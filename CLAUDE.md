@@ -34,6 +34,16 @@ tail -f logs/loop.log                  # combined [implementer]/[tester]-prefixe
 The loop sleeps only when a cycle left the ticket file untouched; if either agent wrote to it,
 the next cycle starts immediately.
 
+The tester's directory has no MCP config, so `run-loop.sh` hands it the `dw` server via
+`--mcp-config` + `--strict-mcp-config` (it sees *only* `dw`) and loads the `dw` plugin live from
+`$SOURCE_DIR/plugins/dw` via `--plugin-dir`. Without the latter it would use the frozen copy in
+`~/.claude/plugins/cache` and never see skill fixes. The implementer needs neither flag: the
+source checkout already has `dw` configured at local scope in `~/.claude.json`.
+
+Two deploy paths, and the implementer must say which one a fix used: server code → restart on
+`lem`, tool schemas refresh automatically; plugin/skill changes → commit and leave the checkout
+on that branch, no restart.
+
 ## Ticket protocol (the core of the design)
 
 Tickets in `mcp-feedback.md` are `## T###` blocks copied from the `T000` template. The

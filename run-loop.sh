@@ -5,6 +5,7 @@
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
 #   MODEL=sonnet ./run-loop.sh          # default is opus
+#   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
 #   tail -f logs/loop.log               # watch from another terminal
 #
 # The implementer runs inside the diffusers-workflow source checkout; the tester
@@ -21,20 +22,36 @@ LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
 MODEL="${MODEL:-opus}"         # passed to both agents as --model
+DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
+DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
+PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
 [ -f "$TICKETS" ]    || { echo "ticket file not found: $TICKETS" >&2; exit 1; }
+[ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
 mkdir -p "$LOGS"
 
 ts() { date '+%H:%M:%S'; }
 
-# run_agent <name> <cwd> <prompt>
+# The tester's cwd has no MCP config of its own, so the dw server is passed
+# explicitly. --strict-mcp-config means dw is the *only* server it sees.
+# --plugin-dir loads the dw plugin live from the implementer's working tree
+# instead of the frozen copy in ~/.claude/plugins/cache, so skill fixes are
+# testable without a reinstall. Tool schemas come from the server and are
+# always fresh.
+TESTER_FLAGS=(
+  --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
+  --strict-mcp-config
+  --plugin-dir "$PLUGIN_DIR"
+)
+
+# run_agent <name> <cwd> <prompt> [extra claude flags...]
 # Streams the agent's output to the terminal, its own log, and the combined log.
 run_agent() {
-  local name="$1" dir="$2" prompt="$3"
+  local name="$1" dir="$2" prompt="$3"; shift 3
   echo "=== $(ts) cycle $cycle: $name ($MODEL) ===" | tee -a "$LOGS/loop.log"
-  (cd "$dir" && claude -p "$prompt" --model "$MODEL" --dangerously-skip-permissions 2>&1) \
+  (cd "$dir" && claude -p "$prompt" --model "$MODEL" --dangerously-skip-permissions "$@" 2>&1) \
     | tee -a "$LOGS/$name.log" \
     | sed -u "s/^/[$name] /" \
     | tee -a "$LOGS/loop.log" \
@@ -62,7 +79,8 @@ while true; do
   run_agent implementer "$SOURCE_DIR" \
     "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on tickets you own, then stop."
   run_agent tester "$REPO" \
-    "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on tickets you own. Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop."
+    "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on tickets you own. Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop." \
+    "${TESTER_FLAGS[@]}"
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board; } | tee -a "$LOGS/loop.log"
 

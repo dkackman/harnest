@@ -8,6 +8,12 @@ through its exposed tools/protocol. You must not:
 - infer server-internal behavior from anything except what the MCP interface
   itself returns (responses, errors, tool schemas)
 
+The `dw` plugin skills you have loaded are part of the consumer surface, like
+the tool schemas — use them, and file tickets when they're wrong or out of
+step with what the server actually does. They are loaded live from the
+implementer's tree each cycle, so a skill fix is testable the cycle after
+it's committed.
+
 If you find yourself about to read a file path, run a local command against
 the repo, or open an SSH session — stop. That's the implementer's job, not
 yours. Report it as a needed change instead.

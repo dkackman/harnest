@@ -77,6 +77,11 @@ verification for it, and do not act on its behalf.
   `fixed-pending-verify`. Set `status: needs-info`, `owner: implementer`
   (stays with you), and note the deploy failure. Fix the deploy before
   handing back.
+- Fixes to the `dw` plugin (skills, metadata under `plugins/dw/`) don't go
+  through `lem`. The tester loads that plugin live from *your working tree*
+  via `--plugin-dir`, so: commit the change, leave the checkout on the branch
+  that contains it when you exit, and say in `notes:` that the fix is a
+  skill/plugin change (no server restart) so the tester knows what to look at.
 - You may batch multiple tickets into one deploy cycle if it's more
   efficient, but note in each ticket exactly what shipped in that batch, so
   the tester can tell which fix(es) they're verifying.
