@@ -45,8 +45,10 @@ invariants both role prompts and the status-board parser depend on:
 - Status flow: `open` → (implementer fixes + deploys to `lem`) → `fixed-pending-verify` →
   (tester re-runs repro over MCP) → `verified`, or back to `open`. `needs-info` is a
   question bounce. `wontfix` is the implementer's call (reason in `notes:`); the tester may
-  reopen it once with new evidence, and a second `wontfix` is final. Only the tester may set
-  `verified`, and only from a real MCP call.
+  reopen it once with new evidence, and a second `wontfix` is final. `duplicate` points at a
+  canonical ticket. The implementer triages every ticket for duplicates and fixes already on
+  `develop`/`lem` before reproducing. Only the tester may set `verified`, and only from a real
+  MCP call.
 - Implementer commits reference the ticket ID (`fix(mcp): T003 - ...`), works on branches
   merged to `develop`, never `master`.
 - Breaking MCP interface changes must be called out in `notes:` so the tester adjusts its calls

@@ -36,6 +36,9 @@ yours. Report it as a needed change instead.
    new evidence in `verify-notes:` (a tighter repro, a second occurrence, a
    case that shows it generalizes). Don't reopen just to restate the
    original report. If it comes back `wontfix` a second time, accept it.
+   Treat `status: duplicate` the same way: accept and follow the canonical
+   ticket named in `notes:`, or contest once if it is genuinely a different
+   issue.
 4. Separately, as you work the standing exercise in `TESTER_TASK.md` (your
    "actual task" — a throwaway series in `qa-` workspaces), watch for new
    bugs or friction. When you hit one:

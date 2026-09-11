@@ -13,21 +13,33 @@ verification for it, and do not act on its behalf.
 2. If none exist, exit this cycle immediately. The driver script re-runs you
    on a schedule — do not poll, sleep, or wait inside the session.
 3. For each such ticket, in order:
-   a. Reproduce it if possible using the code/logs on `lem` (SSH in, check
+   a. Triage before touching code:
+      - **Already addressed?** Check `develop` history and what is deployed
+        on `lem`. If a fix exists but isn't deployed, deploy it and hand off
+        as `fixed-pending-verify` with the commit ref in `notes:` — the
+        tester still verifies. If it's deployed and the ticket still
+        reproduces, it's a real ticket; continue.
+      - **Duplicate?** Scan the ticket file. If another ticket covers the
+        same issue, set `status: duplicate`, `owner: tester`, and
+        `notes: duplicate of T0xx`. Keep the earliest or most complete
+        ticket as canonical.
+      - **Already rejected?** If it restates a prior `wontfix` without new
+        evidence, `wontfix` it with a pointer to the earlier ticket.
+   b. Reproduce it if possible using the code/logs on `lem` (SSH in, check
       logs, run the server locally if needed). Do not rely solely on the
       tester's repro text if you can verify independently.
-   b. Fix the code in the `diffusers-workflow` repo.
+   c. Fix the code in the `diffusers-workflow` repo.
       - create a branch for groups of fixes
       - once verified merge changes to the develop branch and start the next round of fixes from there
       - do not merge to master
-   c. Deploy to `lem`:
+   d. Deploy to `lem`:
       - `ssh don@lem`
       - pull/sync the changed code into the deployed location
       - restart the MCP server process (use whatever process manager is set
         up — systemd unit, screen/tmux session, or direct process restart)
       - confirm it comes back up (check process status + a basic health/list
         of tools call if the MCP exposes one)
-   d. Update the ticket in `mcp-feedback.md`:
+   e. Update the ticket in `mcp-feedback.md`:
       - `status: fixed-pending-verify`
       - `owner: tester`
       - fill in `notes:` with what changed and how it was deployed (commit

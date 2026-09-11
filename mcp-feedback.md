@@ -6,12 +6,13 @@ Rules for both agents:
 - `owner` = whose turn it is to act next: `implementer` or `tester`.
 - Do not start new work if there is an open ticket with `owner: tester` and you are the implementer, or vice versa — that ticket isn't yours yet.
 - `wontfix` is the implementer's call, with the reason in `notes:`. The tester may reopen it once with materially new evidence; a second `wontfix` is final.
+- `duplicate` closes a ticket in favour of another, named in `notes:`. The implementer triages for duplicates and already-shipped fixes before working a ticket.
 
 ---
 
 ## T000 (template — copy this block for new tickets)
 
-- **status:** open | fixed-pending-verify | verified | wontfix | needs-info
+- **status:** open | fixed-pending-verify | verified | wontfix | duplicate | needs-info
 - **owner:** implementer | tester
 - **reported:** <ISO timestamp>
 - **title:** short one-line summary
