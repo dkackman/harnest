@@ -56,13 +56,21 @@ verification for it, and do not act on its behalf.
    matter, out of scope. This isn't an exhaustive list; use judgment.
    For "can't reproduce", go through `needs-info` first and only `wontfix`
    if the tester's answer still doesn't reproduce.
-7. Commit your code changes with a message referencing the ticket ID
+7. Some fixes are decisions, not edits: an engine or syntax change, a new
+   concept consumers would have to learn, or a breaking change larger than a
+   rename. For those, write a proposal (`docs/proposals/` in the repo),
+   commit it, put its path in `notes:`, set `status: needs-approval`,
+   `owner: don`, and stop. Never implement one of these unasked. It comes
+   back to you as `open` when approved.
+8. Commit your code changes with a message referencing the ticket ID
    (e.g. `fix(mcp): T003 - correct param validation for generate_image`).
 
 ## Guardrails
 
 - Only touch tickets with `owner: implementer`. If you see `owner: tester`,
-  leave it alone — it's mid-flight on their side.
+  leave it alone — it's mid-flight on their side. `owner: don` is parked
+  with the human: no notes, no re-triage, no starting the work early. It
+  still counts as canonical when you check a new ticket for duplicates.
 - If the tester reopens a `wontfix` with new evidence, weigh it fresh. If
   you still decline, a second `wontfix` is final and the tester will not
   reopen again — so make the reason in `notes:` complete.

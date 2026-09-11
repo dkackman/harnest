@@ -1,19 +1,21 @@
 # diffusers-workflow MCP — Feedback Log
 
 Rules for both agents:
+
 - Never delete or rewrite another agent's entries — only append new entries or edit the `status` line of an entry you own the next step of.
 - Each entry gets a unique ID: `T001`, `T002`, ... increment from the last one in this file.
-- `owner` = whose turn it is to act next: `implementer` or `tester`.
+- `owner` = whose turn it is to act next: `implementer`, `tester`, or `don` (the human).
 - Do not start new work if there is an open ticket with `owner: tester` and you are the implementer, or vice versa — that ticket isn't yours yet.
 - `wontfix` is the implementer's call, with the reason in `notes:`. The tester may reopen it once with materially new evidence; a second `wontfix` is final.
 - `duplicate` closes a ticket in favour of another, named in `notes:`. The implementer triages for duplicates and already-shipped fixes before working a ticket.
+- `needs-approval` + `owner: don` parks a ticket pending a human decision. Neither agent touches it — no notes, no re-triage, no early work — but it stays canonical for duplicate detection. It comes back as `open` / `owner: implementer` when approved, or `wontfix`.
 
 ---
 
 ## T000 (template — copy this block for new tickets)
 
-- **status:** open | fixed-pending-verify | verified | wontfix | duplicate | needs-info
-- **owner:** implementer | tester
+- **status:** open | fixed-pending-verify | verified | wontfix | duplicate | needs-info | needs-approval
+- **owner:** implementer | tester | don
 - **reported:** <ISO timestamp>
 - **title:** short one-line summary
 - **tool/endpoint:** which MCP tool or method this concerns
@@ -71,6 +73,7 @@ Rules for both agents:
 - **notes:** Still mine - not in this deploy, and not a wontfix. Working it turned up a design decision the ticket does not settle, and half of it would be worse than none:
   A `for_each` that fans a step out per list entry has to answer how the *downstream* step names the group. `previous_result:shot` today means 'that step's result', and a result that is a list drives the **cartesian iteration** the engine already has (4 images x 3 masks = 12 runs) - so a fanned-out group read back through `previous_result:` would run the concat once per shot instead of once over all of them. Gathering and iterating are two different meanings and the reference syntax currently has one. That plus expanded step names, step cache keys (keyed on workflow id + step name), the manifest and the realized workflow is a proposal, not an edit.
   Next cycle: a written proposal in docs/proposals/ for the naming and gather syntax, then the implementation. Nothing needed from you in the meantime.
+  From Don: Write the proposal and then hand it to Don as needs-approval
 - **verify-notes:**
 
 ## T004
@@ -270,4 +273,17 @@ Rules for both agents:
 - **expected:** the error names what *is* available - `Available results: ['first']` - since that list is the whole point of printing it, and the gap between the name asked for and the names present is the fix. And `get_job`'s `manifest` lists the steps that did complete, so the work a failed run produced is still reachable.
 - **actual:** `Available results: []` on a run where a prior step had demonstrably completed, and an empty manifest hiding its file. Only `get_job_events` showed what had run.
 - **notes:** Filed from the T005 investigation, and that is where it bites: `dialogue-short` fails this exact way after ~42 minutes of GPU, and the one diagnostic line that would name the three renamed steps prints an empty list instead. Cheap fix, disproportionate value on a long run.
+- **verify-notes:**
+
+## T016
+
+- **status:** needs-approval
+- **owner:** don
+- **reported:** 2026-09-11T18:51:00Z
+- **title:** Folders in jobs and workspaces, one level deep, to separate intermediate from final outputs
+- **tool/endpoint:** job and workspace output storage; MCP, REST API, and UI
+- **repro:** run any multi-step workflow; inspect where intermediate step outputs and the final assembled output land in the workspace / job listing
+- **expected:** jobs and workspace outputs support folders one level deep — the same shape, look, and behaviour as the folder support that already exists for the workflow and prompt libraries. The intent is separation of intermediate outputs from final ones. Folders carry through all three surfaces: MCP tools, REST API, and UI. MCP consumers are steered toward using them for the intermediate/final distinction (tool descriptions, skills, and any hints should encourage it).
+- **actual:** everything a job produces sits at one level, so a finished episode is indistinguishable from the twenty scratch files that went into it without reading names.
+- **notes:** Match existing folder support unless there is a compelling reason not to — if you diverge, say why. One level deep, no nesting, to stay consistent with the workflow and prompt libraries.
 - **verify-notes:**

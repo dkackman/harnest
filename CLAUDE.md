@@ -49,14 +49,16 @@ on that branch, no restart.
 Tickets in `mcp-feedback.md` are `## T###` blocks copied from the `T000` template. The
 invariants both role prompts and the status-board parser depend on:
 
-- `owner` is a baton: `implementer` or `tester` — whoever's turn it is to act next. An agent
+- `owner` is a baton: `implementer`, `tester`, or `don` (the human) — whoever's turn it is to act next. An agent
   only touches tickets it owns and never edits the other agent's entries beyond the fields it
   is handing off.
 - Status flow: `open` → (implementer fixes + deploys to `lem`) → `fixed-pending-verify` →
   (tester re-runs repro over MCP) → `verified`, or back to `open`. `needs-info` is a
   question bounce. `wontfix` is the implementer's call (reason in `notes:`); the tester may
   reopen it once with new evidence, and a second `wontfix` is final. `duplicate` points at a
-  canonical ticket. The implementer triages every ticket for duplicates and fixes already on
+  canonical ticket. `needs-approval` / `owner: don` parks a ticket with the human — the
+  implementer must use it for engine/syntax changes and anything breaking beyond a rename,
+  after writing a proposal; neither agent touches a parked ticket. The implementer triages every ticket for duplicates and fixes already on
   `develop`/`lem` before reproducing. Only the tester may set `verified`, and only from a real
   MCP call.
 - Implementer commits reference the ticket ID (`fix(mcp): T003 - ...`), works on branches

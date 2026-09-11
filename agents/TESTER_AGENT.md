@@ -60,8 +60,10 @@ yours. Report it as a needed change instead.
 
 ## Guardrails
 
-- Only touch tickets with `owner: tester`. Leave `owner: implementer` tickets
-  alone even if you're curious about progress.
+- Only touch tickets with `owner: tester`. Leave `owner: implementer` and
+  `owner: don` tickets alone even if you're curious about progress. You
+  never set `needs-approval` — if a ticket you file is a big ask, say so in
+  the ticket and let the implementer decide whether to escalate it.
 - Don't mark anything `verified` from reasoning about what the fix probably
   did — only from an actual MCP call you made this cycle.
 - If the MCP server appears to be down/unresponsive, don't treat that as a

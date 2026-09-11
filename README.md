@@ -47,7 +47,8 @@ compact.
 Every ticket is a `## T###` block copied from the `T000` template in
 `mcp-feedback.md`. The rules that make it work:
 
-- **`owner` is a baton.** It names whose turn it is. An agent only touches
+- **`owner` is a baton.** It names whose turn it is: `implementer`,
+  `tester`, or `don`. An agent only touches
   tickets it owns and never rewrites the other agent's entries.
 - **`verified` belongs to the tester alone**, and only from a real MCP call
   made this cycle. The implementer never self-verifies.
@@ -55,6 +56,11 @@ Every ticket is a `## T###` block copied from the `T000` template in
   tester may reopen once with materially new evidence; a second `wontfix` is
   final. "Can't reproduce" goes through `needs-info` first.
 - **`duplicate`** closes a ticket in favour of another, named in `notes:`.
+- **`needs-approval`** with `owner: don` parks a ticket with the human. The
+  implementer must use it for engine or syntax changes, new consumer-facing
+  concepts, and breaking changes beyond a rename — it writes a proposal, then
+  stops. You can also set it on anything to mean "not yet." Neither agent
+  touches a parked ticket.
 - Breaking interface changes are called out in `notes:` so the tester adjusts
   its calls instead of filing the change as a bug.
 - Nobody polls or sleeps inside a session. "Nothing to do" means exit.
@@ -68,6 +74,7 @@ open ──▶ fixed-pending-verify ──▶ verified
 open ──▶ needs-info ──▶ open
 open ──▶ wontfix    ──▶ (tester accepts, or reopens once)
 open ──▶ duplicate
+open ──▶ needs-approval ──▶ open | wontfix   (human decides)
 ```
 
 ## Running it
