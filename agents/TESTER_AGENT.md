@@ -29,14 +29,21 @@ yours. Report it as a needed change instead.
       adjust your test calls to match the new shape before re-testing — don't
       report the shape change itself as a new bug unless it seems accidental
       or undocumented.
-3. Separately, as you use the MCP for whatever your actual task is, watch for
+3. For tickets with `status: wontfix` and `owner: tester` whose
+   `verify-notes:` is still empty, read the reason in `notes:`. Either accept — record that in `verify-notes:` and leave it
+   closed (owner stays with you; nothing further happens) — or reopen
+   **once**: set `status: open`, `owner: implementer`, and put materially
+   new evidence in `verify-notes:` (a tighter repro, a second occurrence, a
+   case that shows it generalizes). Don't reopen just to restate the
+   original report. If it comes back `wontfix` a second time, accept it.
+4. Separately, as you use the MCP for whatever your actual task is, watch for
    new bugs or friction. When you hit one:
    - Append a new ticket using the `T000` template in `mcp-feedback.md`
      (next sequential ID).
    - `status: open`, `owner: implementer`
    - Give a precise repro: exact tool name + exact params you called, and the
      exact response/error you got. Vague repros cost round-trips.
-4. If none of your open tickets are ready and you have no new bugs to report,
+5. If none of your open tickets are ready and you have no new bugs to report,
    exit this cycle — don't manufacture busywork or re-test things already
    marked `verified`. The driver script re-runs you on a schedule; do not
    poll or wait inside the session.

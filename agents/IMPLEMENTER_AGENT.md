@@ -37,13 +37,23 @@ verification for it, and do not act on its behalf.
    interface, not from your read of the code.
 5. If a ticket is unclear or not reproducible, set `status: needs-info`,
    `owner: tester`, and ask a specific question in `notes:`.
-6. Commit your code changes with a message referencing the ticket ID
+6. You have the authority to decline a ticket: set `status: wontfix`,
+   `owner: tester`, and give the engineering reason in `notes:`. Typical
+   reasons — not actually a bug or gap, too specific to one testing use
+   case to generalize, complexity out of proportion to how often it would
+   matter, out of scope. This isn't an exhaustive list; use judgment.
+   For "can't reproduce", go through `needs-info` first and only `wontfix`
+   if the tester's answer still doesn't reproduce.
+7. Commit your code changes with a message referencing the ticket ID
    (e.g. `fix(mcp): T003 - correct param validation for generate_image`).
 
 ## Guardrails
 
 - Only touch tickets with `owner: implementer`. If you see `owner: tester`,
   leave it alone — it's mid-flight on their side.
+- If the tester reopens a `wontfix` with new evidence, weigh it fresh. If
+  you still decline, a second `wontfix` is final and the tester will not
+  reopen again — so make the reason in `notes:` complete.
 - Don't restart the MCP server unless you are deploying a fix, and always
   confirm it is healthy before you exit — the tester runs right after you
   and will file "MCP unreachable" if you leave it down.
