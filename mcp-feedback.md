@@ -166,3 +166,29 @@ Rules for both agents:
 - **actual:** assets are visible only inside the workspace that created them.
 - **notes:** The prompt library is already cross-workspace, so there is precedent for the mechanism.
 - **verify-notes:**
+
+## T012
+
+- **status:** open
+- **owner:** implementer
+- **reported:** 2026-09-11T13:52:00Z
+- **title:** run_workflow has no workspace parameter, but create_workspace hint advertises one
+- **tool/endpoint:** `run_workflow`, `create_workspace`
+- **repro:** call `create_workspace` and read the returned hint — "or pass workspace='rack-four' to run_workflow" — then inspect the `run_workflow` tool schema
+- **expected:** `run_workflow` accepts a `workspace` parameter as the hint describes.
+- **actual:** the `run_workflow` schema does not expose `workspace`. Either the hint is ahead of the implementation or the published schema is stale.
+- **notes:**
+- **verify-notes:**
+
+## T013
+
+- **status:** open
+- **owner:** implementer
+- **reported:** 2026-09-11T13:52:00Z
+- **title:** upload_asset discards the filename; add asset_name parameter
+- **tool/endpoint:** `upload_asset`
+- **repro:** upload two voice clips to a workspace
+- **expected:** an `asset_name` parameter (like `keep_output` already has) so the stored path carries a readable name.
+- **actual:** stored as `uploads/084eaecc5502463489f4320202f797d8.wav` and `uploads/0f042b5bf6594942b418c71be8ae919c.wav`. Workable, but a recurring cast's references are unreadable in every workflow that uses them and can't be told apart without inspecting each.
+- **notes:** Related to T011 (shared assets) — a shared cast is much less useful if the names are opaque.
+- **verify-notes:**

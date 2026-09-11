@@ -17,13 +17,17 @@ shared Markdown ticket file. There is no build, lint, or test step.
   protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split is
   the whole basis of the tester's isolation (honor-system beyond that — it runs with
   `--dangerously-skip-permissions`).
+- `agents/TESTER_TASK.md` — the tester's standing exercise: a throwaway series built in
+  `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
+  deliverable; never touches the default workspace.
 - `mcp-feedback.md` — the shared ticket log. `logs/` — per-agent and combined output, gitignored.
+  The tester also keeps `qa-bible.md` here (gitignored) as its memory across cycles.
 
 ## Running
 
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/diffusers-workflow
-MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
+MAX_CYCLES=3 SLEEP_SECS=60 MODEL=sonnet ./run-loop.sh   # MODEL defaults to opus
 tail -f logs/loop.log                  # combined [implementer]/[tester]-prefixed stream
 ```
 

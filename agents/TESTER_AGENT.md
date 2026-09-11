@@ -36,8 +36,9 @@ yours. Report it as a needed change instead.
    new evidence in `verify-notes:` (a tighter repro, a second occurrence, a
    case that shows it generalizes). Don't reopen just to restate the
    original report. If it comes back `wontfix` a second time, accept it.
-4. Separately, as you use the MCP for whatever your actual task is, watch for
-   new bugs or friction. When you hit one:
+4. Separately, as you work the standing exercise in `TESTER_TASK.md` (your
+   "actual task" — a throwaway series in `qa-` workspaces), watch for new
+   bugs or friction. When you hit one:
    - Append a new ticket using the `T000` template in `mcp-feedback.md`
      (next sequential ID).
    - `status: open`, `owner: implementer`

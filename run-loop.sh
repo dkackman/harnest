@@ -4,6 +4,7 @@
 #
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
+#   MODEL=sonnet ./run-loop.sh          # default is opus
 #   tail -f logs/loop.log               # watch from another terminal
 #
 # The implementer runs inside the diffusers-workflow source checkout; the tester
@@ -19,6 +20,7 @@ AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
+MODEL="${MODEL:-opus}"         # passed to both agents as --model
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
 [ -f "$TICKETS" ]    || { echo "ticket file not found: $TICKETS" >&2; exit 1; }
@@ -27,14 +29,12 @@ mkdir -p "$LOGS"
 
 ts() { date '+%H:%M:%S'; }
 
-# run_agent <name> <cwd> <role-file>
+# run_agent <name> <cwd> <prompt>
 # Streams the agent's output to the terminal, its own log, and the combined log.
 run_agent() {
-  local name="$1" dir="$2" role="$3"
-  echo "=== $(ts) cycle $cycle: $name ===" | tee -a "$LOGS/loop.log"
-  (cd "$dir" && claude -p \
-    "Read the ticket file at $TICKETS and follow the role instructions at $role exactly for this cycle. Act only on tickets you own, then stop." \
-    --dangerously-skip-permissions 2>&1) \
+  local name="$1" dir="$2" prompt="$3"
+  echo "=== $(ts) cycle $cycle: $name ($MODEL) ===" | tee -a "$LOGS/loop.log"
+  (cd "$dir" && claude -p "$prompt" --model "$MODEL" --dangerously-skip-permissions 2>&1) \
     | tee -a "$LOGS/$name.log" \
     | sed -u "s/^/[$name] /" \
     | tee -a "$LOGS/loop.log" \
@@ -59,8 +59,10 @@ while true; do
   cycle=$((cycle + 1))
   before="$(mtime)"
 
-  run_agent implementer "$SOURCE_DIR" "$AGENTS/IMPLEMENTER_AGENT.md"
-  run_agent tester      "$REPO"       "$AGENTS/TESTER_AGENT.md"
+  run_agent implementer "$SOURCE_DIR" \
+    "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on tickets you own, then stop."
+  run_agent tester "$REPO" \
+    "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on tickets you own. Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop."
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board; } | tee -a "$LOGS/loop.log"
 
