@@ -127,3 +127,42 @@ Rules for both agents:
 - **actual:** distinguishing them required a hand-rolled pitch-and-periodicity pass, and it still needed script knowledge to get the crash shot right.
 - **notes:** This is the missing building block for an automatic clamp. Depends on / extends T004.
 - **verify-notes:**
+
+## T009
+
+- **status:** open
+- **owner:** implementer
+- **reported:** 2026-09-11T12:26:00Z
+- **title:** slice_audio drops the sample rate it reads, breaking chain into resample_audio (#15)
+- **tool/endpoint:** `slice_audio` → `resample_audio`
+- **repro:** `slice_audio` on a source, then `resample_audio` with `previous_result` as input and no explicit source rate
+- **expected:** `slice_audio` passes the source sample rate through in its result so `resample_audio` can consume it directly.
+- **actual:** `slice_audio` reads the sample rate but does not include it in its output; `resample_audio` fails until the source rate is restated by hand. Cost one failed job.
+- **notes:**
+- **verify-notes:**
+
+## T010
+
+- **status:** open
+- **owner:** implementer
+- **reported:** 2026-09-11T12:26:00Z
+- **title:** character_a_voice / character_b_voice variables with audio-reference append (#16)
+- **tool/endpoint:** `dialogue-short` template variables; `MiniMaxH3AudioReference`
+- **repro:** author a series with a recurring cast; see T007 for the current hand-copied-strings situation
+- **expected:** template exposes `character_a_voice` / `character_b_voice`, defaulting to `null`. When set, each shot appends a `MiniMaxH3AudioReference` for whichever character speaks in that shot. `null` preserves today's behaviour exactly.
+- **actual:** voice identity is carried only as verbatim strings hand-copied into every shot.
+- **notes:** Concrete proposal from the tester. Would retire T007 (#13) entirely — close that as a duplicate if this lands. Pairs naturally with the role-based renames in T005.
+- **verify-notes:**
+
+## T011
+
+- **status:** open
+- **owner:** implementer
+- **reported:** 2026-09-11T12:26:00Z
+- **title:** Assets are workspace-scoped; recurring cast invisible from a fresh workspace (#17)
+- **tool/endpoint:** asset storage / workspace scoping
+- **repro:** create character assets in one workspace; start episode four in a fresh workspace; try to reference them
+- **expected:** a `common/assets` location shared across all workspaces, the same treatment the prompt library already gets, so a recurring cast is reachable from any episode's workspace.
+- **actual:** assets are visible only inside the workspace that created them.
+- **notes:** The prompt library is already cross-workspace, so there is precedent for the mechanism.
+- **verify-notes:**
