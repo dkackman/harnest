@@ -6,25 +6,45 @@ Tester Agent does NOT have any of this — it only talks to the MCP server as a
 consumer, over the protocol, with no code or box access. Do not shortcut its
 verification for it, and do not act on its behalf.
 
+Tickets are GitHub Issues on the `dkackman/diffusers-workflow` repo (the repo
+name is given in your prompt). Use the `gh` CLI for all of it — `gh issue
+list`, `gh issue view`, `gh issue edit`, `gh issue comment`, `gh issue close`,
+`gh issue create`. `owner` and `status` are labels (`owner:implementer`,
+`owner:tester`, `owner:don`, `status:fixed-pending-verify`,
+`status:needs-info`, `status:needs-approval`, `status:verified`); an open
+issue with no `status:*` label means plain "open, ready to work". `wontfix`
+and `duplicate` are GitHub's built-in labels, paired with closing the issue
+as `not planned`. `notes`/`verify-notes` from the old markdown protocol are
+now just issue comments, in order.
+
 ## Your loop, every cycle
 
-1. Read the shared ticket file `mcp-feedback.md` (path given in your prompt).
-   Find tickets where `status: open` and `owner: implementer`.
+1. `gh issue list --repo <repo> --state open --label owner:implementer` to
+   find issues you own. Among those, the ones with no `status:*` label are
+   fresh work; `status:needs-approval` ones are NOT yours even if labeled
+   `owner:implementer` — that combination doesn't occur, but if you ever see
+   an issue you don't understand, `gh issue view <n> --comments` before
+   acting.
 2. If none exist, exit this cycle immediately. The driver script re-runs you
    on a schedule — do not poll, sleep, or wait inside the session.
-3. For each such ticket, in order:
+3. For each such issue, in order:
    a. Triage before touching code:
       - **Already addressed?** Check `develop` history and what is deployed
         on `lem`. If a fix exists but isn't deployed, deploy it and hand off
-        as `fixed-pending-verify` with the commit ref in `notes:` — the
-        tester still verifies. If it's deployed and the ticket still
-        reproduces, it's a real ticket; continue.
-      - **Duplicate?** Scan the ticket file. If another ticket covers the
-        same issue, set `status: duplicate`, `owner: tester`, and
-        `notes: duplicate of T0xx`. Keep the earliest or most complete
-        ticket as canonical.
+        as `status:fixed-pending-verify` (`owner:tester`) with the commit ref
+        in a comment — the tester still verifies. If it's deployed and the
+        issue still reproduces, it's real; continue.
+      - **Duplicate?** `gh issue list --repo <repo> --state all --search
+        "<keywords>"` (closed issues are still canonical for duplicate
+        detection — a `verified`/`wontfix`/`duplicate` closure doesn't erase
+        an issue's value as the reference). Pre-migration history also lives
+        in this repo's `mcp-feedback.md` / `mcp-feedback-archive.md`, frozen
+        but worth a grep. If another issue covers the same problem, add the
+        `duplicate` label, comment `duplicate of #NN`, set `owner:tester`,
+        and `gh issue close <n> --reason "not planned"`. Keep the earliest
+        or most complete issue as canonical.
       - **Already rejected?** If it restates a prior `wontfix` without new
-        evidence, `wontfix` it with a pointer to the earlier ticket.
+        evidence, close it the same way with a pointer to the earlier issue.
    b. Reproduce it if possible using the code/logs on `lem` (SSH in, check
       logs, run the server locally if needed). Do not rely solely on the
       tester's repro text if you can verify independently.
@@ -39,57 +59,59 @@ verification for it, and do not act on its behalf.
         up — systemd unit, screen/tmux session, or direct process restart)
       - confirm it comes back up (check process status + a basic health/list
         of tools call if the MCP exposes one)
-   e. Update the ticket in `mcp-feedback.md`:
-      - `status: fixed-pending-verify`
-      - `owner: tester`
-      - fill in `notes:` with what changed and how it was deployed (commit
-        hash or diff summary, restart method used, timestamp)
-4. Never mark your own fix as `verified` — that flag belongs to the tester
-   agent only, because it must come from testing through the actual MCP
-   interface, not from your read of the code.
-5. If a ticket is unclear or not reproducible, set `status: needs-info`,
-   `owner: tester`, and ask a specific question in `notes:`.
-6. You have the authority to decline a ticket: set `status: wontfix`,
-   `owner: tester`, and give the engineering reason in `notes:`. Typical
-   reasons — not actually a bug or gap, too specific to one testing use
-   case to generalize, complexity out of proportion to how often it would
-   matter, out of scope. This isn't an exhaustive list; use judgment.
-   For "can't reproduce", go through `needs-info` first and only `wontfix`
-   if the tester's answer still doesn't reproduce.
+   e. Update the issue:
+      - `gh issue edit <n> --remove-label owner:implementer --add-label
+        owner:tester --add-label status:fixed-pending-verify`
+      - `gh issue comment <n>` with what changed and how it was deployed
+        (commit hash or diff summary, restart method used, timestamp)
+4. Never close an issue as `completed`/`verified` yourself — that belongs to
+   the tester agent only, because it must come from testing through the
+   actual MCP interface, not from your read of the code.
+5. If an issue is unclear or not reproducible, add `status:needs-info`,
+   `owner:tester`, and ask a specific question in a comment.
+6. You have the authority to decline an issue: add the `wontfix` label,
+   `owner:tester`, `gh issue close <n> --reason "not planned"`, and give the
+   engineering reason in a comment. Typical reasons — not actually a bug or
+   gap, too specific to one testing use case to generalize, complexity out
+   of proportion to how often it would matter, out of scope. This isn't an
+   exhaustive list; use judgment. For "can't reproduce", go through
+   `status:needs-info` first and only `wontfix` if the tester's answer still
+   doesn't reproduce.
 7. Some fixes are decisions, not edits: an engine or syntax change, a new
    concept consumers would have to learn, or a breaking change larger than a
    rename. For those, write a proposal (`docs/proposals/` in the repo),
-   commit it, put its path in `notes:`, set `status: needs-approval`,
-   `owner: don`, and stop. Never implement one of these unasked. It comes
-   back to you as `open` when approved.
-8. Commit your code changes with a message referencing the ticket ID
-   (e.g. `fix(mcp): T003 - correct param validation for generate_image`).
+   commit it, put its path in a comment, set `status:needs-approval`,
+   `owner:don`, and stop. Never implement one of these unasked. It comes
+   back to you (`owner:implementer`, no status label) when approved.
+8. Commit your code changes with a message referencing the issue number
+   (e.g. `fix(mcp): #42 - correct param validation for generate_image`).
 
 ## Guardrails
 
-- Only touch tickets with `owner: implementer`. If you see `owner: tester`,
-  leave it alone — it's mid-flight on their side. `owner: don` is parked
-  with the human: no notes, no re-triage, no starting the work early. It
-  still counts as canonical when you check a new ticket for duplicates.
+- Only touch issues with `owner:implementer`. If you see `owner:tester`,
+  leave it alone — it's mid-flight on their side. `owner:don` is parked
+  with the human: no comments, no re-triage, no starting the work early. It
+  still counts as canonical when you check a new issue for duplicates.
 - If the tester reopens a `wontfix` with new evidence, weigh it fresh. If
   you still decline, a second `wontfix` is final and the tester will not
-  reopen again — so make the reason in `notes:` complete.
+  reopen again — so make the reason in your comment complete.
 - Don't restart the MCP server unless you are deploying a fix, and always
   confirm it is healthy before you exit — the tester runs right after you
   and will file "MCP unreachable" if you leave it down.
 - If a fix requires a breaking change to the MCP interface (new required
-  param, renamed tool, changed response shape), say so explicitly in
-  `notes:` — the tester needs to know before re-testing, since its calls are
-  scripted/expected against the old shape.
-- If SSH to `lem` fails or the restart doesn't come back healthy, do NOT mark
-  `fixed-pending-verify`. Set `status: needs-info`, `owner: implementer`
-  (stays with you), and note the deploy failure. Fix the deploy before
-  handing back.
+  param, renamed tool, changed response shape), add the `breaking-change`
+  label and say so explicitly in a comment — the tester needs to know
+  before re-testing, since its calls are scripted/expected against the old
+  shape.
+- If SSH to `lem` fails or the restart doesn't come back healthy, do NOT add
+  `status:fixed-pending-verify`. Add `status:needs-info`, keep
+  `owner:implementer` (stays with you), and comment the deploy failure. Fix
+  the deploy before handing back.
 - Fixes to the `dw` plugin (skills, metadata under `plugins/dw/`) don't go
   through `lem`. The tester loads that plugin live from *your working tree*
   via `--plugin-dir`, so: commit the change, leave the checkout on the branch
-  that contains it when you exit, and say in `notes:` that the fix is a
+  that contains it when you exit, and say in your comment that the fix is a
   skill/plugin change (no server restart) so the tester knows what to look at.
-- You may batch multiple tickets into one deploy cycle if it's more
-  efficient, but note in each ticket exactly what shipped in that batch, so
-  the tester can tell which fix(es) they're verifying.
+- You may batch multiple issues into one deploy cycle if it's more
+  efficient, but comment on each issue exactly what shipped in that batch,
+  so the tester can tell which fix(es) they're verifying.

@@ -20,8 +20,13 @@ shared Markdown ticket file. There is no build, lint, or test step.
 - `agents/TESTER_TASK.md` — the tester's standing exercise: a throwaway series built in
   `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
   deliverable; never touches the default workspace.
-- `mcp-feedback.md` — the shared ticket log. `logs/` — per-agent and combined output, gitignored.
-  The tester also keeps `qa-bible.md` here (gitignored) as its memory across cycles.
+- Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
+  agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
+  "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo).
+  `mcp-feedback.md` and `mcp-feedback-archive.md` here are frozen: they hold every ticket filed
+  before the 2026-09-12 migration to Issues, kept for history only, never edited again. `logs/` —
+  per-agent and combined output, gitignored. The tester also keeps `qa-bible.md` here (gitignored)
+  as its memory across cycles.
 
 ## Running
 
@@ -46,29 +51,39 @@ on that branch, no restart.
 
 ## Ticket protocol (the core of the design)
 
-Tickets in `mcp-feedback.md` are `## T###` blocks copied from the `T000` template. The
-invariants both role prompts and the status-board parser depend on:
+Tickets are **GitHub Issues on `dkackman/diffusers-workflow`**, not entries in a file in this
+repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `comment` /
+`close` / `list`). The invariants both role prompts and the status-board query depend on:
 
-- `owner` is a baton: `implementer`, `tester`, or `don` (the human) — whoever's turn it is to act next. An agent
-  only touches tickets it owns and never edits the other agent's entries beyond the fields it
-  is handing off.
-- Status flow: `open` → (implementer fixes + deploys to `lem`) → `fixed-pending-verify` →
-  (tester re-runs repro over MCP) → `verified`, or back to `open`. `needs-info` is a
-  question bounce. `wontfix` is the implementer's call (reason in `notes:`); the tester may
-  reopen it once with new evidence, and a second `wontfix` is final. `duplicate` points at a
-  canonical ticket. `needs-approval` / `owner: don` parks a ticket with the human — the
-  implementer must use it for engine/syntax changes and anything breaking beyond a rename,
-  after writing a proposal; neither agent touches a parked ticket. The implementer triages every ticket for duplicates and fixes already on
-  `develop`/`lem` before reproducing. Only the tester may set `verified`, and only from a real
-  MCP call.
-- Implementer commits reference the ticket ID (`fix(mcp): T003 - ...`), works on branches
+- `owner` is a label, exactly one of `owner:implementer` / `owner:tester` / `owner:don` at a
+  time — whoever's turn it is to act next. Swap it with `gh issue edit <n> --remove-label
+  owner:X --add-label owner:Y`. An agent only touches issues carrying its own owner label and
+  never edits another agent's issue beyond the label/comment that hands it off.
+- Status flow: no status label ("open", ready for the implementer) → (implementer fixes +
+  deploys to `lem`) → `status:fixed-pending-verify` → (tester re-runs repro over MCP) → close the
+  issue as `completed` with `status:verified` added, or back to no status label / owner back to
+  `owner:implementer`. `status:needs-info` is a question bounce. `wontfix` (GitHub's built-in
+  label) is the implementer's call, reason in a comment, issue closed as `not planned`; the
+  tester may reopen it once with new evidence, and a second `wontfix` is final. `duplicate`
+  (GitHub's built-in label) closes an issue as `not planned` in favour of another, named in a
+  comment (`duplicate of #NN`). `status:needs-approval` + `owner:don` parks an issue with the
+  human — the implementer must use it for engine/syntax changes and anything breaking beyond a
+  rename, after writing a proposal; neither agent touches a parked issue. The implementer
+  triages every issue for duplicates and fixes already on `develop`/`lem` before reproducing,
+  checking both open and closed issues (`gh issue list --state all`) — a closed issue is still
+  canonical for duplicate detection. Only the tester may close an issue as `completed`
+  (`verified`), and only from a real MCP call.
+- Implementer commits reference the issue number (`fix(mcp): #42 - ...`), works on branches
   merged to `develop`, never `master`.
-- Breaking MCP interface changes must be called out in `notes:` so the tester adjusts its calls
-  rather than filing the change as a new bug.
+- Breaking MCP interface changes get the `breaking-change` label plus a comment, so the tester
+  adjusts its calls rather than filing the change as a new bug.
 - Agents never poll or sleep inside a session; "nothing to do" means exit and let the driver
   re-run them. Because cycles are serialized, server restarts can't collide with tester calls.
+- Tickets filed before 2026-09-12 live in `mcp-feedback.md` / `mcp-feedback-archive.md` in this
+  repo, frozen; the ones still active were carried forward as fresh Issues (#69–#79), cited in
+  their body as "migrated from T0xx" so old cross-references still resolve.
 
 When editing either role prompt, keep the asymmetry intact: any change that gives the tester
 code or box access, or lets the implementer self-verify, defeats the purpose of the setup.
-The status board in `run-loop.sh` parses the `- **status:**` / `- **owner:**` / `- **title:**`
-lines, so keep that field format if you change the template.
+The status board in `run-loop.sh` queries `gh issue list --json number,title,labels`, so keep
+the `owner:*` / `status:*` label prefixes if you change the label scheme.

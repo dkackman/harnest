@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Drives the implementer and tester Claude Code agents in strictly alternating
-# cycles. Both agents communicate only through mcp-feedback.md.
+# cycles. Both agents communicate only through GitHub Issues on TICKET_REPO.
 #
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
@@ -10,13 +10,15 @@
 #
 # The implementer runs inside the diffusers-workflow source checkout; the tester
 # runs inside this repo, which contains no code. That working-directory split is
-# what keeps the tester a pure MCP consumer.
+# what keeps the tester a pure MCP consumer. Ticket state (pre-2026-09-12) lived
+# in mcp-feedback.md / mcp-feedback-archive.md here; both are frozen history now
+# that tickets are GitHub Issues on TICKET_REPO.
 
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/diffusers-workflow}"
-TICKETS="$REPO/mcp-feedback.md"
+TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
@@ -27,9 +29,11 @@ DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
-[ -f "$TICKETS" ]    || { echo "ticket file not found: $TICKETS" >&2; exit 1; }
 [ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
+command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
+command -v jq >/dev/null     || { echo "jq not on PATH" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "gh CLI not authenticated" >&2; exit 1; }
 mkdir -p "$LOGS"
 
 ts() { date '+%H:%M:%S'; }
@@ -58,28 +62,28 @@ run_agent() {
     || echo "[$name] cycle failed, continuing" | tee -a "$LOGS/loop.log"
 }
 
-# One line per ticket: ID  status  owner  title
+# One line per open issue: #NN  status-labels  owner-label  title
 status_board() {
-  awk '
-    /^## T[0-9]+/            { if (id != "" && id != "T000") printf "  %-5s %-22s %-12s %s\n", id, st, own, title; id=$2; st=own=title="" }
-    /^- \*\*status:\*\*/     { sub(/^- \*\*status:\*\* */, ""); st=$0 }
-    /^- \*\*owner:\*\*/      { sub(/^- \*\*owner:\*\* */, ""); own=$0 }
-    /^- \*\*title:\*\*/      { sub(/^- \*\*title:\*\* */, ""); title=$0 }
-    END                      { if (id != "" && id != "T000") printf "  %-5s %-22s %-12s %s\n", id, st, own, title }
-  ' "$TICKETS"
+  gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
+    --json number,title,labels \
+    --jq '.[] | [
+      ("#" + (.number|tostring)),
+      (([.labels[].name | select(startswith("status:"))]) + ["open"])[0],
+      (([.labels[].name | select(startswith("owner:"))]) + ["unowned"])[0],
+      .title
+    ] | @tsv' \
+  | awk -F'\t' '{printf "  %-5s %-24s %-18s %s\n", $1, $2, $3, $4}'
 }
-
-mtime() { stat -f %m "$TICKETS" 2>/dev/null || stat -c %Y "$TICKETS"; }
 
 cycle=0
 while true; do
   cycle=$((cycle + 1))
-  before="$(mtime)"
+  before="$(status_board)"
 
   run_agent implementer "$SOURCE_DIR" \
-    "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on tickets you own, then stop."
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on issues you own (owner:implementer), then stop."
   run_agent tester "$REPO" \
-    "Read the ticket file at $TICKETS and follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on tickets you own. Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop." \
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on issues you own (owner:tester). Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop." \
     "${TESTER_FLAGS[@]}"
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board; } | tee -a "$LOGS/loop.log"
@@ -89,7 +93,7 @@ while true; do
     break
   fi
 
-  if [ "$(mtime)" != "$before" ]; then
+  if [ "$(status_board)" != "$before" ]; then
     echo "tickets changed this cycle, starting next cycle now" | tee -a "$LOGS/loop.log"
   else
     echo "idle, sleeping ${SLEEP_SECS}s" | tee -a "$LOGS/loop.log"
