@@ -5,12 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## What this is
 
 Not an application — an orchestration harness for two Claude Code agents that iterate on the
-`diffusers-workflow` MCP server in strictly alternating cycles, communicating only through a
-shared Markdown ticket file. There is no build, lint, or test step.
+`diffusers-workflow` MCP server in strictly alternating cycles, communicating through GitHub
+Issues (see "Ticket protocol" below) and, for regression coverage, the `regression-suite-*.md`
+files described below. There is no build, lint, or test step.
 
 - `run-loop.sh` — the driver. Runs implementer, then tester, then prints a ticket status board;
   repeats. Each agent is a fresh `claude -p` session, so no state survives between cycles except
-  what's written to the ticket file.
+  what's written to GitHub Issues (or, per each role prompt's "Adding a case" step, a
+  `regression-suite-*.md` file).
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
 - `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
@@ -30,17 +32,25 @@ shared Markdown ticket file. There is no build, lint, or test step.
   (workspace `regression-complete`, general-purpose but broader/slower, runs on top of `smoke`),
   and `regression-suite-model-specific.md` (workspace `regression-model-specific`, niche, tied
   to one model/pipeline, opt-in only). `./run-regression.sh [level] [suite-file]` picks the level
-  (default `smoke`; `all` runs all three, once each) and optionally overrides that level's suite
-  file. Each run deletes what its cases generate as soon as a case (and any dependent case) is
-  done, keeping only durable fixtures listed in that suite file's "Fixtures" section
-  (workflows/assets reused across runs) and artifacts an open issue needs for a repro; a final
-  sweep removes anything else. All three suite files are checked in (not gitignored) — they're
-  the deliverable. The regression agent grows them over time as it finds adjacent functionality
-  worth covering, and the implementer and tester grow them too: either may append a case (same
-  format, plus a `source:` line) to whichever level's file fits, when a fix or a verification
-  touches something worth a permanent regression check — see each suite file's own "Adding a
-  case" section for the line between levels. Invoke the regression agent by hand, from cron, or
-  via the `loop` skill; it never loops or sleeps internally.
+  (default `smoke`; `complete` also runs `smoke` first; `all` runs all three, once each) and
+  optionally overrides just that level's suite file (its workspace is then derived from the
+  override's filename, never the canonical one, so a one-off suite can't delete another suite's
+  fixtures). Case IDs are prefixed per level (`S-`/`C-`/`M-`) so the same number in two files
+  never collides in the regression agent's duplicate-issue search. Each run deletes what its
+  cases generate as soon as a case (and any dependent case) is done, keeping only durable
+  fixtures listed in that suite file's "Fixtures" section (workflows/assets reused across runs)
+  and artifacts an open issue needs for a repro; a final sweep removes anything else. All three
+  suite files are checked in (not gitignored) — they're the deliverable. `run-regression.sh`
+  commits any pending changes to them before and after every level it runs, so edits made
+  outside a regression run (see below) aren't lost or misattributed. The regression agent grows
+  the suites over time as it finds adjacent functionality worth covering; the implementer and
+  tester grow them too, but not the same way — the implementer only *proposes* a case in its
+  issue hand-off comment (it doesn't have this repo checked out, and a case shouldn't be recorded
+  as confirmed behavior before the tester verifies it over MCP); the tester adds the case for
+  real once it verifies. Either role picks whichever suite file fits (same format, plus a
+  `source:` line) — see each suite file's own "Adding a case" section for the line between
+  levels. Invoke the regression agent by hand, from cron, or via the `loop` skill; it never loops
+  or sleeps internally.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo).
@@ -57,8 +67,9 @@ MAX_CYCLES=3 SLEEP_SECS=60 MODEL=sonnet ./run-loop.sh   # MODEL defaults to opus
 tail -f logs/loop.log                  # combined [implementer]/[tester]-prefixed stream
 ```
 
-The loop sleeps only when a cycle left the ticket file untouched; if either agent wrote to it,
-the next cycle starts immediately.
+The loop sleeps only when a cycle left the ticket board unchanged; if either agent's issue
+activity changed it, the next cycle starts immediately. (Whether an agent also appended a
+regression case in the same cycle isn't part of that check.)
 
 The tester's directory has no MCP config, so `run-loop.sh` hands it the `dw` server via
 `--mcp-config` + `--strict-mcp-config` (it sees *only* `dw`) and loads the `dw` plugin live from

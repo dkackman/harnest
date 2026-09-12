@@ -80,7 +80,9 @@ delete outside the workspace for the level you're currently running.
      just move on.
 4. For each failure or performance regression:
    - `gh issue list --repo <repo> --state open --label regression --search
-     "<case id>"` to check whether it's already reported.
+     "<case id>"` to check whether it's already reported — case IDs are
+     prefixed per level (`S-`/`C-`/`M-`) precisely so this search can't
+     match a same-numbered case in a different suite file.
    - If an open issue already covers this exact case: `gh issue comment`
      with today's date, what you ran, and the actual result — don't file a
      duplicate. If the issue is closed (e.g. `wontfix` or already
@@ -109,15 +111,17 @@ delete outside the workspace for the level you're currently running.
    - If, while exercising the suite, you notice an adjacent basic capability
      that isn't covered yet (a template, an error path, a common parameter
      combination) and it belongs at this level, append a new test case at
-     the end of the relevant section with a `baseline:` of "TBD — first run"
+     the end of the relevant section, with the next unused ID for this
+     file's prefix (`S-`/`C-`/`M-`) and a `baseline:` of "TBD — first run"
      for performance cases. If it belongs at a *different* level instead
      (e.g. you're running `smoke` but the gap you found is niche/model-tied),
-     add it to that level's suite file, not this one — see this file's
-     header for the line between levels. Growing the suite is part of the
-     job, not a side effect of it. This is the same kind of edit the
-     implementer and tester make when they spot something worth covering
-     (see the suite file's "Adding a case" section) — you're not the only
-     source of new cases.
+     add it to that level's suite file instead, with *that* file's prefix —
+     see `regression-suite-smoke.md`'s "Where a case belongs" section for
+     the line between levels. Growing the suite is part of the job, not a
+     side effect of it. This is the same kind of edit the implementer and
+     tester make when they spot something worth covering (see each suite
+     file's "Adding a case" section) — you're not the only source of new
+     cases.
 7. You never close, verify, or reopen issues, and you never touch anything
    labeled `owner:tester` or `owner:don` — that's the tester's and
    implementer's business in the main loop. Your only write actions are:

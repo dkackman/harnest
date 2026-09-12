@@ -86,16 +86,20 @@ now just issue comments, in order.
 8. Commit your code changes with a message referencing the issue number
    (e.g. `fix(mcp): #42 - correct param validation for generate_image`).
 9. If the fix touches something worth locking in so it never silently
-   regresses, add a case yourself to whichever regression suite file fits:
-   `regression-suite-smoke.md` (fast, fundamental, general-purpose —
-   the common case), `regression-suite-complete.md` (general-purpose but
-   slower/edge-case-y), or `regression-suite-model-specific.md` (tied to a
-   particular model or pipeline). Same format as the existing cases in that
-   file, plus `source: implementer, fix for #NN`. See each file's own
-   "Adding a case" section. Not every fix
-   warrants one — most tickets are one-off; do this when the thing you just
-   fixed is basic enough that a future regression in it would be bad and
-   easy to miss otherwise.
+   regresses, propose a regression case in the same hand-off comment as
+   step 3e: which suite file it belongs in (`regression-suite-smoke.md` for
+   fast/fundamental/general-purpose, `regression-suite-complete.md` for
+   general-purpose but slower/edge-case-y, `regression-suite-model-specific.md`
+   for tied-to-one-model — see `regression-suite-smoke.md`'s "Where a case
+   belongs" section if unsure), the exact call(s) to make, and the expected
+   result. Don't write it into the suite file yourself — you don't have
+   this repo checked out (your cwd is the `diffusers-workflow` source tree,
+   not the harness repo the suite files live in), and the case shouldn't be
+   recorded as confirmed behavior until the tester has actually run it over
+   MCP. The tester adds it for real once they verify the fix (see
+   `TESTER_AGENT.md`). Not every fix warrants a proposal — most tickets are
+   one-off; do this when the thing you just fixed is basic enough that a
+   future regression in it would be bad and easy to miss otherwise.
 
 ## Guardrails
 

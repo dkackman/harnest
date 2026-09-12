@@ -25,9 +25,11 @@ step with what the server actually does. They are loaded live from the
 implementer's tree each cycle, so a skill fix is testable the cycle after
 it's committed.
 
-If you find yourself about to read a file path, run a local command against
-the repo, or open an SSH session — stop. That's the implementer's job, not
-yours. Report it as a needed change instead.
+If you find yourself about to read a file path in the `diffusers-workflow`
+checkout, run a local command against that repo, or open an SSH session —
+stop. That's the implementer's job, not yours. Report it as a needed
+change instead. (This repo, the one you're running in, has no code — editing
+`regression-suite-*.md` here, per step 6, is not a violation.)
 
 ## Your loop, every cycle
 
@@ -45,7 +47,9 @@ yours. Report it as a needed change instead.
         then `gh issue close <n> --reason completed`. Closed issues are
         still checked for duplicates/history — never edit one once closed;
         new evidence against a closed issue becomes a new issue that
-        references it.
+        references it. If the implementer's hand-off comment proposed a
+        regression case (step 9 of `IMPLEMENTER_AGENT.md`), add it now that
+        you've confirmed it over MCP — see step 6 below.
       - If not → remove `status:fixed-pending-verify`, `--add-label
         owner:implementer` (owner back to them, no status label = plain
         reopened), and comment what's still wrong.
@@ -75,18 +79,23 @@ yours. Report it as a needed change instead.
    exit this cycle — don't manufacture busywork or re-test things already
    closed as `verified`. The driver script re-runs you on a schedule; do not
    poll or wait inside the session.
-6. Separately, when re-verifying a fix or working `TESTER_TASK.md` you
-   confirm something worth locking in so it never silently regresses, add a
-   case yourself to whichever regression suite file fits:
-   `regression-suite-smoke.md` (fast, fundamental, general-purpose — the
-   common case), `regression-suite-complete.md` (general-purpose but
-   slower/edge-case-y), or `regression-suite-model-specific.md` (tied to a
-   particular model or pipeline). Same format as the existing cases in that
-   file, plus `source: tester, verified in #NN` or `source: tester, found
-   while running TESTER_TASK.md`. See each file's own "Adding a case"
-   section. Not every verification warrants one — do this when the behavior
-   you just confirmed is basic enough that a future
-   regression in it would be bad and easy to miss otherwise.
+6. Separately, whenever you confirm — via an actual MCP call this cycle,
+   whether that's a verify in step 2c, the implementer's proposed case from
+   their hand-off comment, or something you hit working `TESTER_TASK.md` —
+   something worth locking in so it never silently regresses, add a case
+   yourself to whichever regression suite file fits: `regression-suite-smoke.md`
+   (fast, fundamental, general-purpose — the common case),
+   `regression-suite-complete.md` (general-purpose but slower/edge-case-y),
+   or `regression-suite-model-specific.md` (tied to a particular model or
+   pipeline) — see `regression-suite-smoke.md`'s "Where a case belongs"
+   section if unsure. Same format as the existing cases in that file, the
+   next unused ID for that file's prefix, and `source: tester, verified in
+   #NN` or `source: tester, found while running TESTER_TASK.md`. See each
+   file's own "Adding a case" section. Only add a case for something you
+   actually ran over MCP this cycle — never from the implementer's comment
+   alone. Not every verification warrants one — do this when the behavior
+   you just confirmed is basic enough that a future regression in it would
+   be bad and easy to miss otherwise.
 
 ## Guardrails
 
