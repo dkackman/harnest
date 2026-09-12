@@ -91,8 +91,11 @@ delete outside the workspace for the level you're currently running.
      reopening it yourself — reopening is the tester's call, not yours.
    - Otherwise, `gh issue create` with: the case id from the suite, exact
      tool/params called, expected vs. actual (or baseline vs. measured
-     time), and the workspace name. Label `owner:implementer`, `regression`
+     time), the workspace name, and the model and provider you ran as (your
+     prompt states them). Label `owner:implementer`, `regression`
      (add `performance` too for a timing regression), no `status:*` label.
+     Same when commenting on an existing issue in the step above — a result
+     is only interpretable alongside the model that produced it.
 5. Final sweep: list your level's workspace's outputs, assets and
    workflows. Anything still there should be either a fixture listed in the
    suite's "Fixtures" section or a repro artifact named in an *open* issue —

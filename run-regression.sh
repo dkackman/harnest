@@ -13,18 +13,25 @@
 #   ./run-regression.sh all                  # smoke, complete, model-specific
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
 #   MODEL=sonnet ./run-regression.sh         # MODEL defaults to opus
+#   REGRESSION_MODEL=opus ./run-regression.sh   # this agent only; defaults to MODEL
+#   PROVIDER=ollama MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
 #   tail -f logs/regression.log              # watch from another terminal
+#
+# Model/provider resolution lives in providers.sh — see its header for the
+# supported providers and the per-provider knobs (OLLAMA_*, GW_*).
 #
 # A suite-file override gets its own workspace derived from its filename
 # (stripping a leading "regression-suite-" and trailing ".md"), never the
 # level's canonical workspace — so a one-off custom suite can't delete
 # fixtures the real smoke/complete/model-specific suite depends on.
 #
-# regression-suite-*.md is a second channel the implementer and tester write
-# to directly (see their role prompts' "Adding a case" step), not just this
-# script — so before AND after each level's run, this script commits any
-# pending changes to those files, whoever made them.
+# regression-suite-*.md is a second channel the tester writes to directly
+# (see its role prompt's "Adding a case" step), not just this script.
+# run-loop.sh commits the tester's edits under the tester's identity; as a
+# fallback, before the first level runs, this script commits anything still
+# dirty under a neutral "unknown origin" trailer, and after each level it
+# commits that level's run under the regression model's own trailer.
 #
 # Run it by hand, from cron, or wrapped with the `loop` skill for a recurring
 # cadence — it does not loop or sleep internally.
@@ -36,17 +43,14 @@ SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/diffusers-workflow}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
-MODEL="${MODEL:-opus}"
+MODEL="${MODEL:-opus}"          # default model
+PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
+REGRESSION_MODEL="${REGRESSION_MODEL:-$MODEL}"
+REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
+FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
-
-case "$MODEL" in
-  opus)   CO_AUTHOR="Claude Opus 5" ;;
-  sonnet) CO_AUTHOR="Claude Sonnet 5" ;;
-  haiku)  CO_AUTHOR="Claude Haiku 4.5" ;;
-  *)      CO_AUTHOR="Claude ($MODEL)" ;;
-esac
 
 LEVEL="${1:-smoke}"
 SUITE_OVERRIDE="${2:-}"
@@ -75,6 +79,19 @@ command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "gh CLI not authenticated" >&2; exit 1; }
 mkdir -p "$LOGS"
 
+. "$REPO/providers.sh"
+
+# Reject a bad model/provider (or fallback) before touching the ticket board
+# or the workspace. FALLBACK_FLAGS is an array so a name like opus[1m] is
+# never glob-expanded on the claude command line.
+resolve_model_env "$REGRESSION_PROVIDER" "$REGRESSION_MODEL" || exit 1
+fb_words="$(fallback_model_flags "$REGRESSION_PROVIDER" "$FALLBACK_MODEL")" || exit 1
+FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
+
+# The Co-Authored-By trailer on commits this script makes for its own run —
+# the one durable record of which model edited the suite (see co_author_for).
+co_author_for "$REGRESSION_PROVIDER" "$REGRESSION_MODEL"
+
 ts() { date '+%H:%M:%S'; }
 
 default_suite_file() {
@@ -94,18 +111,6 @@ workspace_for_suite_file() {
     regression-suite-*) echo "regression-${base#regression-suite-}" ;;
     *)                  echo "regression-$base" ;;
   esac
-}
-
-# Commits any pending changes to the suite files, from any source (the
-# implementer/tester adding a case between runs, or this script's own run
-# just now). Safe to call repeatedly — a no-op when nothing is dirty.
-commit_suite_changes() {
-  local msg="$1"
-  ( cd "$REPO" && git diff --quiet -- "regression-suite-*.md" \
-      && [ -z "$(git ls-files --others --exclude-standard -- "regression-suite-*.md")" ] ) && return 0
-  git -C "$REPO" add "regression-suite-*.md"
-  git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $CO_AUTHOR <noreply@anthropic.com>"
-  echo "$msg" | tee -a "$LOGS/loop.log"
 }
 
 # Same isolation as the tester in run-loop.sh: this repo has no MCP config of
@@ -137,20 +142,29 @@ run_level() {
     return 0
   fi
 
-  echo "=== $(ts) regression run ($MODEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
+  echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
 
-  (cd "$REPO" && claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Follow the role instructions at $AGENTS/REGRESSION_AGENT.md exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. Read the suite file, exercise every case in it against the $workspace workspace, file or comment on issues for failures and performance regressions, then update the suite file with what you observed. Then stop." \
-    --model "$MODEL" --dangerously-skip-permissions "${REGRESSION_FLAGS[@]}" 2>&1) \
+  (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Follow the role instructions at $AGENTS/REGRESSION_AGENT.md exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. Read the suite file, exercise every case in it against the $workspace workspace, file or comment on issues for failures and performance regressions, then update the suite file with what you observed. Then stop.
+
+$(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
+    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
+    --dangerously-skip-permissions "${REGRESSION_FLAGS[@]}" 2>&1) \
     | tee -a "$LOGS/regression.log" \
     | sed -u "s/^/[regression:$level] /" \
     | tee -a "$LOGS/loop.log" \
     || echo "[regression:$level] run failed" | tee -a "$LOGS/loop.log"
 
-  commit_suite_changes "regression: update $level suite from $(ts) run"
+  commit_suite_changes "regression: update $level suite from $(ts) run ($MODEL_LABEL)"
 }
 
-commit_suite_changes "regression: capture suite edits made outside a regression run"
+# Fallback only: run-loop.sh commits the tester's own suite edits under the
+# tester's identity, so anything still dirty here is of unknown origin (a
+# hand edit between runs, or a cycle that died before committing). It is
+# committed so this run's commit stays attributable to this run — but under a
+# neutral name, never the regression model, which didn't write it.
+commit_suite_changes "regression: capture suite edits of unknown origin made outside a regression run" \
+  "unknown (edited outside a regression run)" "noreply@localhost"
 
 for spec in "${RUN_SPECS[@]}"; do
   run_level "${spec%%:*}" "${spec#*:}"

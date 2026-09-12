@@ -13,6 +13,20 @@ files described below. There is no build, lint, or test step.
   repeats. Each agent is a fresh `claude -p` session, so no state survives between cycles except
   what's written to GitHub Issues (or, per each role prompt's "Adding a case" step, a
   `regression-suite-*.md` file).
+- `providers.sh` — sourced by both drivers. The one table mapping a (provider, model) pair to the
+  environment its `claude` process needs: `anthropic` (native — the default; sets nothing but
+  scrubs ambient `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_DEFAULT_*_MODEL` via
+  `env -u` so the label can't lie), `ollama` (local or Ollama-cloud tags; no proxy needed,
+  since Ollama serves the Anthropic Messages API itself at `/v1/messages`; requires
+  `OLLAMA_CONTEXT_TOKENS`), and `gateway` (anything else speaking that API; requires
+  `GW_BASE_URL`). Each branch rejects a model name that doesn't fit the provider (a
+  non-Claude name under `anthropic`, a Claude name under `ollama`) at startup. It also holds
+  the helpers both drivers share: `validate_fallback_model`/`fallback_model_flags`,
+  `co_author_for` (commit-trailer identity), `runtime_note` (the per-role "Runtime:" prompt
+  paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md`).
+  Model choice is one knob per role: `MODEL`/`PROVIDER` are the defaults, `IMPLEMENTER_MODEL` /
+  `TESTER_MODEL` / `REGRESSION_MODEL` (and `*_PROVIDER`) override per agent. Out of the box
+  nothing changes: `opus` via Anthropic for every agent.
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
 - `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
@@ -64,8 +78,19 @@ files described below. There is no build, lint, or test step.
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/diffusers-workflow
 MAX_CYCLES=3 SLEEP_SECS=60 MODEL=sonnet ./run-loop.sh   # MODEL defaults to opus
+TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models
+PROVIDER=ollama MODEL=qwen2.5:32b ./run-loop.sh         # a non-Anthropic model
 tail -f logs/loop.log                  # combined [implementer]/[tester]-prefixed stream
 ```
+
+Which roles may run a weak model is a design decision, not a config detail: the tester's
+independence is the whole point, and a weak tester degrades that silently by rubber-stamping, so
+vary the implementer (its mistakes show up in its patches) and keep the tester and the regression
+agent on a strong model. Each agent's prompt now states the model and provider it is running as,
+and each role prompt requires the agent to name them in the comments it writes — a fresh session
+is otherwise unidentifiable afterwards, and a verification is only worth what the model behind it
+was. Suite-edit commits are attributed by trailer, honestly: a non-Anthropic model gets
+`<model> (via <provider>)`, not a Claude name and an anthropic.com address.
 
 The loop sleeps only when a cycle left the ticket board unchanged; if either agent's issue
 activity changed it, the next cycle starts immediately. (Whether an agent also appended a

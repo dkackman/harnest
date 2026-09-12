@@ -63,7 +63,9 @@ now just issue comments, in order.
       - `gh issue edit <n> --remove-label owner:implementer --add-label
         owner:tester --add-label status:fixed-pending-verify`
       - `gh issue comment <n>` with what changed and how it was deployed
-        (commit hash or diff summary, restart method used, timestamp)
+        (commit hash or diff summary, restart method used, timestamp), and
+        the model and provider you worked as (your prompt states them) —
+        the tester needs to know what kind of hands produced the fix
 4. Never close an issue as `completed`/`verified` yourself — that belongs to
    the tester agent only, because it must come from testing through the
    actual MCP interface, not from your read of the code.

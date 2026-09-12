@@ -155,7 +155,13 @@ Environment:
 |---|---|---|
 | `SOURCE_DIR` | `~/src/dkackman/diffusers-workflow` | implementer's cwd; also where the `dw` plugin is loaded from |
 | `TICKET_REPO` | `dkackman/diffusers-workflow` | the repo whose Issues are the ticket system |
-| `MODEL` | `opus` | passed to both agents as `--model` |
+| `MODEL` | `opus` | default model, for every agent |
+| `PROVIDER` | `anthropic` | where that model lives: `anthropic`, `ollama`, `gateway` |
+| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `$MODEL` | per-role model overrides |
+| `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` | `$PROVIDER` | per-role provider overrides |
+| `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `$MODEL` / `$PROVIDER` | same, for `run-regression.sh` |
+| `FALLBACK_MODEL` | unset | passed as `--fallback-model` when set; must be a model the role's provider can serve (a Claude name for `anthropic`, a non-Claude tag for `ollama`) |
+| `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | commit trailer on suite edits (see below) |
 | `DW_URL` | `http://192.168.1.194:8765/mcp` | the MCP endpoint handed to the tester |
 | `DW_TOKEN` | `xyz` | dev token, LAN only |
 | `SLEEP_SECS` | `120` | pause after an idle cycle |
@@ -163,6 +169,90 @@ Environment:
 
 Preconditions: `claude` and `gh` on `PATH`, `gh` already authenticated,
 passwordless `ssh don@lem`, the source checkout on `develop`.
+
+### Models and providers
+
+`MODEL` is still one knob for the whole loop and still defaults to `opus`, so
+nothing changes unless you ask it to. What's splittable is *which* model each
+agent runs and *where that model lives*:
+
+```sh
+TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh    # per-role, native
+PROVIDER=ollama MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh   # a non-Anthropic model
+REGRESSION_MODEL=sonnet ./run-regression.sh                # regression agent
+```
+
+`providers.sh` is the one table mapping a provider to the environment its
+`claude` process needs — adding a provider is a case there, not an edit in both
+drivers:
+
+| provider | what it is |
+|---|---|
+| `anthropic` | native Claude Code models — an alias (`opus`, `sonnet`, `haiku`, `fable`, `opus[1m]`) or a full id. The default; sets nothing, but scrubs an ambient `ANTHROPIC_BASE_URL` / `ANTHROPIC_AUTH_TOKEN` / `ANTHROPIC_DEFAULT_*_MODEL` (e.g. left behind by `ollama launch claude`) from the agent's environment so `anthropic/opus` is really served by Anthropic. Rejects a non-Claude model name. |
+| `ollama` | a model served by Ollama, local or an Ollama-cloud tag. Rejects a Claude alias/id; requires `OLLAMA_CONTEXT_TOKENS`. |
+| `gateway` | anything else speaking the Anthropic Messages API — LiteLLM, claude-code-router, a proxy. Requires `GW_BASE_URL` (never falls back to an ambient `ANTHROPIC_BASE_URL`). |
+
+**Ollama needs no proxy.** Ollama serves the Anthropic Messages API itself at
+`/v1/messages`, tool calls and streaming included (verified against Ollama
+0.34). `providers.sh` sets what `ollama launch claude` sets —
+`ANTHROPIC_BASE_URL`, all three `ANTHROPIC_DEFAULT_{OPUS,SONNET,HAIKU}_MODEL`
+tiers pointed at the same tag, `CLAUDE_CODE_SUBAGENT_MODEL`,
+`CLAUDE_CODE_ATTRIBUTION_HEADER=0` — plus two that matter specifically here:
+
+- `CLAUDE_CODE_MAX_CONTEXT_TOKENS`, because Ollama has no
+  `/v1/messages/count_tokens` and Claude Code would otherwise assume 200k and
+  auto-compact against a window the model doesn't have. There is no default:
+  you must set `OLLAMA_CONTEXT_TOKENS`, and the Ollama server's own window
+  (`OLLAMA_CONTEXT_LENGTH`, or the model's `num_ctx`) must be at least that
+  value or the server silently truncates. Ollama's own Claude Code guidance
+  uses 64k (`65536`), which is a reasonable value for the tester's working set
+- `ENABLE_TOOL_SEARCH=true`, because a non-first-party base URL turns MCP tool
+  search off by default and this harness is almost entirely MCP calls
+
+It deliberately does *not* shell out to `ollama launch`: that writes a single
+global profile to `~/.ollama/config.json`, which per-role models would rewrite
+between agents and which is shared with your interactive `claude`. Setting the
+variables directly is the same effect without the global state.
+
+| var | default | what |
+|---|---|---|
+| `OLLAMA_BASE_URL` | `http://127.0.0.1:11434` | the Ollama endpoint |
+| `OLLAMA_TOKEN` | `ollama` | dummy bearer token, so no ambient real key rides along to it |
+| `OLLAMA_CONTEXT_TOKENS` | — | required by `ollama`; the context window Claude Code plans against, which must not exceed the server-side `OLLAMA_CONTEXT_LENGTH` / `num_ctx` (64k per Ollama's Claude Code guidance) |
+| `OLLAMA_STRICT_SUPPRESS` | unset | also suppress thinking / prompt caching / experimental betas — for a model that errors on those fields instead of ignoring them |
+| `GW_BASE_URL` | — | required by `gateway` |
+| `GW_TOKEN` | unset | without it the gateway receives the ambient `ANTHROPIC_API_KEY` |
+| `GW_CONTEXT_TOKENS` | unset | declare the window for `gateway` |
+
+**Which roles to vary, and which not to.** The design rests on a tester that is
+genuinely independent — consumer-only, no code, no box. That is only worth
+anything if the tester is a capable adversary; a weak local tester degrades the
+apparatus *silently*, by rubber-stamping a fix it can't really judge. Vary the
+implementer and the throwaway `TESTER_TASK.md` exercise freely — an
+implementer's mistakes show up in its patches. Keep the tester and the
+regression agent on a strong model: a verifier's mistakes are invisible, and
+its verdict is the thing everything else is gated on. The two roles are also
+not equally dangerous to experiment on — the implementer holds SSH to `lem` and
+runs with `--dangerously-skip-permissions`, so pointing it at an unvetted model
+is a different risk class; prefer an explicit tool allowlist over the blanket
+bypass if you do. The tester has neither, so its blast radius is small — but its
+judgment is the load-bearing part of the whole design, which is exactly why it
+is the worst place to put a weak model.
+
+Two smaller consequences of mixing models:
+
+- **Provenance.** Each agent is a fresh session, so its model is otherwise
+  unrecorded. Both drivers now state the model and provider in the agent's
+  prompt, and each role prompt tells the agent to name them in the comments it
+  writes — so a verification or a filed issue can be traced back to the model
+  that produced it. Suite edits are attributed via the commit trailer, which
+  is `Claude (<model>) <noreply@anthropic.com>` for a Claude model (the alias
+  or id as given — no alias-to-version table to go stale) and
+  `<model> (via <provider>) <noreply@localhost>` for anything else, so a
+  non-Anthropic model is never credited to Anthropic. `CO_AUTHOR` overrides
+  only the name, `CO_AUTHOR_EMAIL` only the address.
+- **`model-specific` in the regression suite means the *video* model**, not the
+  LLM. Don't reuse it for a per-LLM axis.
 
 ### Why the tester needs special flags
 
@@ -199,6 +289,7 @@ silent while an agent works and then lands its summary all at once. A
 ```
 run-loop.sh                         driver for the implementer/tester alternation
 run-regression.sh                   standalone driver for the regression agent
+providers.sh                        model/provider → environment table, shared by both
 agents/
   IMPLEMENTER_AGENT.md              implementer role: loop, guardrails, deploy steps
   TESTER_AGENT.md                   tester role: what it may and may not do

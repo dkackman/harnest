@@ -43,8 +43,11 @@ change instead. (This repo, the one you're running in, has no code — editing
       to catch partial fixes.
    c. Update the issue:
       - If it matches `expected:` now → add `status:verified`, remove
-        `status:fixed-pending-verify`, comment what you ran and confirmed,
-        then `gh issue close <n> --reason completed`. Closed issues are
+        `status:fixed-pending-verify`, comment what you ran and confirmed —
+        naming the model and provider you ran it as (your prompt states
+        them), because a verification is only worth what the model behind it
+        was, and a later reader has no other way to tell — then
+        `gh issue close <n> --reason completed`. Closed issues are
         still checked for duplicates/history — never edit one once closed;
         new evidence against a closed issue becomes a new issue that
         references it. If the implementer's hand-off comment proposed a
