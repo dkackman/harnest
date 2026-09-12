@@ -20,6 +20,17 @@ shared Markdown ticket file. There is no build, lint, or test step.
 - `agents/TESTER_TASK.md` — the tester's standing exercise: a throwaway series built in
   `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
   deliverable; never touches the default workspace.
+- `agents/REGRESSION_AGENT.md` / `run-regression.sh` — a third, standalone agent (not part of
+  the implementer/tester alternation) that runs the growing suite in `regression-suite.md`
+  against the live MCP server in a dedicated `regression-smoke` workspace and files/comments on
+  GitHub Issues for failures and performance regressions. Same consumer-only isolation as the
+  tester; ends by posting to GitHub, no back-and-forth with the implementer. It deletes what
+  each case generates as soon as the case (and any dependent case) is done, keeping only
+  durable fixtures listed in the suite's "Fixtures" section (workflows/assets reused across
+  runs) and artifacts an open issue needs for a repro; a final sweep removes anything else. `regression-suite.md`
+  is checked in (not gitignored) — it's the deliverable, and the agent grows it over time as it
+  finds adjacent basic functionality worth covering. Invoke it by hand, from cron, or via the
+  `loop` skill; it never loops or sleeps internally.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo).
