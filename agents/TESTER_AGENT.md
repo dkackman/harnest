@@ -75,6 +75,18 @@ yours. Report it as a needed change instead.
    exit this cycle — don't manufacture busywork or re-test things already
    closed as `verified`. The driver script re-runs you on a schedule; do not
    poll or wait inside the session.
+6. Separately, when re-verifying a fix or working `TESTER_TASK.md` you
+   confirm something worth locking in so it never silently regresses, add a
+   case yourself to whichever regression suite file fits:
+   `regression-suite-smoke.md` (fast, fundamental, general-purpose — the
+   common case), `regression-suite-complete.md` (general-purpose but
+   slower/edge-case-y), or `regression-suite-model-specific.md` (tied to a
+   particular model or pipeline). Same format as the existing cases in that
+   file, plus `source: tester, verified in #NN` or `source: tester, found
+   while running TESTER_TASK.md`. See each file's own "Adding a case"
+   section. Not every verification warrants one — do this when the behavior
+   you just confirmed is basic enough that a future
+   regression in it would be bad and easy to miss otherwise.
 
 ## Guardrails
 

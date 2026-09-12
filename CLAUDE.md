@@ -21,16 +21,26 @@ shared Markdown ticket file. There is no build, lint, or test step.
   `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
   deliverable; never touches the default workspace.
 - `agents/REGRESSION_AGENT.md` / `run-regression.sh` — a third, standalone agent (not part of
-  the implementer/tester alternation) that runs the growing suite in `regression-suite.md`
-  against the live MCP server in a dedicated `regression-smoke` workspace and files/comments on
-  GitHub Issues for failures and performance regressions. Same consumer-only isolation as the
-  tester; ends by posting to GitHub, no back-and-forth with the implementer. It deletes what
-  each case generates as soon as the case (and any dependent case) is done, keeping only
-  durable fixtures listed in the suite's "Fixtures" section (workflows/assets reused across
-  runs) and artifacts an open issue needs for a repro; a final sweep removes anything else. `regression-suite.md`
-  is checked in (not gitignored) — it's the deliverable, and the agent grows it over time as it
-  finds adjacent basic functionality worth covering. Invoke it by hand, from cron, or via the
-  `loop` skill; it never loops or sleeps internally.
+  the implementer/tester alternation) that runs the growing suite against the live MCP server
+  and files/comments on GitHub Issues for failures and performance regressions. Same
+  consumer-only isolation as the tester; ends by posting to GitHub, no back-and-forth with the
+  implementer. The suite is split one file per level, each with its own workspace so levels
+  never share fixtures or skew each other's timings: `regression-suite-smoke.md` (workspace
+  `regression-smoke`, fast/fundamental/general-purpose, the default), `regression-suite-complete.md`
+  (workspace `regression-complete`, general-purpose but broader/slower, runs on top of `smoke`),
+  and `regression-suite-model-specific.md` (workspace `regression-model-specific`, niche, tied
+  to one model/pipeline, opt-in only). `./run-regression.sh [level] [suite-file]` picks the level
+  (default `smoke`; `all` runs all three, once each) and optionally overrides that level's suite
+  file. Each run deletes what its cases generate as soon as a case (and any dependent case) is
+  done, keeping only durable fixtures listed in that suite file's "Fixtures" section
+  (workflows/assets reused across runs) and artifacts an open issue needs for a repro; a final
+  sweep removes anything else. All three suite files are checked in (not gitignored) — they're
+  the deliverable. The regression agent grows them over time as it finds adjacent functionality
+  worth covering, and the implementer and tester grow them too: either may append a case (same
+  format, plus a `source:` line) to whichever level's file fits, when a fix or a verification
+  touches something worth a permanent regression check — see each suite file's own "Adding a
+  case" section for the line between levels. Invoke the regression agent by hand, from cron, or
+  via the `loop` skill; it never loops or sleeps internally.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo).

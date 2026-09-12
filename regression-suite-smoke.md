@@ -1,15 +1,43 @@
-# Regression suite — dw MCP server
+# Regression suite — dw MCP server — smoke level
+
+Fast, fundamental, general-purpose checks — not tied to a specific
+model/pipeline. This is what runs by default (`./run-regression.sh` with no
+args). Sibling suites: [`regression-suite-complete.md`](regression-suite-complete.md)
+(broader/slower general checks, run on top of this one) and
+[`regression-suite-model-specific.md`](regression-suite-model-specific.md)
+(niche, tied to a particular model/pipeline, opt-in only). A case belongs
+here if it's fast enough to run every pass and general enough that any
+model/pipeline could hit it.
 
 Maintained by the regression agent (`agents/REGRESSION_AGENT.md`), run via
-`run-regression.sh`. Each case is intent + expected result, not a pinned
-tool/param name — confirm the exact call shape against the live tool schema
-each run, since the server evolves. Grows over time: new cases get appended
-to the relevant section, `last run:` notes accumulate so a baseline drifting
-over many runs is visible.
+`run-regression.sh`, and grown by the implementer/tester too (see "Adding a
+case" below). Each case is intent + expected result, not a pinned tool/param
+name — confirm the exact call shape against the live tool schema each run,
+since the server evolves. Grows over time: new cases get appended to the
+relevant section, `last run:` notes accumulate so a baseline drifting over
+many runs is visible.
 
-Workspace for every case: `regression-smoke` (created once, reused).
+## Adding a case
 
-Fixtures vs. outputs: `regression-smoke` is the suite's own workspace, and
+The implementer and the tester both grow this suite, not just the
+regression agent. When either of you, in the course of normal work, hits or
+fixes something that's fast to check, fundamental (not niche, not tied to
+one model/pipeline), and worth locking in so it never silently regresses —
+add a case to **this** file yourself, same run (if it's slower/edge-case-y
+instead, use `regression-suite-complete.md`; if it's tied to one
+model/pipeline, use `regression-suite-model-specific.md` — see each file's
+own header for what belongs there). Use the existing case format (intent +
+`expected:` + `cleanup:`) and a `source:` line naming who added it and why
+(e.g. `source: implementer, fix for #42` or `source: tester, found while
+running TESTER_TASK.md`). No separate approval step — the regression agent
+already grows these files unsupervised when it notices gaps; a case either
+of you adds is the same kind of edit. Leave `last run:` for the regression
+agent to fill in on its next pass.
+
+Workspace for every case in this file: `regression-smoke` (created once,
+reused).
+
+Fixtures vs. outputs: `regression-smoke` is this suite's own workspace, and
 it may keep durable fixtures there for the convenience of future runs —
 workflows the suite authors, input assets it uploads, anything a case is
 faster or more stable for having ready-made. Every fixture is listed in the
