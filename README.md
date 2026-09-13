@@ -1,6 +1,6 @@
 # iterate
 
-Two Claude Code agents improving an MCP server by arguing through GitHub Issues,
+Two Claude Code agents improving [an MCP server](https://github.com/dkackman/diffusers-workflow) by arguing through [GitHub Issues](https://github.com/dkackman/diffusers-workflow/issues) —,
 plus a third agent that runs a standing regression suite against it on its own schedule.
 
 One agent — the **implementer** — has the source, SSH to the box where the
