@@ -114,9 +114,10 @@ level never shares fixtures with or skews the timings of another:
 | `smoke` | `regression-suite-smoke.md` | `regression-smoke` | fast, fundamental, general-purpose — runs every time, the default |
 | `complete` | `regression-suite-complete.md` | `regression-complete` | general-purpose but slower or more edge-case-y; runs on top of `smoke` |
 | `model-specific` | `regression-suite-model-specific.md` | `regression-model-specific` | tied to one named model/pipeline/checkpoint; opt-in only |
+| `security` | `regression-suite-security.md` | `regression-security` | hostile-input probes against the server's default security posture — arbitrary-code gates on introspection-based instantiation, path containment, URL scheme/host policy, secret disclosure, destructive scope; opt-in only. Issues from this suite also carry the `security` label. Its header defines "refused too late" as a failure, and lists what a consumer-only agent can't cover — that belongs in the dw repo's pytest suite instead. |
 
-Case IDs are prefixed per level (`S-`/`C-`/`M-`) so the same number in two
-files never collides. Each case is intent + expected result, not a pinned
+Case IDs are prefixed per level (`S-`/`C-`/`M-`/`SE-`) so the same number in
+two files never collides. Each case is intent + expected result, not a pinned
 tool/param name — the agent confirms the exact call shape against the live
 tool schema every run, since the server evolves.
 
@@ -124,8 +125,14 @@ tool schema every run, since the server evolves.
 ./run-regression.sh                    # smoke only (the default)
 ./run-regression.sh complete           # smoke, then complete
 ./run-regression.sh model-specific     # model-specific only
-./run-regression.sh all                # all three levels
+./run-regression.sh security           # security only
+./run-regression.sh all                # all four levels, once each
 ```
+
+`./run-regression.sh [level] [suite-file]` also takes an optional second
+argument overriding just that level's suite file — its workspace is then
+derived from the override's filename, never the canonical one, so a one-off
+suite can't delete another suite's fixtures.
 
 The suite isn't only grown by the regression agent — the implementer and
 tester grow it too, whenever a fix or a verification touches something
@@ -232,12 +239,12 @@ implementer and the throwaway `TESTER_TASK.md` exercise freely — an
 implementer's mistakes show up in its patches. Keep the tester and the
 regression agent on a strong model: a verifier's mistakes are invisible, and
 its verdict is the thing everything else is gated on. The two roles are also
-not equally dangerous to experiment on — the implementer holds SSH to `lem` and
-runs with `--dangerously-skip-permissions`, so pointing it at an unvetted model
-is a different risk class; prefer an explicit tool allowlist over the blanket
-bypass if you do. The tester has neither, so its blast radius is small — but its
-judgment is the load-bearing part of the whole design, which is exactly why it
-is the worst place to put a weak model.
+not equally dangerous to experiment on — the implementer holds SSH to `lem`
+and its shell surface can't be enumerated up front, so pointing it at an
+unvetted model is a different risk class (see "Permissions" below). The
+tester has neither, so its blast radius is small — but its judgment is the
+load-bearing part of the whole design, which is exactly why it is the worst
+place to put a weak model.
 
 Two smaller consequences of mixing models:
 
@@ -271,6 +278,29 @@ That gives two deploy paths, and the implementer says which one a fix used:
 - **plugin / skills** → commit and leave the checkout on that branch; no
   restart
 
+## Permissions
+
+No agent runs with `--dangerously-skip-permissions`. A headless `claude -p`
+session never prompts, so a call that would have prompted is simply denied —
+the choice is what gets auto-approved vs. auto-denied, and that choice
+differs sharply by role:
+
+- **Tester and regression agent** run under `--permission-mode dontAsk` plus
+  an explicit `--allowedTools` allowlist (`CONSUMER_PERMISSION_FLAGS` in
+  `providers.sh`): `mcp__dw__*`, the dw skills, `gh`, file tools for the
+  suite files and `qa-bible.md`, and a handful of read-only shell helpers
+  (`date`, `file`, read-only `git`). No `ssh`, `curl`, `python`, or `git`
+  writes — the drivers commit suite edits themselves. This is what makes the
+  consumer-only isolation *enforced* rather than honor-system; the remaining
+  gap is that `Read`/`Edit`/`Write` aren't scoped by path, which the role
+  prompts cover. If a cycle logs a denial in `logs/tester.log` for something
+  the role legitimately needs, the fix is to widen that list deliberately,
+  not to reach for the bypass flag.
+- **Implementer** runs under `--permission-mode auto`. Its shell surface
+  (`git`, `gh`, `ssh lem`, `pytest`, `uv`, …) can't be enumerated without
+  breaking a cycle the first time it needs something new, so the classifier
+  approves routine work and denies destructive or exfiltrating actions.
+
 ## Watching
 
 The terminal you launch from shows everything, prefixed `[implementer]` or
@@ -298,6 +328,7 @@ agents/
 regression-suite-smoke.md           fast/fundamental checks, runs every time
 regression-suite-complete.md        broader/slower general checks
 regression-suite-model-specific.md  niche, tied to one model/pipeline
+regression-suite-security.md        hostile-input probes, opt-in only
 qa-bible.md                         tester's memory across cycles (gitignored)
 mcp-feedback.md                     frozen ticket history from before the Issues migration
 mcp-feedback-archive.md             older frozen ticket history

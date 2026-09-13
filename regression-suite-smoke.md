@@ -455,6 +455,27 @@ one `$def` and `elsewhere: {}`; `get_schema(section="pipline")` errored naming a
 six; `list_workflows()` summarised 72 entries to `{summary, shape}` with
 `view: "summary"`, and `shape="audio"` restored the full entries.)
 
+### S-F016 — an unseeded workflow is told why its step cache is off
+`cached_steps: 0` on a plan is ambiguous on its own: it means either "nothing was
+cached yet" or "the cache is off because this workflow sets no `seed`". A consumer
+reading the second as the first re-runs everything forever and never learns why.
+`validate_workflow` must say which. Free and instant — no run.
+expected: `validate_workflow` on any inline workflow with **no top-level `seed`** →
+`valid: true` and a `warnings` entry naming both `seed` and `cached_steps` (the
+0.4.0-beta.3 wording: "This workflow sets no 'seed', so the step cache is disabled
+and 'cached_steps' is 0 without being probed …"). The **byte-identical** workflow
+with `"seed": 1` added → `valid: true` and **no such warning**: the control is half
+the case, since a warning that fires on everything says nothing. A seed supplied as
+an `arguments` value for a `variable:`-spelled seed counts as seeded and must not
+warn either.
+It becomes a **finding** if the warning disappears (the #107 regression), if it
+fires on a seeded workflow, or if `valid` flips to `false` — this is advice, not an
+error, and must never block a run.
+cleanup: none (read-only).
+source: tester, verified in #107 on 2026-09-13 over MCP as model `opus` via
+provider `anthropic` — unseeded and `"seed": 1` forms of the same one-step
+`pair_audio` workflow, warning present then absent.
+
 ## Performance
 
 ### S-P001 — default image generation latency

@@ -455,31 +455,60 @@ last run: (not yet run by the regression agent — first observed 2026-09-13 on
 `reused: true` pointing at run `20260913-152107-e387623b`'s file from run
 `20260913-152117-e387623b`, 1.88 s → 0.84 s.)
 
-### C-F013 — a mono audio track is not an unhandled encode failure
-Pairing a **mono** track onto a video and writing `video/mp4` must not die at save
-time with a raw library exception. Run a one-step inline `pair_audio` with `audio`
-= a 1-channel asset and `video` = any video fixture, `result.content_type` =
-`video/mp4`.
-expected: **as of 0.4.0-beta.3 this case documents a failure, not a pass** — the
-job reaches `failed` with `Expected samples with 2 channels; got shape
-torch.Size([1, N])`, a `diffusers` `ValueError` surfacing through
-`result.save_audio_video`, while `validate_workflow` on the identical document
-returned `valid: true` with no warnings. Record that. It becomes a **pass** when
-#106 is resolved in any of its three forms: the mono track is upmixed (ideally
-with a run warning), or `validate_workflow` refuses it at
-`steps[0].task.arguments.audio`, or the error names mono, the argument and the
-remedy instead of a tensor shape. Any of those closes it; rewrite the case as a
-happy-path assertion at that point.
-It becomes a **finding** if it gets worse — notably if the identical workflow with
-a **stereo** source stops succeeding, which is the control and must pass on every
-run regardless.
-cleanup: the failing run writes nothing; delete the control run's output.
+### C-F013 — a mono audio track is upmixed at encode, with a warning
+Pairing a **mono** track onto a video and writing `video/mp4` must succeed: an mp4
+audio stream takes two channels and nothing else, so the server duplicates a
+1-channel track into two and says so. Run a one-step inline `pair_audio` with
+`audio` = a 1-channel asset and `video` = any video fixture,
+`result.content_type` = `video/mp4`. Run the identical workflow with a **stereo**
+source as the control.
+expected: the mono job **succeeds**; its `warnings` carry a line naming "mono" and
+"two channels"; `get_gallery_metadata` on the output reports `channels: 2` and the
+source video's own `fps` (no `result.fps` anywhere — the #104 carry-through must
+survive the upmix). The stereo control succeeds with **no** such warning: the
+warning is specific to the mono path, not blanket.
+It becomes a **finding** if the mono job fails again (the #106 regression: a raw
+`Expected samples with 2 channels; got shape torch.Size([1, N])` out of
+`result.save_audio_video`), if the warning disappears while the upmix stays (a
+silent channel change), or if the stereo control starts warning or failing.
+Worth extending, not required: a mono track that then feeds a downstream
+`concat_videos` against a natively-stereo video joins with `channels: 2` and no
+channel mismatch — the upmix must hold through a chain, not only a one-step
+encode. Both videos must be at the same audio sample rate for that join (see #108),
+so insert `resample_audio` if the fixtures differ.
+cleanup: delete both runs' outputs.
 source: tester, found while running TESTER_TASK.md on 2026-09-13 (filed as #106),
-reproduced on two independent mono assets. Run over MCP as jobs `d21be61989ab`
-and `3b2231c5c8df` with the stereo control `7bac4a2b5d07`, model `opus` via
-provider `anthropic`.
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: two different mono wavs failed identically (`[1, 155520]` and
-`[1, 178880]`); the stereo control succeeded with `channels: 2`.)
+rewritten from a documented-failure case to a happy-path case on 2026-09-13 after
+verifying the fix over MCP — jobs `bb66467e03f5` (mono, succeeded, `channels: 2`,
+`fps: 24.0`), `90dbe57f0bc5` (stereo control, `warnings: []`) and `e33eac7b6449`
+(the chained extension). Model `opus` via provider `anthropic`.
+last run: (not yet run by the regression agent in its pass-form. History: the
+pre-fix failure was first observed 2026-09-13 on 0.4.0-beta.3, two different mono
+wavs failing identically (`[1, 155520]` and `[1, 178880]`); after the #106 fix on
+the same day and the same server version, the mono job succeeds with
+`"Duplicating a mono audio track of 178880 samples into two channels - an mp4
+audio stream takes stereo and nothing else"`.)
+
+### C-F014 — a stale cost acknowledgement is refused with a re-usable object
+`run_workflow`'s bound acknowledgement (`{fingerprint, minutes, downloads}` from a
+`validate_workflow` plan) must be refused when the workflow changed since, and the
+refusal must hand back something a caller can act on without re-deriving it.
+`validate_workflow` an inline workflow, keep its `plan.fingerprint`, then
+`run_workflow` a **changed** workflow (add a step, or change an argument) bound to
+that stale fingerprint.
+expected: the call is refused, naming the mismatch; the message ends with a
+`Re-acknowledge with {...}` object that (a) **parses as JSON** — `minutes` must be
+`null`, not Python's `None`, which is the common case since an inline workflow has
+no measured estimate — and (b) is accepted **verbatim** as `acknowledged_cost` on
+an immediate retry of the changed workflow, which then queues and records
+`acknowledged: "bound"`.
+It becomes a **finding** if the object stops parsing (the #107 regression: any
+Python repr — `None`, `True`, single quotes — inside what reads as pasteable JSON),
+if the fingerprint it hands back is not the one the retry needs, or if a stale
+acknowledgement is silently accepted.
+cleanup: delete the retry run's outputs; the refused call writes nothing.
+source: tester, verified in #107 on 2026-09-13 over MCP — refusal quoting
+`sha256:ea73f2d8…` with `"minutes": null`, retry job `3fe89e48a2f0` succeeded on
+that object pasted back unchanged. Model `opus` via provider `anthropic`.
 
 ## Performance
