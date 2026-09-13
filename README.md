@@ -1,6 +1,6 @@
 # iterate
 
-Two Claude Code agents improving [an MCP server](https://github.com/dkackman/diffusers-workflow) by arguing through [GitHub Issues](https://github.com/dkackman/diffusers-workflow/issues) —,
+Two Claude Code agents improving [an MCP server](https://github.com/dkackman/diffusers-workflow) by arguing through [GitHub Issues](https://github.com/dkackman/diffusers-workflow/issues),
 plus a third agent that runs a standing regression suite against it on its own schedule.
 
 One agent — the **implementer** — has the source, SSH to the box where the
@@ -47,8 +47,9 @@ but it never blocks on or hands off to anyone; it just checks and posts.
 
 Each agent is a fresh `claude -p` session, so nothing survives between cycles
 except what's written down. That's deliberate: state lives in the GitHub
-Issues and the tester's `qa-bible.md`, not in a context window that will
-eventually compact.
+Issues and the tester's `qa-bible.md` (a bounded snapshot — cast, assets,
+episode ledger, current house rules, next step — not a journal), not in a
+context window that will eventually compact.
 
 ## The ticket protocol
 
@@ -144,6 +145,15 @@ case shouldn't be recorded as confirmed behavior before the tester verifies
 it over MCP. `run-regression.sh` commits any pending suite changes, from
 whatever source, before and after every level it runs.
 
+A level normally runs as one session. `CASES_PER_SESSION=N` splits it into
+sessions of N consecutive cases plus a final sweep-only session, logged as
+`[regression:smoke.1]`, `[regression:smoke.2]`, …, `[regression:smoke.sweep]`.
+It defaults to 3 when the provider declares a context window under 120k
+tokens (`OLLAMA_CONTEXT_TOKENS` / `GW_CONTEXT_TOKENS`) and 0 otherwise: a
+40-50 KB suite read whole plus twenty cases of tool output is what put 64k
+Ollama models into auto-compact thrashing. The role prompt's "Chunked runs"
+section says how a slice honours `cleanup:` lines that cross its boundary.
+
 Invoke it by hand, from cron, or via the `loop` skill — like the other two
 agents, it never loops or sleeps internally.
 
@@ -167,6 +177,7 @@ Environment:
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `$MODEL` | per-role model overrides |
 | `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` | `$PROVIDER` | per-role provider overrides |
 | `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `$MODEL` / `$PROVIDER` | same, for `run-regression.sh` |
+| `CASES_PER_SESSION` | 3 if the declared context window is under 120k, else 0 | `run-regression.sh` only: cases per session, 0 = whole level in one session |
 | `FALLBACK_MODEL` | unset | passed as `--fallback-model` when set; must be a model the role's provider can serve (a Claude name for `anthropic`, a non-Claude tag for `ollama`) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | commit trailer on suite edits (see below) |
 | `DW_URL` | `http://192.168.1.194:8765/mcp` | the MCP endpoint handed to the tester |
@@ -304,7 +315,8 @@ differs sharply by role:
 ## Watching
 
 The terminal you launch from shows everything, prefixed `[implementer]` or
-`[tester]` (or `[regression:<level>]` for a regression run). The same stream
+`[tester]` (or `[regression:<level>]` for a regression run — `<level>.<n>` /
+`<level>.sweep` when chunked). The same stream
 lands in `logs/loop.log`, with per-agent copies in `logs/implementer.log`,
 `logs/tester.log`, and `logs/regression.log`. After each loop cycle the
 driver prints a ticket board queried live from GitHub — one line per open
@@ -329,7 +341,7 @@ regression-suite-smoke.md           fast/fundamental checks, runs every time
 regression-suite-complete.md        broader/slower general checks
 regression-suite-model-specific.md  niche, tied to one model/pipeline
 regression-suite-security.md        hostile-input probes, opt-in only
-qa-bible.md                         tester's memory across cycles (gitignored)
+qa-bible.md                         tester's memory across cycles: ~12 KB snapshot (gitignored)
 logs/                               per-cycle output (gitignored)
 CLAUDE.md                           notes for Claude Code sessions working on this repo
 ```

@@ -17,6 +17,7 @@
 #   MODEL=sonnet ./run-regression.sh         # MODEL defaults to opus
 #   REGRESSION_MODEL=opus ./run-regression.sh   # this agent only; defaults to MODEL
 #   PROVIDER=ollama MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
+#   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
 #   tail -f logs/regression.log              # watch from another terminal
 #
@@ -37,6 +38,18 @@
 #
 # Run it by hand, from cron, or wrapped with the `loop` skill for a recurring
 # cadence — it does not loop or sleep internally.
+#
+# Chunked runs. A suite file is 40-50 KB, and one session exercising all of
+# its cases fills a small (64k) context window part-way through; Claude Code
+# then auto-compacts, the summary drops the suite text, the agent re-reads
+# the whole file to recover, and the window is full again three turns later
+# ("autocompact is thrashing"). CASES_PER_SESSION=N sidesteps that in the
+# driver rather than trusting the model to read sparingly: the level is run
+# as a series of separate sessions, each given N consecutive case IDs to
+# exercise and told to read only those sections, followed by one last
+# session that does the final sweep alone. 0 (the default when the model's
+# native window applies) is the original single session per level; when the
+# provider declares a window under 120k tokens the default becomes 3.
 
 set -euo pipefail
 
@@ -50,6 +63,7 @@ PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|ga
 REGRESSION_MODEL="${REGRESSION_MODEL:-$MODEL}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
+CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header)
 DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
@@ -91,6 +105,21 @@ resolve_model_env "$REGRESSION_PROVIDER" "$REGRESSION_MODEL" || exit 1
 fb_words="$(fallback_model_flags "$REGRESSION_PROVIDER" "$FALLBACK_MODEL")" || exit 1
 FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
 
+# Chunk by default only when the provider declared a window too small for a
+# whole suite in one session (see the header). An explicit CASES_PER_SESSION
+# wins either way, so a 200k model can be chunked to test the mechanism and a
+# small one can be forced whole to watch it fail.
+if [ -z "$CASES_PER_SESSION" ]; then
+  if [ -n "$MODEL_CONTEXT_TOKENS" ] && [ "$MODEL_CONTEXT_TOKENS" -lt 120000 ]; then
+    CASES_PER_SESSION=3
+  else
+    CASES_PER_SESSION=0
+  fi
+fi
+case "$CASES_PER_SESSION" in
+  ''|*[!0-9]*) echo "CASES_PER_SESSION must be a whole number, got '$CASES_PER_SESSION'" >&2; exit 1 ;;
+esac
+
 # The Co-Authored-By trailer on commits this script makes for its own run —
 # the one durable record of which model edited the suite (see co_author_for).
 co_author_for "$REGRESSION_PROVIDER" "$REGRESSION_MODEL"
@@ -129,6 +158,25 @@ REGRESSION_FLAGS=(
   "${CONSUMER_PERMISSION_FLAGS[@]}"
 )
 
+# run_session <level> <suite_file> <workspace> <tag> <instructions>
+# One `claude -p` invocation of the regression agent. <instructions> is the
+# run-specific paragraph that follows the standard override preamble; <tag>
+# is appended to the log prefix ("[regression:smoke.2]") so a chunked run's
+# sessions are distinguishable in loop.log.
+run_session() {
+  local level="$1" suite_file="$2" workspace="$3" tag="$4" instructions="$5"
+  (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Follow the role instructions at $AGENTS/REGRESSION_AGENT.md exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
+
+$(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
+    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
+    "${REGRESSION_FLAGS[@]}" 2>&1) \
+    | tee -a "$LOGS/regression.log" \
+    | sed -u "s/^/[regression:$level$tag] /" \
+    | tee -a "$LOGS/loop.log" \
+    || echo "[regression:$level$tag] run failed" | tee -a "$LOGS/loop.log"
+}
+
 run_level() {
   local level="$1" suite_arg="$2" suite_file workspace
 
@@ -148,18 +196,32 @@ run_level() {
     return 0
   fi
 
-  echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
-
-  (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Follow the role instructions at $AGENTS/REGRESSION_AGENT.md exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. Read the suite file, exercise every case in it against the $workspace workspace, file or comment on issues for failures and performance regressions, then update the suite file with what you observed. Then stop.
-
-$(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
-    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
-    "${REGRESSION_FLAGS[@]}" 2>&1) \
-    | tee -a "$LOGS/regression.log" \
-    | sed -u "s/^/[regression:$level] /" \
-    | tee -a "$LOGS/loop.log" \
-    || echo "[regression:$level] run failed" | tee -a "$LOGS/loop.log"
+  if [ "$CASES_PER_SESSION" -eq 0 ]; then
+    echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
+    run_session "$level" "$suite_file" "$workspace" "" \
+      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, and add any cases step 6 of the role instructions calls for."
+  else
+    # Case IDs in file order, from the `### <ID> — title` headings. The
+    # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
+    # heading that doesn't match isn't a case and is skipped.
+    local ids=() chunk=() seen=0 total=0 session=0 id
+    while read -r id; do ids+=("$id"); done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
+    total=${#ids[@]}
+    echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOGS/loop.log"
+    for id in "${ids[@]}"; do
+      chunk+=("$id"); seen=$((seen + 1))
+      if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then
+        session=$((session + 1))
+        echo "--- $(ts) $level session $session: ${chunk[*]} ---" | tee -a "$LOGS/loop.log"
+        run_session "$level" "$suite_file" "$workspace" ".$session" \
+          "This is a chunked run (see 'Chunked runs' in the role instructions): this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
+        chunk=()
+      fi
+    done
+    echo "--- $(ts) $level session $((session + 1)): final sweep ---" | tee -a "$LOGS/loop.log"
+    run_session "$level" "$suite_file" "$workspace" ".sweep" \
+      "This is the final sweep of a chunked run (see 'Chunked runs' in the role instructions): every case was already exercised in earlier sessions. Do only step 5 of the role instructions against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases."
+  fi
 
   commit_suite_changes "regression: update $level suite from $(ts) run ($MODEL_LABEL)"
 }

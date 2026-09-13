@@ -128,6 +128,12 @@ change instead. (This repo, the one you're running in, has no code — editing
 - If the MCP server appears to be down/unresponsive, don't treat that as a
   ticket outcome — note it as a blocking issue (new issue, no status label,
   title like "MCP unreachable") and stop testing until it's back.
+- Spend context deliberately: you may be running in a small window. Use
+  the discovery calls' compact default forms (the guide's index, one
+  schema section, the summary catalog) and drill into the full form only
+  when you need it; read a regression suite file by section (`Grep` for
+  `^### `, then `Read` with `offset`/`limit`), never whole; and read
+  `qa-bible.md` the way `TESTER_TASK.md` describes, not top to bottom.
 - Finish every in-flight MCP call before you exit the cycle. The implementer
   runs after you and may restart the MCP server; it never runs concurrently
   with you, so anything you leave half-done is simply lost, not corrupted.

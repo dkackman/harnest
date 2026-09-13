@@ -25,9 +25,9 @@ T011, T013). Keep the episodes tiny: two to four shots, short lines.
 
 Each cycle, after verification work:
 
-1. Pick up where the last episode left off. Keep a running `qa-bible.md` in
-   your working directory with the cast, voice strings, workspace names, and
-   what you produced per episode — this is your memory across cycles.
+1. Pick up where the last episode left off. `qa-bible.md` in your working
+   directory is your memory across cycles — see "The bible" below for what
+   goes in it and how to read it.
 2. Advance the series by one concrete step: a new episode, or re-running an
    old one with a recently fixed tool to confirm the fix holds in context.
 3. Exercise adjacent tools while you're there: probe, slice, resample, mix,
@@ -35,6 +35,34 @@ Each cycle, after verification work:
 4. File a ticket the moment something is wrong, missing, undocumented, or
    just annoying enough that you worked around it. A workaround you had to
    invent is a bug report.
+
+## The bible
+
+`qa-bible.md` holds the state a fresh session needs to continue the series,
+and nothing else. It is a snapshot, not a journal: what happened in a cycle
+is already on the GitHub Issues it produced, so it isn't repeated here. Its
+fixed sections, in order:
+
+- **Cast** — the two characters, their voice strings, reference images.
+- **Shared assets** — the `common/assets` fixtures and what each is for.
+- **Workspaces** — one line per `qa-*` workspace: what it holds, whether
+  it's still needed.
+- **Episodes** — one line per episode: number, title, workspace, what was
+  produced, what it exercised.
+- **House rules** — the *current* rules for working the MCP well, each a
+  short bullet. When a rule changes (a fix lands, a workaround becomes
+  unnecessary), edit or delete the old bullet — never add a "cycle N"
+  subsection that contradicts an earlier one and leaves both standing.
+- **Next** — what the next cycle should do, replaced every cycle, not
+  appended to.
+
+Read it in full at the start of the standing task — that is what it is
+for, so keep it readable in full: under about 12 KB. If a cycle's edits
+push it past that, the fix is to condense (merge rules, trim episode lines
+to their essentials, drop a workspace that's been deleted), not to move the
+overflow somewhere else. Per-cycle narrative — what you ran, what you
+verified, the story of a failed attempt — does not go in; the issue you
+filed or commented on carries it.
 
 ## Guardrails
 

@@ -60,20 +60,32 @@ assets linked from outputs) is deleted (`delete_output` / `delete_asset`,
 or whatever the live schema names them) as soon as its checks — and any
 later case the suite says depends on it — are done; each case's `cleanup:`
 line says when. The one exception is an artifact needed to reproduce a
-failure you are filing: keep it, name it in the issue body, and record it in
-the case's `last run:` line so a later run knows why it's there. Never call
-`delete_workspace` on any regression workspace, and never
-delete outside the workspace for the level you're currently running.
+failure you are filing: keep it and name it in the issue body — that issue
+is how a later run's sweep (step 5) knows why it's there; nothing goes into
+the suite file. Never call `delete_workspace` on any regression workspace,
+and never delete outside the workspace for the level you're currently
+running.
 
 ## Your run, every invocation
 
-1. Read the suite file for your level in full.
+1. Read the suite file's header — everything above the first `### ` case
+   heading, which ends with the Fixtures section — then each case's section
+   only as you reach it in step 3 (`Grep` for `^### ` in the suite file
+   gives every case's line number; `Read` with `offset`/`limit` fetches one
+   case, from its heading to the line before the next). Don't read
+   the whole file at once: suites are 40-50 KB, and a whole-file read is what
+   pushes a small context window into auto-compaction mid-run, after which
+   the summary has dropped the cases and you'd read it all again.
 2. Confirm the current tool/template schema (list tools) before assuming any
    case's exact tool name or params still matches — the suite describes
    intent and expected behavior; treat the live schema as ground truth for
    exact call shape. If a case's tool no longer exists or its params changed
    incompatibly, that's itself a regression finding (see step 4) — don't
-   silently adapt and move on without recording it.
+   silently adapt and move on without recording it. Use the discovery
+   calls' compact default forms (the guide's index, one schema section, the
+   summary catalog — S-F015 describes the contract) and drill into the full
+   form only when a case needs it; a full listing costs thousands of tokens
+   and is the other thing that fills a small window.
 3. Execute every case in the file, in order, against your level's workspace:
    - **Functional case**: make the call(s) described, compare the actual
      result against the case's `expected:`. Pass or fail.
@@ -158,6 +170,39 @@ delete outside the workspace for the level you're currently running.
    for your level, then exit — you're invoked on a schedule
    (`run-regression.sh` or a cron/loop wrapper around it), not looping
    internally.
+
+## Chunked runs
+
+When the model's context window is small, `run-regression.sh` splits a
+level into several sessions instead of one (`CASES_PER_SESSION`): each
+session is told the exact case IDs it exercises, and a last session does
+only the final sweep. Your prompt says which kind of session this is; when
+it doesn't mention chunking, you run the whole file as above. In a chunked
+session:
+
+- Run only the cases named in your prompt, in that order, and read only
+  their sections (plus the header, per step 1). Never start on a case
+  outside your slice, even if the suite says it depends on one of yours.
+- Follow each case's `cleanup:` line literally across the slice boundary.
+  If it says to hold an output for a later case, hold it even when that
+  case belongs to a later session — that session will find it. If a case
+  in your slice needs an output an earlier case was to hold and it isn't
+  there, re-create it by that earlier case's steps rather than failing the
+  case, and don't file the gap as a cleanup finding.
+- If the suite header names a case as a precondition for the whole file
+  (the security suite's SE-F001, which checks the server's trust posture),
+  run that check at the start of every session before your slice, even
+  when the case isn't in it — a later slice can't rely on an earlier
+  session having stopped.
+- Skip the final sweep (step 5); the sweep session does it.
+- In the sweep session, leftovers a case deferred to a later case are
+  expected — an earlier session held them exactly as told. Delete them
+  without filing. Everything else in step 5 applies unchanged: fixtures
+  and open-issue repro artifacts stay, and a leftover that no `cleanup:`
+  line could explain is still a finding.
+
+Steps 4, 6 and 7 apply in every session: file or comment on issues as you
+go, and a case you'd add per step 6 can be added from any session.
 
 ## Guardrails
 

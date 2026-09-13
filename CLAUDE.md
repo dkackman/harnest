@@ -56,7 +56,13 @@ files described below. There is no build, lint, or test step.
   optionally overrides just that level's suite file (its workspace is then derived from the
   override's filename, never the canonical one, so a one-off suite can't delete another suite's
   fixtures). Case IDs are prefixed per level (`S-`/`C-`/`M-`/`SE-`) so the same number in two files
-  never collides in the regression agent's duplicate-issue search. Each run deletes what its
+  never collides in the regression agent's duplicate-issue search. A level normally runs as one
+  session; `CASES_PER_SESSION=N` splits it into sessions of N consecutive cases plus a final
+  sweep-only session (the role prompt's "Chunked runs" section says how a slice honours
+  `cleanup:` lines that cross its boundary). It defaults to 3 when the provider declares a
+  context window under 120k tokens (`MODEL_CONTEXT_TOKENS` from `providers.sh`), 0 otherwise —
+  a 40-50 KB suite read whole plus twenty cases of tool output is what put 64k Ollama models
+  into auto-compact thrashing. Each run deletes what its
   cases generate as soon as a case (and any dependent case) is done, keeping only durable
   fixtures listed in that suite file's "Fixtures" section (workflows/assets reused across runs)
   and artifacts an open issue needs for a repro; a final sweep removes anything else. All three
@@ -82,7 +88,8 @@ files described below. There is no build, lint, or test step.
   filed before the 2026-09-12 migration to Issues were carried forward there too (see "Ticket
   protocol" below); GitHub is the only ticket history now. `logs/` — per-agent and combined
   output, gitignored. The tester also keeps `qa-bible.md` here (gitignored) as its memory across
-  cycles.
+  cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
+  capped at ~12 KB by `TESTER_TASK.md`, not a journal; per-cycle narrative belongs on the issues.
 
 ## Running
 

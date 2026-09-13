@@ -8,8 +8,10 @@ this is a single-user system — but about escaping the server and its API
 altogether. Every case here is run with the server's **default** security
 posture (`--trust-workflows` off, no `DW_TRUST_WORKFLOWS`), because that's
 the posture whose guarantees actually matter; a case that only holds with a
-flag flipped isn't a guarantee. Opt-in only: `./run-regression.sh security`
-(or `all`). Sibling suites:
+flag flipped isn't a guarantee. SE-F001 checks that posture and gates
+everything else: run it first in every session, including each slice of a
+chunked run, and stop if it says the server is trusted. Opt-in only:
+`./run-regression.sh security` (or `all`). Sibling suites:
 [`regression-suite-smoke.md`](regression-suite-smoke.md),
 [`regression-suite-complete.md`](regression-suite-complete.md),
 [`regression-suite-model-specific.md`](regression-suite-model-specific.md).
@@ -156,7 +158,7 @@ it runs with a token) *and* `trust_workflows`. **If `trust_workflows` is
 `true`, stop: do not run the rest of this file and do not report passes.** If
 the field is absent, that is the finding — file it as "server doesn't expose
 trust posture; security suite can't verify it's running on defaults", run the
-rest anyway, and note the assumption in every `last run:`.
+rest anyway, and state that assumption in every issue this run files.
 Reporting the field is not itself a disclosure: the refusal messages already
 name the flag.
 cleanup: none (read-only).
@@ -707,8 +709,8 @@ refusal is fine to reuse, or a job with a bogus model name).
 expected: no response contains a bearer token, an HF token (`hf_` followed
 by ≥20 alphanumerics), an `Authorization` header value, or an environment
 dump. `auth_required` may be reported as a boolean; the token value never
-is. Tracebacks in a failed job's events may contain server file paths —
-note them in `last run:` but they are not a failure on a single-user box.
+is. Tracebacks in a failed job's events may contain server file paths — not a
+failure on a single-user box, and not worth an issue on their own.
 cleanup: delete the failed job's outputs if any.
 source: harness, initial security suite 2026-09-13.
 last run: 2026-09-13 PASS (opus/anthropic). `get_server_info`, `get_health`,

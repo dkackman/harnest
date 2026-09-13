@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# shellcheck disable=SC2034  # MODEL_ENV / MODEL_LABEL / CO_AUTHOR* are read by the sourcing driver
+# shellcheck disable=SC2034  # MODEL_ENV / MODEL_LABEL / MODEL_CONTEXT_TOKENS / CO_AUTHOR* are read by the sourcing driver
 # providers.sh — model/provider resolution and the small set of helpers both
 # drivers (run-loop.sh, run-regression.sh) would otherwise duplicate. Sourced,
 # never executed.
@@ -13,7 +13,8 @@
 # Functions (contracts in full above each definition):
 #
 #   is_anthropic_model <model>                  → 0/1
-#   resolve_model_env <provider> <model>        sets MODEL_ENV, MODEL_LABEL
+#   resolve_model_env <provider> <model>        sets MODEL_ENV, MODEL_LABEL,
+#                                               MODEL_CONTEXT_TOKENS
 #   validate_fallback_model <provider> <model>  → 0/1 (stderr on failure)
 #   fallback_model_flags <provider> <model>     prints "--fallback-model X"
 #   co_author_for <provider> <model>            sets CO_AUTHOR, CO_AUTHOR_EMAIL
@@ -68,6 +69,11 @@ is_anthropic_model() {
 #                assignments and/or `-u VAR` unsets. Consumed as
 #                  env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude ...
 #   MODEL_LABEL  "<provider>/<model>" — for logs, prompts, commit trailers
+#   MODEL_CONTEXT_TOKENS
+#                the context window declared to Claude Code for this pair
+#                (OLLAMA_CONTEXT_TOKENS / GW_CONTEXT_TOKENS), or empty when
+#                the model's native window applies. Drivers use it to decide
+#                whether a session's working set needs splitting.
 # Returns 1, with a message on stderr naming the knob to fix, when the pair is
 # invalid or a provider's required setting is missing. Call it once per role
 # at startup so a bad pair fails before the first cycle, not three minutes in.
@@ -76,6 +82,7 @@ resolve_model_env() {
 
   MODEL_ENV=()
   MODEL_LABEL="$provider/$model"
+  MODEL_CONTEXT_TOKENS=""
 
   case "$provider" in
     anthropic)
@@ -125,6 +132,7 @@ resolve_model_env() {
           echo "run: OLLAMA_CONTEXT_TOKENS must be a whole number of tokens, got '$OLLAMA_CONTEXT_TOKENS'." >&2
           return 1 ;;
       esac
+      MODEL_CONTEXT_TOKENS="$OLLAMA_CONTEXT_TOKENS"
       MODEL_ENV=(
         "ANTHROPIC_BASE_URL=${OLLAMA_BASE_URL:-http://127.0.0.1:11434}"
         # Both, and deliberately overriding rather than inheriting: a real
@@ -179,6 +187,7 @@ resolve_model_env() {
       fi
       MODEL_ENV+=("ENABLE_TOOL_SEARCH=true")
       if [ -n "${GW_CONTEXT_TOKENS:-}" ]; then
+        MODEL_CONTEXT_TOKENS="$GW_CONTEXT_TOKENS"
         MODEL_ENV+=("CLAUDE_CODE_MAX_CONTEXT_TOKENS=$GW_CONTEXT_TOKENS")
       fi
       ;;
