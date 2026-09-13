@@ -248,6 +248,47 @@ comment; added here after running `get_memory()` as model `opus` via provider
 a job).
 last run: (not yet run by the regression agent.)
 
+### S-F013 — a per-call workspace pin reaches the output-side tools
+From a session **not** in the workspace under test, run a cheap generation
+pinned with `run_workflow(..., workspace="regression-smoke")`, then take a
+file name **verbatim from that job's manifest** and call the output-side
+tools with the same `workspace=` pin and **without** calling `use_workspace`
+first: `keep_output` it to an asset, and `list_gallery` it.
+Set the session with `use_workspace("default")` for the duration and restore
+`use_workspace("regression-smoke")` at the end. Nothing is written to
+`default` — the pin is what sends every write into `regression-smoke`, which
+is the whole assertion.
+expected: the pinned `keep_output` returns an `asset:` reference whose `path`
+is under `regression-smoke/assets`, and the pinned `list_gallery` returns
+`regression-smoke`'s files with `workspace: "regression-smoke"` in the reply
+and a `url` on each entry already carrying `?workspace=regression-smoke`.
+"Path does not exist", with the workspace segment missing from the path it
+names, is the regression.
+Two things to assert beyond the happy path, because they are what a
+half-wired pin looks like:
+(a) **negative control** — the same `keep_output` with `workspace` dropped
+must still *fail*. That failure is correct (an unpinned call resolving
+against the session's `default`); if it succeeds, the pin is being ignored in
+favour of something else and the passing case above proves nothing.
+(b) **the pin must not switch the session** — an unpinned `list_gallery`
+straight after the pinned keep must report `workspace: "default"`. A pin that
+silently becomes a switch is a different bug with the same symptom set.
+The tools carrying `workspace` are `keep_output`, `list_gallery`,
+`get_gallery_metadata`, `get_output_image`, `get_output_text`,
+`download_output` and `delete_output`. Checking one read tool and one write
+tool is enough per run; rotate which ones rather than doing all seven.
+cleanup: delete the generated output and the kept asset (both pinned).
+source: tester, verified in #99 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13 as job `bd2f45b50862` into workspace
+`qa-ep5` from a session in `default`, model `opus` via provider `anthropic`).
+This is the second time a workspace pin has been wired on the run side only,
+which is why it is in smoke and not `complete`.
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: pinned `keep_output` returned
+`asset:qa-pin-check.mp4` at `/home/don/diffusers-workspace/qa-ep5/assets/`,
+the unpinned control failed with the `/qa-ep5` segment missing, and the
+following unpinned `list_gallery` still reported `workspace: "default"`.)
+
 ## Performance
 
 ### S-P001 — default image generation latency

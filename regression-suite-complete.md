@@ -206,4 +206,70 @@ and `denoise` at 36.3 s bounding a previously silent 36 s lead-in, first
 `pipeline_step` at 46.6 s; H3 job `958078231173`, `text_encoder` logged at
 102.8 s, the same instant as `phase: generating`.)
 
+### C-F006 — the saving phase names the files it writes, and the run matches its curated cost
+Run `templates/ltx2/text-to-video` with stock arguments on a **cold worker**
+(`get_health` first: `worker_alive: false`), wait for it, then read
+`get_job_events`.
+expected: inside the `saving` phase, a `log` event naming the file as its
+write starts and a second one costing it as it finishes, the closing one
+carrying `file` and `seconds` as structured fields rather than only prose.
+`saving` → `step_end` under ~5 s. A `saving` phase with no events under it is
+the regression, and it is the shape that hid a real performance bug for a
+whole cycle.
+Also check the whole run against the catalog's curated `minutes` for the
+template (1.8 at the time of writing, RTX 3090): within a minute or so of it.
+Read the figure from `list_workflows` each run rather than pinning 1.8 here —
+the point is that declared and actual still agree, not that the number is
+still that number.
+`denoise_step` stays frozen at its last value through `saving`; that is what
+the phase is, not a finding.
+**Cold worker matters:** the curated figure is whole-run wall clock including
+model load, and ~65% of this run is `loading`. A warm-worker run lands far
+under it and does not test anything.
+cleanup: delete the generated mp4.
+source: tester, verified in #97 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13 as job `bd2f45b50862`, model `opus` via
+provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: 108.1 s total against a curated 1.8 min; `saving` at 105.6 s,
+`writing ... (121 frames)` at 105.6, `wrote ... in 1.3s (1.4 MB)` at 106.9,
+`step_end` at 107.2 — 1.6 s, against 133 s before the fix.)
+
+### C-F007 — a second model family in the same worker lifetime is not OOM-killed
+Run two generations back to back **without restarting the server**, so the
+second one inherits the first's worker:
+1. `templates/ltx2/text-to-video`, stock arguments.
+2. `templates/minimax/reference-to-video` in the same lifetime.
+expected: job 2 **succeeds**, rather than dying with `Worker process died:
+killed by SIGKILL`. In job 2's events, a `Released cached models: host RSS
+<n> MB, <n> MB available (<n> MB returned to the OS)` log line at the head of
+the run, with the RSS figure a small number of GB — not the tens of GB job 1
+peaked at. That line is the assertion; a job-2 success with a residual RSS in
+the tens of GB is a pass by luck and should be reported as a near miss.
+This box has ~4% host-RAM headroom and `reference-to-video` peaks at ~96% of
+it, so job 2 has no margin to absorb anything job 1 left behind. Do **not**
+"fix" a failure here by cutting job 2's frame count — the run is fine, the
+residue is the bug, and `rerun_job` on a fresh worker succeeding is the
+confirmation (that is exactly how #98 was found).
+Job 2's own peak should be roughly what it is on a fresh worker (~61.9 GB of
+64.2). The fix restored job 2's *starting point*, it did not make the
+template cheaper, so a peak that has dropped a lot is a different change
+worth asking about rather than an improvement to assume.
+Note `get_memory` during a run returns `live: false`, `reason: job_running`
+with a cached reading from the *previous* job — do not compare it against a
+live figure. `host_pinned_*` is absent (not zero) on `lem`'s torch build.
+**This case is ~10 minutes of GPU time** and is the most expensive in the
+file. It earns it: this is the failure mode that silently costs a whole
+session's work, and it cannot be tested with one run or with two runs of the
+same family.
+cleanup: delete both generated outputs.
+source: tester, verified in #98 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13 as jobs `bd2f45b50862` then `2700403c7998`,
+model `opus` via provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: job 2 succeeded in 483.3 s where the byte-identical job died at
+314 s before the fix; `Released cached models: host RSS 2042 MB, 60528 MB
+available (21892 MB returned to the OS)` at 5.6 s; job 2 peak 61,882 MB
+against 61,867 MB on a fresh worker.)
+
 ## Performance
