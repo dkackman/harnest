@@ -63,6 +63,10 @@ error ("Workspace 'regression-smoke' already exists"), not a crash; noted
 because the second, idempotent branch of `expected:` is not what the server
 does.
 
+2026-09-13 pass — workspace already existed and was selectable; `create_workspace`
+re-run is still the same clean tool error, not a crash. The second, idempotent
+branch of `expected:` remains what the server does *not* do.
+
 ### S-F002 — list available tools/templates
 Call whatever the server exposes for tool/template discovery (e.g. a
 tools-list or templates-list call).
@@ -74,6 +78,12 @@ last run: 2026-09-12 pass — `list_workflows()` returned 67 entries (65
 templates + 2 saved), including `templates/text-to-image` (image) and
 `templates/generate-speech` / `templates/minimax/music` (audio). Server
 0.4.0-beta.3 on `lem`, cuda, worker idle.
+
+2026-09-13 pass — 71 entries from a `default` session (65 templates + 6 saved);
+the same 65 templates as the prior run, the saved count having grown by four.
+`templates/text-to-image` (image) and `templates/generate-speech` /
+`templates/minimax/music` (audio) all still present. Server 0.4.0-beta.3 on
+`lem`, cuda, worker alive and idle.
 
 ### S-F003 — generate a single image, default params
 Using the server's basic image-generation tool/template, generate one image
@@ -90,6 +100,9 @@ in the manifest, listed and fetchable. Note: output filenames concatenate
 `file_base_name` and the workflow id with no separator
 (`test_imagetext-to-image-main.0-0.0.jpg`) — consistent across every run, so
 recorded as the naming scheme, not filed.
+
+2026-09-13 pass — job `dbd1304d11f3`, 8.9 s, one jpg in the manifest, listed and
+fetchable. The `file_base_name`+id concatenation is unchanged (#100 tracks it).
 
 ### S-F004 — generate a single image, explicit size/seed
 Same as S-F003 but pin an explicit size and a fixed seed if the tool supports
@@ -111,6 +124,20 @@ check needs a way to bypass the step cache (vary something the cache keys on
 but the image does not, or a cache-off flag) — open question for a future
 case.
 
+2026-09-13 pass, and **the open question above is now answered**. Varying
+`result.file_base_name` and nothing else *is* the cache-bypass lever: it is part
+of the step's cache key but not of the image. Two runs of the same inline
+workflow (384x384, seed 424242, 20 steps, prompt "an apple on a wooden table"),
+differing only in `file_base_name` (`s_f004_a` / `s_f004_b`), came back as two
+distinct run ids with no `reused` flag on either manifest — jobs `9c78701f9c59`
+(4.9 s) and `9a8ff707e8dd` (2.3 s), so the pipeline genuinely re-ran the second
+time. The two jpgs are identical in size (29,406 bytes on disk, 28,585 bytes
+returned by `get_output_image`) and visually indistinguishable, and both carry
+`seed: 424242` in `get_gallery_metadata`. **Seed reproducibility is therefore
+confirmed, not merely cache keying** — which is what the 2026-09-12 run could not
+separate. Future runs should keep using the differing-`file_base_name` trick
+rather than an identical rerun, since an identical rerun only re-proves the cache.
+
 ### S-F005 — invalid image-generation params are rejected cleanly
 Call the image-generation tool with an invalid parameter (e.g. malformed
 size, out-of-range value, or a required field omitted).
@@ -128,6 +155,10 @@ manifest, nothing left in the gallery. Nothing silently corrected, no 500,
 no hang. Worth knowing: (c) is caught only at run time —
 `validate_workflow` passes it (see S-F011).
 
+2026-09-13 pass, same three probes, same behavior: (a) and (b) were refused
+pre-flight with the path named, (c) job `64ffd2575f1f` failed at run time with the
+divisible-by-8 message, empty manifest, gallery unchanged.
+
 ### S-F006 — list/probe workspace contents
 After S-F003/S-F004, use whatever inspection tool the server offers (list,
 probe, etc.) against `regression-smoke`.
@@ -142,6 +173,12 @@ Note the listing carries no image dimensions, so "size matches what was
 requested" has to be checked with `get_output_image` (which reports
 `original_size`) or `get_gallery_metadata`. The latter returned the full
 embedded workflow, arguments and seed for the S-F003 jpg.
+
+2026-09-13 pass — `list_gallery()` showed all three outputs with `folder`,
+`subfolder`, `kind`, `size`, `mtime` and a workspace-scoped `url`; still no image
+dimensions in the listing, so `get_output_image`'s `original_size` remains how
+"size matches what was requested" is checked. Both S-F004 images were deleted here
+and confirmed gone on the re-list.
 
 ### S-F007 — basic audio or multi-step template runs end-to-end
 Run one of the simpler multi-step templates (whatever the schema currently
@@ -165,6 +202,11 @@ unsaved middle step reported an empty file list as expected. Schema note:
 runs before substitution) — the error names both paths and is clear, so it is
 documented behavior, not a finding.
 
+2026-09-13 pass — same three-step inline chain, job `537a5794d56e`, 14.0 s. Both
+variables again survived end to end: the final wav reported `duration_seconds: 1.5`
+and `sample_rate: 24000`, peak -4.20 dBFS / mean -23.97 dBFS (not a silent render),
+with the two unsaved intermediate steps reporting empty file lists as expected.
+
 ### S-F008 — delete_output actually removes the file
 Generate one small default image, delete it with the server's delete tool,
 then list/probe the workspace.
@@ -177,6 +219,9 @@ last run: 2026-09-12 pass — deleted the S-F003 jpg, `deleted: true`; the
 subsequent `get_output_image` on the same name was a clean "Not Found" and
 `list_gallery` no longer showed it.
 
+2026-09-13 pass — deleted the S-F003 jpg, `deleted: true`; `get_output_image` on
+the same name was a clean "Not Found" and the gallery went to empty.
+
 ### S-F009 — the step cache does not serve a deleted output
 Run a workflow once, delete the output it produced, then run the identical
 workflow again.
@@ -188,6 +233,11 @@ last run: 2026-09-12 pass — after S-F008 deleted job 1deae39acc2e's jpg, the
 identical `templates/text-to-image` default run (b2ad7f3341bc) regenerated
 into a new run id with no `reused` flag, 6.3 s. Contrast S-F004, where the
 cached file still existed and the rerun was correctly served from cache.
+
+2026-09-13 pass — after S-F008's delete, the identical default
+`templates/text-to-image` run came back as a new run id
+(`20260913-125316-274302ba`, job `8ac6d3c02c25`) with no `reused` flag and a real
+file, 6.6 s. Nothing was served from the deleted path.
 
 ### S-F010 — validate_workflow catches argument errors before the run
 Call `validate_workflow` with the same `arguments` a run would use: one
@@ -203,6 +253,15 @@ came back invalid with both paths named. Next run should call
 `validate_workflow` directly as well, to confirm the two paths report the
 same errors.
 
+2026-09-13 pass — **the direct `validate_workflow` call is now exercised, and the
+two paths agree exactly.** Both probes were sent down each path in turn against
+`templates/text-to-image`: the undeclared name and the uncoercible value each came
+back from `validate_workflow` as `valid: false` with one entry in `errors`, and the
+message and `path` (`arguments.nonexistent_variable` /
+`arguments.num_images_per_prompt`) were character-for-character the string
+`run_workflow` refused pre-flight with. `checked_arguments` named the argument
+checked in both cases. No GPU time spent on any of the four calls.
+
 ### S-F011 — pipeline value constraints are a clean run-time failure
 Validate, then run, a workflow whose values are schema-valid but the
 pipeline will refuse (e.g. an image size not divisible by 8).
@@ -216,6 +275,11 @@ last run: 2026-09-12 pass — 383x383 SD 1.5 validated clean, then job
 403dcd9a8820 failed with "`height` and `width` have to be divisible by 8".
 Gallery unchanged. (Same probe as S-F005(c); kept as its own case because what
 it pins down is the validate/run boundary, not the error's tone.)
+
+2026-09-13 pass — 383x383 SD 1.5 validated clean (`valid: true`, no warnings),
+then job `64ffd2575f1f` failed with the same divisible-by-8 message, an empty
+manifest, and the gallery confirmed unchanged afterwards. The validate/run
+boundary is where it was.
 
 ### S-F012 — the host-memory high-water mark is never below current
 Call `get_memory()`. Whenever both `host_memory_rss_mb` and
@@ -246,7 +310,14 @@ source: tester, verified in #83 (implementer proposed the case in its hand-off
 comment; added here after running `get_memory()` as model `opus` via provider
 `anthropic` — peak 2594.86 against rss 2226.33 on a worker that had just run
 a job).
-last run: (not yet run by the regression agent.)
+last run: 2026-09-13 pass — first run of this case by the regression agent, two
+readings, both `live: true`. (1) At the top of the run, worker alive and idle
+after an earlier large job: peak 61,881.83 against rss 2,591.29. (2) After the
+suite's own generations, `run_count: 2`: peak 61,881.83 against rss 1,824.56. The
+invariant held in both. Neither reading sampled the interesting state — a fresh
+worker that has never peaked — because the worker was already carrying the
+61.9 GB high-water mark from the H3 job of #98 before this run started. Still
+unsampled; keep running it.
 
 ### S-F013 — a per-call workspace pin reaches the output-side tools
 From a session **not** in the workspace under test, run a cheap generation
@@ -289,6 +360,52 @@ last run: (not yet run by the regression agent — first observed 2026-09-13 on
 the unpinned control failed with the `/qa-ep5` segment missing, and the
 following unpinned `list_gallery` still reported `workspace: "default"`.)
 
+2026-09-13 pass — first run of this case by the regression agent; all four
+assertions held. From a session in `default`:
+`run_workflow(templates/text-to-image, workspace="regression-smoke")` → job
+`77b16e056657`. Write tool `keep_output`, read tool `get_gallery_metadata` this
+run (rotating off `list_gallery`). Pinned `keep_output` returned
+`asset:s-f013-pin-check.jpg` at
+`/home/don/diffusers-workspace/regression-smoke/assets/`. (a) The same call with
+`workspace` dropped correctly failed — "Path does not exist:
+/home/don/diffusers-workspace/outputs/..." with the `/regression-smoke` segment
+missing. (b) The unpinned `list_gallery` straight after still reported
+`workspace: "default"` (15 files, `default`'s own), so the pin did not become a
+switch. The pinned `get_gallery_metadata` resolved the file from outside the
+workspace and showed the overridden prompt had reached the run. Pinned
+`delete_output` cleaned up. One gap noticed while doing this, now covered by
+S-F014: `keep_output` can *create* an asset in another workspace via the pin, but
+`list_assets` and `delete_asset` take no `workspace` argument at all.
+
+### S-F014 — the asset-side tools and the per-call workspace pin
+`keep_output` takes a `workspace` pin and will create an asset in a workspace the
+session is not in (S-F013). Check what can then be done with that asset from
+outside: call the asset-listing and asset-deleting tools, from a session in
+`default`, against an asset that lives in `regression-smoke`.
+expected: documents the pin's coverage on the asset side, which as of
+0.4.0-beta.3 is *absent* — `list_assets` and `delete_asset` declare no
+`workspace` parameter, so an asset created by a pinned `keep_output` is invisible
+and undeletable until `use_workspace` switches the session to it. That asymmetry
+is the case's subject, not a pass/fail on its own: record it. It becomes a
+**finding** if it gets worse (a pinned `keep_output` starts writing somewhere
+`use_workspace` cannot reach either), and the case should be rewritten as a
+happy-path pin check if the two tools gain the argument.
+Assert regardless: after `use_workspace("regression-smoke")`, `list_assets` shows
+the asset with `origin: "workspace"` and `delete_asset` removes it — a pinned
+write must never strand a file the API cannot clean up.
+cleanup: delete the generated output (pinned) and the kept asset (after
+switching), leaving no asset behind either way.
+source: regression agent, noticed while running S-F013 on 2026-09-13 as model
+`opus` via provider `anthropic`; added at smoke level rather than `complete`
+because it is the cleanup path every other case's `cleanup:` line depends on
+being able to reach.
+last run: (not yet run as its own case — the 2026-09-13 S-F013 run established the
+current behavior: pinned `keep_output` wrote
+`/home/don/diffusers-workspace/regression-smoke/assets/s-f013-pin-check.jpg`,
+neither `list_assets` nor `delete_asset` accepts a `workspace` argument, and after
+switching into the workspace `delete_asset` removed it cleanly, reporting
+`origin: "workspace"`.)
+
 ## Performance
 
 ### S-P001 — default image generation latency
@@ -304,6 +421,10 @@ baseline — they exclude queue and agent turnaround. Suggested when a human
 sets one: cold and warm are different numbers and should get separate
 ceilings.
 
+2026-09-13 8.9 s cold (job `dbd1304d11f3`, first SD 1.5 run of the session) /
+6.6 s warm (job `8ac6d3c02c25`, model resident). Wall clock cold was 13.9 s. Both
+sit inside the prior run's 13.6 s / 6.3 s pair — no regression.
+
 ### S-P002 — workspace listing/probe latency
 Time S-F006 (listing/probing a workspace with a handful of assets already in
 it).
@@ -316,6 +437,9 @@ for a sub-second call, so this baseline is only meaningful as a ceiling
 ("nothing pathological"); treat anything under ~5 s as a pass until the
 server reports its own timing.
 
+2026-09-13 3.92 s wall for `list_gallery()` over 3 outputs — under the ~5 s
+ceiling, pass. Same caveat: mostly agent turnaround, not server time.
+
 ### S-P003 — tool/template discovery latency
 Time S-F002 (the tools/templates list call), cold — i.e. as the first call of
 the run, before anything else warms up server-side caches.
@@ -325,6 +449,11 @@ last run: 2026-09-12 3.6 s wall for the first `list_workflows()` of the
 session, same caveat as S-P002 (includes agent turnaround). No sign of a cold
 penalty: the same call later in the run was indistinguishable.
 
+2026-09-13 5.66 s wall for the first `list_workflows()` of the session (71
+entries, issued as the run's very first call). Slower than the prior run's 3.6 s
+but on the same order, and dominated by agent turnaround plus a larger catalog —
+not treated as a regression. Still no evidence of a cold server-side penalty.
+
 ### S-P004 — multi-step audio chain latency
 Time S-F007 (speech → trim → fade, three steps in one job) using the job's own
 `started_at`/`finished_at`, not wall clock.
@@ -332,3 +461,7 @@ baseline: TBD — first run
 cleanup: as S-F007.
 last run: 2026-09-12 10.6 s (job 13037aa0aa51), Bark-small loading included.
 Most of it is the TTS step; the two audio tasks are sub-second.
+2026-09-13 14.0 s (job `537a5794d56e`), Bark-small loading included. +32% on the
+10.6 s prior figure — inside the ~50% noise band, so recorded rather than filed,
+but it is the one number in this run that moved in the wrong direction and is
+worth watching next pass.
