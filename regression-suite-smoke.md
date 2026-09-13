@@ -3,8 +3,9 @@
 Fast, fundamental, general-purpose checks — not tied to a specific
 model/pipeline. This is what runs by default (`./run-regression.sh` with no
 args), and every run of `complete` runs this file first. Sibling suites:
-[`regression-suite-complete.md`](regression-suite-complete.md) and
-[`regression-suite-model-specific.md`](regression-suite-model-specific.md).
+[`regression-suite-complete.md`](regression-suite-complete.md),
+[`regression-suite-model-specific.md`](regression-suite-model-specific.md)
+and [`regression-suite-security.md`](regression-suite-security.md).
 
 **Where a case belongs** (same test for the implementer, tester, and
 regression agent): would it be bad if this broke silently and stayed broken
@@ -13,7 +14,11 @@ between every regression run, for any model/pipeline a consumer might use?
 often — because it's individually slower, or because there are simply many
 variants of it? → `regression-suite-complete.md`. Does it only make sense
 for one specific named model/pipeline/checkpoint? →
-`regression-suite-model-specific.md`. Keep this file itself lean — every
+`regression-suite-model-specific.md`. Would its *failure* mean an agent got
+past a server boundary — code ran, a file outside the server's roots was
+touched, a request left the box, a secret leaked? →
+`regression-suite-security.md`, regardless of speed. Keep this file itself
+lean — every
 case in it runs on every single pass.
 
 Workspace: `regression-smoke`. Case IDs in this file use the `S-` prefix
@@ -405,6 +410,50 @@ current behavior: pinned `keep_output` wrote
 neither `list_assets` nor `delete_asset` accepts a `workspace` argument, and after
 switching into the workspace `delete_asset` removed it cleanly, reporting
 `origin: "workspace"`.)
+
+### S-F015 — the discovery calls answer compactly, and the full form is still reachable
+The three calls a cold session makes before it knows anything — the guide, the
+schema, the workflow catalog — each answer an *index* by default and the whole
+thing on request. This is the contract #101 shipped, and its failure mode is
+silent: a regression costs every session tokens it never sees itemised, and
+nobody notices until a context runs out. All three are free and instant.
+expected: three independent assertions, each a default call and its drill-down.
+1. **Guide.** `get_guide("workflows")` with no section → `content` is the
+   opening plus the *first* section only, and the answer carries `sections`
+   (every heading, in order) and `withheld` (the rest). Assert `content` is
+   under ~3 KB and contains **no heading named in `withheld`** — leakage is the
+   regression, not size alone. Then fetch one withheld section by name and get
+   it whole. The pre-#101 behavior was ~19.6 KB on the no-section call.
+2. **Schema.** `get_schema(section="result")` → `schema.$defs` has exactly the
+   one key `result`; `sections` lists all six (`configuration`, `pipelines`,
+   `result`, `steps`, `tasks`, `variables`); `elsewhere` names the section
+   holding each `$def` the fragment still `$ref`s (`{}` for `result`, and
+   `{"arguments": "pipelines"}` for `tasks`). Then `get_schema()` with no
+   argument → still the whole schema, with `steps` under `properties`. Then a
+   misspelled section (`"pipline"`) → an error **naming the six real sections**,
+   not a silent empty answer.
+3. **Catalog.** `list_workflows()` with no filter → `view == "summary"` and every
+   entry in `details` is `{summary, shape}` only; the `workflows` name list is
+   unabridged. Then `list_workflows(shape=...)` for any shape → the same entries
+   carry `traits`, `cost`, `kinds`, `variable_names` and (where the workflow is
+   list-driven) `lists` again. Both directions matter: a summary that never
+   expands is as broken as a default that never summarises.
+Record the measured size of 1 and 3 in the `last run:` note. The point of #101
+was the number, so a slow creep back up is the thing this case exists to catch,
+and only a recorded baseline makes it visible.
+Note `view`/`note` are absent rather than `view: "full"` on the filtered answer —
+that is current behavior as of 0.4.0-beta.3, not a finding; key on
+`view == "summary"`.
+cleanup: none — every call is read-only.
+source: tester, verified in #101 (all three items proposed by the implementer in
+that issue's hand-off; run over MCP 2026-09-13, model `opus` via provider
+`anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: guide index ~1.5 KB against ~19.6 KB before, 10 sections listed and
+9 withheld, `Result Configuration` fetched back whole; `result` fragment carried
+one `$def` and `elsewhere: {}`; `get_schema(section="pipline")` errored naming all
+six; `list_workflows()` summarised 72 entries to `{summary, shape}` with
+`view: "summary"`, and `shape="audio"` restored the full entries.)
 
 ## Performance
 

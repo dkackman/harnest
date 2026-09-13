@@ -4,7 +4,7 @@ Niche checks tied to a particular model, pipeline, or LoRA/adapter quirk —
 not general-purpose behavior any model could hit (see
 [`regression-suite-smoke.md`](regression-suite-smoke.md) for the exact line
 between general-purpose and niche). Opt-in only: `./run-regression.sh
-model-specific` (or `all`, which also runs the other two files). Expect
+model-specific` (or `all`, which also runs the other three files). Expect
 these to be slower and more expensive — a model load, a specific
 checkpoint, a particular sampler/scheduler combination — which is exactly
 why they're kept out of the default cadence.
@@ -12,7 +12,7 @@ why they're kept out of the default cadence.
 Workspace: `regression-model-specific` — kept separate from the other
 levels' workspaces so a model-heavy run never skews their timings or
 clutters their fixtures. Case IDs in this file use the `M-` prefix
-(`M-F001`, `M-P001`, ...) so they never collide with the `S-`/`C-` IDs in
+(`M-F001`, `M-P001`, ...) so they never collide with the `S-`/`C-`/`SE-` IDs in
 the sibling suites — the regression agent's duplicate-issue search is keyed
 on the full prefixed ID. Full run mechanics (fixtures vs. outputs, cleanup,
 the final sweep) live in `agents/REGRESSION_AGENT.md`, not here.

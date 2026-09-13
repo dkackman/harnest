@@ -6,7 +6,9 @@ every smoke pass. Still general-purpose — not tied to any one
 model/pipeline (see [`regression-suite-smoke.md`](regression-suite-smoke.md)
 for the exact line between the two, and
 [`regression-suite-model-specific.md`](regression-suite-model-specific.md)
-for what's niche instead). Running this level also runs
+for what's niche instead, and
+[`regression-suite-security.md`](regression-suite-security.md) for
+boundary-escape probes). Running this level also runs
 `regression-suite-smoke.md` first (`./run-regression.sh complete`); this
 file holds only the cases on top of that.
 
@@ -46,12 +48,21 @@ when nothing uses it anymore.
 - `asset:qa-cast/ep3-shot1-incident.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4`
   — two independently generated 24 fps shots (124 frames / 5.175 s / 960x544,
   32 kHz stereo) whose soundtracks sit ~11 dB apart (`mean_dbfs` -20.0 and
-  -31.1). Used by C-F001 and C-F002. They live in the **shared**
+  -31.1). Used by C-F001, C-F002, C-F009, C-F011, C-F012 and C-F013's stereo
+  control. They live in the **shared**
   `common/assets`, not in `regression-complete`, so every workspace can
   reach them by that same `asset:` reference — do not delete them in a
   cleanup sweep, and do not expect them under `regression-complete`'s own
   asset dir. The level spread is the point: regenerating them would not
   reproduce it on purpose.
+
+- `asset:qa-cast/priya-voice.wav` — a **mono** (1-channel) voice track. Used by
+  C-F013, where the channel count is the entire subject: it is what makes the
+  `video/mp4` encode fail, and a stereo file will not reproduce the case. Also in
+  the shared `common/assets`, so do not sweep it and do not expect it under
+  `regression-complete`. If it ever has to be replaced, the only property that
+  matters is that it is 1-channel — `get_gallery_metadata` on a paired output
+  reports `channels`, which is the cheapest way to confirm a candidate.
 
 ## Functional
 
@@ -304,5 +315,171 @@ last run: (not yet run by the regression agent — first observed 2026-09-13 on
 6.4 s two-step `concat_videos` job, against
 `ep5-episodeqa-ep5-episode-episode.0-0.0.mp4` before the fix; the `sub/episode`
 validate refused at the documented path.)
+
+### C-F009 — a paired video keeps its source frame rate, with no `result.fps` anywhere
+`pair_audio` is handed frames loaded from a file and an audio track, and the
+output must be written at the rate those frames actually run at. Take a 24 fps
+fixture and run a one-step inline workflow: `pair_audio` with `video` = that
+asset and `audio` = a **stereo** track (the other C-F001 fixture serves — see
+C-F013 for why the channel count is not incidental), `result` =
+`{"content_type": "video/mp4"}` **with no `fps` key**. Task-only, loads no model.
+expected: `get_gallery_metadata` on the output reports `fps: 24.0` and
+`duration_seconds` matching the source (5.167 s for a 124-frame fixture), not
+`8.0` / 15.5 s. **The absence of `result.fps` is the point of the case — do not
+add it**, and do not "fix" a failure by adding it. The regression is #104: the
+loader dropped the rate, `AudioVideo.fps` came back `None`, and the engine fell
+back to `DEFAULT_VIDEO_FPS` = 8, producing a file three times as long with the
+audio finishing a third of the way in — `succeeded`, `warnings: []`, silent.
+Assert the override arm too, in a second run, because it is what makes the first
+arm meaningful: the same workflow **with** `"fps": 12` writes at 12 and emits a
+run warning naming *both* rates and the resulting speed factor. A declared rate
+that wins silently is a regression even though the file is what was asked for.
+(C-F002 owns the detailed assertions on that warning's structured fields and
+prose — here just assert one is present and names both rates.)
+**Not a duplicate of C-F002**, which is the reason to keep both: C-F002 exercises
+`concat_videos`, whose `videos` argument the step loads itself and which has
+carried the rate since #84. This case exercises the *other* loader — an argument
+named `video` (or `*_video`), which goes through the engine's own file-loading
+path and is where the rate was still being dropped as late as #104. Same visible
+symptom, two independent code paths; a fix to one has twice now not covered the
+other.
+Third arm, and the one with the most reach — assert the rate survives the whole
+chain with **nothing declared anywhere**. Keep the paired output from arm 1 as an
+asset, then `concat_videos` it with another 24 fps asset passing **no `fps`
+argument to the task and no `result.fps` on the step**.
+expected: 24 fps, and a frame count and duration that are the two sources' summed
+frames over 24. This is file → load → `pair_audio` → keep as asset → load again →
+join, which is four separate chances to drop the rate; before #104 this shape was
+the reliable way to end up with an 8 fps file. Assert it undeclared or the arm
+tests nothing — a passed-in `fps` would mask exactly the failure it exists for.
+While the join is there and free, assert the level-spread warning too: with
+`match_levels` **off** and two shots whose `mean_dbfs` differ by more than a few
+dB, the run warns, naming both levels, the spread, and `match_levels` as the
+remedy. Silence there is a regression — an audible level jump either side of a
+cut is the one seam artifact no fade control can hide, and the warning is the
+only thing that surfaces it to a caller who cannot listen.
+cleanup: delete the generated outputs and the intermediate asset.
+source: tester, verified in #104 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13 as jobs `7bac4a2b5d07` and `d0b79427fc24`,
+model `opus` via provider `anthropic`). Third arm added from job `af9317223452`
+the same day while running TESTER_TASK.md.
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: 24.0 fps / 5.167 s / 124 frames with no `result.fps`, against
+8.0 fps / 15.5 s before the fix; the `fps: 12` arm warned "Writing video at 12
+fps, but the frames it was given run at 24.0 fps - the file will play 0.5x speed
+(2 times as long). Drop 'fps' from the step's result to keep the source rate".
+Third arm first observed the same day in job `af9317223452`: a fully undeclared
+`concat_videos` join of two 24 fps assets gave 24.0 fps / 248 frames / 10.334 s in
+7.0 s, and the level warning fired — "the tracks being joined span 6.5 dB (rms
+-25.5 to -19.0 dBFS) - the cut will be audible as a level jump. Pass match_levels
+to even them out".)
+
+### C-F010 — a cost estimate re-prices for the list it was actually given
+A list-driven template's curated cost was measured on one list length. Validating
+it with a *different* length must not quote the measured figure unchanged.
+`validate_workflow(name="templates/minimax/dialogue-short", arguments={"shots":
+[...]})` three times — a list shorter than the stored default, the stored default
+(pass no `arguments` at all), and a list longer than it. Free: validation only,
+nothing is queued.
+expected: `plan.estimate.minutes` differs across all three, and `plan.steps` moves
+with the list. `basis` is the assertion that matters:
+- the **stored-default** run reports `catalog` — a measurement of *this* list.
+- the resized runs report `derived` (or `per_entry`, which is strictly better, if
+  the template gains a measured per-entry rate) — arithmetic on a figure measured
+  on a list that is not yours.
+The regression is #85: the same `minutes` returned for every length under
+`basis: "catalog"`, so the quote was the stored default's figure wearing a label
+that claimed it was measured for the caller's run. **Never the same number twice
+with a different `steps` count** is the one-line form of this case.
+Also assert `plan.list_entries` echoes the length the server realized, so a
+failure separates "priced wrong" from "parsed the list wrong".
+cleanup: none — validation is free and queues nothing.
+source: tester, verified in #85 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13, model `opus` via provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3, `templates/minimax/dialogue-short` on an RTX 3090 figure of 42.0:
+2 shots → 5 steps / 16.8 min / `derived`; 5 shots (default) → 8 steps / 42.0 min /
+`catalog`; 10 shots → 13 steps / 84.0 min / `derived`.)
+
+### C-F011 — a job records which form of cost acknowledgement queued it
+`get_job.acknowledged` is documented as one of `none`, `boolean`, `bound`, and it
+is the only record that a run passed the cost gate at all. Queue any cheap
+task-only inline workflow **twice**: once with `acknowledged_cost=true`, once with
+the bound object `{fingerprint, minutes, downloads}` taken from
+`validate_workflow`'s `plan`.
+expected: the bare run records `acknowledged: "boolean"` with `acknowledged_cost:
+null`; the bound run records `acknowledged: "bound"` with the whole object echoed
+back. The regression is #85: a bare `true` recorded `"none"`, which made a job
+that went through the gate indistinguishable from one that never did — defeating
+the point of recording the form. Note `"none"` must still be reachable in
+principle, so assert the two positive forms rather than asserting `"none"` never
+appears.
+Assert the refusal arm while the fixture is at hand, since it is free and it is
+what proves the server saw the flag: the same workflow with
+`acknowledged_cost=false` is refused outright.
+cleanup: delete both generated outputs.
+source: tester, verified in #85 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13 as job `d21be61989ab`, model `opus` via provider
+`anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: bare `true` → `acknowledged: "boolean"`, `acknowledged_cost: null`,
+against `"none"` before the fix.)
+
+### C-F012 — a `seed` is what turns the step cache on, and a cached step is marked `reused`
+The step cache is disabled entirely for a workflow that declares no top-level
+`seed` — `cached_steps` then reports `0` without probing, which from the consumer
+side is indistinguishable from "checked, nothing hit". Pin both halves. Take any
+cheap task-only inline workflow with a top-level `"seed": 1` and run it twice,
+validating before each run.
+expected:
+1. First validate → `plan.cached_steps: 0`; the run executes and writes its file.
+2. Second validate, byte-identical workflow → `plan.cached_steps: 1`.
+3. Second run → the manifest entry carries **`reused: true`** and names the
+   **first run's** file path, not a new one under its own `run_id`. The second job
+   is materially faster (1.88 s → 0.84 s when first measured).
+Then assert the negative, which is the half that misled a tester for two cycles:
+the *same* workflow with the `seed` removed reports `cached_steps: 0` on every
+validate and never marks a step `reused`, no matter how many times it runs.
+Both arms are required. Asserting only the positive would let a change that
+caches unseeded workflows pass, and asserting only `cached_steps` would miss a
+plan that promises a hit the run does not take.
+cleanup: delete the first run's output (the second run produces no new file).
+source: tester, found while verifying #85 on 2026-09-13 — the first time
+`cached_steps` had ever read non-zero in fourteen cycles, and the reason a wrong
+conclusion ("task steps are not cacheable") reached #85 twice. Run over MCP as
+jobs `6a9cb065c40e` and `e3c9b4f38d67`, model `opus` via provider `anthropic`.
+Discoverability of the seed requirement is filed as #107; this case pins the
+behavior regardless of how that is resolved.
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: seeded `pair_audio` step, `cached_steps` 0 → 1, second manifest
+`reused: true` pointing at run `20260913-152107-e387623b`'s file from run
+`20260913-152117-e387623b`, 1.88 s → 0.84 s.)
+
+### C-F013 — a mono audio track is not an unhandled encode failure
+Pairing a **mono** track onto a video and writing `video/mp4` must not die at save
+time with a raw library exception. Run a one-step inline `pair_audio` with `audio`
+= a 1-channel asset and `video` = any video fixture, `result.content_type` =
+`video/mp4`.
+expected: **as of 0.4.0-beta.3 this case documents a failure, not a pass** — the
+job reaches `failed` with `Expected samples with 2 channels; got shape
+torch.Size([1, N])`, a `diffusers` `ValueError` surfacing through
+`result.save_audio_video`, while `validate_workflow` on the identical document
+returned `valid: true` with no warnings. Record that. It becomes a **pass** when
+#106 is resolved in any of its three forms: the mono track is upmixed (ideally
+with a run warning), or `validate_workflow` refuses it at
+`steps[0].task.arguments.audio`, or the error names mono, the argument and the
+remedy instead of a tensor shape. Any of those closes it; rewrite the case as a
+happy-path assertion at that point.
+It becomes a **finding** if it gets worse — notably if the identical workflow with
+a **stereo** source stops succeeding, which is the control and must pass on every
+run regardless.
+cleanup: the failing run writes nothing; delete the control run's output.
+source: tester, found while running TESTER_TASK.md on 2026-09-13 (filed as #106),
+reproduced on two independent mono assets. Run over MCP as jobs `d21be61989ab`
+and `3b2231c5c8df` with the stereo control `7bac4a2b5d07`, model `opus` via
+provider `anthropic`.
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: two different mono wavs failed identically (`[1, 155520]` and
+`[1, 178880]`); the stereo control succeeded with `channels: 2`.)
 
 ## Performance
