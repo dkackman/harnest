@@ -89,8 +89,11 @@ change instead. (This repo, the one you're running in, has no code — editing
    yourself to whichever regression suite file fits: `regression-suite-smoke.md`
    (fast, fundamental, general-purpose — the common case),
    `regression-suite-complete.md` (general-purpose but slower/edge-case-y),
-   or `regression-suite-model-specific.md` (tied to a particular model or
-   pipeline) — see `regression-suite-smoke.md`'s "Where a case belongs"
+   `regression-suite-model-specific.md` (tied to a particular model or
+   pipeline), or `regression-suite-security.md` (its failure would be a
+   boundary escape: code execution, a file outside the server's roots, an
+   off-box request, a leaked secret) — see `regression-suite-smoke.md`'s
+   "Where a case belongs"
    section if unsure. Same format as the existing cases in that file, the
    next unused ID for that file's prefix, and `source: tester, verified in
    #NN` or `source: tester, found while running TESTER_TASK.md`. See each

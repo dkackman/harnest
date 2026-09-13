@@ -44,12 +44,18 @@ files described below. There is no build, lint, or test step.
   never share fixtures or skew each other's timings: `regression-suite-smoke.md` (workspace
   `regression-smoke`, fast/fundamental/general-purpose, the default), `regression-suite-complete.md`
   (workspace `regression-complete`, general-purpose but broader/slower, runs on top of `smoke`),
-  and `regression-suite-model-specific.md` (workspace `regression-model-specific`, niche, tied
-  to one model/pipeline, opt-in only). `./run-regression.sh [level] [suite-file]` picks the level
-  (default `smoke`; `complete` also runs `smoke` first; `all` runs all three, once each) and
+  `regression-suite-model-specific.md` (workspace `regression-model-specific`, niche, tied
+  to one model/pipeline, opt-in only), and `regression-suite-security.md` (workspace
+  `regression-security`, opt-in only: hostile-input probes run on the server's default
+  security posture — arbitrary-code gates on introspection-based instantiation, path
+  containment, URL scheme/host policy, secret disclosure, destructive scope. Its issues also
+  carry the `security` label. Its header defines "refused too late" as a failure, and lists
+  what a consumer-only agent can't cover, which belongs in the dw repo's pytest suite).
+  `./run-regression.sh [level] [suite-file]` picks the level (default `smoke`; `complete`
+  also runs `smoke` first; `all` runs all four, once each) and
   optionally overrides just that level's suite file (its workspace is then derived from the
   override's filename, never the canonical one, so a one-off suite can't delete another suite's
-  fixtures). Case IDs are prefixed per level (`S-`/`C-`/`M-`) so the same number in two files
+  fixtures). Case IDs are prefixed per level (`S-`/`C-`/`M-`/`SE-`) so the same number in two files
   never collides in the regression agent's duplicate-issue search. Each run deletes what its
   cases generate as soon as a case (and any dependent case) is done, keeping only durable
   fixtures listed in that suite file's "Fixtures" section (workflows/assets reused across runs)

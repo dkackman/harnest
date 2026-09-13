@@ -6,11 +6,13 @@
 #   smoke           regression-suite-smoke.md           regression-smoke
 #   complete        regression-suite-complete.md        regression-complete
 #   model-specific  regression-suite-model-specific.md  regression-model-specific
+#   security        regression-suite-security.md        regression-security
 #
 #   ./run-regression.sh                      # smoke only (the default)
 #   ./run-regression.sh complete             # smoke, then complete
 #   ./run-regression.sh model-specific       # model-specific only
-#   ./run-regression.sh all                  # smoke, complete, model-specific
+#   ./run-regression.sh security             # security only (hostile-input probes, opt-in)
+#   ./run-regression.sh all                  # smoke, complete, model-specific, security
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
 #   MODEL=sonnet ./run-regression.sh         # MODEL defaults to opus
 #   REGRESSION_MODEL=opus ./run-regression.sh   # this agent only; defaults to MODEL
@@ -24,7 +26,7 @@
 # A suite-file override gets its own workspace derived from its filename
 # (stripping a leading "regression-suite-" and trailing ".md"), never the
 # level's canonical workspace — so a one-off custom suite can't delete
-# fixtures the real smoke/complete/model-specific suite depends on.
+# fixtures the real smoke/complete/model-specific/security suite depends on.
 #
 # regression-suite-*.md is a second channel the tester writes to directly
 # (see its role prompt's "Adding a case" step), not just this script.
@@ -63,12 +65,13 @@ case "$LEVEL" in
   smoke)          RUN_SPECS=("smoke:$SUITE_OVERRIDE") ;;
   complete)       RUN_SPECS=("smoke:" "complete:$SUITE_OVERRIDE") ;;
   model-specific) RUN_SPECS=("model-specific:$SUITE_OVERRIDE") ;;
+  security)       RUN_SPECS=("security:$SUITE_OVERRIDE") ;;
   all)
     [ -n "$SUITE_OVERRIDE" ] && { echo "a suite-file override is ambiguous with level 'all' — run one level at a time to override its file" >&2; exit 1; }
-    RUN_SPECS=("smoke:" "complete:" "model-specific:")
+    RUN_SPECS=("smoke:" "complete:" "model-specific:" "security:")
     ;;
   *)
-    echo "unknown level '$LEVEL' (expected: smoke, complete, model-specific, all)" >&2
+    echo "unknown level '$LEVEL' (expected: smoke, complete, model-specific, security, all)" >&2
     exit 1
     ;;
 esac
@@ -99,6 +102,7 @@ default_suite_file() {
     smoke)          echo "regression-suite-smoke.md" ;;
     complete)       echo "regression-suite-complete.md" ;;
     model-specific) echo "regression-suite-model-specific.md" ;;
+    security)       echo "regression-suite-security.md" ;;
   esac
 }
 

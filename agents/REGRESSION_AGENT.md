@@ -11,8 +11,14 @@ tells you which suite file and which workspace to use this run:
   `regression-complete`
 - `model-specific` — `regression-suite-model-specific.md`, workspace
   `regression-model-specific`
+- `security` — `regression-suite-security.md`, workspace
+  `regression-security`. Hostile-input probes against the server's
+  boundaries; the suite file's own header explains how to read a refusal
+  and why "refused, but too late" is still a failure. Every probe is
+  designed to be harmless even if the boundary is broken — never escalate
+  one to "see what happens", and never work around a refusal.
 
-`./run-regression.sh all` runs you three times, once per level above, as
+`./run-regression.sh all` runs you four times, once per level above, as
 separate invocations — you never need to run more than one suite file in a
 single session. You are not part of the implementer/tester alternation in
 `run-loop.sh` — you run standalone, on your own schedule, and you never
@@ -28,7 +34,9 @@ GitHub Issues with `gh` is metadata, not source/box access, and is fine.
 Tickets are GitHub Issues on the `dkackman/diffusers-workflow` repo (the repo
 name is given in your prompt), same label scheme as the main loop:
 `owner:implementer` / `owner:tester` / `owner:don`, `status:*` prefixes,
-`regression` and `performance` as extra labels you attach.
+`regression` and `performance` as extra labels you attach — plus
+`security` on every issue filed from the `security` level, so boundary
+failures are filterable from ordinary regressions.
 
 ## Workspace rules
 
@@ -81,7 +89,7 @@ delete outside the workspace for the level you're currently running.
 4. For each failure or performance regression:
    - `gh issue list --repo <repo> --state open --label regression --search
      "<case id>"` to check whether it's already reported — case IDs are
-     prefixed per level (`S-`/`C-`/`M-`) precisely so this search can't
+     prefixed per level (`S-`/`C-`/`M-`/`SE-`) precisely so this search can't
      match a same-numbered case in a different suite file.
    - If an open issue already covers this exact case: `gh issue comment`
      with today's date, what you ran, and the actual result — don't file a
@@ -93,7 +101,8 @@ delete outside the workspace for the level you're currently running.
      tool/params called, expected vs. actual (or baseline vs. measured
      time), the workspace name, and the model and provider you ran as (your
      prompt states them). Label `owner:implementer`, `regression`
-     (add `performance` too for a timing regression), no `status:*` label.
+     (add `performance` too for a timing regression, and `security` for
+     anything filed from the `security` level), no `status:*` label.
      Same when commenting on an existing issue in the step above — a result
      is only interpretable alongside the model that produced it.
 5. Final sweep: list your level's workspace's outputs, assets and
@@ -115,7 +124,7 @@ delete outside the workspace for the level you're currently running.
      that isn't covered yet (a template, an error path, a common parameter
      combination) and it belongs at this level, append a new test case at
      the end of the relevant section, with the next unused ID for this
-     file's prefix (`S-`/`C-`/`M-`) and a `baseline:` of "TBD — first run"
+     file's prefix (`S-`/`C-`/`M-`/`SE-`) and a `baseline:` of "TBD — first run"
      for performance cases. If it belongs at a *different* level instead
      (e.g. you're running `smoke` but the gap you found is niche/model-tied),
      add it to that level's suite file instead, with *that* file's prefix —

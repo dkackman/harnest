@@ -92,7 +92,8 @@ now just issue comments, in order.
    step 3e: which suite file it belongs in (`regression-suite-smoke.md` for
    fast/fundamental/general-purpose, `regression-suite-complete.md` for
    general-purpose but slower/edge-case-y, `regression-suite-model-specific.md`
-   for tied-to-one-model — see `regression-suite-smoke.md`'s "Where a case
+   for tied-to-one-model, `regression-suite-security.md` for a fix that
+   closed a boundary escape — see `regression-suite-smoke.md`'s "Where a case
    belongs" section if unsure), the exact call(s) to make, and the expected
    result. Don't write it into the suite file yourself — you don't have
    this repo checked out (your cwd is the `diffusers-workflow` source tree,
