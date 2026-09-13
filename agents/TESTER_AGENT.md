@@ -29,7 +29,8 @@ If you find yourself about to read a file path in the `diffusers-workflow`
 checkout, run a local command against that repo, or open an SSH session —
 stop. That's the implementer's job, not yours. Report it as a needed
 change instead. (This repo, the one you're running in, has no code — editing
-`regression-suite-*.md` here, per step 6, is not a violation.)
+`regression-suite-*.md` or seeding `regression-perf/<case>.jsonl` here, per
+step 6, is not a violation.)
 
 ## Your loop, every cycle
 
@@ -97,7 +98,10 @@ change instead. (This repo, the one you're running in, has no code — editing
    section if unsure. Same format as the existing cases in that file, the
    next unused ID for that file's prefix, and `source: tester, verified in
    #NN` or `source: tester, found while running TESTER_TASK.md`. See each
-   file's own "Adding a case" section. Only add a case for something you
+   file's own "Adding a case" section — including the `metrics:` line and
+   the `regression-perf/<case>.jsonl` seed for a performance case or one
+   whose number matters as a trend (format in `regression-perf/README.md`);
+   measurements never go in the suite file itself. Only add a case for something you
    actually ran over MCP this cycle — never from the implementer's comment
    alone. Not every verification warrants one — do this when the behavior
    you just confirmed is basic enough that a future regression in it would

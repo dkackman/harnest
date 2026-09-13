@@ -29,8 +29,9 @@
 # level's canonical workspace — so a one-off custom suite can't delete
 # fixtures the real smoke/complete/model-specific/security suite depends on.
 #
-# regression-suite-*.md is a second channel the tester writes to directly
-# (see its role prompt's "Adding a case" step), not just this script.
+# regression-suite-*.md (and regression-perf/, the per-case measurement log)
+# is a second channel the tester writes to directly (see its role prompt's
+# "Adding a case" step), not just this script.
 # run-loop.sh commits the tester's edits under the tester's identity; as a
 # fallback, before the first level runs, this script commits anything still
 # dirty under a neutral "unknown origin" trailer, and after each level it

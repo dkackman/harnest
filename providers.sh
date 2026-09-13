@@ -20,6 +20,7 @@
 #   co_author_for <provider> <model>            sets CO_AUTHOR, CO_AUTHOR_EMAIL
 #   runtime_note <role> <provider> <model>      prints the "Runtime:" paragraph
 #   commit_suite_changes <msg> [name] [email]   commits regression-suite-*.md
+#                                               and regression-perf/
 #   CONSUMER_PERMISSION_FLAGS                    array: permission flags for the
 #                                               consumer-only roles (tester, regression)
 #
@@ -319,7 +320,8 @@ runtime_note() {
 }
 
 # commit_suite_changes <msg> [co_author] [co_author_email]
-# Commits any pending changes to regression-suite-*.md in $REPO — from any
+# Commits any pending changes to regression-suite-*.md and regression-perf/
+# (the per-case measurement log the suite files point at) in $REPO — from any
 # source: the tester adding a case this cycle, the regression agent's run
 # just now, or an edit made by hand between runs — with <msg> as the subject
 # and a Co-Authored-By trailer built from the name/email given (defaulting to
@@ -337,9 +339,10 @@ commit_suite_changes() {
     echo "run: commit_suite_changes: no co-author name/email — call co_author_for <provider> <model> first" >&2
     return 1
   fi
-  ( cd "$REPO" && git diff HEAD --quiet -- "regression-suite-*.md" \
-      && [ -z "$(git ls-files --others --exclude-standard -- "regression-suite-*.md")" ] ) && return 0
-  git -C "$REPO" add "regression-suite-*.md"
-  git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "regression-suite-*.md"
+  local paths=("regression-suite-*.md" "regression-perf")
+  ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
+      && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
+  git -C "$REPO" add -- "${paths[@]}"
+  git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOGS/loop.log"
 }

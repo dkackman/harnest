@@ -23,7 +23,8 @@ files described below. There is no build, lint, or test step.
   non-Claude name under `anthropic`, a Claude name under `ollama`) at startup. It also holds
   the helpers both drivers share: `validate_fallback_model`/`fallback_model_flags`,
   `co_author_for` (commit-trailer identity), `runtime_note` (the per-role "Runtime:" prompt
-  paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md`).
+  paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md` and
+  `regression-perf/`).
   Model choice is one knob per role: `MODEL`/`PROVIDER` are the defaults, `IMPLEMENTER_MODEL` /
   `TESTER_MODEL` / `REGRESSION_MODEL` (and `*_PROVIDER`) override per agent. Out of the box
   nothing changes: `opus` via Anthropic for every agent.
@@ -82,6 +83,17 @@ files described below. There is no build, lint, or test step.
   the three agents may delete or rewrite a case to make it go away, however expensive or
   low-value it looks from a single run; the only route to removing one is a comment/issue
   proposing it, labeled `owner:don` + `status:needs-approval`, left for a human to act on.
+  Measurements are the complement of that rule, not an exception to it: `regression-perf/`
+  holds one append-only JSONL per case (`S-P001.jsonl`, …; format in its `README.md`) where
+  the regression agent records every `-P` case's timing and any metric a functional case
+  declares with a `metrics:` line (a payload size, a count), pass or fail. That is what makes
+  "regression" a comparison rather than a feeling: with `baseline:` left `TBD` — the norm,
+  since no human ever set one — the agent flags a reading more than ~50% over the median of
+  the last 5 entries *or* of the full history for the same metric+condition (the second
+  catches slow creep); a human-set `baseline:` is a hard ceiling on top. Per-case files so an
+  agent reads only the history it needs, never the whole log. Checked in and committed by
+  the drivers alongside the suite files (#135 is where the old "record it in `last run:`"
+  instruction met the no-edit-on-pass rule and this replaced both).
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo). Tickets

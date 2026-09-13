@@ -23,9 +23,11 @@ intent + expected result, not a pinned tool/param name — confirm the exact
 call shape against the live tool schema each run, since the server evolves.
 This file only ever grows with new cases and fixtures; it holds the durable
 test, never a log of runs. A case that passes gets no edit — status for a
-failure lives on the GitHub Issue it produced, not as a note appended here
-(`last run:` lines already in this file predate that policy and are kept as
-history, not a model to continue). No agent may delete, weaken, or rewrite
+failure lives on the GitHub Issue it produced, and a measurement — a `-P`
+case's timing, or anything a case's `metrics:` line names — lives in
+`regression-perf/<case>.jsonl` (see `regression-perf/README.md`); neither is
+a note appended here (`last run:` lines already in this file predate that
+policy and are kept as history, not a model to continue). No agent may delete, weaken, or rewrite
 an existing case, including one it thinks has become too expensive or not
 worth what it costs — see "Removing a case" below.
 
@@ -34,7 +36,10 @@ worth what it costs — see "Removing a case" below.
 The implementer and the tester both grow these suites, not just the
 regression agent — see `regression-suite-smoke.md`'s "Where a case
 belongs" for which file. Use the existing case format (intent + `expected:`
-+ `cleanup:`), the next unused `M-Fnnn`/`M-Pnnn` ID, and a `source:` line
++ `cleanup:`, plus `metrics:` when a number the case yields — a size, a count
+— matters as a trend and should be logged in `regression-perf/`; seed that
+file with the reading you just took, and do the same for a new `M-P` case's
+timing), the next unused `M-Fnnn`/`M-Pnnn` ID, and a `source:` line
 naming who added it and why (e.g. `source: implementer, fix for #42` or
 `source: tester, found while running TESTER_TASK.md`). Name the
 model/pipeline/checkpoint the case depends on explicitly in its body — a

@@ -33,9 +33,11 @@ intent + expected result, not a pinned tool/param name — confirm the exact
 call shape against the live tool schema each run, since the server evolves.
 This file only ever grows with new cases and fixtures; it holds the durable
 test, never a log of runs. A case that passes gets no edit — status for a
-failure lives on the GitHub Issue it produced, not as a note appended here
-(`last run:` lines already in this file predate that policy and are kept as
-history, not a model to continue). No agent may delete, weaken, or rewrite
+failure lives on the GitHub Issue it produced, and a measurement — a `-P`
+case's timing, or anything a case's `metrics:` line names — lives in
+`regression-perf/<case>.jsonl` (see `regression-perf/README.md`); neither is
+a note appended here (`last run:` lines already in this file predate that
+policy and are kept as history, not a model to continue). No agent may delete, weaken, or rewrite
 an existing case, including one it thinks has become too expensive or not
 worth what it costs — see "Removing a case" below.
 
@@ -43,7 +45,10 @@ worth what it costs — see "Removing a case" below.
 
 The implementer and the tester both grow these suites, not just the
 regression agent — see "Where a case belongs" above for which file. Use the
-existing case format (intent + `expected:` + `cleanup:`), the next unused
+existing case format (intent + `expected:` + `cleanup:`, plus `metrics:` when a number
+the case yields — a size, a count — matters as a trend and should be logged
+in `regression-perf/`; seed that file with the reading you just took, and do
+the same for a new `-P` case's timing), the next unused
 `S-Fnnn`/`S-Pnnn` ID, and a `source:` line naming who added it and why
 (e.g. `source: implementer, fix for #42` or `source: tester, found while
 running TESTER_TASK.md`). No separate approval step — the regression agent
@@ -453,9 +458,16 @@ expected: three independent assertions, each a default call and its drill-down.
    carry `traits`, `cost`, `kinds`, `variable_names` and (where the workflow is
    list-driven) `lists` again. Both directions matter: a summary that never
    expands is as broken as a default that never summarises.
-Record the measured size of 1 and 3 in the `last run:` note. The point of #101
-was the number, so a slow creep back up is the thing this case exists to catch,
-and only a recorded baseline makes it visible.
+metrics: `bytes` of 1 (`condition: guide-index`) and of 3's summary answer
+(`condition: catalog-summary`), logged to `regression-perf/S-F015.jsonl` — the
+point of #101 was the number, and a slow creep back up is what this case exists
+to catch, so those two are compared against their history per the regression
+agent's rule as well as against the ceilings here: guide index under 3 KB (above),
+catalog summary under **20 KB** (~12 KB at 71 entries; a catalog that has
+legitimately outgrown that is a `baseline:`-style needs-approval ask, not a
+silent edit). Also log `get_schema()`'s full size (`condition: schema-full`) for
+the trend, but no ceiling on it: it's on-request, and its size is the schema's
+honest size — the guard against it is `section=`, which item 2 already checks.
 Note `view`/`note` are absent rather than `view: "full"` on the filtered answer —
 that is current behavior as of 0.4.0-beta.3, not a finding; key on
 `view == "summary"`.

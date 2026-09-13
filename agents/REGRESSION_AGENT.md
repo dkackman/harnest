@@ -89,11 +89,25 @@ running.
 3. Execute every case in the file, in order, against your level's workspace:
    - **Functional case**: make the call(s) described, compare the actual
      result against the case's `expected:`. Pass or fail.
-   - **Performance case**: make the call(s), measure wall-clock time for the
-     operation itself (not queue/startup overhead), compare against the
-     case's `baseline:`. Flag as a regression if it materially exceeds the
-     baseline (more than ~50% slower, or an explicit ceiling in the case is
-     crossed) — small run-to-run noise is not a finding.
+   - **Performance case**: make the call(s), measure the operation itself
+     (not queue/startup overhead) — the job's own `started_at`→`finished_at`
+     whenever the case yields a job, wall clock only when it doesn't, and
+     say which (`condition`) — then compare against history and record
+     the reading. Same for a functional case that carries a `metrics:`
+     line: run its checks as usual, and measure and record each named
+     metric too. History lives in `regression-perf/<case>.jsonl`
+     (format in `regression-perf/README.md`); read that one file, not the
+     directory. A reading is a regression when it crosses an explicit
+     ceiling in the case, or — with `baseline:` still `TBD` or absent — when
+     it is more than ~50% over the median of the last 5 entries with the
+     same `metric` + `condition` **or** more than ~50% over the median of
+     every entry with that key; the second clause is what catches slow
+     creep that a short window hides. A `baseline:` a human has set is a
+     hard ceiling on top of that. Fewer than 3 prior entries: record and
+     move on, nothing to compare yet. Small run-to-run noise is not a
+     finding. Record the reading either way, pass or regression — append
+     it as the last line of that case's file, one line per
+     `metric`+`condition`, never rewriting or dropping a line already there.
    - **Then its `cleanup:` line**: delete what the case made, unless it's
      being kept for a repro. A delete that fails, or an output that still
      lists after deletion, is a finding in its own right — file it, don't
@@ -133,16 +147,21 @@ running.
      — functional or performance, within its baseline — gets no edit at all:
      the suite describes a durable test, not a log of runs, and "no news" is
      what a healthy case looks like. Status lives on the issue a failure
-     produced (step 4), never as a note appended to the case. Don't rewrite
-     a case's `baseline:` yourself if a passing run's timing drifted, either
-     — that's a human or implementer call to make deliberately, and it isn't
-     a regression if step 4 didn't just flag it as one.
+     produced (step 4), and measurements live in `regression-perf/` (step
+     3) — never as a note appended to the case. Don't rewrite a case's
+     `baseline:` yourself if a passing run's timing drifted, either — that's
+     a human or implementer call to make deliberately, and it isn't a
+     regression if step 3 didn't just flag it as one.
    - If, while exercising the suite, you notice an adjacent basic capability
      that isn't covered yet (a template, an error path, a common parameter
      combination) and it belongs at this level, append a new test case at
      the end of the relevant section, with the next unused ID for this
      file's prefix (`S-`/`C-`/`M-`/`SE-`) and a `baseline:` of "TBD — first run"
-     for performance cases. If it belongs at a *different* level instead
+     for performance cases (the log, not a human, then supplies the working
+     baseline — seed the case's `regression-perf/` file with the reading
+     you just took). A functional case whose *number* matters as much as
+     its pass/fail (a payload size, an entry count) gets a `metrics:` line
+     naming each metric and its `condition`, and is measured the same way. If it belongs at a *different* level instead
      (e.g. you're running `smoke` but the gap you found is niche/model-tied),
      add it to that level's suite file instead, with *that* file's prefix —
      see `regression-suite-smoke.md`'s "Where a case belongs" section for
@@ -163,9 +182,10 @@ running.
    labeled `owner:tester` or `owner:don` — that's the tester's and
    implementer's business in the main loop. Your only write actions are:
    `create_workspace`/calls against your level's workspace (including
-   deleting its own outputs/assets there), `gh issue create`/`comment`, and
+   deleting its own outputs/assets there), `gh issue create`/`comment`,
    *adding* cases/fixtures to suite files — never editing or removing an
-   existing case.
+   existing case — and *appending* readings to `regression-perf/<case>.jsonl`
+   — never rewriting or removing a line already there.
 8. Don't poll or wait inside the session. One pass through the suite file
    for your level, then exit — you're invoked on a schedule
    (`run-regression.sh` or a cron/loop wrapper around it), not looping
