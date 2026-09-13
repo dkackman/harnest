@@ -658,4 +658,54 @@ over MCP as model `opus` via provider `anthropic`, workspace `qa-ep10`, dw
 0.4.0-beta.3 — job `6f3ae9e60d4d`, 0.6 s, bed 14.5 s / 32 kHz / mono, envelope
 −50.8 … −47.8 dBFS across all 15 entries.
 
+### C-F018 — `match_levels` moves the shots to the level the caller asked for
+C-F001 pins the `rms` default (-20 dBFS). The other two halves of the same control
+are untested and are what a caller reaching for it actually sets: the `peak`
+measure, and `match_levels_dbfs` overriding the target. A target that is accepted
+and then ignored is silent — the join succeeds, the levels are merely even at the
+wrong place, and only this metadata call shows it. Task-only, loads no model, uses
+the C-F001 fixtures.
+expected: one inline `concat_videos` step over the two C-F001 fixtures with
+`match_levels: "peak"` and `match_levels_dbfs: -6` succeeds with `warnings: []`
+(matching suppresses the `level_spread` warning, as in C-F001's matched step), and
+`get_gallery_metadata` on the output reports `peak_dbfs` within ~0.1 dB of **-6.0**
+— not the -1.0 `peak` default, and not the inputs' own -1.5. `fps: 24.0`, 248
+frames and `duration_seconds` ≈ 10.33 are unchanged: a level pass must not touch
+the picture.
+It is a **finding** if `peak_dbfs` lands on -1.0 (the default won over the
+explicit argument), on the inputs' own peak (the match did not run), if the
+`level_spread` warning fires anyway, or if the frame count or rate moves.
+cleanup: delete the joined output. Keep the two input assets (fixtures).
+source: regression agent, found while running C-F001/C-F002 on 2026-09-13 — the
+suite pinned only the `rms` default. Measured over MCP as job `b80244bd5b1a`,
+model `opus` via provider `anthropic`, dw 0.4.0-beta.3: `peak_dbfs` -5.9987,
+`mean_dbfs` -23.87, 24.0 fps / 248 frames / 10.334 s, `warnings: []`.
+
+### C-F019 — `dissolve_videos` shortens the cut by one overlap per seam
+Nothing in this suite exercises `dissolve_videos` at all, and it is the other join
+task: `concat_videos` cuts, this melts. Its arithmetic is the part that breaks
+quietly — every seam overlaps two shots, so the result is the summed frames *minus*
+one `dissolve_frames` per seam, and the soundtrack has to be crossfaded over
+exactly that span or it walks off the picture. A wrong frame count here is the
+number a caller then sizes a score slice to (see C-F016), so the error propagates
+into a silently mis-scored film rather than a failed job. Task-only, loads no
+model, uses the C-F001 fixtures.
+expected: one inline `dissolve_videos` step over the two 124-frame C-F001 fixtures
+with `dissolve_frames: 12`, `fps: 24` and `match_levels: "rms"` succeeds, and
+`get_gallery_metadata` on the output reports **236 frames** (248 − 12, *not* 248),
+`fps: 24.0`, and `duration_seconds` ≈ **9.83** — 236/24, i.e. the audio is the same
+length as the picture rather than the un-overlapped 10.33 s. `sample_rate: 32000`,
+`channels: 2`, and `mean_dbfs` on the `rms` target (-20 dBFS) as C-F001's matched
+step.
+It is a **finding** if the frame count is 248 (the overlap was not removed from the
+picture) or the duration is 10.33 s against 236 frames (removed from the picture but
+not the sound, which is the drift the whole-cut version of this bug accumulates over
+a dozen seams), if `dissolve_frames: 0` stops being a plain hard cut, or if the task
+refuses the pair.
+cleanup: delete the dissolved output. Keep the two input assets (fixtures).
+source: regression agent, found while running C-F001/C-F002 on 2026-09-13 —
+`dissolve_videos` had no coverage at any level. Measured over MCP as job
+`b80244bd5b1a`, model `opus` via provider `anthropic`, dw 0.4.0-beta.3: 236 frames
+/ 24.0 fps / 9.834 s / 32 kHz stereo, `mean_dbfs` -19.81, in 1.7 s.
+
 ## Performance
