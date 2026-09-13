@@ -100,14 +100,76 @@ nothing knows better.
 Worth a second assertion in the same job if it is cheap: declare
 `result.fps: 8` on an otherwise identical step and expect the job to carry an
 `fps_mismatch` warning (both channels, as C-F001) — deliberate slow motion
-stays available, it just says so. Do not assert the warning's prose; as of
-0.4.0-beta.3 it states the speed factor inverted (#88).
+stays available, it just says so. Assert the structured fields
+(`kind: "fps_mismatch"`, `declared_fps: 8`, `source_fps: 24`) **and**, since
+#88, the prose: it must say `0.33x speed` and must not say `3x speed`. A
+third step declaring `result.fps: 48` should say `2x speed` — the factor is
+`declared/source`, and the two directions together are what catch it being
+re-inverted, which one direction alone cannot.
 cleanup: delete the joined output(s). Keep the two input assets (fixtures).
 source: tester, verified in #84 (implementer proposed the case; added here
 after running it as job `a8488310d953`, model `opus` via provider
 `anthropic`).
 last run: (not yet run by the regression agent — first observed 2026-09-12 in
 job `a8488310d953`: `fps: 24.0`, 248 frames, 10.334 s against 10.334 s of
-audio, where the same step wrote 8.0 / 31.0 s before the fix.)
+audio, where the same step wrote 8.0 / 31.0 s before the fix. Prose half
+first observed 2026-09-13 on 0.4.0-beta.3, jobs `59bbb88ac014` (declared 8:
+`will play 0.33x speed (3 times as long)`) and `a3783461e87a` (declared 48:
+`2x speed (0.5 times as long)`), 3.5 s and 2.6 s, no GPU time.)
+
+### C-F003 — validation resolves a sub-workflow path, and refuses a cycle
+Three `validate_workflow` calls, no run, no GPU:
+1. a one-step workflow composing a sub-workflow `path` that resolves
+   nowhere (`templates/does-not-exist-at-all`);
+2. one composing an absolute path outside every source the server lists
+   (`/etc/passwd`), placed at a step that is **not** the first;
+3. a composition cycle built on disk: save a leaf workflow `B`, save `A`
+   composing `B`, then overwrite `B` to compose `A`; validate `A`.
+expected: (1) `valid: false`, one error at `steps[0].workflow.path`, message
+naming every candidate path it looked at; (2) `valid: false`, error at the
+offending step's own index, not step 0; (3) `valid: false` with the
+resolution chain in the message, **and** `run_workflow` on `A` refused at
+queue time with the same error — no job created. Also assert the cheap
+warning half: composing a real template with an argument name it declares
+no variable for is a `warning` (not an error) at
+`steps[N].workflow.arguments.<name>`, listing the declared names.
+The point is that all of this is free and pre-flight. The regression is
+`valid: true` — silent, and paid for later by a queued job that dies after
+the expensive steps have already run.
+cleanup: delete the `A`/`B` probe workflows from the workspace. No outputs.
+source: tester, verified in #89 (run over MCP 2026-09-13 as the calls above,
+model `opus` via provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: all three as expected; the cycle error reads `... composes a
+workflow that is already composing it - a cycle: B -> A -> B` at path
+`steps[0].workflow.path -> steps[0].workflow.path -> steps[0].workflow.path`.
+Note `save_workflow` accepts the write that *creates* the cycle, because at
+that moment the child on disk is still the leaf; validate and run both catch
+it immediately after, so no job can start. Do not assert a failure at save.)
+
+### C-F004 — a stored template composes by catalog name, and saves once
+One workflow, two steps, each composing the same cheap stored template
+(currently `templates/text-to-image`) **by its catalog name, with no copy of
+it in the run's workspace**, each parent step declaring its own
+`result: {content_type: ..., subfolder: "intermediate"}` while the composed
+workflow's own step also declares a `result`. Give the two steps different
+arguments so the second cannot be served from the step cache.
+expected: the run succeeds — the name resolves from the read-only examples
+source, which is the half that was broken (#90) — and it writes **one file
+per step, two in total**: `list_gallery` for the run totals 2, both under
+`intermediate`, nothing in the run root with `subfolder: ""`, no
+byte-identical twin, no `-2` collision suffix. `get_job`'s manifest carries
+exactly two entries, keyed on the **parent's** step names, not the composed
+workflow's step name (#92).
+Two regressions in one cheap run, and both are quiet: an unreachable
+template forces every consumer to keep a private copy that silently stops
+tracking the original, and a doubled save costs storage and a shadowed
+manifest key on every composed run without ever failing a job.
+cleanup: delete both outputs.
+source: tester, verified in #90 and #92 (run over MCP 2026-09-13 as job
+`04c6bf9908d4`, model `opus` via provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3, job `04c6bf9908d4`, 17.7 s for both steps including SD1.5 load:
+manifest `left`/`right`, gallery total 2.)
 
 ## Performance
