@@ -84,11 +84,13 @@ implementer's territory), not in a live-server run:
 - Link-local/RFC1918 SSRF targets other than loopback: a fetch to
   `169.254.169.254` on a LAN with no such host hangs until the 300 s
   request timeout, which would stall the run; loopback (SE-F018) proves
-  the same policy gap without the wait. **2026-09-13: SE-F018 now fails —
-  loopback *is* fetched — so this exclusion no longer rests on "loopback is
-  refused, therefore link-local is too". It stays excluded only because the
-  probe would stall the run, not because the boundary is believed to hold.
-  Treat link-local as reachable until #115 is fixed.**
+  the same policy gap without the wait. (2026-09-13 earlier: SE-F018 failed —
+  loopback *was* fetched — so for one run this exclusion rested on nothing but
+  the stall. **2026-09-13 later: #115 fixed and verified, SE-F018 passes, and
+  the refusal message names link-local explicitly alongside loopback and
+  private ranges. The original reasoning is restored** — this stays excluded
+  because the probe would stall the run, and the boundary is again believed to
+  hold on SE-F018's evidence.)
 - A 25,000-character variable value (SE-F022 probe (b)) as a single literal:
   the agent cannot emit one inside a tool call without blowing its output
   budget. The schema has no `maxLength` on argument values at any level, so
@@ -105,8 +107,13 @@ when nothing uses it anymore.
 Repro artifacts currently held in `regression-security` for open issues (not
 fixtures — delete when the issue closes):
 
-- `se-f014a/20260913-180107-93dc1e80/se_f014a-0.0.jpg` — #114 (SE-F014).
-- `se-f015a/20260913-180259-d39c88a3/se_f015a-*.jpg` (5 files) — #116 (SE-F015).
+- (none — the six held for #114 and #116 were deleted 2026-09-13 when those
+  issues were verified and closed. `list_gallery(workspace="regression-security")`
+  should report `total: 0`.)
+
+Still on `lem` outside every workspace, from the 2026-09-13 SE-F016 run, and
+not removable by a consumer-only agent — asked for in #113:
+`/tmp/dw-se-f016-probe.jpg`, `/home/don/dw-se-f016-probe.jpg`.
 
 ## Code execution gate (default: untrusted)
 
@@ -120,15 +127,20 @@ any import: the message should say the workflow is untrusted / outside the
 ecosystem. `ModuleNotFoundError`, `ImportError`, `AttributeError` on the
 probe name, or any trace of the probe having executed, is a fail.
 
-### SE-F001 — server states its security posture
-`get_server_info` (or whatever the live schema calls it).
-expected: the response says whether auth is required (`auth_required`
-true on the regression target — it runs with a token) *and* whether
-workflows are trusted, so this suite can confirm it's testing the untrusted
-default rather than assuming it. If the trust posture isn't reported, that
-is the finding: file it as "server doesn't expose trust posture; security
-suite can't verify it's running on defaults", and run the rest of the
-suite anyway, noting the assumption in every `last run:`.
+### SE-F001 — server states its security posture — **RUN THIS FIRST**
+This is the precondition for the whole file, not one case among many. Every
+other case here is defined to run on the default untrusted posture, and every
+refusal they check for names `--trust-workflows` as the way to turn it off. A
+pass on a trusted server therefore means nothing.
+`get_server_info`.
+expected: the response carries `auth_required` (true on the regression target —
+it runs with a token) *and* `trust_workflows`. **If `trust_workflows` is
+`true`, stop: do not run the rest of this file and do not report passes.** If
+the field is absent, that is the finding — file it as "server doesn't expose
+trust posture; security suite can't verify it's running on defaults", run the
+rest anyway, and note the assumption in every `last run:`.
+Reporting the field is not itself a disclosure: the refusal messages already
+name the flag.
 cleanup: none (read-only).
 source: harness, initial security suite 2026-09-13.
 last run: 2026-09-13 FAIL (opus/anthropic, v0.4.0-beta.3) — `auth_required:
@@ -137,6 +149,13 @@ true` is reported; there is no trust-posture field on `get_server_info` or
 this run: SE-F002–F007 all returned the explicit "…outside the ecosystem …
 Pass --trust-workflows" message, which only appears untrusted. So the
 2026-09-13 results are known to be on defaults, not assumed.
+
+2026-09-13 later (opus/anthropic, v0.4.0-beta.3) **PASS — #120 fixed, closed.**
+`get_server_info()` → `"auth_required": true, "trust_workflows": false`. The
+field's meaning is in the tool description too. Promoted to the file's
+precondition, per the fix's own proposal — from here on the suite reads the
+posture rather than inferring it, which is what lets a later run tell a fix
+from a posture change.
 
 ### SE-F002 — dotted `*_type` outside the ecosystem is refused
 `validate_workflow` (then `run_workflow` if validation lets it through)
@@ -296,6 +315,35 @@ load completed (phase `loading` at 0.7s, `iteration_start` 2.2s) *before*
 the request, so it is also refused far too late. (c) deliberately not run,
 per the note above.
 
+2026-09-13 later (opus/anthropic) **PASS — #112 fixed, closed.** All refused at
+`validate_workflow`, free, before any load. (a) `file:///etc/hostname` →
+`valid: false` at `steps[0].pipeline.remote_text_encoder.url`, "its scheme is
+'file', and an untrusted workflow may only reach an https endpoint - the
+request carries this machine's HuggingFace token". (b)
+`http://127.0.0.1:8765/api/server` → refused on the same scheme rule, so it
+never reaches the host rule. (c) `https://127.0.0.1:8765/encode` → refused on
+the host rule: "127.0.0.1 resolves to 127.0.0.1, an address inside this
+deployment (loopback, link-local or private)".
+Two probes added to this case from here on, both cheap:
+- **hostname, not literal** — `https://localhost:8765/encode` → refused,
+  "localhost resolves to 127.0.0.1". This is the one that proves the check is
+  on the *resolved* address; a rule that only pattern-matched `127.0.0.1`
+  would pass every other case in this list and fail here.
+- **control** — `https://huggingface.co/encode` → `valid: true`, plan
+  returned. Without this the case cannot tell a policy from the feature having
+  been disabled outright.
+The credential-scoping half of the fix (token attached only for
+`huggingface.co` / `huggingface.cloud` / `hf.space`) is **not observable from
+a consumer** and is deliberately not probed — observing it is exactly the
+exfiltration this case exists to prevent. It belongs in the dw repo's pytest
+suite. The original external-host form of probe (c) stays retired permanently.
+A shape note for whoever runs this next: `remote_text_encoder` sits on a
+`pipeline` object, which requires `configuration` (with `component_type`),
+`from_pretrained_arguments` and `arguments` — a draft missing those fails
+schema validation before the URL is ever looked at, which reads like a pass
+and is not one. Confirm the error path is
+`steps[0].pipeline.remote_text_encoder.url`.
+
 ## Filesystem containment
 
 Every name a tool takes that becomes a path on the server must resolve
@@ -426,6 +474,31 @@ purely by existence, which is the documented fail condition. Repro artifact
 `se-f014a/20260913-180107-93dc1e80/se_f014a-0.0.jpg` kept for #114.
 `from_file` not probed separately this run.
 
+2026-09-13 later (opus/anthropic) **PASS — #114 fixed, closed.** Repro artifact
+deleted. (a) and (b) are now refused **identically** at `validate_workflow`,
+messages differing only in the path: "Refusing to read 'image' at '<path>': it
+resolves outside every directory this workflow may read (…5 roots listed…).
+Put the file in the asset library and name it with an 'asset:' reference".
+Existence-independent, so no oracle and no read.
+Two additions to this case:
+- **Probe a task argument as well as a pipeline one.** `get_image_size` (an
+  image processor — loads no model, runs in ~3 s, costs nothing) with the same
+  absolute path → identical refusal at `steps[0].task.arguments.image`. This
+  is how the case checks the policy sits in the loader rather than on the
+  pipeline path, and it is far cheaper than the img2img form, which wants a
+  12 GB `stabilityai/sd-turbo` download.
+- **Probe the relative spelling too**, and score it separately:
+  `image: "../../../../../usr/share/pixmaps/debian-logo.png"`. Containment
+  holds — 2026-09-13 job `70f3f2ea57bc` failed at 3.0 s with
+  `PathTraversalError`, nothing read — but `validate_workflow` returns
+  `valid: true` for it, where the absolute form and `gather_images`' glob
+  (SE-F015) both refuse at validation. Filed as **#124**, low severity, open.
+  Until it lands, `valid: true` on the relative form is expected; a *run* that
+  succeeds is a fail and is the real escape.
+Noted, not filed: the refusal message enumerates five absolute server paths.
+Judged acceptable — a refusal a caller can act on has to say where it may
+read, and `get_server_info().directories` already reports four of them.
+
 ### SE-F015 — `gather_images`/`gather_videos` glob can't leave the workspace
 Inline task-only workflow (no model) whose `gather_images` step has
 `glob: "/usr/share/pixmaps/*.png"` — bounded, cheap, and outside every dw
@@ -452,6 +525,22 @@ Directory enumeration plus bulk exfiltration in one ~1s call, no cost, no
 model load. Second probe not run, per the note above. 5 repro artifacts
 under `se-f015a/20260913-180259-d39c88a3/` kept for #116. `gather_videos`
 not probed — see SE-F024.
+
+2026-09-13 later (opus/anthropic) **PASS — #116 fixed, closed.** 5 repro
+artifacts deleted. Both spellings refused at `validate_workflow`, nothing
+queued. `glob: "/usr/share/pixmaps/*.png"` → "Refusing a glob argument
+'/usr/share/pixmaps/*.png': it **expands under** /usr/share/pixmaps, outside
+every directory this workflow may read (…). Glob inside the asset library" —
+note it reports the expansion root rather than the pattern, which is the right
+thing to check, since the pattern's literal prefix decides where it walks.
+`glob: "../../../../../usr/share/pixmaps/*.png"` → "it contains a '..' path
+segment". The conditional `"../../**/*.png"` probe is now **covered by the
+`..` rule without being run**, and should stay unrun: while it was broken it
+would have walked every workspace including the tester's `qa-*`. Never use an
+unbounded pattern here.
+Cross-reference for a future run: this loader rejects `..` at validation and
+the media-argument loader (SE-F014) does not — same policy, two moments.
+That inconsistency is #124.
 
 ### SE-F016 — `download_output` can't write outside the server's roots
 This tool "downloads to local disk". When the MCP server is mounted inside
@@ -480,6 +569,23 @@ server-side into the operator's home. Only the `..` probe was refused
 is a substring test that an absolute path simply doesn't need. **Two files
 left on `lem` that this agent cannot delete** (named in #113):
 `/tmp/dw-se-f016-probe.jpg` and `/home/don/dw-se-f016-probe.jpg`.
+
+2026-09-13 later (opus/anthropic) **PASS — #113 fixed, closed.** All three
+refused; nothing written, so this run left nothing behind. `/tmp/…` →
+"Refusing to write /tmp/dw-se-f016-probe2.jpg - this MCP endpoint is served by
+dw.serve, so the file would land on the server, where a destination is
+confined to the workspace (/home/don/diffusers-workspace). Pass a relative
+destination, or …". `~/…` → refused, and the message shows the `~` **already
+resolved** to `/home/don/…`, i.e. expanded before the containment test rather
+than after, which is what previously let it through. `/tmp/../tmp/…` → still
+refused on the `..` rule.
+A legal **relative** destination is deliberately **not** probed by this case:
+the only way to test it is to write a file into the workspace on `lem` that a
+consumer-only agent has no tool to remove. That leg belongs in the dw repo's
+pytest suite — see "Not covered here". Every probe here is a refusal, which is
+what keeps the case clean to re-run.
+The two files from the earlier run are still on `lem`; removal asked for in
+#113 before closing it.
 
 ## Network egress
 
@@ -529,6 +635,18 @@ wrapped it in `BytesIO` and handed it to PIL. Only the body not being an
 image stopped the job. Consequence recorded in "Not covered here": the
 `169.254.169.254` exclusion no longer rests on loopback being refused.
 
+2026-09-13 later (opus/anthropic) **PASS — #115 fixed, closed.** `image:
+"http://127.0.0.1:8765/api/server"` → `valid: false` at
+`steps[0].pipeline.arguments.image`: "Refusing to fetch 'image' from '…':
+127.0.0.1 resolves to 127.0.0.1, an address inside this deployment (loopback,
+link-local or private). A workflow may not use the server to reach its own
+network." Refused at validation, by host policy, naming the resolved address.
+The same policy object answers for `remote_text_encoder.url` (SE-F009), where
+the hostname form (`localhost`) is confirmed caught as well — so this is one
+implementation, not two that happen to agree. **The `169.254.169.254`
+exclusion in "Not covered here" is restored**: it rests on loopback and
+link-local being refused again, and this case is what keeps it standing.
+
 ### SE-F019 — model identifiers are Hub repo ids, not paths or URLs
 `download_model` (with `acknowledged_cost` true — the probe must reach the
 validator, and an invalid id never downloads) with `repo_id` values
@@ -550,6 +668,23 @@ nor a valid repo id"), so no escape was demonstrated — the gap is that dw
 doesn't apply its own `repo_id` check to workflows, leaving containment to
 a third party's parsing. A real model directory anywhere readable would
 load by absolute path.
+
+2026-09-13 later (opus/anthropic) **PARTIAL — three of four shapes fixed, #117
+bounced back to the implementer, still open.** `download_model` still passes
+all four. `validate_workflow` on
+`steps[].pipeline.from_pretrained_arguments.model_name` now refuses three:
+`/etc/passwd` → "resolves outside every directory this workflow may read";
+`org/name/../../x` and `../../etc` → "Path contains dangerous pattern matching
+`\.\.`". **Still `valid: true`: `http://127.0.0.1:8765/` and
+`https://evil.example.com/model`**, both with `downloads_required: []` — the
+URL shape is not being read as a repo id at all. No escape demonstrated (as
+when filed, diffusers refuses it downstream), so this stays low severity, but
+the fourth shape falling through is now a sharper inconsistency than when all
+four did. Score this case FAIL until the URL shape refuses.
+Note the argument's real location while you are here: `model_name` lives under
+`from_pretrained_arguments`, not on the `pipeline` object. A `model_name`
+written at pipeline level is **silently ignored** today (#123) — so a probe
+placed there proves nothing and will read as a false pass.
 
 ## Secrets and disclosure
 

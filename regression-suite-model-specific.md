@@ -71,10 +71,17 @@ sample rate with the expected frame count (2 x `num_frames`), and each shot visi
 referenced cast.
 It becomes a **finding** if the free form stops validating, or if the run fails on a reference the
 validator accepted.
-Record rather than assert, until #109 is resolved: the manifest still contains
-`draw_character_a`/`draw_character_b` entries whose portraits nothing references (~55 s of Z-Image
-per run). If #109 lands as "a step nothing references does not run" or as portrait variables, those
-manifest entries should disappear, and this case should then assert their absence.
+Also assert, from 2026-09-13: `get_workflow("templates/minimax/dialogue-short")`'s **description**
+mentions `from_file` with an `asset:` path for a subject reference, *and* says the two Z-Image steps
+still run and their portraits are discarded. The capability being documented is half of what #109
+bought; a refactor that keeps the behaviour but drops the sentence puts the next reader back where
+this case started, which is why the text is asserted and not just the behaviour. The `dw:minimax-h3`
+skill carries the same thing in its `shots` entry description.
+Record rather than assert, until **#122** is decided (it is `status:needs-approval`, parked with
+Don; #109 itself is closed): the manifest still contains `draw_character_a`/`draw_character_b`
+entries whose portraits nothing references (~55 s of Z-Image per run). **If #122 is approved this
+case changes** — those manifest entries should disappear and a run warning should name each elided
+step. Read that as the approved change, not as a regression.
 cleanup: the free form writes nothing. For the paid form, delete the run's outputs; keep no
 fixtures beyond the portrait/voice assets the case needs, which belong in Fixtures if this becomes
 a regular run.
@@ -82,5 +89,45 @@ source: tester, found while running TESTER_TASK.md on 2026-09-13 (episode 7, job
 894.1 s against a 16.8 min `derived` quote, two shots, every reference `from_file`), filed as #109.
 Model `opus` via provider `anthropic`.
 last run: (not yet run by the regression agent — first observed 2026-09-13 on 0.4.0-beta.3.)
+
+2026-09-13 later, paid form, PASS (opus/anthropic) — episode 8, job `2df5f1ff06f2`, **756 s**
+against the same 16.8 min `derived` quote, two shots, every reference `from_file`
+(`asset:qa-cast/priya-portrait.jpg`, `asset:qa-cast/hal-portrait.jpg`, and the two voice wavs).
+`final/…episode.4-0.0.mp4`: 10.35 s, 248 frames (2 x 124), 24 fps, 960x544, 32 kHz stereo, peak
+−2.6 dBFS, mean −23.2 dBFS. No job warnings. Both `draw_character_*` entries present in the
+manifest under `intermediate/` and unreferenced, as recorded above. The documentation assertion
+passes on both surfaces.
+
+### M-F002 — H3 reports one fewer denoise step than `num_inference_steps`, and that is correct
+The MiniMaxH3 scheduler counts sigma **grid points**, terminal zero included: the grid is
+`linspace(1, 0, num_inference_steps)` with consecutive duplicates collapsed, and it drives
+`num_inference_steps - 1` model evaluations, exposed as `timesteps = 1 - sigmas[:-1]`. H3's denoise
+block sizes its progress bar on `len(timesteps)` and dw reports that verbatim. So a requested 9
+reports 8 and a requested 20 reports 19.
+This case exists to record **expected behaviour with its reason**, so the next tester finds the
+explanation before they find the anomaly. It was filed as a suspected dropped step or off-by-one
+(#110) and cost a cycle to resolve.
+expected: run any H3 template with `num_inference_steps: 9` (or leave `dialogue-short`'s default)
+and poll `wait_for_job` → `progress.denoise_total_steps == 8`, with `denoise_step` reaching 8
+before `phase: "decoding"`. With `num_inference_steps: 20` → `denoise_total_steps == 19`. In a
+`for_each` shot step every member reports the same total.
+It is a **finding** if the offset is anything other than exactly one, if it varies between members
+of one run, or — the hypothesis that was ruled out and is the one with a real consequence — if
+`denoise_total_steps` **stops tracking** `num_inference_steps` and pins at 8 regardless. That last
+would mean the 8-step turbo LoRA is fixing the schedule and a caller raising the step count to buy
+quality is paying for nothing. It is not happening today: 20 → 19 is what rules it out.
+`denoise_total_steps` is the correct denominator for pacing a run; `num_inference_steps` is not
+the step count.
+Documented on the consumer surface in `wait_for_job`'s tool description and in the `dw:minimax-h3`
+skill's hard-rules block, and pinned server-side by
+`tests/test_plugin_skills.py::TestMiniMaxH3Skill::test_the_denoise_step_count_is_the_scheduler_s`.
+Assert the skill sentence too — the two are indistinguishable from outside, so the documentation
+going quietly wrong is the failure mode this case guards.
+cleanup: none beyond the host run's own (this rides along on any H3 run; do not spend a run on it
+alone).
+source: tester, verified in #110 on 2026-09-13 over MCP as model `opus` via provider `anthropic` —
+job `2df5f1ff06f2` (`dialogue-short`, `num_inference_steps: 9`, workspace `qa-ep8`), both
+`shot@padlock` and `shot@key` reporting `denoise_total_steps: 8`. The 20 → 19 leg is from the
+earlier ep6 `ref2va` run recorded in #110, not re-run here.
 
 ## Performance

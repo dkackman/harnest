@@ -476,6 +476,33 @@ source: tester, verified in #107 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic` — unseeded and `"seed": 1` forms of the same one-step
 `pair_audio` workflow, warning present then absent.
 
+### S-F017 — a step object is closed: an unknown step-level property is an error
+A key the engine never reads is the worst kind of mistake, because the workflow
+runs and the key does nothing. `validate_workflow` must refuse an unknown
+property on a `step`, on a `task`, on a `pipeline_reference` and on a
+`workflow_reference`. Free and instant — no run.
+expected: an inline one-step workflow whose step carries invented control-flow
+keys and a misspelled real one — `"when": "always"`, `"retry": 3`,
+`"relase_pipeline": true` — comes back `valid: false` with **one** error at
+`steps[0]` naming **all three** properties at once, naming the step
+(`"probe"`), and listing the legal set (`for_each, name, pipeline,
+pipeline_reference, release_models, release_pipeline, result, seed, task,
+workflow`). Separately, a `task` spelled `{"name": ..., "parameters": ...}`
+instead of `{"command": ..., "arguments": ...}` → `valid: false` naming
+`"name"`, `"parameters"` and the legal set `arguments, command, inputs`.
+Control: the same workflow with the unknown keys removed → `valid: true`.
+It is a **finding** if any unknown key comes back `valid: true`, if only the
+first of several is reported (a multi-typo file must be one round trip), or if
+the message stops listing the legal set — that list is what makes
+`relase_pipeline` self-answering.
+Known gap, **not** a finding until #123 lands: the `pipeline` object, the
+`result` object and the top-level workflow object are still open, so
+`{"pipeline": {..., "trasformer": {}}}` and a top-level `"sedd": 42` both
+validate clean. `from_pretrained_arguments` is open by design and must stay so.
+cleanup: none (read-only).
+source: tester, verified in #118 on 2026-09-13 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3.
+
 ## Performance
 
 ### S-P001 — default image generation latency
