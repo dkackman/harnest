@@ -510,9 +510,9 @@ Two additions to this case:
   holds — 2026-09-13 job `70f3f2ea57bc` failed at 3.0 s with
   `PathTraversalError`, nothing read — but `validate_workflow` returns
   `valid: true` for it, where the absolute form and `gather_images`' glob
-  (SE-F015) both refuse at validation. Filed as **#124**, low severity, open.
-  Until it lands, `valid: true` on the relative form is expected; a *run* that
-  succeeds is a fail and is the real escape.
+  (SE-F015) both refuse at validation. Filed as **#124**, low severity;
+  landed and verified 2026-09-13 — the relative form now refuses at
+  validation, same as the others.
 Noted, not filed: the refusal message enumerates five absolute server paths.
 Judged acceptable — a refusal a caller can act on has to say where it may
 read, and `get_server_info().directories` already reports four of them.
@@ -687,18 +687,12 @@ doesn't apply its own `repo_id` check to workflows, leaving containment to
 a third party's parsing. A real model directory anywhere readable would
 load by absolute path.
 
-2026-09-13 later (opus/anthropic) **PARTIAL — three of four shapes fixed, #117
-bounced back to the implementer, still open.** `download_model` still passes
-all four. `validate_workflow` on
-`steps[].pipeline.from_pretrained_arguments.model_name` now refuses three:
-`/etc/passwd` → "resolves outside every directory this workflow may read";
-`org/name/../../x` and `../../etc` → "Path contains dangerous pattern matching
-`\.\.`". **Still `valid: true`: `http://127.0.0.1:8765/` and
-`https://evil.example.com/model`**, both with `downloads_required: []` — the
-URL shape is not being read as a repo id at all. No escape demonstrated (as
-when filed, diffusers refuses it downstream), so this stays low severity, but
-the fourth shape falling through is now a sharper inconsistency than when all
-four did. Score this case FAIL until the URL shape refuses.
+2026-09-13 later (opus/anthropic) three of four shapes fixed at that point
+(`/etc/passwd`, `org/name/../../x`, `../../etc` all refused at
+`validate_workflow`); the URL shapes (`http://127.0.0.1:8765/`,
+`https://evil.example.com/model`) still passed. #117 has since landed and is
+verified: all four shapes now refuse, and `download_model` and
+`validate_workflow` agree in the same words.
 Note the argument's real location while you are here: `model_name` lives under
 `from_pretrained_arguments`, not on the `pipeline` object. A `model_name`
 written at pipeline level is **silently ignored** today (#123) — so a probe
