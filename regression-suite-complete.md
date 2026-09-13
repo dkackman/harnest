@@ -272,4 +272,37 @@ last run: (not yet run by the regression agent — first observed 2026-09-13 on
 available (21892 MB returned to the OS)` at 5.6 s; job 2 peak 61,882 MB
 against 61,867 MB on a fresh worker.)
 
+### C-F008 — `result.file_base_name` is the whole base name, and a collision is counted not overwritten
+Run one inline workflow with **two** steps that both write into the same
+`subfolder` and both set the **same** `result.file_base_name` (e.g.
+`"episode"`). Any cheap task step will do — `concat_videos` over the two
+C-F001 fixtures, in either order, loads no model and costs no GPU.
+expected: the manifest names the two files `<subfolder>/episode-0.0.<ext>` and
+`<subfolder>/episode-0.0-2.<ext>`. Two assertions, and both matter:
+1. **`file_base_name` replaced the derived base**, it was not glued in front
+   of it. Neither name contains a `<workflow id>-<step name>` fragment. The
+   regression is a name like `episodeqa-suite-episode-episode.0-0.0.mp4` —
+   the caller's string prepended to the default base with no separator, which
+   is what #100 was.
+2. **Nothing was overwritten.** Replacing the derived base gives up what used
+   to keep two steps' files apart, so `output_file_path`'s `-2`/`-3` counter
+   is now the only thing standing between them. Two manifest entries, two
+   distinct files.
+Also assert the guard, which is free: `validate_workflow` on the same
+workflow with `file_base_name: "sub/episode"` comes back **invalid**, with the
+error at path `steps[0].result.file_base_name` and a message saying a
+`file_base_name` is a name and not a path. A separator that validates is a
+regression even if the run then writes somewhere sane.
+Do not predict a filename from `file_base_name` anywhere else in a run — read
+it back out of the manifest. This case is the one place that assertion belongs.
+cleanup: delete both generated files.
+source: tester, verified in #100 (proposed by the implementer in that issue's
+hand-off; run over MCP 2026-09-13 as job `883c2fc82f5e`, model `opus` via
+provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: `final/episode-0.0.mp4` + `final/episode-0.0-2.mp4` from a
+6.4 s two-step `concat_videos` job, against
+`ep5-episodeqa-ep5-episode-episode.0-0.0.mp4` before the fix; the `sub/episode`
+validate refused at the documented path.)
+
 ## Performance
