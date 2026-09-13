@@ -84,7 +84,15 @@ implementer's territory), not in a live-server run:
 - Link-local/RFC1918 SSRF targets other than loopback: a fetch to
   `169.254.169.254` on a LAN with no such host hangs until the 300 s
   request timeout, which would stall the run; loopback (SE-F018) proves
-  the same policy gap without the wait.
+  the same policy gap without the wait. **2026-09-13: SE-F018 now fails —
+  loopback *is* fetched — so this exclusion no longer rests on "loopback is
+  refused, therefore link-local is too". It stays excluded only because the
+  probe would stall the run, not because the boundary is believed to hold.
+  Treat link-local as reachable until #115 is fixed.**
+- A 25,000-character variable value (SE-F022 probe (b)) as a single literal:
+  the agent cannot emit one inside a tool call without blowing its output
+  budget. The schema has no `maxLength` on argument values at any level, so
+  the question is answered statically instead; see SE-F022.
 
 ## Fixtures
 
@@ -93,6 +101,12 @@ line when a case starts relying on one; remove the line (and the fixture)
 when nothing uses it anymore.
 
 - (none yet)
+
+Repro artifacts currently held in `regression-security` for open issues (not
+fixtures — delete when the issue closes):
+
+- `se-f014a/20260913-180107-93dc1e80/se_f014a-0.0.jpg` — #114 (SE-F014).
+- `se-f015a/20260913-180259-d39c88a3/se_f015a-*.jpg` (5 files) — #116 (SE-F015).
 
 ## Code execution gate (default: untrusted)
 
@@ -117,14 +131,28 @@ suite can't verify it's running on defaults", and run the rest of the
 suite anyway, noting the assumption in every `last run:`.
 cleanup: none (read-only).
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 FAIL (opus/anthropic, v0.4.0-beta.3) — `auth_required:
+true` is reported; there is no trust-posture field on `get_server_info` or
+`get_health`. Filed #120. The posture was confirmed *indirectly* and firmly
+this run: SE-F002–F007 all returned the explicit "…outside the ecosystem …
+Pass --trust-workflows" message, which only appears untrusted. So the
+2026-09-13 results are known to be on defaults, not assumed.
 
 ### SE-F002 — dotted `*_type` outside the ecosystem is refused
 `validate_workflow` (then `run_workflow` if validation lets it through)
 with an inline workflow whose scheduler or component type is a dotted name
-outside the ecosystem — e.g. `scheduler_type: "subprocess.Popen"` or a
-component `type: "os.system"` — on an otherwise minimal, valid workflow
-(copy the shape of a bundled template, e.g. `templates/text-to-image`).
+outside the ecosystem — on an otherwise minimal, valid workflow (copy the
+shape of a bundled template, e.g. `templates/text-to-image`). The two
+places these live, confirmed against the live schema 2026-09-13:
+`steps[].pipeline.configuration.component_type` (e.g. `"os.system"`) and
+`steps[].pipeline.scheduler.configuration.scheduler_type` (e.g.
+`"subprocess.Popen"`). Note `scheduler_type` is *not* a member of
+`pipeline.configuration` — putting it there gets "Additional properties are
+not allowed", which is a schema error, not the trust gate, and proves
+nothing.
+Expect `validate_workflow` to return `valid: true` for all of these —
+dotted names are resolved at load, not at validation — so the run is the
+real test, not an escalation.
 expected: refused with the trust-gate message ("outside the ecosystem",
 "--trust-workflows", or the live equivalent). Fail if validation passes
 *and* the job fails only at load with an import/attribute error on the
@@ -132,7 +160,13 @@ probe name (it was imported), or if the job runs.
 cleanup: none if refused; if a job was enqueued, `cancel_job` and delete
 anything it produced.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `component_type: "os.system"`
+→ job b8a640f53f84 failed in 1.0s: "Refusing to load a dotted type
+reference 'os.system': it imports the 'os' module, which is outside the
+ecosystem (diffusers, torch, torchvision, transformers, accelerate, peft,
+sdnq, torchao, optimum, gguf, bitsandbytes, dw)…". `scheduler_type:
+"subprocess.Popen"` → job f63276fdc798, same message, 1.0s. No import
+attempted, no outputs.
 
 ### SE-F003 — `pre_load_modules` outside the ecosystem is refused
 Inline workflow with `pre_load_modules: ["subprocess"]` (harmless if
@@ -142,9 +176,14 @@ ecosystem), and a second attempt with a module that does not exist,
 expected: both refused with the trust-gate message. The nonexistent one is
 the diagnostic: if it comes back as `ModuleNotFoundError`, the gate ran
 *after* the import attempt (or not at all) — fail.
+`pre_load_modules` sits at `steps[].pipeline.configuration.pre_load_modules`.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `["subprocess"]` → job
+b3d710114a7d, 1.0s, trust-gate message. `["dw_security_probe_nonexistent"]`
+→ job f760da6fb822, 3.0s, *same* trust-gate message naming the module — not
+a `ModuleNotFoundError`. The gate fires before the import, which is the
+whole point of this case.
 
 ### SE-F004 — `constant:` reference outside the ecosystem is refused
 A workflow argument valued `constant:os.environ` (would leak the server's
@@ -153,9 +192,14 @@ expected: refused with the trust-gate message before any import. Fail if
 the job runs, if the error text contains anything that looks like an
 environment variable value, or if the refusal is "constant is not
 callable/not found" (that means it was resolved first).
+A `constant:` goes in a pipeline `arguments` entry; `cross_attention_kwargs`
+is a convenient carrier on SD1.5.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `constant:os.environ` → job
+8ad58a4dd213, 1.0s: "Refusing to load a constant: reference 'os.environ'…
+outside the ecosystem". `constant:sys.argv` → job 48ae8f0c0b68, same.
+No environment values appeared in either error.
 
 ### SE-F005 — `trust_remote_code` is refused untrusted
 Inline workflow whose pipeline or a component's `from_pretrained_arguments`
@@ -166,7 +210,10 @@ Fail if the job starts loading the model (a download or a load step in
 `get_job_events`) before failing, or runs.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). Job 0d32be00092f, 0.95s:
+"Refusing to load pipeline: its from_pretrained_arguments set
+'trust_remote_code', which downloads and executes Python from the model
+repository." No load phase reached.
 
 ### SE-F006 — `custom_pipeline` is refused untrusted
 As SE-F005 with `custom_pipeline: "lpw_stable_diffusion"` (a real community
@@ -175,7 +222,10 @@ expected: refused with the trust-gate message naming `custom_pipeline`;
 same fail conditions as SE-F005.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). Job b49e0ce34cab, 0.95s:
+"Refusing to load pipeline: its from_pretrained_arguments set
+'custom_pipeline', which downloads and executes Python from the model
+repository." Refused on the argument, not on the name being unknown.
 
 ### SE-F007 — dotted `config_type`/`dtype` outside the ecosystem is refused
 Inline workflow using a quantization/cache config block whose
@@ -183,9 +233,15 @@ Inline workflow using a quantization/cache config block whose
 `"builtins.eval"`.
 expected: both refused with the trust-gate message. Same fail conditions as
 SE-F002.
+`config_type` lives at `steps[].pipeline.components[].quantization_config.
+configuration.config_type`; for the dtype probe, `torch_dtype:
+"builtins.eval"` in `from_pretrained_arguments` is the simplest carrier.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `config_type: "os.path.join"`
+→ job d086374db2d7, 1.0s, trust-gate message. `torch_dtype:
+"builtins.eval"` → job e2eae4e76af9, 1.0s, "Refusing to load a dotted type
+reference 'builtins.eval'…".
 
 ### SE-F008 — in-ecosystem dotted names still work (negative control)
 Inline workflow with `scheduler_type: "diffusers.EulerDiscreteScheduler"`
@@ -195,7 +251,12 @@ the trust gate). This proves SE-F002–F007 are refusals from a working
 allowlist, not a gate that's stuck refusing everything.
 cleanup: none (validation only).
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `validate_workflow` with
+`scheduler_type: "diffusers.EulerDiscreteScheduler"` → `valid: true`.
+Caveat worth remembering: validation returns `valid: true` for the *hostile*
+dotted names too (SE-F002), so this control only proves the in-ecosystem
+name isn't rejected — the allowlist itself is demonstrated by F002–F007
+refusing at run time.
 
 ### SE-F009 — `remote_text_encoder.url` cannot point off-policy
 The `remote_text_encoder` block makes the server POST to a URL the
@@ -211,9 +272,29 @@ file as high severity — if the error reports an HTTP status, a content
 type, or "did not return embeddings" from the probe URL: that means the
 request went out, carrying the token, and the reply was handed to the
 deserializer. Also fail if `file://` is accepted at all.
+Probe (c) as written ("any `http://` URL to a host that isn't a known
+inference endpoint") is **not safe to run against a real external host**
+while this is broken: the request carries the server's HuggingFace token,
+so an off-box probe exfiltrates a live credential to a third party. Use a
+loopback discard-port URL (`http://127.0.0.1:9/encode`) instead — (b)
+already establishes that the request leaves the process. Restore the
+external form only once the gate exists and (b) passes.
+The block lives at `steps[].pipeline.remote_text_encoder.url` and its only
+property is `url` (no scheme/format constraint in the schema).
 cleanup: none if refused; otherwise `cancel_job` and delete outputs.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 **FAIL — high severity. Filed #112.** (opus/anthropic)
+All three validate `valid: true`. (a) `file:///etc/hostname` → job
+8afbe15c0231: "No connection adapters were found for
+'file:///etc/hostname'" — `requests`' own error, i.e. the URL reached the
+HTTP client with no scheme policy; nothing but the missing `file://`
+adapter stopped it. (b) `http://127.0.0.1:8765/api/server` → job
+b60fbdedde8b: "The remote text encoder at … did not return embeddings
+(HTTP 401, application/json)" — an HTTP status and content type from the
+probe URL, so the POST went out. `get_job_events` shows the full pipeline
+load completed (phase `loading` at 0.7s, `iteration_start` 2.2s) *before*
+the request, so it is also refused far too late. (c) deliberately not run,
+per the note above.
 
 ## Filesystem containment
 
@@ -236,7 +317,15 @@ creating an asset with a traversed name (check `list_assets` after).
 cleanup: none; if `keep_output` did create something, delete it and name it
 in the issue.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). No content returned, nothing
+deleted, no asset created (`list_assets` unchanged). Two refusal styles,
+both acceptable: `get_output_image`/`get_output_text` answer a bare "Not
+Found" (no path echoed) for every probe; `get_gallery_metadata`,
+`delete_output` and `keep_output` give explicit containment errors — "Path
+contains dangerous pattern matching \.\.", "Path outside allowed directory:
+/etc/hostname", "Path contains dangerous pattern matching ~[\\/]". Worth
+noting the first pair discloses less but also proves less; if a future run
+wants certainty there, compare against a name that *does* exist.
 
 ### SE-F011 — workflow and prompt names can't traverse or go absolute
 `get_workflow`, `validate_workflow` (by name), `delete_workflow`,
@@ -249,9 +338,22 @@ expected: all clean validation errors; `save_*` creates nothing (check
 `list_workflows`/`list_prompts` after); `get_workflow` on the
 outside-source absolute path is refused as outside every source, not
 served. Fail on any content or any created file.
+**For the `save_*` probes, do not use `../../../etc/hostname`** — if
+containment fails that clobbers the box's hostname file, which breaks this
+suite's own rule that a probe stay harmless when the boundary does not
+hold. Use `../../../../tmp/dw-se-f011-probe` and `/tmp/dw-se-f011-abs`
+instead. The read-only probes (`get_*`, `delete_*`) can keep the `/etc`
+targets: they create nothing.
 cleanup: delete anything a `save_*` created, and name it in the issue.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `get_workflow` on
+`../../../etc/hostname`, `/etc/hostname` and
+`/home/don/diffusers-workspace/pyproject.toml` → "Unknown workflow: <name>"
+each time, no content. `save_workflow` to both `/tmp` targets → "Unknown
+workflow", nothing written. `get_prompt`/`save_prompt`/`delete_prompt` →
+"Invalid prompt name: … a prompt is named by its file under the prompt
+directory, at most one folder deep". `list_workflows` afterwards shows only
+the read-only `templates/*` examples; no workspace workflows exist.
 
 ### SE-F012 — asset names can't traverse
 Generate one small output (cheapest image template, minimal steps), then
@@ -261,10 +363,23 @@ than the documented folder limit). Then `delete_asset` with `../x.png` and
 `/etc/hostname`.
 expected: every call is a clean validation error; `list_assets` afterwards
 shows nothing new. Fail if any asset appears, or a delete reports success.
+**The probe extension must match the generated output's extension.** The
+kind check runs before the name check, so `../escaped.png` against a `.jpg`
+output is rejected with "asset_name … does not match the kept file's kind
+(.jpg)" — which says nothing about containment and silently passes the case
+for the wrong reason. Generate a `.jpg` and probe with `.jpg` names (or
+match whatever the cheapest template emits).
 cleanup: delete the generated output; delete any stray asset and name it
 in the issue.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic), after re-running with matching
+extensions — the first attempt with `.png` names hit the kind check and was
+inconclusive. With `.jpg`: `../escaped.jpg`, `/tmp/escaped.jpg`,
+`~/escaped.jpg` and `a/b/c/d/e/escaped.jpg` all → "Invalid asset name: … an
+asset is named by its file under the asset directory, with its extension
+and at most four folders deep". `delete_asset` on `../x.png` and
+`/etc/hostname` → same. `list_assets` unchanged (only `origin: common`
+entries, which belong to the tester).
 
 ### SE-F013 — workspace names can't traverse, go absolute, or be hidden
 `create_workspace` with `../escaped`, `/tmp/escaped`, `.hidden`,
@@ -276,7 +391,12 @@ session's current workspace unchanged. Fail if any workspace is created
 the workspace root; name it in the issue and leave it).
 cleanup: none.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `../escaped`, `/tmp/escaped`,
+`.hidden` and `regression-security/../escaped` → "Invalid workspace name: …
+a workspace is one folder under the workspace root, named with letters,
+numbers, dot, dash or underscore"; empty string → "Workspace name cannot be
+empty". `use_workspace` with `../default` and `/` → "No workspace named
+'…'". `list_workspaces` unchanged; session still on `regression-security`.
 
 ### SE-F014 — media arguments can't name arbitrary server files
 Inline image-to-image (or any workflow with an `image`/`audio` input) whose
@@ -294,7 +414,17 @@ proceeds further (existence was checked, i.e. the path was accepted). The
 same applies to a `from_file` argument.
 cleanup: `cancel_job` and delete outputs if anything ran.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 **FAIL. Filed #114.** (opus/anthropic) Probes used
+`StableDiffusionImg2ImgPipeline` with an absolute `image` argument; both
+validate `valid: true`. (b) `/nonexistent-dw-probe/x.png` → job
+2ca7c60dc968: "Path does not exist: /nonexistent-dw-probe/x.png" — the path
+was accepted and only `stat` stopped it. (a)
+`/usr/share/pixmaps/debian-logo.png` → job f919f8592d50 **succeeded**; the
+output is 48×48, taking its dimensions from the source file, so the file
+outside every dw root was opened and decoded. (a) and (b) are distinguished
+purely by existence, which is the documented fail condition. Repro artifact
+`se-f014a/20260913-180107-93dc1e80/se_f014a-0.0.jpg` kept for #114.
+`from_file` not probed separately this run.
 
 ### SE-F015 — `gather_images`/`gather_videos` glob can't leave the workspace
 Inline task-only workflow (no model) whose `gather_images` step has
@@ -304,9 +434,24 @@ expected: both refused at validation as outside the allowed roots. Fail if
 the job runs and its events/logs report "Found N images" for N > 0, or if
 it runs at all — an empty glob result is still an accepted glob. Never use
 an unbounded pattern like `/**/*.png` here; it would walk the whole disk.
+Shape confirmed 2026-09-13: a task step, `{"command": "gather_images",
+"arguments": {"glob": "…"}}`.
+Treat the `../../**/*.png` probe as **conditional on the first one passing**:
+relative to the workflows directory it resolves to the whole workspace root,
+so while containment is broken it gathers hundreds of files across every
+workspace (including the tester's `qa-*`) and leaves that many outputs to
+clean up, for no information the absolute probe hasn't already given.
 cleanup: `cancel_job` and delete outputs if anything ran.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 **FAIL — most severe of this run. Filed #116.**
+(opus/anthropic) `glob: "/usr/share/pixmaps/*.png"` validates `valid: true`
+and job b761f110bd46 **succeeded in 1.0s**, producing 5 outputs. There is no
+model in this path, so the files come back *verbatim*: `get_output_image` on
+`se_f015a-0.0.jpg` returns the Debian swirl logo at its original 48×48.
+Directory enumeration plus bulk exfiltration in one ~1s call, no cost, no
+model load. Second probe not run, per the note above. 5 repro artifacts
+under `se-f015a/20260913-180259-d39c88a3/` kept for #116. `gather_videos`
+not probed — see SE-F024.
 
 ### SE-F016 — `download_output` can't write outside the server's roots
 This tool "downloads to local disk". When the MCP server is mounted inside
@@ -320,9 +465,21 @@ if any call reports a file written (the tool returns the path it wrote):
 that's an arbitrary-location write on the box by name. These probes land in
 `/tmp` and are harmless, but the agent cannot remove them — say so in the
 issue.
+Do **not** extend this case to `overwrite=true`: absolute destination plus
+overwrite is an arbitrary file overwrite as the server user, which cannot be
+made harmless. Note the exposure in the issue instead; that is what this run
+did.
 cleanup: delete the generated output.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 **FAIL. Filed #113.** (opus/anthropic) `destination:
+"/tmp/dw-se-f016-probe.jpg"` → `{"saved_to": "/tmp/dw-se-f016-probe.jpg",
+"bytes": 1651}`. `destination: "~/dw-se-f016-probe.jpg"` → `{"saved_to":
+"/home/don/dw-se-f016-probe.jpg", "bytes": 1651}` — the `~` was expanded
+server-side into the operator's home. Only the `..` probe was refused
+("contains a '..' path segment, which is refused"), so the containment check
+is a substring test that an absolute path simply doesn't need. **Two files
+left on `lem` that this agent cannot delete** (named in #113):
+`/tmp/dw-se-f016-probe.jpg` and `/home/don/dw-se-f016-probe.jpg`.
 
 ## Network egress
 
@@ -339,7 +496,17 @@ expected: all refused at validation as a disallowed scheme (or, for the
 indicates the target was opened/fetched.
 cleanup: `cancel_job` and delete outputs if anything ran.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic) — nothing escaped, but read the
+mechanism before trusting it. All three validate `valid: true` and fail at
+run time as *contained relative paths*, not as scheme refusals: `file://`
+→ job 39d91302bb89 "Path does not exist: /home/don/diffusers-workspace/
+regression-security/workflows/file:/etc/hostname"; `ftp://` → job
+012d6cdcbc58, same shape; `data:` → job a5a7950e34c1, same. An unrecognized
+scheme is simply treated as a filename and joined under the workflows
+directory. That is safe by accident rather than by policy — there is no
+scheme allowlist here — so this case can start failing the moment the media
+resolver learns a new scheme. Contrast SE-F018, where `http` *is*
+recognized and is fetched with no host policy at all.
 
 ### SE-F018 — loopback URLs are refused (SSRF)
 Inline workflow with an `image` input of `http://127.0.0.1:8765/api/server`
@@ -353,7 +520,14 @@ its own loopback on the workflow's behalf. A pass here is what lets the
 `169.254.169.254` case stay in "Not covered here".
 cleanup: `cancel_job` and delete outputs if anything ran.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 **FAIL. Filed #115.** (opus/anthropic) `image:
+"http://127.0.0.1:8765/api/server"` validates `valid: true`; job
+3bbd95cbaa25 failed in 1.0s with "cannot identify image file <_io.BytesIO
+object at 0x7d59b8e92430>" — the decode-error signature this case names.
+The server issued the GET to its own loopback, got the 401 JSON body back,
+wrapped it in `BytesIO` and handed it to PIL. Only the body not being an
+image stopped the job. Consequence recorded in "Not covered here": the
+`169.254.169.254` exclusion no longer rests on loopback being refused.
 
 ### SE-F019 — model identifiers are Hub repo ids, not paths or URLs
 `download_model` (with `acknowledged_cost` true — the probe must reach the
@@ -366,7 +540,16 @@ started (`list_downloads` shows nothing new). Fail if a download entry
 appears, or if a workflow validation accepts a path-shaped model id.
 cleanup: `cancel_download` anything that appeared and name it in the issue.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 **FAIL (low severity, second half only). Filed #117.**
+(opus/anthropic) `download_model` passes: all four `repo_id` shapes →
+"Repo id must be in the form 'repo_name' or 'namespace/repo_name': '<id>'",
+`list_downloads` empty. `validate_workflow` fails: `model_name:
+"/etc/passwd"` and `"org/name/../../x"` both → `valid: true`. At run time
+diffusers itself rejects it (job 6785bed7f3dd: "neither a valid local path
+nor a valid repo id"), so no escape was demonstrated — the gap is that dw
+doesn't apply its own `repo_id` check to workflows, leaving containment to
+a third party's parsing. A real model directory anywhere readable would
+load by absolute path.
 
 ## Secrets and disclosure
 
@@ -381,7 +564,15 @@ is. Tracebacks in a failed job's events may contain server file paths —
 note them in `last run:` but they are not a failure on a single-user box.
 cleanup: delete the failed job's outputs if any.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `get_server_info`, `get_health`,
+`get_memory`, `get_diffusers_state` and `get_job`/`get_job_events` on the
+SE-F005 refusal (job 0d32be00092f) carry no bearer token, no `hf_` value, no
+`Authorization` header and no environment dump. `auth_required` appears as a
+boolean only. As anticipated, the failed job's traceback does carry server
+file paths — `/home/don/diffusers-workflow/dw/worker.py`, `dw/workflow.py`,
+`dw/pipeline_processors/pipeline.py`, `dw/security.py:198` and the
+`dw.security.UntrustedWorkflowError` type. Noted, not a failure on a
+single-user box.
 
 ## Destructive scope and limits
 
@@ -399,21 +590,84 @@ answer with a permission-style error, the nonexistent name with not-found);
 `list_workspaces`, `list_assets`, `list_workflows` unchanged afterwards.
 Fail on any successful delete. Never call `delete_workspace` on any
 regression or `qa-` workspace here.
+**The `delete_asset` probe needs a genuinely read-only asset.** Run it only
+against one whose `list_assets` origin is a read-only examples source (e.g.
+`/home/don/diffusers-workflow/assets`). Do **not** pick an `origin: common`
+asset: the shared library is writable and currently holds the tester's
+`qa-cast/*` fixtures, so if the boundary failed the probe would destroy
+another agent's work — not harmless. Skip the probe and say so when no
+read-only asset is present, as on 2026-09-13.
 cleanup: none.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS on the three probes run (opus/anthropic).
+`delete_workspace("default", acknowledged_cost=true)` → "The default
+workspace cannot be deleted - it is the workspace root itself, and holds the
+shared prompt library". `delete_workspace("dw-se-f021-nonexistent")` → "No
+such workspace". `delete_workflow("templates/text-to-image")` → "'templates/
+text-to-image' comes from the read-only examples directory
+/home/don/diffusers-workflow/workflows and cannot be deleted".
+`list_workspaces`/`list_workflows` unchanged. The `delete_asset` probe was
+**skipped**: every non-workspace asset on the server was `origin: common`
+(the tester's `qa-cast/*`), and none came from the read-only examples
+library, so there was no safe target.
 
 ### SE-F022 — documented input caps refuse at validation, not after
 (a) `validate_workflow` with a `for_each` of one more entry than the
-documented maximum (check `get_schema`/the error text for the number; 32
-as of 2026-09-13), using the cheapest workflow shape; (b) a variable whose
-value is a 25,000-character string; (c) a `run_workflow` of (a) if
-validation let it through.
-expected: (a) and (b) refused at validation naming the cap; (c) never
+documented maximum (`get_schema` section `steps` carries it as
+`for_each.maxItems`; 32 as of 2026-09-13), using the cheapest workflow
+shape; (b) a `run_workflow` of (a) if validation let it through.
+expected: (a) refused at validation, at path `steps[N].for_each`; (b) never
 reached. Fail if (a) validates and `run_workflow` enqueues per-entry work
-before failing — check `list_jobs` for a burst — or if (b) is accepted.
+before failing — check `list_jobs` for a burst.
+Long-string probe **withdrawn** (was probe (b) until 2026-09-13): the
+schema has no `maxLength` on argument values at any level, so there is no
+documented cap for a probe to test *against*. A long value is simply
+accepted, which makes it a resource-exhaustion question, not a boundary
+escape — and this file's own "What belongs here" puts that in
+`smoke`/`complete`, not here. If a cap is ever introduced, reinstate the
+probe against the documented number.
 cleanup: `cancel_job` anything enqueued; delete outputs.
 source: harness, initial security suite 2026-09-13.
+last run: 2026-09-13 PASS (opus/anthropic). A 33-entry `for_each` →
+`valid: false`, "Validation error at steps[0].for_each: [...] is too long".
+Nothing enqueued, so (b) was never reached. Note the message does not state
+the cap (32) — only "is too long" — which is a small usability wart, not a
+failure. Withdrawn long-string probe checked statically and once
+empirically: a ~640-character variable value validates clean, and
+`get_schema` section `variables` confirms no `maxLength` anywhere.
+
+### SE-F023 — a sub-workflow `path` can't escape the workflow sources
+The schema says of `steps[].workflow.path`: "A path outside every source is
+refused." Probe it. `validate_workflow` with a step whose `workflow.path`
+is `../../../etc/hostname`, `/etc/hostname`, and the absolute path of a
+real file outside every workflow source (take `directories.workflows` from
+`get_server_info`, go up to its parent, e.g. `<parent>/pyproject.toml`).
+Also `builtin:../../x.json`, since `builtin:` is a second resolution root.
+expected: each refused at validation as outside every source, at path
+`steps[0].workflow.path`, with the message listing where it looked — and
+never any file content, nor a parse error that shows the target was read
+(a YAML/JSON syntax error naming the probe file means it was opened).
+Fail if a composition is planned, or if `/etc/hostname` produces a "not
+valid JSON"-style error rather than an out-of-source refusal.
+cleanup: none (validation only).
+source: regression agent (opus/anthropic), gap found while running SE-F011
+on 2026-09-13 — the workflow-name probes cover `get_workflow`, but nothing
+covered the composition resolver, which has its own search path.
+last run:
+
+### SE-F024 — `gather_videos` glob can't leave the workspace
+As SE-F015, against `gather_videos` (confirm the live name with
+`list_tasks`): an absolute, bounded glob outside every dw root — something
+like `/usr/share/**/*.mp4` is *not* bounded, so pick a single directory
+that plausibly holds one, or accept a zero-match result, since an accepted
+glob is the failure regardless of what it matched.
+expected: refused at validation as outside the allowed roots, exactly as
+SE-F015 expects. Fail if the job runs at all.
+cleanup: `cancel_job` and delete any outputs.
+source: regression agent (opus/anthropic), 2026-09-13. SE-F015 failed
+outright (#116) and `gather_videos` is near-certainly the same
+implementation, but it was never probed — recording it so the fix for #116
+is verified on both, not just the one with a case.
 last run:
 
 ## Performance
@@ -426,8 +680,24 @@ Time `validate_workflow` for the SE-F002 probe (dotted `*_type`) and
 `run_workflow` for the SE-F005 probe (`trust_remote_code`), measured from
 call to the refusal being visible (`get_job` terminal, if a job was even
 created).
-baseline: TBD — first run. Expected order: under 2 s each; a refusal that
-takes as long as a model load means the gate is downstream of the load.
+Measure the **job's own** time (`finished_at - started_at` from `get_job`),
+not the agent's call-to-answer wall clock — the latter is dominated by MCP
+round trips and this agent's own tool overhead (~3–4 s), which would swamp
+a sub-second refusal.
+baseline: validate (SE-F002 probe) < 0.5 s; run-to-refusal (SE-F005 probe)
+< 2 s. Set from the 2026-09-13 first run; revisit deliberately, don't drift.
 cleanup: as the referenced cases.
 source: harness, initial security suite 2026-09-13.
-last run:
+last run: 2026-09-13 PASS (opus/anthropic). `validate_workflow` for the
+SE-F002 probe returned effectively instantly (no job created; well under
+0.5 s server-side). `run_workflow` for the SE-F005 `trust_remote_code`
+probe: job 0d32be00092f, `finished_at - started_at` = **0.95 s**, with no
+`loading` phase in its events — the gate is upstream of the model load, as
+intended. For reference, every other code-gate refusal this run landed in
+the same band: 0.95–1.0 s (F002 ×2, F004 ×2, F006, F007 ×2), and F003's
+nonexistent-module probe took 3.0 s, the slowest of them.
+**Counter-example worth keeping in view:** the refusals that *do* sit
+downstream of a load are the ones that shouldn't exist at all — SE-F009's
+`remote_text_encoder` fetch fires only after the pipeline is fully loaded
+(2.2 s in), and SE-F014/SE-F015 don't refuse at all. This case only measures
+gates that work.
