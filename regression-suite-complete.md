@@ -172,4 +172,38 @@ last run: (not yet run by the regression agent — first observed 2026-09-13 on
 0.4.0-beta.3, job `04c6bf9908d4`, 17.7 s for both steps including SD1.5 load:
 manifest `left`/`right`, gallery total 2.)
 
+### C-F005 — a modular pipeline names its blocks while it runs
+Run the cheapest modular pipeline on the box — currently
+`templates/minimax/music` with a short `audio_duration` (30 is ~75 s) — then
+read `get_job_events` for the whole run.
+expected: between the `phase: generating` event and the **first**
+`pipeline_step`, at least one `log` event of the form `<model>: <block name>`
+(e.g. `MiniMaxAI/MiniMax-Music3: semantic_generator`), and one naming
+`denoise` at the head of the loop. A `generating` phase followed by no event
+at all until a `pipeline_step` is the regression.
+Do **not** assert on the exact block names beyond `denoise` — they are
+diffusers' own and can change with a version bump. Assert on "at least one
+`log` line arrived during the lead-in", not on the sequence.
+Second variant, if the level's budget allows an H3 run: the same assertion on
+a MiniMax H3 template — the pipeline the original report was about. One
+`log` naming a block must arrive at the same `at` as `phase: generating`.
+Note that **LTX-2.5 emits no block logs at all** (measured, `templates/ltx2/text-to-video`,
+job `83444a2ff3f1`): whatever makes it different from H3/Music3 is not
+understood from the consumer side, so do not add an LTX variant expecting
+narration, and do not treat its absence there as this case failing.
+The whole point is a signal that is *absent*, and an absent signal is exactly
+what nobody notices breaking: without it a null `denoise_step` under
+`generating` is indistinguishable from a hang, which on H3 with a video
+reference means ~10 min of silence a consumer is liable to cancel a healthy
+job during (#95).
+cleanup: delete the generated audio output.
+source: tester, verified in #95 (proposed by the implementer in that issue's
+hand-off, run over MCP 2026-09-13 as jobs `bb2c89ba6f54` (Music3) and
+`958078231173` (H3), model `opus` via provider `anthropic`).
+last run: (not yet run by the regression agent — first observed 2026-09-13 on
+0.4.0-beta.3: Music3 job `bb2c89ba6f54`, 75.6 s, `semantic_generator` at 0.0 s
+and `denoise` at 36.3 s bounding a previously silent 36 s lead-in, first
+`pipeline_step` at 46.6 s; H3 job `958078231173`, `text_encoder` logged at
+102.8 s, the same instant as `phase: generating`.)
+
 ## Performance
