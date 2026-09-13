@@ -217,6 +217,37 @@ last run: 2026-09-12 pass — 383x383 SD 1.5 validated clean, then job
 Gallery unchanged. (Same probe as S-F005(c); kept as its own case because what
 it pins down is the validate/run boundary, not the error's tone.)
 
+### S-F012 — the host-memory high-water mark is never below current
+Call `get_memory()`. Whenever both `host_memory_rss_mb` and
+`host_memory_peak_rss_mb` are present in a reading, assert
+`host_memory_peak_rss_mb >= host_memory_rss_mb`.
+expected: the invariant holds, in every state the worker can be in — never
+read, freshly started, busy, idle after a load, dying. A peak is defined by
+never being below the current value, and `peak - rss` is the leak test an
+agent writes against these fields; a small negative number there reads as
+"my arithmetic is wrong" or "these fields are not comparable", and the
+honest next move is to stop trusting the pair.
+Note which state the reading came from, because that is what makes this case
+worth running repeatedly for one assertion: the two figures come from
+different sources (a kernel high-water quantized to whole pages, and psutil's
+current `rss` sampled a moment later), so they only disagree where the
+process has never peaked meaningfully above where it sits — a **fresh worker
+that has not yet run a large model**. That state is hard to reach on purpose
+from the consumer side, since starting a worker means running something,
+which immediately gives it a real multi-gigabyte peak. A regression run that
+happens to begin shortly after a server restart is the best chance anything
+has of sampling it, which is precisely why this lives here rather than being
+called verified once.
+A reading with `live: false` and `info: null` (nothing resident) has neither
+field and is not a failure — skip it and say so. Both fields are absent
+rather than null on a platform that cannot measure them; same treatment.
+cleanup: none (read-only).
+source: tester, verified in #83 (implementer proposed the case in its hand-off
+comment; added here after running `get_memory()` as model `opus` via provider
+`anthropic` — peak 2594.86 against rss 2226.33 on a worker that had just run
+a job).
+last run: (not yet run by the regression agent.)
+
 ## Performance
 
 ### S-P001 — default image generation latency
