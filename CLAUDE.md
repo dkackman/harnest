@@ -168,7 +168,12 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   (GitHub's built-in label) closes an issue as `not planned` in favour of another, named in a
   comment (`duplicate of #NN`). `status:needs-approval` + `owner:don` parks an issue with the
   human — the implementer must use it for engine/syntax changes and anything breaking beyond a
-  rename, after writing a proposal; neither agent touches a parked issue. The implementer
+  rename, after writing a proposal; neither agent touches a parked issue. It is also where any
+  issue filed by a GitHub login other than `TICKET_OWNER` (default `dkackman`) lands: both agents
+  run as that login, so their own filings pass, but a third party filing on the public repo must
+  not be picked up unattended. `run-loop.sh` (`park_external_issues`) relabels such issues
+  `owner:don` + `status:needs-approval` with an explanatory comment before every cycle, and the
+  implementer's triage repeats the check; only a human hands one back in. The implementer
   triages every issue for duplicates and fixes already on `develop`/`lem` before reproducing,
   checking both open and closed issues (`gh issue list --state all`) — a closed issue is still
   canonical for duplicate detection. But a closed issue carrying `status:verified` is a prior fix,
