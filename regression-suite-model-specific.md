@@ -49,4 +49,38 @@ fixture) when nothing uses it anymore.
 
 ## Functional
 
+### M-F001 — an H3 shot takes its cast from files, not only from a previous step
+`templates/minimax/dialogue-short` is the recurring-cast template, and the only way to keep a cast
+across episodes is for a shot's `references` to name **files** rather than the run's own
+`draw_character_*` steps. That the image references accept `from_file` (the way the voice
+references visibly do) is undocumented — so it is exactly the kind of capability that could be
+removed by a refactor with nobody noticing until a series stops matching itself.
+Free form (run this one every pass): `validate_workflow(name="templates/minimax/dialogue-short",
+arguments=...)` with a two-entry `shots` list whose every reference is
+`{"reference_type": "…MiniMaxH3ImageReference" | "…MiniMaxH3AudioReference",
+"from_file": "asset:<a portrait / a voice wav in this workspace>"}` and **no**
+`from_previous_result` anywhere.
+expected: `valid: true`, `checked_arguments` includes `shots`, `plan.list_entries.shots: 2`, and
+`plan.estimate.basis: "derived"` with a `minutes` re-priced for two entries rather than the
+catalog's five-shot figure. An `asset:` that names nothing must still come back as an error at the
+shot's reference path — the check being exercised is that a file reference is *resolved*, not that
+validation waves it through.
+Paid form (opt-in, ~15 min on an RTX 3090, run it when the template or the H3 pipeline changed):
+actually run it. The job succeeds; the concatenated `episode` output is stereo at the shots' own
+sample rate with the expected frame count (2 x `num_frames`), and each shot visibly carries the
+referenced cast.
+It becomes a **finding** if the free form stops validating, or if the run fails on a reference the
+validator accepted.
+Record rather than assert, until #109 is resolved: the manifest still contains
+`draw_character_a`/`draw_character_b` entries whose portraits nothing references (~55 s of Z-Image
+per run). If #109 lands as "a step nothing references does not run" or as portrait variables, those
+manifest entries should disappear, and this case should then assert their absence.
+cleanup: the free form writes nothing. For the paid form, delete the run's outputs; keep no
+fixtures beyond the portrait/voice assets the case needs, which belong in Fixtures if this becomes
+a regular run.
+source: tester, found while running TESTER_TASK.md on 2026-09-13 (episode 7, job `48000580aec1`,
+894.1 s against a 16.8 min `derived` quote, two shots, every reference `from_file`), filed as #109.
+Model `opus` via provider `anthropic`.
+last run: (not yet run by the regression agent — first observed 2026-09-13 on 0.4.0-beta.3.)
+
 ## Performance
