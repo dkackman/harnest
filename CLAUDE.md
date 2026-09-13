@@ -164,8 +164,11 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   rename, after writing a proposal; neither agent touches a parked issue. The implementer
   triages every issue for duplicates and fixes already on `develop`/`lem` before reproducing,
   checking both open and closed issues (`gh issue list --state all`) — a closed issue is still
-  canonical for duplicate detection. Only the tester may close an issue as `completed`
-  (`verified`), and only from a real MCP call.
+  canonical for duplicate detection. But a closed issue carrying `status:verified` is a prior fix,
+  not a standing "already handled" — if the repro still reproduces against current `develop`/`lem`,
+  that's a regression, not a duplicate: reopen the old issue (or link a new one to it) and fix it,
+  never close the new report as `duplicate`/`wontfix` on the strength of the old verification alone.
+  Only the tester may close an issue as `completed` (`verified`), and only from a real MCP call.
 - Implementer commits reference the issue number (`fix(mcp): #42 - ...`), works on branches
   merged to `develop`, never `master`.
 - Breaking MCP interface changes get the `breaking-change` label plus a comment, so the tester
