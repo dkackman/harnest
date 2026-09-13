@@ -99,8 +99,14 @@ regression case in the same cycle isn't part of that check.)
 The tester's directory has no MCP config, so `run-loop.sh` hands it the `dw` server via
 `--mcp-config` + `--strict-mcp-config` (it sees *only* `dw`) and loads the `dw` plugin live from
 `$SOURCE_DIR/plugins/dw` via `--plugin-dir`. Without the latter it would use the frozen copy in
-`~/.claude/plugins/cache` and never see skill fixes. The implementer needs neither flag: the
-source checkout already has `dw` configured at local scope in `~/.claude.json`.
+`~/.claude/plugins/cache` and never see skill fixes. The implementer gets the same
+`--mcp-config` + `--strict-mcp-config` pair (not `--plugin-dir`; it works from the source tree).
+Its checkout already has `dw` at local scope in `~/.claude.json`, so the flags change nothing
+about `dw` — they exist to drop the account-level claude.ai connectors (Gmail, Drive, Calendar)
+that every unrestricted session inherits, which a `--dangerously-skip-permissions` agent must not
+hold. Both roles see MCP tools as deferred names (schemas load on first use), so the `dw` surface
+costs each session well under 2k tokens at connect; per-call result size is the real budget
+(see issue #101).
 
 Two deploy paths, and the implementer must say which one a fix used: server code → restart on
 `lem`, tool schemas refresh automatically; plugin/skill changes → commit and leave the checkout

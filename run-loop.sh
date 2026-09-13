@@ -64,15 +64,23 @@ validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 
 ts() { date '+%H:%M:%S'; }
 
-# The tester's cwd has no MCP config of its own, so the dw server is passed
-# explicitly. --strict-mcp-config means dw is the *only* server it sees.
-# --plugin-dir loads the dw plugin live from the implementer's working tree
-# instead of the frozen copy in ~/.claude/plugins/cache, so skill fixes are
-# testable without a reinstall. Tool schemas come from the server and are
-# always fresh.
-TESTER_FLAGS=(
+# Both agents get dw passed explicitly, and --strict-mcp-config makes it the
+# *only* server they see. For the tester that's a necessity (its cwd has no
+# MCP config); for the implementer it's a fence: the source checkout already
+# has dw at local scope, but without --strict-mcp-config the session also
+# inherits every account-level claude.ai connector (Gmail, Drive, Calendar),
+# and an agent running --dangerously-skip-permissions has no business holding
+# those. Tool schemas come from the server and are always fresh.
+MCP_FLAGS=(
   --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
   --strict-mcp-config
+)
+# --plugin-dir loads the dw plugin live from the implementer's working tree
+# instead of the frozen copy in ~/.claude/plugins/cache, so skill fixes are
+# testable without a reinstall. Only the tester needs it; the implementer
+# works from the source tree itself.
+TESTER_FLAGS=(
+  "${MCP_FLAGS[@]}"
   --plugin-dir "$PLUGIN_DIR"
 )
 
@@ -134,7 +142,8 @@ while true; do
   before="$(status_board)"
 
   run_agent implementer "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on issues you own (owner:implementer), then stop."
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on issues you own (owner:implementer), then stop." \
+    "${MCP_FLAGS[@]}"
   run_agent tester "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on issues you own (owner:tester). Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop." \
     "${TESTER_FLAGS[@]}"
