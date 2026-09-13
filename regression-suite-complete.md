@@ -79,6 +79,15 @@ when nothing uses it anymore.
   matters is that it is 1-channel — `get_gallery_metadata` on a paired output
   reports `channels`, which is the cheapest way to confirm a candidate.
 
+- `asset:uploads/qa-cast/room-bed.wav` — a short room-tone recording, 4.96 s,
+  16 kHz, mono. Used by C-F016, where the only properties that matter are that
+  it is a few seconds long and that its length is known (`get_gallery_metadata`
+  on the reference reports it — see S-F019), so a slice can be asked for well
+  past its end. Also in the shared `common/assets`: do not sweep it, and do not
+  expect it under `regression-complete`. A replacement needs no particular
+  content; re-read its `duration_seconds` and re-derive the frame counts below
+  from it.
+
 ## Functional
 
 ### C-F001 — a run-time warning reaches the caller, on both channels
@@ -568,5 +577,80 @@ source: tester, verified in #108 on 2026-09-13 over MCP as model `opus` via prov
 succeeded 2.6 s, `sample_rate: 32000`, warning at event seq 13) and `454d8eb9af05`
 (pinned to 24000, succeeded, output at 24000, warning naming 24000).
 last run:
+
+### C-F016 — a slice past the end of its source is padded with silence, and says so
+`slice_audio` asked for more material than its source holds returns the length
+asked for with a digitally silent tail. That is deliberate and must stay — a few
+frames of tail pad is a legitimate thing to want — but it is also how
+`assemble-and-score` lays a short score under a long cut and leaves the rest of
+the film unscored. The failure is invisible in the deliverable: the shots' own
+world audio keeps going, so the film has no level drop to notice. The warning is
+therefore the *entire* fix, and a regression in it looks exactly like success.
+Needs the `room-bed.wav` fixture; seconds to run, generates nothing.
+expected: (a) one inline `slice_audio` step against
+`asset:uploads/qa-cast/room-bed.wav` (4.96 s) asking for `num_frames: 372` at
+`fps: 24` — 15.5 s — **succeeds**, writes a file of the full requested length,
+and `get_job(...)["warnings"]` holds **exactly one** entry, prefixed with the
+step's name, containing `past the end of` and naming `loop_audio` with its
+`target_frames`+`fps` pair as the remedy. The numbers in it must be the real
+ones: source ≈ 4.96 s, ≈ 10.5 s padded, 15.50 s returned. (b) Counter-case, a
+slice **inside** the source (`num_frames: 48`, `fps: 24`) → `warnings: []`.
+(c) Counter-case, a slice a few ms past the end (`start_seconds: 0`,
+`duration_seconds: 4.965`) → `warnings: []`: frame-aligned slicing lands a
+sample or two past the end routinely and a warning fired on that is noise
+nobody can act on. (d) The end-to-end path, which is where it bit:
+`run_workflow("templates/assemble-and-score", arguments={shots: three
+`common/assets` shots, score: the room-bed asset, sample_rate: 32000, fps: 24,
+total_frames: 372})` → succeeds, and its `warnings` carries the same entry
+attributed to the `soundtrack` step. Note the source reads as ~2.48 s there,
+not 4.96 s: the template passes `sample_rate` down and `slice_audio`'s
+`sample_rate` *reinterprets* a file's rate rather than resampling it. That is
+documented, pre-existing behaviour — it is not a finding, but the warning's
+arithmetic must be self-consistent with whatever length the task actually saw.
+It is a **finding** if (a) or (d) comes back `warnings: []` (the original bug —
+79% of a track padded in silence), if the padding turns into an error or a
+short track (that breaks the legitimate tail pad), or if (b) or (c) starts
+warning. Also a finding if the warning is only a server-side log line: score
+the job's `warnings` list, which is what a consumer can see.
+The documentation half of the fix is checkable too, and free:
+`get_guide("tasks", section="Video Processing")` → `slice_audio` must still
+state the zero-padding, the warning and `loop_audio`; and
+`get_workflow("templates/assemble-and-score")`'s description must still state
+that a score shorter than `total_frames` is padded with digital silence and
+that the film nonetheless sounds plausible. A caller who reads before running
+is the one who never hits this.
+cleanup: delete every output these runs write; the fixtures are durable.
+source: tester, verified in #126 on 2026-09-13 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep9`, dw 0.4.0-beta.3 — jobs
+`4c0b47638446` (past-end, one warning), `734ae3a07a90` (both counter-cases,
+`warnings: []`) and `8ba0179fb3b4` (the template end-to-end, warning attributed
+to `soundtrack`).
+
+### C-F017 — `loop_audio` lands a bed exactly on the requested length
+This is the remedy C-F016's warning names, so it has to actually work: a warning
+pointing at a task that lands a few frames off is worse than no warning, because
+the caller follows it and gets the same silent tail. `loop_audio` must build a
+bed of exactly `target_frames`/`fps` out of a shorter recording, with no silence
+anywhere in it — the laps are crossfaded, not butted, and only the last lap is
+trimmed. Needs the `room-bed.wav` fixture; seconds to run, generates nothing.
+expected: a two-step inline workflow — `resample_audio` the 16 kHz
+`asset:uploads/qa-cast/room-bed.wav` to 32000, then `loop_audio` it with
+`target_frames: 348`, `fps: 24`, `crossfade_ms: 250` — succeeds with
+`warnings: []`, and `get_gallery_metadata(..., envelope=true)` on the saved bed
+reports `duration_seconds: 14.5` (348/24, exactly) at `sample_rate: 32000`, with
+**15 envelope entries none of which is `-120.0`** and an `rms_dbfs` spread of
+about 3 dB across the whole track. That last part is the real check: a bed
+assembled from ~3 laps of a 4.96 s source must read as continuous material, not
+as material followed by silence, and not with a hole at each loop point.
+It is a **finding** if the duration is not exactly the requested frame count over
+fps (a bed one lap too long or short is how the remedy silently reintroduces the
+bug), if any envelope entry is `-120.0`, if a loop point shows as an `rms_dbfs`
+notch of more than a few dB, or if the job warns — nothing about this is
+irregular and `loop_audio` should have nothing to say about it.
+cleanup: delete the run's output; the fixture is durable.
+source: tester, found while running TESTER_TASK.md (episode 10) on 2026-09-13
+over MCP as model `opus` via provider `anthropic`, workspace `qa-ep10`, dw
+0.4.0-beta.3 — job `6f3ae9e60d4d`, 0.6 s, bed 14.5 s / 32 kHz / mono, envelope
+−50.8 … −47.8 dBFS across all 15 entries.
 
 ## Performance

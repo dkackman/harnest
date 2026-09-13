@@ -561,6 +561,36 @@ provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3. Labelled
 and does not after.
 last run:
 
+### S-F019 — an input asset's own duration/fps/sample_rate is readable before a run
+A workflow's `total_frames`, `fps` and `sample_rate` are arguments the *caller*
+supplies, and they are properties of the assets being passed in. If they cannot
+be read, they are guessed, and a wrong guess is discovered as a failed job or as
+silence padded onto a track (see C-F016). `get_gallery_metadata` must answer for
+an `asset:` reference, not only for an output. Free and instant — no run.
+expected: (a) `list_assets()` → take any entry with `kind: "audio"` or
+`"video"`, and pass its `reference` verbatim to `get_gallery_metadata`. The
+answer carries `source: "asset"`, `job: null`, `metadata: null` for a file
+nothing here generated, and a `media` block whose `duration_seconds` is a
+number — plus `frame_count` and `fps` for a video, `sample_rate` and `channels`
+for audio. (b) `envelope=true` works on an asset too, returning one
+`rms_dbfs`/`peak_dbfs` entry per second, so a position in an input track is
+locatable and not just its length. (c) Counter-case:
+`get_gallery_metadata(name="asset:does-not-exist.wav")` errors with a message
+that names **every asset root it searched** (the workspace's own library,
+`common/assets`, the examples library) — not a path under `outputs/`. (d)
+Counter-case: `get_gallery_metadata(name="asset:../../../../etc/passwd")` is
+refused as an invalid asset *name*, before any lookup.
+It is a **finding** if an `asset:` reference resolves against the outputs root
+again (the original bug: the prefix was echoed into an outputs path verbatim, so
+the error read as a missing file rather than an unsupported reference form), if
+`source` stops distinguishing `"asset"` from `"output"`, if `media` is absent for
+a media asset, or if (d) resolves to anything at all — that last one is a
+containment escape and belongs in `regression-suite-security.md`'s territory, so
+report it there as well.
+cleanup: none (read-only).
+source: tester, verified in #127 on 2026-09-13 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep9`, dw 0.4.0-beta.3.
+
 ## Performance
 
 ### S-P001 — default image generation latency
