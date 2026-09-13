@@ -30,9 +30,9 @@ files described below. There is no build, lint, or test step.
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
 - `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
-  protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split is
-  the whole basis of the tester's isolation (honor-system beyond that — it runs with
-  `--dangerously-skip-permissions`).
+  protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split
+  plus an enforced tool allowlist (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`, see
+  "Permissions" below) is the basis of the tester's isolation.
 - `agents/TESTER_TASK.md` — the tester's standing exercise: a throwaway series built in
   `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
   deliverable; never touches the default workspace.
@@ -103,10 +103,29 @@ The tester's directory has no MCP config, so `run-loop.sh` hands it the `dw` ser
 `--mcp-config` + `--strict-mcp-config` pair (not `--plugin-dir`; it works from the source tree).
 Its checkout already has `dw` at local scope in `~/.claude.json`, so the flags change nothing
 about `dw` — they exist to drop the account-level claude.ai connectors (Gmail, Drive, Calendar)
-that every unrestricted session inherits, which a `--dangerously-skip-permissions` agent must not
-hold. Both roles see MCP tools as deferred names (schemas load on first use), so the `dw` surface
-costs each session well under 2k tokens at connect; per-call result size is the real budget
-(see issue #101).
+that every unrestricted session inherits, which an unattended agent must not hold. Both roles
+see MCP tools as deferred names (schemas load on first use), so the `dw` surface costs each
+session well under 2k tokens at connect; per-call result size is the real budget (see issue
+#101).
+
+## Permissions
+
+No agent runs with `--dangerously-skip-permissions`. A headless `claude -p` session never
+prompts — a call that would have prompted is denied and the denial comes back to the agent as a
+tool result — so the choice is what gets auto-approved vs. auto-denied, per role:
+
+- Tester and regression agent: `--permission-mode dontAsk` + an explicit `--allowedTools` list
+  (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`): `mcp__dw__*`, the dw skills, `gh`, file tools
+  for the suite files and `qa-bible.md`, and a few read-only shell helpers. No `ssh`, `curl`,
+  `python`, or `git` writes (the drivers commit suite edits themselves). This is what makes
+  consumer-only isolation enforced rather than honor-system; the remaining gap is that
+  `Read`/`Edit`/`Write` aren't path-scoped, which the role prompts cover. If a cycle shows a
+  denial in `logs/tester.log` for something the role legitimately needs, widen the list there,
+  deliberately, rather than reaching for the bypass flag.
+- Implementer: `--permission-mode auto`. Its shell surface (`git`, `gh`, `ssh lem`, `pytest`,
+  `uv`, …) can't be enumerated without breaking a cycle the first time it needs something new,
+  so the auto-mode classifier approves routine work and denies destructive or exfiltrating
+  actions.
 
 Two deploy paths, and the implementer must say which one a fix used: server code → restart on
 `lem`, tool schemas refresh automatically; plugin/skill changes → commit and leave the checkout

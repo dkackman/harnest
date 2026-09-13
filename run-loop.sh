@@ -69,8 +69,7 @@ ts() { date '+%H:%M:%S'; }
 # MCP config); for the implementer it's a fence: the source checkout already
 # has dw at local scope, but without --strict-mcp-config the session also
 # inherits every account-level claude.ai connector (Gmail, Drive, Calendar),
-# and an agent running --dangerously-skip-permissions has no business holding
-# those. Tool schemas come from the server and are always fresh.
+# and an unattended agent has no business holding those. Tool schemas come from the server and are always fresh.
 MCP_FLAGS=(
   --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
   --strict-mcp-config
@@ -82,6 +81,16 @@ MCP_FLAGS=(
 TESTER_FLAGS=(
   "${MCP_FLAGS[@]}"
   --plugin-dir "$PLUGIN_DIR"
+  "${CONSUMER_PERMISSION_FLAGS[@]}"
+)
+# The implementer's shell surface can't be enumerated without breaking a
+# cycle the first time it needs sed or pip, so it runs under the auto-mode
+# classifier instead: routine work is approved, destructive or exfiltrating
+# actions are denied (a headless session never prompts; a denial comes back
+# to the agent as a tool result and it routes around or stops).
+IMPLEMENTER_FLAGS=(
+  "${MCP_FLAGS[@]}"
+  --permission-mode auto
 )
 
 # run_agent <name> <cwd> <provider> <model> <prompt> [extra claude flags...]
@@ -116,7 +125,7 @@ $note"
   (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
       claude -p "$full_prompt" \
       --model "$model" ${fallback[@]+"${fallback[@]}"} \
-      --dangerously-skip-permissions "$@" 2>&1) \
+      "$@" 2>&1) \
     | tee -a "$LOGS/$name.log" \
     | sed -u "s/^/[$name] /" \
     | tee -a "$LOGS/loop.log" \
@@ -143,7 +152,7 @@ while true; do
 
   run_agent implementer "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on issues you own (owner:implementer), then stop." \
-    "${MCP_FLAGS[@]}"
+    "${IMPLEMENTER_FLAGS[@]}"
   run_agent tester "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on issues you own (owner:tester). Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop." \
     "${TESTER_FLAGS[@]}"

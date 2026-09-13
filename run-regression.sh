@@ -116,11 +116,13 @@ workspace_for_suite_file() {
 # Same isolation as the tester in run-loop.sh: this repo has no MCP config of
 # its own, so dw is handed explicitly and --strict-mcp-config keeps it the
 # only server visible. --plugin-dir loads the dw plugin live from the source
-# checkout so skill fixes are covered without a reinstall.
+# checkout so skill fixes are covered without a reinstall. The permission
+# allowlist (providers.sh) is the same fence the tester runs behind.
 REGRESSION_FLAGS=(
   --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
   --strict-mcp-config
   --plugin-dir "$PLUGIN_DIR"
+  "${CONSUMER_PERMISSION_FLAGS[@]}"
 )
 
 run_level() {
@@ -149,7 +151,7 @@ run_level() {
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
-    --dangerously-skip-permissions "${REGRESSION_FLAGS[@]}" 2>&1) \
+    "${REGRESSION_FLAGS[@]}" 2>&1) \
     | tee -a "$LOGS/regression.log" \
     | sed -u "s/^/[regression:$level] /" \
     | tee -a "$LOGS/loop.log" \

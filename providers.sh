@@ -19,6 +19,8 @@
 #   co_author_for <provider> <model>            sets CO_AUTHOR, CO_AUTHOR_EMAIL
 #   runtime_note <role> <provider> <model>      prints the "Runtime:" paragraph
 #   commit_suite_changes <msg> [name] [email]   commits regression-suite-*.md
+#   CONSUMER_PERMISSION_FLAGS                    array: permission flags for the
+#                                               consumer-only roles (tester, regression)
 #
 # Providers, and why each is more than just a base URL:
 #   anthropic  Native Claude Code models, alias or full id. The default. Sets
@@ -247,6 +249,28 @@ fallback_model_flags() {
 # user-exported CO_AUTHOR_EMAIL overrides only the email. Neither is inferred
 # from the other. No alias→version table: the alias is the honest label, and
 # a table is wrong the day the alias moves.
+# Permission flags for the roles that talk to the MCP server *only* as a
+# protocol consumer (tester, regression). Their legitimate surface is small
+# and known, so it is enumerated: dw over MCP (ToolSearch loads the deferred
+# schemas), the dw skills, the ticket CLI, file tools for the suite files and
+# qa-bible, and a couple of read-only shell helpers the prompts mention. Under
+# --permission-mode dontAsk anything outside the list is denied outright — a
+# headless session never prompts — so this is the fence that makes the
+# consumer-only isolation enforced rather than honor-system: no ssh, no curl,
+# no python, no git writes (the drivers commit suite edits themselves). Read /
+# Edit / Write are unscoped by path, so a read of the source checkout by
+# absolute path is still on the honor system; the role prompts cover that.
+# The implementer needs open-ended shell (git, gh, ssh lem, pytest, uv, ...)
+# and gets --permission-mode auto in run-loop.sh instead.
+CONSUMER_PERMISSION_FLAGS=(
+  --permission-mode dontAsk
+  --allowedTools
+    "mcp__dw__*" "ToolSearch" "Skill" "Agent" "TodoWrite"
+    "Read" "Glob" "Grep" "Edit" "Write"
+    "Bash(gh *)" "Bash(date *)" "Bash(file *)"
+    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
+)
+
 co_author_for() {
   local provider="$1" model="$2" name email
   if is_anthropic_model "$model"; then
