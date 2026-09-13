@@ -518,6 +518,49 @@ cleanup: none (read-only).
 source: tester, verified in #118 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3.
 
+### S-F018 — the other three workflow objects are closed too
+S-F017 covers the `step`, `task`, `pipeline_reference` and `workflow_reference`
+objects. The same guarantee must hold for the three that were still open after it:
+the **top-level workflow** object, the **`result`** object, and the **`pipeline`**
+object. A stray key in any of them is the same failure S-F017 exists for — the
+workflow runs and the key does nothing. Free and instant — no run.
+expected: four `validate_workflow` probes on inline one-step workflows.
+(a) Top level carrying `"sedd": 42` and `"varaibles": {}` → `valid: false`, **one**
+error at root (`path: null`) naming both keys and listing the legal set
+(`configures, cost, description, id, seed, shape, steps, summary, traits,
+variables`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
+`valid: false` at `steps[0].result` naming `subfoldr` and listing `subfolder`
+among the legal set. (c) `pipeline_type` and `model_name` written at **pipeline
+level** (they belong inside `configuration` / `from_pretrained_arguments`) →
+`valid: false` with **exactly one** error per key, at
+`steps[0].pipeline.pipeline_type` and `steps[0].pipeline.model_name`. (d)
+`"trasformer": {}` at pipeline level → `valid: false`, **exactly one** error at
+`steps[0].pipeline.trasformer`. The pipeline messages must state the *rule* — "any
+other key whose value is a component definition (an object carrying
+`from_pretrained_arguments`)" — not a fixed key list, since a component's name is
+one of the pipeline's own keys.
+Positive controls, and the reason this case cannot be scored without them:
+`validate_workflow(name = "templates/ltx2/two-stage")` → `valid: true`. That is a
+shipped workflow carrying a dynamic component key, so it is what distinguishes
+"closed correctly" from "refuses everything unfamiliar". Second control, cheaper to
+reason about: a hand-written component under an undeclared name but **missing its
+`configuration`** → the error must be `'configuration' is a required property` at
+`steps[0].pipeline.<name>` — i.e. the key was recognized as a component definition
+and validated as one, not rejected as unknown.
+It is a **finding** if any of (a)–(d) comes back `valid: true`, if a single stray
+pipeline key produces more than one error (the pre-fix behaviour: a key refused by
+the component rule also failed that rule's `type` and `required` checks, so one
+typo arrived as three errors describing a component definition the author never
+meant to write), or if either positive control stops validating.
+`from_pretrained_arguments` is open by design and must stay so — do not add a probe
+that closes it.
+cleanup: none (read-only).
+source: tester, verified in #123 on 2026-09-13 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3. Labelled
+`breaking-change` on the fix: a workflow carrying a dead key validated before it
+and does not after.
+last run:
+
 ## Performance
 
 ### S-P001 — default image generation latency

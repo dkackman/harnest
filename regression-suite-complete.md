@@ -526,4 +526,47 @@ source: tester, verified in #107 on 2026-09-13 over MCP — refusal quoting
 `sha256:ea73f2d8…` with `"minutes": null`, retry job `3fe89e48a2f0` succeeded on
 that object pasted back unchanged. Model `opus` via provider `anthropic`.
 
+### C-F015 — mismatched audio sample rates are converted, loudly, and can be pinned
+Shots assembled from different sources routinely carry different sample rates — a
+24 kHz voice clip paired onto a 32 kHz generation is the ordinary case, not an edge
+one. Unlike a level jump, the difference has no editorial meaning, so `concat_videos`
+must convert rather than refuse — **and must say that it did**, because resampling
+every track is a real audio decision made on the caller's behalf. Two-step inline
+workflow: `pair_audio` a 24 kHz audio asset onto a 32 kHz video asset
+(`result.save: false`), then `concat_videos` that result with a second, natively
+32 kHz video asset. Needs two real media fixtures at different rates, which is why
+this is here and not in smoke.
+expected: the job **succeeds** (before #108 it failed mid-run at the join).
+`get_gallery_metadata` on the joined output reports `sample_rate: 32000` — the
+**highest** among the inputs, not the first or the lowest — with channels, fps and
+frame count as the inputs imply. The job's `warnings` list carries **two** entries,
+and `get_job_events` carries the new one as a structured `warning` event with:
+
+```
+kind:         "sample_rate_mismatch"
+command:      "concat_videos"
+sample_rate:  32000
+sample_rates: {"<name of each input>": <its rate>, ...}
+```
+
+naming both rates, identifying each input (by its resolved path when it was given
+as one, by position otherwise), and pointing at both remedies — the `sample_rate`
+argument and the `resample_audio` task.
+Variant, and the half that is easy to get wrong: the same workflow with
+`"sample_rate": 24000` on the concat step → succeeds, output at `sample_rate:
+24000`, and the warning still fires **naming 24000 as the target**. The message must
+report the decision actually taken, not the highest-rate default it would have taken.
+It becomes a **finding** if the join fails again, if the chosen rate is not the
+highest when unpinned or not the pinned value when pinned, or — the #108 bounce, and
+the reason this case scores the event and not just the log — if the conversion
+happens with **no `warning` event**, only a server-side log line. A `logger.warning`
+is not a warning the caller can see; `emit_warning` is. Score a structured-field
+check, not a substring match on the message.
+cleanup: delete both runs' outputs; the fixtures are durable.
+source: tester, verified in #108 on 2026-09-13 over MCP as model `opus` via provider
+`anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3 — jobs `8d09acd951e2` (unpinned,
+succeeded 2.6 s, `sample_rate: 32000`, warning at event seq 13) and `454d8eb9af05`
+(pinned to 24000, succeeded, output at 24000, warning naming 24000).
+last run:
+
 ## Performance
