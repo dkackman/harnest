@@ -104,22 +104,27 @@ delete outside the workspace for the level you're currently running.
      (add `performance` too for a timing regression, and `security` for
      anything filed from the `security` level), no `status:*` label.
      Same when commenting on an existing issue in the step above — a result
-     is only interpretable alongside the model that produced it.
+     is only interpretable alongside the model that produced it. This issue
+     *is* the status record for the case's failure — nothing about it also
+     gets written into the suite file.
 5. Final sweep: list your level's workspace's outputs, assets and
    workflows. Anything still there should be either a fixture listed in the
    suite's "Fixtures" section or a repro artifact named in an *open* issue —
    check with `gh issue view`. Delete everything else, including repro
    artifacts from earlier runs whose issue has since been closed. If the
    sweep finds leftovers from this run that a case should have deleted,
-   that's a cleanup bug in your own run — delete them and mention it in the
-   `last run:` note so the suite text can be tightened. If you created a
-   fixture this run, add it to the "Fixtures" section in step 6.
-6. After running every case, update the suite file:
-   - Append a one-line entry to that case's `last run:` note (date, pass/fail,
-     and measured time for performance cases) so baselines can be revisited
-     over time. Don't rewrite a case's `baseline:` yourself if it drifts —
-     leave that to a human or the implementer to decide deliberately; just
-     record what you measured.
+   that's a cleanup bug in your own run — delete them and, if it's not
+   obvious from the case text why, file an issue on it the same as any other
+   finding, rather than annotating the suite.
+6. After running every case:
+   - Don't touch the suite file just because you ran it. A case that passed
+     — functional or performance, within its baseline — gets no edit at all:
+     the suite describes a durable test, not a log of runs, and "no news" is
+     what a healthy case looks like. Status lives on the issue a failure
+     produced (step 4), never as a note appended to the case. Don't rewrite
+     a case's `baseline:` yourself if a passing run's timing drifted, either
+     — that's a human or implementer call to make deliberately, and it isn't
+     a regression if step 4 didn't just flag it as one.
    - If, while exercising the suite, you notice an adjacent basic capability
      that isn't covered yet (a template, an error path, a common parameter
      combination) and it belongs at this level, append a new test case at
@@ -134,12 +139,21 @@ delete outside the workspace for the level you're currently running.
      tester make when they spot something worth covering (see each suite
      file's "Adding a case" section) — you're not the only source of new
      cases.
+   - You may never delete, weaken, or rewrite an existing case to make it
+     pass or go away — not even one you're convinced is too expensive, too
+     flaky against things outside the server's control, or no longer
+     meaningful. If you think a case should be removed or changed, say so:
+     `gh issue create` on it, labeled `owner:don` + `status:needs-approval`,
+     naming the case id and your reasoning, and leave the case exactly as
+     written until a human acts on it. The implementer and tester follow the
+     same rule for cases they didn't author.
 7. You never close, verify, or reopen issues, and you never touch anything
    labeled `owner:tester` or `owner:don` — that's the tester's and
    implementer's business in the main loop. Your only write actions are:
    `create_workspace`/calls against your level's workspace (including
    deleting its own outputs/assets there), `gh issue create`/`comment`, and
-   edits to suite files.
+   *adding* cases/fixtures to suite files — never editing or removing an
+   existing case.
 8. Don't poll or wait inside the session. One pass through the suite file
    for your level, then exit — you're invoked on a schedule
    (`run-regression.sh` or a cron/loop wrapper around it), not looping
@@ -158,3 +172,7 @@ delete outside the workspace for the level you're currently running.
   intent, exact expected result, no prose padding. Future runs (fresh
   sessions with no memory of this one) depend on the file being
   self-explanatory.
+- Never record a run's outcome in the suite file itself, pass or fail —
+  see step 6. A file that only ever grows with new cases and fixtures, and
+  never shrinks or gains commentary on an existing one, is working as
+  designed.

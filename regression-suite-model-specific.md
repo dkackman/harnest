@@ -21,8 +21,13 @@ Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is
 intent + expected result, not a pinned tool/param name — confirm the exact
 call shape against the live tool schema each run, since the server evolves.
-Grows over time: new cases get appended to the relevant section, `last
-run:` notes accumulate so a baseline drifting over many runs is visible.
+This file only ever grows with new cases and fixtures; it holds the durable
+test, never a log of runs. A case that passes gets no edit — status for a
+failure lives on the GitHub Issue it produced, not as a note appended here
+(`last run:` lines already in this file predate that policy and are kept as
+history, not a model to continue). No agent may delete, weaken, or rewrite
+an existing case, including one it thinks has become too expensive or not
+worth what it costs — see "Removing a case" below.
 
 ## Adding a case
 
@@ -36,8 +41,18 @@ model/pipeline/checkpoint the case depends on explicitly in its body — a
 model-specific case that doesn't say which model it needs is useless to a
 future run. No separate approval step — the regression agent already grows
 these files unsupervised when it notices gaps; a case either of you adds is
-the same kind of edit. Leave `last run:` for the regression agent to fill
-in on its next pass.
+the same kind of edit.
+
+## Removing a case
+
+None of the three agents may remove or rewrite an existing case on their
+own judgment. If a case looks too expensive, too flaky against things
+outside the server's control, or no longer meaningful, propose dropping or
+changing it with a GitHub Issue naming the case id and the reasoning,
+labeled `owner:don` + `status:needs-approval` — the regression agent and
+tester file this directly; the implementer uses its usual needs-approval
+path (it has no suite files checked out to edit anyway). Leave the case
+exactly as written until a human acts on it.
 
 ## Fixtures
 

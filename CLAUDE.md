@@ -70,14 +70,19 @@ files described below. There is no build, lint, or test step.
   real once it verifies. Either role picks whichever suite file fits (same format, plus a
   `source:` line) — see each suite file's own "Adding a case" section for the line between
   levels. Invoke the regression agent by hand, from cron, or via the `loop` skill; it never loops
-  or sleeps internally.
+  or sleeps internally. Suite files hold only the durable test — intent, expected result,
+  cleanup — never a running log of results: a case is expected to keep passing, so a pass leaves
+  no trace in the file, and a failure is a GitHub Issue, not a note appended to the case. None of
+  the three agents may delete or rewrite a case to make it go away, however expensive or
+  low-value it looks from a single run; the only route to removing one is a comment/issue
+  proposing it, labeled `owner:don` + `status:needs-approval`, left for a human to act on.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
-  "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo).
-  `mcp-feedback.md` and `mcp-feedback-archive.md` here are frozen: they hold every ticket filed
-  before the 2026-09-12 migration to Issues, kept for history only, never edited again. `logs/` —
-  per-agent and combined output, gitignored. The tester also keeps `qa-bible.md` here (gitignored)
-  as its memory across cycles.
+  "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo). Tickets
+  filed before the 2026-09-12 migration to Issues were carried forward there too (see "Ticket
+  protocol" below); GitHub is the only ticket history now. `logs/` — per-agent and combined
+  output, gitignored. The tester also keeps `qa-bible.md` here (gitignored) as its memory across
+  cycles.
 
 ## Running
 
@@ -167,9 +172,11 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   adjusts its calls rather than filing the change as a new bug.
 - Agents never poll or sleep inside a session; "nothing to do" means exit and let the driver
   re-run them. Because cycles are serialized, server restarts can't collide with tester calls.
-- Tickets filed before 2026-09-12 live in `mcp-feedback.md` / `mcp-feedback-archive.md` in this
-  repo, frozen; the ones still active were carried forward as fresh Issues (#69–#79), cited in
-  their body as "migrated from T0xx" so old cross-references still resolve.
+- Tickets filed before 2026-09-12 lived in `mcp-feedback.md` / `mcp-feedback-archive.md` in this
+  repo; the ones still active then were carried forward as fresh Issues (#69–#79), cited in
+  their body as "migrated from T0xx" so old cross-references still resolve. Those files have
+  since been removed — GitHub is the sole ticket history, including everything that predates
+  the migration.
 
 When editing either role prompt, keep the asymmetry intact: any change that gives the tester
 code or box access, or lets the implementer self-verify, defeats the purpose of the setup.

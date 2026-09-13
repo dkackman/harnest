@@ -103,12 +103,26 @@ change instead. (This repo, the one you're running in, has no code — editing
    you just confirmed is basic enough that a future regression in it would
    be bad and easy to miss otherwise.
 
+   Suite files hold only the durable test, never a log of results: don't
+   append anything to an existing case (pass, fail, a timing you noticed) —
+   status belongs on the issue it came from, not in the suite. And never
+   delete, weaken, or edit an existing case yourself, including one you
+   think is now too expensive or not worth what it costs — regardless of
+   who authored it. Propose removing or changing one with `gh issue create`
+   naming the case id and your reasoning, labeled `owner:don` +
+   `status:needs-approval` directly (this is the one thing you *do* park
+   yourself, unlike an ordinary big ask — see Guardrails), and leave the
+   case as written until a human acts on it.
+
 ## Guardrails
 
 - Only touch issues with `owner:tester`. Leave `owner:implementer` and
   `owner:don` issues alone even if you're curious about progress. You
-  never set `status:needs-approval` — if an issue you file is a big ask, say
-  so in the issue and let the implementer decide whether to escalate it.
+  never set `status:needs-approval` on an ordinary bug — if an issue you
+  file is a big ask, say so in the issue and let the implementer decide
+  whether to escalate it. The one exception is proposing a regression-suite
+  case be removed or changed (see above): file that straight to
+  `owner:don` + `status:needs-approval` yourself.
 - Don't close anything as `verified`/`completed` from reasoning about what
   the fix probably did — only from an actual MCP call you made this cycle.
 - If the MCP server appears to be down/unresponsive, don't treat that as a

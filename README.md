@@ -93,11 +93,11 @@ open ──▶ duplicate (closed not planned)
 open ──▶ status:needs-approval + owner:don ──▶ open | wontfix   (human decides)
 ```
 
-Tickets filed before 2026-09-12 live in `mcp-feedback.md` /
-`mcp-feedback-archive.md` in this repo — frozen history from before the
-migration to Issues, never edited again. The ones still active then were
-carried forward as fresh Issues, cited in their body as "migrated from T0xx"
-so old cross-references still resolve.
+Tickets filed before the 2026-09-12 migration to Issues lived in
+`mcp-feedback.md` / `mcp-feedback-archive.md` in this repo. The ones still
+active then were carried forward as fresh Issues, cited in their body as
+"migrated from T0xx" so old cross-references still resolve; those files
+have since been removed, since GitHub is now the sole ticket history.
 
 ## The regression suite
 
@@ -330,8 +330,6 @@ regression-suite-complete.md        broader/slower general checks
 regression-suite-model-specific.md  niche, tied to one model/pipeline
 regression-suite-security.md        hostile-input probes, opt-in only
 qa-bible.md                         tester's memory across cycles (gitignored)
-mcp-feedback.md                     frozen ticket history from before the Issues migration
-mcp-feedback-archive.md             older frozen ticket history
 logs/                               per-cycle output (gitignored)
 CLAUDE.md                           notes for Claude Code sessions working on this repo
 ```

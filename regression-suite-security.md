@@ -46,8 +46,16 @@ Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is
 intent + expected result, not a pinned tool/param name — confirm the exact
 call shape against the live tool schema each run, since the server evolves.
-Grows over time: new cases get appended to the relevant section, `last
-run:` notes accumulate so a baseline drifting over many runs is visible.
+This file only ever grows with new cases and fixtures; it holds the durable
+test, never a log of runs. A case that passes gets no edit — status for a
+failure lives on the GitHub Issue it produced, not as a note appended here
+(`last run:` lines already in this file predate that policy and are kept as
+history, not a model to continue). No agent may delete, weaken, or rewrite
+an existing case, including one it thinks has become too expensive, too
+noisy, or no longer meaningful — see "Removing a case" below. In
+particular, a probe with no documented limit to test against (no
+`maxLength`, no cap in the schema) is a gap to file, not a reason to retire
+the case.
 
 ## Adding a case
 
@@ -62,8 +70,18 @@ running TESTER_TASK.md`). Make the probe harmless even if the boundary is
 broken — target `/tmp`, loopback, or a stock system file, never anything
 that would damage the box if the check fails. State both failure modes:
 what "it worked" looks like *and* what "refused too late" looks like. No
-separate approval step. Leave `last run:` for the regression agent to fill
-in on its next pass.
+separate approval step for adding one.
+
+## Removing a case
+
+None of the three agents may remove or rewrite an existing case on their
+own judgment. If a case looks too expensive, too flaky against things
+outside the server's control, or no longer meaningful, propose dropping or
+changing it with a GitHub Issue naming the case id and the reasoning,
+labeled `owner:don` + `status:needs-approval` — the regression agent and
+tester file this directly; the implementer uses its usual needs-approval
+path (it has no suite files checked out to edit anyway). Leave the case
+exactly as written until a human acts on it.
 
 ## Not covered here
 

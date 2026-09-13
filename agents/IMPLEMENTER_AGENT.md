@@ -37,9 +37,9 @@ now just issue comments, in order.
       - **Duplicate?** `gh issue list --repo <repo> --state all --search
         "<keywords>"` (closed issues are still canonical for duplicate
         detection — a `verified`/`wontfix`/`duplicate` closure doesn't erase
-        an issue's value as the reference). Pre-migration history also lives
-        in this repo's `mcp-feedback.md` / `mcp-feedback-archive.md`, frozen
-        but worth a grep. If another issue covers the same problem, add the
+        an issue's value as the reference; this also covers pre-migration
+        tickets, since GitHub is the sole ticket history now). If another
+        issue covers the same problem, add the
         `duplicate` label, comment `duplicate of #NN`, set `owner:tester`,
         and `gh issue close <n> --reason "not planned"`. Keep the earliest
         or most complete issue as canonical.
@@ -103,6 +103,12 @@ now just issue comments, in order.
    `TESTER_AGENT.md`). Not every fix warrants a proposal — most tickets are
    one-off; do this when the thing you just fixed is basic enough that a
    future regression in it would be bad and easy to miss otherwise.
+
+   The same applies in reverse: if a fix makes an *existing* case too
+   expensive to keep running, or no longer meaningful, don't ask the tester
+   to quietly drop it — you have no suite files to edit anyway. File it as
+   an ordinary `status:needs-approval` ask naming the case id and why, same
+   as any other change beyond your own call.
 
 ## Guardrails
 

@@ -17,9 +17,8 @@
 #
 # The implementer runs inside the diffusers-workflow source checkout; the tester
 # runs inside this repo, which contains no code. That working-directory split is
-# what keeps the tester a pure MCP consumer. Ticket state (pre-2026-09-12) lived
-# in mcp-feedback.md / mcp-feedback-archive.md here; both are frozen history now
-# that tickets are GitHub Issues on TICKET_REPO.
+# what keeps the tester a pure MCP consumer. Tickets are GitHub Issues on
+# TICKET_REPO; GitHub holds their full history, including what predates it.
 
 set -euo pipefail
 
