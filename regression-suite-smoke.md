@@ -587,6 +587,61 @@ cleanup: none (read-only).
 source: tester, verified in #127 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep9`, dw 0.4.0-beta.3.
 
+### S-F020 — a `succeeded` image job never hands back a blank frame unannounced
+A job that reports `succeeded` with a populated manifest, a real file and no
+warning is the only signal an unattended consumer has. If the engine can
+substitute a solid-colour image for the one it generated — a safety-checker
+blank, a degenerate latent — and still report exactly that, then no automated
+caller can tell a shipped deliverable from a suppressed one without fetching and
+*looking at* every frame. This is the assertion; the mechanism is the server's
+business.
+expected: two runs of the stock text-to-image template, differing only in seed.
+(a) **The known-blank seed.** A run pinned to seed `3220371727974403` (prompt
+`an apple`, SD 1.5, 25 steps, 512x512 — the #133 repro) must come back as
+*either* a real rendered image, *or* `succeeded` **carrying a warning that names
+the suppression** (in `warnings`, or in `get_gallery_metadata`). What it must not
+be is an unqualified success wrapping a black frame.
+(b) **Control.** The same workflow on a seed that renders normally → a real
+image and **no** such warning. The control is half the case: a warning that
+fires on every run says nothing.
+For an agent that cannot judge pixels, the cheap discriminator is file size from
+`list_gallery`: a solid-colour 512x512 JPEG is ~5-6 KB, a real SD 1.5 render of
+the same prompt and size is ~25-33 KB. Anything under ~10 KB is the thing to look
+at with `get_output_image` — but look, don't rely on the number alone, since a
+genuinely flat composition would also be small.
+It is a **finding** if (a) is a black frame with no warning anywhere in the MCP
+surface, and a *different* finding if (b) starts warning too.
+cleanup: delete both outputs. While #133 is open its own repro artifact is kept
+separately and named there — don't keep a second copy from this case.
+source: regression agent, found on 2026-09-13 running S-F009 as model `opus` via
+provider `anthropic` (filed as #133: the stock template returned an all-black
+image on a random seed and reported `succeeded`, `warnings: []`). At smoke level
+because `templates/text-to-image` is the catalog's reference "hello world" and
+the cheap generation step several other cases lean on.
+
+### S-F021 — deleting a run's outputs returns the workspace to the size it was
+Every other case's `cleanup:` line, and the regression agent's final sweep,
+assume that deleting what a run produced leaves the workspace as it was found.
+Check that directly instead of assuming it, since `list_gallery` being empty is
+not the same claim.
+expected: read `list_workspaces()` and note this workspace's `usage.files` and
+`usage.bytes` before the run's first job; after every `cleanup:` has run, read
+them again. The delta must be only what was deliberately kept — fixtures from
+the "Fixtures" section and repro artifacts named in an *open* issue.
+As of 0.4.0-beta.3 it is **not**: each queued job leaves two sidecars
+(`manifest.json` and the realized `workflow.json`) in its run directory, which no
+MCP tool lists or deletes, so the count rises by 2 per job forever — including
+for a job that *failed* and wrote no media. That is #134, and until it closes this
+case documents the gap rather than passing.
+It becomes a **worse finding** if the per-job residue grows beyond those two
+files, or if a deleted output's own media file is what survives — that last one
+would mean `delete_output` is not deleting, and S-F008 would be failing too.
+cleanup: none of its own — it measures the other cases' cleanup.
+source: regression agent, found on 2026-09-13 during the final sweep as model
+`opus` via provider `anthropic` (filed as #134). At smoke level because it is the
+cleanup path every other case's `cleanup:` line depends on being able to reach —
+the same reason S-F014 is here.
+
 ## Performance
 
 ### S-P001 — default image generation latency
