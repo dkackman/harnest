@@ -500,9 +500,11 @@ expected: after any run that writes a soundtrack —
 - **If the source has no headroom, `job.warnings` says so.** One entry per saved file,
   naming that file and its peak, at or above **-0.5 dBFS** (not 0 — a waveform peaking
   at exactly full scale is "0 dBFS" by its own metadata and still decodes above it,
-  which is the case that started this). On `templates/minimax/music` at defaults this
-  fires; a Music 3 run that produces **no** such warning wants its `peak_dbfs` checked
-  before it is believed.
+  which is the case that started this). A workflow whose saving step is fed an
+  un-normalized Music 3 track fires this; `templates/minimax/music` and
+  `templates/minimax/music-video` no longer do, because #159 put a `normalize_audio`
+  step in both, and their **absence** of a warning is checked by M-F012 rather than
+  here.
 - **`get_gallery_metadata`'s `media.peak_dbfs` agrees.** A file the run warned about
   reads at or above 0 decoded; a file it did not warn about reads below. The two
   pointing opposite ways is the finding, in either direction.
@@ -514,10 +516,13 @@ expected: after any run that writes a soundtrack —
 - **It covers the muxed deliverable, not only the audio file.** On a `music-video` or
   `assemble-and-score` run the warning names the final mp4's soundtrack as well as the
   saved audio. Source and deliverable is the useful pair: #158 was filed because the
-  mp4 was the thing at +3.26 and nothing had mentioned it.
+  mp4 was the thing at +3.26 and nothing had mentioned it. Confirmed in job
+  `089b1e2945d2`: `raw_mux` warned naming the mp4 at +0.8 dBFS and decoded at +0.776,
+  `balanced_mux` did not warn and decoded at -0.626.
 cleanup: none of its own — it reads a run another case or episode already paid for.
 Delete nothing beyond what that run's own cleanup says.
-source: tester, model `opus` via provider `anthropic`, verified in #158 on 2026-09-14
+source: tester, model `opus` via provider `anthropic`, verified in #158 on 2026-09-14;
+stale-case edit approved by Don on 2026-09-14 (#160)
 against dw 0.4.0-beta.4 on `lem`. Job `66f9db65a603` (`templates/minimax/music`,
 `audio_duration: 30`, workspace `qa-ep15`, 91.1 s) covered the first three bullets:
 warning at +0.0 dBFS on the written mp3, `peak_dbfs: 0.758` / `mean_dbfs: -18.24`
