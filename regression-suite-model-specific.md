@@ -102,21 +102,17 @@ Don; #109 itself is closed): the manifest still contains `draw_character_a`/`dra
 entries whose portraits nothing references (~55 s of Z-Image per run). **If #122 is approved this
 case changes** — those manifest entries should disappear and a run warning should name each elided
 step. Read that as the approved change, not as a regression.
+metrics: paid form only — the job's `started_at`→`finished_at` in seconds (`latency`,
+`condition: paid`, two shots), logged to `regression-perf/M-F001.jsonl` and compared against the
+`derived` quote it was given as well as its own history. A run that drifts well past its quote is
+a finding even if it succeeds — the quote is what a caller budgets on.
 cleanup: the free form writes nothing. For the paid form, delete the run's outputs; keep no
 fixtures beyond the portrait/voice assets the case needs, which belong in Fixtures if this becomes
 a regular run.
 source: tester, found while running TESTER_TASK.md on 2026-09-13 (episode 7, job `48000580aec1`,
-894.1 s against a 16.8 min `derived` quote, two shots, every reference `from_file`), filed as #109.
-Model `opus` via provider `anthropic`.
-last run: (not yet run by the regression agent — first observed 2026-09-13 on 0.4.0-beta.3.)
-
-2026-09-13 later, paid form, PASS (opus/anthropic) — episode 8, job `2df5f1ff06f2`, **756 s**
-against the same 16.8 min `derived` quote, two shots, every reference `from_file`
-(`asset:qa-cast/priya-portrait.jpg`, `asset:qa-cast/hal-portrait.jpg`, and the two voice wavs).
-`final/…episode.4-0.0.mp4`: 10.35 s, 248 frames (2 x 124), 24 fps, 960x544, 32 kHz stereo, peak
-−2.6 dBFS, mean −23.2 dBFS. No job warnings. Both `draw_character_*` entries present in the
-manifest under `intermediate/` and unreferenced, as recorded above. The documentation assertion
-passes on both surfaces.
+894.1 s against a 16.8 min `derived` quote, two shots, every reference `from_file`), filed as #109;
+paid form re-run the same day as episode 8, job `2df5f1ff06f2`, 756 s. Model `opus` via provider
+`anthropic`.
 
 ### M-F002 — H3 reports one fewer denoise step than `num_inference_steps`, and that is correct
 The MiniMaxH3 scheduler counts sigma **grid points**, terminal zero included: the grid is
