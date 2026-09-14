@@ -24,6 +24,11 @@
 #   park_external_issues                        relabels issues filed by a
 #                                               non-owner login to owner:don +
 #                                               status:needs-approval
+#   STREAM_FLAGS                                 array: claude output flags every
+#                                               driver passes (stream-json)
+#   render_stream <name>                        stdin: claude stream-json →
+#                                               $LOGS/<name>.jsonl + readable
+#                                               text with per-turn/-session usage
 #   CONSUMER_PERMISSION_FLAGS                    array: permission flags for the
 #                                               consumer-only roles (tester, regression)
 #   RESEARCHER_PERMISSION_FLAGS                  array: permission flags for the
@@ -370,6 +375,75 @@ commit_suite_changes() {
   git -C "$REPO" add -- "${paths[@]}"
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOGS/loop.log"
+}
+
+# STREAM_FLAGS / render_stream <name>
+# Every driver runs `claude -p ... "${STREAM_FLAGS[@]}" 2>&1 | render_stream
+# <name>` instead of letting claude print plain text. stream-json is the only
+# output mode that reports token usage, and usage is what decides whether a
+# cycle is affordable: a 3-cycle loop was eating a whole 5-hour allocation
+# with no way to tell which role, which turn, or which tool result did it.
+# render_stream keeps the raw events in $LOGS/<name>.jsonl (append-only; the
+# occasional non-JSON stderr line is kept verbatim, so analyse it with
+# `fromjson?`) and prints a readable rendering for <name>.log / loop.log:
+#   · ctx=142.3k out=512        one per model turn: the prompt size that turn
+#                               (input + cache read + cache write) and output
+#   > tool_name {"arg":..}      each tool call, input truncated
+#   < 38211 chars               each tool result's size (ERROR when is_error),
+#                               which is how an oversized MCP result shows up
+#   rate-limit: ...             only when the session is throttled / in overage
+#   usage: turns=.. duration=.. cost=.. ctx_peak=.. in=.. cache_read=..
+#          cache_write=.. out=..  once, from the final result event
+# Thinking blocks are dropped. Needs LOGS from the driver.
+STREAM_FLAGS=(--output-format stream-json --verbose)
+
+# shellcheck disable=SC2016  # jq program: the \(...) interpolations are jq's, not the shell's
+_STREAM_RENDER_JQ='
+  def k: if . == null then "0" elif . >= 1000 then ((. / 100 | round) / 10 | tostring) + "k" else tostring end;
+  def usd: ((. // 0) * 100 | round) / 100;
+  def ctx: (.input_tokens // 0) + (.cache_creation_input_tokens // 0) + (.cache_read_input_tokens // 0);
+  def trunc($n): if length > $n then .[:$n] + "…" else . end;
+  def result_len: if type == "string" then length
+    elif type == "array" then (map((.text // "") | length) | add) // 0
+    else (tojson | length) end;
+  foreach inputs as $line ({id: null, max: 0};
+    (($line | fromjson?) // {type: "raw", line: $line}) as $j
+    | .j = $j
+    | .newmsg = ($j.type == "assistant" and $j.message.id != .id)
+    | if $j.type == "assistant" then
+        .id = $j.message.id
+        | .max = ([.max, ($j.message.usage | ctx)] | max)
+      else . end;
+    .j as $j
+    | if $j.type == "raw" then $j.line
+      elif $j.type == "assistant" then
+        (if .newmsg then "· ctx=\($j.message.usage | ctx | k) out=\($j.message.usage.output_tokens // 0)" else empty end),
+        ($j.message.content[]
+          | if .type == "text" then .text
+            elif .type == "tool_use" then "> \(.name) \(.input | tojson | trunc(200))"
+            else empty end)
+      elif $j.type == "user" then
+        ($j.message.content
+          | if type == "array" then
+              .[] | select(.type == "tool_result")
+              | "< \(if .is_error then "ERROR " else "" end)\(.content | result_len) chars"
+            else empty end)
+      elif $j.type == "rate_limit_event" then
+        ($j.rate_limit_info
+          | if .status != "allowed" or .isUsingOverage then
+              "rate-limit: status=\(.status) type=\(.rateLimitType) overage=\(.isUsingOverage) resets=\(.resetsAt | todate)"
+            else empty end)
+      elif $j.type == "result" then
+        "usage: turns=\($j.num_turns) duration=\(($j.duration_ms // 0) / 1000 | round)s cost=$\($j.total_cost_usd | usd) ctx_peak=\(.max | k) in=\($j.usage.input_tokens | k) cache_read=\($j.usage.cache_read_input_tokens | k) cache_write=\($j.usage.cache_creation_input_tokens | k) out=\($j.usage.output_tokens | k)",
+        (if $j.subtype != "success" then "result: \($j.subtype) \($j.result // "" | tostring | trunc(300))" else empty end),
+        ($j.modelUsage // {} | select(length > 1) | to_entries[]
+          | "  \(.key): in=\(.value.inputTokens | k) cache_read=\(.value.cacheReadInputTokens | k) cache_write=\(.value.cacheCreationInputTokens | k) out=\(.value.outputTokens | k) cost=$\(.value.costUSD | usd)")
+      else empty end)
+'
+
+render_stream() {
+  : "${LOGS:?render_stream: LOGS must be set by the driver}"
+  tee -a "$LOGS/$1.jsonl" | jq -Rn -r --unbuffered "$_STREAM_RENDER_JQ"
 }
 
 # park_external_issues

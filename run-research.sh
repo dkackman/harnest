@@ -68,7 +68,7 @@ run_session() {
 
 $(runtime_note researcher "$RESEARCH_PROVIDER" "$RESEARCH_MODEL")" \
     --model "$RESEARCH_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
-    "${RESEARCH_FLAGS[@]}" 2>&1) \
+    "${STREAM_FLAGS[@]}" "${RESEARCH_FLAGS[@]}" 2>&1 | render_stream research) \
     | tee -a "$LOGS/research.log" \
     | sed -u "s/^/[researcher:#$n] /" \
     | tee -a "$LOGS/loop.log" \

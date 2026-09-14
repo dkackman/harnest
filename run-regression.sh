@@ -171,7 +171,7 @@ run_session() {
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
-    "${REGRESSION_FLAGS[@]}" 2>&1) \
+    "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 | render_stream regression) \
     | tee -a "$LOGS/regression.log" \
     | sed -u "s/^/[regression:$level$tag] /" \
     | tee -a "$LOGS/loop.log" \

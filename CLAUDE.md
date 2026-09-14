@@ -114,7 +114,12 @@ files described below. There is no build, lint, or test step.
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo). Tickets
   filed before the 2026-09-12 migration to Issues were carried forward there too (see "Ticket
   protocol" below); GitHub is the only ticket history now. `logs/` — per-agent and combined
-  output, gitignored. The tester also keeps `qa-bible.md` here (gitignored) as its memory across
+  output, gitignored. Every driver runs `claude -p` in stream-json mode through
+  `render_stream` (`providers.sh`), so `<role>.log`/`loop.log` show each tool call, each tool
+  result's size, a `· ctx=Nk` line per model turn, and a final `usage:` line (turns, duration,
+  cost, peak context, token totals) per session — `grep usage: logs/loop.log` is how to see
+  which role and cycle spent the budget; the raw events are kept in `<role>.jsonl`. The tester
+  also keeps `qa-bible.md` here (gitignored) as its memory across
   cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
   capped at ~12 KB by `TESTER_TASK.md`, not a journal; per-cycle narrative belongs on the issues.
 

@@ -125,7 +125,7 @@ $note"
   (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
       claude -p "$full_prompt" \
       --model "$model" ${fallback[@]+"${fallback[@]}"} \
-      "$@" 2>&1) \
+      "${STREAM_FLAGS[@]}" "$@" 2>&1 | render_stream "$name") \
     | tee -a "$LOGS/$name.log" \
     | sed -u "s/^/[$name] /" \
     | tee -a "$LOGS/loop.log" \
