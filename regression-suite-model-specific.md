@@ -150,4 +150,39 @@ job `2df5f1ff06f2` (`dialogue-short`, `num_inference_steps: 9`, workspace `qa-ep
 `shot@padlock` and `shot@key` reporting `denoise_total_steps: 8`. The 20 → 19 leg is from the
 earlier ep6 `ref2va` run recorded in #110, not re-run here.
 
+### M-F003 — every H3 template's step count matches whether it carries the turbo LoRA
+The `lightx2v/Minimax-h3-Turbo` LoRA (`minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`) is
+distilled against the **base** MiniMax-H3 transformer, so it is only valid where that transformer is
+loaded. The six templates that condition on references alone load the *reference* transformer and
+therefore carry no LoRA and run 20 steps; the five that keep the turbo LoRA run 9. All eleven render
+at 960x544. This pairing — LoRA, step count, resolution — is a three-way invariant stated in the
+`dw:minimax-h3` skill's hard rules ("change one, change all three"), and it is the kind of thing a
+template edit breaks silently: a turbo LoRA left on a 20-step reference template, or a reference
+template quietly dropped to 9 steps, produces a job that *runs* and delivers visibly worse video for
+full price. Nothing else in the suite checks it, and it is free to check.
+Free (run this one every pass): `get_workflow(name=..., variables_only=true)` on each of the eleven
+`templates/minimax/*` H3 templates and compare `num_inference_steps`, `width`/`height` and the
+presence of the `lora_*` variables.
+expected:
+- **No LoRA, `num_inference_steps: 20`** — `reference-to-video`, `composable-references`,
+  `voice-timbre-reference`, `generated-subject-reference`, `chain-matched-to-audio`,
+  `chain-video-continuity`. No `lora_model_name` / `lora_weight_name` / `lora_adapter_name` /
+  `lora_scale` variable on any of them.
+- **Turbo LoRA, `num_inference_steps: 9`** — `video-with-audio`, `storyboard`, `dialogue-short`,
+  `music-video`, `chain-matched-and-aligned`.
+- `width: 960`, `height: 544` on all eleven.
+Note the one asymmetry, so a future run doesn't read it as a failure: `chain-matched-and-aligned`
+exposes only `lora_scale` as a variable (1.0) — its LoRA model/weight/adapter names are inline in the
+step rather than variables. The other four turbo templates expose all four `lora_*` variables. A
+template moving a name between inline and variable is not a finding; a step count that stops matching
+the LoRA's presence is.
+It is a **finding** if any template's step count and LoRA presence stop agreeing (20 with a LoRA, 9
+without), if a template changes canvas away from 960x544 without the step/LoRA pair changing with it,
+or if the `dw:minimax-h3` skill's hard-rules block stops naming the same split — the skill is how a
+caller learns which number to quote, and the split going quietly stale there is as bad as the
+templates going wrong.
+cleanup: none — reads only, writes nothing.
+source: regression agent, model `opus` via provider `anthropic`, found while running M-F001 on
+2026-09-13 (server 0.4.0-beta.3). All eleven templates matched the expectation above on that pass.
+
 ## Performance
