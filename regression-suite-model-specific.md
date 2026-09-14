@@ -145,40 +145,56 @@ job `2df5f1ff06f2` (`dialogue-short`, `num_inference_steps: 9`, workspace `qa-ep
 `shot@padlock` and `shot@key` reporting `denoise_total_steps: 8`. The 20 → 19 leg is from the
 earlier ep6 `ref2va` run recorded in #110, not re-run here.
 
-### M-F003 — every H3 template's step count matches whether it carries the turbo LoRA
-The `lightx2v/Minimax-h3-Turbo` LoRA (`minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`) is
-distilled against the **base** MiniMax-H3 transformer, so it is only valid where that transformer is
-loaded. The six templates that condition on references alone load the *reference* transformer and
-therefore carry no LoRA and run 20 steps; the five that keep the turbo LoRA run 9. All eleven render
-at 960x544. This pairing — LoRA, step count, resolution — is a three-way invariant stated in the
-`dw:minimax-h3` skill's hard rules ("change one, change all three"), and it is the kind of thing a
-template edit breaks silently: a turbo LoRA left on a 20-step reference template, or a reference
-template quietly dropped to 9 steps, produces a job that *runs* and delivers visibly worse video for
+### M-F003 — every H3 template's turbo LoRA checkpoint agrees with its canvas, shifts, alpha and step count
+Every `templates/minimax/*` H3 template carries a `lightx2v/Minimax-h3-Turbo` LoRA and runs
+`num_inference_steps: 9`; what differs is *which* checkpoint, and a checkpoint comes with a canvas, a
+sigma-shift pair and an alpha that move together. The `dw:minimax-h3` skill's hard rules state this
+as "change one, change all" and name exactly three tested combinations. It is the kind of thing a
+template edit breaks silently: #149 found four reference templates had carried the FL2VA checkpoint
+(distilled for the base transformer, not `transformer_ref`) for a month, and #147 found the 768p
+FL2VA LoRA on the wrong shift/alpha — both produced jobs that *ran* and delivered worse video for
 full price. Nothing else in the suite checks it, and it is free to check.
-Free (run this one every pass): `get_workflow(name=..., variables_only=true)` on each of the eleven
-`templates/minimax/*` H3 templates and compare `num_inference_steps`, `width`/`height` and the
-presence of the `lora_*` variables.
+Free (run this one every pass): `list_workflows(shape="shot")` and `list_workflows(shape="sequence")`
+to enumerate every `templates/minimax/*` entry that exposes `lora_weight_name` (18 as of
+2026-09-14), then `get_workflow(name=..., variables_only=true)` on each and compare
+`lora_weight_name`, `width`/`height`, `video_shift`/`audio_shift`, `lora_alpha` and
+`num_inference_steps` against the three rows below. Every template also has
+`lora_model_name: "lightx2v/Minimax-h3-Turbo"`, `lora_adapter_name: "turbo"`, `lora_scale: 1.0`.
 expected:
-- **No LoRA, `num_inference_steps: 20`** — `reference-to-video`, `composable-references`,
+- **544p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`,
+  `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Templates:
+  `video-with-audio`, `image-to-video`, `chained-segments`, `enhance-prompt`,
+  `enhance-prompt-with-image` (all 960x544); `first-and-last-frame`, `last-frame-only` (544x544 —
+  same 544 short edge, square because they pin a square still).
+- **768p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors`,
+  1344x768, `video_shift: 6.0`, `audio_shift: 3.0`, `lora_alpha: 128`, 9 steps. Template:
+  `video-with-audio-768p` only. This is the one row whose shift and alpha differ; the skill says
+  so explicitly ("the two 768p LoRAs differ in shift; do not generalise").
+- **768p Ref2VA turbo** — `lora_weight_name: minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors`,
+  960x544, `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Every template
+  whose H3 step takes references (`transformer_ref`): `reference-to-video`, `composable-references`,
   `voice-timbre-reference`, `generated-subject-reference`, `chain-matched-to-audio`,
-  `chain-video-continuity`. No `lora_model_name` / `lora_weight_name` / `lora_adapter_name` /
-  `lora_scale` variable on any of them.
-- **Turbo LoRA, `num_inference_steps: 9`** — `video-with-audio`, `storyboard`, `dialogue-short`,
-  `music-video`, `chain-matched-and-aligned`.
-- `width: 960`, `height: 544` on all eleven.
-Note the one asymmetry, so a future run doesn't read it as a failure: `chain-matched-and-aligned`
-exposes only `lora_scale` as a variable (1.0) — its LoRA model/weight/adapter names are inline in the
-step rather than variables. The other four turbo templates expose all four `lora_*` variables. A
-template moving a name between inline and variable is not a finding; a step count that stops matching
-the LoRA's presence is.
-It is a **finding** if any template's step count and LoRA presence stop agreeing (20 with a LoRA, 9
-without), if a template changes canvas away from 960x544 without the step/LoRA pair changing with it,
-or if the `dw:minimax-h3` skill's hard-rules block stops naming the same split — the skill is how a
-caller learns which number to quote, and the split going quietly stale there is as bad as the
-templates going wrong.
+  `chain-video-continuity`, `chain-matched-and-aligned`, `storyboard`, `dialogue-short`,
+  `music-video`. Note the canvas: a 768p-trained *Ref2VA* checkpoint on a 960x544 canvas at the
+  544p shift is the tested combination, not a mismatch — the skill ties canvas to the FL2VA rows only.
+- `num_inference_steps: 9` on all of them; `denoise_total_steps` reporting 8 in a manifest is the
+  scheduler counting grid points and is expected (skill hard rules).
+It is a **finding** if any template's `lora_weight_name`, canvas, shift pair, alpha or step count
+stops matching the row it belongs to; if an `fl2v` weight appears on a reference-taking template
+(the skill says `validate_workflow` refuses this — a template that ships that way and validates is a
+double finding); if a new `templates/minimax/*` H3 template appears whose values fit none of the
+three rows (a fourth combination is either a skill update or a mistake — check the skill, then file
+either way so the row gets recorded here); or if the `dw:minimax-h3` skill's hard-rules block stops
+naming these three combinations — the skill is how a caller learns which numbers to quote, and it
+going quietly stale is as bad as the templates going wrong. A template moving a `lora_*` value
+between inline and variable is not a finding, nor is a new template landing on one of the three
+rows (add it to the list above).
 cleanup: none — reads only, writes nothing.
 source: regression agent, model `opus` via provider `anthropic`, found while running M-F001 on
-2026-09-13 (server 0.4.0-beta.3). All eleven templates matched the expectation above on that pass.
+2026-09-13 (server 0.4.0-beta.3), as a LoRA-present/no-LoRA vs 9/20-step split. Rewritten
+2026-09-14 (Don, via #156, model `opus` via provider `anthropic`) after #147/#148/#149 put a turbo
+LoRA on every template and the skill's rule became checkpoint-canvas-shift-alpha; all 18 templates
+matched the three rows above over MCP on that date. Related: #147, #148, #149, #156.
 
 ### M-F004 — `validate_workflow` enforces H3's Ref2VA reference limits before the checkpoint loads
 MiniMax-H3's Ref2VA workflow refuses four reference-set shapes — more than 9 images, more than 3
