@@ -702,6 +702,127 @@ the typo gave the single error at `arguments.shots[0].references[0].from_file`,
 and the corrected two-entry call gave `valid: true` with `list_entries.shots: 2`
 and a 16.8 min `derived` estimate.
 
+### S-F026 — a task step that cannot run is refused by the free pre-flight
+`validate_workflow`'s own description says "always run this before
+run_workflow", and the server already knows every task command's signature
+(`get_task` reports `required: true` per parameter). A step that omits a
+required argument, or passes one the command does not accept, cannot run — so
+letting it validate clean hands back a `valid: true`, a plan and a fingerprint
+for a job that will die, which costs a queue slot and, once the step is a
+pipeline rather than an audio task, minutes of loading first. The false-positive
+half matters as much as the check: a signature pass that refuses a *legitimate*
+step would break every catalog workflow, so the positive controls below are not
+optional padding.
+expected:
+- **Missing required argument.** `validate_workflow(workflow={"id":
+  "missing-required", "steps": [{"name": "a", "task": {"command":
+  "resample_audio", "arguments": {"target_sample_rate": 16000}}, "result":
+  {"content_type": "audio/wav"}}]})` → `valid: false`, exactly one error whose
+  `path` is `steps[0].task.arguments.audio` and whose text names both
+  `resample_audio` and `audio`. **No `plan` key** — the answer must not also
+  hand back a fingerprint for a run that cannot start.
+- **Unknown argument is an error, not a warning.** The same shape with
+  `crossfade_audio` and `{"audio": <any asset>, "other": <any asset>,
+  "crossfade_ms": 0}` (the real parameter is `audios`, a list) → `valid: false`
+  with **three** errors: the required `audios` not supplied, plus `audio` and
+  `other` not accepted, each at its own `steps[0].task.arguments.<name>` path.
+  A `valid: true` with these reported as warnings is the finding.
+- **Positive control, single step.** `slice_audio` with `audio`,
+  `start_seconds` and `duration_seconds` → `valid: true`, a `plan` present,
+  and no error mentioning a signature.
+- **Positive control, reference-supplied.** A two-step workflow whose second
+  step supplies its required argument as `"audio": "previous_result:<step1>"`
+  → `valid: true`, `plan.steps: 2`. The check must count a reference as
+  supplying the argument rather than demanding a literal.
+- **The chained-omission case is a refusal, and that is correct.** The same
+  two-step workflow with step 2 omitting `audio` entirely → `valid: false` at
+  `steps[1].task.arguments.audio`. Task steps are not fed the previous result
+  implicitly (guide `workflows`, "Cross-Step Data Flow": chaining is an explicit
+  `previous_result:step_name`), so the check applies at every step index, not
+  only step 1. `run_workflow` on that same body is refused at the gate with the
+  identical message rather than queueing.
+cleanup: none — every call above is `validate_workflow`, which is free and
+writes nothing. The one `run_workflow` is refused before a job exists.
+source: tester, model `opus` via provider `anthropic`, verified in #141 on
+2026-09-14 against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep10`. Cases 1-2 are
+the implementer's proposed pair; the three controls are mine, and the fourth
+was run specifically to rule out a false positive on implicit chaining.
+
+### S-F027 — a step nothing reads does not run, and the three guardrails hold
+The engine drops, before the first step executes, any step whose result no
+later step references and which saves no file (#122). This changes what *every*
+catalog workflow runs, so it is worth pinning cheaply rather than only at the
+price of the H3 template that motivated it. Two things can go wrong and the
+second is far worse than the first: elision stops happening (a silent cost
+regression), or elision becomes too eager and deletes work someone wanted (a
+silently different deliverable). Both directions below. All steps are
+sub-second `slice_audio` calls, so the whole case is cheap.
+expected:
+- **Positive control — elision happens, at plan time and at run time.** A
+  two-step workflow, step `a` a `slice_audio` with `result.save: false` that
+  nothing references, step `b` an independent `slice_audio` that saves →
+  `validate_workflow` gives `plan.steps: 1` and
+  `plan.elided_steps: [{"step": "a", "reason": <names both halves: nothing
+  reads it and it saves no file>}]`. Running it succeeds with `a` named in the
+  job's **`warnings`**, and a manifest containing **only** `b`. The warning must
+  survive to the finished job, not just the plan: the elision has to be legible
+  as "the step did not run" rather than as a mysteriously different result.
+- **Guardrail 1 — a step that saves is kept.** The same two steps with `a`
+  carrying a default `result` (i.e. `save` not false) → `plan.steps: 2`,
+  `elided_steps: []`, even though nothing references `a`. `save` defaults to
+  true, so this is what keeps every pre-existing workflow behaving as it did.
+- **Guardrail 2 — the last step is kept even when it reads nothing.** A
+  single-step workflow whose only step has `result.save: false` →
+  `plan.steps: 1`, `elided_steps: []`. A one-step utility workflow must never
+  be elided into doing nothing.
+- `plan` is computed **after** elision, so the step count a caller acknowledges
+  is the count that runs.
+cleanup: delete the output of step `b` from the positive-control run
+(`delete_output` on that run directory). The validate-only cases write nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #122 on
+2026-09-14 against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job
+`f46dd989c696` for the run-time half). The implementer proposed the expensive
+H3 version of this for `regression-suite-complete.md`; this is the cheap
+engine-level equivalent, written because the guardrails are the part most
+likely to be got wrong by a later change and they need no GPU to check.
+
+### S-F028 — a declared variable bound is refused before anything loads
+A workflow can declare a bound on a variable (`constraints`), and the point of
+declaring it is that a bad value costs nothing instead of failing after the
+weights are in memory — the filed case was `num_frames: 61` on an H3 template,
+which used to validate clean and then fail 138 s into the run (#96). Two
+properties are load-bearing and neither is obvious: the bound is checked against
+the value **after** any declared rounding, and the bound is **readable from the
+catalog** so the next caller does not pick a bad value in the first place.
+expected:
+- **Refusal, free and instant.** `validate_workflow(name=
+  "templates/minimax/video-with-audio", arguments={"num_frames": 61})` →
+  `valid: false`, one error at **`arguments.num_frames`** (the argument path,
+  not a step path), its text carrying all three of: the accepted range
+  (`124 to 345`), the rule (`17 * n + 5`), and the value it would round to
+  (`73`).
+- **Rounding is announced, not silent.** `{"num_frames": 130}` → `valid: true`
+  with a warning naming `141` and saying the run generates 141, not 130.
+- **Snap-then-range, the subtle half.** `{"num_frames": 108}` → **`valid: true`**
+  (it rounds up to 124, which is in range) and `{"num_frames": 346}` →
+  **`valid: false`** ("rounds up to 362 ... must be at most 345"). The bound is
+  applied to the *aligned* count. A validator that checked the raw value would
+  falsely refuse 108-123 — legal input — while still passing the 61 case, so
+  this is the assertion that distinguishes a correct fix from a plausible one.
+- **The catalog carries the rule.** `get_workflow(name=
+  "templates/minimax/video-with-audio", variables_only=true)` →
+  `constraints.num_frames` present beside the `num_frames` default, carrying the
+  numbers and a `reason`. `list_workflows(shape="shot")` carries it terse on the
+  same entry (`"17*n+5, 124-345, rounds up"`). This is the half that prevents the
+  mistake rather than catching it.
+cleanup: none — all four calls are free discovery/validate calls that write
+nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #96 on
+2026-09-14 against dw 0.4.0-beta.4 on `lem`. The implementer proposed the first,
+second and fourth bullets; the snap-then-range pair is mine, added because the
+implementer reported that their own first attempt checked the raw value and
+would have falsely refused 108-123.
+
 ## Performance
 
 ### S-P001 — default image generation latency

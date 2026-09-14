@@ -224,4 +224,83 @@ source: tester, model `opus` via provider `anthropic`, verified in #136 on 2026-
 the ten-image probe and the two edge controls are mine, added because the fix's own design (limits
 read from diffusers, not literals) makes "it refuses everything" the failure mode worth pinning.
 
+### M-F005 — LTX-2.5 refuses an off-grid frame count where H3 rounds it up
+The two video families bound `num_frames` and handle a bad value **opposite ways**, by design
+(#96): H3's pipeline aligns upward, so its templates declare `snap: "up"` and an off-grid count is
+accepted with a warning naming what it becomes; LTX-2.5's pipelines *floor* an off-grid count to the
+grid below — silently giving a shorter clip than asked for — so its templates declare the grid with
+**no `snap`** and refuse instead. Rounding LTX up would be a second silent change in the opposite
+direction from the pipeline's own, so the asymmetry is deliberate. It is worth a model-specific case
+because the obvious "tidy-up" for a later maintainer is to make the two families behave the same,
+which would reintroduce either a silent shortening or a silently longer clip. This is also a
+**breaking change** against older behaviour: an off-grid LTX `num_frames` that used to succeed and
+quietly shorten is now a refusal.
+Model/pipeline: LTX-2.5, via `templates/ltx2/text-to-video`; H3 comparison via
+`templates/minimax/video-with-audio`. Free — `validate_workflow` and `get_workflow` only, no GPU.
+expected:
+- **Off-grid is refused, with no rounding offered.** `validate_workflow(name=
+  "templates/ltx2/text-to-video", arguments={"num_frames": 130})` → `valid: false`, one error at
+  `arguments.num_frames` whose text says the value must be `8 * n + 1`. The message must **not**
+  offer a rounded value — an LTX message containing "rounds up to" is the finding, because it means
+  the H3 `snap` behaviour has been copied onto a family that floors.
+- **On-grid passes clean.** `{"num_frames": 121}` → `valid: true`, `errors: []`, **`warnings: []`**
+  and a `plan`. No warning at all, in contrast to H3's on-grid-but-unaligned case.
+- **The contrast with H3 is the point.** The same off-grid-ish value on the H3 template —
+  `validate_workflow(name="templates/minimax/video-with-audio", arguments={"num_frames": 130})` →
+  `valid: true` **with** a warning naming `141`. Two families, same shape of caller mistake, two
+  different and correct answers. It is a finding if these two converge in either direction.
+- **The catalog explains the asymmetry rather than just asserting it.**
+  `get_workflow(name="templates/ltx2/text-to-video", variables_only=true)` →
+  `constraints.num_frames` carrying `modulus: 8`, `remainder: 1`, `min_frames: 9`, **no `snap` key**,
+  and a `reason` that says why it refuses rather than rounds. `list_workflows(shape="shot")` carries
+  it terse as `"8*n+1, 9+"` on the LTX entries against `"17*n+5, 124-345, rounds up"` on the H3 ones
+  — the presence or absence of `rounds up` in the terse form is the one-glance version of this case.
+cleanup: none — validation and discovery only, writes nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #96 on 2026-09-14 against dw
+0.4.0-beta.4 on `lem`. The first two bullets are the implementer's proposed pair; the H3 contrast and
+the catalog bullet are mine, because the failure worth catching is not either family in isolation but
+the two being made to agree.
+
+### M-F006 — `music-video`'s soundtrack covers the cut at any `shots` length
+`templates/minimax/music-video` invites the caller to change `shots` — its own description says
+"add an entry and there is one more slice and one more shot". Before #142 the `soundtrack` step
+sliced a **hardcoded** `num_frames: 496` (4 × 124) while `slice`, `shot` and `concat_videos` all
+followed the list, so any length but four produced a deliverable whose audio and video were
+different lengths, reported as `succeeded` with `warnings: []`. Two shots gave 248 frames of picture
+in a 20.67 s container: the song kept playing over nothing for 10.3 s, and `frame_count`/`fps`
+contradicted `duration_seconds` in the same metadata block — invisible to an agent that cannot watch
+the file, and the same failure shape as #104. The fix removed the `soundtrack` step entirely and let
+`pair_audio` fit the whole song to the picture (`"fit": "video"`), which is why the assertion below
+is on the manifest as well as the numbers: a re-introduced slice step is the regression, even if some
+future default happens to make the arithmetic come out right.
+Model/pipeline: MiniMax-H3 shots + MiniMax Music 3 score, via `templates/minimax/music-video`. Costs
+a real run — ~830 s for the two-shot form on a 3090.
+expected:
+- **A non-default list length yields a coherent deliverable.** Run the template with a **two**-entry
+  `shots` list (`wide_open` at `start_frame: 0`, `closeup` at `start_frame: 124`), everything else
+  default including `audio_duration: 30`. `get_gallery_metadata` on the `final` output →
+  `frame_count: 248`, `fps: 24.0`, and **`duration_seconds` ≈ 10.333, not ≈ 20.667**. The assertion
+  is that `frame_count / fps` and `duration_seconds` **agree**; a `duration_seconds` near twice the
+  picture length is the original bug returning.
+- **`job.warnings: []`** for this direction — the song is longer than the cut, so nothing is padded.
+- **No slice-the-song step in the manifest.** The steps are `draw_singer`, `write_song`,
+  `slice@<entry>` per shot, `shot@<entry>` per shot, `edit`, `music_video`. A step that slices
+  `write_song` to a frame count is the coupling this case exists to keep out.
+- **The song itself is generated whole.** `write_song`'s intermediate is ≈ 30 s
+  (`audio_duration`), i.e. the fit happens at pair time and not by truncating generation. Without
+  this bullet a "fix" that shortened the song to match would pass the first one.
+- **The other direction — still unconfirmed by anyone, run it when the budget allows.** A **six**-
+  entry list is 744 f = 31 s of cut against a 30 s song, so it should come back `succeeded` **with**
+  a padding warning naming the shortfall, rather than the score quietly stopping before the film does
+  (#126's behaviour). Neither the implementer nor I have spent the ~40 min this needs; it is written
+  here rather than left in the issue so it is not lost. Treat a missing warning here as a finding
+  only after confirming the run really did exceed the song.
+cleanup: delete the run's outputs (sweeps its run directory). Nothing durable is produced — the
+otter singer is not part of the cast.
+source: tester, model `opus` via provider `anthropic`, verified in #142 on 2026-09-14 against dw
+0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `2d9ee9c35ee1`, run `20260914-044933-c660f3d0`,
+succeeded in 831.2 s, `warnings: []`, final `frame_count: 248` / `duration_seconds: 10.333333`
+against the pre-fix run's 248 / 20.666). Proposed by the implementer; the manifest bullet, the
+whole-song bullet and the carried-forward six-shot direction are mine.
+
 ## Performance

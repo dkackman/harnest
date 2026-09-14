@@ -703,4 +703,101 @@ against dw 0.4.0-beta.3 on `lem` (job `bf289b68b439`, three 8.8 dB-spread shots,
 unequal-shot arithmetic is from job `c35749b7ef07` the same evening, workspace
 `qa-ep11`. At complete rather than smoke level because it needs three video assets.
 
+### C-F021 — casting an H3 short from files actually skips the portrait steps
+`templates/minimax/dialogue-short` can be cast from portraits that already exist: a
+shot entry's subject reference takes `from_file: "asset:..."` exactly as its voice
+references do. Before #122 the two Z-Image `draw_character_a` / `draw_character_b`
+steps still ran and their output was discarded — about 55 s and two model loads
+bought and thrown away on every episode, with no argument a caller could pass to
+avoid it. A recurring cast is the headline use of this template, so the saving is the
+feature, and it is invisible from the deliverable: a cast run and an uncast run
+produce the same kind of file. S-F027 pins the *engine's* elision cheaply; this case
+pins that this template is actually wired to benefit, which takes a real run.
+expected:
+- **Before the run, which is the part the cost acknowledgement depends on.**
+  `validate_workflow(name="templates/minimax/dialogue-short", workspace=<one that can
+  reach the cast>, arguments={<voices>, "shots": [entries whose subject references use
+  `from_file: "asset:<portrait>"`]})` → a `plan` whose `elided_steps` names
+  **both** `draw_character_a` and `draw_character_b`, each with a reason, and whose
+  `steps` is reduced accordingly (2 for a one-entry `shots` list, against 8 for the
+  stock five-shot default). The count a caller acknowledges must be the count that runs.
+- **The run.** That workflow run for real → `succeeded`, with both draw steps named in
+  the job's **`warnings`** as not having run, each warning also saying what to check if
+  the step *was* meant to run (a misspelled reference, or a `result` that saves).
+- **Neither portrait is written.** The manifest contains only the shot(s) under
+  `intermediate/` and the assembled episode under `final/` — no Z-Image output.
+- **No Z-Image is ever loaded.** `progress` / `get_job_events` go straight to the first
+  shot step with `phase_detail` naming the H3 pipeline. There must be no `loading`
+  phase for the portrait model at all: a run that loads the weights and then discards
+  the image has not saved the expensive half.
+- **Control — the uncast default is unchanged.** `validate_workflow` on the same
+  template with **no** `shots` override → `steps: 8`, `elided_steps: []`,
+  `list_entries.shots: 5`. Both draw steps still run for a caller who did not supply
+  portraits, because the stock shots reference them. This control is the whole safety
+  margin: elision that fired here would silently break the default deliverable.
+- The template's `save: false` on the two draw steps is what lets elision reach them
+  (the engine keeps any step that saves — S-F027 guardrail 1), so the cast validate
+  above is itself the check that the template half is still in place.
+cleanup: delete the cast run's outputs (sweeps its run directory). Keep the cast
+assets — portraits and voice clips are durable fixtures.
+source: tester, model `opus` via provider `anthropic`, verified in #122 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `af59273620ae`, run
+`20260914-044007-369fdaf5`, one-entry `shots` cast from
+`asset:qa-cast/{priya,hal}-portrait.jpg`, succeeded in 535.8 s against an 8.4 min
+`derived` estimate; both draw steps warned, manifest two entries, first `loading`
+phase was `pipeline: MiniMaxAI/MiniMax-H3`). Proposed by the implementer in that
+issue; the one-entry `shots` list is mine, to buy the same evidence for a quarter of
+the five-shot price.
+
+### C-F022 — a derived cost figure is qualified, bucketed, and knows its device
+`observed` reports what a workflow has actually cost **on this box**, beside the
+curated `cost` a maintainer measured elsewhere (#93). The value of the number is
+entirely in its qualifications: a cold and a warm run differ by 4x or more, and a
+figure measured at one set of driver values says nothing about another. Three ways
+this degrades silently — it starts reporting one unqualified number, it starts mixing
+configurations into one average, or its device lookup fails and reports null on a box
+plainly running CUDA (which is what happened on the first deploy, an `ImportError`
+swallowed into a null by an over-broad `try`).
+expected:
+- **Never an unqualified figure.** `get_workflow(name=<a template with history>,
+  variables_only=true)` → `observed` carrying `cold_minutes`/`cold_runs` and/or
+  `warm_minutes`/`warm_runs`, each side with **its own** run count and range, and a
+  side with no runs **absent rather than null**. There must be no `minutes` or
+  `median_minutes` key: a reader must not be able to quote a number without also
+  picking cold or warm. `runs` equals the two sides plus `unclassified_runs` where
+  present.
+- **The device is known.** `observed.device` and `observed.name` are **non-null** on a
+  box with an accelerator (`"cuda"` / the card's name). Null here reads as "the server
+  does not know what it is running on" and is invisible from the numbers themselves —
+  this is the defect that actually shipped once.
+- **Bucketing — a run at different driver values does not join the bucket.** Note a
+  list-driven template's `observed` (`runs`, `cold_minutes`, `cold_range_minutes`,
+  `drivers`), then run it with a **different list length**. Afterwards the reported
+  block is **unchanged**: same `runs`, same median, same range. The reported bucket is
+  the one the *defaults* give, which is what keeps it comparable to the curated figure.
+  A `runs` that incremented, or a range that stretched to include the new run's time,
+  is the finding.
+- **`comparable: "drivers"` with the `drivers` block spelled out**, so a reader can see
+  which configuration the figure is for rather than trusting it. A list driver reports
+  its **length** (`"shots": 4`), not its contents — bucketing on contents would give
+  every run its own bucket and so a permanent `runs: 1`.
+- **A template with no history abstains.** One with `cost: null` and no default-args
+  runs → no `observed` key at all, and the listing still reports
+  `cost_basis: "curated"`.
+- **The compact listing stays compact.** `list_workflows` carries at most
+  `observed_minutes` (cold) and `observed_runs` per entry — never the full block. An
+  entry with `cost: null` but history present still carries the derived pair, which is
+  the case that makes the feature worth its tokens.
+cleanup: delete the outputs of whatever run was made for the bucketing bullet. The
+figures themselves are job history and are not cleaned up.
+source: tester, model `opus` via provider `anthropic`, verified in #93 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`. The bucketing bullet was confirmed twice
+incidentally: `dialogue-short` read `runs: 5, cold_minutes: 38.57, cold_range
+[32.12, 42.81], drivers.shots: 5` both before and after an 8.93-min one-shot run, and
+`music-video` read `runs: 1, cold_minutes: 25.75, drivers.shots: 4` with an earlier
+14.2-min two-shot run likewise absent. The implementer's proposed cases 1 and 3 (two
+runs into the *same* bucket; a cached `rerun_job` not counting) are **not** in this
+case — I did not spend the runs to confirm them, and they are worth adding when
+someone does.
+
 ## Performance
