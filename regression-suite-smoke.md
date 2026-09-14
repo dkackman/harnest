@@ -76,6 +76,14 @@ nothing uses it anymore.
   frames from its head; all that matters is that it is comfortably longer than
   that, so the slice never reaches the end and pads. Read-only — never sliced in
   place, never deleted.
+- `asset:qa-cast/ep13-episode.mp4` — a 282-frame 24 fps 960x544 stereo 44.1 kHz
+  episode in the shared asset library. S-F031 muxes a soundtrack onto it twice; its
+  known geometry is what says the mux moved only the audio. Read-only.
+- `asset:qa-cast/ep15-song.mp3` — a 30.0 s 44.1 kHz stereo Music 3 track that decodes
+  at **+0.76 dBFS**, i.e. with no headroom. S-F031's positive control depends on that:
+  it is the clipping exhibit from #158/#159, not just a song, so replacing it with a
+  quieter track silently disarms the case. Read-only — never normalized in place,
+  never deleted.
 
 ## Functional
 
@@ -920,6 +928,63 @@ against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. The implementer propose
 first bullet; the `runs`-is-honest bullet and the fall-back-off-the-bucket bullet are
 mine, the third added because quoting a measured-looking figure for an unmeasured
 shape is the failure that would survive the implementer's own case.
+
+### S-F031 — normalizing before a mux is what puts headroom in the deliverable, and the warning tracks it
+Every audio deliverable this box makes is muxed or encoded at least once more after the
+waveform is decided, and a lossy encode of a waveform with no headroom decodes above
+0 dBFS and clips (#158). `normalize_audio(peak_dbfs: -1)` immediately before the saving
+step is the whole fix, and #159 put it inside `templates/minimax/music` and
+`templates/minimax/music-video` so a caller gets it without knowing to ask. This case
+pins the mechanism rather than either template, so it stays true if the templates are
+rewritten: the same video, the same song, muxed twice — once raw, once normalized — in
+one job, with the warning and the decoded level read on both.
+It is deliberately built as a **pair**: the raw branch is the positive control. A case
+that only asserts "the normalized file is below 0" passes just as well when
+`normalize_audio` has become a no-op and the source happens to be quiet, and passes when
+the warning has stopped firing at all. The finding is the *difference* between the two
+branches, in the warning and in the level at once.
+Free and seconds long — two `pair_audio` calls and one `normalize_audio` over durable
+fixtures, no model loads at all. Run it on every pass.
+expected: one job with three task steps — `raw_mux` = `pair_audio(video:
+"asset:qa-cast/ep13-episode.mp4", audio: "asset:qa-cast/ep15-song.mp3", sample_rate:
+44100, fit: "video")`; `balanced` = `normalize_audio(audio:
+"asset:qa-cast/ep15-song.mp3", peak_dbfs: -1, sample_rate: 44100)` with `result.save:
+false`; `balanced_mux` = the same `pair_audio` reading
+`"previous_result:balanced"` — all three `content_type: "video/mp4"` / `fps: 24` except
+`balanced`, which is `audio/mp3` —
+- **The raw branch warns, and names the file and the level.** `job.warnings` carries
+  exactly one entry, for `raw_mux`, naming that step's mp4 and a peak at or above
+  **-0.5 dBFS**, and telling the reader to add `normalize_audio(peak_dbfs: -1)`. A
+  warning that has gone silent here is the regression, and it is the quiet one: the
+  deliverable still clips, nothing says so.
+- **The normalized branch does not warn.** No `job.warnings` entry names `balanced_mux`.
+  A warning on both branches means the check is measuring something other than the
+  waveform it was handed.
+- **The decoded levels move the right way and land either side of full scale.**
+  `get_gallery_metadata(<raw_mux mp4>).media.peak_dbfs` is **at or above 0**;
+  `get_gallery_metadata(<balanced_mux mp4>).media.peak_dbfs` is **strictly below 0**.
+  Assert the sign, not a target: the mux is a second lossy encode and it overshoots the
+  -1.0 the waveform was written at, by 0.4 dB on the verifying run and by as much as
+  0.93 dB on the Music 3 mp3s measured beside it. A case demanding `<= -0.9` would
+  fail on a working fix — that is the trap, and it is why the assertion is the sign.
+- **Both branches are the same picture.** `frame_count`, `fps`, `width`, `height` and
+  `duration_seconds` match between the two mp4s and match the fixture (282 f, 24 fps,
+  960x544, 11.75 s). `normalize_audio` is a gain change on the soundtrack; a branch that
+  also moved the video is a different finding.
+metrics: `peak_dbfs` of each mp4, conditions `raw` and `normalized`, unit `dBFS`, logged
+to `regression-perf/S-F031.jsonl`. Logged pass or fail — the interesting number is the
+*gap* between the two conditions and whether the normalized one creeps toward 0 as the
+encoder or the fixture changes. The median-and-50% rule in `regression-perf/README.md`
+means nothing on a figure that sits near zero and may be negative: read these two by eye
+against the sign assertions above, and do not file an issue off the percentage alone.
+cleanup: delete the run's whole output folder — all three files are scratch. The two
+assets it reads are durable fixtures listed in "Fixtures" and are never deleted.
+source: tester, model `opus` via provider `anthropic`, verified in #159 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`, job `089b1e2945d2` (7.7 s):
+`raw_mux` warned at +0.8 dBFS and decoded `peak_dbfs: 0.776`, `balanced_mux` did not
+warn and decoded `peak_dbfs: -0.626`, both 282 f / 24 fps / 960x544 / 11.75 s. The same
+job is what finally settled M-F011's fourth bullet (the warning naming a muxed mp4, not
+only a saved audio file) with a real MCP call rather than a description.
 
 ## Performance
 

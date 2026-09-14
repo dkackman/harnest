@@ -527,4 +527,62 @@ render and the next `music-video` run should be the one to settle it. No `metric
 line deliberately: a dBFS figure hovering around zero is not something the
 median-and-50% rule in `regression-perf/` can say anything useful about.
 
+### M-F012 — the Music 3 templates deliver headroom without being asked
+Music 3 lands at or over full scale on this box every time, so until #159 the default
+path shipped a deliverable that clipped and a caller had to know to add a gain step.
+`templates/minimax/music` now writes through a `balanced` (`normalize_audio`, -1.0 dBFS)
+step with the pipeline step at `save: false`, and `templates/minimax/music-video` puts
+the same step between `edit` and the `pair_audio` mux. This case pins the *default*
+path — no arguments beyond a duration, nothing the caller has to know.
+Two things about it are easy to get wrong, and both are the point:
+**Do not assert the absence of the warning alone.** `audio_no_headroom` measures the
+waveform as written, so it goes quiet the moment a gain step exists — and it would also
+go quiet if the check itself broke. The level is the assertion; the warning is
+corroboration.
+**Do not assert a target level.** The deliverable is mp3, and a lossy encode overshoots
+the -1.0 the waveform was normalized to. Measured on the verifying runs, that overshoot
+was **0.93 dB and 0.59 dB** on two Music 3 tracks — near enough to eat the whole -1.0.
+An assertion of `<= -0.9 dBFS` fails against a fix that is working correctly. Assert
+strictly below 0, which is what "does not clip" means.
+Model/pipeline: MiniMax Music 3. One ~90 s run at `audio_duration: 30`; the
+`music-video` half rides on whatever `music-video` render the suite or an episode does
+next rather than paying 35 min of its own.
+expected: `run_workflow("templates/minimax/music", arguments={"audio_duration": 30})` —
+- **The catalog still carries the gain step.** `get_workflow("templates/minimax/music")`
+  shows two steps: `generate_music` with `result.save: false`, then `balanced`, a
+  `normalize_audio` task at `peak_dbfs: -1.0` whose `result` is what gets written. A
+  template that has quietly lost the step is the regression this case exists for.
+- **The deliverable is the `balanced` step's file**, named `MiniMaxMusic-balanced.*`
+  (not `MiniMaxMusic-generate_music.*`). The old name no longer resolves as an
+  `output:` reference; `keep_output` is the stable form. Note this is a `.1-0.0.mp3`
+  suffix, not the `.0-0.mp3` the implementer predicted in #159 — read the manifest,
+  don't compose the name.
+- **No `audio_no_headroom` entry in `job.warnings`.** Corroboration only; see above.
+- **`get_gallery_metadata(<the mp3>).media.peak_dbfs` is strictly below 0** and
+  `mean_dbfs` is above -40 (a run normalized into near-silence is the opposite failure
+  and would also satisfy "below 0").
+- **`music-video`'s mux is wired the same way and only there.** On the next
+  `music-video` run: `get_workflow` shows `balanced` reading
+  `"previous_result:write_song"` and `music_video`'s `pair_audio` reading
+  `"previous_result:balanced"`, while every `slice` step still reads
+  `"previous_result:write_song"` — the slices condition the picture, so normalizing
+  them would change what is generated, not just how loud it is. The final mp4's
+  `peak_dbfs` is strictly below 0. A `slice` step reading `balanced` is a finding even
+  if the deliverable's level looks right.
+metrics: `peak_dbfs` of the delivered mp3, condition `music`, unit `dBFS`, logged to
+`regression-perf/M-F012.jsonl`; add condition `music-video` from the muxed mp4 whenever
+a `music-video` run settles that bullet. Logged pass or fail. As with S-F031 the
+median-and-50% rule says nothing useful about a figure near zero — what a reader is
+watching for is the number creeping up toward 0 across encoder or template changes.
+cleanup: delete the run's output folder. Nothing here is a fixture.
+source: tester, model `opus` via provider `anthropic`, verified in #159 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. Two runs: `6d2de49d1849`
+(`audio_duration: 30`, 84.2 s, `peak_dbfs: -0.072`) and `9cd731db7c00`
+(`audio_duration: 45`, 110.5 s, `peak_dbfs: -0.413`), both with empty `job.warnings`.
+`normalize_audio` itself was checked separately in jobs `04fed6350543` / `5364d68417c5`
+(-1 -> -0.73 decoded, -6 -> -5.85; -1 -> -0.53, -6 -> -5.90 on the second track), which
+is what established the overshoot figures above rather than guessing at them. The
+`music-video` bullet is written from the deployed template's JSON read over MCP and is
+**not yet confirmed from a run**.
+
 ## Performance
