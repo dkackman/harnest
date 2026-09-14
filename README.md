@@ -173,7 +173,7 @@ Environment:
 | `SOURCE_DIR` | `~/src/dkackman/diffusers-workflow` | implementer's cwd; also where the `dw` plugin is loaded from |
 | `TICKET_REPO` | `dkackman/diffusers-workflow` | the repo whose Issues are the ticket system |
 | `PROVIDER` | `anthropic` | where the models live: `anthropic`, `ollama`, `gateway` |
-| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `opus` | per-role models; there is no shared `MODEL` |
+| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `opus` | per-role models |
 | `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` | `$PROVIDER` | per-role provider overrides |
 | `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `opus` / `$PROVIDER` | same, for `run-regression.sh` |
 | `RESEARCH_MODEL` / `RESEARCH_PROVIDER` | `sonnet` / `$PROVIDER` | same, for `run-research.sh` |
@@ -194,8 +194,8 @@ passwordless `ssh don@lem`, the source checkout on `develop`.
 ### Models and providers
 
 Each role has its own model knob and its own default — implementer `sonnet`,
-tester `opus`, regression `opus`, researcher `sonnet` — and there is no
-shared `MODEL`. Which role may run a weak model is a design decision (a weak
+tester `opus`, regression `opus`, researcher `sonnet`. Which role may run a
+weak model is a design decision (a weak
 tester rubber-stamps silently; a weak implementer's mistakes show up in
 verification), so it is set per role, never for the loop as a whole.
 `PROVIDER` says where the models live and is shared, with a `*_PROVIDER`

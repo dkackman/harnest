@@ -7,8 +7,7 @@
 #   IMPLEMENTER_MODEL=haiku TESTER_MODEL=opus ./run-loop.sh
 #                                       # per-role models; defaults sonnet / opus
 #   PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
-#                                       # a non-Anthropic model, served by Ollama;
-#                                       # each role is named, there is no shared MODEL
+#                                       # a non-Anthropic model, served by Ollama
 #   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
 #   IMPLEMENTER_BUDGET_USD=8 TESTER_BUDGET_USD=5 TRIAGE_BUDGET_USD=3 ./run-loop.sh
 #                                       # per-session --max-budget-usd caps (0 = none)

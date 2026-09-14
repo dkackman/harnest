@@ -123,7 +123,7 @@ resolve_model_env() {
     ollama)
       if is_anthropic_model "$model"; then
         echo "run: model '$model' is an Anthropic model name, which Ollama does not serve." >&2
-        echo "     Set <ROLE>_MODEL (every role that runs) to the Ollama tag, e.g. gemma4:31b-it-q4_K_M." >&2
+        echo "     Set <ROLE>_MODEL to the Ollama tag, e.g. gemma4:31b-it-q4_K_M." >&2
         return 1
       fi
       # Ollama has no /v1/messages/count_tokens, and Claude Code otherwise

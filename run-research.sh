@@ -10,7 +10,7 @@
 #   tail -f logs/research.log               # watch from another terminal
 #
 # Model/provider resolution lives in providers.sh. RESEARCH_MODEL defaults
-# to "sonnet" (there is no shared MODEL knob): deep feasibility judgment is
+# to "sonnet": deep feasibility judgment is
 # expected to land with the implementer pass (and, where parked, with Don)
 # — the research pass itself is triage-weight, so it gets the cheaper
 # default while staying overridable like every other role.

@@ -37,11 +37,10 @@ files described below. There is no build, lint, or test step.
   `co_author_for` (commit-trailer identity), `runtime_note` (the per-role "Runtime:" prompt
   paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md` and
   `regression-perf/`).
-  Model choice is one knob per role and nothing shared: `IMPLEMENTER_MODEL` (default `sonnet`),
-  `TESTER_MODEL` (`opus`), `REGRESSION_MODEL` (`opus`), `RESEARCH_MODEL` (`sonnet`), each with
-  a `*_PROVIDER` that defaults to `PROVIDER` (`anthropic`). There is deliberately no `MODEL`
-  umbrella: which role may run a weak model is a design decision (see "Running"), and a single
-  default that some roles honoured and others ignored hid it. Under a non-anthropic `PROVIDER`
+  Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
+  (`opus`), `REGRESSION_MODEL` (`opus`), `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
+  that defaults to `PROVIDER` (`anthropic`). Which role may run a weak model is a design
+  decision (see "Running"), so the defaults are per role. Under a non-anthropic `PROVIDER`
   every role that runs must be named explicitly, since a Claude alias can't be served there
   and `resolve_model_env` rejects it at startup.
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
