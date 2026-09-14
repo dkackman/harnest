@@ -635,6 +635,35 @@ outright (#116) and `gather_videos` is near-certainly the same
 implementation, but it was never probed — recording it so the fix for #116
 is verified on both, not just the one with a case.
 
+### SE-F025 — `upload_asset` can't read arbitrary server files
+`upload_asset` is the third way a caller names a file in the asset library
+(beside `keep_output`'s `asset_name` and `delete_asset`, which SE-F012
+covers), and the only one whose *source* is a path. When the MCP endpoint is
+served by `dw.serve`, "local" is the server's disk, so `file_path` is a read
+of the GPU box — the mirror of `download_output`'s write (SE-F016).
+Four probes: (a) an absolute path to a stock media file outside every dw root
+— `/usr/share/pixmaps/debian-logo.png`; (b) a path that certainly does not
+exist with the same extension — `/nonexistent-dw-probe/x.png`; (c) a
+non-media absolute path — `/etc/hostname`; (d) `asset_name` containment,
+`../se-probe-escaped.png` against a legal `file_path`.
+expected: (a) and (b) refused **identically**, as outside the roots the
+workflow may read, in `download_output`'s style — the refusal must not depend
+on whether the file exists. (c) refused. (d) refused as an invalid asset name,
+`list_assets` unchanged. Fail if (a) returns a `reference`/`size` (the file
+was read and copied), or if (b)'s error differs from (a)'s in anything but the
+path (an existence oracle). If (a) succeeds, confirm the escape is real rather
+than a name being registered: run a task-only `get_image_size` step on the
+returned `asset:` reference — a job that *succeeds* means the outside file was
+opened and decoded.
+The extension allowlist is not the boundary: it filters the source
+extension, not the location, so treat (c) passing as no evidence about (a).
+cleanup: `delete_asset` anything (a) or (d) created, and delete the readback
+job's outputs. Name anything kept in the issue.
+source: regression agent (opus/anthropic), 2026-09-13 — gap found while
+running SE-F012; `keep_output`/`delete_asset` were covered and `upload_asset`
+was not. First run FAILED on (a) and (b): filed #138.
+last run:
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model
