@@ -9,10 +9,22 @@ Not an application — an orchestration harness for two Claude Code agents that 
 Issues (see "Ticket protocol" below) and, for regression coverage, the `regression-suite-*.md`
 files described below. There is no build, lint, or test step.
 
-- `run-loop.sh` — the driver. Runs implementer, then tester, then prints a ticket status board;
-  repeats. Each agent is a fresh `claude -p` session, so no state survives between cycles except
-  what's written to GitHub Issues (or, per each role prompt's "Adding a case" step, a
-  `regression-suite-*.md` file).
+- `run-loop.sh` — the driver. Runs the implementer's sessions, then the tester's, then prints a
+  ticket status board; repeats. Sessions are **per issue, not per role**: the implementer gets a
+  short triage session when 2+ issues wait (dispositions each with a `triage:` comment, which
+  is also where related issues get batched into one fix), then one fresh `claude -p` per
+  remaining issue; the tester gets one per `status:fixed-pending-verify` issue, plus a "task"
+  session (closure responses + one `TESTER_TASK.md` step) every `TESTER_TASK_EVERY` cycles
+  (default 2). The driver re-checks an issue's labels right before its session so one already
+  handed off by a batch is skipped. Every session runs with `--max-budget-usd`
+  (`IMPLEMENTER_BUDGET_USD`/`TESTER_BUDGET_USD`/`TRIAGE_BUDGET_USD`, defaults 8/5/3, 0 = none)
+  and `--autocompact $AUTOCOMPACT_TOKENS` (default 120k). The reason is measured, not
+  theoretical: one six-issue implementer session ran 269 turns to a 352k-token peak and 60M
+  cached-input tokens, $37, because issue six re-read issues one to five on every turn. No
+  state survives between sessions except what's written to GitHub Issues (or, per each role
+  prompt's "Adding a case" step, a `regression-suite-*.md` file) — the role prompts tell each
+  agent to leave a resumable trail (branch pushed, progress comment) so a budget cut-off is
+  picked up by the next session rather than lost.
 - `providers.sh` — sourced by both drivers. The one table mapping a (provider, model) pair to the
   environment its `claude` process needs: `anthropic` (native — the default; sets nothing but
   scrubs ambient `ANTHROPIC_BASE_URL`/`ANTHROPIC_AUTH_TOKEN`/`ANTHROPIC_DEFAULT_*_MODEL` via
@@ -27,8 +39,10 @@ files described below. There is no build, lint, or test step.
   `regression-perf/`).
   Model choice is one knob per role: `MODEL`/`PROVIDER` are the defaults, `IMPLEMENTER_MODEL` /
   `TESTER_MODEL` / `REGRESSION_MODEL` / `RESEARCH_MODEL` (and `*_PROVIDER`) override per agent.
-  Out of the box: `opus` via Anthropic for every agent except the researcher, which defaults to
-  `sonnet` regardless of `$MODEL` (see below).
+  Out of the box: `opus` via Anthropic for the tester and regression agent; `sonnet` regardless
+  of `$MODEL` for the implementer (its mistakes surface in the tester's verification, and it
+  is the role that spends the most tokens — under a non-anthropic provider it follows `$MODEL`,
+  since a Claude name can't be served there) and for the researcher (see below).
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
 - `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
@@ -127,10 +141,12 @@ files described below. There is no build, lint, or test step.
 
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/diffusers-workflow
-MAX_CYCLES=3 SLEEP_SECS=60 MODEL=sonnet ./run-loop.sh   # MODEL defaults to opus
+MAX_CYCLES=3 SLEEP_SECS=60 MODEL=sonnet ./run-loop.sh   # MODEL defaults to opus (tester); implementer is sonnet regardless
 TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models
 PROVIDER=ollama MODEL=qwen2.5:32b ./run-loop.sh         # a non-Anthropic model
-tail -f logs/loop.log                  # combined [implementer]/[tester]-prefixed stream
+IMPLEMENTER_BUDGET_USD=0 TESTER_TASK_EVERY=1 ./run-loop.sh   # no implementer cap; standing task every cycle
+tail -f logs/loop.log                  # combined stream, prefixed [implementer:#145] / [tester:task] etc.
+grep usage: logs/loop.log              # one line per session: turns, duration, cost, peak context
 ```
 
 Which roles may run a weak model is a design decision, not a config detail: the tester's

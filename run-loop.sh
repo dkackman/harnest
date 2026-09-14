@@ -4,12 +4,16 @@
 #
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
-#   MODEL=sonnet ./run-loop.sh          # default is opus, for every agent
+#   MODEL=sonnet ./run-loop.sh          # default is opus for the tester; the
+#                                       # implementer defaults to sonnet (see below)
 #   TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh
-#                                       # per-role models; each defaults to MODEL
+#                                       # per-role models
 #   PROVIDER=ollama MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
 #                                       # a non-Anthropic model, served by Ollama
 #   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
+#   IMPLEMENTER_BUDGET_USD=8 TESTER_BUDGET_USD=5 TRIAGE_BUDGET_USD=3 ./run-loop.sh
+#                                       # per-session --max-budget-usd caps (0 = none)
+#   TESTER_TASK_EVERY=2 ./run-loop.sh   # standing task every Nth cycle
 #   tail -f logs/loop.log               # watch from another terminal
 #
 # Model/provider resolution lives in providers.sh — see its header for the
@@ -19,6 +23,25 @@
 # runs inside this repo, which contains no code. That working-directory split is
 # what keeps the tester a pure MCP consumer. Tickets are GitHub Issues on
 # TICKET_REPO; GitHub holds their full history, including what predates it.
+#
+# Sessions are per issue, not per role. One cycle is:
+#   implementer triage   one session, only when 2+ issues are waiting: reads
+#                        them all, closes duplicates, parks what needs parking,
+#                        and leaves a `triage:` comment on each — including
+#                        which issues to batch into one fix
+#   implementer #N       one fresh session per remaining issue (a batch is
+#                        worked by the first issue's session; the driver skips
+#                        an issue that was handed off meanwhile)
+#   tester #N            one fresh session per status:fixed-pending-verify issue
+#   tester task          one session, every TESTER_TASK_EVERY cycles: responds
+#                        to wontfix/duplicate closures, then advances
+#                        TESTER_TASK.md one step
+# Why: one 6-issue implementer session measured 269 turns at a 352k-token peak
+# and 60M cached-input tokens — issue 6 paid to re-read issues 1-5 on every
+# turn. A session's cost is context × turns, and per-issue sessions bound
+# both. --max-budget-usd is the backstop for a session that runs away anyway;
+# the role prompts tell each agent to leave a resumable trail (branch,
+# progress comment) so a cut-off session is picked up, not lost.
 
 set -euo pipefail
 
@@ -32,14 +55,29 @@ SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
 MODEL="${MODEL:-opus}"          # default model, for any role without its own
 PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
-# Per-role overrides. Both roles default to MODEL/PROVIDER, so the original
-# single-knob behavior is unchanged; splitting them is how you run, say, a
-# cheap model on the implementer while the tester stays on a strong one.
-IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-$MODEL}"
+# Per-role overrides. The tester defaults to MODEL: its independence is the
+# point of the setup and a weak tester rubber-stamps silently. The
+# implementer defaults to sonnet regardless of MODEL — its mistakes show up
+# in the tester's verification, and it is the role that burns the most
+# tokens — unless PROVIDER isn't anthropic, in which case it follows MODEL
+# (a Claude name can't be served by ollama).
 TESTER_MODEL="${TESTER_MODEL:-$MODEL}"
-IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
 TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
+IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
+if [ "$IMPLEMENTER_PROVIDER" = anthropic ]; then
+  IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
+else
+  IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-$MODEL}"
+fi
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
+# Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
+# size at which a session auto-compacts instead of growing. Non-Anthropic
+# providers report zero cost, so a cap never fires there.
+IMPLEMENTER_BUDGET_USD="${IMPLEMENTER_BUDGET_USD:-8}"
+TESTER_BUDGET_USD="${TESTER_BUDGET_USD:-5}"
+TRIAGE_BUDGET_USD="${TRIAGE_BUDGET_USD:-3}"
+AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
+TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-2}"   # standing task on every Nth cycle
 DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
@@ -93,43 +131,117 @@ IMPLEMENTER_FLAGS=(
   --permission-mode auto
 )
 
-# run_agent <name> <cwd> <provider> <model> <prompt> [extra claude flags...]
-# Streams the agent's output to the terminal, its own log, and the combined log.
+# run_agent <role> <tag> <budget_usd> <cwd> <provider> <model> <prompt> [extra claude flags...]
+# One fresh claude -p session. <role> picks the role prompt's runtime note
+# and the per-role log file; <tag> (e.g. "#145", "triage", "task") is what
+# distinguishes the sessions of one cycle in loop.log. Streams the agent's
+# output to the terminal, its own log, and the combined log.
 run_agent() {
-  local name="$1" dir="$2" provider="$3" model="$4" prompt="$5"; shift 5
+  local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" prompt="$7"; shift 7
+  local label="$role:$tag"
 
   # Both pairs were validated at startup, so these can't fail on a bad pair —
   # but a bare failing call in the while body would take the whole driver down
   # under set -e with no log line, so any failure is logged and skipped like a
-  # failed cycle rather than propagated.
+  # failed session rather than propagated.
   local fb_words
   if ! resolve_model_env "$provider" "$model" \
      || ! fb_words="$(fallback_model_flags "$provider" "$FALLBACK_MODEL")"; then
-    echo "[$name] cycle failed, continuing" | tee -a "$LOGS/loop.log"
+    echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
     return 0
   fi
   # An array, so a fallback like opus[1m] is never glob-expanded.
   local -a fallback=()
   [ -z "$fb_words" ] || read -r -a fallback <<<"$fb_words"
+  local -a limits=(--autocompact "$AUTOCOMPACT_TOKENS")
+  [ "$budget" = 0 ] || limits+=(--max-budget-usd "$budget")
 
   # Each agent is a fresh session, so its model is otherwise unrecorded: a
   # later reader can't tell an Opus verification from a 31B one. Say it in the
   # prompt, where the agent can carry it into the comments it writes.
   local note full_prompt
-  note="$(runtime_note "$name" "$provider" "$model")"
+  note="$(runtime_note "$role" "$provider" "$model")"
   full_prompt="$prompt
 
 $note"
 
-  echo "=== $(ts) cycle $cycle: $name ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
+  echo "=== $(ts) cycle $cycle: $label ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
   (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
       claude -p "$full_prompt" \
-      --model "$model" ${fallback[@]+"${fallback[@]}"} \
-      "${STREAM_FLAGS[@]}" "$@" 2>&1 | render_stream "$name") \
-    | tee -a "$LOGS/$name.log" \
-    | sed -u "s/^/[$name] /" \
+      --model "$model" ${fallback[@]+"${fallback[@]}"} "${limits[@]}" \
+      "${STREAM_FLAGS[@]}" "$@" 2>&1 < /dev/null | render_stream "$role") \
+    | tee -a "$LOGS/$role.log" \
+    | sed -u "s/^/[$label] /" \
     | tee -a "$LOGS/loop.log" \
-    || echo "[$name] cycle failed, continuing" | tee -a "$LOGS/loop.log"
+    || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
+}
+
+# open_issues <owner-label> <fresh|verify>
+# Issue numbers, ascending, of open issues carrying <owner-label> that are
+# ready for that role: `fresh` = no status:* label at all (the implementer's
+# work queue), `verify` = status:fixed-pending-verify (the tester's).
+open_issues() {
+  local owner="$1" mode="$2" filter
+  case "$mode" in
+    fresh)  filter='([.labels[].name | select(startswith("status:"))] | length) == 0' ;;
+    verify) filter='[.labels[].name] | index("status:fixed-pending-verify") != null' ;;
+    *) echo "open_issues: bad mode $mode" >&2; return 1 ;;
+  esac
+  gh issue list --repo "$TICKET_REPO" --state open --label "$owner" --limit 200 \
+    --json number,labels --jq ".[] | select($filter) | .number" | sort -n
+}
+
+# still_ready <n> <owner-label> <fresh|verify>
+# Re-check one issue just before its session starts: a triage session or an
+# earlier per-issue session (working a batch) may have handed it off already.
+still_ready() {
+  local n="$1" owner="$2" mode="$3"
+  open_issues "$owner" "$mode" | grep -qx "$n"
+}
+
+# implementer_pass — triage (when 2+ issues wait), then one session per issue.
+implementer_pass() {
+  local -a queue=()
+  local n
+  while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(open_issues owner:implementer fresh)
+  [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOGS/loop.log"; return 0; }
+
+  if [ "${#queue[@]}" -ge 2 ]; then
+    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: follow the 'Triage session' section of $AGENTS/IMPLEMENTER_AGENT.md for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
+      "${IMPLEMENTER_FLAGS[@]}"
+  fi
+
+  for n in "${queue[@]}"; do
+    still_ready "$n" owner:implementer fresh \
+      || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
+    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop." \
+      "${IMPLEMENTER_FLAGS[@]}"
+  done
+}
+
+# tester_pass — one session per issue to verify, then (every
+# TESTER_TASK_EVERY cycles) one session for closure responses and the
+# standing task.
+tester_pass() {
+  local n
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    still_ready "$n" owner:tester verify \
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
+      "${TESTER_FLAGS[@]}"
+  done < <(open_issues owner:tester verify)
+
+  if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+    run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
+      "${TESTER_FLAGS[@]}"
+  else
+    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
+  fi
 }
 
 # One line per open issue: #NN  status-labels  owner-label  title
@@ -151,12 +263,8 @@ while true; do
   park_external_issues
   before="$(status_board)"
 
-  run_agent implementer "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this cycle. Act only on issues you own (owner:implementer), then stop." \
-    "${IMPLEMENTER_FLAGS[@]}"
-  run_agent tester "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this cycle. First act on issues you own (owner:tester). Then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Then stop." \
-    "${TESTER_FLAGS[@]}"
+  implementer_pass
+  tester_pass
 
   # The tester is the only agent in this loop that edits the regression suite
   # files (it adds a case once it has verified it over MCP; the implementer

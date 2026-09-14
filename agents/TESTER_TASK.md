@@ -23,7 +23,8 @@ recurring two-character cast is the point — it's what drives reuse across
 episodes, and reuse is where the interesting bugs live (T005, T007, T010,
 T011, T013). Keep the episodes tiny: two to four shots, short lines.
 
-Each cycle, after verification work:
+Each task session (the driver runs one every few cycles, separate from the
+per-issue verify sessions):
 
 1. Pick up where the last episode left off. `qa-bible.md` in your working
    directory is your memory across cycles — see "The bible" below for what

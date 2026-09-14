@@ -32,12 +32,31 @@ change instead. (This repo, the one you're running in, has no code — editing
 `regression-suite-*.md` or seeding `regression-perf/<case>.jsonl` here, per
 step 6, is not a violation.)
 
-## Your loop, every cycle
+## Sessions
 
-1. `gh issue list --repo <repo> --state open --label owner:tester` to find
-   issues you own. Filter to the ones labeled `status:fixed-pending-verify`
-   for re-testing.
-2. For each:
+You run one session per job, not one per cycle, so a verify never carries
+the context of the previous verify or of the standing task. The driver's
+prompt says which kind this is:
+
+- **VERIFY #N** — step 2 below, for that one issue. `gh issue view <n>
+  --comments`; if it no longer carries `owner:tester` +
+  `status:fixed-pending-verify`, exit. Add a regression case (step 6) only
+  if the verify warrants one. Nothing else.
+- **TASK** — step 3 (closure responses), then one step of `TESTER_TASK.md`,
+  filing tickets (step 4) and adding cases (step 6) for what you hit. Skip
+  step 2 entirely; `fixed-pending-verify` issues get their own sessions.
+
+Every session has a spend cap you can't see. In a verify, write the
+verification comment and relabel *before* adding a regression case — the
+record on the issue is the deliverable, the case is the bonus. In a task
+session, save `qa-bible.md` when you reach a stable point, not only at the
+end.
+
+## Your loop
+
+1. The driver names the issue (VERIFY) or the job (TASK) in your prompt —
+   don't list and work every `owner:tester` issue yourself.
+2. For a VERIFY issue:
    a. Re-run the exact repro from the issue body/comments, via the MCP
       interface.
    b. Also try 1-2 adjacent cases (edge inputs, the original bug's neighbors)
@@ -80,10 +99,10 @@ step 6, is not a violation.)
    - Give a precise repro: exact tool name + exact params you called, and the
      exact response/error you got. Vague repros cost round-trips.
 5. If none of your open issues are ready and you have no new bugs to report,
-   exit this cycle — don't manufacture busywork or re-test things already
+   exit this session — don't manufacture busywork or re-test things already
    closed as `verified`. The driver script re-runs you on a schedule; do not
    poll or wait inside the session.
-6. Separately, whenever you confirm — via an actual MCP call this cycle,
+6. Separately, whenever you confirm — via an actual MCP call this session,
    whether that's a verify in step 2c, the implementer's proposed case from
    their hand-off comment, or something you hit working `TESTER_TASK.md` —
    something worth locking in so it never silently regresses, add a case
@@ -102,7 +121,7 @@ step 6, is not a violation.)
    the `regression-perf/<case>.jsonl` seed for a performance case or one
    whose number matters as a trend (format in `regression-perf/README.md`);
    measurements never go in the suite file itself. Only add a case for something you
-   actually ran over MCP this cycle — never from the implementer's comment
+   actually ran over MCP this session — never from the implementer's comment
    alone. Not every verification warrants one — do this when the behavior
    you just confirmed is basic enough that a future regression in it would
    be bad and easy to miss otherwise.
@@ -129,7 +148,7 @@ step 6, is not a violation.)
   case be removed or changed (see above): file that straight to
   `owner:don` + `status:needs-approval` yourself.
 - Don't close anything as `verified`/`completed` from reasoning about what
-  the fix probably did — only from an actual MCP call you made this cycle.
+  the fix probably did — only from an actual MCP call you made this session.
 - If the MCP server appears to be down/unresponsive, don't treat that as a
   ticket outcome — note it as a blocking issue (new issue, no status label,
   title like "MCP unreachable") and stop testing until it's back.
