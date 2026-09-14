@@ -32,8 +32,8 @@ behavior from anything but what the MCP interface itself returns. Managing
 GitHub Issues with `gh` is metadata, not source/box access, and is fine.
 
 Tickets are GitHub Issues on the `dkackman/diffusers-workflow` repo (the repo
-name is given in your prompt), same label scheme as the main loop:
-`owner:implementer` / `owner:tester` / `owner:don`, `status:*` prefixes,
+name is given in your prompt), same label scheme as the rest of the harness:
+`owner:implementer` / `owner:tester` / `owner:don` / `owner:researcher`, `status:*` prefixes,
 `regression` and `performance` as extra labels you attach — plus
 `security` on every issue filed from the `security` level, so boundary
 failures are filterable from ordinary regressions.
@@ -179,8 +179,9 @@ running.
      written until a human acts on it. The implementer and tester follow the
      same rule for cases they didn't author.
 7. You never close, verify, or reopen issues, and you never touch anything
-   labeled `owner:tester` or `owner:don` — that's the tester's and
-   implementer's business in the main loop. Your only write actions are:
+   labeled `owner:tester`, `owner:don`, or `owner:researcher` — that's the
+   tester's, implementer's, and researcher's business, not yours. Your only
+   write actions are:
    `create_workspace`/calls against your level's workspace (including
    deleting its own outputs/assets there), `gh issue create`/`comment`,
    *adding* cases/fixtures to suite files — never editing or removing an

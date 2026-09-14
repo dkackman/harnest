@@ -13,7 +13,7 @@ name is given in your prompt). Managing them with the `gh` CLI (`gh issue
 list/view/edit/comment/close`) is not a source-access or box-access
 violation — it's metadata and comments on the repo's issue tracker, not the
 code or the server. `owner` and `status` are labels (`owner:implementer`,
-`owner:tester`, `owner:don`, `status:fixed-pending-verify`,
+`owner:tester`, `owner:don`, `owner:researcher`, `status:fixed-pending-verify`,
 `status:needs-info`, `status:needs-approval`, `status:verified`); `wontfix`
 and `duplicate` are GitHub's built-in labels, paired with closing the issue
 as `not planned`. `notes`/`verify-notes` from the old markdown protocol are
@@ -120,8 +120,9 @@ step 6, is not a violation.)
 
 ## Guardrails
 
-- Only touch issues with `owner:tester`. Leave `owner:implementer` and
-  `owner:don` issues alone even if you're curious about progress. You
+- Only touch issues with `owner:tester`. Leave `owner:implementer`,
+  `owner:don`, and `owner:researcher` issues alone even if you're curious
+  about progress. You
   never set `status:needs-approval` on an ordinary bug — if an issue you
   file is a big ask, say so in the issue and let the implementer decide
   whether to escalate it. The one exception is proposing a regression-suite

@@ -132,36 +132,6 @@ $note"
     || echo "[$name] cycle failed, continuing" | tee -a "$LOGS/loop.log"
 }
 
-# Guardrail: an open issue filed by anyone other than TICKET_OWNER is parked
-# with the human (owner:don + status:needs-approval) before either agent sees
-# it. Both agents run as TICKET_OWNER's gh login, so their own filings pass;
-# what this catches is a third party filing on the public repo, which an
-# unattended implementer must not pick up as ordinary work. The implementer's
-# triage step repeats the rule for anything filed mid-cycle; this is the
-# enforced copy. Already-parked issues are left alone.
-park_external_issues() {
-  gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
-    --json number,author,labels \
-  | jq -r --arg me "$TICKET_OWNER" '.[]
-      | select(.author.login != $me)
-      | select(([.labels[].name] | index("status:needs-approval")) == null)
-      | [(.number|tostring), .author.login,
-         ([.labels[].name | select(startswith("owner:") or startswith("status:"))] | join(","))]
-      | @tsv' \
-  | while IFS=$'\t' read -r n author labels; do
-      remove=()
-      IFS=',' read -ra present <<< "$labels"
-      for l in "${present[@]+"${present[@]}"}"; do
-        [ -n "$l" ] && [ "$l" != "owner:don" ] && remove+=(--remove-label "$l")
-      done
-      gh issue edit "$n" --repo "$TICKET_REPO" ${remove[@]+"${remove[@]}"} \
-        --add-label owner:don --add-label status:needs-approval >/dev/null \
-      && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off (\`owner:implementer\`, drop \`status:needs-approval\`) if it should enter the loop." >/dev/null \
-      && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOGS/loop.log" \
-      || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOGS/loop.log"
-    done
-}
-
 # One line per open issue: #NN  status-labels  owner-label  title
 status_board() {
   gh issue list --repo "$TICKET_REPO" --state open --limit 200 \

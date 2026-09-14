@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # MODEL_ENV / MODEL_LABEL / MODEL_CONTEXT_TOKENS / CO_AUTHOR* are read by the sourcing driver
-# providers.sh — model/provider resolution and the small set of helpers both
-# drivers (run-loop.sh, run-regression.sh) would otherwise duplicate. Sourced,
-# never executed.
+# providers.sh — model/provider resolution and the small set of helpers all
+# three drivers (run-loop.sh, run-regression.sh, run-research.sh) would
+# otherwise duplicate. Sourced, never executed.
 #
 # Claude Code takes its model from --model, and *where that model lives* from
 # ANTHROPIC_BASE_URL. Any endpoint that speaks the Anthropic Messages API
@@ -21,8 +21,13 @@
 #   runtime_note <role> <provider> <model>      prints the "Runtime:" paragraph
 #   commit_suite_changes <msg> [name] [email]   commits regression-suite-*.md
 #                                               and regression-perf/
+#   park_external_issues                        relabels issues filed by a
+#                                               non-owner login to owner:don +
+#                                               status:needs-approval
 #   CONSUMER_PERMISSION_FLAGS                    array: permission flags for the
 #                                               consumer-only roles (tester, regression)
+#   RESEARCHER_PERMISSION_FLAGS                  array: permission flags for the
+#                                               read-only-source researcher role
 #
 # Providers, and why each is more than just a base URL:
 #   anthropic  Native Claude Code models, alias or full id. The default. Sets
@@ -281,6 +286,25 @@ CONSUMER_PERMISSION_FLAGS=(
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
 )
 
+# Permission flags for the researcher: read-only against the source
+# checkout (Read/Glob/Grep/git-read only — no Edit/Write, no git writes, no
+# ssh, no curl), read-only dw MCP discovery calls, and gh for issue
+# management. Distinct from CONSUMER_PERMISSION_FLAGS (which allows Edit/
+# Write for the suite files the tester/regression agent maintain) and from
+# the implementer's --permission-mode auto: the researcher assesses, it
+# never implements, and it has no durable file of its own to edit.
+RESEARCHER_PERMISSION_FLAGS=(
+  --permission-mode dontAsk
+  --allowedTools
+    "mcp__dw__list_workflows" "mcp__dw__list_guides" "mcp__dw__list_pipelines"
+    "mcp__dw__list_classes" "mcp__dw__list_tasks" "mcp__dw__get_server_info"
+    "mcp__dw__get_schema" "mcp__dw__get_guide" "mcp__dw__get_class"
+    "mcp__dw__get_pipeline_signature" "ToolSearch" "WebFetch" "TodoWrite"
+    "Read" "Glob" "Grep"
+    "Bash(gh *)" "Bash(date *)" "Bash(file *)"
+    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
+)
+
 co_author_for() {
   local provider="$1" model="$2" name email
   if is_anthropic_model "$model"; then
@@ -302,14 +326,15 @@ co_author_for() {
 # things is per role, and matches what each role prompt actually permits: the
 # implementer only *proposes* regression cases in a hand-off comment (it has
 # no checkout of this repo), so it is not told it edits the suite.
-# Roles: implementer, tester, regression. Returns 1 on any other role.
+# Roles: implementer, tester, regression, researcher. Returns 1 on any other role.
 runtime_note() {
   local role="$1" provider="$2" model="$3" examples
   case "$role" in
     implementer) examples="a ticket hand-off comment, a wontfix or needs-info reason, a regression case you propose in a hand-off" ;;
     tester)      examples="a verification comment, a bounce, a new issue, a regression-suite edit" ;;
     regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression)" >&2; return 1 ;;
+    researcher)  examples="a research/proposal comment, a reject reason, a question parked for Don" ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|researcher)" >&2; return 1 ;;
   esac
   printf '%s\n' \
     "Runtime: you are the $role agent, running as model '$model' via the '$provider'" \
@@ -345,4 +370,40 @@ commit_suite_changes() {
   git -C "$REPO" add -- "${paths[@]}"
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOGS/loop.log"
+}
+
+# park_external_issues
+# Guardrail: an open issue filed by anyone other than TICKET_OWNER is parked
+# with the human (owner:don + status:needs-approval) before any driver's
+# agent sees it. Every unattended role runs as TICKET_OWNER's gh login, so
+# its own filings pass; what this catches is a third party filing on the
+# public repo, which no unattended agent may pick up as ordinary work.
+# role-specific triage steps (e.g. the implementer's) repeat the check for
+# anything filed mid-run; this is the enforced copy, shared by every driver
+# that calls it. Already-parked issues are left alone. Needs TICKET_REPO,
+# TICKET_OWNER, and LOGS set by the caller.
+park_external_issues() {
+  : "${TICKET_REPO:?park_external_issues: TICKET_REPO must be set by the driver}"
+  : "${TICKET_OWNER:?park_external_issues: TICKET_OWNER must be set by the driver}"
+  : "${LOGS:?park_external_issues: LOGS must be set by the driver}"
+  gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
+    --json number,author,labels \
+  | jq -r --arg me "$TICKET_OWNER" '.[]
+      | select(.author.login != $me)
+      | select(([.labels[].name] | index("status:needs-approval")) == null)
+      | [(.number|tostring), .author.login,
+         ([.labels[].name | select(startswith("owner:") or startswith("status:"))] | join(","))]
+      | @tsv' \
+  | while IFS=$'\t' read -r n author labels; do
+      remove=()
+      IFS=',' read -ra present <<< "$labels"
+      for l in "${present[@]+"${present[@]}"}"; do
+        [ -n "$l" ] && [ "$l" != "owner:don" ] && remove+=(--remove-label "$l")
+      done
+      gh issue edit "$n" --repo "$TICKET_REPO" ${remove[@]+"${remove[@]}"} \
+        --add-label owner:don --add-label status:needs-approval >/dev/null \
+      && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off (\`owner:implementer\`, drop \`status:needs-approval\`) if it should enter the loop." >/dev/null \
+      && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOGS/loop.log" \
+      || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOGS/loop.log"
+    done
 }
