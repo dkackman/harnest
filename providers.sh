@@ -377,7 +377,7 @@ park_external_issues() {
       done
       gh issue edit "$n" --repo "$TICKET_REPO" ${remove[@]+"${remove[@]}"} \
         --add-label owner:don --add-label status:needs-approval >/dev/null \
-      && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off if it should enter the loop." >/dev/null \
+      && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off (\`owner:implementer\`, drop \`status:needs-approval\`) if it should enter the loop." >/dev/null \
       && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOGS/loop.log" \
       || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOGS/loop.log"
     done
