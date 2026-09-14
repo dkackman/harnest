@@ -14,7 +14,7 @@
 #   ./run-regression.sh security             # security only (hostile-input probes, opt-in)
 #   ./run-regression.sh all                  # smoke, complete, model-specific, security
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
-#   REGRESSION_MODEL=sonnet ./run-regression.sh   # defaults to opus; no shared MODEL knob
+#   REGRESSION_MODEL=sonnet ./run-regression.sh   # defaults to opus
 #   PROVIDER=ollama REGRESSION_MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
