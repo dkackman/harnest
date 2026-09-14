@@ -666,6 +666,42 @@ and its happy-path companion — `target_sample_rate: 16000` on that same track 
 gave `duration_seconds: 14.5` unchanged at `sample_rate: 16000` with levels
 moved ~0.007 dB, i.e. a real filter ran rather than a relabel.
 
+### S-F025 — an `asset:` reference nested inside a list entry is resolved at validate
+`validate_workflow`'s argument pass must reach references that sit *inside* a
+list-driven workflow's entries, not just top-level scalar arguments (S-F010's
+ground). This is the shape a recurring cast takes:
+`templates/minimax/dialogue-short` gets its portraits and voice clips from
+`arguments.shots[N].references[M].from_file`, several objects deep in a list
+entry. If a mistyped asset name there validates clean, the caller gets a
+`valid: true`, a plan and a multi-minute quote, and the job dies at run time —
+after the two Z-Image portrait steps have already burned about a minute — on a
+typo that was free to catch. Both halves are needed: a validator that reports
+every unresolvable nested reference but also refuses a good one is no better.
+expected:
+- **Negative.** `validate_workflow(name="templates/minimax/dialogue-short",
+  workspace=<a workspace that can reach the cast>, arguments={"shots": [one
+  entry whose `references[0].from_file` is a **nonexistent** `asset:` path, e.g.
+  `asset:qa-cast/priya-portrait-NOPE.jpg`, and whose `references[1].from_file`
+  is a real one]})` → `valid: false`, exactly one error, its `path` being
+  `arguments.shots[0].references[0].from_file` — the full index chain, not
+  `arguments.shots` and not a bare message — and its text naming the asset and
+  listing the asset roots searched. `checked_arguments` includes `shots`. The
+  finding is `valid: true`, or an error whose path stops at the list.
+- **Positive control.** The same call with every `from_file` naming a real
+  asset → `valid: true`, `errors: []`, `warnings: []`, and a `plan` whose
+  `list_entries.shots` equals the number of entries passed. A validator that
+  cannot resolve a legitimate nested reference would fail this and pass the
+  negative for the wrong reason.
+- Any list-driven template with `from_file`/`asset:` references in its entries
+  works; `dialogue-short` is named because its cast fixtures are durable.
+cleanup: none — `validate_workflow` is free and writes nothing.
+source: tester, model `opus` via provider `anthropic`, found while running
+TESTER_TASK.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Both halves were
+run in `qa-ep12` while casting ep12 from `asset:qa-cast/{priya,hal}-{portrait.jpg,voice.wav}`:
+the typo gave the single error at `arguments.shots[0].references[0].from_file`,
+and the corrected two-entry call gave `valid: true` with `list_entries.shots: 2`
+and a 16.8 min `derived` estimate.
+
 ## Performance
 
 ### S-P001 — default image generation latency
