@@ -664,6 +664,83 @@ running SE-F012; `keep_output`/`delete_asset` were covered and `upload_asset`
 was not. First run FAILED on (a) and (b): filed #138.
 last run:
 
+### SE-F027 — `upload_asset`'s confinement still lets a legal source through, and `..` out of a root does not
+SE-F025 proves `upload_asset` refuses what it must. This case proves it still
+does its job, and closes the one gap a pure-refusal case structurally cannot see:
+a regression that refuses **every** `file_path` — the confinement misreading the
+roots, `client.mounted` going true where it should not, a root list that comes
+back empty — leaves SE-F025 passing on all four probes while the tool is dead.
+Two probes, both against the mounted endpoint on the GPU box (a stdio `dw-mcp`
+against a remote engine is deliberately unconfined and this case does not apply):
+expected:
+- **Positive control.** `upload_asset(file_path=<an absolute path to a real media
+  file underneath one of the roots the refusal message names>, asset_name=…)` —
+  e.g. a wav in the shared library, `<workspace root>/common/assets/<…>.wav` —
+  succeeds: a `reference`, a `url` scoped to this workspace, `uploaded` naming the
+  source file, and a `size` equal to the file's. A refusal here is the finding,
+  and it is the one SE-F025 would never report.
+- **Traversal out of a root.** A path that *begins* inside a root and climbs out
+  with `..` — `<workspace root>/common/assets/../../../../etc/hostname.png` —
+  refused, with a message differing from SE-F025's (a)/(b)/(c) only in the echoed
+  path. Containment is on the resolved real path, so a prefix that looks legal is
+  not enough; this is also the shape a symlink inside a root would take, which a
+  consumer cannot create and so cannot test directly.
+Read the roots out of the refusal message itself rather than hardcoding them —
+it names them, and on a workspace-scoped session they are the *server's* roots,
+not the session workspace's, which is easy to misread as a bug and is not one.
+cleanup: `delete_asset` the control's `uploads/<asset_name>`. The traversal probe
+creates nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #138 on
+2026-09-13 against dw 0.4.0-beta.3 on `lem`, session workspace `qa-ep10` (control
+uploaded 928,044 bytes as `asset:uploads/qa-probe-control.wav`, deleted after).
+The implementer's suggested addition to SE-F025 — asserting (a) and (b) refuse
+*identically* rather than merely both refusing — is already in SE-F025 as written,
+so nothing there needed changing and nothing there was changed.
+
+### SE-F026 — a trust refusal emits no phase event, and a legitimate load still does
+SE-F005 and SE-F006 say a probe must not "start loading the model" before it
+fails, and read that off `get_job_events`. #137 was the case where that evidence
+went bad without the gate moving: the `loading` phase marker was emitted on entry
+to `pipeline.load()`, with both trust gates *inside* that call, so a job refused
+before touching the model and a job that loaded one and then failed emitted the
+same event. The gate held; the only thing that broke was a consumer's ability to
+tell "refused too late" from "refused in time" — which this suite's header calls
+a failure in its own right, and which is exactly what caught #112. The fix runs
+the trust checks over the definition as a pre-flight, ahead of the marker.
+This case pins both halves of that, because each alone is satisfiable by a bug:
+expected:
+- **The refusal side.** Re-run the SE-F005 probe (`trust_remote_code: true`) and
+  the SE-F006 probe (`custom_pipeline: "lpw_stable_diffusion"`). Each job's full
+  `get_job_events` contains **no `phase` event at all** — not merely no `loading`
+  one. The events are the three `job_status` transitions, the workspace's own log
+  lines, `run_start`, `workflow_start` and `step_start`, and nothing else. This is
+  stronger than SE-F005's own wording and equally true as of 0.4.0-beta.3.
+- **The control, which is the half that matters.** A *legitimate* pipeline job —
+  any small real load; `templates/text-to-image` or an inline SD 1.5 step with no
+  trust flags — **does** emit `phase: "loading"` with the model named in `detail`,
+  immediately after its `step_start`. Without this line the case passes happily if
+  `loading` stops being emitted anywhere, which is the obvious way a
+  "move the marker" change regresses and would leave SE-F005/F006/SE-P001 unable
+  to detect a late refusal ever again.
+- The refusal's traceback still shows the check reached from `create_step_action`
+  → `check_trusted`, i.e. before the step action is even built. A traceback that
+  moves back inside `load()`/`load_component` means the pre-flight was lost and
+  only the in-load gate is left — still safe, but the evidence is gone again.
+It is a **finding** if a refusal acquires any phase event, if a legitimate load
+stops emitting `loading`, or if the refusal message or its timing band changes
+(SE-P001 owns the number; this case owns the events).
+cleanup: the refusals write no media but do create a run directory. Remove each
+with `delete_output("<workflow id>/<run id>")` — the run-directory form, which is
+the only thing that reaches a run that failed before writing media (#134). Delete
+the control job's outputs normally.
+source: tester, model `opus` via provider `anthropic`, verified in #137 on
+2026-09-13 against dw 0.4.0-beta.3 on `lem`, workspace `qa-ep10` (jobs
+`aa720effc6a2` and `babaea669d3e`, both refused at 1.0 s with ten events and no
+phase among them; control job `3a1545cc713c` emitted `loading` at `seq 9, at
+0.7s`). Filed as a new case rather than as an edit to SE-F005 because no agent
+may rewrite an existing case — the implementer offered the amendment in #137's
+hand-off and this is the form the suite's own "Removing a case" rule allows.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

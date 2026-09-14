@@ -523,6 +523,80 @@ source: regression agent, found on 2026-09-13 during the final sweep as model
 cleanup path every other case's `cleanup:` line depends on being able to reach —
 the same reason S-F014 is here.
 
+### S-F022 — `delete_output` reports the sweep, and a run directory is addressable and contained
+S-F021 measures the *outcome* — the workspace returning to the size it was. This
+case pins the two pieces of API surface #134's fix added to get there, which
+S-F021 would not notice the loss of: `delete_output`'s `run_swept` field, and the
+`<workflow>/<run id>` name form. A regression in either leaves S-F021 still
+passing on a workspace that happens to be clean for another reason.
+Run any cheap generating workflow whose manifest has exactly one media file
+(`templates/dissolve-between-shots` over three short video assets is ~6 s, or
+reuse whatever S-F007 just ran), and note its `run_id`.
+expected:
+- `delete_output(name=<the one media file's gallery name>)` → `deleted: true` and
+  `run_swept` equal to that `run_id`. The field is how a caller knows the sidecars
+  went with it; `run_swept: null` on the last media file of a run is a finding.
+- On a second run of the same thing, `delete_output(name="<workflow>/<run id>")` —
+  the first two segments of a gallery name — → `deleted: true`, `run_swept` the
+  run id. This form is the only way to reach a run that failed before writing
+  media, so it must not decay into "404 unless a media file names it".
+- `delete_output(name="<workflow>/../../<some other workspace>/outputs")` → refused
+  as an unknown file, naming the `..` pattern. Nothing outside this workspace's
+  `outputs/` is reachable, and the refusal is a 404-shaped error, not a partial
+  delete.
+- `delete_output(name="<workflow>/not-a-run-id")` → refused as a path that does not
+  exist. A name that is not a run id must never be treated as "delete this
+  directory tree" — that is the failure mode that would turn a typo into a
+  workspace wipe.
+The last two are the reason this is not folded into S-F021: the addressable-run
+form is a recursive delete taking a caller-supplied path, and what makes it safe
+is that it refuses everything that is not exactly a run directory.
+cleanup: the case deletes its own runs as its assertions — nothing is left. If a
+probe's refusal unexpectedly succeeded, whatever it removed is gone and that is
+the finding.
+source: tester, model `opus` via provider `anthropic`, verified in #134 on
+2026-09-13 against dw 0.4.0-beta.3 on `lem`, workspace `qa-ep10` (four jobs run
+and swept by the two forms; `usage` returned to 4 files / 6,138 bytes exactly).
+Not covered here, because a consumer-only agent could not provoke it: the
+failed-job-with-no-media run the `<workflow>/<run id>` form exists for. Two
+attempts at a fast runtime failure both succeeded instead — which became its own
+issue — so that path is exercised against runs that did write media.
+
+### S-F023 — a safety-checker blanking is announced, and the reference template is out of its path
+SD 1.5's NSFW safety checker false-positives on ordinary prompts for particular
+seeds and replaces the image with a solid black one. Until #133 the engine knew
+and said so only in the server's own log, so a job came back `succeeded`, no
+warnings, manifest populated, valid JPEG, and pure black — the exact failure an
+unattended consumer cannot catch, since every signal it has says the run is fine.
+Two things were fixed and both need pinning; ~13 s total on a 3090, no new assets.
+expected:
+- **The warning fires.** `run_workflow(inline_workflow=…)` with SD 1.5
+  (`StableDiffusionPipeline`, `model_name: "stable-diffusion-v1-5/stable-diffusion-v1-5"`,
+  `torch_dtype: "torch.float32"`), top-level `seed: 3220371727974403`, prompt
+  `"an apple"`, `num_inference_steps: 25`, and **no** `safety_checker` key →
+  `status: "succeeded"` and `warnings` containing an entry matching
+  `safety checker blanked`. An empty `warnings` here is the regression, and it is
+  invisible any other way. The seed is load-bearing: it is the one that reproduces,
+  and a fresh seed usually will not.
+- **The escape hatch works.** The same call with `"safety_checker": null` added to
+  `from_pretrained_arguments` → `status: "succeeded"`, `warnings: []`.
+- **The image is actually an image.** `get_output_image` on that second run's
+  output is not black — at 192 px it is a recognisable apple. Assert this, not just
+  the empty `warnings`: a regression that blanks everything regardless of the
+  checker would satisfy both lines above, and the empty-warnings assertion would
+  then be *hiding* the failure rather than catching it. (Corollary worth knowing
+  when reading a failure here: same seed, same steps, same prompt, checker off →
+  apple; checker on → black. The latents were never the problem.)
+- **The template is out of the path.** `get_workflow(name="templates/text-to-image")`
+  → its `from_pretrained_arguments` carries `"safety_checker": null`. The reference
+  "hello world" of the catalog, and the cheap generation step several other cases
+  lean on, must not have a silent content filter in it.
+cleanup: `delete_output` both runs' images; each sweeps its run directory.
+source: tester, model `opus` via provider `anthropic`, verified in #133 on
+2026-09-13 against dw 0.4.0-beta.3 on `lem` (jobs `2f7d2fb743f8` — blanked, warned,
+6.2 s — and `3a1545cc713c` — same seed, checker off, clean apple, 6.3 s). Found by
+the regression agent while running S-F009.
+
 ## Performance
 
 ### S-P001 — default image generation latency

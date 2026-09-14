@@ -180,4 +180,48 @@ cleanup: none — reads only, writes nothing.
 source: regression agent, model `opus` via provider `anthropic`, found while running M-F001 on
 2026-09-13 (server 0.4.0-beta.3). All eleven templates matched the expectation above on that pass.
 
+### M-F004 — `validate_workflow` enforces H3's Ref2VA reference limits before the checkpoint loads
+MiniMax-H3's Ref2VA workflow refuses four reference-set shapes — more than 9 images, more than 3
+videos, more than 3 audio clips, more than 12 references total, and an audio reference with no image
+or video beside it. diffusers enforces them inside the pipeline, i.e. after the H3 checkpoint is up,
+so before #136 the free `validate_workflow` call said `valid: true` and quoted 8.4 minutes for a
+shot that could only ever fail minutes into a paid run. The engine now checks the same rules at
+validation, reading the ceilings off the diffusers block's own constructor defaults rather than
+writing numbers into engine code — which is why this case asserts the *shape* of each answer and the
+family name in the message, not a specific integer that a diffusers release is allowed to raise.
+Model/pipeline: MiniMax-H3 Ref2VA, exercised through `templates/minimax/dialogue-short` (its `shot`
+step is `from_pretrained_arguments.workflow: "ref2va"`). Free — `validate_workflow` only, no GPU, so
+run it every pass. Each probe overrides `shots` with a single one-entry list; the `prompt` text is
+irrelevant to the check, any Context-IR string does.
+expected:
+- **Audio alone** — one reference, `…MiniMaxH3AudioReference` with a resolvable
+  `from_file: "asset:<a voice wav>"` → `valid: false`, one error at path
+  `steps[2].pipeline.arguments.references`, message matching `cannot be used on its own` and naming
+  the expanded member (`member 'shot@<name>'`).
+- **Four audio** — 1 `…MiniMaxH3ImageReference` + 4 `…MiniMaxH3AudioReference` → `valid: false`,
+  same path, message matching `at most 3 audio references, got 4`.
+- **Ten images** — 10 `…MiniMaxH3ImageReference` entries → `valid: false`, same path, message
+  matching `at most 9 image references, got 10`. This is what distinguishes "the per-kind ceilings
+  are read from the block" from "the audio rule got special-cased".
+- **Control, the legal shape** — 1 image + 1 audio → `valid: true`, `plan.list_entries.shots: 1`,
+  `plan.estimate.basis: "derived"`.
+- **Control, the inclusive edge** — 1 image + **3** audio → `valid: true`. The ceiling is `> 3`, not
+  `>= 3`.
+- **Control, the template untouched** — `validate_workflow(name="templates/minimax/dialogue-short")`
+  with no arguments → `valid: true`, `plan.list_entries.shots: 5`, `plan.estimate.basis: "catalog"`.
+  Two of the stock shots carry 2 images + 2 audio, so the guard must not break the entry it guards.
+The three controls are half the case, not padding: the plausible way this check regresses is a
+blanket refuse, or an off-by-one that rejects a legal 3-audio shot, and the two refusal probes alone
+would pass happily through either. It is a **finding** if a probe stops being refused, if a control
+stops validating, or if a refusal moves off `steps[2].pipeline.arguments.references` or stops naming
+the member — the path and the member name are what let a caller find the shot in an expanded
+`for_each` list. A message whose *number* changed (say `at most 12 image references`) is not a
+finding on its own: check whether diffusers raised the block's default, and if so re-point the
+probe's count rather than filing it.
+cleanup: none — validation only, writes nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #136 on 2026-09-13 against dw
+0.4.0-beta.3 on `lem`. The two refusal probes are the regression agent's originals from that issue;
+the ten-image probe and the two edge controls are mine, added because the fix's own design (limits
+read from diffusers, not literals) makes "it refuses everything" the failure mode worth pinning.
+
 ## Performance
