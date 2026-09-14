@@ -94,6 +94,20 @@ files described below. There is no build, lint, or test step.
   agent reads only the history it needs, never the whole log. Checked in and committed by
   the drivers alongside the suite files (#135 is where the old "record it in `last run:`"
   instruction met the no-edit-on-pass rule and this replaced both).
+- `agents/RESEARCHER_AGENT.md` / `run-research.sh` — a fourth, standalone
+  agent (not part of the implementer/tester alternation, and not the
+  regression agent) that turns an `idea`-labeled GitHub Issue into a
+  disposition: reject it (`wontfix`), propose a concrete plan to the
+  implementer (`owner:implementer`, ready to work), or park it for Don's
+  input (`owner:don` + `status:needs-approval`). It is read-only against the
+  `diffusers-workflow` source checkout (no write, no SSH to `lem`) plus
+  read-only `dw` MCP discovery calls and `gh` for issue management — a third
+  isolation shape distinct from both the implementer's full access and the
+  tester/regression agent's MCP-consumer-only fence. `./run-research.sh`
+  gives each open idea issue its own fresh session (never one long session
+  across issues, to keep context from accumulating across a batch), by
+  default on `sonnet` regardless of `$MODEL` — deep feasibility judgment is
+  expected to land with the implementer pass and, where parked, Don.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo). Tickets
@@ -156,6 +170,13 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   `uv`, …) can't be enumerated without breaking a cycle the first time it needs something new,
   so the auto-mode classifier approves routine work and denies destructive or exfiltrating
   actions.
+- Researcher: `--permission-mode dontAsk` + `RESEARCHER_PERMISSION_FLAGS`
+  (`providers.sh`) — read-only against the `diffusers-workflow` source
+  checkout (`Read`/`Grep`/`Glob`, read-only `git`) plus read-only `dw` MCP
+  discovery calls and `gh`. No `Edit`/`Write` on source, no write `git`
+  subcommands, no `ssh`, no `curl`. A third isolation shape: unlike the
+  tester/regression agent it does see source, and unlike the implementer it
+  can never change it.
 
 Two deploy paths, and the implementer must say which one a fix used: server code → restart on
 `lem`, tool schemas refresh automatically; plugin/skill changes → commit and leave the checkout
@@ -167,10 +188,12 @@ Tickets are **GitHub Issues on `dkackman/diffusers-workflow`**, not entries in a
 repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `comment` /
 `close` / `list`). The invariants both role prompts and the status-board query depend on:
 
-- `owner` is a label, exactly one of `owner:implementer` / `owner:tester` / `owner:don` at a
-  time — whoever's turn it is to act next. Swap it with `gh issue edit <n> --remove-label
-  owner:X --add-label owner:Y`. An agent only touches issues carrying its own owner label and
-  never edits another agent's issue beyond the label/comment that hands it off.
+- `owner` is a label, exactly one of `owner:implementer` / `owner:tester` /
+  `owner:don` / `owner:researcher` at a time — whoever's turn it is to act
+  next. An `idea`-labeled issue starts as `owner:researcher`; the researcher
+  agent (see above) moves it to `owner:implementer` (proposal ready to
+  work) or `owner:don` + `status:needs-approval` (parked for input), or
+  closes it `wontfix`, same conventions the implementer/tester already use.
 - Status flow: no status label ("open", ready for the implementer) → (implementer fixes +
   deploys to `lem`) → `status:fixed-pending-verify` → (tester re-runs repro over MCP) → close the
   issue as `completed` with `status:verified` added, or back to no status label / owner back to
