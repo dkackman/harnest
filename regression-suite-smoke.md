@@ -71,7 +71,11 @@ Durable contents of `regression-smoke` that persist across runs. Add a line
 when a case starts relying on one; remove the line (and the fixture) when
 nothing uses it anymore.
 
-- (none yet)
+- `asset:qa-cast/ep11-bed.wav` — a 472-frame (24 fps) 32 kHz mono bed in
+  the shared asset library, reachable from every workspace. S-F029 slices 141
+  frames from its head; all that matters is that it is comfortably longer than
+  that, so the slice never reaches the end and pads. Read-only — never sliced in
+  place, never deleted.
 
 ## Functional
 
@@ -822,6 +826,55 @@ source: tester, model `opus` via provider `anthropic`, verified in #96 on
 second and fourth bullets; the snap-then-range pair is mine, added because the
 implementer reported that their own first attempt checked the raw value and
 would have falsely refused 108-123.
+
+### S-F029 — a declared rounding is applied to the variable, not just inside the pipeline that needs it
+S-F028 covers the *validate-time* half of a declared bound: an off-grid value is
+announced and a bad one refused, both for free. This is the run-time half, and it
+asserts something narrower and easier to break: when a workflow rounds a variable
+up, the **rounded value is what every step gets**, not just the pipeline whose VAE
+imposed the grid. It matters because a frame count is usually shared — on
+`templates/minimax/music-video` the same `num_frames` drives both the H3 `shot`
+steps and the `slice_audio` steps that cut the song into the pieces those shots
+lip-sync to. If rounding were applied inside the H3 pipeline only, every slice
+would be cut short of the video it conditions (130 frames of song under 141 frames
+of picture), the shots would drift out of sync, and nothing would say so: the final
+`pair_audio` re-lays the whole song with `fit: "video"`, so the deliverable's own
+duration still checks out. A silent per-shot failure hidden behind a correct-looking
+deliverable is exactly the shape worth pinning, and it can be tested for pennies —
+the assertion needs no model at all, just one audio task whose output length is the
+effective frame count.
+expected:
+- **The rounded count is what the task runs.** An inline workflow declaring
+  `variable_constraints.num_frames = {modulus: 17, remainder: 5, min_frames: 124,
+  max_frames: 345, snap: "up"}` with `num_frames: 130`, whose single step is
+  `slice_audio(audio="asset:qa-cast/ep11-bed.wav", sample_rate=32000,
+  start_frame=0, num_frames="variable:num_frames", fps=24)` saved as
+  `audio/wav` → `succeeded`, and `get_gallery_metadata` on the output reports
+  **`duration_seconds: 5.875`** — 141 frames at 24 fps, not 130 (5.4167 s). The
+  step never loads a model, so a regression here is a few seconds to catch.
+- **The warning is on the job, not only on the validate.** The same job's
+  `job.warnings` carries the rounding line naming `141` and saying the run
+  generates 141, not 130. `validate_workflow` on the same definition carries it
+  too, as `valid: true` with that warning — a caller who only ever runs still
+  finds out.
+- **Rounding travels with an inline workflow.** The constraint above is declared
+  in the submitted JSON rather than by a stored template, and is honoured anyway.
+  A fix that only consulted the catalog's bounds would pass S-F028 and fail here.
+- **The realized workflow reports the value as submitted.** `get_job_workflow`
+  on that job → `workflow.variables.num_frames` is **`130`**, with
+  `variable_constraints` alongside it. This is correct and deliberate, not a
+  discrepancy to "fix": re-running that definition rounds to 141 again, so it
+  still reproduces the run. It is written down because the obvious reading — that
+  a realized workflow shows effective values — is wrong here, and a future change
+  that rewrote it to 141 would need a deliberate decision rather than a silent one.
+cleanup: `delete_output` the run directory of both jobs. The asset it reads is a
+durable fixture (see "Fixtures") and is never written to.
+source: tester, model `opus` via provider `anthropic`, found while running
+TESTER_TASK.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Measured twice: a
+`music-video`-shaped run with `num_frames: 130` produced a 282-frame deliverable
+(2 x 141) with both warnings on the job, and this audio-only probe isolated the
+question the expensive run could not answer on its own — whether `slice_audio` saw
+130 or 141. It saw 141.
 
 ## Performance
 
