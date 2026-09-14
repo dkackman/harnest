@@ -597,6 +597,75 @@ source: tester, model `opus` via provider `anthropic`, verified in #133 on
 6.2 s — and `3a1545cc713c` — same seed, checker off, clean apple, 6.3 s). Found by
 the regression agent while running S-F009.
 
+### S-F024 — an out-of-domain number in an audio task argument is refused, not interpreted
+A negative frame count and a zero sample rate used to be *accepted*: `slice_audio`
+with `num_frames: -10` returned all-but-the-last-10-frames (Python slice
+semantics leaking through an argument that is a count, #139), and
+`resample_audio` with `target_sample_rate: 0` relabelled the waveform 44100 Hz
+without resampling it — `succeeded`, no warning, 38% duration change, levels
+bit-identical to the source (#140). Both are the same shape and the worst one:
+a plausible-looking track of the wrong length or speed, from a job that says it
+is fine. Declared domains are now checked in three places and all three need
+pinning, because each catches a value the others cannot see. Parts 1–3 are free
+and instant and need no media at all.
+expected:
+- **1. Statically, at the JSON path.** `validate_workflow` on an inline
+  one-step workflow whose `slice_audio` arguments carry `start_frame: -1`,
+  `num_frames: -10`, `fps: 0` → `valid: false` with **three** errors, one per
+  argument, each `path` being `steps[0].task.arguments.<name>` and each message
+  naming that argument. All three at once is the assertion: a validator that
+  short-circuits on the first out-of-domain value hides the rest, and the
+  wording must distinguish "zero or above" (`start_frame`, `non_negative`) from
+  "above zero" (`num_frames`/`fps`, `positive`). Separately, `resample_audio`
+  with `target_sample_rate: 0` → `valid: false`, one error at
+  `steps[0].task.arguments.target_sample_rate`. Use a deliberately
+  **nonexistent** `asset:` reference for the `audio` argument in both — the
+  domain pass must fire without any media present, and pinning that keeps this
+  part fixture-free. (Asset resolution happens *later*, at run time: a
+  nonexistent asset in a queued job fails on the missing file before the
+  command's own domain check is reached, so don't expect a domain error from
+  the run-time layer with a fake input.)
+- **2. Given as a string.** The same `resample_audio` body with
+  `target_sample_rate: "0"` → the same single error, reported as `got '0'`. The
+  CLI / `variable: null` path arrives as a string; coercion must happen before
+  the check, not instead of it.
+- **3. Discoverable, so a caller can read the rule instead of guessing.**
+  `get_task("slice_audio")` → `num_frames`, `duration_seconds`, `fps` and
+  `sample_rate` each carry `"domain": "positive"`; `start_frame` and
+  `start_seconds` carry `"domain": "non_negative"`.
+  `get_task("resample_audio")` → `target_sample_rate` and `sample_rate` carry
+  `"domain": "positive"`. Before the fix these reported `annotation: null` and
+  no domain, which is why a consumer could not tell a negative count from a
+  supported trim-from-the-end idiom.
+- **4. At run time, which is the half a validator cannot cover.** `run_workflow`
+  does **not** re-run the static pass, so a bad value reaches the command: run a
+  one-step `resample_audio` over a **real** audio track (any track the run has
+  to hand — a `generate_speech` wav kept from S-F007, or any asset in the shared
+  library) with `target_sample_rate: "variable:rate"` and
+  `arguments={"rate": 0}`. The job must **fail** — `status: "failed"`,
+  `manifest: []`, `error` naming `target_sample_rate` — and must not succeed.
+  This is the layer that produced #140's wrong deliverable, since the rate there
+  came from a `variable:` inside a chain. (`validate_workflow` on that same body
+  with the same `arguments` also refuses, because the static pass substitutes
+  caller arguments; both refusing is the expected result, and a refusal at
+  either layer alone is a partial fix worth a finding.)
+- **5. A legal zero is still legal.** `get_task("crossfade_audio")` reports
+  `crossfade_ms` as `"domain": "non_negative"` (default `75`), and a
+  `crossfade_audio` step with `crossfade_ms: 0` validates. A hard cut is an
+  ordinary request; `trim_frames: 0` and `dissolve_frames: 0` likewise. Without
+  this line the case invites over-tightening the domains until ordinary
+  workflows break.
+cleanup: parts 1, 2, 3 and 5 are `validate_workflow`/`get_task` only and write
+nothing. Part 4's job fails before it writes media, but it still leaves a run
+directory — `delete_output` it by its `<workflow>/<run id>` name.
+source: tester, model `opus` via provider `anthropic`, verified in #139 and #140
+on 2026-09-14 against dw 0.4.0-beta.3 on `lem`. Parts 1, 2 and 5 run in
+`regression-smoke` exactly as written; part 4 was confirmed in `qa-ep10` against
+a 14.5 s 32 kHz mono wav (job `0d6ea648c1c7`, failed in 0.59 s, empty manifest),
+and its happy-path companion — `target_sample_rate: 16000` on that same track —
+gave `duration_seconds: 14.5` unchanged at `sample_rate: 16000` with levels
+moved ~0.007 dB, i.e. a real filter ran rather than a relabel.
+
 ## Performance
 
 ### S-P001 — default image generation latency
