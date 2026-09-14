@@ -190,7 +190,10 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
 
 - `owner` is a label, exactly one of `owner:implementer` / `owner:tester` /
   `owner:don` / `owner:researcher` at a time — whoever's turn it is to act
-  next. An `idea`-labeled issue starts as `owner:researcher`; the researcher
+  next. Swap it with `gh issue edit <n> --remove-label owner:X --add-label
+  owner:Y`. An agent only touches issues carrying its own owner label and
+  never edits another agent's issue beyond the label/comment that hands it
+  off. An `idea`-labeled issue starts as `owner:researcher`; the researcher
   agent (see above) moves it to `owner:implementer` (proposal ready to
   work) or `owner:don` + `status:needs-approval` (parked for input), or
   closes it `wontfix`, same conventions the implementer/tester already use.
