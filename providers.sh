@@ -281,6 +281,25 @@ CONSUMER_PERMISSION_FLAGS=(
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
 )
 
+# Permission flags for the researcher: read-only against the source
+# checkout (Read/Glob/Grep/git-read only — no Edit/Write, no git writes, no
+# ssh, no curl), read-only dw MCP discovery calls, and gh for issue
+# management. Distinct from CONSUMER_PERMISSION_FLAGS (which allows Edit/
+# Write for the suite files the tester/regression agent maintain) and from
+# the implementer's --permission-mode auto: the researcher assesses, it
+# never implements, and it has no durable file of its own to edit.
+RESEARCHER_PERMISSION_FLAGS=(
+  --permission-mode dontAsk
+  --allowedTools
+    "mcp__dw__list_workflows" "mcp__dw__list_guides" "mcp__dw__list_pipelines"
+    "mcp__dw__list_classes" "mcp__dw__list_tasks" "mcp__dw__get_server_info"
+    "mcp__dw__get_schema" "mcp__dw__get_guide" "mcp__dw__get_class"
+    "mcp__dw__get_pipeline_signature" "ToolSearch" "WebFetch" "TodoWrite"
+    "Read" "Glob" "Grep"
+    "Bash(gh *)" "Bash(date *)" "Bash(file *)"
+    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
+)
+
 co_author_for() {
   local provider="$1" model="$2" name email
   if is_anthropic_model "$model"; then
@@ -302,14 +321,15 @@ co_author_for() {
 # things is per role, and matches what each role prompt actually permits: the
 # implementer only *proposes* regression cases in a hand-off comment (it has
 # no checkout of this repo), so it is not told it edits the suite.
-# Roles: implementer, tester, regression. Returns 1 on any other role.
+# Roles: implementer, tester, regression, researcher. Returns 1 on any other role.
 runtime_note() {
   local role="$1" provider="$2" model="$3" examples
   case "$role" in
     implementer) examples="a ticket hand-off comment, a wontfix or needs-info reason, a regression case you propose in a hand-off" ;;
     tester)      examples="a verification comment, a bounce, a new issue, a regression-suite edit" ;;
     regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression)" >&2; return 1 ;;
+    researcher)  examples="a research/proposal comment, a reject reason, a question parked for Don" ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|researcher)" >&2; return 1 ;;
   esac
   printf '%s\n' \
     "Runtime: you are the $role agent, running as model '$model' via the '$provider'" \
