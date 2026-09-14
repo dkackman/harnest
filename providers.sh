@@ -346,3 +346,39 @@ commit_suite_changes() {
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOGS/loop.log"
 }
+
+# park_external_issues
+# Guardrail: an open issue filed by anyone other than TICKET_OWNER is parked
+# with the human (owner:don + status:needs-approval) before any driver's
+# agent sees it. Every unattended role runs as TICKET_OWNER's gh login, so
+# its own filings pass; what this catches is a third party filing on the
+# public repo, which no unattended agent may pick up as ordinary work.
+# role-specific triage steps (e.g. the implementer's) repeat the check for
+# anything filed mid-run; this is the enforced copy, shared by every driver
+# that calls it. Already-parked issues are left alone. Needs TICKET_REPO,
+# TICKET_OWNER, and LOGS set by the caller.
+park_external_issues() {
+  : "${TICKET_REPO:?park_external_issues: TICKET_REPO must be set by the driver}"
+  : "${TICKET_OWNER:?park_external_issues: TICKET_OWNER must be set by the driver}"
+  : "${LOGS:?park_external_issues: LOGS must be set by the driver}"
+  gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
+    --json number,author,labels \
+  | jq -r --arg me "$TICKET_OWNER" '.[]
+      | select(.author.login != $me)
+      | select(([.labels[].name] | index("status:needs-approval")) == null)
+      | [(.number|tostring), .author.login,
+         ([.labels[].name | select(startswith("owner:") or startswith("status:"))] | join(","))]
+      | @tsv' \
+  | while IFS=$'\t' read -r n author labels; do
+      remove=()
+      IFS=',' read -ra present <<< "$labels"
+      for l in "${present[@]+"${present[@]}"}"; do
+        [ -n "$l" ] && [ "$l" != "owner:don" ] && remove+=(--remove-label "$l")
+      done
+      gh issue edit "$n" --repo "$TICKET_REPO" ${remove[@]+"${remove[@]}"} \
+        --add-label owner:don --add-label status:needs-approval >/dev/null \
+      && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off if it should enter the loop." >/dev/null \
+      && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOGS/loop.log" \
+      || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOGS/loop.log"
+    done
+}
