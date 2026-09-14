@@ -99,7 +99,7 @@ resolve_model_env() {
     anthropic)
       if ! is_anthropic_model "$model"; then
         echo "run: model '$model' is not an Anthropic model name, but its provider is 'anthropic'." >&2
-        echo "     Either set MODEL (or <ROLE>_MODEL) to a Claude alias/id, or set PROVIDER" >&2
+        echo "     Either set <ROLE>_MODEL to a Claude alias/id, or set PROVIDER" >&2
         echo "     (or <ROLE>_PROVIDER) to ollama|gateway for that model." >&2
         return 1
       fi
@@ -123,7 +123,7 @@ resolve_model_env() {
     ollama)
       if is_anthropic_model "$model"; then
         echo "run: model '$model' is an Anthropic model name, which Ollama does not serve." >&2
-        echo "     Set MODEL (or <ROLE>_MODEL) to the Ollama tag, e.g. gemma4:31b-it-q4_K_M." >&2
+        echo "     Set <ROLE>_MODEL (every role that runs) to the Ollama tag, e.g. gemma4:31b-it-q4_K_M." >&2
         return 1
       fi
       # Ollama has no /v1/messages/count_tokens, and Claude Code otherwise

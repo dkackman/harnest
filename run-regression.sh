@@ -14,9 +14,8 @@
 #   ./run-regression.sh security             # security only (hostile-input probes, opt-in)
 #   ./run-regression.sh all                  # smoke, complete, model-specific, security
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
-#   MODEL=sonnet ./run-regression.sh         # MODEL defaults to opus
-#   REGRESSION_MODEL=opus ./run-regression.sh   # this agent only; defaults to MODEL
-#   PROVIDER=ollama MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
+#   REGRESSION_MODEL=sonnet ./run-regression.sh   # defaults to opus; no shared MODEL knob
+#   PROVIDER=ollama REGRESSION_MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
 #   tail -f logs/regression.log              # watch from another terminal
@@ -59,9 +58,8 @@ SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/diffusers-workflow}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
-MODEL="${MODEL:-opus}"          # default model
 PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
-REGRESSION_MODEL="${REGRESSION_MODEL:-$MODEL}"
+REGRESSION_MODEL="${REGRESSION_MODEL:-opus}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header)

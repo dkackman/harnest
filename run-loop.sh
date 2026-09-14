@@ -4,12 +4,11 @@
 #
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
-#   MODEL=sonnet ./run-loop.sh          # default is opus for the tester; the
-#                                       # implementer defaults to sonnet (see below)
-#   TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh
-#                                       # per-role models
-#   PROVIDER=ollama MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
-#                                       # a non-Anthropic model, served by Ollama
+#   IMPLEMENTER_MODEL=haiku TESTER_MODEL=opus ./run-loop.sh
+#                                       # per-role models; defaults sonnet / opus
+#   PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
+#                                       # a non-Anthropic model, served by Ollama;
+#                                       # each role is named, there is no shared MODEL
 #   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
 #   IMPLEMENTER_BUDGET_USD=8 TESTER_BUDGET_USD=5 TRIAGE_BUDGET_USD=3 ./run-loop.sh
 #                                       # per-session --max-budget-usd caps (0 = none)
@@ -53,22 +52,18 @@ AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
-MODEL="${MODEL:-opus}"          # default model, for any role without its own
-PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
-# Per-role overrides. The tester defaults to MODEL: its independence is the
-# point of the setup and a weak tester rubber-stamps silently. The
-# implementer defaults to sonnet regardless of MODEL — its mistakes show up
-# in the tester's verification, and it is the role that burns the most
-# tokens — unless PROVIDER isn't anthropic, in which case it follows MODEL
-# (a Claude name can't be served by ollama).
-TESTER_MODEL="${TESTER_MODEL:-$MODEL}"
-TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
+PROVIDER="${PROVIDER:-anthropic}"  # where the models live: anthropic|ollama|gateway
+# One model knob per role, no shared default: which role may run a weak model
+# is a design decision, not a config detail. The tester defaults to opus —
+# its independence is the point of the setup and a weak tester rubber-stamps
+# silently. The implementer defaults to sonnet — its mistakes show up in the
+# tester's verification, and it is the role that burns the most tokens. Under
+# a non-anthropic PROVIDER both must be named (a Claude alias can't be served
+# there; resolve_model_env rejects it at startup).
+IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
+TESTER_MODEL="${TESTER_MODEL:-opus}"
 IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
-if [ "$IMPLEMENTER_PROVIDER" = anthropic ]; then
-  IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
-else
-  IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-$MODEL}"
-fi
+TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
 # size at which a session auto-compacts instead of growing. Non-Anthropic

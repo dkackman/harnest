@@ -37,12 +37,13 @@ files described below. There is no build, lint, or test step.
   `co_author_for` (commit-trailer identity), `runtime_note` (the per-role "Runtime:" prompt
   paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md` and
   `regression-perf/`).
-  Model choice is one knob per role: `MODEL`/`PROVIDER` are the defaults, `IMPLEMENTER_MODEL` /
-  `TESTER_MODEL` / `REGRESSION_MODEL` / `RESEARCH_MODEL` (and `*_PROVIDER`) override per agent.
-  Out of the box: `opus` via Anthropic for the tester and regression agent; `sonnet` regardless
-  of `$MODEL` for the implementer (its mistakes surface in the tester's verification, and it
-  is the role that spends the most tokens — under a non-anthropic provider it follows `$MODEL`,
-  since a Claude name can't be served there) and for the researcher (see below).
+  Model choice is one knob per role and nothing shared: `IMPLEMENTER_MODEL` (default `sonnet`),
+  `TESTER_MODEL` (`opus`), `REGRESSION_MODEL` (`opus`), `RESEARCH_MODEL` (`sonnet`), each with
+  a `*_PROVIDER` that defaults to `PROVIDER` (`anthropic`). There is deliberately no `MODEL`
+  umbrella: which role may run a weak model is a design decision (see "Running"), and a single
+  default that some roles honoured and others ignored hid it. Under a non-anthropic `PROVIDER`
+  every role that runs must be named explicitly, since a Claude alias can't be served there
+  and `resolve_model_env` rejects it at startup.
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
 - `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
@@ -121,7 +122,7 @@ files described below. There is no build, lint, or test step.
   tester/regression agent's MCP-consumer-only fence. `./run-research.sh`
   gives each open idea issue its own fresh session (never one long session
   across issues, to keep context from accumulating across a batch), by
-  default on `sonnet` regardless of `$MODEL` — deep feasibility judgment is
+  default on `sonnet` — deep feasibility judgment is
   expected to land with the implementer pass and, where parked, Don.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
@@ -141,9 +142,9 @@ files described below. There is no build, lint, or test step.
 
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/diffusers-workflow
-MAX_CYCLES=3 SLEEP_SECS=60 MODEL=sonnet ./run-loop.sh   # MODEL defaults to opus (tester); implementer is sonnet regardless
-TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models
-PROVIDER=ollama MODEL=qwen2.5:32b ./run-loop.sh         # a non-Anthropic model
+MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh                # three cycles, then stop
+TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults opus / sonnet)
+PROVIDER=ollama IMPLEMENTER_MODEL=qwen2.5:32b TESTER_MODEL=qwen2.5:32b ./run-loop.sh   # non-Anthropic: name every role
 IMPLEMENTER_BUDGET_USD=0 TESTER_TASK_EVERY=1 ./run-loop.sh   # no implementer cap; standing task every cycle
 tail -f logs/loop.log                  # combined stream, prefixed [implementer:#145] / [tester:task] etc.
 grep usage: logs/loop.log              # one line per session: turns, duration, cost, peak context

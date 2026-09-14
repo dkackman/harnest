@@ -162,7 +162,7 @@ agents, it never loops or sleeps internally.
 ```sh
 ./run-loop.sh                                   # forever
 MAX_CYCLES=1 ./run-loop.sh                      # one round, then look
-MODEL=sonnet SLEEP_SECS=60 ./run-loop.sh        # MODEL defaults to opus
+IMPLEMENTER_MODEL=haiku SLEEP_SECS=60 ./run-loop.sh   # per-role models; defaults sonnet / opus
 tail -f logs/loop.log                           # watch from another terminal
 ```
 
@@ -172,11 +172,14 @@ Environment:
 |---|---|---|
 | `SOURCE_DIR` | `~/src/dkackman/diffusers-workflow` | implementer's cwd; also where the `dw` plugin is loaded from |
 | `TICKET_REPO` | `dkackman/diffusers-workflow` | the repo whose Issues are the ticket system |
-| `MODEL` | `opus` | default model, for every agent |
-| `PROVIDER` | `anthropic` | where that model lives: `anthropic`, `ollama`, `gateway` |
-| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `$MODEL` | per-role model overrides |
+| `PROVIDER` | `anthropic` | where the models live: `anthropic`, `ollama`, `gateway` |
+| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `opus` | per-role models; there is no shared `MODEL` |
 | `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` | `$PROVIDER` | per-role provider overrides |
-| `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `$MODEL` / `$PROVIDER` | same, for `run-regression.sh` |
+| `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `opus` / `$PROVIDER` | same, for `run-regression.sh` |
+| `RESEARCH_MODEL` / `RESEARCH_PROVIDER` | `sonnet` / `$PROVIDER` | same, for `run-research.sh` |
+| `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
+| `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
+| `TESTER_TASK_EVERY` | `2` | run the tester's standing-task session every Nth cycle |
 | `CASES_PER_SESSION` | 3 if the declared context window is under 120k, else 0 | `run-regression.sh` only: cases per session, 0 = whole level in one session |
 | `FALLBACK_MODEL` | unset | passed as `--fallback-model` when set; must be a model the role's provider can serve (a Claude name for `anthropic`, a non-Claude tag for `ollama`) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | commit trailer on suite edits (see below) |
@@ -190,13 +193,18 @@ passwordless `ssh don@lem`, the source checkout on `develop`.
 
 ### Models and providers
 
-`MODEL` is still one knob for the whole loop and still defaults to `opus`, so
-nothing changes unless you ask it to. What's splittable is *which* model each
-agent runs and *where that model lives*:
+Each role has its own model knob and its own default — implementer `sonnet`,
+tester `opus`, regression `opus`, researcher `sonnet` — and there is no
+shared `MODEL`. Which role may run a weak model is a design decision (a weak
+tester rubber-stamps silently; a weak implementer's mistakes show up in
+verification), so it is set per role, never for the loop as a whole.
+`PROVIDER` says where the models live and is shared, with a `*_PROVIDER`
+override per role:
 
 ```sh
 TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh    # per-role, native
-PROVIDER=ollama MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh   # a non-Anthropic model
+PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
+                                                           # non-Anthropic: name every role that runs
 REGRESSION_MODEL=sonnet ./run-regression.sh                # regression agent
 ```
 

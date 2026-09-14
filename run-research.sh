@@ -4,13 +4,13 @@
 # run-loop.sh, same category as run-regression.sh.
 #
 #   ./run-research.sh                       # research every open idea awaiting research
-#   RESEARCH_MODEL=opus ./run-research.sh   # this agent only; defaults to sonnet, not $MODEL
+#   RESEARCH_MODEL=opus ./run-research.sh   # this agent only; defaults to sonnet
 #   PROVIDER=ollama RESEARCH_MODEL=qwen2.5:32b ./run-research.sh
 #   DW_URL=... DW_TOKEN=... ./run-research.sh
 #   tail -f logs/research.log               # watch from another terminal
 #
 # Model/provider resolution lives in providers.sh. RESEARCH_MODEL defaults
-# to "sonnet" specifically, not $MODEL: deep feasibility judgment is
+# to "sonnet" (there is no shared MODEL knob): deep feasibility judgment is
 # expected to land with the implementer pass (and, where parked, with Don)
 # — the research pass itself is triage-weight, so it gets the cheaper
 # default while staying overridable like every other role.
@@ -30,7 +30,7 @@ TICKET_OWNER="${TICKET_OWNER:-dkackman}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 PROVIDER="${PROVIDER:-anthropic}"
-RESEARCH_MODEL="${RESEARCH_MODEL:-sonnet}"        # NOT $MODEL — see header
+RESEARCH_MODEL="${RESEARCH_MODEL:-sonnet}"        # see header
 RESEARCH_PROVIDER="${RESEARCH_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"
 DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
