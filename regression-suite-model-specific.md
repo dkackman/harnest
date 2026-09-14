@@ -26,8 +26,7 @@ test, never a log of runs. A case that passes gets no edit — status for a
 failure lives on the GitHub Issue it produced, and a measurement — a `-P`
 case's timing, or anything a case's `metrics:` line names — lives in
 `regression-perf/<case>.jsonl` (see `regression-perf/README.md`); neither is
-a note appended here (`last run:` lines already in this file predate that
-policy and are kept as history, not a model to continue). No agent may delete, weaken, or rewrite
+a note appended here. No agent may delete, weaken, or rewrite
 an existing case, including one it thinks has become too expensive or not
 worth what it costs — see "Removing a case" below.
 

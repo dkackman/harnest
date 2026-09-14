@@ -29,8 +29,7 @@ test, never a log of runs. A case that passes gets no edit — status for a
 failure lives on the GitHub Issue it produced, and a measurement — a `-P`
 case's timing, or anything a case's `metrics:` line names — lives in
 `regression-perf/<case>.jsonl` (see `regression-perf/README.md`); neither is
-a note appended here (`last run:` lines already in this file predate that
-policy and are kept as history, not a model to continue). No agent may delete, weaken, or rewrite
+a note appended here. No agent may delete, weaken, or rewrite
 an existing case, including one it thinks has become too expensive or not
 worth what it costs — see "Removing a case" below.
 
@@ -120,11 +119,6 @@ cleanup: delete both joined outputs. Keep the two input assets (fixtures).
 source: tester, verified in #82 (implementer proposed the case in its
 hand-off comment; added here after running it as job `a8488310d953`, model
 `opus` via provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-12 in
-job `a8488310d953`, 8.5 s for a three-step version, no GPU time: warning text
-`join_unmatched: concat_videos: the tracks being joined span 11.1 dB (rms
--31.1 to -20.0 dBFS) ...`, one `level_spread` event at seq 9, matched step
-`mean_dbfs` -20.014.)
 
 ### C-F002 — a video step writes the frame rate its frames are meant for
 Join the two 24 fps fixtures with `concat_videos`, passing the task's own
@@ -150,12 +144,6 @@ cleanup: delete the joined output(s). Keep the two input assets (fixtures).
 source: tester, verified in #84 (implementer proposed the case; added here
 after running it as job `a8488310d953`, model `opus` via provider
 `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-12 in
-job `a8488310d953`: `fps: 24.0`, 248 frames, 10.334 s against 10.334 s of
-audio, where the same step wrote 8.0 / 31.0 s before the fix. Prose half
-first observed 2026-09-13 on 0.4.0-beta.3, jobs `59bbb88ac014` (declared 8:
-`will play 0.33x speed (3 times as long)`) and `a3783461e87a` (declared 48:
-`2x speed (0.5 times as long)`), 3.5 s and 2.6 s, no GPU time.)
 
 ### C-F003 — validation resolves a sub-workflow path, and refuses a cycle
 Three `validate_workflow` calls, no run, no GPU:
@@ -176,16 +164,15 @@ no variable for is a `warning` (not an error) at
 The point is that all of this is free and pre-flight. The regression is
 `valid: true` — silent, and paid for later by a queued job that dies after
 the expensive steps have already run.
+Note `save_workflow` **accepts** the write that creates the cycle in (3),
+because at that moment the child on disk is still a leaf; validate and run
+both catch it immediately after, so no job can start. Do not assert a
+failure at save. The cycle error reads like `... composes a workflow that is
+already composing it - a cycle: B -> A -> B`, at a path that repeats
+`steps[0].workflow.path` once per hop.
 cleanup: delete the `A`/`B` probe workflows from the workspace. No outputs.
 source: tester, verified in #89 (run over MCP 2026-09-13 as the calls above,
 model `opus` via provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: all three as expected; the cycle error reads `... composes a
-workflow that is already composing it - a cycle: B -> A -> B` at path
-`steps[0].workflow.path -> steps[0].workflow.path -> steps[0].workflow.path`.
-Note `save_workflow` accepts the write that *creates* the cycle, because at
-that moment the child on disk is still the leaf; validate and run both catch
-it immediately after, so no job can start. Do not assert a failure at save.)
 
 ### C-F004 — a stored template composes by catalog name, and saves once
 One workflow, two steps, each composing the same cheap stored template
@@ -208,9 +195,6 @@ manifest key on every composed run without ever failing a job.
 cleanup: delete both outputs.
 source: tester, verified in #90 and #92 (run over MCP 2026-09-13 as job
 `04c6bf9908d4`, model `opus` via provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3, job `04c6bf9908d4`, 17.7 s for both steps including SD1.5 load:
-manifest `left`/`right`, gallery total 2.)
 
 ### C-F005 — a modular pipeline names its blocks while it runs
 Run the cheapest modular pipeline on the box — currently
@@ -240,11 +224,6 @@ cleanup: delete the generated audio output.
 source: tester, verified in #95 (proposed by the implementer in that issue's
 hand-off, run over MCP 2026-09-13 as jobs `bb2c89ba6f54` (Music3) and
 `958078231173` (H3), model `opus` via provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: Music3 job `bb2c89ba6f54`, 75.6 s, `semantic_generator` at 0.0 s
-and `denoise` at 36.3 s bounding a previously silent 36 s lead-in, first
-`pipeline_step` at 46.6 s; H3 job `958078231173`, `text_encoder` logged at
-102.8 s, the same instant as `phase: generating`.)
 
 ### C-F006 — the saving phase names the files it writes, and the run matches its curated cost
 Run `templates/ltx2/text-to-video` with stock arguments on a **cold worker**
@@ -263,6 +242,12 @@ the point is that declared and actual still agree, not that the number is
 still that number.
 `denoise_step` stays frozen at its last value through `saving`; that is what
 the phase is, not a finding.
+metrics: `latency` of the whole run in seconds from the job's own timestamps
+(`condition: cold`), and `latency` of `saving` → `step_end` (`condition:
+saving`), logged to `regression-perf/C-F006.jsonl`. The first is the curated
+cost check as a trend rather than a one-off; the second is the number that
+was 133 s before #97 and ~1.6 s after, so creep there is the regression
+returning quietly.
 **Cold worker matters:** the curated figure is whole-run wall clock including
 model load, and ~65% of this run is `loading`. A warm-worker run lands far
 under it and does not test anything.
@@ -270,10 +255,6 @@ cleanup: delete the generated mp4.
 source: tester, verified in #97 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13 as job `bd2f45b50862`, model `opus` via
 provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: 108.1 s total against a curated 1.8 min; `saving` at 105.6 s,
-`writing ... (121 frames)` at 105.6, `wrote ... in 1.3s (1.4 MB)` at 106.9,
-`step_end` at 107.2 — 1.6 s, against 133 s before the fix.)
 
 ### C-F007 — a second model family in the same worker lifetime is not OOM-killed
 Run two generations back to back **without restarting the server**, so the
@@ -298,6 +279,13 @@ worth asking about rather than an improvement to assume.
 Note `get_memory` during a run returns `live: false`, `reason: job_running`
 with a cached reading from the *previous* job — do not compare it against a
 live figure. `host_pinned_*` is absent (not zero) on `lem`'s torch build.
+metrics: logged to `regression-perf/C-F007.jsonl` — job 2's `latency` in
+seconds (`condition: job2`), the residual host RSS in MB from the `Released
+cached models` line (`bytes`, `condition: residual-rss-mb`), and job 2's
+peak RSS in MB (`bytes`, `condition: job2-peak-mb`). The residual is the
+number this case exists for: it was 14,928 MB before #98 and ~2,042 MB after,
+and a creep back toward the tens of GB is the near miss described above
+long before it is a SIGKILL.
 **This case is ~10 minutes of GPU time** and is the most expensive in the
 file. It earns it: this is the failure mode that silently costs a whole
 session's work, and it cannot be tested with one run or with two runs of the
@@ -306,11 +294,6 @@ cleanup: delete both generated outputs.
 source: tester, verified in #98 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13 as jobs `bd2f45b50862` then `2700403c7998`,
 model `opus` via provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: job 2 succeeded in 483.3 s where the byte-identical job died at
-314 s before the fix; `Released cached models: host RSS 2042 MB, 60528 MB
-available (21892 MB returned to the OS)` at 5.6 s; job 2 peak 61,882 MB
-against 61,867 MB on a fresh worker.)
 
 ### C-F008 — `result.file_base_name` is the whole base name, and a collision is counted not overwritten
 Run one inline workflow with **two** steps that both write into the same
@@ -339,11 +322,6 @@ cleanup: delete both generated files.
 source: tester, verified in #100 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13 as job `883c2fc82f5e`, model `opus` via
 provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: `final/episode-0.0.mp4` + `final/episode-0.0-2.mp4` from a
-6.4 s two-step `concat_videos` job, against
-`ep5-episodeqa-ep5-episode-episode.0-0.0.mp4` before the fix; the `sub/episode`
-validate refused at the documented path.)
 
 ### C-F009 — a paired video keeps its source frame rate, with no `result.fps` anywhere
 `pair_audio` is handed frames loaded from a file and an audio track, and the
@@ -392,16 +370,6 @@ source: tester, verified in #104 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13 as jobs `7bac4a2b5d07` and `d0b79427fc24`,
 model `opus` via provider `anthropic`). Third arm added from job `af9317223452`
 the same day while running TESTER_TASK.md.
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: 24.0 fps / 5.167 s / 124 frames with no `result.fps`, against
-8.0 fps / 15.5 s before the fix; the `fps: 12` arm warned "Writing video at 12
-fps, but the frames it was given run at 24.0 fps - the file will play 0.5x speed
-(2 times as long). Drop 'fps' from the step's result to keep the source rate".
-Third arm first observed the same day in job `af9317223452`: a fully undeclared
-`concat_videos` join of two 24 fps assets gave 24.0 fps / 248 frames / 10.334 s in
-7.0 s, and the level warning fired — "the tracks being joined span 6.5 dB (rms
--25.5 to -19.0 dBFS) - the cut will be audible as a level jump. Pass match_levels
-to even them out".)
 
 ### C-F010 — a cost estimate re-prices for the list it was actually given
 A list-driven template's curated cost was measured on one list length. Validating
@@ -422,13 +390,13 @@ that claimed it was measured for the caller's run. **Never the same number twice
 with a different `steps` count** is the one-line form of this case.
 Also assert `plan.list_entries` echoes the length the server realized, so a
 failure separates "priced wrong" from "parsed the list wrong".
+For scale (RTX 3090 figure of 42.0 min when first measured): 2 shots → 5
+steps / 16.8 min / `derived`; 5 shots (default) → 8 steps / 42.0 min /
+`catalog`; 10 shots → 13 steps / 84.0 min / `derived`. Read the current
+figure from the catalog rather than asserting these.
 cleanup: none — validation is free and queues nothing.
 source: tester, verified in #85 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13, model `opus` via provider `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3, `templates/minimax/dialogue-short` on an RTX 3090 figure of 42.0:
-2 shots → 5 steps / 16.8 min / `derived`; 5 shots (default) → 8 steps / 42.0 min /
-`catalog`; 10 shots → 13 steps / 84.0 min / `derived`.)
 
 ### C-F011 — a job records which form of cost acknowledgement queued it
 `get_job.acknowledged` is documented as one of `none`, `boolean`, `bound`, and it
@@ -450,9 +418,6 @@ cleanup: delete both generated outputs.
 source: tester, verified in #85 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13 as job `d21be61989ab`, model `opus` via provider
 `anthropic`).
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: bare `true` → `acknowledged: "boolean"`, `acknowledged_cost: null`,
-against `"none"` before the fix.)
 
 ### C-F012 — a `seed` is what turns the step cache on, and a cached step is marked `reused`
 The step cache is disabled entirely for a workflow that declares no top-level
@@ -479,10 +444,6 @@ conclusion ("task steps are not cacheable") reached #85 twice. Run over MCP as
 jobs `6a9cb065c40e` and `e3c9b4f38d67`, model `opus` via provider `anthropic`.
 Discoverability of the seed requirement is filed as #107; this case pins the
 behavior regardless of how that is resolved.
-last run: (not yet run by the regression agent — first observed 2026-09-13 on
-0.4.0-beta.3: seeded `pair_audio` step, `cached_steps` 0 → 1, second manifest
-`reused: true` pointing at run `20260913-152107-e387623b`'s file from run
-`20260913-152117-e387623b`, 1.88 s → 0.84 s.)
 
 ### C-F013 — a mono audio track is upmixed at encode, with a warning
 Pairing a **mono** track onto a video and writing `video/mp4` must succeed: an mp4
@@ -511,12 +472,6 @@ rewritten from a documented-failure case to a happy-path case on 2026-09-13 afte
 verifying the fix over MCP — jobs `bb66467e03f5` (mono, succeeded, `channels: 2`,
 `fps: 24.0`), `90dbe57f0bc5` (stereo control, `warnings: []`) and `e33eac7b6449`
 (the chained extension). Model `opus` via provider `anthropic`.
-last run: (not yet run by the regression agent in its pass-form. History: the
-pre-fix failure was first observed 2026-09-13 on 0.4.0-beta.3, two different mono
-wavs failing identically (`[1, 155520]` and `[1, 178880]`); after the #106 fix on
-the same day and the same server version, the mono job succeeds with
-`"Duplicating a mono audio track of 178880 samples into two channels - an mp4
-audio stream takes stereo and nothing else"`.)
 
 ### C-F014 — a stale cost acknowledgement is refused with a re-usable object
 `run_workflow`'s bound acknowledgement (`{fingerprint, minutes, downloads}` from a
@@ -581,7 +536,6 @@ source: tester, verified in #108 on 2026-09-13 over MCP as model `opus` via prov
 `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3 — jobs `8d09acd951e2` (unpinned,
 succeeded 2.6 s, `sample_rate: 32000`, warning at event seq 13) and `454d8eb9af05`
 (pinned to 24000, succeeded, output at 24000, warning naming 24000).
-last run:
 
 ### C-F016 — a slice past the end of its source is padded with silence, and says so
 `slice_audio` asked for more material than its source holds returns the length
