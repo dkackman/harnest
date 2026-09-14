@@ -986,6 +986,56 @@ warn and decoded `peak_dbfs: -0.626`, both 282 f / 24 fps / 960x544 / 11.75 s. T
 job is what finally settled M-F011's fourth bullet (the warning naming a muxed mp4, not
 only a saved audio file) with a real MCP call rather than a description.
 
+### S-F032 — a declared bound reaches a value inside a list entry, at the same three places
+S-F028 pins a bound on a **top-level** variable. This is its list-entry twin, and it
+exists because for a while the two were not the same rule: `constraint_errors`,
+`apply_constraints` and the catalog all indexed the declared block by variable *name*
+against the top-level arguments, so a `num_frames` sitting inside a `shots[]` entry was
+invisible to every one of them (#145). The asymmetry was silent in the worst way — the
+same 61 that `video-with-audio` refused for free, `dialogue-short` accepted, quoted a
+plan for, and then failed on 138 s into the run with the weights already loaded. It is
+worth pinning separately from S-F028 because a fix can pass that case and miss this one
+entirely, and because `dialogue-short` is the one H3 template where per-shot length is
+*meant* to vary, so it is where a frame count is most likely typed by hand.
+The bound is matched to an entry field only when a step consumes it as `item:<name>` —
+the constraint follows the value into the pipeline argument rather than following the
+name into the JSON — so an entry key nothing reads is not silently bound. That is a
+server-side rule this case cannot reach over MCP; it is named here so a reader knows the
+match is not by spelling alone.
+Free and instant: three discovery/validate calls, no run, no model load.
+expected:
+- **Refusal at the entry's own path.** `validate_workflow(name=
+  "templates/minimax/dialogue-short", arguments={"shots": [{"name": "cold_open",
+  "num_frames": 61, "prompt": "A short test line.", "references": []}]})` →
+  `valid: false`, one error whose path is **`arguments.shots[0].num_frames`** — the
+  index is part of the path, not a bare `num_frames` — with the same text S-F028
+  demands: the accepted range (`124 to 345`), the rule (`17 * n + 5`), and what it
+  rounds to (`73`). And **no `plan` in the answer**: a refused argument set must not
+  come back with an estimate a caller could acknowledge.
+- **Rounding is announced with the entry named.** The same call with `num_frames: 130`
+  → `valid: true`, one warning **beginning `shots[0]:`** and naming `141`, and a `plan`
+  present. A warning that names only `num_frames` has lost the half that tells a caller
+  *which shot* changes length.
+- **The index is real, not always zero.** Two entries, the first `num_frames: 141`
+  (legal, on the grid) and the second `400` → `valid: false` with the error at
+  **`arguments.shots[1].num_frames`**, saying "rounds up to 413 … must be at most 345",
+  and **no warning for `shots[0]`**, which needs no rounding. A fix that reported every
+  entry error against index 0, or that warned about a value already on the grid, passes
+  the first two bullets and fails here.
+- **The catalog carries the rule beside the field.** `get_workflow(name=
+  "templates/minimax/dialogue-short", variables_only=true)` →
+  `lists.shots.constraints.num_frames` present, terse
+  (`"17*n+5, 124-345, rounds up"`), alongside `lists.shots.fields`. A caller reading
+  what a `shots` entry carries reads the bound in the same place, rather than having to
+  know to look at a top-level `constraints` block for a variable this template does not
+  declare. This is the half that prevents the mistake instead of catching it.
+cleanup: none — all three calls are free discovery/validate calls that write nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #145 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. Don asked for this case by name
+when approving the fix, as the list-entry variant of the existing #96 case. The third
+bullet is mine: the implementer's hand-off proposed only the single-entry 61/130 pair,
+which cannot tell a correct index from a hardcoded one.
+
 ## Performance
 
 ### S-P001 — default image generation latency
