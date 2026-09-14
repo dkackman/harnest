@@ -606,4 +606,111 @@ is what established the overshoot figures above rather than guessing at them. Th
 `music-video` bullet is written from the deployed template's JSON read over MCP and is
 **not yet confirmed from a run**.
 
+### M-F013 — the Ingredients IC-LoRA is named as a download, and a short reference sheet is refused before the weights load
+`templates/ltx2/reference-sheet` is LTX-2.5's only reference/identity route (#151), and it is built
+on the `Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients` adapter, which the box may or may not hold.
+Two things about it are easy to break silently and cheap to check:
+1. **The adapter shows up in the plan.** A `loras` entry carries its repo under `model_name`
+   directly rather than under `from_pretrained_arguments`, and `_collect_sources` originally walked
+   only the latter — so `plan.downloads_required` answered `[]` for exactly the box the field exists
+   to warn: one holding every base weight and not the 1.3 GB adapter, which would then be pulled
+   mid-run. Fixed in `b599cf3`; the shape of that bug survives any future refactor of the plan
+   walker.
+2. **The 121-frame reference bucket is enforced at validate.** The Ingredients card requires the
+   static sheet to be looped to **at least 121 frames** — shorter breaks the reference encoding
+   rather than shortening it, and would otherwise surface as a bad generation after the checkpoint
+   is resident.
+Model/pipeline: LTX-2.5 + `Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients` (weight 0.9, a preview), via
+`templates/ltx2/reference-sheet`. Free — `validate_workflow`, `get_workflow`, `list_models` only,
+no GPU.
+expected:
+- **The adapter is named when absent.** `validate_workflow(name="templates/ltx2/reference-sheet")` →
+  `valid: true`, and `plan.downloads_required` contains an entry whose `repo` is
+  `Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients` — **on a box whose `list_models()` does not list that
+  repo**. Check `list_models` first: if the box has since pulled the adapter, an empty
+  `downloads_required` is correct and this bullet cannot be exercised, so record that and move on
+  rather than filing it.
+- **And not named when present.** `validate_workflow(name="templates/ltx2/generative-upscale")` →
+  `downloads_required: []` on a box whose `list_models()` *does* list
+  `Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler`. This is the pair that distinguishes a
+  working walker from one that reports every `loras` entry unconditionally — a fix for the first
+  bullet that makes this one non-empty has traded one wrong answer for another.
+- **The bound holds on both sides.** `arguments={"reference_frames": 120}` → `valid: false`, one
+  error at `arguments.reference_frames` whose text names 121. `{"reference_frames": 121}` →
+  `valid: true` with `checked_arguments` including `reference_frames`. Inclusive at 121; a 121 that
+  refuses is as much a finding as a 120 that passes.
+- **The catalog carries the rule, not just the validator.**
+  `get_workflow(name="templates/ltx2/reference-sheet", variables_only=true)` →
+  `constraints.reference_frames.min_frames: 121` with a `reason` mentioning the Ingredients bucket,
+  and the defaults are the trained bucket: `width` 768, `height` 448, `num_frames` 121,
+  `frame_rate` 24, `lora_scale` 1.0. A default that drifts off that bucket is a finding — the
+  weights are trained for it.
+Not covered here: an actual generation. It needs a real reference sheet (a composite panel sheet is
+an authoring job, not a fixture this suite can synthesise), and the adapter is an 0.9 preview whose
+output quality is a judgement call rather than a pass/fail.
+cleanup: none — validation and discovery only, writes nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #151 on 2026-09-14 against dw
+0.4.0-beta.4 on `lem`. The first and third bullets are the implementer's proposed pair; the
+present-adapter contrast and the catalog bullet are mine, because a walker that names every LoRA
+unconditionally would pass the proposed pair. Note while running it: the template's default
+`reference_sheet` is `asset:reference_sheet.png`, which exists in no asset root, and the bare
+validate above still answers `valid: true` — filed as #166 and deliberately **not** asserted here
+until that issue settles which way it should go.
+
+### M-F014 — the two restoration IC-LoRAs stay two, and each names its own weight
+`templates/ltx2/restore-deblur` and `templates/ltx2/restore-decompression` (#152) are the family's
+only non-re-rendering route: the caller's own clip goes in as an in-context reference at
+`reference_downscale_factor: 1` and only the defect changes. They are the first templates here whose
+reference is a file dw did not generate. Both vendor cards are emphatic that the two are **not**
+interchangeable — Deblur is spatial defocus only (it explicitly rules out compression repair), and
+Decompression rules out defocus — so the failure this case exists to catch is the two collapsing onto
+one adapter, or onto each other, in a refactor. Nothing in a *run* would say so plainly: the wrong
+adapter still produces a plausible clip.
+Model/pipeline: LTX-2.5 + `Lightricks/LTX-2.5-22b-IC-LoRA-Deblur` and
+`…-IC-LoRA-Decompression` (both weight 0.9, previews). Free — `list_workflows`,
+`validate_workflow`, `get_workflow`, `get_prompt` only, no GPU.
+expected:
+- **Both are in the catalog, as shots that need media.** `list_workflows(shape="shot",
+  traits="needs-input-media")` lists both. Each carries `constraints.num_frames: "8*n+1, 9+"` and
+  traits including `has-audio` + `needs-input-media` but **not** `image-conditioned` — the reference
+  is a clip, and a template that claims `image-conditioned` here is mislabelled for a caller
+  filtering on it.
+- **Each names its own adapter, and only its own.** With a real video asset supplied —
+  `validate_workflow(name="templates/ltx2/restore-deblur", arguments={"source_video":
+  "asset:<any video in the asset list>"})` → `valid: true`, `checked_arguments` includes
+  `source_video`, and `plan.downloads_required` is exactly one entry, repo
+  `Lightricks/LTX-2.5-22b-IC-LoRA-Deblur`. The same call against `restore-decompression` →
+  exactly one entry, repo `…-IC-LoRA-Decompression`. The cross-product is the finding: either
+  template naming the other's repo, naming both, or naming neither. As in M-F013, check
+  `list_models()` first — once the box has pulled an adapter an empty `downloads_required` is
+  correct for it and that half cannot be exercised; record that rather than filing it.
+- **The placeholder default is a guard, not decoration.** `arguments={"source_video":
+  "asset:blurry.mp4"}` → `valid: false`, one error at `arguments.source_video` reading "Asset
+  'blurry.mp4' not found in …". A caller who ships the template without pointing it at their own
+  footage must be stopped at validate, not after the weights load.
+- **The trained bucket is on the workflow.** `get_workflow(name="templates/ltx2/restore-deblur",
+  variables_only=true)` → `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0,
+  `lora_scale` 1.0, `prompt` `prompt:ltx2/deblur_dual_panel`, and
+  `constraints.num_frames` `{modulus 8, remainder 1, min_frames 9}`. Both cards warn that generating
+  far above the bucket weakens the effect, so a default that drifts off it is a finding.
+- **The dual-panel prompts exist and keep their trained shape.**
+  `get_prompt("ltx2/deblur_dual_panel")` and `get_prompt("ltx2/decompression_dual_panel")` both
+  resolve, `intended_model: ltx-2.5`, and each text keeps the two-panel form: a "Reference shows …"
+  half, its "DEBLUR" / "ENHANCE QUALITY" instruction, and a closing clause asserting identity,
+  framing and background geometry are identical and only the named defect differs. A prompt that
+  loses that closing clause is the one way this silently becomes a general re-render.
+Not covered here: an actual restoration pass, or the comparison against `templates/ltx2/two-stage`
+that #152 originally asked for. Both weights are 0.9 previews and "did it look better per minute" is
+a judgement about output, not a pass/fail — that measurement wants a named source clip and committed
+GPU time, which no one has assigned.
+cleanup: none — validation and discovery only, writes nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #152 on 2026-09-14 against dw on
+`lem`. Bullets one through three are the implementer's proposed set, tightened: they proposed
+checking only that Deblur names Deblur, and a template naming *both* adapters would pass that. The
+`8n+1` refusal they also proposed is deliberately **not** repeated here — M-F005 already owns that
+rule for LTX-2.5. Note while running it: as with M-F013, a bare
+`validate_workflow(name="templates/ltx2/restore-deblur")` with no `arguments` answers `valid: true`
+even though the default `asset:blurry.mp4` exists nowhere (no `checked_arguments` key comes back at
+all) — same behaviour as #166, and not asserted here either way until that issue settles.
+
 ## Performance
