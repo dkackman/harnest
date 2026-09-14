@@ -662,4 +662,45 @@ source: regression agent, found while running C-F001/C-F002 on 2026-09-13 —
 `b80244bd5b1a`, model `opus` via provider `anthropic`, dw 0.4.0-beta.3: 236 frames
 / 24.0 fps / 9.834 s / 32 kHz stereo, `mean_dbfs` -19.81, in 1.7 s.
 
+### C-F020 — `templates/dissolve-between-shots` passes `match_levels` through, so its own warning is followable
+C-F018 and C-F019 exercise the `dissolve_videos` **task**. This case is about the
+**template** that wraps it, which is what a caller actually runs, and about a
+different failure: the template used to emit a `dissolve_videos` level-spread
+warning telling the caller to "pass `match_levels`" while declaring no such
+variable, so taking the advice came back `Unknown variable` (#128). A template
+whose own warning names an argument it does not accept costs a round trip every
+time, and the caller's first assumption is a typo.
+Needs three video assets of the same canvas with a **wide level spread** — the
+episode shots this suite's `qa-cast` fixtures provide (ep4/ep6/ep7 span 8.8 dB,
+which is the ordinary spread for independently generated shots and is what makes
+the warning fire at all). ~8 s, task-only, loads no model.
+expected:
+- `validate_workflow(name="templates/dissolve-between-shots", arguments={"match_levels": "rms"})`
+  → `valid: true`, `checked_arguments` includes `match_levels`. This alone is the
+  literal #128 repro.
+- `get_workflow(name=…, variables_only=true)` declares **both** `match_levels` and
+  `match_levels_dbfs`, each defaulting to `null` — null so the task's own per-mode
+  default stands rather than the template inventing one.
+- Run it over the three wide-spread shots with `match_levels: "rms"`, the matching
+  `total_frames`, and a score built to exactly that length: the job succeeds with
+  `warnings: []`. The **absence** of the level-spread warning is the assertion that
+  proves the variable reaches the task rather than only being accepted at the door.
+  A declared-but-unbound variable passes the first two checks and fails only this one.
+Frame arithmetic, worth asserting on the output and worth stating because the
+template's description now carries it: the joined cut is `Σf − (n−1)*d`, which for
+equal shots is `n*f − (n−1)*d`. It holds for **unequal** shots too — 124 + 124 + 248
+with `dissolve_frames: 12` lands on exactly 472 frames / 19.667 s — and unequal is
+the case a caller is most likely to get wrong, since the description states the
+equal-shot form.
+It is a **finding** if the argument is refused again, if either variable stops being
+declared or loses its `null` default, or if the run raises the spread warning despite
+`match_levels` being passed.
+cleanup: delete both runs' outputs (each sweeps its run directory). Keep the shot
+assets — they are episode fixtures.
+source: tester, model `opus` via provider `anthropic`, verified in #128 on 2026-09-13
+against dw 0.4.0-beta.3 on `lem` (job `bf289b68b439`, three 8.8 dB-spread shots,
+`warnings: []` in 6.4 s where the unmatched run had raised the spread warning). The
+unequal-shot arithmetic is from job `c35749b7ef07` the same evening, workspace
+`qa-ep11`. At complete rather than smoke level because it needs three video assets.
+
 ## Performance
