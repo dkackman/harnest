@@ -697,6 +697,35 @@ The implementer's suggested addition to SE-F025 — asserting (a) and (b) refuse
 *identically* rather than merely both refusing — is already in SE-F025 as written,
 so nothing there needed changing and nothing there was changed.
 
+### SE-F028 — the `output:` reference grammar still refuses traversal after being widened
+SE-F010 pins traversal at the output-*side tools* (`get_output_image`, `delete_output`, …).
+This pins the other surface: the `output:` reference **inside a workflow definition**,
+which is a different check on a different code path. It exists because that grammar was
+deliberately loosened — #162 widened the pattern to admit `@` mid-segment, so a
+`for_each` step's own `shot@entry` files could be named back to the server. A pattern that
+has been widened once for a good reason is exactly the one to pin: the next widening is
+where a `.` or a `/` slips in. Free and instant: two `validate_workflow` calls, no run.
+expected:
+- **Traversal refused, at validate.** An inline workflow whose `pair_audio` step has
+  `video: "output:ltx2/../../etc/passwd"` → `valid: false`, error at
+  **`steps[0].task.arguments.video`**, message `segment '..' starts with '.', and every
+  segment must start with a letter, digit or underscore`. Refused in the free call, not
+  at run time — refused-too-late is a failure by this file's rule (see the header), and
+  this reference form used to be checked only after the job was queued.
+- **The widened character did not become free.** `output:<workflow>/<run>/intermediate/@shot.mp4`
+  (a *leading* `@` in the final segment) → `valid: false`, `segment '@shot.mp4' starts with
+  '@', …`. If this validates, the widening escaped its intended scope, whatever the
+  `..` probe says.
+Fail on `valid: true` for either, and on any refusal that echoes a *normalized* form of the
+probe (it would say the name was resolved against the filesystem before being judged).
+The functional half — that a legitimate `shot@entry` name still round-trips — is S-F033 in
+`regression-suite-smoke.md`; a tightening that passes this case by refusing everything is
+caught there, not here.
+cleanup: none; both calls are free validate calls that write nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #162 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15`. The implementer proposed pinning the
+boundary beside the widened pattern; the leading-`@` probe is mine.
+
 ### SE-F026 — a trust refusal emits no phase event, and a legitimate load still does
 SE-F005 and SE-F006 say a probe must not "start loading the model" before it
 fails, and read that off `get_job_events`. #137 was the case where that evidence

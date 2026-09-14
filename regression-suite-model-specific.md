@@ -603,8 +603,13 @@ against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. Two runs: `6d2de49d1849
 `normalize_audio` itself was checked separately in jobs `04fed6350543` / `5364d68417c5`
 (-1 -> -0.73 decoded, -6 -> -5.85; -1 -> -0.53, -6 -> -5.90 on the second track), which
 is what established the overshoot figures above rather than guessing at them. The
-`music-video` bullet is written from the deployed template's JSON read over MCP and is
-**not yet confirmed from a run**.
+`music-video` bullet was confirmed from a run in #161 (tester, model `opus` via provider
+`anthropic`): job `34b5aaa510e5`, 2 shots at `audio_duration: 12`, deliverable at
+`peak_dbfs: -3.921`. That fix moved `music-video`'s `balanced` step to **-3.0 dBFS**
+(`music` stays at -1.0) because the AAC mux overshoots where an mp3 encode barely does —
+by 1.94 dB on #161's material, while the same mux landed 0.92 dB *under* the target on
+this run's. Material-dependent in both directions, which is why the bullet asserts
+strictly below 0 and no target level.
 
 ### M-F013 — the Ingredients IC-LoRA is named as a download, and a short reference sheet is refused before the weights load
 `templates/ltx2/reference-sheet` is LTX-2.5's only reference/identity route (#151), and it is built

@@ -1036,6 +1036,55 @@ when approving the fix, as the list-entry variant of the existing #96 case. The 
 bullet is mine: the implementer's hand-off proposed only the single-entry 61/130 pair,
 which cannot tell a correct index from a hardcoded one.
 
+### S-F033 — a file the server named can be named back to it, and a name it refuses says which character
+A `for_each` step names its members `step@entry`, and the files it writes carry that `@`.
+Those names come back from `job.manifest`, `list_gallery` and `get_gallery_metadata`
+verbatim — but for a while feeding one back as an `output:` reference was rejected as
+malformed (#162), so a whole class of files the server itself had named could not be
+referenced by the language meant to consume them. Every list-driven template is affected,
+since `for_each` is how they all work, and the workaround was a re-render or an
+`upload_asset` round trip. The second half is the message: the refusal described a
+correctly-spelled name and never mentioned `@`, so the cause was only findable by
+bisecting against a sibling file.
+This case is the round trip — *what the server wrote, the server accepts* — plus the two
+edges of the widened grammar, so a future tightening of the pattern can't quietly take
+`@` back out and can't loosen into traversal either. Cheap: one `pair_audio` mux (no
+model load, a few seconds) and three free validate calls.
+expected:
+- **The round trip runs.** Take a `shot@<entry>` file name out of a list-driven run's
+  `job.manifest` **verbatim**, pass it as `output:<that name>` to a `pair_audio` step's
+  `video` (any audio from the same run as `audio`) → `validate_workflow` `valid: true`
+  with a `plan`, and `run_workflow` **`succeeded`** with a file in the manifest. Do not
+  retype or normalize the name; copying it from the manifest is the whole point. No GPU
+  needed if a prior run's files are still on the box — pick any run whose files a
+  `list_gallery` shows.
+- **A malformed name is refused in the free call, and names the character.**
+  `validate_workflow` on an inline workflow carrying `output:tpl/ru n/x.mp4` →
+  `valid: false`, error path **`steps[0].task.arguments.video`**, message naming the
+  offending character *and its position* (`' ' (position 6) is not a character this kind
+  of name may contain`). Two separate failures if either half is missing: a name that can
+  never resolve rejected only after the job is queued is a failure even though the job
+  fails (`validate_workflow` passed this exact workflow before the fix), and a message
+  that merely describes the correct form without naming its objection is the second.
+- **`@` is mid-segment only.** A *leading* `@` — `.../intermediate/@shot.mp4` →
+  `valid: false`, `segment '@shot.mp4' starts with '@', and every segment must start with
+  a letter, digit or underscore`. The widening admitted one character inside a segment; it
+  did not make `@` free.
+- **Shape, not existence.** A well-formed `shot@no_such_entry...` name that is not on disk
+  → `valid: true`. Deliberate, not a gap: whether a run id is still on disk depends on the
+  workspace and on pruning, and validate resolves `arguments` against the workspace but
+  not inline step references. Pinned so a later reader knows this boundary was chosen
+  rather than missed — if it ever *should* become an existence check, that is a new issue,
+  not a silent change to this bullet.
+Traversal in the same reference form is SE-F028, in the security suite, where a boundary
+escape belongs.
+cleanup: delete the run directory the mux wrote (`delete_output` on the run id); the three
+validate calls write nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #162 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15` (round trip = job `2557decd9852`).
+First two bullets proposed by the implementer in its hand-off; the third and fourth are
+mine, from adjacent probes run at verification.
+
 ## Performance
 
 ### S-P001 — default image generation latency

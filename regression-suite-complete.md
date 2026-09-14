@@ -92,6 +92,15 @@ when nothing uses it anymore.
   content; re-read its `duration_seconds` and re-derive the frame counts below
   from it.
 
+- `asset:qa-cast/ep15-song.mp3` and `asset:qa-cast/ep6-cold-open.mp4` — a full-length
+  song and a short 24 fps shot (124 frames), used together by C-F024 as audio source
+  and mux carrier. Also in the shared `common/assets`: do not sweep them, do not
+  expect them under `regression-complete`. Neither is load-bearing on content — C-F024
+  asserts an agreement, not a level — so any few-second-sliceable track and any short
+  video substitute. Note only that the song's mux overshoot on the sliced window is
+  ~0.44 dB, which is why -0.55 dBFS does **not** clip on it; that is the case's true
+  negative, not a defect.
+
 ## Functional
 
 ### C-F001 — a run-time warning reaches the caller, on both channels
@@ -852,5 +861,106 @@ the cold-start control, the peak-RSS bullet and the warm-up caveat are mine. Con
 then job `3368b1967b58` (`lora_scale: 0.8`, `num_frames: 141`, 662.3 s, release at `seq 7` / 4.8 s
 against loading at `seq 8`, 536.29 → 8.125 MB), `run_count: 2` on one worker, peak RSS 61487.10 MB
 on both.
+
+### C-F024 — the mux's own clipping check reads the file it wrote, not the level it was asked for
+`normalize_audio` sets the level of a *waveform*; the AAC encode inside `pair_audio`'s
+`video/mp4` save then moves it, and by an amount that depends entirely on the material.
+Measured on two tracks through the identical chain: one overshot its target by **1.94 dB**,
+the other landed **0.92 dB under** it (#161). So a check that reasons from the requested
+`peak_dbfs` cannot know whether the deliverable clips. The server now probes the written
+file and emits an `audio_clipped` warning when *that* decodes at or above 0 dBFS — which is
+the only measurement that answers the question. This case pins the probe, not the constant.
+The assertion is the **agreement between the warning and the metadata**, in both directions,
+because either half alone is satisfiable by a broken check: a warning that never fires
+passes any "deliverable is clean" test, and a warning that always fires passes any "clipping
+is caught" test. A normalize target that happens not to clip on this material is therefore
+expected to be **silent**, and that silence is a pass, not a miss.
+This is the post-encode counterpart to M-F011, which pins the *source*-side
+`audio_no_headroom` warning on the waveform as written. Two different measurements of two
+different artifacts; a run can legitimately fire one and not the other.
+Costs one short CPU-side job — no model loads, no generation.
+expected: one inline workflow, `slice_audio(asset:qa-cast/ep15-song.mp3, start_seconds: 2,
+duration_seconds: 5)` into two branches, `normalize_audio(peak_dbfs: -0.55)` and
+`normalize_audio(peak_dbfs: -3)`, each muxed by `pair_audio(video:
+asset:qa-cast/ep6-cold-open.mp4, fit: "video")` and saved as `video/mp4` in `final` —
+- **`fit` takes `"video"` or nothing.** `fit: "audio"` is refused with
+  `pair_audio: 'fit' takes 'video' or nothing, got 'audio'`. Worth asserting because the
+  refusal is what keeps the carrier's frame count authoritative.
+- **For each of the two muxed mp4s, `get_gallery_metadata(...).media.peak_dbfs` and the
+  presence of an `audio_clipped` entry in `job.warnings` agree.** Peak at or above 0 →
+  exactly one warning naming *that* file and a figure within ~0.05 dB of the metadata's.
+  Peak below 0 → no warning for that file. Disagreement in either direction is the finding.
+- **The warning names the file and its measured level**, in the shape
+  `<step>: <filename> decodes at +N.NN dBFS - above full scale, so it clips on playback…`.
+  A warning that names only the step, or carries no figure, leaves a reader unable to tell
+  which deliverable to re-render.
+- **One warning per file at most.** The suppression when the source-side no-headroom check
+  has already warned for the same file is deliberate — two warnings about one file read as
+  two problems.
+- **Do not assert that `-0.55` clips.** It did on one material and did not on another, which
+  is the whole reason the probe exists. Assert only the agreement above. If a run wants a
+  guaranteed positive, drive the hot branch from material already known to overshoot and
+  confirm it from the metadata, not from the target.
+cleanup: delete the run's output folder. `asset:qa-cast/ep15-song.mp3` and
+`asset:qa-cast/ep6-cold-open.mp4` live in the shared `common/assets` — do not sweep them.
+Neither is load-bearing on content: any track a few seconds long and any short video with a
+known frame count substitute, since the case asserts agreement rather than a level.
+source: tester, model `opus` via provider `anthropic`, verified in #161 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15`. Proposed by the implementer; the
+agreement framing, the true-negative control and the "do not assert -0.55 clips" caveat are
+mine, and they come from the run disagreeing with the proposal. Job `e8c5eb90ba83` (the two
+branches above): `mux_hot` decoded at **-0.1124 dBFS** with **no** warning — correct, that
+material's mux overshoot is only ~0.44 dB — and `mux_safe` at **-3.401**, also silent. Job
+`418e6300620a`, identical shape on material that overshoots ~0.96 dB on the sliced window:
+`mux_hot` drew exactly one warning, `mux_hot… decodes at +0.41 dBFS - above full scale`,
+and `get_gallery_metadata` independently measured **+0.4097**; `mux_safe` measured
+**-2.4828**, silent. Job `8eb96c97d799` is where `fit: "audio"` was refused. No `metrics:`
+line: a dBFS figure hovering around zero is not something `regression-perf/`'s
+median-and-50% rule can say anything useful about, and the assertion here is an agreement,
+not a number.
+
+### C-F025 — a workspace asset shadows a shared one by elision, and deleting it leaves the shared copy
+An `asset:` reference resolves through a search path — this workspace's `assets/`, then the
+shared `common/assets`, then any read-only examples library — and `list_assets` tags every
+entry with the `origin` it came from. Two things follow that a consumer has no other way to
+learn, and both are easy to break silently: a name present in more than one library is
+reported **once**, from the nearest library (the farther copies are elided, not listed as
+dimmer duplicates), and `delete_asset` resolves in that same order, so deleting a local
+name that shadows a shared one must remove the local copy and leave the shared original
+intact. A regression in the first makes the same asset look duplicated or makes a local
+override look absent; a regression in the second destroys a shared cast member from inside
+a throwaway workspace, which is not recoverable.
+Costs nothing — no jobs, no model loads, four metadata calls.
+expected: in a workspace created fresh for the case, uploading a file whose stored name
+collides with an existing `common/assets` entry, then —
+- **Every `list_assets` entry carries an `origin`**, and the response carries `asset_dir`,
+  `asset_dirs` (nearest library first) and a precomputed `folders` list. An entry missing
+  `origin` is the finding: the UI's source badge and the delete affordance both key off it.
+- **The freshly uploaded entries report `origin: "workspace"`** and everything inherited
+  reports `origin: "common"`. Both values must actually appear; a listing where everything
+  is one origin proves nothing.
+- **The colliding name appears exactly once, with `origin: "workspace"`.** Two entries for
+  one name, or the shared copy winning, is the finding.
+- **`delete_asset(<colliding name>)` returns `origin: "workspace"`**, and afterwards
+  `get_gallery_metadata("asset:<colliding name>")` still resolves — to the shared copy,
+  which is how you know the delete stopped at the nearest library. A failure to resolve
+  means the shared original was destroyed; that is the severe half of this case.
+- Note for whoever runs it: `upload_asset(asset_name: "x/y.ext")` stores under
+  `uploads/x/y.ext`, so pick the collision target from a `common` asset already under
+  `uploads/` rather than assuming the name you pass is the name you get.
+cleanup: delete the workspace created for the case with
+`delete_workspace(acknowledged_cost: true)` — that removes the uploaded copies with it.
+Nothing in `common/assets` is touched; if the shared copy of the collision target is
+missing at the end, that is the case failing, not cleanup to do.
+source: tester, model `opus` via provider `anthropic`, verified in #165 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`. Ran in a throwaway workspace `qa-asset165`:
+`uploads/qa-cast/room-bed.wav` (present in `common/assets`) was uploaded locally, listed
+once as `origin: "workspace"`, deleted with `{"deleted": true, "origin": "workspace"}`, and
+`get_gallery_metadata` then still resolved the reference to the shared 4.96 s / 16 kHz /
+mono original. #165 itself is a web-UI ticket with no MCP surface — this case pins the
+server behaviour the page rests on, not the page. No `examples`-origin library was
+observable on this server (`/home/don/diffusers-workflow/assets` is on `asset_dirs` but
+contributed no entries), so the read-only-refusal branch of `delete_asset` is deliberately
+not asserted here; it belongs in the dw repo's pytest suite, where a fixture can exist.
 
 ## Performance
