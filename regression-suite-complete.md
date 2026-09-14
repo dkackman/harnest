@@ -800,4 +800,57 @@ runs into the *same* bucket; a cached `rerun_job` not counting) are **not** in t
 case — I did not spend the runs to confirm them, and they are worth adding when
 someone does.
 
+### C-F023 — reloading one workflow against itself releases the resident pipeline first
+The worker keeps loaded pipelines between jobs so a repeat run is warm. When the *same* workflow is
+re-run with an argument that changes what a step loads — a LoRA scale, a canvas, a step count,
+anything in the pipeline identity key — the new stack must be built, and the old one has to go
+first. Before #150 it did not: the release path existed but read a `prior_step_keys` map that
+nothing ever populated, so it could only fire *within* a single run and never between two. The
+second job loaded on top of the first and the worker was SIGKILLed by the host OOM killer. This is
+not a comfortable margin on the box that found it: one H3 load alone peaks at ~61.5 GB of 64 GB
+host RSS, so there is no headroom for two and never was. C-F007 covers a second model *family* in
+one worker lifetime; this covers the case it cannot — one workflow reloaded against itself, where
+the workflow name never changes and so the workflow-*switch* release can't fire.
+Costs two real runs of whatever template is chosen. Use a template heavy enough that a doubled
+load would actually exhaust the host; a small pipeline would pass this case while the bug was fully
+present, which is the way it is most likely to be tested into uselessness.
+expected:
+- **Run 1, cold**, on the template's defaults. `get_job_events` → **no `pipeline_released` event
+  at all**. This control is half the case: an unconditional release on every run would satisfy the
+  next bullet while meaning nothing.
+- **Run 2, same workflow**, with an argument changed that is in the pipeline identity key (not
+  merely a call argument — a prompt or an output name will *not* do it; `lora_scale` and a canvas
+  or frame count will). `get_job_events` →
+  `{"event": "pipeline_released", "reason": "superseded", ...}` carrying
+  `gpu_memory_allocated_before_mb` and `gpu_memory_allocated_mb`.
+- **Ordering, which is the actual assertion.** That event's `seq` is **lower** than the first
+  `{"event": "phase", "phase": "loading"}` of run 2 — released *before* the new load, not after it.
+  A release that fires after the load has already happened frees memory the run needed a moment ago
+  and prevents nothing.
+- **The release names what the previous job left.** Run 2's `gpu_memory_allocated_before_mb` equals
+  run 1's closing `memory` event `gpu_memory_allocated_mb`, so the two event streams join up.
+- **Run 2 completes**, `status: "succeeded"`. A SIGKILL presents as a job that stops without an
+  error rather than as a failure with a traceback, so assert the success explicitly.
+- **Peak host memory does not stack.** Run 2's closing `memory` event has a
+  `host_memory_peak_rss_mb` **no higher than run 1's** (it is a process-lifetime high-water mark, so
+  equality is the expected result, not a coincidence). This is the bullet that actually tracks the
+  bug: a second load piling onto the first shows up here long before it shows up as a crash.
+It is a **finding** if the `pipeline_released` event is absent from run 2, if its `reason` stops
+being `"superseded"`, if it moves after the loading phase, if it starts appearing on the cold
+control, or if run 2's peak RSS exceeds run 1's. A slow *first* denoise step on run 2 is **not** a
+finding — allocator warm-up after a release-and-reload was observed at 207 s against a 36 s norm
+with steps 2+ recovering immediately; only a rate that stays slow is a problem.
+cleanup: delete both runs' outputs (sweeps their run directories). Nothing durable is produced.
+metrics: `host_memory_peak_rss_mb` for each of the two runs, condition `run1` / `run2`, unit `MB`
+— logged to `regression-perf/C-F023.jsonl` pass or fail. The trend that matters is not the absolute
+value but whether run 2's reading ever starts exceeding run 1's, which is this bug returning as
+creep instead of as a crash.
+source: tester, model `opus` via provider `anthropic`, verified in #150 on 2026-09-14 against dw
+0.4.0-beta.4 on `lem`, workspace `qa-verify`. Proposed by the implementer; the ordering assertion,
+the cold-start control, the peak-RSS bullet and the warm-up caveat are mine. Confirmed with
+`templates/minimax/reference-to-video`: job `b4b5959424d3` (defaults, 496.0 s, no release event)
+then job `3368b1967b58` (`lora_scale: 0.8`, `num_frames: 141`, 662.3 s, release at `seq 7` / 4.8 s
+against loading at `seq 8`, 536.29 → 8.125 MB), `run_count: 2` on one worker, peak RSS 61487.10 MB
+on both.
+
 ## Performance

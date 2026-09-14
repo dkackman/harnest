@@ -1,0 +1,1 @@
+{"ts":"2026-09-14T15:44:21Z","level":"model-specific","case":"M-F008","metric":"latency","condition":"cold","value":786.0,"unit":"s","server":"0.4.0-beta.4","model":"opus","provider":"anthropic","ref":"job b6ecc7877346","note":"first ever run of templates/minimax/video-with-audio-768p; defaults, 1344x768/124f, 8 evaluations; first denoise step ~232 s then ~40-57 s/step"}

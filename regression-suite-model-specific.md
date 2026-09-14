@@ -303,4 +303,84 @@ succeeded in 831.2 s, `warnings: []`, final `frame_count: 248` / `duration_secon
 against the pre-fix run's 248 / 20.666). Proposed by the implementer; the manifest bullet, the
 whole-song bullet and the carried-forward six-shot direction are mine.
 
+### M-F007 — an H3 checkpoint swap is three numbers, and the catalog says so
+The turbo LoRAs for MiniMax-H3 are trained at a canvas *and* a sigma schedule *and* an alpha, and
+the three move together. `lightx2v/Minimax-h3-Turbo`'s 544p FL2VA checkpoints are trained at shift
+12/3 with the file's own `alpha: 8`; its 768p FL2VA checkpoints are trained at **shift 6**/3 with
+upstream passing `--lora-alpha 128`, a sixteenfold difference from the file's recorded alpha rather
+than a nudge. Before #147 no H3 template mentioned `shift` or `alpha` at all, so a caller reaching
+for 768p could only override `lora_weight_name` — which would have run the 768p LoRA on the 544p
+sigma schedule at a sixteenth of its trained strength, and produced a clip that looks merely
+mediocre rather than misconfigured. This case pins the *pairing* in the catalog: the point is not
+that any one number is right but that the templates state enough for a caller to see that a
+checkpoint swap is not a one-argument change. Note the asymmetry deliberately — the Ref2VA 768p
+checkpoint is shift **12**/3, not 6, so 768p does not imply shift 6.
+Model/pipeline: MiniMax-H3, `lightx2v/Minimax-h3-Turbo` LoRA family. Free — `get_workflow` only, no
+GPU, so run it every pass.
+expected: `get_workflow(name=..., variables_only=true)` on each, checking `video_shift`,
+`audio_shift` and `lora_alpha` are all **declared** (`lora_alpha: null` is a declaration — it means
+"use the file's own" — while a *missing* `lora_alpha` key is the regression):
+- `templates/minimax/video-with-audio` — `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`,
+  960x544, an FL2VA (`fl2v`) weight name.
+- `templates/minimax/video-with-audio-768p` — `video_shift: 6.0`, `audio_shift: 3.0`,
+  `lora_alpha: 128`, 1344x768, a `768p` FL2VA weight name.
+- `templates/minimax/reference-to-video` — `video_shift: 12.0`, `audio_shift: 3.0`,
+  `lora_alpha: null`, 960x544, a **`ref2v`** weight name. This is the asymmetry control: a run that
+  "helpfully" normalised every 768p-trained checkpoint to shift 6 would break it.
+It is a **finding** if any of the three keys stops being declared on any of the three templates, if
+the 544p/768p pair stops differing in `video_shift` and `lora_alpha` (the pair is the whole case —
+two templates that agree on all three numbers mean the distinction has been flattened), or if the
+Ref2VA row moves to shift 6. A number changing in step with a checkpoint change named in an issue is
+not a finding on its own: check which weight file the template now pins, and whether upstream's
+specs table gives that file a different shift/alpha, before filing.
+cleanup: none — reads only, writes nothing.
+metrics: none — this case yields no measurement, only declarations.
+source: tester, model `opus` via provider `anthropic`, verified in #147 on 2026-09-14 against dw
+0.4.0-beta.4 on `lem`, workspace `qa-verify`. All three templates matched the above on that pass.
+The runtime half — that these numbers reach the scheduler rather than merely being declared — is
+M-F002's territory (`num_inference_steps: 9` producing an 8-evaluation schedule), confirmed again
+the same day by job `b4b5959424d3`. Deliberately kept separate: this case is free and that one
+costs a render, and the catalog going stale is the failure worth catching on every pass.
+
+### M-F008 — the 768p H3 path renders at its trained canvas on its trained schedule
+`templates/minimax/video-with-audio-768p` pins a combination rather than leaving it to arguments:
+the `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16` checkpoint, 1344x768, `video_shift: 6.0`,
+`lora_alpha: 128`, `num_inference_steps: 9`. Every one of those has to reach a different part of
+the stack — the canvas to the pipeline, the shift to the scheduler, the alpha to the peft layers
+after load — and none of them fails loudly if it doesn't. A 768p LoRA run on the 544p sigma
+schedule at the file's own `alpha: 8` (a sixteenth of what upstream passes) produces a clip that
+completes, saves, and simply looks mediocre. M-F007 pins that the catalog *declares* these
+numbers; this case is the other half — that a render on them actually happens. The two together
+are why a checkpoint swap can be trusted to be three numbers rather than one.
+Model/pipeline: MiniMax-H3 T2VA with `lightx2v/Minimax-h3-Turbo`'s **768p FL2VA** 8-step
+checkpoint. Costs one real run, ~13 min cold on a 3090 — model-specific is opt-in, which is where
+a render this size belongs.
+expected: `run_workflow("templates/minimax/video-with-audio-768p")` on defaults, then
+`wait_for_job` / `get_job_events` / `get_gallery_metadata` on the output:
+- **`status: "succeeded"`, `warnings: []`.** Completion is itself the assertion here — see above.
+- **`denoise_total_steps: 8`** from `num_inference_steps: 9`, i.e. the turbo schedule, not a
+  silent fallback to the base model's step count.
+- **The deliverable is `width: 1344`, `height: 768`**, `frame_count: 124`, `fps: 24.0`, with audio:
+  `sample_rate: 32000`, `channels: 2`, and `mean_dbfs` above -40 (a soundtrack that generated
+  rather than a silent track beside a good picture).
+- **`host_memory_peak_rss_mb` stays under `host_memory_total_mb`** on the closing `memory` event.
+  This box runs at ~96% of host RAM on H3 and the original 768p attempt was OOM-killed at 345
+  frames, so the headroom is the thing to watch, not an abstract pass.
+It is a **finding** if the run fails or OOMs at the *default* 124 frames, if the canvas comes back
+anything but 1344x768, if `denoise_total_steps` stops being 8, or if wall clock moves well outside
+the trend in `regression-perf/M-F008.jsonl` (the shift or the alpha silently not being applied
+would most likely show up as a step count or a timing change, since nobody in this loop can judge
+the picture). A failure at a frame count *above* the default is not this case's business — 345
+frames at this canvas is a known OOM and deliberately out of scope.
+cleanup: delete the run's output (sweeps its run directory). Nothing durable is produced.
+metrics: `latency`, condition `cold`, unit `s` — the job's own `started_at`->`finished_at`, logged
+to `regression-perf/M-F008.jsonl` pass or fail. This template shipped with **no curated `cost`**
+because nothing had measured it, so this log is currently the only cost history it has.
+source: tester, model `opus` via provider `anthropic`, verified in #148 on 2026-09-14 against dw
+0.4.0-beta.4 on `lem`, workspace `qa-verify` — the template's first ever run (job `b6ecc7877346`,
+786.0 s, 1344x768/124 f, peak RSS 61548.9 of 64208.6 MB). Proposed by the implementer; the memory
+bullet and the audio half of the metadata bullet are mine. Note for a future run: the **first**
+denoise step took ~232 s against ~40-57 s for steps 2-8 — warm-up, not a stall, and the same
+pattern C-F023 records after a reload.
+
 ## Performance
