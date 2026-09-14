@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # MODEL_ENV / MODEL_LABEL / MODEL_CONTEXT_TOKENS / CO_AUTHOR* are read by the sourcing driver
-# providers.sh — model/provider resolution and the small set of helpers both
-# drivers (run-loop.sh, run-regression.sh) would otherwise duplicate. Sourced,
-# never executed.
+# providers.sh — model/provider resolution and the small set of helpers all
+# three drivers (run-loop.sh, run-regression.sh, run-research.sh) would
+# otherwise duplicate. Sourced, never executed.
 #
 # Claude Code takes its model from --model, and *where that model lives* from
 # ANTHROPIC_BASE_URL. Any endpoint that speaks the Anthropic Messages API
@@ -21,8 +21,13 @@
 #   runtime_note <role> <provider> <model>      prints the "Runtime:" paragraph
 #   commit_suite_changes <msg> [name] [email]   commits regression-suite-*.md
 #                                               and regression-perf/
+#   park_external_issues                        relabels issues filed by a
+#                                               non-owner login to owner:don +
+#                                               status:needs-approval
 #   CONSUMER_PERMISSION_FLAGS                    array: permission flags for the
 #                                               consumer-only roles (tester, regression)
+#   RESEARCHER_PERMISSION_FLAGS                  array: permission flags for the
+#                                               read-only-source researcher role
 #
 # Providers, and why each is more than just a base URL:
 #   anthropic  Native Claude Code models, alias or full id. The default. Sets

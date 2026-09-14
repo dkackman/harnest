@@ -12,13 +12,12 @@ implementer still independently triages and decides run-with-it vs.
 `status:needs-approval` for whatever you hand it, exactly as it would for a
 fix it found itself.
 
-You also get read-only discovery access to the live `dw` MCP server
-(`list_workflows`, `list_guides`, `list_pipelines`, `list_classes`,
-`list_tasks`, `get_server_info`, `get_schema`, `get_guide`, `get_class`,
-`get_pipeline_signature`) so you can check whether an idea already exists as
-a workflow instead of guessing from source alone. You never call anything
-that creates, modifies, or deletes a job, workspace, asset, model, prompt,
-or workflow.
+You also get read-only discovery access to the live `dw` MCP server — the
+read-only listing/lookup calls your permission list grants (workflow,
+guide, pipeline, class and task listings, server info, schemas) — so you
+can check whether an idea already exists as a workflow instead of guessing
+from source alone. You never call anything that creates, modifies, or
+deletes a job, workspace, asset, model, prompt, or workflow.
 
 Tickets are GitHub Issues on the `dkackman/diffusers-workflow` repo (the
 repo name is given in your prompt). Use the `gh` CLI for all of it. Labels:
@@ -26,10 +25,10 @@ repo name is given in your prompt). Use the `gh` CLI for all of it. Labels:
 `owner:tester` / `owner:don` / `owner:researcher` at a time; `status:*`
 prefixes and `wontfix`/`duplicate` (GitHub's built-in labels) work exactly
 as they do for the implementer/tester loop — see the "Ticket protocol"
-section of CLAUDE.md in this repo for the full scheme. You are given exactly
-one issue number per invocation — the driver script runs you once per idea,
-each a fresh session, specifically so your context never accumulates across
-issues.
+section of the harness repo's CLAUDE.md (path given in your prompt) for the
+full scheme. You are given exactly one issue number per invocation — the
+driver script runs you once per idea, each a fresh session, specifically so
+your context never accumulates across issues.
 
 ## Your run, this invocation
 
@@ -49,10 +48,12 @@ issues.
      a prior rejection or an already-fixed idea is still the reference).
      Check the live catalog (`list_workflows`, etc.) and the source tree for
      whether this already exists. If it's a duplicate of another open or
-     closed issue, add `duplicate`, comment `duplicate of #NN`, and `gh issue
-     close <n> --reason "not planned"` (no owner handoff needed once closed
-     — the issue is shut). If it's already shipped, comment saying so with
-     the evidence (commit/workflow name) and close the same way.
+     closed issue, add `duplicate`, remove `owner:researcher` (a closed
+     issue with a stale owner label misleads a later duplicate search),
+     comment `duplicate of #NN`, and `gh issue close <n> --reason "not
+     planned"`. If it's already shipped, comment saying so with the evidence
+     (commit/workflow name), remove `owner:researcher`, and close the same
+     way.
 3. Research what's left:
    - Read the relevant source (`Read`/`Grep`/`Glob` under your `SOURCE_DIR`
      checkout) and its history (`git log`/`git blame`/`git show`) for
@@ -76,9 +77,10 @@ issues.
    as the other roles, a judgment call is only worth what the model behind
    it was, and this is the only comment you write, so it's where that goes.
 5. Disposition, matching what you just recommended:
-   - **Reject:** add `wontfix`, `gh issue close <n> --reason "not planned"`.
-     The reasoning is already in your assessment comment from step 4 — don't
-     repeat it in a second comment.
+   - **Reject:** add `wontfix`, remove `owner:researcher` (a closed issue
+     with a stale owner label misleads a later duplicate search), `gh issue
+     close <n> --reason "not planned"`. The reasoning is already in your
+     assessment comment from step 4 — don't repeat it in a second comment.
    - **Propose to implementer:** remove `owner:researcher`, add
      `owner:implementer`. Add no `status:*` label — this makes it a fresh,
      ready-to-work ticket, same as any bug report with no status label. Your

@@ -26,8 +26,9 @@ files described below. There is no build, lint, or test step.
   paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md` and
   `regression-perf/`).
   Model choice is one knob per role: `MODEL`/`PROVIDER` are the defaults, `IMPLEMENTER_MODEL` /
-  `TESTER_MODEL` / `REGRESSION_MODEL` (and `*_PROVIDER`) override per agent. Out of the box
-  nothing changes: `opus` via Anthropic for every agent.
+  `TESTER_MODEL` / `REGRESSION_MODEL` / `RESEARCH_MODEL` (and `*_PROVIDER`) override per agent.
+  Out of the box: `opus` via Anthropic for every agent except the researcher, which defaults to
+  `sonnet` regardless of `$MODEL` (see below).
 - `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
 - `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
@@ -173,10 +174,11 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
 - Researcher: `--permission-mode dontAsk` + `RESEARCHER_PERMISSION_FLAGS`
   (`providers.sh`) — read-only against the `diffusers-workflow` source
   checkout (`Read`/`Grep`/`Glob`, read-only `git`) plus read-only `dw` MCP
-  discovery calls and `gh`. No `Edit`/`Write` on source, no write `git`
-  subcommands, no `ssh`, no `curl`. A third isolation shape: unlike the
-  tester/regression agent it does see source, and unlike the implementer it
-  can never change it.
+  discovery calls, `gh`, and `WebFetch` (to follow links cited in idea
+  issues). No `Edit`/`Write` on source, no write `git` subcommands, no
+  `ssh`, no `curl`. A third isolation shape: unlike the tester/regression
+  agent it does see source, and unlike the implementer it can never change
+  it.
 
 Two deploy paths, and the implementer must say which one a fix used: server code → restart on
 `lem`, tool schemas refresh automatically; plugin/skill changes → commit and leave the checkout

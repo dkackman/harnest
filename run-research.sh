@@ -5,7 +5,7 @@
 #
 #   ./run-research.sh                       # research every open idea awaiting research
 #   RESEARCH_MODEL=opus ./run-research.sh   # this agent only; defaults to sonnet, not $MODEL
-#   PROVIDER=ollama MODEL=qwen2.5:32b ./run-research.sh
+#   PROVIDER=ollama RESEARCH_MODEL=qwen2.5:32b ./run-research.sh
 #   DW_URL=... DW_TOKEN=... ./run-research.sh
 #   tail -f logs/research.log               # watch from another terminal
 #
@@ -29,7 +29,6 @@ TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 TICKET_OWNER="${TICKET_OWNER:-dkackman}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
-MODEL="${MODEL:-opus}"
 PROVIDER="${PROVIDER:-anthropic}"
 RESEARCH_MODEL="${RESEARCH_MODEL:-sonnet}"        # NOT $MODEL — see header
 RESEARCH_PROVIDER="${RESEARCH_PROVIDER:-$PROVIDER}"
@@ -65,7 +64,7 @@ RESEARCH_FLAGS=(
 run_session() {
   local n="$1"
   (cd "$SOURCE_DIR" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. Follow the role instructions at $AGENTS/RESEARCHER_AGENT.md exactly for this run, researching and dispositioning ONLY issue #$n. Then stop.
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. Follow the role instructions at $AGENTS/RESEARCHER_AGENT.md exactly for this run, researching and dispositioning ONLY issue #$n. The harness repo's CLAUDE.md (for its 'Ticket protocol' section) is at $REPO/CLAUDE.md. Then stop.
 
 $(runtime_note researcher "$RESEARCH_PROVIDER" "$RESEARCH_MODEL")" \
     --model "$RESEARCH_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
