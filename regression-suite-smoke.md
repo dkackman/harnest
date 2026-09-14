@@ -876,6 +876,51 @@ TESTER_TASK.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Measured twice: a
 question the expensive run could not answer on its own — whether `slice_audio` saw
 130 or 141. It saw 141.
 
+### S-F030 — a cost estimate quotes this box's own history, and says when it stops being able to
+The server records what each workflow actually cost on this machine, and
+`list_workflows` reports it as `observed_minutes` / `observed_runs`. The failure this
+case exists to catch is the two halves disagreeing: `plan.estimate` answering
+`basis: "unknown"` on a workflow this box has finished eleven times, so the only
+figure a caller can bind into `acknowledged_cost` is the one nobody measured. That is
+what was filed (#154) — the history was there and the estimate ignored it.
+The second half is the one that is easy to get wrong in the other direction, and it is
+the load-bearing assertion here. An observed figure is only valid for the *shape* it
+was measured on. Quoting the default list's minutes for a run whose frame count or
+list length was overridden would be worse than answering "unknown", because it comes
+with a provenance label that makes it look measured. So the estimate has to fall back
+off `observed` the moment the caller's arguments leave the recorded bucket.
+expected:
+- **The listing and the estimate agree.** `list_workflows(shape="shot",
+  traits="identity-referenced")` → at least one entry carrying a non-null
+  `observed_minutes` and `observed_runs` (at time of writing
+  `templates/minimax/reference-to-video` at 8.04/11 and `templates/minimax/storyboard`
+  at 11.84/7). `validate_workflow(name=<that entry>)` → `plan.estimate` with
+  `basis: "observed"`, `minutes` equal to the listing's `observed_minutes` rounded to
+  one decimal, `device: "cuda"`, `measured_on` naming the accelerator, and `runs`
+  equal to `observed_runs`. A `basis: "unknown"` on a workflow the listing reports
+  history for is the regression.
+- **`runs` is present and honest.** It is `null` on every other basis and an integer
+  on `observed`. `runs: 1` is a measurement of one run and has to be reported as one,
+  not smoothed into a median — `templates/minimax/music-video` answers exactly that
+  (25.8 minutes over 1 run). A basis of `observed` with `runs` absent or null is a
+  finding: it is the field that tells a caller how much the figure is worth.
+- **Off the recorded bucket, it falls back rather than lying.**
+  `validate_workflow(name="templates/minimax/storyboard", arguments={"num_frames":
+  345})` → `basis: "catalog"` (the curated figure, `minutes: 10.1`, `measured_on:
+  "RTX 3090"`) and **`runs: null`**. Resizing away from the driver values the history
+  was bucketed on must not keep quoting 11.8 under an `observed` label. `basis:
+  "observed"` on an overridden shape is the regression, and it is the dangerous one,
+  because the answer still looks well-sourced.
+It is a finding if any of the three fail, and specifically if `basis` and `runs`
+disagree in either direction — `observed` without a count, or a count on a figure
+nobody measured here.
+cleanup: none — `list_workflows` and `validate_workflow` are free and write nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #154 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. The implementer proposed the
+first bullet; the `runs`-is-honest bullet and the fall-back-off-the-bucket bullet are
+mine, the third added because quoting a measured-looking figure for an unmeasured
+shape is the failure that would survive the implementer's own case.
+
 ## Performance
 
 ### S-P001 — default image generation latency

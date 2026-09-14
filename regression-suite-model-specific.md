@@ -383,4 +383,148 @@ bullet and the audio half of the metadata bullet are mine. Note for a future run
 denoise step took ~232 s against ~40-57 s for steps 2-8 — warm-up, not a stall, and the same
 pattern C-F023 records after a reload.
 
+### M-F009 — an H3 adapter trained against the wrong partition is refused, and an unknown one is not
+This is the one H3 misconfiguration that never shows up in the output. MiniMax-H3's
+`ref2va` workflow denoises against the `transformer_ref` partition; a `fl2v` turbo
+checkpoint is trained against `transformer`. Loading the wrong one raises nothing —
+H3 accepts it, the run succeeds, the clip saves, and the only symptom is that it
+looks worse than it should. Nobody in this loop can judge a picture, so if validate
+does not catch it, nothing does; that is why it is worth a case even though the
+refusal is free (#155).
+The second half is what keeps the rule from becoming a cage. The `ref2v`/`fl2v`
+naming is MiniMax's own file-naming convention, not a symbol anything declares, so a
+checkpoint whose name says neither cannot be classified — and a validator that refused
+what it could not classify would block every future adapter the day it shipped. An
+unrecognised name has to stay **valid**, with a warning. That bullet is the
+load-bearing one: if it ever starts failing, the escape hatch has closed and the rule
+has become a whitelist.
+Model/pipeline: MiniMax-H3 Ref2VA with `lightx2v/Minimax-h3-Turbo`'s 8-step turbo
+checkpoints. Free — three `validate_workflow` calls, no GPU, nothing loaded.
+expected:
+- **The mismatch is refused.** `validate_workflow(name=
+  "templates/minimax/reference-to-video", arguments={"lora_weight_name":
+  "minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors"})` → `valid: false`, exactly one
+  error at **`arguments.lora_weight_name`** (the path points at what the caller wrote),
+  its text naming both partitions (`transformer` and `transformer_ref`) and saying the
+  run would otherwise succeed. Path and both partition names matter: an error that
+  only says "incompatible adapter" does not tell a caller which way round it is.
+- **An unrecognised name stays valid.** Same call with
+  `"my-new-ref-lora.safetensors"` → **`valid: true`**, with a warning naming the
+  `ref2v`/`fl2v` convention and this step's `ref2va` workflow. `valid: false` here is
+  the regression, and it is the one that would quietly break the next checkpoint
+  release.
+- **The template's own default is clean.** Same call with no `arguments` (default
+  `minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors`) → `valid: true` with no
+  adapter warning at all. This is the control: a rule that warns on the catalog's own
+  correct pairing is noise, and the catalog is swept in the dw repo's own tests for
+  exactly that reason.
+Not covered here: the symmetric refusal (a `ref2v` adapter on a `t2va`/`fl2va` step).
+The implementer reports it is implemented, but every H3 template reachable from
+`list_workflows(shape="shot", traits="identity-referenced")` runs `ref2va`, so a
+consumer-only agent has no step to exercise it against — `chain-video-continuity`
+looks like a candidate and is not (`get_workflow` shows `workflow: "ref2va"`, so a
+`ref2v` adapter there is correct and validating clean is the right answer, not a miss).
+If a `t2va`/`fl2va` template ever enters the catalog, that half belongs in a new case
+beside this one.
+cleanup: none — all three calls are free and write nothing.
+source: tester, model `opus` via provider `anthropic`, verified in #155 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. Proposed by the implementer;
+the "not covered" note is mine, recorded so a future reader does not read the gap as
+an oversight and does not repeat the `chain-video-continuity` false lead.
+
+### M-F010 — an elided step says which variable replaced it, and a typo is refused as a typo
+`templates/minimax/music-video` draws its singer with a `draw_singer` step unless the
+caller supplies `singer_reference`, in which case nothing reads that step's result and
+it does not run. Two very different things produce that same "nothing reads it" state:
+the caller deliberately supplied a portrait, or something upstream broke and the step
+went unread by accident. The engine used to report both with the same wording — a
+diagnosis suggesting a misspelling — so the happy path of supplying a standing cast
+member came back looking like a mistake (#157). The fix compares the definition as
+**written** against the substituted steps, so an override is recorded as an override.
+The trap in the third bullet is what makes the second one safe to trust. If a
+misspelled variable name were silently accepted, a typo'd `singer_reference` would be
+indistinguishable from a successful one — the step would elide, the plan would look
+right, and the render would use whatever the workflow drew instead of the cast member
+the caller asked for. Refusing the unknown name outright is what closes that.
+Model/pipeline: MiniMax-H3 `music-video`. Free — three `validate_workflow` calls, no
+GPU. The `job.warnings` bullet costs nothing extra because it rides on whatever
+`music-video` run happens next; do not render for it.
+expected:
+- **The override is named.** `validate_workflow(name="templates/minimax/music-video",
+  arguments={"singer_reference": {"reference_type": "variable:image_reference_type",
+  "from_file": "asset:qa-cast/priya-portrait.jpg"}})` → `plan.elided_steps` is exactly
+  one entry: `step: "draw_singer"`, `overridden_by: "singer_reference"`, and a `reason`
+  naming that variable. The word **"misspelled" must not appear anywhere in the
+  answer** — that is the literal regression. `plan.steps` is 11.
+- **No override, no elision.** The same call with no `arguments` → `elided_steps: []`
+  and `plan.steps` 12. The count moving by exactly one is the cheap cross-check that
+  the elision is real and not just a label.
+- **A typo is refused, not absorbed.** `arguments={"singer_refrence": {...}}` →
+  `valid: false`, one error at `arguments.singer_refrence` reading "Unknown variable
+  'singer_refrence'" and listing the declared variable names. A misspelling that comes
+  back `valid: true` with `draw_singer` elided is the dangerous failure: it is a silent
+  wrong render, not an error.
+- **The run-time wording follows the same record.** On the next real `music-video` run
+  that supplies `singer_reference`, `job.warnings` carries "Step 'draw_singer' did not
+  run: 'singer_reference' was supplied, so nothing reads its result." — the saving
+  stated, the misspelling diagnosis absent. Check it when a run happens; it does not
+  justify one.
+cleanup: none for the three validate calls. The run-time bullet adds nothing to clean
+up beyond whatever that run already cleans up.
+source: tester, model `opus` via provider `anthropic`, verified in #157 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep13` (the portrait is a shared asset,
+so any workspace reaches it). Proposed by the implementer; the typo bullet is mine —
+they described the trap as covered and it is, but it was not in the case they proposed,
+and it is the bullet that makes the override bullet worth anything.
+
+### M-F011 — a clipped soundtrack is warned about and reported as clipped, by both halves at once
+Music 3 writes tracks at or over full scale as a matter of course, and a lossy encode
+of a waveform with no headroom decodes above 0 dBFS and clips. Two independent things
+are supposed to notice: a `job.warnings` entry when the file is written, and
+`get_gallery_metadata`'s `media.peak_dbfs` when the file is read back. The regression
+to catch is **the two disagreeing** — a deliverable at full scale reported as clean, or
+a warning about a file that is fine (#158). Neither number alone is the assertion; the
+agreement is.
+There is a subtlety that makes this case worth more than it looks. The warning measures
+the waveform **as written**; `get_gallery_metadata` measures the **decoded** file, which
+overshoots by a few tenths legitimately. So the two are not the same measurement and
+must not be asserted equal — what has to hold is that the warning is present whenever
+the source has no headroom, and that the metadata hint tells a reader how to interpret
+the overshoot rather than leaving them to guess. On the verifying run the decoded figure
+was +0.76 dBFS, inside the band the hint itself calls legitimate, while the source was
++0.0 — a check built only on the decoded number would have shrugged at it.
+Model/pipeline: MiniMax Music 3, and any workflow that muxes a soundtrack into a video.
+Costs nothing of its own: ride it on whatever Music 3 or `music-video` run the suite or
+an episode does next.
+expected: after any run that writes a soundtrack —
+- **If the source has no headroom, `job.warnings` says so.** One entry per saved file,
+  naming that file and its peak, at or above **-0.5 dBFS** (not 0 — a waveform peaking
+  at exactly full scale is "0 dBFS" by its own metadata and still decodes above it,
+  which is the case that started this). On `templates/minimax/music` at defaults this
+  fires; a Music 3 run that produces **no** such warning wants its `peak_dbfs` checked
+  before it is believed.
+- **`get_gallery_metadata`'s `media.peak_dbfs` agrees.** A file the run warned about
+  reads at or above 0 decoded; a file it did not warn about reads below. The two
+  pointing opposite ways is the finding, in either direction.
+- **The hint teaches both ends of the range.** The `next` text carries `mean_dbfs`
+  below -40 as the near-silent failure **and** `peak_dbfs` at or above 0 as the
+  no-headroom one, with the caveat that a decoded lossy file overshoots by a few tenths
+  and that +1 or more is the real signal. A hint that teaches only the quiet end is a
+  regression — an agent that cannot listen has nothing else to read.
+- **It covers the muxed deliverable, not only the audio file.** On a `music-video` or
+  `assemble-and-score` run the warning names the final mp4's soundtrack as well as the
+  saved audio. Source and deliverable is the useful pair: #158 was filed because the
+  mp4 was the thing at +3.26 and nothing had mentioned it.
+cleanup: none of its own — it reads a run another case or episode already paid for.
+Delete nothing beyond what that run's own cleanup says.
+source: tester, model `opus` via provider `anthropic`, verified in #158 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`. Job `66f9db65a603` (`templates/minimax/music`,
+`audio_duration: 30`, workspace `qa-ep15`, 91.1 s) covered the first three bullets:
+warning at +0.0 dBFS on the written mp3, `peak_dbfs: 0.758` / `mean_dbfs: -18.24`
+decoded, hint carrying both ends. The fourth bullet — the muxed mp4 — is **written from
+the implementer's description and not yet confirmed over MCP**; it costs a ~25 min
+render and the next `music-video` run should be the one to settle it. No `metrics:`
+line deliberately: a dBFS figure hovering around zero is not something the
+median-and-50% rule in `regression-perf/` can say anything useful about.
+
 ## Performance
