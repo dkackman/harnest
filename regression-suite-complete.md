@@ -1132,4 +1132,56 @@ over MCP as model `opus` via provider `anthropic`, workspace `qa-ep17`, dw
 named above instead because they are the pair this suite already guarantees, and
 the case asserts nothing about the shots beyond their rate and frame count.
 
+### C-F030 — `slice_audio`'s `sample_rate` override reinterprets a file, and that silences C-F016's warning
+C-F016 guarantees the padding warning that is the *entire* signal a score came up
+short, and notes in passing that `slice_audio`'s `sample_rate` reinterprets a
+file's rate rather than resampling it. This case pins the consequence of putting
+those two together, because it is how the warning goes quiet in exactly the case
+where the score is most wrong: given a `sample_rate` below the file's own, the
+task consumes proportionally fewer samples, so a slice that would have run past
+the end no longer does — no warning — and the material that *is* returned is
+time-dilated by the rate ratio (slower and lower). Nothing in the response says
+so. The override itself is documented and wanted for a raw waveform; what must
+never regress is the pairing's observability, and what must never be "fixed" by
+weakening C-F016's warning instead. Needs the `ep15-song.mp3` fixture; ~1.5 s to
+run, no GPU.
+expected: one inline workflow, seeded, two `slice_audio` steps against
+`asset:qa-cast/ep15-song.mp3` (30.023 s, 44100 Hz, stereo), both
+`start_frame: 0, num_frames: 792, fps: 24` (= 33.00 s, i.e. past the end), both
+writing `audio/wav` to `final`, differing only in `sample_rate`: `ctrl` at
+`44100`, `test` at `32000`. Then `get_job(...)["warnings"]` and
+`get_gallery_metadata(..., envelope=true)` on both outputs.
+(a) `ctrl` produces **exactly one** warning, prefixed with its step name and
+containing `past the end of`, with the real numbers (≈2.98 s padded onto a
+30.02 s source, 33.00 s returned) — this is C-F016's contract, re-asserted on a
+second source. (b) `test` produces **no** `slice_past_end` warning at all:
+33.00 s × 32000 = 1,056,000 samples is only 23.95 s of a 44100 Hz source, so
+nothing runs past the end. (c) Both files decode at `duration_seconds: 33.0`,
+`ctrl` at 44100 Hz and `test` at 32000 Hz. (d) The dilation is exactly the rate
+ratio, 44100/32000 = 1.378: landmark `peak_dbfs` values in the source's own
+envelope recur in `test`'s envelope at 1.378× their source timestamp, matching
+to ~4 decimal places — e.g. source t=16 s `-8.9205` → test t=22 s; source t=21 s
+`-21.6359` → test t=29 s; source t=23 s `-7.0706` → test t=31 s. (Envelope
+buckets are 1 s wide, so score the values' identity and the ~1.38 trend across
+several landmarks, not a single bucket index.)
+It is a **finding** if (a) stops warning (C-F016 regressed), if (b) starts
+emitting a `slice_past_end` warning computed from the *file's* rate rather than
+the rate the task was given (the warning's arithmetic must stay self-consistent
+with the length the task actually saw — C-F016 says the same), if (d)'s ratio is
+no longer the rate ratio (the override quietly became a resample, which is a
+behaviour change callers relying on the documented semantics would not be told
+about), or if either step errors. It is **not** a finding — it is the fix landing
+— if `test` gains a *new, distinctly named* warning that the given `sample_rate`
+differs from the rate the named file carries; that is proposal 2 on #180 and is
+the outcome this case exists to make visible. Update the case then, via the
+normal route, rather than reading it as a pass or a fail.
+cleanup: delete the run's outputs. `asset:qa-cast/ep15-song.mp3` is a durable
+fixture listed above — keep it.
+source: tester, found while running TESTER_TASK.agent.md (episode 18) on
+2026-09-16 over MCP as model `opus` via provider `anthropic`, workspace
+`qa-ep18`, job `ce7a0a579ecb` (1.45 s; `ctrl` warned `slice_past_end`, `test`
+`warnings: []`; both 33.0 s; landmarks matched at 1.378×). Filed as #180 against
+`templates/assemble-and-score`, which wires its mix `sample_rate` into this
+parameter and so reaches the dilation from its own defaults.
+
 ## Performance
