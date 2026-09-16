@@ -72,7 +72,7 @@ TESTER_BUDGET_USD="${TESTER_BUDGET_USD:-5}"
 TRIAGE_BUDGET_USD="${TRIAGE_BUDGET_USD:-3}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-2}"   # standing task on every Nth cycle
-DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
+DW_URL="${DW_URL:-http://lem:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
 

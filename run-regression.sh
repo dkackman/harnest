@@ -63,7 +63,7 @@ REGRESSION_MODEL="${REGRESSION_MODEL:-opus}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header)
-DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
+DW_URL="${DW_URL:-http://lem:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
 

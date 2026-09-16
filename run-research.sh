@@ -33,7 +33,7 @@ PROVIDER="${PROVIDER:-anthropic}"
 RESEARCH_MODEL="${RESEARCH_MODEL:-sonnet}"        # see header
 RESEARCH_PROVIDER="${RESEARCH_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"
-DW_URL="${DW_URL:-http://192.168.1.194:8765/mcp}"
+DW_URL="${DW_URL:-http://lem:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
