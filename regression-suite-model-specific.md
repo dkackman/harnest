@@ -722,4 +722,57 @@ rule for LTX-2.5. Note while running it: as with M-F013, a bare
 even though the default `asset:blurry.mp4` exists nowhere (no `checked_arguments` key comes back at
 all) — same behaviour as #166, and not asserted here either way until that issue settles.
 
+### M-F015 — the adapter-partition refusal is symmetric: a `ref2v` adapter on a `t2va`/`fl2va` step is refused too
+M-F009 pins one direction — an `fl2v` adapter on a `ref2va` step. Its closing note says the
+symmetric half "is implemented" per the implementer but that a consumer-only agent has no step to
+exercise it against, because every template under
+`list_workflows(shape="shot", traits="identity-referenced")` runs `ref2va`. That premise is too
+narrow: the H3 templates that do **not** take references are exactly the ones running `t2va` and
+`fl2va`, and they are in the catalog. So the other half is testable and now is.
+Why it matters as much as M-F009's half: this is the same misconfiguration that never shows up in
+the output. H3 routes whatever adapter it is handed onto whichever partition the step denoises
+against, raises nothing, and delivers a clip that merely looks worse. If validate does not catch
+it, nothing in this loop can — nobody here can judge a picture.
+The unrecognised-name bullet is the load-bearing one for the same reason it is in M-F009: `ref2v`
+and `fl2v` are MiniMax's file-naming convention, not a symbol anything declares, so a validator
+that refused what it could not classify would block every future adapter on release day. If that
+bullet ever fails, the escape hatch has closed on this side too.
+Model/pipeline: MiniMax-H3 T2VA via `templates/minimax/video-with-audio` (step `text_to_video_audio`,
+`workflow: "t2va"`) and FL2VA via `templates/minimax/image-to-video` (`workflow: "fl2va"`), against
+`lightx2v/Minimax-h3-Turbo`'s 8-step turbo checkpoints. Free — four `validate_workflow` calls, no
+GPU, nothing loaded.
+expected:
+- **A `ref2v` adapter on the `t2va` step is refused.** `validate_workflow(name=
+  "templates/minimax/video-with-audio", arguments={"lora_weight_name":
+  "minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors"})` → `valid: false`, exactly one error
+  at **`arguments.lora_weight_name`**, its text naming both partitions (`transformer_ref` as what
+  the adapter was trained against, `transformer` as what this step denoises against), naming the
+  step's workflow (`t2va`), saying the run would otherwise succeed, and pointing at `fl2v` as the
+  name to look for. Both partition names and the direction matter: an error reading only
+  "incompatible adapter" does not tell a caller which way round it is.
+- **And on the `fl2va` step.** The same call against `templates/minimax/image-to-video` → the same
+  shape, with `fl2va` as the named workflow. Two different non-reference workflows rather than one,
+  because the rule is about the partition a step denoises against, not about a single template.
+- **An unrecognised name stays valid on this side too.** `templates/minimax/video-with-audio` with
+  `{"lora_weight_name": "my-new-t2v-lora.safetensors"}` → **`valid: true`**, with a warning naming
+  the `ref2v`/`fl2v` convention and this step's `t2va` workflow. `valid: false` here is the
+  regression.
+- **The template's own default is clean.** `validate_workflow(name=
+  "templates/minimax/video-with-audio")` with no `arguments` (default
+  `minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`) → no adapter error and no adapter warning.
+  The control: a rule that fires on the catalog's own correct pairing is noise. M-F003 is what pins
+  which checkpoint each template should be carrying in the first place.
+It is a **finding** if either refusal stops happening, if a refusal moves off
+`arguments.lora_weight_name`, if the message stops naming both partitions or the step's workflow,
+if the unrecognised name starts being refused, or if the stock default starts warning. A message
+whose wording changed while keeping both partition names and the workflow name is not a finding.
+cleanup: none — all four calls are free and write nothing.
+source: regression agent, model `opus` via provider `anthropic`, found on 2026-09-16 while running
+M-F009 against dw 0.4.0-beta.4 on `lem`, workspace `regression-model-specific`. All four bullets
+passed on that date. Written as a new case rather than folded into M-F009 because M-F009's own
+"Not covered here" paragraph says this half "belongs in a new case beside this one" once a
+`t2va`/`fl2va` template is reachable — they were reachable all along, just not under the
+`identity-referenced` trait that paragraph searched. M-F009 is left exactly as written; the
+correction to its premise belongs here, not in an edit to it. Related: #155.
+
 ## Performance
