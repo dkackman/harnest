@@ -1272,6 +1272,55 @@ level, rate-provenance and runtime bullets are mine. At smoke level because it
 is one of the two `audio`-shape catalog entries, costs ~17 s, and its failure
 mode in #169 was total and yet invisible to every other case in this file.
 
+### S-F038 — a media-less run directory is enumerable and deletable by name
+S-F034 pins that a run which wrote no media can still be *deleted* by its
+`<workflow>/<run id>` name — but only while you still hold that name from the job
+you just ran. Nothing enumerated the ones already on disk, so a workspace could
+report files in `list_workspaces().usage` that no listing call would name and no
+cleanup could reach (#170: 44 such files in `regression-smoke`, 22 run directories
+of `manifest.json` + `workflow.json`). `list_gallery(only_orphans=true)` is the
+approved answer: a run directory with no file of a `MEDIA_KINDS` extension anywhere
+beneath it. If it decays, every `cleanup:` line in this file goes back to being
+unverifiable for the failure case, which is exactly the case that leaves litter.
+Cheap — no generation, pure listing plus one delete of something already garbage.
+expected:
+- **Orphan mode enumerates.** `list_gallery(only_orphans=true, workspace=<a
+  workspace holding at least one media-less run dir>)` returns a `runs` array of
+  `{name, mtime}`, newest first, with `total` the full count and `limit`/`offset`
+  paging it (`limit=3` → 3 entries, `total` still the full count). A workspace that
+  has never been run answers `runs: []`, `total: 0`.
+- **The two modes stay separate.** The same call without `only_orphans` returns
+  `files` plus the `folders`/`subfolders` facets and **no** `runs` key; orphan mode
+  returns `runs` and no `files`/facets. A response carrying both, or orphan mode
+  quietly answering with the normal listing, is the finding.
+- **It does not claim media-bearing runs.** In a workspace whose normal listing
+  shows real media, the orphan listing must not contain the run directory that
+  media sits under. A false positive here is worse than a false negative: the
+  approved semantics make these directories deletable, so a run with output in it
+  being listed as an orphan is a data-loss path, not a cosmetic bug.
+- **Enumerable means actionable.** `delete_output(name=<one of the returned
+  `runs[].name`s>, workspace=<same>)` → `deleted: true` with `run_swept` equal to
+  that run id, and a repeat orphan listing has `total` down by one with that name
+  absent. A name the listing hands back that `delete_output` will not take is the
+  finding.
+- Assert on the orphan listing's own `total`, not on `list_workspaces().usage` —
+  #177 is open on `usage` not moving after a delete, and this case must not
+  inherit that. S-F021 and S-F034 are where `usage` is held to account.
+cleanup: it is cleanup — each run it deletes is litter by definition. Delete only
+what the orphan listing named, one run is enough to prove the round trip, and never
+in a workspace outside this suite's own.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #170 on
+2026-09-16 against dw on `lem`, workspace `regression-smoke`. Proposed by the
+implementer in its hand-off comment (the list→delete→re-list round trip); the mode
+separation, the paging, the false-positive bullet and the "don't assert on `usage`"
+note are mine, from what the verify session actually ran — 22 orphans enumerated
+and matching the 44-file figure, `regression-model-specific` empty as a control, a
+media-bearing `iron-bloom-frames/` run correctly absent from that workspace's 6
+orphans, and `regr-seeded-image/20260912-212841-20cb7305` deleted with the listing
+going 22 → 21. At smoke level for the same reason S-F022 and S-F034 are: it is part
+of the cleanup path every other case depends on being able to reach.
+
 ## Performance
 
 ### S-P001 — default image generation latency
