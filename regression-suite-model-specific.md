@@ -80,10 +80,10 @@ arguments=...)` with a two-entry `shots` list whose every reference is
 "from_file": "asset:<a portrait / a voice wav in this workspace>"}` and **no**
 `from_previous_result` anywhere.
 expected: `valid: true`, `checked_arguments` includes `shots`, `plan.list_entries.shots: 2`, and
-`plan.estimate.basis: "derived"` with a `minutes` re-priced for two entries rather than the
-catalog's five-shot figure. An `asset:` that names nothing must still come back as an error at the
-shot's reference path — the check being exercised is that a file reference is *resolved*, not that
-validation waves it through.
+`plan.estimate` re-priced for two entries rather than the catalog's five-shot figure — `basis:
+"observed"` on this box, `"catalog"` where no comparable run history exists. An `asset:` that
+names nothing must still come back as an error at the shot's reference path — the check being
+exercised is that a file reference is *resolved*, not that validation waves it through.
 Paid form (opt-in, ~15 min on an RTX 3090, run it when the template or the H3 pipeline changed):
 actually run it. The job succeeds; the concatenated `episode` output is stereo at the shots' own
 sample rate with the expected frame count (2 x `num_frames`), and each shot visibly carries the
@@ -91,16 +91,16 @@ referenced cast.
 It becomes a **finding** if the free form stops validating, or if the run fails on a reference the
 validator accepted.
 Also assert, from 2026-09-13: `get_workflow("templates/minimax/dialogue-short")`'s **description**
-mentions `from_file` with an `asset:` path for a subject reference, *and* says the two Z-Image steps
-still run and their portraits are discarded. The capability being documented is half of what #109
-bought; a refactor that keeps the behaviour but drops the sentence puts the next reader back where
-this case started, which is why the text is asserted and not just the behaviour. The `dw:minimax-h3`
-skill carries the same thing in its `shots` entry description.
-Record rather than assert, until **#122** is decided (it is `status:needs-approval`, parked with
-Don; #109 itself is closed): the manifest still contains `draw_character_a`/`draw_character_b`
-entries whose portraits nothing references (~55 s of Z-Image per run). **If #122 is approved this
-case changes** — those manifest entries should disappear and a run warning should name each elided
-step. Read that as the approved change, not as a regression.
+mentions `from_file` with an `asset:` path for a subject reference, *and* (per #122) says an
+episode cast entirely from files does not pay for the two Z-Image steps — they save nothing, so
+once no shot references them the engine drops them from the run and warns that it did. The
+capability being documented is half of what #109 bought; a refactor that keeps the behaviour but
+drops the sentence puts the next reader back where this case started, which is why the text is
+asserted and not just the behaviour. The `dw:minimax-h3` skill carries the same thing in its
+`shots` entry description.
+Since #122 landed: the two-entry validate's `plan.elided_steps` names both `draw_character_a` and
+`draw_character_b`, each with `overridden_by: "shots"`, and `plan.steps` is reduced accordingly —
+the manifest no longer contains portrait entries nothing references.
 metrics: paid form only — the job's `started_at`→`finished_at` in seconds (`latency`,
 `condition: paid`, two shots), logged to `regression-perf/M-F001.jsonl` and compared against the
 `derived` quote it was given as well as its own history. A run that drifts well past its quote is
@@ -220,12 +220,14 @@ expected:
   matching `at most 9 image references, got 10`. This is what distinguishes "the per-kind ceilings
   are read from the block" from "the audio rule got special-cased".
 - **Control, the legal shape** — 1 image + 1 audio → `valid: true`, `plan.list_entries.shots: 1`,
-  `plan.estimate.basis: "derived"`.
+  and `plan.estimate` re-priced for one entry rather than the stock list's figure — `basis:
+  "observed"` on this box, `"catalog"` where no comparable run history exists.
 - **Control, the inclusive edge** — 1 image + **3** audio → `valid: true`. The ceiling is `> 3`, not
   `>= 3`.
 - **Control, the template untouched** — `validate_workflow(name="templates/minimax/dialogue-short")`
-  with no arguments → `valid: true`, `plan.list_entries.shots: 5`, `plan.estimate.basis: "catalog"`.
-  Two of the stock shots carry 2 images + 2 audio, so the guard must not break the entry it guards.
+  with no arguments → `valid: true`, `plan.list_entries.shots: 5`, and the same `basis` preference
+  (`observed` on this box, `catalog` otherwise) for the stock five-shot figure. Two of the stock
+  shots carry 2 images + 2 audio, so the guard must not break the entry it guards.
 The three controls are half the case, not padding: the plausible way this check regresses is a
 blanket refuse, or an off-by-one that rejects a legal 3-audio shot, and the two refusal probes alone
 would pass happily through either. It is a **finding** if a probe stops being refused, if a control
@@ -300,8 +302,8 @@ expected:
   picture length is the original bug returning.
 - **`job.warnings: []`** for this direction — the song is longer than the cut, so nothing is padded.
 - **No slice-the-song step in the manifest.** The steps are `draw_singer`, `write_song`,
-  `slice@<entry>` per shot, `shot@<entry>` per shot, `edit`, `music_video`. A step that slices
-  `write_song` to a frame count is the coupling this case exists to keep out.
+  `slice@<entry>` per shot, `shot@<entry>` per shot, `edit`, `balanced`, `music_video`. A step
+  that slices `write_song` to a frame count is the coupling this case exists to keep out.
 - **The song itself is generated whole.** `write_song`'s intermediate is ≈ 30 s
   (`audio_duration`), i.e. the fit happens at pair time and not by truncating generation. Without
   this bullet a "fix" that shortened the song to match would pass the first one.
@@ -471,10 +473,12 @@ expected:
   "from_file": "asset:qa-cast/priya-portrait.jpg"}})` → `plan.elided_steps` is exactly
   one entry: `step: "draw_singer"`, `overridden_by: "singer_reference"`, and a `reason`
   naming that variable. The word **"misspelled" must not appear anywhere in the
-  answer** — that is the literal regression. `plan.steps` is 11.
+  answer** — that is the literal regression.
 - **No override, no elision.** The same call with no `arguments` → `elided_steps: []`
-  and `plan.steps` 12. The count moving by exactly one is the cheap cross-check that
-  the elision is real and not just a label.
+  and `plan.steps` one more than the overridden call above. The count moving by
+  exactly one is the cheap cross-check that the elision is real and not just a label
+  — assert the delta, not an absolute count, since a step added to the template
+  elsewhere (e.g. #159/#161's `balanced`) shifts both sides together.
 - **A typo is refused, not absorbed.** `arguments={"singer_refrence": {...}}` →
   `valid: false`, one error at `arguments.singer_refrence` reading "Unknown variable
   'singer_refrence'" and listing the declared variable names. A misspelling that comes
