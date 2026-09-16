@@ -1372,6 +1372,65 @@ covered here; the same invalidation on `delete_workflow`/`delete_prompt`/
 `delete_asset` is claimed by #177's fix but was not exercised over MCP, since the
 only candidates in this workspace are durable fixtures.
 
+### S-F040 — a validated document runs without renaming a key
+The server instructions describe validate→run as one loop, but the two halves used
+four parameter names for two concepts: `validate_workflow` took `workflow`/`name`
+while `run_workflow` took `inline_workflow`/`workflow_path`, each tool internally
+consistent and mutually silent about the other. Carrying a document straight from a
+`valid: true` answer into the run call therefore failed with "Provide exactly one
+of" — a guaranteed wasted round trip for every agent that follows the documented
+loop for the first time, and the kind of thing that gets papered over with a
+"remember to rename the key" note in a memory file. #179 fixed it additively, with
+both tools accepting both spellings; this case pins the round trip *and* the
+exactly-one-of enforcement that an additive alias is the natural way to break.
+Cheap: one 8-step SD 1.5 run (~12 s on a 3090) plus free pre-flight calls.
+expected:
+- **The round trip needs no edit.** `validate_workflow(workflow=<minimal valid
+  inline definition>)` → `valid: true` with a `plan.fingerprint`; then
+  `run_workflow(workflow=<the same JSON, unchanged>, acknowledged_cost={fingerprint,
+  minutes, downloads})` → a job id, **not** a "Provide exactly one of" error. Then
+  `wait_for_job` → `succeeded` with a populated manifest. Assert the run reached
+  `succeeded`, not just that the call was accepted: a signature that takes the alias
+  and then drops it on the floor passes an acceptance-only assertion.
+- **Both aliases, both directions.** `validate_workflow(workflow_path=<a stored
+  workflow name>)` → `valid: true` with a real plan (an `estimate` for a workflow
+  this box has run, not a parse error) — the alias has to resolve to the catalog
+  lookup, not to an inline-parse attempt. And `run_workflow(name=<the same stored
+  name>, acknowledged_cost=true)` is accepted on the same footing.
+- **Both spellings of one concept is its own error.**
+  `validate_workflow(workflow=<def>, inline_workflow=<the same def>)` and
+  `run_workflow(workflow_path=<name>, name=<the same name>, acknowledged_cost=true)`
+  each fail naming *both* parameters as "the same thing - provide only one". A
+  generic exactly-one-of message here is a (mild) finding: the caller passed one
+  concept, and being told to pass exactly one of two things it thinks it did pass is
+  the confusion this issue was about.
+- **Exactly-one-of still holds across the alias pairs.** `run_workflow(workflow=<def>,
+  name=<a stored name>, acknowledged_cost=true)` → refused, and bare
+  `validate_workflow()` with neither a document nor a name → refused. Both messages
+  name both spellings of each pair (`workflow_path`/`name`, `inline_workflow`/
+  `workflow`), so the error teaches the alias instead of naming one arbitrary half.
+  This bullet is the regression that matters most: aliasing is exactly how a
+  mutually-exclusive pair quietly becomes a pair that accepts both.
+- **The descriptions agree with the behavior.** Both tools' descriptions, as read
+  from the live schema, cross-reference the other tool's naming. Half of #179 was
+  that each description was silent about the other, so a behavior-only fix would
+  leave the toll in place for any agent that reads before it calls.
+cleanup: `delete_output` the run directory of the one job this case queues (last
+media file takes the run directory with it). The stored workflow used for the
+name-side bullets is read and validated only, never modified.
+metrics: none — the assertions are all shape and error text; S-P001 already tracks
+image-generation latency, and this case's run is a vehicle, not a measurement.
+source: tester, model `opus` via provider `anthropic`, verified in #179 on 2026-09-16
+against dw `0.4.0-beta.4` on `lem`, workspace `qa-ep17`: the failing call from the
+report (`run_workflow(workflow=…)`) queued job `62054e5c3a49` and succeeded in 11.9 s;
+`validate_workflow(workflow_path="templates/text-to-image")` returned a plan with
+`estimate.basis: "observed"`, `runs: 13`; both collision cases returned "are the same
+thing - provide only one"; and both exactly-one-of messages listed both spellings.
+Proposed by the implementer in its hand-off comment (round trip plus the two
+collision cases); the exactly-one-of-survives-aliasing bullet, the
+`wait_for_job`-reached-`succeeded` requirement, the alias-resolves-to-the-catalog
+check and the description bullet are mine, from what that session ran.
+
 ## Performance
 
 ### S-P001 — default image generation latency

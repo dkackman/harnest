@@ -797,4 +797,62 @@ passed on that date. Written as a new case rather than folded into M-F009 becaus
 `identity-referenced` trait that paragraph searched. M-F009 is left exactly as written; the
 correction to its premise belongs here, not in an edit to it. Related: #155.
 
+### M-F016 — an unsatisfiable Hub-kernel processor is refused at validate time, not 88s into the load
+`templates/ltx2/diffusion-decode` is the one LTX-2.5 template whose decoder is
+`LTX2VideoVaeNeighborhoodNattenProcessor`, which fetches a prebuilt `na3d` kernel from
+`shi-labs/natten` in its constructor. Whether that kernel exists is a property of the box, not of
+the workflow: published natten wheels are built per torch version, and `lem` runs a torch the
+published set does not cover. The durable rule is not "this template fails" — it is **the answer
+arrives before anything loads, whichever way it goes**. Before the #178 fix the template validated
+clean and then failed ~88s in, after the transformer and text encoder were already on the GPU.
+This is the LTX-2.5-specific instance of the repo's "refuse before cost" convention (#166's
+missing-asset refusal, #174's headroom warning), and it is written as source-level (any processor
+whose `__init__` calls `get_kernel(`), so a future Hub-kernel-backed processor is covered by the
+same check.
+Model/pipeline: LTX-2.5 via `templates/ltx2/diffusion-decode` (step index 1, component
+`diffusion_decoder`), against `shi-labs/natten`'s published build variants and whatever torch the
+server runs. Free — three `validate_workflow` calls plus one `run_workflow` that must never queue.
+**This case is box-dependent by design.** Read the outcome, don't assume it:
+- **Unsatisfied box** (what `lem` gave on 2026-09-16, torch 2.14 / x86_64 / CUDA):
+  `validate_workflow(name="templates/ltx2/diffusion-decode")` → `valid: false` in seconds, with an
+  error whose `path` is **`steps[1].pipeline.configuration.components.diffusion_decoder.attn_processor_type`**
+  and whose `message` names the processor class, contains **`cannot be used on this machine`**, and
+  lists the rejected build variants with the reason per variant (torch-version mismatch, CPU-arch
+  mismatch). The variant list is what makes the error self-diagnosing rather than just a refusal —
+  a message that drops it is a regression in its own right.
+- **Satisfied box** (natten ships a matching build, or the server's torch moves back into range):
+  the same call → `valid: true`. That is a pass, not a failure — the check is allowed to say yes.
+expected:
+- **The verdict is reached without loading weights.** Either branch above must come back in seconds.
+  A call that takes ~88s, or that returns `valid: true` and *then* fails inside a run with a natten
+  build-variant error, is the original bug back.
+- **The run path refuses too, not just the validate tool.** On an unsatisfied box,
+  `run_workflow(workflow_path="templates/ltx2/diffusion-decode", acknowledged_cost=true)` → an
+  immediate tool error carrying the same message and the same JSON path, **no job queued** (nothing
+  new in `list_jobs`), no GPU time spent. Load-bearing: the 88s cost this case exists to prevent was
+  paid by callers who skipped `validate_workflow`, so a fix wired only into the validate tool would
+  leave the reported bug live.
+- **No false positives on the conv-VAE siblings.** `validate_workflow` on
+  `templates/ltx2/text-to-video` and on `templates/ltx2/two-stage` → **`valid: true`** both, each
+  with a `plan.estimate`. These are the same LTX-2.5 family and the same checkpoints; only the
+  diffusion decoder is natten-backed. A check that refuses these has stopped discriminating and has
+  taken the whole LTX-2.5 catalog out with it.
+- **It doesn't short-circuit the rest of validation.** `validate_workflow(name=
+  "templates/ltx2/diffusion-decode", arguments={"num_frames": 10})` → `valid: false` with **two**
+  errors present, one at `arguments.num_frames` (the 8*n+1 grid rule M-F005 pins) and one at the
+  `attn_processor_type` path. The server's "every schema error comes back at once" contract has to
+  survive a check that constructs objects; one error swallowing the other is a finding.
+It is a **finding** if the verdict starts costing a model load either way, if the run path stops
+refusing on an unsatisfied box, if a sibling LTX-2.5 template starts failing this check, if the two
+errors stop co-reporting, or if the refusal message loses the class name or the build-variant list.
+A `valid: true` on the diffusion-decode template is **not** by itself a finding — check the run
+path and the timing before filing, since natten shipping a matching wheel produces exactly that.
+cleanup: none — the three validate calls write nothing, and the `run_workflow` call must be refused
+before a job exists. If it *does* queue a job, cancel it (`cancel_job`) and file that as the finding.
+source: tester, verified in #178, model `opus` via provider `anthropic`, on 2026-09-16 against
+`lem`. All four bullets passed on that date with `lem` in the unsatisfied branch (`valid: false`,
+torch 2.14 vs natten's 2.11/2.12/2.13 builds). Proposed by the implementer in its hand-off comment;
+added here only after running it over MCP. Related: #178, and #153 (the FlexAttention VRAM issue,
+which is a different failure in the same template family and not this).
+
 ## Performance
