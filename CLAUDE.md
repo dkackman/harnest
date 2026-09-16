@@ -14,7 +14,7 @@ files described below. There is no build, lint, or test step.
   short triage session when 2+ issues wait (dispositions each with a `triage:` comment, which
   is also where related issues get batched into one fix), then one fresh `claude -p` per
   remaining issue; the tester gets one per `status:fixed-pending-verify` issue, plus a "task"
-  session (closure responses + one `TESTER_TASK.md` step) every `TESTER_TASK_EVERY` cycles
+  session (closure responses + one `TESTER_TASK.agent.md` step) every `TESTER_TASK_EVERY` cycles
   (default 2). The driver re-checks an issue's labels right before its session so one already
   handed off by a batch is skipped. Every session runs with `--max-budget-usd`
   (`IMPLEMENTER_BUDGET_USD`/`TESTER_BUDGET_USD`/`TRIAGE_BUDGET_USD`, defaults 8/5/3, 0 = none)
@@ -43,16 +43,16 @@ files described below. There is no build, lint, or test step.
   decision (see "Running"), so the defaults are per role. Under a non-anthropic `PROVIDER`
   every role that runs must be named explicitly, since a Claude alias can't be served there
   and `resolve_model_env` rejects it at startup.
-- `agents/IMPLEMENTER_AGENT.md` — role prompt for the agent with source access and SSH to the
+- `agents/IMPLEMENTER.agent.md` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
-- `agents/TESTER_AGENT.md` — role prompt for the agent that talks to the MCP server *only* as a
+- `agents/TESTER.agent.md` — role prompt for the agent that talks to the MCP server *only* as a
   protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split
   plus an enforced tool allowlist (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`, see
   "Permissions" below) is the basis of the tester's isolation.
-- `agents/TESTER_TASK.md` — the tester's standing exercise: a throwaway series built in
+- `agents/TESTER_TASK.agent.md` — the tester's standing exercise: a throwaway series built in
   `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
   deliverable; never touches the default workspace.
-- `agents/REGRESSION_AGENT.md` / `run-regression.sh` — a third, standalone agent (not part of
+- `agents/REGRESSION.agent.md` / `run-regression.sh` — a third, standalone agent (not part of
   the implementer/tester alternation) that runs the growing suite against the live MCP server
   and files/comments on GitHub Issues for failures and performance regressions. Same
   consumer-only isolation as the tester; ends by posting to GitHub, no back-and-forth with the
@@ -111,7 +111,7 @@ files described below. There is no build, lint, or test step.
   agent reads only the history it needs, never the whole log. Checked in and committed by
   the drivers alongside the suite files (#135 is where the old "record it in `last run:`"
   instruction met the no-edit-on-pass rule and this replaced both).
-- `agents/RESEARCHER_AGENT.md` / `run-research.sh` — a fourth, standalone
+- `agents/RESEARCHER.agent.md` / `run-research.sh` — a fourth, standalone
   agent (not part of the implementer/tester alternation, and not the
   regression agent) that turns an `idea`-labeled GitHub Issue into a
   disposition: reject it (`wontfix`), propose a concrete plan to the
@@ -137,7 +137,7 @@ files described below. There is no build, lint, or test step.
   which role and cycle spent the budget; the raw events are kept in `<role>.jsonl`. The tester
   also keeps `qa-bible.md` here (gitignored) as its memory across
   cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
-  capped at ~12 KB by `TESTER_TASK.md`, not a journal; per-cycle narrative belongs on the issues.
+  capped at ~12 KB by `TESTER_TASK.agent.md`, not a journal; per-cycle narrative belongs on the issues.
 
 ## Running
 

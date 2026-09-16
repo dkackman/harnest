@@ -254,7 +254,7 @@ variables directly is the same effect without the global state.
 genuinely independent — consumer-only, no code, no box. That is only worth
 anything if the tester is a capable adversary; a weak local tester degrades the
 apparatus *silently*, by rubber-stamping a fix it can't really judge. Vary the
-implementer and the throwaway `TESTER_TASK.md` exercise freely — an
+implementer and the throwaway `TESTER_TASK.agent.md` exercise freely — an
 implementer's mistakes show up in its patches. Keep the tester and the
 regression agent on a strong model: a verifier's mistakes are invisible, and
 its verdict is the thing everything else is gated on. The two roles are also
@@ -341,10 +341,10 @@ run-loop.sh                         driver for the implementer/tester alternatio
 run-regression.sh                   standalone driver for the regression agent
 providers.sh                        model/provider → environment table, shared by both
 agents/
-  IMPLEMENTER_AGENT.md              implementer role: loop, guardrails, deploy steps
-  TESTER_AGENT.md                   tester role: what it may and may not do
-  TESTER_TASK.md                    the tester's standing exercise between verifications
-  REGRESSION_AGENT.md               regression agent role: run mechanics, workspace rules
+  IMPLEMENTER.agent.md              implementer role: loop, guardrails, deploy steps
+  TESTER.agent.md                   tester role: what it may and may not do
+  TESTER_TASK.agent.md              the tester's standing exercise between verifications
+  REGRESSION.agent.md               regression agent role: run mechanics, workspace rules
 regression-suite-smoke.md           fast/fundamental checks, runs every time
 regression-suite-complete.md        broader/slower general checks
 regression-suite-model-specific.md  niche, tied to one model/pipeline

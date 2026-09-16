@@ -33,7 +33,7 @@
 #   tester #N            one fresh session per status:fixed-pending-verify issue
 #   tester task          one session, every TESTER_TASK_EVERY cycles: responds
 #                        to wontfix/duplicate closures, then advances
-#                        TESTER_TASK.md one step
+#                        TESTER_TASK.agent.md one step
 # Why: one 6-issue implementer session measured 269 turns at a 352k-token peak
 # and 60M cached-input tokens — issue 6 paid to re-read issues 1-5 on every
 # turn. A session's cost is context × turns, and per-issue sessions bound
@@ -202,7 +202,7 @@ implementer_pass() {
 
   if [ "${#queue[@]}" -ge 2 ]; then
     run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: follow the 'Triage session' section of $AGENTS/IMPLEMENTER_AGENT.md for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: follow the 'Triage session' section of $AGENTS/IMPLEMENTER.agent.md for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
       "${IMPLEMENTER_FLAGS[@]}"
   fi
 
@@ -210,7 +210,7 @@ implementer_pass() {
     still_ready "$n" owner:implementer fresh \
       || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Follow the role instructions at $AGENTS/IMPLEMENTER_AGENT.md exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Follow the role instructions at $AGENTS/IMPLEMENTER.agent.md exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop." \
       "${IMPLEMENTER_FLAGS[@]}"
   done
 }
@@ -225,13 +225,13 @@ tester_pass() {
     still_ready "$n" owner:tester verify \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester verify)
 
   if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER_AGENT.md exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.agent.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
   else
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"

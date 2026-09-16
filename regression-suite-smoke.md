@@ -25,7 +25,7 @@ Workspace: `regression-smoke`. Case IDs in this file use the `S-` prefix
 (`S-F001`, `S-P001`, ...) so they never collide with the `C-`/`M-` IDs in
 the sibling suites — the regression agent's duplicate-issue search is keyed
 on the full prefixed ID. Full run mechanics (fixtures vs. outputs, cleanup,
-the final sweep) live in `agents/REGRESSION_AGENT.md`, not here.
+the final sweep) live in `agents/REGRESSION.agent.md`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is
@@ -50,7 +50,7 @@ in `regression-perf/`; seed that file with the reading you just took, and do
 the same for a new `-P` case's timing), the next unused
 `S-Fnnn`/`S-Pnnn` ID, and a `source:` line naming who added it and why
 (e.g. `source: implementer, fix for #42` or `source: tester, found while
-running TESTER_TASK.md`). No separate approval step — the regression agent
+running TESTER_TASK.agent.md`). No separate approval step — the regression agent
 already grows these files unsupervised when it notices gaps; a case either
 of you adds is the same kind of edit.
 
@@ -708,7 +708,7 @@ expected:
   works; `dialogue-short` is named because its cast fixtures are durable.
 cleanup: none — `validate_workflow` is free and writes nothing.
 source: tester, model `opus` via provider `anthropic`, found while running
-TESTER_TASK.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Both halves were
+TESTER_TASK.agent.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Both halves were
 run in `qa-ep12` while casting ep12 from `asset:qa-cast/{priya,hal}-{portrait.jpg,voice.wav}`:
 the typo gave the single error at `arguments.shots[0].references[0].from_file`,
 and the corrected two-entry call gave `valid: true` with `list_entries.shots: 2`
@@ -878,7 +878,7 @@ expected:
 cleanup: `delete_output` the run directory of both jobs. The asset it reads is a
 durable fixture (see "Fixtures") and is never written to.
 source: tester, model `opus` via provider `anthropic`, found while running
-TESTER_TASK.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Measured twice: a
+TESTER_TASK.agent.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Measured twice: a
 `music-video`-shaped run with `num_frames: 130` produced a 282-frame deliverable
 (2 x 141) with both warnings on the job, and this audio-only probe isolated the
 question the expensive run could not answer on its own — whether `slice_audio` saw

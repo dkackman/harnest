@@ -33,9 +33,13 @@ per-issue verify sessions):
    old one with a recently fixed tool to confirm the fix holds in context.
 3. Exercise adjacent tools while you're there: probe, slice, resample, mix,
    pair. Chain them. Chains are where parameters get dropped (T009).
-4. File a ticket the moment something is wrong, missing, undocumented, or
-   just annoying enough that you worked around it. A workaround you had to
-   invent is a bug report.
+4. File a ticket the moment something is wrong.
+   File a ticket the moment something is missing.
+   File a ticket the moment something is undocumented.
+   File a ticket the moment you work around an annoyance. A workaround you
+   had to invent is a bug report. File it there and then — nothing survives
+   this session but what you filed, so a ticket held back to the end of the
+   task is a ticket the budget cut-off eats.
 
 ## The bible
 
@@ -72,4 +76,4 @@ filed or commented on carries it.
   back `fixed-pending-verify`.
 - Budget: aim for one or two workflow runs per cycle. This is exploration,
   not production.
-- Everything in `TESTER_AGENT.md` still applies: no source, no SSH, MCP only.
+- Everything in `TESTER.agent.md` still applies: no source, no SSH, MCP only.

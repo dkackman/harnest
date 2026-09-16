@@ -42,7 +42,7 @@ prompt says which kind this is:
   --comments`; if it no longer carries `owner:tester` +
   `status:fixed-pending-verify`, exit. Add a regression case (step 6) only
   if the verify warrants one. Nothing else.
-- **TASK** — step 3 (closure responses), then one step of `TESTER_TASK.md`,
+- **TASK** — step 3 (closure responses), then one step of `TESTER_TASK.agent.md`,
   filing tickets (step 4) and adding cases (step 6) for what you hit. Skip
   step 2 entirely; `fixed-pending-verify` issues get their own sessions.
 
@@ -71,7 +71,7 @@ end.
         still checked for duplicates/history — never edit one once closed;
         new evidence against a closed issue becomes a new issue that
         references it. If the implementer's hand-off comment proposed a
-        regression case (step 9 of `IMPLEMENTER_AGENT.md`), add it now that
+        regression case (step 9 of `IMPLEMENTER.agent.md`), add it now that
         you've confirmed it over MCP — see step 6 below.
       - If not → remove `status:fixed-pending-verify`, `--add-label
         owner:implementer` (owner back to them, no status label = plain
@@ -90,7 +90,7 @@ end.
    If it comes back `wontfix` a second time, accept it. Treat `duplicate`
    the same way: accept and follow the canonical issue named in the
    comment, or contest once if it is genuinely a different issue.
-4. Separately, as you work the standing exercise in `TESTER_TASK.md` (your
+4. Separately, as you work the standing exercise in `TESTER_TASK.agent.md` (your
    "actual task" — a throwaway series in `qa-` workspaces), watch for new
    bugs or friction. When you hit one:
    - `gh issue create --repo <repo> --template mcp-ticket.md` (or `gh issue
@@ -104,7 +104,7 @@ end.
    poll or wait inside the session.
 6. Separately, whenever you confirm — via an actual MCP call this session,
    whether that's a verify in step 2c, the implementer's proposed case from
-   their hand-off comment, or something you hit working `TESTER_TASK.md` —
+   their hand-off comment, or something you hit working `TESTER_TASK.agent.md` —
    something worth locking in so it never silently regresses, add a case
    yourself to whichever regression suite file fits: `regression-suite-smoke.md`
    (fast, fundamental, general-purpose — the common case),
@@ -116,7 +116,7 @@ end.
    "Where a case belongs"
    section if unsure. Same format as the existing cases in that file, the
    next unused ID for that file's prefix, and `source: tester, verified in
-   #NN` or `source: tester, found while running TESTER_TASK.md`. See each
+   #NN` or `source: tester, found while running TESTER_TASK.agent.md`. See each
    file's own "Adding a case" section — including the `metrics:` line and
    the `regression-perf/<case>.jsonl` seed for a performance case or one
    whose number matters as a trend (format in `regression-perf/README.md`);
@@ -157,7 +157,7 @@ end.
   schema section, the summary catalog) and drill into the full form only
   when you need it; read a regression suite file by section (`Grep` for
   `^### `, then `Read` with `offset`/`limit`), never whole; and read
-  `qa-bible.md` the way `TESTER_TASK.md` describes, not top to bottom.
+  `qa-bible.md` the way `TESTER_TASK.agent.md` describes, not top to bottom.
 - Finish every in-flight MCP call before you exit the cycle. The implementer
   runs after you and may restart the MCP server; it never runs concurrently
   with you, so anything you leave half-done is simply lost, not corrupted.

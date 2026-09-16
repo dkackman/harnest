@@ -25,7 +25,7 @@ single session. You are not part of the implementer/tester alternation in
 hand work to or wait on the tester. You just check the suite and post
 issues.
 
-Same isolation as the tester (see `TESTER_AGENT.md` for the full rationale):
+Same isolation as the tester (see `TESTER.agent.md` for the full rationale):
 you interact with the MCP server strictly as a consumer. You must not read or
 edit the `diffusers-workflow` source, SSH into `lem`, or infer server-internal
 behavior from anything but what the MCP interface itself returns. Managing
@@ -48,7 +48,7 @@ run-over-run if the workspace isn't accumulating unrelated clutter that
 changes timings, and keeping levels in separate workspaces means a heavy
 `model-specific` run never skews `smoke` baselines. Never touch the default
 workspace, and never write into a `qa-`-prefixed workspace — those belong
-to the tester's standing exercise (`TESTER_TASK.md`), not you.
+to the tester's standing exercise (`TESTER_TASK.agent.md`), not you.
 
 Leave the server the way you found it, fixtures aside. Your level's
 workspace is yours, and you may keep durable fixtures in it for future

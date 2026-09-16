@@ -64,7 +64,7 @@ RESEARCH_FLAGS=(
 run_session() {
   local n="$1"
   (cd "$SOURCE_DIR" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. Follow the role instructions at $AGENTS/RESEARCHER_AGENT.md exactly for this run, researching and dispositioning ONLY issue #$n. The harness repo's CLAUDE.md (for its 'Ticket protocol' section) is at $REPO/CLAUDE.md. Then stop.
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. Follow the role instructions at $AGENTS/RESEARCHER.agent.md exactly for this run, researching and dispositioning ONLY issue #$n. The harness repo's CLAUDE.md (for its 'Ticket protocol' section) is at $REPO/CLAUDE.md. Then stop.
 
 $(runtime_note researcher "$RESEARCH_PROVIDER" "$RESEARCH_MODEL")" \
     --model "$RESEARCH_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \

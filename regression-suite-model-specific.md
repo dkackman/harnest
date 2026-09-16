@@ -15,7 +15,7 @@ clutters their fixtures. Case IDs in this file use the `M-` prefix
 (`M-F001`, `M-P001`, ...) so they never collide with the `S-`/`C-`/`SE-` IDs in
 the sibling suites — the regression agent's duplicate-issue search is keyed
 on the full prefixed ID. Full run mechanics (fixtures vs. outputs, cleanup,
-the final sweep) live in `agents/REGRESSION_AGENT.md`, not here.
+the final sweep) live in `agents/REGRESSION.agent.md`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is
@@ -40,7 +40,7 @@ belongs" for which file. Use the existing case format (intent + `expected:`
 file with the reading you just took, and do the same for a new `M-P` case's
 timing), the next unused `M-Fnnn`/`M-Pnnn` ID, and a `source:` line
 naming who added it and why (e.g. `source: implementer, fix for #42` or
-`source: tester, found while running TESTER_TASK.md`). Name the
+`source: tester, found while running TESTER_TASK.agent.md`). Name the
 model/pipeline/checkpoint the case depends on explicitly in its body — a
 model-specific case that doesn't say which model it needs is useless to a
 future run. No separate approval step — the regression agent already grows
@@ -108,7 +108,7 @@ a finding even if it succeeds — the quote is what a caller budgets on.
 cleanup: the free form writes nothing. For the paid form, delete the run's outputs; keep no
 fixtures beyond the portrait/voice assets the case needs, which belong in Fixtures if this becomes
 a regular run.
-source: tester, found while running TESTER_TASK.md on 2026-09-13 (episode 7, job `48000580aec1`,
+source: tester, found while running TESTER_TASK.agent.md on 2026-09-13 (episode 7, job `48000580aec1`,
 894.1 s against a 16.8 min `derived` quote, two shots, every reference `from_file`), filed as #109;
 paid form re-run the same day as episode 8, job `2df5f1ff06f2`, 756 s. Model `opus` via provider
 `anthropic`.

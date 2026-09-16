@@ -119,7 +119,7 @@ under Guardrails says how to make a cut-off session cheap to resume.
    not the harness repo the suite files live in), and the case shouldn't be
    recorded as confirmed behavior until the tester has actually run it over
    MCP. The tester adds it for real once they verify the fix (see
-   `TESTER_AGENT.md`). Not every fix warrants a proposal — most tickets are
+   `TESTER.agent.md`). Not every fix warrants a proposal — most tickets are
    one-off; do this when the thing you just fixed is basic enough that a
    future regression in it would be bad and easy to miss otherwise.
 

@@ -967,4 +967,72 @@ observable on this server (`/home/don/diffusers-workflow/assets` is on `asset_di
 contributed no entries), so the read-only-refusal branch of `delete_asset` is deliberately
 not asserted here; it belongs in the dw repo's pytest suite, where a fixture can exist.
 
+### C-F026 — `stabilize_video` steadies the picture and leaves everything else alone
+`stabilize_video` is the one general-purpose video task with no coverage at any level, and
+what it must *not* change is the whole risk: it shifts every frame back toward the first,
+crops to the region all of them cover, and resizes to the original size, so a regression
+shows up as a deliverable that is quietly a different size, a different length, or silent —
+never as a failed job. The assembly templates once ran it on every shot before a cut and
+their output came out visibly wider than the source; that is the shape of the failure.
+Task-only, loads no model, ~4 s, uses a C-F001 fixture.
+expected: one inline `stabilize_video` step with `clip: "asset:qa-cast/ep3-shot1-incident.mp4"`
+and `smooth: 0`, saved as `video/mp4`, succeeds with `warnings: []`, and
+`get_gallery_metadata` on the output reports the source's own numbers unchanged:
+`width: 960`, `height: 544`, `frame_count: 124`, `fps: 24.0`, `duration_seconds` ≈ 5.167,
+`sample_rate: 32000`, `channels: 2`, and a `peak_dbfs` equal to the source's (-2.5700) —
+the soundtrack is carried through untouched, not re-levelled. `mean_dbfs` lands within
+~0.05 dB of the source's -20.0; the re-encode moves it by rounding, not by processing.
+Second arm, free and the reason the first is written the way it is:
+`validate_workflow` on the same step with the argument named **`video`** instead of `clip`
+comes back **invalid**, with two errors — `steps[0].task.arguments.clip` (required and not
+supplied) and `steps[0].task.arguments.video` (the task does not accept it). The name is
+deliberate: the engine loads an argument called `video` itself, as bare frames, which would
+strip the soundtrack before the task ever saw it. A `video` that validates is a regression
+even if the run then produces a picture, because the sound is what it silently costs.
+It is a **finding** if the size, frame count or rate moves, if the output comes back silent
+or at a different level, if the job warns, or if `video` is accepted.
+cleanup: delete the stabilized output. Keep the input asset (fixture).
+source: regression agent, model `opus` via provider `anthropic`, found while running the
+`complete` level on 2026-09-16 against dw 0.4.0-beta.4 on `lem` — `stabilize_video` had no
+coverage in any suite file. Measured as job `d1edbd4dbc68` (960x544 / 124 / 24.0 fps /
+5.167 s / 32 kHz stereo, `peak_dbfs` -2.5700, `mean_dbfs` -19.968, `warnings: []`, 4.0 s);
+the `video`-argument refusal is from `validate_workflow` the same minute.
+
+### C-F027 — `pair_audio`'s `fit` cuts a long track in silence and pads a short one loudly
+`fit: "video"` is the control that makes a soundtrack follow a cut whose length is an
+argument (#142), and its two directions have opposite obligations: cutting a track that is
+too long is exactly what was asked for and must be silent, while padding one that is too
+short leaves the end of the deliverable with no sound and must say so. A `fit` that warns
+on both is noise a caller learns to ignore; one that warns on neither is #142 back. C-F015
+and C-F024 both *use* `fit`, neither asserts it. Task-only, loads no model, ~6 s.
+expected: one inline workflow over `asset:qa-cast/ep6-cold-open.mp4` (124 frames / 24 fps /
+5.167 s) with three `pair_audio` steps, each saved as `video/mp4` —
+- **`fit: "video"`, track longer than the picture** (`asset:qa-cast/ep15-song.mp3`, 30.02 s)
+  → output `duration_seconds` ≈ **5.167** at `frame_count: 124`, and **no `fit` warning at
+  all**. The cut is the requested behaviour, so silence about it is the assertion.
+- **`fit: "video"`, track shorter than the picture** (a 5.00 s `slice_audio` of the same
+  song) → output `duration_seconds` ≈ **5.167**, and **exactly one** `fit` warning, prefixed
+  with the step's name, naming all three real figures: the track's length, the silence added,
+  and the video's (`padded the 5.00 s track with 0.17 s of silence to reach the 5.17 s of
+  video it is laid over`), and pointing at a longer track or fewer frames as the remedy.
+- **`fit` unset, same 30.02 s track** → the track is used as it is: output
+  `duration_seconds` ≈ **30.02** against `frame_count: 124`, with a warning naming both
+  lengths *and* the frame count and rate (`the track is 30.02 s and the video it is laid
+  over is 5.17 s (124 frames at 24 fps)`) and naming `fit: "video"` as the remedy. This arm
+  is what keeps the default honest: the disagreement is allowed, it is just never silent.
+Ignore the `audio_no_headroom` warning this song draws on every arm — it is a property of the
+material (M-F011's subject), not of `fit`, and it is why the assertion above is "no `fit`
+warning" rather than `warnings: []`.
+It is a **finding** if the cut arm warns, if the pad arm does not, if either `fit: "video"`
+arm's duration is not the picture's, if the unset arm stops warning, or if any warning loses
+the figures — a warning that says a length disagrees without saying by how much cannot be
+acted on without re-deriving it.
+cleanup: delete the run's outputs. Keep the input assets — both are shared `common/assets`
+fixtures; do not sweep them.
+source: regression agent, model `opus` via provider `anthropic`, found while running C-F024
+on 2026-09-16 against dw 0.4.0-beta.4 on `lem`, where the pad warning fired incidentally and
+nothing in the suite asserted it. Measured as job `44a8336fe388`: `fit_cut` 5.166667 s / 124
+frames / no `fit` warning, `fit_pad` 5.166667 s / 124 frames / one pad warning, `fit_unset`
+30.022993 s / 124 frames / one disagreement warning.
+
 ## Performance

@@ -42,7 +42,7 @@ Workspace: `regression-security`. Case IDs use the `SE-` prefix (`SE-F001`,
 regression agent's duplicate-issue search is keyed on the full prefixed ID.
 Issues filed from this file carry the `security` label in addition to
 `regression`. Full run mechanics (fixtures vs. outputs, cleanup, the final
-sweep) live in `agents/REGRESSION_AGENT.md`, not here.
+sweep) live in `agents/REGRESSION.agent.md`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is
@@ -72,7 +72,7 @@ in `regression-perf/`; seed that file with the reading you just took, and do
 the same for a new `-P` case's timing), the next unused
 `SE-Fnnn`/`SE-Pnnn` ID, and a `source:` line naming who added it and why
 (e.g. `source: implementer, fix for #42` or `source: tester, found while
-running TESTER_TASK.md`). Make the probe harmless even if the boundary is
+running TESTER_TASK.agent.md`). Make the probe harmless even if the boundary is
 broken — target `/tmp`, loopback, or a stock system file, never anything
 that would damage the box if the check fails. State both failure modes:
 what "it worked" looks like *and* what "refused too late" looks like. No
