@@ -39,8 +39,12 @@ files described below. There is no build, lint, or test step.
   `regression-perf/`).
   Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
   (`opus`), `REGRESSION_MODEL` (`opus`), `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
-  that defaults to `PROVIDER` (`anthropic`). Which role may run a weak model is a design
-  decision (see "Running"), so the defaults are per role. Under a non-anthropic `PROVIDER`
+  that defaults to `PROVIDER` (`anthropic`). The implementer's triage session is the one
+  exception: `TRIAGE_MODEL`/`TRIAGE_PROVIDER` default to the *tester's*, not the
+  implementer's, because a wrong `wontfix`/`duplicate`/park call never bounces back — it
+  just disappears — and the session is short and capped, so the strong model costs almost
+  nothing there. Which role may run a weak model is a design decision (see "Running"), so
+  the defaults are per role. Under a non-anthropic `PROVIDER`
   every role that runs must be named explicitly, since a Claude alias can't be served there
   and `resolve_model_env` rejects it at startup.
 - `agents/IMPLEMENTER.agent.md` — role prompt for the agent with source access and SSH to the

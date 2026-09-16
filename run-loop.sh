@@ -6,6 +6,7 @@
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
 #   IMPLEMENTER_MODEL=haiku TESTER_MODEL=opus ./run-loop.sh
 #                                       # per-role models; defaults sonnet / opus
+#   TRIAGE_MODEL=sonnet ./run-loop.sh   # triage session's model; defaults to TESTER_MODEL
 #   PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
 #                                       # a non-Anthropic model, served by Ollama
 #   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
@@ -63,6 +64,12 @@ IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
 TESTER_MODEL="${TESTER_MODEL:-opus}"
 IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
 TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
+# Triage is the implementer's role but not its model by default: a wrong
+# wontfix/duplicate/park call doesn't bounce back from the tester, it just
+# disappears, and the session is short and capped, so the strong model is
+# nearly free there. Follows the tester's model+provider unless set.
+TRIAGE_MODEL="${TRIAGE_MODEL:-$TESTER_MODEL}"
+TRIAGE_PROVIDER="${TRIAGE_PROVIDER:-$TESTER_PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
 # size at which a session auto-compacts instead of growing. Non-Anthropic
@@ -91,8 +98,10 @@ mkdir -p "$LOGS"
 # guard: run_agent trusts these pairs and never aborts the loop over them.
 resolve_model_env "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" || exit 1
 resolve_model_env "$TESTER_PROVIDER" "$TESTER_MODEL" || exit 1
+resolve_model_env "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" || exit 1
 validate_fallback_model "$IMPLEMENTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
+validate_fallback_model "$TRIAGE_PROVIDER" "$FALLBACK_MODEL" || exit 1
 
 ts() { date '+%H:%M:%S'; }
 
@@ -201,7 +210,7 @@ implementer_pass() {
   [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOGS/loop.log"; return 0; }
 
   if [ "${#queue[@]}" -ge 2 ]; then
-    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
+    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: follow the 'Triage session' section of $AGENTS/IMPLEMENTER.agent.md for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
       "${IMPLEMENTER_FLAGS[@]}"
   fi
