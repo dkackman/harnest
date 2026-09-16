@@ -18,7 +18,7 @@ its fixtures. Case IDs in this file use the `C-` prefix (`C-F001`,
 `C-P001`, ...) so they never collide with the `S-`/`M-` IDs in the sibling
 suites — the regression agent's duplicate-issue search is keyed on the full
 prefixed ID. Full run mechanics (fixtures vs. outputs, cleanup, the final
-sweep) live in `agents/REGRESSION_AGENT.md`, not here.
+sweep) live in `agents/REGRESSION.agent.md`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is
@@ -43,7 +43,7 @@ belongs" for which file. Use the existing case format (intent + `expected:`
 file with the reading you just took, and do the same for a new `C-P` case's
 timing), the next unused `C-Fnnn`/`C-Pnnn` ID, and a `source:` line
 naming who added it and why (e.g. `source: implementer, fix for #42` or
-`source: tester, found while running TESTER_TASK.md`). No separate approval
+`source: tester, found while running TESTER_TASK.agent.md`). No separate approval
 step — the regression agent already grows these files unsupervised when it
 notices gaps; a case either of you adds is the same kind of edit.
 
@@ -378,7 +378,7 @@ cleanup: delete the generated outputs and the intermediate asset.
 source: tester, verified in #104 (proposed by the implementer in that issue's
 hand-off; run over MCP 2026-09-13 as jobs `7bac4a2b5d07` and `d0b79427fc24`,
 model `opus` via provider `anthropic`). Third arm added from job `af9317223452`
-the same day while running TESTER_TASK.md.
+the same day while running TESTER_TASK.agent.md.
 
 ### C-F010 — a cost estimate re-prices for the list it was actually given
 A list-driven template's curated cost was measured on one list length. Validating
@@ -388,11 +388,12 @@ it with a *different* length must not quote the measured figure unchanged.
 (pass no `arguments` at all), and a list longer than it. Free: validation only,
 nothing is queued.
 expected: `plan.estimate.minutes` differs across all three, and `plan.steps` moves
-with the list. `basis` is the assertion that matters:
-- the **stored-default** run reports `catalog` — a measurement of *this* list.
-- the resized runs report `derived` (or `per_entry`, which is strictly better, if
-  the template gains a measured per-entry rate) — arithmetic on a figure measured
-  on a list that is not yours.
+with the list. `basis` is the assertion that matters, in this order of preference:
+`observed` (this box's own finished runs *at that list length* — strictly the best
+answer, and what a template with history will normally report), then `per_entry`,
+then `derived`, then `catalog`. What must never happen is the #85 shape: the same
+`minutes` under `basis: "catalog"` for two different `steps` counts — a stored
+figure wearing a label claiming it was measured for the caller's run.
 The regression is #85: the same `minutes` returned for every length under
 `basis: "catalog"`, so the quote was the stored default's figure wearing a label
 that claimed it was measured for the caller's run. **Never the same number twice
@@ -476,7 +477,7 @@ channel mismatch — the upmix must hold through a chain, not only a one-step
 encode. Both videos must be at the same audio sample rate for that join (see #108),
 so insert `resample_audio` if the fixtures differ.
 cleanup: delete both runs' outputs.
-source: tester, found while running TESTER_TASK.md on 2026-09-13 (filed as #106),
+source: tester, found while running TESTER_TASK.agent.md on 2026-09-13 (filed as #106),
 rewritten from a documented-failure case to a happy-path case on 2026-09-13 after
 verifying the fix over MCP — jobs `bb66467e03f5` (mono, succeeded, `channels: 2`,
 `fps: 24.0`), `90dbe57f0bc5` (stereo control, `warnings: []`) and `e33eac7b6449`
@@ -616,7 +617,7 @@ bug), if any envelope entry is `-120.0`, if a loop point shows as an `rms_dbfs`
 notch of more than a few dB, or if the job warns — nothing about this is
 irregular and `loop_audio` should have nothing to say about it.
 cleanup: delete the run's output; the fixture is durable.
-source: tester, found while running TESTER_TASK.md (episode 10) on 2026-09-13
+source: tester, found while running TESTER_TASK.agent.md (episode 10) on 2026-09-13
 over MCP as model `opus` via provider `anthropic`, workspace `qa-ep10`, dw
 0.4.0-beta.3 — job `6f3ae9e60d4d`, 0.6 s, bed 14.5 s / 32 kHz / mono, envelope
 −50.8 … −47.8 dBFS across all 15 entries.
@@ -731,8 +732,11 @@ expected:
   `steps` is reduced accordingly (2 for a one-entry `shots` list, against 8 for the
   stock five-shot default). The count a caller acknowledges must be the count that runs.
 - **The run.** That workflow run for real → `succeeded`, with both draw steps named in
-  the job's **`warnings`** as not having run, each warning also saying what to check if
-  the step *was* meant to run (a misspelled reference, or a `result` that saves).
+  the job's **`warnings`** as not having run, each naming the argument that overrode them
+  (`overridden_by`, and `kind: "step_elided"` on the matching `warning` event). Per #157
+  the wording must **not** suggest a misspelled reference or a missing `result` when the
+  step was elided because an argument was supplied — that is the happy path, not a
+  suspected fault.
 - **Neither portrait is written.** The manifest contains only the shot(s) under
   `intermediate/` and the assembled episode under `final/` — no Z-Image output.
 - **No Z-Image is ever loaded.** `progress` / `get_job_events` go straight to the first
