@@ -770,6 +770,41 @@ phase among them; control job `3a1545cc713c` emitted `loading` at `seq 9, at
 may rewrite an existing case — the implementer offered the amendment in #137's
 hand-off and this is the form the suite's own "Removing a case" rule allows.
 
+### SE-F029 — the *shared* asset library enforces the same name containment
+SE-F012 and SE-F025(d) pin `asset_name` against the workspace's own library
+(`<workspace>/assets`). `shared=true` writes into a different root — the
+library every workspace shares (`<workspace root>/common/assets`) — reached
+through a separate branch of both writers. A name check applied on the
+workspace path and not on the shared one would put a caller-named file
+outside a root, and no case saw that branch.
+Five probes, all refusals, nothing generated beyond one cheap image:
+- `upload_asset(file_path=<a legal source under a named root>,
+  asset_name="../se-f029-escaped.wav", shared=true)` and the same with
+  `/tmp/se-f029-escaped.wav`.
+- Generate one small output (cheapest image template), then
+  `keep_output(..., shared=true)` with `asset_name` `../se-f029-escaped.jpg`,
+  `/tmp/se-f029-escaped.jpg`, and `a/b/c/d/e/se-f029-escaped.jpg` (deeper than
+  the documented four-folder limit). Match the probe extension to the
+  generated output's, for the reason SE-F012 gives.
+expected: every probe refused with the same invalid-asset-name error the
+workspace-library probes get (`segment '..' starts with '.'`, `segment 1 is
+empty`, and the folder-depth message), and `list_assets` unchanged — in
+particular no new entry with `origin: common`. Fail if any probe creates a
+file, if the shared branch refuses with a *different* rule than the workspace
+branch (that means two checks exist and only one is authoritative), or if a
+refusal echoes a normalized path.
+The probes are harmless if containment fails: `..` off `common/assets` lands a
+stray new file in `<workspace root>/common`, and `/tmp` is the suite's
+designated harmless target. Never probe `shared=true` with a name that could
+land on an existing file — the shared library holds the tester's `qa-cast/*`
+fixtures, and SE-F021 already forbids touching them.
+cleanup: delete the generated output; `delete_asset` anything that appeared
+and name it in the issue.
+source: regression agent, model `opus` via provider `anthropic`, 2026-09-16 —
+gap found while running SE-F012/SE-F025 on dw 0.4.0-beta.4: both cover
+`asset_name` only on the workspace library, and `shared=true` was never
+probed. First run PASSED on all five probes.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model
