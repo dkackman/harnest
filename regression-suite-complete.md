@@ -101,6 +101,14 @@ when nothing uses it anymore.
   ~0.44 dB, which is why -0.55 dBFS does **not** clip on it; that is the case's true
   negative, not a defect.
 
+- `asset:qa-cast/ep6-shot1-priya.mp4` — a short 24 fps shot, 124 frames / 5.175 s,
+  960x544, with its own 32000 Hz stereo audio. Used by C-F031 as the single shot
+  under a 44.1 kHz score, where the point is only that its audio rate differs from
+  the score's. Also in the shared `common/assets`: do not sweep it, do not expect it
+  under `regression-complete`. Not load-bearing on content; any short shot whose
+  sample rate is *not* 44100 substitutes, re-reading its frame count and rate from
+  `get_gallery_metadata` and re-deriving C-F031's `total_frames` from it.
+
 ## Functional
 
 ### C-F001 — a run-time warning reaches the caller, on both channels
@@ -1183,5 +1191,79 @@ source: tester, found while running TESTER_TASK.agent.md (episode 18) on
 `warnings: []`; both 33.0 s; landmarks matched at 1.378×). Filed as #180 against
 `templates/assemble-and-score`, which wires its mix `sample_rate` into this
 parameter and so reaches the dilation from its own defaults.
+
+### C-F031 — a `sample_rate` that contradicts a file's real rate is warned about, and `assemble-and-score` resamples its score instead of relabelling it
+C-F030 pins the *old* pairing: the override dilates and says nothing. This case
+pins the two things #180 added on top of it, which are what make the dilation
+survivable rather than silent. (1) The general guard: any task that takes an
+`audio` argument plus a `sample_rate` warns when the named file's own rate
+disagrees with the one it was handed — the one signal that separates a
+deliberate reinterpretation from a mistake. (2) The template wiring:
+`templates/assemble-and-score` slices its score at the score's own rate and
+resamples it in a separate step, so the mix rate is a resample target
+everywhere in that workflow and never a reinterpretation. Both halves are
+reachable from the template's defaults (`sample_rate: 44100`) with a 32 kHz
+score, or from a 32 kHz cut with a 44.1 kHz score, which is what every H3
+deliverable on this box is. Needs the `ep15-song.mp3` and
+`ep6-shot1-priya.mp4` fixtures; ~6 s to run, no GPU.
+expected: three parts.
+(a) **The guard.** One inline workflow, seeded, three `slice_audio` steps
+against `asset:qa-cast/ep15-song.mp3` (30.023 s, 44100 Hz, stereo), all
+`start_frame: 0, num_frames: 792, fps: 24`, differing only in `sample_rate`:
+`44100` (the file's own), `32000` (contradicting it), and the argument omitted
+entirely. `get_job(...)["warnings"]` carries, for the `32000` step **only**, a
+warning naming both rates and saying the samples are relabeled rather than
+resampled and that this changes speed and pitch, and pointing at
+`resample_audio` as the way to convert — e.g. `sample_rate=32000 was given, but
+the source actually carries 44100 Hz`. The other two steps produce **no** such
+warning: a matching override is not a mismatch, and an omitted one is not an
+override. (Each of the three steps also carries its own unrelated warnings —
+`slice_past_end` for the two un-dilated arms, and a no-headroom warning on the
+saved file for all three; score the presence and absence of the *rate* warning,
+not the total count.)
+(b) **The template's shape.** `get_workflow("templates/assemble-and-score")`:
+the `soundtrack` step calls `slice_audio` with `audio`/`start_frame`/
+`num_frames`/`fps` and **no** `sample_rate`; a `resample_audio` step follows it
+with `target_sample_rate: variable:sample_rate`; and the `mix_audio` step
+consumes that resampled step, not `soundtrack` directly.
+(c) **The chain does not dilate, and still pads.** Run that pair inline —
+`slice_audio` (no `sample_rate`) then `resample_audio(target_sample_rate:
+32000)` — over the same source, asking for 792 frames @ 24 fps. The output
+decodes at `duration_seconds: 33.0`, `sample_rate: 32000`, the `slice_past_end`
+warning is present on the slice step, and `get_gallery_metadata(...,
+envelope=true)` puts the source's landmark `peak_dbfs` values at **their own
+timestamps, ratio 1.0** — source t=16 s `-8.9205` → t=16 s, t=21 s `-21.6359` →
+t=21 s, t=23 s `-7.0706` → t=23 s, each within ~0.1 dB (the resample's own
+error) — with the last ~3 s at `-120.0 dBFS`, the pad, ending at 30.02 s where
+the source does. Then run the template itself for the end-to-end shape:
+`run_workflow(workflow_path="templates/assemble-and-score", arguments={shots:
+["asset:qa-cast/ep6-shot1-priya.mp4"], score: "asset:qa-cast/ep15-song.mp3",
+sample_rate: 32000, fps: 24, total_frames: 124, score_start_frame: 0})` — a
+44.1 kHz score under a 32 kHz cut, the exact shape #180 reported. It succeeds
+with `warnings: []` (nothing is overridden and a 30 s score covers a 5.17 s
+cut), and the film decodes at 124 frames / 24 fps / 960x544 / 32000 Hz, ~5.17 s.
+It is a **finding** if the mismatch warning in (a) disappears (the guard
+regressed — the dilation is silent again, which is #180 returning), if it starts
+firing on the matching or the omitted arm (a false positive on the two
+correct ways to call the task, which trains callers to ignore it), if (b)'s
+`soundtrack` step regains a `sample_rate` argument or the resample step is
+dropped, if (c)'s landmarks move off ratio 1.0 toward 1.378 (the template is
+reinterpreting the score again) or the `slice_past_end` warning goes quiet, or
+if the template run errors or returns a film at the wrong rate or length. A
+warning that fires for a raw waveform given a `sample_rate` is **not** a
+finding: a waveform carries no rate of its own, so the argument is the only way
+to supply one and can't contradict anything — but it is worth noting if seen,
+since it would be the same false-positive shape as the omitted arm.
+cleanup: delete both runs' outputs, including the template run's film under
+`templates/assemble-and-score/`. `asset:qa-cast/ep15-song.mp3` and
+`asset:qa-cast/ep6-shot1-priya.mp4` are durable fixtures listed above — keep
+them.
+source: tester, verified in #180 on 2026-09-16 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep18`, jobs `54de94ae21fd` (guard, 3.2 s),
+`efd7e2ff2144` (chain, 0.9 s) and `a6e92ae356b9` (template end to end, 2.2 s),
+against `dw` 0.4.0-beta.4. Proposed by the implementer in #180's hand-off
+comment, both halves; added here after confirming each over MCP. Reads with
+C-F030, which pins the override semantics this warns about, and with C-F016,
+whose padding warning the mismatch used to suppress.
 
 ## Performance
