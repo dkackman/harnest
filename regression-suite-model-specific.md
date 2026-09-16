@@ -300,7 +300,10 @@ expected:
   `frame_count: 248`, `fps: 24.0`, and **`duration_seconds` ≈ 10.333, not ≈ 20.667**. The assertion
   is that `frame_count / fps` and `duration_seconds` **agree**; a `duration_seconds` near twice the
   picture length is the original bug returning.
-- **`job.warnings: []`** for this direction — the song is longer than the cut, so nothing is padded.
+- **No padding warning** for this direction — the song is longer than the cut, so nothing is padded.
+  Headroom warnings naming the raw `write_song` mp3 or a `shot@<entry>` intermediate are expected
+  (an un-normalized Music 3 track reaching a saving step is M-F011's `audio_no_headroom` case firing
+  as designed) and are M-F011's business, not this case's; only a padding warning here is a finding.
 - **No slice-the-song step in the manifest.** The steps are `draw_singer`, `write_song`,
   `slice@<entry>` per shot, `shot@<entry>` per shot, `edit`, `balanced`, `music_video`. A step
   that slices `write_song` to a frame count is the coupling this case exists to keep out.
@@ -525,9 +528,13 @@ expected: after any run that writes a soundtrack —
   `templates/minimax/music-video` no longer do, because #159 put a `normalize_audio`
   step in both, and their **absence** of a warning is checked by M-F012 rather than
   here.
-- **`get_gallery_metadata`'s `media.peak_dbfs` agrees.** A file the run warned about
-  reads at or above 0 decoded; a file it did not warn about reads below. The two
-  pointing opposite ways is the finding, in either direction.
+- **An unwarned file reads below 0 decoded.** That half is the one that catches a clipping
+  deliverable reported as clean, and must hold in one direction only. A **warned** file's decoded
+  level is not asserted either way: the warning measures the source waveform, and the encode moves
+  it by up to ~2 dB in either direction depending on the mux (`regression-perf/M-F012.jsonl` has AAC
+  landing under target by -0.92 and -1.11 dB against the +1.94 dB over that #161 first measured on an
+  mp3). What must hold on the warned side is only that the warning fires whenever the *source* is at
+  or above the -0.5 dBFS threshold, not a sign on the decoded number.
 - **The hint teaches both ends of the range.** The `next` text carries `mean_dbfs`
   below -40 as the near-silent failure **and** `peak_dbfs` at or above 0 as the
   no-headroom one, with the caveat that a decoded lossy file overshoots by a few tenths
@@ -542,7 +549,8 @@ expected: after any run that writes a soundtrack —
 cleanup: none of its own — it reads a run another case or episode already paid for.
 Delete nothing beyond what that run's own cleanup says.
 source: tester, model `opus` via provider `anthropic`, verified in #158 on 2026-09-14;
-stale-case edit approved by Don on 2026-09-14 (#160)
+stale-case edit approved by Don on 2026-09-14 (#160); the warned-side direction was dropped
+per approval on 2026-09-16 (#173, item 7) once AAC mux measurements showed it unsound
 against dw 0.4.0-beta.4 on `lem`. Job `66f9db65a603` (`templates/minimax/music`,
 `audio_duration: 30`, workspace `qa-ep15`, 91.1 s) covered the first three bullets:
 warning at +0.0 dBFS on the written mp3, `peak_dbfs: 0.758` / `mean_dbfs: -18.24`
@@ -633,7 +641,8 @@ Model/pipeline: LTX-2.5 + `Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients` (weight 0
 `templates/ltx2/reference-sheet`. Free — `validate_workflow`, `get_workflow`, `list_models` only,
 no GPU.
 expected:
-- **The adapter is named when absent.** `validate_workflow(name="templates/ltx2/reference-sheet")` →
+- **The adapter is named when absent.** `validate_workflow(name="templates/ltx2/reference-sheet",
+  arguments={"reference_sheet": "asset:<any image in the workspace>"})` →
   `valid: true`, and `plan.downloads_required` contains an entry whose `repo` is
   `Lightricks/LTX-2.5-22b-IC-LoRA-Ingredients` — **on a box whose `list_models()` does not list that
   repo**. Check `list_models` first: if the box has since pulled the adapter, an empty
@@ -644,16 +653,21 @@ expected:
   `Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler`. This is the pair that distinguishes a
   working walker from one that reports every `loras` entry unconditionally — a fix for the first
   bullet that makes this one non-empty has traded one wrong answer for another.
-- **The bound holds on both sides.** `arguments={"reference_frames": 120}` → `valid: false`, one
-  error at `arguments.reference_frames` whose text names 121. `{"reference_frames": 121}` →
-  `valid: true` with `checked_arguments` including `reference_frames`. Inclusive at 121; a 121 that
-  refuses is as much a finding as a 120 that passes.
+- **The bound holds on both sides.** `arguments={"reference_sheet": "asset:<any image in the
+  workspace>", "reference_frames": 120}` → `valid: false`, one error at `arguments.reference_frames`
+  whose text names 121. The same with `"reference_frames": 121` → `valid: true` with
+  `checked_arguments` including `reference_frames`. Inclusive at 121; a 121 that refuses is as much a
+  finding as a 120 that passes.
 - **The catalog carries the rule, not just the validator.**
   `get_workflow(name="templates/ltx2/reference-sheet", variables_only=true)` →
   `constraints.reference_frames.min_frames: 121` with a `reason` mentioning the Ingredients bucket,
   and the defaults are the trained bucket: `width` 768, `height` 448, `num_frames` 121,
   `frame_rate` 24, `lora_scale` 1.0. A default that drifts off that bucket is a finding — the
   weights are trained for it.
+- **The bare call is refused, not silently accepted.**
+  `validate_workflow(name="templates/ltx2/reference-sheet")` with no `arguments` → `valid: false`,
+  one error at `variables.reference_sheet` naming the missing default `asset:reference_sheet.png`
+  (#166). A bare call answering `valid: true` here is that bug back.
 Not covered here: an actual generation. It needs a real reference sheet (a composite panel sheet is
 an authoring job, not a fixture this suite can synthesise), and the adapter is an 0.9 preview whose
 output quality is a judgement call rather than a pass/fail.
@@ -661,10 +675,8 @@ cleanup: none — validation and discovery only, writes nothing.
 source: tester, model `opus` via provider `anthropic`, verified in #151 on 2026-09-14 against dw
 0.4.0-beta.4 on `lem`. The first and third bullets are the implementer's proposed pair; the
 present-adapter contrast and the catalog bullet are mine, because a walker that names every LoRA
-unconditionally would pass the proposed pair. Note while running it: the template's default
-`reference_sheet` is `asset:reference_sheet.png`, which exists in no asset root, and the bare
-validate above still answers `valid: true` — filed as #166 and deliberately **not** asserted here
-until that issue settles which way it should go.
+unconditionally would pass the proposed pair. The bare-call bullet was added once #166 (the missing
+default asset) verified on 2026-09-16; until then it was deliberately left unasserted either way.
 
 ### M-F014 — the two restoration IC-LoRAs stay two, and each names its own weight
 `templates/ltx2/restore-deblur` and `templates/ltx2/restore-decompression` (#152) are the family's
@@ -708,6 +720,9 @@ expected:
   half, its "DEBLUR" / "ENHANCE QUALITY" instruction, and a closing clause asserting identity,
   framing and background geometry are identical and only the named defect differs. A prompt that
   loses that closing clause is the one way this silently becomes a general re-render.
+- **The bare call is refused, not silently accepted.**
+  `validate_workflow(name="templates/ltx2/restore-deblur")` with no `arguments` → `valid: false`,
+  one error naming the missing default `asset:blurry.mp4` (#166, same behaviour as M-F013).
 Not covered here: an actual restoration pass, or the comparison against `templates/ltx2/two-stage`
 that #152 originally asked for. Both weights are 0.9 previews and "did it look better per minute" is
 a judgement about output, not a pass/fail — that measurement wants a named source clip and committed
@@ -717,10 +732,8 @@ source: tester, model `opus` via provider `anthropic`, verified in #152 on 2026-
 `lem`. Bullets one through three are the implementer's proposed set, tightened: they proposed
 checking only that Deblur names Deblur, and a template naming *both* adapters would pass that. The
 `8n+1` refusal they also proposed is deliberately **not** repeated here — M-F005 already owns that
-rule for LTX-2.5. Note while running it: as with M-F013, a bare
-`validate_workflow(name="templates/ltx2/restore-deblur")` with no `arguments` answers `valid: true`
-even though the default `asset:blurry.mp4` exists nowhere (no `checked_arguments` key comes back at
-all) — same behaviour as #166, and not asserted here either way until that issue settles.
+rule for LTX-2.5. The bare-call bullet was added once #166 verified on 2026-09-16, same treatment
+as M-F013.
 
 ### M-F015 — the adapter-partition refusal is symmetric: a `ref2v` adapter on a `t2va`/`fl2va` step is refused too
 M-F009 pins one direction — an `fl2v` adapter on a `ref2va` step. Its closing note says the
