@@ -1085,6 +1085,47 @@ against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep15` (round trip = job `2557dec
 First two bullets proposed by the implementer in its hand-off; the third and fourth are
 mine, from adjacent probes run at verification.
 
+### S-F034 — a run that failed before writing any media is still deletable by its run name
+S-F022 pins the `<workflow>/<run id>` delete form, but could only exercise it against
+runs that *did* write media — its own source note says the failed-job-with-no-media case
+"could not be provoked" from the consumer side, two attempts at a fast runtime failure
+having succeeded instead. That is the one shape the form exists for: such a run leaves a
+run directory containing only `manifest.json` and `workflow.json`, no media file names
+it, and no other call can address it. If the form decays into "404 unless a media file
+names it", those directories accumulate with no way to reach them and every later sweep
+is wrong about what a workspace holds.
+Two fast runtime failures that reliably write nothing are now known, and both are already
+run by other cases — this case costs only the two deletes.
+expected:
+- **From a failed pipeline run.** Take S-F005(c)/S-F011's 383x383 SD 1.5 job (fails in
+  ~2.5 s on "`height` and `width` have to be divisible by 8", `manifest: []`). Note its
+  `run_id`, then `delete_output(name="<workflow id>/<run id>")` → `deleted: true` and
+  `run_swept` equal to that run id.
+- **From a failed task run.** Take S-F024 part 4's `resample_audio` job
+  (`target_sample_rate` arriving as 0 through a `variable:`; fails in ~1.3 s,
+  `manifest: []`) and delete it the same way → `deleted: true`, `run_swept` the run id.
+  Two different failure layers, because a form wired only into the pipeline path would
+  pass the first bullet alone.
+- **The delete is the assertion.** Either call answering "not found", or answering
+  `deleted: true` with `run_swept: null`, is the finding — the second more quietly, since
+  it says the directory was left behind.
+- **And it actually went.** `list_workspaces()` reports this workspace's `usage.files`
+  down by exactly 2 per swept run (the two sidecars). A `deleted: true` that does not move
+  `usage` is the same finding as a refusal.
+cleanup: none of its own — the case *is* the cleanup those two cases would otherwise have
+to do, and it leaves nothing behind.
+metrics: none. The timings above are context for recognising the failures, not figures to
+log; S-P001 already tracks this box's SD 1.5 latency.
+source: regression agent, model `opus` via provider `anthropic`, found on 2026-09-16 while
+running S-F005 and S-F024 against dw 0.4.0-beta.4 on `lem`, workspace `regression-smoke`.
+Both halves were run: job `e4e35b833f56` (383x383, run `20260916-004532-c9a15679`) and job
+`2168c7a24782` (`target_sample_rate` 0, run `20260916-005157-1a7e0a0c`), each swept by its
+`<workflow>/<run id>` name with `run_swept` matching, and the workspace measured back to
+its pre-run 47 files / 43,135 bytes afterwards. Added at smoke level for the same reason
+S-F014, S-F021 and S-F022 are here: it is the cleanup path every other case's `cleanup:`
+line depends on being able to reach. Written as a new case rather than a bullet on S-F022,
+which no agent may edit.
+
 ## Performance
 
 ### S-P001 — default image generation latency
