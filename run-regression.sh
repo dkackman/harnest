@@ -47,9 +47,12 @@
 # driver rather than trusting the model to read sparingly: the level is run
 # as a series of separate sessions, each given N consecutive case IDs to
 # exercise and told to read only those sections, followed by one last
-# session that does the final sweep alone. 0 (the default when the model's
-# native window applies) is the original single session per level; when the
-# provider declares a window under 120k tokens the default becomes 3.
+# session that does the final sweep alone. When the provider declares a
+# window under 120k tokens the default is 3; otherwise (including Anthropic,
+# which declares no window here) it's 8 — a full suite's tool-call output
+# alone can clear Claude Code's 120k autocompact threshold before the last
+# case, so an unset CASES_PER_SESSION never means "one session per level."
+# Set it to 0 explicitly to force that (e.g. to watch autocompact thrash).
 
 set -euo pipefail
 
@@ -62,7 +65,7 @@ PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|ga
 REGRESSION_MODEL="${REGRESSION_MODEL:-opus}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
-CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header)
+CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header); 0 = one session per level
 DW_URL="${DW_URL:-http://lem:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
@@ -104,15 +107,17 @@ resolve_model_env "$REGRESSION_PROVIDER" "$REGRESSION_MODEL" || exit 1
 fb_words="$(fallback_model_flags "$REGRESSION_PROVIDER" "$FALLBACK_MODEL")" || exit 1
 FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
 
-# Chunk by default only when the provider declared a window too small for a
-# whole suite in one session (see the header). An explicit CASES_PER_SESSION
-# wins either way, so a 200k model can be chunked to test the mechanism and a
-# small one can be forced whole to watch it fail.
+# Chunk by default always, sized to the provider's declared window (see the
+# header) — a small window (e.g. a 64k Ollama model) gets 3 cases per
+# session, everything else (including Anthropic, which declares no window
+# here) gets 8. An explicit CASES_PER_SESSION wins either way, so a 200k
+# model can be forced whole (0) to watch autocompact thrash, or chunked
+# tighter/looser than the default.
 if [ -z "$CASES_PER_SESSION" ]; then
   if [ -n "$MODEL_CONTEXT_TOKENS" ] && [ "$MODEL_CONTEXT_TOKENS" -lt 120000 ]; then
     CASES_PER_SESSION=3
   else
-    CASES_PER_SESSION=0
+    CASES_PER_SESSION=8
   fi
 fi
 case "$CASES_PER_SESSION" in

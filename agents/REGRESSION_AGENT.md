@@ -194,12 +194,12 @@ running.
 
 ## Chunked runs
 
-When the model's context window is small, `run-regression.sh` splits a
-level into several sessions instead of one (`CASES_PER_SESSION`): each
+By default, `run-regression.sh` splits a level into several sessions instead
+of one (`CASES_PER_SESSION`, sized to the model's context window): each
 session is told the exact case IDs it exercises, and a last session does
-only the final sweep. Your prompt says which kind of session this is; when
-it doesn't mention chunking, you run the whole file as above. In a chunked
-session:
+only the final sweep. Your prompt says which kind of session this is; only
+when `CASES_PER_SESSION=0` is set explicitly do you run the whole file in
+one session, as above. In a chunked session:
 
 - Run only the cases named in your prompt, in that order, and read only
   their sections (plus the header, per step 1). Never start on a case

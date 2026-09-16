@@ -72,13 +72,15 @@ files described below. There is no build, lint, or test step.
   optionally overrides just that level's suite file (its workspace is then derived from the
   override's filename, never the canonical one, so a one-off suite can't delete another suite's
   fixtures). Case IDs are prefixed per level (`S-`/`C-`/`M-`/`SE-`) so the same number in two files
-  never collides in the regression agent's duplicate-issue search. A level normally runs as one
-  session; `CASES_PER_SESSION=N` splits it into sessions of N consecutive cases plus a final
-  sweep-only session (the role prompt's "Chunked runs" section says how a slice honours
-  `cleanup:` lines that cross its boundary). It defaults to 3 when the provider declares a
-  context window under 120k tokens (`MODEL_CONTEXT_TOKENS` from `providers.sh`), 0 otherwise —
-  a 40-50 KB suite read whole plus twenty cases of tool output is what put 64k Ollama models
-  into auto-compact thrashing. Each run deletes what its
+  never collides in the regression agent's duplicate-issue search. A level runs as a series of
+  sessions of `CASES_PER_SESSION` consecutive cases plus a final sweep-only session (the role
+  prompt's "Chunked runs" section says how a slice honours `cleanup:` lines that cross its
+  boundary). It defaults to 3 when the provider declares a context window under 120k tokens
+  (`MODEL_CONTEXT_TOKENS` from `providers.sh`), 8 otherwise (including under Anthropic, which
+  declares no window here) — a 40-50 KB suite read whole plus twenty cases of tool output is
+  what put 64k Ollama models into auto-compact thrashing, and a full suite's tool output alone
+  can clear the 120k autocompact threshold before the last case even on a 200k-window model.
+  Set `CASES_PER_SESSION=0` explicitly to force one session per level. Each run deletes what its
   cases generate as soon as a case (and any dependent case) is done, keeping only durable
   fixtures listed in that suite file's "Fixtures" section (workflows/assets reused across runs)
   and artifacts an open issue needs for a repro; a final sweep removes anything else. All three
