@@ -239,9 +239,15 @@ Inline workflow using a quantization/cache config block whose
 `"builtins.eval"`.
 expected: both refused with the trust-gate message. Same fail conditions as
 SE-F002.
-`config_type` lives at `steps[].pipeline.components[].quantization_config.
-configuration.config_type`; for the dtype probe, `torch_dtype:
-"builtins.eval"` in `from_pretrained_arguments` is the simplest carrier.
+Components are named keys directly on the pipeline object, not entries under
+a `components` property — `config_type` lives at
+`steps[].pipeline.<component name>.quantization_config.configuration.
+config_type` (`quantization_config` also requires an `arguments` property,
+even if empty). Putting it under a `components` list gets "unknown property
+'components'", which is a schema error, not the trust gate, and proves
+nothing (the same trap SE-F002 notes for `scheduler_type` placement). For
+the dtype probe, `torch_dtype: "builtins.eval"` in
+`from_pretrained_arguments` is the simplest carrier.
 cleanup: none if refused; otherwise as SE-F002.
 source: harness, initial security suite 2026-09-13.
 
