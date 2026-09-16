@@ -1321,6 +1321,57 @@ orphans, and `regr-seeded-image/20260912-212841-20cb7305` deleted with the listi
 going 22 → 21. At smoke level for the same reason S-F022 and S-F034 are: it is part
 of the cleanup path every other case depends on being able to reach.
 
+### S-F039 — `usage` moves the moment a delete lands, not 60 s later
+`list_workspaces().usage` is the "did my cleanup actually free anything" signal every
+`cleanup:` line in this file leans on, and the regression agent's end-of-run sweep
+asserts on it. It is a cached disk glance with a short TTL, so the number is only
+trustworthy if every call that *changes* the tree drops that cache: before #177 it
+did not, and three consecutive `delete_output` calls left `usage` byte-for-byte
+identical, which reads from the consumer side as "the delete failed" or "something
+leaked". The TTL itself is by design and is not what this case pins — a running job's
+own writes are still allowed to lag. What is pinned is that an explicit delete is
+reflected immediately. Cheap: pure listing plus deletes of things that are already
+litter.
+expected:
+- **A delete moves the number.** In a workspace holding at least one deletable run,
+  record `usage.{files,bytes}` from `list_workspaces()`, call `delete_output(name=<a
+  run dir or file in that workspace>, workspace=<same>)` → `deleted: true`, then call
+  `list_workspaces()` again **with no wait** — `files` and `bytes` for that workspace
+  are both strictly lower. Unchanged figures are the finding; there is no acceptable
+  amount of delay here short of the next call.
+- **Every delete, not just the first.** Immediately after that read (which has
+  repopulated the cache), delete a second run and re-read. The figures must move
+  again. A fix that invalidates once, or one that merely happened to coincide with
+  natural expiry, passes the first bullet and fails this one — run both.
+- **The invalidation is scoped.** Across those same responses, every *other*
+  workspace's `usage` block is unchanged. Dropping the whole cache on any delete
+  would also pass the bullets above while making the figure churn for workspaces
+  nothing touched.
+- The drop should be consistent with what was removed (deleting a two-file
+  media-less run takes `files` down by 2), but assert on the direction and on the
+  delete's own `run_swept`/`deleted` fields rather than on exact byte counts — a
+  concurrent job in that workspace can move `bytes` underneath the comparison.
+cleanup: it is cleanup — pick the runs to delete from `list_gallery(only_orphans=true,
+workspace=<this suite's own workspace>)`, which are litter by definition, and never
+delete in a workspace outside this suite's own. Two runs is enough; nothing to
+create, so nothing left behind.
+metrics: none. `usage.files`/`usage.bytes` are a property of whatever the workspace
+happens to hold that day, not a trend worth a `regression-perf/` file — the assertion
+is the delta, and it is local to one run of the case.
+source: tester, model `opus` via provider `anthropic`, verified in #177 on 2026-09-16
+against dw on `lem`, workspace `regression-smoke`: `{files: 38, bytes: 31573}` →
+delete `s-f007/20260913-232036-c058d295` → `{36, 29500}` on the very next call →
+delete `s-f007/20260913-232117-1afca25d` → `{34, 27385}`, with all other workspaces'
+figures identical throughout. Proposed by the implementer in its hand-off comment
+(record `usage`, delete, re-read immediately); the second-delete-inside-the-TTL
+bullet, the scoping bullet and the "assert the direction, not the byte count" note
+are mine, from what that session ran. S-F038 deliberately refuses to assert on
+`usage` because #177 was open when it was written — this is the case that holds
+`usage` to account instead, alongside S-F021 and S-F034. Only `delete_output` is
+covered here; the same invalidation on `delete_workflow`/`delete_prompt`/
+`delete_asset` is claimed by #177's fix but was not exercised over MCP, since the
+only candidates in this workspace are durable fixtures.
+
 ## Performance
 
 ### S-P001 — default image generation latency

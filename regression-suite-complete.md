@@ -1035,4 +1035,101 @@ nothing in the suite asserted it. Measured as job `44a8336fe388`: `fit_cut` 5.16
 frames / no `fit` warning, `fit_pad` 5.166667 s / 124 frames / one pad warning, `fit_unset`
 30.022993 s / 124 frames / one disagreement warning.
 
+### C-F028 — a phase that goes silent past the threshold says so, in a typed event, and stops when it resumes
+A job that is working but emitting nothing is indistinguishable from a hung one over MCP, and
+the pre-denoise lead-in of an `ltx2` run is the natural instance: `generating` starts, then
+~50 s pass with `denoise_step: null` before the first `pipeline_step`. #176 made that visible
+with a generic watchdog. What is worth locking in is not the LTX number but the three
+properties that make it usable: the warning is **typed** (`kind: "phase_stall"`, so a consumer
+keys on a field instead of matching prose), it reaches **both** consumer surfaces, and it is
+measuring *silence*, not phase length — a phase that takes two minutes while emitting
+sub-events must stay clean. The last is the part most likely to rot into a false-positive
+generator. Loads a model; ~3-4 min.
+expected: `run_workflow("templates/ltx2/text-to-video", {num_frames: 25, width: 768,
+height: 448})`, then `get_job_events` on the finished job —
+- **the fire.** Somewhere inside `generating`, before the first `pipeline_step`, exactly one
+  `event: "warning"` carrying `kind: "phase_stall"`, `phase: "generating"`, and a numeric
+  `seconds_since_phase_start` at or just past the server's threshold (30 s as built; read it
+  off the reading, don't hard-code it). Its `message` names the phase and the elapsed figure.
+  Nothing in the payload is LTX- or pipeline-specific — `phase` is just whatever phase the job
+  was in.
+- **both surfaces.** The same text appears in `get_job` / `wait_for_job` `warnings`, prefixed
+  with the step's name, while the job is still running — not only after it finishes.
+- **it stops.** No further `phase_stall` for `generating` after the first `pipeline_step`
+  event. The watchdog is silenced by progress, not by the phase ending.
+- **no false positive on a slow-but-talking phase.** The same job's `loading` phase runs well
+  past 30 s total while emitting its component sub-events; as long as no *gap between* those
+  is over the threshold, it draws no `phase_stall`. Check the gaps in the event stream and
+  assert against them, not against the phase's total length.
+If the lead-in happens to come in under the threshold (a fully warm box can shorten it), the
+fire arm is **inconclusive, not a pass** — re-run it as the first `ltx2` job of the session so
+the load is cold. The other three arms hold either way.
+It is a **finding** if the warning is a plain `log` line or loses `kind`/`phase`/
+`seconds_since_phase_start`, if it appears on only one of the two surfaces, if it keeps firing
+after progress resumes, or if any phase that is emitting events inside the threshold draws one
+anyway.
+cleanup: delete the run's outputs. No durable fixtures.
+source: tester, verified in #176, model `opus` via provider `anthropic`, on 2026-09-16 against
+dw 0.4.0-beta.4 on `lem`. Measured as job `9baf48bea129`: `generating` entered at 84.2 s, one
+`phase_stall` at 117.7 s with `seconds_since_phase_start: 33.5`, first `pipeline_step` at
+134.3 s and nothing after; `loading` spanned 6.6-84.2 s with sub-event gaps of 28.5 s and
+21.9 s and stayed clean. The issue's "repeats on an interval while the stall continues"
+requirement is deliberately **not** asserted here — no consumer-side lever lengthens a phase's
+silence enough to see a second firing, so it is covered by unit tests in the dw repo instead.
+
+### C-F029 — a six-step task-only chain carries its parameters, and `keep_output` hands the result to a stored template
+Every other chained case here is two or three steps. The failure this one is for is
+the one that only appears with depth: an argument that survives one hop and is
+dropped at the fourth, where the run still succeeds and the deliverable is merely
+wrong. It also pins the seam nothing else covers — a generated file promoted with
+`keep_output(shared=true)` being consumed by a **stored** workflow under its
+`asset:` name in the same session, which is the documented way to feed a template
+something the catalog didn't ship. Task-only both halves: no model loads, ~13 s total.
+expected: two runs.
+(1) A six-step inline workflow (`id` + `seed`, one `result` on the last step only)
+chaining `resample_audio` (`asset:uploads/qa-cast/room-bed.wav` → 32000) →
+`loop_audio` (`target_frames: 260`, `fps: 24`, `crossfade_ms: 250`) →
+`slice_audio` (`asset:qa-cast/priya-voice.wav`, `start_seconds: 0`,
+`duration_seconds: 3`) → `resample_audio` (→ 32000) → `mix_audio` over
+**both** branches (`audios: ["previous_result:bedloop", "previous_result:priya32"]`,
+`gains: [2.5, 0.8]`) → `normalize_audio` (`peak_dbfs: -3`) succeeds with
+`warnings: []` and no elided steps, and `get_gallery_metadata` on the one saved
+file reports `duration_seconds: 10.8333` (260/24, exactly), `sample_rate: 32000`,
+`channels: 1`, `peak_dbfs` within 0.05 dB of **-3.0**. Two independent chains
+meeting at `mix_audio` is the point of the shape: the bed's length and the
+normalizer's target both have four hops to get lost in.
+(2) `keep_output(name=<that file>, asset_name="qa-cast/ep17-score.wav",
+shared=true)` returns `reference: asset:qa-cast/ep17-score.wav`, and
+`templates/assemble-and-score` run with `shots` = the two 32 kHz C-F001 fixtures,
+`score` = that reference, `sample_rate: 32000`, `fps: 24`, `total_frames: 248`,
+`seam_fade_ms: 80`, `match_levels: "rms"` succeeds with `warnings: []` — in
+particular **no `slice_past_end`**, the score being 10.83 s against a 10.33 s
+cut — and the film reports 248 frames / `duration_seconds` ≈ 10.334 / `fps: 24.0`
+/ `sample_rate: 32000` / `channels: 2` and `peak_dbfs` **below 0** (the template
+normalizes to -3 before the mux; the AAC overshoot on this material is a few
+hundredths of a dB, so -3 has ample headroom — cf. C-F024, where a lossy source
+overshoots by ~0.44 dB).
+It is a **finding** if either job warns, if the bed's duration is not exactly
+260/24, if the score is not 32 kHz mono at -3 dBFS (a rate or a gain dropped
+mid-chain), if `keep_output`'s reference is not resolvable by the stored template
+(`asset:` reference errors at validation), if the film's frame count, rate or
+sample rate moves, or if the film's `peak_dbfs` reaches 0 — that last one being
+the clipped-deliverable failure #161 reported against `music-video`, here on the
+path that is supposed to be safe from it.
+metrics: `film_peak_dbfs` — the decoded `peak_dbfs` of the muxed film from (2),
+condition `-`. The number is the mux headroom actually delivered against the -3
+the template asked for; drift toward 0 across runs is the regression, and a
+single reading can't show it.
+cleanup: delete both runs' outputs and the `qa-cast/ep17-score.wav` asset the case
+creates (it is rebuilt by step 1 every run, so it is not a fixture). Keep the three
+input assets — all durable fixtures listed above.
+source: tester, found while running TESTER_TASK.agent.md (episode 17) on 2026-09-16
+over MCP as model `opus` via provider `anthropic`, workspace `qa-ep17`, dw
+0.4.0-beta.4 — job `589964f1a8db` (8.1 s, bed 10.833344 s / 32 kHz / mono /
+-3.0000975 dBFS) and job `5b8def4f9a91` (4.7 s, film 248 frames / 10.334 s /
+32 kHz / stereo / -2.9758 dBFS), both `warnings: []`. Episode 17 used
+`ep4-shot1-amnesty.mp4`/`ep4-shot2-desk.mp4` as its shots; the C-F001 fixtures are
+named above instead because they are the pair this suite already guarantees, and
+the case asserts nothing about the shots beyond their rate and frame count.
+
 ## Performance
