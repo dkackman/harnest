@@ -1126,6 +1126,152 @@ S-F014, S-F021 and S-F022 are here: it is the cleanup path every other case's `c
 line depends on being able to reach. Written as a new case rather than a bullet on S-F022,
 which no agent may edit.
 
+### S-F035 — a stored default that cannot resolve is caught by the free pre-flight, not by the run
+`validate_workflow` is documented as the pre-flight you always run before
+`run_workflow`, and its own description promises a valid answer says "whether it
+covered your values or only the stored defaults". The filed bug (#166) was that it
+only walked caller-supplied `arguments` for `asset:`/`prompt:`/`output:` existence
+and never the workflow's declared `variables` defaults, so one workflow gave two
+verdicts depending on whether the caller happened to restate a default —
+`valid: true` bare, `valid: false` with the same value passed explicitly — and the
+bare path deferred the failure until after the weights had loaded. The general
+property, not the template: **a reference is checked wherever the effective value
+comes from.**
+expected:
+- **Bare call reports the unresolvable default.** `validate_workflow(name=
+  "templates/ltx2/reference-sheet")`, no arguments → `valid: false`, one error whose
+  path is **`variables.reference_sheet`** (not `arguments.`, not a step path), its
+  text naming the missing asset `reference_sheet.png` and the asset roots searched.
+  `checked_arguments: []`. A `valid: true` here is the regression.
+- **The default really is unresolvable.** `get_workflow(name=
+  "templates/ltx2/reference-sheet", variables_only=true)` → `"reference_sheet":
+  "asset:reference_sheet.png"`, and `list_assets()` reports no such asset in any
+  root. If a later run of this suite finds the template's default changed or that
+  asset present, the case's premise is gone — file an issue rather than editing it.
+- **The two paths agree.** The same call with `arguments={"reference_sheet":
+  "asset:reference_sheet.png"}` → `valid: false` too, same message, but at
+  **`arguments.reference_sheet`**. Identical verdict, different path: the path is
+  what tells a caller "you wrote a bad reference" from "you did not override a bad
+  default", so a fix that reports both as `arguments.` is a partial fix.
+- **No over-reporting — the override is what gets judged.** The same call with
+  `arguments={"reference_sheet": "asset:<any real image in this workspace>"}` →
+  `valid: true`, `checked_arguments: ["reference_sheet"]`, and a `plan`. This is the
+  assertion that separates a correct fix from one that just fails any workflow
+  carrying a placeholder default: the caller's value replaces the default before the
+  check, and the workflow's *other* defaults (its `prompt:` and `constant:` ones)
+  resolve and are not falsely flagged.
+cleanup: none — all four calls are free discovery/validate calls that load nothing,
+queue nothing and write nothing.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #166 on
+2026-09-15 against dw 0.4.0-beta.4 on `lem` (fix a199d37 on `develop`). The
+implementer proposed the first and fourth bullets in its hand-off comment; the
+`variables.` vs `arguments.` path pair and the premise check are mine. At smoke
+level because the pre-flight is what every other case's cost control rests on, and
+because the failure mode is silent — a bare `validate_workflow` answering
+`valid: true` looks exactly like a healthy one. Note the intended side effect the
+implementer flagged: any catalog template shipping a placeholder `asset:` default
+now answers `valid: false` on a bare call in a workspace without that file.
+
+### S-F036 — an unwritable `result.content_type` is refused by the free pre-flight, not by the writer
+S-F017/S-F018 pin that an *unknown key* on a workflow object is an error. This is the
+other half: a **known key carrying a value no writer can honour**. The filed bug (#168)
+was that `result.content_type: "video"` — the obvious shorthand for `video/mp4` —
+validated clean with a plan, then died at run time inside a writer the caller never
+chose, as `TiffWriter.write() got an unexpected keyword argument 'fps'`: a message
+naming neither the field, the value, nor the step. An unrecognised content type fell
+through to the image writer instead of being an error. Same shape as #162 in a
+different field. The general property: **the writer a `content_type` selects is
+resolved at validate, and a value that selects nothing is refused there.** Cheap to
+regress on and expensive to hit — this one cost only a `pair_audio` step, but the same
+mistake on a step behind a multi-GB download is paid for in full before the message
+arrives.
+expected:
+- **The bare word is refused, at its own path.** `validate_workflow` on a single-step
+  document whose `result` is `{"subfolder": "final", "content_type": "video"}` →
+  `valid: false`, exactly one error, path **`steps[0].result.content_type`**, message
+  naming the value and what it wanted (`content_type wants a MIME type like
+  'video/mp4' or 'image/png', not a bare word`). `valid: true` here is the regression;
+  so is an error at a vaguer path, since the path is the whole point of catching it
+  here rather than in the writer.
+- **A well-formed but unwritable MIME type is refused too.** The same document with
+  `content_type: "video/webm"` → `valid: false` at the same path, with a message
+  distinguishing *this* objection from the bare-word one (`video is only written as
+  'video/mp4'`). This is the assertion that the check consults the real writer
+  registry rather than pattern-matching `type/subtype`; a fix that only rejects
+  shapes without a slash passes the first bullet and fails here.
+- **No over-tightening — the legitimate value still passes.** The same document with
+  `content_type: "video/mp4"` → `valid: true`, a `plan` with a fingerprint, and no
+  error at `steps[0].result.content_type`. A suite that only asserts refusals is
+  satisfied by a check that refuses everything.
+- **The check runs after substitution.** The same document with `content_type:
+  "variable:ct"`, a declared `ct` variable, and `arguments: {"ct": "video"}` →
+  `valid: false` with the bare-word message at `steps[0].result.content_type`. A value
+  routed through `arguments` must not be able to walk past the pre-flight and reach
+  the writer; a check that only reads literals in the stored document passes the first
+  three bullets and leaves the original bug open on the path callers actually use.
+- **Workspace-independent.** All four calls use `output:` references that need not
+  exist (inline task arguments are not existence-checked), so this case carries no
+  fixture and runs identically in any workspace. If a future run finds the positive
+  bullet failing on a missing-reference error instead, that is a change in
+  `validate_workflow`'s reference checking, not in this case's subject — file it
+  rather than editing here.
+cleanup: none — all four are free validate calls. Nothing loads, queues, or is written.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #168 on 2026-09-15
+against dw 0.4.0-beta.4 on `lem` (fix 3db782e on `develop`), run in both `qa-ep15` and
+`regression-smoke` to confirm the workspace-independence bullet. The implementer's
+hand-off comment proposed the first and third bullets; the `video/webm` and
+`variable:`-substitution bullets are mine, and the second closes the "how wide is the
+fall-through" question the original issue listed as unprobed. At smoke level for the
+same reason S-F010 and S-F035 are: the free pre-flight is what every other case's cost
+control rests on, and a hole in it is silent — a `valid: true` with a plan looks
+exactly like a healthy one right up until the run burns the budget.
+
+### S-F037 — the stock `generate-speech` template runs on its own defaults
+Call `run_workflow(workflow_path="templates/generate-speech",
+acknowledged_cost=true)` with **no `arguments` at all** — stock catalog entry,
+stock defaults (`suno/bark-small`, `v2/en_speaker_6`, the template's own line of
+text). This is deliberately *not* S-F007: S-F007 exercises Bark inside an inline
+three-step chain it authors itself, so it can keep passing while the catalog
+entry a consumer would actually reach is unusable. #169 was exactly that — every
+Bark run failed on an upstream `transformers` 5.17.0 regression
+(`BatchEncoding.to() got an unexpected keyword argument 'dtype'`), and the
+catalog's `audio` shape has only two entries, one of which is this. The general
+property: **a stored template must run as shipped, without a caller supplying
+anything.** A template whose defaults do not run is a broken catalog entry
+regardless of whether some hand-written workflow can reach the same task.
+expected:
+- `validate_workflow(name="templates/generate-speech")` → `valid: true`,
+  `plan.steps: 1`. (A "no seed, step cache disabled" warning is the normal state
+  of this template, not a finding.) Note that validate passed here throughout
+  #169 too — a clean pre-flight is *not* evidence the run works, which is why
+  this case runs it.
+- The job reaches `status: "succeeded"` with `error: null` and `warnings: []`.
+- The manifest is **non-empty**: one `speak` entry with one `.wav`. An empty
+  manifest on a succeeded job is as much a failure here as an outright error.
+- `get_gallery_metadata` on that wav reports `kind: audio`, `sample_rate:
+  24000`, `channels: 1`, a `duration_seconds` of roughly 8 s for the stock line,
+  and a level that is not silence (`mean_dbfs` well above -40; it measured
+  -25.8, `peak_dbfs` -3.4). The rate assertion matters on its own: the template
+  declares no `result.sample_rate` precisely so the wav carries whatever the
+  model produced, so a wrong rate here means the saving path re-stamped it.
+- Under a minute of GPU time end to end (it measured 17.4 s). If this ever runs
+  for minutes, that is #132's complaint returning, not this case's subject —
+  file it separately rather than widening this case.
+cleanup: delete the run with the `<workflow>/<run id>` form of `delete_output`.
+Nothing here is a fixture.
+metrics: none — S-P004 already times the Bark path via S-F007's chain, and a
+second timing series on the same model would drift in lockstep without adding a
+signal.
+source: tester, model `opus` via provider `anthropic`, verified in #169 on
+2026-09-16 against dw 0.4.0-beta.4 on `lem` (fix `f8d7452` on `develop`, which
+pinned `transformers>=5.16.1,!=5.17.0`), run in a throwaway `qa-verify-169`
+workspace. Proposed by the implementer in its hand-off comment; the manifest,
+level, rate-provenance and runtime bullets are mine. At smoke level because it
+is one of the two `audio`-shape catalog entries, costs ~17 s, and its failure
+mode in #169 was total and yet invisible to every other case in this file.
+
 ## Performance
 
 ### S-P001 — default image generation latency
