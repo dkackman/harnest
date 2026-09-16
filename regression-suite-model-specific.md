@@ -378,7 +378,12 @@ checkpoint. Costs one real run, ~13 min cold on a 3090 — model-specific is opt
 a render this size belongs.
 expected: `run_workflow("templates/minimax/video-with-audio-768p")` on defaults, then
 `wait_for_job` / `get_job_events` / `get_gallery_metadata` on the output:
-- **`status: "succeeded"`, `warnings: []`.** Completion is itself the assertion here — see above.
+- **`status: "succeeded"`.** Completion is itself the assertion here — see above. `warnings`
+  may contain `audio_no_headroom` (H3's own soundtrack sits close enough to
+  `HEADROOM_WARN_DBFS` that the pre-encode check fires on this family's stock defaults, #174) —
+  that alone is not a finding. It **is** a finding if `audio_clipped` also appears, or if
+  `get_gallery_metadata`'s `peak_dbfs` on the written file is at or above 0 dBFS without
+  `audio_clipped` having fired for it.
 - **`denoise_total_steps: 8`** from `num_inference_steps: 9`, i.e. the turbo schedule, not a
   silent fallback to the base model's step count.
 - **The deliverable is `width: 1344`, `height: 768`**, `frame_count: 124`, `fps: 24.0`, with audio:
@@ -400,7 +405,11 @@ because nothing had measured it, so this log is currently the only cost history 
 source: tester, model `opus` via provider `anthropic`, verified in #148 on 2026-09-14 against dw
 0.4.0-beta.4 on `lem`, workspace `qa-verify` — the template's first ever run (job `b6ecc7877346`,
 786.0 s, 1344x768/124 f, peak RSS 61548.9 of 64208.6 MB). Proposed by the implementer; the memory
-bullet and the audio half of the metadata bullet are mine. Note for a future run: the **first**
+bullet and the audio half of the metadata bullet are mine. `warnings` assertion loosened per Don's
+#174 disposition on 2026-09-16 (fix (1)'s post-encode probe is add-only, not replace — the
+pre-encode `audio_no_headroom` warning still fires on this family's stock defaults even though the
+mux always comes back clean; re-architecting `warn_without_headroom`'s timing to satisfy a strict
+`warnings: []` was declined as disproportionate to the actual defect). Note for a future run: the **first**
 denoise step took ~232 s against ~40-57 s for steps 2-8 — warm-up, not a stall, and the same
 pattern C-F023 records after a reload.
 
