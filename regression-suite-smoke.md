@@ -1567,6 +1567,51 @@ dialogue coherently in 2.6 s — the video-soundtrack path the schema doc promis
 works, but that asset is a `qa-cast` fixture, not this suite's, so it is not asserted
 here.
 
+### S-F044 — a gated repo this box's token cannot reach is refused by the free pre-flight
+Before #186 a gated Hugging Face repo whose license this box's token had not accepted
+was invisible until the job ran and the load hit a 403 — a queue slot and a worker
+load spent to discover something the hub could have said up front. The first fix
+keyed `access_blocked` on `model_info`, which the hub answers for anyone, so the field
+was `false` for a repo the token was genuinely refused on; the second fix probes a
+real sibling file (the request class a load actually makes) when `gated` is truthy.
+This case pins that the pre-flight answer matches what a download would do. Free:
+`validate_workflow` only, nothing is fetched. The fixture repo is 10.9 MB and the
+gate on it is **not** accepted on `lem` as of 2026-09-17 — if someone accepts it, the
+first bullet inverts and the case needs a new un-granted fixture, not a weakened
+assertion (a `download_model` on it that fails with a `403 ... Cannot access gated
+repo` in `list_downloads` is how to reconfirm; `delete_model` the partial entry after).
+expected:
+- **Blocked is reported as blocked, with a pointer.** `validate_workflow` on an inline
+  one-step workflow — `pipeline.configuration.component_type: "StableDiffusionPipeline"`,
+  `from_pretrained_arguments.model_name: "pyannote/speaker-diarization-3.1"`, any
+  `arguments`, `result.content_type: image/png`, a top-level `seed` so the cache warning
+  stays out of the way — is `valid: true` and `plan.downloads_required` has exactly one
+  entry, `repo: "pyannote/speaker-diarization-3.1"`, `gated` truthy (`"auto"` today) and
+  **`access_blocked: true`**; `warnings` contains exactly one line, and it names both the
+  repo and `https://huggingface.co/pyannote/speaker-diarization-3.1`. `access_blocked:
+  false` or `null` for this repo with no warning is the regression (`null` is the
+  honest answer only when the hub could not be reached at all — check `gb` and `gated`
+  are also `null` in that event before calling it a network blip).
+- **Accessible and un-gated are not flagged.** The same workflow with two more steps,
+  `stabilityai/sd-turbo` (not gated) and `stabilityai/stable-diffusion-3.5-large` (gated,
+  license accepted on `lem`): the pyannote entry is unchanged, sd-turbo's is
+  `gated: false, access_blocked: false`, SD3.5's is `gated: "auto", access_blocked:
+  false`, and `warnings` still carries exactly the one pyannote line — the warning is
+  per blocked entry, not all-or-nothing, and an accepted gate is not a false positive.
+- **Unknown stays unknown.** A fourth step naming `tester-nonexistent-org/does-not-exist-186`
+  yields `gb: null, gated: null, access_blocked: null` and no warning for it: a repo the
+  hub does not know is "unknown", never reported as blocked or as clear.
+cleanup: none — validate only, no job, no download.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #186 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem`: the single-step call returned `{"repo":
+"pyannote/speaker-diarization-3.1", "gb": 0.0, "gated": "auto", "access_blocked":
+true}` plus the one warning; the four-repo call returned `false`/`false` for sd-turbo,
+`"auto"`/`false` for SD3.5-large, `"manual"`/`false` for `meta-llama/Llama-3.2-1B`
+and `null`/`null` for the nonexistent repo, with no gate warning. The token's refusal
+on pyannote was established live in the previous verify round (a `download_model`
+that failed `403 ... you are not in the authorized list`).
+
 ## Performance
 
 ### S-P001 — default image generation latency
