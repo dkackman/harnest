@@ -1431,6 +1431,142 @@ collision cases); the exactly-one-of-survives-aliasing bullet, the
 `wait_for_job`-reached-`succeeded` requirement, the alias-resolves-to-the-catalog
 check and the description bullet are mine, from what that session ran.
 
+### S-F041 — a schema-advertised `device` is accepted by a task that runs no model
+`get_task(<command>)` appends `device` to every task's parameter list — the engine
+treats it as a universal, always-safe override. Before #185, only the model-backed
+handlers actually consumed it; a utility task like `resample_audio` forwarded
+`arguments` straight to a function whose signature had no `device`, so the argument
+the schema advertised was a `TypeError` at run time, after the job was queued, and
+the free pre-flight (`validate_workflow`) let it through because it does not check
+argument names against the signature. The fix consumes `device` in the dispatcher for
+every non-model handler. This case pins the contract from the consumer side: if the
+schema lists it, passing it runs. Cheap: two utility-task jobs, a few seconds each,
+no model load.
+expected:
+- **The schema still advertises it.** `get_task("resample_audio")` and
+  `get_task("gain_audio")` each list a parameter named `device` (required: false)
+  whose description says it is a device override. If a future change stops
+  advertising it on non-model tasks instead, that is a *different* valid resolution
+  of #185 — record it as an observation, not a failure, and propose retiring this
+  case per "Removing a case".
+- **Passing it runs.** An inline workflow with one step `resample_audio`,
+  `arguments: {"audio": "asset:qa-cast/ep11-bed.wav", "target_sample_rate": 16000,
+  "device": "cpu"}`, `result: {"subfolder": "final", "file_base_name": "resampled",
+  "content_type": "audio/wav"}` → `validate_workflow` valid, `run_workflow` accepted,
+  `wait_for_job` → `succeeded` with one manifest file, `error: null`. A `TypeError`
+  mentioning `device` — or any failure at all — is the regression.
+- **Not just `cpu`, not just one command.** A second inline workflow with two steps:
+  `gain_audio` with `{"audio": "asset:qa-cast/ep11-bed.wav", "gain_db": -6,
+  "start_seconds": 0, "duration_seconds": 1, "device": "cuda"}` and `resample_audio`
+  with `device: "cuda:0"` (same audio, `target_sample_rate: 16000`), each with an
+  audio/wav `result` → `succeeded`, two manifest files. `gain_audio` is a different
+  non-model handler and the two accelerator spellings are what a real agent passes
+  when it means "keep this off the pipeline's GPU"; a fix that special-cases one
+  command or one literal passes the bullet above and fails this one.
+cleanup: `delete_output` the run directory of each of the two jobs (last media file
+takes the run directory with it). The fixture bed is read-only.
+metrics: none — the assertions are all pass/fail; S-P004 tracks audio-chain latency.
+source: tester, model `opus` via provider `anthropic`, verified in #185 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem`, workspace `qa-verify-185` (using
+`asset:uploads/qa-cast/room-bed.wav` / `asset:qa-cast/hal-voice.wav`; the case uses
+the suite's own fixture bed instead): job `242d79ae47d0` (`resample_audio`,
+`device: "cpu"`) succeeded in 2.9 s; job `1b501f78d203` (`gain_audio` `device:
+"cuda"` + `resample_audio` `device: "cuda:0"`) succeeded in 0.6 s. The implementer's
+hand-off also proposed pinning that a command whose `arguments` is a list (the
+`previous_result` fan-out into `gather_inputs`) survives the new wrapper; that path is
+not constructible from an inline workflow (the schema requires `arguments` to be an
+object), so it belongs in the dw repo's pytest suite, not here.
+
+### S-F042 — `gain_audio` changes only the addressed region, and clips a region past the end
+Before #187 there was no per-region gain task: ducking a scene meant a five-step
+`slice_audio` → normalize → `mix_audio` → rejoin → `pair_audio` chain. `gain_audio`
+applies `gain_db` to one region, addressed in seconds (`start_seconds`/`duration_seconds`)
+or in frames (`start_frame`/`num_frames`/`fps`, resolved like `slice_audio`), and
+leaves everything outside it untouched. Cheap: two utility jobs, ~1 s each, no model.
+The fixture bed's per-second `rms_dbfs`/`peak_dbfs` envelope is flat enough that a
+region's shift and its neighbours' stillness are both unambiguous — read it once
+with `get_gallery_metadata("asset:qa-cast/ep11-bed.wav", envelope=true)` before
+either job, and compare the outputs' envelopes against it.
+expected:
+- **Seconds, negative gain, middle region.** Inline workflow, one step `gain_audio`
+  `{"audio": "asset:qa-cast/ep11-bed.wav", "gain_db": -12, "start_seconds": 5,
+  "duration_seconds": 3}`, `result: {"subfolder": "final", "file_base_name": "ducked",
+  "content_type": "audio/wav"}` → `succeeded`, one manifest file. Its envelope vs. the
+  source's: seconds 5, 6 and 7 have `peak_dbfs` and `rms_dbfs` each **12 dB (±0.1)
+  below** the source's same-second figures; **every other second is numerically
+  identical** to the source (not "close" — the same float). `duration_seconds`,
+  `sample_rate` and `channels` unchanged. A shift outside the region, a region that
+  moved by less than the asked gain, or a changed duration is the finding.
+- **Frames, positive gain, region reaching past the end.** Same shape with
+  `{"gain_db": 6, "start_frame": 400, "num_frames": 200, "fps": 24}` (frame 400 =
+  16.667 s; the region would end at 25 s on a 19.67 s track) → `succeeded`, and
+  `duration_seconds` **equal to the source's** (19.666656) — the region is clipped to
+  the track, never zero-padded like `slice_audio`'s. Seconds 16 onward are +6 dB
+  (±0.1) on peak; seconds 0–15 identical to the source. An output longer than the
+  source is the regression.
+- **Domains are pinned.** `validate_workflow` on the frames shape with
+  `start_frame: -1, num_frames: 0` → `valid: false`, two errors at
+  `steps[0].task.arguments.start_frame` and `.num_frames`, each naming `gain_audio`.
+  (A no-region call — `gain_db` alone — validates and is refused at run time with a
+  message naming both address forms; that is the current behaviour, an observation
+  on #187, not an assertion here.)
+cleanup: `delete_output` the run directory of each of the two jobs. The fixture bed
+is read-only.
+metrics: none — S-P004 tracks audio-chain latency.
+source: tester, model `opus` via provider `anthropic`, verified in #187 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem`, workspace `qa-verify-187`: job `6751bf30fdb4`
+(seconds/−12 dB: seconds 5–7 peak −28.886 → −40.883, RMS −50.78 → −62.78, all others
+identical; 1.1 s) and job `bc12d804d750` (frames/+6 dB past the end: duration still
+19.666656 s, seconds 16–18 peak −28.886 → −22.884; 0.6 s). The implementer's
+proposed sample-level assertions (scaled-by-linear-gain inside, bit-identical outside)
+are the pytest form of the same properties and belong in the dw repo.
+
+### S-F043 — `transcribe_audio` returns the words a TTS deliverable actually speaks
+Before #188 nothing in the tool set returned what was spoken: a dropped line or a
+mid-sentence truncation in a Bark/CSM take could only be inferred from `duration` and
+words-per-second arithmetic. `transcribe_audio` (Whisper-class, default
+`openai/whisper-base`) makes the words themselves checkable. This case pins the loop
+end to end from the consumer side: speak a known script, transcribe the wav, and read
+the text back over MCP. Cheap: bark-small (~15 s) plus whisper-base (~10 s), both
+already cached on `lem`; a first run on a fresh box downloads whisper-base once.
+expected:
+- **The task and its template are discoverable.** `get_task("transcribe_audio")` lists
+  `audio` (required), `device`, `sample_rate` and `model_name` (default named as
+  `openai/whisper-base`); `list_workflows(shape="utility")` includes
+  `templates/transcribe-audio` with `kinds: ["text"]` and variables `input_audio`,
+  `model_name`. (It is bucketed under `utility`, not `text`.)
+- **The stored template transcribes a stored template's speech.** Run
+  `templates/generate-speech` with `arguments: {"text": "The purple elephant delivered
+  seventeen umbrellas to the lighthouse on Tuesday."}` → `succeeded`, one wav. Then
+  `templates/transcribe-audio` with `input_audio` = `output:` + that wav's manifest name
+  → `succeeded`, one `.txt` in the manifest, `error: null`. `get_output_text` on it →
+  `content_type` starts `text/plain`, `truncated: false`, and the text, lowercased,
+  contains **`purple elephant`**, **`umbrellas`** and **`lighthouse`**, and the digit
+  string `17` or the word `seventeen` (Whisper normalises numerals either way). An
+  empty text, a text missing any of those tokens, or a manifest with no `.txt` is the
+  regression. Word-for-word equality is *not* asserted — bark-small's rendering varies
+  run to run and a single mangled word is TTS, not ASR.
+- **Chained, on the accelerator, from `previous_result`.** One inline workflow, two
+  steps: `generate_speech` `{"text": "Nine green bicycles waited outside the bakery
+  until midnight.", "voice_preset": "v2/en_speaker_3", "model_name": "suno/bark-small"}`
+  (`content_type: audio/wav`) then `transcribe_audio` `{"audio": "previous_result:speak",
+  "device": "cuda"}` (`content_type: text/plain`) → `succeeded`, two manifest files; the
+  text contains `bicycles` and `bakery`. A failure here with the bullet above passing
+  means the in-memory waveform path or the `device` override broke, not the model.
+cleanup: `delete_output` the run directory of each of the three jobs (the `.txt` is
+the last file of its run, so the directory goes with it).
+metrics: none — the assertions are token-presence; S-P004 tracks audio-chain latency.
+source: tester, model `opus` via provider `anthropic`, verified in #188 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem`, workspace `qa-verify-188`: job `9ac795d05425`
+(bark-small, 15 s) → job `f2ab2ceaff4b` (whisper-base via the stored template, 11 s)
+returned `"The purple elephant delivered 17 umbrellas to the lighthouse on Tuesday."`
+exactly; job `052ef160620e` (chained inline, `device: "cuda"`, 17 s total) returned
+`"nine green bicycles waited outside the bakery until midnight."`. A third run took
+an H3 video (`asset:qa-cast/ep6-cold-open.mp4`) as `input_audio` and transcribed its
+dialogue coherently in 2.6 s — the video-soundtrack path the schema doc promises
+works, but that asset is a `qa-cast` fixture, not this suite's, so it is not asserted
+here.
+
 ## Performance
 
 ### S-P001 — default image generation latency
