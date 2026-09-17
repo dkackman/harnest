@@ -32,6 +32,9 @@
 #                        worked by the first issue's session; the driver skips
 #                        an issue that was handed off meanwhile)
 #   tester #N            one fresh session per status:fixed-pending-verify issue
+#   tester #N (handoff)  one fresh session per owner:tester issue with no
+#                        status label - a suite/harness-file edit the
+#                        implementer asked for but can't make itself
 #   tester task          one session, every TESTER_TASK_EVERY cycles: responds
 #                        to wontfix/duplicate closures, then advances
 #                        TESTER_TASK.agent.md one step
@@ -224,9 +227,10 @@ implementer_pass() {
   done
 }
 
-# tester_pass — one session per issue to verify, then (every
-# TESTER_TASK_EVERY cycles) one session for closure responses and the
-# standing task.
+# tester_pass — one session per issue to verify, one session per issue handed
+# off with no status label (a suite/harness-file change the implementer can't
+# make itself), then (every TESTER_TASK_EVERY cycles) one session for closure
+# responses and the standing task.
 tester_pass() {
   local n
   while IFS= read -r n; do
@@ -237,6 +241,21 @@ tester_pass() {
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester verify)
+
+  # owner:tester with no status label: not a verify (nothing to run over MCP)
+  # and not a wontfix/duplicate closure - a suite-file or other harness-side
+  # edit the implementer asked for because it has no checkout of this repo.
+  # #194 sat unpicked-up until a human noticed, because neither queue above
+  # matches "owner:tester, no status" - this one does, symmetric to the
+  # implementer's `fresh` queue.
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    still_ready "$n" owner:tester fresh \
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop." \
+      "${TESTER_FLAGS[@]}"
+  done < <(open_issues owner:tester fresh)
 
   if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \

@@ -42,9 +42,14 @@ prompt says which kind this is:
   --comments`; if it no longer carries `owner:tester` +
   `status:fixed-pending-verify`, exit. Add a regression case (step 6) only
   if the verify warrants one. Nothing else.
+- **HANDOFF #N** — step 2h below, for that one issue. `gh issue view <n>
+  --comments`; if it no longer carries `owner:tester` with no status label,
+  exit. Nothing to run over MCP here — this is a suite/harness-file edit the
+  implementer asked for in a comment but can't make itself (it has no
+  checkout of this repo).
 - **TASK** — step 3 (closure responses), then one step of `TESTER_TASK.agent.md`,
   filing tickets (step 4) and adding cases (step 6) for what you hit. Skip
-  step 2 entirely; `fixed-pending-verify` issues get their own sessions.
+  steps 2 and 2h entirely; those get their own sessions.
 
 Every session has a spend cap you can't see. In a verify, write the
 verification comment and relabel *before* adding a regression case — the
@@ -80,6 +85,19 @@ end.
       breaking interface change, adjust your test calls to match the new
       shape before re-testing — don't report the shape change itself as a
       new bug unless it seems accidental or undocumented.
+2h. For a HANDOFF issue (`owner:tester`, no status label — not
+    `fixed-pending-verify`, not `wontfix`/`duplicate`): read the comment
+    asking for the change and apply exactly that, in this repo (a
+    `regression-suite-*.md` edit is the common case, per step 6's file — but
+    treat the comment as authoritative on what to touch, not this example).
+    Commit it the way step 6 commits a case. Comment what you changed, naming
+    the model/provider you ran as. If nothing remains to verify over MCP,
+    close it (`gh issue close <n> --reason completed`); if the requesting
+    comment says otherwise (e.g. it's one part of a larger ask), follow that
+    instead. If the ask is unclear or asks you to do something outside this
+    repo (source, SSH, an MCP call) — that's scope creep into the
+    implementer's or your own VERIFY lane; say so in a comment and leave it,
+    don't guess.
 3. For issues labeled `wontfix` or `duplicate` with `owner:tester` that you
    haven't responded to yet, read the reason in the comments. Either
    accept — comment that and leave it closed (nothing further happens) — or
