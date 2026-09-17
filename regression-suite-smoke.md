@@ -84,6 +84,14 @@ nothing uses it anymore.
   it is the clipping exhibit from #158/#159, not just a song, so replacing it with a
   quieter track silently disarms the case. Read-only — never normalized in place,
   never deleted.
+- `asset:qa-cast/ep6-cold-open.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` — two
+  124-frame 24 fps 960x544 32 kHz stereo shots in the shared asset library. S-F045
+  joins them in that order because the first has the loudest outgoing tail among the
+  shared shots (last full second −20.5 dBFS RMS) and the second the quietest head
+  (first second −44.4 dBFS RMS), which is what makes a bled tail measurable against
+  the incoming material. Both also serve the `complete` suite; read-only, never
+  deleted. Any substitute pair needs the same loud-tail-into-quiet-head shape, re-read
+  from `get_gallery_metadata(envelope=true)` on the assets.
 
 ## Functional
 
@@ -1611,6 +1619,47 @@ true}` plus the one warning; the four-repo call returned `false`/`false` for sd-
 and `null`/`null` for the nonexistent repo, with no gate warning. The token's refusal
 on pyannote was established live in the previous verify round (a `download_model`
 that failed `403 ... you are not in the authorized list`).
+
+### S-F045 — `audio_bleed_gain_db` ducks the bled tail by exactly the dB asked for
+Before #199 a `concat_videos` bleed (`audio_bleed_ms`) added the outgoing shot's
+reversed tail at full scale or not at all — a tail loud enough to push the seam over
+0 dBFS could only be switched off. `audio_bleed_gain_db` (default 0) scales that
+copy by `10^(gain/20)` before it is added, and does nothing when `audio_bleed_ms` is
+0. This pins both halves with one cheap job (four utility steps, ~10 s, no model).
+Confirm the argument name against `get_task("concat_videos")` first.
+Run one inline workflow with four `concat_videos` steps, each over
+`["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`, `fps: 24`,
+`result.content_type: video/mp4`: (a) `audio_bleed_ms: 500, audio_bleed_gain_db: 0`,
+(b) same with `-6`, (c) same with `-20`, (d) `audio_bleed_ms: 0, audio_bleed_gain_db:
+-6`. Then `get_gallery_metadata(envelope=true)` on each output and read the seam
+second — index 5 of `media.envelope` (5–6 s; the seam is at 5.175 s).
+expected:
+- The job **succeeds** with four 248-frame / 10.334 s / 32 kHz stereo outputs whose
+  whole-file `peak_dbfs`, `duration_seconds` and `frame_count` are identical across
+  all four — gain touches only the bled window.
+- Seam-second `rms_dbfs` is **strictly monotonic**: (a) > (b) > (c) ≥ (d), with (a)
+  at least 5 dB above (d) — the bleed is audible against this head — and (c) within
+  0.5 dB of (d).
+- Subtracting (d)'s energy (`10^(rms/10)`) from each of (a)–(c) isolates the bled
+  tail's contribution; the ratio (a)/(b) must be **6 dB ± 1** and (a)/(c) **20 dB ± 3**
+  (the −20 arm sits near the AAC floor, hence the wider band). A −6 that measures ~0
+  dB (knob ignored), ~12 dB (applied twice, or applied to power instead of amplitude)
+  or +6 (sign inverted) is the regression; each is a one-line mistake in a scale
+  factor and none of them fails the job.
+- (d)'s envelope matches a plain join — `audio_bleed_gain_db` without a bleed is
+  inert, not an error and not a silent bleed.
+- Seam-second `peak_dbfs` for (a) is above (b)'s; (b), (c) and (d) may be equal, since
+  once the tail is ducked below the incoming shot's own peak that peak is what remains.
+The `level_spread` warning fires on every step (these shots sit 12 dB apart) and, since
+#198, a `bleed_join` tonal-tail warning on (a)–(c): both expected, neither a finding.
+cleanup: delete the run (one `delete_output` on `<workflow>/<run id>`). The two
+assets are shared fixtures — leave them.
+metrics: none — the assertions are fixed ratios, not a trend.
+source: tester, model `opus` via provider `anthropic`, verified in #199 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (job `894fd4dec2f0`, workspace `qa-verify-199`):
+seam-second RMS −34.41 / −38.19 / −40.76 / −40.90 dBFS for (a)/(b)/(c)/(d), isolating
+to 6.0 dB and 20.2 dB; seam peaks −17.87 / −20.72 / −20.72 / −20.72. The implementer
+proposed the smoke check in its hand-off comment.
 
 ## Performance
 

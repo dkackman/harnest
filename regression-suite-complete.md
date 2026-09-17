@@ -1266,4 +1266,65 @@ comment, both halves; added here after confirming each over MCP. Reads with
 C-F030, which pins the override semantics this warns about, and with C-F016,
 whose padding warning the mismatch used to suppress.
 
+### C-F032 — `templates/dissolve-between-shots` resamples its score instead of relabelling it, and its past-end warning survives a mix rate that differs from the score's
+C-F031 (b)/(c) pin #180's wiring in `assemble-and-score`; this is the same
+assertion against its sibling, `dissolve-between-shots`, which #196 found had
+been left on the old wiring (`sample_rate` fed straight into the `soundtrack`
+`slice_audio` step). The tell is the C-F030/C-F031 one: a relabel stretches the
+score, so a slice that runs past the score's real end lands "inside" the
+stretched source and the `slice_past_end` warning goes quiet — the deliverable
+then ships with the score slow and pitched down, and the run says nothing
+true about it. A two-run probe identical except for `sample_rate`, with
+`total_frames` deliberately past the score's end, makes the past-end warning
+the assertion. Task-only, loads no model, uses the two C-F001 fixtures and the
+`ep15-song.mp3` fixture; ~10 s for both runs.
+expected: three parts.
+(a) **The template's shape.** `get_workflow("templates/dissolve-between-shots")`:
+the `soundtrack` step calls `slice_audio` with `audio`/`start_frame`/
+`num_frames`/`fps` and **no** `sample_rate`; a `soundtrack_resampled` step
+(`resample_audio`, `target_sample_rate: variable:sample_rate`) follows it; and
+`mixed` consumes `previous_result:soundtrack_resampled`, not `soundtrack`.
+(b) **Control and treatment agree on the past-end warning.** Two
+`run_workflow(workflow_path="templates/dissolve-between-shots", arguments={shots:
+[<the two C-F001 fixtures>], score: "asset:qa-cast/ep15-song.mp3", fps: 24,
+dissolve_frames: 12, total_frames: 840, score_start_frame: 0, sample_rate: R})`
+with `R = 44100` (the score's own rate) and `R = 32000` (the shots' rate,
+contradicting the score's). Both succeed, and both carry on the `soundtrack` step
+a `slice_audio` warning that the slice runs ~4.98 s past the end of a 30.02 s
+source (840 frames @ 24 fps = 35 s against a 30.02 s song). **Neither** run
+carries a warning saying `sample_rate=... was given, but the source actually
+carries 44100 Hz` / that samples are being relabeled — the relabel guard C-F031
+(a) pins has nothing to fire on because the template no longer overrides the
+score's rate. Each run also warns about the shots' level spread (the C-F001 pair
+is unmatched by design) and about a 35 s track laid over a 236-frame / 9.83 s
+cut; those are the probe's shape, not the assertion — score the presence of
+`slice_past_end` and the absence of the relabel warning, not the count.
+(c) **The film is at the mix rate and the right length.** `get_gallery_metadata`
+on the treatment run's `film` output reports `sample_rate: 32000`,
+`duration_seconds: 35.0` (±0.05), `frame_count: 236`, `fps: 24`, and `peak_dbfs`
+within ~0.1 dB of -3.0 (the template's `balanced` step). A relabel would have
+produced a 41.4 s track (35 × 44100/32000).
+It is a **finding** if (a)'s `soundtrack` step regains a `sample_rate` argument
+or the resample step is dropped or bypassed by `mixed`; if the treatment run's
+`slice_past_end` warning is missing while the control's is present (the
+template is relabelling again — #196 returning); if either run carries the
+relabel warning; or if (c)'s duration drifts toward 41.4 s or its rate is not
+32000. A treatment run whose `slice_past_end` text quotes a *different* source
+length than the control's is the same finding (the length is being read after
+a relabel).
+cleanup: delete both runs under `templates/dissolve-between-shots/`. The two
+C-F001 fixtures and `asset:qa-cast/ep15-song.mp3` are durable fixtures listed
+above — keep them.
+source: tester, verified in #196 on 2026-09-17 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep19`, jobs `8f70801901e1` (control,
+44100, 6.9 s) and `511d18c51aca` (treatment, 32000, 3.4 s), against `dw`
+0.4.0-beta.6; treatment film decoded at 32000 Hz / 35.0 s / 236 frames /
+-2.948 dBFS. Proposed by the tester in #196's body and by the implementer's
+hand-off; added after confirming over MCP. The verify used
+`ep4-shot1-amnesty.mp4`/`ep4-shot2-desk.mp4` (8.1 dB spread) as its shots; the
+C-F001 fixtures are named above instead because they are the pair this suite
+already guarantees (same 124 frames / 24 fps / 32 kHz), and the case asserts
+nothing about the shots beyond their rate and frame count — as C-F020 does.
+Reads with C-F031, whose (b)/(c) are the same assertion on `assemble-and-score`.
+
 ## Performance
