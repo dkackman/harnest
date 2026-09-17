@@ -35,6 +35,9 @@
 #   tester #N (handoff)  one fresh session per owner:tester issue with no
 #                        status label - a suite/harness-file edit the
 #                        implementer asked for but can't make itself
+#   tester #N (answer)   one fresh session per owner:tester issue with
+#                        status:needs-info - a question the implementer
+#                        bounced back
 #   tester task          one session, every TESTER_TASK_EVERY cycles: responds
 #                        to wontfix/duplicate closures, then advances
 #                        TESTER_TASK.agent.md one step
@@ -182,22 +185,26 @@ $note"
     || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
 }
 
-# open_issues <owner-label> <fresh|verify>
+# open_issues <owner-label> <fresh|verify|needsinfo>
 # Issue numbers, ascending, of open issues carrying <owner-label> that are
 # ready for that role: `fresh` = no status:* label at all (the implementer's
-# work queue), `verify` = status:fixed-pending-verify (the tester's).
+# work queue, and the tester's handoff queue), `verify` =
+# status:fixed-pending-verify (the tester's), `needsinfo` =
+# status:needs-info (a question bounced to whoever holds the owner label -
+# the implementer bounces to owner:tester per IMPLEMENTER.agent.md step 5).
 open_issues() {
   local owner="$1" mode="$2" filter
   case "$mode" in
-    fresh)  filter='([.labels[].name | select(startswith("status:"))] | length) == 0' ;;
-    verify) filter='[.labels[].name] | index("status:fixed-pending-verify") != null' ;;
+    fresh)     filter='([.labels[].name | select(startswith("status:"))] | length) == 0' ;;
+    verify)    filter='[.labels[].name] | index("status:fixed-pending-verify") != null' ;;
+    needsinfo) filter='[.labels[].name] | index("status:needs-info") != null' ;;
     *) echo "open_issues: bad mode $mode" >&2; return 1 ;;
   esac
   gh issue list --repo "$TICKET_REPO" --state open --label "$owner" --limit 200 \
     --json number,labels --jq ".[] | select($filter) | .number" | sort -n
 }
 
-# still_ready <n> <owner-label> <fresh|verify>
+# still_ready <n> <owner-label> <fresh|verify|needsinfo>
 # Re-check one issue just before its session starts: a triage session or an
 # earlier per-issue session (working a batch) may have handed it off already.
 still_ready() {
@@ -229,8 +236,9 @@ implementer_pass() {
 
 # tester_pass — one session per issue to verify, one session per issue handed
 # off with no status label (a suite/harness-file change the implementer can't
-# make itself), then (every TESTER_TASK_EVERY cycles) one session for closure
-# responses and the standing task.
+# make itself), one session per issue bounced back with status:needs-info
+# (a question the implementer asked), then (every TESTER_TASK_EVERY cycles)
+# one session for closure responses and the standing task.
 tester_pass() {
   local n
   while IFS= read -r n; do
@@ -256,6 +264,18 @@ tester_pass() {
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop." \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester fresh)
+
+  # owner:tester with status:needs-info: the implementer bounced a question
+  # here (IMPLEMENTER.agent.md step 5) - e.g. "what were the job ids of the
+  # failed run and the retry". Nothing else schedules these either.
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    still_ready "$n" owner:tester needsinfo \
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is an ANSWER session for issue #$n only (step 2a of your loop) - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop." \
+      "${TESTER_FLAGS[@]}"
+  done < <(open_issues owner:tester needsinfo)
 
   if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \

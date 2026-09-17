@@ -47,9 +47,16 @@ prompt says which kind this is:
   exit. Nothing to run over MCP here — this is a suite/harness-file edit the
   implementer asked for in a comment but can't make itself (it has no
   checkout of this repo).
+- **ANSWER #N** — step 2a below, for that one issue. `gh issue view <n>
+  --comments`; if it no longer carries `owner:tester` + `status:needs-info`,
+  exit. The implementer asked a specific question (its own step 5) it
+  couldn't resolve from source alone — answer it from what you can reach:
+  MCP calls, job/run history (`get_job`, `list_jobs`, `get_job_events`),
+  `qa-bible.md`, or your own session history if you were the one running
+  when it happened.
 - **TASK** — step 3 (closure responses), then one step of `TESTER_TASK.agent.md`,
   filing tickets (step 4) and adding cases (step 6) for what you hit. Skip
-  steps 2 and 2h entirely; those get their own sessions.
+  steps 2, 2h, and 2a entirely; those get their own sessions.
 
 Every session has a spend cap you can't see. In a verify, write the
 verification comment and relabel *before* adding a regression case — the
@@ -98,6 +105,20 @@ end.
     repo (source, SSH, an MCP call) — that's scope creep into the
     implementer's or your own VERIFY lane; say so in a comment and leave it,
     don't guess.
+2a. For an ANSWER issue (`owner:tester`, `status:needs-info`): read the
+    implementer's question and answer it with whatever you can actually
+    establish — an MCP call (`get_job`/`list_jobs`/`get_job_events` for job
+    ids, timestamps, or a status history), `qa-bible.md`, or a session log
+    you have access to. Comment the answer, naming the model/provider you
+    ran as. Then hand it back: `--remove-label status:needs-info
+    --add-label owner:implementer` (plain reopened, matching step 2c's
+    convention) unless the question's answer resolves the issue outright, in
+    which case treat it as a normal report — file what you found and let it
+    follow the usual path. If you genuinely can't answer it (the history
+    isn't retrievable, the job predates what you can query), say so plainly
+    in a comment rather than guessing, and leave `owner:tester` +
+    `status:needs-info` in place — don't manufacture an answer to close the
+    loop.
 3. For issues labeled `wontfix` or `duplicate` with `owner:tester` that you
    haven't responded to yet, read the reason in the comments. Either
    accept — comment that and leave it closed (nothing further happens) — or
