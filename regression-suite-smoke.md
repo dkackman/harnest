@@ -960,11 +960,17 @@ expected: one job with three task steps — `raw_mux` = `pair_audio(video:
 false`; `balanced_mux` = the same `pair_audio` reading
 `"previous_result:balanced"` — all three `content_type: "video/mp4"` / `fps: 24` except
 `balanced`, which is `audio/mp3` —
-- **The raw branch warns, and names the file and the level.** `job.warnings` carries
-  exactly one entry, for `raw_mux`, naming that step's mp4 and a peak at or above
-  **-0.5 dBFS**, and telling the reader to add `normalize_audio(peak_dbfs: -1)`. A
-  warning that has gone silent here is the regression, and it is the quiet one: the
-  deliverable still clips, nothing says so.
+- **The raw branch warns twice, by design, and both name the file.** `job.warnings`
+  carries exactly two entries for `raw_mux`, both naming that step's mp4: an
+  `audio_no_headroom` pre-encode warning, at a peak at or above **-0.5 dBFS**,
+  advising `normalize_audio(peak_dbfs: -1)`; and an `audio_clipped` post-encode
+  warning on the written file, advising `normalize_audio(peak_dbfs: -3)`. The two
+  giving different advice is expected (#174/#161) — the pre-encode figure predates
+  the post-encode probe's more conservative one — not a defect to flag. Either
+  warning going silent is the regression to watch for: the pre-encode one silent
+  means the waveform-level check stopped firing; the post-encode one silent means
+  the written-file probe stopped firing, and a video mux's overshoot is not
+  reliably positive enough to skip that check the way a plain audio save can (#174).
 - **The normalized branch does not warn.** No `job.warnings` entry names `balanced_mux`.
   A warning on both branches means the check is measuring something other than the
   waveform it was handed.
