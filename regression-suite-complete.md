@@ -1327,4 +1327,52 @@ already guarantees (same 124 frames / 24 fps / 32 kHz), and the case asserts
 nothing about the shots beyond their rate and frame count — as C-F020 does.
 Reads with C-F031, whose (b)/(c) are the same assertion on `assemble-and-score`.
 
+### C-F033 — `concat_videos`' audio bleed warns when the reversed tail is speech, and not when it is room tone at any rate
+An `audio_bleed_ms` join reverses the outgoing shot's tail onto the seam, which
+is fine for room tone or crowd noise and audibly wrong for speech or music.
+#198 added a `bleed_join` warning for that, and its first cut measured spectral
+flatness *after* resampling to the join's target rate — so an upsampled room
+bed read as "tonal" from its empty top band while native-rate speech passed
+silently, the inverse of the intent. The refix band-limits the flatness to the
+outgoing clip's native Nyquist and adds a harmonicity check for voiced
+material. Three joins in one task-only job pin both halves; uses the
+`priya-voice.wav`, `room-bed.wav`, `ep6-cold-open.mp4` and C-F001 fixtures;
+~15 s. Each join builds its outgoing shot the same way: `loop_audio` the named
+audio to 20 s, `pair_audio` it onto `asset:qa-cast/ep6-cold-open.mp4` with
+`fit: "video"`, then `concat_videos([previous_result:<shot>,
+"asset:qa-cast/ep3-shot2-reply.mp4"], audio_bleed_ms: 300, ...)`.
+expected: three parts, read from the job's `warnings` list.
+(a) **Speech at its native rate warns.** Outgoing bed = `asset:qa-cast/priya-voice.wav`
+(24 kHz), join pinned to `sample_rate: 24000`. The join's step carries a
+`bleed_join:` warning saying the tail being reversed onto the seam looks tonal or
+speech-like, quoting a spectral flatness and a harmonicity, and suggesting
+`seam_fade_ms` instead.
+(b) **Room tone at its native rate does not.** Outgoing bed =
+`asset:uploads/qa-cast/room-bed.wav` (16 kHz), join pinned to `sample_rate:
+16000`. No `bleed_join:` warning on that step. (A level-spread warning and the
+sample-rate resample warning are the probe's shape, not the assertion.)
+(c) **Room tone upsampled does not either.** Same bed, join pinned to
+`sample_rate: 44100` (×2.75 over the bed's rate). No `bleed_join:` warning on
+that step. This is the #198 false positive: before the refix it fired here at
+flatness 0.08.
+It is a **finding** if (a) carries no `bleed_join:` warning (native-rate
+speech is passing again — the harmonicity leg is gone or the flatness is being
+taken on the wrong rate); if (b) or (c) carries one (the band-limit is gone, or
+a threshold moved); or if (a)'s warning names a kind other than the
+bleed-join tonal one. The exact flatness/harmonicity figures are not the
+assertion — only which joins warn.
+cleanup: delete the run. All four assets are durable fixtures listed above —
+keep them.
+source: tester, verified in #198 on 2026-09-17 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-verify-198`, jobs `2e012747bad9`
+(room-bed native 16000 and upsampled 44100: no warning) and `8b7081fd2940`
+(priya native 24000: warning, flatness 0.23 / harmonicity 0.77), against `dw`
+0.4.0-beta.6 at develop `c42acea`. The verify used `ep4-shot2-desk.mp4` as the
+incoming shot; the C-F001 fixture is named here instead because it has the
+same 32 kHz audio and the case asserts nothing about the incoming shot. The
+implementer's hand-off proposed this case; adapted to the fixtures this suite
+already guarantees. Note the verify also found that `hal-voice.wav`'s last
+300 ms is unvoiced and does not trip the detector — that is why the speech
+fixture here is `priya-voice.wav`, whose tail at this shot length is voiced.
+
 ## Performance

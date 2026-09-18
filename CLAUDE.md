@@ -235,7 +235,14 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   (GitHub's built-in label) closes an issue as `not planned` in favour of another, named in a
   comment (`duplicate of #NN`). `status:needs-approval` + `owner:don` parks an issue with the
   human — the implementer must use it for engine/syntax changes and anything breaking beyond a
-  rename, after writing a proposal; neither agent touches a parked issue. It is also where any
+  rename, after writing a proposal; neither agent touches a parked issue. The triage session
+  (see below) applies the same label earlier and more cheaply, before any fix is built: when an
+  issue's own text suggests the fix would add new engine or validation surface (a new
+  task/command, a new `validate_workflow` rule, widening an existing task's argument matrix)
+  where a narrow repro-only verify is likely to pass while untested edge cases underneath it
+  don't, triage escalates it straight to `owner:don` + `status:needs-approval` with a `triage:
+  escalate` comment, no proposal required at that point — for Don to assess and either approve,
+  ask for a proposal, or route out of band. It is also where any
   issue filed by a GitHub login other than `TICKET_OWNER` (default `dkackman`) lands: both agents
   run as that login, so their own filings pass, but a third party filing on the public repo must
   not be picked up unattended. `run-loop.sh` (`park_external_issues`) relabels such issues

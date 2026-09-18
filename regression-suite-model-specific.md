@@ -855,4 +855,46 @@ torch 2.14 vs natten's 2.11/2.12/2.13 builds). Proposed by the implementer in it
 added here only after running it over MCP. Related: #178, and #153 (the FlexAttention VRAM issue,
 which is a different failure in the same template family and not this).
 
+### M-F017 — an in-memory LTX-2.5 audio+video save fits its audio to the frame count, standalone and chained
+LTX-2.5 generates its soundtrack alongside the picture and hands the engine both as in-memory
+pipeline output (the audio still a torch tensor on the generating device). Two things have gone
+wrong on that path in turn: first (#197 as filed) the codec-padding fit applied to file-decoded
+audio was never applied to in-memory shots, so a `previous_result:` chain of shots accumulated a
+few samples of drift per seam; then the fix for that called a numpy-only pad on the CUDA tensor and
+**every** in-memory LTX-2.5 audio+video save crashed — including the stock
+`templates/ltx2/text-to-video` alone — with `can't convert cuda:0 device type tensor to numpy`.
+This case pins both: the save succeeds, and the muxed audio sits exactly on the frame count.
+Model/pipeline: LTX-2.5 (`Lightricks/LTX-2.5-Diffusers` via `LTX2Pipeline`, `output_type "{np}"`),
+sdnq uint4 transformer / int8 Gemma as in `templates/ltx2/text-to-video`. Two runs, ~1.5 min and
+~2 min warm at 512×320.
+1. `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"width": 512,
+   "height": 320, "num_frames": 49})` (validate first and bind the fingerprint).
+2. An inline workflow with **two** `LTX2Pipeline` steps copied from that template's step
+   (`shot_a` with `num_frames: 49`, `shot_b` with `num_frames: 65` — different lengths on
+   purpose), same 512×320 / `frame_rate 24.0` / seed 7, each with `result: {content_type:
+   "video/mp4", fps: 24, subfolder: "intermediate"}`, followed by `cut`: `{"task": {"command":
+   "concat_videos", "arguments": {"videos": ["previous_result:shot_a", "previous_result:shot_b"],
+   "trim_frames": 0, "fps": 24}}, "result": {"content_type": "video/mp4", "fps": 24, "subfolder":
+   "final"}}`. The shots must reach the concat via `previous_result:`, not `output:` — a file
+   round-trip takes the decode path and would not exercise the in-memory fit at all.
+3. `get_gallery_metadata` on every file in both manifests.
+expected:
+- Both jobs **succeed** with a full manifest (1 file, then 3 files). A `failed` job whose error
+  mentions `numpy.pad`, `Tensor.cpu()` or "can't convert … tensor to numpy" is the #197 regression
+  back; an empty manifest on the standalone template is the catalog's main T2V entry broken.
+- For every output, `media.duration_seconds` equals `media.frame_count / media.fps` to the
+  reported precision: standalone 49 → `2.041667`; `shot_a` 49 → `2.041667`; `shot_b` 65 →
+  `2.708333`; `cut` 114 → `4.750000`, with `frame_count` 114 (= 49 + 65, `trim_frames 0`). A
+  duration that overshoots the frame count by tens of milliseconds on a shot, or a cut longer than
+  the sum of its shots, is the original drift back.
+- `media.sample_rate` 48000, `channels` 2 on each — the mux kept the pipeline's native track,
+  it didn't resample it to hit the length.
+Headroom warnings (`peaks at +0.0 dBFS` / `decodes at +0.27 dBFS`) on `shot_a` and `cut` are the
+`fox_dawn_choir` prompt running hot and are expected; they are not part of this case.
+cleanup: `delete_output` on both run directories (all four files) — nothing here is a fixture.
+source: tester, verified in #197, model `opus` via provider `anthropic`, on 2026-09-17 against
+dw `0.4.0-beta.6` on `lem` (jobs `1fdfe227500e` standalone, `bbbe46872e83` chain; all four
+durations landed exactly on frames/24). Proposed by the implementer in its hand-off comment;
+added here only after running it over MCP.
+
 ## Performance

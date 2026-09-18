@@ -140,6 +140,20 @@ commit). Read source only as far as a disposition needs — a `grep` to see
 whether two issues land in the same file, not a study of the fix. Do not
 reproduce, do not branch, do not deploy.
 
+Also judge, from the issue text alone, whether a fix would touch **new
+engine or validation surface**: a new task/command, a new `validate_workflow`
+rule, or widening an existing task's argument matrix in a way that creates
+edge cases a quick fix is likely to leave unchecked (the shape of #119 →
+#208/#209: a new `judge`/`select` surface shipped and verified clean, then
+turned up an unenforced pre-flight check and a crash on an untested
+argument combination once the tester probed further). This is a lower,
+earlier bar than step 7's "engine or syntax change" — you're not asking
+"is this a breaking change," you're asking "does fixing this mean adding
+code paths nobody has exercised yet, where a narrow repro-only verify
+might pass while edge cases underneath it don't." When it does, escalate
+it at triage rather than letting a fix session build it and hand it to
+the tester to discover the gaps after the fact.
+
 Then leave exactly one comment per issue that still needs work, beginning
 `triage:`, in one of these forms:
 
@@ -153,6 +167,13 @@ Then leave exactly one comment per issue that still needs work, beginning
   per-issue session deploys and hands off without re-fixing.
 - `triage: needs-info — <the question>` and apply `status:needs-info` +
   `owner:tester` as usual; this issue then gets no fix session.
+- `triage: escalate — <one line: what new surface this adds and why it
+  needs sign-off before a fix session builds it>` — apply
+  `owner:don` + `status:needs-approval` yourself, same as step 7, but
+  before any code is written rather than after. No proposal doc required
+  at this stage — that's for Don to ask for if the scope isn't clear from
+  the comment. This issue then gets no fix session until it comes back
+  `owner:implementer` with no status label.
 
 Keep the comments short — they are read by a fresh session that has none
 of your context. Name the model and provider you ran as, as always.

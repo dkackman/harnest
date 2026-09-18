@@ -1667,6 +1667,141 @@ seam-second RMS −34.41 / −38.19 / −40.76 / −40.90 dBFS for (a)/(b)/(c)/(
 to 6.0 dB and 20.2 dB; seam peaks −17.87 / −20.72 / −20.72 / −20.72. The implementer
 proposed the smoke check in its hand-off comment.
 
+### S-F046 — a `select` rule that needs a threshold is refused by the free pre-flight, not after the fan-out
+#119 added the `select` reducer (N candidates + N scores → one) so a scored fan-out
+can pick a winner before an expensive stage. Its rule-specific arguments
+(`threshold` for `first_above`/`first_below`, `index` for `index`) are only
+checked at validate; if that check slips, a missing threshold surfaces only after
+every candidate has been generated. Free, no model loads. Confirm the argument
+names against `get_task("select")` first.
+`validate_workflow` on this inline document (any real image pipeline will do — the
+pre-flight never instantiates it):
+```json
+{"id": "s_f046", "seed": 7,
+ "variables": {"candidates": [{"name":"a","prompt":"a red apple"},{"name":"b","prompt":"a green pear"}]},
+ "steps": [
+  {"name":"still","for_each":"variable:candidates","release_pipeline":true,
+   "pipeline":{"configuration":{"component_type":"ZImagePipeline","offload":"sequential"},
+     "from_pretrained_arguments":{"model_name":"Tongyi-MAI/Z-Image-Turbo","torch_dtype":"torch.bfloat16","low_cpu_mem_usage":true},
+     "arguments":{"prompt":"item:prompt","num_inference_steps":9,"guidance_scale":0,"width":512,"height":512}},
+   "result":{"content_type":"image/jpeg","subfolder":"intermediate"}},
+  {"name":"judge","for_each":"variable:candidates",
+   "task":{"command":"judge","arguments":{"image":"previous_result:still",
+     "rubric":"How red is the dominant object? 0 = not at all, 10 = vivid red.","scale":[0,10],"device":"cuda"}}},
+  {"name":"pick","task":{"command":"select","arguments":{"candidates":"gather:still","scores":"gather:judge","rule":"first_above"}},
+   "result":{"content_type":"image/jpeg","subfolder":"final"}}]}
+```
+then the same document twice more: (b) `rule: "best"`; (c) `rule: "argmax"` (a
+control — no threshold needed).
+expected:
+- (a) `valid: false`; one error whose path is `steps[2].task.arguments.threshold` and
+  whose message names the rule and the missing argument ("select rule 'first_above'
+  requires a threshold" or equivalent). No plan, nothing queued.
+- (b) `valid: false` at `steps[2].task.arguments.rule`, naming `best` as unknown.
+- (c) `valid: true` with a plan. A `valid: true` on (a) or (b) is the regression —
+  the run would then burn the whole fan-out before `select` failed. Also a
+  regression: (a) refused at some path other than the `threshold` argument, since
+  the point of the path is that an agent can repair the one field.
+`gather:` from a for_each step, `previous_result:` from inside a sibling for_each
+over the same list, and `item:` are the conventions in play; a validate error about
+any of *those* on (c) means the reference syntax moved, not that `select` broke —
+re-read the guide's "Cross-Step Data Flow" section before filing.
+cleanup: none — validate-only.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #119 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (workspace `qa-verify-119`): (a) refused at
+`steps[2].task.arguments.threshold` "select rule 'first_above' requires a threshold.",
+(b) at `steps[2].task.arguments.rule` "select: unknown rule: 'best'.", and the argmax
+form ran to a `selected: {position, score, entry}` manifest entry (jobs `4011ed6e1007`,
+`7d3e270b148a`). The implementer proposed check (a) in its hand-off comment.
+
+### S-F047 — `compress_audio` / `filter_audio` shape a track the way their arguments say, measured by `analyze_audio`
+#200 added whole-track dynamics (`compress_audio`: `mode` compress/limit/gate) and a
+single biquad (`filter_audio`: `kind` lowpass/highpass/bandpass/notch). Both are pure
+arithmetic on samples, so a regression is a wrong number, not a failed job — this pins
+the arithmetic with one cheap utility-only job (~8 s, no model) and a round of free
+refusals. Confirm the argument names against `get_task` for both tasks first.
+Run one inline workflow on `asset:qa-cast/ep11-bed.wav` (19.67 s, 32 kHz mono, peak
+−28.89 dBFS): an `analyze_audio` on the source, then four processing steps each
+followed by `analyze_audio` on `previous_result:` (`application/json`, subfolder
+`intermediate`): (a) `compress_audio` `threshold_dbfs: -40, ratio: 4, attack_ms: 0,
+mode: "compress"`; (b) same with `mode: "limit"`; (c) `filter_audio` `cutoff_hz: 200,
+kind: "lowpass"`; (d) `filter_audio` `cutoff_hz: 4000, kind: "highpass"`. Then
+`validate_workflow` on a copy with `ratio: 0` on (a) and `cutoff_hz: -5` on (c), and
+run four one-step jobs that must fail: `mode: "expand"`, `threshold_dbfs: 3`,
+`kind: "shelf"`, and `cutoff_hz: 16000` (= Nyquist at 32 kHz).
+expected:
+- The job **succeeds**; every arm's `duration_seconds`, `sample_rate` and `channels`
+  match the source's (19.666656 / 32000 / 1) — these tasks never resample or trim.
+- (a) `peak_dbfs` is **−37.22 ± 0.1**: threshold + (source peak − threshold) / ratio
+  = −40 + 11.11 / 4. A peak still at −28.89 is the compressor doing nothing;
+  −40.0 is `limit` behaviour leaking into `compress`; −34.4 or −42.8 is the ratio
+  applied to the wrong quantity.
+- (b) `peak_dbfs` is **−40.0 ± 0.05** — a limiter with zero attack holds the peak
+  exactly at threshold.
+- (c) `high_dbfs` drops by **at least 40 dB** from the source's while `low_dbfs` moves
+  less than 5 dB; (d) is the mirror — `low_dbfs` drops at least 40 dB, `high_dbfs`
+  moves less than 3 dB. A filter that moves both bands the same way, or neither, is
+  the regression; a swap between (c) and (d) is `kind` being ignored.
+- `validate_workflow` refuses `ratio: 0` at `steps[<a>].task.arguments.ratio` and
+  `cutoff_hz: -5` at `steps[<c>].task.arguments.cutoff_hz`, each message naming the
+  task; no plan, nothing queued.
+- Each of the four bad runs fails with a message that names the task, the argument and
+  the accepted values: `mode must be one of ('compress', 'limit', 'gate')`,
+  `'threshold_dbfs' cannot be above full scale (0)`, `kind must be one of
+  ('lowpass', 'highpass', 'bandpass', 'notch')`, `must be below the Nyquist frequency
+  (16000.0) for sample_rate 32000`. A run that succeeds on any of them, or a
+  `cutoff_hz` at Nyquist that quietly produces silence, is the regression.
+`analyze_audio`'s band figures are relative — assert the *shift* between source and
+output, never an absolute band level (see #207). `compress` with the default
+`attack_ms` (10) leaves this bed's single-sample peak untouched; that is why (a) sets
+it to 0, not a finding.
+cleanup: delete the runs (one `delete_output` per `<workflow>/<run id>`, the failed
+ones included). The asset is a shared fixture — leave it.
+metrics: none — the assertions are fixed numbers, not a trend.
+source: tester, model `opus` via provider `anthropic`, verified in #200 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (jobs `7c175207aac8`, `a542ea98369a`, workspace
+`qa-verify-200`): (a) peak −37.2215, (b) −39.999999, (c) high −123.7 → −181.6 with
+low −91.3 → −94.4, (d) low −91.3 → −143.9 with high −123.7 → −124.7; refusals as
+quoted (jobs `a542ea98369a`, `eb0ef01f09c6`, `b91568a540ae`, `a8e727d9dcc4`). The
+implementer proposed the analyze → compress → analyze round-trip in its hand-off
+comment.
+
+### S-F048 — `save_workflow(patch=...)` edits one field and leaves the rest of the stored document alone
+#202 added an optional `patch` argument to `save_workflow` — a JSON Merge Patch
+(RFC 7396) merged onto the currently stored definition — as the alternative to
+resending the whole `workflow`. The whole value of the feature is that a one-field
+edit touches only that field, so the regression to catch is a patch that clobbers a
+sibling, fails to delete, or bypasses validation. Free, no model, no job.
+Save a throwaway utility workflow `qa-patch-smoke` with the full `workflow` form:
+`id`, a `summary`, four variables (`prompt`, `width: 512`, `height: 512`, `steps: 4`)
+and one `text`-command step whose `result.subfolder` is `final`. Then, in order:
+(1) `patch: {"variables": {"steps": 8}}`; (2) `patch: {"variables": {"width": null,
+"seed": 42}, "summary": "patched"}`; (3) `patch: {"steps": [<one new step, different
+name>]}`; (4) `patch: {"steps": null}`; (5) the same call with both `workflow` and
+`patch`, and once more with neither; (6) `patch: {"variables": {"steps": 1}}` against
+a name that does not exist. `get_workflow` after (1), (2), (3) and (4).
+expected:
+- After (1): `variables.steps` is 8 and `id`, `summary`, the other three variables
+  and the `steps` list are unchanged. Any other key moving is the regression.
+- After (2): `width` is gone, `seed` is 42, `summary` is `patched`, and `prompt` /
+  `height` / `steps: 8` are untouched — a `null` deletes, a new key adds, and the
+  nested merge is recursive.
+- After (3): the `steps` list holds exactly the one new step — a list is replaced
+  whole, not merged or appended.
+- (4) is refused with `Validation error: 'steps' is a required property` and the
+  `get_workflow` that follows shows the document from (3) — a patch that produces an
+  invalid document must not land.
+- Both calls in (5) are refused with `Provide exactly one of `workflow` ... or
+  `patch` ...`; (6) is refused with `Unknown workflow: <name>` and creates nothing.
+cleanup: `delete_workflow("qa-patch-smoke")`.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #202 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (workspace `qa-verify-202`, since deleted): every
+step above behaved as written. The implementer proposed the one-variable patch +
+`get_workflow` check in its hand-off comment; the deletion, list, refusal and
+unknown-name arms are the tester's adjacent cases.
+
 ## Performance
 
 ### S-P001 — default image generation latency
