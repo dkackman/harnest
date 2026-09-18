@@ -1935,6 +1935,51 @@ rms −18.851 / crest 19.397 / low −57.697 / mid −66.414 / **high `null`**; 
 soundtrack peak −1.036 / rms −20.880 / crest 19.844, all bands numeric. The Nyquist
 `null` is the case the implementer proposed in its hand-off comment.
 
+### S-F052 — `analyze_audio`'s band `*_dbfs` sit on `rms_dbfs`'s scale: one band's power adds up to the track's
+#211 found the three band readings a constant ~40 dB under `rms_dbfs` — a per-bin mean
+magnitude wearing a `_dbfs` suffix, so an agent comparing `low_dbfs` against
+`compress_audio.threshold_dbfs` got a nonsense answer. The fix sums each band's
+Parseval power, so the three bands together carry the track's `mean(x²)` — the
+quantity `rms_dbfs` is built from. This pins that contract with a signal whose energy
+is (almost) all in one band, where that band must read `rms_dbfs` itself. S-F051's
+"band values are on a different scale" caveat describes the pre-#211 state and is
+superseded by this case; S-F047's shift-only assertions remain valid either way. One
+utility job, four steps, ~4 s, no model.
+Run one inline workflow in this suite's workspace, every `analyze_audio` step with
+`result: {"content_type": "application/json"}`: (1) `filter_audio` `{"audio":
+"asset:qa-cast/ep15-song.mp3", "cutoff_hz": 120, "kind": "lowpass"}` → `audio/wav`,
+subfolder `intermediate`; (2) `analyze_audio` on `previous_result:` of step 1; (3)
+`analyze_audio` on `asset:qa-cast/ep15-song.mp3` (the unfiltered file); (4)
+`analyze_audio` on `asset:qa-cast/ep11-bed.wav`. Read each JSON with `get_output_text`.
+expected:
+- Step 2 (the lowpassed song): `low_dbfs` is within **1 dB** of that step's own
+  `rms_dbfs`, and `mid_dbfs` and `high_dbfs` are both at least 15 dB below it. A
+  `low_dbfs` 30 dB or more under `rms_dbfs` is the #211 regression (per-bin magnitude
+  back); a `low_dbfs` *above* `rms_dbfs` is a band claiming more power than the track
+  has (a mirrored-half double-count).
+- Steps 3 and 4 (unfiltered tracks): the loudest of `low_dbfs`/`mid_dbfs`/`high_dbfs`
+  is within **6 dB** of that step's `rms_dbfs`, and the power sum of the three bands,
+  `10·log10(Σ 10^(band/10))`, is within **1 dB** of `rms_dbfs` (never above it by more
+  than 0.1 dB). A loudest band 30+ dB under `rms_dbfs` on either is the regression.
+- Every step still returns the six keys of S-F051 with `crest_factor_db = peak_dbfs −
+  rms_dbfs` to 0.01 dB — the rescale must not have touched the whole-track figures:
+  step 3's `peak_dbfs` is still **+0.76 ± 0.05** and its `rms_dbfs` **−18.24 ± 0.05**.
+Do not extend the power-sum check to a highpassed or otherwise top-heavy signal: at
+verification a 6 kHz highpass summed ~2.3 dB short of `rms_dbfs` (the `high` band's
+upper edge is below Nyquist, so energy above it is counted by `rms_dbfs` and by no
+band). That is a band-edge property, not the #211 defect; the 1 dB sum tolerance is
+for full-band material only.
+cleanup: `delete_output` the job's run directory (`<workflow>/<run id>`); the fixtures
+are read-only.
+metrics: none — the assertions are tolerances around fixed values, not a trend.
+source: tester, model `opus` via provider `anthropic`, verified in #211 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (jobs `315d6077aaa4`, `f38fc154efcc`, workspace
+`qa-verify-211`, since deleted): lowpassed song rms −24.097 / low −24.266 / mid −42.529
+/ high −82.535; unfiltered song rms −18.236 / low −22.316 / mid −21.682 / high −35.038
+(sum −18.87); bed rms −49.938 / low −57.789 / mid −50.749 / high −72.955 (sum −49.95).
+The single-band-equals-rms shape is the case the implementer proposed in its hand-off
+comment.
+
 ## Performance
 
 ### S-P001 — default image generation latency

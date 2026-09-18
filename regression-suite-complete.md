@@ -1478,4 +1478,62 @@ provider `anthropic`, workspace `qa-ep19`, jobs `ba670a6ce8f5` (template, 1.9 s,
 the implementer's hand-off; added after confirming each part over MCP. Reads
 with C-F030/C-F031, which pin the argument-level override and its guard.
 
+### C-F036 — `templates/assemble-and-score` at its default `sample_rate` upsamples all-32 kHz inputs honestly
+C-F031(c) runs the template with `sample_rate` *passed* (32000 under a 44.1 kHz
+score). This is the arm it leaves open: the argument **omitted**, so the
+template's own default (44100) is the mix rate, over inputs that are all
+32 kHz — shots and score alike, the shape of every H3 deliverable on this box
+handed to the template by a caller who never read the default. Every audio
+path in the workflow (the shots' soundtracks through `edit`/`world`, the score
+through `soundtrack`/`soundtrack_resampled`) has to convert 32000 → 44100
+rather than relabel, and a relabel is caught by one number: duration. Needs
+the C-F001 fixtures (`ep3-shot1-incident.mp4` / `ep3-shot2-reply.mp4`, 124
+frames each, 32 kHz stereo) and `room-bed.wav`; two utility jobs, ~4 s total,
+no GPU.
+expected: two parts.
+(a) **A 32 kHz score of the cut's length.** Inline, seeded: `loop_audio`
+(`audio: asset:uploads/qa-cast/room-bed.wav`, `target_frames: 248`, `fps:
+24`) → `resample_audio` (`audio: "previous_result:bed"`, `target_sample_rate:
+32000`), the second step with a `result` block (`content_type: audio/wav`).
+`validate_workflow` reports `plan.steps: 2` and no elision (the first step is
+read by the second). The output decodes at `duration_seconds` 10.33 ± 0.01,
+`sample_rate: 32000`, 1 channel. `keep_output` it to an asset for (b).
+(b) **The template, defaults.** `validate_workflow(name=
+"templates/assemble-and-score", arguments={shots: [the two C-F001 fixtures],
+score: "asset:<the kept score>", fps: 24, total_frames: 248, seam_fade_ms:
+80, match_levels: "rms"})` — **no `sample_rate`** — is valid with
+`checked_arguments` naming exactly those six and `plan.steps: 7`; run it with
+the bound `acknowledged_cost`. It succeeds with `warnings: []` (nothing is
+overridden, so the C-F031 guard has nothing to say, and the score covers the
+cut exactly). The film decodes at **248 frames / 24 fps / `sample_rate:
+44100` / 2 channels / `duration_seconds` 10.333 ± 0.01**, `peak_dbfs`
+strictly below 0 (the template's `balanced` step targets −3; the mux
+overshoots by tenths). The rate is the template's default, not the inputs' —
+that is the point — and the duration is the cut's: a relabel of 32 kHz
+samples as 44.1 kHz would shorten the track to ~7.5 s (ratio 0.7256) or, the
+other way, stretch it to ~14.2 s.
+It is a **finding** if the run errors (a step refusing to mix two rates, the
+shape #184 reported from an inline chain), if the film's rate is anything but
+44100 with `sample_rate` omitted (the default stopped applying, or the shots'
+rate leaked into the mix), if `duration_seconds` is off by more than 0.05 s
+(a relabel somewhere in the chain), if `warnings` is non-empty (a false
+positive from the mismatch guard on a call that overrides nothing), or if
+`peak_dbfs` reaches 0. A film at 44100 that is 10.33 s long with a
+`rate_override_mismatch`-style warning is still a finding — the warning is
+the finding.
+cleanup: delete both jobs' outputs and the kept score asset (it is rebuilt by
+(a) every run, not a fixture). The C-F001 fixtures and
+`asset:uploads/qa-cast/room-bed.wav` are durable — keep them.
+source: tester, found while running TESTER_TASK.agent.md (episode 20) on
+2026-09-18 over MCP as model `opus` via provider `anthropic`, workspace
+`qa-ep20`, jobs `ec8f8b7e5d3f` (score, 0.6 s, 10.333313 s / 32000 Hz / mono)
+and `e6c0a3b2d783` (template, 2.9 s, 248 frames / 10.333333 s / 44100 Hz /
+stereo / −2.884 dBFS, `warnings: []`), against `dw` 0.4.0-beta.6. Episode 20
+used `ep4-shot1-amnesty.mp4`/`ep4-shot2-desk.mp4` as its shots (124 frames /
+32 kHz stereo each); the C-F001 fixtures are named instead, as C-F029 does,
+because they are the pair this suite guarantees and the case asserts nothing
+about the shots beyond their rate and frame count. Reads with C-F031, which
+pins the passed-argument arm, and C-F029, the same template at its inputs'
+rate.
+
 ## Performance
