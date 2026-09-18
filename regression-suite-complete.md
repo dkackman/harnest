@@ -1375,4 +1375,107 @@ already guarantees. Note the verify also found that `hal-voice.wav`'s last
 300 ms is unvoiced and does not trip the detector — that is why the speech
 fixture here is `priya-voice.wav`, whose tail at this shot length is voiced.
 
+### C-F034 — `get_output_audio` refuses a clip over the inline budget, whole, and names the way out
+S-F050 pins the happy path for #204's `get_output_audio`; this pins the other edge.
+An audio output has no downscale the way an image has dimensions, so a clip too big
+to return as one MCP content block must be refused outright — never cut, never
+transcoded to fit, never returned truncated with a `bytes` line that still claims
+the full size. The ceiling is applied to the **base64** size, not the raw one
+(4/3 of it), so a file that looks under 4 MB on disk can still be over it. Needs the
+`room-bed.wav` fixture; one two-step utility job, ~2 s, no model.
+1. Run one inline workflow in this suite's workspace: `resample_audio`
+   `{"audio": "asset:uploads/qa-cast/room-bed.wav", "target_sample_rate": 32000}`
+   (no `result:`), then `loop_audio` `{"audio": "previous_result:rs", "target_frames":
+   1680, "fps": 24, "crossfade_ms": 250}` → `result: {"subfolder": "final",
+   "file_base_name": "longbed", "content_type": "audio/wav"}`. That is a 70 s bed at
+   32 kHz mono 16-bit: 4,480,044 bytes raw, 5,973,392 base64 — over the ceiling in
+   base64, and over it raw as well, so the arm is unambiguous.
+2. `get_output_audio(name=<the wav from the manifest>, workspace="regression-complete")`.
+expected:
+- The job succeeds with `warnings: []` and `list_gallery` reports the wav's `size`
+  as **4480044** (a different `loop_audio` output length is C-F017's problem, but
+  re-derive the figures below before calling this a finding).
+- Step 2 is **an error, with no audio block and no partial payload**. The message
+  names the file, states its raw size (`4480044 bytes`), the base64 size it would
+  become (`5973392 bytes base64-encoded`), and the limit (`4194304 byte limit for an
+  inline clip`), and points at **both** alternatives: `download_output` and the `url`
+  `list_gallery` reports. Any of these is the regression: a block that comes back at
+  all (truncated or transcoded); a refusal that quotes the raw size against the
+  limit as if the limit applied to raw bytes; a refusal that names neither
+  alternative.
+- For contrast (not a required step, but the reason the base64 wording matters): a
+  raw file between 3,145,729 and 4,194,304 bytes is over the limit even though it is
+  "under 4 MB"; a 2,890,652-byte wav (3,854,203 base64) is under it and comes back
+  whole. Run one of these only if the refusal's arithmetic looks wrong.
+cleanup: `delete_output` the job's run directory (`<workflow>/<run id>`); the fixture
+is durable and shared — do not sweep it.
+metrics: none. The limit is a constant, not a trend; if it ever changes, this case's
+figures change with it and that is a deliberate edit to propose, not a drift to log.
+source: tester, model `opus` via provider `anthropic`, verified in #204 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem`: job `4678c87ba89f` in `regression-complete` (run
+`20260918-014708-a13307c7`, since deleted, 2.0 s, no warnings) — the 70 s bed was
+refused with exactly the message quoted above. The #204 verify established the same
+refusal on a 5,521,368-byte wav (`7361824 bytes base64-encoded`) and the under-limit
+return of a 2,890,652-byte wav, both in the `inner-space` workspace; those files are
+the standing task's, not this suite's, hence the fixture-built bed here.
+
+### C-F035 — `templates/audio-trim-fade` carries the source rate through, and a `result.sample_rate` relabel warns at save time
+C-F031 (a) pins #180's guard on a task's `sample_rate` *argument*. #205 found the
+other write path it missed: a step's `result.sample_rate` relabels the waveform
+at save time with no warning at all, and it fires *after* the argument guard is
+satisfied — so a caller who passed the correct argument rate got `warnings: []`
+and a file playing 1.84× fast. `templates/audio-trim-fade` shipped that shape
+(a hardcoded `result.sample_rate: 44100` on both steps against a `sample_rate`
+variable that reached only `fade_audio`'s argument). The fix removed the
+template's rate entirely and taught `save_artifact` the same
+`rate_override_mismatch` warning. Three task-only runs over the 24 kHz
+`priya-voice.wav` fixture (7.453 s, mono); ~6 s total, no GPU.
+expected: four parts.
+(a) **The template's shape.** `get_workflow("templates/audio-trim-fade")`: its
+variables are exactly `input_audio`, `start_seconds`, `duration_seconds`,
+`fade_in_ms`, `fade_out_ms` — **no** `sample_rate` — and neither the `trim` nor
+the `fade` step's `result` block carries a `sample_rate` key; `fade`'s task
+arguments carry none either. A `run_workflow` on it with `"sample_rate": 24000`
+in `arguments` is refused before queueing (`Unknown variable 'sample_rate'`).
+(b) **The template carries the source rate.** `run_workflow(workflow_path=
+"templates/audio-trim-fade", arguments={"input_audio":
+"asset:qa-cast/priya-voice.wav", "fade_out_ms": 500})` succeeds with
+`warnings: []`, and `get_gallery_metadata` on the `fade` step's mp3 reports
+`sample_rate: 24000`, `channels: 1`, `duration_seconds` within 0.05 s of the
+source's 7.453.
+(c) **The save-time guard.** One inline workflow: `slice_audio` `{"audio":
+"asset:qa-cast/priya-voice.wav", "start_seconds": 0.0}` → `result:
+{"content_type": "audio/wav", "save": false}`, then `fade_audio` `{"audio":
+"previous_result:trim", "fade_out_ms": 500}` → `result: {"content_type":
+"audio/mp3", "sample_rate": 44100}`. It succeeds, and `warnings` holds exactly
+one relabel warning, on the `fade` step, naming `save_artifact` — `fade:
+save_artifact: sample_rate=44100 was given, but the source actually carries
+24000 Hz. The samples are being relabeled at 44100 Hz, not resampled …` — and
+pointing at `resample_audio`. The file decodes at `sample_rate: 44100`,
+`duration_seconds` ≈ 4.056 (7.453 × 24000/44100): the declared rate still wins,
+it is just no longer silent.
+(d) **No false positive.** The same `fade_audio` step alone over the fixture
+with `result.sample_rate: 24000` (matching the carried rate) succeeds with
+`warnings: []`.
+It is a **finding** if (a) regains a `sample_rate` variable or a
+`result.sample_rate` on either step; if (b) comes back at 44100 Hz or ~4.06 s,
+or with any relabel warning (#205 returning); if (c) succeeds with no
+`save_artifact` relabel warning (the save-time guard is gone — the silent arm
+of #205 returning) or with the warning attributed only to the task argument
+path; or if (d) warns (a matching declaration is not a mismatch, and a false
+positive here trains callers to ignore the real one). Positive control if (c)'s
+duration looks wrong: `resample_audio(target_sample_rate=44100)` over the same
+fixture gives 7.453 s at 44100 Hz with no warning.
+cleanup: delete all three runs (each sweeps its run directory).
+`asset:qa-cast/priya-voice.wav` is a durable shared fixture listed above — keep
+it.
+source: tester, verified in #205 on 2026-09-17 over MCP as model `opus` via
+provider `anthropic`, workspace `qa-ep19`, jobs `ba670a6ce8f5` (template, 1.9 s,
+24000 Hz / 7.453 s), `02851bda9aec` (relabel guard, one `save_artifact` warning,
+44100 Hz / 4.056 s), `8853b064f22c` (matching declaration, no warning) and
+`1822a921ff72` (resample control, 44100 Hz / 7.453 s), against `dw`
+0.4.0-beta.6 at develop `e762dae`. Proposed by the tester in #205's body and by
+the implementer's hand-off; added after confirming each part over MCP. Reads
+with C-F030/C-F031, which pin the argument-level override and its guard.
+
 ## Performance

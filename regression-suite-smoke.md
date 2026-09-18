@@ -92,6 +92,10 @@ nothing uses it anymore.
   the incoming material. Both also serve the `complete` suite; read-only, never
   deleted. Any substitute pair needs the same loud-tail-into-quiet-head shape, re-read
   from `get_gallery_metadata(envelope=true)` on the assets.
+- `asset:qa-cast/ep11-coldopen.mp4` — a video with a soundtrack in the shared asset
+  library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). S-F051 hands
+  it to `analyze_audio` as the "video in, soundtrack measured" input shape; any
+  substitute just needs a non-silent soundtrack. Read-only, never deleted.
 
 ## Functional
 
@@ -1801,6 +1805,135 @@ against dw `0.4.0-beta.6` on `lem` (workspace `qa-verify-202`, since deleted): e
 step above behaved as written. The implementer proposed the one-variable patch +
 `get_workflow` check in its hand-off comment; the deletion, list, refusal and
 unknown-name arms are the tester's adjacent cases.
+
+### S-F049 — `upload_asset(content=...)` puts inline bytes in the library without touching any path
+#203 added `content` (base64) to `upload_asset` as the alternative to `file_path`, so an
+agent with no filesystem in common with a `dw.serve --mcp` endpoint can still land a
+small input. The regression to catch is the inline path silently breaking (falling back
+to a path read, dropping the `uploads/` placement, or letting a name escape) or the
+two error messages losing the pointer to the agent-usable route. Free, no model, no job.
+`content` is the base64 of a 1×1 PNG (70 bytes):
+`iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFBQIAX8jx0gAAAABJRU5ErkJggg==`
+In order: (1) `upload_asset(content=<that>, asset_name="regress/inline-upload-test.png")`,
+then `list_assets()`; (2) the same `content` with no `asset_name`; (3) the same with both
+`content` and `file_path="/tmp/x.png"`, and once more with neither; (4) the same
+`content` with `asset_name="regress/evil.py"`; (5) with `asset_name="../../escape.png"`;
+(6) `content="!!!not-base64@@@"`, `asset_name="regress/bad.png"`; (7)
+`upload_asset(file_path="/nowhere/local-only.png", asset_name="regress/x.png")`; (8)
+`download_output(name="anything.png", destination="/nowhere/anything.png")`.
+expected:
+- (1) returns `reference: "asset:uploads/regress/inline-upload-test.png"`, `uploaded:
+  "regress/inline-upload-test.png"`, `size: 70`, and `list_assets` lists it with
+  `origin: workspace`, `kind: image`, `size: 70`. The `uploads/` prefix is the
+  `/api/uploads` route's placement, the same one the web UI's picker gets.
+- (2) is refused with `content requires asset_name`; both calls in (3) with `Pass exactly
+  one of file_path or content.`; (4) with `not a kind the asset library takes`; (5) with
+  `Invalid asset name` naming the `..` segment; (6) with `content could not be decoded as
+  base64`. None of (2)–(6) creates an asset.
+- (7) is refused (`Refusing to read`) and the message names `content=` as the
+  alternative; (8) is refused (`Refusing to write`) and the message names the
+  `list_gallery` url, `get_output_image` / `get_output_audio` / `get_output_text`, and
+  `keep_output`. A refusal that only points at the web UI is the regression.
+cleanup: `delete_asset("uploads/regress/inline-upload-test.png")`.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #203 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (workspace `qa-verify-203`, since deleted): every
+step above behaved as written. The implementer proposed (1) in its hand-off comment
+(with `asset:regress/…` as the reference; the server actually returns
+`asset:uploads/regress/…`); the refusal arms are the tester's adjacent cases. The 4 MB
+`MAX_INLINE_UPLOAD_BYTES` cap is deliberately not a case here: a >4 MB base64 argument
+can't be sent from an LLM-driven seat, so that check lives in the dw repo's pytest suite.
+
+### S-F050 — `get_output_audio` returns a short clip inline as a typed audio block, and refuses video
+Before #204 there was no in-context path for a generated audio output: an agent could
+see it in `list_gallery` and describe it with `get_gallery_metadata`, but getting the
+bytes meant `download_output` (a write on the server's disk) or an out-of-band fetch
+of the gallery `url`. `get_output_audio(name, workspace=None)` is the audio analogue of
+`get_output_image`: a typed MCP `AudioContent` block plus a text tail naming the file
+and its raw size. It is audio-only and never transcodes or cuts. Cheap: one utility
+job, two steps, ~4 s, no model.
+1. Run one inline workflow in this suite's workspace with two utility steps:
+   `slice_audio` `{"audio": "asset:qa-cast/ep11-bed.wav", "start_seconds": 0,
+   "duration_seconds": 2}` → `result: {"subfolder": "final", "file_base_name": "clip",
+   "content_type": "audio/wav"}`, and `concat_videos` `{"videos":
+   ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"], "fps": 24}`
+   → `result: {"subfolder": "final", "file_base_name": "cut", "content_type":
+   "video/mp4"}`. (`concat_videos` warns about the 12 dB level jump between the two
+   fixtures; that warning is S-F045's territory, not a finding here.)
+2. `get_output_audio(name=<the wav from the manifest>, workspace="regression-smoke")`.
+3. `get_output_audio(name=<the mp4 from the manifest>, workspace="regression-smoke")`.
+4. `get_output_audio(name="asset:qa-cast/ep11-bed.wav", workspace="regression-smoke")`.
+expected:
+- Step 2 returns **a typed audio content block** (`audio/x-wav`) — not a text
+  description, not a server path — followed by two text lines `name: <the wav name>`
+  and `bytes: N`, where `N` equals that file's `size` in `list_gallery` (128044 for a
+  2 s slice of the 32 kHz mono 16-bit bed) and equals the decoded blob's length. A
+  `bytes` figure that disagrees with the gallery size, or a payload smaller than it,
+  is the regression (a silent truncation).
+- Step 3 is **refused, with no payload**, and the message names the file, says it is
+  `video/mp4, not audio`, and points at `get_output_image` and `get_gallery_metadata`
+  as the alternatives. A video handed back as an "audio" block is the regression.
+- Step 4 → `Not Found`: `asset:` references are not gallery names and this tool reads
+  the gallery only (same as `get_output_image`). This is the current contract, pinned
+  so a change to it is noticed rather than silent; a later issue may extend it.
+- The `workspace` pin works without `use_workspace` in every call above.
+cleanup: `delete_output` the job's run directory (`<workflow>/<run id>`); the fixtures
+are read-only.
+metrics: none — the inline size limit is C-F034's over-budget case, not a trend here.
+source: tester, model `opus` via provider `anthropic`, verified in #204 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem`: job `9b6558f16343` in `regression-smoke` (run
+`20260918-014610-4b98a16d`, since deleted, 3.8 s) — the 2 s wav came back as
+`audio/x-wav` with `bytes: 128044` and a 128044-byte blob; the mp4 was refused with the
+message quoted above; the `asset:` name returned `Not Found`. The #204 verify also
+covered a 41930-byte mp3 (`audio/mpeg`, `bytes` = gallery size, valid MPEG layer III)
+and a 2,890,652-byte wav (3,854,203 B base64, just under the 4,194,304 ceiling)
+returned whole; the over-budget refusal is C-F034 in the `complete` suite.
+
+### S-F051 — `analyze_audio` reads a video's soundtrack, reports `null` for a band above Nyquist, and keeps `crest = peak − rms`
+#207 added `analyze_audio(audio, sample_rate=None)`: a read-only measurement task
+returning `peak_dbfs`, `rms_dbfs`, `crest_factor_db` and a low/mid/high band reading.
+S-F047 already pins the band *shift* under `compress_audio`/`filter_audio`; this case
+pins the task's own contract — the three input shapes it accepts and the one edge it
+documents: a band whose lower bound is at or above the track's Nyquist frequency
+reads `null`, never a spurious floor number. One utility job, four steps, ~4 s, no model.
+Run one inline workflow in this suite's workspace, every `analyze_audio` step with
+`result: {"content_type": "application/json", "subfolder": "final"}`:
+(1) `resample_audio` `{"audio": "asset:qa-cast/ep15-song.mp3", "target_sample_rate":
+4000}` → `audio/wav`, subfolder `intermediate`; (2) `analyze_audio` on
+`asset:qa-cast/ep15-song.mp3` (the file, 44.1 kHz); (3) `analyze_audio` on
+`previous_result:` of step 1 (the waveform, no explicit `sample_rate`); (4)
+`analyze_audio` on `asset:qa-cast/ep11-coldopen.mp4` (a video — its soundtrack is
+taken). Read each JSON with `get_output_text`.
+expected:
+- The job succeeds and each `analyze_audio` step writes exactly one JSON file with the
+  six keys `peak_dbfs`, `rms_dbfs`, `crest_factor_db`, `low_dbfs`, `mid_dbfs`,
+  `high_dbfs` — nothing else, no waveform written.
+- In every step, `crest_factor_db` equals `peak_dbfs − rms_dbfs` to within 0.01 dB.
+- Step 2 (the mp3 at full rate): all six values are numbers; `peak_dbfs` is **+0.76
+  ± 0.05** (the fixture's known over-full-scale decode, see Fixtures) — the same figure
+  `get_gallery_metadata` reports, so a peak here that disagrees with it is a reading
+  error, not a fixture change.
+- Step 3 (the 4 kHz waveform): `high_dbfs` is **`null`** — the high band's lower bound
+  is above the 2 kHz Nyquist, so its mask is empty. `low_dbfs` and `mid_dbfs` are still
+  numbers, and `low_dbfs` is within **0.1 dB** of step 2's (a downsample to 4 kHz
+  leaves the low band untouched). A number in `high_dbfs` here — however small — is
+  the regression (a false floor), as is a failed step (the empty mask crashing) or a
+  `low_dbfs` that moved (the hand-off waveform's sample rate mis-read).
+- Step 4 (the video): all six values are numbers; no error about the input kind.
+  `analyze_audio` on a video that has no soundtrack is not covered here.
+Band values are on a different scale from `rms_dbfs` (~40 dB below it on every track
+to date — #211 tracks whether that stays so); assert only what is listed above, never
+a band's absolute level against `rms_dbfs`.
+cleanup: `delete_output` the job's run directory (`<workflow>/<run id>`); the fixtures
+are read-only.
+metrics: none — the assertions are fixed values and a `null`, not a trend.
+source: tester, model `opus` via provider `anthropic`, verified in #207 on 2026-09-17
+against dw `0.4.0-beta.6` on `lem` (jobs `0d5439af1982`, `7626b5f8ebbc`, workspace
+`qa-verify-207`, since deleted): mp3 at 44.1 kHz peak 0.7575 / rms −18.236 / crest
+18.994 / low −57.697 / mid −69.187 / high −88.844; the same track at 4 kHz peak 0.545 /
+rms −18.851 / crest 19.397 / low −57.697 / mid −66.414 / **high `null`**; the video
+soundtrack peak −1.036 / rms −20.880 / crest 19.844, all bands numeric. The Nyquist
+`null` is the case the implementer proposed in its hand-off comment.
 
 ## Performance
 
