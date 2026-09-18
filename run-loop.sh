@@ -13,6 +13,8 @@
 #   IMPLEMENTER_BUDGET_USD=8 TESTER_BUDGET_USD=5 TRIAGE_BUDGET_USD=3 ./run-loop.sh
 #                                       # per-session --max-budget-usd caps (0 = none)
 #   TESTER_TASK_EVERY=2 ./run-loop.sh   # standing task every Nth cycle
+#   ONLY_ISSUES=227 ./run-loop.sh       # this cycle works #227 (and nothing
+#                                       # else), implementer and tester both
 #   tail -f logs/loop.log               # watch from another terminal
 #
 # Model/provider resolution lives in providers.sh — see its header for the
@@ -58,6 +60,12 @@ AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
+# Comma-separated issue numbers. Set, it narrows *every* role's queue to those
+# issues, so one cycle works them and nothing else — the way to drive a single
+# issue through both agents without spending a session on each of the others.
+# An issue the filter excludes is skipped silently rather than parked, and a
+# queue of one skips triage by construction. Unset is the normal full run.
+ONLY_ISSUES="${ONLY_ISSUES:-}"
 PROVIDER="${PROVIDER:-anthropic}"  # where the models live: anthropic|ollama|gateway
 # One model knob per role, no shared default: which role may run a weak model
 # is a design decision, not a config detail. The tester defaults to opus —
@@ -200,8 +208,15 @@ open_issues() {
     needsinfo) filter='[.labels[].name] | index("status:needs-info") != null' ;;
     *) echo "open_issues: bad mode $mode" >&2; return 1 ;;
   esac
-  gh issue list --repo "$TICKET_REPO" --state open --label "$owner" --limit 200 \
-    --json number,labels --jq ".[] | select($filter) | .number" | sort -n
+  local out
+  out="$(gh issue list --repo "$TICKET_REPO" --state open --label "$owner" --limit 200 \
+    --json number,labels --jq ".[] | select($filter) | .number" | sort -n)"
+  if [ -n "$ONLY_ISSUES" ]; then
+    local pat
+    pat="$(printf '%s' "$ONLY_ISSUES" | tr ',' ' ' | tr -s ' ' | sed 's/^ *//;s/ *$//;s/ /|/g')"
+    out="$(printf '%s\n' "$out" | grep -E "^($pat)$" || true)"
+  fi
+  [ -n "$out" ] && printf '%s\n' "$out"
 }
 
 # still_ready <n> <owner-label> <fresh|verify|needsinfo>
