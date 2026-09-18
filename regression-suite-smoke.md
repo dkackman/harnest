@@ -2046,6 +2046,55 @@ number, not an artifact - 'result' cannot be saved"; (b) and (c) `valid: true`; 
 refused with the same message, `queued: 0`. Case as proposed in the implementer's
 hand-off comment, with the two controls and the `run_workflow` check added.
 
+### S-F055 — `select` refuses `candidates`/`scores` gathered from `for_each` groups of different sizes, on the resolved expansion
+#213 (bounded release of #208): `select` zips `gather:candidates` against
+`gather:scores`, and #119 only ever checked their *shape* (both `gather:` or both
+lists), never that the two groups expanded to the same number of members. A 2-vs-1
+mismatch validated clean and surfaced only after the fan-out had run, or not at all.
+The fix compares the post-expansion sizes — after the caller's `arguments` are folded
+in, not the static `variables` lists — and reports at the `select` step's `scores`
+argument. Free, no model loads; the judge reads a fixed asset so the `previous_result`
+list-identity rule (`_rewrite_reference`, fail-fast) cannot trip first and mask this one.
+Three `validate_workflow` calls on the same inline document, varying only the lists:
+```json
+{"id":"s_f055",
+ "variables":{"candidates":[{"name":"a","prompt":"a red apple"},{"name":"b","prompt":"a green pear"}],
+              "other":[{"name":"x"}]},
+ "seed":7,
+ "steps":[
+  {"name":"still","for_each":"variable:candidates","release_pipeline":true,
+   "pipeline":{"configuration":{"component_type":"ZImagePipeline","offload":"sequential"},
+     "from_pretrained_arguments":{"model_name":"Tongyi-MAI/Z-Image-Turbo","torch_dtype":"torch.bfloat16","low_cpu_mem_usage":true},
+     "arguments":{"prompt":"item:prompt","num_inference_steps":9,"guidance_scale":0,"width":512,"height":512}},
+   "result":{"content_type":"image/jpeg","subfolder":"intermediate"}},
+  {"name":"judge","for_each":"variable:other",
+   "task":{"command":"judge","arguments":{"image":"asset:qa-cast/hal-portrait.jpg","rubric":"How red is this?","scale":[0,10],"device":"cuda"}}},
+  {"name":"pick","task":{"command":"select","arguments":{"candidates":"gather:still","scores":"gather:judge","rule":"argmax"}},
+   "result":{"content_type":"image/jpeg","subfolder":"final"}}]}
+```
+- (a) as written: `candidates` 2 entries, `other` 1.
+- (b) control: `other` given two entries (`x`, `y`).
+- (c) override: document (b) with `arguments: {"other": [{"name":"x"}]}` — static
+  lists agree, the caller's override makes them disagree.
+Any image asset the workspace can reach works for `judge`'s `image`; it is never fetched.
+expected:
+- (a) `valid: false`; one error at `steps[2].task.arguments.scores` whose message
+  names both counts, e.g. "select: 'candidates' and 'scores' gather from for_each
+  groups of different sizes: candidates has 2 entries, scores has 1." No plan.
+- (b) `valid: true` with a plan whose `list_entries` is `{candidates: 2, other: 2}`
+  (unused-field warnings on `other` are fine).
+- (c) `valid: false` with the same `.scores` error and the same "2 entries … 1" text
+  as (a). A `valid: true` here means the check went back to reading the static
+  `variables` lists instead of the resolved expansion — that is the regression #213's
+  scope was written around.
+cleanup: none — validate-only.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #213 on 2026-09-18
+against `develop` f6eba42 (merged bf6cc58) on `lem`: (a) and (c) `steps[2].task.arguments.scores`
+"candidates has 2 entries, scores has 1."; (b) `valid: true`, `list_entries {candidates: 2, other: 2}`.
+Also confirmed the mirror (1 vs 2) reports at `.scores`, not `.candidates`. Case as
+proposed in the implementer's hand-off comment, with the control and override added.
+
 ## Performance
 
 ### S-P001 — default image generation latency
