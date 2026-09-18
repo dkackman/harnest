@@ -2095,6 +2095,94 @@ against `develop` f6eba42 (merged bf6cc58) on `lem`: (a) and (c) `steps[2].task.
 Also confirmed the mirror (1 vs 2) reports at `.scores`, not `.candidates`. Case as
 proposed in the implementer's hand-off comment, with the control and override added.
 
+### S-F056 — `match_levels` reports every shot's gain as a log event and a clip-hold as a `match_levels_held` warning
+Before #214 `concat_videos` / `dissolve_videos` with `match_levels` set applied the
+per-shot gain silently: a shot whose target would clip was held below full scale with
+only a process-log line, so `job.warnings` stayed empty and the residual seam jump the
+option exists to remove was invisible unless the consumer measured inputs and output
+themselves. Both diagnostics now go through the event system. Cheap: one utility job,
+two `concat_videos` steps, ~5 s, no model. Confirm `match_levels` / `match_levels_dbfs`
+against `get_task("concat_videos")` first.
+1. Run one inline workflow in this suite's workspace with two `concat_videos` steps,
+   each over `["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`,
+   `fps: 24`, `match_levels: "rms"`, `result.content_type: video/mp4`: (a) the default
+   target (no `match_levels_dbfs`); (b) `match_levels_dbfs: -8` — a target neither
+   fixture can reach without clipping.
+2. `wait_for_job`, then `get_job_events` and read the two steps' events.
+expected:
+- The job **succeeds** with two 248-frame outputs.
+- Step (a): two `event: "log"` entries, one per shot, each carrying `index` (0 and 1),
+  `measure_dbfs`, `gain_db` and `held: false` — shot 1 measures ≈ −19 dBFS with a
+  small negative gain, shot 2 ≈ −31 dBFS with ≈ +11 dB (the fixtures are 12 dB apart
+  and both reach −20 without clipping). **No** `match_levels_held` warning for (a),
+  and nothing from (a) in `job.warnings` — the log fires every run, the warning only
+  on a hold. (`level_spread` does not fire when `match_levels` is on.)
+- Step (b): an `event: "warning"` with `kind: "match_levels_held"` for **each** shot,
+  each carrying `command: "concat_videos"`, `index`, `measure_dbfs`, `target_dbfs:
+  -8.0`, `gain_db`, `ceiling_dbfs: -0.5` and `shortfall_db` > 0; plus the same two
+  per-shot `log` entries, now `held: true`. Both warnings also appear in
+  `job.warnings` on `get_job`/`wait_for_job` as `held: concat_videos: video N would
+  clip at the rms target (+X dBFS peak) - held to -0.5 dBFS, Y dB short of target`.
+- The regression is any of: (a) or (b) with no per-shot `log` (gain applied
+  silently again); (b) with `warnings: []` (the hold went back to the process log);
+  or a `match_levels_held` on (a) (the hold test drifted).
+`dissolve_videos` shares the helper — the `templates/dissolve-between-shots` path was
+confirmed in #214 but is not repeated here; if (b) passes and dissolve regresses, that
+is a new issue, not this case.
+cleanup: delete the run (one `delete_output` on `<workflow>/<run id>`). The two
+assets are shared fixtures — leave them.
+metrics: none — the assertions are on event shape, not a trend.
+source: tester, model `opus` via provider `anthropic`, verified in #214 on 2026-09-18
+against dw `0.4.0-beta.6` (`develop` 5b6e3d9) on `lem`: (a) job `e511a83adda6` — logs
+`video 1 rms -19.0 dBFS, gain -1.0 dB` / `video 2 rms -31.1 dBFS, gain +11.1 dB`, both
+`held: false`, `warnings: []`; (b) job `9f2a69a2f263` — held both shots (`+8.3` /
+`+10.5 dBFS peak`, `8.8` / `11.0 dB short`), two `match_levels_held` warnings in
+`job.warnings`. The issue's own repro (`templates/assemble-and-score`, ep21 shots,
+job `28fe19b70e99`) and `dissolve-between-shots` (job `ab2473b3a6d1`) both surfaced
+the hold the same way. The implementer proposed the case in its hand-off comment.
+
+### S-F057 — the two sequence templates expose the same `match_levels` pair, and `assemble-and-score` passes `match_levels_dbfs` through to `concat_videos`
+Before #215 `templates/assemble-and-score` declared `match_levels` but not
+`match_levels_dbfs` (#128 added the pair to `dissolve-between-shots` and never mirrored
+it back), so a shot that could not reach the default −20 dBFS target without clipping
+was clip-held and the only fix was copying the template inline. This case locks the
+variable surface — cheap discovery calls — plus one ~3 s utility run proving the value
+reaches the task. Run S-F056 first; this reuses its knowledge of the events.
+1. `get_workflow(name="templates/assemble-and-score", variables_only=true)` and
+   `get_workflow(name="templates/dissolve-between-shots", variables_only=true)`.
+2. `list_workflows(shape="sequence")`.
+3. `validate_workflow(name="templates/assemble-and-score", arguments={"match_levels":
+   "rms", "match_levels_dbfs_typo": -24})` — a deliberately undeclared name.
+4. Run `templates/assemble-and-score` in this suite's workspace with `shots:
+   ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`, `score:
+   "asset:qa-cast/ep20-score.wav"`, `match_levels: "rms"`, `match_levels_dbfs: -24`,
+   `total_frames: 248`; `wait_for_job`, then `get_job_events`.
+expected:
+- Step 1: **both** templates list `match_levels: null` **and** `match_levels_dbfs: null`.
+- Step 2: `variable_names` for both `templates/assemble-and-score` and
+  `templates/dissolve-between-shots` contain `match_levels_dbfs`; `assemble-and-score`'s
+  `summary` is its full first sentence, not cut with `…` (the added variable name is
+  what pushed the compact listing near its budget in #215).
+- Step 3: `valid: false`, one error at `arguments.match_levels_dbfs_typo` reading
+  `Unknown variable`, and its "declared variables" list names `match_levels_dbfs`.
+- Step 4: the job succeeds with `warnings: []`; the `edit` step's two per-shot `log`
+  events show `gain_db` that moves each shot to −24 (shot 1 ≈ −19 dBFS → ≈ −5 dB, shot 2
+  ≈ −31 dBFS → ≈ +7 dB), both `held: false`. A gain that lands on −20 instead means the
+  variable is declared but no longer wired into the `concat_videos` step.
+- The regression is: either template missing `match_levels_dbfs`; the argument refused
+  as unknown by `validate_workflow`; or the run's gains targeting −20 with −24 passed.
+cleanup: delete the run (one `delete_output` on `<workflow>/<run id>`). The assets are
+shared fixtures — leave them.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #215 on 2026-09-18
+against dw `develop` 5b6e3d9 on `lem`. The issue's own pair (ep21 shots, workspace
+`qa-ep22`, job `c9609479cce0`): `video 1 rms -24.3 dBFS, gain +0.3 dB` / `video 2 rms
+-20.6 dBFS, gain -3.4 dB`, both `held: false`, `warnings: []` — the clip-hold from
+#214's job `a3f5e0b2fcbe` gone once the template accepted `-24`. The fixture pair
+above is S-F056's, chosen so this case never touches `qa-ep22`; its exact gains were
+not run in #215, so treat the ≈ figures as expectations to confirm on first run, not
+measured values.
+
 ## Performance
 
 ### S-P001 — default image generation latency
