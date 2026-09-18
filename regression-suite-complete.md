@@ -109,6 +109,16 @@ when nothing uses it anymore.
   sample rate is *not* 44100 substitutes, re-reading its frame count and rate from
   `get_gallery_metadata` and re-deriving C-F031's `total_frames` from it.
 
+- `asset:qa-cast/ep21-shot1-receipt.mp4` and `asset:qa-cast/ep21-shot2-verdict.mp4`
+  — two 24 fps dialogue shots (124 frames / 5.167 s / 960x544, 32 kHz stereo)
+  from episode 21, whose outgoing shot ends on a **voiced** speech tail
+  (`bleed_join` measures it at flatness 0.22 / harmonicity 0.33). Used by
+  C-F037, where that tail is the point: a shot ending in silence or room tone
+  would not fire the warning. Also in the shared `common/assets`: do not sweep
+  them, do not expect them under `regression-complete`. A replacement pair
+  needs shot 1 to end in voiced speech — confirm a candidate by running the
+  bleed arm of C-F037 alone before swapping it in.
+
 ## Functional
 
 ### C-F001 — a run-time warning reaches the caller, on both channels
@@ -1535,5 +1545,53 @@ because they are the pair this suite guarantees and the case asserts nothing
 about the shots beyond their rate and frame count. Reads with C-F031, which
 pins the passed-argument arm, and C-F029, the same template at its inputs'
 rate.
+
+### C-F037 — `templates/assemble-and-score` honours the seam choice: `seam_fade_ms` on a speech tail is clean, `audio_bleed_ms` on the same tail warns
+C-F033 pins the `bleed_join` detector at the `concat_videos` task level with
+synthetic shots. This is the template-level pair on real dialogue: the same
+two-shot cut run twice through `templates/assemble-and-score`, once with the
+hard cut the warning recommends and once with the bleed it warns about, so a
+regression in how the template forwards `seam_fade_ms` / `audio_bleed_ms` to
+its `edit` step (a dropped variable, a default that overrides the argument, a
+bleed applied on top of a fade) shows up as the wrong arm warning. Needs the
+ep21 fixtures above and a 32 kHz score of the cut's length — build one as
+C-F036(a) does, or reuse any 32 kHz ≥ 10.34 s audio asset. Two template
+jobs, ~3 s each, no GPU.
+expected: two parts, read from each job's `warnings` and the film's metadata.
+Common arguments: `shots: [asset:qa-cast/ep21-shot1-receipt.mp4,
+asset:qa-cast/ep21-shot2-verdict.mp4]`, `score: "asset:<the score>"`,
+`sample_rate: 32000`, `fps: 24`, `total_frames: 248`, `match_levels: "rms"`,
+`score_gain: 0.0`, `world_gain: 1.0`.
+(a) **Hard cut.** `audio_bleed_ms: 0`, `seam_fade_ms: 80`. `validate_workflow`
+is valid with `plan.steps: 7`; the run succeeds with **no `bleed_join:`
+warning**, and the film decodes at 248 frames / 24 fps / `sample_rate: 32000`
+/ 2 channels / `duration_seconds` 10.333 ± 0.01, `peak_dbfs` strictly below 0.
+(b) **Bleed.** `audio_bleed_ms: 1800`, `seam_fade_ms` omitted. Same
+arguments otherwise; the run succeeds and the `edit` step carries a
+`bleed_join:` warning saying the reversed tail looks tonal or speech-like,
+quoting a flatness and a harmonicity and suggesting `seam_fade_ms`. Same
+frame count and duration as (a).
+It is a **finding** if (a) carries a `bleed_join:` warning (a bleed is being
+applied despite `audio_bleed_ms: 0`, or the fade path is being run through
+the detector), if (b) carries none (the argument is not reaching `concat_videos`,
+or the fixture's tail is no longer voiced — check the fixture before filing),
+if either run errors, or if either film's frame count, rate or duration is
+off. `score_gain: 0.0` must be accepted without a warning in both arms (a
+muted score is a legal mix). Levels are **not** the assertion: with
+`match_levels: "rms"` shot 1 is clip-held short of the −20 dBFS target and
+the seam still carries a ~2.6 dB step — #214 asks for that to be reported and
+#215 for the template to expose `match_levels_dbfs`; when either lands,
+extend this case rather than reading the silence as a pass.
+cleanup: delete both runs and the score if it was built for this case. The
+ep21 fixtures are durable — keep them.
+source: tester, found while running TESTER_TASK.agent.md (episode 22) on
+2026-09-18 over MCP as model `opus` via provider `anthropic`, workspace
+`qa-ep22`, score `asset:qa-cast/ep20-score.wav` (32 kHz mono, 10.33 s), jobs
+`a3f5e0b2fcbe` (fade: `warnings: []`, 248 f / 10.334 s / 32000 Hz / stereo /
+peak −3.002 dBFS, seam second rms −20.1 / peak −4.6) and `ca911ef36454`
+(bleed 1800 ms: `bleed_join` flatness 0.22 / harmonicity 0.33), against `dw`
+0.4.0-beta.6. Episode 21 (job `bbbd9aef3825`) is where the warning first fired
+on this material with `audio_bleed_ms: 400`; ep22 is the re-cut the warning
+asked for.
 
 ## Performance
