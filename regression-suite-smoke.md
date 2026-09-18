@@ -1980,6 +1980,72 @@ against dw `0.4.0-beta.6` on `lem` (jobs `315d6077aaa4`, `f38fc154efcc`, workspa
 The single-band-equals-rms shape is the case the implementer proposed in its hand-off
 comment.
 
+### S-F053 — `validate_workflow`'s plan echoes the workspace and output root it probed against
+#184 reported a step cache "wiped" by a failed job; the likelier story was a
+`validate_workflow` probed against a different output root than the job ran in — the
+cache keys on the root, so a validate from the wrong workspace answers `cached_steps: 0`
+with nothing to say why. The fix adds `plan.workspace` and `plan.output_dir` so a `0`
+can be cross-checked. This pins those two fields and that they follow the per-call
+`workspace` pin, not the session. Two free calls, no job, no model.
+Call `validate_workflow(name="templates/text-to-image", arguments={})` twice: once
+with no `workspace` (session on the default workspace), once with
+`workspace="regression-smoke"`.
+expected:
+- Both `valid: true`. Both plans carry the keys `workspace` and `output_dir` (strings).
+- Unpinned: `plan.workspace == "default"` and `plan.output_dir` is the default
+  workspace's `outputs` directory as `list_workspaces` reports it (ends in `/outputs`
+  with no workspace segment).
+- Pinned: `plan.workspace == "regression-smoke"` and `plan.output_dir` ends in
+  `/regression-smoke/outputs`. A pinned call that still echoes `default` is the
+  regression — the probe ran where the session is, not where the job would.
+- Both plans still carry `fingerprint`, `steps`, `cached_steps`, `estimate` (the new
+  keys are additive).
+Do not assert on `cached_steps` — it depends on what the in-memory cache holds and this
+template sets no seed, so it is `0` without being probed either way.
+cleanup: none (read-only).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #184 on 2026-09-18
+against `lem` after the `develop` merge of `fix/184-plan-workspace-echo` (1996f8a):
+unpinned → `default` / `/home/don/diffusers-workspace/outputs`; pinned to `qa-ep20` →
+`qa-ep20` / `/home/don/diffusers-workspace/qa-ep20/outputs`. Shape as proposed in the
+implementer's hand-off comment; a stored `name` that lives only in another workspace is
+refused outright when unpinned, so the mismatch this guards is only reachable with a
+template or an inline definition.
+
+### S-F054 — a `result` block on a scalar-returning step is refused by the free pre-flight, not by the writer
+#212 (split from #209): `judge` returns one number, not an artifact, and a `result`
+block on it is a natural thing to write — the guide's Result Configuration section
+describes saving text and a score reads as text. It used to validate clean and die
+only after the whole fan-out had run (`write() argument must be str, not float` in
+`save_artifact`, ~2 min of GPU wasted). The fix declares what each command returns
+at the registry and refuses `result` on a scalar step at validate. Free, no model
+loads; the `image` value is never fetched.
+Four `validate_workflow` calls on inline documents, each one step named `score`:
+- (a) `{"id":"s_f054","steps":[{"name":"score","task":{"command":"judge","arguments":{"image":"https://example.com/a.png","rubric":"Is this a cat?","scale":[1,10]}},"result":{"content_type":"text/plain","subfolder":"intermediate"}}]}`
+- (b) the same document with the `result` block removed (control).
+- (c) the same shape on an artifact-returning task: `{"command":"canny","arguments":{"image":"https://example.com/a.png"}}` with `"result":{"content_type":"image/png","subfolder":"intermediate"}` (control).
+- (d) `run_workflow` on document (a) with `acknowledged_cost=true`.
+expected:
+- (a) `valid: false`; one error at path `steps[0].result` whose message says the
+  command returns a number/scalar, not an artifact (e.g. "judge returns a number, not
+  an artifact - 'result' cannot be saved"). No plan.
+- (b) `valid: true` with a plan (the rule is not over-broad on `judge` itself).
+- (c) `valid: true` with a plan (no false positive on an artifact task).
+- (d) refused as a tool error carrying the same `steps[0].result` message; nothing
+  queued — `get_health` afterwards shows `queued: 0` and `current_job: null`. A queued
+  job here is the regression, whether or not it later fails.
+Use the `content_type` form of `result` shown, not a bare `{"format":"json"}` — that
+one is caught by the schema first (`'content_type' is a required property`) and never
+reaches the scalar rule, so it cannot tell you whether the rule is still there.
+cleanup: none — validate-only; (d) never queues.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #212 on 2026-09-18
+against dw `0.4.0-beta.6` on `lem` after the `develop` merge of
+`fix/212-scalar-result-validation` (36d5293): (a) `steps[0].result` "judge returns a
+number, not an artifact - 'result' cannot be saved"; (b) and (c) `valid: true`; (d)
+refused with the same message, `queued: 0`. Case as proposed in the implementer's
+hand-off comment, with the two controls and the `run_workflow` check added.
+
 ## Performance
 
 ### S-P001 — default image generation latency
