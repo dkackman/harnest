@@ -897,4 +897,49 @@ dw `0.4.0-beta.6` on `lem` (jobs `1fdfe227500e` standalone, `bbbe46872e83` chain
 durations landed exactly on frames/24). Proposed by the implementer in its hand-off comment;
 added here only after running it over MCP.
 
+### M-F018 — every consumer of an in-memory LTX-2.5 shot gets the fitted audio, not just the muxer
+M-F017 measures saved mp4s, and a saved mp4's `duration_seconds` is derived from its frame count —
+it passed while the in-memory chain still drifted. The third and fourth rounds of #197 were that
+gap: the codec-padding fit was computed inside the save and reached only the file (round 3) or
+only whichever consumer happened to share the object instance the save had extracted (round 4:
+`concat_videos` saw a fitted track while a `gain_audio` reading the *same* `previous_result:shot`
+re-extracted the raw, short waveform). This case measures the audio each in-memory consumer is
+actually handed, by tapping it with a zero-gain `gain_audio` written as wav — a wav's
+`duration_seconds` is sample-derived, so it can't be flattered by a frame count.
+Model/pipeline: LTX-2.5 (`Lightricks/LTX-2.5-Diffusers` via `LTX2Pipeline`, `output_type "{np}"`),
+sdnq uint4 transformer / int8 Gemma as in `templates/ltx2/text-to-video`. One run, ~2.5 min warm
+at 512×320.
+1. An inline workflow with **three** `LTX2Pipeline` steps copied from that template's step
+   (`shot_a` 49 frames, `shot_b` 65, `shot_c` 33 — different lengths on purpose), 512×320 /
+   `frame_rate 24` / seed 11, each with `result: {content_type: "video/mp4", fps: 24, subfolder:
+   "intermediate"}`; then `cut`: `concat_videos` over `["previous_result:shot_a",
+   "previous_result:shot_b", "previous_result:shot_c"]`, `trim_frames 0`, `fps 24`, saved
+   `video/mp4` to `final`; then four taps `tap_a`/`tap_b`/`tap_c`/`tap_cut`, each `{"task":
+   {"command": "gain_audio", "arguments": {"audio": "previous_result:<shot_a|shot_b|shot_c|cut>",
+   "gain_db": 0, "start_frame": 0, "num_frames": 1, "fps": 24}}, "result": {"content_type":
+   "audio/wav", "subfolder": "intermediate"}}`. Every reference must be `previous_result:`, never
+   `output:` — a file round-trip takes the decode path and masks exactly what this case checks.
+   Use a seed the step cache has not seen (a cached shot is re-read from disk, same masking).
+2. `validate_workflow`, bind the fingerprint, `run_workflow`, `wait_for_job`.
+3. `get_gallery_metadata` on the four tap wavs and on the `cut` mp4.
+expected:
+- The job **succeeds** with 8 manifest entries.
+- Each tap wav's `media.duration_seconds` equals its source's frames/24 **exactly** at the reported
+  precision: `tap_a` `2.041667`, `tap_b` `2.708333`, `tap_c` `1.375`, `tap_cut` `6.125`
+  (`sample_rate` 48000, `channels` 2). A per-shot tap a few hundredths short (round 4 read
+  `2.01` / `2.69` / `1.33` against those) while `tap_cut` is exact is the object-identity
+  regression back: the muxer/concat got the fit and the audio tasks did not.
+- The `cut` mp4 reports `frame_count` 147 (= 49 + 65 + 33) and `duration_seconds` `6.125`. Note
+  that this line alone proves nothing about the seams — the cut's own save fits the *sum* to 147
+  frames — which is why the per-shot taps are the check, not the cut.
+Headroom warnings (`peaks at +0.0 dBFS`) on `shot_c`, `cut` and their taps are the
+`fox_dawn_choir` prompt running hot and are expected; they are not part of this case.
+cleanup: `delete_output` on the run directory (3 shot mp4s, 1 cut mp4, 4 tap wavs) — nothing
+here is a fixture.
+source: tester, verified in #197 (round 4), model `opus` via provider `anthropic`, on 2026-09-18
+against dw `0.4.0-beta.6` on `lem` (job `cda8a63386c8`, run `20260918-183942-cb5722ed`; all four
+taps landed exactly on frames/24, where job `04ab218e7640` the round before had the three
+per-shot taps short). Proposed by the implementer in its hand-off comment for `complete`;
+placed here because it needs LTX-2.5's in-memory audio+video output shape.
+
 ## Performance

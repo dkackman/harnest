@@ -2183,6 +2183,124 @@ above is S-F056's, chosen so this case never touches `qa-ep22`; its exact gains 
 not run in #215, so treat the ≈ figures as expectations to confirm on first run, not
 measured values.
 
+### S-F058 — a `variable:` argument that resolves to `null` is omitted; a literal inline `null` is not
+Before #209 `replace_variables` spliced a null-resolving `variable:` reference in
+place, so a `select` step written as `rule: variable:rule, threshold:
+variable:threshold, index: variable:index` with `threshold`/`index` defaulting to
+`null` was refused ("'threshold' is only meaningful for rule 'first_above'…") and the
+only way to change rules on a stored workflow was to edit the step. Don's scoped rule
+(#209): a key whose value *arrived via* `variable:` and resolved to `null` is dropped
+before argument checks; a literal `null` written inline keeps its meaning. Validate-only,
+free. Same skeleton as S-F046 with the `select` arguments variable-driven:
+```json
+{"id":"s_f058","seed":7,
+ "variables":{"candidates":[{"name":"a","prompt":"a red apple"},{"name":"b","prompt":"a green pear"}],
+              "rule":"argmax","threshold":null,"index":null},
+ "steps":[
+  {"name":"still","for_each":"variable:candidates","release_pipeline":true,
+   "pipeline":{"configuration":{"component_type":"ZImagePipeline","offload":"sequential"},
+     "from_pretrained_arguments":{"model_name":"Tongyi-MAI/Z-Image-Turbo","torch_dtype":"torch.bfloat16","low_cpu_mem_usage":true},
+     "arguments":{"prompt":"item:prompt","num_inference_steps":9,"guidance_scale":0,"width":512,"height":512}},
+   "result":{"content_type":"image/jpeg","subfolder":"intermediate"}},
+  {"name":"judge","for_each":"variable:candidates",
+   "task":{"command":"judge","arguments":{"image":"previous_result:still",
+     "rubric":"How red is the dominant object? 0 = not at all, 10 = vivid red.","scale":[0,10],"device":"cuda"}}},
+  {"name":"pick","task":{"command":"select","arguments":{"candidates":"gather:still","scores":"gather:judge",
+     "rule":"variable:rule","threshold":"variable:threshold","index":"variable:index"}},
+   "result":{"content_type":"image/jpeg","subfolder":"final"}}]}
+```
+1. `validate_workflow(workflow=<above>)` as written.
+2. Same document with `arguments={"rule":"first_above","threshold":5}`.
+3. Same document with `arguments={"rule":"first_above"}` — threshold left at its `null` default.
+4. Control: the `pick` step's arguments replaced by literal
+   `"rule":"argmax","threshold":null,"index":null` (drop `rule`/`threshold`/`index` from
+   `variables`).
+expected:
+- Step 1: `valid: true`, plan with 5 steps and `list_entries: {candidates: 2}`.
+- Step 2: `valid: true`, `checked_arguments` lists `rule` and `threshold`.
+- Step 3: `valid: false`, exactly one error at `steps[2].task.arguments.threshold` reading
+  "select rule 'first_above' requires a threshold." — the dropped key reads as *missing*,
+  not as "only meaningful for".
+- Step 4: `valid: false` with **two** errors, at `steps[2].task.arguments.threshold` and
+  `…index`, each "only meaningful for rule …, not 'argmax'" — literal null is still
+  present. A `valid: true` here means null-dropping leaked into literal JSON, which is
+  the wider engine change #209 explicitly declined.
+- The regression is: step 1 refused at `threshold`/`index`; step 3 passing (a null
+  threshold accepted for `first_above`); or step 4 passing.
+cleanup: none (validate-only, nothing queued).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #209 on 2026-09-18
+against dw `develop` 506dcc6 on `lem`. All four validate calls above were run as
+written; the step-1 document was also run once (job `a787dc68197c`, workspace
+`qa-verify-209`, 68 s, `pick` → `selected: {position: 0, entry: still@a}`) to confirm
+the run path agrees with validate — not repeated here, since the fix lives in the one
+substitution routine both share.
+
+### S-F059 — `clear_memory` is refused while a job runs, frees VRAM when idle, and drops the step cache
+Before #221 the worker's `clear_memory` command was reachable only from the REPL, so
+an agent doing repeated runs against a live box had no way to reclaim VRAM short of an
+out-of-band restart. The MCP tool wires it with two rules that matter: the worker queue
+is FIFO, so a clear sent while a job is active is refused (409) rather than blocking
+behind it or corrupting it; and it drops the step cache, so a seeded workflow reruns
+instead of reusing. Cheap — three SD 1.5 runs (~5–9 s each warm) plus one that is
+served from cache.
+1. `run_workflow(workflow_path="templates/text-to-image",
+   arguments={"prompt":"a red lighthouse on a cliff at dusk","num_images_per_prompt":1},
+   acknowledged_cost=true)` and, without waiting, `clear_memory()`.
+2. `wait_for_job` on that job to completion. Then `get_memory` (note
+   `gpu_memory_allocated_mb`, `run_count`), then `clear_memory()` with the queue idle,
+   then `get_health`.
+3. `get_job_workflow(<step-1 job>)` and run its realized `workflow` (which carries the
+   pinned `seed`) as `inline_workflow` twice, waiting each time.
+4. `clear_memory()`, then the identical inline run a third time.
+expected:
+- Step 1: `clear_memory` returns an error *immediately* — "A job is running or queued -
+  clearing memory out from under it would corrupt the run…" — and the job still
+  finishes `succeeded` with its one `main` file. A clear that blocks for the job's
+  duration, or a job that fails/cancels after the refused clear, is the regression.
+- Step 2: `{"cleared": true, "info": {...}}` where `info` has the same shape as
+  `get_memory`'s: `gpu_memory_allocated_mb` drops to single digits (from the hundreds a
+  resident SD 1.5 holds) and `run_count` is 0. `get_health` afterwards is `status: ok`
+  (`worker_alive` may be true or false — both are fine; the worker restarts on the
+  next job).
+- Step 3: the second seeded run's `main` manifest entry carries `reused: true`, names
+  the first run's file, and finishes in ~1 s with a dozen events.
+- Step 4: the third run has **no** `reused` marker, writes into its own new run
+  directory, and takes as long as the first (a full denoise, ~45 events). A `reused:
+  true` here means the clear did not drop the step cache.
+cleanup: `delete_output` for all four runs (`templates/text-to-image/<run>/` and the
+inline id's directory); or run the whole case in a throwaway workspace and delete it.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #221 on 2026-09-18
+against dw `0.4.0-beta.6` (develop `a516b12`) on `lem`, workspace `qa-verify-221`:
+jobs `642773b65e7f` (refused clear, finished 8.8 s), `73376205bccc` / `122b21c67cf4`
+(`reused: true`, 0.7 s) / `6fd7f4eec716` (regenerated after clear, 5.4 s); idle clear
+took `gpu_memory_allocated_mb` 497 → 8.1.
+
+### S-F060 — `get_server_info` reports the runtime environment, consistent with `get_diffusers_state`
+Before #222 the server-info tools named the device, the dw version and the diffusers
+version, and nothing else about the environment — an agent choosing a CUDA-only option
+(bitsandbytes, torch.compile) or reading a torch/driver-shaped failure had to guess what
+was installed. `get_server_info` now carries a `runtime` block. Read-only, free.
+1. `get_server_info()`.
+2. `get_diffusers_state()`.
+expected:
+- Step 1: the response has a `runtime` object with string fields `python_version`,
+  `torch_version`, `cuda_version`, `driver_version` and a `packages` object keyed by
+  package name — at least `diffusers`, `transformers`, `accelerate`, `bitsandbytes`,
+  `peft`, `safetensors`, `sentencepiece` on a CUDA server. Every value is a non-empty
+  version string, none is null or an error message. (On an mps/cpu server
+  `bitsandbytes` may be absent from `packages` — absent, not present-with-an-error; the
+  cuda/driver fields may likewise be absent there.) A missing `runtime` block, or a
+  package whose value is an error string rather than a version, is the regression.
+- Step 2: `version` equals `runtime.packages.diffusers` from step 1 — the two tools
+  must not disagree about which diffusers is loaded.
+cleanup: none (read-only).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #222 on 2026-09-18
+against dw `0.4.0-beta.6` (develop `a516b12`) on `lem`: python 3.12.3, torch
+2.14.0+cu130, cuda 13.0, driver 580.173.02, diffusers 0.41.0.dev0 on both tools.
+
 ## Performance
 
 ### S-P001 — default image generation latency
