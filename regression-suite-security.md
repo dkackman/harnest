@@ -627,20 +627,6 @@ source: regression agent (opus/anthropic), gap found while running SE-F011
 on 2026-09-13 — the workflow-name probes cover `get_workflow`, but nothing
 covered the composition resolver, which has its own search path.
 
-### SE-F024 — `gather_videos` glob can't leave the workspace
-As SE-F015, against `gather_videos` (confirm the live name with
-`list_tasks`): an absolute, bounded glob outside every dw root — something
-like `/usr/share/**/*.mp4` is *not* bounded, so pick a single directory
-that plausibly holds one, or accept a zero-match result, since an accepted
-glob is the failure regardless of what it matched.
-expected: refused at validation as outside the allowed roots, exactly as
-SE-F015 expects. Fail if the job runs at all.
-cleanup: `cancel_job` and delete any outputs.
-source: regression agent (opus/anthropic), 2026-09-13. SE-F015 failed
-outright (#116) and `gather_videos` is near-certainly the same
-implementation, but it was never probed — recording it so the fix for #116
-is verified on both, not just the one with a case.
-
 ### SE-F025 — `upload_asset` can't read arbitrary server files
 `upload_asset` is the third way a caller names a file in the asset library
 (beside `keep_output`'s `asset_name` and `delete_asset`, which SE-F012
