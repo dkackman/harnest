@@ -1053,47 +1053,44 @@ nothing in the suite asserted it. Measured as job `44a8336fe388`: `fit_cut` 5.16
 frames / no `fit` warning, `fit_pad` 5.166667 s / 124 frames / one pad warning, `fit_unset`
 30.022993 s / 124 frames / one disagreement warning.
 
-### C-F028 — a phase that goes silent past the threshold says so, in a typed event, and stops when it resumes
+### C-F028 — a phase that goes silent past the threshold draws no false positive while it is still talking
 A job that is working but emitting nothing is indistinguishable from a hung one over MCP, and
-the pre-denoise lead-in of an `ltx2` run is the natural instance: `generating` starts, then
-~50 s pass with `denoise_step: null` before the first `pipeline_step`. #176 made that visible
-with a generic watchdog. What is worth locking in is not the LTX number but the three
-properties that make it usable: the warning is **typed** (`kind: "phase_stall"`, so a consumer
-keys on a field instead of matching prose), it reaches **both** consumer surfaces, and it is
-measuring *silence*, not phase length — a phase that takes two minutes while emitting
-sub-events must stay clean. The last is the part most likely to rot into a false-positive
-generator. Loads a model; ~3-4 min.
+the pre-denoise lead-in of an `ltx2` run was the natural instance for exercising the #176
+watchdog end to end — but #239 found that lead-in has shrunk from ~48 s (source reading) to
+~5 s on a cold load, under the 30 s threshold, so nothing in the current catalog forces the
+watchdog to actually fire from MCP any more. The fire, both-surfaces and it-stops properties
+are unit-tested directly against the watchdog instead (`tests/test_events.py`:
+`test_watchdog_fires_after_threshold_with_no_events`,
+`test_watchdog_repeats_while_the_stall_continues`,
+`test_watchdog_stops_once_a_new_event_arrives`,
+`test_watchdog_event_carries_the_required_fields`), where a fast threshold makes the timing
+controllable. Note that the "both surfaces" property this case originally asserted no longer
+holds by design: `490a42a` (#176, same day, after this case's own source reading) deliberately
+kept a `phase_stall` report out of `job.warnings` — it is a moment, not a fact about the
+result — so it reaches only the event log now, pinned by
+`tests/test_job_warnings.py::test_a_phase_stall_report_stays_out_of_the_persisted_warnings`.
+What is left worth checking from MCP is the one property with no unit-level equivalent: a real
+job's `loading` phase, which genuinely runs long while emitting its own sub-events, must not
+trip the watchdog on its account. Loads a model; ~1-2 min.
 expected: `run_workflow("templates/ltx2/text-to-video", {num_frames: 25, width: 768,
 height: 448})`, then `get_job_events` on the finished job —
-- **the fire.** Somewhere inside `generating`, before the first `pipeline_step`, exactly one
-  `event: "warning"` carrying `kind: "phase_stall"`, `phase: "generating"`, and a numeric
-  `seconds_since_phase_start` at or just past the server's threshold (30 s as built; read it
-  off the reading, don't hard-code it). Its `message` names the phase and the elapsed figure.
-  Nothing in the payload is LTX- or pipeline-specific — `phase` is just whatever phase the job
-  was in.
-- **both surfaces.** The same text appears in `get_job` / `wait_for_job` `warnings`, prefixed
-  with the step's name, while the job is still running — not only after it finishes.
-- **it stops.** No further `phase_stall` for `generating` after the first `pipeline_step`
-  event. The watchdog is silenced by progress, not by the phase ending.
-- **no false positive on a slow-but-talking phase.** The same job's `loading` phase runs well
-  past 30 s total while emitting its component sub-events; as long as no *gap between* those
-  is over the threshold, it draws no `phase_stall`. Check the gaps in the event stream and
-  assert against them, not against the phase's total length.
-If the lead-in happens to come in under the threshold (a fully warm box can shorten it), the
-fire arm is **inconclusive, not a pass** — re-run it as the first `ltx2` job of the session so
-the load is cold. The other three arms hold either way.
-It is a **finding** if the warning is a plain `log` line or loses `kind`/`phase`/
-`seconds_since_phase_start`, if it appears on only one of the two surfaces, if it keeps firing
-after progress resumes, or if any phase that is emitting events inside the threshold draws one
-anyway.
+- **no false positive on a slow-but-talking phase.** The job's `loading` phase runs for tens of
+  seconds total while emitting its component sub-events; as long as no *gap between* those is
+  over the server's threshold (30 s as built; read it off the reading, don't hard-code it), it
+  draws no `phase_stall` anywhere in the job. Check the gaps in the event stream and assert
+  against them, not against the phase's total length.
+It is a **finding** if any phase that is emitting events inside the threshold draws a
+`phase_stall` anyway. It is not a finding if no `phase_stall` fires anywhere in the job — that
+is expected while the ltx2 lead-in stays under 30 s, and does not exercise this case's subject.
 cleanup: delete the run's outputs. No durable fixtures.
 source: tester, verified in #176, model `opus` via provider `anthropic`, on 2026-09-16 against
-dw 0.4.0-beta.4 on `lem`. Measured as job `9baf48bea129`: `generating` entered at 84.2 s, one
-`phase_stall` at 117.7 s with `seconds_since_phase_start: 33.5`, first `pipeline_step` at
-134.3 s and nothing after; `loading` spanned 6.6-84.2 s with sub-event gaps of 28.5 s and
-21.9 s and stayed clean. The issue's "repeats on an interval while the stall continues"
-requirement is deliberately **not** asserted here — no consumer-side lever lengthens a phase's
-silence enough to see a second firing, so it is covered by unit tests in the dw repo instead.
+dw 0.4.0-beta.4 on `lem`. Measured as job `9baf48bea129`: `loading` spanned 6.6-84.2 s with
+sub-event gaps of 28.5 s and 21.9 s and stayed clean. Narrowed to the no-false-positive arm
+alone in #239 (2026-09-19, dw 0.4.0-beta.6), which found the fire arm unreachable from MCP
+(job `4a4048d04cf1`: cold `loading` 1.1-86.2 s with a 32.3 s sub-event gap and no false
+positive; `generating` lead-in only 5.4 s, under threshold) and the both-surfaces arm already
+superseded by `490a42a`. The fire/repeats/it-stops/typed-fields properties are covered by unit
+tests in the dw repo instead, per the options `#239` proposed.
 
 ### C-F029 — a six-step task-only chain carries its parameters, and `keep_output` hands the result to a stored template
 Every other chained case here is two or three steps. The failure this one is for is
