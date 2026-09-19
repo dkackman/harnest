@@ -1,0 +1,20 @@
+{
+  "autoMode": {
+    "environment": [
+      "### Org-wide",
+      "- **Organization**: dkackman (personal GitHub account); one maintainer",
+      "- **Repository visibility**: dkackman/diffusers-workflow is PUBLIC on GitHub. Issue comments and commits pushed there are public.",
+      "- **Source control**: the trusted repo is the diffusers-workflow checkout this session starts in and its `origin` remote (github.com/dkackman/diffusers-workflow). Work on feature branches merged to `develop`; never commit to or push `master`.",
+      "- **Default / protected branches**: `master` is the release branch and is protected by convention (never pushed to by an agent); `develop` is the integration branch.",
+      "- **CI/CD deploy targets**: none. Deployment is a manual restart of the dw server on the LAN host `lem` over ssh (see below).",
+      "- **Sensitive remote targets**: the host `lem` is the only remote box. `ssh lem` for git pull / service restart / reading logs / running the server's tests is routine. Anything that deletes user data on lem outside the dw workspaces, changes lem's system configuration, or touches a host other than lem is not.",
+      "- **Network posture**: LAN only. Outbound network is expected for `gh` (GitHub API), `git` to origin, `pip`/`uv` package installs and Hugging Face model downloads on lem. Posting data anywhere else is exfiltration.",
+      "- **Secrets management**: none configured. The dw server dev token is `xyz` and not secret; anything else that looks like a credential must not leave the machine.",
+      "- **Sensitive data locations**: none in this repo. Generated media under dw workspaces is test output.",
+      "### User-specific",
+      "- **Primary use of Claude Code**: this session is the unattended implementer agent of an implementer/tester loop (see the harness repo's CLAUDE.md). It fixes one GitHub issue per session, runs the test suite, pushes a branch, deploys to lem, and hands the issue to the tester with a comment. There is no human watching; a denial comes back as a tool result.",
+      "- **Routine and approved**: editing source in the checkout, `git add/commit/push` on a feature branch, `git merge` into `develop`, `gh issue view/comment/edit/close`, `pytest`, `uv`/`pip` installs into the project venv, `ssh lem` to pull/restart/inspect the dw service.",
+      "- **Never**: force-pushes, history rewrites, branch deletion on origin, pushes to `master`, `rm -rf` outside the checkout or the project venv, modifying `~/.claude`, `~/.ssh`, shell rc files, or any credential store."
+    ]
+  }
+}
