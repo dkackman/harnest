@@ -328,6 +328,14 @@ RESEARCHER_PERMISSION_FLAGS=(
 # the implementer's auto-mode environment (run-loop.sh, --settings).
 ISOLATION_FLAGS=(--setting-sources project,local)
 
+# Auto-memory is not a settings source, so --setting-sources doesn't touch
+# it: a sonnet/opus session in the source checkout still loaded
+# ~/.claude/projects/<checkout>/memory/MEMORY.md (9.7 KB, ~8k tokens with
+# the memory instructions), and the implementer had been *writing* there
+# too (implementer-cycle-*.md files in Don's project memory). Every
+# driver inherits this from sourcing providers.sh.
+export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+
 # --tools: the built-in tools a role gets *schemas* for. Everything a role
 # actually used across every logged session, and nothing else. MCP tools
 # are unaffected (they come from --mcp-config as deferred names).

@@ -40,7 +40,9 @@ files described below. There is no build, lint, or test step.
   (`--setting-sources project,local` — no user-level plugins, hooks, memory or MCP servers
   reach an unattended agent; measured 2026-09-19, those were ~12 KB of SessionStart hook
   text per session, and the `remember` plugin was capturing agent sessions into Don's own
-  memory and re-injecting them), the per-role `--tools` lists (`CONSUMER_TOOLS`/
+  memory and re-injecting them), `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` exported alongside it
+  (auto-memory isn't a settings source; the implementer had been reading *and writing* Don's
+  project memory under the source checkout), the per-role `--tools` lists (`CONSUMER_TOOLS`/
   `RESEARCHER_TOOLS`/`IMPLEMENTER_TOOLS` — only the built-in tools a role has ever used; the
   ~20k tokens of Artifact/Workflow/Agent/... schemas a role is denied anyway no longer ride
   on every turn), and `effort_flags` with the `EFFORT` default (`medium`, what sessions ran
