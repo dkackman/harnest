@@ -660,6 +660,57 @@ No commit — this task produces evidence, not code. Report the before/after `us
 
 ---
 
+### Task 8: Disable auto-memory for agent sessions (found during Task 7)
+
+Measured during acceptance: with everything above in place, a sonnet implementer session still started at 51.8k, 13k above the haiku figure for the same flags. The difference is Claude Code's **auto-memory** — `~/.claude/projects/-Users-don-src-dkackman-diffusers-workflow/memory/` holds 58 files / 131 KB and its `MEMORY.md` (9.7 KB) is loaded into every sonnet/opus session there. Worse, files named `implementer-cycle-2026-09-12*.md` show the implementer agent has been *writing* into Don's project memory — the same feedback loop `remember` had. `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` takes the same session to 43.3k and closes the loop. `--setting-sources` does not cover it (auto-memory is not a settings source), so it is an environment variable, exported once where every driver already gets its shared environment.
+
+**Files:**
+- Modify: `providers.sh` — next to `ISOLATION_FLAGS`
+- Modify: `CLAUDE.md` — the `providers.sh` bullet sentence about `ISOLATION_FLAGS`
+
+- [ ] **Step 1: Export the variable in providers.sh**
+
+Directly after the `ISOLATION_FLAGS=(--setting-sources project,local)` line add:
+```bash
+# Auto-memory is not a settings source, so --setting-sources doesn't touch
+# it: a sonnet/opus session in the source checkout still loaded
+# ~/.claude/projects/<checkout>/memory/MEMORY.md (9.7 KB, ~8k tokens with
+# the memory instructions), and the implementer had been *writing* there
+# too (implementer-cycle-*.md files in Don's project memory). Every
+# driver inherits this from sourcing providers.sh.
+export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+```
+
+- [ ] **Step 2: Verify**
+
+Run (from the source checkout, sonnet, a few cents):
+```bash
+cd ~/src/dkackman/diffusers-workflow && source /Users/don/testing/iterate/providers.sh && MCP='{"mcpServers":{"dw":{"type":"http","url":"http://lem:8765/mcp","headers":{"Authorization":"Bearer xyz"}}}}' && claude -p "Reply with the single word ok." --model sonnet --output-format stream-json --verbose --no-session-persistence "${ISOLATION_FLAGS[@]}" --tools "$IMPLEMENTER_TOOLS" --strict-mcp-config --mcp-config "$MCP" --settings /Users/don/testing/iterate/agent-settings/implementer.json --permission-mode auto --append-system-prompt-file /Users/don/testing/iterate/agents/IMPLEMENTER.agent.md 2>/dev/null </dev/null | python3 -c "
+import sys,json
+for line in sys.stdin:
+    try: e=json.loads(line)
+    except ValueError: continue
+    if e.get('type')=='assistant':
+        u=e['message']['usage']; print('ctx=%.1fk'%((u.get('input_tokens',0)+u.get('cache_read_input_tokens',0)+u.get('cache_creation_input_tokens',0))/1000)); break
+"
+```
+Expected: `ctx≈43k` (was 51.8k without the export). Also `env -i HOME=$HOME PATH=$PATH bash -c 'source ./providers.sh; echo $CLAUDE_CODE_DISABLE_AUTO_MEMORY'` from the harness repo prints `1`.
+
+- [ ] **Step 3: Document**
+
+In CLAUDE.md's `providers.sh` bullet, after the sentence ending `…re-injecting them),` insert: `\`CLAUDE_CODE_DISABLE_AUTO_MEMORY=1\` exported alongside it (auto-memory isn't a settings source; the implementer had been reading *and writing* Don's project memory under the source checkout),`.
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add providers.sh CLAUDE.md
+git commit -m "providers: disable auto-memory for agent sessions
+
+Co-Authored-By: Claude Opus 5 (1M context) <noreply@anthropic.com>"
+```
+
+---
+
 ## Out of scope (noted, not done here)
 
 - This repo's `CLAUDE.md` (14 KB) and the dw repo's `CLAUDE.md` (39 KB, ~10k tokens on every implementer turn) still load into every session. Cutting them needs `--bare` (API-key only, no OAuth) or a rewritten `--system-prompt`; worth its own look once the numbers above are in.
