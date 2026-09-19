@@ -1678,6 +1678,29 @@ S-F057's so this case never touches `qa-ep23`; the `total_frames` values (248 fo
 124-frame shots; 236 = 248 − 12 for the dissolve) keep the score slice inside the
 ~10.3 s bed so neither run warns.
 
+### S-F069 — the no-seed warning is scoped to workflows that have something to seed
+S-F016 checks the warning fires on an unseeded workflow with a pipeline-shaped step;
+this is the other half. A workflow built only of `task` steps has no generative
+randomness — regeneration is deterministic and free — so asking it for a `seed` is
+noise, and a consumer that takes every warning seriously adds a meaningless key or
+stops trusting the warning list (#247). Free and instant — no run.
+expected: `validate_workflow` on an inline workflow with **no top-level `seed`**
+whose only step is a task (`{"name": "qr", "task": {"command": "qr_code",
+"arguments": {"qr_code_contents": "https://example.com"}}, "result":
+{"content_type": "image/png", "file_base_name": "qr", "subfolder": "final"}}`)
+→ `valid: true` and `warnings: []` — in particular no "sets no 'seed'" entry.
+Control: the same call with that step replaced by a one-step `pipeline`
+(`configuration.component_type: StableDiffusionPipeline`, any `model_name`, no seed)
+→ `valid: true` **with** the S-F016 warning, so the gate did not simply switch the
+warning off.
+It becomes a **finding** if the task-only form warns about `seed`, if the pipeline
+control stops warning (that is S-F016's finding too), or if `valid` flips to `false`
+on either.
+cleanup: none (read-only).
+source: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via
+provider `anthropic` — the `qr_code` form validated with `warnings: []`; the
+`StableDiffusionPipeline` form validated with the no-seed warning present.
+
 ## Performance
 
 ### S-P001 — default image generation latency

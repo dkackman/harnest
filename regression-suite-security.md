@@ -564,6 +564,28 @@ failure on a single-user box, and not worth an issue on their own.
 cleanup: delete the failed job's outputs if any.
 source: harness, initial security suite 2026-09-13.
 
+### SE-F030 — an unknown gallery name is refused without echoing a server path
+The gallery lookup shared by `get_gallery_metadata` (and the thumbnail /
+download / delete routes behind it) used to put the server's resolved absolute
+filesystem path in its 404 body, straight from the path validator's exception
+text (#247). The refusal must name what the caller sent, not where the server
+looked. Harmless probe: the names below exist nowhere.
+expected: `get_gallery_metadata(name="does-not-exist/0000/nope.png")` → an error
+whose text contains `does-not-exist/0000/nope.png` and **no** absolute path (no
+segment starting with `/home/`, `/var/`, `/srv/`, `/mnt/`, or the workspace root
+`get_server_info` reports); the 0.4.x wording is `Unknown file:
+does-not-exist/0000/nope.png`. Same with `name="../../etc/passwd"` → refused, the
+error echoes `../../etc/passwd` at most, and never a resolved `/etc/passwd` or a
+workspace-root-prefixed path. A positive control that a *real* `list_gallery`
+`name` still resolves is S-F013's job, not this case's.
+"It worked" looks like the error (or any response) carrying `/home/…` or the
+workspace's `outputs` directory. "Refused too late" does not apply — this is a
+read-only lookup; any leak is the failure.
+cleanup: none (read-only).
+source: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via
+provider `anthropic` — both names returned `Unknown file: <name as sent>` with
+no server path.
+
 ## Destructive scope and limits
 
 Deletes must stay inside what the caller owns, and documented caps must be
