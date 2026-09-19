@@ -2445,6 +2445,133 @@ wiring is inspectable through the interface and the gain's effect on the join wa
 verified in #199; a run-level check belongs beside S-F057's step 4 if one is ever
 wanted.
 
+### S-F065 — the stock `generate-speech` template runs on its VITS defaults, and no longer declares `voice_preset`
+#226 moved `templates/generate-speech`'s default `model_name` from `suno/bark-small`
+to `facebook/mms-tts-eng` (VITS) and dropped the template's `voice_preset` variable
+(a single-voice model refuses it, so keeping it would have made the template's own
+defaults reject themselves). This is S-F037's property — **a stored template must run
+as shipped, without a caller supplying anything** — re-stated against the new default;
+S-F037's Bark-specific assertions (24 kHz, ~8 s, `v2/en_speaker_6`) are wrong by design
+from `2d57b39` on and its retirement is proposed separately. The catalog's `audio`
+shape still has only two entries, one of which is this, and #169 showed the failure
+mode is total yet invisible to every case that authors its own workflow inline.
+1. `get_workflow(name="templates/generate-speech", variables_only=true)`.
+2. `validate_workflow(name="templates/generate-speech")`.
+3. `run_workflow(workflow_path="templates/generate-speech", acknowledged_cost=true)`
+   with **no `arguments` at all**; `wait_for_job`; `get_gallery_metadata` on the wav.
+4. `validate_workflow(name="templates/generate-speech", arguments={"voice_preset":
+   "v2/en_speaker_6"})`.
+5. `run_workflow(...)` again with `arguments={"text": "One."}`; `get_gallery_metadata`.
+expected:
+- Step 1: variables are exactly `text` and `model_name`, `model_name` is
+  `facebook/mms-tts-eng`, and there is **no** `voice_preset`. A Bark default or a
+  reappearing `voice_preset` is the regression, whether or not the run passes.
+- Step 2: `valid: true`, `plan.steps: 1`; the "no seed, step cache disabled" warning
+  is this template's normal state. As in #169, a clean pre-flight is not evidence
+  the run works — step 3 is what this case is for.
+- Step 3: `status: "succeeded"`, `error: null`, `warnings: []`, a **non-empty**
+  manifest (one `speak` entry, one `.wav`). Metadata: `kind: audio`, `sample_rate:
+  16000` (VITS's native rate — the template declares no `result.sample_rate`, so a
+  different figure means the saving path re-stamped it), `channels: 1`,
+  `duration_seconds` roughly 4-5 s for the stock line (measured 4.624), `mean_dbfs`
+  well above -40 (measured -18.3, `peak_dbfs` -1.3). Under 30 s end to end
+  (measured 2.9 s warm) — minutes here is #132's complaint, file it separately.
+- Step 4: `valid: false`, one error at `arguments.voice_preset` reading `Unknown
+  variable 'voice_preset'; declared variables: model_name, text`. The old Bark knob
+  is refused by the free pre-flight, not at model load.
+- Step 5: `succeeded`, a much shorter wav (measured 0.16 s, `mean_dbfs` -15.6) —
+  `text` still reaches VITS as a plain string and the output length tracks it.
+cleanup: delete both runs with the `<workflow>/<run id>` form of `delete_output`.
+Nothing here is a fixture.
+metrics: none — the VITS path is a few seconds warm and a timing series on it
+would only mirror model-load time; S-P004 remains the audio-chain timing.
+source: tester, model `opus` via provider `anthropic`, verified in #226 on 2026-09-18
+against dw 0.4.0-beta.6 (`develop` 2d57b39) on `lem`, jobs `0d6dfd28a919` and
+`d1a35e432ebf` in a throwaway `qa-verify-226` workspace. The implementer's hand-off
+proposed the default run and the audio checks; the `voice_preset` refusal and the
+`text` override are mine.
+
+### S-F066 — `generate_speech` reaches the model for every TTS family it drives, not just the template default
+#232: transformers 5.17.0's `TextToAudioPipeline.preprocess` called
+`BatchEncoding.to(dtype=...)`, which that class never accepted, so **every** model
+`generate_speech` routes through `pipeline("text-to-audio", ...)` — SpeechT5, VITS,
+Bark — died ~4 s in before any forward pass. #224 had scoped the breakage to Bark
+("expendable") on the strength of #169, and S-F065 alone would have kept passing
+had the default been a model that avoids that pipeline class. This case pins the
+shared-pipeline property with the two non-default families, plus the version
+exclusion the fix restored, so a future bump that reintroduces the bug (or lands
+5.17.0 again) is caught whichever model the template defaults to.
+1. `get_server_info`; read `runtime.packages.transformers`.
+2. `run_workflow(workflow_path="templates/generate-speech", arguments={"model_name":
+   "suno/bark-small", "text": "The quick brown fox jumps over the lazy dog."},
+   acknowledged_cost=true)`; `wait_for_job`.
+3. `run_workflow(inline_workflow=..., acknowledged_cost=true)` with one
+   `generate_speech` step, `arguments={"text": "The quick brown fox jumps over the
+   lazy dog.", "model_name": "microsoft/speecht5_tts", "device": "cuda"}`, result
+   `{"content_type": "audio/wav", "subfolder": "final", "file_base_name":
+   "speecht5-plain"}`; `wait_for_job`; `get_job` for the traceback.
+expected:
+- Step 1: the version is **not** `5.17.0`. (The floor is `>=5.16.1,!=5.17.0`; a
+  later version that passes steps 2-3 is fine — the pin, not the number, is the
+  property.)
+- Step 2: `status: "succeeded"`, `error: null`, `warnings: []`, one `.wav` in the
+  `speak` manifest entry. Bark is the slow family here — measured 7.2 s warm; under
+  a minute is normal.
+- Step 3: `status: "failed"` — SpeechT5 has no default voice — but the failure is
+  the model's own: `error` reads `speaker_embeddings must be specified` and the
+  traceback's last frames are `text_to_audio.py … _forward` →
+  `modeling_speecht5.py … _generate_speech`. **A `TypeError` mentioning
+  `BatchEncoding.to()` / `dtype`, or a traceback that ends in
+  `text_to_audio.py … preprocess`, is the regression** even though the job "fails"
+  either way — the discriminator is *where* it failed, not that it did. (Passing
+  `speaker_embedding` and getting a wav is #223's case, not this one.)
+cleanup: delete step 2's run with the `<workflow>/<run id>` form of `delete_output`;
+step 3 writes nothing. Nothing here is a fixture.
+metrics: none — S-F065 and S-P004 carry the audio timings; this case is about
+which frame the failure lands in.
+source: tester, model `opus` via provider `anthropic`, verified in #232 on 2026-09-18
+against dw 0.4.0-beta.6 (`develop` 7f588c2, transformers 5.16.1) on `lem`, jobs
+`ebc313a45891` (Bark) and `d0425f18a275` (SpeechT5) in workspace `qa-verify-223`.
+The implementer's hand-off proposed the default-template run, which S-F065 already
+holds; the non-default families and the failure-location check are mine.
+
+### S-F067 — `generate_speech` rejects a malformed `messages` before any model load, naming the argument
+#233: `messages` (added by #225, see S-F063) had no shape guard, so a bare string
+passed the exactly-one check and silently behaved as `text`, and a wrong-keyed dict
+died in the tokenizer with an error that never named `messages`. This locks in the
+runtime guard: every non-conforming shape fails at the task level, sub-second, with
+one error that names `'messages'` and the required `{role, content}` shape — and a
+well-formed list still gets through to the pipeline. Each step is a one-step inline
+workflow `{"id": "<id>", "steps": [{"name": "speak", "task": {"command":
+"generate_speech", "arguments": <args>}}]}` with `args` = `{"messages": <M>,
+"model_name": "facebook/mms-tts-eng", "device": "cuda"}`; no `seed`, no `result`
+block needed (every step fails by design). `run_workflow(acknowledged_cost=true)`
+then `wait_for_job` for each.
+1. `M = "hello there"` (bare string).
+2. `M = [{"speaker": "bob", "text": "hello"}]` (wrong-keyed dict).
+3. `M = []` (empty list).
+4. `M = ["hello"]` (non-dict item).
+5. `M = [{"role": "user", "content": 42}]` (non-string `content`).
+6. `M = [{"role": "user", "content": "hello there"}]` (well-formed control).
+expected:
+- Steps 1–5 each finish `failed` in under ~2 s (`finished_at - started_at`), with no
+  `loading` phase, and an `error` containing `'messages'` and `non-empty list of
+  {'role': ..., 'content': ...}`. Any of them reaching the tokenizer (`Input must be
+  a string, list of strings, or list of ints`), reaching the model, or — step 1
+  especially — *succeeding* as if `text` had been given, is the regression.
+- Step 6 fails **after** the guard with the model's own error mentioning
+  `chat_template` (VITS has none; this is S-F063 step 3's outcome). A step 6 that
+  fails with the `'messages' needs` wording is the guard over-rejecting — also a
+  regression.
+- `validate_workflow` accepting all six is the current state (runtime guard only);
+  a validate-time rejection of 1–5 is an improvement, note it and move on.
+cleanup: `delete_output` on the six failed runs' `run_dir`s (each is empty).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #233 on 2026-09-18
+against dw `0.4.0-beta.6` / transformers `5.16.1` on `lem` (jobs `5e23773d18de`,
+`a1518b26136d`, `05765286f54e`, `5937f06e6510`, `6c0ae99d62db`, control
+`2ee19cd29502`) in workspace `qa-verify-233`.
+
 ## Performance
 
 ### S-P001 — default image generation latency

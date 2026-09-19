@@ -1594,4 +1594,52 @@ peak −3.002 dBFS, seam second rms −20.1 / peak −4.6) and `ca911ef36454`
 on this material with `audio_bleed_ms: 400`; ep22 is the re-cut the warning
 asked for.
 
+### C-F038 — `templates/dissolve-between-shots` honours `match_levels_dbfs` across three shots: every shot is gained to the lower target, none is clip-held
+C-F037 leaves levels out of its assertion because the default −20 dBFS
+`rms` target clip-holds a loud shot (#214). This is the level-match check the
+extra variable makes possible (#215): three dialogue shots that sit 6–8 dB
+apart are dissolved with `match_levels_dbfs: -24`, and the assertion is read
+from the `dissolve_videos` step's level-match events — one per shot, each
+with the measured rms, the gain applied, and `held`. A regression in how the
+template forwards the target (variable dropped, default −20 winning, the
+clip-hold engaging where the headroom exists) shows up as a wrong gain sign,
+a `held: true`, or a missing event. Needs the two ep21 fixtures above plus a
+third 24 fps / 124-frame / 32 kHz stereo shot — `asset:qa-cast/ep4-shot1-amnesty.mp4`
+(shared `common/assets`, quieter than the ep21 pair) is what the source run
+used; either C-F001 fixture substitutes, re-reading its frame count. One
+template job, ~6 s, no GPU.
+expected: `validate_workflow` on `templates/dissolve-between-shots` with
+`shots: [asset:qa-cast/ep21-shot1-receipt.mp4, asset:qa-cast/ep21-shot2-verdict.mp4,
+<third shot>]`, `dissolve_frames: 12`, `match_levels: "rms"`,
+`match_levels_dbfs: -24`, `score: "asset:<any 32 kHz audio>"`,
+`sample_rate: 32000`, `fps: 24`, `total_frames: 348` (= 3×124 − 2×12; re-derive
+if the third shot's count differs), `score_gain: 0.6`, `world_gain: 1.0` is
+valid; the run succeeds. `get_job_events` carries **three** level-match
+events from the `dissolve_videos` step, one per shot in order, each naming
+the measured rms in dBFS and the gain in dB, with **`held: false` on all
+three** and each gain ≈ (−24 − measured rms) within 0.2 dB — so a shot
+measuring above −24 gets a negative gain and one below gets a positive one.
+The film decodes at 348 frames / 24 fps / 32000 Hz / 2 channels /
+`duration_seconds` 14.5 ± 0.01, `peak_dbfs` strictly below 0; the seam
+`envelope` from `get_gallery_metadata(envelope=true)` has no second more than
+6 dB below its neighbours (no hole at either dissolve). A `slice_past_end`
+warning on the score is expected when the score is shorter than 14.5 s and is
+not a finding.
+It is a **finding** if any event reports `held: true` (there is headroom for
+every gain at −24 on this material), if a gain's sign contradicts its measured
+rms against −24, if a gain matches the −20 target instead (the variable is not
+reaching the task), if fewer than three events appear, if the run errors, or
+if the film's frame count, rate or duration is off.
+cleanup: delete the run. The ep21 fixtures and the shared ep4 shot are
+durable — keep them.
+source: tester, found while running TESTER_TASK.agent.md (episode 23) on
+2026-09-19 over MCP as model `opus` via provider `anthropic`, workspace
+`qa-ep23`, score `asset:qa-cast/ep20-score.wav` (10.33 s, padded 4.17 s with a
+`slice_past_end` warning), job `1032400503fc` (6 s): shot rms −24.3 / −20.6 /
+−27.9 dBFS → gains +0.3 / −3.4 / +3.9 dB, all `held: false`; film 348 f /
+14.5 s / 32000 Hz / stereo / peak −2.94 dBFS, envelope rms −21.7 to −33.8 with
+no seam hole; against `dw` 0.4.0-beta.6. The same job is the repro for #235
+(the `film` step's `subfolder` is `""`, not `final`) — that is not part of
+this case's assertion.
+
 ## Performance
