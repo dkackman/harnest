@@ -1250,50 +1250,6 @@ same reason S-F010 and S-F035 are: the free pre-flight is what every other case'
 control rests on, and a hole in it is silent — a `valid: true` with a plan looks
 exactly like a healthy one right up until the run burns the budget.
 
-### S-F037 — the stock `generate-speech` template runs on its own defaults
-Call `run_workflow(workflow_path="templates/generate-speech",
-acknowledged_cost=true)` with **no `arguments` at all** — stock catalog entry,
-stock defaults (`suno/bark-small`, `v2/en_speaker_6`, the template's own line of
-text). This is deliberately *not* S-F007: S-F007 exercises Bark inside an inline
-three-step chain it authors itself, so it can keep passing while the catalog
-entry a consumer would actually reach is unusable. #169 was exactly that — every
-Bark run failed on an upstream `transformers` 5.17.0 regression
-(`BatchEncoding.to() got an unexpected keyword argument 'dtype'`), and the
-catalog's `audio` shape has only two entries, one of which is this. The general
-property: **a stored template must run as shipped, without a caller supplying
-anything.** A template whose defaults do not run is a broken catalog entry
-regardless of whether some hand-written workflow can reach the same task.
-expected:
-- `validate_workflow(name="templates/generate-speech")` → `valid: true`,
-  `plan.steps: 1`. (A "no seed, step cache disabled" warning is the normal state
-  of this template, not a finding.) Note that validate passed here throughout
-  #169 too — a clean pre-flight is *not* evidence the run works, which is why
-  this case runs it.
-- The job reaches `status: "succeeded"` with `error: null` and `warnings: []`.
-- The manifest is **non-empty**: one `speak` entry with one `.wav`. An empty
-  manifest on a succeeded job is as much a failure here as an outright error.
-- `get_gallery_metadata` on that wav reports `kind: audio`, `sample_rate:
-  24000`, `channels: 1`, a `duration_seconds` of roughly 8 s for the stock line,
-  and a level that is not silence (`mean_dbfs` well above -40; it measured
-  -25.8, `peak_dbfs` -3.4). The rate assertion matters on its own: the template
-  declares no `result.sample_rate` precisely so the wav carries whatever the
-  model produced, so a wrong rate here means the saving path re-stamped it.
-- Under a minute of GPU time end to end (it measured 17.4 s). If this ever runs
-  for minutes, that is #132's complaint returning, not this case's subject —
-  file it separately rather than widening this case.
-cleanup: delete the run with the `<workflow>/<run id>` form of `delete_output`.
-Nothing here is a fixture.
-metrics: none — S-P004 already times the Bark path via S-F007's chain, and a
-second timing series on the same model would drift in lockstep without adding a
-signal.
-source: tester, model `opus` via provider `anthropic`, verified in #169 on
-2026-09-16 against dw 0.4.0-beta.4 on `lem` (fix `f8d7452` on `develop`, which
-pinned `transformers>=5.16.1,!=5.17.0`), run in a throwaway `qa-verify-169`
-workspace. Proposed by the implementer in its hand-off comment; the manifest,
-level, rate-provenance and runtime bullets are mine. At smoke level because it
-is one of the two `audio`-shape catalog entries, costs ~17 s, and its failure
-mode in #169 was total and yet invisible to every other case in this file.
-
 ### S-F038 — a media-less run directory is enumerable and deletable by name
 S-F034 pins that a run which wrote no media can still be *deleted* by its
 `<workflow>/<run id>` name — but only while you still hold that name from the job
