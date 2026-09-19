@@ -132,30 +132,30 @@ under Guardrails says how to make a cut-off session cheap to resume.
 ## Triage session
 
 When your prompt says it is a triage session, it lists every issue waiting
-for you. The job is to decide, cheaply, what each one is — not to fix
-anything. For each listed issue, `gh issue view <n> --comments`, then apply
-the triage checks from step 3a (filed by someone else → park; duplicate →
-close; restated `wontfix` → close; already fixed but undeployed → note the
-commit). Read source only as far as a disposition needs — a `grep` to see
-whether two issues land in the same file, not a study of the fix. Do not
-reproduce, do not branch, do not deploy.
+you. The job is to decide, cheaply, what each one is — not to fix anything.
+For each listed issue, follow these steps in order:
 
-Also judge, from the issue text alone, whether a fix would touch **new
-engine or validation surface**: a new task/command, a new `validate_workflow`
-rule, or widening an existing task's argument matrix in a way that creates
-edge cases a quick fix is likely to leave unchecked (the shape of #119 →
-#208/#209: a new `judge`/`select` surface shipped and verified clean, then
-turned up an unenforced pre-flight check and a crash on an untested
-argument combination once the tester probed further). This is a lower,
-earlier bar than step 7's "engine or syntax change" — you're not asking
-"is this a breaking change," you're asking "does fixing this mean adding
-code paths nobody has exercised yet, where a narrow repro-only verify
-might pass while edge cases underneath it don't." When it does, escalate
-it at triage rather than letting a fix session build it and hand it to
-the tester to discover the gaps after the fact.
-
-Then leave exactly one comment per issue that still needs work, beginning
-`triage:`, in one of these forms:
+1. Read the issue with `gh issue view <n> --comments`.
+2. Apply the ownership check from step 3a. If someone other than the repo
+  owner filed it, park it with `owner:don` + `status:needs-approval` and
+  explain that human triage is required.
+3. Check whether the issue is already handled. If a fix exists on `develop`
+  but is not deployed, record the commit for a later deploy. If it is
+  deployed and still reproduces, continue triaging it as a real issue.
+4. Search all open and closed issues for duplicates. If another issue is the
+  same problem, mark this issue `duplicate`, point to the canonical issue,
+  and close it as `not planned`.
+5. Check whether it only restates an earlier `wontfix`. If it adds no new
+  evidence, close it as `not planned` with a pointer to that issue.
+6. Read only the source needed for a disposition, such as a `grep` to see
+  whether two issues share a file. Do not reproduce, branch, or deploy.
+7. From the issue text, decide whether the fix would add **new engine or
+  validation surface**: a new task/command, a new `validate_workflow` rule,
+  or a wider argument matrix with unchecked edge cases. This is an earlier,
+  lower bar than step 7's "engine or syntax change": escalate when a narrow
+  repro-only verification could pass while new code paths remain untested.
+8. Leave exactly one `triage:` comment for each issue that still needs work.
+  Use one of these forms:
 
 - `triage: work` — a self-contained fix; its own session will handle it.
 - `triage: batch with #NN, #MM — <one line on why>` — issues sharing a root
@@ -175,8 +175,8 @@ Then leave exactly one comment per issue that still needs work, beginning
   the comment. This issue then gets no fix session until it comes back
   `owner:implementer` with no status label.
 
-Keep the comments short — they are read by a fresh session that has none
-of your context. Name the model and provider you ran as, as always.
+9. Keep comments short because a fresh session will read them without your
+   context. Name the model and provider you ran as, as always.
 
 ## Guardrails
 

@@ -33,13 +33,11 @@ per-issue verify sessions):
    old one with a recently fixed tool to confirm the fix holds in context.
 3. Exercise adjacent tools while you're there: probe, slice, resample, mix,
    pair. Chain them. Chains are where parameters get dropped (T009).
-4. File a ticket the moment something is wrong.
-   File a ticket the moment something is missing.
-   File a ticket the moment something is undocumented.
-   File a ticket the moment you work around an annoyance. A workaround you
-   had to invent is a bug report. File it there and then — nothing survives
-   this session but what you filed, so a ticket held back to the end of the
-   task is a ticket the budget cut-off eats.
+4. File a ticket for any significant issue encountered during the session,
+  including bugs, missing documentation, or workarounds. A workaround you
+  had to invent is a bug report. File it there and then — nothing survives
+  this session but what you filed, so a ticket held back to the end of the
+  task is a ticket the budget cut-off eats.
 
 ## The bible
 
