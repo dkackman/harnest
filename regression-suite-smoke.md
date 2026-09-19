@@ -2301,6 +2301,150 @@ source: tester, model `opus` via provider `anthropic`, verified in #222 on 2026-
 against dw `0.4.0-beta.6` (develop `a516b12`) on `lem`: python 3.12.3, torch
 2.14.0+cu130, cuda 13.0, driver 580.173.02, diffusers 0.41.0.dev0 on both tools.
 
+### S-F061 — a list-driven run's `intermediate/…-shot@*.mp4` files, named as the manifest names them, are valid `shots` for `templates/assemble-and-score`
+The series-episodes procedure (#217) recuts an episode from the per-shot clips of an
+H3 template run rather than re-uploading them: `assemble-and-score`'s `shots` variable
+takes `output:` references to those files. The clips a `for_each` `shot` step writes
+live in the run's `intermediate/` subfolder and carry the `<workflow id>-shot@<name>.<index>-0.0.mp4`
+name; `final/` holds only the concatenated episode. Two things have to keep holding
+for that to work: `validate_workflow` must resolve a template's *argument* `output:`
+reference (an existence check against the workspace — unlike an inline step
+reference, S-F033) exactly as the manifest spells it, `@` and all, and the guessed
+form the skill used to teach (`final/<shot name>.mp4`) must keep failing *here*, in
+the free call, not after the job is queued. Cheap: one two-entry `concat_videos`
+`for_each` run (no model, ~5 s) and two free validate calls; no H3 generation needed,
+since the naming and the subfolder are the `for_each` step's, not the model's.
+Run this inline workflow in the level's workspace:
+```json
+{"id":"s_f061",
+ "variables":{"shots":[{"name":"open","clip":"asset:qa-cast/ep6-cold-open.mp4"},
+                       {"name":"reply","clip":"asset:qa-cast/ep3-shot2-reply.mp4"}]},
+ "steps":[{"name":"shot","for_each":"variable:shots",
+   "task":{"command":"concat_videos","arguments":{"videos":["item:clip"],"fps":24}},
+   "result":{"content_type":"video/mp4","subfolder":"intermediate"}}]}
+```
+then `validate_workflow(name="templates/assemble-and-score", arguments={shots: [...],
+score: "asset:qa-cast/ep15-song.mp3", total_frames: 248})` twice: (a) `shots` = the two
+manifest names verbatim, each prefixed `output:`; (b) the same with `shots[0]`
+replaced by the guessed form `output:s_f061/<run id>/final/open.mp4`.
+expected:
+- The run **succeeds** with a two-entry manifest, steps `shot@open` and `shot@reply`,
+  both `subfolder: "intermediate"`, files
+  `s_f061/<run id>/intermediate/s_f061-shot@open.0-0.0.mp4` and
+  `…/s_f061-shot@reply.1-0.0.mp4` — no `final/` entry at all. Copy the names from the
+  manifest; do not retype them.
+- (a) → **`valid: true`**, `checked_arguments` containing `shots` (so the references
+  were actually resolved, not skipped), plan of 7 steps.
+- (b) → **`valid: false`**, single error at path **`arguments.shots[0]`** whose message
+  names the missing name and the workspace's outputs directory (`Output
+  's_f061/<run id>/final/open.mp4' not found under …/regression-smoke/outputs`). A
+  `valid: true` here — the existence check dropped from argument references — is the
+  regression that turns a bad `shots` entry back into a queued job that fails at the
+  cut.
+cleanup: delete the run (`delete_output` on `s_f061/<run id>`); the validate calls
+write nothing. The three assets are shared fixtures — leave them.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #217 on 2026-09-18
+against dw `0.4.0-beta.6` on `lem` (job `c5354b8a9c99`, workspace `regression-smoke`);
+the same two arms were first confirmed against a real `music-video` H3 run
+(`slow-light`, job `2e646456406a`) in that issue's verify comment. The implementer
+proposed the positive arm in its hand-off; the negative arm and the fixture-based
+stand-in for the H3 run are mine.
+
+### S-F062 — `match_levels_dbfs` on both `concat_videos` and `dissolve_videos` names the -0.5 dBFS clip-hold ceiling and the `match_levels_held` warning
+#214 was reopened as a false regression because the served `match_levels_dbfs`
+description named only the `peak` default (−1 dBFS), which a workflow author read as
+the ceiling a clipping shot is held at; #220 fixed the text, and the first fix reached
+only `concat_videos` because `dissolve_videos` carries its own copy of the string
+(their `match_levels` behaviour is shared, S-F056/S-F057). This locks in that both
+served descriptions agree and name what a consumer has to look for. Read-only, free.
+1. `get_task(command="concat_videos")`.
+2. `get_task(command="dissolve_videos")`.
+expected:
+- In both responses the `match_levels_dbfs` parameter's `description` contains all
+  three of: `-0.5 dBFS` (the hold ceiling), `match_levels_held` (the warning kind),
+  and the phrase `log event` (the per-shot hold report) — alongside the `-1 dBFS` /
+  `-20 dBFS` defaults.
+- The two descriptions are identical. A `dissolve_videos` text that names only the
+  defaults, or that differs from `concat_videos`'s, is the regression (the two copies
+  drifting apart is exactly how #220 bounced once).
+cleanup: none (read-only).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #220 on 2026-09-18
+against dw `0.4.0-beta.6` on `lem`.
+
+### S-F063 — `generate_speech` requires exactly one of `text` / `messages`, and a `messages` list reaches the pipeline as chat input
+#225 added a `messages` argument (a list of `{role, content}` dicts, for chat-templated
+TTS models such as VibeVoice) beside `text`, and turned the old "needs `text`" guard
+into "exactly one of the two". This locks in the guard firing at the task level (before
+any model load, so it is nearly free) and the list actually being handed to the
+pipeline as chat input rather than stringified. Each step is a one-step inline
+workflow: `{"id": "<id>", "steps": [{"name": "tts", "task": {"command":
+"generate_speech", "arguments": <args>}, "result": {"content_type": "audio/wav",
+"subfolder": "final", "file_base_name": "tts"}}]}`. No `seed` needed; all three fail
+by design.
+1. `args = {"text": "hello", "messages": [{"role": "user", "content": "hello"}],
+   "model_name": "facebook/mms-tts-eng", "device": "cuda"}` → `run_workflow`, then
+   `get_job`.
+2. `args = {"model_name": "facebook/mms-tts-eng", "device": "cuda"}` (neither) →
+   `run_workflow`, `get_job`.
+3. `args = {"messages": [{"role": "user", "content": "hello there"}], "model_name":
+   "facebook/mms-tts-eng", "device": "cuda"}` → `run_workflow`, `get_job`.
+expected:
+- Steps 1 and 2 fail in under ~2 s with an `error` containing `exactly one of 'text'`
+  and `'messages'`; the traceback's deepest dw frame is in `dw/tasks/task.py`, with no
+  `transformers/pipelines` frame — the guard ran before the pipeline was built.
+- Step 3 fails with an error mentioning `chat_template` (VITS has none), and its
+  traceback contains `apply_chat_template` under `transformers/pipelines/text_to_audio.py`
+  — proof the list went through as chat input. A step 3 that fails with
+  `exactly one of` (list rejected by the guard), or whose traceback shows no
+  `apply_chat_template` (list coerced to text), is the regression. If step 3 fails
+  with `BatchEncoding.to() got an unexpected keyword argument 'dtype'` instead, that
+  is #232 (the transformers `preprocess` breakage), not this case — but it would mean
+  the chat branch was skipped, so still report it.
+- `validate_workflow` accepts all three (the guard is runtime-only as of #225); a
+  validate-time rejection is an improvement, not a failure — note it and move on.
+cleanup: `delete_output` on the three failed runs' `run_dir`s (each is empty; nothing
+else is written).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #225 on 2026-09-18
+against dw `0.4.0-beta.6` / transformers `5.17.0` on `lem` (jobs `9ef1cbb420f7`,
+`8d8f7829ffa9`, `a510779ccd67`).
+
+### S-F064 — every template that exposes `audio_bleed_ms` also exposes `audio_bleed_gain_db`, and `assemble-and-score` wires it into `concat_videos`
+#199 added `audio_bleed_gain_db` to `concat_videos` to duck the time-reversed tail
+bleed #198 established, but no template reached it: `templates/assemble-and-score`,
+`templates/minimax/dialogue-short` and `templates/minimax/music-video` all exposed the
+switch that creates the bleed (`audio_bleed_ms`) and not the one that sets its level,
+so the shipped mitigation was unreachable except by copying a template inline — the
+second recurrence of "task argument exists, no template exposes it" after #215 /
+S-F057. Discovery calls only, all free; the task-level behaviour of the gain is #199's.
+1. `get_workflow(name=..., variables_only=true)` for each of the three templates.
+2. `get_workflow(name="templates/assemble-and-score")` (full definition).
+3. `list_workflows(shape="sequence")`.
+4. `validate_workflow(name="templates/minimax/dialogue-short", arguments=
+   {"audio_bleed_gain_db": -6.5})`, then the same with `{"audio_bleed_gain_db": "loud"}`.
+expected:
+- Step 1: all three list `audio_bleed_gain_db: 0` beside `audio_bleed_ms`. Any
+  template whose variables carry `audio_bleed_ms` but not `audio_bleed_gain_db` is the
+  regression — including a future template that adds the bleed switch without the gain.
+- Step 2: the `edit` step's `concat_videos` arguments contain
+  `"audio_bleed_gain_db": "variable:audio_bleed_gain_db"` — declared *and* wired; a
+  variable present in step 1 but absent here is the silent form of the regression.
+- Step 3: `variable_names` for all three templates contain `audio_bleed_gain_db`, and
+  `assemble-and-score`'s `summary` is a complete sentence, not cut with `…` (the extra
+  variable names are what pushed the compact listing over its #101 budget in #227).
+- Step 4: `-6.5` → `valid: true` with `checked_arguments: ["audio_bleed_gain_db"]` (a
+  fractional dB is accepted despite the integer default); `"loud"` → `valid: false`, one
+  error at `arguments.audio_bleed_gain_db` reading `Cannot convert`.
+cleanup: none (read-only).
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #227 on 2026-09-18
+against dw `develop` 5c03105 on `lem`. Not run to a generation in the verify: the
+wiring is inspectable through the interface and the gain's effect on the join was
+verified in #199; a run-level check belongs beside S-F057's step 4 if one is ever
+wanted.
+
 ## Performance
 
 ### S-P001 — default image generation latency
