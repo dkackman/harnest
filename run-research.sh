@@ -5,6 +5,7 @@
 #
 #   ./run-research.sh                       # research every open idea awaiting research
 #   RESEARCH_MODEL=opus ./run-research.sh   # this agent only; defaults to sonnet
+#   RESEARCH_EFFORT=high ./run-research.sh   # --effort; defaults medium
 #   PROVIDER=ollama RESEARCH_MODEL=qwen2.5:32b ./run-research.sh
 #   DW_URL=... DW_TOKEN=... ./run-research.sh
 #   tail -f logs/research.log               # watch from another terminal
@@ -45,7 +46,11 @@ mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
 
+RESEARCH_EFFORT="${RESEARCH_EFFORT:-$EFFORT}"   # --effort; medium unless set
+
 resolve_model_env "$RESEARCH_PROVIDER" "$RESEARCH_MODEL" || exit 1
+effort_flags anthropic "$RESEARCH_EFFORT" >/dev/null || exit 1
+EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$RESEARCH_PROVIDER" "$RESEARCH_EFFORT")"
 fb_words="$(fallback_model_flags "$RESEARCH_PROVIDER" "$FALLBACK_MODEL")" || exit 1
 FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
 
@@ -54,6 +59,8 @@ ts() { date '+%H:%M:%S'; }
 RESEARCH_FLAGS=(
   --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
   --strict-mcp-config
+  "${ISOLATION_FLAGS[@]}"
+  --tools "$RESEARCHER_TOOLS"
   "${RESEARCHER_PERMISSION_FLAGS[@]}"
 )
 
@@ -64,10 +71,11 @@ RESEARCH_FLAGS=(
 run_session() {
   local n="$1"
   (cd "$SOURCE_DIR" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. Follow the role instructions at $AGENTS/RESEARCHER.agent.md exactly for this run, researching and dispositioning ONLY issue #$n. The harness repo's CLAUDE.md (for its 'Ticket protocol' section) is at $REPO/CLAUDE.md. Then stop.
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. Your role instructions are in your system prompt (the contents of $AGENTS/RESEARCHER.agent.md); follow them exactly for this run, researching and dispositioning ONLY issue #$n. The harness repo's CLAUDE.md (for its 'Ticket protocol' section) is at $REPO/CLAUDE.md. Then stop.
 
 $(runtime_note researcher "$RESEARCH_PROVIDER" "$RESEARCH_MODEL")" \
-    --model "$RESEARCH_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
+    --model "$RESEARCH_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} \
+    --append-system-prompt-file "$AGENTS/RESEARCHER.agent.md" \
     "${STREAM_FLAGS[@]}" "${RESEARCH_FLAGS[@]}" 2>&1 | render_stream research) \
     | tee -a "$LOGS/research.log" \
     | sed -u "s/^/[researcher:#$n] /" \

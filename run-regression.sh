@@ -15,6 +15,7 @@
 #   ./run-regression.sh all                  # smoke, complete, model-specific, security
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
 #   REGRESSION_MODEL=sonnet ./run-regression.sh   # defaults to opus
+#   REGRESSION_EFFORT=high ./run-regression.sh   # --effort; defaults medium
 #   PROVIDER=ollama REGRESSION_MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
@@ -100,10 +101,15 @@ mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
 
+# --effort; medium unless set. Defaults to EFFORT (providers.sh).
+REGRESSION_EFFORT="${REGRESSION_EFFORT:-$EFFORT}"
+
 # Reject a bad model/provider (or fallback) before touching the ticket board
 # or the workspace. FALLBACK_FLAGS is an array so a name like opus[1m] is
 # never glob-expanded on the claude command line.
 resolve_model_env "$REGRESSION_PROVIDER" "$REGRESSION_MODEL" || exit 1
+effort_flags anthropic "$REGRESSION_EFFORT" >/dev/null || exit 1
+EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$REGRESSION_PROVIDER" "$REGRESSION_EFFORT")"
 fb_words="$(fallback_model_flags "$REGRESSION_PROVIDER" "$FALLBACK_MODEL")" || exit 1
 FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
 
@@ -159,6 +165,8 @@ REGRESSION_FLAGS=(
   --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
   --strict-mcp-config
   --plugin-dir "$PLUGIN_DIR"
+  "${ISOLATION_FLAGS[@]}"
+  --tools "$CONSUMER_TOOLS"
   "${CONSUMER_PERMISSION_FLAGS[@]}"
 )
 
@@ -170,10 +178,11 @@ REGRESSION_FLAGS=(
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" instructions="$5"
   (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Follow the role instructions at $AGENTS/REGRESSION.agent.md exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions are in your system prompt (the contents of $AGENTS/REGRESSION.agent.md); follow them exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
-    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} \
+    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} \
+    --append-system-prompt-file "$AGENTS/REGRESSION.agent.md" \
     "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 | render_stream regression) \
     | tee -a "$LOGS/regression.log" \
     | sed -u "s/^/[regression:$level$tag] /" \
