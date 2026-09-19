@@ -134,10 +134,15 @@ running.
      *is* the status record for the case's failure — nothing about it also
      gets written into the suite file.
 5. Final sweep: list your level's workspace's outputs, assets and
-   workflows. Anything still there should be either a fixture listed in the
-   suite's "Fixtures" section or a repro artifact named in an *open* issue —
-   check with `gh issue view`. Delete everything else, including repro
-   artifacts from earlier runs whose issue has since been closed. If the
+   workflows, **and** its orphan run dirs (`list_gallery(only_orphans=true)`)
+   — a refused or failed job still leaves a bookkeeping-only run dir
+   (manifest/workflow/job, no media) that the normal listing doesn't surface
+   at all, so checking only the non-orphan listing under-counts what's
+   actually there. Anything still there should be either a fixture listed in
+   the suite's "Fixtures" section or a repro artifact named in an *open*
+   issue — check with `gh issue view`. Delete everything else, including
+   repro artifacts from earlier runs whose issue has since been closed and
+   every orphan run dir (`delete_output(name="<workflow>/<run id>")`). If the
    sweep finds leftovers from this run that a case should have deleted,
    that's a cleanup bug in your own run — delete them and, if it's not
    obvious from the case text why, file an issue on it the same as any other
@@ -215,7 +220,14 @@ one session, as above. In a chunked session:
   run that check at the start of every session before your slice, even
   when the case isn't in it — a later slice can't rely on an earlier
   session having stopped.
-- Skip the final sweep (step 5); the sweep session does it.
+- Skip the final sweep (step 5) except its orphan check: before you exit,
+  `list_gallery(only_orphans=true)` and `delete_output` any orphan run dir
+  your own slice's cases produced (a refused/failed `run_workflow` call
+  leaves one even though it holds no media). Do this every session, not just
+  the sweep session — deferring it lets refused-job run dirs from cases that
+  are a pass-by-refusal (most `security`-level cases) pile up across many
+  chunked sessions before anything clears them. Everything else about the
+  final sweep still belongs to the sweep session only.
 - In the sweep session, leftovers a case deferred to a later case are
   expected — an earlier session held them exactly as told. Delete them
   without filing. Everything else in step 5 applies unchanged: fixtures
