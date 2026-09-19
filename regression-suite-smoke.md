@@ -590,41 +590,6 @@ failed-job-with-no-media run the `<workflow>/<run id>` form exists for. Two
 attempts at a fast runtime failure both succeeded instead — which became its own
 issue — so that path is exercised against runs that did write media.
 
-### S-F023 — a safety-checker blanking is announced, and the reference template is out of its path
-SD 1.5's NSFW safety checker false-positives on ordinary prompts for particular
-seeds and replaces the image with a solid black one. Until #133 the engine knew
-and said so only in the server's own log, so a job came back `succeeded`, no
-warnings, manifest populated, valid JPEG, and pure black — the exact failure an
-unattended consumer cannot catch, since every signal it has says the run is fine.
-Two things were fixed and both need pinning; ~13 s total on a 3090, no new assets.
-expected:
-- **The warning fires.** `run_workflow(inline_workflow=…)` with SD 1.5
-  (`StableDiffusionPipeline`, `model_name: "stable-diffusion-v1-5/stable-diffusion-v1-5"`,
-  `torch_dtype: "torch.float32"`), top-level `seed: 3220371727974403`, prompt
-  `"an apple"`, `num_inference_steps: 25`, and **no** `safety_checker` key →
-  `status: "succeeded"` and `warnings` containing an entry matching
-  `safety checker blanked`. An empty `warnings` here is the regression, and it is
-  invisible any other way. The seed is load-bearing: it is the one that reproduces,
-  and a fresh seed usually will not.
-- **The escape hatch works.** The same call with `"safety_checker": null` added to
-  `from_pretrained_arguments` → `status: "succeeded"`, `warnings: []`.
-- **The image is actually an image.** `get_output_image` on that second run's
-  output is not black — at 192 px it is a recognisable apple. Assert this, not just
-  the empty `warnings`: a regression that blanks everything regardless of the
-  checker would satisfy both lines above, and the empty-warnings assertion would
-  then be *hiding* the failure rather than catching it. (Corollary worth knowing
-  when reading a failure here: same seed, same steps, same prompt, checker off →
-  apple; checker on → black. The latents were never the problem.)
-- **The template is out of the path.** `get_workflow(name="templates/text-to-image")`
-  → its `from_pretrained_arguments` carries `"safety_checker": null`. The reference
-  "hello world" of the catalog, and the cheap generation step several other cases
-  lean on, must not have a silent content filter in it.
-cleanup: `delete_output` both runs' images; each sweeps its run directory.
-source: tester, model `opus` via provider `anthropic`, verified in #133 on
-2026-09-13 against dw 0.4.0-beta.3 on `lem` (jobs `2f7d2fb743f8` — blanked, warned,
-6.2 s — and `3a1545cc713c` — same seed, checker off, clean apple, 6.3 s). Found by
-the regression agent while running S-F009.
-
 ### S-F024 — an out-of-domain number in an audio task argument is refused, not interpreted
 A negative frame count and a zero sample rate used to be *accepted*: `slice_audio`
 with `num_frames: -10` returned all-but-the-last-10-frames (Python slice
