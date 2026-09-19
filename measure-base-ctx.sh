@@ -5,6 +5,10 @@
 # under the given flags. Runs a one-word prompt on haiku, so it costs well
 # under a cent. This is how the driver flag sets are tuned: the number that
 # matters for cost is what every turn of a session carries, and this is it.
+# It runs on haiku, which does not load auto-memory, and it does not source
+# providers.sh - so a sonnet/opus session in the source checkout starts
+# higher than this says: that checkout's CLAUDE.md, and (without
+# CLAUDE_CODE_DISABLE_AUTO_MEMORY=1) its auto-memory, come on top.
 #
 #   ./measure-base-ctx.sh baseline
 #   ./measure-base-ctx.sh lean --setting-sources project,local --tools "Bash,Read"
