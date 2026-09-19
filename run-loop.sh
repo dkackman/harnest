@@ -7,6 +7,7 @@
 #   IMPLEMENTER_MODEL=haiku TESTER_MODEL=opus ./run-loop.sh
 #                                       # per-role models; defaults sonnet / opus
 #   TRIAGE_MODEL=sonnet ./run-loop.sh   # triage session's model; defaults to TESTER_MODEL
+#   TESTER_EFFORT=high ./run-loop.sh    # per-role --effort; defaults medium (EFFORT)
 #   PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
 #                                       # a non-Anthropic model, served by Ollama
 #   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
@@ -107,6 +108,13 @@ mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
 
+# Per-role effort (--effort). Defaults to EFFORT (providers.sh, `medium` -
+# what every session ran at while it was inherited from user settings).
+# Triage follows the tester's, like its model does.
+IMPLEMENTER_EFFORT="${IMPLEMENTER_EFFORT:-$EFFORT}"
+TESTER_EFFORT="${TESTER_EFFORT:-$EFFORT}"
+TRIAGE_EFFORT="${TRIAGE_EFFORT:-$TESTER_EFFORT}"
+
 # Reject a bad model/provider (or a fallback the role's provider can't serve)
 # before the first cycle rather than three minutes into it. This is the only
 # guard: run_agent trusts these pairs and never aborts the loop over them.
@@ -116,6 +124,9 @@ resolve_model_env "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" || exit 1
 validate_fallback_model "$IMPLEMENTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TRIAGE_PROVIDER" "$FALLBACK_MODEL" || exit 1
+for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT"; do
+  effort_flags anthropic "$e" >/dev/null || exit 1
+done
 
 ts() { date '+%H:%M:%S'; }
 
@@ -136,25 +147,35 @@ MCP_FLAGS=(
 TESTER_FLAGS=(
   "${MCP_FLAGS[@]}"
   --plugin-dir "$PLUGIN_DIR"
+  "${ISOLATION_FLAGS[@]}"
+  --tools "$CONSUMER_TOOLS"
   "${CONSUMER_PERMISSION_FLAGS[@]}"
 )
 # The implementer's shell surface can't be enumerated without breaking a
 # cycle the first time it needs sed or pip, so it runs under the auto-mode
 # classifier instead: routine work is approved, destructive or exfiltrating
 # actions are denied (a headless session never prompts; a denial comes back
-# to the agent as a tool result and it routes around or stops).
+# to the agent as a tool result and it routes around or stops). The
+# classifier's picture of the environment used to come from Don's user
+# settings; ISOLATION_FLAGS cuts those off, so the harness supplies its own.
 IMPLEMENTER_FLAGS=(
   "${MCP_FLAGS[@]}"
+  "${ISOLATION_FLAGS[@]}"
+  --tools "$IMPLEMENTER_TOOLS"
+  --settings "$REPO/agent-settings/implementer.json"
   --permission-mode auto
 )
 
-# run_agent <role> <tag> <budget_usd> <cwd> <provider> <model> <prompt> [extra claude flags...]
+# run_agent <role> <tag> <budget_usd> <cwd> <provider> <model> <effort> <prompt-file> <prompt> [extra claude flags...]
 # One fresh claude -p session. <role> picks the role prompt's runtime note
 # and the per-role log file; <tag> (e.g. "#145", "triage", "task") is what
-# distinguishes the sessions of one cycle in loop.log. Streams the agent's
-# output to the terminal, its own log, and the combined log.
+# distinguishes the sessions of one cycle in loop.log. <prompt-file> is the
+# role prompt (agents/<ROLE>.agent.md), appended to the system prompt so it
+# is in the cached prefix from turn one rather than a 12-16 KB tool result
+# the agent has to Read first. Streams the agent's output to the terminal,
+# its own log, and the combined log.
 run_agent() {
-  local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" prompt="$7"; shift 7
+  local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" effort="$7" prompt_file="$8" prompt="$9"; shift 9
   local label="$role:$tag"
 
   # Both pairs were validated at startup, so these can't fail on a bad pair —
@@ -172,6 +193,8 @@ run_agent() {
   [ -z "$fb_words" ] || read -r -a fallback <<<"$fb_words"
   local -a limits=(--autocompact "$AUTOCOMPACT_TOKENS")
   [ "$budget" = 0 ] || limits+=(--max-budget-usd "$budget")
+  local -a effort_words=()
+  read -r -a effort_words <<<"$(effort_flags "$provider" "$effort")"
 
   # Each agent is a fresh session, so its model is otherwise unrecorded: a
   # later reader can't tell an Opus verification from a 31B one. Say it in the
@@ -185,7 +208,8 @@ $note"
   echo "=== $(ts) cycle $cycle: $label ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
   (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
       claude -p "$full_prompt" \
-      --model "$model" ${fallback[@]+"${fallback[@]}"} "${limits[@]}" \
+      --model "$model" ${fallback[@]+"${fallback[@]}"} ${effort_words[@]+"${effort_words[@]}"} "${limits[@]}" \
+      --append-system-prompt-file "$prompt_file" \
       "${STREAM_FLAGS[@]}" "$@" 2>&1 < /dev/null | render_stream "$role") \
     | tee -a "$LOGS/$role.log" \
     | sed -u "s/^/[$label] /" \
@@ -235,16 +259,16 @@ implementer_pass() {
   [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOGS/loop.log"; return 0; }
 
   if [ "${#queue[@]}" -ge 2 ]; then
-    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: follow the 'Triage session' section of $AGENTS/IMPLEMENTER.agent.md for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
+    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow its 'Triage session' section for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
       "${IMPLEMENTER_FLAGS[@]}"
   fi
 
   for n in "${queue[@]}"; do
     still_ready "$n" owner:implementer fresh \
       || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Follow the role instructions at $AGENTS/IMPLEMENTER.agent.md exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop." \
+    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" "$IMPLEMENTER_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop." \
       "${IMPLEMENTER_FLAGS[@]}"
   done
 }
@@ -260,8 +284,8 @@ tester_pass() {
     [ -n "$n" ] || continue
     still_ready "$n" owner:tester verify \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester verify)
 
@@ -275,8 +299,8 @@ tester_pass() {
     [ -n "$n" ] || continue
     still_ready "$n" owner:tester fresh \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop." \
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop." \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester fresh)
 
@@ -287,14 +311,14 @@ tester_pass() {
     [ -n "$n" ] || continue
     still_ready "$n" owner:tester needsinfo \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is an ANSWER session for issue #$n only (step 2a of your loop) - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop." \
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is an ANSWER session for issue #$n only (step 2a of your loop) - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop." \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester needsinfo)
 
   if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
-    run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Follow the role instructions at $AGENTS/TESTER.agent.md exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.agent.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
+    run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.agent.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
   else
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
