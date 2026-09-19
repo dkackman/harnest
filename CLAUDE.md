@@ -36,7 +36,17 @@ files described below. There is no build, lint, or test step.
   the helpers both drivers share: `validate_fallback_model`/`fallback_model_flags`,
   `co_author_for` (commit-trailer identity), `runtime_note` (the per-role "Runtime:" prompt
   paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md` and
-  `regression-perf/`).
+  `regression-perf/`). It also holds what every session leaves *out*: `ISOLATION_FLAGS`
+  (`--setting-sources project,local` — no user-level plugins, hooks, memory or MCP servers
+  reach an unattended agent; measured 2026-09-19, those were ~12 KB of SessionStart hook
+  text per session, and the `remember` plugin was capturing agent sessions into Don's own
+  memory and re-injecting them), the per-role `--tools` lists (`CONSUMER_TOOLS`/
+  `RESEARCHER_TOOLS`/`IMPLEMENTER_TOOLS` — only the built-in tools a role has ever used; the
+  ~20k tokens of Artifact/Workflow/Agent/... schemas a role is denied anyway no longer ride
+  on every turn), and `effort_flags` with the `EFFORT` default (`medium`, what sessions ran
+  at while it was inherited from user settings; per-role `*_EFFORT` knobs in each driver).
+  `measure-base-ctx.sh` is how a flag set's turn-1 context is measured before and after a
+  change like this.
   Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
   (`opus`), `REGRESSION_MODEL` (`opus`), `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
   that defaults to `PROVIDER` (`anthropic`). The implementer's triage session is the one
@@ -153,6 +163,8 @@ PROVIDER=ollama IMPLEMENTER_MODEL=qwen2.5:32b TESTER_MODEL=qwen2.5:32b ./run-loo
 IMPLEMENTER_BUDGET_USD=0 TESTER_TASK_EVERY=1 ./run-loop.sh   # no implementer cap; standing task every cycle
 tail -f logs/loop.log                  # combined stream, prefixed [implementer:#145] / [tester:task] etc.
 grep usage: logs/loop.log              # one line per session: turns, duration, cost, peak context
+TESTER_EFFORT=high REGRESSION_EFFORT=high ./run-loop.sh   # per-role --effort (default medium)
+./measure-base-ctx.sh lean --setting-sources project,local --tools "Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,TodoWrite"   # turn-1 context of a flag set
 ```
 
 Which roles may run a weak model is a design decision, not a config detail: the tester's
@@ -175,10 +187,12 @@ The tester's directory has no MCP config, so `run-loop.sh` hands it the `dw` ser
 `--mcp-config` + `--strict-mcp-config` pair (not `--plugin-dir`; it works from the source tree).
 Its checkout already has `dw` at local scope in `~/.claude.json`, so the flags change nothing
 about `dw` — they exist to drop the account-level claude.ai connectors (Gmail, Drive, Calendar)
-that every unrestricted session inherits, which an unattended agent must not hold. Both roles
-see MCP tools as deferred names (schemas load on first use), so the `dw` surface costs each
-session well under 2k tokens at connect; per-call result size is the real budget (see issue
-#101).
+that every unrestricted session inherits, which an unattended agent must not hold. The same
+paragraph of flags now also drops user-level settings entirely (`ISOLATION_FLAGS`) — the
+implementer's own `--append-system-prompt-file` role prompt and `--settings` file are what
+it runs on. Both roles see MCP tools as deferred names (schemas load on first use), so the
+`dw` surface costs each session well under 2k tokens at connect; per-call result size is the
+real budget (see issue #101).
 
 ## Permissions
 
@@ -197,7 +211,9 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
 - Implementer: `--permission-mode auto`. Its shell surface (`git`, `gh`, `ssh lem`, `pytest`,
   `uv`, …) can't be enumerated without breaking a cycle the first time it needs something new,
   so the auto-mode classifier approves routine work and denies destructive or exfiltrating
-  actions.
+  actions. The classifier's picture of the environment (trusted repo, `lem`, what "routine"
+  means here) is `agent-settings/implementer.json`, passed via `--settings`; it used to be
+  inherited from user settings and described a different checkout.
 - Researcher: `--permission-mode dontAsk` + `RESEARCHER_PERMISSION_FLAGS`
   (`providers.sh`) — read-only against the `diffusers-workflow` source
   checkout (`Read`/`Grep`/`Glob`, read-only `git`) plus read-only `dw` MCP
