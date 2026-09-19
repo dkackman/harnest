@@ -285,7 +285,7 @@ fallback_model_flags() {
 CONSUMER_PERMISSION_FLAGS=(
   --permission-mode dontAsk
   --allowedTools
-    "mcp__dw__*" "ToolSearch" "Skill" "Agent" "TodoWrite"
+    "mcp__dw__*" "ToolSearch" "Skill" "TodoWrite"
     "Read" "Glob" "Grep" "Edit" "Write"
     "Bash(gh *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
@@ -309,6 +309,50 @@ RESEARCHER_PERMISSION_FLAGS=(
     "Bash(gh *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
 )
+
+# Context every session carries on every turn, and doesn't need. Measured
+# 2026-09-19 (measure-base-ctx.sh): a session started with ~42k tokens
+# before its first tool call, ~20k of it built-in tool schemas the role is
+# denied anyway (Artifact, Workflow, Agent, Monitor, ...), plus ~12 KB from
+# user-level SessionStart hooks - the superpowers preamble and the remember
+# plugin's dump of Don's own session memory, which was also *capturing* the
+# agents' sessions back into .remember/ and re-injecting them everywhere.
+# Cost here is cache_read = context x turns, so this is ~25k tokens off
+# every turn of a 30-100 turn session.
+#
+# --setting-sources project,local: no user-level settings, so no user
+# plugins, hooks, memory or MCP servers reach an unattended agent. The dw
+# plugin still arrives via --plugin-dir; project settings (the source
+# checkout's .claude/) still apply to the implementer. Two things the user
+# level used to supply are now passed explicitly: effort (effort_flags) and
+# the implementer's auto-mode environment (run-loop.sh, --settings).
+ISOLATION_FLAGS=(--setting-sources project,local)
+
+# --tools: the built-in tools a role gets *schemas* for. Everything a role
+# actually used across every logged session, and nothing else. MCP tools
+# are unaffected (they come from --mcp-config as deferred names).
+CONSUMER_TOOLS="Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,TodoWrite"
+RESEARCHER_TOOLS="Bash,Read,Glob,Grep,ToolSearch,WebFetch,TodoWrite"
+IMPLEMENTER_TOOLS="Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,Agent,WebFetch,WebSearch,TodoWrite"
+
+# Effort was inherited from ~/.claude/settings.json (effortLevel: medium)
+# until ISOLATION_FLAGS cut that off; `medium` is therefore the default that
+# preserves what every logged session ran at. One knob per role in the
+# drivers (IMPLEMENTER_EFFORT etc.), all defaulting to this.
+EFFORT="${EFFORT:-medium}"
+
+# effort_flags <provider> <effort>
+# The --effort words for a session, or nothing: the flag is an Anthropic
+# request parameter and a non-anthropic provider gets nothing it can't take.
+effort_flags() {
+  local provider="$1" effort="$2"
+  case "$effort" in
+    low|medium|high|xhigh|max) ;;
+    *) echo "run: effort must be one of low|medium|high|xhigh|max, got '$effort'" >&2; return 1 ;;
+  esac
+  [ "$provider" = anthropic ] && printf -- '--effort %s' "$effort"
+  return 0
+}
 
 co_author_for() {
   local provider="$1" model="$2" name email
