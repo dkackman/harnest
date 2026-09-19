@@ -96,6 +96,10 @@ nothing uses it anymore.
   library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). S-F051 hands
   it to `analyze_audio` as the "video in, soundtrack measured" input shape; any
   substitute just needs a non-silent soundtrack. Read-only, never deleted.
+- `asset:qa-cast/ep20-score.wav` — a ~10.3 s score bed in the shared asset library.
+  S-F057 and S-F068 pass it as `score` to the two sequence templates; a `total_frames`
+  longer than it draws a `slice_past_end` warning, which those cases either expect or
+  avoid by choosing `total_frames` ≤ 248. Read-only, never deleted.
 
 ## Functional
 
@@ -2571,6 +2575,50 @@ source: tester, model `opus` via provider `anthropic`, verified in #233 on 2026-
 against dw `0.4.0-beta.6` / transformers `5.16.1` on `lem` (jobs `5e23773d18de`,
 `a1518b26136d`, `05765286f54e`, `5937f06e6510`, `6c0ae99d62db`, control
 `2ee19cd29502`) in workspace `qa-verify-233`.
+
+### S-F068 — both sequence templates mark their `film` as `final`, so a `subfolder == "final"` consumer finds the deliverable
+#235: `templates/assemble-and-score` and `templates/dissolve-between-shots` each have a
+single saving step (`film`) and neither declared a `subfolder`, so the film landed at the
+run-dir top level with `"subfolder": ""` — invisible to a consumer following `get_job`'s
+own convention ("`final` is the deliverable") and inconsistent with the generating
+templates, whose shots come out under `intermediate/` and `final/` (S-F061). The
+two-or-more-saving-steps test in the dw repo never reached a one-step template, so this
+is the only guard. Two ~5 s utility runs plus two discovery calls.
+1. `get_workflow(name="templates/assemble-and-score")` and
+   `get_workflow(name="templates/dissolve-between-shots")` (full form).
+2. Run `templates/assemble-and-score` in this suite's workspace with `shots:
+   ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`, `score:
+   "asset:qa-cast/ep20-score.wav"`, `sample_rate: 32000`, `total_frames: 248`;
+   `wait_for_job`.
+3. Run `templates/dissolve-between-shots` with the same `shots`/`score`/`sample_rate`,
+   `dissolve_frames: 12`, `total_frames: 236`; `wait_for_job`.
+4. `list_gallery(workspace=<this suite's workspace>, subfolder="final")`.
+expected:
+- Step 1: in both definitions the `film` step's `result` block carries `"subfolder":
+  "final"`; no other step has a `result` block.
+- Steps 2–3: both jobs succeed. In each manifest the `film` entry has `"subfolder":
+  "final"` and its one file name reads `templates/<template>/<run id>/final/<template>-
+  film.6-0.0.mp4` — the `final/` segment present in the name, not just the field. Every
+  other step reports `"files": []` and `"subfolder": ""` (they save nothing; that is
+  correct, not a regression).
+- Step 4: the two films are listed, each with `subfolder: "final"` and `folder:
+  templates/<template>`; nothing else from these runs appears under `final`.
+- The regression is: either `film` entry back to `"subfolder": ""` or a file name
+  without the `final/` segment; or the gallery `final` filter returning fewer than the
+  two films.
+cleanup: delete both runs (`delete_output` on each `templates/<template>/<run id>`). The
+assets are shared fixtures — leave them.
+metrics: none.
+source: tester, model `opus` via provider `anthropic`, verified in #235 on 2026-09-18
+against dw `0.4.0-beta.6` on `lem` (develop `1acace7`), in workspace `qa-ep23` with the
+issue's own ep21/ep4 shots: `dissolve-between-shots` job `f5e86f4ccfb1` →
+`templates/dissolve-between-shots/20260919-010200-89f71598/final/dissolve-between-shots-film.6-0.0.mp4`,
+`assemble-and-score` job `0664b1f20fff` →
+`templates/assemble-and-score/20260919-010221-55c1580a/final/assemble-and-score-film.6-0.0.mp4`;
+`list_gallery(subfolder="final")` returned exactly those two. The fixture pair above is
+S-F057's so this case never touches `qa-ep23`; the `total_frames` values (248 for two
+124-frame shots; 236 = 248 − 12 for the dissolve) keep the score slice inside the
+~10.3 s bed so neither run warns.
 
 ## Performance
 

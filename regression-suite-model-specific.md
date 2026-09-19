@@ -942,4 +942,46 @@ taps landed exactly on frames/24, where job `04ab218e7640` the round before had 
 per-shot taps short). Proposed by the implementer in its hand-off comment for `complete`;
 placed here because it needs LTX-2.5's in-memory audio+video output shape.
 
+### M-F019 — SpeechT5 speaks in the voice of an `asset:` reference clip, on a half-precision pipe
+`generate_speech`'s `speaker_embedding` (#223) reduces a reference wav to a speechbrain x-vector
+and hands it to SpeechT5 as `speaker_embeddings`. It failed twice before it ever produced audio on
+`lem`: first on tensor shape (`(512,)` where the decoder wants `(1, 512)`), then on dtype — the
+x-vector was built float32 while the pipe loads fp16 on CUDA, and the decoder prenet's `F.linear`
+refused `Float × Half` (job `54c1edef2d04`). Both are silent to a unit test that asserts float32,
+so this case runs the real thing and checks that the embedding actually conditions the output.
+Model/pipeline: `microsoft/speecht5_tts` via `TextToAudioPipeline`, x-vector encoder
+`speechbrain/spkrec-xvect-voxceleb`; needs `device: cuda` (the dtype bug is CUDA-only: a cpu pipe
+is float32 and would pass regardless). Reference clips: the shared cast assets
+`asset:qa-cast/hal-voice.wav` and `asset:qa-cast/priya-voice.wav` (both in `common/assets`,
+reachable from every workspace). ~12 s warm for two steps.
+1. An inline workflow with two `generate_speech` steps, identical except for the clip: `{"text":
+   "The quick brown fox jumps over the lazy dog near the river bank.", "model_name":
+   "microsoft/speecht5_tts", "device": "cuda", "speaker_embedding": "asset:qa-cast/hal-voice.wav"}`
+   as `hal`, the same with `asset:qa-cast/priya-voice.wav` as `priya`, each saved `audio/wav` to
+   `final`. No top-level seed (SpeechT5's prenet samples anyway).
+2. `validate_workflow`, `run_workflow`, `wait_for_job`; `get_gallery_metadata(envelope=true)` on
+   both wavs.
+3. Adjacent: a one-step workflow with `model_name: "suno/bark-small"` and the same
+   `speaker_embedding`; run it and read the job's `error`.
+expected:
+- Step 1's job **succeeds** with two manifest entries; both wavs report `sample_rate` 16000,
+  `channels` 1, `duration_seconds` between 5 and 9, `mean_dbfs` above -35 (speech, not silence).
+  A `RuntimeError: mat1 and mat2 must have the same dtype` in the traceback is the dtype bug back;
+  a `speaker_embeddings` dimension error at `modeling_speecht5.py` is the shape bug back.
+- The two wavs differ in a way a run-to-run resample does not: `peak_dbfs` apart by ≥ 1 dB, or
+  `mean_dbfs` apart by ≥ 1.5 dB, or the second-by-second `rms_dbfs` profile places its deepest
+  pause in a different second. (On 2026-09-18: hal -6.0 / -27.4 with the pause at s2, priya -7.8
+  / -24.9 with the pause at s1–s2; a second hal take landed at -5.8 / -27.6, pause at s2 — the
+  same voice is self-consistent to within ~0.3 dB on both figures.) Two wavs that match each other
+  as closely as two takes of one voice means the embedding is being ignored.
+- Step 3's job **fails** before any model loads (≤ 5 s) with `error` naming the model and the
+  argument: `suno/bark-small takes no 'speaker_embedding' - only a SpeechT5 model conditions on an
+  x-vector`. A Bark job that *succeeds* with the argument present is the guard gone.
+cleanup: `delete_output` on both run directories. The two voice clips are shared cast fixtures
+owned by the tester's `qa-cast`, not this suite — leave them.
+source: tester, verified in #223, model `opus` via provider `anthropic`, on 2026-09-18 against dw
+`0.4.0-beta.6` / transformers 5.16.1 on `lem` (jobs `47a9022d296f` two voices, `aefa805e32ed` hal
+control, `c3525c29b650` Bark rejection). Placed here rather than `smoke` because it is tied to one
+checkpoint and one encoder and needs a CUDA box for the dtype half to mean anything.
+
 ## Performance
