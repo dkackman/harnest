@@ -1178,4 +1178,59 @@ no seam hole; against `dw` 0.4.0-beta.6. The same job is the repro for #235
 (the `film` step's `subfolder` is `""`, not `final`) — that is not part of
 this case's assertion.
 
+### C-F039 — a cost figure that comes only from a composed child is reported `partial`
+Three `validate_workflow` calls with an inline `workflow`, no run, no GPU.
+Each is a one-step parent whose step is `workflow: {path: <child>, arguments:
+{prompt: "variable:prompt"}}` with `variables: {prompt: "a lighthouse at
+dusk"}`:
+1. parent with **no** `cost` block composing `templates/ltx2/text-to-video`
+   (curated cost, 1.8 min on RTX 3090);
+2. parent with no `cost` block composing `templates/minimax/video-with-audio`
+   (`cost: null` in the catalog);
+3. parent carrying its own `cost: [{device: cuda, name: "RTX 3090",
+   vram_gb: 24, minutes: 0.5}]` composing `templates/ltx2/text-to-video`.
+expected: (1) `plan.estimate.minutes` equals the child's curated figure,
+`basis: "unknown"`, and `partial: true` — the parent contributed nothing, so
+the number is not the whole run; (2) `minutes: null`, `basis: "unknown"`,
+`partial: false` — nothing priced anywhere is "unknown", not "partly known";
+(3) `minutes` is the sum (2.3), `basis: "catalog"`, `measured_on: "RTX 3090"`,
+`partial: false`. The regression is (1) coming back `partial: false`: a
+caller following quote → go-ahead → run reads a child's minutes as a trusted
+total for a workflow whose unpriced steps may be the bulk of the wall time
+(#242's original was off by ~640x that way). Whether the response also
+*names* the unpriced steps is #252's concern, not this case's.
+cleanup: none — inline validations write nothing.
+source: tester, verified in #242 (run over MCP 2026-09-19 as the calls above,
+model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6).
+
+### C-F040 — `validate_workflow` projects host memory for a resident `for_each` from observed history, warns, and never refuses
+One cheap run plus four free validations; no model, no GPU. Save a
+workspace workflow `c-f040-qr-list`: `variables: {codes: [{name: "a", text:
+"alpha"}]}` and one step `{name: "qr", for_each: "variable:codes", task:
+{command: "qr_code", arguments: {qr_code_contents: "item:text", height: 256,
+width: 256}}, result: {content_type: "image/png", subfolder: "final"}}` — no
+`release_pipeline`/`release_models`, so it is the resident shape. Then:
+1. `validate_workflow(name="c-f040-qr-list", arguments={codes: [32 entries]})`
+   **before any run** (32 is the `for_each` cap; 33 is a schema error);
+2. `run_workflow` it once with the 1-entry default, `wait_for_job`;
+3. the same 32-entry validation again;
+4. the same validation with 16 entries;
+5. `save_workflow(patch=...)` adding `release_pipeline: true` to the `qr`
+   step, then the 32-entry validation once more.
+expected: (1) `valid: true`, `warnings: []` — cold start, no history, no
+projection; (3) `valid: true` **and** one warning beginning `Projected host
+memory for this run (~N MB, 32 entries held resident together) exceeds this
+machine's usable RAM (~M MB)` — N is the run's observed peak × 32 (a bare
+worker peaks ~1.9 GB, so N ≈ 60 GB), M ≈ 90% of host RAM, and the run is
+*not* blocked; (4) `warnings: []` — 16 × ~1.9 GB is under the ceiling; (5)
+`warnings: []` — the released shape projects the largest single peak, not
+per-entry × N. The regressions: (3) coming back with no warning (history not
+persisted or not read), `valid: false` on (3) (warn became refuse, which the
+approved scope rejects), a warning on (1) (a projection from nothing), or a
+warning on (5) (the shape distinction lost). If (3) is silent on a box with
+much more than 64 GB RAM, that's the ceiling, not a regression — say so.
+cleanup: `delete_workflow("c-f040-qr-list")`; delete the run's output.
+source: tester, verified in #243 (run over MCP 2026-09-19 as the calls above,
+model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6).
+
 ## Performance

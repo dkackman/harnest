@@ -91,7 +91,9 @@ nothing uses it anymore.
   (first second −44.4 dBFS RMS), which is what makes a bled tail measurable against
   the incoming material. Both also serve the `complete` suite; read-only, never
   deleted. Any substitute pair needs the same loud-tail-into-quiet-head shape, re-read
-  from `get_gallery_metadata(envelope=true)` on the assets.
+  from `get_gallery_metadata(envelope=true)` on the assets. S-F071 also tiles the first
+  one with `frame_grid`; its 960×544 / 124-frame geometry is what the expected grid
+  sizes are computed from.
 - `asset:qa-cast/ep11-coldopen.mp4` — a video with a soundtrack in the shared asset
   library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). S-F051 hands
   it to `analyze_audio` as the "video in, soundtrack measured" input shape; any
@@ -100,6 +102,9 @@ nothing uses it anymore.
   S-F057 and S-F068 pass it as `score` to the two sequence templates; a `total_frames`
   longer than it draws a `slice_past_end` warning, which those cases either expect or
   avoid by choosing `total_frames` ≤ 248. Read-only, never deleted.
+- `asset:qa-cast/hal-voice.wav` — a 6.48 s 24 kHz mono line in the shared asset
+  library. S-F072's pad control lays it under the 19.67 s `ep11-coldopen.mp4`; any
+  substitute just needs to be clearly shorter than that video. Read-only, never deleted.
 
 ## Functional
 
@@ -1700,6 +1705,101 @@ cleanup: none (read-only).
 source: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via
 provider `anthropic` — the `qr_code` form validated with `warnings: []`; the
 `StableDiffusionPipeline` form validated with the no-seed warning present.
+
+### S-F070 — a text-only run is visible to `list_gallery`, and its `.txt` is the run's media
+A run whose only output is a `.txt` (`transcribe-audio`, `expand-prompt`, any `text`-shape
+workflow) used to be invisible to both `list_gallery` modes — not a file in the normal
+listing, and not a "media-less" run in `only_orphans` either — so a sweep could only
+delete it if it already knew the name from the job (#238). Cheap: `transcribe-audio`
+on a short clip runs in seconds.
+expected: `run_workflow(workflow_path="templates/transcribe-audio", arguments=
+{"input_audio": "asset:qa-cast/hal-voice.wav"})` succeeds with a manifest of exactly one
+`.txt`. Then `list_gallery()` lists that file with `kind: "text"`, a non-zero `size`, a
+`url` carrying `?workspace=<this workspace>`, and `templates/transcribe-audio` in
+`folders`; `list_gallery(only_orphans=true)` → `runs: []` (the run has a real file);
+`get_output_text(<name>)` returns the transcript. Then `delete_output(<name>)` →
+`deleted: true` **and** `run_swept: <run id>` — the `.txt` counts as the run's last media
+file, so the run directory goes with it — and both `list_gallery()` and
+`list_gallery(only_orphans=true)` are empty afterwards.
+It becomes a **finding** if the `.txt` is absent from the normal listing, appears with a
+`kind` other than `text`, if the run shows up under `only_orphans` while its file
+exists, or if `delete_output` removes the file without `run_swept` (leaving a
+bookkeeping-only directory the pre-fix sweep could not see).
+cleanup: the `delete_output` above is the cleanup; if it did not sweep, `delete_output`
+on the run name `templates/transcribe-audio/<run id>`.
+source: tester, verified in #238 on 2026-09-19 over MCP as model `opus` via
+provider `anthropic` — fresh run in `qa-verify-238`: listed as `kind: "text"`, `size: 48`;
+`only_orphans` empty; `delete_output` reported `run_swept`.
+
+### S-F071 — `frame_grid` tiles a clip into one contact sheet, and clamps `count` to the clip
+The task command that lets an agent look at a clip without authoring a frames-extraction
+workflow (#245): N frames sampled evenly across the full duration, first and last frame
+inclusive, tiled into one image with the timestamp burned into each tile. Cheap — no
+model, runs in about a second on the 124-frame fixture.
+expected: `get_task("frame_grid")` lists `video`, `count` (default 12), `columns`
+(default null), `tile_width` (default 320), `label` (default true). Then run an inline
+one-step workflow `{"name": "grid", "task": {"command": "frame_grid", "arguments":
+{"video": "asset:qa-cast/ep6-cold-open.mp4", "count": "variable:count", "columns":
+"variable:columns", "tile_width": "variable:tile_width"}}, "result": {"content_type":
+"image/png", "subfolder": "final"}}` with `variables: {"count": 12, "columns": null,
+"tile_width": 320}`:
+- defaults → `succeeded`, a manifest of exactly one `.png`, and `get_output_image` on it
+  reports `original_size: [1280, 543]` — 4 columns × 3 rows of 320×181 tiles (the
+  fixture is 960×544, so `rows = isqrt(12) = 3`, `columns = ceil(12/3) = 4`, biased wide).
+  The image shows 12 frames of the clip, each carrying a `MM:SS.s` label; the first reads
+  `00:00.0` and the last `00:05.1` (frame 123 at 24 fps), so the sample spans the whole
+  clip.
+- `arguments: {"count": 200, "columns": 16, "tile_width": 80}` → `succeeded`, **not** an
+  error: `count` is clamped to the clip's 124 frames, `original_size: [1280, 360]`
+  (16 × 8 cells of 80×45), and the last row holds 12 tiles with 4 black cells on the
+  right (left-justified).
+- `validate_workflow` with `arguments: {"count": 0}` → `valid: false`, an error at
+  `steps[0].task.arguments.count` (positive domain), before anything runs.
+It becomes a **finding** if `frame_grid` is missing from `get_task`, if the default grid's
+size departs from the formula (a different tile height, columns fewer than rows), if the
+first/last labels do not reach the clip's ends, if an over-long `count` fails the run
+instead of clamping, or if `count: 0` reaches the run.
+metrics: `default_grid_seconds` — `finished_at - started_at` of the defaults job.
+cleanup: `delete_output` on each run's `qa-frame-grid/<run id>` directory.
+source: tester, verified in #245 on 2026-09-19 over MCP as model `opus` via provider
+`anthropic` — defaults `[1280, 543]` in 1.3 s, labels `00:00.0` → `00:05.1`; `count: 200`
+clamped to a 16×8 grid at `[1280, 360]`; `count: 0` refused at validate.
+
+### S-F072 — `pair_audio` `fit: "video"` warns in both directions, and stays quiet on an exact fit
+`fit: "video"` is lossy in one direction only: padding a short track adds silence
+(nothing lost), trimming a long one discards real content. Before #246 only the pad
+branch warned; the trim — the destructive one — was server-log only, so a caller
+could lose the loudest second of a score with `warnings: []`. Three one-step inline
+`pair_audio` muxes over shared fixtures, no model, each about two seconds:
+`{"name": "mux", "task": {"command": "pair_audio", "arguments": {"video": <V>, "audio":
+<A>, "fit": "video"}}, "result": {"content_type": "video/mp4", "subfolder": "final"}}`.
+expected:
+- **Trim arm** — `V = asset:qa-cast/ep6-cold-open.mp4` (124 frames, 5.17 s), `A =
+  asset:qa-cast/ep11-bed.wav` (19.67 s) → `succeeded`, and `warnings[]` on `get_job`
+  carries a `pair_audio: 'fit' trimmed 14.50 s off the 19.67 s track to reach the
+  5.17 s of video …` line. `get_job_events` has the structured form: `event: warning`,
+  `kind: audio_trimmed_to_video`, `command: pair_audio`, `trimmed_seconds: 14.5`,
+  `audio_seconds` ≈ 19.67, `video_seconds` ≈ 5.17.
+- **Pad control** — `V = asset:qa-cast/ep11-coldopen.mp4` (472 frames, 19.67 s), `A =
+  asset:qa-cast/hal-voice.wav` (6.48 s) → `succeeded`, the `audio_padded_to_video`
+  warning (`'fit' padded the 6.48 s track with 13.19 s of silence …`) and **no**
+  `audio_trimmed_to_video` warning.
+- **Exact-fit control** — `V = asset:qa-cast/ep11-coldopen.mp4`, `A =
+  asset:qa-cast/ep11-bed.wav` (19.667 s vs 19.6667 s) → `succeeded` with **neither**
+  fit warning; the only warning is the unrelated mono→stereo duplication. This arm is
+  what keeps the case from being #159-style noise: a sub-frame rounding difference
+  must not be reported as a trim.
+Ignore the `Duplicating a mono audio track …` warning in all three; it is about the
+mp4 container, not `fit`.
+It becomes a **finding** if the trim arm's warning is missing from `warnings[]` or
+lacks `kind`/`trimmed_seconds` in the event, if the pad control gains a trim warning
+or loses its pad warning, or if the exact-fit control warns about either direction.
+A stock `templates/music-video` run now carries the trim warning by design (its
+default 30 s song over a ~20.7 s cut) — that is expected, not a finding.
+cleanup: `delete_output` on each run's `<workflow id>/<run id>` directory.
+source: tester, verified in #246 on 2026-09-20 over MCP as model `opus` via provider
+`anthropic` — jobs `46ea12726874` (trim, 14.50 s), `3f70d7aac7bb` (pad, 13.19 s),
+`fd1b43c9c80e` (exact, no fit warning).
 
 ## Performance
 
