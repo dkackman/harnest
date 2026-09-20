@@ -915,19 +915,25 @@ expected: one job with three task steps — `raw_mux` = `pair_audio(video:
 false`; `balanced_mux` = the same `pair_audio` reading
 `"previous_result:balanced"` — all three `content_type: "video/mp4"` / `fps: 24` except
 `balanced`, which is `audio/mp3` —
-- **The raw branch warns twice, by design, and both name the file.** `job.warnings`
-  carries exactly two entries for `raw_mux`, both naming that step's mp4: an
-  `audio_no_headroom` pre-encode warning, at a peak at or above **-0.5 dBFS**,
-  advising `normalize_audio(peak_dbfs: -1)`; and an `audio_clipped` post-encode
-  warning on the written file, advising `normalize_audio(peak_dbfs: -3)`. The two
-  giving different advice is expected (#174/#161) — the pre-encode figure predates
-  the post-encode probe's more conservative one — not a defect to flag. Either
-  warning going silent is the regression to watch for: the pre-encode one silent
-  means the waveform-level check stopped firing; the post-encode one silent means
-  the written-file probe stopped firing, and a video mux's overshoot is not
-  reliably positive enough to skip that check the way a plain audio save can (#174).
-- **The normalized branch does not warn.** No `job.warnings` entry names `balanced_mux`.
-  A warning on both branches means the check is measuring something other than the
+- **The raw branch warns twice on headroom, by design, and both name the file.**
+  `job.warnings` carries exactly two *headroom* entries for `raw_mux` (an
+  `audio_no_headroom` pre-encode warning and an `audio_clipped` post-encode
+  warning), both naming that step's mp4: the pre-encode one at a peak at or above
+  **-0.5 dBFS**, advising `normalize_audio(peak_dbfs: -1)`; the post-encode one on
+  the written file, advising `normalize_audio(peak_dbfs: -3)`. The two giving
+  different advice is expected (#174/#161) — the pre-encode figure predates the
+  post-encode probe's more conservative one — not a defect to flag. Either warning
+  going silent is the regression to watch for: the pre-encode one silent means the
+  waveform-level check stopped firing; the post-encode one silent means the
+  written-file probe stopped firing, and a video mux's overshoot is not reliably
+  positive enough to skip that check the way a plain audio save can (#174). With
+  the fixtures as given (`ep15-song.mp3` at 30.02 s, `ep13-episode.mp4` at 11.75 s),
+  both branches also carry a `pair_audio: 'fit' trimmed …` warning — #246's intended
+  trim notice (pinned as expected by S-F072's trim arm), not a finding, and not
+  counted among the headroom warnings above.
+- **The normalized branch does not warn on headroom.** No `job.warnings` entry names
+  `balanced_mux` with an `audio_no_headroom` or `audio_clipped` warning. A headroom
+  warning on both branches means the check is measuring something other than the
   waveform it was handed.
 - **The decoded levels move the right way and land either side of full scale.**
   `get_gallery_metadata(<raw_mux mp4>).media.peak_dbfs` is **at or above 0**;
