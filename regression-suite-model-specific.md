@@ -720,4 +720,50 @@ source: tester, verified in #223, model `opus` via provider `anthropic`, on 2026
 control, `c3525c29b650` Bark rejection). Placed here rather than `smoke` because it is tied to one
 checkpoint and one encoder and needs a CUDA box for the dtype half to mean anything.
 
+### M-F020 — editing one shot of an identity-referenced H3 `for_each` list re-renders only that shot
+The step cache's whole value on a seeded, list-driven template is that fixing one line of one shot
+does not pay for the others. Before #253 it never did for any step carrying an image/audio/video
+reference: the `MiniMaxH3*Reference` / `LTX2ReferenceCondition` dataclasses are rebuilt fresh from
+the source file on every run, wrap `PIL.Image`/array/tensor fields with no value equality, and the
+cache's `deep_equal` turned the comparison error into "unequal" — an unconditional miss for exactly
+the steps that cost the most. A unit test on the equality helper can pass while a real reference
+still misses (the realized value is what matters), so this case runs the real thing.
+Model/pipeline: `MiniMaxAI/MiniMax-H3` via `templates/minimax/dialogue-short` (stored `seed` 42),
+`device: cuda`. Cast: the shared assets `asset:qa-cast/{priya,hal}-portrait.jpg` and
+`asset:qa-cast/{priya,hal}-voice.wav` (in `common/assets`). Paid, ~15 min + ~5 min on an RTX 3090
+— opt-in, run it when the step cache, `for_each` expansion, `realize_args`, or the H3 reference
+adapters change. Both runs must land on the same worker process (nothing between them, no restart),
+since the cache is in-memory and #244 (persistence across a restart) is a separate, parked question.
+1. `validate_workflow(name="templates/minimax/dialogue-short", workspace=<this suite's>,
+   arguments=A)` where `A` = `character_a_voice`/`character_b_voice` as the two voice assets,
+   `seam_fade_ms: 80`, and a two-entry `shots` list — `accuse` (124 frames, both portraits as
+   `variable:subject_reference_type` `from_file` refs + both voices as `variable:voice_reference_type`
+   refs from the two variables) and `deflect` (124 frames, hal's portrait + `character_b_voice`),
+   each with a `subject_definitions:`/`summary:` prompt. Then `run_workflow` with the bound ack;
+   `wait_for_job`.
+2. Change **only** the spoken line inside `deflect`'s prompt. `validate_workflow` again, same
+   name/workspace; then `run_workflow`, `wait_for_job`, `get_job_events(after=-1, limit=14)`.
+3. Adjacent: `validate_workflow` a third time with step 2's arguments unchanged.
+expected:
+- Step 1: `plan.cached_steps: 0`; the job succeeds with no `reused` on any manifest entry.
+- Step 2: `plan.cached_steps: 1`. The job succeeds in roughly a third of step 1's time; events show
+  `step_start shot@accuse` → `step_end … reused: true` within the first second, its `files`
+  naming **step 1's** run dir (`<run-1>/intermediate/…shot@accuse.0-0.0.mp4`), then `shot@deflect`
+  through its full denoise and `episode` re-run. `get_job`'s manifest carries `reused: true` on
+  `shot@accuse` **only**. `shot@accuse` going through `iteration_start` → `generating` → denoise
+  steps is the bug back — and note `phase: cached` at 0.1 s on every step is the *pipeline*
+  residency, not step reuse; only `reused` on `step_end`/the manifest counts.
+- Step 3: `plan.cached_steps: 3` — every member and the join are held.
+- (Not asserted here, tracked in #255: `plan.estimate.minutes` does not yet drop with
+  `cached_steps`.)
+metrics: step 2's job `started_at`→`finished_at` in seconds (`latency`, `condition:
+one-shot-cached`), logged to `regression-perf/M-F020.jsonl`. A reading near step 1's full time is
+the miss back even if `reused` somehow survived.
+cleanup: `delete_output` on both run directories. The cast assets are the tester's `qa-cast`
+fixtures — leave them.
+source: tester, verified in #253, model `opus` via provider `anthropic`, on 2026-09-20 against dw
+`0.4.0-beta.6` on `lem` (jobs `410af2dcc1aa` cold, 877 s; `2493b23f555f` one shot cached, 285 s;
+third validate `cached_steps: 3`). Implementer proposed the case in its hand-off; placed here
+because it depends on the H3 reference dataclasses and a CUDA box.
+
 ## Performance
