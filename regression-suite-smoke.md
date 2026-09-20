@@ -1801,6 +1801,89 @@ source: tester, verified in #246 on 2026-09-20 over MCP as model `opus` via prov
 `anthropic` — jobs `46ea12726874` (trim, 14.50 s), `3f70d7aac7bb` (pad, 13.19 s),
 `fd1b43c9c80e` (exact, no fit warning).
 
+### S-F073 — `wait_for_job` advertises its cap in the tool description, and the reply's clamp agrees with it
+The per-call cap on `wait_for_job` is a deployment setting (#248: `DW_MCP_MAX_WAIT_SECONDS`,
+default 55), and an agent budgets its polls by it — one call per cap-seconds of the job. The
+tool description interpolates the live value so a caller reads the real cap, not a number
+baked into prose; the reply must then clamp to the same value. No model, no job queued:
+this runs against any already-finished job (`list_jobs(status="succeeded", limit=1)`), which
+returns immediately but still fills the timeout fields.
+expected:
+- The `wait_for_job` tool description (as the MCP client loads it) states a numeric cap:
+  "One call blocks for at most `<cap>` seconds … budget roughly one call per `<cap>`s of the
+  job". Note `<cap>` — it is the deployment's, not necessarily 55.
+- `wait_for_job(job_id=<finished>, timeout_seconds=600)` (or any value above `<cap>`) →
+  `timeout_requested_seconds: 600.0`, `timeout_applied_seconds` **equal to `<cap>`**,
+  `timeout_capped: true`, `still_running: false`.
+- `wait_for_job(job_id=<finished>, timeout_seconds=<n>)` with `<n>` below `<cap>` (30 when
+  the cap is 55) → `timeout_applied_seconds: <n>`, `timeout_capped: false`.
+It becomes a **finding** if the description carries no numeric cap, if the clamped
+`timeout_applied_seconds` differs from the described cap, if `timeout_capped` is wrong for
+either arm, or if any of the three timeout fields is missing from the reply. A cap other
+than 55 is not a finding on its own — that is the deployment's choice — as long as the
+description and the reply agree on it.
+cleanup: none — nothing is created.
+source: tester, verified in #248 on 2026-09-20 over MCP as model `opus` via provider
+`anthropic` — description read 55.0, `timeout_seconds=600` on job `fd1b43c9c80e` applied
+55.0/capped true, `timeout_seconds=30` applied 30.0/capped false.
+
+### S-F074 — `list_assets` and `list_workspaces` are compact by default, and `detail=true` restores the full entry
+Both listings are called dozens of times per session and every byte stays in context (#101,
+#249). The default reply carries only what an agent needs to pick an entry; the rest is
+behind `detail=true`. What a listing *reveals* — the library roots, their `writable` flags,
+`shadowed` — does not change with `detail`, only the per-entry bulk. No model, nothing
+created: runs against whatever the workspace already holds (an empty `assets` list still
+exercises the top-level fields).
+expected:
+- `list_workspaces()` → every `workspaces[]` entry has exactly the keys `name`, `default`,
+  `usage` (`usage` = `{files, bytes}`); a top-level `note` names `detail=True`;
+  `workspace_root`, `default`, `current` present.
+- `list_workspaces(detail=true)` → every entry additionally has `root`, `workflows`,
+  `assets`, `outputs`, `prompts`, `common_assets`; **no** top-level `note`.
+- `list_assets()` → every `assets[]` (and `shadowed[]`) entry has exactly the keys `name`,
+  `reference`, `kind`, `size`, `origin`; a top-level `note` names `detail=True`; `asset_dir`,
+  `asset_dirs`, `folders`, `libraries` (each with `origin`/`dir`/`writable`) and `shadowed`
+  all present.
+- `list_assets(detail=true)` → every entry additionally has `folder`, `mtime`, `url`; **no**
+  top-level `note`.
+It becomes a **finding** if a compact entry carries any of the detail-only keys, if a detail
+entry lacks one, if the `note` is missing from the compact reply or present on the detail
+reply, or if any top-level field listed above disappears in either mode.
+cleanup: none — nothing is created.
+source: tester, verified in #249 on 2026-09-19 over MCP as model `opus` via provider
+`anthropic` — 19 workspaces / 47 assets in `default`, both modes exactly as above.
+
+### S-F075 — a partial plan estimate names what was unpriced, and an all-priced one names nothing
+`validate_workflow`'s `plan.estimate` sums curated `cost` blocks across a composed workflow
+(#242); when some contributor has none, `partial: true` alone cannot tell a caller whether
+the gap is a trivial step or a 12-shot loop. `unpriced` (#252) names each contributor: the
+parent by its own `id` when the parent's own steps carry no `cost`, each composed child by
+its `workflow.path`. Free, no model, no job — three inline `validate_workflow` calls
+against stock templates whose cost state is fixed: `templates/ltx2/text-to-video` has a
+curated cost (1.8 min on cuda), `templates/ltx2/extend-clip` has none. Each inline
+workflow is one step, `{"name": "clip", "workflow": {"path": <template>, "arguments":
+{"prompt": "variable:prompt"}}, "result": {"content_type": "video/mp4", "subfolder":
+"final"}}`, with `"variables": {"prompt": "a lighthouse at dusk"}`.
+expected:
+- `id: "qa-252-unpriced-parent"`, **no** `cost`, composing `templates/ltx2/text-to-video`
+  → `valid: true`; `estimate.partial: true`; `estimate.unpriced == ["qa-252-unpriced-parent"]`
+  — the parent alone, since the child is priced; `minutes` is the child's 1.8.
+- `id: "qa-252-priced-parent"`, `"cost": [{"device": "cuda", "name": "RTX 3090",
+  "vram_gb": 24, "minutes": 0.5}]`, composing `templates/ltx2/extend-clip` → `valid: true`;
+  `partial: true`; `unpriced == ["templates/ltx2/extend-clip"]` — the child alone, by path;
+  `basis: "catalog"`, `minutes: 0.5`.
+- `id: "qa-252-all-priced"`, the same `cost` block, composing `templates/ltx2/text-to-video`
+  → `valid: true`; `partial: false`; `unpriced == []` (present and empty, not absent);
+  `minutes: 2.3`.
+It becomes a **finding** if `unpriced` is missing from any of the three replies, if it
+names a priced contributor or omits an unpriced one, or if `partial` disagrees with whether
+`unpriced` is empty. A change in the templates' curated costs (text-to-video losing its
+block, extend-clip gaining one) moves which arm names what — re-check `list_workflows
+(shape="shot")` `cost` before calling that a finding.
+cleanup: none — nothing is created.
+source: tester, verified in #252 on 2026-09-19 over MCP as model `opus` via provider
+`anthropic` — the three replies exactly as above.
+
 ## Performance
 
 ### S-P001 — default image generation latency
