@@ -1353,7 +1353,11 @@ reaches the task. Run S-F056 first; this reuses its knowledge of the events.
    `get_workflow(name="templates/dissolve-between-shots", variables_only=true)`.
 2. `list_workflows(shape="sequence")`.
 3. `validate_workflow(name="templates/assemble-and-score", arguments={"match_levels":
-   "rms", "match_levels_dbfs_typo": -24})` — a deliberately undeclared name.
+   "rms", "match_levels_dbfs_typo": -24, "shots": ["asset:qa-cast/ep6-cold-open.mp4",
+   "asset:qa-cast/ep3-shot2-reply.mp4"], "score": "asset:qa-cast/ep20-score.wav"})` —
+   a deliberately undeclared name, with real `shots`/`score` supplied (step 4's
+   fixture pair) so the template's placeholder `asset:` defaults (#166, pinned by
+   S-F035) don't also fire and this stays a one-error call.
 4. Run `templates/assemble-and-score` in this suite's workspace with `shots:
    ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`, `score:
    "asset:qa-cast/ep20-score.wav"`, `match_levels: "rms"`, `match_levels_dbfs: -24`,
