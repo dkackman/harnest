@@ -2557,6 +2557,46 @@ source: tester, found while running TESTER_TASK.agent.md (ep34, `qa-ep34`, job
 asset peak of −28.886, `two-slots` identical to `solo-unity` to the third decimal;
 every output 9.333 s / 32 kHz.
 
+### S-F094 — a negative `mix_audio` gain is refused by the free pre-flight, and a gain above 1 is warned about as a not-dB value
+`mix_audio.gains` is the engine's one level control that is a plain multiplier rather than
+dB, so `-12` typed by habit is a phase-inverted 12x boost — it used to validate, run and
+succeed with nothing in `warnings` or the events (#292). The domain check is the same
+element-wise `non_negative` mechanism S-F024 exercises on scalars, reached through a list;
+if it regresses, a bad bed level is a silent success again. Free except step 3, which is a
+few seconds of CPU on one asset:
+1. `get_task("mix_audio")`.
+2. `validate_workflow(workspace=<suite workspace>, workflow={"id": "regression-mix-neg-gain",
+   "variables": {"bed_gain": 12}, "steps": [
+   {"name": "bed", "task": {"command": "loop_audio", "arguments":
+   {"audio": "asset:qa-cast/ep11-bed.wav", "target_frames": 224, "fps": 24}},
+   "result": {"content_type": "audio/wav", "save": false}},
+   {"name": "mix", "task": {"command": "mix_audio", "arguments":
+   {"audios": ["asset:qa-cast/ep33-episode.mp4", "previous_result:bed"], "gains": [0, "variable:bed_gain"]}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "mix-neg"}}]},
+   arguments={"bed_gain": -12})`.
+3. The same workflow with `gains: [1.0, "variable:bed_gain"]` and no `arguments` (so the bed
+   gain is the declared 12): `validate_workflow`, then `run_workflow` with the bound
+   acknowledgement, `wait_for_job`, `get_job_events`.
+expected:
+- Step 1: the `gains` parameter carries `"domain": "non_negative"` (and `sample_rate`
+  still carries `positive`).
+- Step 2: `valid: false`, exactly one error, at `steps[1].task.arguments.gains[1]`, whose
+  message names `mix_audio`, `gains[1]`, "zero or above" and `got -12` — the value that
+  arrived through `variable:` + `arguments` is what was checked, and the `0` in
+  `gains[0]` was accepted (a zero gain is a valid mute, not a domain violation).
+- Step 3: validates (`valid: true`), `succeeded`. `job.warnings` carries a `mix:` entry
+  saying the gain(s) `[12]` are a multiplier, not decibels; the events for the `mix` step
+  carry, in order, a `warning` with `kind: mix_audio_gain_not_db` and `gains: [1, 12]`,
+  then a `log` whose `message` is `mix_audio: 2 tracks, gains [1.0, 12.0]` with a `gains`
+  field, both before the `saving` phase. An `audio_no_headroom` warning on the output and
+  `audio_near_silent` on the bed are expected side effects of a 12x bed, not findings.
+It is a **finding** if step 2 validates, or reports the error at any other path, or if
+step 3 runs without the `mix_audio_gain_not_db` warning or the applied-gains `log`.
+cleanup: `delete_output` the run folder from step 3.
+metrics: none.
+source: tester, verified in #292 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic` (job `b3491e7c8b92` in `qa-ep34`; 3.7 s end to end).
+
 ## Performance
 
 ### S-P001 — default image generation latency
