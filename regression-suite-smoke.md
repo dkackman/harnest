@@ -2384,6 +2384,43 @@ clip-held 0.1 dB short; `bleed_join` recommended `audio_bleed_ms: 0`. The
 `audio_bleed_gain_db`-with-`audio_bleed_ms: 0` combination is deliberately *not* in
 this case: it draws no warning today (#290).
 
+### S-F090 — an `audio_bleed_gain_db` that a zero `audio_bleed_ms` makes inert is warned about at validate
+#290: `concat_videos` only applies `audio_bleed_gain_db` along the bleed path, so with
+`audio_bleed_ms: 0` — explicitly, or simply left at the task default — the gain does
+nothing, and until #290 the pre-flight said so for `seam_fade_ms` (S-F087) and
+`crossfade_ms` (S-F089) but not for this pair. Free: one validate call, nothing runs.
+1. `validate_workflow(workspace=<suite workspace>, workflow={"id":
+   "regression-inert-bleed-gain", "seed": 1, "steps": [
+   {"name": "gain_without_bleed", "task": {"command": "concat_videos", "arguments":
+   {"videos": ["asset:qa-cast/ep31-shot1-return.mp4", "asset:qa-cast/ep31-shot2-shrug.mp4"],
+   "audio_bleed_ms": 0, "audio_bleed_gain_db": -6, "fps": 24}}, "result":
+   {"content_type": "video/mp4", "subfolder": "intermediate", "file_base_name": "gain-a"}},
+   {"name": "gain_bleed_omitted", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "audio_bleed_gain_db": -6, "fps": 24}}, "result": {...,
+   "file_base_name": "gain-b"}},
+   {"name": "gain_with_bleed", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "audio_bleed_ms": 800, "audio_bleed_gain_db": -6, "fps": 24}},
+   "result": {..., "file_base_name": "gain-c"}},
+   {"name": "no_gain_no_bleed", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "audio_bleed_ms": 0, "fps": 24}}, "result": {...,
+   "file_base_name": "gain-d"}}]})`.
+expected:
+- `valid: true` with exactly two warnings, one naming `gain_without_bleed` and one
+  naming `gain_bleed_omitted`, each saying `audio_bleed_gain_db` has no effect when
+  `audio_bleed_ms` is 0 and telling the caller to pass a non-zero `audio_bleed_ms` for
+  the gain to apply.
+- No warning mentions `gain_with_bleed` or `no_gain_no_bleed`.
+It is a **finding** if either inert step validates without the warning (the omitted-key
+step in particular — that is the "forgot the bleed" case), if the warning does not name
+both arguments, or if the non-zero-bleed or no-gain step draws one.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #290 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: in `qa-ep32` both inert steps warned `Step '<name>': 'audio_bleed_gain_db'
+has no effect when 'audio_bleed_ms' is 0 - pass a non-zero 'audio_bleed_ms' for the gain
+to apply.`, the other two steps were silent, and a fifth `trim_frames: 0, crossfade_ms:
+300` step in the same document still drew its #288 warning.
+
 ## Performance
 
 ### S-P001 — default image generation latency
