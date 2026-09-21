@@ -2106,6 +2106,35 @@ source: tester, verified in #278 on 2026-09-21 over MCP as model `opus` via prov
 peak -50.22`; ep25-episode → 15 bins, last `rms -26.27`. Also observed then:
 `ep21-shot1-receipt.mp4` 5.167 s → 6 bins, `ep15-song.mp3` 30.023 s → 31 bins.
 
+### S-F082 — the step cache's workspace scoping is documented, and a plan names the workspace it was evaluated in
+#279: `validate_workflow(workspace=A)` reported `cached_steps: 1` and `workspace=B` reported
+`0` for the same fingerprint, and nothing on the consumer surface said the step cache is
+per workspace, nor which workspace a plan had been evaluated against. The fix is two guide
+paragraphs plus `plan.workspace` / `plan.output_dir`. Free — three read-only calls, no run.
+1. `get_guide(name="workflows", section="Seeds")`.
+2. `get_guide(name="workspaces", section="Runs")`.
+3. `validate_workflow(name="templates/dissolve-between-shots", workspace="regression-smoke")`
+   with no `arguments` (stored defaults only; validity is not the point).
+expected:
+- Step 1's `content` states that the step cache is scoped to the output directory a run
+  writes into — the pinned workspace's own `outputs/` on `dw.serve` — that two workspaces
+  holding a matching run do not share an entry, that `plan.cached_steps` answers for the
+  pinned workspace only, and that deleting a workspace drops its entries.
+- Step 2's `content` says the same from the workspace side: the cache is validated against
+  the output *root*, is per workspace, and deleting a workspace drops its entries along with
+  its `outputs/`.
+- Step 3's `plan` carries `workspace: "regression-smoke"` and an `output_dir` ending in
+  `/regression-smoke/outputs`, so a `cached_steps` value can always be read against the
+  workspace it was computed for.
+It is a **finding** if either section no longer mentions the workspace at all, or if `plan`
+has no `workspace` / `output_dir`.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #279 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: both guide sections carried the text; `validate_workflow` pinned to `qa-ep26`
+and `qa-ep25` returned `plan.workspace` / `plan.output_dir` for each. (Whether an entry
+survives a server restart is #281, not this case.)
+
 ## Performance
 
 ### S-P001 — default image generation latency
