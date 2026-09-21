@@ -899,8 +899,9 @@ expected:
   finding: it is the field that tells a caller how much the figure is worth.
 - **Off the recorded bucket, it falls back rather than lying.**
   `validate_workflow(name="templates/minimax/storyboard", arguments={"num_frames":
-  345})` → `basis: "catalog"` (the curated figure, `minutes: 10.1`, `measured_on:
-  "RTX 3090"`) and **`runs: null`**. Resizing away from the driver values the history
+  345})` → `basis: "unknown"`, `minutes: null`, `measured_on: null` and **`runs:
+  null`** (since #267 an overridden cost driver quotes neither the observed nor the
+  curated figure — see S-F078). Resizing away from the driver values the history
   was bucketed on must not keep quoting 11.8 under an `observed` label. `basis:
   "observed"` on an overridden shape is the regression, and it is the dangerous one,
   because the answer still looks well-sourced.
@@ -912,7 +913,9 @@ source: tester, model `opus` via provider `anthropic`, verified in #154 on 2026-
 against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. The implementer proposed the
 first bullet; the `runs`-is-honest bullet and the fall-back-off-the-bucket bullet are
 mine, the third added because quoting a measured-looking figure for an unmeasured
-shape is the failure that would survive the implementer's own case.
+shape is the failure that would survive the implementer's own case. Bullet 3's
+fall-back target was reworded from `catalog` to `unknown` in #304 (2026-09-21) after
+#267 removed the catalog hop; S-F078 is the case that pins that behaviour.
 
 ### S-F031 — normalizing before a mux is what puts headroom in the deliverable, and the warning tracks it
 Every audio deliverable this box makes is muxed or encoded at least once more after the
