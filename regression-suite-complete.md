@@ -1237,4 +1237,70 @@ cleanup: `delete_workflow("c-f040-qr-list")`; delete the run's output.
 source: tester, verified in #243 (run over MCP 2026-09-19 as the calls above,
 model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6).
 
+### C-F041 — a resident `for_each`'s host-memory projection counts history rows from default-argument runs
+Companion to C-F040, narrowed to the one thing #264 broke: a history row
+whose stored `arguments` is empty (the run used the workflow's declared
+default for the list variable) must still resolve to an entry count and feed
+the resident-shape per-entry figure. Free apart from one ~6 s run; no model,
+no GPU. Because the projection's history lookup is keyed on workflow name
+across workspaces (#274), use a name never run on this box — `c-f041-qr-<run
+date as YYYYMMDD>` — not C-F040's. Save it with `id` equal to that name,
+`variables: {codes: [{name: "a", text: "alpha"}]}` and one step `{name: "qr",
+for_each: "variable:codes", task: {command: "qr_code", arguments:
+{qr_code_contents: "item:text", height: 256, width: 256}}, result:
+{content_type: "image/png", subfolder: "final"}}` — no
+`release_pipeline`/`release_models`. Then:
+1. `validate_workflow(name=<it>, arguments={codes: [32 entries]})` before any
+   run;
+2. `run_workflow(workflow_path=<it>, acknowledged_cost=true)` with **no
+   `arguments`** — the 1-entry default, so the history row's own `arguments`
+   is `{}`; `wait_for_job`;
+3. the same 32-entry validation again.
+expected: (1) `valid: true`, `warnings: []`; (3) `valid: true` and exactly one
+warning beginning `Projected host memory for this run (~N MB, 32 entries held
+resident together) exceeds this machine's usable RAM` and citing `based on 1
+run(s) of this workflow's own history`. N is whatever the run's
+`host_memory_peak_rss_mb` was × 32 — on a warm worker that peak is the
+process's lifetime high-water mark (#272), so N can be absurd (~2 TB); the
+case asserts only that the row was counted (the warning exists and says
+"entries held resident together"), not N's size. The regression is (3)
+coming back `warnings: []` — the default-arguments row dropped from the count
+again — or `valid: false`. On a box with much more than 64 GB RAM (3) may be
+silent because 32 × a bare ~1.9 GB peak fits under the ceiling; say so
+rather than fail it. Do not extend this case to the 16-entry or
+`release_pipeline` checks — those are C-F040's, and both are blocked on #272.
+cleanup: `delete_workflow(<it>)`; delete the run's output.
+source: tester, verified in #264 (run over MCP 2026-09-21 as the calls above,
+model `opus` via provider `anthropic`; the implementer's proposed case from
+its #264 hand-off).
+
+### C-F042 — a pure-composition parent inherits its observed child's basis; a parent with its own uncosted step does not
+Two `validate_workflow` calls with an inline `workflow`, no run, no GPU.
+Both compose `templates/minimax/video-with-audio` — pick any catalog child
+that `list_workflows` reports with `observed_runs >= 1` on this box if that
+one has none — with a step `{name: "clip", workflow: {path: <child>,
+arguments: {prompt: "a ferrofluid pool", num_frames: 124, width: 960,
+height: 544}}, result: {content_type: "video/mp4", file_base_name: "clip",
+subfolder: "final"}}`, `seed: 7`, and **no** `cost` block on the parent:
+1. `id: "c-f042-pure"` — that one step only;
+2. `id: "c-f042-mixed"` — the same step plus a second, own step `{name:
+   "frames", task: {command: "extract_frames", arguments: {video:
+   "previous_result:clip", count: 4}}, result: {content_type: "image/png",
+   file_base_name: "frame", subfolder: "frames"}}` with no `cost` anywhere.
+expected: (1) `plan.estimate.basis: "observed"`, `partial: false`,
+`unpriced: []`, and `minutes` equal to the child's own `observed_minutes` —
+every declared step is a `workflow` step, so the children's figures are the
+whole story; (2) `basis: "unknown"`, `partial: true`, `unpriced` naming the
+parent — the `extract_frames` step is real declared work nobody priced, and
+inheriting the child's number as a trusted total is exactly #242's hazard.
+The regressions: (1) back to `basis: "unknown"`/`partial: true` (#268
+reverted), or (2) coming back `partial: false` (the pure-composition test
+widened to "any parent with a composed child", which is the bug an earlier
+attempt at #268 had). The parent's `runs`/`measured_on` being `null` in (1)
+is #275, not this case's concern.
+cleanup: none — inline validations write nothing.
+source: tester, verified in #268 (run over MCP 2026-09-21 as the calls above,
+model `opus` via provider `anthropic`; the implementer's proposed case from
+its #268 hand-off, with the #242 half kept as its own numbered call).
+
 ## Performance

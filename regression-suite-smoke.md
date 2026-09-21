@@ -1894,6 +1894,157 @@ cleanup: none — nothing is created.
 source: tester, verified in #252 on 2026-09-19 over MCP as model `opus` via provider
 `anthropic` — the three replies exactly as above.
 
+### S-F076 — `plan.estimate.cached_minutes` accounts for `cached_steps`
+Before #255 `plan.estimate.minutes` was the whole-workflow observed time regardless of
+`plan.cached_steps` — 14.2 min quoted for a run that would touch no GPU at all — and the
+consumer had no field to correct it from. The fix adds `cached_minutes`: the cost of the
+plan *after* the cached steps are subtracted, present on every estimate shape (`null` when
+`minutes` is). Cheap — two SD 1.5 jobs, one of them half-served from the step cache.
+1. `save_workflow(name="qa-s076-two-step", workflow=...)`: `"seed": 255`, no `cost` or
+   `cost_drivers`, `"variables": {"prompt_a": "a red lighthouse on a cliff at dusk",
+   "prompt_b": "a blue rowboat on a calm lake at dawn"}`, two steps `first` / `second` each a
+   `StableDiffusionPipeline` on `stable-diffusion-v1-5/stable-diffusion-v1-5` (`torch_dtype`
+   `torch.float32`, `safety_checker: null`) with `prompt: variable:prompt_a` / `prompt_b`,
+   `num_inference_steps: 25`, `num_images_per_prompt: 1`; results `image/jpeg`,
+   subfolders `intermediate` / `final`.
+2. `validate_workflow(name="qa-s076-two-step")` (cold), then `run_workflow` it
+   (`acknowledged_cost=true`), `wait_for_job`.
+3. `validate_workflow(name=...)` again, nothing changed.
+4. `save_workflow(name=..., patch={"variables": {"prompt_b": "a green bicycle leaning on a
+   brick wall"}})` — a stored change, **not** an `arguments` override (an override on a
+   workflow with no `cost_drivers` drops the estimate to `basis: "unknown"`, which is not
+   what this case tests) — then `validate_workflow(name=...)`.
+5. `run_workflow` that plan with the bound ack `{fingerprint, minutes, downloads: []}` from
+   step 4, `wait_for_job`.
+expected:
+- Step 2 (cold): `cached_steps: 0`, `estimate.cached_minutes` **present** and `null`
+  alongside `minutes: null`, `basis: "unknown"`. The job succeeds with both steps in the
+  manifest, no `reused`.
+- Step 3: `cached_steps: 2`, `basis: "observed"`, `runs: 1`, `minutes` > 0 (≈0.3), and
+  `cached_minutes: 0.0` — every step cached → a zero quote.
+- Step 4: `cached_steps: 1`, `basis: "observed"`, `minutes` unchanged from step 3, and
+  `0 < cached_minutes < minutes` (≈0.1 vs 0.3 — the warm cost of the one step that runs).
+  The `fingerprint` differs from step 3's (the definition changed).
+- Step 5: `first` carries `reused: true` naming step 2's file; `second` is a new file; the
+  job finishes in seconds (≈4 s), near `cached_minutes`, not `minutes`.
+It becomes a **finding** if `cached_minutes` is absent from any reply, if it is `> minutes`
+or non-zero with every step cached, or if it equals `minutes` with a step cached.
+cleanup: `delete_workflow("qa-s076-two-step")` and `delete_output` for both runs
+(`qa-s076-two-step/<run>/`); or run the whole case in a throwaway workspace and delete it.
+metrics: none.
+source: tester, verified in #255 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`, workspace `qa-v255` (workflow there was named `qa-v255-two-step`): jobs
+`0769bf82b652` (cold, 17.4 s) / `604ba5707167` (`first` reused, 4.1 s);
+`cached_minutes` 0.0 → 0.1 → 0.0 across steps 3, 4, and a re-validate after step 5.
+
+### S-F077 — a seeded `generate_speech` is reproducible, and a near-silent audio deliverable is warned about
+#261: the S-F007 chain, submitted three times with `seed: 7`, produced three different Bark
+waveforms — one of them a 1.5 s slice of leading pause that `succeeded` with `warnings: []`.
+The workflow seed was never reaching the transformers pipeline (no `generator=` kwarg
+there, so the fix seeds torch's global RNG right before the call), and no post-write check
+existed for the quiet end of the scale the way `audio_no_headroom` covers the loud end.
+Cheap — three Bark runs of a one-line prompt (~8 s each warm) plus one `normalize_audio`.
+1. Submit the S-F007 chain inline with `"seed": 7`, `line` = "The regression suite is
+   running the smoke level.", and the `speak` step **also saved** (`result: {content_type:
+   "audio/wav", sample_rate: 24000, subfolder: "raw"}`). `wait_for_job`.
+2. Submit it twice more, each time with a **different workflow `id`** (e.g. `…-b`, `…-c`)
+   and a different `speak` subfolder. An unchanged resubmission is served entirely from the
+   step cache (`reused: true` on every step, sub-second, run_id pointing at run 1's files)
+   and proves nothing about the seed — that is what the changed id is for. Confirm each of
+   these runs has **no** `reused` step in its manifest.
+3. `get_gallery_metadata(name=<raw speak wav>, envelope=true)` on all three.
+4. Submit a fourth inline workflow: `"seed": 8`, `generate_speech` on the same `line`
+   (saved, subfolder `raw`) → `normalize_audio` with `peak_dbfs: -60`, `sample_rate: 24000`,
+   saved as `final`. `wait_for_job`, then `get_job`.
+expected:
+- Step 3: the three raw `speak` wavs are identical — same `duration_seconds`, same
+  `peak_dbfs` and `mean_dbfs` to the last printed digit, same per-second `envelope`
+  entries. (2026-09-21: 4.0 s, peak -5.374823488688958, mean -23.968651572244767.) The
+  seed-7 chains keep `warnings: []`.
+- Step 4: the seed-8 raw wav differs from the seed-7 one (a different duration or level —
+  the seed steers the draw, the RNG is not pinned to one constant), and the job `succeeded`
+  with a `warnings[]` entry naming the `final` file, its mean dBFS (well below -40, ≈-75),
+  and the phrase "near-silent". The seed-7 chains, at a mean of ≈-24 dBFS, must not carry it.
+It becomes a **finding** if any two of the three seed-7 raw wavs differ in any figure, if a
+cache-served run was counted as one of the three, if the -60 dBFS deliverable succeeds with
+`warnings: []`, or if a normal-level speech run picks up the near-silent warning.
+cleanup: run the whole case in a throwaway workspace and delete it; otherwise
+`delete_output` on all four runs.
+metrics: none.
+source: tester, verified in #261 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`, workspace `qa-verify-261`: jobs `753b45752457` (cold) / `6040f3b8c826` /
+`bccfb02a4524` identical to full float precision; `6c7c59722d33` was the cache-served
+resubmission; `44bdcd423ffd` warned at -75.34 dBFS.
+
+### S-F078 — a declared `cost_driver` overridden off its measured value drops the quote to `unknown`
+#267: `templates/ltx2/text-to-video` declares `num_frames` (with `width`/`height`) as a
+`cost_driver`, measured at 121. Overriding it to 345 found no matching observed bucket and
+then fell back to the curated `catalog` figure for 121 frames — presented as authoritative
+for a clip almost three times as long. The fix extends the list-length reprice check to a
+scalar driver moved off the value the figure was measured at. Free — four validate calls,
+no run, works against the stored template so no fixture is needed.
+1. `validate_workflow(name="templates/ltx2/text-to-video")` — no arguments.
+2. Same, `arguments={"num_frames": 345}`.
+3. Same, `arguments={"width": 1280, "height": 704}`.
+4. Same, `arguments={"num_frames": 121, "prompt": "a quiet lake at dawn"}` — the driver
+   set explicitly to its measured value, plus a non-driver override.
+expected:
+- Step 1: `plan.estimate.basis` is `"observed"` (or `"catalog"` on a box that has never
+  run it) with `minutes` > 0 — the template prices at its defaults.
+- Steps 2 and 3: `basis: "unknown"`, `minutes: null`, `runs: null`, `measured_on: null`,
+  `valid: true` with the overridden names in `checked_arguments`. Neither the catalog nor
+  the observed figure is quoted for a driver value it was not measured at.
+- Step 4: identical `estimate` to step 1 — an override that does not move a driver off
+  its measured value keeps the quote.
+It becomes a **finding** if step 2 or 3 answers `basis: "catalog"` or `"observed"` with a
+non-null `minutes`, or if step 4 drops to `unknown`.
+cleanup: none — nothing is created.
+metrics: none.
+source: tester, verified in #267 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: steps 1 and 4 answered `observed`, 2.5 min, 12 runs on the RTX 3090; steps 2
+and 3 answered `unknown` with `minutes: null`.
+
+### S-F079 — a failed job keeps the phase it died in, frozen at `finished_at`
+#269: `progress` went `null` the moment a job left `running`, so the only way to learn which
+phase a failure hit was reading a ~40-frame traceback — when the job's own `phase` events
+already held the answer. `get_job` and `wait_for_job` now keep the last-known phase on a
+`failed` job, with `seconds_in_phase` stopped at `finished_at` rather than still counting.
+Cheap — two deliberate failures on SD 1.5, ~6 s and ~2 s, no successful run needed.
+1. Take the stored `templates/text-to-image` definition (`get_workflow`), and run it inline
+   with the step's `arguments` widened to `height: 8192, width: 8192, num_inference_steps: 3`
+   (`acknowledged_cost` bound to the validate plan; `minutes` is `null` for an inline
+   workflow with no history). On a 24 GB card this CUDA-OOMs in the first UNet forward, a
+   second or two after the `generating` phase event.
+2. `wait_for_job`, then `get_job` on it at least a few seconds later.
+3. Same definition with `model_name` pointing at a repo that does not exist (e.g.
+   `stable-diffusion-v1-5/does-not-exist-qa269`; validate lists it under `downloads_required`
+   and the bound acknowledgement must name it). Fails in the load, offline.
+4. `wait_for_job` on that one.
+expected:
+- Step 2: `status: "failed"`, `manifest: []`, and `progress` **present** on both calls:
+  `step: "main"`, `phase: "generating"`, `phase_detail` naming the SD 1.5 repo,
+  `denoise_step: null`. `seconds_in_phase` equals the gap between the `phase: generating`
+  event's `at` and the `job_status: failed` event's `at` in `get_job_events` (about 1.5 s),
+  and reads the **same** value on the later `get_job` — it is frozen, not elapsed-since.
+- Step 4: `status: "failed"` with `progress.phase: "loading"` and `phase_detail` naming the
+  bogus repo — the last-known phase generally, not `generating` hard-wired.
+- On a GPU too large to OOM at 8192², or where the failure lands elsewhere, the assertion is
+  the same: whatever phase the last `phase` event named is what `progress.phase` reads, and
+  `progress` is never `null` on a job that emitted at least one phase event.
+It becomes a **finding** if either failed job answers `progress: null`, if the phase differs
+from the last `phase` event in `get_job_events`, or if `seconds_in_phase` grows between the
+`wait_for_job` reply and a later `get_job`. A `historical: true` job with `event_count: 0`
+(one from before a server restart) showing no `progress` is not a finding — there is nothing
+to derive it from.
+cleanup: `delete_output(name="<workflow id>/<run id>")` for both runs (each leaves only the
+two sidecars, S-F034's shape), or delete the case's workspace.
+metrics: none.
+source: tester, verified in #269 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`, dw 0.4.0-beta.6 on `lem`: job `19fa559e8158` OOM'd at `at: 6.3` after
+`generating` at `at: 4.8`, `seconds_in_phase: 1.4` on both `wait_for_job` and a later
+`get_job`; job `c4dd43dd0787` failed loading with `progress.phase: "loading"`,
+`seconds_in_phase: 0.9`. Case proposed by the implementer in its hand-off comment.
+
 ## Performance
 
 ### S-P001 — default image generation latency
