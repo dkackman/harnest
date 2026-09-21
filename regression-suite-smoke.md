@@ -2421,6 +2421,43 @@ has no effect when 'audio_bleed_ms' is 0 - pass a non-zero 'audio_bleed_ms' for 
 to apply.`, the other two steps were silent, and a fifth `trim_frames: 0, crossfade_ms:
 300` step in the same document still drew its #288 warning.
 
+### S-F091 — `loop_audio` shortening a bed to `target_frames` is sample-faithful, not faded
+`loop_audio` is documented for making a bed *longer*; the other direction — a bed longer
+than the cut, cut down to `target_frames` — has no doc and no case, and a hidden fade or
+crossfade at the truncation point would read as a dead last second under a `pair_audio`
+(the ep33 film's last bin sat at −60 dBFS rms and looked exactly like that until probed).
+Seeded, seconds, one job:
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id":
+   "regression-loop-truncate", "seed": 1, "steps": [
+   {"name": "bed_tail_raw", "task": {"command": "slice_audio", "arguments":
+   {"audio": "asset:qa-cast/ep11-bed.wav", "start_seconds": 9.0, "duration_seconds": 0.334}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "tail-raw"}},
+   {"name": "bed_loop", "task": {"command": "loop_audio", "arguments":
+   {"audio": "asset:qa-cast/ep11-bed.wav", "target_frames": 224, "fps": 24}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "bed-loop"}},
+   {"name": "bed_tail_loop", "task": {"command": "slice_audio", "arguments":
+   {"audio": "previous_result:bed_loop", "start_seconds": 9.0, "duration_seconds": 0.334}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "tail-loop"}}]},
+   acknowledged_cost=<bound from validate>)`, `wait_for_job`.
+2. `get_gallery_metadata` on `bed-loop-0.0.wav`, `tail-raw-0.0.wav` and `tail-loop-0.0.wav`.
+expected:
+- `succeeded`; `bed-loop` is `duration_seconds` 9.33 ± 0.01 at `sample_rate` 32000, mono
+  (224 f at 24 fps out of a 19.67 s source — nothing looped, so no crossfade applies).
+- `tail-raw` and `tail-loop` `mean_dbfs` agree within 0.1 dB and `peak_dbfs` within
+  0.5 dB: the last third of a second of the truncated bed is the source's own material at
+  its own level, not a fade-out.
+- `job.warnings` may carry `audio_near_silent` on any of the three (the bed is a −50 dBFS
+  room tone by design); nothing else.
+It is a **finding** if `bed-loop` is any other length or rate, if the two tails differ by
+more than the tolerances (a fade or crossfade applied where no loop point exists), or if
+the run fails.
+cleanup: `delete_output` the run folder.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep33, `qa-ep33`, job
+`dfd9cc5a3244`) on 2026-09-21 over MCP as model `opus` via provider `anthropic`: tails
+−60.48 vs −60.50 dBFS mean, peak −38.01 on both, `bed-loop` 9.333 s / 32 kHz / mono,
+peak equal to the source asset's (−28.89).
+
 ## Performance
 
 ### S-P001 — default image generation latency
