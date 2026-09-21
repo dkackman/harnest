@@ -74,8 +74,10 @@ nothing uses it anymore.
 - `asset:qa-cast/ep11-bed.wav` — a 472-frame (24 fps) 32 kHz mono bed in
   the shared asset library, reachable from every workspace. S-F029 slices 141
   frames from its head; all that matters is that it is comfortably longer than
-  that, so the slice never reaches the end and pads. Read-only — never sliced in
-  place, never deleted.
+  that, so the slice never reaches the end and pads. S-F081 reads its envelope: it is
+  19.667 s, so a `ceil` bin count is 20, and its last 0.667 s is a fade ≈ 15 dB below the
+  body — any substitute needs a non-whole-second duration and a tail that is audibly
+  quieter than the second before it. Read-only — never sliced in place, never deleted.
 - `asset:qa-cast/ep13-episode.mp4` — a 282-frame 24 fps 960x544 stereo 44.1 kHz
   episode in the shared asset library. S-F031 muxes a soundtrack onto it twice; its
   known geometry is what says the mux moved only the audio. Read-only.
@@ -109,7 +111,8 @@ nothing uses it anymore.
   shared asset library: a 248-frame shot dissolved over 12 frames into a 124-frame one, so
   the second shot's first frame is 236 and the track is exactly 15.0 s. S-F080 reads it
   with `get_output_frames`; the frame arithmetic in its expected block is computed from
-  that geometry. Read-only, never deleted.
+  that geometry. S-F081 reads its envelope as the whole-second control (exactly 15 bins).
+  Read-only, never deleted.
 
 ## Functional
 
@@ -2077,6 +2080,31 @@ source: tester, found while running TESTER_TASK.agent.md (ep25, 2026-09-21) over
 `opus` via provider `anthropic`, dw 0.4.0-beta.6 on `lem`: seam 1 reported `frame 236 @ 9.83s
 difference: 5.06 [256x72]`; moments `frame 242 @ 10.08s` / `frame 358 @ 14.92s` with 125 KB
 and 73 KB wavs.
+
+### S-F081 — the envelope has `ceil(duration)` bins: a real partial tail stands alone, a whole-second track gets no phantom bin
+The tool says the envelope is "what says whether a shot is still sounding at its last
+frame". That reading depends on the bin count: #277 was one *extra* near-silent bin on a
+15.0 s track (codec padding decoded past the reported duration, read as a hole at the
+tail), and #278 was the over-correction — every sub-second tail folded into the previous
+bin, so a 0.667 s fade on a 19.667 s track was averaged into a full-level second and
+invisible. Free — two read-only calls on fixtures. Pass `workspace="regression-smoke"`.
+1. `get_gallery_metadata(name="asset:qa-cast/ep11-bed.wav", envelope=true)`.
+2. `get_gallery_metadata(name="asset:qa-cast/ep25-episode.mp4", envelope=true)`.
+expected:
+- Step 1: `duration_seconds` ≈ 19.667, `envelope.interval_seconds: 1.0`, and `rms_dbfs` /
+  `peak_dbfs` each have **20** entries (`ceil(19.667)`). Entries 0–18 sit around −48…−51
+  dBFS rms; entry 19 is clearly lower (≈ −64 rms / ≈ −50 peak) — the real fade-out,
+  reported on its own rather than blended into entry 18.
+- Step 2: `duration_seconds: 15.0`, and `rms_dbfs` / `peak_dbfs` each have exactly **15**
+  entries, all in the −21…−36 dBFS rms range; no trailing entry tens of dB below the rest.
+It is a **finding** if step 1 returns 19 bins (the tail folded away again, #278), if step
+2 returns 16 (the padding bin back, #277), or if `len(rms_dbfs) != len(peak_dbfs)`.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #278 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`, dw on `lem` at develop ffd7455: ep11-bed → 20 bins, last `rms -64.31 /
+peak -50.22`; ep25-episode → 15 bins, last `rms -26.27`. Also observed then:
+`ep21-shot1-receipt.mp4` 5.167 s → 6 bins, `ep15-song.mp3` 30.023 s → 31 bins.
 
 ## Performance
 
