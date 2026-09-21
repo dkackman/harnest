@@ -77,7 +77,9 @@ nothing uses it anymore.
   that, so the slice never reaches the end and pads. S-F081 reads its envelope: it is
   19.667 s, so a `ceil` bin count is 20, and its last 0.667 s is a fade ≈ 15 dB below the
   body — any substitute needs a non-whole-second duration and a tail that is audibly
-  quieter than the second before it. Read-only — never sliced in place, never deleted.
+  quieter than the second before it. S-F096 mixes and crossfades it with the 44.1 kHz
+  `ep15-song.mp3` as the 32 kHz half of a rate-mismatched pair. Read-only — never sliced
+  in place, never deleted.
 - `asset:qa-cast/ep13-episode.mp4` — a 282-frame 24 fps 960x544 stereo 44.1 kHz
   episode in the shared asset library. S-F031 muxes a soundtrack onto it twice; its
   known geometry is what says the mux moved only the audio. S-F086 dissolves it after the
@@ -85,8 +87,9 @@ nothing uses it anymore.
 - `asset:qa-cast/ep15-song.mp3` — a 30.0 s 44.1 kHz stereo Music 3 track that decodes
   at **+0.76 dBFS**, i.e. with no headroom. S-F031's positive control depends on that:
   it is the clipping exhibit from #158/#159, not just a song, so replacing it with a
-  quieter track silently disarms the case. Read-only — never normalized in place,
-  never deleted.
+  quieter track silently disarms the case. S-F096 mixes and crossfades it with the 32 kHz
+  `ep11-bed.wav` as the 44.1 kHz half of a rate-mismatched pair; its 30.023 s length is
+  in that case's expected durations. Read-only — never normalized in place, never deleted.
 - `asset:qa-cast/ep6-cold-open.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` — two
   124-frame 24 fps 960x544 32 kHz stereo shots in the shared asset library. S-F045
   joins them in that order because the first has the loudest outgoing tail among the
@@ -2631,6 +2634,95 @@ source: tester, found while running TESTER_TASK.agent.md (ep35, `qa-ep35`, job
 −21.258 → −33.258 rms, −5.666 → −17.668 peak; bins 0/1/3/4/5 identical to the source to
 the third decimal; 5.1667 s / 32 kHz / 2 ch; 0.8 s end to end. Note the step logs nothing
 about what it applied (#294) — the envelope is the only evidence until that lands.
+
+### S-F096 — `mix_audio` and `crossfade_audio` resample tracks at different sample rates instead of failing
+#293: the two pure-audio joiners still died with `needs one sample rate, got [32000, 44100]`
+after #108 (`concat_videos`) and #287 (`dissolve_videos`, S-F086) had removed that constraint
+from the video joiners. A bed and a song from different families routinely disagree on rate,
+so a score pass that refuses the mix is unusable on a real cast. Now, with `sample_rate`
+unset, each picks the highest rate among its inputs, resamples the rest up to it, and says so
+as a warning; a pinned `sample_rate` still relabels (#180) and the docstring says so. Cheap:
+one ~4 s task-only run, two shared assets.
+1. `validate_workflow(workspace=<suite workspace>, workflow={"id": "regression-audio-rates",
+   "seed": 1, "steps": [
+   {"name": "mix", "task": {"command": "mix_audio", "arguments": {"audios":
+   ["asset:qa-cast/ep11-bed.wav", "asset:qa-cast/ep15-song.mp3"], "gains": [1.0, 0.5]}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "mix"}},
+   {"name": "xfade", "task": {"command": "crossfade_audio", "arguments": {"audios":
+   ["asset:qa-cast/ep11-bed.wav", "asset:qa-cast/ep15-song.mp3"], "crossfade_ms": 500}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "xfade"}}]})`,
+   then `run_workflow` with the bound acknowledgement, then `wait_for_job`. The 32 kHz bed is
+   deliberately first, so "first track's rate" and "highest rate" disagree.
+2. `get_gallery_metadata` on the `mix` and `xfade` files the manifest names.
+3. `get_task("mix_audio")` and `get_task("crossfade_audio")`.
+expected:
+- Validate is `valid: true` (no pre-flight rate check exists — declined in #287/#293).
+- The job is `succeeded`, not `failed`. `warnings` holds one `mix: mix_audio:` entry and one
+  `xfade: crossfade_audio:` entry, each saying the tracks carry different sample rates,
+  naming both tracks with their rates (`ep11-bed.wav: 32000 Hz`, `ep15-song.mp3: 44100 Hz`),
+  saying it is resampling them all to **44100 Hz**, and naming both remedies (`sample_rate`
+  to pin a target, `resample_audio` ahead of the step). Neither step emits the #180
+  "relabeled … not resampled" warning. (An `xfade:` no-headroom warning is expected too —
+  the song decodes at +0.76 dBFS — and is not part of this case.)
+- Step 2: `mix` is `sample_rate: 44100`, `duration_seconds` 30.02 ± 0.05 (the longer input,
+  at its native length — a relabel would stretch it to ~41.4 s); `xfade` is `sample_rate:
+  44100`, `duration_seconds` 49.19 ± 0.05 (19.667 + 30.023 − 0.5).
+- Step 3: both `sample_rate` descriptions say that, left unset, the highest rate is used and
+  the rest resampled, and that a given value *relabels* rather than resamples.
+It is a **finding** if either step fails with "needs one sample rate" (or any) error, if a
+step succeeds with no mismatch warning, if the target is 32000 (first-listed rather than
+highest, with no pin given), if either output's rate or duration disagrees with the above, or
+if a `get_task` description still calls a given `sample_rate` merely the one that "wins".
+cleanup: `delete_output` on the `regression-audio-rates/<run>` directory.
+metrics: none.
+source: tester, verified in #293 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: job `6e4f03a463de` (both orders of the pair, plus the pinned-32k control)
+succeeded in 3.7 s with the warnings quoted above; mixes read back 44100 Hz / 30.023 s, the
+crossfade 44100 Hz / 49.19 s, the pinned-32k control 32000 Hz / 41.376 s with the #180
+warning. Job `9d5461d74dea` confirmed a three-track crossfade and a pin equal to the higher
+rate behave the same way.
+
+### S-F097 — `gain_audio` logs the dB and the resolved region it applied, in seconds and in samples, for both the seconds and the frames form
+#294: `gain_audio` applied its gain silently — nothing between `phase: task / gain_audio` and
+`phase: saving` — so a consumer that cannot listen could only prove a duck landed by
+measuring the envelope (S-F095), and could not prove it at all where the region fell on a
+quiet stretch. Now the step emits a log event in the shape #292 gave `mix_audio`, and the
+frame form shows its frame→second→sample conversion in that same event, so a wrong `fps`
+or rate is visible without a measurement. Cheap: one ~1 s task-only run, one shared asset,
+no saved file needed for the second step.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "regression-gain-log",
+   "seed": 1, "steps": [
+   {"name": "duck_seconds", "task": {"command": "gain_audio", "arguments":
+   {"audio": "asset:qa-cast/ep31-shot1-return.mp4", "gain_db": -12, "start_seconds": 2.0,
+   "duration_seconds": 1.0}},
+   "result": {"content_type": "audio/wav", "subfolder": "final", "file_base_name": "gain-log-s"}},
+   {"name": "duck_frames", "task": {"command": "gain_audio", "arguments":
+   {"audio": "asset:qa-cast/ep31-shot1-return.mp4", "gain_db": 3.5, "start_frame": 24,
+   "num_frames": 12, "fps": 24}},
+   "result": {"content_type": "audio/wav", "subfolder": "final", "file_base_name": "gain-log-f"}}]},
+   acknowledged_cost=<bound from validate>)`, `wait_for_job`, then `get_job_events`.
+expected:
+- `succeeded`. In the events, each `phase: task / gain_audio` is followed, before that
+  step's `phase: saving`, by one `event: "log"` with `command: "gain_audio"` and structured
+  fields `gain_db`, `start_seconds`, `duration_seconds`, `start_sample`, `end_sample`,
+  `sample_rate`.
+- `duck_seconds`: message `gain_audio: -12.0 dB over 2.000-3.000 s (samples 64000-96000 @
+  32000 Hz)`; `gain_db: -12`, `start_seconds: 2.0`, `duration_seconds: 1.0`,
+  `start_sample: 64000`, `end_sample: 96000`, `sample_rate: 32000`.
+- `duck_frames`: message `gain_audio: 3.5 dB over 1.000-1.500 s (samples 32000-48000 @
+  32000 Hz)`; `start_seconds: 1.0`, `duration_seconds: 0.5` (24 f and 12 f at 24 fps),
+  `start_sample: 32000`, `end_sample: 48000` — the frame form reports the region it
+  resolved to in seconds and samples, not the frame numbers it was given.
+It is a **finding** if either step has no `log` event between its `task` phase and its
+`saving` phase, if the event lacks any of the six structured fields, if the samples disagree
+with `start_seconds × sample_rate` / `(start + duration) × sample_rate`, or if the frames
+step's resolved seconds are not 1.0 / 0.5.
+cleanup: `delete_output` on the `regression-gain-log/<run>` directory.
+metrics: none.
+source: tester, verified in #294 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: job `3cdc5f90dcd7` (seconds form, seq 11 between `task` seq 10 and `saving`
+seq 12) and job `94a6677af7a5` (frames form, seq 12) produced exactly the two messages and
+field sets above; each run under 1 s.
 
 ## Performance
 
