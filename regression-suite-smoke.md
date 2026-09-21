@@ -2302,6 +2302,42 @@ task-only run over two existing shots (job `f46a7d3a2af2`) carried the warning a
 and its `bleed_tonal_material` remedy now reads `Pass 'audio_bleed_ms': 0 for a hard cut
 on this material instead - seam_fade_ms has no effect while audio_bleed_ms is non-zero.`
 
+### S-F088 — `get_job.event_count` on a historical job equals what `get_job_events` serves
+#289: a job rehydrated from history (`historical: true` — after a server restart, or once
+it aged out of memory) reported `event_count: 0` while `get_job_events` paged through its
+full persisted tail, so a consumer reading the count concluded the events were lost with
+the process and never looked for the warnings-with-measurements that live there. Live
+jobs were never affected, so a case that only checks the job it just ran would pass
+through the bug. Free: no run — any job already on the server does.
+1. `list_jobs(limit=20, status="succeeded")` and pick one with `historical: true`
+   (any workspace; the server keeps history from before this session, so there is
+   always one). Prefer one with a multi-step workflow so the count is not trivial.
+2. `get_job(job_id)` — note `event_count` and `historical`.
+3. `get_job_events(job_id, after=<event_count - 3>, limit=50)` — the last few events.
+4. Also run any small job (a one-step `slice_audio` or `gain_audio` over a fixture is
+   enough), `wait_for_job` to `succeeded`, and repeat steps 2-3 on it while it is still
+   live (`historical: false`).
+expected:
+- In step 2 `historical` is `true` and `event_count` is a positive integer, not `0` or
+  `null`.
+- Step 3 returns exactly the events with `seq` from `event_count - 2` through
+  `event_count - 1`, the last being `job_status: succeeded`, `last_seq == event_count - 1`,
+  `truncated: false` — i.e. the count is the number of events on record, no more and no
+  less.
+- The live job in step 4 satisfies the same identity.
+It is a **finding** if a historical job reports `event_count: 0` while `get_job_events`
+serves any event, if `last_seq + 1 != event_count` on either job, or if a live and a
+historical job disagree on what `event_count` means.
+cleanup: delete the step-4 run's outputs by run name (`delete_output`); the historical job
+is someone else's and is left alone.
+metrics: none.
+source: tester, verified in #289 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: four historical jobs across `qa-ep30` and `qa-verify-285` — `22932ad7d1b6`
+(96 events), `d95ff1b61ed2` (95), `0eebb7f67ece` (34), `a0e10ced3bad` (189) — each
+reported `event_count` exactly `last_seq + 1` of its final `get_job_events` page. Before
+the fix the first of these read `event_count: 0`. The over-200-event persisted-cap
+variant the implementer proposed is not covered here: no such job existed to confirm it.
+
 ## Performance
 
 ### S-P001 — default image generation latency
