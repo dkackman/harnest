@@ -409,7 +409,8 @@ that issue's hand-off; run over MCP 2026-09-13, model `opus` via provider
 cached yet" or "the cache is off because this workflow sets no `seed`". A consumer
 reading the second as the first re-runs everything forever and never learns why.
 `validate_workflow` must say which. Free and instant — no run.
-expected: `validate_workflow` on any inline workflow with **no top-level `seed`** →
+expected: `validate_workflow` on an inline workflow **with a pipeline step** and no
+top-level `seed` (a task-only workflow is exempt — see S-F069) →
 `valid: true` and a `warnings` entry naming both `seed` and `cached_steps` (the
 0.4.0-beta.3 wording: "This workflow sets no 'seed', so the step cache is disabled
 and 'cached_steps' is 0 without being probed …"). The **byte-identical** workflow
@@ -423,7 +424,9 @@ error, and must never block a run.
 cleanup: none (read-only).
 source: tester, verified in #107 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic` — unseeded and `"seed": 1` forms of the same one-step
-`pair_audio` workflow, warning present then absent.
+`pair_audio` workflow, warning present then absent. The `pair_audio` form no
+longer warns as of #247 (it's task-only, see S-F069); the probe is now a
+one-step `StableDiffusionPipeline` workflow (proposed and verified in #297).
 
 ### S-F018 — the other three workflow objects are closed too
 S-F017 covers the `step`, `task`, `pipeline_reference` and `workflow_reference`
