@@ -1394,4 +1394,49 @@ over MCP 2026-09-21 in `qa-ep29` as job `13a766bd6a77`, model `opus` via
 provider `anthropic`; 236 f / 32000 Hz / peak −3.07, 10 envelope bins, no
 warnings).
 
+### C-F046 — a lossless save of an over-full waveform warns twice: the prediction and the clipped file it wrote
+One inline task-only job, no GPU (~5 s). `resample_audio` on
+`asset:qa-cast/ep15-song.mp3` (shared; decodes at **+0.76 dBFS**, the
+resampled float peaks at +0.52 — read it with `get_gallery_metadata` first,
+the case is void if the fixture has been re-kept below 0 dBFS) saved as
+`audio/wav`, plus three siblings in the same workflow: the identical resample
+saved as `audio/mp3`; `normalize_audio(peak_dbfs: 0)` of the same asset saved
+as wav; `normalize_audio(peak_dbfs: -3)` saved as wav (control). A wav writer
+hard-clips anything above 1.0, so the pre-write `audio_no_headroom` figure and
+the file on disk are two different facts, and before #295 only the first was
+reported — in text that called the clip a *future* mp3/AAC risk, on a file
+already clipped. This is the lossless counterpart to C-F024 (which pins the
+post-encode probe on a video mux) and M-F011 (the source-side warning alone).
+expected: the job `succeeded`, and per step, in `get_job_events` (`kind`) and
+mirrored in `job.warnings`:
+- **wav resample**: **both** `audio_no_headroom` (`peak_dbfs` ≈ 0.52; text says
+  *the write itself clips samples above full scale to 0 dBFS - the file just
+  written is already clipped*, not a hypothetical lossy encode) **and**
+  `audio_clipped` (`peak_dbfs` 0.0, *decodes at +0.00 dBFS … The write itself
+  clipped it*). `get_gallery_metadata(...).media.peak_dbfs` for the wav is
+  **~0.000** (within 0.01 dB of full scale), agreeing with `audio_clipped`,
+  not with the 0.52 prediction.
+- **mp3 resample**: `audio_no_headroom` only, with the lossy wording (*an mp3
+  or AAC encode of it decodes above 0 dBFS and clips*), and the mp3's metadata
+  peak is genuinely above 0 (≈ +0.65) — the one-warning-per-lossy-file
+  suppression from C-F024 still holds, and its text is true because the
+  overshoot survived the encode.
+- **`normalize_audio` to 0 dBFS, wav**: both warnings, `peak_dbfs` 0.0 on each.
+- **`normalize_audio` to −3 dBFS, wav**: no warning; metadata peak ≈ −3.00.
+- A `log` event `resample_audio: 44100 → 32000 Hz, 30.02 s` with structured
+  `source_sample_rate` / `target_sample_rate` / `seconds` fields precedes each
+  resample's `saving` phase — the proof-of-application line from #295's
+  adjacent ask, matching `gain_audio` (#294) and `mix_audio`.
+A wav step that draws only `audio_no_headroom`, a metadata peak that agrees
+with the prediction instead of the file, or the lossy wording on a lossless
+save is the regression. No `metrics:` line — the assertion is agreement, not a
+number (see C-F024).
+cleanup: delete the run's output folder. `asset:qa-cast/ep15-song.mp3` lives in
+the shared `common/assets` — do not sweep it.
+source: tester, verified in #295 (model `opus` via provider `anthropic`, run over
+MCP 2026-09-21 in `qa-v295` as job `a750a03f4ff0`: wav resample seq 12/13,
+metadata 0.00027; mp3 seq 22 only, metadata +0.649; norm0 seq 30/31; norm3
+silent at −2.9997). Proposed by the implementer in its hand-off; the lossy and
+−3 controls are mine.
+
 ## Performance
