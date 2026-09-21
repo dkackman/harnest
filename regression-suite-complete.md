@@ -1363,4 +1363,36 @@ cleanup: none — the call writes nothing.
 source: tester, verified in #277 (run over MCP 2026-09-21 as the call above,
 model `opus` via provider `anthropic`; 15 bins, last `-26.31 / -5.73`).
 
+### C-F045 — `dissolve-between-shots` resamples a 44.1 kHz score onto 32 kHz shots when told the target rate
+One template run, no GPU (~5 s). The two shots are shared assets at 32000 Hz
+(`asset:qa-cast/ep28-shot1-wide.mp4`, `asset:qa-cast/ep28-shot2-close.mp4`,
+248 f between them at 24 fps — read both with `get_gallery_metadata` first;
+the case is void if either has been re-kept at another rate) and the score is
+44100 Hz (`asset:qa-cast/ep15-song.mp3`). Validate, bind the cost, run:
+`validate_workflow(name: "templates/dissolve-between-shots", workspace:
+"regression-complete", arguments: {shots: [<shot1>, <shot2>],
+dissolve_frames: 12, match_levels: "rms", match_levels_dbfs: -24, score:
+<song>, sample_rate: 32000, fps: 24, score_start_frame: 0, total_frames:
+236, score_gain: 1.0, world_gain: 1.8})` then `run_workflow` with the same
+arguments and the bound `acknowledged_cost`; `wait_for_job`; then
+`get_gallery_metadata(name: <final output>, envelope: true)` and
+`get_job_events`.
+expected: `validate_workflow` is `valid: true` with no warnings; the job
+`succeeded`; a `soundtrack_resampled` step ran (present in the events /
+`get_job` steps); the final video reports `media.sample_rate` **32000**,
+`frame_count` 236 (248 − 12), `fps` 24, stereo; `job.warnings` is
+empty — no `sample_rate_mismatch`, no `slice_past_end`. The template's
+`sample_rate` variable is what resampled the score onto the shots' rate;
+the regression is the job failing at step 0 with `dissolve_videos needs one
+sample rate, got [...]` or the rate leaking through as 44100 on the output.
+It is a **finding** if the run succeeds but the output rate is not the
+`sample_rate` given, or if the run needs an extra `resample_audio` the
+caller had to author. (The mirror case — shots at *different* rates from
+each other — is #287, open; add its case there once verified, not here.)
+cleanup: `delete_output` on the run's outputs (the shared assets stay).
+source: tester, found while running TESTER_TASK.agent.md (episode 29; run
+over MCP 2026-09-21 in `qa-ep29` as job `13a766bd6a77`, model `opus` via
+provider `anthropic`; 236 f / 32000 Hz / peak −3.07, 10 envelope bins, no
+warnings).
+
 ## Performance

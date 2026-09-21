@@ -766,4 +766,51 @@ source: tester, verified in #253, model `opus` via provider `anthropic`, on 2026
 third validate `cached_steps: 3`). Implementer proposed the case in its hand-off; placed here
 because it depends on the H3 reference dataclasses and a CUDA box.
 
+### M-F021 — a hot intermediate that a normalizer consumes is not warned about; one nothing re-levels still is
+Music 3 always lands at or over full scale, and `templates/minimax/music-video` saves that raw
+mp3 (`write_song`, `subfolder: intermediate`) before `balanced` (`normalize_audio`, -3.0 dBFS)
+re-levels it into the only deliverable. Until #286 the `audio_no_headroom` check fired on that
+intermediate save on every stock run — a warning for a designed-in condition, which trains a
+reader to ignore `job.warnings` (the thing #161 was fixing). The fix suppresses the pre-write
+(`audio_no_headroom`) and post-write (`audio_clipped`) checks on a save whose result a later
+`normalize_audio` or `match_levels` step consumes — and *only* those two tasks: a step that
+merely reads the result (a `slice_audio` conditioning read) does not suppress it. This case
+pins both halves, because a suppression that widened to "any consumer" would silence the
+warning on a genuinely un-normalized clipped save and look identical on the template run.
+**Measure the intermediate.** The template half is only evidence if the raw mp3 really is
+over -0.5 dBFS — a quieter render would pass the warning check for the wrong reason.
+Model/pipeline: MiniMax Music 3 (write_song) + MiniMax H3 `ref2va` (shots). The template half
+rides on whatever `music-video` render the suite does for M-F006/M-F012 rather than paying for
+its own; the two inline halves are utility-only and take seconds, but need a hot mp3 to read —
+use that render's `write_song` intermediate via `output:`.
+expected:
+- **Template half.** On a `music-video` run (any `shots`/`audio_duration`), `job.warnings`
+  carries no entry naming `write_song` — neither `audio_no_headroom` ("peaks at … leaves no
+  headroom") nor `audio_clipped`. Corroborate with
+  `get_gallery_metadata(<write_song intermediate mp3>).media.peak_dbfs` **at or above -0.5**
+  (it was +0.31 on the verifying run) — if it isn't, the half proves nothing; say so and rely
+  on the inline halves. The final mp4's `peak_dbfs` stays strictly below 0 (M-F012's bullet).
+- **Negative half — a reader is not a normalizer.** Inline workflow, two `task` steps:
+  `resave` = `slice_audio(audio: "output:<that write_song mp3>", start_seconds: 0,
+  duration_seconds: <the full audio_duration>, sample_rate: 44100)` with
+  `result: {content_type: "audio/mp3", sample_rate: 44100, subfolder: "intermediate"}`;
+  `reader` = `slice_audio(audio: "previous_result:resave", start_seconds: 0,
+  duration_seconds: 2, sample_rate: 44100)`, no `result`. `job.warnings` **must** carry
+  `resave: The soundtrack written to … peaks at +N dBFS, which leaves no headroom …`. An empty
+  list here is the regression — check the slice's own `peak_dbfs` first (a slice that misses
+  the hot part is correctly unwarned; take the whole track).
+- **Positive half — a normalizer is.** Same `resave`, then `balanced` =
+  `normalize_audio(audio: "previous_result:resave", peak_dbfs: -3.0, sample_rate: 44100)` with
+  `result: {content_type: "audio/mp3", sample_rate: 44100, subfolder: "final"}`.
+  `job.warnings` is empty; both files are in the manifest.
+cleanup: `delete_output` on the two inline runs' folders. The `music-video` render belongs to
+whichever case ran it.
+source: tester, verified in #286, model `opus` via provider `anthropic`, on 2026-09-21 against dw
+`0.4.0-beta.6` on `lem`, workspace `qa-ep28`. Template run `0d21109872ee` (2 shots,
+`audio_duration: 12`, 13.0 min): warnings = elision note + #246 fit-trim only; intermediate
+`peak_dbfs: +0.305`, deliverable `-4.737`. Negative `37bea958364b` warned (`+0.3 dBFS`); a
+first attempt slicing only 6 s (`84a617565b28`, `-1.91 dBFS`) was correctly silent, which is
+where the "take the whole track" note comes from. Positive `495f91d39f78`: `warnings: []`.
+Implementer proposed the case in its hand-off; placed here because it needs a Music 3 track.
+
 ## Performance
