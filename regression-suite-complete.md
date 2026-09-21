@@ -119,6 +119,17 @@ when nothing uses it anymore.
   needs shot 1 to end in voiced speech — confirm a candidate by running the
   bleed arm of C-F037 alone before swapping it in.
 
+- `asset:qa-cast/ep25-episode.mp4` — a 24 fps cut whose length is an **exact
+  whole number of seconds**: 360 frames / 15.0 s / 960x544, 32 kHz stereo,
+  with audio all the way to its last frame (its 15th second is ~-26 dBFS
+  rms). Used by C-F044, where the integer duration is the point: a lossy
+  decode runs a few samples past 15.0 s and the envelope must not report
+  those as a 16th bin. Also in the shared `common/assets`: do not sweep it,
+  do not expect it under `regression-complete`. A replacement needs
+  `duration_seconds` to be a whole number and audible audio in its last
+  second — confirm both with `get_gallery_metadata` and
+  `get_output_frames(at=[<duration - 0.1>], hear=1)` before swapping it in.
+
 ## Functional
 
 ### C-F001 — a run-time warning reaches the caller, on both channels
@@ -1302,5 +1313,54 @@ cleanup: none — inline validations write nothing.
 source: tester, verified in #268 (run over MCP 2026-09-21 as the calls above,
 model `opus` via provider `anthropic`; the implementer's proposed case from
 its #268 hand-off, with the #242 half kept as its own numbered call).
+
+### C-F043 — a rolled-up observed estimate carries the child's `runs` and `measured_on`
+Three `validate_workflow` calls, no run, no GPU. Same child as C-F042
+(`templates/minimax/video-with-audio`, or any catalog child `list_workflows`
+reports with `observed_runs >= 1` on this box):
+1. `validate_workflow(name: <child>)` — note `plan.estimate.runs` and
+   `plan.estimate.measured_on`;
+2. an inline `workflow` `{id: "c-f043-one", steps: [{name: "a", workflow:
+   {path: <child>}}]}` — a pure-composition parent with one child;
+3. an inline `workflow` `{id: "c-f043-two", steps: [{name: "a", workflow:
+   {path: <child>}}, {name: "b", workflow: {path: <child>}}]}` — two
+   `workflow` steps to the same child.
+expected: (2) `basis: "observed"`, `partial: false`, `minutes` equal to
+(1)'s, and `runs` and `measured_on` equal to (1)'s — populated, not null;
+(3) `basis: "observed"`, `minutes` twice (1)'s, `runs` equal to (1)'s (the
+min across children, which are the same child), `measured_on` equal to
+(1)'s (every child names the same device). The regression is (2) or (3)
+coming back `basis: "observed"` with `runs: null` or `measured_on: null` —
+an estimate that says it was measured without saying how many times or on
+what. (A multi-child parent whose children genuinely disagree on device
+should null `measured_on`; that is not reproducible on a one-GPU box and is
+left to the dw pytest suite.)
+cleanup: none — inline validations write nothing.
+source: tester, verified in #275 (run over MCP 2026-09-21 as the calls above,
+model `opus` via provider `anthropic`; the implementer's proposed case from
+its #275 hand-off, widened with the two-child call).
+
+### C-F044 — an envelope on a whole-second track has exactly one bin per second, and its last bin is the real last second
+One `get_gallery_metadata` call, no run, no GPU:
+`get_gallery_metadata(name: "asset:qa-cast/ep25-episode.mp4", envelope:
+true)`. Note `media.duration_seconds` (15.0) and
+`media.envelope.interval_seconds` (1.0).
+expected: `media.envelope.rms_dbfs` and `media.envelope.peak_dbfs` each have
+exactly `duration_seconds / interval_seconds` = **15** entries, and the last
+entry is within a few dB of its neighbours (rms roughly -22 to -28 dBFS; peak
+above -10 dBFS) — the level of the track's real 15th second. The regression
+is a 16th entry: a lossy decoder's priming/padding runs a few samples past
+the nominal 15.0 s, and before #277 that fragment was reported as its own
+one-second bin at ~-56 dBFS rms, reading as a dead last second on a track
+that is not. Any last entry more than ~15 dB below the one before it fails
+the case, whatever the count. (The fold applies to any sub-second tail —
+5.167 s gives 5 bins — so do not assert `ceil`; #278 is where the length of
+that tail is being discussed.)
+metrics: `envelope_bins` — `len(media.envelope.rms_dbfs)`, condition
+`ep25-episode.mp4/interval-1.0`. Any reading other than 15 is a failure
+regardless of trend.
+cleanup: none — the call writes nothing.
+source: tester, verified in #277 (run over MCP 2026-09-21 as the call above,
+model `opus` via provider `anthropic`; 15 bins, last `-26.31 / -5.73`).
 
 ## Performance

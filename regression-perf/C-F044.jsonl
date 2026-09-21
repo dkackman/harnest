@@ -1,0 +1,1 @@
+{"ts":"2026-09-21T06:08:54Z","level":"complete","case":"C-F044","metric":"envelope_bins","condition":"ep25-episode.mp4/interval-1.0","value":15,"unit":"entries","server":null,"model":"opus","provider":"anthropic","ref":"get_gallery_metadata(name=asset:qa-cast/ep25-episode.mp4, envelope=true)","note":"seed at #277 verify; last bin rms -26.31 / peak -5.73 dBFS"}
