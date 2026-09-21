@@ -2135,6 +2135,33 @@ source: tester, verified in #279 on 2026-09-21 over MCP as model `opus` via prov
 and `qa-ep25` returned `plan.workspace` / `plan.output_dir` for each. (Whether an entry
 survives a server restart is #281, not this case.)
 
+### S-F083 — the `get_gallery_metadata` docstring's tasks-guide cross-reference resolves through `get_guide`
+#282: the tool description told the reader to "see \"Headroom and clipping warnings\" in
+the tasks guide", but `get_guide` indexes only top-level headings, so that name errored
+and the thresholds paragraph was unreachable from the cross-reference. The fix repointed
+the docstring at a section that resolves. Free — one schema read and one guide read.
+1. Read the `get_gallery_metadata` tool description as served (the deferred-tool schema,
+   e.g. via `ToolSearch select:mcp__dw__get_gallery_metadata`); note the guide name and
+   section it names for the `-0.5` / `0.0` dBFS thresholds.
+2. `get_guide(name="tasks", section=<that section>)` — currently
+   `section="Video Processing"`, with `normalize_audio` as the sub-section to look for.
+expected:
+- Step 1's description names a guide *and* a section (not just a bold paragraph title).
+- Step 2 resolves (no `has no section` error) and its `content` contains the string
+  `Headroom and clipping warnings` together with both threshold names `audio_no_headroom`
+  and `audio_clipped`.
+It is a **finding** if step 2 errors, or resolves to content that no longer carries the
+thresholds paragraph — either way the docstring is pointing at something a reader can't
+fetch. If the docstring's target moves to another section that does resolve and does
+carry the paragraph, that is a pass, not a finding.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #282 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: the description named `normalize_audio` in "Video Processing";
+`get_guide(name="tasks", section="Video Processing")` returned the `### normalize_audio`
+sub-section with the `**Headroom and clipping warnings.**` paragraph and both warning
+names; the old title still errors, by design (sub-headings are not indexed).
+
 ## Performance
 
 ### S-P001 — default image generation latency
