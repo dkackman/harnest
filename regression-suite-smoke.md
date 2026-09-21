@@ -105,6 +105,11 @@ nothing uses it anymore.
 - `asset:qa-cast/hal-voice.wav` — a 6.48 s 24 kHz mono line in the shared asset
   library. S-F072's pad control lays it under the 19.67 s `ep11-coldopen.mp4`; any
   substitute just needs to be clearly shorter than that video. Read-only, never deleted.
+- `asset:qa-cast/ep25-episode.mp4` — a 360-frame 24 fps 960x544 32 kHz stereo cut in the
+  shared asset library: a 248-frame shot dissolved over 12 frames into a 124-frame one, so
+  the second shot's first frame is 236 and the track is exactly 15.0 s. S-F080 reads it
+  with `get_output_frames`; the frame arithmetic in its expected block is computed from
+  that geometry. Read-only, never deleted.
 
 ## Functional
 
@@ -2044,6 +2049,34 @@ source: tester, verified in #269 on 2026-09-21 over MCP as model `opus` via prov
 `generating` at `at: 4.8`, `seconds_in_phase: 1.4` on both `wait_for_job` and a later
 `get_job`; job `c4dd43dd0787` failed loading with `progress.phase: "loading"`,
 `seconds_in_phase: 0.9`. Case proposed by the implementer in its hand-off comment.
+
+### S-F080 — `get_output_frames` reads an `asset:` video by seam and by moment, with sound
+`get_output_frames` is the only way to *see* a cut over MCP (#245), and its `seams` and
+`hear` selectors are what a cut is checked with; neither had a case. Free — no job, two
+calls on the fixture `asset:qa-cast/ep25-episode.mp4` (360 frames, second shot from frame
+236). Pass `workspace="regression-smoke"` on both.
+1. `get_output_frames(name="asset:qa-cast/ep25-episode.mp4", seams=true, boundaries=[236],
+   names=["tub","receipt"], max_dimension=256)`.
+2. `get_output_frames(name="asset:qa-cast/ep25-episode.mp4", at=["frame:242", 14.9], hear=1,
+   max_dimension=256)`.
+expected:
+- Step 1: one image (the frame pair either side of the join, tiled side by side, no wider
+  than 256 px) plus a text block reporting `frame_count: 360  fps: 24.0` and one seam line
+  naming `tub | receipt` at `frame 236 @ 9.83s` with a numeric `difference`.
+- Step 2: two images and two `audio/wav` blobs, one pair per moment, plus a text block with
+  `frame 242 @ 10.08s` and `frame 358 @ 14.92s` (a `frame:N` selector lands on frame N; a
+  seconds selector lands on `round(t * fps)`) and a `hear: 1.0s around each moment` line. The
+  second wav is shorter than the first — the window is clipped at the end of the track, not
+  padded.
+It becomes a **finding** if an `asset:` name is refused (only gallery names accepted), if
+`seams` needs a job-owned output rather than an asset, if a `frame:N` selector is read as
+seconds, if `hear` returns no audio, or if the frame indices drift from the arithmetic above.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep25, 2026-09-21) over MCP as model
+`opus` via provider `anthropic`, dw 0.4.0-beta.6 on `lem`: seam 1 reported `frame 236 @ 9.83s
+difference: 5.06 [256x72]`; moments `frame 242 @ 10.08s` / `frame 358 @ 14.92s` with 125 KB
+and 73 KB wavs.
 
 ## Performance
 
