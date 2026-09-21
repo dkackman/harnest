@@ -2458,6 +2458,50 @@ source: tester, found while running TESTER_TASK.agent.md (ep33, `qa-ep33`, job
 −60.48 vs −60.50 dBFS mean, peak −38.01 on both, `bed-loop` 9.333 s / 32 kHz / mono,
 peak equal to the source asset's (−28.89).
 
+### S-F092 — a `match_levels_dbfs` that an unset `match_levels` makes inert is warned about at validate, on both join commands
+#291: `concat_videos` and `dissolve_videos` only call the level matcher when
+`match_levels` is `"rms"` or `"peak"` (off by default), so a caller who passes only the
+`match_levels_dbfs` target has stated an intent the engine silently dropped — the third
+"modifier without its enabler" pair on these commands after S-F087 (#288) and S-F090
+(#290). Free: one validate call, nothing runs.
+1. `validate_workflow(workspace=<suite workspace>, workflow={"id":
+   "regression-inert-match-levels-dbfs", "seed": 1, "steps": [
+   {"name": "concat_target_only", "task": {"command": "concat_videos", "arguments":
+   {"videos": ["asset:qa-cast/ep31-shot1-return.mp4", "asset:qa-cast/ep31-shot2-shrug.mp4"],
+   "fps": 24, "match_levels_dbfs": -24}}, "result": {"content_type": "video/mp4",
+   "subfolder": "intermediate", "file_base_name": "ml-a", "fps": 24}},
+   {"name": "dissolve_target_only", "task": {"command": "dissolve_videos", "arguments":
+   {"videos": [same two], "dissolve_frames": 0, "fps": 24, "match_levels_dbfs": -24}},
+   "result": {..., "file_base_name": "ml-b"}},
+   {"name": "concat_explicit_null", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "fps": 24, "match_levels": null, "match_levels_dbfs": -24}},
+   "result": {..., "file_base_name": "ml-c"}},
+   {"name": "concat_live", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "fps": 24, "match_levels": "rms", "match_levels_dbfs": -24}},
+   "result": {..., "file_base_name": "ml-d"}},
+   {"name": "dissolve_live", "task": {"command": "dissolve_videos", "arguments":
+   {"videos": [same two], "dissolve_frames": 0, "fps": 24, "match_levels": "peak",
+   "match_levels_dbfs": -24}}, "result": {..., "file_base_name": "ml-e"}},
+   {"name": "dissolve_neither", "task": {"command": "dissolve_videos", "arguments":
+   {"videos": [same two], "dissolve_frames": 0, "fps": 24}}, "result": {...,
+   "file_base_name": "ml-f"}}]})`.
+expected:
+- `valid: true` with exactly three warnings, one each naming `concat_target_only`,
+  `dissolve_target_only` and `concat_explicit_null`, each saying `match_levels_dbfs`
+  has no effect when `match_levels` is unset and telling the caller to pass `"rms"` or
+  `"peak"` for the target to apply.
+- No warning mentions `concat_live`, `dissolve_live` or `dissolve_neither`.
+It is a **finding** if any of the three inert steps validates without the warning (a
+regression on only one of the two commands counts), if the warning does not name both
+arguments, or if a live or no-target step draws one.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #291 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: in `qa-ep33` the two target-only steps and the explicit-null step each warned
+`Step '<name>': 'match_levels_dbfs' has no effect when 'match_levels' is unset - pass
+"rms" or "peak" for the target to apply.`; the `rms`, `peak` and no-target steps were
+silent.
+
 ## Performance
 
 ### S-P001 — default image generation latency
