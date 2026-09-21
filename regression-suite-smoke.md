@@ -2162,6 +2162,38 @@ source: tester, verified in #282 on 2026-09-21 over MCP as model `opus` via prov
 sub-section with the `**Headroom and clipping warnings.**` paragraph and both warning
 names; the old title still errors, by design (sub-headings are not indexed).
 
+### S-F084 — the `workflow_end` event's manifest names files exactly as `get_job` and `step_end` do
+#284: the last content event of a finished job, `workflow_end`, carried a `manifest[]`
+whose `files` were absolute paths under the workspace's `outputs/` root, while `step_end`
+in the same stream and `get_job`'s manifest gave the gallery-relative
+`<workflow>/<run id>/<subfolder>/<file>` — so a consumer reading the final manifest off
+the event stream had a name no output-side tool accepted. Cheap: one CPU-only inline run.
+1. `run_workflow(inline_workflow=..., acknowledged_cost=true)` with three steps —
+   `gather_images` of the HF `robot.png` URL, then `canny` with
+   `result: {content_type: "image/jpeg", subfolder: "final"}`, then `crop_square` with
+   `subfolder: "intermediate"`, both over `previous_result:input_image` — and
+   `wait_for_job` to `succeeded`.
+2. `get_job_events(job_id, after=<last_seq minus ~10>)` and find the `workflow_end` event;
+   `get_job(job_id)` for its `manifest`.
+3. `get_gallery_metadata(name=<one workflow_end manifest file>)`.
+expected:
+- The `workflow_end` event's `manifest` is identical, entry for entry (`step`, `files`,
+  `subfolder`), to `get_job`'s `manifest`, and every `files` entry is gallery-relative:
+  starts with the workflow id, no leading `/`, no `outputs/` prefix, and matches the same
+  step's `step_end.files` earlier in the stream. Both the `final` and the `intermediate`
+  subfolder appear, and the `gather_images` step has `files: []` in both places.
+- Step 3 resolves with `source: "output"` and the job's id — the name is usable as-is.
+It is a **finding** if any `workflow_end` file differs from `get_job`'s for the same step,
+carries a leading `/` or a directory outside `<workflow>/<run id>/`, or step 3 fails to
+resolve the name.
+cleanup: delete the run's outputs by run name (`delete_output`), as S-F022 does.
+metrics: none.
+source: tester, verified in #284 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: job `ed6d2fbaeb7e` — `workflow_end.manifest`, `get_job.manifest` and the two
+`step_end.files` all read `qa284_canny/20260921-071603-082a2b15/{final,intermediate}/…`,
+and `get_gallery_metadata` on the intermediate name returned `source: output`, job
+`ed6d2fbaeb7e`.
+
 ## Performance
 
 ### S-P001 — default image generation latency
