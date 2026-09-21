@@ -1193,30 +1193,29 @@ no seam hole; against `dw` 0.4.0-beta.6. The same job is the repro for #235
 (the `film` step's `subfolder` is `""`, not `final`) — that is not part of
 this case's assertion.
 
-### C-F039 — a cost figure that comes only from a composed child is reported `partial`
-Three `validate_workflow` calls with an inline `workflow`, no run, no GPU.
-Each is a one-step parent whose step is `workflow: {path: <child>, arguments:
-{prompt: "variable:prompt"}}` with `variables: {prompt: "a lighthouse at
-dusk"}`:
-1. parent with **no** `cost` block composing `templates/ltx2/text-to-video`
-   (curated cost, 1.8 min on RTX 3090);
-2. parent with no `cost` block composing `templates/minimax/video-with-audio`
-   (`cost: null` in the catalog);
-3. parent carrying its own `cost: [{device: cuda, name: "RTX 3090",
-   vram_gb: 24, minutes: 0.5}]` composing `templates/ltx2/text-to-video`.
-expected: (1) `plan.estimate.minutes` equals the child's curated figure,
-`basis: "unknown"`, and `partial: true` — the parent contributed nothing, so
-the number is not the whole run; (2) `minutes: null`, `basis: "unknown"`,
-`partial: false` — nothing priced anywhere is "unknown", not "partly known";
-(3) `minutes` is the sum (2.3), `basis: "catalog"`, `measured_on: "RTX 3090"`,
-`partial: false`. The regression is (1) coming back `partial: false`: a
-caller following quote → go-ahead → run reads a child's minutes as a trusted
-total for a workflow whose unpriced steps may be the bulk of the wall time
-(#242's original was off by ~640x that way). Whether the response also
-*names* the unpriced steps is #252's concern, not this case's.
+### C-F039 — a parent's own `cost` block sums with a composed child's curated cost as a `catalog` estimate
+One `validate_workflow` call with an inline `workflow`, no run, no GPU: a
+one-step parent carrying its own `cost: [{device: cuda, name: "RTX 3090",
+vram_gb: 24, minutes: 0.5}]`, whose step is `workflow: {path:
+templates/ltx2/text-to-video, arguments: {prompt: "variable:prompt"}}`
+(curated cost, 1.8 min on RTX 3090), with `variables: {prompt: "a lighthouse
+at dusk"}`.
+expected: `plan.estimate.minutes` is the sum (2.3), `basis: "catalog"`,
+`measured_on: "RTX 3090"`, `partial: false` — the parent's own priced work
+plus the child's curated figure account for the whole run, so nothing is
+partial.
 cleanup: none — inline validations write nothing.
-source: tester, verified in #242 (run over MCP 2026-09-19 as the calls above,
-model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6).
+source: tester, verified in #242 (run over MCP 2026-09-19, model `opus` via
+provider `anthropic`, against `dw` 0.4.0-beta.6); narrowed in #276 — this
+case's original calls (1) and (2) asserted a pure-composition parent with no
+`cost` of its own comes back `basis: "unknown"`/`partial: true`, which #268
+deliberately changed (such a parent now inherits `basis: "observed"` from a
+fully-observed child) and which C-F042 now covers more precisely, including
+the still-live #242 hazard (a composed child's number silently trusted as a
+parent's total) via its mixed-step call. Call (2)'s premise — a child with
+`cost: null` and no observed history — had also gone stale on this box,
+where curated-cost children accumulate observed runs over time. Retired
+rather than rewritten, per #276 (model `opus` via provider `anthropic`).
 
 ### C-F040 — `validate_workflow` projects host memory for a resident `for_each` from observed history, warns, and never refuses
 One cheap run plus four free validations; no model, no GPU. Save a
