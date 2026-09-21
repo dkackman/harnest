@@ -1896,31 +1896,48 @@ source: tester, verified in #249 on 2026-09-19 over MCP as model `opus` via prov
 (#242); when some contributor has none, `partial: true` alone cannot tell a caller whether
 the gap is a trivial step or a 12-shot loop. `unpriced` (#252) names each contributor: the
 parent by its own `id` when the parent's own steps carry no `cost`, each composed child by
-its `workflow.path`. Free, no model, no job — three inline `validate_workflow` calls
-against stock templates whose cost state is fixed: `templates/ltx2/text-to-video` has a
-curated cost (1.8 min on cuda), `templates/ltx2/extend-clip` has none. Each inline
-workflow is one step, `{"name": "clip", "workflow": {"path": <template>, "arguments":
-{"prompt": "variable:prompt"}}, "result": {"content_type": "video/mp4", "subfolder":
-"final"}}`, with `"variables": {"prompt": "a lighthouse at dusk"}`.
+its `workflow.path`. Since #268 a parent with no `cost` whose *every* step is a `workflow`
+step is pure composition and inherits its child's estimate instead of being named — the
+parent is only unpriced when it has a task step of its own that nobody costed. Free, no
+model, no job — four inline `validate_workflow` calls against stock templates whose cost
+state is fixed: `templates/ltx2/text-to-video` has a curated cost (2.2 min on cuda at the
+time of writing; it has moved once already, so read the current figure from
+`list_workflows(shape="shot")` rather than the numbers here), `templates/ltx2/extend-clip`
+has none. Each inline workflow is one step, `{"name": "clip", "workflow": {"path":
+<template>, "arguments": {"prompt": "variable:prompt"}}, "result": {"content_type":
+"video/mp4", "subfolder": "final"}}`, with `"variables": {"prompt": "a lighthouse at
+dusk"}`, except where an arm says to add a second step.
 expected:
 - `id: "qa-252-unpriced-parent"`, **no** `cost`, composing `templates/ltx2/text-to-video`
-  → `valid: true`; `estimate.partial: true`; `estimate.unpriced == ["qa-252-unpriced-parent"]`
-  — the parent alone, since the child is priced; `minutes` is the child's 1.8.
+  → `valid: true`; `estimate.partial: false`; `estimate.unpriced == []` (present and
+  empty); `basis: "observed"` (or `"catalog"` on a box that has never run the child) —
+  pure composition inherits the child's figure, and the parent is not named (#268).
+- `id: "qa-252-unpriced-parent"` again, still **no** `cost`, with a second step after
+  `clip`: `{"name": "sheet", "task": {"command": "frame_grid", "arguments": {"video":
+  "output:clip"}}, "result": {"content_type": "image/png", "subfolder": "intermediate"}}`
+  → `valid: true`; `partial: true`; `unpriced == ["qa-252-unpriced-parent"]` — the parent
+  alone, named for its own uncosted task step, since the child is priced; `minutes` is
+  still the child's figure, not null. (The #242 shape #268 explicitly preserves; the
+  tester's `qa-268-mixed` check there answered `basis: "unknown"` for it.)
 - `id: "qa-252-priced-parent"`, `"cost": [{"device": "cuda", "name": "RTX 3090",
   "vram_gb": 24, "minutes": 0.5}]`, composing `templates/ltx2/extend-clip` → `valid: true`;
   `partial: true`; `unpriced == ["templates/ltx2/extend-clip"]` — the child alone, by path;
   `basis: "catalog"`, `minutes: 0.5`.
 - `id: "qa-252-all-priced"`, the same `cost` block, composing `templates/ltx2/text-to-video`
   → `valid: true`; `partial: false`; `unpriced == []` (present and empty, not absent);
-  `minutes: 2.3`.
-It becomes a **finding** if `unpriced` is missing from any of the three replies, if it
+  `minutes` is the parent's 0.5 plus the child's current catalog figure.
+It becomes a **finding** if `unpriced` is missing from any of the four replies, if it
 names a priced contributor or omits an unpriced one, or if `partial` disagrees with whether
 `unpriced` is empty. A change in the templates' curated costs (text-to-video losing its
 block, extend-clip gaining one) moves which arm names what — re-check `list_workflows
 (shape="shot")` `cost` before calling that a finding.
 cleanup: none — nothing is created.
 source: tester, verified in #252 on 2026-09-19 over MCP as model `opus` via provider
-`anthropic` — the three replies exactly as above.
+`anthropic` — the original three replies exactly as above. Arm 1 was rewritten and the
+mixed-parent arm added in #307 (2026-09-21) after #268 made a pure-composition parent
+inherit its child's history: the regression agent's run that day answered `observed`,
+2.2 min, 13 runs, `partial: false`, `unpriced: []` for the one-step parent, and arms 2
+and 3 as written (text-to-video's curated figure had moved from 1.8 to 2.2).
 
 ### S-F076 — `plan.estimate.cached_minutes` accounts for `cached_steps`
 Before #255 `plan.estimate.minutes` was the whole-workflow observed time regardless of
