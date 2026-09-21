@@ -2724,6 +2724,45 @@ source: tester, verified in #294 on 2026-09-21 over MCP as model `opus` via prov
 seq 12) and job `94a6677af7a5` (frames form, seq 12) produced exactly the two messages and
 field sets above; each run under 1 s.
 
+### S-F098 — `resample_audio` converts: the written track carries the target rate at the source's duration, and a frame-form slice of it lands on the target rate's sample grid
+`resample_audio` is the remedy every mixed-rate warning names (#108, #287, #293) and the only
+task whose purpose is to convert rather than relabel — yet the smoke suite only ever exercised
+its refusals (S-F024 parts 1–4). A relabel bug would still "succeed": a 44.1 kHz track
+stamped 32 kHz plays 37.8 % slow (#180's exact failure, in the one task that must never do
+it). Cheap: one ~1 s task-only run, one shared asset.
+1. `get_gallery_metadata(name="asset:qa-cast/ep15-song.mp3")` — the source: 44100 Hz,
+   2 ch, `duration_seconds` 30.02 ± 0.05.
+2. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "regression-resample",
+   "seed": 1, "steps": [
+   {"name": "resample", "task": {"command": "resample_audio", "arguments":
+   {"audio": "asset:qa-cast/ep15-song.mp3", "target_sample_rate": 32000}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "song32k"}},
+   {"name": "slice", "task": {"command": "slice_audio", "arguments":
+   {"audio": "previous_result:resample", "start_frame": 0, "num_frames": 224, "fps": 24}},
+   "result": {"content_type": "audio/wav", "subfolder": "final", "file_base_name": "song32k-224f"}}]},
+   acknowledged_cost=<bound from validate>)`, `wait_for_job`, then `get_gallery_metadata`
+   on both files the manifest names.
+expected:
+- `succeeded`. `resample`: `sample_rate: 32000`, `channels: 2`, `duration_seconds` equal to
+  the source's within 0.05 s (30.02 — a relabel reads ~41.38 s). `slice`: `sample_rate:
+  32000`, `duration_seconds` 9.333 ± 0.005 (224 f / 24 fps, resolved on the *converted*
+  track's rate — 298 667 samples at 32 kHz, not 224/24 of a 44.1 kHz sample count).
+- No `#180` "relabeled … not resampled" warning on either step, and no sample-rate mismatch
+  warning (there is one track). An `audio_no_headroom` warning on each written wav *is*
+  expected — the song decodes above full scale — and is not part of this case (its wording
+  and the missing `audio_clipped` are #295).
+It is a **finding** if the resampled file's rate is not 32000, if its duration moves by more
+than 0.05 s from the source's, if the slice is not 9.333 s at 32000 Hz, or if either step
+warns that it relabeled.
+cleanup: `delete_output` on the `regression-resample/<run>` directory.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep36, `qa-ep36`, job
+`d37790d23c42`) on 2026-09-21 over MCP as model `opus` via provider `anthropic`: the
+resampled wav read back 32000 Hz / 2 ch / 30.023406 s from a 30.02 s 44.1 kHz source, the
+224-frame slice 9.333344 s / 32000 Hz; whole chain 0.4 s. Two `gain_audio` frame-form
+ducks chained off the slice by `previous_result:` each landed exactly −9.00 dB in their
+bins (S-F095/S-F097 cover that arithmetic; this case is the conversion in front of it).
+
 ## Performance
 
 ### S-P001 — default image generation latency
