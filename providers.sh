@@ -443,7 +443,9 @@ commit_suite_changes() {
 #   > tool_name {"arg":..}      each tool call, input truncated
 #   < 38211 chars               each tool result's size (ERROR when is_error),
 #                               which is how an oversized MCP result shows up
-#   rate-limit: ...             only when the session is throttled / in overage
+#   rate-limit: ...             only when the session is throttled / in overage;
+#                               carries resets=<iso> for a reader and
+#                               resets_epoch=<secs> for sleep_if_rate_limited
 #   usage: turns=.. duration=.. cost=.. ctx_peak=.. in=.. cache_read=..
 #          cache_write=.. out=..  once, from the final result event
 # Thinking blocks are dropped. Needs LOGS from the driver.
@@ -483,7 +485,7 @@ _STREAM_RENDER_JQ='
       elif $j.type == "rate_limit_event" then
         ($j.rate_limit_info
           | if .status != "allowed" or .isUsingOverage then
-              "rate-limit: status=\(.status) type=\(.rateLimitType) overage=\(.isUsingOverage) resets=\(.resetsAt | todate)"
+              "rate-limit: status=\(.status) type=\(.rateLimitType) overage=\(.isUsingOverage) resets=\(.resetsAt | todate) resets_epoch=\(.resetsAt)"
             else empty end)
       elif $j.type == "result" then
         "usage: turns=\($j.num_turns) duration=\(($j.duration_ms // 0) / 1000 | round)s cost=$\($j.total_cost_usd | usd) ctx_peak=\(.max | k) in=\($j.usage.input_tokens | k) cache_read=\($j.usage.cache_read_input_tokens | k) cache_write=\($j.usage.cache_creation_input_tokens | k) out=\($j.usage.output_tokens | k)",
@@ -496,6 +498,44 @@ _STREAM_RENDER_JQ='
 render_stream() {
   : "${LOGS:?render_stream: LOGS must be set by the driver}"
   tee -a "$LOGS/$1.jsonl" | jq -Rn -r --unbuffered "$_STREAM_RENDER_JQ"
+}
+
+# sleep_if_rate_limited <rendered-session-log>
+# A session that starts while the account's rate limit is rejected returns
+# in under a second with turns=1 cost=$0, and a driver that just "continues"
+# spins: 2026-09-21 02:50-08:30 the loop launched ~37 such sessions against
+# a rejected five-hour window because the ticket board kept reading as
+# changed. So after every session the driver hands its rendered output here;
+# if the session was rejected, sleep until the reset the event named (plus
+# a minute of slack) and log it. A rejection on resume just names the next
+# reset, so this can't spin either. Nothing to do when the session wasn't
+# rejected.
+# session_died <rendered-session-log>
+# True when a session ended without a final `usage:` line - the claude
+# process went away before its result event (2026-09-21 17:26 three
+# regression sessions in a row did, in a four-second window, with nothing on
+# stderr; the next launch four seconds later was fine). A budget cut-off or
+# an autocompact still emits `usage:`, so those are not "died". A rejected
+# rate limit does emit it too, and sleep_if_rate_limited owns that case.
+# The drivers retry a died session once, after a short pause.
+session_died() {
+  [ -r "$1" ] && ! grep -q '^usage: ' "$1"
+}
+SESSION_RETRY_PAUSE_SECS="${SESSION_RETRY_PAUSE_SECS:-30}"
+
+sleep_if_rate_limited() {
+  local f="$1" line epoch now wait
+  [ -r "$f" ] || return 0
+  line="$(grep 'rate-limit: status=rejected' "$f" | tail -n 1)" || return 0
+  [ -n "$line" ] || return 0
+  epoch="$(printf '%s\n' "$line" | sed -n 's/.*resets_epoch=\([0-9][0-9]*\).*/\1/p')"
+  [ -n "$epoch" ] || return 0
+  now="$(date +%s)"
+  wait=$((epoch + 60 - now))
+  if [ "$wait" -gt 0 ]; then
+    echo "[loop] rate limit rejected; sleeping ${wait}s until $(date -r "$epoch" '+%H:%M:%S') + 60s" | tee -a "$LOGS/loop.log"
+    sleep "$wait"
+  fi
 }
 
 # park_external_issues

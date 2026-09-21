@@ -176,7 +176,12 @@ REGRESSION_FLAGS=(
 # is appended to the log prefix ("[regression:smoke.2]") so a chunked run's
 # sessions are distinguishable in loop.log.
 run_session() {
-  local level="$1" suite_file="$2" workspace="$3" tag="$4" instructions="$5"
+  local level="$1" suite_file="$2" workspace="$3" tag="$4" instructions="$5" attempt
+  # .last-session is this session's rendered output alone: a rejected rate
+  # limit sleeps the driver until the reset, a session that died before its
+  # result event is retried once (both in providers.sh).
+  for attempt in 1 2; do
+  : > "$LOGS/.last-session"
   (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions are in your system prompt (the contents of $AGENTS/REGRESSION.agent.md); follow them exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
 
@@ -184,10 +189,16 @@ $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} \
     --append-system-prompt-file "$AGENTS/REGRESSION.agent.md" \
     "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 | render_stream regression) \
-    | tee -a "$LOGS/regression.log" \
+    | tee -a "$LOGS/regression.log" "$LOGS/.last-session" \
     | sed -u "s/^/[regression:$level$tag] /" \
     | tee -a "$LOGS/loop.log" \
     || echo "[regression:$level$tag] run failed" | tee -a "$LOGS/loop.log"
+  sleep_if_rate_limited "$LOGS/.last-session"
+  session_died "$LOGS/.last-session" || break
+  [ "$attempt" -eq 1 ] || break
+  echo "[regression:$level$tag] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
+  sleep "$SESSION_RETRY_PAUSE_SECS"
+  done
 }
 
 run_level() {

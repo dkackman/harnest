@@ -15,7 +15,13 @@ files described below. There is no build, lint, or test step.
   is also where related issues get batched into one fix), then one fresh `claude -p` per
   remaining issue; the tester gets one per `status:fixed-pending-verify` issue, plus a "task"
   session (closure responses + one `TESTER_TASK.agent.md` step) every `TESTER_TASK_EVERY` cycles
-  (default 2). The driver re-checks an issue's labels right before its session so one already
+  (default 4 — it is the most expensive session in a cycle and is discovery, not verification;
+  on the cycles in between, a pending `wontfix`/`duplicate` closure gets a short "closures"
+  session of its own, tracked in `logs/closures-seen`, so the reopen window doesn't stretch
+  with the knob). A session that starts while the account's rate limit is rejected returns in
+  under a second at $0; `sleep_if_rate_limited` (`providers.sh`) then sleeps every driver
+  until the reset the event named instead of relaunching (37 such sessions spun on
+  2026-09-21). The driver re-checks an issue's labels right before its session so one already
   handed off by a batch is skipped. Every session runs with `--max-budget-usd`
   (`IMPLEMENTER_BUDGET_USD`/`TESTER_BUDGET_USD`/`TRIAGE_BUDGET_USD`, defaults 8/5/3, 0 = none)
   and `--autocompact $AUTOCOMPACT_TOKENS` (default 120k). The reason is measured, not

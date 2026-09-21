@@ -13,7 +13,7 @@
 #   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
 #   IMPLEMENTER_BUDGET_USD=8 TESTER_BUDGET_USD=5 TRIAGE_BUDGET_USD=3 ./run-loop.sh
 #                                       # per-session --max-budget-usd caps (0 = none)
-#   TESTER_TASK_EVERY=2 ./run-loop.sh   # standing task every Nth cycle
+#   TESTER_TASK_EVERY=2 ./run-loop.sh   # standing task every Nth cycle (default 4)
 #   ONLY_ISSUES=227 ./run-loop.sh       # this cycle works #227 (and nothing
 #                                       # else), implementer and tester both
 #   tail -f logs/loop.log               # watch from another terminal
@@ -41,6 +41,9 @@
 #   tester #N (answer)   one fresh session per owner:tester issue with
 #                        status:needs-info - a question the implementer
 #                        bounced back
+#   tester closures      one session, only on a cycle where a wontfix/duplicate
+#                        closure the tester hasn't seen is waiting and no task
+#                        session runs: responds to those closures (step 3)
 #   tester task          one session, every TESTER_TASK_EVERY cycles: responds
 #                        to wontfix/duplicate closures, then advances
 #                        TESTER_TASK.agent.md one step
@@ -93,7 +96,13 @@ IMPLEMENTER_BUDGET_USD="${IMPLEMENTER_BUDGET_USD:-8}"
 TESTER_BUDGET_USD="${TESTER_BUDGET_USD:-5}"
 TRIAGE_BUDGET_USD="${TRIAGE_BUDGET_USD:-3}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
-TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-2}"   # standing task on every Nth cycle
+# The standing task is the most expensive session in a cycle ($1.5-3.7, 50-65
+# turns, measured 2026-09-21) and it is discovery, not verification, so it is
+# the knob to turn when cost matters. 2 -> 4 halves its amortised cost per
+# cycle. Closure responses used to ride only in this session, so they would
+# have waited up to four cycles; they now get their own cheap session on any
+# cycle where one is pending (see tester_pass).
+TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-4}"   # standing task on every Nth cycle
 DW_URL="${DW_URL:-http://lem:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
 PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
@@ -205,16 +214,29 @@ run_agent() {
 
 $note"
 
-  echo "=== $(ts) cycle $cycle: $label ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
-  (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
-      claude -p "$full_prompt" \
-      --model "$model" ${fallback[@]+"${fallback[@]}"} ${effort_words[@]+"${effort_words[@]}"} "${limits[@]}" \
-      --append-system-prompt-file "$prompt_file" \
-      "${STREAM_FLAGS[@]}" "$@" 2>&1 < /dev/null | render_stream "$role") \
-    | tee -a "$LOGS/$role.log" \
-    | sed -u "s/^/[$label] /" \
-    | tee -a "$LOGS/loop.log" \
-    || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
+  # .last-session holds just this session's rendered output (the role log is
+  # cumulative), so the checks after the pipe read only what this session
+  # saw: a rejected rate limit sleeps the driver until the reset; a session
+  # that died before its result event is retried once.
+  local attempt
+  for attempt in 1 2; do
+    : > "$LOGS/.last-session"
+    echo "=== $(ts) cycle $cycle: $label ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
+    (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
+        claude -p "$full_prompt" \
+        --model "$model" ${fallback[@]+"${fallback[@]}"} ${effort_words[@]+"${effort_words[@]}"} "${limits[@]}" \
+        --append-system-prompt-file "$prompt_file" \
+        "${STREAM_FLAGS[@]}" "$@" 2>&1 < /dev/null | render_stream "$role") \
+      | tee -a "$LOGS/$role.log" "$LOGS/.last-session" \
+      | sed -u "s/^/[$label] /" \
+      | tee -a "$LOGS/loop.log" \
+      || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
+    sleep_if_rate_limited "$LOGS/.last-session"
+    session_died "$LOGS/.last-session" || break
+    [ "$attempt" -eq 1 ] || break
+    echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
+    sleep "$SESSION_RETRY_PAUSE_SECS"
+  done
 }
 
 # open_issues <owner-label> <fresh|verify|needsinfo>
@@ -249,6 +271,35 @@ open_issues() {
 still_ready() {
   local n="$1" owner="$2" mode="$3"
   open_issues "$owner" "$mode" | grep -qx "$n"
+}
+
+# pending_closures
+# Numbers of closed issues carrying owner:tester plus wontfix or duplicate
+# that no tester session has been dispatched for yet (TESTER.agent.md step
+# 3: accept, or reopen once with new evidence). Whether the tester has
+# *responded* is only visible in the comments, so the driver keeps its own
+# ledger, logs/closures-seen, of the numbers it has already handed to a
+# session - mark_closures_seen appends to it after the closure or task
+# session runs. A reopened issue that comes back wontfix a second time is
+# already in the ledger, which matches the rule that a second wontfix is
+# final. Honours ONLY_ISSUES like open_issues does.
+pending_closures() {
+  local out seen="$LOGS/closures-seen"
+  out="$(gh issue list --repo "$TICKET_REPO" --state closed --label owner:tester --limit 200 \
+    --json number,labels \
+    --jq '.[] | select([.labels[].name] | (index("wontfix") != null or index("duplicate") != null)) | .number' \
+    | sort -n)"
+  if [ -n "$ONLY_ISSUES" ]; then
+    local pat
+    pat="$(printf '%s' "$ONLY_ISSUES" | tr ',' ' ' | tr -s ' ' | sed 's/^ *//;s/ *$//;s/ /|/g')"
+    out="$(printf '%s\n' "$out" | grep -E "^($pat)$" || true)"
+  fi
+  [ -r "$seen" ] && out="$(printf '%s\n' "$out" | grep -vxF -f "$seen" || true)"
+  [ -n "$out" ] && printf '%s\n' "$out"
+}
+
+mark_closures_seen() {
+  [ $# -gt 0 ] && printf '%s\n' "$@" >> "$LOGS/closures-seen"
 }
 
 # implementer_pass — triage (when 2+ issues wait), then one session per issue.
@@ -316,10 +367,26 @@ tester_pass() {
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester needsinfo)
 
+  # Closure responses (step 3) ride in the task session when one runs this
+  # cycle; on the other cycles a pending closure gets a short session of its
+  # own, so raising TESTER_TASK_EVERY slows discovery but not the reopen
+  # window. Either way the driver's ledger is updated afterwards.
+  local -a closures=()
+  while IFS= read -r n; do [ -n "$n" ] && closures+=("$n"); done < <(pending_closures)
+
   if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.agent.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
+    mark_closures_seen ${closures[@]+"${closures[@]}"}
+  elif [ "${#closures[@]}" -gt 0 ]; then
+    local list
+    list="$(printf '#%s ' "${closures[@]}")"
+    run_agent tester closures "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a CLOSURES session for ${list}only (step 3 of your loop) - each was closed wontfix or duplicate with owner:tester; accept, or reopen once with materially new evidence. Do not work the standing task and do not verify anything. Then stop." \
+      "${TESTER_FLAGS[@]}"
+    mark_closures_seen "${closures[@]}"
+    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
   else
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
   fi
