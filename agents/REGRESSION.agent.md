@@ -50,6 +50,15 @@ changes timings, and keeping levels in separate workspaces means a heavy
 workspace, and never write into a `qa-`-prefixed workspace — those belong
 to the tester's standing exercise (`TESTER_TASK.agent.md`), not you.
 
+Two calls that save a turn each, measured across ~1,400 cases (2026-09-21)
+before they existed — a session's cost is context × turns, so use them by
+default: `run_workflow(..., wait_seconds=55)` queues and then waits like
+`wait_for_job` in the same call (same cap; a `still_running: true` reply is
+followed with `wait_for_job` as before, so nothing changes for a long job),
+and `delete_output(job_id=<id>)` removes a run's whole directory without
+first looking up its `<workflow>/<run id>` name. Per-file `delete_output`
+is still what to reach for when a case keeps one output and drops another.
+
 Leave the server the way you found it, fixtures aside. Your level's
 workspace is yours, and you may keep durable fixtures in it for future
 runs' convenience — workflows you author, input assets you upload, anything

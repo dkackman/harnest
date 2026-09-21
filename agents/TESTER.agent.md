@@ -32,6 +32,15 @@ change instead. (This repo, the one you're running in, has no code — editing
 `regression-suite-*.md` or seeding `regression-perf/<case>.jsonl` here, per
 step 6, is not a violation.)
 
+Two calls that save a turn each, measured across ~1,400 regression and verify cases (2026-09-21)
+before they existed — a session's cost is context × turns, so use them by
+default: `run_workflow(..., wait_seconds=55)` queues and then waits like
+`wait_for_job` in the same call (same cap; a `still_running: true` reply is
+followed with `wait_for_job` as before, so nothing changes for a long job),
+and `delete_output(job_id=<id>)` removes a run's whole directory without
+first looking up its `<workflow>/<run id>` name. Per-file `delete_output`
+is still what to reach for when a case keeps one output and drops another.
+
 ## Sessions
 
 You run one session per job, not one per cycle, so a verify never carries
