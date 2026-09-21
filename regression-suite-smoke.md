@@ -2194,6 +2194,35 @@ source: tester, verified in #284 on 2026-09-21 over MCP as model `opus` via prov
 and `get_gallery_metadata` on the intermediate name returned `source: output`, job
 `ed6d2fbaeb7e`.
 
+### S-F085 — a `task.command` the engine does not register is refused by the free pre-flight
+#285: `validate_workflow` said `valid: true` on a step whose `task.command` named nothing
+the engine registers (the shipped `templates/image-processors` carried a `face_detector`
+step), so the run did nine steps' worth of work before dying with the engine's own
+"Unknown task command". The per-argument checks (S-F010) only ran once the command
+resolved; a command that did not exist at all fell through silently. Free: two validate
+calls, nothing runs.
+1. `validate_workflow(inline_workflow={"id": "regression-bad-command", "steps": [{"name":
+   "bad", "task": {"command": "nonexistent_processor", "arguments": {"image": "x"}}}]})`.
+2. `validate_workflow(name="templates/image-processors")`.
+expected:
+- Step 1 is `valid: false` with exactly one error at `steps[0].task.command` whose message
+  names `nonexistent_processor` and says it is not a registered task command — the
+  refusal lands at the command, before any missing/unknown-argument complaint about
+  `image`.
+- Step 2 is `valid: true`, and `plan.steps` equals the number of steps `get_workflow`
+  reports for the template (25 as of #285) — the shipped template names only commands
+  the engine registers.
+It is a **finding** if step 1 comes back `valid: true`, or reports only argument-level
+errors with no error at `steps[0].task.command`, or if step 2 reports any step's
+`task.command` as unregistered.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #285 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: step 1 returned `'nonexistent_processor' is not a registered task command.
+This step would fail at run time with the engine's own "Unknown task command" error` at
+`steps[0].task.command`; step 2 returned `valid: true`, `plan.steps: 25`, and the
+template then ran to `succeeded` 25/25 (job `a0e10ced3bad`).
+
 ## Performance
 
 ### S-P001 — default image generation latency
