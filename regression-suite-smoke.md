@@ -116,6 +116,11 @@ nothing uses it anymore.
   with `get_output_frames`; the frame arithmetic in its expected block is computed from
   that geometry. S-F081 reads its envelope as the whole-second control (exactly 15 bins).
   Read-only, never deleted.
+- `asset:qa-cast/ep33-episode.mp4` — a 224-frame 24 fps 960x544 32 kHz stereo cut in the
+  shared asset library that decodes at about −1.0 dBFS peak. S-F093 mixes it solo at 1.0
+  and 0.5 and reads the 6.02 dB difference; any substitute needs a non-silent 32 kHz
+  soundtrack (its exact peak is read from the asset at run time, not assumed). S-F093 also
+  loops `ep11-bed.wav` (above) to its 224-frame length. Read-only, never deleted.
 
 ## Functional
 
@@ -2501,6 +2506,56 @@ source: tester, verified in #291 on 2026-09-21 over MCP as model `opus` via prov
 `Step '<name>': 'match_levels_dbfs' has no effect when 'match_levels' is unset - pass
 "rms" or "peak" for the target to apply.`; the `rms`, `peak` and no-target steps were
 silent.
+
+### S-F093 — `mix_audio` gains are linear multipliers applied as given: no hidden normalization, no sum-scaling
+`mix_audio` is the one level control in the engine that is not in dB (`gains` are plain
+multipliers), and the only way a consumer can tell a mixer that quietly peak-normalizes or
+divides by the track count from one that does what it was told is to measure. A bed laid
+under dialogue at 0.25 that comes back normalized to −1 dBFS, or a unity solo that lands
+6 dB down because the mixer averaged two slots, would be a silent level bug in every
+score-under-dialogue chain. Seeded, seconds, one job, one asset:
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id":
+   "regression-mix-linear", "seed": 1, "steps": [
+   {"name": "solo_unity", "task": {"command": "mix_audio", "arguments":
+   {"audios": ["asset:qa-cast/ep33-episode.mp4"], "gains": [1.0]}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "solo-unity"}},
+   {"name": "solo_half", "task": {"command": "mix_audio", "arguments":
+   {"audios": ["asset:qa-cast/ep33-episode.mp4"], "gains": [0.5]}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "solo-half"}},
+   {"name": "bed", "task": {"command": "loop_audio", "arguments":
+   {"audio": "asset:qa-cast/ep11-bed.wav", "target_frames": 224, "fps": 24}},
+   "result": {"content_type": "audio/wav", "save": false}},
+   {"name": "bed_x12", "task": {"command": "mix_audio", "arguments":
+   {"audios": ["previous_result:bed"], "gains": [12.0]}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "bed-x12"}},
+   {"name": "two_slots_zero_bed", "task": {"command": "mix_audio", "arguments":
+   {"audios": ["asset:qa-cast/ep33-episode.mp4", "previous_result:bed"], "gains": [1.0, 0.0]}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate", "file_base_name": "two-slots"}}]},
+   acknowledged_cost=<bound from validate>)`, `wait_for_job`.
+2. `get_gallery_metadata` on `asset:qa-cast/ep33-episode.mp4`, `asset:qa-cast/ep11-bed.wav`
+   and the four outputs.
+expected:
+- `succeeded`; every output is 9.33 ± 0.01 s at `sample_rate` 32000.
+- `solo-unity` `peak_dbfs` equals the ep33 asset's decoded peak within 0.1 dB (about
+  −1.0) — a single track at unity is passed through, not normalized.
+- `solo-half` peak is `solo-unity` peak − 6.02 ± 0.1 dB, and its `mean_dbfs` is 6.02 ± 0.1
+  below `solo-unity`'s.
+- `bed-x12` peak is the ep11-bed asset's peak + 21.58 ± 0.1 dB (about −7.3 from −28.9) —
+  a gain above 1 is applied as given, not clamped.
+- `two-slots` peak and mean equal `solo-unity`'s within 0.05 dB — a second slot at gain 0
+  adds nothing and the sum is not divided by the slot count.
+- `job.warnings` may carry `audio_near_silent` for the bed (a −50 dBFS room tone by
+  design); nothing else. (Once #292 lands, `bed_x12` may draw a "gain above 1 is a
+  multiplier, not dB" warning — that is not a finding.)
+It is a **finding** if any peak or mean lands outside the tolerances (a normalizing or
+averaging mixer), if a gain above 1 is clamped, or if the run fails.
+cleanup: `delete_output` the run folder.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep34, `qa-ep34`, job
+`a4433db88e90`) on 2026-09-21 over MCP as model `opus` via provider `anthropic`:
+`solo-unity` −1.012 / −19.81, `solo-half` −7.033 / −25.83, `bed-x12` −7.302 from an
+asset peak of −28.886, `two-slots` identical to `solo-unity` to the third decimal;
+every output 9.333 s / 32 kHz.
 
 ## Performance
 
