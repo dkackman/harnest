@@ -2260,6 +2260,48 @@ source: tester, verified in #287 on 2026-09-21 over MCP as model `opus` via prov
 back as 394 frames, 44100 Hz stereo. The same session confirmed `sample_rate: 32000` pins
 the target (job `370442220fe7`) and that two 32 kHz shots draw no warning.
 
+### S-F087 — a `seam_fade_ms` that a non-zero `audio_bleed_ms` makes inert is warned about at validate
+#288: `concat_videos` takes the bleed path at any hard cut where `audio_bleed_ms` is
+non-zero, so a `seam_fade_ms` passed alongside it does nothing — and
+`templates/minimax/dialogue-short` ships `audio_bleed_ms: 1800` as a default, so a caller
+passing only `seam_fade_ms` (the remedy the old `bleed_tonal_material` warning itself
+recommended) got a clean validate, a clean run and no fade. Now the pre-flight resolves
+both arguments (through `variable:` references, defaults merged with the caller's
+`arguments`) and warns. Free: three validate calls, nothing runs.
+1. `validate_workflow(name="templates/minimax/dialogue-short", arguments={"seam_fade_ms":
+   80})` — `audio_bleed_ms` deliberately left at the template default.
+2. `validate_workflow(name="templates/minimax/dialogue-short", arguments={"seam_fade_ms":
+   80, "audio_bleed_ms": 0})`.
+3. `validate_workflow(inline_workflow={"id": "regression-inert-seam-fade", "steps":
+   [{"name": "join", "task": {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep13-episode.mp4"],
+   "audio_bleed_ms": 500, "seam_fade_ms": 80, "fps": 24}}, "result": {"content_type":
+   "video/mp4", "fps": 24, "subfolder": "final"}}]})` — literals, no `variable:`.
+expected:
+- Steps 1 and 3 are `valid: true` and each carries exactly one warning that names the
+  step (`episode` / `join`), says `seam_fade_ms` has no effect while `audio_bleed_ms` is
+  the resolved value (`1800` in step 1, `500` in step 3), and tells the caller to pass
+  `audio_bleed_ms: 0` for the fade to apply.
+- Step 2 carries no warning mentioning `seam_fade_ms` or `audio_bleed_ms` (the
+  host-memory projection warning the template draws on this box is unrelated and may
+  be present).
+- `get_workflow("templates/minimax/dialogue-short").description` says the two are
+  mutually exclusive and that a declick fade instead of a bleed means setting
+  `audio_bleed_ms` to 0.
+It is a **finding** if step 1 or 3 validates with no such warning, if the warning names
+a value other than the one that resolves, if step 2 warns about the pair, or if the
+template description no longer states the exclusivity.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #288 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: the template with `seam_fade_ms: 80` warned `Step 'episode': 'seam_fade_ms'
+has no effect while 'audio_bleed_ms' is 1800 - a hard cut takes the bleed path instead of
+the fade path. Pass 'audio_bleed_ms': 0 for 'seam_fade_ms' to apply.`; with
+`audio_bleed_ms: 0` it did not; a literal inline step warned the same naming `1800`. A
+task-only run over two existing shots (job `f46a7d3a2af2`) carried the warning at submit
+and its `bleed_tonal_material` remedy now reads `Pass 'audio_bleed_ms': 0 for a hard cut
+on this material instead - seam_fade_ms has no effect while audio_bleed_ms is non-zero.`
+
 ## Performance
 
 ### S-P001 — default image generation latency
