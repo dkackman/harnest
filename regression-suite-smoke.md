@@ -2597,6 +2597,41 @@ metrics: none.
 source: tester, verified in #292 on 2026-09-21 over MCP as model `opus` via provider
 `anthropic` (job `b3491e7c8b92` in `qa-ep34`; 3.7 s end to end).
 
+### S-F095 — `gain_audio` ducks exactly the second-based region it was given, by exactly the dB it was given, and nothing outside it
+`gain_audio` is the one region-scoped level tool (a duck under a line, a boost on a sting),
+and its failure modes — the gain applied to the whole track, the region converted with the
+wrong rate or channel layout, dB applied as a multiplier — all still "succeed". A consumer
+that cannot listen only catches them by measuring the envelope bin by bin, so this pins the
+arithmetic on one shot with a known, flat middle. Seeded, one job, seconds, one asset:
+1. `get_gallery_metadata(name="asset:qa-cast/ep31-shot1-return.mp4", envelope=true)` —
+   the source (5.167 s, 32 kHz stereo, 124 f @ 24 fps).
+2. `run_workflow(workspace=<suite workspace>, inline_workflow={"id":
+   "regression-gain-region", "seed": 1, "steps": [
+   {"name": "duck_middle", "task": {"command": "gain_audio", "arguments":
+   {"audio": "asset:qa-cast/ep31-shot1-return.mp4", "gain_db": -12, "start_seconds": 2.0,
+   "duration_seconds": 1.0}},
+   "result": {"content_type": "audio/wav", "subfolder": "final", "file_base_name": "gain-region"}}]},
+   acknowledged_cost=<bound from validate>)`, `wait_for_job`, then
+   `get_gallery_metadata(envelope=true)` on the output.
+expected:
+- `succeeded`, `warnings: []`; output is 5.167 ± 0.01 s, `sample_rate` 32000, 2 channels
+  (the video's soundtrack is taken, not relabeled or downmixed).
+- Envelope bin 2 (2–3 s): `rms_dbfs` and `peak_dbfs` are each the source's bin-2 figure
+  − 12.0 ± 0.1 dB (about −33.3 rms / −17.7 peak from −21.3 / −5.7).
+- Every other bin's `rms_dbfs` and `peak_dbfs` equal the source's within 0.05 dB — the
+  region did not leak into 1–2 s or 3–4 s (a wrong sample-rate or interleaving conversion
+  moves or stretches it), and the track-level `peak_dbfs` is unchanged (−4.81, which lives
+  in bin 3).
+It is a **finding** if bin 2 moves by anything other than −12 dB, if any other bin moves,
+if the duration or rate changes, or if the run fails.
+cleanup: `delete_output` the run folder.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep35, `qa-ep35`, job
+`220b0347481a`) on 2026-09-21 over MCP as model `opus` via provider `anthropic`: bin 2
+−21.258 → −33.258 rms, −5.666 → −17.668 peak; bins 0/1/3/4/5 identical to the source to
+the third decimal; 5.1667 s / 32 kHz / 2 ch; 0.8 s end to end. Note the step logs nothing
+about what it applied (#294) — the envelope is the only evidence until that lands.
+
 ## Performance
 
 ### S-P001 — default image generation latency
