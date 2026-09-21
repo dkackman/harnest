@@ -453,9 +453,13 @@ episode shots this suite's `qa-cast` fixtures provide (ep4/ep6/ep7 span 8.8 dB,
 which is the ordinary spread for independently generated shots and is what makes
 the warning fire at all). ~8 s, task-only, loads no model.
 expected:
-- `validate_workflow(name="templates/dissolve-between-shots", arguments={"match_levels": "rms"})`
-  → `valid: true`, `checked_arguments` includes `match_levels`. This alone is the
-  literal #128 repro.
+- `validate_workflow(name="templates/dissolve-between-shots", arguments={"match_levels":
+  "rms", "shots": ["asset:qa-cast/ep4-shot1-amnesty.mp4",
+  "asset:qa-cast/ep6-shot1-priya.mp4", "asset:qa-cast/ep7-shot1-ledger.mp4"], "score":
+  "asset:qa-cast/ep11-bed.wav"})` — real fixture `shots`/`score` supplied alongside
+  `match_levels` so the template's placeholder `asset:` defaults (#166, pinned by
+  S-F035) don't also fire — → `valid: true`, `checked_arguments` includes
+  `match_levels`. This alone is the literal #128 repro.
 - `get_workflow(name=…, variables_only=true)` declares **both** `match_levels` and
   `match_levels_dbfs`, each defaulting to `null` — null so the task's own per-mode
   default stands rather than the template inventing one.
