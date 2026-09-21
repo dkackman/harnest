@@ -83,7 +83,8 @@ nothing uses it anymore.
 - `asset:qa-cast/ep13-episode.mp4` — a 282-frame 24 fps 960x544 stereo 44.1 kHz
   episode in the shared asset library. S-F031 muxes a soundtrack onto it twice; its
   known geometry is what says the mux moved only the audio. S-F086 dissolves it after the
-  32 kHz `ep6-cold-open.mp4` as the 44.1 kHz half of a rate-mismatched pair. Read-only.
+  32 kHz `ep6-cold-open.mp4` as the 44.1 kHz half of a rate-mismatched pair. S-F082
+  validates it as a `shots` entry. Read-only.
 - `asset:qa-cast/ep15-song.mp3` — a 30.0 s 44.1 kHz stereo Music 3 track that decodes
   at **+0.76 dBFS**, i.e. with no headroom. S-F031's positive control depends on that:
   it is the clipping exhibit from #158/#159, not just a song, so replacing it with a
@@ -101,7 +102,8 @@ nothing uses it anymore.
   one with `frame_grid`; its 960×544 / 124-frame geometry is what the expected grid
   sizes are computed from. S-F086 dissolves the first one into the 44.1 kHz
   `ep13-episode.mp4` as the 32 kHz half of a rate-mismatched pair (its 124 frames are in
-  that case's expected frame count).
+  that case's expected frame count). S-F082 binds both (with `ep13-episode.mp4` and
+  `ep20-score.wav`) to `templates/dissolve-between-shots` in a validate-only call.
 - `asset:qa-cast/ep11-coldopen.mp4` — a video with a soundtrack in the shared asset
   library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). S-F051 hands
   it to `analyze_audio` as the "video in, soundtrack measured" input shape; any
@@ -109,7 +111,8 @@ nothing uses it anymore.
 - `asset:qa-cast/ep20-score.wav` — a ~10.3 s score bed in the shared asset library.
   S-F057 and S-F068 pass it as `score` to the two sequence templates; a `total_frames`
   longer than it draws a `slice_past_end` warning, which those cases either expect or
-  avoid by choosing `total_frames` ≤ 248. Read-only, never deleted.
+  avoid by choosing `total_frames` ≤ 248. S-F082 validates it as `score`. Read-only,
+  never deleted.
 - `asset:qa-cast/hal-voice.wav` — a 6.48 s 24 kHz mono line in the shared asset
   library. S-F072's pad control lays it under the 19.67 s `ep11-coldopen.mp4`; any
   substitute just needs to be clearly shorter than that video. Read-only, never deleted.
@@ -2130,8 +2133,12 @@ per workspace, nor which workspace a plan had been evaluated against. The fix is
 paragraphs plus `plan.workspace` / `plan.output_dir`. Free — three read-only calls, no run.
 1. `get_guide(name="workflows", section="Seeds")`.
 2. `get_guide(name="workspaces", section="Runs")`.
-3. `validate_workflow(name="templates/dissolve-between-shots", workspace="regression-smoke")`
-   with no `arguments` (stored defaults only; validity is not the point).
+3. `validate_workflow(name="templates/dissolve-between-shots", workspace="regression-smoke",
+   arguments={"shots": ["asset:qa-cast/ep6-cold-open.mp4",
+   "asset:qa-cast/ep3-shot2-reply.mp4", "asset:qa-cast/ep13-episode.mp4"], "score":
+   "asset:qa-cast/ep20-score.wav"})`. The arguments matter: a `plan` is only returned on
+   `valid: true`, and the template's stored defaults name `asset:shot_1.mp4` etc., which
+   do not exist in `regression-smoke` (#308).
 expected:
 - Step 1's `content` states that the step cache is scoped to the output directory a run
   writes into — the pinned workspace's own `outputs/` on `dw.serve` — that two workspaces
@@ -2140,9 +2147,9 @@ expected:
 - Step 2's `content` says the same from the workspace side: the cache is validated against
   the output *root*, is per workspace, and deleting a workspace drops its entries along with
   its `outputs/`.
-- Step 3's `plan` carries `workspace: "regression-smoke"` and an `output_dir` ending in
-  `/regression-smoke/outputs`, so a `cached_steps` value can always be read against the
-  workspace it was computed for.
+- Step 3 answers `valid: true` and its `plan` carries `workspace: "regression-smoke"` and
+  an `output_dir` ending in `/regression-smoke/outputs`, so a `cached_steps` value can
+  always be read against the workspace it was computed for.
 It is a **finding** if either section no longer mentions the workspace at all, or if `plan`
 has no `workspace` / `output_dir`.
 cleanup: none — nothing is written.
@@ -2150,7 +2157,10 @@ metrics: none.
 source: tester, verified in #279 on 2026-09-21 over MCP as model `opus` via provider
 `anthropic`: both guide sections carried the text; `validate_workflow` pinned to `qa-ep26`
 and `qa-ep25` returned `plan.workspace` / `plan.output_dir` for each. (Whether an entry
-survives a server restart is #281, not this case.)
+survives a server restart is #281, not this case.) Step 3 was rebound to the
+`regression-smoke` fixtures in #308 (2026-09-21): the original argument-free call is
+`valid: false` there and so carries no `plan`; the regression agent's run with these
+arguments answered `plan.workspace: "regression-smoke"`.
 
 ### S-F083 — the `get_gallery_metadata` docstring's tasks-guide cross-reference resolves through `get_guide`
 #282: the tool description told the reader to "see \"Headroom and clipping warnings\" in
