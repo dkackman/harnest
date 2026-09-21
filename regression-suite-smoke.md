@@ -2338,6 +2338,52 @@ reported `event_count` exactly `last_seq + 1` of its final `get_job_events` page
 the fix the first of these read `event_count: 0`. The over-200-event persisted-cap
 variant the implementer proposed is not covered here: no such job existed to confirm it.
 
+### S-F089 — `concat_videos` bleed with `audio_bleed_gain_db` fills the seam hole, and the inert `crossfade_ms` is warned about
+#199/#288: a hard cut between two independently generated shots leaves a hole where the
+outgoing shot's tail meets the incoming shot's silent head; `audio_bleed_ms` rings the
+tail over it and `audio_bleed_gain_db` ducks that tail. Both are silent no-ops in some
+combinations, so the working path and the pre-flight for one inert combination are
+checked together. A/B in one job over two existing 124-frame shots; ~8 s, no GPU.
+1. `validate_workflow(workspace=<suite workspace>, workflow={"id":
+   "regression-bleed-ab", "seed": 1, "steps": [
+   {"name": "control", "task": {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep31-shot1-return.mp4", "asset:qa-cast/ep31-shot2-shrug.mp4"],
+   "audio_bleed_ms": 0, "fps": 24, "match_levels": "rms"}}, "result": {"content_type":
+   "video/mp4", "subfolder": "intermediate", "file_base_name": "bleed-control"}},
+   {"name": "treatment", "task": {"command": "concat_videos", "arguments": {"videos":
+   [same two], "audio_bleed_ms": 800, "audio_bleed_gain_db": -6, "fps": 24,
+   "match_levels": "rms"}}, "result": {"content_type": "video/mp4", "subfolder":
+   "final", "file_base_name": "bleed-treatment"}},
+   {"name": "inert_crossfade", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "trim_frames": 0, "crossfade_ms": 300, "fps": 24}}, "result":
+   {"content_type": "video/mp4", "subfolder": "intermediate", "file_base_name":
+   "bleed-inert"}}]})`.
+2. `run_workflow` the same document with the bound `acknowledged_cost`, `wait_for_job`
+   to `succeeded`, then `get_gallery_metadata(envelope=true)` on the `control` and
+   `treatment` files.
+expected:
+- Step 1 is `valid: true` with exactly one warning, naming step `inert_crossfade` and
+  saying `crossfade_ms` has no effect when `trim_frames` is 0.
+- The job succeeds; both A/B files are 248 frames, 24 fps, 32000 Hz stereo,
+  `mean_dbfs` within ±0.5 of −20 (the rms target).
+- `job.warnings` carries a `match_levels_held` line for each of `control` and
+  `treatment` (video 2 held to −0.5 dBFS) and a `bleed_join` line for `treatment` only,
+  whose remedy says to pass `audio_bleed_ms: 0` (not `seam_fade_ms`).
+- Envelope index 5 (the seam second, 5.17 s) reads `rms_dbfs` below −45 in `control` and
+  at least 15 dB higher in `treatment`; every other index's `rms_dbfs` matches between
+  the two files within 0.5 dB.
+It is a **finding** if the inert-crossfade warning is missing, if `treatment`'s seam
+bin is not raised by the bleed, if any non-seam bin differs by more than 0.5 dB (the
+bleed leaked past its 800 ms), or if the `bleed_join` remedy names `seam_fade_ms`.
+cleanup: `delete_output` the run by run name.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep32) on 2026-09-21 over MCP
+as model `opus` via provider `anthropic`: job `310af1018ea1` in `qa-ep32`, 7.5 s; seam
+bin −53.2 rms in control vs −32.0 in treatment, all other bins within 0.06 dB; both
+clip-held 0.1 dB short; `bleed_join` recommended `audio_bleed_ms: 0`. The
+`audio_bleed_gain_db`-with-`audio_bleed_ms: 0` combination is deliberately *not* in
+this case: it draws no warning today (#290).
+
 ## Performance
 
 ### S-P001 — default image generation latency
