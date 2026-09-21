@@ -14,7 +14,7 @@
 #   ./run-regression.sh security             # security only (hostile-input probes, opt-in)
 #   ./run-regression.sh all                  # smoke, complete, model-specific, security
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
-#   REGRESSION_MODEL=sonnet ./run-regression.sh   # defaults to opus
+#   REGRESSION_MODEL=opus ./run-regression.sh     # defaults to sonnet
 #   REGRESSION_EFFORT=high ./run-regression.sh   # --effort; defaults medium
 #   PROVIDER=ollama REGRESSION_MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
@@ -63,7 +63,14 @@ TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
-REGRESSION_MODEL="${REGRESSION_MODEL:-opus}"
+# sonnet, not opus, since 2026-09-21: a smoke run on each, same day, same
+# chunks - opus $32.64 / 699 turns, sonnet $17.85 / 799 turns, and sonnet's
+# three new issues (#310-#312) were all real, one of them a wrong literal
+# the opus run had committed to the suite an hour earlier. Regression is
+# execution of a written case, so the "keep the judging roles strong" rule
+# (CLAUDE.md "Running") costs more here than it buys; the tester stays on
+# opus.
+REGRESSION_MODEL="${REGRESSION_MODEL:-sonnet}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header); 0 = one session per level

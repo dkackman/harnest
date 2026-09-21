@@ -56,7 +56,7 @@ files described below. There is no build, lint, or test step.
   `measure-base-ctx.sh` is how a flag set's turn-1 context is measured before and after a
   change like this.
   Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
-  (`opus`), `REGRESSION_MODEL` (`opus`), `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
+  (`opus`), `REGRESSION_MODEL` (`sonnet`), `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
   that defaults to `PROVIDER` (`anthropic`). The implementer's triage session is the one
   exception: `TRIAGE_MODEL`/`TRIAGE_PROVIDER` default to the *tester's*, not the
   implementer's, because a wrong `wontfix`/`duplicate`/park call never bounces back — it
@@ -177,8 +177,11 @@ TESTER_EFFORT=high REGRESSION_EFFORT=high ./run-loop.sh   # per-role --effort (d
 
 Which roles may run a weak model is a design decision, not a config detail: the tester's
 independence is the whole point, and a weak tester degrades that silently by rubber-stamping, so
-vary the implementer (its mistakes show up in its patches) and keep the tester and the regression
-agent on a strong model. Each agent's prompt now states the model and provider it is running as,
+vary the implementer (its mistakes show up in its patches) and keep the tester on a strong model.
+The regression agent is the measured exception: its work is executing written cases, not judging,
+and a same-day smoke run on each (2026-09-21) cost $32.64 on Opus vs $17.85 on Sonnet with no loss
+in what was filed (#310–#312, one of them a wrong literal the Opus run had committed an hour
+earlier) — so it defaults to `sonnet`. Each agent's prompt now states the model and provider it is running as,
 and each role prompt requires the agent to name them in the comments it writes — a fresh session
 is otherwise unidentifiable afterwards, and a verification is only worth what the model behind it
 was. Suite-edit commits are attributed by trailer, honestly: a non-Anthropic model gets
