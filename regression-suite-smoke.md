@@ -80,7 +80,8 @@ nothing uses it anymore.
   quieter than the second before it. Read-only — never sliced in place, never deleted.
 - `asset:qa-cast/ep13-episode.mp4` — a 282-frame 24 fps 960x544 stereo 44.1 kHz
   episode in the shared asset library. S-F031 muxes a soundtrack onto it twice; its
-  known geometry is what says the mux moved only the audio. Read-only.
+  known geometry is what says the mux moved only the audio. S-F086 dissolves it after the
+  32 kHz `ep6-cold-open.mp4` as the 44.1 kHz half of a rate-mismatched pair. Read-only.
 - `asset:qa-cast/ep15-song.mp3` — a 30.0 s 44.1 kHz stereo Music 3 track that decodes
   at **+0.76 dBFS**, i.e. with no headroom. S-F031's positive control depends on that:
   it is the clipping exhibit from #158/#159, not just a song, so replacing it with a
@@ -95,7 +96,9 @@ nothing uses it anymore.
   deleted. Any substitute pair needs the same loud-tail-into-quiet-head shape, re-read
   from `get_gallery_metadata(envelope=true)` on the assets. S-F071 also tiles the first
   one with `frame_grid`; its 960×544 / 124-frame geometry is what the expected grid
-  sizes are computed from.
+  sizes are computed from. S-F086 dissolves the first one into the 44.1 kHz
+  `ep13-episode.mp4` as the 32 kHz half of a rate-mismatched pair (its 124 frames are in
+  that case's expected frame count).
 - `asset:qa-cast/ep11-coldopen.mp4` — a video with a soundtrack in the shared asset
   library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). S-F051 hands
   it to `analyze_audio` as the "video in, soundtrack measured" input shape; any
@@ -2222,6 +2225,40 @@ source: tester, verified in #285 on 2026-09-21 over MCP as model `opus` via prov
 This step would fail at run time with the engine's own "Unknown task command" error` at
 `steps[0].task.command`; step 2 returned `valid: true`, `plan.steps: 25`, and the
 template then ran to `succeeded` 25/25 (job `a0e10ced3bad`).
+
+### S-F086 — `dissolve_videos` resamples shots at different sample rates instead of failing
+#287: `dissolve_videos` died at the first step of `templates/dissolve-between-shots` with
+`needs one sample rate, got [32000, 44100]` — the exact constraint #108 had already
+removed from `concat_videos`. Shots from different families routinely carry different
+rates, so a sequence template that refuses the mix is unusable on a real cast. Now the
+task picks the highest rate among the inputs (or the caller's `sample_rate`), resamples
+the rest, and says so as a warning. Cheap: one ~5 s task-only run.
+1. `run_workflow(inline_workflow={"id": "regression-dissolve-rates", "steps": [{"name":
+   "edit", "task": {"command": "dissolve_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep13-episode.mp4"],
+   "dissolve_frames": 12, "fps": 24}}, "result": {"content_type": "video/mp4", "fps":
+   24, "subfolder": "final"}}]}, acknowledged_cost=true)`, then `wait_for_job`. The 32 kHz
+   shot is deliberately first, so "first video's rate" and "highest rate" disagree.
+2. `get_gallery_metadata` on the `edit` file the manifest names.
+expected:
+- The job is `succeeded`, not `failed`, and `warnings` holds exactly one entry from
+  `edit: dissolve_videos:` that names both input rates (`video 1: 32000 Hz, video 2:
+  44100 Hz`), says it is resampling them all to **44100 Hz**, and names the two remedies
+  (`sample_rate` to pin a target, `resample_audio` ahead of the step).
+- Step 2 reports `sample_rate: 44100`, `channels: 2`, `frame_count: 394` (124 + 282 − 12),
+  `fps: 24.0`.
+- `get_task("dissolve_videos")` lists a `sample_rate` parameter, and its `videos`
+  description does not say the rates must match.
+It is a **finding** if the job fails with a "needs one sample rate" (or any) error, if it
+succeeds with no `sample_rate_mismatch`-style warning, if the target is 32000 (first-listed
+rather than highest, with no pin given), or if the output's `sample_rate` disagrees with the
+warning's target.
+cleanup: `delete_output` on the `regression-dissolve-rates/<run>` directory.
+metrics: none.
+source: tester, verified in #287 on 2026-09-21 over MCP as model `opus` via provider
+`anthropic`: job `47f27a3d566e` succeeded in 5 s with the warning quoted above; output read
+back as 394 frames, 44100 Hz stereo. The same session confirmed `sample_rate: 32000` pins
+the target (job `370442220fe7`) and that two 32 kHz shots draw no warning.
 
 ## Performance
 
