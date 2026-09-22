@@ -2060,18 +2060,32 @@ no run, works against the stored template so no fixture is needed.
 expected:
 - Step 1: `plan.estimate.basis` is `"observed"` (or `"catalog"` on a box that has never
   run it) with `minutes` > 0 — the template prices at its defaults.
-- Steps 2 and 3: `basis: "unknown"`, `minutes: null`, `runs: null`, `measured_on: null`,
-  `valid: true` with the overridden names in `checked_arguments`. Neither the catalog nor
-  the observed figure is quoted for a driver value it was not measured at.
+- Steps 2 and 3: **either** `basis: "unknown"`, `minutes: null`, `runs: null`,
+  `measured_on: null` — neither the catalog nor the observed figure is quoted for a
+  driver value it was not measured at — **or**, once this box has accumulated enough
+  real runs at that exact overridden value, `basis: "observed"` with
+  `low_confidence: true` and `minutes` specific to *that* value's own bucket (#301/#319's
+  small-n tempering, landed 2026-09-21, after this case was written). Either way
+  `valid: true` with the overridden names in `checked_arguments`. What is never
+  acceptable is `basis: "catalog"`, or an `observed`/`catalog` `minutes` copied from the
+  *unmatched* measured bucket (step 1/4's own figure, priced for the driver's measured
+  value) presented as if it priced the overridden one — that silent-wrong-figure
+  behavior is #267's original bug and is the actual regression this case guards against,
+  distinct from a correctly-bucketed low-confidence answer.
 - Step 4: identical `estimate` to step 1 — an override that does not move a driver off
   its measured value keeps the quote.
-It becomes a **finding** if step 2 or 3 answers `basis: "catalog"` or `"observed"` with a
-non-null `minutes`, or if step 4 drops to `unknown`.
+It becomes a **finding** if step 2 or 3 answers `basis: "catalog"`, or answers
+`basis: "observed"`/`"catalog"` with `minutes` matching step 1/4's unmatched
+measured-bucket figure rather than one specific to the overridden value, or if step 4
+drops to `unknown`.
 cleanup: none — nothing is created.
 metrics: none.
 source: tester, verified in #267 on 2026-09-21 over MCP as model `opus` via provider
 `anthropic`: steps 1 and 4 answered `observed`, 2.5 min, 12 runs on the RTX 3090; steps 2
-and 3 answered `unknown` with `minutes: null`.
+and 3 answered `unknown` with `minutes: null`. Step 2's expectation widened to admit
+`observed`+`low_confidence` per #331 (2026-09-22, model `sonnet` via provider
+`anthropic`) — #301/#319's small-n bucketing now legitimately answers `observed` for a
+driver value with enough of its own runs, same pattern already seen for S-F030.
 
 ### S-F079 — a failed job keeps the phase it died in, frozen at `finished_at`
 #269: `progress` went `null` the moment a job left `running`, so the only way to learn which
