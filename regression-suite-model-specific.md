@@ -963,4 +963,45 @@ source: tester, verified in #318, model `opus` via provider `anthropic`, on 2026
 `0e4e39a8a70d` (step-caching) in ~75 s, both cold, no OOM. The implementer proposed the case in
 its hand-off; both runs were confirmed over MCP before it was added.
 
+### M-F026 — the 768p H3 template refuses a frame count its VRAM ceiling cannot fit, and declares a cost
+The H3 counterpart to M-F022. Before #324 none of the MiniMax H3 `shot` templates carried a `cost`
+array or a `vram_estimate`, so `templates/minimax/video-with-audio-768p` at `num_frames: 345` (the
+family's own grid ceiling, M-F005-style `17*n+5`) validated clean and OOM'd mid-denoise on lem's
+RTX 3090 (job `282172105da1`: 20.25 GiB allocated + a refused 5.57 GiB). The fix declared
+`cost: [{cuda, RTX 3090, vram_gb: 24, minutes: 9.87}]` and a `vram_estimate` (`base_gb` +
+`bytes_per_voxel` over `width * height * num_frames`, fitted from that OOM and the 960x544x124
+image-to-video point) on five templates: `video-with-audio-768p`, `video-with-audio`,
+`reference-to-video`, `enhance-prompt` (cost + estimate) and `storyboard` (estimate only, cost was
+already curated). Model/pipeline: MiniMax H3 via `templates/minimax/video-with-audio-768p` at its
+1344x768 canvas. Free — validate calls only. As in M-F022, the calibration constants are the
+implementer's to move; this pins the far side of the ceiling and a known-safe point, not the
+breakpoint (which sat between 277 and 294 frames at the 2026-09-21 calibration).
+expected:
+- `validate_workflow(name="templates/minimax/video-with-audio-768p", arguments={"num_frames": 345})`
+  → **`valid: false`**, one error at path **`arguments`** whose message names the product
+  (`1344*768*345`), the projected figure (`projects to 25.82 GB VRAM` at the 2026-09-21
+  calibration — the number may move, the shape must not), the declared ceiling (`above the 24 GB
+  declared for RTX 3090`) and `#324`. No `arguments.num_frames` grid error — 345 is on-grid.
+- `validate_workflow(name="templates/minimax/video-with-audio-768p")` (the 124-frame default)
+  → `valid: true`, no warnings, a `plan.estimate` with `minutes` set. The check must not touch
+  the template's own default.
+- `validate_workflow(name="templates/minimax/video-with-audio-768p", arguments={"num_frames": 243})`
+  → `valid: true` — a mid-range count well under the ceiling must not be refused.
+- `list_workflows(shape="shot", traits="has-audio")` → `details["templates/minimax/video-with-audio-768p"].cost`
+  is a one-entry list with `device: "cuda"`, `vram_gb: 24` and a numeric `minutes`; the same for
+  `video-with-audio`, `reference-to-video`, `enhance-prompt` and `storyboard` (`cost` not null on
+  any of the five).
+It is a **finding** if 345 validates clean on the 768p template, if the refusal degrades to a
+warning or lands at `arguments.num_frames` instead of `arguments`, if the default or 243 starts
+being refused, if the message loses the product, the projected GB, the ceiling or the issue
+reference, or if any of the five templates' `cost` goes back to null. The 11 H3 shot templates left
+undeclared in #324 (`image-to-video`, `first-and-last-frame`, `chained-segments`, …) validating
+clean at 345 is *not* a finding of this case — add them here when they get declared and verified.
+cleanup: none — validate/list calls only, nothing written.
+source: tester, verified in #324, model `opus` via provider `anthropic`, on 2026-09-21 against
+`lem` `develop @ 8459606` (cd34174 deployed). All four bullets passed on that date (345 → 25.82 GB
+refusal; default, 124, 243, 260, 277 → true; 294 → 24.41 GB refusal; five `cost` entries present).
+The implementer proposed the 345 bullet in its hand-off; added only after running it over MCP.
+Related: #265 (LTX2 half, M-F022), #266.
+
 ## Performance
