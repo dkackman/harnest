@@ -1669,9 +1669,11 @@ expected:
 - Step 1: variables are exactly `text` and `model_name`, `model_name` is
   `facebook/mms-tts-eng`, and there is **no** `voice_preset`. A Bark default or a
   reappearing `voice_preset` is the regression, whether or not the run passes.
-- Step 2: `valid: true`, `plan.steps: 1`; the "no seed, step cache disabled" warning
-  is this template's normal state. As in #169, a clean pre-flight is not evidence
-  the run works — step 3 is what this case is for.
+- Step 2: `valid: true`, `plan.steps: 1`, `warnings: []`. The template's only step is
+  the `generate_speech` *task*, and since #247 (S-F069) the no-seed warning is scoped to
+  workflows with a pipeline step — so no "sets no 'seed'" entry here (#329). As in
+  #169, a clean pre-flight is not evidence the run works — step 3 is what this case is
+  for.
 - Step 3: `status: "succeeded"`, `error: null`, `warnings: []`, a **non-empty**
   manifest (one `speak` entry, one `.wav`). Metadata: `kind: audio`, `sample_rate:
   16000` (VITS's native rate — the template declares no `result.sample_rate`, so a
@@ -2006,6 +2008,11 @@ Before #255 `plan.estimate.minutes` was the whole-workflow observed time regardl
 consumer had no field to correct it from. The fix adds `cached_minutes`: the cost of the
 plan *after* the cached steps are subtracted, present on every estimate shape (`null` when
 `minutes` is). Cheap — two SD 1.5 jobs, one of them half-served from the step cache.
+0. If `qa-s076-two-step` is already saved in the workspace (an earlier run that stopped
+   before its cleanup), `delete_workflow` it first. Since #312 the cost history is kept
+   per `(workspace, workflow_name)` and `delete_workflow` purges it, so a leftover — or
+   rows from before #312, which is what #330 was — is the only way step 2 reads
+   `observed`; deleting first makes step 2 cold by construction.
 1. `save_workflow(name="qa-s076-two-step", workflow=...)`: `"seed": 255`, no `cost` or
    `cost_drivers`, `"variables": {"prompt_a": "a red lighthouse on a cliff at dusk",
    "prompt_b": "a blue rowboat on a calm lake at dawn"}`, two steps `first` / `second` each a
@@ -3216,8 +3223,16 @@ source: tester, verified in #303 on 2026-09-22 over MCP as model `opus` via prov
 Time S-F003 (single image, default params) using the job's own
 `started_at`→`finished_at` — not wall clock, which adds queue time and agent
 turnaround. Log **cold** (first SD 1.5 run of the session, model loading from
-disk) and **warm** (a later default run with the model resident, e.g.
-S-F009's) as separate `condition`s; they are different numbers.
+disk) and **warm** as separate `condition`s; they are different numbers.
+**Warm** is S-F003's workflow (same template, default params) run again
+immediately after the cold run, with no other workflow in between — the
+server's resident-pipeline cache is keyed on workflow identity, not on the
+model, so a run that follows a *different* workflow reloads the pipeline even
+on the same SD 1.5 weights (#332: `Workflow changed - releasing cached
+models...`, ~2 s of reload). Such a run is neither cold nor warm: don't log it
+under either condition. The `warm` readings logged before this change (#337)
+may include such reloads — the 6.16 s of 2026-09-22 is one — so the warm
+median is noisy until they leave the last-5 window.
 baseline: TBD — the log is the baseline; when a human sets one, cold and warm
 get separate ceilings.
 cleanup: as S-F003.
