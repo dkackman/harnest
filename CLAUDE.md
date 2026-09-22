@@ -243,7 +243,23 @@ refresh automatically; plugin/skill changes → commit and leave the checkout on
 restart. `run-loop.sh` also records what lem is running at the start of every cycle
 (`deployed_head`, one ssh) and puts it, plus the issue's title/labels/body/latest comments
 (`issue_context`, capped), into every per-issue session prompt so neither role spends its first
-turns on `gh issue view`.
+turns on `gh issue view`. `DEPLOYED_HEAD` is refreshed between the implementer and tester
+passes (the tester must be told what it is actually verifying against), and
+`check_lem_on_develop` warns in `loop.log` if lem isn't on `origin/develop` at that point —
+the implementer merges every fix into `develop` and deploys `develop` (role prompt step 3c/3d)
+because lem can only be on one commit and a cycle hands off several fixes; on 2026-09-21
+three branch-only deploys were wiped by a fourth session's `develop` deploy and had to be
+merged by hand before the tester ran. Both are driver-side (one `ls-remote`, the same ssh) —
+the tester still reaches lem only over MCP.
+
+Bounce escalation: `handoff_count` (labeled events for `status:fixed-pending-verify` on the
+issue's timeline) is how many fixes the tester has sent back. At `IMPLEMENTER_ESCALATE_AFTER`
+(default 2) the issue's next implementer session runs on `TESTER_MODEL`/`TESTER_PROVIDER`
+with a prompt note that the bounce comments are now the spec; at `IMPLEMENTER_PARK_AFTER`
+(default 4) the driver parks it `owner:don` + `status:needs-approval` with a comment instead
+of launching another session. Two, not one, because a first bounce is usually a spec gap
+the bounce comment closes (#265's second round on sonnet cost $0.71 against $4.65 for the
+first, and verified); 0 disables either.
 
 ## Ticket protocol (the core of the design)
 

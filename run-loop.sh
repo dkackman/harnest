@@ -88,6 +88,16 @@ TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
 # nearly free there. Follows the tester's model+provider unless set.
 TRIAGE_MODEL="${TRIAGE_MODEL:-$TESTER_MODEL}"
 TRIAGE_PROVIDER="${TRIAGE_PROVIDER:-$TESTER_PROVIDER}"
+# Escalation on bounce. The number of times an issue has already been handed
+# off as status:fixed-pending-verify is the number of fixes the tester sent
+# back; once it reaches IMPLEMENTER_ESCALATE_AFTER, the next implementer
+# session runs on the tester's model+provider, and at IMPLEMENTER_PARK_AFTER
+# the driver parks the issue with Don instead of launching a session. Two,
+# not one: a first bounce is usually a spec gap the bounce comment closes
+# (#265's second round on sonnet was $0.71 against $4.65 for the first), a
+# second is the same reviewer rejecting the same model twice. 0 disables.
+IMPLEMENTER_ESCALATE_AFTER="${IMPLEMENTER_ESCALATE_AFTER:-2}"
+IMPLEMENTER_PARK_AFTER="${IMPLEMENTER_PARK_AFTER:-4}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
 # size at which a session auto-compacts instead of growing. Non-Anthropic
@@ -337,6 +347,36 @@ deployed_head() {
   || echo unknown
 }
 
+# check_lem_on_develop
+# lem can only be on one commit, and a cycle hands off several fixes, so the
+# implementer merges each fix into develop and deploys develop (its role
+# prompt, step 3c/3d). If lem is on anything else when the tester's turn
+# comes, the tester is about to verify against a server missing some of the
+# fixes it was handed (2026-09-21: three fix branches deployed one over the
+# other, then a fourth session deployed develop, which had none of them).
+# Warn loudly and put it in loop.log; the sessions still run, since the
+# tester's prompt names what lem is running and it can bounce a mismatch.
+check_lem_on_develop() {
+  local want
+  want="$(git -C "$SOURCE_DIR" ls-remote -q origin refs/heads/develop 2>/dev/null | cut -c1-7)"
+  [ -n "$want" ] || return 0
+  case "$DEPLOYED_HEAD" in
+    "develop @ $want") ;;
+    *) echo "[loop] WARNING: lem is on '$DEPLOYED_HEAD' but origin/develop is $want — the tester will verify against a server that may lack this cycle's fixes; run: ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'" | tee -a "$LOGS/loop.log" ;;
+  esac
+}
+
+# handoff_count
+# How many times an issue has been labeled status:fixed-pending-verify — one
+# per implementer hand-off, so on an issue that is owner:implementer again it
+# is the number of bounces. Read from the issue's event timeline; 0 on any
+# failure so a gh hiccup never escalates or parks by accident.
+handoff_count() {
+  gh api --paginate "repos/$TICKET_REPO/issues/$1/events" \
+    --jq '[.[] | select(.event == "labeled" and .label.name == "status:fixed-pending-verify")] | length' 2>/dev/null \
+  | awk '{ s += $1 } END { print s + 0 }'
+}
+
 # implementer_pass — triage (when 2+ issues wait), then one session per issue.
 implementer_pass() {
   local -a queue=()
@@ -356,11 +396,27 @@ $(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
       "${IMPLEMENTER_FLAGS[@]}"
   fi
 
+  local bounces model provider escalation
   for n in "${queue[@]}"; do
     still_ready "$n" owner:implementer fresh \
       || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" "$IMPLEMENTER_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.
+    bounces="$(handoff_count "$n")"
+    model="$IMPLEMENTER_MODEL"; provider="$IMPLEMENTER_PROVIDER"; escalation=""
+    if [ "$IMPLEMENTER_PARK_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_PARK_AFTER" ]; then
+      echo "[implementer:#$n] bounced $bounces times; parking with owner:don instead of another retry" | tee -a "$LOGS/loop.log"
+      gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:implementer --add-label owner:don --add-label status:needs-approval >/dev/null \
+        && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this issue has been handed off as fixed and bounced back by the tester $bounces times (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER), the most recent on the tester's own model. The two roles are not converging on what \"fixed\" means here; a human should look at the bounce comments and either narrow the ask or say which side is right, then hand it back with \`owner:implementer\`." >/dev/null \
+        || echo "[implementer:#$n] could not park (gh failed); skipping this cycle" | tee -a "$LOGS/loop.log"
+      continue
+    elif [ "$IMPLEMENTER_ESCALATE_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_ESCALATE_AFTER" ]; then
+      model="$TESTER_MODEL"; provider="$TESTER_PROVIDER"
+      echo "[implementer:#$n] bounced $bounces times; escalating this session to $provider/$model" | tee -a "$LOGS/loop.log"
+      escalation="
+
+This issue has been handed off as fixed and sent back by the tester $bounces times. You are running on a stronger model than the sessions that produced those fixes, for that reason — say so in your hand-off comment. Read every bounce comment before touching code: the tester's objections are the specification now, and a fix that satisfies the original text but not those comments will bounce again."
+    fi
+    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$provider" "$model" "$IMPLEMENTER_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.$escalation
 
 lem is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -479,6 +535,11 @@ while true; do
   echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOGS/loop.log"
 
   implementer_pass
+  # Refresh after the implementer's deploys: the tester must be told what it
+  # is actually verifying against, not what lem ran when the cycle began.
+  DEPLOYED_HEAD="$(deployed_head)"
+  echo "[loop] lem is running: $DEPLOYED_HEAD (after implementer pass)" | tee -a "$LOGS/loop.log"
+  check_lem_on_develop
   tester_pass
 
   # The tester is the only agent in this loop that edits the regression suite

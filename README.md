@@ -33,17 +33,34 @@ but it never blocks on or hands off to anyone; it just checks and posts.
    ┌──────────────── dw MCP server on lem ────────────────┐
 ```
 
-1. **Implementer** lists issues it owns (`owner:implementer`), works each one:
-   triage (duplicate? already shipped? previously rejected?), reproduce on
-   the box, fix on a branch, merge to `develop`, deploy to `lem`, restart,
-   confirm healthy, then hand each issue back with a comment on what changed.
-2. **Tester** lists issues it owns (`owner:tester`), re-runs every repro
-   handed to it — plus a couple of adjacent cases — through the MCP, and
-   closes each `verified` or bounces it back to the implementer with what's
-   still wrong. Then it advances a throwaway series in `qa-` workspaces,
-   filing new issues for anything it hits.
+1. **Implementer** gets one short triage session when two or more issues
+   wait (duplicate? already shipped? previously rejected? batch with a
+   sibling? escalate to Don?), then one fresh session per remaining issue:
+   reproduce on the box, fix on a branch, merge to `develop`, and deploy
+   `develop` with one call — `ssh lem '~/diffusers-workflow/scripts/deploy.sh
+   develop'` (fetch, ff-only pull, reinstall if needed, wait for a running
+   job, restart the `dw-serve` systemd unit, poll health). Always `develop`,
+   never the branch: lem can only be on one commit and a cycle hands off
+   several fixes. Then it hands each issue back with a comment on what
+   changed and which commit lem is running.
+2. **Tester** gets one session per issue handed to it (`owner:tester`),
+   re-runs the repro — plus a couple of adjacent cases — through the MCP, and
+   closes it `verified` or bounces it back to the implementer with what's
+   still wrong. Every `TESTER_TASK_EVERY` cycles it also advances a
+   throwaway series in `qa-` workspaces, filing new issues for anything it
+   hits; in between, a pending `wontfix`/`duplicate` gets a short closures
+   session of its own.
 3. The driver prints a status board (queried live from GitHub) and goes
    again. It sleeps only when a cycle left that board unchanged.
+
+The driver does the fetching so the sessions don't: each per-issue prompt
+carries the issue's title, labels, body and latest comments, and what lem is
+running (one ssh per pass). Before that, a verify session spent most of its
+turns on `gh issue view`. An issue the tester has bounced
+`IMPLEMENTER_ESCALATE_AFTER` times (default 2) gets its next implementer
+session on the tester's model; at `IMPLEMENTER_PARK_AFTER` (default 4) the
+driver parks it with Don instead — the two roles aren't converging on what
+"fixed" means, and a human should say which side is right.
 
 Each agent is a fresh `claude -p` session, so nothing survives between cycles
 except what's written down. That's deliberate: state lives in the GitHub
@@ -175,12 +192,16 @@ Environment:
 | `PROVIDER` | `anthropic` | where the models live: `anthropic`, `ollama`, `gateway` |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `opus` | per-role models |
 | `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` | `$PROVIDER` | per-role provider overrides |
-| `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `opus` / `$PROVIDER` | same, for `run-regression.sh` |
+| `REGRESSION_MODEL` / `REGRESSION_PROVIDER` | `sonnet` / `$PROVIDER` | same, for `run-regression.sh` (measured 2026-09-21: same smoke run $17.85 on sonnet vs $32.64 on opus, same findings) |
+| `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | `$TESTER_MODEL` / `$TESTER_PROVIDER` | the implementer's triage session; strong by default because a wrong `wontfix` never bounces back |
 | `RESEARCH_MODEL` / `RESEARCH_PROVIDER` | `sonnet` / `$PROVIDER` | same, for `run-research.sh` |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
-| `TESTER_TASK_EVERY` | `2` | run the tester's standing-task session every Nth cycle |
-| `CASES_PER_SESSION` | 3 if the declared context window is under 120k, else 0 | `run-regression.sh` only: cases per session, 0 = whole level in one session |
+| `TESTER_TASK_EVERY` | `4` | run the tester's standing-task session every Nth cycle (the most expensive session in a cycle; closure responses still run every cycle) |
+| `IMPLEMENTER_ESCALATE_AFTER` | `2` | bounces before an issue's implementer session runs on the tester's model; `0` = never |
+| `IMPLEMENTER_PARK_AFTER` | `4` | bounces before the driver parks an issue with `owner:don` + `status:needs-approval`; `0` = never |
+| `SESSION_RETRY_PAUSE_SECS` | `30` | a session that ends without a result is retried once after this pause; a rejected rate limit sleeps the driver until the reset instead |
+| `CASES_PER_SESSION` | 3 if the declared context window is under 120k, else 8 | `run-regression.sh` only: cases per session, 0 = whole level in one session |
 | `FALLBACK_MODEL` | unset | passed as `--fallback-model` when set; must be a model the role's provider can serve (a Claude name for `anthropic`, a non-Claude tag for `ollama`) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | commit trailer on suite edits (see below) |
 | `DW_URL` | `http://192.168.1.194:8765/mcp` | the MCP endpoint handed to the tester |
@@ -189,7 +210,10 @@ Environment:
 | `MAX_CYCLES` | `0` | 0 = run forever |
 
 Preconditions: `claude` and `gh` on `PATH`, `gh` already authenticated,
-passwordless `ssh don@lem`, the source checkout on `develop`.
+passwordless `ssh don@lem`, the source checkout on `develop`, and on `lem`
+the dw repo's `scripts/deploy.sh` with the server under its `dw-serve`
+systemd user unit (`scripts/dw-serve.service` in that repo; the script
+falls back to a `screen` session if the unit isn't installed).
 
 ### Models and providers
 
@@ -330,21 +354,30 @@ lands in `logs/loop.log`, with per-agent copies in `logs/implementer.log`,
 driver prints a ticket board queried live from GitHub — one line per open
 issue: number, status label, owner label, title.
 
-Note that `claude -p` emits only the agent's final message, so the log stays
-silent while an agent works and then lands its summary all at once. A
-37-minute implementer pass produces nothing until minute 37.
+Sessions run in stream-json mode, so the log shows each tool call as it
+happens, each result's size, a `· ctx=Nk` line per model turn, and one
+`usage:` line per session (turns, duration, cost, peak context, token
+totals). `grep usage: logs/loop.log` is the cost breakdown of a run;
+`grep -c 'deploy.sh' logs/implementer.log` is how many deploys it took. The
+driver also logs what lem is running before each pass and warns if it isn't
+`origin/develop` when the tester's turn comes.
 
 ## Layout
 
 ```
 run-loop.sh                         driver for the implementer/tester alternation
 run-regression.sh                   standalone driver for the regression agent
-providers.sh                        model/provider → environment table, shared by both
+run-research.sh                     standalone driver for the researcher (idea issues)
+providers.sh                        model/provider → environment table, shared by all drivers
+measure-base-ctx.sh                 turn-1 context of a flag set, for measuring isolation changes
+agent-settings/implementer.json     the auto-mode classifier's picture of the implementer's environment
 agents/
   IMPLEMENTER.agent.md              implementer role: loop, guardrails, deploy steps
   TESTER.agent.md                   tester role: what it may and may not do
   TESTER_TASK.agent.md              the tester's standing exercise between verifications
   REGRESSION.agent.md               regression agent role: run mechanics, workspace rules
+  RESEARCHER.agent.md               researcher role: read-only source + MCP discovery
+regression-perf/                    append-only per-case timing/metric history (JSONL)
 regression-suite-smoke.md           fast/fundamental checks, runs every time
 regression-suite-complete.md        broader/slower general checks
 regression-suite-model-specific.md  niche, tied to one model/pipeline
