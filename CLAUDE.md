@@ -235,7 +235,7 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   it.
 
 Two deploy paths, and the implementer must say which one a fix used: server code →
-`ssh lem ~/diffusers-workflow/scripts/deploy.sh <branch>` (in the dw repo: fetch, ff-only pull,
+`ssh lem '~/diffusers-workflow/scripts/deploy.sh <branch>'` (in the dw repo: fetch, ff-only pull,
 reinstall if `pyproject.toml` changed, wait for a running job, restart via the `dw-serve`
 systemd user unit if installed else its `screen` session, poll health — the one call that
 replaced ~40 hand-rolled ssh turns per issue and eleven `kill -9`s of the server), tool schemas

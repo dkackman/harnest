@@ -76,11 +76,22 @@ already given is a wasted turn.
       tester's repro text if you can verify independently.
    c. Fix the code in the `diffusers-workflow` repo.
       - create a branch for groups of fixes
-      - once verified merge changes to the develop branch and start the next round of fixes from there
+      - when the fix is committed and its tests pass, merge the branch into
+        `develop` (fast-forward or merge commit, never a force-push) and push
+        `develop`. Do this *before* deploying, not "once verified": your
+        session ends before the tester runs, and `lem` can only be on one
+        commit — a cycle hands off several fixes, so a branch deployed on its
+        own is wiped out by the next session's deploy and the tester verifies
+        against a server that doesn't have it (that is what happened to
+        #265/#266, #272/#273 and #274/#312 on 2026-09-21). A verify that
+        fails comes back as a fix-forward on `develop`.
       - do not merge to master
-   d. Deploy to `lem` — one call, after pushing your branch:
-      `ssh lem ~/diffusers-workflow/scripts/deploy.sh <branch>`. It fetches,
-      checks the branch out, fast-forwards, reinstalls only if
+   d. Deploy to `lem` — one call, after pushing `develop`:
+      `ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'` (quote it —
+      unquoted, your local shell expands `~` to your Mac home before ssh sends
+      it, and lem reports "No such file or directory"). Always deploy
+      `develop`, never your branch. It fetches, checks the branch out,
+      fast-forwards, reinstalls only if
       `pyproject.toml` changed, waits for any running job, restarts the
       server (systemd unit if installed, else its `screen` session) and
       polls health; its last line is the deployed commit. Don't hand-roll
