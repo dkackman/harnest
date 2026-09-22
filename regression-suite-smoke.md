@@ -127,6 +127,12 @@ nothing uses it anymore.
   and 0.5 and reads the 6.02 dB difference; any substitute needs a non-silent 32 kHz
   soundtrack (its exact peak is read from the asset at run time, not assumed). S-F093 also
   loops `ep11-bed.wav` (above) to its 224-frame length. Read-only, never deleted.
+- `asset:uploads/qa-cast/room-bed.wav` — a 4.96 s 16 kHz mono room-tone bed in the
+  shared asset library that decodes at about −50 dBFS mean, i.e. below the −40 dBFS
+  `audio_near_silent` line by design. S-F103 slices it as the "source that arrived
+  quiet" half of the near-silent rule; any substitute must already be under −40 dBFS
+  before it is sliced, or the case's negative arm proves nothing. Also the `complete`
+  suite's C-F016 fixture. Read-only, never deleted.
 
 ## Functional
 
@@ -2795,6 +2801,257 @@ resampled wav read back 32000 Hz / 2 ch / 30.023406 s from a 30.02 s 44.1 kHz so
 224-frame slice 9.333344 s / 32000 Hz; whole chain 0.4 s. Two `gain_audio` frame-form
 ducks chained off the slice by `previous_result:` each landed exactly −9.00 dB in their
 bins (S-F095/S-F097 cover that arithmetic; this case is the conversion in front of it).
+
+### S-F099 — `get_memory` answers mid-run from the job's last phase boundary, not a previous job's post-run reading
+Before #273 the worker measured memory once per job, after it finished, so `get_memory`
+during a run served whatever the *previous* job had left — minutes old — for the whole
+duration, exactly when an agent needs it to tell a slow run from one thrashing toward an
+OOM (#265/#266). Now the worker emits a `memory` reading at every phase boundary and the
+server serves the freshest one. Cheap: one SD 1.5 run, no model load if resident.
+1. `run_workflow(workspace=<suite workspace>, workflow_path="templates/text-to-image",
+   arguments={"num_images_per_prompt": 8, "prompt": "a lighthouse on a cliff at dusk"},
+   acknowledged_cost=true)` with `wait_seconds` **0** — the run needs to still be going.
+2. Immediately `get_memory()` and `get_job(job_id)`; a few seconds later `get_memory()`
+   again. Then `wait_for_job` to completion and `get_job_events(job_id)`.
+expected:
+- While `get_job` reports `status: running`: `live: false`, `stale: true`, `reason:
+  "job_running"` (that label is correct — it says *why* the reading is cached, and is not
+  the finding), with `info` **populated** (not null) and `age_seconds` small — under ~10 s
+  on the first read, and on the second read grown by roughly the wall time between the two
+  calls (both count from the same phase boundary, `generating` at t≈0 for a resident model).
+- `get_job_events` shows a `memory` event immediately after **every** `phase` event
+  (`cached` or `loading`, `generating`, `decoding`, `saving`), plus the post-run one before
+  `job_status: succeeded`. The `decoding`/`saving` readings differ from the `generating`
+  one in `gpu_memory_reserved_mb` — they are measurements, not a copied baseline.
+- After the job finishes, `get_memory` returns `live: true`, `stale: false`, `reason: null`.
+It is a **finding** if a mid-run `get_memory` has `info: null`, or an `age_seconds` larger
+than the running job's own age (that is the previous job's reading again), or if a `phase`
+event has no `memory` event after it.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+source: tester, verified in #273 (implementer proposed the case in its hand-off comment;
+added after running it on 2026-09-21 over MCP as model `opus` via provider `anthropic`: job
+`cfa6fb531220`, mid-run reads at `age_seconds` 1.8 and 8.4 with `reason: "job_running"`
+and `info` populated; `memory` events at seq 8/11/39/41/60 after `cached`/`generating`/
+`decoding`/`saving`/post-run, reserved 4088 → 6376 → 13316 MB across them).
+
+### S-F100 — a small-n observed estimate is tempered toward the curated figure, or flagged when there is none
+Before #301 a figure measured once on this box was quoted by `plan.estimate` with the
+same authority as one measured fourteen times (and ran ~3x pessimistic in the case that
+was filed). The approved shape: below `runs: 3`, if the workflow carries a curated
+`cost` block, `minutes` is blended linearly toward it (weight `runs/3` on the observed
+figure); if there is no curated figure, `minutes` is left alone and `low_confidence:
+true` is added beside `runs`. At or above 3 runs nothing changes. Free — three
+`validate_workflow` calls and one listing, nothing written. Read the listing first: the
+run counts drift as the box is used, so pick the entries by their `observed_runs`, not by
+the names below, and choose one entry per row.
+1. `list_workflows(shape="shot")` and `list_workflows(shape="sequence")` — note each
+   entry's `cost`, `observed_minutes`, `observed_runs`.
+2. `validate_workflow(name=<entry with observed_runs 1 or 2 AND a non-null cost>)`.
+3. `validate_workflow(name=<entry with observed_runs 1 or 2 AND cost: null>)`.
+4. `validate_workflow(name=<entry with observed_runs >= 3>)`.
+expected:
+- Step 2 (blend): `basis: "observed"`, `runs` equal to the listing's count, **no**
+  `low_confidence` key, and `minutes` strictly between the listing's `observed_minutes`
+  and the curated `cost[].minutes`, within 0.1 of
+  `observed * runs/3 + curated * (1 - runs/3)`. Equal to the raw observed figure is the
+  regression.
+- Step 3 (flag): `basis: "observed"`, `minutes` equal to the listing's `observed_minutes`
+  rounded to one decimal (unmodified), `runs` as listed, and `low_confidence: true`.
+  Absent flag, or a `minutes` that moved with nothing to move toward, is the regression.
+- Step 4 (threshold): `minutes` equal to the listing's `observed_minutes` rounded to one
+  decimal, no `low_confidence` key — with or without a curated `cost`. A blend or a flag
+  at 3+ runs is the regression.
+If no entry fits step 2 (every low-n workflow lacks a `cost`, or the low-n ones have all
+been run past 3), skip that step and say so — do not manufacture one; it is not a finding.
+cleanup: none.
+metrics: none.
+source: tester, verified in #301 (implementer proposed both halves in its hand-off
+comment; added after running it on 2026-09-21 over MCP as model `opus` via provider
+`anthropic` against `develop @ d5e3725`: `templates/minimax/music-video` curated 35 /
+observed 25.75 / 1 run → 31.9, no flag; `templates/minimax/enhance-prompt` no cost /
+5.67 / 1 run → 5.7 with `low_confidence: true`; `templates/minimax/video-with-audio`
+6.6 / 2 runs → flagged; `templates/ltx2/two-stage` 8.2 / 3.12 / 3 runs → 3.1, no flag).
+
+### S-F101 — a single-saving-step template's deliverable is marked `final`, so `list_gallery(subfolder="final")` finds it
+#302: S-F068 guards the two sequence templates #235 fixed, but the `final` convention had
+never reached any *other* one-saving-step template — every LTX-2.5 template and the general
+single-shot ones (`text-to-image`, …) shipped `"subfolder": ""`, so the documented "list
+only deliverables" pattern returned nothing for them. The dw repo's own test now covers
+1+ saving steps; this is the consumer-side guard that the convention holds catalog-wide,
+checked on the cheapest template rather than the LTX-2.5 one the issue was filed against
+(the fix is one sweep, so one template stands for the class). Reuse S-F003's run if it is
+still present rather than generating again.
+1. Run `templates/text-to-image` in this suite's workspace (defaults); `wait_for_job` (or
+   `run_workflow(..., wait_seconds=55)`).
+2. `list_gallery(workspace=<this suite's workspace>, subfolder="final")`.
+expected:
+- Step 1: the job succeeds; its one manifest entry (step `main`) has `"subfolder":
+  "final"` and its file name reads `templates/text-to-image/<run id>/final/<file>.jpg` —
+  the `final/` segment present in the name, not just the field.
+- Step 2: that file is listed with `subfolder: "final"` and `folder:
+  templates/text-to-image`.
+- The regression is: the manifest entry back to `"subfolder": ""`, a name without the
+  `final/` segment, or the `final` filter not listing the file.
+cleanup: delete the run (`delete_output(job_id=<id>)`) unless S-F003's cleanup already
+covers it.
+metrics: none.
+source: tester, verified in #302 (implementer proposed the case in its hand-off comment;
+added after running it on 2026-09-21 over MCP as model `opus` via provider `anthropic`
+against `develop @ d5e3725`, in workspace `qa-verify-302`: `templates/text-to-image` job
+`1692848b00f8` → `templates/text-to-image/20260922-033453-b3b4bd77/final/test_image-0.0.jpg`,
+and the issue's own family `templates/ltx2/text-to-video` (`num_frames: 25`) job
+`61c44d8f7b66` → `.../20260922-033214-a189631c/final/LTX2-text_to_video.0-0.0.mp4`;
+`list_gallery(subfolder="final")` returned exactly those two).
+
+### S-F102 — `mix_audio`'s not-dB gain warning has a threshold: a modest multiplier like the templates' stock `world_gain: 1.8` is silent, a dB-shaped 12 still warns
+The `mix_audio_gain_not_db` heuristic S-F094 pins fired at any gain above 1.0 when it
+shipped, which meant both sequence templates tripped it on their own `world_gain: 1.8`
+default and `warnings: []` was unreachable for any bare template run (#306). The threshold
+is now 3.0: a value under it is a plausible multiplier, a value at or above it is treated as
+a dB figure typed into the wrong unit. If the threshold drifts down again, S-F057/S-F068/C-F020's
+`warnings: []` expectations all break at once with a warning no caller can act on; if it
+drifts up or the check is dropped, a real `12` becomes a silent 12x boost. Two short CPU
+runs on the shared cast assets:
+1. `run_workflow(workflow_path="templates/assemble-and-score", workspace=<suite workspace>,
+   arguments={"shots": ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"],
+   "score": "asset:qa-cast/ep20-score.wav", "match_levels": "rms", "match_levels_dbfs": -24,
+   "total_frames": 248}, acknowledged_cost=<bound>, wait_seconds=55)` — `world_gain` left at
+   the template's default (`get_workflow(variables_only=true)` shows it as 1.8).
+2. The same call with `world_gain: 12` added to `arguments`.
+expected:
+- Step 1: `succeeded`, `warnings: []` — nothing from `mixed:`, and no
+  `mix_audio_gain_not_db` event.
+- Step 2: `succeeded`, and `warnings` carries exactly one `mixed: mix_audio: gain(s) [12.0]
+  are a multiplier, not decibels …` entry (the `edit:` level-spread warning is also present
+  only if `match_levels` was dropped; with it passed, the gain warning is the only entry).
+It is a **finding** if step 1 carries any `mix_audio_gain_not_db` warning, or if step 2
+does not.
+cleanup: `delete_output(job_id=<id>)` for both runs.
+metrics: none.
+source: tester, verified in #306 (implementer proposed the case in its hand-off comment;
+added after running it on 2026-09-22 over MCP as model `opus` via provider `anthropic`
+against `develop @ d5e3725`, workspace `regression-smoke`: job `d80bd33149e6` at the stock
+1.8 → `warnings: []`; job `ae9e4d6d57ab` at `world_gain: 12` → the gain warning present,
+alongside the `edit:` level-spread warning because that run omitted `match_levels`;
+`templates/dissolve-between-shots` job `e0f581c0c0b1` at its stock 1.8 was likewise free of
+the gain warning).
+
+### S-F103 — `slice_audio` of a source that arrived near-silent does not warn `audio_near_silent`; a slice that *made* a normal source near-silent still does
+The save-time near-silent check S-F077 pins (#261) fired on every slice of a room-tone bed
+(#309) — exactly the material the tasks guide's `loop_audio` section tells a caller to cut
+out and lay under a scene, quiet by design. The rule is now: `slice_audio` measures its
+source's own level before cutting, and a slice whose source was *already* under the
+−40 dBFS line is not a defect the slice introduced, so it is not warned about; a slice of a
+normal-level source that comes out near-silent (here, because the past-end pad dwarfs the
+material) still is. If the suppression goes, C-F016's `warnings: []` arms break and every
+scored cut carries a warning nobody can act on; if it widens to all of `slice_audio`, a
+genuinely attenuated slice goes unremarked. Two CPU-only runs, seconds each, no model:
+1. `run_workflow(workspace=<suite workspace>, acknowledged_cost=true, wait_seconds=55,
+   inline_workflow={"id": "s_f103_quiet", "variables": {}, "steps": [
+     {"name": "past_end", "task": {"command": "slice_audio", "arguments":
+       {"audio": "asset:uploads/qa-cast/room-bed.wav", "num_frames": 372, "fps": 24}},
+      "result": {"content_type": "audio/wav", "file_base_name": "past_end"}},
+     {"name": "inside", "task": {"command": "slice_audio", "arguments":
+       {"audio": "asset:uploads/qa-cast/room-bed.wav", "num_frames": 48, "fps": 24}},
+      "result": {"content_type": "audio/wav", "file_base_name": "inside"}}]})`
+2. `run_workflow(workspace=<suite workspace>, acknowledged_cost=true, wait_seconds=55,
+   inline_workflow={"id": "s_f103_loud", "variables": {}, "steps": [
+     {"name": "voice_inside", "task": {"command": "slice_audio", "arguments":
+       {"audio": "asset:qa-cast/hal-voice.wav", "num_frames": 48, "fps": 24}},
+      "result": {"content_type": "audio/wav", "file_base_name": "voice_inside"}},
+     {"name": "voice_diluted", "task": {"command": "slice_audio", "arguments":
+       {"audio": "asset:qa-cast/hal-voice.wav", "start_seconds": 0, "duration_seconds": 1200}},
+      "result": {"content_type": "audio/wav", "file_base_name": "voice_diluted"}}]})`
+   (6.48 s of speech padded to 1200 s reads about −44 dBFS mean — under the line.)
+The `result` blocks matter: a step nothing reads and that saves no file does not run
+(S-F027), and the check is at save time.
+expected:
+- Run 1: `succeeded`; `warnings` holds **exactly one** entry, `past_end: slice_audio: the
+  requested slice runs … past the end of …` (the C-F016 warning). No entry from either step
+  contains `near-silent`.
+- Run 2: `succeeded`; `warnings` holds exactly two entries, both prefixed `voice_diluted:`
+  — the past-end one and `voice_diluted-0.0.wav decodes at a mean level of … dBFS -
+  near-silent for a deliverable meant to be heard …`. Nothing from `voice_inside`.
+It is a **finding** if run 1 carries any `near-silent` entry (the suppression regressed),
+if run 2's `voice_diluted` does not (the check was dropped or widened to all slices), or
+if either run's past-end warning is missing (that is C-F016's ground, but it is cheap to
+notice here).
+cleanup: `delete_output(job_id=<id>)` for both runs.
+metrics: none.
+source: tester, verified in #309 (implementer proposed the case in its hand-off comment;
+added after running it on 2026-09-22 over MCP as model `opus` via provider `anthropic`
+against `develop @ d5e3725`, workspace `regression-complete`: job `1c4096862cfa` on the
+room bed → one warning, the past-end one, across a past-end, an inside and a 4.965 s slice;
+job `e6c29c15ef40` on `hal-voice.wav` → the inside slice silent, the 1200 s slice carrying
+both the past-end and a `-43.86 dBFS … near-silent` entry).
+
+### S-F104 — observed-cost history is scoped to the workspace, and `delete_workflow` purges it
+#312 (batched with #274): `plan.estimate`'s `basis: "observed"` was fed by every finished
+run of the same `workflow_name` on the server, whatever workspace it ran in — so S-F076's
+step-2 "cold" validate read `observed`, `runs: 3` in a workspace that had never run it,
+and #274's host-memory warnings quoted other workspaces' runs. The rows are now keyed by
+`(workspace, workflow_name)` for workspace-writable workflows, and `delete_workflow` drops
+the name's rows with the file, which is what lets a case re-save a fixed name and still get
+a cold quote. One SD 1.5 two-step run (~10 s warm); the rest is free.
+1. In a **fresh throwaway workspace** (`create_workspace(name=..., use=true)`), save the
+   S-F076 document under the exact name S-F076 uses, `qa-s076-two-step` — a name the
+   `regression-smoke` workspace has run many times — and `validate_workflow(name=...)`.
+2. `run_workflow(name=..., acknowledged_cost=true, wait_seconds=55)`, then
+   `validate_workflow(name=...)` again.
+3. `delete_workflow("qa-s076-two-step")`, `save_workflow` the identical document again,
+   `validate_workflow(name=...)`.
+expected:
+- Step 1: `estimate.basis: "unknown"`, `minutes: null`, `runs: null`, `cached_minutes:
+  null` — other workspaces' history for the name does not leak in.
+- Step 2: `basis: "observed"`, **`runs: 1`** (this workspace's one run, not the server-wide
+  count), `cached_steps: 2`, `cached_minutes: 0.0`.
+- Step 3: back to `basis: "unknown"`, `runs: null`, `cached_minutes: null`. `cached_steps`
+  may still read `2` — the step cache is content-keyed and the outputs are still on disk;
+  only the cost rows are purged, and that is the point.
+It is a **finding** if step 1 or step 3 answers `observed`, or if step 2's `runs` exceeds 1.
+cleanup: `delete_workspace(name=<throwaway>, acknowledged_cost=true)`.
+metrics: none.
+source: tester, verified in #312 on 2026-09-22 over MCP as model `opus` via provider
+`anthropic` against `develop @ d5e3725`, workspace `qa-v312`: step 1 `unknown`/`runs: null`;
+job `6f5b8a81070d` (9.8 s, both steps fresh) → step 2 `observed`/`runs: 1`/`cached_minutes:
+0.0`; after delete + re-save `unknown`/`runs: null` with `cached_steps: 2`.
+
+### S-F105 — a priced parent's composed estimate uses the child's catalog figure, and says so
+#315: S-F075 arm 4's `minutes` was the parent's `cost` plus the child's *observed* median
+(0.5 + 2.11 → 2.6) while `basis` read `"catalog"` and `measured_on` the short catalog
+device string — the figure and its label disagreed. Since the fix, a child's observed
+history is only folded in when the parent has no priced figure of its own (the only case
+where the total can honestly be `basis: "observed"`); a priced parent prices its children
+from their own `cost` block. S-F075 pins the arithmetic; this pins the label. Free, no
+model, no job — three inline `validate_workflow` calls, each one step `{"name": "clip",
+"workflow": {"path": <template>, "arguments": {"prompt": "variable:prompt"}}, "result":
+{"content_type": "video/mp4", "subfolder": "final"}}` with `"variables": {"prompt": "a
+lighthouse at dusk"}`. Read the children's current `cost`/`observed_minutes` from
+`list_workflows(shape="shot")` first; the arithmetic below uses that, not the numbers here.
+expected:
+- `"cost": [{"device": "cuda", "name": "RTX 3090", "vram_gb": 24, "minutes": 0.5}]`
+  composing `templates/ltx2/text-to-video` (curated cost, run on this box) → `basis:
+  "catalog"`, `measured_on: "RTX 3090"` (the catalog block's `name`, not the observed
+  device string), `runs: null`, `minutes == 0.5 + <child's catalog minutes>` to one decimal
+  — **not** `0.5 + observed_minutes`, when the two differ.
+- The same parent `cost` composing `templates/ltx2/two-stage` (curated cost, also observed
+  here) → the same shape: `basis: "catalog"`, `minutes == 0.5 + <its catalog minutes>`.
+- **No** parent `cost`, composing `templates/ltx2/text-to-video` → `basis: "observed"`,
+  `runs` = the child's `observed_runs`, `measured_on` the long observed device name (e.g.
+  `"NVIDIA GeForce RTX 3090"`), `minutes ≈ observed_minutes` — the pure-composition arm
+  still inherits observed data (#268), so the fix did not over-correct.
+It is a **finding** if any priced-parent arm's `minutes` equals `0.5 + observed_minutes`
+rather than `0.5 + cost.minutes` (when those differ), or if `basis` and `measured_on` are
+not the catalog forms alongside a catalog-summed figure. If a box has never run the child,
+arm 1 and arm 3 both legitimately read `catalog` — the arms only discriminate when
+`observed_minutes` is present and differs from `cost.minutes`.
+cleanup: none — nothing is created.
+metrics: none.
+source: tester, verified in #315 on 2026-09-22 over MCP as model `opus` via provider
+`anthropic` against `develop @ d5e3725`: text-to-video catalog 1.8 / observed 2.11 (14
+runs) → priced parent `2.3`/`catalog`/`"RTX 3090"`; two-stage catalog 8.2 / observed 3.12
+→ `8.7`/`catalog`; no-cost parent → `2.1`/`observed`/`runs: 14`.
 
 ## Performance
 

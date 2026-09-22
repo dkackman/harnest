@@ -1439,4 +1439,78 @@ metadata 0.00027; mp3 seq 22 only, metadata +0.649; norm0 seq 30/31; norm3
 silent at −2.9997). Proposed by the implementer in its hand-off; the lossy and
 −3 controls are mine.
 
+### C-F047 — a light job after a heavy one reports its own host peak, not the worker's lifetime high-water mark
+Two runs back to back in the **same worker lifetime** (no server restart
+between them):
+1. A heavy job — anything that pushes the worker's host RSS into the tens of
+   GB: C-F007's job 1 (`templates/ltx2/text-to-video`) if this run already
+   did it, else `templates/prompt-weighting` (FLUX.1-schnell). Its own
+   outcome does not matter for this case; it only has to load a big model.
+2. Immediately after: `templates/text-to-image`, stock arguments except the
+   prompt (~10 s, SD1.5, ~2 GB of host RSS).
+Then `get_job_events` on job 2 and read its `memory` events (one per `phase`
+boundary plus the post-run one).
+expected: every `memory.info` on job 2 carries **both** `host_memory_peak_rss_mb`
+and `host_memory_job_peak_rss_mb`, and they differ by an order of magnitude:
+- `host_memory_peak_rss_mb` is the process-lifetime `ru_maxrss` and still
+  shows job 1's tens-of-GB high-water mark on every reading (unchanged in
+  meaning — `host_memory.py`'s whole-process figure).
+- `host_memory_job_peak_rss_mb` on the **first** reading equals that reading's
+  `host_memory_rss_mb` (the job's baseline), and on every later reading is
+  the running max of job 2's own rss — a few GB at most, never job 1's
+  figure. Because job 2 never exceeds the inherited high-water mark, the
+  field is floored at the job's current rss rather than reporting a zero or
+  negative delta.
+Job 1's own first `memory` reading shows the same pattern (job-scoped ==
+rss at baseline), proving the baseline is captured per job, not carried over.
+A job-2 `host_memory_job_peak_rss_mb` in the tens of GB, a missing field, or a
+first reading whose two job-scoped/rss figures disagree is the regression
+(#272: the lifetime peak was what fed `host_memory_projection`, so a trivial
+job after a heavy one drew a false host-ceiling warning). No `metrics:` line —
+the assertion is the split between two fields, not a number.
+cleanup: delete both generated outputs.
+source: tester, verified in #272 (model `opus` via provider `anthropic`, run over
+MCP 2026-09-21 in `qa-verify-272`: heavy `fb77c0f322e6` (prompt-weighting,
+OOMed on the card, baseline 1890 MB both fields), light `6ad4f4781fce`:
+lifetime 61811 MB on all five readings, job-scoped 1898.8 → 2098.8 MB tracking
+rss exactly). Proposed by the implementer in its hand-off.
+
+### C-F048 — a workspace-local workflow's observed history is scoped to its workspace and purged by `delete_workflow`; a catalog template's still pools
+Free apart from one ~2 s run; no model, no GPU. Runs in a **scratch
+workspace**, not `regression-complete`, so it can hit the exact collision
+#274 reported: a same-name copy of C-F040's fixture in a workspace that has
+never run it.
+1. `create_workspace("regression-complete-c-f048", use=true)`.
+2. `save_workflow("c-f040-qr-list", <C-F040's workflow verbatim, id
+   "c-f040-qr-list", resident shape>)` — the same name `regression-complete`
+   has run under C-F040 (this run or an earlier one).
+3. `validate_workflow(name="c-f040-qr-list", arguments={codes: [32 entries]})`.
+4. `run_workflow(workflow_path="c-f040-qr-list", acknowledged_cost=true,
+   wait_seconds=55)` — 1-entry default; then the same 32-entry validation.
+5. `delete_workflow("c-f040-qr-list")`, `save_workflow` the identical
+   document again, and the 32-entry validation once more.
+6. `get_workflow("templates/minimax/video-with-audio", variables_only=true)`
+   from this same never-run workspace.
+expected: (3) `valid: true`, `warnings: []`, `plan.estimate.basis:
+"unknown"`, `runs: null` — none of `regression-complete`'s runs of the name
+leak in; (4) one warning beginning `Projected host memory for this run (~N MB,
+32 entries held resident together) exceeds this machine's usable RAM` citing
+exactly `based on 1 run(s) of this workflow's own history` — this workspace's
+run counted, nobody else's (on a box with much more than 64 GB RAM (4) may be
+silent because 32 × a bare ~1.9 GB peak fits; say so rather than fail it, and
+lean on (5)'s `basis`/`runs` instead); (5) back to `warnings: []`, `basis:
+"unknown"` — the deleted copy's row is gone with it; (6) `observed` present
+with `runs` ≥ 1 and no run of the template in this workspace — a shared
+catalog source still pools across workspaces (#154). The regressions: a
+warning or `runs` > 0 on (3) (history keyed on name alone again — #274),
+`based on N run(s)` with N > 1 on (4), a warning on (5) (`delete_workflow`
+stopped purging — C-F040 step 1 then fails on every second cycle), or (6)
+losing `observed` (workspace scoping applied to a read-only source too).
+cleanup: `delete_output(job_id=<the run>)`, then
+`delete_workspace("regression-complete-c-f048", acknowledged_cost=true)`.
+source: tester, verified in #274 (model `opus` via provider `anthropic`, run
+over MCP 2026-09-21 in `qa-verify-274` against develop `d5e3725` +
+`9bdfe6f`: (3) clean, (4) `~67354 MB … based on 1 run(s)`, (5) clean, (6)
+`runs: 3`). Proposed by the implementer in its hand-off, scoped to what was run.
+
 ## Performance

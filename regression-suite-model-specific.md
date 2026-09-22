@@ -813,4 +813,84 @@ first attempt slicing only 6 s (`84a617565b28`, `-1.91 dBFS`) was correctly sile
 where the "take the whole track" note comes from. Positive `495f91d39f78`: `warnings: []`.
 Implementer proposed the case in its hand-off; placed here because it needs a Music 3 track.
 
+### M-F022 — LTX-2.5 text-to-video refuses a (width, height, num_frames) that cannot fit VAE decode, at validate time
+`templates/ltx2/text-to-video` declares a top-level `vram_estimate` (`base_gb` + `bytes_per_voxel`
+over `width * height * num_frames`) that `validate_workflow` checks against the template's
+`cost[].vram_gb` (24 GB, RTX 3090). Before #265 the frame-count grid rule (`8*n+1`, M-F005) was the
+only bound, so `num_frames: 345` validated clean, ran all eight denoise steps (~5 min of GPU) and
+then died in the VAE decoder's conv3d. The ceiling is the "refuse before cost" counterpart to that
+rule: a voxel count the decode can't fit is an **error**, not a warning, before anything loads.
+Model/pipeline: LTX-2.5 via `templates/ltx2/text-to-video`, RTX 3090's 24 GB `cost` entry. Free —
+four `validate_workflow` calls, nothing runs. The calibration numbers (`base_gb`, `bytes_per_voxel`)
+are the implementer's to move; this case pins the far side of the ceiling and a known-safe point,
+not the exact breakpoint, so a recalibration doesn't turn it into a false finding.
+expected:
+- `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 345})` →
+  **`valid: true`**, `checked_arguments: ["num_frames"]`, a `plan.estimate`. 345 is the original
+  repro and a confirmed post-#266 pass; a ceiling that refuses it has been recalibrated too tight.
+- `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 900})` →
+  **`valid: false`** with **two** errors: one at `arguments.num_frames` (the `8 * n + 1` grid rule)
+  and one at **`arguments`** whose message names the product (`960*544*900`), the projected figure
+  (`projects to 28.32 GB VRAM` at the 2026-09-21 calibration — the number may move, the shape
+  must not), the declared ceiling (`above the 24 GB declared for RTX 3090`) and `#265`. Both
+  errors must co-report; one swallowing the other is the "every schema error at once" contract
+  broken.
+- `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 121, "width": 1920, "height": 1088})`
+  → **`valid: false`** with the `arguments` ceiling error and *no* `arguments.num_frames` error —
+  the ceiling reads width and height, not only the frame count, and a grid-clean count doesn't
+  mask it.
+- `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 121})` (the
+  default) → `valid: true`, no warnings. The check must not touch the template's own default.
+It is a **finding** if 900 frames or 1920x1088 validates clean, if the refusal degrades to a
+warning, if 345 or the default starts being refused, if the two errors at 900 stop co-reporting, or
+if the message loses the product, the projected GB, the declared ceiling or the issue reference.
+Not covered here (open on #265 at the time of writing): whether `run_workflow` refuses the same
+config on submission, and whether the H3 templates declare a ceiling at all — add those bullets
+when they verify, don't infer them from this one.
+cleanup: none — four validate calls, nothing written.
+source: tester, verified in #265 (partial verify — this half passed, the run-path and H3 halves
+bounced), model `opus` via provider `anthropic`, on 2026-09-21 against `lem` `develop @ d5e3725`.
+All four bullets passed on that date (345 → true; 900 → 28.32 GB refusal + grid error; 1920x1088x121
+→ 25.08 GB refusal; 121 → true). Implementer proposed the 900/345 pair in its hand-off; added here
+only after running it over MCP. Related: #266 (the offload change the calibration rests on).
+
+### M-F023 — LTX-2.5 text-to-video's transformer leaves VRAM before VAE decode, so a 345-frame clip fits a 24 GB card
+`templates/ltx2/text-to-video` runs its 12.44 GB transformer under `group_offload` (`block_level`,
+one group, streamed) rather than pinning it to `cuda` with `preserve_device_placement`. Before #266
+the transformer stayed resident through the decode, and #265's 345-frame repro OOM'd in the VAE's
+conv3d with ~11.7 GB free for a decode that needed ~13 GB. This case is the run-path counterpart to
+M-F022: M-F022 pins that the ceiling admits 345 frames, this one pins that 345 frames actually
+completes — and *why*, so a template edit that quietly re-pins the transformer is caught by the
+memory event rather than by a later OOM. Model/pipeline: LTX-2.5 (`Lightricks/LTX-2.5-Diffusers`)
+via `templates/ltx2/text-to-video`, RTX 3090 (24.1 GB). **Paid** — ~4 min of GPU cold; the
+transformer load dominates, so run it before anything else that would evict it, not after.
+expected:
+- `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 345}, acknowledged_cost=true, wait_seconds=55)`
+  then `wait_for_job` until done → `status: succeeded`, one `final/*.mp4` in the manifest, no
+  `warnings`, no `error`. An OOM here is the original #265 failure back.
+- In `get_job_events`, the `memory` event that immediately follows the `phase: decoding` event
+  (right after `pipeline_step` 8/8) has **`gpu_memory_allocated_mb` under 4000** — the transformer
+  is off the card going into decode. The 2026-09-21 reading was 2163 MB; ~14 GB at that point means
+  the transformer is resident again, which is the bug, even if the run happens to survive.
+- The eight `pipeline_step` events are evenly spaced: the gap between consecutive ones is within
+  ~10% of the 13.1–13.2 s baseline (2026-09-21, uint4 transformer). A large jump means the
+  group_offload has turned into per-step leaf streaming (`num_blocks_per_group` collapsed) — the
+  throughput cost the whole-transformer group was chosen to avoid.
+- The post-`workflow_end` `memory` event shows allocated back near the idle floor (~1.75 GB on
+  2026-09-21), not the transformer's 12 GB — nothing leaks past the job.
+It is a **finding** if the run fails with OOM, if the decode-entry `gpu_memory_allocated_mb` is
+above ~4000, if a denoise gap exceeds the baseline by more than ~10% without a diffusers/torch
+upgrade explaining it, or if the transformer is still resident after `workflow_end`.
+metrics: `denoise_step_seconds`, condition `uint4`, unit `s` — the mean gap between consecutive
+`pipeline_step` events (steps 1→8), from the job's own `at` timestamps; and `decode_entry_allocated`,
+condition `-`, unit `MB` — `gpu_memory_allocated_mb` from the `memory` event following
+`phase: decoding`. Both logged to `regression-perf/M-F023.jsonl`, pass or fail.
+cleanup: `delete_output(job_id=<the run's job id>)` — the run directory goes whole; keep it only
+if the run failed and an issue needs the traceback.
+source: tester, verified in #266, model `opus` via provider `anthropic`, on 2026-09-21 against
+`lem` `develop @ d5e3725`: job `cb2f0aeb0609` succeeded in 243 s; decode-entry allocated 2163 MB
+(free 12759 MB); steps at 13.1–13.2 s; post-job allocated 1750 MB. Implementer proposed the
+345-frame run in its hand-off; the memory-event bullets are the tester's, added only after reading
+them over MCP. Related: #265 (M-F022, the validate-time ceiling).
+
 ## Performance
