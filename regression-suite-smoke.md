@@ -3053,6 +3053,108 @@ source: tester, verified in #315 on 2026-09-22 over MCP as model `opus` via prov
 runs) → priced parent `2.3`/`catalog`/`"RTX 3090"`; two-stage catalog 8.2 / observed 3.12
 → `8.7`/`catalog`; no-cost parent → `2.1`/`observed`/`runs: 14`.
 
+### S-F106 — on the mounted server, moving the session pin off a non-default workspace warns that the pin is shared, and `create_workspace(use=true)` lands for its own caller
+#298: the mounted `/mcp` surface has one workspace pin for every connected client, so
+another agent's `use_workspace`/`create_workspace(use=true)` changes what this session
+sees (that is by design — single-user server, not fixed). The guard is that a switch
+*away from* a non-default pin now carries a `warning` naming the old and new workspace
+and pointing at per-call `workspace=`; and `create_workspace(use=true)` must agree with
+the next `get_server_info()` in an uninterrupted session. Free, no model, no job. Run
+with the suite's pin on `regression-smoke` (non-default) so the first arm has something
+to move away from; every arm is a single call.
+expected:
+- `create_workspace(name="regression-smoke-298", use=true)` → `current:
+  "regression-smoke-298"`, `next` says this session now works there, **and** a
+  `warning` string that names both `'regression-smoke'` and `'regression-smoke-298'`
+  and mentions `workspace=`. `get_server_info()` immediately after → `workspace:
+  "regression-smoke-298"`, every `directories.{workflows,assets,outputs}` under
+  `regression-smoke-298/`.
+- `use_workspace(name="regression-smoke-298")` while already there → **no** `warning`
+  key.
+- `create_workspace(name="regression-smoke-298b")` (no `use`) → **no** `warning`,
+  `current` still `regression-smoke-298`, `next` says the session did not move.
+- `use_workspace(name="default")` → `warning` naming `'regression-smoke-298'` →
+  `'default'`. Then `use_workspace(name="regression-smoke")` from default → **no**
+  `warning` (leaving the default pin is not a leak worth warning about).
+It is a **finding** if the non-default → anything switch has no `warning`, if the warning
+names the wrong pair, if `get_server_info` disagrees with `create_workspace(use=true)`'s
+own `current`, or if any of the three quiet arms warns. A cross-client interleave cannot
+be exercised from one session; it is out of scope here.
+cleanup: `delete_workspace("regression-smoke-298", acknowledged_cost=true)` and
+`delete_workspace("regression-smoke-298b", acknowledged_cost=true)`; confirm
+`list_workspaces().current == "regression-smoke"` before the next case.
+metrics: none.
+source: tester, verified in #298 on 2026-09-22 over MCP as model `opus` via provider
+`anthropic` against `develop @ 7e1a1a5` (with `qa-verify-*` workspace names in place of
+the `regression-smoke-*` ones above).
+
+### S-F107 — `get_output_frames` `crop` is in source pixels, cut per frame before any downscale or sheet layout
+#303: `get_output_frames` gained `get_output_image`'s `crop` (`[x, y, width, height]`), and
+the first landing cut it from tiles *already shrunk* to `max_dimension` — so one box named a
+different region at every size — and, in `count` mode, from the assembled contact sheet, so
+an in-bounds source box was refused as "outside the 256x48 image". The contract is the image
+tool's: the box is in the decoded frame's own pixels, cut per frame before anything else.
+Free — no job, four calls on the fixture `asset:qa-cast/ep25-episode.mp4` (960x544 source).
+Pass `workspace="regression-smoke"` on each.
+1. `get_output_frames(name="asset:qa-cast/ep25-episode.mp4", at=[0.0], crop=[100,50,120,90],
+   max_dimension=1024)`.
+2. The same call with `max_dimension=256`.
+3. `get_output_frames(name="asset:qa-cast/ep25-episode.mp4", count=3, crop=[100,50,120,90],
+   max_dimension=256)`.
+4. `get_output_frames(name="asset:qa-cast/ep25-episode.mp4", at=[0.0], crop=[5000,5000,10,10])`.
+expected:
+- Steps 1 and 2: one `[120x90]` tile each, text block reporting `crop: [100, 50, 120, 90]`,
+  and the two images show the **same** region (upper-left of frame 0: red brick wall with
+  the top-left corner of a picture frame in the lower right of the tile) — `max_dimension`
+  must not move the box.
+- Step 3: accepted (no error), a `[256x64]` contact sheet of three per-frame `120x90` crops
+  with `frames: 0 (0.00s), 180 (7.50s), 359 (14.96s)` and the same `crop:` line; the first
+  tile is the same brick/frame-corner region as steps 1–2.
+- Step 4: an error naming the **source** frame — `crop origin (5000, 5000) lies outside
+  the 960x544 frame.` — not a tile or sheet size.
+It is a **finding** if steps 1 and 2 show different regions, if step 3 is refused (a crop
+checked against the sheet) or its tiles are not per-frame crops, if the `crop:` telemetry
+line is missing, or if step 4's error quotes anything other than the source dimensions.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #303 on 2026-09-22 over MCP as model `opus` via provider
+`anthropic` against `develop @ 7e1a1a5` (dw 0.4.0-beta.6 on `lem`).
+
+### S-F108 — a blended small-n estimate says so: `tempered: true` with both source figures, and nothing else carries the marker
+#319: S-F100 checks the *number* the #301 blend produces; this checks that the blend is
+*labelled*. Before the fix a 1-run estimate blended toward the curated figure came back as
+`basis: "observed", minutes: 31.9` while `list_workflows` reported `observed_minutes: 25.75`
+for the same workflow — two tools disagreeing on "observed" with nothing in the estimate to
+reconcile them. The additive shape: when the blend fires, `plan.estimate` carries
+`tempered: true`, `observed_minutes` (the raw point figure, the same number the listing
+reports) and `curated_minutes` (what it blended toward) beside `runs`; `basis` and `minutes`
+are unchanged. Free — a listing and three `validate_workflow` calls, nothing written. Pick the
+entries by `observed_runs` from the listing as S-F100 does, one per row, since counts drift.
+1. `list_workflows(shape="sequence")` (and `shape="shot"` / `shape="image"` if the sequence
+   list has no fit for a row) — note `cost`, `observed_minutes`, `observed_runs`.
+2. `validate_workflow(name=<entry with observed_runs 1 or 2 AND a non-null cost>)`.
+3. `validate_workflow(name=<entry with observed_runs >= 3>)`.
+4. `validate_workflow(name=<entry with observed_runs 1 or 2 AND cost: null>)`.
+expected:
+- Step 2 (blend): `basis: "observed"`, `tempered: true`, `observed_minutes` equal to the
+  listing's `observed_minutes` (to one decimal), `curated_minutes` equal to the listing's
+  `cost[].minutes` for this device, `runs` as listed, no `low_confidence`, and `minutes`
+  still the blend S-F100 describes. Missing `tempered`, or a `tempered` that comes without
+  both source figures, is the regression.
+- Step 3 (threshold): `basis: "observed"`, `runs` as listed, and **none** of `tempered`,
+  `observed_minutes`, `curated_minutes`, `low_confidence`.
+- Step 4 (no curated figure): `low_confidence: true` and **none** of `tempered`,
+  `observed_minutes`, `curated_minutes` — the flag path and the blend path are exclusive.
+If no entry fits a row, skip it and say so — do not manufacture one; it is not a finding.
+cleanup: none.
+metrics: none.
+source: tester, verified in #319 on 2026-09-22 over MCP as model `opus` via provider
+`anthropic` against `develop @ 7e1a1a5` (implementer proposed the case in its hand-off
+comment; `templates/minimax/music-video` 1 run / curated 35 → `tempered: true,
+observed_minutes: 25.8, curated_minutes: 35.0, minutes: 31.9`; `templates/minimax/dialogue-short`
+5 runs → no marker fields; `templates/step-caching` 2 runs, no cost → `low_confidence: true`,
+no marker fields).
+
 ## Performance
 
 ### S-P001 — default image generation latency

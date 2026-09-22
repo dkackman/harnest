@@ -893,4 +893,74 @@ source: tester, verified in #266, model `opus` via provider `anthropic`, on 2026
 345-frame run in its hand-off; the memory-event bullets are the tester's, added only after reading
 them over MCP. Related: #265 (M-F022, the validate-time ceiling).
 
+### M-F024 — LTX-2.5 text-to-video refuses an over-ceiling (width, height, num_frames) on `run_workflow` too, before anything loads
+The `vram_estimate` ceiling M-F022 pins at validate time is also enforced at run time, beside
+`apply_constraints` in the workflow's prepare step — so a caller that skips `validate_workflow`
+(or folds its arguments differently) is refused on submission, not 5 minutes later in the VAE.
+Before the second half of #265 landed, `run_workflow` with the same arguments `validate_workflow`
+refused returned `status: running` and began loading the transformer. This case pins that the run
+path and the validate path refuse the same thing with the same message, and that the refusal
+happens before a run directory or a load phase exists. Model/pipeline: LTX-2.5 via
+`templates/ltx2/text-to-video`, RTX 3090's 24 GB `cost` entry. Effectively free — the two refused
+submissions fail in under 3 s with no model load; the one accepted submission is cancelled during
+its load phase (~90 s wall, a cooperative cancel waits for the load to reach a boundary).
+expected:
+- `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 353}, acknowledged_cost=true, wait_seconds=20)`
+  → **`status: failed`** within the wait, **`run_id: null`**, an empty `manifest`, and `job.error`
+  beginning `Workflow execution error:` followed by the *same* ceiling message `validate_workflow`
+  reports for these arguments (the product `960*544*353`, `projects to … GB VRAM`, `above the
+  24 GB declared for RTX 3090`, `#265`). `progress.phase` must be null — no `loading` ever began.
+  353 is the first grid point past the confirmed-safe 345, so it sits just over the ceiling at the
+  2026-09-21 calibration; if a recalibration admits it, move to the next refused grid point rather
+  than calling this a finding.
+- `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 121, "width": 1920, "height": 1088}, acknowledged_cost=true, wait_seconds=15)`
+  → **`status: failed`**, `run_id: null`, the `1920*1088*121` ceiling message — the run-time gate
+  reads width and height, not only frames, same as the validate-time one.
+- `run_workflow(workflow_path="templates/ltx2/text-to-video", arguments={"num_frames": 345}, acknowledged_cost=true, wait_seconds=6)`
+  → **`status: running`**, a non-null `run_id`, `progress.phase: "loading"` — the confirmed-safe
+  point is *not* over-refused by the run-time gate. Then `cancel_job(job_id)` and `wait_for_job`
+  until `status: cancelled`; the job isn't meant to finish (M-F023 is the case that runs it out).
+It is a **finding** if 353 or 1920x1088 comes back `running`/`queued` (or reaches a `loading`
+phase, or gets a `run_id`) before failing, if the run-time error text differs from the
+validate-time text for the same arguments, if it degrades to a `warnings` entry on a running job,
+or if 345 is refused on submission.
+cleanup: `delete_output(job_id=<the 345-frame job's id>)` — the cancelled run leaves a run
+directory; the two refused jobs have none (`run_id: null`), nothing to delete for them.
+source: tester, verified in #265 (the run-path half; the H3 half split to #324), model `opus` via
+provider `anthropic`, on 2026-09-21 against `lem` `develop @ 7e1a1a5`: job `1ba74592fb81` (353)
+failed in 2.9 s and `872838db5cb7` (1920x1088x121) in 0.3 s, both `run_id: null` with the
+validate-time message verbatim; `c84504466b5c` (345) entered `loading` and was cancelled.
+Related: M-F022 (the same ceiling at validate time), M-F023 (345 frames running to completion).
+
+### M-F025 — the unquantized FLUX templates offload, so they load on the 24 GB card they ship for
+`templates/prompt-weighting` (FLUX.1-schnell, bf16) and `templates/step-caching` (FLUX.1-dev, bf16)
+are the two catalog templates that load a full-precision FLUX pipeline without quantizing it. Before
+#318 neither carried an `offload` key, so `place_component` moved the whole pipeline onto the GPU in
+one piece and OOM'd ~26 s in, still in `phase: loading`, on lem's RTX 3090 (23.56 GiB) — a stock
+template that could never run on the box it ships with. The fix gave both `offload: model`, the
+pattern the sibling FLUX templates (`lora`, `lora-styles`, `ip-adapter`, `image-variation`,
+`image-to-image`) already use. This case pins that both templates get through `loading` and produce
+an image; a template edit that drops the offload (or a `place_component` change that ignores it)
+comes back as the OOM. Model/pipeline: `black-forest-labs/FLUX.1-schnell` and
+`black-forest-labs/FLUX.1-dev` via `FluxPipeline`, RTX 3090 (24 GB). **Paid** — ~80 s of GPU each,
+cold; run with the card otherwise idle so a leftover from an earlier case can't be mistaken for
+the regression.
+expected:
+- `run_workflow(workflow_path="templates/prompt-weighting", arguments={"prompt": "a (red:1.4) apple on a wooden table"}, acknowledged_cost=true, wait_seconds=55)`
+  then `wait_for_job` until done → `status: succeeded`, no `error`, no `warnings`, one
+  `final/*.jpg` in the manifest. The `still_running` reply at 55 s should already show
+  `phase: generating` with `denoise_step` moving — `loading` is where the bug lived.
+- `run_workflow(workflow_path="templates/step-caching", acknowledged_cost=true, wait_seconds=55)`
+  with its defaults, then `wait_for_job` until done → `status: succeeded`, no `error`, no
+  `warnings`, one `final/*.jpg`.
+It is a **finding** if either job fails with `CUDA out of memory` (in any phase, but `loading`
+is the original), if either fails to leave `phase: loading` within ~55 s while the card is
+otherwise idle, or if either finishes with a non-empty `warnings` about device placement.
+cleanup: `delete_output(job_id=<each run's job id>)` — both run directories go whole; keep one
+only if it failed and an issue needs the traceback.
+source: tester, verified in #318, model `opus` via provider `anthropic`, on 2026-09-21 against
+`lem` `develop @ 7e1a1a5`: job `0f82bac02a68` (prompt-weighting) succeeded in ~78 s and
+`0e4e39a8a70d` (step-caching) in ~75 s, both cold, no OOM. The implementer proposed the case in
+its hand-off; both runs were confirmed over MCP before it was added.
+
 ## Performance
