@@ -949,22 +949,22 @@ expected: one job with three task steps — `raw_mux` = `pair_audio(video:
 false`; `balanced_mux` = the same `pair_audio` reading
 `"previous_result:balanced"` — all three `content_type: "video/mp4"` / `fps: 24` except
 `balanced`, which is `audio/mp3` —
-- **The raw branch warns twice on headroom, by design, and both name the file.**
-  `job.warnings` carries exactly two *headroom* entries for `raw_mux` (an
-  `audio_no_headroom` pre-encode warning and an `audio_clipped` post-encode
-  warning), both naming that step's mp4: the pre-encode one at a peak at or above
-  **-0.5 dBFS**, advising `normalize_audio(peak_dbfs: -1)`; the post-encode one on
-  the written file, advising `normalize_audio(peak_dbfs: -3)`. The two giving
-  different advice is expected (#174/#161) — the pre-encode figure predates the
-  post-encode probe's more conservative one — not a defect to flag. Either warning
-  going silent is the regression to watch for: the pre-encode one silent means the
-  waveform-level check stopped firing; the post-encode one silent means the
-  written-file probe stopped firing, and a video mux's overshoot is not reliably
-  positive enough to skip that check the way a plain audio save can (#174). With
-  the fixtures as given (`ep15-song.mp3` at 30.02 s, `ep13-episode.mp4` at 11.75 s),
-  both branches also carry a `pair_audio: 'fit' trimmed …` warning — #246's intended
-  trim notice (pinned as expected by S-F072's trim arm), not a finding, and not
-  counted among the headroom warnings above.
+- **The raw branch warns on headroom, and the warning names the file.** `job.warnings`
+  carries exactly **one** *headroom* entry for `raw_mux`, naming that step's mp4: the
+  post-encode `audio_clipped` warning on the written file (decodes above full scale,
+  advising `normalize_audio(peak_dbfs: -3)`). No pre-encode `audio_no_headroom` entry
+  for `raw_mux` — on a video mux the pre-encode check is deliberately deferred to the
+  post-encode probe (#174 amendment, bbe4adb,
+  `docs/proposals/h3-video-mux-headroom-warning-partial.md`), so a clean mux is never
+  warned about a defect the encode didn't introduce. **Two** headroom entries for
+  `raw_mux` is the regression to watch for in one direction (the deferral stopped
+  working — the pre-2026-09-20 shape #194/#305 recorded); **zero** is the regression
+  in the other (the written-file probe stopped firing, and a video mux's overshoot is
+  exactly what that probe exists to catch). With the fixtures as given
+  (`ep15-song.mp3` at 30.02 s, `ep13-episode.mp4` at 11.75 s), both branches also
+  carry a `pair_audio: 'fit' trimmed …` warning — #246's intended trim notice (pinned
+  as expected by S-F072's trim arm), not a finding, and not counted among the
+  headroom warnings above.
 - **The normalized branch does not warn on headroom.** No `job.warnings` entry names
   `balanced_mux` with an `audio_no_headroom` or `audio_clipped` warning. A headroom
   warning on both branches means the check is measuring something other than the
@@ -993,7 +993,8 @@ against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`, job `089b1e2945d2` (7.7
 `raw_mux` warned at +0.8 dBFS and decoded `peak_dbfs: 0.776`, `balanced_mux` did not
 warn and decoded `peak_dbfs: -0.626`, both 282 f / 24 fps / 960x544 / 11.75 s. The same
 job is what finally settled M-F011's fourth bullet (the warning naming a muxed mp4, not
-only a saved audio file) with a real MCP call rather than a description.
+only a saved audio file) with a real MCP call rather than a description. Warning-count
+bullet amended per #305's wontfix (bbe4adb) on 2026-09-22.
 
 ### S-F032 — a declared bound reaches a value inside a list entry, at the same three places
 S-F028 pins a bound on a **top-level** variable. This is its list-entry twin, and it
