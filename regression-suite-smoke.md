@@ -929,13 +929,20 @@ expected:
   history for is the regression.
 - **`runs` is present and honest.** It is `null` on every other basis and an integer
   on `observed`. `runs: 1` is a measurement of one run and has to be reported as one,
-  not smoothed into a median — `templates/minimax/enhance-prompt` answers exactly
+  not smoothed into a median — `templates/describe-and-regenerate` answers exactly
   that (5.7 minutes over 1 run, `low_confidence: true`, no curated `cost` block to
   blend toward). A basis of `observed` with `runs` absent or null is a finding: it is
   the field that tells a caller how much the figure is worth. A 1-2 run workflow that
   *does* carry a curated `cost` is tempered toward it rather than reported at full
   authority — that blend, not this bullet, is what `templates/minimax/music-video`
-  now demonstrates; see S-F100.
+  now demonstrates; see S-F100. Pick this bullet's example fresh each time rather than
+  trusting the name written here: whether a workflow has a curated `cost` and how many
+  runs it has behind it both drift as the catalog and this box's history change (#327
+  caught `enhance-prompt`, this bullet's example before it, having grown a curated cost
+  after the case was written and landing on `tempered` instead) — re-run
+  `list_workflows(shape=<any>)` looking for `cost: null` with `observed_runs` 1 or 2,
+  confirm with `validate_workflow` that `low_confidence` actually appears and neither
+  `tempered` nor `curated_minutes` does, and swap the name in if it no longer holds.
 - **Off the recorded bucket, it falls back rather than lying.**
   `validate_workflow(name="templates/minimax/storyboard", arguments={"num_frames":
   345})` → `basis: "unknown"`, `minutes: null`, `measured_on: null` and **`runs:
@@ -958,7 +965,16 @@ fall-back target was reworded from `catalog` to `unknown` in #304 (2026-09-21) a
 example swapped from `music-video` to `enhance-prompt` per #320 (2026-09-22): #301's
 small-n blend (S-F100) pulls a 1-run estimate toward a curated `cost` figure when one
 exists, so `music-video`'s own 1-run answer is now 31.9 (blended), not the 25.8 raw
-observed minutes this bullet quoted.
+observed minutes this bullet quoted. Swapped again to `templates/describe-and-regenerate`
+per #327 (2026-09-22): `enhance-prompt` had grown its own curated `cost` block (5.67
+min/RTX 3090) by the time #320 landed — or already had one and #320's premise was wrong
+from the start, consumer-side calls can't tell which — so it answered `tempered: true`
+with `curated_minutes`/`observed_minutes` instead of `low_confidence: true`, the same
+blended shape S-F100 exists to demonstrate, not this bullet's. Re-verified live over MCP:
+`describe-and-regenerate` has `cost: null`, `observed_runs: 1`, and
+`validate_workflow(name="templates/describe-and-regenerate")` answers `basis: "observed"`,
+`runs: 1`, `minutes: 5.7`, `low_confidence: true`, with no `tempered`/`curated_minutes`
+field present.
 
 ### S-F031 — normalizing before a mux is what puts headroom in the deliverable, and the warning tracks it
 Every audio deliverable this box makes is muxed or encoded at least once more after the
