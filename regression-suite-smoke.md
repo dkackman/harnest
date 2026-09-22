@@ -582,13 +582,14 @@ expected:
   run id. This form is the only way to reach a run that failed before writing
   media, so it must not decay into "404 unless a media file names it".
 - `delete_output(name="<workflow>/../../<some other workspace>/outputs")` → refused
-  as an unknown file, naming the `..` pattern. Nothing outside this workspace's
-  `outputs/` is reachable, and the refusal is a 404-shaped error, not a partial
-  delete.
-- `delete_output(name="<workflow>/not-a-run-id")` → refused as a path that does not
-  exist. A name that is not a run id must never be treated as "delete this
-  directory tree" — that is the failure mode that would turn a typo into a
-  workspace wipe.
+  as an unknown file whose message ends ` - path contains a disallowed pattern`
+  (it must not echo any resolved server path — the only path in the message is
+  the `name` passed). Nothing outside this workspace's `outputs/` is reachable,
+  and the refusal is a 404-shaped error, not a partial delete.
+- `delete_output(name="<workflow>/not-a-run-id")` → refused as an unknown file
+  whose message ends ` - path does not exist`. A name that is not a run id must
+  never be treated as "delete this directory tree" — that is the failure mode
+  that would turn a typo into a workspace wipe.
 The last two are the reason this is not folded into S-F021: the addressable-run
 form is a recursive delete taking a caller-supplied path, and what makes it safe
 is that it refuses everything that is not exactly a run directory.
@@ -601,7 +602,11 @@ and swept by the two forms; `usage` returned to 4 files / 6,138 bytes exactly).
 Not covered here, because a consumer-only agent could not provoke it: the
 failed-job-with-no-media run the `<workflow>/<run id>` form exists for. Two
 attempts at a fast runtime failure both succeeded instead — which became its own
-issue — so that path is exercised against runs that did write media.
+issue — so that path is exercised against runs that did write media. Bullets 3-4
+reworded per #322 to the exact refusal strings #310's fix settled on (`cc0c710`,
+2026-09-22): the containment and not-a-run-id refusals no longer echo the `..`
+pattern or a resolved path, so the wording pins the two message suffixes
+observed over MCP instead.
 
 ### S-F024 — an out-of-domain number in an audio task argument is refused, not interpreted
 A negative frame count and a zero sample rate used to be *accepted*: `slice_audio`
