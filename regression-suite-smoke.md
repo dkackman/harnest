@@ -908,9 +908,13 @@ expected:
   history for is the regression.
 - **`runs` is present and honest.** It is `null` on every other basis and an integer
   on `observed`. `runs: 1` is a measurement of one run and has to be reported as one,
-  not smoothed into a median — `templates/minimax/music-video` answers exactly that
-  (25.8 minutes over 1 run). A basis of `observed` with `runs` absent or null is a
-  finding: it is the field that tells a caller how much the figure is worth.
+  not smoothed into a median — `templates/minimax/enhance-prompt` answers exactly
+  that (5.7 minutes over 1 run, `low_confidence: true`, no curated `cost` block to
+  blend toward). A basis of `observed` with `runs` absent or null is a finding: it is
+  the field that tells a caller how much the figure is worth. A 1-2 run workflow that
+  *does* carry a curated `cost` is tempered toward it rather than reported at full
+  authority — that blend, not this bullet, is what `templates/minimax/music-video`
+  now demonstrates; see S-F100.
 - **Off the recorded bucket, it falls back rather than lying.**
   `validate_workflow(name="templates/minimax/storyboard", arguments={"num_frames":
   345})` → `basis: "unknown"`, `minutes: null`, `measured_on: null` and **`runs:
@@ -929,7 +933,11 @@ first bullet; the `runs`-is-honest bullet and the fall-back-off-the-bucket bulle
 mine, the third added because quoting a measured-looking figure for an unmeasured
 shape is the failure that would survive the implementer's own case. Bullet 3's
 fall-back target was reworded from `catalog` to `unknown` in #304 (2026-09-21) after
-#267 removed the catalog hop; S-F078 is the case that pins that behaviour.
+#267 removed the catalog hop; S-F078 is the case that pins that behaviour. Bullet 2's
+example swapped from `music-video` to `enhance-prompt` per #320 (2026-09-22): #301's
+small-n blend (S-F100) pulls a 1-run estimate toward a curated `cost` figure when one
+exists, so `music-video`'s own 1-run answer is now 31.9 (blended), not the 25.8 raw
+observed minutes this bullet quoted.
 
 ### S-F031 — normalizing before a mux is what puts headroom in the deliverable, and the warning tracks it
 Every audio deliverable this box makes is muxed or encoded at least once more after the
