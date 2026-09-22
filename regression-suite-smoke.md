@@ -2605,7 +2605,7 @@ source: tester, found while running TESTER_TASK.agent.md (ep34, `qa-ep34`, job
 asset peak of −28.886, `two-slots` identical to `solo-unity` to the third decimal;
 every output 9.333 s / 32 kHz.
 
-### S-F094 — a negative `mix_audio` gain is refused by the free pre-flight, and a gain above 1 is warned about as a not-dB value
+### S-F094 — a negative `mix_audio` gain is refused by the free pre-flight, and a dB-shaped gain (3 or above) is warned about as a not-dB value
 `mix_audio.gains` is the engine's one level control that is a plain multiplier rather than
 dB, so `-12` typed by habit is a phase-inverted 12x boost — it used to validate, run and
 succeed with nothing in `warnings` or the events (#292). The domain check is the same
@@ -2643,7 +2643,11 @@ step 3 runs without the `mix_audio_gain_not_db` warning or the applied-gains `lo
 cleanup: `delete_output` the run folder from step 3.
 metrics: none.
 source: tester, verified in #292 on 2026-09-21 over MCP as model `opus` via provider
-`anthropic` (job `b3491e7c8b92` in `qa-ep34`; 3.7 s end to end).
+`anthropic` (job `b3491e7c8b92` in `qa-ep34`; 3.7 s end to end). Title reworded per #321
+on 2026-09-22: #306 raised `mix_audio_gain_not_db`'s threshold from `> 1.0` to `>= 3.0`
+(`GAIN_LOOKS_LIKE_DB_ABOVE`, commit `05cfbfd`), so a gain of 1.8 no longer warns; this
+case's own gain of 12 is unaffected. The threshold's other side (1.8 silent, 12 warns) is
+pinned by S-F102.
 
 ### S-F095 — `gain_audio` ducks exactly the second-based region it was given, by exactly the dB it was given, and nothing outside it
 `gain_audio` is the one region-scoped level tool (a duck under a line, a boost on a sting),
