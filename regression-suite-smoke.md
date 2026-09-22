@@ -654,14 +654,24 @@ expected:
   does **not** re-run the static pass, so a bad value reaches the command: run a
   one-step `resample_audio` over a **real** audio track (any track the run has
   to hand — a `generate_speech` wav kept from S-F007, or any asset in the shared
-  library) with `target_sample_rate: "variable:rate"` and
-  `arguments={"rate": 0}`. The job must **fail** — `status: "failed"`,
-  `manifest: []`, `error` naming `target_sample_rate` — and must not succeed.
-  This is the layer that produced #140's wrong deliverable, since the rate there
-  came from a `variable:` inside a chain. (`validate_workflow` on that same body
-  with the same `arguments` also refuses, because the static pass substitutes
-  caller arguments; both refusing is the expected result, and a refusal at
-  either layer alone is a partial fix worth a finding.)
+  library) whose step declares `target_sample_rate: "variable:rate"`, with the
+  workflow's own `variables` block giving `rate` some ordinary default (32000,
+  say — anything positive) and the bad value arriving **only** as the *caller's*
+  override: `run_workflow(..., arguments={"rate": 0})`. That last part is load-
+  bearing (#328) — a 0 baked into the workflow's own declared default for `rate`
+  is not this case: `set_variables` substitutes a declared default into the
+  definition before the static domain pass runs, so it is already sitting in
+  the resolved JSON body by the time the check fires and gets refused
+  pre-flight, at `run_workflow` too, same as part 1. Only a value that arrives
+  purely from the caller's `arguments` at run time — never touching the
+  workflow's own declared default — reaches the command unchecked. The job must
+  **fail** — `status: "failed"`, `manifest: []`, `error` naming
+  `target_sample_rate` — and must not succeed. This is the layer that produced
+  #140's wrong deliverable, since the rate there came from a `variable:` inside
+  a chain. (`validate_workflow` given the same `name`/`workflow` and the same
+  `arguments` also refuses, because it substitutes caller arguments the same
+  way; both refusing is the expected result, and a refusal at either layer
+  alone is a partial fix worth a finding.)
 - **5. A legal zero is still legal.** `get_task("crossfade_audio")` reports
   `crossfade_ms` as `"domain": "non_negative"` (default `75`), and a
   `crossfade_audio` step with `crossfade_ms: 0` validates. A hard cut is an
@@ -677,7 +687,16 @@ on 2026-09-14 against dw 0.4.0-beta.3 on `lem`. Parts 1, 2 and 5 run in
 a 14.5 s 32 kHz mono wav (job `0d6ea648c1c7`, failed in 0.59 s, empty manifest),
 and its happy-path companion — `target_sample_rate: 16000` on that same track —
 gave `duration_seconds: 14.5` unchanged at `sample_rate: 16000` with levels
-moved ~0.007 dB, i.e. a real filter ran rather than a relabel.
+moved ~0.007 dB, i.e. a real filter ran rather than a relabel. Part 4 re-verified
+over MCP on 2026-09-22 (job `01bd05280c7e`, `qa-cast/ep11-bed.wav`, `variables:
+{rate: 16000}` overridden by `arguments: {rate: 0}` at `run_workflow` — queued,
+failed in 1.4 s, `manifest: []`, error naming `target_sample_rate`) per #328:
+the regression agent's reconstruction had instead baked `0` into the workflow's
+own declared `variables` default with no caller override, which a same-session
+check confirmed *is* refused pre-flight (unlike the documented fixture) — not a
+regression, a reconstruction that used a different shape than this case
+specifies. Wording tightened above so the caller-override requirement is
+unmissable.
 
 ### S-F025 — an `asset:` reference nested inside a list entry is resolved at validate
 `validate_workflow`'s argument pass must reach references that sit *inside* a
@@ -1127,10 +1146,12 @@ expected:
   `run_id`, then `delete_output(name="<workflow id>/<run id>")` → `deleted: true` and
   `run_swept` equal to that run id.
 - **From a failed task run.** Take S-F024 part 4's `resample_audio` job
-  (`target_sample_rate` arriving as 0 through a `variable:`; fails in ~1.3 s,
-  `manifest: []`) and delete it the same way → `deleted: true`, `run_swept` the run id.
-  Two different failure layers, because a form wired only into the pipeline path would
-  pass the first bullet alone.
+  (`target_sample_rate` arriving as 0 through a **caller's `arguments` override**
+  on a `variable:` reference — not baked into the workflow's own declared
+  default, which is refused pre-flight instead, see part 4's note per #328;
+  fails in ~1.3 s, `manifest: []`) and delete it the same way → `deleted: true`,
+  `run_swept` the run id. Two different failure layers, because a form wired
+  only into the pipeline path would pass the first bullet alone.
 - **The delete is the assertion.** Either call answering "not found", or answering
   `deleted: true` with `run_swept: null`, is the finding — the second more quietly, since
   it says the directory was left behind.
