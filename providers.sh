@@ -19,8 +19,16 @@
 #   fallback_model_flags <provider> <model>     prints "--fallback-model X"
 #   co_author_for <provider> <model>            sets CO_AUTHOR, CO_AUTHOR_EMAIL
 #   runtime_note <role> <provider> <model>      prints the "Runtime:" paragraph
+#   resolved_model <log-name> <fallback>        the model id the last session
+#                                               logged actually ran on
+#   refresh_plugin_tree <src> <tree>            detached origin/develop worktree
+#                                               the consumer roles load dw from
+#   acquire_driver_lock <name>                  one lem-touching driver at a time
+#   audit_issue <n> <role>                      [audit] WARNING on a broken
+#                                               owner/close invariant
 #   commit_suite_changes <msg> [name] [email]   commits regression-suite-*.md
-#                                               and regression-perf/
+#                                               and regression-perf/ (warns if
+#                                               the commit removed lines)
 #   park_external_issues                        relabels issues filed by a
 #                                               non-owner login to owner:don +
 #                                               status:needs-approval
@@ -282,13 +290,23 @@ fallback_model_flags() {
 # absolute path is still on the honor system; the role prompts cover that.
 # The implementer needs open-ended shell (git, gh, ssh lem, pytest, uv, ...)
 # and gets --permission-mode auto in run-loop.sh instead.
+#
+# gh is `gh issue` only. `Bash(gh *)` let a consumer read the whole source
+# tree (`gh api repos/.../contents`, `gh search code`, `gh repo clone`) and
+# delete things (`gh api -X DELETE` - the researcher did, on a comment); every
+# logged consumer call was `gh issue ...`. The two dw tools denied outright
+# act on the whole server and no suite case or task needs them; the other
+# destructive ones (delete_workspace, clear_memory, download_model) are
+# exercised by suite cases, so they stay on the prompts' honor system.
 CONSUMER_PERMISSION_FLAGS=(
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__*" "ToolSearch" "Skill" "TodoWrite"
     "Read" "Glob" "Grep" "Edit" "Write"
-    "Bash(gh *)" "Bash(date *)" "Bash(file *)"
+    "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
+  --disallowedTools
+    "mcp__dw__delete_model" "mcp__dw__update_diffusers"
 )
 
 # Permission flags for the researcher: read-only against the source
@@ -306,7 +324,7 @@ RESEARCHER_PERMISSION_FLAGS=(
     "mcp__dw__get_schema" "mcp__dw__get_guide" "mcp__dw__get_class"
     "mcp__dw__get_pipeline_signature" "ToolSearch" "WebFetch" "TodoWrite"
     "Read" "Glob" "Grep"
-    "Bash(gh *)" "Bash(date *)" "Bash(file *)"
+    "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
 )
 
@@ -393,12 +411,98 @@ runtime_note() {
     researcher)  examples="a research/proposal comment, a reject reason, a question parked for Don" ;;
     *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|researcher)" >&2; return 1 ;;
   esac
+  # An alias (`opus`) moves when a new model ships, so a comment that says
+  # "opus" can't later be told apart from the next Opus. Claude Code's own
+  # system prompt states the exact model id; the note points the agent at
+  # it. A non-Claude model name is already exact.
+  local id_hint=""
+  is_anthropic_model "$model" \
+    && id_hint=" Use the exact model id your system prompt states (e.g. claude-opus-5), not the alias."
   printf '%s\n' \
     "Runtime: you are the $role agent, running as model '$model' via the '$provider'" \
     "provider. Whenever you record something durable that rests on your own" \
     "judgment — $examples —" \
     "name that model and provider in it, so a later reader can tell which model" \
-    "produced it."
+    "produced it.$id_hint"
+}
+
+# resolved_model <log-name> <fallback>
+# The model id the most recent session logged to $LOGS/<log-name>.jsonl
+# actually ran on (its init event), or <fallback> when there is none - so a
+# commit trailer says claude-opus-5 rather than the alias that was asked for.
+resolved_model() {
+  local id
+  id="$(grep '"subtype":"init"' "$LOGS/$1.jsonl" 2>/dev/null | tail -n 1 | jq -r '.model // empty' 2>/dev/null)"
+  printf '%s\n' "${id:-$2}"
+}
+
+# refresh_plugin_tree <source_dir> <plugin_tree>
+# The dw plugin the consumer roles load (--plugin-dir) comes from a detached
+# worktree of <source_dir> pinned to origin/develop - the same commit lem
+# deploys - never from <source_dir>'s own working tree, which is on whatever
+# branch the last implementer session (or a human) left checked out. That
+# gap is the plugin-side twin of the lem one fixed by "always deploy
+# develop": on 2026-09-22 the tester was loading skills from a feature
+# branch committed eight minutes earlier. The worktree is driver-owned and
+# never edited, so it is reset hard every time. Prints the commit it is on;
+# returns 1 (and leaves any existing tree alone) if the fetch fails.
+refresh_plugin_tree() {
+  local src="$1" tree="$2"
+  git -C "$src" fetch -q origin develop 2>/dev/null || return 1
+  if [ ! -e "$tree/.git" ]; then
+    mkdir -p "$(dirname "$tree")"
+    git -C "$src" worktree add -q --detach "$tree" origin/develop >/dev/null 2>&1 || return 1
+  fi
+  git -C "$tree" checkout -q --detach --force origin/develop 2>/dev/null || return 1
+  git -C "$tree" rev-parse --short HEAD
+}
+
+# acquire_driver_lock <name>
+# One driver at a time against lem. run-loop's implementer restarts the
+# server mid-cycle (deploy.sh), and a regression run measures timings and
+# expects the server to stay up; each driver also keeps per-session state
+# under $LOGS. mkdir is atomic, and macOS ships no flock(1). Waits for a
+# holder whose pid is alive; takes over a lock whose holder is gone. The
+# lock is released on exit by the trap this sets.
+acquire_driver_lock() {
+  local lock="$LOGS/.driver.lock" holder waited=0
+  while ! mkdir "$lock" 2>/dev/null; do
+    holder="$(cat "$lock/owner" 2>/dev/null || true)"
+    if [ -n "$holder" ] && ! kill -0 "${holder%% *}" 2>/dev/null; then
+      echo "[lock] taking over a stale lock from '$holder'" | tee -a "$LOGS/loop.log"
+      rm -rf "$lock"
+      continue
+    fi
+    [ "$waited" -eq 0 ] && echo "[lock] $1 waiting for '$holder' to finish" | tee -a "$LOGS/loop.log"
+    waited=1
+    sleep 30
+  done
+  echo "$$ $1" > "$lock/owner"
+  # shellcheck disable=SC2064  # expand $lock now
+  trap "rm -rf '$lock'" EXIT
+}
+
+# audit_issue <n> <role>
+# Invariants the role prompts state but nothing else checks, read straight
+# off the issue after a session touched it. A violation is logged loudly
+# ([audit] WARNING in loop.log), not repaired - the fix is a human call, and
+# the log is what shows a model drifting from its prompt (a model swap is
+# exactly when it would). Checks: an open issue carries exactly one owner:*
+# label; only the tester closes an issue as completed.
+audit_issue() {
+  local n="$1" role="$2" facts state reason owners
+  # "|"-separated, not @tsv: stateReason is empty on an open issue, and read
+  # collapses consecutive tabs (whitespace IFS), shifting owners into reason.
+  facts="$(gh issue view "$n" --repo "$TICKET_REPO" --json state,stateReason,labels \
+    --jq '[.state, (.stateReason // ""), ([.labels[].name | select(startswith("owner:"))] | join(","))] | join("|")' 2>/dev/null)" || return 0
+  IFS='|' read -r state reason owners <<<"$facts"
+  if [ "$state" = OPEN ] && { [ -z "$owners" ] || [ "$owners" != "${owners%%,*}" ]; }; then
+    echo "[audit] WARNING: #$n is open with owner labels '${owners:-none}' after a session as $role; exactly one is the invariant" | tee -a "$LOGS/loop.log"
+  fi
+  if [ "$state" = CLOSED ] && [ "$reason" = COMPLETED ] && [ "$role" != tester ]; then
+    echo "[audit] WARNING: #$n was closed as completed after a session as $role; only the tester may, from a real MCP call" | tee -a "$LOGS/loop.log"
+  fi
+  return 0
 }
 
 # commit_suite_changes <msg> [co_author] [co_author_email]
@@ -425,8 +529,15 @@ commit_suite_changes() {
   ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
       && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
   git -C "$REPO" add -- "${paths[@]}"
+  # Suites only grow and regression-perf/ is append-only, except for an edit
+  # a human approved (a tester HANDOFF session applying one). Removed lines
+  # are therefore worth a look, not a refusal: the commit goes ahead so the
+  # tree stays clean, and the warning names it for review.
+  local shrunk
+  shrunk="$(git -C "$REPO" diff --cached --numstat -- "${paths[@]}" | awk '$2 > 0 { printf "%s(-%s) ", $3, $2 }')"
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOGS/loop.log"
+  [ -z "$shrunk" ] || echo "[audit] WARNING: $(git -C "$REPO" rev-parse --short HEAD) removed lines from ${shrunk}- cases and readings are add-only unless a human approved the change; review it" | tee -a "$LOGS/loop.log"
 }
 
 # STREAM_FLAGS / render_stream <name>
@@ -443,6 +554,8 @@ commit_suite_changes() {
 #   > tool_name {"arg":..}      each tool call, input truncated
 #   < 38211 chars               each tool result's size (ERROR when is_error),
 #                               which is how an oversized MCP result shows up
+#   model: claude-opus-5        once, from the init event: the id an alias
+#                               like `opus` resolved to for this session
 #   rate-limit: ...             only when the session is throttled / in overage;
 #                               carries resets=<iso> for a reader and
 #                               resets_epoch=<secs> for sleep_if_rate_limited
@@ -470,6 +583,7 @@ _STREAM_RENDER_JQ='
       else . end;
     .j as $j
     | if $j.type == "raw" then $j.line
+      elif $j.type == "system" and $j.subtype == "init" then "model: \($j.model)"
       elif $j.type == "assistant" then
         (if .newmsg then "· ctx=\($j.message.usage | ctx | k) out=\($j.message.usage.output_tokens // 0)" else empty end),
         ($j.message.content[]

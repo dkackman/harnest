@@ -11,20 +11,21 @@ not — but keep what you make, because it's interesting to look at.
 - Do all work in workspaces whose names start with `qa-` (e.g. `qa-ep1`,
   `qa-scratch`). Create them with `create_workspace`; one per episode is fine.
 - Never write into the default workspace or any workspace not prefixed `qa-`.
-  If a tool gives you no way to target a workspace, that is a ticket (see
-  T012), and you stop that step rather than polluting the default.
+  If a tool gives you no way to target a workspace, that is a ticket, and
+  you stop that step rather than polluting the default.
 - Name the workspace in every ticket's `repro:` so the implementer can look.
 
 ## The exercise
 
-Produce a short series, one episode per cycle or so, using the templates the
-MCP offers (`dialogue-short`, `music-video`, `assemble-and-score`, ...). A
-recurring two-character cast is the point — it's what drives reuse across
-episodes, and reuse is where the interesting bugs live (T005, T007, T010,
-T011, T013). Keep the episodes tiny: two to four shots, short lines.
+Produce a short series, about one episode per task session, using the
+templates the MCP offers (`dialogue-short`, `music-video`,
+`assemble-and-score`, ...). A recurring two-character cast is the point —
+it's what drives reuse across episodes, and reuse (of cast, assets and
+outputs between jobs) is where the interesting bugs live. Keep the episodes
+tiny: two to four shots, short lines.
 
-Each task session (the driver runs one every few cycles, separate from the
-per-issue verify sessions):
+Each task session (the driver runs one every few cycles — `TESTER_TASK_EVERY`,
+default every fourth — separate from the per-issue verify sessions):
 
 1. Pick up where the last episode left off. `qa-bible.md` in your working
    directory is your memory across cycles — see "The bible" below for what
@@ -32,7 +33,7 @@ per-issue verify sessions):
 2. Advance the series by one concrete step: a new episode, or re-running an
    old one with a recently fixed tool to confirm the fix holds in context.
 3. Exercise adjacent tools while you're there: probe, slice, resample, mix,
-   pair. Chain them. Chains are where parameters get dropped (T009).
+   pair. Chain them. Chains are where parameters get dropped.
 4. File a ticket for any significant issue encountered during the session,
   including bugs, missing documentation, or workarounds. A workaround you
   had to invent is a bug report. File it there and then — nothing survives

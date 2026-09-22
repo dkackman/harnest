@@ -187,7 +187,9 @@ Environment:
 
 | var | default | what |
 |---|---|---|
-| `SOURCE_DIR` | `~/src/dkackman/diffusers-workflow` | implementer's cwd; also where the `dw` plugin is loaded from |
+| `SOURCE_DIR` | `~/src/dkackman/dw-agent` | the agents' own clone of the dw repo, with its own `venv` (`install.sh`): implementer's and researcher's cwd. Not your working checkout |
+| `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` | detached worktree of `SOURCE_DIR` at `origin/develop`, reset by the drivers; where the tester and regression agent load the `dw` plugin from |
+| `DEPLOY_ON_MISMATCH` | `1` | if lem isn't on `origin/develop` before the tester pass, the driver redeploys `develop`; `0` = warn only |
 | `TICKET_REPO` | `dkackman/diffusers-workflow` | the repo whose Issues are the ticket system |
 | `PROVIDER` | `anthropic` | where the models live: `anthropic`, `ollama`, `gateway` |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `opus` | per-role models |
@@ -196,6 +198,7 @@ Environment:
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | `$TESTER_MODEL` / `$TESTER_PROVIDER` | the implementer's triage session; strong by default because a wrong `wontfix` never bounces back |
 | `RESEARCH_MODEL` / `RESEARCH_PROVIDER` | `sonnet` / `$PROVIDER` | same, for `run-research.sh` |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
+| `REGRESSION_BUDGET_USD` / `RESEARCH_BUDGET_USD` | `6` / `3` | same, per regression chunk session / per research session |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
 | `TESTER_TASK_EVERY` | `4` | run the tester's standing-task session every Nth cycle (the most expensive session in a cycle; closure responses still run every cycle) |
 | `IMPLEMENTER_ESCALATE_AFTER` | `2` | bounces before an issue's implementer session runs on the tester's model; `0` = never |
@@ -204,13 +207,15 @@ Environment:
 | `CASES_PER_SESSION` | 3 if the declared context window is under 120k, else 8 | `run-regression.sh` only: cases per session, 0 = whole level in one session |
 | `FALLBACK_MODEL` | unset | passed as `--fallback-model` when set; must be a model the role's provider can serve (a Claude name for `anthropic`, a non-Claude tag for `ollama`) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | commit trailer on suite edits (see below) |
-| `DW_URL` | `http://192.168.1.194:8765/mcp` | the MCP endpoint handed to the tester |
+| `DW_URL` | `http://lem:8765/mcp` | the MCP endpoint handed to the tester |
 | `DW_TOKEN` | `xyz` | dev token, LAN only |
 | `SLEEP_SECS` | `120` | pause after an idle cycle |
 | `MAX_CYCLES` | `0` | 0 = run forever |
 
 Preconditions: `claude` and `gh` on `PATH`, `gh` already authenticated,
-passwordless `ssh don@lem`, the source checkout on `develop`, and on `lem`
+passwordless `ssh don@lem`, the agents' clone at `SOURCE_DIR` (`git clone -b
+develop https://github.com/dkackman/diffusers-workflow.git ~/src/dkackman/dw-agent`
+then `bash ./install.sh` in it — the driver's startup error says so too), and on `lem`
 the dw repo's `scripts/deploy.sh` with the server under its `dw-serve`
 systemd user unit (`scripts/dw-serve.service` in that repo; the script
 falls back to a `screen` session if the unit isn't installed).
@@ -218,7 +223,7 @@ falls back to a `screen` session if the unit isn't installed).
 ### Models and providers
 
 Each role has its own model knob and its own default — implementer `sonnet`,
-tester `opus`, regression `opus`, researcher `sonnet`. Which role may run a
+tester `opus`, regression `sonnet`, researcher `sonnet`. Which role may run a
 weak model is a design decision (a weak
 tester rubber-stamps silently; a weak implementer's mistakes show up in
 verification), so it is set per role, never for the loop as a whole.
@@ -309,17 +314,19 @@ Two smaller consequences of mixing models:
 The tester runs from this directory, which has no MCP configuration, so the
 driver hands it the `dw` server explicitly with `--mcp-config` and
 `--strict-mcp-config` (it sees *only* `dw` — no other servers, no noise). It
-also gets `--plugin-dir $SOURCE_DIR/plugins/dw`, which loads the `dw` plugin
-live from the implementer's working tree rather than the frozen copy Claude
+also gets `--plugin-dir $PLUGIN_TREE/plugins/dw`, which loads the `dw` plugin
+from a detached worktree the driver resets to `origin/develop` — the commit
+lem runs — before every tester pass, rather than the frozen copy Claude
 Code keeps in `~/.claude/plugins/cache`. Without that, skill fixes would be
-invisible to the tester until someone reinstalled the plugin.
+invisible to the tester until someone reinstalled the plugin. (It used to
+load from the implementer's working tree, i.e. whatever branch happened to
+be checked out there.)
 
 That gives two deploy paths, and the implementer says which one a fix used:
 
-- **server code** → restart on `lem`; tool schemas refresh on the tester's
-  next connection automatically
-- **plugin / skills** → commit and leave the checkout on that branch; no
-  restart
+- **server code** → merge to `develop`, deploy `develop` on `lem`; tool
+  schemas refresh on the tester's next connection automatically
+- **plugin / skills** → merge to `develop` and push; no restart
 
 ## Permissions
 
@@ -330,10 +337,12 @@ differs sharply by role:
 
 - **Tester and regression agent** run under `--permission-mode dontAsk` plus
   an explicit `--allowedTools` allowlist (`CONSUMER_PERMISSION_FLAGS` in
-  `providers.sh`): `mcp__dw__*`, the dw skills, `gh`, file tools for the
+  `providers.sh`): `mcp__dw__*` (minus `delete_model` and `update_diffusers`,
+  denied outright), the dw skills, `gh issue`, file tools for the
   suite files and `qa-bible.md`, and a handful of read-only shell helpers
-  (`date`, `file`, read-only `git`). No `ssh`, `curl`, `python`, or `git`
-  writes — the drivers commit suite edits themselves. This is what makes the
+  (`date`, `file`, read-only `git`). No `ssh`, `curl`, `python`, `git`
+  writes, or other `gh` subcommands (`gh api`/`gh repo clone` would read the
+  source) — the drivers commit suite edits themselves. This is what makes the
   consumer-only isolation *enforced* rather than honor-system; the remaining
   gap is that `Read`/`Edit`/`Write` aren't scoped by path, which the role
   prompts cover. If a cycle logs a denial in `logs/tester.log` for something

@@ -23,8 +23,9 @@ files described below. There is no build, lint, or test step.
   until the reset the event named instead of relaunching (37 such sessions spun on
   2026-09-21). The driver re-checks an issue's labels right before its session so one already
   handed off by a batch is skipped. Every session runs with `--max-budget-usd`
-  (`IMPLEMENTER_BUDGET_USD`/`TESTER_BUDGET_USD`/`TRIAGE_BUDGET_USD`, defaults 8/5/3, 0 = none)
-  and `--autocompact $AUTOCOMPACT_TOKENS` (default 120k). The reason is measured, not
+  (`IMPLEMENTER_BUDGET_USD`/`TESTER_BUDGET_USD`/`TRIAGE_BUDGET_USD`, defaults 8/5/3, 0 = none;
+  `REGRESSION_BUDGET_USD` 6 per chunk session and `RESEARCH_BUDGET_USD` 3 in the standalone
+  drivers) and `--autocompact $AUTOCOMPACT_TOKENS` (default 120k). The reason is measured, not
   theoretical: one six-issue implementer session ran 269 turns to a 352k-token peak and 60M
   cached-input tokens, $37, because issue six re-read issues one to five on every turn. No
   state survives between sessions except what's written to GitHub Issues (or, per each role
@@ -66,7 +67,9 @@ files described below. There is no build, lint, or test step.
   every role that runs must be named explicitly, since a Claude alias can't be served there
   and `resolve_model_env` rejects it at startup.
 - `agents/IMPLEMENTER.agent.md` — role prompt for the agent with source access and SSH to the
-  `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`).
+  `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`,
+  default `~/src/dkackman/dw-agent`: a clone kept for the agents, with its own `venv` from
+  `install.sh` — not Don's working checkout, which it used to share and switch branches under).
 - `agents/TESTER.agent.md` — role prompt for the agent that talks to the MCP server *only* as a
   protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split
   plus an enforced tool allowlist (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`, see
@@ -164,7 +167,7 @@ files described below. There is no build, lint, or test step.
 ## Running
 
 ```sh
-./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/diffusers-workflow
+./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/dw-agent
 MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh                # three cycles, then stop
 TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults opus / sonnet)
 PROVIDER=ollama IMPLEMENTER_MODEL=qwen2.5:32b TESTER_MODEL=qwen2.5:32b ./run-loop.sh   # non-Anthropic: name every role
@@ -184,17 +187,37 @@ in what was filed (#310–#312, one of them a wrong literal the Opus run had com
 earlier) — so it defaults to `sonnet`. Each agent's prompt now states the model and provider it is running as,
 and each role prompt requires the agent to name them in the comments it writes — a fresh session
 is otherwise unidentifiable afterwards, and a verification is only worth what the model behind it
-was. Suite-edit commits are attributed by trailer, honestly: a non-Anthropic model gets
+was. An alias (`opus`) moves when a new model ships, so the runtime note tells the agent to use
+the exact id its system prompt states, `render_stream` logs a `model:` line per session from
+the init event, and suite-commit trailers use that resolved id (`resolved_model`). Suite-edit
+commits are attributed by trailer, honestly: a non-Anthropic model gets
 `<model> (via <provider>)`, not a Claude name and an anthropic.com address.
 
 The loop sleeps only when a cycle left the ticket board unchanged; if either agent's issue
 activity changed it, the next cycle starts immediately. (Whether an agent also appended a
 regression case in the same cycle isn't part of that check.)
 
+`run-loop.sh` and `run-regression.sh` never run at once: both take `logs/.driver.lock`
+(`acquire_driver_lock`, a `mkdir` lock; a stale one is taken over) and wait for the other,
+because an implementer deploy restarts the server under a regression run. `run-research.sh`
+makes only read-only MCP calls and takes no lock. Each driver keeps its own
+`logs/.last-session.<driver>` for the rate-limit and died-session checks.
+
+After every per-issue session (and on each triaged issue after triage) `audit_issue` checks
+the invariants the prompts state — an open issue has exactly one `owner:*` label; only the
+tester closes as `completed` — and `commit_suite_changes` flags a suite commit that removed
+lines (cases and `regression-perf/` readings are add-only unless a human approved it). Both log
+`[audit] WARNING` to `loop.log` and repair nothing: `grep '\[audit\]' logs/loop.log` after a
+model change is how drift from the prompts shows up.
+
 The tester's directory has no MCP config, so `run-loop.sh` hands it the `dw` server via
-`--mcp-config` + `--strict-mcp-config` (it sees *only* `dw`) and loads the `dw` plugin live from
-`$SOURCE_DIR/plugins/dw` via `--plugin-dir`. Without the latter it would use the frozen copy in
-`~/.claude/plugins/cache` and never see skill fixes. The implementer gets the same
+`--mcp-config` + `--strict-mcp-config` (it sees *only* `dw`) and loads the `dw` plugin via
+`--plugin-dir` from `PLUGIN_TREE` (default `~/src/dkackman/dw-agent-plugin`): a detached
+worktree of `SOURCE_DIR` that `refresh_plugin_tree` resets to `origin/develop` — the commit lem
+deploys — at startup and before every tester pass. Without `--plugin-dir` it would use the
+frozen copy in `~/.claude/plugins/cache` and never see skill fixes; loading from `SOURCE_DIR`'s
+own working tree (the old way) meant loading whatever branch was checked out there, which on
+2026-09-22 was Don's in-progress feature branch. `run-regression.sh` uses the same tree. The implementer gets the same
 `--mcp-config` + `--strict-mcp-config` pair (not `--plugin-dir`; it works from the source tree).
 Its checkout already has `dw` at local scope in `~/.claude.json`, so the flags change nothing
 about `dw` — they exist to drop the account-level claude.ai connectors (Gmail, Drive, Calendar)
@@ -212,9 +235,13 @@ prompts — a call that would have prompted is denied and the denial comes back 
 tool result — so the choice is what gets auto-approved vs. auto-denied, per role:
 
 - Tester and regression agent: `--permission-mode dontAsk` + an explicit `--allowedTools` list
-  (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`): `mcp__dw__*`, the dw skills, `gh`, file tools
-  for the suite files and `qa-bible.md`, and a few read-only shell helpers. No `ssh`, `curl`,
-  `python`, or `git` writes (the drivers commit suite edits themselves). This is what makes
+  (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`): `mcp__dw__*`, the dw skills, `gh issue`, file
+  tools for the suite files and `qa-bible.md`, and a few read-only shell helpers. No `ssh`, `curl`,
+  `python`, or `git` writes (the drivers commit suite edits themselves), and no other `gh`
+  subcommand — a bare `gh *` let a consumer read the source through `gh api .../contents` or
+  `gh repo clone`. `--disallowedTools` denies `delete_model` and `update_diffusers` outright
+  (server-wide, used by no case); the other destructive dw tools are exercised by suite cases
+  and stay on the prompts. This is what makes
   consumer-only isolation enforced rather than honor-system; the remaining gap is that
   `Read`/`Edit`/`Write` aren't path-scoped, which the role prompts cover. If a cycle shows a
   denial in `logs/tester.log` for something the role legitimately needs, widen the list there,
@@ -228,7 +255,7 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
 - Researcher: `--permission-mode dontAsk` + `RESEARCHER_PERMISSION_FLAGS`
   (`providers.sh`) — read-only against the `diffusers-workflow` source
   checkout (`Read`/`Grep`/`Glob`, read-only `git`) plus read-only `dw` MCP
-  discovery calls, `gh`, and `WebFetch` (to follow links cited in idea
+  discovery calls, `gh issue`, and `WebFetch` (to follow links cited in idea
   issues). No `Edit`/`Write` on source, no write `git` subcommands, no
   `ssh`, no `curl`. A third isolation shape: unlike the tester/regression
   agent it does see source, and unlike the implementer it can never change
@@ -239,13 +266,18 @@ Two deploy paths, and the implementer must say which one a fix used: server code
 reinstall if `pyproject.toml` changed, wait for a running job, restart via the `dw-serve`
 systemd user unit if installed else its `screen` session, poll health — the one call that
 replaced ~40 hand-rolled ssh turns per issue and eleven `kill -9`s of the server), tool schemas
-refresh automatically; plugin/skill changes → commit and leave the checkout on that branch, no
-restart. `run-loop.sh` also records what lem is running at the start of every cycle
+refresh automatically; plugin/skill changes → merge to `develop` and push, no restart (the
+tester's plugin tree follows `origin/develop`). `run-loop.sh` also records what lem is running at the start of every cycle
 (`deployed_head`, one ssh) and puts it, plus the issue's title/labels/body/latest comments
 (`issue_context`, capped), into every per-issue session prompt so neither role spends its first
-turns on `gh issue view`. `DEPLOYED_HEAD` is refreshed between the implementer and tester
+turns on `gh issue view`. `issue_context` withholds comments by any login other than
+`TICKET_OWNER` (a one-line stub instead): the repo is public, `park_external_issues` only vets
+who *filed* an issue, and the implementer that reads the prompt runs in auto mode with push
+and ssh; every agent posts as `TICKET_OWNER`, so nothing the loop wrote is lost. The role
+prompts say the same of comments met via `gh`. `DEPLOYED_HEAD` is refreshed between the implementer and tester
 passes (the tester must be told what it is actually verifying against), and
-`check_lem_on_develop` warns in `loop.log` if lem isn't on `origin/develop` at that point —
+`check_lem_on_develop` logs a warning and redeploys `develop` itself (`DEPLOY_ON_MISMATCH=0`
+to only warn) if lem isn't on `origin/develop` at that point —
 the implementer merges every fix into `develop` and deploys `develop` (role prompt step 3c/3d)
 because lem can only be on one commit and a cycle hands off several fixes; on 2026-09-21
 three branch-only deploys were wiped by a fourth session's `develop` deploy and had to be
@@ -253,7 +285,8 @@ merged by hand before the tester ran. Both are driver-side (one `ls-remote`, the
 the tester still reaches lem only over MCP.
 
 Bounce escalation: `handoff_count` (labeled events for `status:fixed-pending-verify` on the
-issue's timeline) is how many fixes the tester has sent back. At `IMPLEMENTER_ESCALATE_AFTER`
+issue's timeline since its last `reopened` event, so hand-offs that passed before a
+regression reopened it don't count) is how many fixes the tester has sent back. At `IMPLEMENTER_ESCALATE_AFTER`
 (default 2) the issue's next implementer session runs on `TESTER_MODEL`/`TESTER_PROVIDER`
 with a prompt note that the bounce comments are now the spec; at `IMPLEMENTER_PARK_AFTER`
 (default 4) the driver parks it `owner:don` + `status:needs-approval` with a comment instead

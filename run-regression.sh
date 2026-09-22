@@ -18,6 +18,10 @@
 #   REGRESSION_EFFORT=high ./run-regression.sh   # --effort; defaults medium
 #   PROVIDER=ollama REGRESSION_MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
+#   REGRESSION_BUDGET_USD=0 ./run-regression.sh  # no per-session cap (default $6)
+#
+# Waits for run-loop.sh if it is running (logs/.driver.lock), and stops the
+# run when a session reports the MCP server unreachable (REGRESSION-ABORT).
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
 #   tail -f logs/regression.log              # watch from another terminal
 #
@@ -58,7 +62,8 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/diffusers-workflow}"
+SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"          # the agents' clone (see run-loop.sh)
+PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin}"  # origin/develop, shared with run-loop.sh
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
@@ -74,9 +79,15 @@ REGRESSION_MODEL="${REGRESSION_MODEL:-sonnet}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header); 0 = one session per level
+# Per-session --max-budget-usd (0 = none) and autocompact point, as in
+# run-loop.sh. 116 chunk sessions to 2026-09-22: median $2.10, p90 $4.59,
+# max $9.41 - the cap sits above a normal chunk and stops a runaway one.
+# A capped chunk loses its remaining cases for this run, not the suite.
+REGRESSION_BUDGET_USD="${REGRESSION_BUDGET_USD:-6}"
+AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 DW_URL="${DW_URL:-http://lem:8765/mcp}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
-PLUGIN_DIR="$SOURCE_DIR/plugins/dw"
+PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
 
 LEVEL="${1:-smoke}"
 SUITE_OVERRIDE="${2:-}"
@@ -100,13 +111,22 @@ case "$LEVEL" in
     ;;
 esac
 
-[ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
+[ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
 command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
+command -v jq >/dev/null     || { echo "jq not on PATH" >&2; exit 1; }
 gh auth status >/dev/null 2>&1 || { echo "gh CLI not authenticated" >&2; exit 1; }
 mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
+
+# Never alongside run-loop.sh: an implementer deploy restarts the server
+# mid-case, and both drivers keep per-session state under logs/.
+acquire_driver_lock run-regression
+LAST_SESSION="$LOGS/.last-session.regression"
+refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
+  || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
+[ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
 
 # --effort; medium unless set. Defaults to EFFORT (providers.sh).
 REGRESSION_EFFORT="${REGRESSION_EFFORT:-$EFFORT}"
@@ -137,9 +157,8 @@ case "$CASES_PER_SESSION" in
   ''|*[!0-9]*) echo "CASES_PER_SESSION must be a whole number, got '$CASES_PER_SESSION'" >&2; exit 1 ;;
 esac
 
-# The Co-Authored-By trailer on commits this script makes for its own run —
-# the one durable record of which model edited the suite (see co_author_for).
-co_author_for "$REGRESSION_PROVIDER" "$REGRESSION_MODEL"
+LIMIT_FLAGS=(--autocompact "$AUTOCOMPACT_TOKENS")
+[ "$REGRESSION_BUDGET_USD" = 0 ] || LIMIT_FLAGS+=(--max-budget-usd "$REGRESSION_BUDGET_USD")
 
 ts() { date '+%H:%M:%S'; }
 
@@ -184,28 +203,37 @@ REGRESSION_FLAGS=(
 # sessions are distinguishable in loop.log.
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" instructions="$5" attempt
-  # .last-session is this session's rendered output alone: a rejected rate
+  # $LAST_SESSION is this session's rendered output alone: a rejected rate
   # limit sleeps the driver until the reset, a session that died before its
   # result event is retried once (both in providers.sh).
   for attempt in 1 2; do
-  : > "$LOGS/.last-session"
+  : > "$LAST_SESSION"
   (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions are in your system prompt (the contents of $AGENTS/REGRESSION.agent.md); follow them exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
-    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} \
+    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${LIMIT_FLAGS[@]}" \
     --append-system-prompt-file "$AGENTS/REGRESSION.agent.md" \
-    "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 | render_stream regression) \
-    | tee -a "$LOGS/regression.log" "$LOGS/.last-session" \
+    "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 < /dev/null | render_stream regression) \
+    | tee -a "$LOGS/regression.log" "$LAST_SESSION" \
     | sed -u "s/^/[regression:$level$tag] /" \
     | tee -a "$LOGS/loop.log" \
     || echo "[regression:$level$tag] run failed" | tee -a "$LOGS/loop.log"
-  sleep_if_rate_limited "$LOGS/.last-session"
-  session_died "$LOGS/.last-session" || break
+  sleep_if_rate_limited "$LAST_SESSION"
+  session_died "$LAST_SESSION" || break
   [ "$attempt" -eq 1 ] || break
   echo "[regression:$level$tag] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
   sleep "$SESSION_RETRY_PAUSE_SECS"
   done
+}
+
+# session_aborted
+# True when the session just run ended with the role prompt's abort line
+# (REGRESSION-ABORT: ...), which it prints when the MCP server is
+# unreachable. Without this the driver launched every remaining chunk into
+# a down server, and each one could file its own "MCP unreachable" issue.
+session_aborted() {
+  grep -q '^REGRESSION-ABORT:' "$LAST_SESSION" 2>/dev/null
 }
 
 run_level() {
@@ -247,14 +275,27 @@ run_level() {
         run_session "$level" "$suite_file" "$workspace" ".$session" \
           "This is a chunked run (see 'Chunked runs' in the role instructions): this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
         chunk=()
+        if session_aborted; then
+          echo "[regression:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOGS/loop.log"
+          break
+        fi
       fi
     done
-    echo "--- $(ts) $level session $((session + 1)): final sweep ---" | tee -a "$LOGS/loop.log"
-    run_session "$level" "$suite_file" "$workspace" ".sweep" \
-      "This is the final sweep of a chunked run (see 'Chunked runs' in the role instructions): every case was already exercised in earlier sessions. Do only step 5 of the role instructions against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases."
+    if ! session_aborted; then
+      echo "--- $(ts) $level session $((session + 1)): final sweep ---" | tee -a "$LOGS/loop.log"
+      run_session "$level" "$suite_file" "$workspace" ".sweep" \
+        "This is the final sweep of a chunked run (see 'Chunked runs' in the role instructions): every case was already exercised in earlier sessions. Do only step 5 of the role instructions against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases."
+    fi
   fi
 
+  # The trailer names the id the model alias actually resolved to.
+  co_author_for "$REGRESSION_PROVIDER" "$(resolved_model regression "$REGRESSION_MODEL")"
   commit_suite_changes "regression: update $level suite from $(ts) run ($MODEL_LABEL)"
+  # An unreachable server fails every later level the same way.
+  if session_aborted; then
+    echo "[regression] stopping: MCP unreachable" | tee -a "$LOGS/loop.log"
+    exit 1
+  fi
 }
 
 # Fallback only: run-loop.sh commits the tester's own suite edits under the
