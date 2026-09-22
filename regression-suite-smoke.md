@@ -92,8 +92,8 @@ nothing uses it anymore.
   `ep11-bed.wav` as the 44.1 kHz half of a rate-mismatched pair; its 30.023 s length is
   in that case's expected durations. Read-only — never normalized in place, never deleted.
 - `asset:qa-cast/ep6-cold-open.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` — two
-  124-frame 24 fps 960x544 32 kHz stereo shots in the shared asset library. S-F045
-  joins them in that order because the first has the loudest outgoing tail among the
+  124-frame 24 fps 960x544 32 kHz stereo shots in the shared asset library. Joined in
+  that order because the first has the loudest outgoing tail among the
   shared shots (last full second −20.5 dBFS RMS) and the second the quietest head
   (first second −44.4 dBFS RMS), which is what makes a bled tail measurable against
   the incoming material. Both also serve the `complete` suite; read-only, never
@@ -105,9 +105,9 @@ nothing uses it anymore.
   that case's expected frame count). S-F082 binds both (with `ep13-episode.mp4` and
   `ep20-score.wav`) to `templates/dissolve-between-shots` in a validate-only call.
 - `asset:qa-cast/ep11-coldopen.mp4` — a video with a soundtrack in the shared asset
-  library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). S-F051 hands
-  it to `analyze_audio` as the "video in, soundtrack measured" input shape; any
-  substitute just needs a non-silent soundtrack. Read-only, never deleted.
+  library (peak −1.04 dBFS, RMS −20.9 dBFS as `analyze_audio` reads it). Kept as a
+  "video in, soundtrack measured" input shape for `analyze_audio`; any substitute
+  just needs a non-silent soundtrack. Read-only, never deleted.
 - `asset:qa-cast/ep20-score.wav` — a ~10.3 s score bed in the shared asset library.
   S-F057 and S-F068 pass it as `score` to the two sequence templates; a `total_frames`
   longer than it draws a `slice_past_end` warning, which those cases either expect or
@@ -438,11 +438,13 @@ longer warns as of #247 (it's task-only, see S-F069); the probe is now a
 one-step `StableDiffusionPipeline` workflow (proposed and verified in #297).
 
 ### S-F018 — the other three workflow objects are closed too
-S-F017 covers the `step`, `task`, `pipeline_reference` and `workflow_reference`
-objects. The same guarantee must hold for the three that were still open after it:
-the **top-level workflow** object, the **`result`** object, and the **`pipeline`**
-object. A stray key in any of them is the same failure S-F017 exists for — the
-workflow runs and the key does nothing. Free and instant — no run.
+The `step`, `task`, `pipeline_reference` and `workflow_reference` objects' schema
+closure is covered by unit tests (the case that once re-confirmed it here, S-F017,
+was retired in commit `bd5e0d5` as duplicate of that coverage). The same guarantee must
+hold for the three that were still open after it: the **top-level workflow**
+object, the **`result`** object, and the **`pipeline`** object. A stray key in any
+of them is the same failure S-F017 existed for — the workflow runs and the key
+does nothing. Free and instant — no run.
 expected: four `validate_workflow` probes on inline one-step workflows.
 (a) Top level carrying `"sedd": 42` and `"varaibles": {}` → `valid: false`, **one**
 error at root (`path: null`) naming both keys and listing the legal set
@@ -1197,7 +1199,8 @@ implementer flagged: any catalog template shipping a placeholder `asset:` defaul
 now answers `valid: false` on a bare call in a workspace without that file.
 
 ### S-F036 — an unwritable `result.content_type` is refused by the free pre-flight, not by the writer
-S-F017/S-F018 pin that an *unknown key* on a workflow object is an error. This is the
+S-F018 (and, for the objects it no longer covers itself, unit tests) pins that an
+*unknown key* on a workflow object is an error. This is the
 other half: a **known key carrying a value no writer can honour**. The filed bug (#168)
 was that `result.content_type: "video"` — the obvious shorthand for `video/mp4` —
 validated clean with a plan, then died at run time inside a writer the caller never
@@ -1396,7 +1399,7 @@ Before #215 `templates/assemble-and-score` declared `match_levels` but not
 it back), so a shot that could not reach the default −20 dBFS target without clipping
 was clip-held and the only fix was copying the template inline. This case locks the
 variable surface — cheap discovery calls — plus one ~3 s utility run proving the value
-reaches the task. Run S-F056 first; this reuses its knowledge of the events.
+reaches the task.
 1. `get_workflow(name="templates/assemble-and-score", variables_only=true)` and
    `get_workflow(name="templates/dissolve-between-shots", variables_only=true)`.
 2. `list_workflows(shape="sequence")`.
@@ -1432,7 +1435,8 @@ against dw `develop` 5b6e3d9 on `lem`. The issue's own pair (ep21 shots, workspa
 `qa-ep22`, job `c9609479cce0`): `video 1 rms -24.3 dBFS, gain +0.3 dB` / `video 2 rms
 -20.6 dBFS, gain -3.4 dB`, both `held: false`, `warnings: []` — the clip-hold from
 #214's job `a3f5e0b2fcbe` gone once the template accepted `-24`. The fixture pair
-above is S-F056's, chosen so this case never touches `qa-ep22`; its exact gains were
+above is the shared `ep6-cold-open.mp4`/`ep3-shot2-reply.mp4` pair, chosen so this
+case never touches `qa-ep22`; its exact gains were
 not run in #215, so treat the ≈ figures as expectations to confirm on first run, not
 measured values.
 
@@ -1556,7 +1560,7 @@ stand-in for the H3 run are mine.
 description named only the `peak` default (−1 dBFS), which a workflow author read as
 the ceiling a clipping shot is held at; #220 fixed the text, and the first fix reached
 only `concat_videos` because `dissolve_videos` carries its own copy of the string
-(their `match_levels` behaviour is shared, S-F056/S-F057). This locks in that both
+(their `match_levels` behaviour is shared, see S-F057). This locks in that both
 served descriptions agree and name what a consumer has to look for. Read-only, free.
 1. `get_task(command="concat_videos")`.
 2. `get_task(command="dissolve_videos")`.
@@ -2321,14 +2325,17 @@ source: tester, verified in #287 on 2026-09-21 over MCP as model `opus` via prov
 back as 394 frames, 44100 Hz stereo. The same session confirmed `sample_rate: 32000` pins
 the target (job `370442220fe7`) and that two 32 kHz shots draw no warning.
 
-### S-F087 — a `seam_fade_ms` that a non-zero `audio_bleed_ms` makes inert is warned about at validate
+### S-F087 — a companion argument that renders `seam_fade_ms` or `audio_bleed_gain_db` inert is warned about at validate
 #288: `concat_videos` takes the bleed path at any hard cut where `audio_bleed_ms` is
 non-zero, so a `seam_fade_ms` passed alongside it does nothing — and
 `templates/minimax/dialogue-short` ships `audio_bleed_ms: 1800` as a default, so a caller
 passing only `seam_fade_ms` (the remedy the old `bleed_tonal_material` warning itself
 recommended) got a clean validate, a clean run and no fade. Now the pre-flight resolves
 both arguments (through `variable:` references, defaults merged with the caller's
-`arguments`) and warns. Free: three validate calls, nothing runs.
+`arguments`) and warns. #290 is the mirror case: `audio_bleed_gain_db` only applies along
+the bleed path, so with `audio_bleed_ms: 0` — explicitly, or simply left at the task
+default — the gain does nothing, and until #290 the pre-flight said so for `seam_fade_ms`
+but not for this pair. Free: four validate calls, nothing runs.
 1. `validate_workflow(name="templates/minimax/dialogue-short", arguments={"seam_fade_ms":
    80})` — `audio_bleed_ms` deliberately left at the template default.
 2. `validate_workflow(name="templates/minimax/dialogue-short", arguments={"seam_fade_ms":
@@ -2338,6 +2345,21 @@ both arguments (through `variable:` references, defaults merged with the caller'
    ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep13-episode.mp4"],
    "audio_bleed_ms": 500, "seam_fade_ms": 80, "fps": 24}}, "result": {"content_type":
    "video/mp4", "fps": 24, "subfolder": "final"}}]})` — literals, no `variable:`.
+4. `validate_workflow(workspace=<suite workspace>, workflow={"id":
+   "regression-inert-bleed-gain", "seed": 1, "steps": [
+   {"name": "gain_without_bleed", "task": {"command": "concat_videos", "arguments":
+   {"videos": ["asset:qa-cast/ep31-shot1-return.mp4", "asset:qa-cast/ep31-shot2-shrug.mp4"],
+   "audio_bleed_ms": 0, "audio_bleed_gain_db": -6, "fps": 24}}, "result":
+   {"content_type": "video/mp4", "subfolder": "intermediate", "file_base_name": "gain-a"}},
+   {"name": "gain_bleed_omitted", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "audio_bleed_gain_db": -6, "fps": 24}}, "result": {...,
+   "file_base_name": "gain-b"}},
+   {"name": "gain_with_bleed", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "audio_bleed_ms": 800, "audio_bleed_gain_db": -6, "fps": 24}},
+   "result": {..., "file_base_name": "gain-c"}},
+   {"name": "no_gain_no_bleed", "task": {"command": "concat_videos", "arguments":
+   {"videos": [same two], "audio_bleed_ms": 0, "fps": 24}}, "result": {...,
+   "file_base_name": "gain-d"}}]})`.
 expected:
 - Steps 1 and 3 are `valid: true` and each carries exactly one warning that names the
   step (`episode` / `join`), says `seam_fade_ms` has no effect while `audio_bleed_ms` is
@@ -2346,12 +2368,19 @@ expected:
 - Step 2 carries no warning mentioning `seam_fade_ms` or `audio_bleed_ms` (the
   host-memory projection warning the template draws on this box is unrelated and may
   be present).
+- Step 4 is `valid: true` with exactly two warnings, one naming `gain_without_bleed` and
+  one naming `gain_bleed_omitted`, each saying `audio_bleed_gain_db` has no effect when
+  `audio_bleed_ms` is 0 and telling the caller to pass a non-zero `audio_bleed_ms` for the
+  gain to apply; no warning mentions `gain_with_bleed` or `no_gain_no_bleed`.
 - `get_workflow("templates/minimax/dialogue-short").description` says the two are
   mutually exclusive and that a declick fade instead of a bleed means setting
   `audio_bleed_ms` to 0.
 It is a **finding** if step 1 or 3 validates with no such warning, if the warning names
-a value other than the one that resolves, if step 2 warns about the pair, or if the
-template description no longer states the exclusivity.
+a value other than the one that resolves, if step 2 warns about the pair, if either of
+step 4's inert steps validates without its warning (the omitted-key step in particular —
+that is the "forgot the bleed" case), if step 4's warning does not name both arguments,
+if step 4's non-zero-bleed or no-gain step draws one, or if the template description no
+longer states the exclusivity.
 cleanup: none — nothing is written.
 metrics: none.
 source: tester, verified in #288 on 2026-09-21 over MCP as model `opus` via provider
@@ -2362,6 +2391,14 @@ the fade path. Pass 'audio_bleed_ms': 0 for 'seam_fade_ms' to apply.`; with
 task-only run over two existing shots (job `f46a7d3a2af2`) carried the warning at submit
 and its `bleed_tonal_material` remedy now reads `Pass 'audio_bleed_ms': 0 for a hard cut
 on this material instead - seam_fade_ms has no effect while audio_bleed_ms is non-zero.`
+Step 4 merged in from a separate S-F090 during the 2026-09-22 suite audit (both cases were
+the identical "modifier argument rendered inert by a companion argument's value" pattern on
+`concat_videos`/`audio_bleed_ms`, free and validate-only): verified in #290 on 2026-09-21
+over MCP as model `opus` via provider `anthropic`, in `qa-ep32` both inert steps warned
+`Step '<name>': 'audio_bleed_gain_db' has no effect when 'audio_bleed_ms' is 0 - pass a
+non-zero 'audio_bleed_ms' for the gain to apply.`, the other two steps were silent, and a
+fifth `trim_frames: 0, crossfade_ms: 300` step in the same document still drew its #288
+warning.
 
 ### S-F088 — `get_job.event_count` on a historical job equals what `get_job_events` serves
 #289: a job rehydrated from history (`historical: true` — after a server restart, or once
@@ -2445,43 +2482,6 @@ clip-held 0.1 dB short; `bleed_join` recommended `audio_bleed_ms: 0`. The
 `audio_bleed_gain_db`-with-`audio_bleed_ms: 0` combination is deliberately *not* in
 this case: it draws no warning today (#290).
 
-### S-F090 — an `audio_bleed_gain_db` that a zero `audio_bleed_ms` makes inert is warned about at validate
-#290: `concat_videos` only applies `audio_bleed_gain_db` along the bleed path, so with
-`audio_bleed_ms: 0` — explicitly, or simply left at the task default — the gain does
-nothing, and until #290 the pre-flight said so for `seam_fade_ms` (S-F087) and
-`crossfade_ms` (S-F089) but not for this pair. Free: one validate call, nothing runs.
-1. `validate_workflow(workspace=<suite workspace>, workflow={"id":
-   "regression-inert-bleed-gain", "seed": 1, "steps": [
-   {"name": "gain_without_bleed", "task": {"command": "concat_videos", "arguments":
-   {"videos": ["asset:qa-cast/ep31-shot1-return.mp4", "asset:qa-cast/ep31-shot2-shrug.mp4"],
-   "audio_bleed_ms": 0, "audio_bleed_gain_db": -6, "fps": 24}}, "result":
-   {"content_type": "video/mp4", "subfolder": "intermediate", "file_base_name": "gain-a"}},
-   {"name": "gain_bleed_omitted", "task": {"command": "concat_videos", "arguments":
-   {"videos": [same two], "audio_bleed_gain_db": -6, "fps": 24}}, "result": {...,
-   "file_base_name": "gain-b"}},
-   {"name": "gain_with_bleed", "task": {"command": "concat_videos", "arguments":
-   {"videos": [same two], "audio_bleed_ms": 800, "audio_bleed_gain_db": -6, "fps": 24}},
-   "result": {..., "file_base_name": "gain-c"}},
-   {"name": "no_gain_no_bleed", "task": {"command": "concat_videos", "arguments":
-   {"videos": [same two], "audio_bleed_ms": 0, "fps": 24}}, "result": {...,
-   "file_base_name": "gain-d"}}]})`.
-expected:
-- `valid: true` with exactly two warnings, one naming `gain_without_bleed` and one
-  naming `gain_bleed_omitted`, each saying `audio_bleed_gain_db` has no effect when
-  `audio_bleed_ms` is 0 and telling the caller to pass a non-zero `audio_bleed_ms` for
-  the gain to apply.
-- No warning mentions `gain_with_bleed` or `no_gain_no_bleed`.
-It is a **finding** if either inert step validates without the warning (the omitted-key
-step in particular — that is the "forgot the bleed" case), if the warning does not name
-both arguments, or if the non-zero-bleed or no-gain step draws one.
-cleanup: none — nothing is written.
-metrics: none.
-source: tester, verified in #290 on 2026-09-21 over MCP as model `opus` via provider
-`anthropic`: in `qa-ep32` both inert steps warned `Step '<name>': 'audio_bleed_gain_db'
-has no effect when 'audio_bleed_ms' is 0 - pass a non-zero 'audio_bleed_ms' for the gain
-to apply.`, the other two steps were silent, and a fifth `trim_frames: 0, crossfade_ms:
-300` step in the same document still drew its #288 warning.
-
 ### S-F091 — `loop_audio` shortening a bed to `target_frames` is sample-faithful, not faded
 `loop_audio` is documented for making a bed *longer*; the other direction — a bed longer
 than the cut, cut down to `target_frames` — has no doc and no case, and a hidden fade or
@@ -2523,8 +2523,8 @@ peak equal to the source asset's (−28.89).
 #291: `concat_videos` and `dissolve_videos` only call the level matcher when
 `match_levels` is `"rms"` or `"peak"` (off by default), so a caller who passes only the
 `match_levels_dbfs` target has stated an intent the engine silently dropped — the third
-"modifier without its enabler" pair on these commands after S-F087 (#288) and S-F090
-(#290). Free: one validate call, nothing runs.
+"modifier without its enabler" pair on these commands after S-F087's #288 and #290 arms.
+Free: one validate call, nothing runs.
 1. `validate_workflow(workspace=<suite workspace>, workflow={"id":
    "regression-inert-match-levels-dbfs", "seed": 1, "steps": [
    {"name": "concat_target_only", "task": {"command": "concat_videos", "arguments":
@@ -2853,13 +2853,20 @@ added after running it on 2026-09-21 over MCP as model `opus` via provider `anth
 and `info` populated; `memory` events at seq 8/11/39/41/60 after `cached`/`generating`/
 `decoding`/`saving`/post-run, reserved 4088 → 6376 → 13316 MB across them).
 
-### S-F100 — a small-n observed estimate is tempered toward the curated figure, or flagged when there is none
+### S-F100 — a small-n observed estimate is tempered toward the curated figure, or flagged when there is none, and says so
 Before #301 a figure measured once on this box was quoted by `plan.estimate` with the
 same authority as one measured fourteen times (and ran ~3x pessimistic in the case that
 was filed). The approved shape: below `runs: 3`, if the workflow carries a curated
 `cost` block, `minutes` is blended linearly toward it (weight `runs/3` on the observed
 figure); if there is no curated figure, `minutes` is left alone and `low_confidence:
-true` is added beside `runs`. At or above 3 runs nothing changes. Free — three
+true` is added beside `runs`. At or above 3 runs nothing changes. #319 added the label
+half: before that fix a 1-run estimate blended toward the curated figure came back as
+`basis: "observed", minutes: 31.9` while `list_workflows` reported
+`observed_minutes: 25.75` for the same workflow — two tools disagreeing on "observed"
+with nothing in the estimate to reconcile them. The additive shape: when the blend
+fires, `plan.estimate` carries `tempered: true`, `observed_minutes` (the raw point
+figure, the same number the listing reports) and `curated_minutes` (what it blended
+toward) beside `runs`; `basis` and `minutes` are unchanged. Free — three
 `validate_workflow` calls and one listing, nothing written. Read the listing first: the
 run counts drift as the box is used, so pick the entries by their `observed_runs`, not by
 the names below, and choose one entry per row.
@@ -2873,13 +2880,19 @@ expected:
   `low_confidence` key, and `minutes` strictly between the listing's `observed_minutes`
   and the curated `cost[].minutes`, within 0.1 of
   `observed * runs/3 + curated * (1 - runs/3)`. Equal to the raw observed figure is the
-  regression.
+  regression. Also `tempered: true`, `observed_minutes` equal to the listing's
+  `observed_minutes` (to one decimal), and `curated_minutes` equal to the listing's
+  `cost[].minutes` for this device. Missing `tempered`, or a `tempered` that comes
+  without both source figures, is the regression.
 - Step 3 (flag): `basis: "observed"`, `minutes` equal to the listing's `observed_minutes`
   rounded to one decimal (unmodified), `runs` as listed, and `low_confidence: true`.
   Absent flag, or a `minutes` that moved with nothing to move toward, is the regression.
+  **None** of `tempered`, `observed_minutes`, `curated_minutes` — the flag path and the
+  blend path are exclusive.
 - Step 4 (threshold): `minutes` equal to the listing's `observed_minutes` rounded to one
   decimal, no `low_confidence` key — with or without a curated `cost`. A blend or a flag
-  at 3+ runs is the regression.
+  at 3+ runs is the regression. **None** of `tempered`, `observed_minutes`,
+  `curated_minutes`, `low_confidence`.
 If no entry fits step 2 (every low-n workflow lacks a `cost`, or the low-n ones have all
 been run past 3), skip that step and say so — do not manufacture one; it is not a finding.
 cleanup: none.
@@ -2890,6 +2903,14 @@ comment; added after running it on 2026-09-21 over MCP as model `opus` via provi
 observed 25.75 / 1 run → 31.9, no flag; `templates/minimax/enhance-prompt` no cost /
 5.67 / 1 run → 5.7 with `low_confidence: true`; `templates/minimax/video-with-audio`
 6.6 / 2 runs → flagged; `templates/ltx2/two-stage` 8.2 / 3.12 / 3 runs → 3.1, no flag).
+The `tempered`/`observed_minutes`/`curated_minutes` labels were merged in from a
+separate S-F108 during the 2026-09-22 suite audit (both cases ran the identical 3-arm
+setup against the #301 tempering feature, free and read-only): verified in #319 on
+2026-09-22 over MCP as model `opus` via provider `anthropic` against `develop @ 7e1a1a5`
+(implementer proposed the case in its hand-off comment; `templates/minimax/music-video`
+1 run / curated 35 → `tempered: true, observed_minutes: 25.8, curated_minutes: 35.0,
+minutes: 31.9`; `templates/minimax/dialogue-short` 5 runs → no marker fields;
+`templates/step-caching` 2 runs, no cost → `low_confidence: true`, no marker fields).
 
 ### S-F101 — a single-saving-step template's deliverable is marked `final`, so `list_gallery(subfolder="final")` finds it
 #302: S-F068 guards the two sequence templates #235 fixed, but the `final` convention had
@@ -3137,41 +3158,6 @@ cleanup: none — nothing is written.
 metrics: none.
 source: tester, verified in #303 on 2026-09-22 over MCP as model `opus` via provider
 `anthropic` against `develop @ 7e1a1a5` (dw 0.4.0-beta.6 on `lem`).
-
-### S-F108 — a blended small-n estimate says so: `tempered: true` with both source figures, and nothing else carries the marker
-#319: S-F100 checks the *number* the #301 blend produces; this checks that the blend is
-*labelled*. Before the fix a 1-run estimate blended toward the curated figure came back as
-`basis: "observed", minutes: 31.9` while `list_workflows` reported `observed_minutes: 25.75`
-for the same workflow — two tools disagreeing on "observed" with nothing in the estimate to
-reconcile them. The additive shape: when the blend fires, `plan.estimate` carries
-`tempered: true`, `observed_minutes` (the raw point figure, the same number the listing
-reports) and `curated_minutes` (what it blended toward) beside `runs`; `basis` and `minutes`
-are unchanged. Free — a listing and three `validate_workflow` calls, nothing written. Pick the
-entries by `observed_runs` from the listing as S-F100 does, one per row, since counts drift.
-1. `list_workflows(shape="sequence")` (and `shape="shot"` / `shape="image"` if the sequence
-   list has no fit for a row) — note `cost`, `observed_minutes`, `observed_runs`.
-2. `validate_workflow(name=<entry with observed_runs 1 or 2 AND a non-null cost>)`.
-3. `validate_workflow(name=<entry with observed_runs >= 3>)`.
-4. `validate_workflow(name=<entry with observed_runs 1 or 2 AND cost: null>)`.
-expected:
-- Step 2 (blend): `basis: "observed"`, `tempered: true`, `observed_minutes` equal to the
-  listing's `observed_minutes` (to one decimal), `curated_minutes` equal to the listing's
-  `cost[].minutes` for this device, `runs` as listed, no `low_confidence`, and `minutes`
-  still the blend S-F100 describes. Missing `tempered`, or a `tempered` that comes without
-  both source figures, is the regression.
-- Step 3 (threshold): `basis: "observed"`, `runs` as listed, and **none** of `tempered`,
-  `observed_minutes`, `curated_minutes`, `low_confidence`.
-- Step 4 (no curated figure): `low_confidence: true` and **none** of `tempered`,
-  `observed_minutes`, `curated_minutes` — the flag path and the blend path are exclusive.
-If no entry fits a row, skip it and say so — do not manufacture one; it is not a finding.
-cleanup: none.
-metrics: none.
-source: tester, verified in #319 on 2026-09-22 over MCP as model `opus` via provider
-`anthropic` against `develop @ 7e1a1a5` (implementer proposed the case in its hand-off
-comment; `templates/minimax/music-video` 1 run / curated 35 → `tempered: true,
-observed_minutes: 25.8, curated_minutes: 35.0, minutes: 31.9`; `templates/minimax/dialogue-short`
-5 runs → no marker fields; `templates/step-caching` 2 runs, no cost → `low_confidence: true`,
-no marker fields).
 
 ## Performance
 

@@ -427,11 +427,12 @@ nobody can act on. (d) The end-to-end path, which is where it bit:
 `run_workflow("templates/assemble-and-score", arguments={shots: three
 `common/assets` shots, score: the room-bed asset, sample_rate: 32000, fps: 24,
 total_frames: 372})` → succeeds, and its `warnings` carries the same entry
-attributed to the `soundtrack` step. Note the source reads as ~2.48 s there,
-not 4.96 s: the template passes `sample_rate` down and `slice_audio`'s
-`sample_rate` *reinterprets* a file's rate rather than resampling it. That is
-documented, pre-existing behaviour — it is not a finding, but the warning's
-arithmetic must be self-consistent with whatever length the task actually saw.
+attributed to the `soundtrack` step. The source reads at its real ~4.96 s here,
+not a reinterpreted length: since #180 (see C-F031(b)/(c)) the `soundtrack`
+step calls `slice_audio` with no `sample_rate` and a separate `resample_audio`
+step follows it, so nothing in this template reinterprets a file's rate
+anymore. The warning's arithmetic must be self-consistent with whatever length
+the task actually saw.
 It is a **finding** if (a) or (d) comes back `warnings: []` (the original bug —
 79% of a track padded in silence), if the padding turns into an error or a
 short track (that breaks the legitimate tail pad), or if (b) or (c) starts
@@ -449,7 +450,10 @@ source: tester, verified in #126 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep9`, dw 0.4.0-beta.3 — jobs
 `4c0b47638446` (past-end, one warning), `734ae3a07a90` (both counter-cases,
 `warnings: []`) and `8ba0179fb3b4` (the template end-to-end, warning attributed
-to `soundtrack`).
+to `soundtrack`). Bullet (d)'s reinterpretation claim was stale against #180's
+rewiring of `assemble-and-score` (see C-F031) and was corrected during the
+2026-09-22 suite audit — it had never been re-verified against dw
+0.4.0-beta.4+, where the template resamples instead.
 
 ### C-F020 — `templates/dissolve-between-shots` passes `match_levels` through, so its own warning is followable
 C-F018 and C-F019 exercise the `dissolve_videos` **task**. This case is about the
@@ -1284,9 +1288,9 @@ source: tester, verified in #264 (run over MCP 2026-09-21 as the calls above,
 model `opus` via provider `anthropic`; the implementer's proposed case from
 its #264 hand-off).
 
-### C-F042 — a pure-composition parent inherits its observed child's basis; a parent with its own uncosted step does not
-Two `validate_workflow` calls with an inline `workflow`, no run, no GPU.
-Both compose `templates/minimax/video-with-audio` — pick any catalog child
+### C-F042 — a pure-composition parent inherits its observed child's basis, carrying `runs`/`measured_on` through; a parent with its own uncosted step does not
+Five `validate_workflow` calls with an inline `workflow`, no run, no GPU.
+All compose `templates/minimax/video-with-audio` — pick any catalog child
 that `list_workflows` reports with `observed_runs >= 1` on this box if that
 one has none — with a step `{name: "clip", workflow: {path: <child>,
 arguments: {prompt: "a ferrofluid pool", num_frames: 124, width: 960,
@@ -1296,48 +1300,42 @@ subfolder: "final"}}`, `seed: 7`, and **no** `cost` block on the parent:
 2. `id: "c-f042-mixed"` — the same step plus a second, own step `{name:
    "frames", task: {command: "extract_frames", arguments: {video:
    "previous_result:clip", count: 4}}, result: {content_type: "image/png",
-   file_base_name: "frame", subfolder: "frames"}}` with no `cost` anywhere.
+   file_base_name: "frame", subfolder: "frames"}}` with no `cost` anywhere;
+3. `validate_workflow(name: <child>)` — note `plan.estimate.runs` and
+   `plan.estimate.measured_on`;
+4. `id: "c-f042-one"` — a pure-composition parent with one child step
+   (`{name: "a", workflow: {path: <child>}}`);
+5. `id: "c-f042-two"` — two `workflow` steps to the same child (`{name: "a",
+   workflow: {path: <child>}}, {name: "b", workflow: {path: <child>}}`).
 expected: (1) `plan.estimate.basis: "observed"`, `partial: false`,
 `unpriced: []`, and `minutes` equal to the child's own `observed_minutes` —
 every declared step is a `workflow` step, so the children's figures are the
 whole story; (2) `basis: "unknown"`, `partial: true`, `unpriced` naming the
 parent — the `extract_frames` step is real declared work nobody priced, and
 inheriting the child's number as a trusted total is exactly #242's hazard.
+(4) `basis: "observed"`, `partial: false`, `minutes` equal to (3)'s, and
+`runs` and `measured_on` equal to (3)'s — populated, not null; (5) `basis:
+"observed"`, `minutes` twice (3)'s, `runs` equal to (3)'s (the min across
+children, which are the same child), `measured_on` equal to (3)'s (every
+child names the same device).
 The regressions: (1) back to `basis: "unknown"`/`partial: true` (#268
-reverted), or (2) coming back `partial: false` (the pure-composition test
+reverted); (2) coming back `partial: false` (the pure-composition test
 widened to "any parent with a composed child", which is the bug an earlier
-attempt at #268 had). The parent's `runs`/`measured_on` being `null` in (1)
-is #275, not this case's concern.
+attempt at #268 had); or (4)/(5) coming back `basis: "observed"` with
+`runs: null` or `measured_on: null` — an estimate that says it was measured
+without saying how many times or on what. (A multi-child parent whose
+children genuinely disagree on device should null `measured_on`; that is
+not reproducible on a one-GPU box and is left to the dw pytest suite.)
 cleanup: none — inline validations write nothing.
-source: tester, verified in #268 (run over MCP 2026-09-21 as the calls above,
+source: tester, verified in #268 (run over MCP 2026-09-21 as calls 1-2,
 model `opus` via provider `anthropic`; the implementer's proposed case from
-its #268 hand-off, with the #242 half kept as its own numbered call).
-
-### C-F043 — a rolled-up observed estimate carries the child's `runs` and `measured_on`
-Three `validate_workflow` calls, no run, no GPU. Same child as C-F042
-(`templates/minimax/video-with-audio`, or any catalog child `list_workflows`
-reports with `observed_runs >= 1` on this box):
-1. `validate_workflow(name: <child>)` — note `plan.estimate.runs` and
-   `plan.estimate.measured_on`;
-2. an inline `workflow` `{id: "c-f043-one", steps: [{name: "a", workflow:
-   {path: <child>}}]}` — a pure-composition parent with one child;
-3. an inline `workflow` `{id: "c-f043-two", steps: [{name: "a", workflow:
-   {path: <child>}}, {name: "b", workflow: {path: <child>}}]}` — two
-   `workflow` steps to the same child.
-expected: (2) `basis: "observed"`, `partial: false`, `minutes` equal to
-(1)'s, and `runs` and `measured_on` equal to (1)'s — populated, not null;
-(3) `basis: "observed"`, `minutes` twice (1)'s, `runs` equal to (1)'s (the
-min across children, which are the same child), `measured_on` equal to
-(1)'s (every child names the same device). The regression is (2) or (3)
-coming back `basis: "observed"` with `runs: null` or `measured_on: null` —
-an estimate that says it was measured without saying how many times or on
-what. (A multi-child parent whose children genuinely disagree on device
-should null `measured_on`; that is not reproducible on a one-GPU box and is
-left to the dw pytest suite.)
-cleanup: none — inline validations write nothing.
-source: tester, verified in #275 (run over MCP 2026-09-21 as the calls above,
-model `opus` via provider `anthropic`; the implementer's proposed case from
-its #275 hand-off, widened with the two-child call).
+its #268 hand-off, with the #242 half kept as its own numbered call) and
+in #275 (run over MCP 2026-09-21 as calls 3-5, same model/provider; the
+implementer's proposed case from its #275 hand-off, widened with the
+two-child call). Merged from a separate C-F043 during the 2026-09-22 suite
+audit — both cases built the identical inline composition against the same
+child with no run cost of their own, differing only in which estimate
+fields they scored.
 
 ### C-F044 — an envelope on a whole-second track has exactly one bin per second, and its last bin is the real last second
 One `get_gallery_metadata` call, no run, no GPU:

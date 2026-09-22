@@ -676,7 +676,6 @@ job's outputs. Name anything kept in the issue.
 source: regression agent (opus/anthropic), 2026-09-13 — gap found while
 running SE-F012; `keep_output`/`delete_asset` were covered and `upload_asset`
 was not. First run FAILED on (a) and (b): filed #138.
-last run:
 
 ### SE-F027 — `upload_asset`'s confinement still lets a legal source through, and `..` out of a root does not
 SE-F025 proves `upload_asset` refuses what it must. This case proves it still

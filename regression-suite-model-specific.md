@@ -128,6 +128,9 @@ to enumerate every `templates/minimax/*` entry that exposes `lora_weight_name` (
 `lora_weight_name`, `width`/`height`, `video_shift`/`audio_shift`, `lora_alpha` and
 `num_inference_steps` against the three rows below. Every template also has
 `lora_model_name: "lightx2v/Minimax-h3-Turbo"`, `lora_adapter_name: "turbo"`, `lora_scale: 1.0`.
+`video_shift`, `audio_shift` and `lora_alpha` must all be **declared** keys, not just correctly
+valued — `lora_alpha: null` is a declaration (it means "use the file's own"), while a *missing*
+`lora_alpha` key is a regression a caller reaching for a checkpoint override would hit silently.
 expected:
 - **544p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`,
   `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Templates:
@@ -147,6 +150,9 @@ expected:
   544p shift is the tested combination, not a mismatch — the skill ties canvas to the FL2VA rows only.
 - `num_inference_steps: 9` on all of them; `denoise_total_steps` reporting 8 in a manifest is the
   scheduler counting grid points and is expected (skill hard rules).
+- Note the asymmetry deliberately, on `reference-to-video` and the rest of the Ref2VA row: a
+  768p-trained *Ref2VA* checkpoint stays at shift **12**, not 6 — a run that "helpfully" normalised
+  every 768p-trained checkpoint to shift 6 would break it, since 768p does not imply shift 6.
 It is a **finding** if any template's `lora_weight_name`, canvas, shift pair, alpha or step count
 stops matching the row it belongs to; if an `fl2v` weight appears on a reference-taking template
 (the skill says `validate_workflow` refuses this — a template that ships that way and validates is a
@@ -162,7 +168,12 @@ source: regression agent, model `opus` via provider `anthropic`, found while run
 2026-09-13 (server 0.4.0-beta.3), as a LoRA-present/no-LoRA vs 9/20-step split. Rewritten
 2026-09-14 (Don, via #156, model `opus` via provider `anthropic`) after #147/#148/#149 put a turbo
 LoRA on every template and the skill's rule became checkpoint-canvas-shift-alpha; all 18 templates
-matched the three rows above over MCP on that date. Related: #147, #148, #149, #156.
+matched the three rows above over MCP on that date. Related: #147, #148, #149, #156. Merged with
+M-F007 during the 2026-09-22 suite audit — both compared the same three templates' `video_shift`/
+`lora_alpha` pairing against the same canonical rows; M-F007's "declared vs. missing key" nuance
+and its explicit Ref2VA-asymmetry framing (verified in #147 on that date, workspace `qa-verify`,
+all three templates matching) are folded into the bullets above. M-F008 covers the runtime half —
+that these numbers actually reach the scheduler, not just the catalog.
 
 ### M-F006 — `music-video`'s soundtrack covers the cut at any `shots` length
 `templates/minimax/music-video` invites the caller to change `shots` — its own description says
@@ -209,45 +220,6 @@ succeeded in 831.2 s, `warnings: []`, final `frame_count: 248` / `duration_secon
 against the pre-fix run's 248 / 20.666). Proposed by the implementer; the manifest bullet, the
 whole-song bullet and the carried-forward six-shot direction are mine.
 
-### M-F007 — an H3 checkpoint swap is three numbers, and the catalog says so
-The turbo LoRAs for MiniMax-H3 are trained at a canvas *and* a sigma schedule *and* an alpha, and
-the three move together. `lightx2v/Minimax-h3-Turbo`'s 544p FL2VA checkpoints are trained at shift
-12/3 with the file's own `alpha: 8`; its 768p FL2VA checkpoints are trained at **shift 6**/3 with
-upstream passing `--lora-alpha 128`, a sixteenfold difference from the file's recorded alpha rather
-than a nudge. Before #147 no H3 template mentioned `shift` or `alpha` at all, so a caller reaching
-for 768p could only override `lora_weight_name` — which would have run the 768p LoRA on the 544p
-sigma schedule at a sixteenth of its trained strength, and produced a clip that looks merely
-mediocre rather than misconfigured. This case pins the *pairing* in the catalog: the point is not
-that any one number is right but that the templates state enough for a caller to see that a
-checkpoint swap is not a one-argument change. Note the asymmetry deliberately — the Ref2VA 768p
-checkpoint is shift **12**/3, not 6, so 768p does not imply shift 6.
-Model/pipeline: MiniMax-H3, `lightx2v/Minimax-h3-Turbo` LoRA family. Free — `get_workflow` only, no
-GPU, so run it every pass.
-expected: `get_workflow(name=..., variables_only=true)` on each, checking `video_shift`,
-`audio_shift` and `lora_alpha` are all **declared** (`lora_alpha: null` is a declaration — it means
-"use the file's own" — while a *missing* `lora_alpha` key is the regression):
-- `templates/minimax/video-with-audio` — `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`,
-  960x544, an FL2VA (`fl2v`) weight name.
-- `templates/minimax/video-with-audio-768p` — `video_shift: 6.0`, `audio_shift: 3.0`,
-  `lora_alpha: 128`, 1344x768, a `768p` FL2VA weight name.
-- `templates/minimax/reference-to-video` — `video_shift: 12.0`, `audio_shift: 3.0`,
-  `lora_alpha: null`, 960x544, a **`ref2v`** weight name. This is the asymmetry control: a run that
-  "helpfully" normalised every 768p-trained checkpoint to shift 6 would break it.
-It is a **finding** if any of the three keys stops being declared on any of the three templates, if
-the 544p/768p pair stops differing in `video_shift` and `lora_alpha` (the pair is the whole case —
-two templates that agree on all three numbers mean the distinction has been flattened), or if the
-Ref2VA row moves to shift 6. A number changing in step with a checkpoint change named in an issue is
-not a finding on its own: check which weight file the template now pins, and whether upstream's
-specs table gives that file a different shift/alpha, before filing.
-cleanup: none — reads only, writes nothing.
-metrics: none — this case yields no measurement, only declarations.
-source: tester, model `opus` via provider `anthropic`, verified in #147 on 2026-09-14 against dw
-0.4.0-beta.4 on `lem`, workspace `qa-verify`. All three templates matched the above on that pass.
-The runtime half — that these numbers reach the scheduler rather than merely being declared — is
-M-F002's territory (`num_inference_steps: 9` producing an 8-evaluation schedule), confirmed again
-the same day by job `b4b5959424d3`. Deliberately kept separate: this case is free and that one
-costs a render, and the catalog going stale is the failure worth catching on every pass.
-
 ### M-F008 — the 768p H3 path renders at its trained canvas on its trained schedule
 `templates/minimax/video-with-audio-768p` pins a combination rather than leaving it to arguments:
 the `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16` checkpoint, 1344x768, `video_shift: 6.0`,
@@ -255,7 +227,7 @@ the `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16` checkpoint, 1344x768, `video_sh
 the stack — the canvas to the pipeline, the shift to the scheduler, the alpha to the peft layers
 after load — and none of them fails loudly if it doesn't. A 768p LoRA run on the 544p sigma
 schedule at the file's own `alpha: 8` (a sixteenth of what upstream passes) produces a clip that
-completes, saves, and simply looks mediocre. M-F007 pins that the catalog *declares* these
+completes, saves, and simply looks mediocre. M-F003 pins that the catalog *declares* these
 numbers; this case is the other half — that a render on them actually happens. The two together
 are why a checkpoint swap can be trusted to be three numbers rather than one.
 Model/pipeline: MiniMax-H3 T2VA with `lightx2v/Minimax-h3-Turbo`'s **768p FL2VA** 8-step
