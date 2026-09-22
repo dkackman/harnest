@@ -302,6 +302,41 @@ mark_closures_seen() {
   [ $# -gt 0 ] && printf '%s\n' "$@" >> "$LOGS/closures-seen"
 }
 
+# issue_context <n> [brief]
+# The issue as text for a session prompt: title, labels, body, and the
+# comments - so the agent starts with what it would otherwise spend its
+# first 3-6 turns fetching with gh (tester verify sessions were 583 gh calls
+# out of 812 shell calls, measured 2026-09-21). Capped so a long thread can't
+# swamp the prompt: body 8 KB, the last 6 comments at 3 KB each (`brief`:
+# body 2 KB, no comments - for triage, which sees several issues). An agent
+# still uses gh to act, and to re-read if it suspects the issue moved.
+issue_context() {
+  local n="$1" mode="${2:-full}" body_cap=8000 comment_n=6
+  [ "$mode" = brief ] && { body_cap=2000; comment_n=0; }
+  gh issue view "$n" --repo "$TICKET_REPO" --json number,title,labels,body,comments,author \
+  | jq -r --argjson bc "$body_cap" --argjson cn "$comment_n" '
+      def cap($k): if length > $k then .[:$k] + "\n[... truncated by the driver; gh issue view for the rest]" else . end;
+      "## #\(.number): \(.title)",
+      "labels: \([.labels[].name] | join(", "))   filed by: @\(.author.login)",
+      "",
+      (.body | cap($bc)),
+      (if $cn > 0 and (.comments | length) > 0 then
+        (if (.comments | length) > $cn then "\n[\((.comments | length) - $cn) earlier comment(s) omitted]" else "" end),
+        (.comments[-$cn:][] | "\n--- comment by @\(.author.login) at \(.createdAt) ---\n\(.body | cap(3000))")
+       else empty end)' 2>/dev/null \
+  || echo "## #$n (the driver could not fetch it; use gh issue view)"
+}
+
+# deployed_head
+# What lem is running when the cycle starts, for the implementer's "already
+# addressed?" check and the tester's record of what it verified against.
+# One ssh per cycle instead of one per session; "unknown" on any failure.
+deployed_head() {
+  ssh -o ConnectTimeout=8 -o BatchMode=yes lem \
+    'cd ~/diffusers-workflow && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"' 2>/dev/null \
+  || echo unknown
+}
+
 # implementer_pass — triage (when 2+ issues wait), then one session per issue.
 implementer_pass() {
   local -a queue=()
@@ -311,7 +346,13 @@ implementer_pass() {
 
   if [ "${#queue[@]}" -ge 2 ]; then
     run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow its 'Triage session' section for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow its 'Triage session' section for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop.
+
+lem is running: $DEPLOYED_HEAD (as of $(ts)).
+
+The issues as of $(ts), bodies only — start from these; gh is for acting on them, for their comments, and for anything newer:
+
+$(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
       "${IMPLEMENTER_FLAGS[@]}"
   fi
 
@@ -319,7 +360,13 @@ implementer_pass() {
     still_ready "$n" owner:implementer fresh \
       || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" "$IMPLEMENTER_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.
+
+lem is running: $DEPLOYED_HEAD (as of $(ts)).
+
+The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
+
+$(issue_context "$n")" \
       "${IMPLEMENTER_FLAGS[@]}"
   done
 }
@@ -336,7 +383,13 @@ tester_pass() {
     still_ready "$n" owner:tester verify \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop.
+
+lem is running: $DEPLOYED_HEAD (as of $(ts)).
+
+The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
+
+$(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester verify)
 
@@ -351,7 +404,13 @@ tester_pass() {
     still_ready "$n" owner:tester fresh \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
+
+lem is running: $DEPLOYED_HEAD (as of $(ts)).
+
+The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
+
+$(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester fresh)
 
@@ -363,7 +422,13 @@ tester_pass() {
     still_ready "$n" owner:tester needsinfo \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is an ANSWER session for issue #$n only (step 2a of your loop) - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop." \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is an ANSWER session for issue #$n only (step 2a of your loop) - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
+
+lem is running: $DEPLOYED_HEAD (as of $(ts)).
+
+The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
+
+$(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
   done < <(open_issues owner:tester needsinfo)
 
@@ -410,6 +475,8 @@ while true; do
   cycle=$((cycle + 1))
   park_external_issues
   before="$(status_board)"
+  DEPLOYED_HEAD="$(deployed_head)"
+  echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOGS/loop.log"
 
   implementer_pass
   tester_pass

@@ -28,6 +28,13 @@ related issues can be batched and duplicates closed before any fix starts.
 Every session has a spend cap you can't see; "Leaving a resumable trail"
 under Guardrails says how to make a cut-off session cheap to resume.
 
+The driver also puts the issue itself in your prompt — title, labels, body
+and the latest comments, as of the moment the session started — and the
+branch and commit `lem` is running. Start from those; `gh` is for acting on
+the issue and for anything that may have changed since (a long thread is
+truncated, and the prompt says so where it is). Fetching what you were
+already given is a wasted turn.
+
 ## Your loop, every session
 
 1. Your prompt names the issue. `gh issue view <n> --comments`. Confirm it
@@ -71,13 +78,17 @@ under Guardrails says how to make a cut-off session cheap to resume.
       - create a branch for groups of fixes
       - once verified merge changes to the develop branch and start the next round of fixes from there
       - do not merge to master
-   d. Deploy to `lem`:
-      - `ssh don@lem`
-      - pull/sync the changed code into the deployed location
-      - restart the MCP server process (use whatever process manager is set
-        up — systemd unit, screen/tmux session, or direct process restart)
-      - confirm it comes back up (check process status + a basic health/list
-        of tools call if the MCP exposes one)
+   d. Deploy to `lem` — one call, after pushing your branch:
+      `ssh lem ~/diffusers-workflow/scripts/deploy.sh <branch>`. It fetches,
+      checks the branch out, fast-forwards, reinstalls only if
+      `pyproject.toml` changed, waits for any running job, restarts the
+      server (systemd unit if installed, else its `screen` session) and
+      polls health; its last line is the deployed commit. Don't hand-roll
+      any of that over ssh — no `git pull`, `pgrep`, `kill`, `screen`, or
+      `sleep` loops — and never `kill -9` the server: if the script fails,
+      its output says why; put that in the issue and hand off with
+      `status:needs-info` to `owner:don` rather than forcing it. The log is
+      `journalctl --user -u dw-serve` (unit) or `~/dw-serve.log` (screen).
    e. Update the issue:
       - `gh issue edit <n> --remove-label owner:implementer --add-label
         owner:tester --add-label status:fixed-pending-verify`

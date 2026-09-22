@@ -234,9 +234,16 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   agent it does see source, and unlike the implementer it can never change
   it.
 
-Two deploy paths, and the implementer must say which one a fix used: server code → restart on
-`lem`, tool schemas refresh automatically; plugin/skill changes → commit and leave the checkout
-on that branch, no restart.
+Two deploy paths, and the implementer must say which one a fix used: server code →
+`ssh lem ~/diffusers-workflow/scripts/deploy.sh <branch>` (in the dw repo: fetch, ff-only pull,
+reinstall if `pyproject.toml` changed, wait for a running job, restart via the `dw-serve`
+systemd user unit if installed else its `screen` session, poll health — the one call that
+replaced ~40 hand-rolled ssh turns per issue and eleven `kill -9`s of the server), tool schemas
+refresh automatically; plugin/skill changes → commit and leave the checkout on that branch, no
+restart. `run-loop.sh` also records what lem is running at the start of every cycle
+(`deployed_head`, one ssh) and puts it, plus the issue's title/labels/body/latest comments
+(`issue_context`, capped), into every per-issue session prompt so neither role spends its first
+turns on `gh issue view`.
 
 ## Ticket protocol (the core of the design)
 

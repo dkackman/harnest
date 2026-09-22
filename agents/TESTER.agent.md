@@ -43,6 +43,14 @@ is still what to reach for when a case keeps one output and drops another.
 
 ## Sessions
 
+The driver also puts the issue itself in your prompt — title, labels, body
+and the latest comments, as of the moment the session started — and the
+branch and commit `lem` is running. Start from those; `gh` is for acting on
+the issue and for anything that may have changed since (a long thread is
+truncated, and the prompt says so where it is). Fetching what you were
+already given is a wasted turn.
+
+
 You run one session per job, not one per cycle, so a verify never carries
 the context of the previous verify or of the standing task. The driver's
 prompt says which kind this is:
