@@ -1250,20 +1250,32 @@ width: 256}}, result: {content_type: "image/png", subfolder: "final"}}` — no
 5. `save_workflow(patch=...)` adding `release_pipeline: true` to the `qr`
    step, then the 32-entry validation once more.
 expected: (1) `valid: true`, `warnings: []` — cold start, no history, no
-projection; (3) `valid: true` **and** one warning beginning `Projected host
-memory for this run (~N MB, 32 entries held resident together) exceeds this
-machine's usable RAM (~M MB)` — N is the run's observed peak × 32 (a bare
-worker peaks ~1.9 GB, so N ≈ 60 GB), M ≈ 90% of host RAM, and the run is
-*not* blocked; (4) `warnings: []` — 16 × ~1.9 GB is under the ceiling; (5)
+projection; (3) N = 32 × the run's job-scoped peak (`host_memory_job_peak_rss_mb`,
+#272 — the whole server process's RSS during that job, not qr_code's own
+delta, so it's dominated by the process's own baseline footprint rather than
+anything qr_code does). On a box whose ~90%-of-RAM ceiling (M) sits below N,
+`valid: true` **and** one warning beginning `Projected host memory for this
+run (~N MB, 32 entries held resident together) exceeds this machine's usable
+RAM (~M MB)`, and the run is *not* blocked. On lem specifically (~64 GB RAM,
+M ≈ 57.8 GB) a bare worker's job-scoped peak runs ~800–900 MB, so N ≈ 26–29
+GB sits *under* M — (3) legitimately comes back `warnings: []` there; that's
+the ceiling and the job-scoped metric working as intended (#272), not a
+regression (see #334). Before #272 this case's N used the process's
+*lifetime* peak instead, which climbs across a session and reliably cleared
+M — that arithmetic no longer holds and should not be used to judge (3);
+(4) `warnings: []` — 16 entries projects to half of N, further under M; (5)
 `warnings: []` — the released shape projects the largest single peak, not
-per-entry × N. The regressions: (3) coming back with no warning (history not
-persisted or not read), `valid: false` on (3) (warn became refuse, which the
-approved scope rejects), a warning on (1) (a projection from nothing), or a
-warning on (5) (the shape distinction lost). If (3) is silent on a box with
-much more than 64 GB RAM, that's the ceiling, not a regression — say so.
+per-entry × N. The regressions: `valid: false` on (3) (warn became refuse,
+which the approved scope rejects), a warning on (1) (a projection from
+nothing), or a warning on (5) (the shape distinction lost). A silent (3) is
+only a regression when N (report the job-scoped peak actually observed × 32)
+would itself clear this box's M and it still comes back empty — always state
+both N and M when reporting (3), silent or not, since "silent" alone no
+longer says which case it is.
 cleanup: `delete_workflow("c-f040-qr-list")`; delete the run's output.
 source: tester, verified in #243 (run over MCP 2026-09-19 as the calls above,
-model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6).
+model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6); expected
+text corrected for #272's job-scoped peak per #334 (2026-09-22).
 
 ### C-F041 — a resident `for_each`'s host-memory projection counts history rows from default-argument runs
 Companion to C-F040, narrowed to the one thing #264 broke: a history row
@@ -1284,23 +1296,36 @@ for_each: "variable:codes", task: {command: "qr_code", arguments:
    `arguments`** — the 1-entry default, so the history row's own `arguments`
    is `{}`; `wait_for_job`;
 3. the same 32-entry validation again.
-expected: (1) `valid: true`, `warnings: []`; (3) `valid: true` and exactly one
-warning beginning `Projected host memory for this run (~N MB, 32 entries held
+expected: (1) `valid: true`, `warnings: []`; (3), on a box whose ~90%-of-RAM
+ceiling (M) sits below N = 32 × the run's job-scoped peak
+(`host_memory_job_peak_rss_mb`, #272), `valid: true` and exactly one warning
+beginning `Projected host memory for this run (~N MB, 32 entries held
 resident together) exceeds this machine's usable RAM` and citing `based on 1
-run(s) of this workflow's own history`. N is whatever the run's
-`host_memory_peak_rss_mb` was × 32 — on a warm worker that peak is the
-process's lifetime high-water mark (#272), so N can be absurd (~2 TB); the
-case asserts only that the row was counted (the warning exists and says
-"entries held resident together"), not N's size. The regression is (3)
-coming back `warnings: []` — the default-arguments row dropped from the count
-again — or `valid: false`. On a box with much more than 64 GB RAM (3) may be
-silent because 32 × a bare ~1.9 GB peak fits under the ceiling; say so
-rather than fail it. Do not extend this case to the 16-entry or
-`release_pipeline` checks — those are C-F040's, and both are blocked on #272.
+run(s) of this workflow's own history` — proof the default-arguments row's
+`{}` resolved to a count instead of being dropped (#264).
+
+**Known gap on lem (#334):** a bare worker's job-scoped peak (~800–900 MB)
+puts N ≈ 26–29 GB under lem's M (~57.8 GB), so (3) comes back `warnings: []`
+there regardless of whether the row was counted — a dropped row (bug
+present) and a counted row that's simply under ceiling (bug absent) are
+*indistinguishable* by this case's only observable on this box. Do not treat
+a silent (3) on lem as either a pass or a fail on its own; it does not
+exercise #264 here. The deterministic guard for #264 is
+`tests/test_host_memory_projection.py::test_default_arguments_row_still_counts_toward_the_projection`
+in the dw repo's own pytest suite (synthetic rows, no live RAM dependency) —
+that is what actually re-catches this regression; treat this MCP case as
+confirming the warning *shape* (message text, `based on N run(s)` phrasing)
+when it does fire, not as the primary #264 regression guard while lem stays
+this large. Only fail this case outright on `valid: false`, or on a
+malformed/missing warning when one does appear.
+
+Do not extend this case to the 16-entry or `release_pipeline` checks — those
+are C-F040's.
 cleanup: `delete_workflow(<it>)`; delete the run's output.
 source: tester, verified in #264 (run over MCP 2026-09-21 as the calls above,
 model `opus` via provider `anthropic`; the implementer's proposed case from
-its #264 hand-off).
+its #264 hand-off); expected text corrected for #272's job-scoped peak, and
+the resulting lem coverage gap documented, per #334 (2026-09-22).
 
 ### C-F042 — a pure-composition parent inherits its observed child's basis, carrying `runs`/`measured_on` through; a parent with its own uncosted step does not
 Five `validate_workflow` calls with an inline `workflow`, no run, no GPU.
