@@ -816,30 +816,37 @@ expected: one inline workflow, seeded, two `slice_audio` steps against
 writing `audio/wav` to `final`, differing only in `sample_rate`: `ctrl` at
 `44100`, `test` at `32000`. Then `get_job(...)["warnings"]` and
 `get_gallery_metadata(..., envelope=true)` on both outputs.
-(a) `ctrl` produces **exactly one** warning, prefixed with its step name and
-containing `past the end of`, with the real numbers (≈2.98 s padded onto a
-30.02 s source, 33.00 s returned) — this is C-F016's contract, re-asserted on a
-second source. (b) `test` produces **no** `slice_past_end` warning at all:
-33.00 s × 32000 = 1,056,000 samples is only 23.95 s of a 44100 Hz source, so
-nothing runs past the end. (c) Both files decode at `duration_seconds: 33.0`,
-`ctrl` at 44100 Hz and `test` at 32000 Hz. (d) The dilation is exactly the rate
-ratio, 44100/32000 = 1.378: landmark `peak_dbfs` values in the source's own
-envelope recur in `test`'s envelope at 1.378× their source timestamp, matching
-to ~4 decimal places — e.g. source t=16 s `-8.9205` → test t=22 s; source t=21 s
-`-21.6359` → test t=29 s; source t=23 s `-7.0706` → test t=31 s. (Envelope
-buckets are 1 s wide, so score the values' identity and the ~1.38 trend across
-several landmarks, not a single bucket index.)
-It is a **finding** if (a) stops warning (C-F016 regressed), if (b) starts
+(a) `ctrl` produces a warning, prefixed with its step name and containing
+`past the end of`, with the real numbers (≈2.98 s padded onto a 30.02 s
+source, 33.00 s returned) — this is C-F016's contract, re-asserted on a second
+source; it may also carry the fixture's own unrelated no-headroom/clip
+warnings (the file peaks above 0 dBFS regardless of the rate given), which are
+not part of this case's assertion. `ctrl` carries **no** relabel warning: a
+`sample_rate` matching the file's own is not a mismatch. (b) `test` produces
+**no** `slice_past_end` warning at all: 33.00 s × 32000 = 1,056,000 samples is
+only 23.95 s of a 44100 Hz source, so nothing runs past the end. Since #180's
+proposal 2 landed, `test` instead carries a `rate_override_mismatch`-style
+warning naming both rates (e.g. `sample_rate=32000 was given, but the source
+actually carries 44100 Hz`) and pointing at `resample_audio` — this is the
+guard C-F031(a) pins in full; its presence here is expected, not a finding.
+(c) Both files decode at `duration_seconds: 33.0`, `ctrl` at 44100 Hz and
+`test` at 32000 Hz. (d) The dilation is exactly the rate ratio, 44100/32000 =
+1.378: landmark `peak_dbfs` values in the source's own envelope recur in
+`test`'s envelope at 1.378× their source timestamp, matching to ~4 decimal
+places — e.g. source t=16 s `-8.9205` → test t=22 s; source t=21 s `-21.6359`
+→ test t=29 s; source t=23 s `-7.0706` → test t=31 s. (Envelope buckets are
+1 s wide, so score the values' identity and the ~1.38 trend across several
+landmarks, not a single bucket index.) The override still reinterprets rather
+than resamples — the guard warns about it, it does not stop it.
+It is a **finding** if (a) stops warning (C-F016 regressed) or gains a relabel
+warning of its own (a matching rate flagged as a mismatch), if (b) starts
 emitting a `slice_past_end` warning computed from the *file's* rate rather than
 the rate the task was given (the warning's arithmetic must stay self-consistent
-with the length the task actually saw — C-F016 says the same), if (d)'s ratio is
-no longer the rate ratio (the override quietly became a resample, which is a
-behaviour change callers relying on the documented semantics would not be told
-about), or if either step errors. It is **not** a finding — it is the fix landing
-— if `test` gains a *new, distinctly named* warning that the given `sample_rate`
-differs from the rate the named file carries; that is proposal 2 on #180 and is
-the outcome this case exists to make visible. Update the case then, via the
-normal route, rather than reading it as a pass or a fail.
+with the length the task actually saw — C-F016 says the same), if (b) stops
+carrying the relabel warning (the guard regressing — #180 proposal 2 going
+quiet again), if (d)'s ratio is no longer the rate ratio (the override quietly
+became a resample, which is a behaviour change callers relying on the
+documented semantics would not be told about), or if either step errors.
 cleanup: delete the run's outputs. `asset:qa-cast/ep15-song.mp3` is a durable
 fixture listed above — keep it.
 source: tester, found while running TESTER_TASK.agent.md (episode 18) on
@@ -847,7 +854,14 @@ source: tester, found while running TESTER_TASK.agent.md (episode 18) on
 `qa-ep18`, job `ce7a0a579ecb` (1.45 s; `ctrl` warned `slice_past_end`, `test`
 `warnings: []`; both 33.0 s; landmarks matched at 1.378×). Filed as #180 against
 `templates/assemble-and-score`, which wires its mix `sample_rate` into this
-parameter and so reaches the dilation from its own defaults.
+parameter and so reaches the dilation from its own defaults. Updated by the
+regression agent (`complete` level) on 2026-09-22, model `sonnet` via provider
+`anthropic`, after #180 proposal 2 landed: job `65dd5aed9633` reproduced (a)
+(past-end warning plus incidental clip/headroom warnings from the fixture's
+own level), (b) (`test` now carries the relabel warning and no `slice_past_end`),
+(c) (both 33.0 s at their own rates) and (d) (landmarks at 1.378× matching to
+4 decimal places) — the case's own "fix landing" carve-out, made the new
+baseline rather than an in-band pass/fail read.
 
 ### C-F031 — a `sample_rate` that contradicts a file's real rate is warned about, and `assemble-and-score` resamples its score instead of relabelling it
 C-F030 pins the *old* pairing: the override dilates and says nothing. This case
