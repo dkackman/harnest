@@ -1776,11 +1776,11 @@ inclusive, tiled into one image with the timestamp burned into each tile. Cheap 
 model, runs in about a second on the 124-frame fixture.
 expected: `get_task("frame_grid")` lists `video`, `count` (default 12), `columns`
 (default null), `tile_width` (default 320), `label` (default true). Then run an inline
-one-step workflow `{"name": "grid", "task": {"command": "frame_grid", "arguments":
-{"video": "asset:qa-cast/ep6-cold-open.mp4", "count": "variable:count", "columns":
-"variable:columns", "tile_width": "variable:tile_width"}}, "result": {"content_type":
-"image/png", "subfolder": "final"}}` with `variables: {"count": 12, "columns": null,
-"tile_width": 320}`:
+one-step workflow `{"id": "qa-s071-grid", "variables": {"count": 12, "columns": null,
+"tile_width": 320}, "steps": [{"name": "grid", "task": {"command": "frame_grid",
+"arguments": {"video": "asset:qa-cast/ep6-cold-open.mp4", "count": "variable:count",
+"columns": "variable:columns", "tile_width": "variable:tile_width"}}, "result":
+{"content_type": "image/png", "subfolder": "final"}}]}`:
 - defaults → `succeeded`, a manifest of exactly one `.png`, and `get_output_image` on it
   reports `original_size: [1280, 543]` — 4 columns × 3 rows of 320×181 tiles (the
   fixture is 960×544, so `rows = isqrt(12) = 3`, `columns = ceil(12/3) = 4`, biased wide).
@@ -1914,7 +1914,7 @@ expected:
   pure composition inherits the child's figure, and the parent is not named (#268).
 - `id: "qa-252-unpriced-parent"` again, still **no** `cost`, with a second step after
   `clip`: `{"name": "sheet", "task": {"command": "frame_grid", "arguments": {"video":
-  "output:clip"}}, "result": {"content_type": "image/png", "subfolder": "intermediate"}}`
+  "previous_result:clip"}}, "result": {"content_type": "image/png", "subfolder": "intermediate"}}`
   → `valid: true`; `partial: true`; `unpriced == ["qa-252-unpriced-parent"]` — the parent
   alone, named for its own uncosted task step, since the child is priced; `minutes` is
   still the child's figure, not null. (The #242 shape #268 explicitly preserves; the
