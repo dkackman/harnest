@@ -221,10 +221,14 @@ a human approves.
   repo (`suite` + `status:needs-approval`) of proposed moves, merges, contradictions, stale references and retirements
   against a per-level budget. A level is skipped for 7 days after a run, or while its last
   curation issue is still open.
+  The first run (harnest#2, applied 2026-09-23) moved 40 cases from smoke to complete,
+  leaving smoke at 56 cases against a 30 min / $13 budget.
 - **`run-retro.sh`** reads the logs since the last retro and files up to three evidenced
   proposals on this repo, labeled `harness` + `status:needs-approval`. The logs cover
   cost per role, denials, guard refusals, audit warnings, bounces and bench results.
   `RETRO_EVIDENCE_ONLY=1` prints the evidence without running a session.
+  The first (harnest#3, applied) added a "Your shell" section to the tester and regression
+  prompts, naming the tool to use for each pattern the fence denies.
 - **`run-digest.sh`** writes one line per `owner:don` issue: the ask, a recommendation and
   the command that carries it out, plus the median days parked. It writes
   `logs/digest.md`; `DIGEST_ISSUE=N` also posts it on issue N.

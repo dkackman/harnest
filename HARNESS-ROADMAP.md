@@ -14,9 +14,9 @@ rather than in a separate log.
 | R2  | Pre-hand-off reviewer subagent                    | checklist applied; watch live bounces | — |
 | R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
 | R4  | Tester-authored acceptance specs for features     | todo    | —          |
-| R5  | Scheduled suite curation                          | built; first proposal harnest#2 waiting | — |
+| R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56); schedule weekly | — |
 | R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
-| R7  | Retro agent (the self-improvement loop)           | built; first proposal harnest#3 | R1 |
+| R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; watch denial counts | R1 |
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
@@ -218,7 +218,8 @@ That's a prompt change, so it goes through R1: a baseline run, the checklist, th
 The 4 bounced cases in `bench/` are the ones to watch. Revisit the reviewer if the checklist
 doesn't move the bounce rate over the next ~30 hand-offs.
 
-**Applied (2026-09-23), in step 3c of `IMPLEMENTER.agent.md`, before the merge.** It's in 3c
+**Applied (2026-09-23), in step 3c of `IMPLEMENTER.agent.md`, before the merge** (since R10,
+the "Fix" section of `agents/implementer/fix.md`). It's in 3c
 rather than 3e so that it runs before `develop` is pushed, where fixing a miss is cheaper,
 and so that the benchmark's replay note (which skips 3e) exercises it. R1 result: neutral on
 pass rate, one traceable win (#302), +4% cost; see R1. The measure that decides it is the
@@ -424,7 +425,7 @@ dropped by about that share.
 2. Pick the next batch. The free `validate_workflow` pre-flight cases (S-F010, S-F018,
    S-F026, S-F032–S-F035) are the obvious ones.
 3. Teach the tester to add a JSON case beside a prose case it adds. That's a
-   `TESTER.agent.md` change, and `commit_suite_changes` must also commit
+   `agents/tester/cases.md` change, and `commit_suite_changes` must also commit
    `contract/cases/`.
 
 ## R7 — Retro agent (the self-improvement loop)
@@ -484,6 +485,10 @@ plus `--body-file`, Edit for perf appends, `--jq` instead of pipelines and loops
 measure it named is those denial counts in the next digest. It looked at the most expensive
 sessions and the bounces and found nothing new to file. Its own fence denied it a `for`
 loop and an `awk` pipeline once each.
+
+**Applied (2026-09-23), commit `2c8b025`.** A "Your shell" section in
+`agents/tester/core.md` and `agents/regression/core.md` lists what the fence allows and the
+tool to use instead of each denied pattern. The next retro's denial counts are the measure.
 
 ## R8 — Port the drivers to the Claude Agent SDK
 

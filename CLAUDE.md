@@ -340,7 +340,7 @@ prompts say the same of comments met via `gh`. `DEPLOYED_HEAD` is refreshed betw
 passes (the tester must be told what it is actually verifying against), and
 `check_lem_on_develop` logs a warning and redeploys `develop` itself (`DEPLOY_ON_MISMATCH=0`
 to only warn) if lem isn't on `origin/develop` at that point —
-the implementer merges every fix into `develop` and deploys `develop` (role prompt step 3c/3d)
+the implementer merges every fix into `develop` and deploys `develop` (the "Fix" and "Deploy" sections of `agents/implementer/fix.md`)
 because lem can only be on one commit and a cycle hands off several fixes; on 2026-09-21
 three branch-only deploys were wiped by a fourth session's `develop` deploy and had to be
 merged by hand before the tester ran. Both are driver-side (one `ls-remote`, the same ssh) —
