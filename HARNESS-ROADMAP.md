@@ -10,8 +10,8 @@ rather than in a separate log.
 
 | ID  | Item                                              | Status  | Depends on |
 |-----|---------------------------------------------------|---------|------------|
-| R1  | Replay benchmark (measure the loop itself)        | built; corrected baseline running | —   |
-| R2  | Pre-hand-off reviewer subagent                    | measured; re-scoped to a checklist | R1 baseline |
+| R1  | Replay benchmark (measure the loop itself)        | done; baseline + checklist run | —   |
+| R2  | Pre-hand-off reviewer subagent                    | checklist applied; watch live bounces | — |
 | R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
 | R4  | Tester-authored acceptance specs for features     | todo    | —          |
 | R5  | Scheduled suite curation                          | built; first proposal harnest#2 waiting | — |
@@ -133,9 +133,37 @@ and bounce count (`handoff_count` logic already exists in `run-loop.sh`).
 - On the bounced cases, the judge marks down what only the tester's bounce asked for (#75's
   `pipeline_released` event, #265's run-time backstop). The real implementer missed those
   too, so those cases measure whether a fix anticipates the tester, which is R2's target.
-- The judge is somewhat lenient on error-message quality: #124 passed with a raw-regex
-  message. Tighten it with a rescore (`BENCH_RESCORE=1`) of every label at once, never
-  between runs being compared.
+- The judge was somewhat lenient on error-message quality: #124 passed with a raw-regex
+  message.
+
+**Corrected baseline, and the R2 checklist (2026-09-23).** Both runs were judged by the
+same judge. It was pinned to `claude-opus-5-5` at effort `high`, with a rubric that counts
+error and warning message quality, and 3 tries of 150 s each.
+
+| run | judged | pass | partial | fail | cost |
+|---|---|---|---|---|---|
+| `baseline2-sonnet@a84c53b` (corrected snapshots) | 16 of 17 | 10 | 5 | 1 | $18.74 |
+| `checklist-sonnet@733e4db` (+ pre-merge checklist) | 17 of 17 | 11 | 6 | 0 | $19.53 |
+
+Case by case, 14 of 17 cases got the same verdict. The differences:
+- **#302, partial → pass.** The candidate swept all ~50 templates instead of two. That's
+  exactly the checklist's "every item the issue names is covered".
+- **#124, pass → partial.** The two sessions wrote different messages. The checklist run
+  produced the raw-regex message the first run had also produced. That's sampling
+  variance, correctly penalized by the new rubric.
+- **#186, fail → partial.** Both runs have the same underlying flaw; this is judge variance
+  on it.
+- **#238** was never judged in baseline2: the Opus stall beat all three tries.
+
+With 17 cases and one run each, the checklist is neutral on pass rate. It has one win
+traceable to it, no loss attributable to it, and costs about 4% more.
+
+Judge notes:
+- Opus stalled mid-thinking on #238's baseline2 prompt in every try. A trivial Opus prompt
+  answered in 2 s, and Sonnet answered that prompt every time. A case that exhausts its
+  tries is counted as "unjudged" (`judged=` in `--summary`), not as a fail.
+- A single run's noise is about ±1–2 cases. Before relying on a small difference, run the
+  same config twice.
 
 ## R2 — Pre-hand-off reviewer
 
@@ -189,6 +217,13 @@ swap:
 That's a prompt change, so it goes through R1: a baseline run, the checklist, then a rerun.
 The 4 bounced cases in `bench/` are the ones to watch. Revisit the reviewer if the checklist
 doesn't move the bounce rate over the next ~30 hand-offs.
+
+**Applied (2026-09-23), in step 3c of `IMPLEMENTER.agent.md`, before the merge.** It's in 3c
+rather than 3e so that it runs before `develop` is pushed, where fixing a miss is cheaper,
+and so that the benchmark's replay note (which skips 3e) exercises it. R1 result: neutral on
+pass rate, one traceable win (#302), +4% cost; see R1. The measure that decides it is the
+live bounce rate over the next ~30 hand-offs, against 8.6%. `run-retro.sh`'s digest reports
+hand-offs and bounces for each window.
 
 ## R3 — Invariant hooks
 

@@ -10,7 +10,8 @@
 #   BENCH_PROMPT_REV=538f87f ./run-bench.sh # the implementer prompt as of a commit
 #   BENCH_JOBS=3 ./run-bench.sh             # cases in parallel (no lem involved)
 #   ./run-bench.sh --summary                # pass rate / cost / turns per label
-#   BENCH_RESCORE=1 BENCH_LABEL=x ./run-bench.sh 289   # re-score a kept session, no new spend
+#   BENCH_RESCORE=1 BENCH_LABEL=x ./run-bench.sh 289   # re-score a kept session, no new session
+#   BENCH_RESCORE=judge BENCH_LABEL=x ./run-bench.sh    # re-judge only, reusing that label's stored signals
 #
 # Standalone and offline: no gh, no ssh, no MCP, never touches lem or the
 # agents' checkout. Each case gets a fresh clone holding only history up to
@@ -47,7 +48,12 @@ JUDGE_PROVIDER="${JUDGE_PROVIDER:-anthropic}"
 # which a replay skips.
 BENCH_BUDGET_USD="${BENCH_BUDGET_USD:-4}"
 JUDGE_BUDGET_USD="${JUDGE_BUDGET_USD:-1}"
-JUDGE_TIMEOUT_SECS="${JUDGE_TIMEOUT_SECS:-300}"
+JUDGE_TIMEOUT_SECS="${JUDGE_TIMEOUT_SECS:-150}"
+JUDGE_TRIES="${JUDGE_TRIES:-3}"
+# Pinned, like every session's effort: with no --effort the judge's request
+# stalled mid-thinking on one prompt, three times out of three (2026-09-23);
+# medium and high both answered in under a minute.
+JUDGE_EFFORT="${JUDGE_EFFORT:-high}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 BENCH_JOBS="${BENCH_JOBS:-1}"
 BENCH_PROMPT_REV="${BENCH_PROMPT_REV:-}"   # empty = working tree
@@ -68,6 +74,7 @@ summary() {
     | group_by([.label, .issue]) | map(max_by(.at))
     | group_by(.label)[]
     | { label: .[0].label, n: length,
+        judged: map(select(.verdict == "pass" or .verdict == "partial" or .verdict == "fail")) | length,
         pass: map(select(.verdict == "pass")) | length,
         partial: map(select(.verdict == "partial")) | length,
         clean: map(select(.new_failures == 0)) | length,
@@ -76,7 +83,7 @@ summary() {
         cost: (map(.cost) | add), turns: (map(.turns) | add / length | round),
         ctx: (map(.ctx_peak_k) | add / length | round),
         capped: map(select(.budget_hit)) | length }
-    | "\(.label)\n  n=\(.n) pass=\(pct(.pass; .n)) partial=\(pct(.partial; .n)) no-new-failures=\(pct(.clean; .n)) hidden-tests=\(pct(.hidden; .hidden_n)) budget-capped=\(.capped)\n  cost=$\(.cost * 100 | round / 100) ($\(.cost / .n * 100 | round / 100)/case) turns=\(.turns)/case ctx_peak=\(.ctx)k/case"
+    | "\(.label)\n  n=\(.n) judged=\(.judged) pass=\(pct(.pass; .judged)) partial=\(pct(.partial; .judged)) no-new-failures=\(pct(.clean; .n)) hidden-tests=\(pct(.hidden; .hidden_n)) budget-capped=\(.capped)\n  cost=$\(.cost * 100 | round / 100) ($\(.cost / .n * 100 | round / 100)/case) turns=\(.turns)/case ctx_peak=\(.ctx)k/case"
   ' "$RESULTS"
 }
 [ "${1:-}" = --summary ] && { shift; summary "$@"; exit 0; }
@@ -146,7 +153,7 @@ run_case() {
   # Pre-fix failures, once per commit: this Mac fails some worker tests at
   # every commit, and those mustn't count against the agent.
   local base="$LOGS/baseline-$prefix.txt"
-  if [ "${BENCH_RESCORE:-0}" = 1 ] && [ -s "$out/session.jsonl" ]; then
+  if [ "${BENCH_RESCORE:-0}" != 0 ] && [ -s "$out/session.jsonl" ]; then
     echo "$tag $(ts) rescoring the existing session in $out"
     # Scoring mutates the tree (the real fix's tests go in), so every score
     # starts from the frozen agent result, never from a previous score.
@@ -201,8 +208,15 @@ $(runtime_note implementer "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL")" \
             r=$(wc -l < "$out/real.files"); h=$(comm -12 "$out/real.files" "$out/agent.files" | wc -l)
             [ "$r" -eq 0 ] && echo null || awk -v h="$h" -v r="$r" 'BEGIN{printf "%.2f", h/r}')"
 
+  local newfail hidden=none
+  if [ "${BENCH_RESCORE:-0}" = judge ]; then
+    local prev
+    prev="$(jq -c --arg l "$BENCH_LABEL" --argjson i "$n" 'select(.label == $l and .issue == $i)' "$RESULTS" | tail -n 1)"
+    [ -n "$prev" ] || { echo "$tag no earlier row under $BENCH_LABEL to rejudge" >&2; return 0; }
+    newfail="$(jq -r .new_failures <<<"$prev")"; hidden="$(jq -r .hidden <<<"$prev")"
+    recall="$(jq -r .file_recall <<<"$prev")"
+  else
   echo "$tag $(ts) scoring"
-  local newfail
   newfail="$(comm -13 "$base" <(pytest_failures "$dir") | tee "$out/new-failures.txt" | wc -l | tr -d ' ')"
 
   # The real fix's tests against the agent's code: those test files go back
@@ -210,7 +224,6 @@ $(runtime_note implementer "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL")" \
   # own edits to the same files are replaced (its other test files stay). A
   # fix that implements the same behavior under different names fails these
   # without being wrong, which is why this informs the judge, not the verdict.
-  local hidden=none
   if [ -s "$case/tests.patch" ]; then
     local -a tfiles=(); while IFS= read -r f; do tfiles+=("$f"); done < <(jq -r '.test_files[]' "$case/meta.json")
     for f in "${tfiles[@]}"; do
@@ -222,6 +235,7 @@ $(runtime_note implementer "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL")" \
       if [ -s "$out/hidden-failures.txt" ]; then hidden=fail; else hidden=pass; fi
     else hidden=conflict; fi
   fi
+  fi
 
   echo "$tag $(ts) judging"
   local jprompt="You are judging a replayed bug fix. An implementer agent was given the issue below at the commit just before the real fix, and produced the candidate diff. The real fix was verified by an independent tester over the live MCP interface. Decide whether the candidate would have passed that verification.
@@ -230,6 +244,7 @@ pass: fixes what the issue describes, as completely as the real fix does in subs
 partial: fixes some of it, or fixes it with a gap the tester would plausibly have bounced.
 fail: does not fix it, is wrong, or breaks something else.
 An escalation or needs-info in HANDOFF.md instead of a fix is 'pass' only if the issue genuinely required it, and the real fix shows otherwise here.
+Error and warning messages are part of the behavior: the tester reads them over MCP, and a message that names the wrong thing or leaks internals (a raw regex, an exception repr) is something it bounces. A candidate whose user-facing message is materially less specific than the real fix's is at best 'partial'.
 
 $(jq -r '"Case note: \(.note)"' "$case/meta.json")
 
@@ -254,13 +269,21 @@ real fix's tests on candidate tree: $hidden
 share of real fix's non-test files touched: $recall
 
 End your answer with exactly one line of JSON: {\"verdict\": \"pass|partial|fail\", \"reason\": \"<one or two sentences>\"}"
+  printf '%s' "$jprompt" > "$out/judge-prompt.txt"
   local jout
-  # A judge call normally takes ~15 s; one hung for 10+ minutes on
-  # 2026-09-23, so it is bounded. A timeout leaves verdict "error", which a
-  # BENCH_RESCORE run replaces.
-  jout="$(cd "$out" && env ${JUDGE_ENV[@]+"${JUDGE_ENV[@]}"} perl -e 'alarm shift; exec @ARGV' "$JUDGE_TIMEOUT_SECS" claude -p "$jprompt" --model "$JUDGE_MODEL" \
-            --max-budget-usd "$JUDGE_BUDGET_USD" --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "" \
-            --output-format json < /dev/null 2>/dev/null || true)"
+  # A judge call normally takes 15-50 s. Opus stalled mid-thinking on one
+  # 23 KB prompt in 4 of 6 tries on 2026-09-23 (a trivial prompt answered in
+  # 2 s, and Sonnet answered that prompt every time), so each try is bounded
+  # and a stalled one is retried. Still no verdict after JUDGE_TRIES leaves
+  # "error", which --summary counts separately and BENCH_RESCORE=judge redoes.
+  local jout="" try
+  for try in $(seq 1 "$JUDGE_TRIES"); do
+    jout="$(cd "$out" && env ${JUDGE_ENV[@]+"${JUDGE_ENV[@]}"} perl -e 'alarm shift; exec @ARGV' "$JUDGE_TIMEOUT_SECS" claude -p "$jprompt" --model "$JUDGE_MODEL" --effort "$JUDGE_EFFORT" \
+              --max-budget-usd "$JUDGE_BUDGET_USD" --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "" \
+              --output-format json < /dev/null 2>/dev/null || true)"
+    printf '%s' "$jout" | jq -r '.result // ""' 2>/dev/null | grep -q '{"verdict"' && break
+    echo "$tag judge try $try gave no verdict${try:+, retrying}"
+  done
   printf '%s\n' "$jout" > "$out/judge.json"
   local verdict
   verdict="$(printf '%s' "$jout" | jq -r '.result // ""' 2>/dev/null | grep -o '{"verdict".*}' | tail -n 1 || true)"
