@@ -1,0 +1,20 @@
+{
+ "issue": 345,
+ "kind": "validation",
+ "note": "pipeline step with a component_type diffusers lacks",
+ "title": "validate_workflow passes a pipeline step whose component_type diffusers does not export, and quotes its download; the run dies 3 s in (same class as #285's task.command)",
+ "prefix": "b0965b3443bd9937a85a84c74453f39594e71898",
+ "fix_commits": [
+  "cf96edf1fc18951336696483b89518a6feef837b"
+ ],
+ "fix_files": [
+  "dw/introspection.py",
+  "dw/workflow.py",
+  "tests/test_component_type_errors.py"
+ ],
+ "test_files": [
+  "tests/test_component_type_errors.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

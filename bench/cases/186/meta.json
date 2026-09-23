@@ -1,0 +1,24 @@
+{
+ "issue": 186,
+ "kind": "bounced",
+ "note": "plan/server: expose gated repos before queueing (2 hand-offs)",
+ "title": "Model catalog does not expose whether a repo is gated before a run is queued",
+ "prefix": "09875d9ef105c7ab336625d883ea5b4913dbe5f1",
+ "fix_commits": [
+  "993fe44f8e50db12ccb1f43bf349fcad8bc1ce42",
+  "f78226ea41df62f1fe6cb12af3f85b137a56bd63"
+ ],
+ "fix_files": [
+  "docs/SERVER.md",
+  "dw/plan.py",
+  "dw/server/app.py",
+  "tests/test_plan.py",
+  "tests/test_server.py"
+ ],
+ "test_files": [
+  "tests/test_plan.py",
+  "tests/test_server.py"
+ ],
+ "handoffs": 2,
+ "body_edited_after_filing": false
+}

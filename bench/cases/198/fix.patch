@@ -1,0 +1,472 @@
+commit a0cd11a3ce05e7b0c9b25418cce70aabe7401834
+fix(audio): #198/#199 - warn on tonal bleed material, add gain_db to bleed_join
+
+
+diff --git a/docs/TASKS.md b/docs/TASKS.md
+index 0540762..139c5ff 100644
+--- a/docs/TASKS.md
++++ b/docs/TASKS.md
+@@ -216,6 +216,7 @@ video generation" in the workflow guide):
+ | `trim_frames` | No | Frames dropped from the head of every video after the first (default: 0) |
+ | `crossfade_ms` | No | Equal-power crossfade at each audio seam, drawn from the trimmed material - no effect when `trim_frames` is 0, and validation warns when one is written there (default: 75) |
+ | `audio_bleed_ms` | No | How long the outgoing video's tail rings on over the head of the next one, at seams with nothing trimmed to crossfade (default: 0, off) |
++| `audio_bleed_gain_db` | No | Gain applied to the bled tail before it is added, in dB - negative ducks a tail that would otherwise push the seam over 0 dBFS (default: 0, unchanged) |
+ | `seam_fade_ms` | No | Fade on each side of a seam that gets neither a crossfade nor a bleed - for tonal material, not for a continuous bed (default: 3, just enough not to click) |
+ | `fps` | No | Frame rate of the videos - required to join audio when trimming, and the rate the joined file is written at unless `result.fps` overrides it |
+ | `match_levels` | No | Even the shots' loudness out before joining - `"rms"` for perceived level (the measurement `get_gallery_metadata` reports as `mean_dbfs`), `"peak"` for the loudest sample. Off by default |
+@@ -225,7 +226,9 @@ A video may also be named by path or URL, which is how shots an earlier run
+ already wrote are joined without regenerating them - the file is read with the
+ audio muxed into it, and its track is fitted to the frames' own duration so the
+ codec's block padding does not walk the sound off the picture over a dozen
+-seams:
++seams. A shot generated in memory through a `previous_result:` chain gets the
++same fit, applied where the file is written rather than where it is decoded,
++so per-shot drift does not accumulate across a cut the way it once did:
+ 
+ ```json
+ {
+@@ -281,7 +284,10 @@ a five-shot H3 sitcom cut, 700 ms still left a 44 dB hole at the worst seam;
+ 
+ A bleed works because it copies ambience, which has no pitch and no attacks to
+ give the copy away. It is the wrong tool for anything tonal - a copied musical
+-phrase or half-spoken word reads as a stutter whichever direction it runs. When a
++phrase or half-spoken word reads as a stutter whichever direction it runs.
++`bleed_join` checks the outgoing tail's spectral flatness and warns when it
++looks tonal or speech-like rather than noise-like, so this failure mode
++surfaces in the job's `warnings` list instead of only in the mix. When a
+ shot ends on something tonal, either give the cut a continuous bed with
+ `slice_audio` + `loop_audio` + `mix_audio` + `pair_audio`, which leaves no seam
+ to treat at all, or fade the
+diff --git a/dw/tasks/audio_utils.py b/dw/tasks/audio_utils.py
+index 603e74c..b56b00b 100644
+--- a/dw/tasks/audio_utils.py
++++ b/dw/tasks/audio_utils.py
+@@ -112,7 +112,27 @@ def equal_power_crossfade_join(
+     return numpy.concatenate([previous[:, :-window], blended, following], axis=1)
+ 
+ 
+-def bleed_join(previous, following, sample_rate, bleed_ms, seam_fade_ms=None):
++# Below this, the reversed tail's spectral energy is concentrated in a few
++# bins rather than spread across the band - speech or a pitched/tonal element
++# rather than room tone or crowd noise, the direction-agnostic material a
++# bleed is meant for
++TONAL_FLATNESS_THRESHOLD = 0.3
++
++
++def _spectral_flatness(waveform):
++    """Geometric-mean-over-arithmetic-mean of the magnitude spectrum, averaged
++    across channels - near 0 for tonal/speech material, near 1 for noise-like
++    material (see TONAL_FLATNESS_THRESHOLD)."""
++    spectrum = numpy.abs(numpy.fft.rfft(waveform, axis=1))
++    spectrum = numpy.maximum(spectrum, 1e-10)
++    geometric_mean = numpy.exp(numpy.mean(numpy.log(spectrum), axis=1))
++    arithmetic_mean = numpy.mean(spectrum, axis=1)
++    return float(numpy.mean(geometric_mean / arithmetic_mean))
++
++
++def bleed_join(
++    previous, following, sample_rate, bleed_ms, seam_fade_ms=None, gain_db=0.0
++):
+     """Butt-join two waveforms, ringing the outgoing tail on across the seam.
+ 
+     Cut-based workflows generate every shot independently, so nothing overlaps at
+@@ -124,7 +144,10 @@ def bleed_join(previous, following, sample_rate, bleed_ms, seam_fade_ms=None):
+     waveform, the way an audience carries across a picture cut. The copy is
+     time-reversed so it starts on the outgoing waveform's own last sample and the
+     seam stays continuous without a declick fade; crowd noise and room tone are
+-    direction-agnostic, so the reversal itself is not audible.
++    direction-agnostic, so the reversal itself is not audible - speech or a
++    tonal/musical tail is not, which is what gets a warning below rather than a
++    refusal, since a caller who has already listened to the material may still
++    want the bleed.
+ 
+     The tail is added to whatever the incoming waveform already carries, and
+     neither side is shortened, so frames and samples stay in step.
+@@ -136,6 +159,10 @@ def bleed_join(previous, following, sample_rate, bleed_ms, seam_fade_ms=None):
+         bleed_ms: How long the tail rings on, clamped to the material available
+         seam_fade_ms: Fade applied on each side of the seam when there is no
+             material to bleed at all
++        gain_db: Gain applied to the bled copy before it is added, in dB -
++            negative ducks a tail that would otherwise push the seam over
++            0 dBFS; 0 (the default) is unchanged, full-scale, the prior
++            behavior
+ 
+     Returns:
+         The two waveforms joined, of their full combined length
+@@ -150,15 +177,32 @@ def bleed_join(previous, following, sample_rate, bleed_ms, seam_fade_ms=None):
+     if window <= 0:
+         return _declick_join(previous, following, sample_rate, seam_fade_ms)
+ 
++    tail = previous[:, ::-1][:, :window]
++
++    flatness = _spectral_flatness(previous[:, -window:])
++    if flatness < TONAL_FLATNESS_THRESHOLD:
++        emit_warning(
++            f"bleed_join: the tail being reversed onto the seam looks tonal or "
++            f"speech-like (spectral flatness {flatness:.2f}) rather than the "
++            f"room tone or crowd noise a bleed is meant for - the reversal is "
++            f"likely to be audible as a stutter or a note running backwards. "
++            f"Consider seam_fade_ms for a hard cut on this material instead.",
++            kind="bleed_tonal_material",
++            command="bleed_join",
++            flatness=round(flatness, 3),
++        )
++
+     decay, _ = _equal_power_ramps(window)  # cos: 1 down to ~0
++    gain = 10.0 ** (gain_db / 20.0) if gain_db else 1.0
+     following = following.copy()
+-    following[:, :window] += previous[:, ::-1][:, :window] * decay
++    following[:, :window] += tail * decay * gain
+ 
+     peak = numpy.abs(following[:, :window]).max()
+     if peak > 1.0:
+         logger.warning(
+             f"Audio bleed pushed the seam to {peak:.2f} - it is added to the "
+-            f"incoming track, which was not silent enough to absorb it"
++            f"incoming track, which was not silent enough to absorb it. Pass "
++            f"a negative gain_db to duck the bled copy."
+         )
+     return numpy.concatenate([previous, following], axis=1)
+ 
+diff --git a/dw/tasks/concat_videos.py b/dw/tasks/concat_videos.py
+index 1b18365..61aed5b 100644
+--- a/dw/tasks/concat_videos.py
++++ b/dw/tasks/concat_videos.py
+@@ -45,6 +45,7 @@ def concat_videos(
+     trim_frames=0,
+     crossfade_ms=75,
+     audio_bleed_ms=0,
++    audio_bleed_gain_db=0,
+     seam_fade_ms=None,
+     fps=None,
+     match_levels=None,
+@@ -72,6 +73,11 @@ def concat_videos(
+             cut-based workflows, where every shot is generated independently and
+             a running laugh track would otherwise butt-join into silence.
+             0 (the default) leaves the seam as a plain declicked join
++        audio_bleed_gain_db: Gain applied to the bled tail before it is added,
++            in dB. 0 (the default) is unchanged, full-scale, matching the
++            outgoing material exactly; negative ducks a tail that would
++            otherwise push the seam over 0 dBFS, or that reads as too present
++            against the incoming shot. Has no effect when audio_bleed_ms is 0
+         seam_fade_ms: Fade applied on each side of a seam that gets neither a
+             crossfade nor a bleed. Defaults to the few milliseconds that keep a
+             butt-join from clicking; raise it to a hundred or so for a graceful
+@@ -199,7 +205,12 @@ def concat_videos(
+         )
+         if trim_samples == 0 and audio_bleed_ms:
+             audio = bleed_join(
+-                audio, waveform, sample_rate, audio_bleed_ms, seam_fade_ms
++                audio,
++                waveform,
++                sample_rate,
++                audio_bleed_ms,
++                seam_fade_ms,
++                audio_bleed_gain_db,
+             )
+         else:
+             audio = equal_power_crossfade_join(
+diff --git a/tests/test_audio_utils.py b/tests/test_audio_utils.py
+index 99918ea..c0abf7e 100644
+--- a/tests/test_audio_utils.py
++++ b/tests/test_audio_utils.py
+@@ -324,6 +324,38 @@ class TestBleedJoin:
+ 
+         assert bleed_join(previous, following, 100, 500).shape == (2, 200)
+ 
++    def test_gain_db_scales_the_bled_tail(self):
++        previous = numpy.full((1, 100), 0.5, dtype=numpy.float32)
++        following = numpy.zeros((1, 100), dtype=numpy.float32)
++
++        full = bleed_join(previous, following, 100, 500, gain_db=0.0)
++        ducked = bleed_join(previous, following, 100, 500, gain_db=-6.0)
++
++        assert ducked[0, 100] == pytest.approx(
++            full[0, 100] * 10 ** (-6.0 / 20.0), abs=1e-3
++        )
++
++    def test_tonal_material_warns(self, caplog):
++        # a pure tone concentrates its spectrum in one bin - low flatness
++        t = numpy.arange(400) / 100.0
++        previous = numpy.sin(2 * numpy.pi * 5 * t).astype(numpy.float32)[None, :]
++        following = numpy.zeros((1, 400), dtype=numpy.float32)
++
++        with caplog.at_level("WARNING"):
++            bleed_join(previous, following, 100, 500)
++
++        assert "tonal" in caplog.text or "speech" in caplog.text
++
++    def test_noise_like_material_does_not_warn(self, caplog):
++        rng = numpy.random.default_rng(0)
++        previous = rng.normal(0, 0.2, (1, 400)).astype(numpy.float32)
++        following = numpy.zeros((1, 400), dtype=numpy.float32)
++
++        with caplog.at_level("WARNING"):
++            bleed_join(previous, following, 100, 500)
++
++        assert "tonal" not in caplog.text
++
+ 
+ class TestResampleAudio:
+     def test_it_scales_the_length_to_the_new_rate(self):
+commit 15e99213aba74172f1a3a9f79d46d41aa57016e1
+fix(audio): #198 - detect speech/tonal bleed tails at native rate
+
+
+diff --git a/dw/tasks/audio_utils.py b/dw/tasks/audio_utils.py
+index b56b00b..fc8980c 100644
+--- a/dw/tasks/audio_utils.py
++++ b/dw/tasks/audio_utils.py
+@@ -118,20 +118,88 @@ def equal_power_crossfade_join(
+ # bleed is meant for
+ TONAL_FLATNESS_THRESHOLD = 0.3
+ 
++# Above this, the tail's waveform repeats closely enough within a plausible
++# pitch period to be voiced speech or a pitched note rather than noise -
++# a bandwidth-insensitive companion to flatness, since a resample's own
++# band limiting does not touch how periodic the waveform is (#198)
++HARMONICITY_THRESHOLD = 0.45
+ 
+-def _spectral_flatness(waveform):
++# Typical fundamental range for a human voice or a pitched instrument note;
++# the periodicity search only looks at lags in this range so a slow room-tone
++# swell or hum near DC cannot register as a pitch
++_PERIODICITY_MIN_HZ = 60.0
++_PERIODICITY_MAX_HZ = 500.0
++
++
++def _spectral_flatness(waveform, sample_rate=None, native_sample_rate=None):
+     """Geometric-mean-over-arithmetic-mean of the magnitude spectrum, averaged
+     across channels - near 0 for tonal/speech material, near 1 for noise-like
+-    material (see TONAL_FLATNESS_THRESHOLD)."""
++    material (see TONAL_FLATNESS_THRESHOLD).
++
++    When the material was upsampled, band-limited interpolation leaves near
++    zero energy above the original Nyquist - a large near-silent band that
++    depresses the geometric mean relative to the arithmetic one regardless of
++    what the material actually is, reading as spuriously tonal (#198). Given
++    both rates, the spectrum is limited to bins below the native Nyquist so an
++    upsampled tail is measured the same as it would be at its own rate.
++    """
+     spectrum = numpy.abs(numpy.fft.rfft(waveform, axis=1))
++    if (
++        sample_rate
++        and native_sample_rate
++        and native_sample_rate < sample_rate
++    ):
++        native_bins = max(
++            2,
++            int(spectrum.shape[1] * native_sample_rate / sample_rate),
++        )
++        spectrum = spectrum[:, :native_bins]
+     spectrum = numpy.maximum(spectrum, 1e-10)
+     geometric_mean = numpy.exp(numpy.mean(numpy.log(spectrum), axis=1))
+     arithmetic_mean = numpy.mean(spectrum, axis=1)
+     return float(numpy.mean(geometric_mean / arithmetic_mean))
+ 
+ 
++def _harmonicity(waveform, sample_rate):
++    """Normalized autocorrelation peak within a plausible pitch range,
++    averaged across channels - near 1 for a strongly periodic signal (voiced
++    speech, a pitched note), near 0 for noise (see HARMONICITY_THRESHOLD).
++
++    Spectral flatness alone missed real speech (#198): a vowel's formants
++    spread its energy broadly enough across the band that flatness reads
++    similar to noise, even though the waveform itself repeats every pitch
++    period. Autocorrelation measures that repetition directly and is
++    insensitive to how the spectrum happens to be shaped, so it catches what
++    flatness cannot.
++    """
++    min_lag = max(int(sample_rate / _PERIODICITY_MAX_HZ), 1)
++    max_lag = min(int(sample_rate / _PERIODICITY_MIN_HZ), waveform.shape[1] - 1)
++    if max_lag <= min_lag:
++        return 0.0
++
++    scores = []
++    for channel in waveform:
++        centered = channel - channel.mean()
++        energy = float(numpy.dot(centered, centered))
++        if energy <= 1e-12:
++            continue
++        correlation = numpy.correlate(centered, centered, mode="full")
++        zero_lag = correlation.shape[0] // 2
++        window = correlation[zero_lag + min_lag : zero_lag + max_lag + 1]
++        if window.size == 0:
++            continue
++        scores.append(float(numpy.max(window) / energy))
++    return max(scores) if scores else 0.0
++
++
+ def bleed_join(
+-    previous, following, sample_rate, bleed_ms, seam_fade_ms=None, gain_db=0.0
++    previous,
++    following,
++    sample_rate,
++    bleed_ms,
++    seam_fade_ms=None,
++    gain_db=0.0,
++    native_sample_rate=None,
+ ):
+     """Butt-join two waveforms, ringing the outgoing tail on across the seam.
+ 
+@@ -163,6 +231,12 @@ def bleed_join(
+             negative ducks a tail that would otherwise push the seam over
+             0 dBFS; 0 (the default) is unchanged, full-scale, the prior
+             behavior
++        native_sample_rate: The rate the outgoing tail was actually recorded
++            or generated at, when that differs from sample_rate because the
++            caller upsampled it to join. Band-limits the flatness check to
++            below the tail's own Nyquist, so upsampling's near-silent high
++            band cannot itself read as tonal (#198). Omit when the tail is
++            already at its native rate
+ 
+     Returns:
+         The two waveforms joined, of their full combined length
+@@ -179,17 +253,21 @@ def bleed_join(
+ 
+     tail = previous[:, ::-1][:, :window]
+ 
+-    flatness = _spectral_flatness(previous[:, -window:])
+-    if flatness < TONAL_FLATNESS_THRESHOLD:
++    tail_source = previous[:, -window:]
++    flatness = _spectral_flatness(tail_source, sample_rate, native_sample_rate)
++    harmonicity = _harmonicity(tail_source, native_sample_rate or sample_rate)
++    if flatness < TONAL_FLATNESS_THRESHOLD or harmonicity > HARMONICITY_THRESHOLD:
+         emit_warning(
+             f"bleed_join: the tail being reversed onto the seam looks tonal or "
+-            f"speech-like (spectral flatness {flatness:.2f}) rather than the "
+-            f"room tone or crowd noise a bleed is meant for - the reversal is "
+-            f"likely to be audible as a stutter or a note running backwards. "
+-            f"Consider seam_fade_ms for a hard cut on this material instead.",
++            f"speech-like (spectral flatness {flatness:.2f}, harmonicity "
++            f"{harmonicity:.2f}) rather than the room tone or crowd noise a "
++            f"bleed is meant for - the reversal is likely to be audible as a "
++            f"stutter or a note running backwards. Consider seam_fade_ms for "
++            f"a hard cut on this material instead.",
+             kind="bleed_tonal_material",
+             command="bleed_join",
+             flatness=round(flatness, 3),
++            harmonicity=round(harmonicity, 3),
+         )
+ 
+     decay, _ = _equal_power_ramps(window)  # cos: 1 down to ~0
+diff --git a/dw/tasks/concat_videos.py b/dw/tasks/concat_videos.py
+index 61aed5b..4a838f0 100644
+--- a/dw/tasks/concat_videos.py
++++ b/dw/tasks/concat_videos.py
+@@ -182,6 +182,7 @@ def concat_videos(
+ 
+     frames = []
+     audio = None
++    audio_native_rate = None
+ 
+     for index, (video, clip) in enumerate(zip(videos, clips)):
+         head_trim = trim_frames if index > 0 else 0
+@@ -193,6 +194,7 @@ def concat_videos(
+         waveform = waveforms[index]
+         if audio is None:
+             audio = waveform
++            audio_native_rate = video.sample_rate
+             continue
+ 
+         if head_trim > 0 and fps is None:
+@@ -211,6 +213,7 @@ def concat_videos(
+                 audio_bleed_ms,
+                 seam_fade_ms,
+                 audio_bleed_gain_db,
++                native_sample_rate=audio_native_rate,
+             )
+         else:
+             audio = equal_power_crossfade_join(
+@@ -221,6 +224,7 @@ def concat_videos(
+                 crossfade_ms,
+                 seam_fade_ms,
+             )
++        audio_native_rate = video.sample_rate
+ 
+     logger.debug(f"Concatenated {len(videos)} videos into {len(frames)} frames")
+     # The rate the caller declared, else the rate the first input carries -
+diff --git a/tests/test_audio_utils.py b/tests/test_audio_utils.py
+index c0abf7e..8803bd1 100644
+--- a/tests/test_audio_utils.py
++++ b/tests/test_audio_utils.py
+@@ -15,6 +15,7 @@ from dw.tasks.audio_utils import (
+     frames_to_samples,
+     load_audio,
+     resample_audio,
++    resample_waveform,
+     slice_samples,
+ )
+ 
+@@ -356,6 +357,71 @@ class TestBleedJoin:
+ 
+         assert "tonal" not in caplog.text
+ 
++    def test_native_rate_speech_like_material_warns_via_harmonicity(self, caplog):
++        # broadband formants keep flatness high (noise-like), so only a
++        # periodicity measure catches this as voiced speech (#198)
++        sample_rate = 24000
++        n = int(sample_rate * 0.3)
++        t = numpy.arange(n) / sample_rate
++        rng = numpy.random.default_rng(1)
++        f0 = 150.0
++        harmonics = [1.0, 0.6, 0.45, 0.3, 0.2, 0.12]
++        speech_like = sum(
++            amp * numpy.sin(2 * numpy.pi * f0 * (k + 1) * t + rng.uniform(0, 2 * numpy.pi))
++            for k, amp in enumerate(harmonics)
++        )
++        speech_like = speech_like + rng.normal(0, 0.25, n)
++        speech_like = (speech_like / numpy.abs(speech_like).max()).astype(numpy.float32)
++        previous = speech_like[None, :]
++        following = numpy.zeros((1, n), dtype=numpy.float32)
++
++        with caplog.at_level("WARNING"):
++            bleed_join(previous, following, sample_rate, 300)
++
++        assert "tonal" in caplog.text or "speech" in caplog.text
++
++    def test_native_rate_noise_does_not_warn_at_speech_rate(self, caplog):
++        # regression guard: harmonicity must not itself become a false
++        # positive source for genuine noise at a realistic sample rate
++        sample_rate = 24000
++        n = int(sample_rate * 0.3)
++        rng = numpy.random.default_rng(1)
++        previous = rng.normal(0, 0.2, (1, n)).astype(numpy.float32)
++        following = numpy.zeros((1, n), dtype=numpy.float32)
++
++        with caplog.at_level("WARNING"):
++            bleed_join(previous, following, sample_rate, 300)
++
++        assert "tonal" not in caplog.text
++        assert "speech" not in caplog.text
++
++    def test_upsampled_noise_does_not_falsely_warn_when_native_rate_given(
++        self, caplog
++    ):
++        # band-limited interpolation leaves near-silence above the tail's own
++        # Nyquist, which used to depress flatness and read as spuriously
++        # tonal purely because of the resample - not because of the content
++        # (#198)
++        native_rate = 16000
++        target_rate = 48000
++        n = int(native_rate * 0.3)
++        rng = numpy.random.default_rng(2)
++        noise = rng.normal(0, 0.2, (1, n)).astype(numpy.float32)
++        upsampled = resample_waveform(noise, native_rate, target_rate)
++        following = numpy.zeros_like(upsampled)
++
++        with caplog.at_level("WARNING"):
++            bleed_join(
++                upsampled,
++                following,
++                target_rate,
++                300,
++                native_sample_rate=native_rate,
++            )
++
++        assert "tonal" not in caplog.text
++        assert "speech" not in caplog.text
++
+ 
+ class TestResampleAudio:
+     def test_it_scales_the_length_to_the_new_rate(self):

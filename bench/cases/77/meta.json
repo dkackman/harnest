@@ -1,0 +1,17 @@
+{
+ "issue": 77,
+ "kind": "skill",
+ "note": "LTX skill should recommend save:false on intermediates (doc-only)",
+ "title": "LTX skill should recommend save: false on intermediate steps",
+ "prefix": "6cc2643992cca1a8b46450804698ec9828c11b3b",
+ "fix_commits": [
+  "32063070a68a06420e4e530f28909d008b8eaee4"
+ ],
+ "fix_files": [
+  "plugins/dw/skills/ltx-2.5/SKILL.md",
+  "plugins/dw/skills/minimax-music3/SKILL.md"
+ ],
+ "test_files": [],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

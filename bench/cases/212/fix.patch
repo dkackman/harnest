@@ -1,0 +1,301 @@
+commit da32153b00763962db0af56fe1946ca10a0c3cb4
+fix: #212 - validate_workflow refuses result on scalar-returning steps
+
+
+diff --git a/dw/result.py b/dw/result.py
+index c2ab2e8..41cf22e 100644
+--- a/dw/result.py
++++ b/dw/result.py
+@@ -578,6 +578,19 @@ class Result:
+             logger.warning(f"Skipping None artifact for {file_base_name}")
+             return []
+ 
++        if isinstance(artifact, (int, float, bool)):
++            # Static validation (dw/scalar_result_validation.py, #212) refuses
++            # a 'result' block on a command declared to return a scalar, but
++            # a command name reached only through a 'variable:' is literal
++            # only at run time and so invisible to that check - this is the
++            # same refusal for the one path that can still get here, naming
++            # the value rather than failing inside soundfile/PIL/open() with
++            # a bare TypeError after the step's own work is already done
++            raise ValueError(
++                f"'{file_base_name}' is a {type(artifact).__name__} ({artifact!r}), "
++                "not an artifact - a 'result' block cannot save it"
++            )
++
+         if isinstance(artifact, dict):
+             # Recursively save dictionary items
+             logger.debug(
+diff --git a/dw/scalar_result_validation.py b/dw/scalar_result_validation.py
+new file mode 100644
+index 0000000..8628c91
+--- /dev/null
++++ b/dw/scalar_result_validation.py
+@@ -0,0 +1,78 @@
++"""A `result` block on a step whose command returns a scalar, not an
++artifact (#212).
++
++`judge` returns a bare `float` - a natural fit for `result` to look like it
++applies (the guide's Result Configuration section describes saving text,
++and a score reads like one), but there is no file to write. `validate_workflow`
++answered `valid: true` and the run generated its full fan-out before dying
++deep inside `save_artifact` on `write() argument must be str, not float`,
++naming neither the step nor the command. Checked here against the command's
++own declared `returns` kind (`dw/tasks/task.py`'s `register_command`) rather
++than a name match on `judge`, so a future scalar-returning task is covered
++by declaring itself rather than by a second special case here.
++"""
++
++from .for_each import MEMBER_SEPARATOR, render_path
++from .tasks.task import task_command_info
++
++RESULT_KEY = "result"
++
++
++def scalar_result_errors(workflow_definition, source_indices=None):
++    """Every `result` block on a scalar-returning command, as [{path, message}].
++
++    The definition handed here has already been substituted and expanded,
++    so a step's `task.command` is literal. `source_indices`, when given, is
++    the source step index of each step - a `for_each` group turns one
++    written step into several, and the path an error carries has to be one
++    the author can find in the file they wrote; the member is named in the
++    message.
++    """
++    steps = workflow_definition.get("steps")
++    if not isinstance(steps, list):
++        return []
++
++    errors = []
++    for index, step in enumerate(steps):
++        if not isinstance(step, dict):
++            continue
++        result = step.get(RESULT_KEY)
++        if not isinstance(result, dict):
++            continue
++        task = step.get("task")
++        if not isinstance(task, dict):
++            continue
++        command = task.get("command")
++        if not isinstance(command, str):
++            continue
++        try:
++            info = task_command_info(command)
++        except ValueError:
++            continue
++        if info.get("returns") != "scalar":
++            continue
++
++        source = (
++            source_indices[index]
++            if source_indices is not None and index < len(source_indices)
++            else index
++        )
++        name = step.get("name")
++        where = (
++            f" in member '{name}'"
++            if isinstance(name, str) and MEMBER_SEPARATOR in name
++            else ""
++        )
++        errors.append(
++            {
++                "path": render_path(("steps", source, RESULT_KEY)),
++                "message": (
++                    f"{command} returns a number, not an artifact - "
++                    f"'result' cannot be saved{where}"
++                ),
++            }
++        )
++    return errors
++
++
++__all__ = ["scalar_result_errors"]
+diff --git a/dw/tasks/task.py b/dw/tasks/task.py
+index 2a0db33..1a07d1d 100644
+--- a/dw/tasks/task.py
++++ b/dw/tasks/task.py
+@@ -33,7 +33,11 @@ _COMMAND_INFO: Dict[str, dict] = {}
+ 
+ 
+ def register_command(
+-    command_name: str, implementation=None, provided=(), consumes_device=False
++    command_name: str,
++    implementation=None,
++    provided=(),
++    consumes_device=False,
++    returns="artifact",
+ ):
+     """
+     Decorator to register a command handler function.
+@@ -53,6 +57,13 @@ def register_command(
+             reach the implementation as an unexpected keyword argument (#185).
+             Some commands (e.g. gather_inputs) receive a non-dict argument
+             value, which never carries a device to drop
++        returns: "artifact" (the default - an image/video/audio/frames object
++            `Result.save` knows how to write) or "scalar" for a command whose
++            return value is a bare number with no file to save (`judge`). A
++            `result` block on a "scalar" command is refused in
++            `validation_errors` (dw/scalar_result_validation.py, #212) rather
++            than reaching `save_artifact` at run time, where a float has
++            nothing left identifying which command produced it
+ 
+     Returns:
+         Decorator function
+@@ -73,6 +84,7 @@ def register_command(
+             "kind": "command",
+             "implementation": implementation,
+             "provided": tuple(provided),
++            "returns": returns,
+         }
+         logger.debug(f"Registered command handler: {command_name}")
+         return func
+@@ -83,8 +95,11 @@ def register_command(
+ def task_command_info(command_name):
+     """Where a task command's argument schema lives: a dict with 'kind'
+     ('command', 'image_processor' or 'video_processor'), 'implementation'
+-    (dotted path or None for free-form), and 'provided'. Raises ValueError
+-    for a name that is not a task command at all."""
++    (dotted path or None for free-form), 'provided', and 'returns'
++    ('artifact', the default, or 'scalar' for a bare-number command like
++    `judge` - missing entirely for an image/video processor, which is
++    always artifact-shaped). Raises ValueError for a name that is not a
++    task command at all."""
+     info = _COMMAND_INFO.get(command_name)
+     if info is not None:
+         return info
+@@ -450,6 +465,7 @@ def _handle_image_to_text(task, arguments, previous_pipelines):
+     "judge",
+     implementation="dw.tasks.judge.judge",
+     consumes_device=True,
++    returns="scalar",
+ )
+ def _handle_judge(task, arguments, previous_pipelines):
+     """Score an image against a rubric with a vision-language model"""
+diff --git a/dw/workflow.py b/dw/workflow.py
+index 7777700..cc7cba5 100644
+--- a/dw/workflow.py
++++ b/dw/workflow.py
+@@ -44,6 +44,7 @@ from .variable_constraints import (
+ from .subfolders import step_subfolder, subfolder_errors
+ from .reference_names import reference_name_errors
+ from .content_types import content_type_errors
++from .scalar_result_validation import scalar_result_errors
+ from .kernel_availability import kernel_availability_errors
+ from .step import Step
+ from .step_cache import (
+@@ -641,6 +642,12 @@ class Workflow:
+             # traceback naming neither the field nor the value
+             # (dw/content_types.py, #168)
+             + content_type_errors(expanded, source_indices)
++            # A 'result' block on a step whose command returns a scalar, not
++            # an artifact - judge's score validated clean and then died
++            # inside save_artifact with a bare TypeError after the fan-out
++            # ahead of it had already generated (dw/scalar_result_validation.py,
++            # #212)
++            + scalar_result_errors(expanded, source_indices)
+             # A location policy refuses before a model load is spent on the
+             # run rather than after it (dw/locations.py)
+             + location_errors(expanded, source_indices, base_dir)
+diff --git a/tests/test_scalar_result_validation.py b/tests/test_scalar_result_validation.py
+new file mode 100644
+index 0000000..7241790
+--- /dev/null
++++ b/tests/test_scalar_result_validation.py
+@@ -0,0 +1,97 @@
++"""Tests for #212: `validate_workflow` refusing a `result` block on a step
++whose command returns a scalar rather than an artifact.
++
++`judge` returns a bare float; a `result` block on such a step validated
++clean and then died at run time inside `save_artifact` with
++`write() argument must be str, not float` after the fan-out ahead of it had
++already generated (#212). These are the free pre-flight versions.
++"""
++
++import unittest
++
++from dw.scalar_result_validation import scalar_result_errors
++
++
++def _step(name, command, result=None, arguments=None):
++    step = {"name": name, "task": {"command": command, "arguments": arguments or {}}}
++    if result is not None:
++        step["result"] = result
++    return step
++
++
++class TestScalarResultErrors(unittest.TestCase):
++    def test_result_on_judge_is_an_error(self):
++        definition = {
++            "steps": [
++                _step(
++                    "score",
++                    "judge",
++                    result={"content_type": "text/plain", "subfolder": "intermediate"},
++                )
++            ]
++        }
++
++        errors = scalar_result_errors(definition, source_indices=[0])
++
++        self.assertEqual(len(errors), 1)
++        self.assertEqual(errors[0]["path"], "steps[0].result")
++        self.assertIn("judge", errors[0]["message"])
++        self.assertIn("not an artifact", errors[0]["message"])
++
++    def test_no_result_on_judge_is_fine(self):
++        definition = {"steps": [_step("score", "judge")]}
++
++        errors = scalar_result_errors(definition, source_indices=[0])
++
++        self.assertEqual(errors, [])
++
++    def test_result_on_artifact_returning_command_is_fine(self):
++        definition = {
++            "steps": [
++                _step(
++                    "shot",
++                    "gather_images",
++                    result={"content_type": "image/png"},
++                )
++            ]
++        }
++
++        errors = scalar_result_errors(definition, source_indices=[0])
++
++        self.assertEqual(errors, [])
++
++    def test_unknown_command_is_ignored(self):
++        definition = {
++            "steps": [_step("mystery", "not_a_real_command", result={"content_type": "image/png"})]
++        }
++
++        errors = scalar_result_errors(definition, source_indices=[0])
++
++        self.assertEqual(errors, [])
++
++    def test_member_step_names_the_member_in_the_message(self):
++        definition = {
++            "steps": [
++                _step(
++                    "score@shot-1",
++                    "judge",
++                    result={"content_type": "text/plain"},
++                )
++            ]
++        }
++
++        errors = scalar_result_errors(definition, source_indices=[0])
++
++        self.assertEqual(len(errors), 1)
++        self.assertIn("member 'score@shot-1'", errors[0]["message"])
++
++    def test_non_dict_step_is_skipped(self):
++        definition = {"steps": ["not-a-step"]}
++
++        errors = scalar_result_errors(definition)
++
++        self.assertEqual(errors, [])
++
++
++if __name__ == "__main__":
++    unittest.main()

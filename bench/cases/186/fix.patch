@@ -1,0 +1,490 @@
+commit 993fe44f8e50db12ccb1f43bf349fcad8bc1ce42
+fix(plan): #186 - surface gate status in downloads_required pre-flight
+
+
+diff --git a/docs/SERVER.md b/docs/SERVER.md
+index 099d418..69e8810 100644
+--- a/docs/SERVER.md
++++ b/docs/SERVER.md
+@@ -303,9 +303,18 @@ The editor's forms come from these; they are just as usable from scripts:
+   also gets a warning saying so, since `0` alone does not distinguish a
+   disabled cache from an empty one);
+   `downloads_required`, each `model_name` the hub cache does not hold as
+-  `{repo, gb}` (`gb` from the hub, `null` when it could not be asked -
+-  `?sizes=false` skips the hub) and each `from_single_file` URL as
+-  `{repo: null, url, gb: null}`; and `estimate`, `{minutes, basis,
++  `{repo, gb, gated, access_blocked}` (`gb` from the hub, `null` when it
++  could not be asked - `?sizes=false` skips the hub, and then `gated` and
++  `access_blocked` are `null` too); `gated` is the hub's own field for the
++  repo (`false`, `"auto"` or `"manual"`) or `null` when the lookup itself
++  failed for a reason other than the gate; `access_blocked` is `true`
++  when this box's Hugging Face token specifically has not been granted
++  access to a gated repo (`GatedRepoError` from the hub, the pre-flight
++  signal for what would otherwise be a 403 partway into a run, #186) -
++  `validate_workflow`'s `warnings` carries one line per such entry. Each
++  `from_single_file` URL is `{repo: null, url, gb: null, gated: null,
++  access_blocked: null}`, since a direct file URL is never gated; and
++  `estimate`, `{minutes, basis,
+   device, measured_on, partial, runs}` from this box's own history when it
+   has one and otherwise from the workflow's `cost` block -
+   `basis` is `observed` (the cold median of this server's own finished runs
+diff --git a/dw/plan.py b/dw/plan.py
+index ae7b547..3a8d1a6 100644
+--- a/dw/plan.py
++++ b/dw/plan.py
+@@ -19,7 +19,7 @@ import logging
+ import os
+ 
+ from huggingface_hub import model_info
+-from huggingface_hub.utils import HFValidationError, validate_repo_id
++from huggingface_hub.utils import GatedRepoError, HFValidationError, validate_repo_id
+ 
+ from .elision import elide_definition
+ from .hub_cache import scan_models
+@@ -459,9 +459,14 @@ def downloads_required(expanded, base_dir, workflow_dir, cache_dir, lookup_sizes
+         # body, and a free pre-flight must not be a directory-existence oracle
+         if name in present or not _is_repo_id(name):
+             continue
+-        required.append({"repo": name, "gb": _size_gb(name) if lookup_sizes else None})
++        entry = {"repo": name, "gb": None, "gated": None, "access_blocked": None}
++        if lookup_sizes:
++            entry["gb"], entry["gated"], entry["access_blocked"] = _model_info(name)
++        required.append(entry)
+     for url in urls:
+-        required.append({"repo": None, "url": url, "gb": None})
++        required.append(
++            {"repo": None, "url": url, "gb": None, "gated": None, "access_blocked": None}
++        )
+     return required
+ 
+ 
+@@ -495,6 +500,20 @@ def _collect_sources(tree, names, urls):
+             _collect_sources(value, names, urls)
+ 
+ 
++def gate_warnings(downloads_required):
++    """One line per required download this box's token is blocked from -
++    the pre-flight signal #186 asked for, so a gated repo is a
++    `validate_workflow`-visible condition rather than a 403 the run only
++    discovers after it has loaded everything ahead of that step."""
++    return [
++        f"{entry['repo']} is gated and not accessible with this box's "
++        "Hugging Face token - accept its license at "
++        f"https://huggingface.co/{entry['repo']} before running this workflow"
++        for entry in downloads_required
++        if entry.get("access_blocked")
++    ]
++
++
+ def _is_repo_id(name):
+     try:
+         validate_repo_id(name)
+@@ -513,13 +532,27 @@ def _is_url(value):
+         return False
+ 
+ 
+-def _size_gb(name):
+-    """A repo's size in GiB to one decimal, or None when the hub does not
+-    say - unreachable, gated without a token, or a file with no size."""
++def _model_info(name):
++    """A repo's size in GiB, gate status, and whether this box's token is
++    blocked from it - a `(gb, gated, access_blocked)` triple.
++
++    `gated` is `model_info`'s own field (`False` / `"auto"` / `"manual"`),
++    readable only when the call succeeds - which it does even for a gated
++    repo this token has been granted. A `GatedRepoError` is the call failing
++    for exactly that reason: the repo is gated and this box's token has not
++    (or no longer) been granted access, distinct from every other lookup
++    failure (unreachable, a file with no size), which says nothing about the
++    gate either way (#186).
++    """
+     try:
+         info = model_info(name, files_metadata=True, timeout=SIZE_LOOKUP_TIMEOUT)
+-        total = sum(s.size for s in (info.siblings or []) if getattr(s, "size", None))
++    except GatedRepoError as e:
++        logger.debug(f"Gate not accepted for {name}: {e}")
++        return None, True, True
+     except Exception as e:
+         logger.debug(f"No size for {name}: {e}")
+-        return None
+-    return round(total / GIB, 1) if total else None
++        return None, None, None
++    total = sum(s.size for s in (info.siblings or []) if getattr(s, "size", None))
++    gb = round(total / GIB, 1) if total else None
++    gated = getattr(info, "gated", False) or False
++    return gb, gated, False
+diff --git a/dw/server/app.py b/dw/server/app.py
+index 31f2406..843d745 100644
+--- a/dw/server/app.py
++++ b/dw/server/app.py
+@@ -73,7 +73,7 @@ from .exports import export_directory, export_job
+ from ..result import read_embedded_metadata
+ from ..media_info import probe_media
+ from ..hub_cache import scan_models, delete_model, DownloadManager
+-from ..plan import build_plan, unseeded_cache_warnings
++from ..plan import build_plan, gate_warnings, unseeded_cache_warnings
+ from ..runs import (
+     MANIFEST_FILE_NAME,
+     REALIZED_FILE_NAME,
+@@ -1748,6 +1748,8 @@ def create_app(
+         except Exception:
+             logger.exception("Plan could not be built")
+             answer["plan"] = None
++        if answer["plan"]:
++            answer["warnings"] += gate_warnings(answer["plan"]["downloads_required"])
+         return answer
+ 
+     # ------------------------------------------------------------ workspaces
+diff --git a/tests/test_plan.py b/tests/test_plan.py
+index cd9f929..39078e2 100644
+--- a/tests/test_plan.py
++++ b/tests/test_plan.py
+@@ -6,7 +6,7 @@ import json
+ 
+ import pytest
+ 
+-from dw.plan import build_plan, unseeded_cache_warnings
++from dw.plan import build_plan, gate_warnings, unseeded_cache_warnings
+ from dw.runs import new_run_id
+ from dw.workflow import workflow_from_definition
+ 
+@@ -490,7 +490,9 @@ class TestSubWorkflowEstimate:
+ 
+ class TestDownloadsRequired:
+     def test_a_repo_not_in_the_cache_is_required(self, plan):
+-        assert plan()["downloads_required"] == [{"repo": "org/still-model", "gb": None}]
++        assert plan()["downloads_required"] == [
++            {"repo": "org/still-model", "gb": None, "gated": None, "access_blocked": None}
++        ]
+ 
+     def test_a_cached_repo_is_not(self, plan, monkeypatch):
+         import dw.plan
+@@ -544,7 +546,13 @@ class TestDownloadsRequired:
+             "from_single_file": "https://example.test/x.safetensors"
+         }
+         assert plan(spec)["downloads_required"] == [
+-            {"repo": None, "url": "https://example.test/x.safetensors", "gb": None}
++            {
++                "repo": None,
++                "url": "https://example.test/x.safetensors",
++                "gb": None,
++                "gated": None,
++                "access_blocked": None,
++            }
+         ]
+ 
+     def test_a_single_file_local_path_is_not_listed(self, plan):
+@@ -590,6 +598,7 @@ class TestDownloadsRequired:
+ 
+         class Info:
+             siblings = [Sibling(2 * 1024**3), Sibling(None), Sibling(512 * 1024**2)]
++            gated = False
+ 
+         calls = []
+ 
+@@ -599,11 +608,40 @@ class TestDownloadsRequired:
+ 
+         monkeypatch.setattr(dw.plan, "model_info", fake_model_info)
+         answer = plan(lookup_sizes=True)["downloads_required"]
+-        assert answer == [{"repo": "org/still-model", "gb": 2.5}]
++        assert answer == [
++            {"repo": "org/still-model", "gb": 2.5, "gated": False, "access_blocked": False}
++        ]
+         assert calls[0][0] == "org/still-model"
+         assert calls[0][1]["files_metadata"] is True
+         assert calls[0][1]["timeout"] == 5.0
+ 
++    def test_a_gated_repo_this_token_may_access_is_not_blocked(self, plan, monkeypatch):
++        import dw.plan
++
++        class Info:
++            siblings = []
++            gated = "manual"
++
++        monkeypatch.setattr(dw.plan, "model_info", lambda name, **k: Info())
++        assert plan(lookup_sizes=True)["downloads_required"] == [
++            {"repo": "org/still-model", "gb": None, "gated": "manual", "access_blocked": False}
++        ]
++
++    def test_a_gated_repo_this_token_lacks_access_to_is_blocked(self, plan, monkeypatch):
++        import httpx
++        import dw.plan
++        from huggingface_hub.utils import GatedRepoError
++
++        response = httpx.Response(403, request=httpx.Request("GET", "https://hf.co/x"))
++
++        def boom(*a, **k):
++            raise GatedRepoError("no access", response=response)
++
++        monkeypatch.setattr(dw.plan, "model_info", boom)
++        assert plan(lookup_sizes=True)["downloads_required"] == [
++            {"repo": "org/still-model", "gb": None, "gated": True, "access_blocked": True}
++        ]
++
+     def test_a_hub_failure_is_a_null_size(self, plan, monkeypatch):
+         import dw.plan
+ 
+@@ -612,7 +650,7 @@ class TestDownloadsRequired:
+ 
+         monkeypatch.setattr(dw.plan, "model_info", boom)
+         assert plan(lookup_sizes=True)["downloads_required"] == [
+-            {"repo": "org/still-model", "gb": None}
++            {"repo": "org/still-model", "gb": None, "gated": None, "access_blocked": None}
+         ]
+ 
+     def test_lookup_sizes_false_never_calls_the_hub(self, plan, monkeypatch):
+@@ -625,6 +663,28 @@ class TestDownloadsRequired:
+         plan(lookup_sizes=False)
+ 
+ 
++class TestGateWarnings:
++    def test_a_blocked_repo_gets_a_warning(self):
++        required = [
++            {"repo": "org/free-model", "gb": 1.0, "gated": False, "access_blocked": False},
++            {"repo": "org/gated-model", "gb": None, "gated": True, "access_blocked": True},
++        ]
++        warnings = gate_warnings(required)
++        assert len(warnings) == 1
++        assert "org/gated-model" in warnings[0]
++        assert "huggingface.co/org/gated-model" in warnings[0]
++
++    def test_an_accepted_gate_gets_no_warning(self):
++        required = [
++            {"repo": "org/manual-gate", "gb": 1.0, "gated": "manual", "access_blocked": False}
++        ]
++        assert gate_warnings(required) == []
++
++    def test_unknown_gate_status_gets_no_warning(self):
++        required = [{"repo": "org/offline", "gb": None, "gated": None, "access_blocked": None}]
++        assert gate_warnings(required) == []
++
++
+ class TestCachedSteps:
+     def test_no_probe_is_unknown(self, plan):
+         assert plan()["cached_steps"] is None
+diff --git a/tests/test_server.py b/tests/test_server.py
+index 516cde1..0908a66 100644
+--- a/tests/test_server.py
++++ b/tests/test_server.py
+@@ -3817,7 +3817,37 @@ class TestValidatePlan:
+         assert plan["steps"] == 1
+         assert plan["estimate"]["basis"] in {"catalog", "other_device"}
+         assert plan["estimate"]["minutes"] == 2.0
+-        assert plan["downloads_required"] == [{"repo": "m", "gb": None}]
++        assert plan["downloads_required"] == [
++            {"repo": "m", "gb": None, "gated": None, "access_blocked": None}
++        ]
++
++    def test_a_blocked_gate_surfaces_as_a_warning(self, server, monkeypatch):
++        """#186: a repo this box's token cannot access is a 403 partway into
++        a run unless the pre-flight says so first."""
++        import httpx
++        import dw.plan
++        from huggingface_hub.utils import GatedRepoError
++
++        monkeypatch.setattr(
++            dw.plan, "scan_models", lambda cache_dir=None: {"repos": []}
++        )
++
++        response = httpx.Response(403, request=httpx.Request("GET", "https://hf.co/x"))
++
++        def boom(*a, **k):
++            raise GatedRepoError("no access", response=response)
++
++        monkeypatch.setattr(dw.plan, "model_info", boom)
++        with server(success_script) as client:
++            result = client.post(
++                "/api/validate",
++                json={"workflow": video_workflow("gated", with_cost=True)},
++            ).json()
++        assert result["plan"]["downloads_required"] == [
++            {"repo": "m", "gb": None, "gated": True, "access_blocked": True}
++        ]
++        gate_warnings = [w for w in result["warnings"] if "huggingface.co/m" in w]
++        assert len(gate_warnings) == 1
+ 
+     def test_the_estimate_quotes_this_box_s_own_history(self, server, monkeypatch):
+         """#154: `basis: unknown` has to mean nobody has a number. A stored
+commit f78226ea41df62f1fe6cb12af3f85b137a56bd63
+fix(plan): #186 - actually probe file access to detect a blocked gate
+
+
+diff --git a/docs/SERVER.md b/docs/SERVER.md
+index 69e8810..6e893a5 100644
+--- a/docs/SERVER.md
++++ b/docs/SERVER.md
+@@ -309,9 +309,17 @@ The editor's forms come from these; they are just as usable from scripts:
+   repo (`false`, `"auto"` or `"manual"`) or `null` when the lookup itself
+   failed for a reason other than the gate; `access_blocked` is `true`
+   when this box's Hugging Face token specifically has not been granted
+-  access to a gated repo (`GatedRepoError` from the hub, the pre-flight
+-  signal for what would otherwise be a 403 partway into a run, #186) -
+-  `validate_workflow`'s `warnings` carries one line per such entry. Each
++  access to a gated repo, `false` when the repo isn't gated or the token is
++  accepted, and `null` when it could not be determined either way. A gated
++  repo's own metadata is served by the hub regardless of this token's
++  access, so `model_info` succeeding proves nothing about the gate; a
++  gated entry gets a second, real check - a HEAD request against one of the
++  repo's own files - and it is *that* request's `GatedRepoError` that sets
++  `access_blocked: true` (the pre-flight signal for what would otherwise be
++  a 403 partway into a run, #186). `access_blocked` is `null` when there is
++  no file to probe or the probe itself fails for an unrelated reason (e.g.
++  offline) - "unknown" is not "not blocked". `validate_workflow`'s
++  `warnings` carries one line per entry with `access_blocked: true`. Each
+   `from_single_file` URL is `{repo: null, url, gb: null, gated: null,
+   access_blocked: null}`, since a direct file URL is never gated; and
+   `estimate`, `{minutes, basis,
+diff --git a/dw/plan.py b/dw/plan.py
+index 3a8d1a6..2174247 100644
+--- a/dw/plan.py
++++ b/dw/plan.py
+@@ -19,6 +19,7 @@ import logging
+ import os
+ 
+ from huggingface_hub import model_info
++from huggingface_hub import get_hf_file_metadata, hf_hub_url
+ from huggingface_hub.utils import GatedRepoError, HFValidationError, validate_repo_id
+ 
+ from .elision import elide_definition
+@@ -537,12 +538,17 @@ def _model_info(name):
+     blocked from it - a `(gb, gated, access_blocked)` triple.
+ 
+     `gated` is `model_info`'s own field (`False` / `"auto"` / `"manual"`),
+-    readable only when the call succeeds - which it does even for a gated
+-    repo this token has been granted. A `GatedRepoError` is the call failing
+-    for exactly that reason: the repo is gated and this box's token has not
+-    (or no longer) been granted access, distinct from every other lookup
+-    failure (unreachable, a file with no size), which says nothing about the
+-    gate either way (#186).
++    readable only when the call succeeds - and the hub answers `model_info`
++    for a gated repo regardless of whether this token has been granted
++    access, since that call serves metadata rather than file bytes (found
++    verifying #186: `access_blocked` came back `false` for repos this box's
++    token was actually refused on). A `GatedRepoError` straight out of
++    `model_info` is still a real signal - some other endpoint behind it
++    checked and refused - but its absence proves nothing, so a `gated` repo
++    that got this far is checked for real with a HEAD request against one of
++    its own files (`_probe_gate_blocked`), the same request class a run's
++    actual load would make and the one place the hub's 403 for "gated, token
++    not accepted" actually appears.
+     """
+     try:
+         info = model_info(name, files_metadata=True, timeout=SIZE_LOOKUP_TIMEOUT)
+@@ -555,4 +561,27 @@ def _model_info(name):
+     total = sum(s.size for s in (info.siblings or []) if getattr(s, "size", None))
+     gb = round(total / GIB, 1) if total else None
+     gated = getattr(info, "gated", False) or False
+-    return gb, gated, False
++    access_blocked = False
++    if gated:
++        access_blocked = _probe_gate_blocked(name, info.siblings or [])
++    return gb, gated, access_blocked
++
++
++def _probe_gate_blocked(name, siblings):
++    """HEAD one real file of a gated repo to see whether this box's token is
++    actually accepted - `model_info` succeeding says nothing either way
++    (#186). `None` when there is no file to probe or the probe fails for a
++    reason other than the gate, since that is "unknown", not "not blocked".
++    """
++    filename = next((s.rfilename for s in siblings if getattr(s, "rfilename", None)), None)
++    if filename is None:
++        return None
++    try:
++        get_hf_file_metadata(hf_hub_url(name, filename), timeout=SIZE_LOOKUP_TIMEOUT)
++        return False
++    except GatedRepoError as e:
++        logger.debug(f"Gate not accepted for {name}: {e}")
++        return True
++    except Exception as e:
++        logger.debug(f"Gate probe inconclusive for {name}: {e}")
++        return None
+diff --git a/tests/test_plan.py b/tests/test_plan.py
+index 39078e2..c6911bb 100644
+--- a/tests/test_plan.py
++++ b/tests/test_plan.py
+@@ -618,11 +618,15 @@ class TestDownloadsRequired:
+     def test_a_gated_repo_this_token_may_access_is_not_blocked(self, plan, monkeypatch):
+         import dw.plan
+ 
++        class Sibling:
++            rfilename = "config.json"
++
+         class Info:
+-            siblings = []
++            siblings = [Sibling()]
+             gated = "manual"
+ 
+         monkeypatch.setattr(dw.plan, "model_info", lambda name, **k: Info())
++        monkeypatch.setattr(dw.plan, "get_hf_file_metadata", lambda url, **k: object())
+         assert plan(lookup_sizes=True)["downloads_required"] == [
+             {"repo": "org/still-model", "gb": None, "gated": "manual", "access_blocked": False}
+         ]
+@@ -634,6 +638,29 @@ class TestDownloadsRequired:
+ 
+         response = httpx.Response(403, request=httpx.Request("GET", "https://hf.co/x"))
+ 
++        class Sibling:
++            rfilename = "config.json"
++
++        class Info:
++            siblings = [Sibling()]
++            gated = "manual"
++
++        def boom(*a, **k):
++            raise GatedRepoError("no access", response=response)
++
++        monkeypatch.setattr(dw.plan, "model_info", lambda name, **k: Info())
++        monkeypatch.setattr(dw.plan, "get_hf_file_metadata", boom)
++        assert plan(lookup_sizes=True)["downloads_required"] == [
++            {"repo": "org/still-model", "gb": None, "gated": "manual", "access_blocked": True}
++        ]
++
++    def test_a_gated_repo_model_info_itself_refuses_is_blocked(self, plan, monkeypatch):
++        import httpx
++        import dw.plan
++        from huggingface_hub.utils import GatedRepoError
++
++        response = httpx.Response(403, request=httpx.Request("GET", "https://hf.co/x"))
++
+         def boom(*a, **k):
+             raise GatedRepoError("no access", response=response)
+ 
+@@ -642,6 +669,37 @@ class TestDownloadsRequired:
+             {"repo": "org/still-model", "gb": None, "gated": True, "access_blocked": True}
+         ]
+ 
++    def test_a_gated_repo_with_no_probeable_file_is_unknown(self, plan, monkeypatch):
++        import dw.plan
++
++        class Info:
++            siblings = []
++            gated = "auto"
++
++        monkeypatch.setattr(dw.plan, "model_info", lambda name, **k: Info())
++        assert plan(lookup_sizes=True)["downloads_required"] == [
++            {"repo": "org/still-model", "gb": None, "gated": "auto", "access_blocked": None}
++        ]
++
++    def test_a_gate_probe_failing_for_an_unrelated_reason_is_unknown(self, plan, monkeypatch):
++        import dw.plan
++
++        class Sibling:
++            rfilename = "config.json"
++
++        class Info:
++            siblings = [Sibling()]
++            gated = "auto"
++
++        def boom(*a, **k):
++            raise RuntimeError("offline")
++
++        monkeypatch.setattr(dw.plan, "model_info", lambda name, **k: Info())
++        monkeypatch.setattr(dw.plan, "get_hf_file_metadata", boom)
++        assert plan(lookup_sizes=True)["downloads_required"] == [
++            {"repo": "org/still-model", "gb": None, "gated": "auto", "access_blocked": None}
++        ]
++
+     def test_a_hub_failure_is_a_null_size(self, plan, monkeypatch):
+         import dw.plan
+ 

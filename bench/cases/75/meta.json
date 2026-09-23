@@ -1,0 +1,21 @@
+{
+ "issue": 75,
+ "kind": "bounced",
+ "note": "engine: release_pipeline ordering vs save (2 hand-offs)",
+ "title": "release_pipeline ordering relative to save may hold ~10 GB resident longer than necessary",
+ "prefix": "d7d2aff02c640baf0151f7d30168cc2cf5158dc4",
+ "fix_commits": [
+  "2e2ac0514a35c8cda4dda434187d5171f9065095",
+  "93c502ee62a262147ca1a07aef2dd19d2816f947"
+ ],
+ "fix_files": [
+  "docs/SERVER.md",
+  "dw/workflow.py",
+  "tests/test_pipeline_caching.py"
+ ],
+ "test_files": [
+  "tests/test_pipeline_caching.py"
+ ],
+ "handoffs": 2,
+ "body_edited_after_filing": false
+}

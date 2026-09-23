@@ -1,0 +1,281 @@
+commit fe824c93b869a02b62a119a7dbd5c560adb970c2
+fix(server): #273 - emit memory_info at phase boundaries; #272 - job-scoped host memory baseline delta
+
+
+diff --git a/dw/host_memory_projection.py b/dw/host_memory_projection.py
+index f0c62c3..0c29d02 100644
+--- a/dw/host_memory_projection.py
++++ b/dw/host_memory_projection.py
+@@ -7,8 +7,8 @@ never covered - a `for_each` that keeps its pipeline resident across a
+ SIGKILL on host RAM with the accelerator nowhere near full (#243).
+ 
+ Scope is v1, by the repo owner's own sign-off on the issue: observed, not
+-curated (no author-declared memory figure - `host_memory_peak_rss_mb` is a
+-worker-reported field, not a schema key); warn, not refuse (host RAM headroom
++curated (no author-declared memory figure - `host_memory_job_peak_rss_mb` is
++a worker-reported field, not a schema key); warn, not refuse (host RAM headroom
+ is a property of *this machine*, not something a caller chose, so it never
+ blocks a run); no cross-machine normalization; and a cold start - no history
+ for this workflow at all - means no check, the same rule `observed_cost.py`
+@@ -114,7 +114,7 @@ def _already_survived(rows, list_entries, requested, projected_mb, variables):
+     minutes ago.
+     """
+     for row in rows:
+-        peak = row.get("host_memory_peak_rss_mb")
++        peak = row.get("host_memory_job_peak_rss_mb")
+         if not isinstance(peak, (int, float)) or peak < projected_mb:
+             continue
+         count = _row_count(row, list_entries, variables)
+@@ -129,16 +129,18 @@ def host_memory_warnings(definition, list_entries, rows, ceiling_mb):
+ 
+     `rows` are this workflow's finished runs as `JobHistory.finished_runs()`
+     groups them - the same history `observed_cost.py` reads, extended with
+-    `host_memory_peak_rss_mb` per row (#243). `ceiling_mb` is this box's own
+-    RAM, scaled by `CEILING_FRACTION`; the caller reads that once per request
+-    rather than this module importing `host_memory` for a per-validate
+-    syscall.
++    `host_memory_job_peak_rss_mb` per row (#243, repointed from the
++    process-lifetime `host_memory_peak_rss_mb` by #272 - a small job run
++    right after a heavy one no longer inherits the heavy job's peak).
++    `ceiling_mb` is this box's own RAM, scaled by `CEILING_FRACTION`; the
++    caller reads that once per request rather than this module importing
++    `host_memory` for a per-validate syscall.
+     """
+     requested = _requested_count(list_entries)
+     if requested is None or not rows or not ceiling_mb:
+         return []
+     variables = definition.get("variables") or {}
+-    peaks = [row["host_memory_peak_rss_mb"] for row in rows]
++    peaks = [row["host_memory_job_peak_rss_mb"] for row in rows]
+     peaks = [value for value in peaks if isinstance(value, (int, float))]
+     if not peaks:
+         # Cold start: history exists for this workflow, but no run of it
+@@ -150,7 +152,7 @@ def host_memory_warnings(definition, list_entries, rows, ceiling_mb):
+     else:
+         per_entry = []
+         for row in rows:
+-            peak = row["host_memory_peak_rss_mb"]
++            peak = row["host_memory_job_peak_rss_mb"]
+             count = _row_count(row, list_entries, variables)
+             if isinstance(peak, (int, float)) and count:
+                 per_entry.append(peak / count)
+diff --git a/dw/server/jobs.py b/dw/server/jobs.py
+index 570f0f2..0d0ce59 100644
+--- a/dw/server/jobs.py
++++ b/dw/server/jobs.py
+@@ -147,6 +147,15 @@ class JobHistory:
+                 connection.execute(
+                     "ALTER TABLE jobs ADD COLUMN host_memory_peak_rss_mb REAL"
+                 )
++            # This job's own contribution to that process-lifetime figure -
++            # growth since the job's first phase-boundary reading, or its
++            # current rss when it caused no growth (#272). NULL for a row
++            # predating the column and for any run that never got a
++            # memory_info message at all
++            if "host_memory_job_peak_rss_mb" not in columns:
++                connection.execute(
++                    "ALTER TABLE jobs ADD COLUMN host_memory_job_peak_rss_mb REAL"
++                )
+ 
+     def _connect(self):
+         # WAL mode lets a reader (the web UI polling job status, an MCP
+@@ -168,8 +177,9 @@ class JobHistory:
+                 "INSERT OR REPLACE INTO jobs (id, workflow, status, created_at,"
+                 " started_at, finished_at, arguments, spec, manifest, warnings,"
+                 " error, events, workspace, workflow_name, run_id, run_dir,"
+-                " acknowledged, host_memory_peak_rss_mb) VALUES"
+-                " (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
++                " acknowledged, host_memory_peak_rss_mb,"
++                " host_memory_job_peak_rss_mb) VALUES"
++                " (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 (
+                     job.id,
+                     job.workflow_name,
+@@ -193,6 +203,7 @@ class JobHistory:
+                     # (#243) - the same "absent means unknown" the column
+                     # itself allows
+                     getattr(job, "host_memory_peak_rss_mb", None),
++                    getattr(job, "host_memory_job_peak_rss_mb", None),
+                 ),
+             )
+ 
+@@ -287,7 +298,7 @@ class JobHistory:
+                 "SELECT workflow_name, started_at, finished_at, arguments,"
+                 " manifest, INSTR(COALESCE(events, ''), ?) > 0,"
+                 " COALESCE(json_array_length(COALESCE(events, '[]')), 0) >= ?,"
+-                " host_memory_peak_rss_mb"
++                " host_memory_peak_rss_mb, host_memory_job_peak_rss_mb"
+                 " FROM jobs WHERE status = ? AND workflow_name IS NOT NULL"
+                 " AND started_at IS NOT NULL AND finished_at IS NOT NULL",
+                 (LOADING_MARKER, EVENT_CAP, SUCCEEDED),
+@@ -302,6 +313,7 @@ class JobHistory:
+             had_load,
+             at_cap,
+             peak_rss_mb,
++            job_peak_rss_mb,
+         ) in rows:
+             grouped.setdefault(name, []).append(
+                 {
+@@ -313,6 +325,7 @@ class JobHistory:
+                     "had_load": bool(had_load),
+                     "events_at_cap": bool(at_cap),
+                     "host_memory_peak_rss_mb": peak_rss_mb,
++                    "host_memory_job_peak_rss_mb": job_peak_rss_mb,
+                 }
+             )
+         return grouped
+@@ -470,6 +483,11 @@ class Job:
+         # The worker's own high-water mark for this run, from its final
+         # memory_info message - None for a run that never got that far (#243)
+         self.host_memory_peak_rss_mb = None
++        # This job's own contribution to that process-lifetime figure -
++        # growth since the job's first phase boundary, or the job's current
++        # rss when it caused no growth (#272). None for a run that never got
++        # a memory_info message at all
++        self.host_memory_job_peak_rss_mb = None
+         self.events = []
+         # The running summary a poll reads - see _note_progress. Kept as the
+         # events arrive rather than derived from the log on request, because
+@@ -1258,13 +1276,27 @@ class JobManager:
+                 text = message.get("message") or message.get("workflow_name", "")
+                 job.add_event({"event": "log", "message": text})
+             elif message_type == "memory_info":
++                # One per phase boundary now, not just once post-run (#273) -
++                # each folds into the cached reading memory_status() answers
++                # from while the job is busy, which is what makes that call
++                # fresh instead of a refusal for the run's whole duration
+                 self._record_memory(message.get("info"))
+                 job.add_event({"event": "memory", "info": self.last_memory})
+-                # The worker's post-run reading, so it survives as a real
++                # The worker's own high-water mark, latest reading wins (it
++                # is monotonic for the process' life) - persisted as a real
+                 # column rather than only inside the trimmed event tail (#243)
+-                peak = (message.get("info") or {}).get("host_memory_peak_rss_mb")
++                info = message.get("info") or {}
++                peak = info.get("host_memory_peak_rss_mb")
+                 if peak is not None:
+                     job.host_memory_peak_rss_mb = peak
++                # This job's own contribution to that process-lifetime peak,
++                # computed against its own baseline (#272) - max() is
++                # defensive; by construction each reading only grows
++                job_peak = info.get("host_memory_job_peak_rss_mb")
++                if job_peak is not None:
++                    job.host_memory_job_peak_rss_mb = max(
++                        job_peak, job.host_memory_job_peak_rss_mb or 0
++                    )
+             elif message_type == "success":
+                 self._record_manifest(job, message)
+                 return (SUCCEEDED, None, None)
+diff --git a/dw/worker.py b/dw/worker.py
+index d31ffdc..0e7a7f0 100644
+--- a/dw/worker.py
++++ b/dw/worker.py
+@@ -35,6 +35,28 @@ def _mb(value):
+     return f"{value:.0f} MB" if value is not None else "unknown"
+ 
+ 
++def _job_scoped_peak_rss_mb(info, baseline_peak_mb):
++    """This job's own contribution to the process-lifetime peak (#272).
++
++    `host_memory_peak_rss_mb` is `ru_maxrss` - process-lifetime, never reset -
++    so in the persistent worker a small job run right after a heavy one
++    inherits the heavy job's high-water mark as its own. `baseline_peak_mb`
++    is that same process-lifetime figure read at this job's first phase
++    boundary; because ru_maxrss is monotonic non-decreasing, growth since
++    then is unambiguously this job's doing. A job that caused no growth at
++    all (it rode an earlier, larger peak) has no meaningful "job peak" to
++    report as a delta, so this floors at the job's current rss instead of
++    reporting a number that undersells what is resident right now.
++    """
++    peak = info.get("host_memory_peak_rss_mb")
++    if peak is None or baseline_peak_mb is None:
++        return None
++    growth = peak - baseline_peak_mb
++    if growth > 0:
++        return growth
++    return info.get("host_memory_rss_mb")
++
++
+ logger = logging.getLogger("dw.worker")
+ 
+ # Memory management constants
+@@ -235,13 +257,33 @@ class WorkflowWorker:
+                 }
+             )
+ 
+-            # Progress events stream to the client as they happen; the watcher
+-            # thread keeps the command queue live so cancel works mid-run
+-            context = RunContext(
+-                on_event=lambda event: self.result_queue.put(
+-                    {"type": "progress", **event}
+-                )
+-            )
++            # Progress events stream to the client as they happen; the
++            # watcher thread keeps the command queue live so cancel works
++            # mid-run. Each phase boundary also gets its own memory_info
++            # message (#273), so get_memory answers freshly mid-run instead
++            # of refusing with job_running for the run's whole duration; the
++            # first such reading is this job's baseline for the job-scoped
++            # peak field carried on every memory_info from here on (#272)
++            job_baseline = {"peak_rss_mb": None}
++
++            def _on_event(event):
++                self.result_queue.put({"type": "progress", **event})
++                if event.get("event") == "phase":
++                    memory_info = self._get_memory_info()
++                    if job_baseline["peak_rss_mb"] is None:
++                        job_baseline["peak_rss_mb"] = memory_info.get(
++                            "host_memory_peak_rss_mb"
++                        )
++                    memory_info["host_memory_job_peak_rss_mb"] = (
++                        _job_scoped_peak_rss_mb(
++                            memory_info, job_baseline["peak_rss_mb"]
++                        )
++                    )
++                    self.result_queue.put(
++                        {"type": "memory_info", "info": memory_info}
++                    )
++
++            context = RunContext(on_event=_on_event)
+             watcher = self._watch_commands(context)
+             # Which workspace's assets this job's 'asset:' references resolve
+             # against. A server holds several workspaces and each has its own
+@@ -272,8 +314,15 @@ class WorkflowWorker:
+             # Aggressive memory cleanup after execution
+             self._cleanup_between_runs()
+ 
+-            # Report memory status
++            # Report memory status - the job's final reading, carrying the
++            # same job-scoped delta the phase-boundary readings above do
++            # (#272). A run with no phase events at all (job_baseline never
++            # set) reports host_memory_job_peak_rss_mb as null rather than
++            # guessing a baseline after the fact.
+             memory_info = self._get_memory_info()
++            memory_info["host_memory_job_peak_rss_mb"] = _job_scoped_peak_rss_mb(
++                memory_info, job_baseline["peak_rss_mb"]
++            )
+             self.result_queue.put({"type": "memory_info", "info": memory_info})
+ 
+             self.result_queue.put(
+diff --git a/tests/test_host_memory_projection.py b/tests/test_host_memory_projection.py
+index 5ce6cf1..5cf7789 100644
+--- a/tests/test_host_memory_projection.py
++++ b/tests/test_host_memory_projection.py
+@@ -16,7 +16,7 @@ MB = 1.0
+ def row(peak_mb, arguments=None):
+     return {
+         "arguments": json.dumps(arguments or {}),
+-        "host_memory_peak_rss_mb": peak_mb,
++        "host_memory_job_peak_rss_mb": peak_mb,
+     }
+ 
+ 
+@@ -54,7 +54,7 @@ class TestProjection:
+         rows = [
+             {
+                 "arguments": json.dumps({"shots": [1, 2, 3]}),
+-                "host_memory_peak_rss_mb": None,
++                "host_memory_job_peak_rss_mb": None,
+             }
+         ]
+         warnings = host_memory_warnings(definition, {"shots": 12}, rows, 10_000 * MB)

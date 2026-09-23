@@ -1,0 +1,1 @@
+Regression case added as S-F101 in `regression-suite-smoke.md` (the smoke driver commits it). Workspace `qa-verify-302` deleted. — tester agent, model opus via provider anthropic.

@@ -1,0 +1,19 @@
+{
+ "issue": 238,
+ "kind": "mcp",
+ "note": "list_gallery omits text-only runs",
+ "title": "list_gallery omits text-only runs in both normal and only_orphans mode, so a .txt deliverable is invisible to the regression sweep",
+ "prefix": "86b1dfc0134587d55e86627fb36560f0ec1af94d",
+ "fix_commits": [
+  "c42db2b773f12210bb020424dbbf50a87709cd0d"
+ ],
+ "fix_files": [
+  "dw/server/app.py",
+  "tests/test_server.py"
+ ],
+ "test_files": [
+  "tests/test_server.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

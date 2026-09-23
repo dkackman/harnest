@@ -1,0 +1,234 @@
+commit dbc10c5a48b94c105dee9a3180ce5e1261ab9218
+feat: #265 - a declared VRAM ceiling over (width, height, num_frames)
+
+
+diff --git a/dw/vram_estimate.py b/dw/vram_estimate.py
+new file mode 100644
+index 0000000..66d6d26
+--- /dev/null
++++ b/dw/vram_estimate.py
+@@ -0,0 +1,99 @@
++"""A declared VRAM ceiling over a workflow's own cost_drivers.
++
++A video template's `cost_drivers` name `num_frames`, `width` and `height`
++because they move wall clock - but nothing checked whether a combination of
++them also moves past the card the template's `cost` entry was measured on.
++`validate_workflow` answered `valid: true` for a frame count the VAE's own
++decode step could not fit beside whatever the pipeline keeps resident, and
++the run found out 90+ seconds into denoising rather than before it started
++(#265).
++
++`vram_estimate` is declared the same way `cost` is - a maintainer's own
++reading of what a stage needs, calibrated from a real run's reported
++requirement at a known combination, never derived from a live probe. The
++formula is deliberately the simplest one that fits a video VAE's own
++scaling: memory beyond a fixed base grows with the voxel count a decode
++tensor holds, which is why the variables it scales with are named rather
++than assumed to be `num_frames` alone - an image template's width and
++height matter here just as much as a video template's frame count does.
++"""
++
++import numbers
++
++KEY = "vram_estimate"
++
++
++def _as_number(value):
++    if isinstance(value, bool):
++        return None
++    if isinstance(value, numbers.Real):
++        return float(value)
++    if isinstance(value, str):
++        try:
++            return float(value)
++        except ValueError:
++            return None
++    return None
++
++
++def declared_estimate(definition):
++    estimate = definition.get(KEY)
++    return estimate if isinstance(estimate, dict) else None
++
++
++def required_gb(estimate, values):
++    """The projected requirement for `values`, or None when a voxel
++    variable's value is not a number this pass can compute with - an
++    undeclared reference or a for_each list is somebody else's error."""
++    product = 1.0
++    for name in estimate.get("voxel_variables", []):
++        number = _as_number(values.get(name))
++        if number is None:
++            return None
++        product *= number
++    base = estimate.get("base_gb", 0)
++    per_voxel = estimate.get("bytes_per_voxel", 0)
++    return base + per_voxel * product / (1024**3)
++
++
++def vram_estimate_errors(definition, arguments=None, supplied=()):
++    """Every `cost` entry a declared vram_estimate projects to exceed, as
++    [{path, message}] - refused, not warned, since the failure this guards
++    is an OOM partway through a run that already spent minutes loading."""
++    estimate = declared_estimate(definition)
++    if estimate is None:
++        return []
++    voxel_variables = estimate.get("voxel_variables", [])
++    values = {**(definition.get("variables") or {}), **(arguments or {})}
++    projected = required_gb(estimate, values)
++    if projected is None:
++        return []
++    cost = definition.get("cost")
++    if not isinstance(cost, list):
++        return []
++    reason = estimate.get("reason")
++    because = f" - {reason}" if reason else ""
++    where = "arguments" if any(v in (supplied or ()) for v in voxel_variables) else "variables"
++    errors = []
++    for entry in cost:
++        if not isinstance(entry, dict):
++            continue
++        capacity = entry.get("vram_gb")
++        if capacity is None or projected <= capacity:
++            continue
++        device_label = entry.get("name") or entry.get("device", "this device")
++        errors.append(
++            {
++                "path": where,
++                "message": (
++                    f"{'*'.join(voxel_variables)} = "
++                    f"{'*'.join(str(values.get(v)) for v in voxel_variables)} "
++                    f"projects to {projected:.2f} GB VRAM, above the "
++                    f"{capacity} GB declared for {device_label}{because}. "
++                    f"Declared ceiling: {estimate.get('base_gb', 0)} GB base plus "
++                    f"{estimate.get('bytes_per_voxel', 0):.4g} bytes per unit of "
++                    f"{' * '.join(voxel_variables)}"
++                ),
++            }
++        )
++    return errors
+diff --git a/dw/workflow.py b/dw/workflow.py
+index c89a476..de19cb8 100644
+--- a/dw/workflow.py
++++ b/dw/workflow.py
+@@ -46,6 +46,7 @@ from .reference_names import reference_name_errors
+ from .content_types import content_type_errors
+ from .scalar_result_validation import scalar_result_errors
+ from .kernel_availability import kernel_availability_errors
++from .vram_estimate import vram_estimate_errors
+ from .step import Step
+ from .step_cache import (
+     step_cache,
+@@ -689,6 +690,14 @@ class Workflow:
+                 self.workflow_definition, arguments, supplied=set(arguments or {})
+             )
+             + constraint_reference_errors(self.workflow_definition)
++            # A (width, height, num_frames)-shaped combination a declared
++            # vram_estimate projects past the card 'cost' was measured on -
++            # refused here rather than found 90+ seconds into denoising on
++            # an OOM the caller had no way to see coming (dw/vram_estimate.py,
++            # #265)
++            + vram_estimate_errors(
++                self.workflow_definition, arguments, supplied=set(arguments or {})
++            )
+             # An 'attn_processor_type' whose Hub kernel this machine has no
+             # build variant for - validated clean and then died 88s into
+             # loading, naming a torch/natten mismatch the construction alone
+diff --git a/dw/workflow_schema.json b/dw/workflow_schema.json
+index 4969bf9..f7b893c 100644
+--- a/dw/workflow_schema.json
++++ b/dw/workflow_schema.json
+@@ -68,6 +68,24 @@
+         "variables": {
+             "$ref": "#/$defs/arguments"
+         },
++        "vram_estimate": {
++            "description": "A declared VRAM ceiling over this workflow's cost_drivers, checked against each 'cost' entry's 'vram_gb' in validate_workflow. Never derived from a profiler - a maintainer's own reading of what a stage needs, the same way 'cost' itself is. required_gb = base_gb + bytes_per_voxel * (product of voxel_variables' values) / 2^30; a combination projecting above any cost entry's vram_gb for that entry's device is refused, not warned, since the failure this guards is an OOM partway through a run that already spent minutes loading. 'voxel_variables' names the cost_drivers whose product drives the estimate - typically width, height and num_frames for a video template.",
++            "type": "object",
++            "required": ["base_gb", "bytes_per_voxel", "voxel_variables"],
++            "properties": {
++                "base_gb": {"type": "number", "minimum": 0, "description": "What stays resident regardless of the voxel count - everything the pipeline keeps on the device throughout, measured or bounded by a real run."},
++                "bytes_per_voxel": {"type": "number", "minimum": 0, "description": "Bytes of additional VRAM per unit of the voxel_variables' product, calibrated from a real run's reported requirement at a known combination."},
++                "voxel_variables": {
++                    "type": "array",
++                    "items": {"type": "string"},
++                    "minItems": 1,
++                    "uniqueItems": true,
++                    "description": "Variable names whose product is the voxel count the formula scales with. Each must be a declared variable."
++                },
++                "reason": {"type": "string"}
++            },
++            "additionalProperties": false
++        },
+         "variable_constraints": {
+             "description": "What each variable's value is allowed to be, by variable name. A rule the engine could only enforce after the weights were loaded costs minutes to discover; declared here it is a free refusal at validation time and a line in the catalog beside the default.",
+             "type": "object",
+diff --git a/workflows/templates/ltx2/text-to-video.json b/workflows/templates/ltx2/text-to-video.json
+index e6e9eec..d34b527 100644
+--- a/workflows/templates/ltx2/text-to-video.json
++++ b/workflows/templates/ltx2/text-to-video.json
+@@ -5,6 +5,12 @@
+         {"device": "cuda", "name": "RTX 3090", "vram_gb": 24, "minutes": 1.8}
+     ],
+     "cost_drivers": ["num_frames", "width", "height"],
++    "vram_estimate": {
++        "base_gb": 21.3,
++        "bytes_per_voxel": 16.04,
++        "voxel_variables": ["width", "height", "num_frames"],
++        "reason": "VAE decode's conv3d activation scales with the voxel count width * height * num_frames; bytes_per_voxel is calibrated from a real run that reported needing 2.69 GiB for decode with 557 MiB free at 960x544x345 frames (#265). base_gb is the tightest bound consistent with a confirmed pass at that same combination once the transformer offloads off VRAM before decode (#266) - so this ceiling is validated up to 345 frames at the default resolution and is deliberately conservative beyond it, pending a calibration run at a higher frame count"
++    },
+     "variables": {
+         "transformer_weights_dtype": "{uint4}",
+         "text_encoder_weights_dtype": "{int8}",
+commit 3454686418b40b0dc70ebc526e4573286191e3ce
+fix(engine): #265 - enforce vram_estimate at run time, not just validate
+
+
+diff --git a/dw/vram_estimate.py b/dw/vram_estimate.py
+index 66d6d26..e5cb1ea 100644
+--- a/dw/vram_estimate.py
++++ b/dw/vram_estimate.py
+@@ -97,3 +97,16 @@ def vram_estimate_errors(definition, arguments=None, supplied=()):
+             }
+         )
+     return errors
++
++
++def apply_vram_estimate(definition, variables):
++    """The run-time half of the check above - the backstop for a caller
++    that skips validate_workflow (or an inline/composed workflow static
++    validation never saw). Raises ValueError for the same projection
++    vram_estimate_errors refuses, so run() cannot start a job the decode
++    step was always going to OOM on (#265)."""
++    if not isinstance(variables, dict):
++        return
++    errors = vram_estimate_errors(definition, variables)
++    if errors:
++        raise ValueError(errors[0]["message"])
+diff --git a/dw/workflow.py b/dw/workflow.py
+index de19cb8..7077e7f 100644
+--- a/dw/workflow.py
++++ b/dw/workflow.py
+@@ -46,7 +46,7 @@ from .reference_names import reference_name_errors
+ from .content_types import content_type_errors
+ from .scalar_result_validation import scalar_result_errors
+ from .kernel_availability import kernel_availability_errors
+-from .vram_estimate import vram_estimate_errors
++from .vram_estimate import apply_vram_estimate, vram_estimate_errors
+ from .step import Step
+ from .step_cache import (
+     step_cache,
+@@ -821,6 +821,13 @@ class Workflow:
+             # before anything loads, and before substitution puts the value
+             # everywhere it is referenced (dw/variable_constraints.py, #96)
+             apply_constraints(workflow_def, variables)
++            # A (width, height, num_frames)-shaped combination a declared
++            # vram_estimate projects past the card 'cost' was measured on -
++            # the run-time backstop for a caller that skips
++            # validate_workflow, so this raises the same refusal rather
++            # than starting a job the decode step was always going to OOM
++            # on (dw/vram_estimate.py, #265)
++            apply_vram_estimate(workflow_def, variables)
+             # realize the variables, initializing downloads of images etc
+             realize_args(variables, base_dir)
+             ## then replace any variable references in the workflow definition with the actual values

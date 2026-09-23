@@ -1,0 +1,19 @@
+{
+ "issue": 262,
+ "kind": "perf",
+ "note": "result: 5x slow decode/save phases",
+ "title": "C-F006: ltx2/text-to-video decoding (26-31 s) and saving (~10 s) phases ~5x slower cold and warm; 99 s silent lead-in from #171 recurs (246 s vs 125 s median)",
+ "prefix": "4cc5cf662e3365a3791d8ce31ea2a99d0dcc082b",
+ "fix_commits": [
+  "0e072354ec62c486ffe066629ace5ccb1aaacb3a"
+ ],
+ "fix_files": [
+  "dw/result.py",
+  "tests/test_result.py"
+ ],
+ "test_files": [
+  "tests/test_result.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

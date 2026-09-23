@@ -1,0 +1,21 @@
+{
+ "issue": 272,
+ "kind": "engine",
+ "note": "host_memory_peak_rss_mb is process-lifetime, not per-job",
+ "title": "host_memory_peak_rss_mb is process-lifetime, not per-job - poisons host-memory projections in a persistent worker",
+ "prefix": "d5e3725debc5ba1858736fbc1cd5bc5011519256",
+ "fix_commits": [
+  "fe824c93b869a02b62a119a7dbd5c560adb970c2"
+ ],
+ "fix_files": [
+  "dw/host_memory_projection.py",
+  "dw/server/jobs.py",
+  "dw/worker.py",
+  "tests/test_host_memory_projection.py"
+ ],
+ "test_files": [
+  "tests/test_host_memory_projection.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

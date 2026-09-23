@@ -1,0 +1,81 @@
+commit c42db2b773f12210bb020424dbbf50a87709cd0d
+fix(server): #238 - make .txt outputs visible in gallery/asset listings
+
+
+diff --git a/dw/server/app.py b/dw/server/app.py
+index 97dc3c3..3846b9c 100644
+--- a/dw/server/app.py
++++ b/dw/server/app.py
+@@ -2363,6 +2363,11 @@ def create_app(
+         **{ext: "image" for ext in ALLOWED_IMAGE_EXTENSIONS},
+         **{ext: "video" for ext in ALLOWED_VIDEO_EXTENSIONS},
+         **{ext: "audio" for ext in ALLOWED_AUDIO_EXTENSIONS},
++        # Not in the security allowlists above (nothing loads a .txt back
++        # into a pipeline, so it is not a path a run reads), but a
++        # text-shape run's deliverable is a real output and belongs in the
++        # gallery like any other kind (#238)
++        ".txt": "text",
+     }
+ 
+     # The allowlist members that are not already-compressed containers -
+@@ -2863,9 +2868,14 @@ def create_app(
+                         # temp file is complete), so it is stored instead.
+                         # Everything else - .json, .md, .txt, .bmp, .wav, an
+                         # unrecognized extension - deflates, including the
+-                        # export zip's text files
++                        # export zip's text files. ".txt" is in MEDIA_KINDS
++                        # (kind "text", #238) but is plain text, not an
++                        # already-compressed container, so it stays out of
++                        # this policy the same way .json and .md do
++                        kind = MEDIA_KINDS.get(extension)
+                         stored = (
+-                            extension in MEDIA_KINDS
++                            kind is not None
++                            and kind != "text"
+                             and extension not in RAW_MEDIA_EXTENSIONS
+                         )
+                         archive.write(
+diff --git a/tests/test_server.py b/tests/test_server.py
+index a69bb0b..b72ecca 100644
+--- a/tests/test_server.py
++++ b/tests/test_server.py
+@@ -1202,7 +1202,7 @@ def test_gallery_lists_media_and_reads_metadata(server, tmp_path):
+     with server(success_script) as client:
+         outputs = tmp_path / "outputs"
+ 
+-        # a plain image, a video stand-in, and a non-media file
++        # a plain image, a video stand-in, and a text deliverable (#238)
+         Image.new("RGB", (4, 4)).save(outputs / "plain-gen.0-0.0.png")
+         (outputs / "clip-gen.0-0.0.mp4").write_bytes(b"\x00" * 10)
+         (outputs / "notes.txt").write_text("not media")
+@@ -1222,9 +1222,11 @@ def test_gallery_lists_media_and_reads_metadata(server, tmp_path):
+             "plain-gen.0-0.0.png",
+             "clip-gen.0-0.0.mp4",
+             "meta-gen.0-0.0.png",
++            "notes.txt",
+         }
+         kinds = {f["name"]: f["kind"] for f in listing["files"]}
+         assert kinds["clip-gen.0-0.0.mp4"] == "video"
++        assert kinds["notes.txt"] == "text"
+ 
+         # metadata endpoint: full workflow comes back for the editor
+         response = client.get("/api/gallery/meta-gen.0-0.0.png/metadata").json()
+@@ -1869,15 +1871,16 @@ def test_the_asset_library_lists_what_it_holds(asset_server, tmp_path):
+     (library / "gyre").mkdir(parents=True)
+     (library / "iris.png").write_bytes(b"png")
+     (library / "gyre" / "voice.wav").write_bytes(b"riff")
+-    (library / "notes.txt").write_text("not media")
++    (library / "notes.txt").write_text("a caption, a script - a real asset (#238)")
+ 
+     with asset_server(success_script) as client:
+         body = client.get("/api/assets").json()
+ 
+     names = {entry["name"]: entry for entry in body["assets"]}
+-    assert set(names) == {"iris.png", "gyre/voice.wav"}
++    assert set(names) == {"iris.png", "gyre/voice.wav", "notes.txt"}
+     assert names["iris.png"]["reference"] == "asset:iris.png"
+     assert names["gyre/voice.wav"]["kind"] == "audio"
++    assert names["notes.txt"]["kind"] == "text"
+     assert body["folders"] == ["", "gyre"]
+ 
+ 

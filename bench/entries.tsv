@@ -1,0 +1,21 @@
+# issue	kind	note
+# Curated 2026-09-22 from the 195 status:verified issues: fixes of 1-2 commits
+# and 20-600 changed lines, spread across kinds. Bounce counts are
+# status:fixed-pending-verify hand-offs; 14 of 192 verified issues ever bounced.
+265	bounced	engine+template: VRAM ceiling on video frame counts (2 hand-offs)
+198	bounced	audio task: speech/tonal detection in bleed_join tail (2 hand-offs)
+186	bounced	plan/server: expose gated repos before queueing (2 hand-offs)
+75	bounced	engine: release_pipeline ordering vs save (2 hand-offs)
+124	security	path containment: relative '..' in media args (real fix batched with #117)
+262	perf	result: 5x slow decode/save phases
+72	engine	failed pipeline loads leak GPU/host memory
+272	engine	host_memory_peak_rss_mb is process-lifetime, not per-job
+289	mcp	get_job event_count 0 for historical jobs
+179	mcp	validate_workflow/run_workflow argument-name mismatch
+74	mcp	list_jobs limit under a status filter
+212	validation	refuse result block on judge (scalar) steps
+345	validation	pipeline step with a component_type diffusers lacks
+238	mcp	list_gallery omits text-only runs
+254	validation	host-memory warning fires for a run shape that is safe
+77	skill	LTX skill should recommend save:false on intermediates (doc-only)
+302	template	LTX-2.5 templates don't set result.subfolder (50-file sweep)

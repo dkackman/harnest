@@ -1,0 +1,305 @@
+commit 264dbd6e5dde40f1d98df27d6a04c67d2ce19f22
+fix(mcp): #179 - accept validate_workflow/run_workflow parameter aliases
+
+
+diff --git a/dw_mcp/authoring.py b/dw_mcp/authoring.py
+index 1ceebe1..73caa2a 100644
+--- a/dw_mcp/authoring.py
++++ b/dw_mcp/authoring.py
+@@ -9,24 +9,47 @@ re-implements it - a second, subtly different check is how the two drift.
+ from dw_mcp.client import DwApiError, api_path
+ 
+ 
+-def validate_workflow(client, workflow=None, name=None, workspace=None, arguments=None):
++def validate_workflow(
++    client,
++    workflow=None,
++    name=None,
++    inline_workflow=None,
++    workflow_path=None,
++    workspace=None,
++    arguments=None,
++):
+     """Schema- and signature-check a workflow without queuing anything. This
+     is free (no GPU work) and should be called before any run or save. Give
+-    either an inline definition or the name of a stored one, as
+-    `list_workflows` reports it.
++    either an inline definition (`workflow`, or `inline_workflow` - the same
++    thing `run_workflow` calls it) or the name of a stored one (`name`, or
++    `workflow_path` - the same thing `run_workflow` calls it), as
++    `list_workflows` reports it. A validated document can be handed straight
++    to `run_workflow` under either spelling.
+ 
+     `arguments` is the same dict `run_workflow` takes, checked against the
+     variables the workflow declares and against this workspace's libraries.
+     Without it the answer is about the stored definition and its stock
+     defaults - which is everything except the part the caller wrote
+     (2026-09-11)."""
+-    if (workflow is None) == (name is None):
++    if workflow is not None and inline_workflow is not None:
+         raise DwApiError(
+-            "Provide exactly one of `workflow` (an inline definition) or "
+-            "`name` (a stored workflow)."
++            "`workflow` and `inline_workflow` are the same thing - provide "
++            "only one."
++        )
++    if name is not None and workflow_path is not None:
++        raise DwApiError(
++            "`name` and `workflow_path` are the same thing - provide only "
++            "one."
++        )
++    inline = workflow if workflow is not None else inline_workflow
++    stored = name if name is not None else workflow_path
++    if (inline is None) == (stored is None):
++        raise DwApiError(
++            "Provide exactly one of `workflow`/`inline_workflow` (an inline "
++            "definition) or `name`/`workflow_path` (a stored workflow)."
+         )
+     params = {"workspace": workspace} if workspace else None
+-    payload = {"workflow_path": name} if workflow is None else {"workflow": workflow}
++    payload = {"workflow_path": stored} if inline is None else {"workflow": inline}
+     if arguments:
+         payload["arguments"] = arguments
+     # The server resolves a name against its own workflow directory, so
+diff --git a/dw_mcp/diagnose.py b/dw_mcp/diagnose.py
+index 75b39ae..67d51e1 100644
+--- a/dw_mcp/diagnose.py
++++ b/dw_mcp/diagnose.py
+@@ -66,33 +66,51 @@ def run_workflow(
+     client,
+     workflow_path=None,
+     inline_workflow=None,
++    workflow=None,
++    name=None,
+     arguments=None,
+     acknowledged_cost=False,
+     workspace=None,
+ ):
+-    """Queue a workflow. `workflow_path` is either a catalog name from
+-    `list_workflows` or a path to a workflow file on the server. Returns as
+-    soon as it is queued - it does not wait for the job to finish. Poll
+-    `get_job_events` for progress.
++    """Queue a workflow. `workflow_path` (or `name` - the same thing
++    `validate_workflow` calls it) is either a catalog name from
++    `list_workflows` or a path to a workflow file on the server;
++    `inline_workflow` (or `workflow` - the same thing `validate_workflow`
++    calls it) is a full definition. A document just checked with
++    `validate_workflow` can be handed straight to this call under either
++    spelling. Returns as soon as it is queued - it does not wait for the job
++    to finish. Poll `get_job_events` for progress.
+ 
+     `acknowledged_cost` is true or, better, the plan it was quoted from:
+     {fingerprint, minutes, downloads} from `validate_workflow` - see
+     COST_REFUSAL. A bound one the server checks; a 409 means the run's
+     shape changed since the quote and the message carries the new plan."""
++    if workflow_path is not None and name is not None:
++        raise DwApiError(
++            "`workflow_path` and `name` are the same thing - provide only "
++            "one."
++        )
++    if inline_workflow is not None and workflow is not None:
++        raise DwApiError(
++            "`inline_workflow` and `workflow` are the same thing - provide "
++            "only one."
++        )
++    path = workflow_path if workflow_path is not None else name
++    inline = inline_workflow if inline_workflow is not None else workflow
+     if not acknowledged_cost:
+         raise DwApiError(COST_REFUSAL)
+-    if (workflow_path is None) == (inline_workflow is None):
++    if (path is None) == (inline is None):
+         raise DwApiError(
+-            "Provide exactly one of `workflow_path` (a catalog name or a "
+-            "path to a workflow on the server) or `inline_workflow` (a "
+-            "definition to run as-is)."
++            "Provide exactly one of `workflow_path`/`name` (a catalog name "
++            "or a path to a workflow on the server) or "
++            "`inline_workflow`/`workflow` (a definition to run as-is)."
+         )
+     payload = {"arguments": arguments or {}}
+     payload.update(_acknowledgement_body(acknowledged_cost))
+-    if workflow_path is not None:
+-        payload["workflow_path"] = workflow_path
++    if path is not None:
++        payload["workflow_path"] = path
+     else:
+-        payload["workflow"] = inline_workflow
++        payload["workflow"] = inline
+     # base_dir is deliberately absent: it decides where an inline workflow's
+     # relative paths resolve, and the MCP surface does not hand that out
+     # A named workspace pins this one job rather than the session: a
+diff --git a/dw_mcp/server.py b/dw_mcp/server.py
+index 37c38ea..a7a124e 100644
+--- a/dw_mcp/server.py
++++ b/dw_mcp/server.py
+@@ -715,17 +715,22 @@ def build_server(client):
+     def validate_workflow(
+         workflow: dict | None = None,
+         name: str | None = None,
++        inline_workflow: dict | None = None,
++        workflow_path: str | None = None,
+         workspace: str | None = None,
+         arguments: dict | None = None,
+     ) -> dict:
+         """Check a workflow against the schema and against real pipeline
+         signatures. Free and instant - always run this before run_workflow.
+         Give exactly one of `workflow` or `name` - `name` being a stored
+-        workflow as `list_workflows` reports it. Every schema error comes
+-        back at once, each with its JSON path. `workspace` names the
+-        workspace for this one call without switching the session to it -
+-        use it to pin a job whose `output:` or `asset:` references live in a
+-        workspace other than the session's.
++        workflow as `list_workflows` reports it. `run_workflow` calls these
++        same two concepts `inline_workflow` and `workflow_path`; both tools
++        accept both spellings, so a definition or a name checked here can be
++        handed straight to `run_workflow` without renaming a key. Every
++        schema error comes back at once, each with its JSON path.
++        `workspace` names the workspace for this one call without switching
++        the session to it - use it to pin a job whose `output:` or `asset:`
++        references live in a workspace other than the session's.
+ 
+         Pass the same `arguments` you will pass to `run_workflow` and they
+         are checked too: a name the workflow no longer declares, a value
+@@ -774,6 +779,8 @@ def build_server(client):
+             client,
+             workflow=workflow,
+             name=name,
++            inline_workflow=inline_workflow,
++            workflow_path=workflow_path,
+             workspace=workspace,
+             arguments=arguments,
+         )
+@@ -875,6 +882,8 @@ def build_server(client):
+     def run_workflow(
+         workflow_path: str | None = None,
+         inline_workflow: dict | None = None,
++        workflow: dict | None = None,
++        name: str | None = None,
+         arguments: dict | None = None,
+         acknowledged_cost: bool | dict = False,
+         workspace: str | None = None,
+@@ -887,12 +896,15 @@ def build_server(client):
+         `wait_for_job`, then `get_job` for the manifest. Give exactly one of
+         `workflow_path` - a catalog name from `list_workflows`, with or
+         without .json, or a path on the server - or `inline_workflow`, a
+-        full definition for a request nothing stored covers. `arguments`
+-        overrides the workflow's variables by name, which is how one stored
+-        workflow serves many requests without being edited or copied.
+-        `workspace` names the workspace for this one call without switching
+-        the session to it - use it to pin a job whose `output:` or `asset:`
+-        references live in a workspace other than the session's.
++        full definition for a request nothing stored covers. `validate_workflow`
++        calls these same two concepts `name` and `workflow`; both tools
++        accept both spellings, so a document just validated can be run
++        without renaming a key. `arguments` overrides the workflow's
++        variables by name, which is how one stored workflow serves many
++        requests without being edited or copied. `workspace` names the
++        workspace for this one call without switching the session to it -
++        use it to pin a job whose `output:` or `asset:` references live in a
++        workspace other than the session's.
+ 
+         Bind the acknowledgement to what you quoted: pass
+         {"fingerprint": plan.fingerprint, "minutes": plan.estimate.minutes,
+@@ -904,6 +916,8 @@ def build_server(client):
+             client,
+             workflow_path=workflow_path,
+             inline_workflow=inline_workflow,
++            workflow=workflow,
++            name=name,
+             arguments=arguments,
+             acknowledged_cost=acknowledged_cost,
+             workspace=workspace,
+diff --git a/tests/test_mcp_server.py b/tests/test_mcp_server.py
+index 45231dd..0f338e7 100644
+--- a/tests/test_mcp_server.py
++++ b/tests/test_mcp_server.py
+@@ -582,6 +582,89 @@ async def test_run_workflow_accepts_explicit_nulls_and_says_pick_one():
+     assert "acknowledged_cost" in str(caught.value)
+ 
+ 
++@pytest.mark.asyncio
++async def test_validate_workflow_accepts_the_run_workflow_spelling():
++    """A document validated under `workflow`/`name` should be runnable under
++    `inline_workflow`/`workflow_path` without renaming a key, and vice versa -
++    the two tools describe the same two concepts under different names (#179)."""
++    server = server_over(ok({"valid": True, "errors": []}))
++
++    result = await server.call_tool(
++        "validate_workflow", {"inline_workflow": {"id": "w"}}
++    )
++
++    assert "valid" in json.dumps(_text_of(result))
++
++
++@pytest.mark.asyncio
++async def test_validate_workflow_refuses_both_spellings_of_the_same_concept():
++    server = server_over(ok({}))
++
++    with pytest.raises(Exception) as caught:
++        await server.call_tool(
++            "validate_workflow",
++            {"workflow": {"id": "w"}, "inline_workflow": {"id": "w"}},
++        )
++
++    assert "same thing" in str(caught.value)
++
++    with pytest.raises(Exception) as caught:
++        await server.call_tool(
++            "validate_workflow", {"name": "w.json", "workflow_path": "w.json"}
++        )
++
++    assert "same thing" in str(caught.value)
++
++
++@pytest.mark.asyncio
++async def test_run_workflow_accepts_the_validate_workflow_spelling():
++    """The other direction of #179: a workflow just checked with
++    `validate_workflow`'s `workflow`/`name` should run without renaming."""
++    server = server_over(ok({"id": "job-1", "status": "queued"}))
++
++    result = await server.call_tool(
++        "run_workflow",
++        {"workflow": {"id": "w"}, "acknowledged_cost": True},
++    )
++
++    assert "job-1" in json.dumps(_text_of(result))
++
++    result = await server.call_tool(
++        "run_workflow", {"name": "w.json", "acknowledged_cost": True}
++    )
++
++    assert "job-1" in json.dumps(_text_of(result))
++
++
++@pytest.mark.asyncio
++async def test_run_workflow_refuses_both_spellings_of_the_same_concept():
++    server = server_over(ok({}))
++
++    with pytest.raises(Exception) as caught:
++        await server.call_tool(
++            "run_workflow",
++            {
++                "workflow_path": "w.json",
++                "name": "w.json",
++                "acknowledged_cost": True,
++            },
++        )
++
++    assert "same thing" in str(caught.value)
++
++    with pytest.raises(Exception) as caught:
++        await server.call_tool(
++            "run_workflow",
++            {
++                "inline_workflow": {"id": "w"},
++                "workflow": {"id": "w"},
++                "acknowledged_cost": True,
++            },
++        )
++
++    assert "same thing" in str(caught.value)
++
++
+ @pytest.mark.asyncio
+ async def test_optional_parameters_are_declared_nullable():
+     """A `{"type": "object", "default": null}` schema contradicts itself."""

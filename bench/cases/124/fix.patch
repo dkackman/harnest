@@ -1,0 +1,570 @@
+commit 781a4c8bff56d200d2f022d3b19a77e2bda9a5a3
+fix(mcp): #108 #117 #123 #124 - a warning the caller can read, and three objects that stop ignoring keys
+
+
+diff --git a/docs/SECURITY.md b/docs/SECURITY.md
+index e2de43e..0dcbc91 100644
+--- a/docs/SECURITY.md
++++ b/docs/SECURITY.md
+@@ -108,7 +108,10 @@ One policy now answers all of it, untrusted:
+ - **A path** must resolve inside a root this installation already works in -
+   the workflow file's own directory, the asset libraries on the search path,
+   the output root. `validate_path` already refuses `..`, so in practice this
+-  closes the absolute path that pointed somewhere else entirely. The remedy
++  closes the absolute path that pointed somewhere else entirely; a relative
++  one that climbs out is refused on its `..` segments, at validation time as
++  well as at the loader, so both spellings are answered at the same moment
++  rather than one of them three seconds into a queued job (#124). The remedy
+   for a file outside is to put it in the asset library and use an `asset:`
+   reference. Containment is checked **before** existence, so the refusal
+   cannot be used as a file-existence oracle.
+@@ -122,7 +125,9 @@ One policy now answers all of it, untrusted:
+   attached only for `huggingface.co`, `huggingface.cloud` and `hf.space`. An
+   endpoint elsewhere is still reachable; it just does not get the credential.
+ - **`model_name`** must be a Hub repo id or a path inside a root - the same
+-  shape check `download_model` has always applied to `repo_id`.
++  shape check `download_model` has always applied to `repo_id`. A URL is
++  neither, and is refused as such rather than resolving into the workflow's
++  own directory as a path-shaped name (#117).
+ 
+ Enforced twice: `location_errors` runs inside `validation_errors`, so
+ `validate_workflow` refuses before a model load is spent on the run, and the
+diff --git a/docs/WORKFLOW_GUIDE.md b/docs/WORKFLOW_GUIDE.md
+index a9794a8..0a11e85 100644
+--- a/docs/WORKFLOW_GUIDE.md
++++ b/docs/WORKFLOW_GUIDE.md
+@@ -336,17 +336,27 @@ in braces keeps it a plain string — `"{nf4}"` is the string `nf4`. Getting thi
+ wrong fails at load time, after validation has already passed, so a value that
+ is meant as text under one of those keys must be braced.
+ 
+-### A step takes only the keys the engine reads
+-
+-`step`, `task`, `workflow` and `pipeline_reference` are closed objects: a
+-property the engine does not read is a validation error naming the step and
+-the key, not a warning. There is no `when`, no `retry`, no `select` - if a
+-draft reaches for one, the shape it wants is a different arrangement of
+-steps, not a flag. The error exists because a plausible invented key used to
+-validate cleanly and then do nothing, so the expensive work ran with the
+-input silently having had no effect. `result` and `from_pretrained_arguments`
+-are open on purpose; `pipeline` is open because a component's name is one of
+-its keys.
++### A workflow takes only the keys the engine reads
++
++The workflow object itself, `step`, `task`, `workflow`,
++`pipeline_reference` and `result` are closed: a property the engine does not
++read is a validation error naming the object and the key, not a warning.
++There is no `when`, no `retry`, no `select` - if a draft reaches for one, the
++shape it wants is a different arrangement of steps, not a flag. The error
++exists because a plausible invented key used to validate cleanly and then do
++nothing, so the expensive work ran with the input silently having had no
++effect - a mistyped `sedd` left the run unseeded while validation advised
++setting a seed, and a mistyped `subfoldr` put the deliverable at the run
++root rather than in `final/`.
++
++`pipeline` is closed to the same rule with one opening: any key whose value
++is a *component definition* - an object carrying `from_pretrained_arguments` -
++names a component to load, because diffusers grows component names faster
++than the schema does (`latent_upsampler`, `prompt_enhancer` and `processor`
++all appear that way in shipped templates). A pipeline key that is not one of
++those is refused, which is what catches `pipeline_type` or `model_name`
++written a level too high. `from_pretrained_arguments` stays open - it passes
++its keys through to `from_pretrained`.
+ 
+ ### Where a workflow may read and reach
+ 
+diff --git a/dw/locations.py b/dw/locations.py
+index 4b1ce6d..3b17eb9 100644
+--- a/dw/locations.py
++++ b/dw/locations.py
+@@ -375,8 +375,17 @@ def validate_model_name(name, base_dir=None):
+     try:
+         validate_repo_id(str(name))
+         return str(name)
+-    except HFValidationError:
+-        pass
++    except HFValidationError as e:
++        # A URL is neither a repo id nor a path, but joined onto the workflow
++        # directory it resolves inside a root and so passed the containment
++        # check below - the one shape of the four `download_model` refuses
++        # that got through here (#117). `from_pretrained` would refuse it
++        # downstream; the point of this check is not to rely on that
++        if "://" in str(name):
++            raise InvalidInputError(
++                f"Refusing a model_name of '{name}': it is a URL, not a Hub "
++                f"repo id or a local model directory ({e})."
++            )
+     return validate_media_path(
+         str(name), base_dir, "a model_name", require_exists=False
+     )
+@@ -416,10 +425,21 @@ def _check(value, base_dir, what):
+         if is_http_url(value):
+             validate_media_url(value, what)
+         elif os.path.isabs(value):
+-            # Only an absolute path can escape: validate_path already
+-            # refuses '..', so a relative one is under base_dir by
+-            # construction and costs a stat nobody asked for here
+             validate_media_path(value, base_dir, what, require_exists=False)
++        elif ".." in value.replace("\\", "/").split("/"):
++            # A relative path is under base_dir by construction unless it
++            # climbs out, and validate_path refuses '..' - but only when the
++            # loader reaches it, which is a queued job and three seconds in
++            # rather than a validation answer. Checked on the segments here
++            # the way validate_media_glob checks a pattern's, so the two
++            # spellings of "read outside the roots" are refused at the same
++            # moment (#124)
++            raise PathTraversalError(
++                f"Refusing to read {what} at '{value}': it contains a '..' "
++                f"path segment, so it does not resolve inside any directory "
++                f"this workflow may read. Put the file in the asset library "
++                f"and name it with an 'asset:' reference."
++            )
+     except (PathTraversalError, InvalidInputError) as e:
+         return str(e)
+     except Exception:
+diff --git a/dw/schema.py b/dw/schema.py
+index 3d40e43..58a1503 100644
+--- a/dw/schema.py
++++ b/dw/schema.py
+@@ -40,13 +40,34 @@ def validate_data_all(data, schema):
+         chosen = best_match([error])
+         key = (json_path(chosen.absolute_path), error_message(chosen))
+         seen.setdefault(key, None)
+-    ordered = sorted(seen, key=lambda key: (key[0] or "", key[1]))
++    ordered = sorted(
++        _only_unknown_property(seen), key=lambda key: (key[0] or "", key[1])
++    )
+     return [
+         {"path": path, "message": message}
+         for path, message in ordered[:MAX_VALIDATION_ERRORS]
+     ]
+ 
+ 
++def _only_unknown_property(keys):
++    """Drop the shape complaints about a key that is simply unknown.
++
++    A key refused by a typed `additionalProperties` fails that shape's own
++    'type' and 'required' checks too, so one mistyped 'trasformer' arrives
++    as three errors, two of which describe the component definition the
++    author never meant to write. Where a path has the unknown-property
++    message, it is the whole story (#123).
++    """
++    unknown = {
++        path for path, message in keys if message.startswith('unknown property "')
++    }
++    return [
++        (path, message)
++        for path, message in keys
++        if path not in unknown or message.startswith('unknown property "')
++    ]
++
++
+ def error_message(error):
+     """The message an agent can act on for one schema violation.
+ 
+@@ -58,6 +79,14 @@ def error_message(error):
+     the message names the object, the key, and the full set that is read.
+     """
+     if error.validator != "additionalProperties":
++        # An object that is closed except for one shape of key - the pipeline,
++        # where any other key may name a component - refuses an unknown key
++        # through that shape's own 'type'/'required' rather than through
++        # additionalProperties, and jsonschema then reports the shape rather
++        # than the key. The schema carries the sentence to say instead (#123)
++        explanation = (error.schema or {}).get("unknownPropertyMessage")
++        if explanation and error.absolute_path:
++            return f'unknown property "{error.absolute_path[-1]}" - {explanation}'
+         return error.message
+ 
+     allowed = sorted((error.schema or {}).get("properties") or {})
+diff --git a/dw/tasks/concat_videos.py b/dw/tasks/concat_videos.py
+index eccd6c2..1b18365 100644
+--- a/dw/tasks/concat_videos.py
++++ b/dw/tasks/concat_videos.py
+@@ -10,6 +10,7 @@ outgoing tail ring on across the seam - see `audio_bleed_ms`.
+ 
+ import logging
+ 
++from ..events import emit_warning
+ from ..result import AudioVideo
+ from .audio_utils import (
+     as_channels_samples,
+@@ -137,16 +138,27 @@ def concat_videos(
+     ]
+     sample_rate = sample_rate or (max(rates) if rates else None)
+     if rates and any(rate != sample_rate for rate in rates):
+-        logger.warning(
+-            "Videos carry audio at different sample rates ("
+-            + ", ".join(
+-                f"{name}: {video.sample_rate} Hz"
+-                for name, video in zip(names, videos)
+-                if isinstance(video, AudioVideo) and video.audio is not None
+-            )
++        # emit_warning rather than logger.warning, for the reason the level
++        # spread below is emitted: resampling every track is an audio
++        # decision made on the caller's behalf, and a caller reading the job
++        # over the API or MCP sees the warnings list and nothing else - the
++        # conversion landing silently is worse than the loud failure it
++        # replaced (#108)
++        per_video = {
++            name: video.sample_rate
++            for name, video in zip(names, videos)
++            if isinstance(video, AudioVideo) and video.audio is not None
++        }
++        emit_warning(
++            "concat_videos: videos carry audio at different sample rates ("
++            + ", ".join(f"{name}: {rate} Hz" for name, rate in per_video.items())
+             + f") - resampling them all to {sample_rate} Hz. Pass "
+             "'sample_rate' to pin a different target, or resample ahead of "
+-            "this step with the 'resample_audio' task."
++            "this step with the 'resample_audio' task.",
++            kind="sample_rate_mismatch",
++            command="concat_videos",
++            sample_rate=sample_rate,
++            sample_rates=per_video,
+         )
+         waveforms = [
+             (
+diff --git a/dw/workflow_schema.json b/dw/workflow_schema.json
+index 37d3d25..e33235c 100644
+--- a/dw/workflow_schema.json
++++ b/dw/workflow_schema.json
+@@ -71,6 +71,10 @@
+             "pattern": "^variable:",
+             "format": "int64"
+         },
++        "argument_template": {
++            "description": "Engine-injected: the arguments a parent workflow passed to this one when it ran it as a sub-workflow. Written by create_step_action from the step's 'arguments' block, not authored - a workflow file carrying one is read, but a sub-workflow step is how they are meant to be supplied.",
++            "type": "object"
++        },
+         "steps": {
+             "type": "array",
+             "minItems": 1,
+@@ -79,6 +83,7 @@
+             }
+         }
+     },
++    "additionalProperties": false,
+     "required": [
+         "id",
+         "steps"
+@@ -452,6 +457,19 @@
+                     "$ref": "#/$defs/arguments"
+                 }
+             },
++            "additionalProperties": {
++                "description": "Any other key names a pipeline component to load. Diffusers grows component names faster than this schema does, so a key whose value is a component definition - an object carrying 'from_pretrained_arguments' - is loaded under that name. Anything else is a mistyped or misplaced key and is refused rather than ignored.",
++                "unknownPropertyMessage": "the engine reads the properties this object declares, plus any other key whose value is a component definition (an object carrying 'from_pretrained_arguments') - anything else would be silently ignored",
++                "type": "object",
++                "required": [
++                    "from_pretrained_arguments"
++                ],
++                "allOf": [
++                    {
++                        "$ref": "#/$defs/pipeline_component"
++                    }
++                ]
++            },
+             "required": [
+                 "configuration",
+                 "from_pretrained_arguments",
+@@ -1163,17 +1181,13 @@
+                     "description": "Whether to embed generation parameters as metadata in saved images (PNG info chunks or EXIF). Only applies to image content types.",
+                     "type": "boolean",
+                     "default": false
++                },
++                "format": {
++                    "description": "Audio container format handed to the writer, e.g. 'WAV' or 'FLAC'. Derived from content_type unless set. Only used when output is audio.",
++                    "type": "string"
+                 }
+             },
+-            "additionalProperties": {
+-                "type": [
+-                    "string",
+-                    "number",
+-                    "object",
+-                    "array",
+-                    "boolean"
+-                ]
+-            },
++            "additionalProperties": false,
+             "required": [
+                 "content_type"
+             ]
+diff --git a/tests/test_concat_videos.py b/tests/test_concat_videos.py
+index 14ac129..b415cc2 100644
+--- a/tests/test_concat_videos.py
++++ b/tests/test_concat_videos.py
+@@ -481,6 +481,43 @@ class TestWarningsReachTheCaller:
+ 
+         assert [e for e in events if e["event"] == "warning"] == []
+ 
++    def test_the_resample_warning_is_emitted_as_an_event(self):
++        """#108 again: the conversion shipped, the warning that says it
++        happened only reached the server's log, so a caller had every track
++        resampled on their behalf with nothing in the job saying so."""
++        from dw.events import RunContext, activate_context, deactivate_context
++
++        events = []
++        token = activate_context(RunContext(on_event=events.append))
++        try:
++            with patch(
++                "dw.tasks.concat_videos.load_audio_video",
++                return_value=audio_video(8, 0.5),
++            ):
++                concat_videos(["first.mp4", audio_video(8, 0.5, sample_rate=200)])
++        finally:
++            deactivate_context(token)
++
++        warnings = [e for e in events if e.get("kind") == "sample_rate_mismatch"]
++        assert len(warnings) == 1
++        assert warnings[0]["command"] == "concat_videos"
++        assert warnings[0]["sample_rate"] == 200
++        assert warnings[0]["sample_rates"] == {"first.mp4": 100, "video 2": 200}
++        assert "resampling them all to 200 Hz" in warnings[0]["message"]
++        assert "resample_audio" in warnings[0]["message"]
++
++    def test_one_rate_emits_no_resample_warning(self):
++        from dw.events import RunContext, activate_context, deactivate_context
++
++        events = []
++        token = activate_context(RunContext(on_event=events.append))
++        try:
++            concat_videos([audio_video(4, 0.5), audio_video(4, 0.5)])
++        finally:
++            deactivate_context(token)
++
++        assert [e for e in events if e.get("kind") == "sample_rate_mismatch"] == []
++
+ 
+ class TestFrameRateTravelsWithTheJoin:
+     """result.fps defaults to 8, so a 24 fps cut that says nothing there
+diff --git a/tests/test_locations.py b/tests/test_locations.py
+index 39133df..a257489 100644
+--- a/tests/test_locations.py
++++ b/tests/test_locations.py
+@@ -300,6 +300,17 @@ class TestModelName:
+         os.makedirs(local)
+         assert validate_model_name(local, workflow_dir)
+ 
++    @pytest.mark.parametrize(
++        "name",
++        ["http://127.0.0.1:8765/", "https://evil.example.com/model", "file:///etc"],
++    )
++    def test_a_url_shaped_name_is_refused(self, untrusted, workflow_dir, name):
++        """#117: joined onto the workflow directory a URL resolved inside a
++        root, so the one shape download_model refuses that reached
++        model_name went on validating clean."""
++        with pytest.raises(InvalidInputError):
++            validate_model_name(name, workflow_dir)
++
+ 
+ class TestValidationTimeErrors:
+     """Refused by validate_workflow rather than after a pipeline load."""
+@@ -398,6 +409,56 @@ class TestValidationTimeErrors:
+         }
+         assert location_errors(definition, base_dir=workflow_dir) == []
+ 
++    @pytest.mark.parametrize(
++        "location",
++        [
++            "../../../../../usr/share/pixmaps/debian-logo.png",
++            "../../../../etc/hostname",
++        ],
++    )
++    def test_a_relative_traversal_is_an_error_too(
++        self, untrusted, workflow_dir, location
++    ):
++        """#124: the absolute spelling was refused here and the relative one
++        only when the loader reached it - three seconds into a queued job,
++        after validate_workflow had said to go ahead."""
++        definition = {
++            "steps": [
++                {
++                    "name": "probe",
++                    "task": {
++                        "command": "get_image_size",
++                        "arguments": {"image": location},
++                    },
++                }
++            ]
++        }
++
++        errors = location_errors(definition, base_dir=workflow_dir)
++
++        assert [error["path"] for error in errors] == ["steps[0].task.arguments.image"]
++        assert "'..'" in errors[0]["message"]
++
++    def test_a_url_shaped_model_name_is_an_error(self, untrusted, workflow_dir):
++        """#117 at validation time, where the tester found it."""
++        definition = {
++            "steps": [
++                {
++                    "name": "load",
++                    "pipeline": {
++                        "from_pretrained_arguments": {
++                            "model_name": "http://127.0.0.1:8765/"
++                        }
++                    },
++                }
++            ]
++        }
++
++        assert [
++            error["path"]
++            for error in location_errors(definition, base_dir=workflow_dir)
++        ] == ["steps[0].pipeline.from_pretrained_arguments.model_name"]
++
+     def test_the_error_carries_the_authored_step_index(self, untrusted, workflow_dir):
+         """A for_each member reports against the step the author wrote."""
+         definition = {
+diff --git a/tests/test_schema.py b/tests/test_schema.py
+index d93b36b..4f53b86 100644
+--- a/tests/test_schema.py
++++ b/tests/test_schema.py
+@@ -580,15 +580,138 @@ class TestClosedObjects:
+         errors = validate_data_all(workflow, schema)
+         assert errors, f"{definition} should not have validated"
+ 
+-    def test_the_pipeline_object_stays_open(self):
+-        """The reason `pipeline` is not in the list above: a component's name
+-        is one of its keys - `latent_upsampler`, `prompt_enhancer` and
+-        `processor` all appear that way in shipped templates - so the
+-        zero-stray-key sweep it would need cannot pass until those are named
+-        properties. Pinned so a later sweep does not close it by eye."""
++    def test_the_pipeline_object_is_open_only_to_a_component(self):
++        """#123: `pipeline` cannot be closed outright - a component's name is
++        one of its keys, and `latent_upsampler`, `prompt_enhancer` and
++        `processor` all appear that way in shipped templates. So it takes the
++        rule `declared_component_names` applies: any other key whose value is
++        a component definition, and nothing else."""
+         schema = load_schema("workflow")
+-        for name in ("pipeline", "pipeline_component"):
+-            assert schema["$defs"][name].get("additionalProperties") is not False
++        extra = schema["$defs"]["pipeline"]["additionalProperties"]
++        assert extra["required"] == ["from_pretrained_arguments"]
++        assert extra["type"] == "object"
++        # pipeline_component itself stays open - its own keys are the
++        # from_pretrained kwargs a component takes
++        assert (
++            schema["$defs"]["pipeline_component"].get("additionalProperties")
++            is not False
++        )
++
++    @pytest.mark.parametrize(
++        "stray",
++        [
++            {"pipeline_type": "diffusers.Whatever"},
++            {"model_name": "org/typo"},
++            {"trasformer": {}},
++        ],
++    )
++    def test_a_key_that_is_not_a_component_is_an_error(self, stray):
++        """#123: `pipeline_type` and `model_name` are real names from the
++        wrong level and `trasformer` is a typo; all three used to validate
++        and be ignored, and the `model_name` one ran against whatever
++        `from_pretrained_arguments` said."""
++        schema = load_schema("workflow")
++        workflow = {
++            "id": "probe",
++            "steps": [
++                {
++                    "name": "draw",
++                    "pipeline": {
++                        "configuration": {"component_type": "StableDiffusionPipeline"},
++                        "from_pretrained_arguments": {"model_name": "org/model"},
++                        "arguments": {"prompt": "x"},
++                        **stray,
++                    },
++                    "result": {"content_type": "image/jpeg"},
++                }
++            ],
++        }
++
++        errors = validate_data_all(workflow, schema)
++
++        assert [error["path"] for error in errors] == [
++            f"steps[0].pipeline.{list(stray)[0]}"
++        ]
++        # one message per stray key, and it is the one that says what is
++        # wrong rather than a complaint about the component it is not
++        assert errors[0]["message"].startswith(f'unknown property "{list(stray)[0]}"')
++        assert "from_pretrained_arguments" in errors[0]["message"]
++
++    def test_a_component_named_by_a_key_still_validates(self):
++        schema = load_schema("workflow")
++        workflow = {
++            "id": "probe",
++            "steps": [
++                {
++                    "name": "draw",
++                    "pipeline": {
++                        "configuration": {"component_type": "LTXPipeline"},
++                        "from_pretrained_arguments": {"model_name": "org/model"},
++                        "arguments": {"prompt": "x"},
++                        "latent_upsampler": {
++                            "configuration": {"component_type": "LatentUpsampler"},
++                            "from_pretrained_arguments": {"model_name": "org/up"},
++                        },
++                    },
++                    "result": {"content_type": "video/mp4"},
++                }
++            ],
++        }
++
++        assert validate_data_all(workflow, schema) == []
++
++    @pytest.mark.parametrize(
++        "stray",
++        [{"varaibles": {"x": 1}}, {"sedd": 42}, {"when": "always"}],
++    )
++    def test_an_unknown_top_level_property_is_an_error(self, stray):
++        """#123: `sedd` was the sharp one - validation answered that the
++        workflow set no seed and advised setting one, with the misspelling
++        of it in front of it."""
++        schema = load_schema("workflow")
++        workflow = {
++            "id": "probe",
++            "steps": [
++                {"name": "s", "task": {"command": "gather_inputs", "arguments": {}}}
++            ],
++            **stray,
++        }
++
++        errors = validate_data_all(workflow, schema)
++
++        assert [error["path"] for error in errors] == [None]
++        assert list(stray)[0] in errors[0]["message"]
++        assert "steps" in errors[0]["message"]
++
++    @pytest.mark.parametrize(
++        "stray", [{"subfoldr": "final"}, {"fille_base_name": "x"}, {"fsp": 24}]
++    )
++    def test_an_unknown_result_property_is_an_error(self, stray):
++        """#123: a mistyped `subfoldr` means the deliverable quietly lands at
++        the run root rather than in the `final/` the convention promises."""
++        schema = load_schema("workflow")
++        workflow = {
++            "id": "probe",
++            "steps": [
++                {
++                    "name": "s",
++                    "task": {"command": "gather_inputs", "arguments": {}},
++                    "result": {"content_type": "text/plain", **stray},
++                }
++            ],
++        }
++
++        errors = validate_data_all(workflow, schema)
++
++        assert [error["path"] for error in errors] == ["steps[0].result"]
++        assert list(stray)[0] in errors[0]["message"]
++        assert "subfolder" in errors[0]["message"]
++
++    def test_the_later_swept_objects_are_closed_in_the_schema(self):
++        """#123: the three the #118 sweep left open."""
++        schema = load_schema("workflow")
++        assert schema["additionalProperties"] is False
++        assert schema["$defs"]["result"]["additionalProperties"] is False
+ 
+     def test_the_swept_objects_are_closed_in_the_schema(self):
+         schema = load_schema("workflow")

@@ -1,0 +1,28 @@
+{
+ "issue": 124,
+ "kind": "security",
+ "note": "path containment: relative '..' in media args (real fix batched with #117)",
+ "title": "Media arguments: a relative '..' traversal validates clean and is only refused at run time, while the absolute form and gather_images' glob both refuse at validation",
+ "prefix": "00131824fa45b61eb36d50ae5c9252607261eb70",
+ "fix_commits": [
+  "781a4c8bff56d200d2f022d3b19a77e2bda9a5a3"
+ ],
+ "fix_files": [
+  "docs/SECURITY.md",
+  "docs/WORKFLOW_GUIDE.md",
+  "dw/locations.py",
+  "dw/schema.py",
+  "dw/tasks/concat_videos.py",
+  "dw/workflow_schema.json",
+  "tests/test_concat_videos.py",
+  "tests/test_locations.py",
+  "tests/test_schema.py"
+ ],
+ "test_files": [
+  "tests/test_concat_videos.py",
+  "tests/test_locations.py",
+  "tests/test_schema.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

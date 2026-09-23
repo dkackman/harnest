@@ -1,0 +1,22 @@
+{
+ "issue": 198,
+ "kind": "bounced",
+ "note": "audio task: speech/tonal detection in bleed_join tail (2 hand-offs)",
+ "title": "bleed_join's reversed tail has no speech/tonal detection, only a peak>1.0 clip warning",
+ "prefix": "fcd87bd6eb4012192b4f3c2e96da5ef8301e2b8b",
+ "fix_commits": [
+  "a0cd11a3ce05e7b0c9b25418cce70aabe7401834",
+  "15e99213aba74172f1a3a9f79d46d41aa57016e1"
+ ],
+ "fix_files": [
+  "docs/TASKS.md",
+  "dw/tasks/audio_utils.py",
+  "dw/tasks/concat_videos.py",
+  "tests/test_audio_utils.py"
+ ],
+ "test_files": [
+  "tests/test_audio_utils.py"
+ ],
+ "handoffs": 2,
+ "body_edited_after_filing": false
+}

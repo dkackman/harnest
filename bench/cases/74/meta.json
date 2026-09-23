@@ -1,0 +1,19 @@
+{
+ "issue": 74,
+ "kind": "mcp",
+ "note": "list_jobs limit under a status filter",
+ "title": "list_jobs pagination possibly ignores/misapplies limit under a status filter",
+ "prefix": "a6a664ce2cf112fdf49b9e1c63aef632849c2244",
+ "fix_commits": [
+  "d7d2aff02c640baf0151f7d30168cc2cf5158dc4"
+ ],
+ "fix_files": [
+  "dw/server/app.py",
+  "tests/test_jobs_listing.py"
+ ],
+ "test_files": [
+  "tests/test_jobs_listing.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

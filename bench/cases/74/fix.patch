@@ -1,0 +1,69 @@
+commit d7d2aff02c640baf0151f7d30168cc2cf5158dc4
+fix(server): #74 - a jobs limit above the match is no cut at all
+
+
+diff --git a/dw/server/app.py b/dw/server/app.py
+index 47300e1..cf88037 100644
+--- a/dw/server/app.py
++++ b/dw/server/app.py
+@@ -901,8 +901,11 @@ def create_app(
+                     status_code=400, detail="limit must not be negative"
+                 )
+             # the newest are the interesting ones, and the list is oldest
+-            # first - so the cut comes off the front, not the back
+-            jobs = jobs[len(jobs) - limit :] if limit else []
++            # first - so the cut comes off the front, not the back. max(0, ...)
++            # because a limit above what matched is no cut at all: a bare
++            # negative start would be read from the end instead, and answer a
++            # limit of 12 against 9 matching jobs with the last 3 of them
++            jobs = jobs[max(0, len(jobs) - limit) :] if limit else []
+         return {"jobs": jobs, "total": total}
+ 
+     @app.get("/api/jobs/{job_id}")
+diff --git a/tests/test_jobs_listing.py b/tests/test_jobs_listing.py
+index 021885b..61708df 100644
+--- a/tests/test_jobs_listing.py
++++ b/tests/test_jobs_listing.py
+@@ -160,3 +160,42 @@ def test_mcp_list_jobs_passes_its_filters():
+         "status": "failed,cancelled",
+         "workspace": "qa",
+     }
++
++
++def test_limit_larger_than_the_match_returns_every_match(server):
++    """A limit above the number of matching jobs is not a cut at all.
++
++    The slice used to be taken from `len(jobs) - limit`, which goes negative
++    once the limit exceeds what matched and then counts back from the end -
++    so a limit just above what matched answered with only the difference -
++    `limit=12` against 9 matching jobs returned 3 of them and called
++    the other 6 "not listed".
++    """
++    with server(success_script) as client:
++        ids = []
++        for _ in range(3):
++            job = client.post("/api/jobs", json={"workflow": valid_workflow()}).json()
++            wait_for_status(client, job["id"], {"succeeded"})
++            ids.append(job["id"])
++
++        body = client.get("/api/jobs", params={"limit": 4}).json()
++
++        assert body["total"] == 3
++        assert [job["id"] for job in body["jobs"]] == ids
++
++
++def test_limit_larger_than_the_match_under_a_status_filter(server):
++    """The shape the report came in: limit above the count, plus `status`."""
++    with server(success_script) as client:
++        ids = []
++        for _ in range(2):
++            job = client.post("/api/jobs", json={"workflow": valid_workflow()}).json()
++            wait_for_status(client, job["id"], {"succeeded"})
++            ids.append(job["id"])
++
++        body = client.get(
++            "/api/jobs", params={"limit": 3, "status": "succeeded"}
++        ).json()
++
++        assert body["total"] == 2
++        assert [entry["id"] for entry in body["jobs"]] == ids

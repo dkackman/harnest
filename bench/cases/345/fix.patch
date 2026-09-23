@@ -1,0 +1,341 @@
+commit cf96edf1fc18951336696483b89518a6feef837b
+fix(introspection): #345 - refuse a component_type/scheduler_type/config_type that would die 3s into the run
+
+
+diff --git a/dw/introspection.py b/dw/introspection.py
+index 32ef3fb..49ae478 100644
+--- a/dw/introspection.py
++++ b/dw/introspection.py
+@@ -14,6 +14,7 @@ any module on the system.
+ import re
+ import inspect
+ import logging
++import difflib
+ from .variables import undeclared_variable_references
+ 
+ logger = logging.getLogger("dw")
+@@ -635,6 +636,125 @@ def task_signature_errors(workflow_definition, source_indices=None):
+     return errors
+ 
+ 
++_TYPE_REFERENCE_KEYS = ("component_type", "scheduler_type", "config_type")
++
++# A class-name-shaped string, bare or dotted - excludes a {}-escaped literal
++# and a variable:/constant:/asset:/... reference, which use ':' or braces
++# and are checked elsewhere
++_DOTTED_NAME_PATTERN = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*(\.[A-Za-z_][A-Za-z0-9_]*)*$")
++
++
++def _type_reference_candidates(key):
++    """Names to suggest a close match from, keyed by which field was wrong."""
++    if key == "component_type":
++        return list_pipelines() + list_classes("models")
++    if key == "scheduler_type":
++        return list_classes("schedulers")
++    return list_classes("quantization")
++
++
++def _type_reference_error(key, value, path):
++    """One component_type/scheduler_type/config_type value, checked against
++    the resolver the run itself uses for a '*_type' value
++    (type_helpers.load_type_from_name) - not load_allowed_class's narrower
++    ALLOWED_MODULES, which would refuse names the catalog already relies on
++    (e.g. 'transformers.AutoProcessor', 'dw.community_pipelines...') that
++    TRUSTED_TOP_LEVEL_PACKAGES lets the run itself load. Using the real
++    resolver is what makes #345's own invariant hold: this can never refuse
++    a name that would in fact have run.
++
++    Returns an error dict ({path, message}), or None if `value` would resolve.
++    """
++    if not isinstance(value, str) or not _DOTTED_NAME_PATTERN.match(value):
++        return None
++
++    from .type_helpers import load_type_from_name
++    from .security import UntrustedWorkflowError
++
++    try:
++        load_type_from_name(value)
++    except UntrustedWorkflowError as e:
++        return {"path": path, "message": str(e)}
++    except (ImportError, AttributeError, ValueError):
++        class_name = value.rsplit(".", 1)[-1]
++        suggestions = difflib.get_close_matches(
++            class_name, _type_reference_candidates(key), n=3, cutoff=0.6
++        )
++        message = f"{key} {value!r} does not exist"
++        if suggestions:
++            message += f" (closest matches: {', '.join(suggestions)})"
++        return {"path": path, "message": message}
++    return None
++
++
++def _walk_type_references(node, path, errors):
++    if isinstance(node, dict):
++        for key in _TYPE_REFERENCE_KEYS:
++            if key in node:
++                error = _type_reference_error(key, node[key], path + (key,))
++                if error is not None:
++                    errors.append(error)
++        for k, v in node.items():
++            _walk_type_references(v, path + (k,), errors)
++    elif isinstance(node, list):
++        for i, item in enumerate(node):
++            _walk_type_references(item, path + (i,), errors)
++
++
++def component_type_errors(workflow_definition, source_indices=None):
++    """Every component_type/scheduler_type/config_type in a step's pipeline
++    naming a class the run itself could not load, as [{path, message}] - a
++    misspelled class used to validate clean and only die ~3s into the run,
++    after the worker had already loaded a checkpoint the plan's
++    downloads_required quoted for a pipeline that could never exist (#345).
++
++    A class outside the trusted ecosystem entirely (UntrustedWorkflowError,
++    see _type_reference_error) is reported with a distinct message from one
++    that is merely spelled wrong - "not allowed" is not "does not exist".
++
++    The definition handed here has already been substituted and expanded,
++    matching task_signature_errors; source_indices maps each expanded step
++    back to the step the author wrote.
++    """
++    from .for_each import MEMBER_SEPARATOR, render_path
++
++    steps = workflow_definition.get("steps")
++    if not isinstance(steps, list):
++        return []
++
++    errors = []
++    for index, step in enumerate(steps):
++        if not isinstance(step, dict):
++            continue
++        pipeline = step.get("pipeline")
++        if not isinstance(pipeline, dict):
++            continue
++        source = (
++            source_indices[index]
++            if source_indices is not None and index < len(source_indices)
++            else index
++        )
++        name = step.get("name")
++        where = (
++            f" in member '{name}'"
++            if isinstance(name, str) and MEMBER_SEPARATOR in name
++            else ""
++        )
++        found = []
++        _walk_type_references(pipeline, ("pipeline",), found)
++        for error in found:
++            full_message = f"{error['message']}{where}"
++            if not full_message.endswith("."):
++                full_message += "."
++            errors.append(
++                {
++                    "path": render_path(("steps", source) + error["path"]),
++                    "message": full_message,
++                }
++            )
++    return errors
++
++
+ def _resolved_value(arguments, key, values):
+     """`arguments[key]` as a number, resolving a `variable:name` reference
+     against `values` (declared defaults merged with the caller's own
+diff --git a/dw/workflow.py b/dw/workflow.py
+index e65e173..d9685f3 100644
+--- a/dw/workflow.py
++++ b/dw/workflow.py
+@@ -32,7 +32,7 @@ from .locations import location_errors
+ from .reference_limits import reference_limit_errors
+ from .adapter_compatibility import adapter_errors, warn_adapters
+ from .elision import elide_definition, warn_elided
+-from .introspection import task_signature_errors
++from .introspection import task_signature_errors, component_type_errors
+ from .task_domains import task_argument_errors
+ from .select_validation import select_errors
+ from .variable_constraints import (
+@@ -689,6 +689,12 @@ class Workflow:
+             # is the one mistake a free pre-flight most obviously exists for
+             # (dw/introspection.py, #141)
+             + task_signature_errors(expanded, source_indices)
++            # A step's pipeline names a component_type/scheduler_type/
++            # config_type that does not exist (or is outside the trusted
++            # ecosystem entirely) - validated clean and died 3s into the run
++            # after a checkpoint the plan had already quoted for downloading
++            # (dw/introspection.py, #345)
++            + component_type_errors(expanded, source_indices)
+             # A value outside a rule the workflow declares - the bound that
+             # cost 138 s of loading to discover, refused for free at the
+             # path the value sits at (dw/variable_constraints.py, #96)
+diff --git a/tests/test_component_type_errors.py b/tests/test_component_type_errors.py
+new file mode 100644
+index 0000000..3aed385
+--- /dev/null
++++ b/tests/test_component_type_errors.py
+@@ -0,0 +1,167 @@
++"""A pipeline step whose component_type/scheduler_type/config_type diffusers
++does not export.
++
++`validate_workflow` used to answer `valid: true` for a misspelled class name -
++`configuration.component_type` is resolved lazily, deep inside pipeline
++construction, so the job queued, the worker loaded a checkpoint the plan had
++already quoted a download for, and only then died on diffusers' own
++AttributeError, ~3s in (#345). This mirrors #285's task_signature_errors:
++checked against the same resolver the run itself uses for a '*_type' value
++(`type_helpers.load_type_from_name`), so the rule can never refuse a name
++that would in fact have run.
++"""
++
++import json
++import pathlib
++
++import pytest
++
++from dw.introspection import component_type_errors
++
++
++def pipeline_step(component_type, name="a", extra=None):
++    step = {
++        "name": name,
++        "pipeline": {"configuration": {"component_type": component_type}},
++        "result": {"content_type": "image/png"},
++    }
++    if extra:
++        step["pipeline"].update(extra)
++    return step
++
++
++def errors_for(component_type):
++    return component_type_errors({"id": "ct", "steps": [pipeline_step(component_type)]})
++
++
++class TestAMisspelledClass:
++    def test_it_is_refused_with_a_suggestion(self):
++        errors = errors_for("FluxPipelin")
++        assert len(errors) == 1
++        assert errors[0]["path"] == "steps[0].pipeline.configuration.component_type"
++        assert "does not exist" in errors[0]["message"]
++        assert "FluxPipeline" in errors[0]["message"]
++
++    def test_a_real_class_is_accepted(self):
++        assert errors_for("FluxPipeline") == []
++
++    def test_a_real_dotted_class_outside_the_narrow_allowlist_is_accepted(self):
++        """These name modules that are not on introspection's own
++        ALLOWED_MODULES (sdnq only) but are on the runtime's broader
++        TRUSTED_TOP_LEVEL_PACKAGES, and are real, shipped catalog entries -
++        the check must resolve them the way the run itself does, not refuse
++        something that would have worked."""
++        assert errors_for("transformers.AutoProcessor") == []
++        assert (
++            errors_for(
++                "dw.community_pipelines.pipeline_flux_rf_inversion."
++                "RFInversionFluxPipeline"
++            )
++            == []
++        )
++
++
++class TestAllowlistedAbsentVsPresentButDisallowed:
++    def test_an_absent_class_in_a_trusted_module_says_does_not_exist(self):
++        errors = component_type_errors(
++            {
++                "id": "ct",
++                "steps": [
++                    pipeline_step(
++                        None,
++                        extra={"quantization_config": {"config_type": "sdnq.NoSuchConfig"}},
++                    )
++                ],
++            }
++        )
++        assert len(errors) == 1
++        assert "does not exist" in errors[0]["message"]
++
++    def test_a_class_in_a_disallowed_module_says_not_allowed(self, monkeypatch):
++        # This suite trusts workflows by default (conftest.py); the trust
++        # gate itself is only exercised untrusted, matching
++        # tests/test_workflow_trust.py's own pattern.
++        monkeypatch.setenv("DW_TRUST_WORKFLOWS", "0")
++        errors = errors_for("os.system")
++        assert len(errors) == 1
++        assert "does not exist" not in errors[0]["message"]
++        assert "outside the ecosystem" in errors[0]["message"]
++
++    def test_the_two_messages_differ(self, monkeypatch):
++        monkeypatch.setenv("DW_TRUST_WORKFLOWS", "0")
++        absent = component_type_errors(
++            {
++                "id": "ct",
++                "steps": [
++                    pipeline_step(
++                        None,
++                        extra={"quantization_config": {"config_type": "sdnq.NoSuchConfig"}},
++                    )
++                ],
++            }
++        )[0]["message"]
++        disallowed = errors_for("os.system")[0]["message"]
++        assert absent != disallowed
++
++
++class TestSchedulerAndQuantizationFields:
++    def test_a_misspelled_scheduler_type_is_refused(self):
++        definition = {
++            "id": "ct",
++            "steps": [
++                {
++                    "name": "a",
++                    "pipeline": {
++                        "scheduler": {"configuration": {"scheduler_type": "DDIMSchedulr"}}
++                    },
++                    "result": {"content_type": "image/png"},
++                }
++            ],
++        }
++        errors = component_type_errors(definition)
++        assert len(errors) == 1
++        assert errors[0]["path"] == (
++            "steps[0].pipeline.scheduler.configuration.scheduler_type"
++        )
++
++    def test_a_real_config_type_is_accepted(self):
++        definition = {
++            "id": "ct",
++            "steps": [pipeline_step(None, extra={"quantization_config": {"config_type": "sdnq.SDNQConfig"}})],
++        }
++        assert component_type_errors(definition) == []
++
++
++class TestNoDownloadIsQuotedForARefusedStep:
++    def test_component_type_plays_no_part_in_collecting_sources(self):
++        """POST /api/validate builds `plan` (and its downloads_required) only
++        when validation_errors is empty - see dw/server/app.py's validate
++        route - and component_type never feeds `_collect_sources` at all, so
++        a step that fails this check was never going to contribute a
++        download either way."""
++        from dw.plan import _collect_sources
++
++        definition = {"id": "ct", "steps": [pipeline_step("FluxPipelin")]}
++        assert errors_for("FluxPipelin") != []
++        names, urls = [], []
++        _collect_sources(definition, names, urls)
++        assert names == []
++        assert urls == []
++
++
++class TestTheCatalogItself:
++    """Every workflow shipped in the repo passes the new check."""
++
++    @pytest.mark.parametrize(
++        "path",
++        sorted(
++            str(p)
++            for p in list(pathlib.Path("workflows").rglob("*.json"))
++            + list(pathlib.Path("dw/workflows").glob("*.json"))
++        ),
++    )
++    def test_workflow_has_no_component_type_error(self, path):
++        definition = json.loads(pathlib.Path(path).read_text())
++        if not isinstance(definition, dict) or "steps" not in definition:
++            pytest.skip("not a workflow")
++        assert component_type_errors(definition) == []

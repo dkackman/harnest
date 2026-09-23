@@ -1,0 +1,21 @@
+{
+ "issue": 179,
+ "kind": "mcp",
+ "note": "validate_workflow/run_workflow argument-name mismatch",
+ "title": "validate_workflow takes 'workflow'/'name'; run_workflow takes 'inline_workflow'/'workflow_path' \u2014 four names for two things in one documented loop",
+ "prefix": "fff8a035f5e19f297475ec76ce3e9494419aa14a",
+ "fix_commits": [
+  "264dbd6e5dde40f1d98df27d6a04c67d2ce19f22"
+ ],
+ "fix_files": [
+  "dw_mcp/authoring.py",
+  "dw_mcp/diagnose.py",
+  "dw_mcp/server.py",
+  "tests/test_mcp_server.py"
+ ],
+ "test_files": [
+  "tests/test_mcp_server.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

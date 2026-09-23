@@ -1,0 +1,19 @@
+{
+ "issue": 289,
+ "kind": "mcp",
+ "note": "get_job event_count 0 for historical jobs",
+ "title": "get_job reports event_count 0 for a historical job whose events get_job_events still serves in full",
+ "prefix": "9f52d78f071aca8eeb77cfe8b2e0abf285936cd3",
+ "fix_commits": [
+  "fb0ae31c4ff2fa7e6ca368f5e877cdd2251899c2"
+ ],
+ "fix_files": [
+  "dw/server/jobs.py",
+  "tests/test_server.py"
+ ],
+ "test_files": [
+  "tests/test_server.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

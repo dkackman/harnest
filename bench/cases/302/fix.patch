@@ -1,0 +1,749 @@
+commit ec43edbd8a085cbc1202505571d9a1afef311b60
+fix(templates): #302 - mark every single-saving-step template's deliverable final
+
+
+diff --git a/tests/test_template_subfolders.py b/tests/test_template_subfolders.py
+index 9914f8c..3a18133 100644
+--- a/tests/test_template_subfolders.py
++++ b/tests/test_template_subfolders.py
+@@ -1,4 +1,4 @@
+-"""Every multi-step template says which of its outputs is the deliverable.
++"""Every template says which of its outputs is the deliverable.
+ 
+ A run writes everything into one directory, so a finished episode sits
+ beside the scratch that went into it. A step's `result.subfolder` places
+@@ -9,13 +9,16 @@ propagates only if every shipped template follows it; this test is what
+ keeps it from drifting.
+ 
+ The rule: a *saving step* is one
+-whose `result` sets `content_type` and does not set `save: false`; a
+-template is in scope when it has two or more saving steps; every saving
+-step of an in-scope template carries `final` or `intermediate`, and at
+-least one is `final`. The packaged builtins in dw/workflows/ stay unmarked:
+-a builtin is a step list a parent composes, and a role is the parent's to
+-assign - the parent's own `result` block, not the child's, is where it
+-says so.
++whose `result` sets `content_type` and does not set `save: false`; every
++template with one or more saving steps marks each `final` or
++`intermediate`, and at least one `final` - a template with exactly one
++saving step marks that step `final` (#302: a single-step template's lone
++deliverable was routinely left unmarked, so `list_gallery(subfolder="final")`
++found nothing for it even though the two/more-step convention from #235 was
++followed everywhere it applied). The packaged builtins in dw/workflows/ stay
++unmarked: a builtin is a step list a parent composes, and a role is the
++parent's to assign - the parent's own `result` block, not the child's, is
++where it says so.
+ """
+ 
+ import json
+@@ -42,16 +45,17 @@ def saving_steps(definition):
+ 
+ 
+ TEMPLATES = [f for f in get_example_files() if f.startswith("workflows/templates/")]
+-IN_SCOPE = [f for f in TEMPLATES if len(list(saving_steps(load(f)))) >= 2]
++IN_SCOPE = [f for f in TEMPLATES if len(list(saving_steps(load(f)))) >= 1]
+ 
+ 
+ def test_the_scope_is_what_the_design_counted():
+-    """Eighteen templates had two or more saving steps when the convention
+-    landed. A template added later with several saving steps joins the
+-    parametrized test below on its own; this pins that none has quietly
+-    left it (a step that stopped saving would drop a template from scope
+-    without failing anything else)."""
+-    assert len(IN_SCOPE) >= 18, IN_SCOPE
++    """Every shipped template had at least one saving step when this was
++    last swept (#302 extended the rule to single-saving-step templates,
++    which the original two-or-more scope missed entirely). A template
++    added later joins the parametrized test below on its own; this pins
++    that none has quietly left scope (a step that stopped saving would
++    drop a template from scope without failing anything else)."""
++    assert len(IN_SCOPE) >= 67, IN_SCOPE
+ 
+ 
+ @pytest.mark.parametrize("template", IN_SCOPE)
+diff --git a/workflows/templates/attention-processor.json b/workflows/templates/attention-processor.json
+index 2c5ccaf..d389366 100644
+--- a/workflows/templates/attention-processor.json
++++ b/workflows/templates/attention-processor.json
+@@ -34,7 +34,8 @@
+             "result": {
+                 "content_type": "image/png",
+                 "embed_metadata": true,
+-                "file_base_name": "sdpa_output"
++                "file_base_name": "sdpa_output",
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/audio-trim-fade.json b/workflows/templates/audio-trim-fade.json
+index dcfad21..e23c266 100644
+--- a/workflows/templates/audio-trim-fade.json
++++ b/workflows/templates/audio-trim-fade.json
+@@ -35,7 +35,8 @@
+         }
+       },
+       "result": {
+-        "content_type": "audio/mp3"
++        "content_type": "audio/mp3",
++        "subfolder": "final"
+       }
+     }
+   ]
+diff --git a/workflows/templates/base-and-refiner.json b/workflows/templates/base-and-refiner.json
+index f4ec30a..17ddf6f 100644
+--- a/workflows/templates/base-and-refiner.json
++++ b/workflows/templates/base-and-refiner.json
+@@ -51,7 +51,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/community-pipeline.json b/workflows/templates/community-pipeline.json
+index 371eaf5..ac28c2c 100644
+--- a/workflows/templates/community-pipeline.json
++++ b/workflows/templates/community-pipeline.json
+@@ -67,7 +67,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/controlnet-component.json b/workflows/templates/controlnet-component.json
+index b4bcb36..e533ddb 100644
+--- a/workflows/templates/controlnet-component.json
++++ b/workflows/templates/controlnet-component.json
+@@ -43,7 +43,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/depth-marigold.json b/workflows/templates/depth-marigold.json
+index b36f6fc..f8fc08a 100644
+--- a/workflows/templates/depth-marigold.json
++++ b/workflows/templates/depth-marigold.json
+@@ -36,7 +36,8 @@
+             },
+             "result": {
+                 "content_type": "image/png",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/embed-metadata.json b/workflows/templates/embed-metadata.json
+index 6c2329d..5b262de 100644
+--- a/workflows/templates/embed-metadata.json
++++ b/workflows/templates/embed-metadata.json
+@@ -25,7 +25,8 @@
+             },
+             "result": {
+                 "content_type": "image/png",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/expand-prompt.json b/workflows/templates/expand-prompt.json
+index 8fc4309..4fd1035 100644
+--- a/workflows/templates/expand-prompt.json
++++ b/workflows/templates/expand-prompt.json
+@@ -16,7 +16,8 @@
+                 }
+             },
+             "result": {
+-                "content_type": "text/plain"
++                "content_type": "text/plain",
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/generate-speech.json b/workflows/templates/generate-speech.json
+index 9f78e38..4a4c8af 100644
+--- a/workflows/templates/generate-speech.json
++++ b/workflows/templates/generate-speech.json
+@@ -16,7 +16,8 @@
+         }
+       },
+       "result": {
+-        "content_type": "audio/wav"
++        "content_type": "audio/wav",
++        "subfolder": "final"
+       }
+     }
+   ]
+diff --git a/workflows/templates/image-edit.json b/workflows/templates/image-edit.json
+index 849e6d2..9cf5bd6 100644
+--- a/workflows/templates/image-edit.json
++++ b/workflows/templates/image-edit.json
+@@ -28,7 +28,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/image-to-image.json b/workflows/templates/image-to-image.json
+index 309c5b4..82a3aac 100644
+--- a/workflows/templates/image-to-image.json
++++ b/workflows/templates/image-to-image.json
+@@ -37,7 +37,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/image-to-text.json b/workflows/templates/image-to-text.json
+index f298828..2f1404e 100644
+--- a/workflows/templates/image-to-text.json
++++ b/workflows/templates/image-to-text.json
+@@ -25,7 +25,8 @@
+                 }
+             },
+             "result": {
+-                "content_type": "text/plain"
++                "content_type": "text/plain",
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/image-variation.json b/workflows/templates/image-variation.json
+index d3022f7..a6b8ec5 100644
+--- a/workflows/templates/image-variation.json
++++ b/workflows/templates/image-variation.json
+@@ -48,7 +48,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/inpaint.json b/workflows/templates/inpaint.json
+index abc6268..2e01f67 100644
+--- a/workflows/templates/inpaint.json
++++ b/workflows/templates/inpaint.json
+@@ -34,7 +34,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/interpolate-frames.json b/workflows/templates/interpolate-frames.json
+index 76fa0f1..25fefb0 100644
+--- a/workflows/templates/interpolate-frames.json
++++ b/workflows/templates/interpolate-frames.json
+@@ -44,7 +44,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 60
++                "fps": 60,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ip-adapter.json b/workflows/templates/ip-adapter.json
+index 1d7f9ec..8562bd8 100644
+--- a/workflows/templates/ip-adapter.json
++++ b/workflows/templates/ip-adapter.json
+@@ -33,7 +33,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/lora.json b/workflows/templates/lora.json
+index cce7b4d..b30240b 100644
+--- a/workflows/templates/lora.json
++++ b/workflows/templates/lora.json
+@@ -40,7 +40,8 @@
+             "result": {
+                 "content_type": "image/jpeg",
+                 "embed_metadata": true,
+-                "save": true
++                "save": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/chained-segments.json b/workflows/templates/ltx2/chained-segments.json
+index e001d12..5350f8d 100644
+--- a/workflows/templates/ltx2/chained-segments.json
++++ b/workflows/templates/ltx2/chained-segments.json
+@@ -149,7 +149,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/enhance-prompt.json b/workflows/templates/ltx2/enhance-prompt.json
+index 525d801..51172f6 100644
+--- a/workflows/templates/ltx2/enhance-prompt.json
++++ b/workflows/templates/ltx2/enhance-prompt.json
+@@ -174,7 +174,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/extend-clip.json b/workflows/templates/ltx2/extend-clip.json
+index b4421e2..f4567f3 100644
+--- a/workflows/templates/ltx2/extend-clip.json
++++ b/workflows/templates/ltx2/extend-clip.json
+@@ -244,7 +244,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/image-to-video.json b/workflows/templates/ltx2/image-to-video.json
+index c647b69..167cc67 100644
+--- a/workflows/templates/ltx2/image-to-video.json
++++ b/workflows/templates/ltx2/image-to-video.json
+@@ -139,7 +139,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/keyframes.json b/workflows/templates/ltx2/keyframes.json
+index 7d9275d..c83bf26 100644
+--- a/workflows/templates/ltx2/keyframes.json
++++ b/workflows/templates/ltx2/keyframes.json
+@@ -159,7 +159,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/restore-deblur.json b/workflows/templates/ltx2/restore-deblur.json
+index 3c889a0..9d6e0d3 100644
+--- a/workflows/templates/ltx2/restore-deblur.json
++++ b/workflows/templates/ltx2/restore-deblur.json
+@@ -165,7 +165,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/restore-decompression.json b/workflows/templates/ltx2/restore-decompression.json
+index cb32f30..d0392d6 100644
+--- a/workflows/templates/ltx2/restore-decompression.json
++++ b/workflows/templates/ltx2/restore-decompression.json
+@@ -165,7 +165,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/text-to-video.json b/workflows/templates/ltx2/text-to-video.json
+index d34b527..0d23970 100644
+--- a/workflows/templates/ltx2/text-to-video.json
++++ b/workflows/templates/ltx2/text-to-video.json
+@@ -138,7 +138,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/ltx2/two-stage.json b/workflows/templates/ltx2/two-stage.json
+index 1ddd5c0..5463385 100644
+--- a/workflows/templates/ltx2/two-stage.json
++++ b/workflows/templates/ltx2/two-stage.json
+@@ -310,7 +310,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/chain-matched-and-aligned.json b/workflows/templates/minimax/chain-matched-and-aligned.json
+index 1c469a4..1123053 100644
+--- a/workflows/templates/minimax/chain-matched-and-aligned.json
++++ b/workflows/templates/minimax/chain-matched-and-aligned.json
+@@ -196,7 +196,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/chain-matched-to-audio.json b/workflows/templates/minimax/chain-matched-to-audio.json
+index ac7b38c..1888470 100644
+--- a/workflows/templates/minimax/chain-matched-to-audio.json
++++ b/workflows/templates/minimax/chain-matched-to-audio.json
+@@ -189,7 +189,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/chain-video-continuity.json b/workflows/templates/minimax/chain-video-continuity.json
+index 80de141..a87e198 100644
+--- a/workflows/templates/minimax/chain-video-continuity.json
++++ b/workflows/templates/minimax/chain-video-continuity.json
+@@ -196,7 +196,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/chained-segments.json b/workflows/templates/minimax/chained-segments.json
+index 0a16cb4..1c7c6ad 100644
+--- a/workflows/templates/minimax/chained-segments.json
++++ b/workflows/templates/minimax/chained-segments.json
+@@ -180,7 +180,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/composable-references.json b/workflows/templates/minimax/composable-references.json
+index e68f54b..b5977a1 100644
+--- a/workflows/templates/minimax/composable-references.json
++++ b/workflows/templates/minimax/composable-references.json
+@@ -182,7 +182,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/first-and-last-frame.json b/workflows/templates/minimax/first-and-last-frame.json
+index 76c5296..2eb6b89 100644
+--- a/workflows/templates/minimax/first-and-last-frame.json
++++ b/workflows/templates/minimax/first-and-last-frame.json
+@@ -173,7 +173,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/image-to-video.json b/workflows/templates/minimax/image-to-video.json
+index 94b3fd0..823b76e 100644
+--- a/workflows/templates/minimax/image-to-video.json
++++ b/workflows/templates/minimax/image-to-video.json
+@@ -169,7 +169,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/last-frame-only.json b/workflows/templates/minimax/last-frame-only.json
+index 97df0ce..30e009b 100644
+--- a/workflows/templates/minimax/last-frame-only.json
++++ b/workflows/templates/minimax/last-frame-only.json
+@@ -169,7 +169,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/music.json b/workflows/templates/minimax/music.json
+index c91c991..fbab14c 100644
+--- a/workflows/templates/minimax/music.json
++++ b/workflows/templates/minimax/music.json
+@@ -58,7 +58,8 @@
+             },
+             "result": {
+                 "content_type": "audio/mp3",
+-                "sample_rate": 44100
++                "sample_rate": 44100,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/reference-to-video.json b/workflows/templates/minimax/reference-to-video.json
+index addf83e..ac3173d 100644
+--- a/workflows/templates/minimax/reference-to-video.json
++++ b/workflows/templates/minimax/reference-to-video.json
+@@ -181,7 +181,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/video-with-audio-768p.json b/workflows/templates/minimax/video-with-audio-768p.json
+index 7986d08..c250086 100644
+--- a/workflows/templates/minimax/video-with-audio-768p.json
++++ b/workflows/templates/minimax/video-with-audio-768p.json
+@@ -166,7 +166,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/video-with-audio.json b/workflows/templates/minimax/video-with-audio.json
+index 27490f2..b924959 100644
+--- a/workflows/templates/minimax/video-with-audio.json
++++ b/workflows/templates/minimax/video-with-audio.json
+@@ -166,7 +166,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/minimax/voice-timbre-reference.json b/workflows/templates/minimax/voice-timbre-reference.json
+index 1b5183c..d3c866a 100644
+--- a/workflows/templates/minimax/voice-timbre-reference.json
++++ b/workflows/templates/minimax/voice-timbre-reference.json
+@@ -197,7 +197,8 @@
+             },
+             "result": {
+                 "content_type": "video/mp4",
+-                "fps": 24
++                "fps": 24,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/multi-image-reference.json b/workflows/templates/multi-image-reference.json
+index f4bb999..cab352d 100644
+--- a/workflows/templates/multi-image-reference.json
++++ b/workflows/templates/multi-image-reference.json
+@@ -58,7 +58,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/outpaint.json b/workflows/templates/outpaint.json
+index c79e1d8..10b9693 100644
+--- a/workflows/templates/outpaint.json
++++ b/workflows/templates/outpaint.json
+@@ -40,7 +40,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/prompt-weighting.json b/workflows/templates/prompt-weighting.json
+index faa3140..2dc6cc8 100644
+--- a/workflows/templates/prompt-weighting.json
++++ b/workflows/templates/prompt-weighting.json
+@@ -26,7 +26,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/segment.json b/workflows/templates/segment.json
+index d760497..5c958e4 100644
+--- a/workflows/templates/segment.json
++++ b/workflows/templates/segment.json
+@@ -31,7 +31,8 @@
+             },
+             "result": {
+                 "content_type": "image/png",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/step-caching.json b/workflows/templates/step-caching.json
+index c00f690..59a25b6 100644
+--- a/workflows/templates/step-caching.json
++++ b/workflows/templates/step-caching.json
+@@ -29,7 +29,8 @@
+             },
+             "result": {
+                 "content_type": "image/jpeg",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/surface-normals.json b/workflows/templates/surface-normals.json
+index 05b8a0d..3decc9c 100644
+--- a/workflows/templates/surface-normals.json
++++ b/workflows/templates/surface-normals.json
+@@ -36,7 +36,8 @@
+             },
+             "result": {
+                 "content_type": "image/png",
+-                "embed_metadata": true
++                "embed_metadata": true,
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/text-to-image.json b/workflows/templates/text-to-image.json
+index 001d39d..a0699c5 100644
+--- a/workflows/templates/text-to-image.json
++++ b/workflows/templates/text-to-image.json
+@@ -30,7 +30,8 @@
+             "result": {
+                 "content_type": "image/jpeg",
+                 "embed_metadata": true,
+-                "file_base_name": "test_image"
++                "file_base_name": "test_image",
++                "subfolder": "final"
+             }
+         }
+     ]
+diff --git a/workflows/templates/transcribe-audio.json b/workflows/templates/transcribe-audio.json
+index b2444cb..4e55cec 100644
+--- a/workflows/templates/transcribe-audio.json
++++ b/workflows/templates/transcribe-audio.json
+@@ -16,7 +16,8 @@
+         }
+       },
+       "result": {
+-        "content_type": "text/plain"
++        "content_type": "text/plain",
++        "subfolder": "final"
+       }
+     }
+   ]
+diff --git a/workflows/templates/upscale-diffusion.json b/workflows/templates/upscale-diffusion.json
+index 65d7fa2..6fe915f 100644
+--- a/workflows/templates/upscale-diffusion.json
++++ b/workflows/templates/upscale-diffusion.json
+@@ -34,7 +34,8 @@
+         }
+       },
+       "result": {
+-        "content_type": "image/png"
++        "content_type": "image/png",
++        "subfolder": "final"
+       }
+     }
+   ]
+diff --git a/workflows/templates/upscale-spandrel.json b/workflows/templates/upscale-spandrel.json
+index 4a67496..49b368d 100644
+--- a/workflows/templates/upscale-spandrel.json
++++ b/workflows/templates/upscale-spandrel.json
+@@ -29,7 +29,8 @@
+         }
+       },
+       "result": {
+-        "content_type": "image/png"
++        "content_type": "image/png",
++        "subfolder": "final"
+       }
+     }
+   ]

@@ -1,0 +1,498 @@
+commit 6e5ea8fc313109dd287987d225990b917b179252
+fix(engine): #72 - a failed load and a failed run release what they built
+
+
+diff --git a/dw/pipeline_processors/pipeline.py b/dw/pipeline_processors/pipeline.py
+index 8aeb29a..c84be29 100644
+--- a/dw/pipeline_processors/pipeline.py
++++ b/dw/pipeline_processors/pipeline.py
+@@ -238,117 +238,150 @@ class Pipeline:
+             logger.info(f"Pre-loading module: {module_name}")
+             importlib.import_module(module_name)
+ 
+-        # Prepare arguments and load pipeline
+-        from_pretrained_arguments = self.populate_from_pretrained_arguments(
+-            self.device, shared_components
+-        )
+-        reused_components = self.resolve_reused_components(shared_components)
++        # A load that raises partway has already built some of what it was
++        # asked for - the pipeline itself, its quantized weights, a placement
++        # half applied - and none of that is reachable from the caller, which
++        # never received a pipeline. Left alone it stays resident until the
++        # exception is handled and something else happens to collect, so a
++        # retry loads its own copy on top of the last attempt's: three failures
++        # is three pipelines' worth of dead weight. Tear the attempt down here
++        # instead, then let the failure carry on
++        try:
++            # Prepare arguments and load pipeline
++            from_pretrained_arguments = self.populate_from_pretrained_arguments(
++                self.device, shared_components
++            )
++            reused_components = self.resolve_reused_components(shared_components)
+ 
+-        # Adapters add weights to the components they attach to, and an offloading
+-        # hook only streams the weights that existed when it was installed - so a
+-        # pipeline that loads any is placed after they are on it, not at load
+-        adapters_to_load = bool(self.pipeline_definition.get("loras", [])) or (
+-            self.pipeline_definition.get("ip_adapter", None) is not None
+-        )
++            # Adapters add weights to the components they attach to, and an offloading
++            # hook only streams the weights that existed when it was installed - so a
++            # pipeline that loads any is placed after they are on it, not at load
++            adapters_to_load = bool(self.pipeline_definition.get("loras", [])) or (
++                self.pipeline_definition.get("ip_adapter", None) is not None
++            )
+ 
+-        # Load and configure the main pipeline
+-        self.pipeline = load_component(
+-            "pipeline",
+-            self.configuration,
+-            from_pretrained_arguments,
+-            self.device,
+-            reused_components,
+-            defer_placement=adapters_to_load,
+-        )
++            # Load and configure the main pipeline
++            self.pipeline = load_component(
++                "pipeline",
++                self.configuration,
++                from_pretrained_arguments,
++                self.device,
++                reused_components,
++                defer_placement=adapters_to_load,
++            )
+ 
+-        # Enable attention slicing if explicitly requested or automatically on MPS
+-        # MPS benefits from slicing since Metal shares system RAM with the GPU
+-        if self.configuration.get("enable_attention_slicing", False) or (
+-            get_device_type(self.device) == "mps"
+-            and not self.configuration.get("disable_attention_slicing", False)
+-        ):
+-            # Modular pipelines have no attention slicing - on MPS this is applied
+-            # automatically, so skip rather than fail when the pipeline lacks it
+-            if has_method(self.pipeline, "enable_attention_slicing"):
+-                logger.debug("Enabling attention slicing for pipeline")
+-                self.pipeline.enable_attention_slicing()
+-            else:
+-                logger.debug(
+-                    f"{type(self.pipeline).__name__} does not support attention slicing, skipping"
+-                )
++            # Enable attention slicing if explicitly requested or automatically on MPS
++            # MPS benefits from slicing since Metal shares system RAM with the GPU
++            if self.configuration.get("enable_attention_slicing", False) or (
++                get_device_type(self.device) == "mps"
++                and not self.configuration.get("disable_attention_slicing", False)
++            ):
++                # Modular pipelines have no attention slicing - on MPS this is applied
++                # automatically, so skip rather than fail when the pipeline lacks it
++                if has_method(self.pipeline, "enable_attention_slicing"):
++                    logger.debug("Enabling attention slicing for pipeline")
++                    self.pipeline.enable_attention_slicing()
++                else:
++                    logger.debug(
++                        f"{type(self.pipeline).__name__} does not support attention slicing, skipping"
++                    )
+ 
+-        # configure components that are not shared
+-        self.configure_loaded_components()
++            # configure components that are not shared
++            self.configure_loaded_components()
+ 
+-        # Apply SDNQ quantized matmul optimization to specified components
+-        sdnq_optimize = self.configuration.get("sdnq_optimize", [])
+-        if sdnq_optimize:
+-            apply_sdnq_optimizations(self.pipeline, sdnq_optimize)
++            # Apply SDNQ quantized matmul optimization to specified components
++            sdnq_optimize = self.configuration.get("sdnq_optimize", [])
++            if sdnq_optimize:
++                apply_sdnq_optimizations(self.pipeline, sdnq_optimize)
+ 
+-        # Enable diffusers built-in cache acceleration on transformer
+-        cache_config = get_cache_configuration(self.configuration)
+-        if cache_config is not None:
+-            enable_cache_on_transformer(self.pipeline, cache_config)
++            # Enable diffusers built-in cache acceleration on transformer
++            cache_config = get_cache_configuration(self.configuration)
++            if cache_config is not None:
++                enable_cache_on_transformer(self.pipeline, cache_config)
+ 
+-        # Configure the schedulers if specified - a pipeline that denoises two
+-        # modalities against two schedules configures each of them separately
+-        load_and_configure_scheduler(
+-            self.pipeline_definition.get("scheduler", None), self.pipeline
+-        )
+-        load_and_configure_scheduler(
+-            self.pipeline_definition.get("audio_scheduler", None),
+-            self.pipeline,
+-            "audio_scheduler",
+-        )
++            # Configure the schedulers if specified - a pipeline that denoises two
++            # modalities against two schedules configures each of them separately
++            load_and_configure_scheduler(
++                self.pipeline_definition.get("scheduler", None), self.pipeline
++            )
++            load_and_configure_scheduler(
++                self.pipeline_definition.get("audio_scheduler", None),
++                self.pipeline,
++                "audio_scheduler",
++            )
+ 
+-        self.publish_shared_components(shared_components)
++            self.publish_shared_components(shared_components)
+ 
+-        # Load and configure LoRA models
+-        load_loras(self.pipeline_definition.get("loras", []), self.pipeline)
++            # Load and configure LoRA models
++            load_loras(self.pipeline_definition.get("loras", []), self.pipeline)
+ 
+-        # Load and configure IP-Adapter
+-        load_ip_adapter(self.pipeline_definition.get("ip_adapter", None), self.pipeline)
++            # Load and configure IP-Adapter
++            load_ip_adapter(
++                self.pipeline_definition.get("ip_adapter", None), self.pipeline
++            )
+ 
+-        # The adapters are on the pipeline now, so its offloading hooks can be
+-        # installed over the weights they added
+-        if adapters_to_load:
+-            self.pipeline = place_component(
+-                self.pipeline,
+-                "pipeline",
+-                self.configuration,
+-                self.device,
+-                # A modular pipeline's manager owns its placement, and the manager
+-                # load_component gave it is the one it holds
+-                getattr(self.pipeline, "_components_manager", None),
++            # The adapters are on the pipeline now, so its offloading hooks can be
++            # installed over the weights they added
++            if adapters_to_load:
++                self.pipeline = place_component(
++                    self.pipeline,
++                    "pipeline",
++                    self.configuration,
++                    self.device,
++                    # A modular pipeline's manager owns its placement, and the manager
++                    # load_component gave it is the one it holds
++                    getattr(self.pipeline, "_components_manager", None),
++                )
++
++            # Place the components the pipeline loaded itself, once everything that alters
++            # them - dtypes, adapters, quantized matmuls - has been applied. Offloading hooks
++            # installed before those would be fighting them
++            configure_components(
++                self.pipeline, self.configuration, self.device, reused_components
+             )
+ 
+-        # Place the components the pipeline loaded itself, once everything that alters
+-        # them - dtypes, adapters, quantized matmuls - has been applied. Offloading hooks
+-        # installed before those would be fighting them
+-        configure_components(
+-            self.pipeline, self.configuration, self.device, reused_components
+-        )
++            # Set up random generator if needed - no_generator is a boolean, so an
++            # explicit false still gets a generator
++            if not self.configuration.get("no_generator", False):
++                logger.debug("Setting up random generator")
++                self.argument_template["generator"] = torch.Generator(
++                    self.device
++                ).manual_seed(self.pipeline_definition.get("seed", self.default_seed))
++
++            # Hand the first run a clean allocator. Loading churns the device even
++            # when little of the pipeline stays there - a quantization pass with
++            # 'quantization_device' set works on the accelerator and returns the
++            # weights to the host, and group offloading moves components off it
++            # again - and the cached blocks left behind are the wrong shape for
++            # inference. workflow.py does this between steps; a one-step workflow
++            # would otherwise run its only step on top of the loading debris
++            gc.collect()
++            empty_device_cache()
++        except BaseException:
++            self._discard_failed_load(shared_components)
++            raise
++
++        logger.debug("Pipeline loaded successfully")
++
++    def _discard_failed_load(self, shared_components):
++        """Drop everything a load that raised had built, and reclaim it.
+ 
+-        # Set up random generator if needed - no_generator is a boolean, so an
+-        # explicit false still gets a generator
+-        if not self.configuration.get("no_generator", False):
+-            logger.debug("Setting up random generator")
+-            self.argument_template["generator"] = torch.Generator(
+-                self.device
+-            ).manual_seed(self.pipeline_definition.get("seed", self.default_seed))
+-
+-        # Hand the first run a clean allocator. Loading churns the device even
+-        # when little of the pipeline stays there - a quantization pass with
+-        # 'quantization_device' set works on the accelerator and returns the
+-        # weights to the host, and group offloading moves components off it
+-        # again - and the cached blocks left behind are the wrong shape for
+-        # inference. workflow.py does this between steps; a one-step workflow
+-        # would otherwise run its only step on top of the loading debris
++        Unpublishes as well as releases: a component shared before the failure
++        would otherwise be handed to a later step as a component of a pipeline
++        that does not exist. A name this pipeline reused rather than loaded
++        stays published - that entry belongs to the earlier pipeline that put
++        it there, which is still alive.
++        """
++        logger.info(f"Load of pipeline '{self.name}' failed - releasing what it built")
++        reused = set(self.component_names("reused_components"))
++        for shared_component_name in self.component_names("shared_components"):
++            if shared_component_name not in reused:
++                shared_components.pop(shared_component_name, None)
++        self.pipeline = None
++        self.argument_template.pop("generator", None)
+         gc.collect()
+         empty_device_cache()
+ 
+-        logger.debug("Pipeline loaded successfully")
+-
+     def publish_shared_components(self, shared_components):
+         """Store components that will be shared with other pipelines.
+ 
+diff --git a/dw/worker.py b/dw/worker.py
+index 911aeb8..1a7d38d 100644
+--- a/dw/worker.py
++++ b/dw/worker.py
+@@ -177,6 +177,9 @@ class WorkflowWorker:
+         # whatever the run had written by then - the steps that did complete
+         # are the first thing a failed long run is asked about
+         workflow = None
++        # Bound for the same reason: the failure path evicts against what the
++        # run touched, and a run can fail before it has a context at all
++        context = None
+ 
+         try:
+             set_log_level(log_level)
+@@ -232,12 +235,7 @@ class WorkflowWorker:
+                 if asset_token is not None:
+                     deactivate_asset_dir(asset_token)
+ 
+-            # Drop cached pipelines this run no longer touched - an edited
+-            # workflow that removed or redefined a step leaves those behind
+-            for cache_key in list(self.loaded_pipelines):
+-                if cache_key not in context.touched_pipelines:
+-                    logger.info("Evicting cached pipeline no longer in workflow")
+-                    del self.loaded_pipelines[cache_key]
++            self._evict_untouched_pipelines(context)
+ 
+             self.run_count += 1
+ 
+@@ -268,17 +266,28 @@ class WorkflowWorker:
+             )
+         except Exception as e:
+             logger.error(f"Error executing workflow: {e}", exc_info=True)
+-            self.result_queue.put(
+-                {
+-                    "type": "error",
+-                    "message": f"Workflow execution error: {str(e)}",
+-                    "traceback": traceback.format_exc(),
+-                    # The files the steps before the failure wrote are on
+-                    # disk; reporting them is what keeps a run that died at
+-                    # step five from looking like one that produced nothing
+-                    "manifest": getattr(workflow, "manifest", []),
+-                }
+-            )
++            failure = {
++                "type": "error",
++                "message": f"Workflow execution error: {str(e)}",
++                "traceback": traceback.format_exc(),
++                # The files the steps before the failure wrote are on
++                # disk; reporting them is what keeps a run that died at
++                # step five from looking like one that produced nothing
++                "manifest": getattr(workflow, "manifest", []),
++            }
++            # The exception's traceback reaches every frame between here and
++            # the failure, and those frames hold whatever a half-finished load
++            # had built - so a collection that runs while the exception is
++            # still live frees none of it. The report above is a formatted
++            # string by now, so nothing is lost by letting the traceback go
++            e.__traceback__ = None
++            del e
++            # Success and cancellation both reclaim; failure did neither, so a
++            # half-loaded pipeline and any variant the attempt superseded
++            # stayed resident and the next attempt loaded on top of them
++            self._evict_untouched_pipelines(context)
++            self._cleanup_between_runs()
++            self.result_queue.put(failure)
+ 
+     def _load_workflow(self, command: Dict[str, Any], output_dir: str):
+         """Build the Workflow a command names, and its cache identity."""
+@@ -363,6 +372,22 @@ class WorkflowWorker:
+         memory_info = self._get_memory_info()
+         self.result_queue.put({"type": "memory_status", "info": memory_info})
+ 
++    def _evict_untouched_pipelines(self, context):
++        """Drop cached pipelines this run no longer touched.
++
++        An edited workflow that removed or redefined a step leaves those
++        behind, and so does a failed attempt whose superseded variant nothing
++        will ever load again. A run that failed before it had a context
++        touched nothing this can be judged against, so nothing is dropped -
++        the caller's own cleanup still runs.
++        """
++        if context is None:
++            return
++        for cache_key in list(self.loaded_pipelines):
++            if cache_key not in context.touched_pipelines:
++                logger.info("Evicting cached pipeline no longer in workflow")
++                del self.loaded_pipelines[cache_key]
++
+     def _cleanup_between_runs(self):
+         """
+         Aggressive memory cleanup between workflow runs.
+diff --git a/tests/test_pipeline_components.py b/tests/test_pipeline_components.py
+index 25e10f0..ba0a2ab 100644
+--- a/tests/test_pipeline_components.py
++++ b/tests/test_pipeline_components.py
+@@ -602,3 +602,72 @@ class TestRemoteTextEncoderResponse:
+         embeds = remote.remote_text_encoder(["a mug"], "https://example.invalid", "cpu")
+ 
+         assert embeds.shape == (2,)
++
++
++class TestFailedLoadIsTornDown:
++    """#72: a load that raises partway left what it had built resident.
++
++    Everything after the pipeline itself can fail - a quantized matmul pass, a
++    LoRA, a group-offload placement - and each failure used to hand the
++    workflow an exception with several GB still on the device, which the next
++    attempt then loaded on top of.
++    """
++
++    def _definition(self):
++        return {
++            "configuration": {"component_type": "{MockPipeline}"},
++            "from_pretrained_arguments": {"model_name": "some/repo"},
++            "arguments": {"prompt": "a cat"},
++        }
++
++    def _pipeline(self):
++        return Pipeline(self._definition(), 42, "cpu")
++
++    def test_a_load_that_fails_after_the_pipeline_is_built_drops_it(self, monkeypatch):
++        built = MagicMock()
++        monkeypatch.setattr(
++            "dw.pipeline_processors.pipeline.load_component",
++            lambda *args, **kwargs: built,
++        )
++        monkeypatch.setattr(
++            Pipeline,
++            "configure_loaded_components",
++            lambda self: (_ for _ in ()).throw(RuntimeError("placement failed")),
++        )
++        emptied = []
++        monkeypatch.setattr(
++            "dw.pipeline_processors.pipeline.empty_device_cache",
++            lambda *args, **kwargs: emptied.append(True),
++        )
++
++        pipeline = self._pipeline()
++        with pytest.raises(RuntimeError, match="placement failed"):
++            pipeline.load({})
++
++        assert pipeline.pipeline is None, "the half-loaded pipeline must be dropped"
++        assert emptied, "the device cache is emptied on the way out"
++
++    def test_a_failed_load_unpublishes_what_it_had_shared(self, monkeypatch):
++        """A component published before the failure would otherwise be handed
++        to a later step as if it belonged to a pipeline that exists."""
++        definition = self._definition()
++        definition["shared_components"] = ["vae"]
++        monkeypatch.setattr(
++            "dw.pipeline_processors.pipeline.load_component",
++            lambda *args, **kwargs: MagicMock(),
++        )
++        monkeypatch.setattr(
++            "dw.pipeline_processors.pipeline.load_loras",
++            lambda *args, **kwargs: (_ for _ in ()).throw(RuntimeError("lora failed")),
++        )
++        monkeypatch.setattr(
++            "dw.pipeline_processors.pipeline.empty_device_cache",
++            lambda *args, **kwargs: None,
++        )
++
++        shared = {}
++        pipeline = Pipeline(definition, 42, "cpu")
++        with pytest.raises(RuntimeError, match="lora failed"):
++            pipeline.load(shared)
++
++        assert shared == {}
+diff --git a/tests/test_worker_execute.py b/tests/test_worker_execute.py
+index f73ee9e..1ff4615 100644
+--- a/tests/test_worker_execute.py
++++ b/tests/test_worker_execute.py
+@@ -195,3 +195,72 @@ def test_a_failure_before_the_workflow_loads_reports_no_manifest():
+         )
+     error = next(m for m in _drain(worker.result_queue) if m["type"] == "error")
+     assert error["manifest"] == []
++
++
++def test_a_failed_run_reclaims_memory_and_drops_untouched_pipelines():
++    """#72: a run that fails leaks everything it had loaded.
++
++    Success and cancellation both reclaim; failure did neither, so a
++    half-loaded pipeline and any variant the failed attempt superseded stayed
++    resident - and the next attempt loaded its own on top of them, which is
++    how three retries starved a decode by 1.88 GiB.
++    """
++
++    class FailingWorkflow(StubWorkflow):
++        def run(self, arguments, previous_pipelines=None, context=None):
++            context.touch_pipeline("kept-key")
++            raise RuntimeError("CUDA out of memory")
++
++    worker = _make_worker()
++    worker.loaded_pipelines["kept-key"] = object()
++    worker.loaded_pipelines["dead-variant"] = object()
++
++    with patch.object(worker, "_cleanup_between_runs") as cleanup:
++        messages = _execute(worker, FailingWorkflow())
++
++    assert "error" in [message["type"] for message in messages]
++    cleanup.assert_called_once()
++    # the variant this run never touched is dead weight - the one it did touch
++    # is still the warm model a retry would reuse
++    assert "dead-variant" not in worker.loaded_pipelines
++    assert "kept-key" in worker.loaded_pipelines
++
++
++def test_a_failed_run_drops_the_traceback_before_reclaiming():
++    """The traceback is what pins a half-finished load in memory.
++
++    Every frame between the handler and the failure is reachable through
++    `__traceback__`, and those frames hold whatever the load had built when it
++    raised - so a collection that runs while the exception is still live frees
++    none of it. The report is a formatted string by then, so the traceback
++    goes first and the reclaim afterwards has something to reclaim.
++    """
++    import gc
++    import weakref
++
++    class Weight:
++        pass
++
++    held = []
++    alive_at_cleanup = []
++
++    class FailingWorkflow(StubWorkflow):
++        def run(self, arguments, previous_pipelines=None, context=None):
++            half_loaded = Weight()
++            held.append(weakref.ref(half_loaded))
++            raise RuntimeError("load failed partway")
++
++    worker = _make_worker()
++
++    def record():
++        gc.collect()
++        alive_at_cleanup.append(held[0]() is not None)
++
++    # the log record itself carries exc_info, and pytest's capture keeps every
++    # record for the length of the test - which would pin the traceback here
++    # no matter what the worker does with it
++    with patch("dw.worker.logger"):
++        with patch.object(worker, "_cleanup_between_runs", side_effect=record):
++            _execute(worker, FailingWorkflow())
++
++    assert alive_at_cleanup == [False]

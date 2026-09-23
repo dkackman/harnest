@@ -1,0 +1,20 @@
+{
+ "issue": 265,
+ "kind": "bounced",
+ "note": "engine+template: VRAM ceiling on video frame counts (2 hand-offs)",
+ "title": "Video templates validate frame counts they cannot render: no VRAM ceiling on (width, height, num_frames)",
+ "prefix": "88601fa2b3026c741b67e1e404f1622483460de9",
+ "fix_commits": [
+  "dbc10c5a48b94c105dee9a3180ce5e1261ab9218",
+  "3454686418b40b0dc70ebc526e4573286191e3ce"
+ ],
+ "fix_files": [
+  "dw/vram_estimate.py",
+  "dw/workflow.py",
+  "dw/workflow_schema.json",
+  "workflows/templates/ltx2/text-to-video.json"
+ ],
+ "test_files": [],
+ "handoffs": 2,
+ "body_edited_after_filing": false
+}

@@ -1,0 +1,22 @@
+{
+ "issue": 212,
+ "kind": "validation",
+ "note": "refuse result block on judge (scalar) steps",
+ "title": "validate_workflow: refuse result block on judge (scalar-returning) steps",
+ "prefix": "1996f8a7aa717d7ee98a8f23e58d16632f11a3ba",
+ "fix_commits": [
+  "da32153b00763962db0af56fe1946ca10a0c3cb4"
+ ],
+ "fix_files": [
+  "dw/result.py",
+  "dw/scalar_result_validation.py",
+  "dw/tasks/task.py",
+  "dw/workflow.py",
+  "tests/test_scalar_result_validation.py"
+ ],
+ "test_files": [
+  "tests/test_scalar_result_validation.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

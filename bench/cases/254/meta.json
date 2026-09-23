@@ -1,0 +1,19 @@
+{
+ "issue": 254,
+ "kind": "validation",
+ "note": "host-memory warning fires for a run shape that is safe",
+ "title": "validate_workflow projected-host-memory warning (#243) fires for a run shape that had just succeeded on the same box (62 GB projected vs 58 GB usable; run then succeeds again)",
+ "prefix": "b8780a594605d8363ba534865b2e0dde0ed06e4f",
+ "fix_commits": [
+  "c4821fb405e2de3c2c955e48e163cb74228c1b13"
+ ],
+ "fix_files": [
+  "dw/host_memory_projection.py",
+  "tests/test_host_memory_projection.py"
+ ],
+ "test_files": [
+  "tests/test_host_memory_projection.py"
+ ],
+ "handoffs": 1,
+ "body_edited_after_filing": false
+}

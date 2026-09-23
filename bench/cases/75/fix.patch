@@ -1,0 +1,254 @@
+commit 2e2ac0514a35c8cda4dda434187d5171f9065095
+perf(engine): #75 - release_pipeline frees before the write, not after
+
+
+diff --git a/dw/workflow.py b/dw/workflow.py
+index d3b244a..b59092e 100644
+--- a/dw/workflow.py
++++ b/dw/workflow.py
+@@ -763,6 +763,35 @@ class Workflow:
+                     hits_this_run.add(step.name)
+                 else:
+                     result = step.run(results, pipelines, step_action)
++
++                # A sub-workflow's saves land in the child's manifest - read it
++                # here, before the release below may drop the child
++                sub_manifest = (
++                    list(getattr(step_action, "manifest", []))
++                    if isinstance(step_action, Workflow)
++                    else []
++                )
++
++                # A released pipeline frees its memory for later steps - the
++                # alternative on a card that cannot hold two models is offloading
++                # everything, which taxes every run to survive one transition.
++                # Before the write, not after: the result is already in host
++                # memory and saving never touches the pipeline, so a release
++                # that waited for the write would hold ~10 GB on the device
++                # through the longest phase of a video step. The loop's own
++                # locals are the last references to this step's action, so
++                # clearing that is part of the release - a popped pipeline this
++                # frame still holds is not freed, and it would otherwise stay
++                # resident through the next step's load, which is exactly when
++                # both models would be in memory at once
++                if step_data.get("release_pipeline", False):
++                    logger.info(f"Releasing pipeline for step: {step.name}")
++                    pipelines.pop(self._pipeline_keys_by_step.get(step.name), None)
++                    step_action = None
++                    gc.collect()
++                    empty_device_cache()
++
++                if not reused:
+                     saved_files = result.save(
+                         self.step_output_dir(step_data),
+                         f"{workflow_id}-{step.name}.{i}",
+@@ -791,10 +820,9 @@ class Workflow:
+                 if reused:
+                     manifest_entry["reused"] = True
+                 self.manifest.append(manifest_entry)
+-                # A sub-workflow's saves land in the child's manifest - roll
+-                # them up so job history and the gallery see every file
+-                if isinstance(step_action, Workflow):
+-                    self.manifest.extend(getattr(step_action, "manifest", []))
++                # roll the child's saves up so job history and the gallery see
++                # every file
++                self.manifest.extend(sub_manifest)
+                 step_end_data = {"files": saved_files, "subfolder": subfolder}
+                 if reused:
+                     step_end_data["reused"] = True
+@@ -812,17 +840,9 @@ class Workflow:
+                 # already, and last_result keeps the workflow's return value
+                 release_unreferenced_results(results, remaining_refs)
+ 
+-                # A released pipeline frees its memory for later steps - the
+-                # alternative on a card that cannot hold two models is offloading
+-                # everything, which taxes every run to survive one transition
+-                if step_data.get("release_pipeline", False):
+-                    logger.info(f"Releasing pipeline for step: {step.name}")
+-                    pipelines.pop(self._pipeline_keys_by_step.get(step.name), None)
+-
+                 # The loop's own locals are the last references to this step's
+-                # action and result - a released pipeline would otherwise stay
+-                # resident through the next step's load, which is exactly when
+-                # both models would be in memory at once
++                # action and result - anything they still hold would stay
++                # resident through the next step's load
+                 step_action = None
+                 result = None
+ 
+diff --git a/tests/test_pipeline_caching.py b/tests/test_pipeline_caching.py
+index ae765dc..889b316 100644
+--- a/tests/test_pipeline_caching.py
++++ b/tests/test_pipeline_caching.py
+@@ -267,8 +267,45 @@ def test_release_pipeline_evicts_after_step():
+     kept_key = workflow._pipeline_keys_by_step["keep"]
+     assert released_key not in pipeline_cache, "released pipeline should be evicted"
+     assert kept_key in pipeline_cache, "other pipelines stay cached"
+-    # the between-step cleanup returns cached blocks to the device
+-    assert empty_cache.call_count == len(_release_workflow_def()["steps"])
++    # the between-step cleanup returns cached blocks to the device - once per
++    # step, plus once for the release itself, which reclaims where it drops
++    # rather than waiting for the end of the step
++    assert empty_cache.call_count == len(_release_workflow_def()["steps"]) + 1
++
++
++def test_release_pipeline_happens_before_the_result_is_written():
++    """A released pipeline is gone by the time the step writes its files.
++
++    The write does not touch the pipeline - the result is already in host
++    memory - and writing a long video is the longest phase of the step. A
++    release that waits for the write holds ~10 GB of weights on the device
++    for minutes after the last thing that needed them.
++    """
++    workflow = Workflow(_release_workflow_def(), "/tmp/test_output", "test.json")
++    pipeline_cache = {}
++    cached_at_save = {}
++
++    def mock_pipeline_load(self, shared_components):
++        self.pipeline = MagicMock()
++
++    def mock_run(self, *args, **kwargs):
++        result = MagicMock(result_list=[])
++        step_name = self.name
++
++        def save(*save_args, **save_kwargs):
++            key = workflow._pipeline_keys_by_step.get(step_name)
++            cached_at_save[step_name] = key in pipeline_cache
++            return []
++
++        result.save.side_effect = save
++        return result
++
++    with patch.object(Pipeline, "load", mock_pipeline_load):
++        with patch.object(Step, "run", mock_run):
++            with patch("dw.workflow.empty_device_cache"):
++                workflow.run({}, previous_pipelines=pipeline_cache)
++
++    assert cached_at_save == {"generate": False, "keep": True}
+ 
+ 
+ def _release_models_workflow_def(release):
+commit 93c502ee62a262147ca1a07aef2dd19d2816f947
+fix(mcp): #75 - the pipeline release is reported on the event stream
+
+
+diff --git a/docs/SERVER.md b/docs/SERVER.md
+index 5536854..5a0ef57 100644
+--- a/docs/SERVER.md
++++ b/docs/SERVER.md
+@@ -172,6 +172,7 @@ Every event in the stream carries a `seq` and an `event` name:
+ | `iteration_start` | each argument combination in a step | `step`, `iteration`, `total_iterations` |
+ | `pipeline_step` | each denoise step | `step`, `total_steps`. Emitted for a pipeline that takes a `callback_on_step_end`, and for a `ModularPipeline` (H3, LTX-2, Qwen-Image), which takes none - there the denoise block's own progress bar is what reports |
+ | `phase` | the step changes what it is doing | `phase`, `detail` |
++| `pipeline_released` | a step with `release_pipeline` drops its pipeline | `step`, `index`, `gpu_memory_allocated_mb` and `gpu_memory_allocated_before_mb` (both `null` where the backend cannot say). Emitted between the step's generation and its files being written, which is where the release happens - so the ordering is readable off the event stream rather than by trying to poll memory through a sub-second write |
+ | `workflow_end` | the run finishes | `manifest` |
+ 
+ A step spends most of its wall clock outside the denoise loop, and
+diff --git a/dw/workflow.py b/dw/workflow.py
+index b59092e..2bd56a2 100644
+--- a/dw/workflow.py
++++ b/dw/workflow.py
+@@ -61,7 +61,7 @@ from .variables import (
+ from .pipeline_processors.pipeline import Pipeline
+ from .tasks.model_cache import clear_model_cache
+ from .tasks.task import Task
+-from . import get_device, empty_device_cache
++from . import get_device, empty_device_cache, device_memory_stats
+ from .security import (
+     validate_path,
+     validate_workflow_path,
+@@ -213,6 +213,17 @@ def pipeline_cache_key(pipeline_definition):
+     return hashlib.sha256(serialized.encode()).hexdigest()
+ 
+ 
++def _allocated_mb():
++    """Device memory in use right now, for the pipeline_released event -
++    None where the backend cannot say, so a reading is never confused with
++    a genuine zero."""
++    try:
++        stats = device_memory_stats()
++    except Exception:  # a progress figure is never worth failing a run over
++        return None
++    return stats["allocated_mb"] if stats["available"] else None
++
++
+ def release_unreferenced_results(results, remaining_refs):
+     """Drop results no remaining reference can resolve to.
+ 
+@@ -786,10 +797,27 @@ class Workflow:
+                 # both models would be in memory at once
+                 if step_data.get("release_pipeline", False):
+                     logger.info(f"Releasing pipeline for step: {step.name}")
++                    before = _allocated_mb()
+                     pipelines.pop(self._pipeline_keys_by_step.get(step.name), None)
+                     step_action = None
+                     gc.collect()
+                     empty_device_cache()
++                    # Say so on the event stream. The release is otherwise
++                    # invisible to a consumer: it sits inside the sub-second
++                    # window between a step's generation and its files
++                    # appearing, which is too narrow to catch by polling
++                    # get_memory, and it is exactly the ordering this event
++                    # exists to make readable (it precedes the step's
++                    # step_end, and on a released card the figures show the
++                    # drop rather than implying it)
++                    run_context.emit(
++                        "pipeline_released",
++                        workflow=workflow_id,
++                        step=step.name,
++                        index=i,
++                        gpu_memory_allocated_mb=_allocated_mb(),
++                        gpu_memory_allocated_before_mb=before,
++                    )
+ 
+                 if not reused:
+                     saved_files = result.save(
+diff --git a/tests/test_pipeline_caching.py b/tests/test_pipeline_caching.py
+index 889b316..f51413c 100644
+--- a/tests/test_pipeline_caching.py
++++ b/tests/test_pipeline_caching.py
+@@ -444,3 +444,44 @@ def test_redefined_step_evicts_prior_pipeline_before_loading():
+     assert (
+         seen_at_load["old_still_cached"] is False
+     ), "the redefined step's previous model must be evicted before load"
++
++
++def test_pipeline_released_is_reported_on_the_event_stream():
++    """The release is announced, and before the step's files are written.
++
++    A consumer cannot time the release by polling memory: it happens inside
++    the window between generation ending and the files appearing, which is
++    sub-second for an image step. The event is the ordered record that makes
++    it readable - see issue #75.
++    """
++    from dw.events import RunContext
++
++    events = []
++    workflow = Workflow(_release_workflow_def(), "/tmp/test_output", "test.json")
++
++    def mock_pipeline_load(self, shared_components):
++        self.pipeline = MagicMock()
++
++    with patch.object(Pipeline, "load", mock_pipeline_load):
++        with patch.object(
++            Step, "run", lambda self, *args, **kwargs: MagicMock(result_list=[])
++        ):
++            with patch("dw.workflow.empty_device_cache"):
++                workflow.run(
++                    {},
++                    previous_pipelines={},
++                    context=RunContext(on_event=events.append),
++                )
++
++    names = [e["event"] for e in events]
++    released = [e for e in events if e["event"] == "pipeline_released"]
++    assert len(released) == 1, "only the step that asked for it reports a release"
++    assert released[0]["step"] == "generate"
++    assert "gpu_memory_allocated_mb" in released[0]
++    assert "gpu_memory_allocated_before_mb" in released[0]
++
++    ends = [i for i, e in enumerate(events) if e["event"] == "step_end"]
++    assert names.index("pipeline_released") < ends[0], (
++        "the release is reported before the step reports its files - which is "
++        "the ordering the event exists to make visible"
++    )
