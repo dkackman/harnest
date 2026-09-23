@@ -93,6 +93,26 @@ already given is a wasted turn.
         `origin/develop`, not from your working tree. A verify that fails
         comes back as a fix-forward on `develop`.
       - do not merge to master
+      - before merging, check your diff against the issue. These are the
+        misses that have most often sent a fix back from the tester, and
+        each is visible in `git diff` without running anything:
+        - **Every item the issue names is covered.** List what it asks for
+          (each tool, task, template, docstring copy, probe shape) and point
+          at the change and the test for each. Fixing one copy of a
+          docstring, or one of two sibling tasks the issue names, covers
+          only that one.
+        - **The tests exercise the claim, not a mock of it.** A test that
+          stubs the very function, shape or dtype the issue is about passes
+          whatever the real code does. At least one test runs the real path
+          the issue describes.
+        - **What the tester is meant to see reaches MCP.** A warning or note
+          for the caller goes through `dw.events.emit_warning` (or the job's
+          equivalent), not `logger.warning`, which only reaches the server
+          log.
+        - **The hand-off comment will match the diff.** Every claim you are
+          about to make ("crops source pixels", "warns on mismatch") must be
+          true of the code as committed; if something is only partly done,
+          say so.
    d. Deploy to `lem` — one call, after pushing `develop`:
       `ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'` (quote it —
       unquoted, your local shell expands `~` to your Mac home before ssh sends
