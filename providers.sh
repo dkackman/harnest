@@ -298,7 +298,14 @@ fallback_model_flags() {
 # act on the whole server and no suite case or task needs them; the other
 # destructive ones (delete_workspace, clear_memory, download_model) are
 # exercised by suite cases, so they stay on the prompts' honor system.
+#
+# agent-settings/consumer.json adds the R3 guard hook (agent-settings/hooks/
+# guard.py): closing as completed or adding status:verified is refused in a
+# session that has made no mcp__dw__ call, and an owner:* label can only be
+# swapped, never stacked. The hook finds the script via HARNEST_HOOKS.
+export HARNEST_HOOKS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agent-settings/hooks"
 CONSUMER_PERMISSION_FLAGS=(
+  --settings "$HARNEST_HOOKS/../consumer.json"
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__*" "ToolSearch" "Skill" "TodoWrite"

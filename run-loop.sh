@@ -468,6 +468,12 @@ $(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
 
 This issue has been handed off as fixed and sent back by the tester $bounces times. You are running on a stronger model than the sessions that produced those fixes, for that reason — say so in your hand-off comment. Read every bounce comment before touching code: the tester's objections are the specification now, and a fix that satisfies the original text but not those comments will bounce again."
     fi
+    # The R3 hand-off gate (agent-settings/hooks/guard.py) compares HEAD's
+    # tests against develop as it stood when this session began, so a fix is
+    # blocked only for failures it introduced, not ones already on develop.
+    git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
+    HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
+    export HARNEST_BASE_COMMIT
     run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$provider" "$model" "$IMPLEMENTER_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.$escalation
 

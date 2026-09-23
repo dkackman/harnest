@@ -16,5 +16,19 @@
       "- **Routine and approved**: editing source in the checkout, `git add/commit/push` on a feature branch, `git merge` into `develop` and `git push origin develop` after that merge (the deploy step pulls it on lem), `gh issue view/comment/edit/close`, `pytest`, `uv`/`pip` installs into the project venv, `ssh lem` to pull/restart/inspect the dw service.",
       "- **Never**: force-pushes, history rewrites, branch deletion on origin, pushes to `master`, `rm -rf` outside the checkout or the project venv, modifying `~/.claude`, `~/.ssh`, shell rc files, or any credential store."
     ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HARNEST_HOOKS/guard.py\" implementer",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
   }
 }
