@@ -979,4 +979,86 @@ refusal; default, 124, 243, 260, 277 → true; 294 → 24.41 GB refusal; five `c
 The implementer proposed the 345 bullet in its hand-off; added only after running it over MCP.
 Related: #265 (LTX2 half, M-F022), #266.
 
+### M-F027 — `dialogue-short` releases MiniMax-H3 after its last shot, before `concat_videos` assembles the cut
+In `templates/minimax/dialogue-short` the `shot` step (a `for_each` over `variable:shots`, MiniMax-H3
+via ModularPipeline) sets `"release_pipeline": true`. `for_each` carries that onto the last member
+only, so H3 loads once, is reused by every later member, and is freed before `episode`
+(`concat_videos`, `gather:shot`) runs. Before #344 the ~50 GB H3 stayed resident through the
+assembly and a long `shots` list was OOM-killed. Model/pipeline: MiniMax-H3 via
+`templates/minimax/dialogue-short` (Z-Image for the two `draw_character_*` steps). **Paid**: about
+15 min of GPU for two 124-frame shots.
+expected:
+- `get_workflow("templates/minimax/dialogue-short")` → the `shot` step has `"release_pipeline": true`.
+- `run_workflow(workflow_path="templates/minimax/dialogue-short", arguments={"num_inference_steps": 8,
+  "shots": <two entries in the shape the listing's `lists` declares, one per character reference>},
+  acknowledged_cost=true, wait_seconds=55)`, then `wait_for_job` until done → `status: succeeded`,
+  one `final/*.mp4`, no `error`. A non-default `num_inference_steps` keeps a step-cache hit from
+  serving the shots without loading H3.
+- In `get_job_events`, the second `shot@` member reports phase `cached`, meaning H3 was reused, not
+  reloaded.
+- There is exactly one `pipeline_released` event for `shot`, on the **last** member. It comes
+  **before** `episode`'s `step_start`, and the `memory` event right after it shows
+  `gpu_memory_allocated_mb` in the tens of MB (10.7 MB on 2026-09-22). If no release happens, or it
+  happens after `episode` starts or on the first member, that is the #344 bug back.
+It is a **finding** if the run is OOM-killed, if `release_pipeline` is gone from the template, if
+the release is missing or out of order, or if a later member reloads H3.
+Host RSS is deliberately **not** asserted here. After the release it stays about 10.6 GB above the
+pre-load baseline and grows about 3.6 GB per member; that is open as #368. Once #368 is resolved,
+the issue that closes it should say whether this case should gain an RSS bullet.
+cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole. Keep it only if
+the run failed and an issue needs it.
+source: tester, verified in #344, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-22
+against `lem` `develop @ e5bfb9e`: job `41e3ced1c3ce` succeeded in ~867 s. `shot@react` was
+`cached`; `pipeline_released` (seq 121, +863.9 s, GPU allocated 257.8 → 10.7 MB) preceded
+`episode` `step_start` (seq 127, +864.9 s). Related: #368 (host RSS).
+
+### M-F028 — `restore-faces` runs on its defaults, with no `low_cpu_mem_usage: false` in its `generate` step
+`templates/restore-faces` generates with Z-Image Turbo (`Tongyi-MAI/Z-Image-Turbo`, `ZImagePipeline`,
+bf16), then runs the `restore_faces` task (GFPGAN, `leonelhs/gfpgan` / `GFPGANv1.4.pth`). Before #346
+its `generate` step's `from_pretrained_arguments` carried `"low_cpu_mem_usage": false`, which diffusers
+refuses when parallel loading is on (dw's server default). The job died ~6 s in with `Parallel loading
+is not supported when not using low_cpu_mem_usage.`, and validate passed it. It was the only catalog
+template with that key, so a template author copying its old form would bring the failure back.
+**Paid**: about 40 s of GPU, warm.
+expected:
+- `get_workflow("templates/restore-faces")` → `steps[0].pipeline.from_pretrained_arguments` has no
+  `low_cpu_mem_usage` key, or has it set to `true`.
+- `validate_workflow(name="templates/restore-faces", arguments={})` → `valid: true` (the no-seed
+  step-cache warning is expected).
+- `run_workflow(workflow_path="templates/restore-faces", arguments={}, acknowledged_cost=<bound plan>,
+  wait_seconds=55)`, then `wait_for_job` if still running → `status: succeeded`, `warnings: []`, no
+  `error`. The manifest has two steps: `generate` (one `intermediate/*.jpg`) and `restore` (one
+  `final/*.jpg`).
+It is a **finding** if the run fails with the parallel-loading `NotImplementedError` or any load-time
+error, or if `low_cpu_mem_usage: false` reappears in the template.
+cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole.
+source: tester, verified in #346, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-22
+against `lem` `develop @ e5bfb9e`: job `ef9c0e9cc3ff` succeeded in ~40 s. The implementer proposed
+the case in its hand-off, and it was added only after that run.
+
+### M-F029 — a resident H3 `for_each`'s host-memory projection fits base + marginal, not whole peak × entries
+Depends on MiniMax H3 (t2va, 544p turbo LoRA) history, not on a fixture in this suite's workspace:
+`acorn-wars/shots-batch` in workspace `acorn-wars` is a resident `for_each: "variable:shots"` over
+one H3 step, and its runs cover two list lengths (1 and 5 entries; 7 runs as of 2026-09-22). Before
+#348, `validate_workflow` divided the whole observed peak by entry count, then multiplied it back out,
+so 5 entries projected ~305 GB against a measured ~62 GB. **Free**: validation only, no run.
+`use_workspace("acorn-wars")` (the `workspace=` argument on `validate_workflow` does not resolve a
+workspace-stored workflow name), then:
+1. `validate_workflow(name="acorn-wars/shots-batch", arguments={shots: [5 entries of {name, prompt,
+   num_frames: 158}]})`;
+2. the same call with 12 entries.
+expected: both return `valid: true` and exactly one warning each, beginning `Projected host memory
+for this run (~N MB at <5|12> entries, extrapolated from runs of 1 and 5 entries)`. N at 5 entries
+should be within ~10% of the largest single 5-entry run's peak (~61.6 GB on lem, 2026-09-22). It must
+not be near 5 × the per-entry figure (~300 GB), and the text must not say `held resident together`.
+N at 12 entries must stay bounded by the base + slope fit. On 2026-09-22 it was flat at ~61.6 GB,
+nowhere near 12 × 12 GB. It is a **finding** if either N is several times the measured single-run
+peak, if the old wording comes back, or if `valid: false` (warn became refuse). If `acorn-wars`
+history is gone, or no longer spans two list lengths, the case can't run. Report it as skipped, not
+failed.
+metrics: `projected_mb_5` (N from call 1).
+cleanup: none (validation only); `use_workspace` back to this suite's workspace.
+source: tester, verified in #348, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-22
+against `lem` `develop @ e5bfb9e`.
+
 ## Performance

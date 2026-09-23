@@ -395,23 +395,3 @@ qa-bible.md                         tester's memory across cycles: ~12 KB snapsh
 logs/                               per-cycle output (gitignored)
 CLAUDE.md                           notes for Claude Code sessions working on this repo
 ```
-
-## What the first round looked like
-
-Thirteen tickets went in, back when tickets were still `## T###` blocks in
-`mcp-feedback.md` rather than GitHub Issues. The implementer triaged all of
-them in 37 minutes: ten shipped on one branch and deployed, one folded into
-another as a duplicate, one declined with a stated what-would-change-my-mind,
-one found to be a stale deploy rather than a bug, one held for a design
-proposal.
-
-The tester verified eight in six minutes with measured evidence — envelope
-bins summing back to the track mean, a sample rate surviving a three-step
-chain — and bounced one: a variable rename that missed the template's final
-step, which validation didn't catch because `previous_result:` references
-aren't checked and resolve lazily. Rather than burn the 42-minute run to
-prove it, the tester built a two-step probe that failed the same way in
-seconds. It then filed two new tickets about why the failure would have been
-expensive to diagnose.
-
-That bounce is the whole reason the tester can't read the code.

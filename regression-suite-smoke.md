@@ -3217,6 +3217,147 @@ metrics: none.
 source: tester, verified in #303 on 2026-09-22 over MCP as model `opus` via provider
 `anthropic` against `develop @ 7e1a1a5` (dw 0.4.0-beta.6 on `lem`).
 
+### S-F108 — a fractional argument to an integer-typed variable is refused, not truncated
+#338: a variable's type comes from its default, and coercion used to be a bare `int(v)`.
+`score_gain: 0.3` against a default of `1` was realized as `0` without a warning. It deleted
+the music from four "succeeded" films. The real-valued catalog defaults are now floats
+(`guidance_scale: 9.0`, `audio_bleed_gain_db: 0.0`, …), and a fractional value sent to a
+variable that really is an int is refused at pre-flight. Free: no job is queued.
+1. `validate_workflow(name="templates/upscale-diffusion", arguments={"noise_level": 20.5})`.
+   `noise_level` is integer-typed (default `20`).
+2. `run_workflow(workflow_path="templates/upscale-diffusion", arguments={"noise_level": 20.5},
+   acknowledged_cost=true)`.
+3. `validate_workflow(name="templates/upscale-diffusion", arguments={"guidance_scale": 7.5})`.
+4. `validate_workflow(name="templates/upscale-diffusion",
+   arguments={"noise_level": 30, "num_inference_steps": "12"})`, then the same call with
+   `{"num_inference_steps": "12.5"}`.
+expected:
+- Step 1: `valid: false`, one error at `arguments.noise_level` that names the variable, the
+  value and what it would have become. Today's message is `noise_level 20.5 would be realized
+  as 20: this variable is typed integer by its default; …`.
+- Step 2: refused before queueing, with the same message. No `job_id`.
+- Step 3: `valid: true`, no warnings. `guidance_scale` is in `checked_arguments`.
+- Step 4: the integral values are valid. The fractional string is refused at
+  `arguments.num_inference_steps`.
+It is a **finding** if step 1 or step 4's second call validates, or if step 2 queues a job.
+Either one means a fraction can reach an int variable and be floored silently. It is also a
+finding if step 3 is refused or warned about, which would mean a real-valued catalog default
+has gone back to an integer literal.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #338 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e`.
+
+### S-F109 — both sequence templates' `world_fade_out_ms` fades only the world tail, and its default `0` changes nothing
+Before #339 the shots' world sound in `templates/assemble-and-score` and
+`templates/dissolve-between-shots` ran at full level to the last frame. It sat about 25 dB
+over a score's written decay, and no argument could hand the ending to the score.
+Both templates now declare `world_fade_out_ms` (default `0`) and run a `world_faded`
+(`fade_audio`) step between `world` and `mixed`. This case checks that the fade touches
+only the tail and that the default is a real no-op. Four ~4 s utility runs, no model.
+1. `get_workflow(name="templates/assemble-and-score", variables_only=true)` and the same
+   for `templates/dissolve-between-shots`.
+2. Run `templates/assemble-and-score` in this suite's workspace with `shots:
+   ["asset:qa-cast/ep6-cold-open.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`, `score:
+   "asset:qa-cast/ep20-score.wav"`, `total_frames: 248`. Run it again with
+   `world_fade_out_ms: 3000` added. Read each film with
+   `get_gallery_metadata(envelope=true)`.
+3. Do the same for `templates/dissolve-between-shots` with `total_frames: 236`: once
+   default, once with `world_fade_out_ms: 3000`. Read both envelopes.
+expected:
+- Step 1: both templates list `world_fade_out_ms: 0`.
+- Steps 2–3: all four jobs succeed, and each manifest has a `world_faded` step between
+  `world` and `mixed`. Within each template, the faded run's `warnings` equal the
+  default run's. Neither template's fade adds a warning. The only warnings are the
+  pre-existing no-`match_levels` level-jump note, plus the dissolve's resample note.
+- Within each template, `media.envelope.rms_dbfs` is identical in the two runs up to about
+  3 s from the end. The last three buckets of the faded run are lower than the default's,
+  and the final bucket is lower by at least 6 dB. At verification, assemble's s7–s10
+  went from −31.6/−30.2/−31.7/−52.0 to −31.7/−32.0/−39.4/−61.1, and dissolve's s7–s9 went
+  from −29.2/−32.6/−33.0 to −30.1/−36.2/−44.5.
+- The regression is any of these: the variable is missing; `world_faded` is missing; the
+  tails are unchanged, which means `mixed` has been rewired back to the raw `world`; or the
+  default run differs from the faded run before the tail, which means the fade is leaking
+  earlier or the default is no longer a no-op.
+cleanup: delete all four runs (`delete_output(job_id=...)` on each). The assets are
+shared fixtures, so leave them.
+metrics: none.
+source: tester, verified in #339 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e` (jobs 1a36cf75d84c, b007639f60eb,
+2cb736b751d8, a5fe2d863125).
+
+### S-F110 — a `component_type`/`scheduler_type` the runtime cannot resolve is refused by the free pre-flight, with suggestions
+Before #345, `validate_workflow` returned `valid: true` for a pipeline step whose
+`component_type` named a class diffusers doesn't export, and quoted its download. The run
+then died 3 s in with "module diffusers has no attribute …". This is the pipeline-side
+twin of S-F085. Free: four validate calls, nothing runs.
+Each call below uses this step shape, with only the named field changed: `{"id":
+"regression-bad-class", "steps": [{"name": "g", "pipeline": {"configuration":
+{"component_type": <CT>}, "from_pretrained_arguments": {"model_name":
+"stabilityai/stable-diffusion-xl-base-1.0"}, "arguments": {"prompt": "a cat"}}, "result":
+{"content_type": "image/png"}}]}`.
+1. `<CT>` = `"StableDiffusionXLPipline"` (misspelled).
+2. `<CT>` = `"StableDiffusionXLPipeline"` (real).
+3. `<CT>` = `"os.system"` (outside the trusted ecosystem).
+4. `<CT>` = `"StableDiffusionXLPipeline"`, plus `"scheduler": {"configuration":
+   {"scheduler_type": "EulerDiscreteSchedulr"}}` inside `pipeline`.
+expected:
+- Step 1 is `valid: false`, with an error at `steps[0].pipeline.configuration.component_type`.
+  The message says `'StableDiffusionXLPipline' does not exist` and lists closest matches,
+  including `StableDiffusionXLPipeline`. There is no `plan`, so no `downloads_required`.
+- Step 2 is `valid: true` and its plan quotes the SDXL repo in `downloads_required`. A real
+  class is not refused.
+- Step 3 is `valid: false` at the same path, with a *refusal* message ("Refusing to load a
+  dotted type reference … outside the ecosystem"). That wording is different from step 1's
+  "does not exist".
+- Step 4 is `valid: false` at `steps[0].pipeline.scheduler.configuration.scheduler_type`.
+  The message says it does not exist and suggests `EulerDiscreteScheduler`.
+It is a **finding** if step 1 or step 4 comes back `valid: true`, or if step 1 still quotes
+a download. It is also one if step 2 is refused, or if step 3's message can't be told apart
+from step 1's.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #345 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e`. All four came back as expected above.
+Step 2 quoted 71.6 GB. (The issue's original `QwenImage21Pipeline` repro now validates
+correctly: `get_class` shows lem's diffusers exports that class, so this case uses a
+misspelling instead.)
+
+### S-F111 — a still image under a `video` argument is refused by the free pre-flight, and the `media_type` form that loads it runs
+Before #347, `loop_frames`'s `video` argument was documented as accepting a still.
+`validate_workflow` passed `"video": "asset:<x>.png"`, and the run then failed with "Video
+file extension not allowed: .png". Validate now checks the extension of a `video`-keyed
+literal or `asset:`/`output:` reference against the allowed video extensions, including
+after a `variable:` has been resolved. For an image extension, the error names the form
+that works. One ~3 s utility run, no model.
+Each call below uses this workflow shape, with only `<V>` changed: `{"id": "lf", "steps":
+[{"name": "hold", "task": {"command": "loop_frames", "arguments": {"video": <V>,
+"num_frames": 121}}, "result": {"content_type": "video/mp4", "fps": 24}}]}`.
+1. `validate_workflow` with `<V>` = `"asset:qa-cast/hal-portrait.jpg"`.
+2. The same still passed indirectly: add `"variables": {"clip":
+   "asset:qa-cast/hal-portrait.jpg"}` and set `<V>` = `"variable:clip"`.
+3. `<V>` = `"asset:qa-cast/ep20-score.wav"` (a non-image, non-video extension).
+4. `<V>` = `"asset:qa-cast/ep6-cold-open.mp4"` (a real video).
+5. `<V>` = `{"media_type": "image", "location": "asset:qa-cast/hal-portrait.jpg"}`. Validate
+   it, then `run_workflow` it in this suite's workspace. Read the output with
+   `get_gallery_metadata`.
+expected:
+- Steps 1–2: `valid: false`, with one error at `steps[0].task.arguments.video`. The message
+  says the value is a still image and names `{"media_type": "image", "location":
+  "asset:qa-cast/hal-portrait.jpg"}` as the form that loads it.
+- Step 3: `valid: false` at the same path, "Video file extension not allowed: .wav".
+- Step 4: `valid: true`. A real video is not refused.
+- Step 5: `valid: true`. The job succeeds, and the output's `media.frame_count` is `121`.
+It is a **finding** if step 1 or step 2 validates, since that would mean the failure has
+moved back to run time. It is also a finding if step 4 is refused, or if step 5 fails or
+returns a frame count other than 121.
+cleanup: `delete_output(job_id=...)` on step 5's job. The assets are shared fixtures, so
+leave them.
+metrics: none.
+source: tester, verified in #347 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e` (job 4ae03c56e4a1: 121 frames, 24 fps,
+768x768).
+
 ## Performance
 
 ### S-P001 — default image generation latency

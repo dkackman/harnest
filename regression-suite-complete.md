@@ -1550,4 +1550,41 @@ over MCP 2026-09-21 in `qa-verify-274` against develop `d5e3725` +
 `9bdfe6f`: (3) clean, (4) `~67354 MB … based on 1 run(s)`, (5) clean, (6)
 `runs: 3`). Proposed by the implementer in its hand-off, scoped to what was run.
 
+### C-F049 — a slice that stops just short of its source's non-silent end says so; a deliberate excerpt does not
+The opposite direction to C-F016. `assemble-and-score` and
+`dissolve-between-shots` slice their score to `total_frames`. H3's `17n+5`
+lattice often makes an exact match unreachable, so the cut ends a moment before
+the score does and the score's real ending is dropped without a word. This
+happened with a 2.37 s tail that held the song's loudest second (#342). A slice
+is a slice, so the warning is gated: the dropped tail must be under 10 s,
+under 5 % of the slice length, and non-silent. Seconds to run, no model. Uses
+the shared assets `asset:qa-cast/ep11-bed.wav` (19.67 s, 32 kHz mono,
+non-silent), `asset:qa-cast/ep28-shot1-wide.mp4` and
+`asset:qa-cast/ep28-shot2-close.mp4` (124 frames each @ 24 fps).
+expected:
+- (a) An inline workflow with three `slice_audio` steps (`result.content_type:
+  "audio/wav"`) on the bed succeeds. The steps are:
+  - `near_end`: `start_frame: 0, num_frames: 460, fps: 24`, which leaves a
+    0.50 s tail.
+  - `excerpt`: `num_frames: 24`, which leaves an 18.67 s tail.
+  - `half`: `start_seconds: 0, duration_seconds: 10`, which leaves a 9.67 s
+    tail: under the absolute gate, but 97 % of the slice.
+- In (a), `warnings` holds **exactly one** entry, prefixed `near_end:`. It must
+  say `the slice ends 0.50 s before the 19.67 s source does, dropping its tail`
+  and give a real `peak … dBFS in the dropped 0.50 s`.
+- (b) `run_workflow("templates/assemble-and-score", arguments={shots: [the two
+  ep28 shots], score: the bed, total_frames: 248, score_start_frame: 214,
+  sample_rate: 32000})` succeeds, which leaves a 0.42 s tail. Its `warnings`
+  holds the same kind of entry, attributed to `soundtrack`, naming `0.42 s`
+  and `19.67 s`.
+- It is a **finding** if (a) `near_end` or (b) comes back `warnings: []` (the
+  #342 bug), or if `excerpt` or `half` starts warning (noise on legitimate
+  excerpts, the reason for the gates).
+cleanup: `delete_output(job_id=…)` for both runs; the assets are shared and
+durable.
+source: tester, verified in #342 (model `claude-opus-5-5` via provider
+`anthropic`, run over MCP 2026-09-22 in `regression-complete` against develop
+`e5bfb9e`; jobs `1a06544c0760` (a) and `61ea679c3904` (b)). Proposed by the
+implementer in its hand-off.
+
 ## Performance
