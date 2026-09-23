@@ -1006,7 +1006,7 @@ false`; `balanced_mux` = the same `pair_audio` reading
   advising `normalize_audio(peak_dbfs: -3)`). No pre-encode `audio_no_headroom` entry
   for `raw_mux` — on a video mux the pre-encode check is deliberately deferred to the
   post-encode probe (#174 amendment, bbe4adb,
-  `docs/proposals/h3-video-mux-headroom-warning-partial.md`), so a clean mux is never
+  `docs/proposals/complete/h3-video-mux-headroom-warning-complete.md`), so a clean mux is never
   warned about a defect the encode didn't introduce. **Two** headroom entries for
   `raw_mux` is the regression to watch for in one direction (the deferral stopped
   working — the pre-2026-09-20 shape #194/#305 recorded); **zero** is the regression

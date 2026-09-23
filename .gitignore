@@ -1,3 +1,4 @@
 logs/
 .DS_Store
 qa-bible.md
+__pycache__/
