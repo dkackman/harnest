@@ -3385,6 +3385,29 @@ metrics: none.
 source: tester, verified in #350 on 2026-09-22 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ e5bfb9e`.
 
+### S-F116 — `get_task` describes the three frame-grab commands, each with its own summary
+Before #366, `get_task("get_frame")` returned an empty `summary` and no parameter
+descriptions. Nothing said that `frame_index` is 0-based or that a negative value counts
+from the end. `get_first_frame` and `get_last_frame` share `get_frame`'s implementation.
+Free: three discovery calls, nothing runs.
+1. `get_task("get_frame")`.
+2. `get_task("get_first_frame")`.
+3. `get_task("get_last_frame")`.
+expected:
+- All three: a non-empty `summary`, and all three summaries differ from each other.
+  Step 2's names the first frame and step 3's names the last. `video` has a non-empty
+  `description` saying what it accepts (frame list/array/tensor, AudioVideo, file reference).
+- Step 1: `frame_index` (default 0) has a `description` saying it is 0-based and that
+  negative indexes count from the end.
+- Steps 2 and 3: `frame_index` is absent because it is pinned. `parameters` is `video` and
+  `device`.
+It is a **finding** if any summary is empty, if steps 2 and 3 share a summary with each other
+or with step 1, or if `video`/`frame_index` lose their descriptions.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #366 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e`.
+
 ### S-F113 — a dict parameter given as a JSON string is parsed, and a malformed one is named as invalid JSON
 Before #359, `validate_workflow`, `run_workflow` and `save_prompt` typed their document
 params as `dict` only. A JSON *string* with a syntax error got pydantic's
