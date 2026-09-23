@@ -1,0 +1,1 @@
+{"ts":"2026-09-23T02:10:27Z","level":"complete","case":"C-F050","metric":"latency","condition":"12-frames","value":5.75,"unit":"s","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job 13504b665cc9","note":"13 frames incl. get_last_frame; seed reading from the #367 verify"}

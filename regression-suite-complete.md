@@ -130,6 +130,14 @@ when nothing uses it anymore.
   second — confirm both with `get_gallery_metadata` and
   `get_output_frames(at=[<duration - 0.1>], hear=1)` before swapping it in.
 
+- `asset:qa-cast/long-film-4089.mp4` — a **long** 24 fps film, 4089 frames /
+  170.4 s / 960x544, 33 MB. It is the actual clip from #367 that got SIGKILLed.
+  Used by C-F050, where the length is the whole point: decoding all of it once
+  per frame is what used to kill the worker. Also in the shared
+  `common/assets`, so do not sweep it and do not expect it under
+  `regression-complete`. Any replacement needs thousands of frames. Re-read its
+  `frame_count` with `get_gallery_metadata` and re-derive C-F050's indexes.
+
 ## Functional
 
 ### C-F001 — a run-time warning reaches the caller, on both channels
@@ -1533,6 +1541,38 @@ durable.
 source: tester, verified in #342 (model `claude-opus-5-5` via provider
 `anthropic`, run over MCP 2026-09-22 in `regression-complete` against develop
 `e5bfb9e`; jobs `1a06544c0760` (a) and `61ea679c3904` (b)). Proposed by the
+implementer in its hand-off.
+
+### C-F050 — pulling frames from a long film seeks instead of decoding the whole clip
+`get_frame`, `get_first_frame` and `get_last_frame` used to decode every frame of
+a clip to return one. In a `for_each` they did that once per member, so 12
+frames from a 4089-frame film ended in a SIGKILL at 82 s (#367). Seconds to run,
+no model. Uses the shared `asset:qa-cast/long-film-4089.mp4` (4089 frames).
+expected:
+- (a) An inline task-only workflow succeeds, with `variables.clip:
+  "asset:qa-cast/long-film-4089.mp4"` and a `frames` list of 12 `{name, at}`
+  entries at 0, 340, 680, … 3400 and 4088. It has two steps:
+  - `last`: `get_last_frame` with `video: "variable:clip"`.
+  - `frame`: `for_each: "variable:frames"`, then `get_frame` with
+    `video: "variable:clip"` and `frame_index: "item:at"`.
+  Both steps use `result.content_type: "image/png"`. The job writes 13 PNGs,
+  `warnings: []`, and takes **well under a minute** (about 6 s when verified).
+  The `variable:` form is the one the callers use, as in the `GrabFrames`
+  workflow shape.
+- (b) A one-step workflow runs `get_frame` on the same asset with `frame_index:
+  4089`. It fails fast with `frame 4089 is past the end of a 4089-frame clip
+  (frames 0-4088)`.
+- It is a **finding** if (a) is killed, fails with no Python error, or runs
+  for tens of seconds or more (the whole-clip decode is back), or if (b)'s
+  wording changes.
+metrics: `latency` of (a) in seconds, from the job's own `started_at` →
+`finished_at` (`condition: 12-frames`), logged to `regression-perf/C-F050.jsonl`.
+cleanup: `delete_output(job_id=…)` for both runs. The asset is shared and
+durable.
+source: tester, verified in #367 (model `claude-opus-5-5` via provider
+`anthropic`, run over MCP 2026-09-22 against develop `e5bfb9e`; job
+`13504b665cc9` (a) in `regression-complete`; (b) job `afbff51cff8d`, run
+against the same film before it was kept as a shared asset). Proposed by the
 implementer in its hand-off.
 
 ## Performance
