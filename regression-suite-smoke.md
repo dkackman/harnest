@@ -59,10 +59,11 @@ of you adds is the same kind of edit.
 None of the three agents may remove or rewrite an existing case on their
 own judgment. If a case looks too expensive, too flaky against things
 outside the server's control, or no longer meaningful, propose dropping or
-changing it with a GitHub Issue naming the case id and the reasoning,
-labeled `owner:don` + `status:needs-approval` — the regression agent and
-tester file this directly; the implementer uses its usual needs-approval
-path (it has no suite files checked out to edit anyway). Leave the case
+changing it with a GitHub Issue on the harness repo, `dkackman/harnest`
+(where this file lives, not the ticket repo), naming the case id and the
+reasoning, labeled `suite` + `status:needs-approval`. All three agents file
+this directly, the implementer included (it has no suite files checked out
+to edit anyway), and so does the curator (`run-curate.sh`). Leave the case
 exactly as written until a human acts on it.
 
 ## Fixtures

@@ -187,9 +187,10 @@ running.
      pass or go away — not even one you're convinced is too expensive, too
      flaky against things outside the server's control, or no longer
      meaningful. If you think a case should be removed or changed, say so:
-     `gh issue create` on it, labeled `owner:don` + `status:needs-approval`,
-     naming the case id and your reasoning, and leave the case exactly as
-     written until a human acts on it. The implementer and tester follow the
+     `gh issue create --repo dkackman/harnest` (the harness repo, where the
+     suites live, not the ticket repo), labeled `suite` +
+     `status:needs-approval`, naming the case id and your reasoning, and
+     leave the case exactly as written until a human acts on it. The implementer and tester follow the
      same rule for cases they didn't author.
 7. You never close, verify, or reopen issues, and never change any issue's
    labels — that's the tester's, implementer's, researcher's and Don's
