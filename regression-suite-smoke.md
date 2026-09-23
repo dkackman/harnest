@@ -3358,6 +3358,127 @@ source: tester, verified in #347 on 2026-09-22 over MCP as model `claude-opus-5-
 provider `anthropic` against `develop @ e5bfb9e` (job 4ae03c56e4a1: 121 frames, 24 fps,
 768x768).
 
+### S-F112 — `get_task` lists a function-backed image processor's real arguments, and validate checks them
+Before #350, `get_task` reported every image processor as `(image, device)` with
+`accepts_kwargs: true` and the generic summary "'<name>' image processor (ControlNet
+preprocessor)". That hid real arguments, and an agent concluded `recenter_crop` could not
+reach a corner. Free: three discovery calls and one validate, nothing runs.
+1. `get_task("recenter_crop")`.
+2. `get_task("resize_resample")`.
+3. `get_task("canny")` (detector-backed, so no plain function behind it).
+4. `validate_workflow` with `{"id": "qa_350", "steps": [{"name": "crop", "task": {"command":
+   "recenter_crop", "arguments": {"image": "https://example.com/x.png", "center_x": 0.9,
+   "center_y": 0.1, "crop": 0.25, "bogus_arg": 1}}}]}`.
+expected:
+- Step 1: `accepts_kwargs: false`, with a real docstring summary (not "ControlNet
+  preprocessor"). `parameters` includes `center_x` (0.5), `center_y` (0.5), `crop` (1.0),
+  `width` (null), `height` (null) and `fill` ("edge"), alongside `image` and `device`.
+- Step 2: `accepts_kwargs: false`, and `parameters` includes `resolution` (1024).
+- Step 3: still the generic shape. `parameters` is just `image` and `device`, with
+  `accepts_kwargs: true`.
+- Step 4: `valid: false`, with exactly one error, at `steps[0].task.arguments.bogus_arg`
+  ("does not accept argument"). `center_x`/`center_y`/`crop` are not flagged.
+It is a **finding** if step 1 or 2 falls back to `(image, device)`, if step 4 flags a real
+argument or passes `bogus_arg`, or if step 3 starts claiming arguments it doesn't have.
+cleanup: none — nothing is written.
+metrics: none.
+source: tester, verified in #350 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e`.
+
+### S-F113 — a dict parameter given as a JSON string is parsed, and a malformed one is named as invalid JSON
+Before #359, `validate_workflow`, `run_workflow` and `save_prompt` typed their document
+params as `dict` only. A JSON *string* with a syntax error got pydantic's
+`Input should be a valid dictionary [type=dict_type …]`, and an agent read that as "the
+tool won't take a document this size" when the real cause was a syntax error. Free: no
+GPU time.
+The values below must reach the server as **strings**, not objects. A client that
+parses a `{`-leading parameter value as JSON will send an object and skip the path this
+case tests; a leading space (`' {…}'`) keeps it a string, and the server's JSON parse
+ignores the whitespace.
+1. `save_prompt(name="qa-sf113", prompt=' {"text": "a red fox in snow", "description": "S-F113"}')`,
+   then `get_prompt("qa-sf113")`.
+2. `save_prompt(name="qa-sf113-bad", prompt=' {"text": "a cat", "description": "x" ')`.
+3. `validate_workflow(workflow=' {"id": "x", "steps": [ }')`, and the same string as
+   `validate_workflow(inline_workflow=…)` and `run_workflow(inline_workflow=…)`.
+expected:
+- Step 1: saved. `get_prompt` returns the parsed object (`text`, `description`).
+- Step 2: refused with `` `prompt` is not valid JSON: `` plus the parser's detail
+  (line/column), and nothing is saved.
+- Step 3: each call is refused with `` `<param>` is not valid JSON: Expecting value: line 1
+  column … ``, naming the param it was given as. `run_workflow` refuses before
+  anything is queued.
+It is a **finding** if any step returns `dict_type`/`Input should be a valid dictionary`,
+or if step 1 stores the raw string instead of the object.
+cleanup: `delete_prompt("qa-sf113")`. Also delete `qa-sf113-bad` if it exists, since
+that existing is itself a finding.
+metrics: none.
+source: tester, verified in #359 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e`.
+
+### S-F114 — `run_workflow`'s queued answer names the workspace the job was queued into
+Before #360, a `run_workflow` with `wait_seconds=0` answered `{job_id, status,
+queue_position, next}` with no workspace. On the mounted server (`get_server_info` →
+`mcp.mounted: true`) every client shares one pin (#298), so a client that another client
+had moved got no sign of it until it went looking for its outputs. Cheap: two ~1 s
+utility jobs, no model load.
+Workflow: an inline one-step `resample_audio`, `arguments: {"audio":
+"asset:qa-cast/ep11-bed.wav", "target_sample_rate": 16000}`, `result: {"subfolder":
+"final", "file_base_name": "resampled", "content_type": "audio/wav"}`. Validate it first
+and pass the plan as `acknowledged_cost`.
+1. `use_workspace("regression-smoke")`, then `run_workflow(inline_workflow=…,
+   wait_seconds=0)` with **no** `workspace=`.
+2. `use_workspace("default")`, then the same run with `workspace="regression-smoke"`,
+   `wait_seconds=0`. Then `use_workspace("regression-smoke")` again so the rest of the
+   run stays in this suite's workspace.
+expected:
+- Step 1: the reply carries `"workspace": "regression-smoke"` beside `job_id`/`status`/
+  `queue_position`/`next`.
+- Step 2: the reply carries `"workspace": "regression-smoke"`. That is the job's
+  workspace, not the session pin (`default`).
+- `wait_for_job` on each job reports `job.workspace: "regression-smoke"`, the same value
+  as the queued answer. It is a **finding** if the queued answer has no `workspace` key,
+  or if it disagrees with the job's own.
+cleanup: `delete_output(job_id=…)` for both jobs. The fixture bed is read-only.
+metrics: none.
+source: tester, verified in #360 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e` (jobs `5d05fc04b40d`, `79939a6ce65b`).
+
+### S-F115 — media loads by the argument a variable lands in, not by the variable's name
+Before #365, the engine applied its media-loading name rules (`image`/`*_image`,
+`video`/`*_video`, `*_type`/`*_dtype`) to the variables dict, keyed by the *variable* name.
+So a variable named `image` feeding a `video` argument was loaded as a PIL image, and the
+job failed with `Video specification must be a string, got <class 'PIL.Image.Image'>`.
+Cheap: two utility jobs of a few seconds each, no model.
+1. Validate and then run `{"id": "qa-sf115-chain", "variables": {"image":
+   "asset:qa-cast/ep6-shot1-priya.mp4", "video": "asset:qa-cast/ep6-cold-open.mp4"},
+   "steps": [{"name": "bed", "task": {"command": "normalize_audio", "arguments": {"audio":
+   "variable:video"}}}, {"name": "frames", "task": {"command": "loop_frames", "arguments":
+   {"video": "variable:image", "num_frames": 48}}}, {"name": "out", "task": {"command":
+   "pair_audio", "arguments": {"video": "previous_result:frames", "audio":
+   "previous_result:bed", "fit": "video"}}, "result": {"content_type": "video/mp4"}}]}`.
+   Read the mp4 with `get_gallery_metadata`.
+2. Validate and then run `{"id": "qa-sf115-names", "variables": {"hero_image":
+   "asset:cast/pat.jpg", "reference_type": "float16"}, "steps": [{"name": "size", "task":
+   {"command": "get_image_size", "arguments": {"image": "variable:hero_image"}}, "result":
+   {"content_type": "application/json"}}, {"name": "label", "task": {"command":
+   "compose_text", "arguments": {"parts": ["kind=", "variable:reference_type"],
+   "separator": ""}}, "result": {"content_type": "text/plain"}}]}`. Read both outputs with
+   `get_output_text`.
+expected:
+- Step 1: `valid: true`, and the job succeeds with no warnings. The mp4 has
+  `media.frame_count` 48, a width and height (960x544 from this source), and an audio
+  stream (`sample_rate` is not null).
+- Step 2: the job succeeds. `size` is `{"width": 768, "height": 768}`, so a `*_image`
+  variable fed to an `image` argument still loads as an image. `label` is exactly
+  `kind=float16`, so a `_type` variable stays a string and is not turned into a torch dtype.
+It is a **finding** if step 1 fails with any message about a PIL image or a
+"Video specification", or if step 2's label reads `torch.float16` or the job fails.
+cleanup: `delete_output(job_id=…)` on both jobs. The assets are shared fixtures, so leave
+them.
+metrics: none.
+source: tester, verified in #365 on 2026-09-22 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ e5bfb9e` (jobs `bcb37cf0f8a5`, `1bc5b2354d70`).
+
 ## Performance
 
 ### S-P001 — default image generation latency
