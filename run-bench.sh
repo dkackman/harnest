@@ -47,6 +47,7 @@ JUDGE_PROVIDER="${JUDGE_PROVIDER:-anthropic}"
 # which a replay skips.
 BENCH_BUDGET_USD="${BENCH_BUDGET_USD:-4}"
 JUDGE_BUDGET_USD="${JUDGE_BUDGET_USD:-1}"
+JUDGE_TIMEOUT_SECS="${JUDGE_TIMEOUT_SECS:-300}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 BENCH_JOBS="${BENCH_JOBS:-1}"
 BENCH_PROMPT_REV="${BENCH_PROMPT_REV:-}"   # empty = working tree
@@ -63,6 +64,8 @@ summary() {
   jq -rs --arg want "$*" '
     def pct(a; b): if b == 0 then "-" else "\((100 * a / b) | round)%" end;
     map(. as $r | select($want == "" or ($want | split(" ") | index($r.label)) != null))
+    # a rescore appends a row; the latest row per (label, case) is the one that counts
+    | group_by([.label, .issue]) | map(max_by(.at))
     | group_by(.label)[]
     | { label: .[0].label, n: length,
         pass: map(select(.verdict == "pass")) | length,
@@ -252,7 +255,10 @@ share of real fix's non-test files touched: $recall
 
 End your answer with exactly one line of JSON: {\"verdict\": \"pass|partial|fail\", \"reason\": \"<one or two sentences>\"}"
   local jout
-  jout="$(cd "$out" && env ${JUDGE_ENV[@]+"${JUDGE_ENV[@]}"} claude -p "$jprompt" --model "$JUDGE_MODEL" \
+  # A judge call normally takes ~15 s; one hung for 10+ minutes on
+  # 2026-09-23, so it is bounded. A timeout leaves verdict "error", which a
+  # BENCH_RESCORE run replaces.
+  jout="$(cd "$out" && env ${JUDGE_ENV[@]+"${JUDGE_ENV[@]}"} perl -e 'alarm shift; exec @ARGV' "$JUDGE_TIMEOUT_SECS" claude -p "$jprompt" --model "$JUDGE_MODEL" \
             --max-budget-usd "$JUDGE_BUDGET_USD" --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "" \
             --output-format json < /dev/null 2>/dev/null || true)"
   printf '%s\n' "$jout" > "$out/judge.json"

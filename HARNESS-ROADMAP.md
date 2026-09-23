@@ -10,19 +10,21 @@ rather than in a separate log.
 
 | ID  | Item                                              | Status  | Depends on |
 |-----|---------------------------------------------------|---------|------------|
-| R1  | Replay benchmark (measure the loop itself)        | built; baseline run pending | —   |
+| R1  | Replay benchmark (measure the loop itself)        | built; corrected baseline running | —   |
 | R2  | Pre-hand-off reviewer subagent                    | measured; re-scoped to a checklist | R1 baseline |
 | R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
 | R4  | Tester-authored acceptance specs for features     | todo    | —          |
 | R5  | Scheduled suite curation                          | built; first proposal harnest#2 waiting | — |
 | R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
-| R7  | Retro agent (the self-improvement loop)           | built; first run pending | R1 |
+| R7  | Retro agent (the self-improvement loop)           | built; first proposal harnest#3 | R1 |
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | todo | R1, R3     |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | proposals migrated (dw#374–#380, #244); design todo | R4 (absorbs it), R1 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
-major changes. R9 can go in whenever there's room; R10 goes after R3.
+major changes. R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
+R4's spec step as R11's phase 3, not separately.
 
 ## Principles every item must keep
 
@@ -116,8 +118,24 @@ and bounce count (`handoff_count` logic already exists in `run-loop.sh`).
 - Live implementer sessions ran $1.29 median ($3.28 p90). A full 17-case run should be
   about $25–30, including roughly $0.10–0.30 of judge per case.
 
-**Next.** Run the baseline: `./run-bench.sh` on the current prompt with sonnet, then again
-with `IMPLEMENTER_MODEL=claude-opus-5-5` for comparison.
+**First baseline (2026-09-23, `baseline-sonnet@5e4cfc7`, body-only snapshots).**
+- Results: 9 pass, 5 partial, 3 fail (53% pass). No case introduced a new test failure.
+  $15.62 total ($0.92/case), 30 turns and a 74k peak context per case.
+- The real fix's tests passed on only 13% of candidates. That signal is weak, because the
+  real tests pin names and message wording, so it stays an input to the judge rather than
+  a verdict.
+- The run exposed a flaw in the cases: three issues (#265, #272, #345) had been parked with
+  Don before their fix. The replay saw only the body as filed, so #272 re-escalated instead
+  of fixing. Most cases also had a `triage:` comment the real session saw.
+- `snapshot.py` now freezes the body plus the owner's comments before the first hand-off,
+  which is what `issue_context` gave the real session. The first baseline is kept, under
+  its own label, as a record, not a reference point.
+- On the bounced cases, the judge marks down what only the tester's bounce asked for (#75's
+  `pipeline_released` event, #265's run-time backstop). The real implementer missed those
+  too, so those cases measure whether a fix anticipates the tester, which is R2's target.
+- The judge is somewhat lenient on error-message quality: #124 passed with a raw-regex
+  message. Tighten it with a rescore (`BENCH_RESCORE=1`) of every label at once, never
+  between runs being compared.
 
 ## R2 — Pre-hand-off reviewer
 
@@ -261,6 +279,10 @@ engine-surface escalation after the proposal is approved.
 
 **First step.** Pick a feature waiting in `owner:don` and run it through this path by hand
 before writing any driver code.
+
+**Folded into R11 (2026-09-23).** R11 builds this item's parent/child issues and its spec
+step as its phases 2–3 and 5. It answers the open decisions: `status:needs-spec` is kept,
+and the feature lead writes the child breakdown from the approved plan.
 
 ## R5 — Scheduled suite curation
 
@@ -410,6 +432,13 @@ data to have helped.
   - The most expensive session in the window was a `regression:complete` run: $37.62,
     311 turns, 345k peak context.
 
+**First retro (2026-09-23): harnest#3**, $0.79. It judged the fence right, and proposed
+that the tester and regression prompts name the allowed tool for each denied pattern: Write
+plus `--body-file`, Edit for perf appends, `--jq` instead of pipelines and loops. The
+measure it named is those denial counts in the next digest. It looked at the most expensive
+sessions and the bounces and found nothing new to file. Its own fence denied it a `for`
+loop and an `awk` pipeline once each.
+
 ## R8 — Port the drivers to the Claude Agent SDK
 
 **Why.** About 75 KB of bash now carries the status board, escalation, bounce counting,
@@ -524,6 +553,183 @@ loads only its kind's fragment, with the turn-1 context drop measured by
 **Sequencing.** Do this after R3. Once hooks enforce some of the invariants, their prose
 copies can shrink to a one-line pointer, which makes the cut safer.
 
+## R11 — Feature lead: proposals as issues, designed with Don, built in stages
+
+**Why.** Work bigger than a fix doesn't go through the loop. It's written up in the dw repo's
+`docs/proposals/` (10 open docs, 4 `complete/` design records, and `todo.md` ranking them). It
+waits there until Don picks one. Then an interactive Claude Code session takes it from a
+short Q&A to a plan, and executes the plan. That works, but it needs Don at the keyboard for
+the whole build, and the proposals are invisible to the loop, the digest (R9) and the status
+board. The Q&A is the only part that needs Don. It can happen as issue comments.
+
+**Shape.** One issue per feature. A new role, the **feature lead**, owns it from design
+through delivery. The lead designs with Don in the issue's comments. After Don approves the
+plan, it builds the feature in stages and runs the code-side work as a swarm. Each stage is
+verified by the existing tester, whose fence doesn't move.
+
+```
+feature issue ──(Don: "go")──► 1 design ◄──► Don (comments)
+                                 │ plan approved (only Don can set it)
+                                 ▼
+                           2 decompose into stages (child issues)
+                                 ▼
+          3 tester writes acceptance cases per stage (R4, before any code)
+                                 ▼
+          4 lead builds a stage: swarm on a worktree → merge to develop → deploy
+                                 ▼
+          5 tester verifies the stage over MCP ── bounce ──► back to the lead
+                                 ▼  (last stage verified)
+          6 lead closes out: docs, plan → docs/proposals/complete/, parent closed by tester
+```
+
+**Issues and labels.**
+- Label `feature` on the parent. "Proposal" stays a word in the plan, not a label. A
+  client-agent request (such as a TESTER_TASK finding that is really a feature) gets the
+  same label. The researcher (`idea`) can promote an idea to `feature` in place of its
+  `owner:implementer` disposition when the idea is too big for one session.
+- New owner **`owner:lead`**. `audit_issue`, the status board and `guard.py`'s
+  one-owner rule learn it. New statuses: `status:plan-review` (a plan is posted and waiting
+  for Don) and `status:plan-approved`. The guard refuses `status:plan-approved` from any
+  agent, the way it refuses `status:verified` from the implementer. That makes approval
+  Don's alone, by construction.
+- The backlog is `feature` + `owner:don` + `status:needs-approval`, which is how the
+  proposals sit today. Don starts one by swapping `owner:don` → `owner:lead`, with an
+  optional comment for scope or priority. Don answers the lead's questions by commenting
+  and swapping the owner back. Every agent posts as `TICKET_OWNER`, so a new comment can't
+  signal a human turn. The label swap is that signal, as it is everywhere else.
+- Stages are child issues (R4's parent/child) linked to the parent. Each carries `feature`,
+  `stage`, `parent: #NN` in its body, and moves through the ordinary status flow. A child
+  issue's implementer role is the lead: a bounce returns it to `owner:lead`, not to
+  `owner:implementer`, because the lead holds the plan.
+
+**Phase 1: design (a conversation over several sessions).** `run-features.sh` gives each
+`owner:lead` parent in the design phase one fresh session. The session reads the issue, the
+thread and the source, then does one of three things:
+- asks Don questions, then `owner:don` + `status:needs-info`;
+- posts or revises the plan, then `owner:don` + `status:plan-review`;
+- or, when the design shows the feature isn't worth building, recommends that and parks it.
+
+Design sessions are read-only against source and use read-only `dw` MCP discovery. That's
+the researcher's fence (`RESEARCHER_PERMISSION_FLAGS`) plus `gh issue`, so they take no
+driver lock and can run while the loop runs. The plan is **one comment, edited in place**
+(`gh issue comment --edit-last`) and headed `<!-- harnest:plan vN -->`. Each revision adds
+a short "changed since vN-1" comment, so Don reviews one current document and not a scroll.
+The plan names:
+- the problem and non-goals;
+- the design and the engine, MCP and syntax surface it touches (everything
+  `status:needs-approval` exists for is decided here, once);
+- the stages, each independently landable on `develop` and small enough for a session;
+- per stage, acceptance intent for the tester to turn into cases, the unit tests and docs
+  it owes, and its deploy path (server or plugin);
+- the risks, and a cost estimate per stage from R1 and `usage:` data.
+
+The existing `docs/proposals/*.md` docs are the starting point. Migration is one issue per
+open doc: the body is a summary plus a link to the file at its current commit. `todo.md`'s
+tier becomes a `priority:1..3` label, and `audits/` stays as it is, since audits aren't
+features.
+
+**Phase 2: decompose.** After Don adds `status:plan-approved`, the lead files the child
+issues from the plan (one session, no code) and hands the parent to `owner:tester` with
+`status:needs-spec`.
+
+**Phase 3: acceptance specs, which is R4.** The tester reads the approved plan (never the
+source) and writes each stage's acceptance cases as `pending: #child` suite cases, plus
+`contract/` JSON where they're mechanical (R6). Then it hands back. The tester writes these
+cases before any code exists, so the lead's code can't shape them. That keeps a narrow
+repro from passing while untested edge cases underneath it fail, which is why features
+escalate today.
+
+**Phase 4: build, and where the swarm lives.** One `run-features.sh` session per stage, under
+the driver lock, with the implementer's permissions (`auto` mode, `implementer.json`, the R3
+guard and hand-off gate). The lead runs on a stage branch and fans code-only work out to
+subagents: the stage's code in one or more worktrees where it splits cleanly, unit tests,
+docs and skill text, and a proposed regression case per behavior (proposed only; the tester
+records it). Then it integrates, runs pytest and ruff, merges to `develop`, deploys once with
+the path the plan named, and hands the child to the tester.
+- **Code-side fan-out is fine, and verification-side fan-out isn't.** Subagents never deploy
+  and never call MCP, so they don't queue on `lem`. One deploy per stage keeps `lem` serial.
+  That's why this narrows "Considered and deferred" rather than contradicting it: the
+  objection there was parallel sessions queuing behind a deploy, and here nothing parallel
+  touches `lem`.
+- **The tester is never a subagent of the lead.** A subagent's prompt is written by a parent
+  that has read the code, so a lead-dispatched "tester" would verify what the lead told it
+  to look for. Independence is about who writes the verifier's instructions, not only about
+  its tool fence. Verification stays a driver-launched tester session that reads only the
+  issue record and the `pending:` cases.
+- **Stages land on `develop`, not a long-lived feature branch.** `lem` can only be on one
+  commit, and `check_lem_on_develop` redeploys `develop` whenever it isn't. A feature-branch
+  deploy would be wiped by the next cycle, as on 2026-09-21. The plan's "independently
+  landable" rule exists for this. A stage that would expose half a feature goes in behind a
+  flag or as an unreferenced tool or template until the last stage wires it in.
+
+**Phase 5–6: verify and close.** The tester verifies each child against its repro plus every
+`pending: #child` case. Verified means `pending:` comes off those cases (R4's one allowed
+edit) and the child closes. A bounce goes back to `owner:lead`, with the existing
+`handoff_count` escalation and park thresholds. After the last child closes, the lead runs
+one close-out session: it moves the plan into `docs/proposals/complete/<slug>.md` (the format
+the four existing `-complete.md` docs use) and updates user-facing docs and `todo.md`. Then
+it hands the parent to the tester, which closes it after a smoke pass over the feature's
+cases.
+
+**Models: who plans and who builds.** The harness's own evidence points one way. Put the
+strong model where a mistake doesn't bounce back, and the cheap model where a mistake is
+caught by a check. That's why triage runs on the tester's model and regression runs on
+sonnet.
+- **Design and the lead itself: Opus 5.5 (`claude-opus-5-5`).** A wrong plan is the most
+  expensive error in this whole flow and the least likely to be caught. The tester writes
+  cases from the plan, so every stage can pass verification while delivering the wrong
+  feature, and Don's approval is the only check. Design is also cheap in tokens: a few
+  sessions of reading and one document out. At $4/$20 per MTok against sonnet's $2/$10,
+  Opus doubles a line item that's small to begin with.
+- **Code-side subagents: sonnet by default, measured before it's trusted.** Execution is
+  most of the tokens, and every mistake it makes meets pytest, the R3 gate, the lead's
+  integration review and the tester. A well-specified stage is the case sonnet is good at.
+  A weak plan makes the executor re-plan, which is the argument *against* the opposite split
+  (sonnet plans, Opus executes): the executor pays Opus rates to recover what the plan
+  didn't say.
+- **Haiku** only for read-only sweeps inside the swarm, such as finding every call site or
+  every doc that mentions a tool. Never for code that lands.
+- **What's a decision and what's a hypothesis.** "Opus designs" is a decision on the
+  asymmetry argument above. "Sonnet builds stages" is a hypothesis. The alternative to
+  measure is Opus 5.5 at `low`/`medium` effort for everything: one model, one cache
+  namespace, and often as cheap per *completed* task as a cheaper model that takes more
+  turns. R1 already has the lever. Run the planned `IMPLEMENTER_MODEL=claude-opus-5-5`
+  comparison at `medium` and `low` against the sonnet baseline (53% pass, $0.92/case). If
+  Opus-low matches its cost at a higher pass rate, the lead's subagents inherit the lead's
+  model and the split goes away.
+- Knobs follow the existing pattern: `LEAD_MODEL`/`LEAD_PROVIDER` (default the tester's),
+  `LEAD_WORKER_MODEL` (default `sonnet`), `LEAD_EFFORT`, and `LEAD_DESIGN_BUDGET_USD`,
+  `LEAD_STAGE_BUDGET_USD`, sized from the first runs.
+
+**Keeping the asymmetry.** The lead is an implementer with a plan: it sees code, never
+verifies, and can't approve its own plan. The tester gets one new input, the approved plan,
+which is prose written *before* the code and already public on the issue. It still never
+sees source. Nothing lets the lead write suite or `contract/` cases.
+
+**Open decisions.**
+- Label names: `owner:lead`, `status:plan-review`, `status:plan-approved`, `stage`.
+- Whether a design session can run while its issue waits on Don. Probably no: one session
+  per Don turn keeps the thread readable and the cost bounded.
+- Whether trivial stages (docs only, a one-file skill fix) can skip phase 3 when the plan
+  says so, as long as Don approved that line.
+- How many features may be in build at once. Start with **one**, because stages from two
+  features interleaving on `develop` makes a bounce hard to attribute.
+- Whether stage-build sessions run inside `run-loop.sh`'s cycle (simpler locking, and the
+  board sees them) or in `run-features.sh` under the shared lock. Design sessions stay
+  outside either way.
+- R8: this is a large enough driver change to be the one that goes straight to the SDK.
+
+**Done when.** One proposal from `docs/proposals/` goes from issue to closed parent through
+this path. Don's only input is issue comments and label swaps, with no engine-surface
+escalation after plan approval. Also record, for that feature, the total cost, the bounces
+per stage, and Don's comment count. Compare them against the last comparable interactive
+proposal (`h3-video-mux-headroom-warning`'s fixes 1–4 shipped in one branch on 2026-09-20).
+
+**First step.** Migrate the open proposal docs to issues (a script, run by hand). Then run
+`workspace-folders.md` through phases 1–6 by hand, with an interactive session playing the
+lead from the written prompt. `todo.md` rates it low-complexity, and it spans engine, MCP
+and UI. Write `LEAD.agent.md` and `run-features.sh` from what that run shows, not before.
+
 ---
 
 ## Considered and deferred
@@ -533,6 +739,8 @@ copies can shrink to a one-line pointer, which makes the cut safer.
   Revisit if there's ever a second box or a GPU-free test tier.
 - **Multi-agent workflows inside the unattended loop.** Fan-out adds cost without solving a
   problem the loop has. Workflows are useful for one-off audits Don runs interactively (like
-  the 2026-09-22 suite audit), which R5 makes routine.
+  the 2026-09-22 suite audit), which R5 makes routine. R11 narrows this: a feature
+  stage's code-only work (code, unit tests, docs) can fan out inside one session, because
+  none of it touches `lem`. Deploys and verification stay serial.
 - **Letting the retro agent apply its own proposals.** Rejected on principle; see
   "Principles every item must keep".
