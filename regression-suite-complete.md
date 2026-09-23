@@ -1235,13 +1235,14 @@ parent's total) via its mixed-step call. Call (2)'s premise — a child with
 where curated-cost children accumulate observed runs over time. Retired
 rather than rewritten, per #276 (model `opus` via provider `anthropic`).
 
-### C-F040 — `validate_workflow` projects host memory for a resident `for_each` from observed history, warns, and never refuses
+### C-F040 — `validate_workflow` never refuses on a resident `for_each`'s host-memory projection, and skips it entirely for a task-only workflow
 One cheap run plus four free validations; no model, no GPU. Save a
 workspace workflow `c-f040-qr-list`: `variables: {codes: [{name: "a", text:
 "alpha"}]}` and one step `{name: "qr", for_each: "variable:codes", task:
 {command: "qr_code", arguments: {qr_code_contents: "item:text", height: 256,
 width: 256}}, result: {content_type: "image/png", subfolder: "final"}}` — no
-`release_pipeline`/`release_models`, so it is the resident shape. Then:
+`release_pipeline`/`release_models`, so it is the resident shape, and no
+pipeline/pipeline_reference/workflow step anywhere (task-only). Then:
 1. `validate_workflow(name="c-f040-qr-list", arguments={codes: [32 entries]})`
    **before any run** (32 is the `for_each` cap; 33 is a schema error);
 2. `run_workflow` it once with the 1-entry default, `wait_for_job`;
@@ -1250,82 +1251,29 @@ width: 256}}, result: {content_type: "image/png", subfolder: "final"}}` — no
 5. `save_workflow(patch=...)` adding `release_pipeline: true` to the `qr`
    step, then the 32-entry validation once more.
 expected: (1) `valid: true`, `warnings: []` — cold start, no history, no
-projection; (3) N = 32 × the run's job-scoped peak (`host_memory_job_peak_rss_mb`,
-#272 — the whole server process's RSS during that job, not qr_code's own
-delta, so it's dominated by the process's own baseline footprint rather than
-anything qr_code does). On a box whose ~90%-of-RAM ceiling (M) sits below N,
-`valid: true` **and** one warning beginning `Projected host memory for this
-run (~N MB, 32 entries held resident together) exceeds this machine's usable
-RAM (~M MB)`, and the run is *not* blocked. On lem specifically (~64 GB RAM,
-M ≈ 57.8 GB) a bare worker's job-scoped peak runs ~800–900 MB, so N ≈ 26–29
-GB sits *under* M — (3) legitimately comes back `warnings: []` there; that's
-the ceiling and the job-scoped metric working as intended (#272), not a
-regression (see #334). Before #272 this case's N used the process's
-*lifetime* peak instead, which climbs across a session and reliably cleared
-M — that arithmetic no longer holds and should not be used to judge (3);
-(4) `warnings: []` — 16 entries projects to half of N, further under M; (5)
-`warnings: []` — the released shape projects the largest single peak, not
-per-entry × N. The regressions: `valid: false` on (3) (warn became refuse,
-which the approved scope rejects), a warning on (1) (a projection from
-nothing), or a warning on (5) (the shape distinction lost). A silent (3) is
-only a regression when N (report the job-scoped peak actually observed × 32)
-would itself clear this box's M and it still comes back empty — always state
-both N and M when reporting (3), silent or not, since "silent" alone no
-longer says which case it is.
+projection; (3) `valid: true`, `warnings: []` — a task-only workflow has no
+pipeline/pipeline_reference/workflow step, so `host_memory_warnings` returns
+`[]` unconditionally regardless of history or entry count (#348,
+`_has_seedable_step`); this is not the same thing as a silent projection
+that stayed under this box's RAM ceiling (see #334 for that shape, now
+retired here since it no longer applies to a task-only fixture) — it is the
+gate suppressing the projection outright; (4) `warnings: []` for the same
+reason; (5) `warnings: []` — still task-only after `release_pipeline: true`,
+the gate doesn't look at the release flag. The regressions: `valid: false`
+on any call (the approved scope never refuses), or a warning on (1), (3),
+(4), or (5) — any of them would mean the task-only gate stopped suppressing
+the projection, or a projection formed from nothing.
 cleanup: `delete_workflow("c-f040-qr-list")`; delete the run's output.
 source: tester, verified in #243 (run over MCP 2026-09-19 as the calls above,
 model `opus` via provider `anthropic`, against `dw` 0.4.0-beta.6); expected
-text corrected for #272's job-scoped peak per #334 (2026-09-22).
-
-### C-F041 — a resident `for_each`'s host-memory projection counts history rows from default-argument runs
-Companion to C-F040, narrowed to the one thing #264 broke: a history row
-whose stored `arguments` is empty (the run used the workflow's declared
-default for the list variable) must still resolve to an entry count and feed
-the resident-shape per-entry figure. Free apart from one ~6 s run; no model,
-no GPU. Because the projection's history lookup is keyed on workflow name
-across workspaces (#274), use a name never run on this box — `c-f041-qr-<run
-date as YYYYMMDD>` — not C-F040's. Save it with `id` equal to that name,
-`variables: {codes: [{name: "a", text: "alpha"}]}` and one step `{name: "qr",
-for_each: "variable:codes", task: {command: "qr_code", arguments:
-{qr_code_contents: "item:text", height: 256, width: 256}}, result:
-{content_type: "image/png", subfolder: "final"}}` — no
-`release_pipeline`/`release_models`. Then:
-1. `validate_workflow(name=<it>, arguments={codes: [32 entries]})` before any
-   run;
-2. `run_workflow(workflow_path=<it>, acknowledged_cost=true)` with **no
-   `arguments`** — the 1-entry default, so the history row's own `arguments`
-   is `{}`; `wait_for_job`;
-3. the same 32-entry validation again.
-expected: (1) `valid: true`, `warnings: []`; (3), on a box whose ~90%-of-RAM
-ceiling (M) sits below N = 32 × the run's job-scoped peak
-(`host_memory_job_peak_rss_mb`, #272), `valid: true` and exactly one warning
-beginning `Projected host memory for this run (~N MB, 32 entries held
-resident together) exceeds this machine's usable RAM` and citing `based on 1
-run(s) of this workflow's own history` — proof the default-arguments row's
-`{}` resolved to a count instead of being dropped (#264).
-
-**Known gap on lem (#334):** a bare worker's job-scoped peak (~800–900 MB)
-puts N ≈ 26–29 GB under lem's M (~57.8 GB), so (3) comes back `warnings: []`
-there regardless of whether the row was counted — a dropped row (bug
-present) and a counted row that's simply under ceiling (bug absent) are
-*indistinguishable* by this case's only observable on this box. Do not treat
-a silent (3) on lem as either a pass or a fail on its own; it does not
-exercise #264 here. The deterministic guard for #264 is
+text corrected for #272's job-scoped peak per #334 (2026-09-22); rewritten
+for #348's task-only gate, which made the warning-branch assertions here and
+in the retired C-F041 unreachable — see #369 (2026-09-22). #348's
+base+slope projection on a pipeline-bearing workflow is now covered live by
+M-F029 (`regression-suite-model-specific.md`) against `acorn-wars/shots-batch`;
+the #264 default-arguments-row guard remains pinned by
 `tests/test_host_memory_projection.py::test_default_arguments_row_still_counts_toward_the_projection`
-in the dw repo's own pytest suite (synthetic rows, no live RAM dependency) —
-that is what actually re-catches this regression; treat this MCP case as
-confirming the warning *shape* (message text, `based on N run(s)` phrasing)
-when it does fire, not as the primary #264 regression guard while lem stays
-this large. Only fail this case outright on `valid: false`, or on a
-malformed/missing warning when one does appear.
-
-Do not extend this case to the 16-entry or `release_pipeline` checks — those
-are C-F040's.
-cleanup: `delete_workflow(<it>)`; delete the run's output.
-source: tester, verified in #264 (run over MCP 2026-09-21 as the calls above,
-model `opus` via provider `anthropic`; the implementer's proposed case from
-its #264 hand-off); expected text corrected for #272's job-scoped peak, and
-the resulting lem coverage gap documented, per #334 (2026-09-22).
+in the dw repo's own pytest suite.
 
 ### C-F042 — a pure-composition parent inherits its observed child's basis, carrying `runs`/`measured_on` through; a parent with its own uncosted step does not
 Five `validate_workflow` calls with an inline `workflow`, no run, no GPU.
