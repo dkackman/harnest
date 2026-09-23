@@ -20,7 +20,7 @@ rather than in a separate log.
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | labels created; hand run on dw#375: plan v1 posted, waiting on Don | R4 (absorbs it), R1 |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | labels created; hand run on dw#375: plan v2 (verdict: defer) waiting on Don | R4 (absorbs it), R1 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -694,7 +694,35 @@ The plan names:
 - the stages, each independently landable on `develop` and small enough for a session;
 - per stage, acceptance intent for the tester to turn into cases, the unit tests and docs
   it owes, and its deploy path (server or plugin);
-- the risks, and a cost estimate per stage from R1 and `usage:` data.
+- the risks, and a cost estimate per stage from R1 and `usage:` data;
+- **a verdict on whether to build it at all**, placed first in the plan (see below).
+
+**The verdict: not everything that can be built should be.** A plan opens with a short
+assessment on these axes, each answered from evidence rather than asserted:
+- **Value.** Who gains, how often, and what shows the demand is real: issues filed,
+  agents or Don hitting the gap, or workarounds in use.
+- **Build cost.** The stage estimates, summed.
+- **Inertia.** What the product carries forever once this lands:
+  - new MCP, REST or syntax surface every client and agent must learn;
+  - tool-description context cost (#101);
+  - tests and docs to keep true;
+  - security surface loosened;
+  - concepts added to the model of how dw works.
+  This is usually bigger than the build cost, and it is the axis that is easiest to leave
+  out.
+- **Reversibility.** Whether it can be taken back without a `breaking-change`, once data or
+  names in the wild depend on it.
+- **Cheaper alternatives.** The smallest change that gets most of the value, including
+  doing nothing, and what each gives up.
+
+It ends in one line with one of these verdicts:
+- **build**, e.g. "clear value, and worth its complexity";
+- **build smaller**, naming the alternative;
+- **defer**, naming what evidence would change the answer;
+- **don't build**.
+
+The lead may recommend against the feature it was handed; that is part of the job, not a
+failure of it. Don's approval covers the verdict as well as the design.
 
 The existing `docs/proposals/*.md` docs are the starting point. Migration is one issue per
 open doc: the body is a summary plus a link to the file at its current commit. `todo.md`'s
@@ -823,6 +851,11 @@ consumer of a workspace name, and posted plan v1 with three questions (→ `owne
   UI test), and that is one more thing Don approves. It resolves the open decision on
   skipping phase 3: skip it when a stage has no MCP surface, and only when the plan says
   so.
+- **The verdict needs evidence from real use.** Don asked for a value-vs-inertia verdict
+  after v1, so v2 added one. A single read-only `list_workspaces` call flipped it from an
+  implied "build" to "defer": 14 of 20 workspaces are unrelated projects, and the clutter
+  behind the original ask had gone. The design fence already allows read-only MCP calls;
+  the prompt must say to use them to measure demand, not just to check the API.
 
 
 ---
