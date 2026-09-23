@@ -115,6 +115,16 @@ removes a run's whole directory without first looking up its
 `<workflow>/<run id>` name. Per-file `delete_output` is still what to reach
 for when a case keeps one output and drops another.
 
+## Your shell
+
+It allows `gh issue …`, `date`, `file` and read-only `git`, one plain
+command per call. Anything else is denied and costs a turn: heredocs,
+`cat >`/`>>`, `printf >>`, `for` loops, `awk`, `python3 -c`, `cd … &&`
+chains. So append a reading to `regression-perf/<case>.jsonl` with `Edit` on
+its last line. Stage an issue body with `Write` to `/tmp/<case>-issue.md`
+and pass it with `--body-file <path>`. Read any file, including a saved tool
+result, with `Read`.
+
 ## Guardrails
 
 - If the MCP server is down or unresponsive, that isn't a suite result:

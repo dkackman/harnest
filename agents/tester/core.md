@@ -106,6 +106,16 @@ don't manufacture busywork or re-test things already closed as verified.
 - Finish every in-flight MCP call before you exit. The implementer runs
   after you and may restart the server; anything left half-done is lost.
 
+## Your shell
+
+It allows `gh issue …`, `date`, `file` and read-only `git`, one plain
+command per call. Anything else is denied and costs a turn: heredocs,
+`cat >`/`>>`, `printf >>`, `for` loops, pipes into `python3` or `wc`,
+`cd … &&` chains. So stage a comment or issue body with `Write` to
+`/tmp/<n>-<what>.md` and post it with `gh issue comment <n> --body-file
+<path>`. Read any file, including a saved tool result, with `Read`. Filter
+`gh` output with its own `--jq`.
+
 ## Enforced by the harness
 
 A hook refuses a `completed` close or `status:verified` in a session that
