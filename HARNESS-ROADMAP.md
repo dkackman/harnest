@@ -14,11 +14,11 @@ rather than in a separate log.
 | R2  | Pre-hand-off reviewer subagent                    | measured; re-scoped to a checklist | R1 baseline |
 | R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
 | R4  | Tester-authored acceptance specs for features     | todo    | —          |
-| R5  | Scheduled suite curation                          | todo    | —          |
-| R6  | Graduate mechanical cases to an executable client | todo    | R5 helps   |
-| R7  | Retro agent (the self-improvement loop)           | todo    | R1         |
+| R5  | Scheduled suite curation                          | built; first proposal harnest#2 waiting | — |
+| R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
+| R7  | Retro agent (the self-improvement loop)           | built; first run pending | R1 |
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
-| R9  | Approval digest for `owner:don`                   | todo    | —          |
+| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | todo | R1, R3     |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
@@ -282,6 +282,30 @@ moving cases out.
 
 **Done when.** Smoke is back under its budget and stays there without any hand-run audit.
 
+**Built (2026-09-22).** `run-curate.sh` and `agents/CURATOR.agent.md` run one Opus session per
+level (`CURATE_MODEL`). The session reads the suite, its `regression-perf/` files and a
+chunk table from `loop.log`: which cases ran in which session, and what that session cost,
+because cost is only known per chunk. It files one issue with at most 12 proposals on **this repo**, labeled `suite` +
+`status:needs-approval`. Suite proposals moved here from the ticket repo on 2026-09-22: they
+edit files that live here, and on dw they sat in the loop's status board and Don's engine
+queue. The "Removing a case" rule in every suite file, and the tester's and regression
+agent's copies of it, now point here too.
+- It has no Edit/Write and no MCP.
+- A level is skipped for `CURATE_EVERY_DAYS` (7) after a run, and while its last curation
+  issue is still open, so proposals don't pile up.
+- Proposed budgets per full run: smoke 20 min / $8, complete 60 / $20, model-specific
+  60 / $12, security 15 / $6 (`CURATE_BUDGET_<LEVEL>`). These are proposals, not
+  measurements; smoke actually ran about 40 min / $17–18 on sonnet over its last three
+  runs.
+- First run: **harnest#2** (smoke; filed as dw#373 and transferred), $1.91, 12 proposals: 5 moves, 3 merges, 1 contradiction
+  and stale references. Item 5 is flagged as only needed if $8 is firm. The session
+  caught one bad citation (item 6) in its final message but didn't fix the issue, so the
+  prompt now says to re-check citations before filing and to edit the issue if a mistake
+  is found.
+
+**Next.** Decide harnest#2, especially the smoke budget. Then schedule `run-curate.sh` weekly
+(cron or the `loop` skill).
+
 ## R6 — Move mechanical cases to an executable MCP client
 
 **Why.** Many cases are just "call X with Y, expect field Z". Having an LLM run those is the
@@ -308,6 +332,32 @@ Bash command.
 
 **Done when.** At least a third of smoke is `runner: script`, and smoke's LLM cost has
 dropped by about that share.
+
+**Built (2026-09-22).** `contract/`; see `contract/README.md`.
+- `mcp_client.py` is a standard-library MCP client over streamable HTTP. There's no
+  dependency to choose, which settles the library question.
+- `run.py` takes cases as JSON (`steps` of `{call, args, expect}`) and prints a JSON
+  report, exiting 0/1/2.
+- Three cases written: S-F002, S-F028 and S-F036. All pass on `lem` in 0.36 s total. A
+  mutation check changed one expectation in each case, and every changed expectation
+  failed with a readable message.
+- Decision on the runner: the driver runs it, not the agent. `run-regression.sh` runs
+  every case whose suite block has a `runner: script` line and a matching
+  `contract/cases/<ID>.json`, before any session. It removes those cases from the agent's
+  chunks and hands the report to the level's last session, which only files failures.
+- The suite line is the switch. Graduating a case edits it, so it goes through
+  `owner:don`. No case is marked yet, so the integration does nothing until one is.
+- Writing S-F036 found a stale detail in its prose: `output:` references "need not exist"
+  but must be well-formed names (`workflow/run/file`), which the server now checks. A
+  script case makes that kind of literal explicit.
+
+**Next.**
+1. Approve marking S-F002/S-F028/S-F036 `runner: script`.
+2. Pick the next batch. The free `validate_workflow` pre-flight cases (S-F010, S-F018,
+   S-F026, S-F032–S-F035) are the obvious ones.
+3. Teach the tester to add a JSON case beside a prose case it adds. That's a
+   `TESTER.agent.md` change, and `commit_suite_changes` must also commit
+   `contract/cases/`.
 
 ## R7 — Retro agent (the self-improvement loop)
 
@@ -336,6 +386,29 @@ Whether to cap it at three proposals per run to keep signal high.
 
 **Done when.** A retro-proposed change is approved, applied, and shown by R1 or the `usage:`
 data to have helped.
+
+**Built (2026-09-22).** `run-retro.sh` and `agents/RETRO.agent.md` (Opus, $5 cap).
+- **Decisions:** proposals go to **`dkackman/harnest`**, labeled `harness` +
+  `status:needs-approval`. That keeps them out of the dw loop's queue, status board and
+  audit. At most **3** proposals per run.
+- **Evidence:** the driver computes the evidence itself, so the agent starts from facts:
+  - sessions and cost per role and kind, and the most expensive sessions;
+  - `[audit]` warnings and guard refusals;
+  - permission denials grouped by command;
+  - bounces in the window;
+  - the bench summary.
+- **Window:** "since the last retro" is byte offsets into each log, in
+  `logs/retro-seen.json`. They advance only after a session that finished.
+  `RETRO_EVIDENCE_ONLY=1` prints the evidence without a session.
+- **First evidence run (not yet a session):** 215 denials, 204 of them from the tester
+  and regression agent.
+  - The top pattern is shell-writing files: `cat >` a comment body to `/tmp` (74, from
+    the tester) and `cat >>`/`printf` to `regression-perf/*.jsonl` (about 35, from
+    regression).
+  - Each is a wasted turn before the agent switches to Write/Edit. That's a legitimate
+    need hitting the fence, the kind of thing the first retro should propose a fix for.
+  - The most expensive session in the window was a `regression:complete` run: $37.62,
+    311 turns, 345k peak context.
 
 ## R8 — Port the drivers to the Claude Agent SDK
 
@@ -369,6 +442,16 @@ or comment that carries it out. It's posted somewhere Don already looks: an issu
 a pinned tracking issue, a page, or a notification.
 
 **Done when.** The median time an issue stays parked with Don goes down.
+
+**Built (2026-09-22).** `run-digest.sh` runs one tool-less sonnet session over every open
+`owner:don` issue. Comments by other logins are withheld, as in `run-loop.sh`. For each
+issue it produces a row: the ask, a recommendation, and the exact `gh` command that carries
+it out. It prints the median days parked, which is this item's measure, and writes
+`logs/digest.md`. `DIGEST_ISSUE=N` also posts it as a comment on issue N. Where to post by
+default is still open.
+- First run: 4 parked, median 3.5 days. #195, #218 and #244 each got a concrete
+  "needs a proposal" ask; #300 got "read it yourself", since its thread has no
+  recommendation.
 
 ## R10 — Role prompts: remove duplication, then build each prompt per session kind
 

@@ -126,7 +126,8 @@ files described below. There is no build, lint, or test step.
   no trace in the file, and a failure is a GitHub Issue, not a note appended to the case. None of
   the three agents may delete or rewrite a case to make it go away, however expensive or
   low-value it looks from a single run; the only route to removing one is a comment/issue
-  proposing it, labeled `owner:don` + `status:needs-approval`, left for a human to act on.
+  proposing it, filed on this repo (`dkackman/harnest`) labeled `suite` +
+  `status:needs-approval`, left for a human to act on.
   Measurements are the complement of that rule, not an exception to it: `regression-perf/`
   holds one append-only JSONL per case (`S-P001.jsonl`, …; format in its `README.md`) where
   the regression agent records every `-P` case's timing and any metric a functional case
@@ -163,6 +164,23 @@ files described below. There is no build, lint, or test step.
   `bench/results/results.jsonl` (checked in, append-only); `--summary` groups them by
   `BENCH_LABEL`. Offline, so no driver lock. Use it before and after any change to
   `IMPLEMENTER.agent.md` or the implementer's model.
+- `run-curate.sh` / `agents/CURATOR.agent.md` (R5), `run-retro.sh` / `agents/RETRO.agent.md`
+  (R7) and `run-digest.sh` (R9) are standalone drivers that only propose changes. None of
+  them edits a suite, prompt or driver, and none takes the driver lock (no MCP).
+  - **Curator:** files one issue per level on **this** repo, labeled `suite` +
+    `status:needs-approval`, and searches the ticket repo for case history. Its evidence is
+    a per-chunk cost table parsed from `loop.log`.
+  - **Retro:** files up to three `harness` + `status:needs-approval` issues on **this**
+    repo (`dkackman/harnest`), from an evidence digest the driver computes. The window
+    since the last retro is byte offsets in `logs/retro-seen.json`.
+  - **Digest:** a tool-less summary of the `owner:don` queue.
+- `contract/` (R6) holds script-run regression cases: a standard-library MCP client
+  (`mcp_client.py`), a runner (`run.py`) and JSON cases keyed by suite case IDs.
+  `run-regression.sh` runs a case by script only when its suite block carries
+  `runner: script` and the JSON exists. It then drops that case from the agent's chunks
+  and gives the report to the level's last session, which files failures only. Marking a
+  case edits it, so it needs approval like any other change to a case. The implementer
+  never touches `contract/`.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo). Tickets

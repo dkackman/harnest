@@ -168,8 +168,8 @@ affect each other's timings:
   doesn't have this repo and a case isn't confirmed until the tester runs it.
 - **What's in a suite file:** only the durable test. A pass leaves no trace in the file,
   and a failure becomes an issue.
-- **Removing a case:** no agent deletes or weakens one. The only route is an `owner:don` +
-  `status:needs-approval` proposal.
+- **Removing a case:** no agent deletes or weakens one. The only route is a proposal filed
+  on this repo, labeled `suite` + `status:needs-approval`.
 - **Commits:** the driver commits suite and `regression-perf/` changes before and after
   every level. It flags any commit that removed lines.
 
@@ -210,6 +210,27 @@ BENCH_PROMPT_REV=<commit> ./run-bench.sh    # the implementer prompt as of a com
 ```
 
 It never touches `lem`, so it takes no driver lock. See [`bench/README.md`](bench/README.md).
+
+## Curation, retro, digest and contract cases
+
+These are standalone, read-only drivers. Each one proposes changes and never applies them;
+a human approves.
+
+- **`run-curate.sh [level]`** runs one Opus session per regression level. It reads the
+  suite, its perf history and what recent runs cost per chunk, then files one issue on this
+  repo (`suite` + `status:needs-approval`) of proposed moves, merges, contradictions, stale references and retirements
+  against a per-level budget. A level is skipped for 7 days after a run, or while its last
+  curation issue is still open.
+- **`run-retro.sh`** reads the logs since the last retro and files up to three evidenced
+  proposals on this repo, labeled `harness` + `status:needs-approval`. The logs cover
+  cost per role, denials, guard refusals, audit warnings, bounces and bench results.
+  `RETRO_EVIDENCE_ONLY=1` prints the evidence without running a session.
+- **`run-digest.sh`** writes one line per `owner:don` issue: the ask, a recommendation and
+  the command that carries it out, plus the median days parked. It writes
+  `logs/digest.md`; `DIGEST_ISSUE=N` also posts it on issue N.
+- **`contract/run.py`** runs mechanical cases as a plain MCP client, with no LLM.
+  `run-regression.sh` uses it for any suite case marked `runner: script`. See
+  [`contract/README.md`](contract/README.md).
 
 ## Running it
 
@@ -389,6 +410,10 @@ run-loop.sh                         implementer/tester driver
 run-regression.sh                   regression driver
 run-research.sh                     researcher driver
 run-bench.sh                        replay benchmark of the implementer (offline)
+run-curate.sh                       suite curation: one owner:don proposal issue per level
+run-retro.sh                        retro: evidenced harness proposals, filed on this repo
+run-digest.sh                       one-line-per-issue digest of the owner:don queue
+contract/                           script-run regression cases and their MCP client
 bench/                              benchmark cases, replay note, results (see bench/README.md)
 providers.sh                        provider table and shared helpers (isolation, permissions, logging, audits)
 measure-base-ctx.sh                 measures turn-1 context for a flag set
@@ -401,6 +426,8 @@ agents/
   TESTER_TASK.agent.md              the tester's standing exercise
   REGRESSION.agent.md               regression agent role
   RESEARCHER.agent.md               researcher role
+  CURATOR.agent.md                  suite curator role
+  RETRO.agent.md                    retro role
 regression-suite-{smoke,complete,model-specific,security}.md
 regression-perf/                    append-only per-case metric history (JSONL)
 HARNESS-ROADMAP.md                  planned evolution of the harness
