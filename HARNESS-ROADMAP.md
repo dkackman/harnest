@@ -20,7 +20,7 @@ rather than in a separate log.
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | labels created; hand run on dw#375: plan v2 (verdict: defer) waiting on Don | R4 (absorbs it), R1 |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | labels created; hand run 1 (dw#375): declined at design, closed; needs a feature that gets built | R4 (absorbs it), R1 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -856,6 +856,18 @@ consumer of a workspace name, and posted plan v1 with three questions (→ `owne
   implied "build" to "defer": 14 of 20 workspaces are unrelated projects, and the clutter
   behind the original ask had gone. The design fence already allows read-only MCP calls;
   the prompt must say to use them to measure demand, not just to check the API.
+- **Treat the owner swap as the signal and clear stale statuses.** Don handed #375
+  back with `owner:lead` but left `status:plan-review` on it. A driver that selects issues
+  by status would have skipped it. The lead's session clears a stale review status itself.
+- **"Don't build" has its own close-out.** It is one session with no stages:
+  - close the issue as `not planned` + `wontfix`, with a record comment (the verdict, the
+    evidence, and what would reopen it);
+  - move the doc to `docs/proposals/declined/` with the reason at the top, plus any
+    corrections the plan found, so a revival starts from the analysis;
+  - move its `todo.md` entry to a "Declined" section.
+  It makes a docs-only commit to `develop`, with no deploy. #375 closed this way
+  (dw `05bc836`), 2026-09-23. Phases 2–6 weren't reached, so the "Done when" still needs a
+  feature that gets built.
 
 
 ---
