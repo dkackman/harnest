@@ -1,0 +1,11 @@
+{
+ "id": "S-F002", "level": "smoke", "title": "list available tools/templates",
+ "note": "The prose case's mechanical half: list_workflows() answers the summary view and carries the image and audio templates every run has had.",
+ "steps": [
+  {"call": "list_workflows", "args": {}, "expect": [
+    {"path": "workflows", "contains": "templates/text-to-image"},
+    {"path": "workflows", "contains_any": ["templates/generate-speech", "templates/minimax/music"]},
+    {"path": "view", "eq": "summary"}
+  ]}
+ ]
+}

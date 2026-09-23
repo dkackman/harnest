@@ -236,6 +236,19 @@ session_aborted() {
   grep -q '^REGRESSION-ABORT:' "$LAST_SESSION" 2>/dev/null
 }
 
+# script_cases <suite_file>
+# IDs of the cases whose prose block carries a `runner: script` line and that
+# have a contract/cases/<ID>.json: those run through contract/run.py (R6), a
+# plain MCP client with no LLM, before any agent session. The agent never
+# executes them; it only files what the report says failed. The suite line is
+# what makes a case script-run, so which cases graduate is a suite edit, and
+# goes through the same approval as any other.
+script_cases() {
+  awk '/^### / { id = ""; if (match($0, /^### [A-Z]+-[A-Z][0-9]+ /)) id = substr($0, 5, RLENGTH - 5) }
+       /^runner: script[[:space:]]*$/ && id != "" { print id; id = "" }' "$1" \
+  | while read -r id; do [ -f "$REPO/contract/cases/$id.json" ] && echo "$id"; done
+}
+
 run_level() {
   local level="$1" suite_arg="$2" suite_file workspace
 
@@ -255,16 +268,33 @@ run_level() {
     return 0
   fi
 
+  local -a script_ids=()
+  local script_note="" id
+  while read -r id; do [ -n "$id" ] && script_ids+=("$id"); done < <(script_cases "$suite_file")
+  if [ "${#script_ids[@]}" -gt 0 ]; then
+    local report
+    report="$(python3 "$REPO/contract/run.py" --url "$DW_URL" --token "$DW_TOKEN" "${script_ids[@]}" 2>&1 || true)"
+    echo "[regression:$level] script cases: $(printf '%s' "$report" | jq -r '"\(.passed // 0) passed, \(.failed // 0) failed, \(.errors // 0) errored\(if .error then " - " + .error else "" end)"' 2>/dev/null || echo "report unreadable")" | tee -a "$LOGS/loop.log"
+    script_note="
+
+These cases ran as scripts before this session (contract/run.py, a plain MCP client; see 'runner: script' on each): ${script_ids[*]}. Do not execute them. Their report:
+$report
+For each case whose status is fail or error, do step 4 of the role instructions exactly as for a case you ran yourself, quoting its failures; a pass needs nothing. An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure."
+  fi
+
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
     run_session "$level" "$suite_file" "$workspace" "" \
-      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, and add any cases step 6 of the role instructions calls for."
+      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, and add any cases step 6 of the role instructions calls for.$script_note"
   else
     # Case IDs in file order, from the `### <ID> — title` headings. The
     # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
     # heading that doesn't match isn't a case and is skipped.
-    local ids=() chunk=() seen=0 total=0 session=0 id
-    while read -r id; do ids+=("$id"); done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
+    local ids=() chunk=() seen=0 total=0 session=0
+    while read -r id; do
+      case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
+      ids+=("$id")
+    done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
     total=${#ids[@]}
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOGS/loop.log"
     for id in "${ids[@]}"; do
@@ -284,7 +314,7 @@ run_level() {
     if ! session_aborted; then
       echo "--- $(ts) $level session $((session + 1)): final sweep ---" | tee -a "$LOGS/loop.log"
       run_session "$level" "$suite_file" "$workspace" ".sweep" \
-        "This is the final sweep of a chunked run (see 'Chunked runs' in the role instructions): every case was already exercised in earlier sessions. Do only step 5 of the role instructions against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases."
+        "This is the final sweep of a chunked run (see 'Chunked runs' in the role instructions): every case was already exercised in earlier sessions. Do only step 5 of the role instructions against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases.$script_note"
     fi
   fi
 

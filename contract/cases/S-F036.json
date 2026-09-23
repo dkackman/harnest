@@ -1,0 +1,183 @@
+{
+ "id": "S-F036",
+ "level": "smoke",
+ "title": "an unwritable result.content_type is refused by the free pre-flight, not by the writer",
+ "note": "Output refs must be well-formed names (workflow/run/file); they need not exist.",
+ "steps": [
+  {
+   "label": "bare word 'video' is refused at its own path",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f036",
+     "variables": {},
+     "steps": [
+      {
+       "name": "pair",
+       "task": {
+        "command": "pair_audio",
+        "arguments": {
+         "video": "output:contract/run/latest/a.mp4",
+         "audio": "output:contract/run/latest/b.wav"
+        }
+       },
+       "result": {
+        "subfolder": "final",
+        "content_type": "video"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].result.content_type"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "video/mp4",
+      "bare word"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "video/webm is refused with a different message",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f036",
+     "variables": {},
+     "steps": [
+      {
+       "name": "pair",
+       "task": {
+        "command": "pair_audio",
+        "arguments": {
+         "video": "output:contract/run/latest/a.mp4",
+         "audio": "output:contract/run/latest/b.wav"
+        }
+       },
+       "result": {
+        "subfolder": "final",
+        "content_type": "video/webm"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].result.content_type"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": "video/mp4"
+    },
+    {
+     "path": "errors[0].message",
+     "not_contains": "bare word"
+    }
+   ]
+  },
+  {
+   "label": "video/mp4 still validates, with a plan",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f036",
+     "variables": {},
+     "steps": [
+      {
+       "name": "pair",
+       "task": {
+        "command": "pair_audio",
+        "arguments": {
+         "video": "output:contract/run/latest/a.mp4",
+         "audio": "output:contract/run/latest/b.wav"
+        }
+       },
+       "result": {
+        "subfolder": "final",
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "plan.fingerprint",
+     "exists": true
+    },
+    {
+     "path": "errors",
+     "none_contains": "result.content_type"
+    }
+   ]
+  },
+  {
+   "label": "a value routed through arguments is checked after substitution",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f036",
+     "variables": {
+      "ct": "video/mp4"
+     },
+     "steps": [
+      {
+       "name": "pair",
+       "task": {
+        "command": "pair_audio",
+        "arguments": {
+         "video": "output:contract/run/latest/a.mp4",
+         "audio": "output:contract/run/latest/b.wav"
+        }
+       },
+       "result": {
+        "subfolder": "final",
+        "content_type": "variable:ct"
+       }
+      }
+     ]
+    },
+    "arguments": {
+     "ct": "video"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "steps[0].result.content_type",
+      "bare word"
+     ]
+    }
+   ]
+  }
+ ]
+}

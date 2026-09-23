@@ -1,0 +1,44 @@
+{
+ "id": "S-F028", "level": "smoke", "title": "a declared variable bound is refused before anything loads",
+ "steps": [
+  {"label": "61 is refused at the argument path, naming range, rule and rounding",
+   "call": "validate_workflow", "args": {"name": "templates/minimax/video-with-audio", "arguments": {"num_frames": 61}},
+   "expect": [
+    {"path": "valid", "eq": false},
+    {"path": "errors", "len": 1},
+    {"path": "errors[0].path", "eq": "arguments.num_frames"},
+    {"path": "errors[0].message", "contains": ["124 to 345", "17 * n + 5", "73"]}
+   ]},
+  {"label": "130 validates, with a warning that the run generates 141",
+   "call": "validate_workflow", "args": {"name": "templates/minimax/video-with-audio", "arguments": {"num_frames": 130}},
+   "expect": [
+    {"path": "valid", "eq": true},
+    {"path": "warnings", "any_contains": ["141", "130"]}
+   ]},
+  {"label": "108 snaps up to 124 and is legal (bound applied after rounding)",
+   "call": "validate_workflow", "args": {"name": "templates/minimax/video-with-audio", "arguments": {"num_frames": 108}},
+   "expect": [{"path": "valid", "eq": true}]},
+  {"label": "346 snaps up to 362 and is refused",
+   "call": "validate_workflow", "args": {"name": "templates/minimax/video-with-audio", "arguments": {"num_frames": 346}},
+   "expect": [
+    {"path": "valid", "eq": false},
+    {"path": "errors[0].path", "eq": "arguments.num_frames"},
+    {"path": "errors[0].message", "contains": ["362", "345"]}
+   ]},
+  {"label": "the catalog carries the rule beside the default",
+   "call": "get_workflow", "args": {"name": "templates/minimax/video-with-audio", "variables_only": true},
+   "expect": [
+    {"path": "variables.num_frames", "exists": true},
+    {"path": "constraints.num_frames.min_frames", "eq": 124},
+    {"path": "constraints.num_frames.max_frames", "eq": 345},
+    {"path": "constraints.num_frames.modulus", "eq": 17},
+    {"path": "constraints.num_frames.remainder", "eq": 5},
+    {"path": "constraints.num_frames.reason", "exists": true}
+   ]},
+  {"label": "list_workflows(shape=shot) carries it terse on the entry",
+   "call": "list_workflows", "args": {"shape": "shot"},
+   "expect": [
+    {"path": "details[\"templates/minimax/video-with-audio\"]", "contains": ["17*n+5", "124-345", "rounds up"]}
+   ]}
+ ]
+}
