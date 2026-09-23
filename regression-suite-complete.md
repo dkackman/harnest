@@ -3473,4 +3473,30 @@ source: tester, verified in #349 on 2026-09-23 over MCP as model `claude-opus-5-
 provider `anthropic` against `develop @ 0963746` (jobs `f345420a96a0`, `d43cf8781e64`: 124
 frames, 24.0 fps, 960x544, 32 kHz stereo, 5.167 s).
 
+### C-F094 — `pair_audio` with `fit` unset uses the track as it is, and warns when its length disagrees with the frames
+C-F084 covers `fit: "video"`. This case covers the other branch, which the task's own
+schema promises: "left unset the track is used as it is, and a length that disagrees
+with the frames' is warned about rather than passing in silence". That silent path is
+#142's failure shape. It is one inline mux with no model and takes about 4 s: `{"id":
+"qa-c-f094", "seed": 1, "steps": [{"name": "pair", "task": {"command": "pair_audio",
+"arguments": {"video": "asset:qa-cast/ep37-episode.mp4", "audio":
+"asset:qa-cast/ep35-ducked.wav"}}, "result": {"content_type": "video/mp4", "subfolder":
+"final"}}]}`. The video is 248 frames at 24 fps (10.33 s). The track is 9.83 s at 32 kHz.
+expected:
+- `validate_workflow` returns `valid: true`, and the job `succeeded`.
+- `warnings[]` carries `pair: pair_audio: the track is 9.83 s and the video it is laid
+  over is 10.33 s (248 frames at 24 fps) …`, which names `'fit': 'video'` as the remedy.
+- `get_job_events` has the structured form: `event: warning`, `kind:
+  audio_video_length_mismatch`, `command: pair_audio`, `audio_seconds` ≈ 9.83 and
+  `video_seconds` ≈ 10.33.
+- In `get_gallery_metadata` the output has `frame_count` 248, `fps` 24.0 and 32000 Hz
+  stereo audio. Its audio is not padded or trimmed, so `peak_dbfs` stays below 0.
+It is a **finding** if the job succeeds with no length warning, if the warning lacks its
+`kind` or either duration, or if an unset `fit` pads or trims the way `"video"` would.
+cleanup: `delete_output(job_id=…)`. Both assets are shared fixtures, so leave them.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep37); verified on 2026-09-23
+over MCP as model `claude-opus-5-5` via provider `anthropic` (job `5eb50a6fbc7b` in
+`qa-ep37`: 248 f, 24.0 fps, 32 kHz stereo, peak −1.84 dBFS).
+
 ## Performance
