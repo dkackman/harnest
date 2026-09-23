@@ -350,18 +350,29 @@ agent's copies of it, now point here too.
 - It has no Edit/Write and no MCP.
 - A level is skipped for `CURATE_EVERY_DAYS` (7) after a run, and while its last curation
   issue is still open, so proposals don't pile up.
-- Proposed budgets per full run: smoke 20 min / $8, complete 60 / $20, model-specific
-  60 / $12, security 15 / $6 (`CURATE_BUDGET_<LEVEL>`). These are proposals, not
-  measurements; smoke actually ran about 40 min / $17–18 on sonnet over its last three
-  runs.
+- Budgets per full run: smoke 30 min / $13 (raised from a proposed 20 / $8 when harnest#2
+  was decided), complete 60 / $20, model-specific 60 / $12, security 15 / $6
+  (`CURATE_BUDGET_<LEVEL>`). Only smoke's has been decided. Complete's needs revisiting
+  now that it holds 40 more cases.
 - First run: **harnest#2** (smoke; filed as dw#373 and transferred), $1.91, 12 proposals: 5 moves, 3 merges, 1 contradiction
   and stale references. Item 5 is flagged as only needed if $8 is firm. The session
   caught one bad citation (item 6) in its final message but didn't fix the issue, so the
   prompt now says to re-check citations before filing and to edit the issue if a mistake
   is found.
 
-**Next.** Decide harnest#2, especially the smoke budget. Then schedule `run-curate.sh` weekly
-(cron or the `loop` skill).
+**Applied (2026-09-23).** harnest#2 items 1–4 and 6–12, with item 5 rejected in favor of
+the higher budget:
+- 40 cases moved from smoke to complete as C-F051–C-F090, each with a `moved from S-Fxxx`
+  note. S-F104 was merged into C-F048 and C-F044 into C-F087. The 4 stale references
+  were fixed.
+- Smoke went from 97 cases to 56, and complete from 34 to 73. The fixture lists moved with
+  the cases, and `regression-perf/S-F031`/`S-F071` became `C-F078`/`C-F083`, with their
+  rows unchanged.
+
+The next smoke run is the measurement: it should come in near $13 and 30 min.
+
+**Next.** Schedule `run-curate.sh` weekly (cron or the `loop` skill). Set complete's budget
+after its next run.
 
 ## R6 — Move mechanical cases to an executable MCP client
 

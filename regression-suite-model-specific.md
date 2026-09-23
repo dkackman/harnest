@@ -382,7 +382,7 @@ expected: `run_workflow("templates/minimax/music", arguments={"audio_duration": 
   if the deliverable's level looks right.
 metrics: `peak_dbfs` of the delivered mp3, condition `music`, unit `dBFS`, logged to
 `regression-perf/M-F012.jsonl`; add condition `music-video` from the muxed mp4 whenever
-a `music-video` run settles that bullet. Logged pass or fail. As with S-F031 the
+a `music-video` run settles that bullet. Logged pass or fail. As with C-F078 the
 median-and-50% rule says nothing useful about a figure near zero — what a reader is
 watching for is the number creeping up toward 0 across encoder or template changes.
 cleanup: delete the run's output folder. Nothing here is a fixture.
