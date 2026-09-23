@@ -218,7 +218,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
 | `DW_URL` / `DW_TOKEN` | `http://lem:8765/mcp` / `xyz` | the MCP endpoint (dev token, LAN only) |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
-| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `opus` | per-role models; each has a `*_PROVIDER` defaulting to `$PROVIDER` |
+| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |
 | `REGRESSION_MODEL` / `RESEARCH_MODEL` | `sonnet` / `sonnet` | standalone drivers; same `*_PROVIDER` pattern |
 | `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`RESEARCH_EFFORT` (triage follows the tester's) |

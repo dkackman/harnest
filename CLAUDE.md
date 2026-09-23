@@ -57,7 +57,9 @@ files described below. There is no build, lint, or test step.
   `measure-base-ctx.sh` is how a flag set's turn-1 context is measured before and after a
   change like this.
   Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
-  (`opus`), `REGRESSION_MODEL` (`sonnet`), `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
+  (`claude-opus-5-5` — the exact id, not the `opus` alias, since an alias moves on the next
+  release and a verification is only worth the model behind it), `REGRESSION_MODEL` (`sonnet`),
+  `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
   that defaults to `PROVIDER` (`anthropic`). The implementer's triage session is the one
   exception: `TRIAGE_MODEL`/`TRIAGE_PROVIDER` default to the *tester's*, not the
   implementer's, because a wrong `wontfix`/`duplicate`/park call never bounces back — it
@@ -173,7 +175,7 @@ structural change to the drivers or role prompts.
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/dw-agent
 MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh                # three cycles, then stop
-TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults opus / sonnet)
+TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults claude-opus-5-5 / sonnet)
 PROVIDER=ollama IMPLEMENTER_MODEL=qwen2.5:32b TESTER_MODEL=qwen2.5:32b ./run-loop.sh   # non-Anthropic: name every role
 IMPLEMENTER_BUDGET_USD=0 TESTER_TASK_EVERY=1 ./run-loop.sh   # no implementer cap; standing task every cycle
 tail -f logs/loop.log                  # combined stream, prefixed [implementer:#145] / [tester:task] etc.

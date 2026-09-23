@@ -85,7 +85,7 @@ PROVIDER="${PROVIDER:-anthropic}"  # where the models live: anthropic|ollama|gat
 # a non-anthropic PROVIDER both must be named (a Claude alias can't be served
 # there; resolve_model_env rejects it at startup).
 IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
-TESTER_MODEL="${TESTER_MODEL:-opus}"
+TESTER_MODEL="${TESTER_MODEL:-claude-opus-5-5}"   # exact id, not the "opus" alias: an alias moves on the next release and a verification is only worth the model behind it (see resolved_model)
 IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
 TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
 # Triage is the implementer's role but not its model by default: a wrong
