@@ -1,4 +1,4 @@
-# iterate
+# Harnest
 
 Claude Code agents that improve [an MCP server](https://github.com/dkackman/diffusers-workflow)
 by arguing through [its GitHub Issues](https://github.com/dkackman/diffusers-workflow/issues).

@@ -225,7 +225,7 @@ except Don in an interactive session. Every harness improvement so far started t
 
 **Build.** A standalone `run-retro.sh`, read-only, run after every N cycles or weekly. It
 reads the logs and issue timelines since the last retro (tracked in `logs/retro-seen`) and
-files issues **against this repo** (`dkackman/iterate`), each labeled `harness` + `status:needs-approval`.
+files issues **against this repo** (`dkackman/harnest`), each labeled `harness` + `status:needs-approval`.
 Each issue is one concrete, evidenced proposal, for example:
 
 - "tester sessions on #3xx re-fetched the issue with `gh issue view` 4× despite
