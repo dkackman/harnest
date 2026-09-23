@@ -1652,6 +1652,152 @@ metrics: none.
 source: tester, verified in #360 on 2026-09-22 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ e5bfb9e` (jobs `5d05fc04b40d`, `79939a6ce65b`).
 
+### S-F117 — a null-seeded catalog entry reports the seed it drew, replays from it, and takes `new_seed`
+The catalog convention (#351) is `"seed": "variable:seed"` on every generative entry.
+An unseeded entry declares `variables.seed: null`, so every run draws a fresh seed, and a
+caller can only get a take back if the run reports the seed it drew. Before #351,
+`rerun_job(new_seed=true)` also refused any entry whose seed didn't come from a
+variable. `templates/text-to-image` (SD 1.5, ~10 s a run) is the cheap member of that group.
+expected:
+- `get_workflow("templates/text-to-image", variables_only=true)` → `variables.seed: null`
+  and top-level `"seed": "variable:seed"`.
+- `run_workflow(workflow_path="templates/text-to-image", workspace="regression-smoke",
+  acknowledged_cost=true, wait_seconds=55)` → `succeeded`. `get_job_workflow(<job>)` →
+  `realized: true`, `seed_variable: "seed"`, and an integer `workflow.seed` equal to
+  `workflow.variables.seed` (call it S).
+- The same run with `arguments={"seed": S}` → `succeeded`, and its image is the same
+  picture as the first run (same `bytes` from `get_output_image(max_dimension=256)`
+  on both).
+- `rerun_job(<first job>, new_seed=true, acknowledged_cost=true)` → queued with
+  `arguments.seed` an integer ≠ S, and `wait_for_job` → `succeeded`.
+It is a **finding** if the entry has lost `variable:seed`, the realized seed is null or
+missing, the replay differs, or `new_seed` refuses.
+cleanup: `delete_output(job_id=…)` for all three jobs.
+metrics: none.
+source: tester, verified in #351 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7` (jobs `543804adb1fe`, `fd89268291d1`,
+`32398232dba4`, run in `default`; the pinned half, `templates/ltx2/text-to-video` realizing
+42 and taking `new_seed`, was also checked but is too slow for smoke).
+
+### S-F118 — `export_job` doesn't send an MCP-only agent to fetch a token-gated zip, and a mounted `download_output` with no destination is refused
+Before #353, `export_job` told the agent to "fetch the zip URL and unpack it". The URL was
+relative and sat behind the server's bearer token, which the agent can't attach. A mounted
+`download_output` with no `destination` wrote the file loose in the workspace root, where
+no delete tool reaches. Cheap: one ~1 s utility job, no model load.
+Workflow: the S-F114 inline `resample_audio` on `asset:qa-cast/ep11-bed.wav`. Validate it,
+then `run_workflow(..., workspace="regression-smoke", acknowledged_cost=<plan>,
+wait_seconds=55)` → `succeeded`. Its output name is `<name>`.
+expected:
+- The **served tool descriptions** (the schemas as loaded):
+  - `export_job`'s makes fetching conditional on `auth_required`, and says to hand
+    `open_url` to the person when it is true.
+  - `download_output`'s says a `dw.serve --mcp` endpoint requires `destination`.
+- `export_job(job_id=<job>)` returns `zip_url`/`open_url` and `auth_required`.
+  - When `auth_required` is `true`, `next` tells the agent to hand `open_url` to the
+    person and not fetch it.
+  - With DW_PUBLIC_URL unset, the **`absolute_zip_url` key is absent**, not null, and
+    `list_gallery` entries carry `url` and no `absolute_url`. If the server has one
+    configured, the key is present and equals that base URL + `zip_url`.
+- On the mounted server (`get_server_info` → `mcp.mounted: true`),
+  `download_output(name=<name>)` with no `destination` is **refused**. The error names
+  the `list_gallery` url, the `get_output_*` tools or `keep_output`.
+- `download_output(name=<name>, destination="outputs/regsmoke-f118/r1/")` → `saved_to`
+  ends in `outputs/regsmoke-f118/r1/<file>`, bytes > 0. After that,
+  `delete_output(name="regsmoke-f118/r1/<file>")` → `deleted: true`.
+It is a **finding** if either description tells the agent to fetch unconditionally or to
+omit `destination`. It is also a finding if `absolute_zip_url` comes back as `null`, or
+if the no-destination call succeeds, wherever the file lands.
+cleanup: `delete_output(job_id=<job>)`, plus the downloaded copy as above. The export
+directory (`exports/<job id>`, a few KB) stays on the server because no MCP tool removes
+exports.
+metrics: none.
+source: tester, verified in #353 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7` (export of `ef9c0e9cc3ff` and a
+download/delete of a `templates/restore-faces` output in `default`, not the resample job
+above; the DW_PUBLIC_URL-set path is untested, since that is server config).
+
+### S-F119 — gallery reads take an `output:`-prefixed name, and `list_gallery(media=true)` carries duration
+You need one audio or video output in the workspace. S-F007's final wav works if you run
+this case before S-F007's cleanup. Otherwise run any short audio chain. Note the file's
+`name` from `list_gallery(folder=<its folder>)`.
+expected:
+- `get_gallery_metadata(name="output:<name>")` resolves. It returns the bare `name` and
+  a `media` block with `duration_seconds`. It does **not** return a 404 of the form
+  `Unknown file: output:<name> - path does not exist`.
+- `get_gallery_metadata(name="output:../../etc/passwd")` is still refused. The message
+  names the stripped path as disallowed.
+- `list_gallery(folder=<its folder>, media=true)`: the entry carries `duration_seconds`,
+  and it equals the metadata's `media.duration_seconds`. Image and text entries in a
+  `media=true` listing carry no such key.
+- `list_gallery(folder=<its folder>)` without `media`: the same entry has no
+  `duration_seconds` key.
+cleanup: none of its own. Clean up whatever run supplied the file per that run's case,
+or with `delete_output(job_id=<job>)` if it was run for this case alone.
+metrics: none.
+source: tester, verified in #356 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7`. That run used existing `default`-workspace
+outputs: a Music 3 mp3 (30.023401 s in both the listing and the metadata), two LTX2 mp4s,
+and image entries. The traversal probe was refused with `Unknown file: ../../etc/passwd -
+path contains a disallowed pattern`.
+
+### S-F120 — media metadata reports integrated LUFS, and `normalize_audio(target_lufs=…)` hits it or warns at the ceiling
+Before #361, `peak_dbfs` was the only level control, and nothing on the server measured
+perceived loudness. A sparse voice and a dense score could share a peak yet sit tens of dB
+apart. Cheap: one ~3 s utility job, no model load.
+`get_gallery_metadata` on `asset:qa-cast/hal-voice.wav` and `asset:qa-cast/ep20-score.wav`.
+Then validate and run (`workspace="regression-smoke"`, `acknowledged_cost=<plan>`,
+`wait_seconds=55`) one inline workflow with three `normalize_audio` steps, each
+`result.content_type: "audio/wav"`:
+`up` = ep20-score, `target_lufs=-26, peak_dbfs=-1`; `capped` = hal-voice,
+`target_lufs=-16, peak_dbfs=-1`; `plain` = hal-voice, `peak_dbfs=-3` only. Read each
+output's `get_gallery_metadata`.
+expected:
+- Both assets' `media` blocks carry numeric `integrated_lufs` and `true_peak_dbfs` next to
+  `peak_dbfs`/`mean_dbfs`. For reference: hal-voice ≈ -20.5 LUFS with peak -1.0, and
+  ep20-score ≈ -48.3 LUFS with peak -28.9.
+- `up`'s output: `integrated_lufs` within 0.5 LU of -26 and `peak_dbfs` ≤ -1.
+- `capped`'s output: `peak_dbfs` ≈ -1.0 (the ceiling holds), with loudness still short of
+  -16. The job's `warnings` name `capped`, `target_lufs=-16`, and the shortfall in LU
+  (≈ 4.5).
+- `plain`'s output: `peak_dbfs` ≈ -3.0 with no loudness warning. Peak-only behaviour is
+  unchanged.
+- `validate_workflow` with `target_lufs: 3` on any `normalize_audio` step is refused at
+  `steps[0].task.arguments.target_lufs`.
+It is a **finding** if either LUFS key is missing or `null` on these non-silent inputs, if
+`capped` exceeds its ceiling, or if the ceiling hits without a warning.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+source: tester, verified in #361 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7`. That job (4 steps, in a scratch workspace)
+read -26.00 / -30.00 LUFS on target, and the capped step warned "4.5 LU short of the target".
+The short (<400 ms) and all-silent `null` paths are untested over MCP.
+
+### S-F121 — a `previous_result:` entry in a task's `inputs` list is resolved, not passed through as a literal
+Before #381, `validate_workflow` checked a `previous_result:` reference inside a task's
+`inputs` list, but the engine then handed the list over unchanged. The task got the
+literal string `"previous_result:step1"`. Cheap: two utility-only jobs, about 2 s each,
+no model load.
+In `workspace="regression-smoke"`, validate and then run (`acknowledged_cost=<plan>`,
+`wait_seconds=55`) this inline workflow:
+`{"id":"inputs_reference_check","steps":[{"name":"step1","task":{"command":"gather_inputs","inputs":["value1","value2"]},"result":{"content_type":"application/json","save":false}},{"name":"step2","task":{"command":"gather_inputs","inputs":["previous_result:step1","extra"]},"result":{"content_type":"application/json"}}]}`.
+Read each step2 file with `get_output_text`. Then run the same workflow again with step2's
+`inputs` set to `[{"value":"previous_result:step1"}]` (a different `id`). Finally, validate
+it with `previous_result:nosuch` as step2's first entry.
+expected:
+- The first run succeeds, and step2's manifest lists three files holding `"value1"`,
+  `"value2"` and `"extra"`, in that order. No file contains `previous_result:`.
+- The object-entry run's step2 writes two files, `{"value": "value1"}` and
+  `{"value": "value2"}`.
+- `previous_result:nosuch` is refused by `validate_workflow` at `steps[1].task.inputs[0]`,
+  with a message naming the steps that are available.
+It is a **finding** if any step2 output holds the literal reference string, or if the run
+produces a different iteration count.
+cleanup: `delete_output(job_id=<job>)` for each run.
+metrics: none.
+source: tester, verified in #381 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7` (jobs 4a586838a916 and a859dba09c23,
+run in the default workspace and deleted afterwards).
+
 ## Performance
 
 ### S-P001 — default image generation latency

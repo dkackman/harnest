@@ -3371,4 +3371,70 @@ metrics: none.
 source: moved from S-F115 (curation 2026-09-22, harnest#2); tester, verified in #365 on 2026-09-22 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ e5bfb9e` (jobs `bcb37cf0f8a5`, `1bc5b2354d70`).
 
+### C-F091 — a composed child is priced for the `cost_driver` values its composing step passes, not its defaults
+#341: a `workflow` step composing `templates/minimax/video-with-audio` with
+`arguments: {"num_frames": 345}` was quoted at the child's default-frames figure, first
+from the catalog and then, after the first fix, from the default bucket's observed
+history. A 12-shot parent came out at about a third of its real cost. This case is
+C-F054's check applied through composition. It costs nothing: five validate calls, no
+run, inline workflows, no fixture.
+1. `validate_workflow(name="templates/minimax/video-with-audio", arguments={"num_frames": 345})`.
+   This is the top-level reference figure.
+2. `validate_workflow(name="templates/minimax/video-with-audio")`, with no arguments.
+   This is the default reference figure.
+3. `validate_workflow(workflow={"id":"qa-c-f091-single","steps":[{"name":"shot","workflow":{"path":"templates/minimax/video-with-audio","arguments":{"num_frames":345,"prompt":"x"}}}]})`.
+4. `validate_workflow(workflow={"id":"qa-c-f091-default","steps":[{"name":"shot","workflow":{"path":"templates/minimax/video-with-audio","arguments":{"prompt":"x"}}}]})`.
+5. `validate_workflow(workflow={"id":"qa-c-f091-mix","variables":{"shots":[{"prompt":"a","nf":345},{"prompt":"b","nf":124}]},"steps":[{"name":"shot","for_each":"variable:shots","workflow":{"path":"templates/minimax/video-with-audio","arguments":{"num_frames":"item:nf","prompt":"item:prompt"}}}]})`.
+expected:
+- Step 3's `plan.estimate` `minutes` and `basis` equal step 1's. If step 1 is `unknown`
+  with `minutes: null`, step 3 is too. Step 4's equal step 2's.
+- Step 5: if steps 1 and 2 are both priced, `minutes` is their sum (within 0.1) and
+  `partial: false`. If step 1 is `unknown`, `partial: true` and
+  `templates/minimax/video-with-audio` is in `unpriced`, with `minutes` equal to step 2's.
+It is a **finding** if step 3's `minutes` equals step 2's while step 1's differs, or if
+step 5 comes to twice step 2's figure. Either one is #341: a composed child quoted at its
+default's figure for a driver value it was not measured at.
+cleanup: none. Nothing is created.
+metrics: none.
+source: tester, verified in #341 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7` (RTX 3090). Step 1 gave 19.0 observed,
+step 2 gave 6.6 observed, step 3 gave 19.0, step 4 gave 6.6, and a 345/345/124 mix gave
+44.6. A child at `num_frames: 243`, which had no bucket, came back `unknown`, the same as
+the top level.
+
+### C-F092 — `result.fps` takes a `variable:` reference, the written file carries the resolved rate, and a bad rate is refused at validate
+Before #363, `result.fps` accepted only an integer literal. `"fps": "variable:fps"` failed
+the schema check, so a template's `frame_rate` variable could not reach the file it wrote.
+The ltx2 templates, `assemble-and-score` and `dissolve-between-shots` now point `result.fps`
+at their rate variable. A resolved rate must be a positive whole number, because the
+writer truncates a fraction. Cheap: one ~3 s utility run with no model, plus free
+validates.
+Workflow W: `{"id": "qa-c-f092", "variables": {"fps": 24}, "steps": [{"name": "qr",
+"task": {"command": "qr_code", "arguments": {"qr_code_contents": "fps"}}}, {"name": "vid",
+"task": {"command": "loop_frames", "arguments": {"video": "previous_result:qr",
+"num_frames": 30}}, "result": {"content_type": "video/mp4", "fps": "variable:fps"}}]}`.
+1. `validate_workflow` W with `arguments: {"fps": 12}`. Then `run_workflow` it with the
+   same arguments, and read the mp4 with `get_gallery_metadata`.
+2. `validate_workflow` W with `arguments: {"fps": 0}`.
+3. `validate_workflow` W with the variable default changed to `23.976` and no arguments.
+4. `validate_workflow(name="templates/ltx2/chained-segments", arguments={"frame_rate": 29.97})`,
+   then the same call with `{"frame_rate": 30}`.
+expected:
+- Step 1: `valid: true`. The job succeeds, and the mp4's `media.fps` is `12.0`,
+  `frame_count` is `30` and `duration_seconds` is `2.5`.
+- Step 2: `valid: false` at `steps[1].result.fps`, with a message saying fps must be
+  greater than zero.
+- Step 3: `valid: false` at `steps[1].result.fps`, with a message saying fps must be a whole
+  number.
+- Step 4: the 29.97 call is `valid: false` at `steps[0].result.fps`, which shows the
+  template's `result.fps` follows `frame_rate`. The 30 call is `valid: true`.
+It is a **finding** if step 1 fails validation with a type error on `result.fps`, or if the
+file is written at 24 or 8 fps. It is also a finding if step 2 or 3 validates, or if step 4's
+29.97 call validates.
+cleanup: `delete_output(job_id=…)` on step 1's job.
+metrics: none.
+source: tester, verified in #363 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 4aaeef7` (job `ca6861eb89fa`: 12.0 fps, 30 frames,
+2.5 s, 768x768).
+
 ## Performance
