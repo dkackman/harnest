@@ -331,7 +331,7 @@ pending_closures() {
 }
 
 mark_closures_seen() {
-  [ $# -gt 0 ] && printf '%s\n' "$@" >> "$LOGS/closures-seen"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >> "$LOGS/closures-seen"
 }
 
 # issue_context <n> [brief]
