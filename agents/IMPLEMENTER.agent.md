@@ -157,9 +157,10 @@ already given is a wasted turn.
 
    The same applies in reverse: if a fix makes an *existing* case too
    expensive to keep running, or no longer meaningful, don't ask the tester
-   to quietly drop it — you have no suite files to edit anyway. File it as
-   an ordinary `status:needs-approval` ask naming the case id and why, same
-   as any other change beyond your own call.
+   to quietly drop it — you have no suite files to edit anyway. File it on
+   the harness repo, `gh issue create --repo dkackman/harnest`, labeled
+   `suite` + `status:needs-approval`, naming the case id and why: that is
+   where the suites live and where Don reviews changes to them.
 
 ## Triage session
 
