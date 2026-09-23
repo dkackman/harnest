@@ -336,27 +336,31 @@ median-and-50% rule in `regression-perf/` can say anything useful about.
 ### M-F012 — the Music 3 templates deliver headroom without being asked
 Music 3 lands at or over full scale on this box every time, so until #159 the default
 path shipped a deliverable that clipped and a caller had to know to add a gain step.
-`templates/minimax/music` now writes through a `balanced` (`normalize_audio`, -1.0 dBFS)
-step with the pipeline step at `save: false`, and `templates/minimax/music-video` puts
-the same step between `edit` and the `pair_audio` mux. This case pins the *default*
-path — no arguments beyond a duration, nothing the caller has to know.
+`templates/minimax/music` now writes through a `balanced` (`normalize_audio`, -3.0 dBFS
+— -1.0 until #362) step with the pipeline step at `save: false`, and
+`templates/minimax/music-video` puts the same step between `edit` and the `pair_audio`
+mux, also at -3.0. This case pins the *default* path — no arguments beyond a duration,
+nothing the caller has to know.
 Two things about it are easy to get wrong, and both are the point:
 **Do not assert the absence of the warning alone.** `audio_no_headroom` measures the
 waveform as written, so it goes quiet the moment a gain step exists — and it would also
 go quiet if the check itself broke. The level is the assertion; the warning is
 corroboration.
 **Do not assert a target level.** The deliverable is mp3, and a lossy encode overshoots
-the -1.0 the waveform was normalized to. Measured on the verifying runs, that overshoot
-was **0.93 dB and 0.59 dB** on two Music 3 tracks — near enough to eat the whole -1.0.
-An assertion of `<= -0.9 dBFS` fails against a fix that is working correctly. Assert
-strictly below 0, which is what "does not clip" means.
+the -3.0 the waveform is normalized to. Measured overshoot has run **0.93 dB and 0.59 dB**
+on two Music 3 tracks against the old -1.0 target, and 1.56 dB against -1.0 on the run
+that prompted #362 — already most of a -1.0 margin, and enough to clip outright at 1.56.
+The -3.0 target moved for exactly that reason; a verifying run at -3.0 still overshot by
+~0.96 dB (#362), so the margin is doing its job rather than eliminating overshoot. An
+assertion of a specific ceiling below 0 fails against a fix that is working correctly.
+Assert strictly below 0, which is what "does not clip" means.
 Model/pipeline: MiniMax Music 3. One ~90 s run at `audio_duration: 30`; the
 `music-video` half rides on whatever `music-video` render the suite or an episode does
 next rather than paying 35 min of its own.
 expected: `run_workflow("templates/minimax/music", arguments={"audio_duration": 30})` —
 - **The catalog still carries the gain step.** `get_workflow("templates/minimax/music")`
   shows two steps: `generate_music` with `result.save: false`, then `balanced`, a
-  `normalize_audio` task at `peak_dbfs: -1.0` whose `result` is what gets written. A
+  `normalize_audio` task at `peak_dbfs: -3.0` whose `result` is what gets written. A
   template that has quietly lost the step is the regression this case exists for.
 - **The deliverable is the `balanced` step's file**, named `MiniMaxMusic-balanced.*`
   (not `MiniMaxMusic-generate_music.*`). The old name no longer resolves as an
@@ -391,10 +395,13 @@ is what established the overshoot figures above rather than guessing at them. Th
 `music-video` bullet was confirmed from a run in #161 (tester, model `opus` via provider
 `anthropic`): job `34b5aaa510e5`, 2 shots at `audio_duration: 12`, deliverable at
 `peak_dbfs: -3.921`. That fix moved `music-video`'s `balanced` step to **-3.0 dBFS**
-(`music` stays at -1.0) because the AAC mux overshoots where an mp3 encode barely does —
-by 1.94 dB on #161's material, while the same mux landed 0.92 dB *under* the target on
-this run's. Material-dependent in both directions, which is why the bullet asserts
-strictly below 0 and no target level.
+(`music` stayed at -1.0 at the time) because the AAC mux overshoots where an mp3 encode
+barely does — by 1.94 dB on #161's material, while the same mux landed 0.92 dB *under*
+the target on this run's. Material-dependent in both directions, which is why the bullet
+asserts strictly below 0 and no target level. #362 (2026-09-23) brought `music` to the
+same -3.0 after a 1.56 dB mp3 overshoot against -1.0 nearly clipped a default run;
+verified at -3.0 with job `7acc0d169072` (`audio_duration: 60`, `peak_dbfs: -2.04`,
+`warnings: []`) — both templates now normalize to -3.0, for the same reason.
 
 ### M-F013 — the Ingredients IC-LoRA is named as a download, and a short reference sheet is refused before the weights load
 `templates/ltx2/reference-sheet` is LTX-2.5's only reference/identity route (#151), and it is built
