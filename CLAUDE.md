@@ -164,6 +164,10 @@ files described below. There is no build, lint, or test step.
   cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
   capped at ~12 KB by `TESTER_TASK.agent.md`, not a journal; per-cycle narrative belongs on the issues.
 
+Planned evolution of the harness itself (replay benchmark, hooks, feature specs, suite
+curation, retro loop, SDK port) is tracked in `HARNESS-ROADMAP.md`. Read it before a
+structural change to the drivers or role prompts.
+
 ## Running
 
 ```sh
