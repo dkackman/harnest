@@ -14,7 +14,7 @@ files described below. There is no build, lint, or test step.
   short triage session when 2+ issues wait (dispositions each with a `triage:` comment, which
   is also where related issues get batched into one fix), then one fresh `claude -p` per
   remaining issue; the tester gets one per `status:fixed-pending-verify` issue, plus a "task"
-  session (closure responses + one `TESTER_TASK.agent.md` step) every `TESTER_TASK_EVERY` cycles
+  session (closure responses + one step of the standing task, `agents/tester/standing-task.md`) every `TESTER_TASK_EVERY` cycles
   (default 4 — it is the most expensive session in a cycle and is discovery, not verification;
   on the cycles in between, a pending `wontfix`/`duplicate` closure gets a short "closures"
   session of its own, tracked in `logs/closures-seen`, so the reopen window doesn't stretch
@@ -68,18 +68,28 @@ files described below. There is no build, lint, or test step.
   the defaults are per role. Under a non-anthropic `PROVIDER`
   every role that runs must be named explicitly, since a Claude alias can't be served there
   and `resolve_model_env` rejects it at startup.
-- `agents/IMPLEMENTER.agent.md` — role prompt for the agent with source access and SSH to the
+- Role prompts for the loop's three MCP roles are built per session kind (roadmap R10):
+  `agents/<role>/core.md` holds the role's identity, fences, label scheme, trust rule and
+  guardrails, and one fragment per session kind holds only that kind's steps.
+  `role_prompt <role> <kind> <file>` (`providers.sh`) concatenates them, and `run_agent`,
+  `run_session` and `run-bench.sh` pass the result as `--append-system-prompt-file`.
+  Kinds: implementer `fix`/`triage`; tester `verify`/`handoff`/`answer`/`closures`/`task`
+  (`task` also loads `standing-task.md`, and `verify`/`handoff`/`task` load `cases.md`);
+  regression `whole`/`chunk`/`sweep`. State each rule once, in the core if more than one
+  kind needs it, and have fragments point at it by section name, never by step number
+  across files. A rule enforced by `guard.py` stays in the core as a one-line pointer.
+- `agents/implementer/` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`,
   default `~/src/dkackman/dw-agent`: a clone kept for the agents, with its own `venv` from
   `install.sh` — not Don's working checkout, which it used to share and switch branches under).
-- `agents/TESTER.agent.md` — role prompt for the agent that talks to the MCP server *only* as a
+- `agents/tester/` — role prompt for the agent that talks to the MCP server *only* as a
   protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split
   plus an enforced tool allowlist (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`, see
   "Permissions" below) is the basis of the tester's isolation.
-- `agents/TESTER_TASK.agent.md` — the tester's standing exercise: a throwaway series built in
+- `agents/tester/standing-task.md` — the tester's standing exercise: a throwaway series built in
   `qa-`-prefixed workspaces so it finds bugs in use, not just by re-verifying fixes. Not a
   deliverable; never touches the default workspace.
-- `agents/REGRESSION.agent.md` / `run-regression.sh` — a third, standalone agent (not part of
+- `agents/regression/` / `run-regression.sh` — a third, standalone agent (not part of
   the implementer/tester alternation) that runs the growing suite against the live MCP server
   and files/comments on GitHub Issues for failures and performance regressions. Same
   consumer-only isolation as the tester; ends by posting to GitHub, no back-and-forth with the
@@ -163,7 +173,7 @@ files described below. There is no build, lint, or test step.
   overlap, and an Opus judge verdict. Results are one JSONL row per case in
   `bench/results/results.jsonl` (checked in, append-only); `--summary` groups them by
   `BENCH_LABEL`. Offline, so no driver lock. Use it before and after any change to
-  `IMPLEMENTER.agent.md` or the implementer's model.
+  `agents/implementer/` or the implementer's model.
 - `run-curate.sh` / `agents/CURATOR.agent.md` (R5), `run-retro.sh` / `agents/RETRO.agent.md`
   (R7) and `run-digest.sh` (R9) are standalone drivers that only propose changes. None of
   them edits a suite, prompt or driver, and none takes the driver lock (no MCP).
@@ -193,7 +203,7 @@ files described below. There is no build, lint, or test step.
   which role and cycle spent the budget; the raw events are kept in `<role>.jsonl`. The tester
   also keeps `qa-bible.md` here (gitignored) as its memory across
   cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
-  capped at ~12 KB by `TESTER_TASK.agent.md`, not a journal; per-cycle narrative belongs on the issues.
+  capped at ~12 KB by `agents/tester/standing-task.md`, not a journal; per-cycle narrative belongs on the issues.
 
 Planned evolution of the harness itself (replay benchmark, hooks, feature specs, suite
 curation, retro loop, SDK port) is tracked in `HARNESS-ROADMAP.md`. Read it before a
@@ -311,7 +321,7 @@ changed files, and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin
 when the session began, exported by `implementer_pass`). The gate is relative because
 `develop` isn't always green. The result is stamped per tree in the checkout's `.git`.
 `HARNEST_HOOKS` (exported by `providers.sh`) is how the settings files find the script.
-When editing a role prompt, a rule the guard enforces can be one line pointing at it (R10).
+The role prompts' cores carry each guard rule as one line under "Enforced by the harness".
 
 Two deploy paths, and the implementer must say which one a fix used: server code →
 `ssh lem '~/diffusers-workflow/scripts/deploy.sh <branch>'` (in the dw repo: fetch, ff-only pull,

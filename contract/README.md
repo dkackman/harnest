@@ -26,8 +26,8 @@ when both of these hold:
 
 `run-regression.sh` then runs those cases through `run.py` before any agent
 session and takes them out of the agent's chunks. It hands the report to the
-final session, whose only job for them is to file failures (step 4 of
-`REGRESSION.agent.md`). Adding `runner: script` edits a case, so it goes
+final session, whose only job for them is to file failures ("Reporting a
+failure" in `agents/regression/core.md`). Adding `runner: script` edits a case, so it goes
 through the same `owner:don` approval as any other change to a case.
 
 The prose stays in the suite. It says *why* the case exists, and the JSON only

@@ -694,3 +694,34 @@ park_external_issues() {
       || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOGS/loop.log"
     done
 }
+
+# role_prompt <role> <kind> <out-file>
+# Writes the system prompt for one kind of session (roadmap R10): the role's
+# shared core (identity, fences, labels, trust, guardrails) followed by the
+# fragments for that kind only, from agents/<role>/. The driver always knows
+# the kind, so no session reads another kind's instructions, and no fence
+# depends on something that might not load (which is why this isn't a
+# skill). Echoes <out-file>. An unknown pair is an error, not an empty prompt.
+HARNEST_AGENTS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agents"
+role_prompt() {
+  local role="$1" kind="$2" out="$3" p
+  # Positional parameters, not a split string, so this works sourced from zsh too.
+  case "$role:$kind" in
+    implementer:fix)    set -- core fix ;;
+    implementer:triage) set -- core triage ;;
+    tester:verify)      set -- core verify cases ;;
+    tester:handoff)     set -- core handoff cases ;;
+    tester:answer)      set -- core answer ;;
+    tester:closures)    set -- core closures ;;
+    tester:task)        set -- core closures task cases standing-task ;;
+    regression:whole)   set -- core run-cases sweep ;;
+    regression:chunk)   set -- core run-cases chunk ;;
+    regression:sweep)   set -- core sweep ;;
+    *) echo "role_prompt: no prompt for $role:$kind" >&2; return 1 ;;
+  esac
+  for p in "$@"; do
+    [ -r "$HARNEST_AGENTS/$role/$p.md" ] || { echo "role_prompt: missing agents/$role/$p.md" >&2; return 1; }
+  done
+  for p in "$@"; do cat "$HARNEST_AGENTS/$role/$p.md"; done > "$out" || return 1
+  echo "$out"
+}

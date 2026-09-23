@@ -25,7 +25,7 @@ Workspace: `regression-smoke`. Case IDs in this file use the `S-` prefix
 (`S-F001`, `S-P001`, ...) so they never collide with the `C-`/`M-` IDs in
 the sibling suites — the regression agent's duplicate-issue search is keyed
 on the full prefixed ID. Full run mechanics (fixtures vs. outputs, cleanup,
-the final sweep) live in `agents/REGRESSION.agent.md`, not here.
+the final sweep) live in `agents/regression/`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is

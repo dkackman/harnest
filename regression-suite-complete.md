@@ -18,7 +18,7 @@ its fixtures. Case IDs in this file use the `C-` prefix (`C-F001`,
 `C-P001`, ...) so they never collide with the `S-`/`M-` IDs in the sibling
 suites — the regression agent's duplicate-issue search is keyed on the full
 prefixed ID. Full run mechanics (fixtures vs. outputs, cleanup, the final
-sweep) live in `agents/REGRESSION.agent.md`, not here.
+sweep) live in `agents/regression/`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is

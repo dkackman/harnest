@@ -46,7 +46,7 @@
 #                        session runs: responds to those closures (step 3)
 #   tester task          one session, every TESTER_TASK_EVERY cycles: responds
 #                        to wontfix/duplicate closures, then advances
-#                        TESTER_TASK.agent.md one step
+#                        the standing task one step
 # Why: one 6-issue implementer session measured 269 turns at a 352k-token peak
 # and 60M cached-input tokens — issue 6 paid to re-read issues 1-5 on every
 # turn. A session's cost is context × turns, and per-issue sessions bound
@@ -66,7 +66,6 @@ SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"
 PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 TICKET_OWNER="${TICKET_OWNER:-dkackman}"   # GitHub login whose issues the agents may act on unasked
-AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
@@ -200,25 +199,27 @@ IMPLEMENTER_FLAGS=(
   --permission-mode auto
 )
 
-# run_agent <role> <tag> <budget_usd> <cwd> <provider> <model> <effort> <prompt-file> <prompt> [extra claude flags...]
+# run_agent <role> <tag> <budget_usd> <cwd> <provider> <model> <effort> <kind> <prompt> [extra claude flags...]
 # One fresh claude -p session. <role> picks the role prompt's runtime note
 # and the per-role log file; <tag> (e.g. "#145", "triage", "task") is what
-# distinguishes the sessions of one cycle in loop.log. <prompt-file> is the
-# role prompt (agents/<ROLE>.agent.md), appended to the system prompt so it
-# is in the cached prefix from turn one rather than a 12-16 KB tool result
-# the agent has to Read first. Streams the agent's output to the terminal,
+# distinguishes the sessions of one cycle in loop.log. <kind> picks the role
+# prompt for this kind of session (role_prompt in providers.sh: the role's
+# core plus that kind's fragments, from agents/<role>/), appended to the
+# system prompt so it is in the cached prefix from turn one rather than a
+# tool result the agent has to Read first. Streams the agent's output to the terminal,
 # its own log, and the combined log.
 run_agent() {
-  local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" effort="$7" prompt_file="$8" prompt="$9"; shift 9
+  local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" effort="$7" kind="$8" prompt="$9"; shift 9
   local label="$role:$tag"
 
   # Both pairs were validated at startup, so these can't fail on a bad pair —
   # but a bare failing call in the while body would take the whole driver down
   # under set -e with no log line, so any failure is logged and skipped like a
   # failed session rather than propagated.
-  local fb_words
+  local fb_words prompt_file
   if ! resolve_model_env "$provider" "$model" \
-     || ! fb_words="$(fallback_model_flags "$provider" "$FALLBACK_MODEL")"; then
+     || ! fb_words="$(fallback_model_flags "$provider" "$FALLBACK_MODEL")" \
+     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role.md")"; then
     echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
     return 0
   fi
@@ -273,7 +274,7 @@ $note"
 # work queue, and the tester's handoff queue), `verify` =
 # status:fixed-pending-verify (the tester's), `needsinfo` =
 # status:needs-info (a question bounced to whoever holds the owner label -
-# the implementer bounces to owner:tester per IMPLEMENTER.agent.md step 5).
+# the implementer bounces to owner:tester per agents/implementer/core.md, "Needs info").
 open_issues() {
   local owner="$1" mode="$2" filter
   case "$mode" in
@@ -303,8 +304,7 @@ still_ready() {
 
 # pending_closures
 # Numbers of closed issues carrying owner:tester plus wontfix or duplicate
-# that no tester session has been dispatched for yet (TESTER.agent.md step
-# 3: accept, or reopen once with new evidence). Whether the tester has
+# that no tester session has been dispatched for yet (agents/tester/closures.md: accept, or reopen once with new evidence). Whether the tester has
 # *responded* is only visible in the comments, so the driver keeps its own
 # ledger, logs/closures-seen, of the numbers it has already handed to a
 # session - mark_closures_seen appends to it after the closure or task
@@ -432,8 +432,8 @@ implementer_pass() {
   [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOGS/loop.log"; return 0; }
 
   if [ "${#queue[@]}" -ge 2 ]; then
-    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow its 'Triage session' section for exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop.
+    run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" triage \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions for it are in your system prompt; triage exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop.
 
 lem is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -474,8 +474,8 @@ This issue has been handed off as fixed and sent back by the tester $bounces tim
     git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
     HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
     export HARNEST_BASE_COMMIT
-    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$provider" "$model" "$IMPLEMENTER_EFFORT" "$AGENTS/IMPLEMENTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. Your role instructions are in your system prompt (the contents of $AGENTS/IMPLEMENTER.agent.md); follow them exactly for this session, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.$escalation
+    run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$provider" "$model" "$IMPLEMENTER_EFFORT" fix \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a fix session: your role instructions for it are in your system prompt; follow them exactly, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.$escalation
 
 lem is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -497,8 +497,8 @@ tester_pass() {
     [ -n "$n" ] || continue
     still_ready "$n" owner:tester verify \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a VERIFY session for issue #$n only (step 2 of your loop). Do not work the standing task. Then stop.
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" verify \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a VERIFY session for issue #$n only. Do not work the standing task. Then stop.
 
 lem is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -518,8 +518,8 @@ $(issue_context "$n")" \
     [ -n "$n" ] || continue
     still_ready "$n" owner:tester fresh \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a HANDOFF session for issue #$n only (step 2h of your loop) - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" handoff \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a HANDOFF session for issue #$n only - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
 
 lem is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -530,14 +530,14 @@ $(issue_context "$n")" \
   done < <(open_issues owner:tester fresh)
 
   # owner:tester with status:needs-info: the implementer bounced a question
-  # here (IMPLEMENTER.agent.md step 5) - e.g. "what were the job ids of the
+  # here (agents/implementer/core.md, "Needs info") - e.g. "what were the job ids of the
   # failed run and the retry". Nothing else schedules these either.
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" owner:tester needsinfo \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is an ANSWER session for issue #$n only (step 2a of your loop) - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" answer \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is an ANSWER session for issue #$n only - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
 
 lem is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -554,16 +554,18 @@ $(issue_context "$n")" \
   local -a closures=()
   while IFS= read -r n; do [ -n "$n" ] && closures+=("$n"); done < <(pending_closures)
 
+  local clist="none pending"
+  [ "${#closures[@]}" -eq 0 ] || clist="$(printf '#%s ' "${closures[@]}")"
   if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
-    run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a TASK session — first respond to any wontfix/duplicate closures you own (step 3 of your loop), then advance the standing task in $AGENTS/TESTER_TASK.agent.md by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
+    run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
     mark_closures_seen ${closures[@]+"${closures[@]}"}
   elif [ "${#closures[@]}" -gt 0 ]; then
     local list
     list="$(printf '#%s ' "${closures[@]}")"
-    run_agent tester closures "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" "$AGENTS/TESTER.agent.md" \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions are in your system prompt (the contents of $AGENTS/TESTER.agent.md); follow them exactly for this session: it is a CLOSURES session for ${list}only (step 3 of your loop) - each was closed wontfix or duplicate with owner:tester; accept, or reopen once with materially new evidence. Do not work the standing task and do not verify anything. Then stop." \
+    run_agent tester closures "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" closures \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a CLOSURES session for ${list}only - each was closed wontfix or duplicate with owner:tester; accept, or reopen once with materially new evidence. Do not work the standing task and do not verify anything. Then stop." \
       "${TESTER_FLAGS[@]}"
     mark_closures_seen "${closures[@]}"
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"

@@ -42,7 +42,7 @@ Workspace: `regression-security`. Case IDs use the `SE-` prefix (`SE-F001`,
 regression agent's duplicate-issue search is keyed on the full prefixed ID.
 Issues filed from this file carry the `security` label in addition to
 `regression`. Full run mechanics (fixtures vs. outputs, cleanup, the final
-sweep) live in `agents/REGRESSION.agent.md`, not here.
+sweep) live in `agents/regression/`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown
 by the implementer/tester too (see "Adding a case" below). Each case is

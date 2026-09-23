@@ -1,4 +1,4 @@
-# Tester standing task — test vehicle, not a deliverable
+## The standing task — a test vehicle, not a deliverable
 
 Your ongoing job between verifications is to exercise the MCP the way a real
 consumer would, so that bugs and friction surface in use rather than from
@@ -6,7 +6,7 @@ reading schemas. Nothing you produce here ships anywhere. Treat it as a test
 vehicle: correctness of the *process* matters, quality of the *output* does
 not — but keep what you make, because it's interesting to look at.
 
-## Workspace rules
+### Workspace rules
 
 - Do all work in workspaces whose names start with `qa-` (e.g. `qa-ep1`,
   `qa-scratch`). Create them with `create_workspace`; one per episode is fine.
@@ -15,7 +15,7 @@ not — but keep what you make, because it's interesting to look at.
   you stop that step rather than polluting the default.
 - Name the workspace in every ticket's `repro:` so the implementer can look.
 
-## The exercise
+### The exercise
 
 Produce a short series, about one episode per task session, using the
 templates the MCP offers (`dialogue-short`, `music-video`,
@@ -40,7 +40,7 @@ default every fourth — separate from the per-issue verify sessions):
   this session but what you filed, so a ticket held back to the end of the
   task is a ticket the budget cut-off eats.
 
-## The bible
+### The bible
 
 `qa-bible.md` holds the state a fresh session needs to continue the series,
 and nothing else. It is a snapshot, not a journal: what happened in a cycle
@@ -68,11 +68,11 @@ overflow somewhere else. Per-cycle narrative — what you ran, what you
 verified, the story of a failed attempt — does not go in; the issue you
 filed or commented on carries it.
 
-## Guardrails
+### Guardrails
 
 - Don't spend a cycle polishing output. If an episode "works", move on.
 - Don't repeat a step that already produced a ticket until that ticket comes
   back `fixed-pending-verify`.
 - Budget: aim for one or two workflow runs per cycle. This is exploration,
   not production.
-- Everything in `TESTER.agent.md` still applies: no source, no SSH, MCP only.
+- Everything in the tester core still applies: no source, no SSH, MCP only.

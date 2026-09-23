@@ -88,17 +88,25 @@ summary() {
 }
 [ "${1:-}" = --summary ] && { shift; summary "$@"; exit 0; }
 
-# The prompt under test: this repo's IMPLEMENTER.agent.md at BENCH_PROMPT_REV
-# (or the working tree), with the replay note appended. The note is the same
-# for every configuration, so it cancels out of any comparison.
+# The prompt under test: the implementer's fix-session prompt (agents/
+# implementer/core.md + fix.md, as role_prompt assembles it) at
+# BENCH_PROMPT_REV, or the working tree, with the replay note appended. The
+# note is the same for every configuration, so it cancels out of any
+# comparison. A rev from before the split (R10) has one file,
+# agents/IMPLEMENTER.agent.md, and that is used instead.
 PROMPT_FILE="$WORK/.implementer-prompt.$$.md"
 if [ -n "$BENCH_PROMPT_REV" ]; then
-  git -C "$REPO" show "$BENCH_PROMPT_REV:agents/IMPLEMENTER.agent.md" > "$PROMPT_FILE"
+  if git -C "$REPO" cat-file -e "$BENCH_PROMPT_REV:agents/implementer/core.md" 2>/dev/null; then
+    { git -C "$REPO" show "$BENCH_PROMPT_REV:agents/implementer/core.md"
+      git -C "$REPO" show "$BENCH_PROMPT_REV:agents/implementer/fix.md"; } > "$PROMPT_FILE"
+  else
+    git -C "$REPO" show "$BENCH_PROMPT_REV:agents/IMPLEMENTER.agent.md" > "$PROMPT_FILE"
+  fi
   PROMPT_ID="$(git -C "$REPO" rev-parse --short "$BENCH_PROMPT_REV")"
 else
-  cp "$REPO/agents/IMPLEMENTER.agent.md" "$PROMPT_FILE"
+  role_prompt implementer fix "$PROMPT_FILE" >/dev/null || exit 1
   PROMPT_ID="$(git -C "$REPO" rev-parse --short HEAD)"
-  git -C "$REPO" diff --quiet HEAD -- agents/IMPLEMENTER.agent.md || PROMPT_ID="$PROMPT_ID+dirty"
+  git -C "$REPO" diff --quiet HEAD -- agents/implementer || PROMPT_ID="$PROMPT_ID+dirty"
 fi
 cat "$BENCH/replay-note.md" >> "$PROMPT_FILE"
 BENCH_LABEL="${BENCH_LABEL:-$IMPLEMENTER_PROVIDER/$IMPLEMENTER_MODEL@$PROMPT_ID}"

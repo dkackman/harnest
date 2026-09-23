@@ -65,7 +65,6 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"          # the agents' clone (see run-loop.sh)
 PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin}"  # origin/develop, shared with run-loop.sh
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
-AGENTS="$REPO/agents"
 LOGS="$REPO/logs"
 PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
 # sonnet, not opus, since 2026-09-21: a smoke run on each, same day, same
@@ -196,24 +195,27 @@ REGRESSION_FLAGS=(
   "${CONSUMER_PERMISSION_FLAGS[@]}"
 )
 
-# run_session <level> <suite_file> <workspace> <tag> <instructions>
-# One `claude -p` invocation of the regression agent. <instructions> is the
+# run_session <level> <suite_file> <workspace> <tag> <kind> <instructions>
+# One `claude -p` invocation of the regression agent. <kind> (whole, chunk,
+# sweep) picks its system prompt: role_prompt in providers.sh. <instructions> is the
 # run-specific paragraph that follows the standard override preamble; <tag>
 # is appended to the log prefix ("[regression:smoke.2]") so a chunked run's
 # sessions are distinguishable in loop.log.
 run_session() {
-  local level="$1" suite_file="$2" workspace="$3" tag="$4" instructions="$5" attempt
+  local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" attempt prompt_file
+  prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.regression.md")" \
+    || { echo "[regression:$level$tag] no role prompt for '$kind'" | tee -a "$LOGS/loop.log"; return 0; }
   # $LAST_SESSION is this session's rendered output alone: a rejected rate
   # limit sleeps the driver until the reset, a session that died before its
   # result event is retried once (both in providers.sh).
   for attempt in 1 2; do
   : > "$LAST_SESSION"
   (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions are in your system prompt (the contents of $AGENTS/REGRESSION.agent.md); follow them exactly for this run, with these overrides: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions for this kind of session are in your system prompt; follow them exactly, with these specifics: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${LIMIT_FLAGS[@]}" \
-    --append-system-prompt-file "$AGENTS/REGRESSION.agent.md" \
+    --append-system-prompt-file "$prompt_file" \
     "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 < /dev/null | render_stream regression) \
     | tee -a "$LOGS/regression.log" "$LAST_SESSION" \
     | sed -u "s/^/[regression:$level$tag] /" \
@@ -279,13 +281,13 @@ run_level() {
 
 These cases ran as scripts before this session (contract/run.py, a plain MCP client; see 'runner: script' on each): ${script_ids[*]}. Do not execute them. Their report:
 $report
-For each case whose status is fail or error, do step 4 of the role instructions exactly as for a case you ran yourself, quoting its failures; a pass needs nothing. An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure."
+For each case whose status is fail or error, report it ('Reporting a failure' in the role instructions) exactly as for a case you ran yourself, quoting its failures; a pass needs nothing. An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure."
   fi
 
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
-    run_session "$level" "$suite_file" "$workspace" "" \
-      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, and add any cases step 6 of the role instructions calls for.$script_note"
+    run_session "$level" "$suite_file" "$workspace" "" whole \
+      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.$script_note"
   else
     # Case IDs in file order, from the `### <ID> — title` headings. The
     # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
@@ -302,8 +304,8 @@ For each case whose status is fail or error, do step 4 of the role instructions 
       if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then
         session=$((session + 1))
         echo "--- $(ts) $level session $session: ${chunk[*]} ---" | tee -a "$LOGS/loop.log"
-        run_session "$level" "$suite_file" "$workspace" ".$session" \
-          "This is a chunked run (see 'Chunked runs' in the role instructions): this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
+        run_session "$level" "$suite_file" "$workspace" ".$session" chunk \
+          "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
         chunk=()
         if session_aborted; then
           echo "[regression:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOGS/loop.log"
@@ -313,8 +315,8 @@ For each case whose status is fail or error, do step 4 of the role instructions 
     done
     if ! session_aborted; then
       echo "--- $(ts) $level session $((session + 1)): final sweep ---" | tee -a "$LOGS/loop.log"
-      run_session "$level" "$suite_file" "$workspace" ".sweep" \
-        "This is the final sweep of a chunked run (see 'Chunked runs' in the role instructions): every case was already exercised in earlier sessions. Do only step 5 of the role instructions against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases.$script_note"
+      run_session "$level" "$suite_file" "$workspace" ".sweep" sweep \
+        "This is the final sweep of a chunked run: every case was already exercised in earlier sessions. Do only the final sweep against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases.$script_note"
     fi
   fi
 

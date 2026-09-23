@@ -58,7 +58,7 @@ never one per role.
    cases over MCP. It then either closes the issue as `verified` or sends it back with
    what's still wrong.
    - Every `TESTER_TASK_EVERY` cycles, a *task* session also moves forward a throwaway
-     series in `qa-` workspaces ([`TESTER_TASK.agent.md`](agents/TESTER_TASK.agent.md))
+     series in `qa-` workspaces ([`agents/tester/standing-task.md`](agents/tester/standing-task.md))
      and files anything it hits.
    - On the cycles in between, a pending `wontfix`/`duplicate` closure gets its own
      short session, so the tester can accept it or reopen it once.
@@ -420,11 +420,10 @@ measure-base-ctx.sh                 measures turn-1 context for a flag set
 agent-settings/implementer.json     auto-mode classifier's picture of the implementer's environment, plus its guard hook
 agent-settings/consumer.json        tester/regression guard hook
 agent-settings/hooks/guard.py       the guard (protocol invariants and the hand-off gate)
-agents/
-  IMPLEMENTER.agent.md              implementer role, including triage
-  TESTER.agent.md                   tester role
-  TESTER_TASK.agent.md              the tester's standing exercise
-  REGRESSION.agent.md               regression agent role
+agents/                           role prompts; the drivers build each session's from parts (role_prompt)
+  implementer/                      core.md + fix.md or triage.md
+  tester/                           core.md + verify/handoff/answer/closures/task.md, cases.md, standing-task.md
+  regression/                       core.md + run-cases.md + chunk.md or sweep.md
   RESEARCHER.agent.md               researcher role
   CURATOR.agent.md                  suite curator role
   RETRO.agent.md                    retro role

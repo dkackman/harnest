@@ -13,7 +13,7 @@ BENCH_JOBS=3 ./run-bench.sh 289 74 238      # a subset, in parallel
 ```
 
 A run's rows are grouped under `BENCH_LABEL`, which defaults to
-`provider/model@<harness commit>` (`+dirty` if `agents/IMPLEMENTER.agent.md`
+`provider/model@<harness commit>` (`+dirty` if `agents/implementer/`
 has uncommitted edits). Set it yourself to name an experiment.
 
 ## Files
