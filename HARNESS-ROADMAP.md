@@ -19,10 +19,10 @@ rather than in a separate log.
 | R7  | Retro agent (the self-improvement loop)           | todo    | R1         |
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | todo    | —          |
-| R10 | Split role prompts into on-demand skills          | todo    | R1 to measure |
+| R10 | Role prompts: dedupe, then assemble per session kind | todo | R1, R3     |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
-major changes, and R9 and R10 whenever there's room.
+major changes. R9 can go in whenever there's room; R10 goes after R3.
 
 ## Principles every item must keep
 
@@ -278,21 +278,76 @@ a pinned tracking issue, a page, or a notification.
 
 **Done when.** The median time an issue stays parked with Don goes down.
 
-## R10 — Split role prompts into on-demand skills
+## R10 — Role prompts: remove duplication, then build each prompt per session kind
 
-**Why.** `IMPLEMENTER.agent.md` (16 KB), `TESTER.agent.md` (14 KB) and `REGRESSION.agent.md`
-(17 KB) are loaded on every turn. Much of that text is a procedure used in a minority of
-sessions: deploying, adding a suite case, closure responses, triage.
+**Origin.** The loop-monitoring session's harness review (2026-09-22, session `8b1f39d1`)
+estimated the implementer and tester prompts "could each lose roughly a third": they carried
+dated measurements and incident stories, and repeated the label scheme. Commit `0dfb73b`
+trimmed the anecdotes lightly (the prompts now contain no dates or issue-number war
+stories) and deliberately left the deeper cut for later, so the Opus 5.5 trial wasn't
+testing two changes at once.
 
-**Build.** Keep each role's identity, fences and core loop in the system prompt. Move the
-occasional procedures into project skills that the role loads when the step comes up.
-Measure turn-1 context before and after with `measure-base-ctx.sh`.
+**Assessment (2026-09-22).** The one-third estimate is about right in bytes, but for a
+different reason than the review gave, and cost is not the case for doing it:
 
-**Guard.** A fence must never move into a skill, because a skill might not be loaded. R1
-must show no pass-rate loss after the change.
+- **Cost is negligible.** `IMPLEMENTER.agent.md` is about 4k tokens and `TESTER.agent.md`
+  about 3.5k. Sessions peak at 40–65k context, and the system prompt is cached. Cutting a
+  third saves roughly 1.3k cached tokens per turn, about $0.01–0.02 over a 25-turn verify,
+  or around 1% of a session. Don't justify this item with cost.
+- **The real problem is duplication and text for other session kinds.** A rule stated
+  three times in slightly different words is where a model finds a contradiction.
+  Examples from the current text:
+  - The "filed by someone else → park" rule appears three times in the implementer prompt:
+    step 3a, triage step 2 and Guardrails.
+  - "Deploy failed → `needs-info` + `owner:don`" appears twice, in step 3d and Guardrails.
+    That exact split was once a real contradiction: the older Guardrails text said to keep
+    `owner:implementer`, which stranded the issue. The review caught it.
+  - The duplicate-check procedure is written out in both step 3a and the triage section.
+  - "Never close as completed" appears in step 4 and again under the tester's ownership.
+  - "Don't poll or sleep" appears in implementer step 2 and tester step 5.
+- **Some text no longer applies.**
+  - "`notes`/`verify-notes` from the old markdown protocol" is in both prompts, but no
+    agent has seen that protocol since the 2026-09-12 migration.
+  - Tester step 1, "don't list and work every `owner:tester` issue", and step 5, "if none
+    of your open issues are ready…", date from before per-issue sessions.
+  - Implementer step 2, "if there's nothing to do, exit", mostly can't happen now that the
+    driver names a ready issue.
+- **Most of each prompt is for session kinds other than the current one.** A VERIFY session
+  reads HANDOFF, ANSWER, closures and TASK text. A fix session reads the whole triage
+  section, which is about 2.5 KB; a triage session reads the whole fix loop. The driver
+  already knows the session kind when it builds the prompt (TRIAGE/fix,
+  VERIFY/HANDOFF/ANSWER/TASK/closures), so it doesn't have to guess.
 
-**Done when.** Turn-1 context drops measurably, and R1 or the bounce rate shows no
-regression.
+**Build.**
+1. **Remove duplication and dead text.** Keep one authoritative statement of each rule,
+   and where the rule is needed, point to it rather than restating it. Delete the
+   old-protocol and pre-per-issue text. Keep a short *why* where it changes behavior, such
+   as "because `lem` can only be on one commit". Rationale helps a model generalize, so
+   this isn't a cut to bare rules; cut narrative, not reasons.
+2. **Build the prompt per session kind in the driver.** Split each role prompt into a
+   shared core (identity, fences, label scheme, trust rule, guardrails) plus one fragment
+   per session kind. `run-loop.sh` concatenates core + fragment into the
+   `--append-system-prompt-file` it already writes. Do this, not skills: the driver knows
+   the kind for certain, while a skill might not load, and no fence may ever depend on
+   something that might not load.
+3. **Apply the same pass to `REGRESSION.agent.md`** (17 KB, the largest). It has chunked,
+   sweep and full-run modes, and the driver knows which one it's starting.
+
+**Guard.**
+- Every fence and invariant stays in the shared core, word for word, or is enforced by R3
+  hooks first. Removing duplication must never delete the only copy of a rule.
+- Diff the rule list before and after: extract each "never / only / must" sentence and
+  confirm each one still exists exactly once.
+- This is a prompt change, so it follows the Principles: R1 before and after for the
+  implementer; for the tester, compare bounce and verify-quality spot checks over the next
+  ~20 verifies, since R1 doesn't cover the tester yet.
+
+**Done when.** The prompts contain no duplicate rules or old-protocol text. Each session
+loads only its kind's fragment, with the turn-1 context drop measured by
+`measure-base-ctx.sh`. R1 and the verify spot checks show no regression.
+
+**Sequencing.** Do this after R3. Once hooks enforce some of the invariants, their prose
+copies can shrink to a one-line pointer, which makes the cut safer.
 
 ---
 
