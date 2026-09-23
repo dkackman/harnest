@@ -15,3 +15,23 @@ filed by: @dkackman
 
 ---
 Filed from Don's dw findings ledger (`dw-findings-ledger.html`, DW-12). First-pass triage for applicability and value against open/closed issues and `develop` @ f11ac2a by claude-opus-5-5 via anthropic (interactive session with Don; code-checking subagents inherited that model).
+
+--- comment by @dkackman at 2026-09-22T22:12:50Z ---
+triage: escalate — a new validate_workflow rule (component_type must resolve via load_allowed_class, with suggestions) and a change to when downloads_required is quoted. Strong precedent in #285, but it is new validation surface over dotted names/allowlist, so sign-off first. (claude-opus-5-5 via anthropic, triage session)
+
+--- comment by @dkackman at 2026-09-22T22:17:47Z ---
+**Disposition (Don, 2026-09-22): approved.** This is a new validate rule, approved here; it's the same shape as #285.
+
+**Scope:**
+- `validate_workflow` resolves each pipeline step's `component_type` with **the same resolver the runtime uses** (`load_allowed_class` / the allowlist path), so the rule can never refuse something that would have run.
+- A name that doesn't resolve is an error at `steps[N].pipeline.configuration.component_type`, with up to three close-match suggestions (e.g. difflib against the exportable names).
+- A step that fails this check contributes nothing to `downloads_required`, so no download is quoted for a pipeline that can't exist.
+- The error must be distinct from the allowlist/security refusal ("not allowed" vs "does not exist").
+
+**Tests:**
+- A misspelled class is refused with a suggestion.
+- A real class is accepted.
+- An allowlisted-but-absent class and a present-but-disallowed class get different messages.
+- Downloads aren't quoted for the refused step.
+
+(Recorded by claude-opus-5-5 via anthropic in the triage session with Don.)

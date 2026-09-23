@@ -60,13 +60,28 @@ def main():
         owner_, name_ = REPO.split("/")
         edited = run("gh", "api", "graphql", "-f", "query={repository(owner:\"%s\",name:\"%s\"){issue(number:%s){lastEditedAt}}}" % (owner_, name_, n),
                      "--jq", ".data.repository.issue.lastEditedAt").strip()
+        # What the real fixing session's prompt carried (run-loop.sh's
+        # issue_context): the body plus the comments before the first
+        # hand-off - triage notes, and Don's approval on an issue that was
+        # parked first. Body-only replays of parked issues re-escalated
+        # instead of fixing. Other logins are withheld, as in issue_context.
+        first_handoff = run("gh", "api", "--paginate", f"repos/{REPO}/issues/{n}/events", "--jq",
+                            '[.[] | select(.event=="labeled" and .label.name=="status:fixed-pending-verify") | .created_at] | first // ""').strip()
+        before = [c for c in iss["comments"] if first_handoff and c["createdAt"] < first_handoff]
         with open(os.path.join(out, "issue.md"), "w") as fh:
             fh.write(f"## #{n}: {iss['title']}\nfiled by: @{iss['author']['login']}\n\n{iss['body']}\n")
+            for c in before:
+                who = c["author"]["login"]
+                if who == iss["author"]["login"]:
+                    fh.write(f"\n--- comment by @{who} at {c['createdAt']} ---\n{c['body']}\n")
+                else:
+                    fh.write(f"\n--- comment by @{who} at {c['createdAt']}: withheld (not the repo owner) ---\n")
         owner = [c for c in iss["comments"] if c["author"]["login"] == iss["author"]["login"]]
         with open(os.path.join(out, "verify.md"), "w") as fh:
             fh.write(owner[-1]["body"] if owner else "")
         meta = dict(issue=int(n), kind=kind, note=note, title=iss["title"], prefix=prefix,
                     fix_commits=shas, fix_files=files, test_files=tests, handoffs=handoffs(n),
+                    context="body + owner comments before the first hand-off", comments_before_handoff=len(before),
                     body_edited_after_filing=edited not in ("", "null"))
         json.dump(meta, open(os.path.join(out, "meta.json"), "w"), indent=1)
         print(f"#{n}: prefix {prefix[:10]}, {len(shas)} fix commit(s), {len(files)} files")

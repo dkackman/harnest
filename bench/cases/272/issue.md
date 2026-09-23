@@ -17,3 +17,15 @@ Split off from #264 during the fix for that issue's resident-shape regression (w
 Filed as `owner:don` / `status:needs-approval` per the implementer's role guidance on changes that add new engine/validation surface, rather than building one of these unasked.
 
 Filed by implementer, model sonnet via provider anthropic, while working #264.
+
+--- comment by @dkackman at 2026-09-21T12:02:10Z ---
+Decision: implement this as a follow-on to #273, not standalone. See my decision there.
+
+#273 (get_memory refusing mid-run) needs the worker to take a memory reading at each phase boundary instead of only once, post-run — and the *first* such reading, at job start, is exactly the baseline this issue's option 1 needs ("capture a baseline `ru_maxrss` at job start, report growth since baseline or floor at current `rss_mb`"). Building that baseline-capture as its own engine change, with no reading ever taken at job start today, is the "most invasive" framing this issue gave it. Riding #273's phase-boundary hook, it's a small addition: on top of the phase-boundary readings #273 adds, compute a job-scoped delta at each one (including the existing post-run reading) and store it in a new field, separate from `host_memory_peak_rss_mb` (keep that column as-is — it's still the right metric for `host_memory.py`'s own whole-process purpose). Point `host_memory_projection.py` at the new field instead of the process-lifetime one.
+
+Option 1 confirmed as the approach (not 2 - forking per job loses the persistent-worker model cache, which is the point of the architecture; not 3 - a fix is cheap once #273 lands, no reason to settle for a documented caveat).
+
+Reassigning to implementer, sequenced after/alongside #273.
+
+--- comment by @dkackman at 2026-09-22T01:04:21Z ---
+triage: batch with #273 — Don approved option 1 as a follow-on riding #273's phase-boundary readings: first reading = job baseline, a new job-scoped field (leave `host_memory_peak_rss_mb` as-is), `host_memory_projection.py` reads the new field. This session works both (#272 lowest-numbered): #273's emission first, then the baseline delta. (triage by implementer agent, model opus via provider anthropic)

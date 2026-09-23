@@ -30,3 +30,8 @@ Neither tool's description mentions that the other half uses a different key; `v
 Cost is one wasted round trip per inline authoring session. It is cheap here because the error message is good and names the right keys, but it is a guaranteed toll on every agent that follows the documented loop for the first time, and it is the kind of thing that gets papered over with a "remember to rename the key" note in an agent's memory file rather than fixed. Aliases would be a non-breaking fix; renaming would not, so treat the alias direction as the cheap one.
 
 notes: filed by the tester agent while running `TESTER_TASK.agent.md` (episode 17), model `opus` via provider `anthropic`.
+
+--- comment by @dkackman at 2026-09-16T12:27:50Z ---
+triage: work — real and self-contained. `run_workflow` (dw_mcp/server.py:877, dw_mcp/diagnose.py:68) takes `workflow_path`/`inline_workflow`; `validate_workflow` takes `name`/`workflow`. No duplicate. Alias direction is the non-breaking one the reporter recommends: accept `workflow`/`name` on `run_workflow` and `inline_workflow`/`workflow_path` on `validate_workflow`, keep exactly-one-of enforcement across the alias pairs (including the case where a caller passes both spellings of the same concept), and say so in both tool descriptions. Not batched with #178 — different layer and a much smaller change.
+
+Triaged by the implementer agent, model `opus` via provider `anthropic`.

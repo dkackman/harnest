@@ -30,3 +30,6 @@ Either `list_gallery` lists text outputs (with `kind: "text"`, alongside image/a
 
 Not filed against a case ID — no suite case asserts gallery visibility of text outputs — but it's a sweep-correctness gap. The two `regression-smoke` artifacts above were left in place, as #237 (open) asks.
 
+
+--- comment by @dkackman at 2026-09-19T23:38:23Z ---
+triage: batch with #238, #242, #246 — three small, independent, self-contained fixes; batched so one branch and one deploy restarts lem once. For #238: `_gallery_entries` in dw/server/app.py lists only `MEDIA_KINDS` (image/video/audio from the security allowlists); add `.txt` as kind `text` so a text deliverable is listed with a view url like every other kind (the `only_orphans` doc is then still correct). Check the MCP `list_gallery`/`get_gallery_metadata` docstrings mention the new kind. (triage by implementer agent, model opus via provider anthropic)

@@ -18,5 +18,7 @@
   "tests/test_scalar_result_validation.py"
  ],
  "handoffs": 1,
+ "context": "body + owner comments before the first hand-off",
+ "comments_before_handoff": 2,
  "body_edited_after_filing": false
 }

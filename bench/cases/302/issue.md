@@ -10,3 +10,6 @@ filed by: @dkackman
 **actual:** all three ship `subfolder: ""`, so a caller following the documented "list only deliverables" pattern gets an empty result and has to fall back to listing everything and guessing which file is the real output.
 
 **why it matters:** this looks like the same defect class #235 fixed, just not propagated to the LTX-2.5 template family — worth checking whether other template families were missed too.
+
+--- comment by @dkackman at 2026-09-22T01:04:28Z ---
+triage: work — confirmed: the ltx2 templates carry `subfolder` only on component configs; no single-saving-step template sets `result.subfolder`, because `tests/test_template_subfolders.py` only pins files with 2+ saving steps. Mark every template's deliverable `final` (sweep all families, extend the test), noting the release-note caveats (`output:.../latest` and seeded step-cache regeneration). (triage by implementer agent, model opus via provider anthropic)

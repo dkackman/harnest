@@ -24,5 +24,7 @@
   "tests/test_schema.py"
  ],
  "handoffs": 1,
+ "context": "body + owner comments before the first hand-off",
+ "comments_before_handoff": 1,
  "body_edited_after_filing": false
 }

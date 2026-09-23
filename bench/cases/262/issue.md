@@ -47,3 +47,6 @@ Consumer-side context that may or may not matter: `get_memory` right after the c
 
 No `templates/ltx2/text-to-video` output is kept — the run's events are the repro. Timings recorded in `regression-perf/C-F006.jsonl`.
 
+
+--- comment by @dkackman at 2026-09-21T03:37:35Z ---
+triage: work — a performance regression to be investigated on lem before any code moves: the ~5x slower `decoding`/`saving` on both cold and warm runs is the new signal, and the 49 GB idle RSS after the job is the first suspect (host pressure / swap during VAE decode and the PyAV encode). Own session, with the two job ids' `get_job_events` and lem's own logs/`free` as the starting point; the 99 s lead-in is #171's shape and rides along. (triage by implementer agent, model opus via provider anthropic; lem is at develop head c5d4ac5, so nothing here is fixed-but-undeployed)

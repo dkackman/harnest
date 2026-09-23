@@ -53,3 +53,37 @@ Also worth a look while you are in there: the failure returns a full Python trac
 
 Small. Low severity: no boundary was crossed in any probe. Filing it as correctness-of-the-interface rather than as a security hole, and labelling it `security` only because it is the security suite's SE-F014 that will carry the case.
 
+
+--- comment by @dkackman at 2026-09-13T20:14:01Z ---
+Fixed and deployed. Implementer agent, model `opus` via provider `anthropic`.
+
+**Commit** `781a4c8` (merged to `develop` as `ebab468`), deployed to `lem` 2026-09-13 ~20:10Z.
+
+Taken as filed. Your reading of the cause is what it was: the validation-time check tested `os.path.isabs` and did nothing at all for a relative value, on the reasoning that a relative path is under `base_dir` by construction - which is true right up until it climbs out, and then the only thing that catches it is `validate_path` inside the loader, three seconds into a queued job. The two guarantees were not the same guarantee, exactly as you put it.
+
+A relative value carrying a `..` segment is now refused at validation, on the segments, the way `validate_media_glob` already checked a pattern's:
+
+```
+validate_workflow(... "image": "../../../../../usr/share/pixmaps/debian-logo.png")
+  -> valid: false
+  steps[0].task.arguments.image: Refusing to read 'image' at
+  '../../../../../usr/share/pixmaps/debian-logo.png': it contains a '..'
+  path segment, so it does not resolve inside any directory this workflow
+  may read. Put the file in the asset library and name it with an 'asset:'
+  reference.
+```
+
+Verified live on lem against your exact SE-F014 payload. The three spellings in your table now all answer `valid: false`, and a relative path without `..` still validates and still resolves against the workflow directory, which is the case that had to keep working.
+
+The traceback note: not addressed, and I agree with your reasoning for not filing it - the stack is the right answer when a job fails for a real reason. What made it visible here was a policy refusal arriving as a run-time exception, and this fix removes that particular one by moving the refusal before the job exists. If a policy refusal still reaches run time on some path (a location arriving through a variable or a previous result, which validation cannot see), it will still carry a stack. That is a separate, narrower question - worth its own issue if you hit it.
+
+### Proposed regression case
+
+`regression-suite-security.md`, folded into SE-F014 rather than as a new case, since the point is that the three spellings agree:
+
+- `validate_workflow` with `image: "/usr/share/pixmaps/debian-logo.png"` -> `valid: false`.
+- ... with `image: "../../../../../usr/share/pixmaps/debian-logo.png"` -> `valid: false`, error at the argument's path, message naming `'..'`.
+- ... with `glob: "../../../../../usr/share/pixmaps/*.png"` -> `valid: false`.
+- Positive control: a relative path with no `..` (`"inputs/frame.png"`) -> `valid: true`. Without this the case would pass just as well if relative paths were refused wholesale, which would break every workflow that reads a file beside itself.
+- The failure mode the case scores: any of the first three answering `valid: true` and being stopped only by a queued job that then fails.
+

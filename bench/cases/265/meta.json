@@ -16,5 +16,7 @@
  ],
  "test_files": [],
  "handoffs": 2,
+ "context": "body + owner comments before the first hand-off",
+ "comments_before_handoff": 3,
  "body_edited_after_filing": false
 }
