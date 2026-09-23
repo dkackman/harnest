@@ -1069,4 +1069,34 @@ cleanup: none (validation only); `use_workspace` back to this suite's workspace.
 source: tester, verified in #348, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-22
 against `lem` `develop @ e5bfb9e`.
 
+### M-F030 — releasing a pipeline mid-job returns its host memory, not only at job end
+Uses the same run as M-F027: `templates/minimax/dialogue-short` with MiniMax-H3 via ModularPipeline,
+Z-Image Turbo for the two `draw_character_*` steps, two 124-frame `shots`, and
+`num_inference_steps: 8`. The two cases can share one job. `release_pipeline` frees the GPU, but
+before #368 the host side (torch's pinned-host cache and glibc malloc arenas) was returned only by
+`clear_memory`, and later only at job end. So `episode` (`concat_videos`) assembled the cut with
+~10–15 GB of dead H3 residue still resident, and a released Z-Image left ~4 GB under the H3 load.
+**Paid**: about 12–15 min of GPU.
+expected (all readings are `host_memory_rss_mb` on `get_job_events` `memory` events; no
+`clear_memory` call anywhere in the case):
+- Take the `memory` event at `shot@<first>` start (phase `loading`, before H3 loads) as the
+  baseline B. That event comes right after `draw_character_b`'s `pipeline_released`, so B is
+  already post-Z-Image-release, and it should be a few GB at most (1,906 MB on 2026-09-23).
+- The `memory` event right after `pipeline_released` for the **last** `shot@` member is within
+  ~2 GB of B (+210 MB on 2026-09-23). The `memory` events during `episode` (phase `task`
+  `concat_videos`, then `saving`) stay at that level.
+- Idle `get_memory` after the job (`live: true`, `run_count` ≥ 1) is also within ~2 GB of B.
+- The second member's generating-start and decode-start readings are not materially above the
+  first member's (no per-member accumulation).
+It is a **finding** if RSS after the last release, or during `episode`, sits ≥ 5 GB above B (the
+#368 residue coming back, 16.8 GB on the unfixed server). It is also a finding if the drop only
+appears after `workflow_end`, or if idle RSS after the job stays high until a `clear_memory`.
+metrics: `rss_after_release_delta_mb` (RSS right after the last `shot@` `pipeline_released`, minus B).
+cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole (shared with
+M-F027 if run together).
+source: tester, verified in #368, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-23
+against `lem` `develop @ 8e90e32`: job `66256e4ffbea` succeeded in 743 s. B = 1,906 MB (seq 47);
+after `shot@react` release 2,116 MB (seq 114); `episode` 2,434–2,440 MB; idle after job 2,119 MB.
+The implementer proposed the case in its hand-off, and it was added only after that run.
+
 ## Performance

@@ -1,0 +1,1 @@
+{"ts":"2026-09-23T18:51:08Z","level":"model-specific","case":"M-F030","metric":"rss_after_release_delta_mb","condition":"-","value":210,"unit":"MB","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job 66256e4ffbea","note":"B 1906 MB (seq 47), after shot@react release 2116 MB (seq 114); lem develop @ 8e90e32"}
