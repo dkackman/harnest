@@ -20,7 +20,7 @@ rather than in a separate log.
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | proposals migrated (dw#374–#380, #244); design todo | R4 (absorbs it), R1 |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | labels created; hand run on dw#375: plan v1 posted, waiting on Don | R4 (absorbs it), R1 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -802,6 +802,28 @@ proposal (`h3-video-mux-headroom-warning`'s fixes 1–4 shipped in one branch on
 `workspace-folders.md` through phases 1–6 by hand, with an interactive session playing the
 lead from the written prompt. `todo.md` rates it low-complexity, and it spans engine, MCP
 and UI. Write `LEAD.agent.md` and `run-features.sh` from what that run shows, not before.
+
+**Hand run, dw#375 (2026-09-23).** Labels `owner:lead`, `status:plan-review`,
+`status:plan-approved`, `status:needs-spec` and `stage` were created on the ticket repo.
+`guard.py`'s one-owner rule, `audit_issue` and the board already match any `owner:*`, and
+the loop only picks up `owner:implementer`/`owner:tester`, so `owner:lead` needed no driver
+change. Phase 1 took one session: it read the proposal, then ran an Explore sweep for every
+consumer of a workspace name, and posted plan v1 with three questions (→ `owner:don` +
+`status:plan-review`). What this shows for `LEAD.agent.md`:
+- **Re-check the proposal against the code.** The doc was a week old and wrong in two
+  places that mattered. It said no REST route changes, but `DELETE /api/workspaces/{name}`
+  can't match a `/`. It also missed a security hole: the reserved-name check was
+  whole-string, so `outputs/x` would pass. The one read-only sweep of consumers is what
+  found both. Make it a required step.
+- **Plan with questions, not a questions-only turn.** A plan with defaults marked
+  "(Qn)" lets Don approve or redirect in one reply. A questions-first turn costs a whole
+  round trip.
+- **Not every stage is MCP-verifiable.** A UI stage has no behavior the tester can reach,
+  so phase 3 can't apply. The plan has to name the verifier for such a stage (Don, or a
+  UI test), and that is one more thing Don approves. It resolves the open decision on
+  skipping phase 3: skip it when a stage has no MCP surface, and only when the plan says
+  so.
+
 
 ---
 
