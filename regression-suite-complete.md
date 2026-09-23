@@ -3437,4 +3437,40 @@ source: tester, verified in #363 on 2026-09-23 over MCP as model `claude-opus-5-
 provider `anthropic` against `develop @ 4aaeef7` (job `ca6861eb89fa`: 12.0 fps, 30 frames,
 2.5 s, 768x768).
 
+### C-F093 — `grade` grades a video file per frame, keeping frames, fps and audio, and refuses an out-of-range white balance at validate
+#349 added the CPU `grade` task. At first it took only `image`, so an `.mp4` passed validate
+and then failed at run time with "Image file extension not allowed". `temperature` and `tint`
+were also extrapolated past their documented range of -1.0 to 1.0. The input is now `media`,
+which takes an image or a video file. Cheap: two utility runs of about 3 s each with no model,
+plus free validates.
+1. `validate_workflow`, then `run_workflow` `{"id": "qa-c-f093", "steps": [{"name": "grade",
+   "task": {"command": "grade", "arguments": {"media": "asset:qa-cast/ep6-cold-open.mp4",
+   "saturation": 0, "temperature": -1}}, "result": {"content_type": "video/mp4"}}]}`. Read
+   the mp4 with `get_gallery_metadata` and look at one frame with `get_output_frames`.
+2. Run the same shape again with `media` set to `output:<step 1's mp4>` and arguments
+   `"temperature": 1, "tint": -1, "contrast": 1.3`. Read it the same way.
+3. `validate_workflow` with the step 1 shape, but with arguments `{"media":
+   "asset:qa-cast/hal-portrait.jpg", "temperature": 5, "tint": -3}`.
+4. `validate_workflow` with the step 1 shape, but with arguments `{"media":
+   "asset:qa-cast/hal-portrait.jpg", "contrast": -0.5}`.
+expected:
+- Step 1: `valid: true`. The job succeeds. The mp4 has `frame_count` 124, `fps` 24.0, is
+  960x544, and has 32000 Hz stereo audio. The source is the same on all four. The frame is
+  greyscale.
+- Step 2: the job succeeds with the same frame count, fps, size and audio. The frame has
+  turned yellow-green from the grey, which is warm plus green, and the ±1.0 boundary values
+  are accepted.
+- Step 3: `valid: false`. There is one error each at `steps[0].task.arguments.temperature`
+  and `.tint`, and each names the -1.0 to 1.0 range.
+- Step 4: `valid: false` at `steps[0].task.arguments.contrast`. The exact wording is
+  not part of this case; #383 covers it.
+It is a **finding** if step 1 or 2 fails, drops the audio (`sample_rate` null), or changes
+the frame count or fps. It is also a finding if step 3 or 4 validates.
+cleanup: `delete_output(job_id=…)` on both jobs, step 2's first. The assets are shared
+fixtures, so leave them.
+metrics: none.
+source: tester, verified in #349 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 0963746` (jobs `f345420a96a0`, `d43cf8781e64`: 124
+frames, 24.0 fps, 960x544, 32 kHz stereo, 5.167 s).
+
 ## Performance
