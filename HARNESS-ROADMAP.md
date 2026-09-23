@@ -19,7 +19,7 @@ rather than in a separate log.
 | R7  | Retro agent (the self-improvement loop)           | built; first proposal harnest#3 | R1 |
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
-| R10 | Role prompts: dedupe, then assemble per session kind | todo | R1, R3     |
+| R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | proposals migrated (dw#374–#380, #244); design todo | R4 (absorbs it), R1 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
@@ -587,6 +587,28 @@ loads only its kind's fragment, with the turn-1 context drop measured by
 
 **Sequencing.** Do this after R3. Once hooks enforce some of the invariants, their prose
 copies can shrink to a one-line pointer, which makes the cut safer.
+
+**Applied (2026-09-23), commit `9d99aa4`.** `agents/<role>/core.md` plus one fragment per
+session kind, concatenated by `role_prompt` (`providers.sh`) into the file each session gets
+through `--append-system-prompt-file`. The tester's task session now carries the standing
+task in its system prompt instead of spending a turn reading it. Every never/only/must
+sentence in the three old prompts (106) was matched to one survivor in the new text or to a
+guard hook. The only drops were pre-per-issue text, narrative, and "never force-push" as prose.
+
+Turn-1 context (`measure-base-ctx.sh`, haiku, before → after): implementer fix 13.0k → 11.9k,
+triage 13.0k → 10.7k; tester verify 12.1k → 10.7k, task 13.2k → 11.8k; regression chunk
+12.8k → 11.5k, sweep 12.8k → 10.5k.
+
+R1, sonnet, 17 cases: `r10-sonnet@9d99aa4` scored 9 pass, 7 partial and 1 fail, $20.41.
+`checklist-sonnet@733e4db` scored 11, 6 and 0, $19.53. Both cases that dropped were rerun:
+- #179 passed twice more, so its partial was noise.
+- #262 is unstable on either prompt. The old prompt passed it 4 times in 5 and stopped at
+  needs-info once. The new prompt passed it once in 3, stopped at needs-info once and made
+  one wrong fix.
+
+The reruns are under `-repN` labels. Read the result as neutral within noise, and keep #262
+in mind as the one case to rerun several times whenever the implementer prompt changes.
+Still owed: the tester and regression check over the next ~20 live verifies.
 
 ## R11 — Feature lead: proposals as issues, designed with Don, built in stages
 
