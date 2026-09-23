@@ -191,6 +191,26 @@ The researcher can read the source checkout but not write to it. It can also mak
 has no SSH and no write access to git. It takes no driver lock, because it never changes
 anything on the server.
 
+## The replay benchmark
+
+`run-bench.sh` measures the implementer against issues whose right answer is already known.
+It re-runs the implementer on an issue from `bench/cases/`, starting at the `develop` commit
+just before the real fix. The clone holds no later history and has no remote, and GitHub,
+`lem`, MCP and the web are all denied. The script then scores the result four ways:
+- new pytest failures;
+- the real fix's tests run against the candidate;
+- overlap with the files the real fix touched;
+- a verdict (`pass`/`partial`/`fail`) from a separate Opus judge.
+
+```sh
+./run-bench.sh                              # all cases: sonnet, the working-tree prompt
+IMPLEMENTER_MODEL=opus ./run-bench.sh       # a different model
+BENCH_PROMPT_REV=<commit> ./run-bench.sh    # the implementer prompt as of a commit
+./run-bench.sh --summary                    # pass rate, cost and turns per configuration
+```
+
+It never touches `lem`, so it takes no driver lock. See [`bench/README.md`](bench/README.md).
+
 ## Running it
 
 ```sh
@@ -316,6 +336,23 @@ differs by role is what gets approved automatically.
 - **Researcher:** `dontAsk` plus `RESEARCHER_PERMISSION_FLAGS`: read-only source,
   read-only git, read-only `dw` discovery, `gh issue` and `WebFetch`.
 
+**Guard hooks.** A `PreToolUse` hook,
+[`agent-settings/hooks/guard.py`](agent-settings/hooks/guard.py), refuses the protocol
+violations that are cheap to spot on a command line, at the moment of the call. The agent
+gets the reason back and can correct itself, rather than the audit finding it later.
+- The implementer can't close an issue as `completed`, add `status:verified`, lift an
+  `owner:don`/`status:needs-approval` park, push to `master`, or force-push.
+- The implementer can't hand off (`status:fixed-pending-verify`) with uncommitted changes,
+  with `ruff` failing on files it changed, or with a test failing that passed on `develop`
+  when the session began. The driver exports that commit as `HARNEST_BASE_COMMIT`.
+- The tester and regression agent can't close as `completed` or add `status:verified` in a
+  session that has made no `mcp__dw__*` call.
+- No role can add an `owner:*` label without removing one in the same command.
+
+The hook is wired through `agent-settings/implementer.json` and
+`agent-settings/consumer.json`. It matches command text, so it catches mistakes, not a
+determined workaround; the audit is still the backstop.
+
 **What sessions don't get.** Every session runs with `--setting-sources project,local` and
 `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1`, so no user-level plugins, hooks, memory or MCP servers
 reach an unattended agent. `--tools` limits each role to the built-in tools it uses.
@@ -351,9 +388,13 @@ Everything streams to the terminal and to `logs/loop.log`, prefixed by session:
 run-loop.sh                         implementer/tester driver
 run-regression.sh                   regression driver
 run-research.sh                     researcher driver
+run-bench.sh                        replay benchmark of the implementer (offline)
+bench/                              benchmark cases, replay note, results (see bench/README.md)
 providers.sh                        provider table and shared helpers (isolation, permissions, logging, audits)
 measure-base-ctx.sh                 measures turn-1 context for a flag set
-agent-settings/implementer.json     auto-mode classifier's picture of the implementer's environment
+agent-settings/implementer.json     auto-mode classifier's picture of the implementer's environment, plus its guard hook
+agent-settings/consumer.json        tester/regression guard hook
+agent-settings/hooks/guard.py       the guard (protocol invariants and the hand-off gate)
 agents/
   IMPLEMENTER.agent.md              implementer role, including triage
   TESTER.agent.md                   tester role

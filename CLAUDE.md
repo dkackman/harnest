@@ -152,6 +152,17 @@ files described below. There is no build, lint, or test step.
   across issues, to keep context from accumulating across a batch), by
   default on `sonnet` — deep feasibility judgment is
   expected to land with the implementer pass and, where parked, Don.
+- `run-bench.sh` / `bench/` — the replay benchmark (roadmap R1). It re-runs the
+  implementer, with its real role prompt plus `bench/replay-note.md`, on curated
+  already-verified issues. Each run starts from a clone holding only history up to the
+  commit before the real fix, with no remote. `gh`/`ssh`/push/web are denied and there's
+  no MCP, because the real fix is on GitHub. `PYTHONPATH` points at the clone, because the
+  shared venv's editable install otherwise imports `SOURCE_DIR`. Scoring covers new pytest
+  failures against that commit's own failures, the real fix's tests on the candidate, file
+  overlap, and an Opus judge verdict. Results are one JSONL row per case in
+  `bench/results/results.jsonl` (checked in, append-only); `--summary` groups them by
+  `BENCH_LABEL`. Offline, so no driver lock. Use it before and after any change to
+  `IMPLEMENTER.agent.md` or the implementer's model.
 - Tickets live as **GitHub Issues** on `dkackman/diffusers-workflow` (not in this repo) — both
   agents act on them with the `gh` CLI, already authenticated on this machine. Filed with the
   "MCP agent-loop ticket" template (`.github/ISSUE_TEMPLATE/mcp-ticket.md` in that repo). Tickets
@@ -266,6 +277,23 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   `ssh`, no `curl`. A third isolation shape: unlike the tester/regression
   agent it does see source, and unlike the implementer it can never change
   it.
+
+Guard hooks (roadmap R3): `agent-settings/hooks/guard.py` is a `PreToolUse` hook on `Bash`.
+The implementer loads it via `agent-settings/implementer.json`; tester and regression load it
+via `agent-settings/consumer.json`, which is inside `CONSUMER_PERMISSION_FLAGS`. It refuses at
+call time what `audit_issue` otherwise only finds afterwards:
+- `completed` closes and `status:verified` from the implementer;
+- lifting a `owner:don`/`needs-approval` park;
+- pushes to `master`, and force pushes;
+- stacking `owner:*` labels;
+- a consumer verifying in a session with no `mcp__dw__*` call.
+
+It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
+changed files, and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin/develop
+when the session began, exported by `implementer_pass`). The gate is relative because
+`develop` isn't always green. The result is stamped per tree in the checkout's `.git`.
+`HARNEST_HOOKS` (exported by `providers.sh`) is how the settings files find the script.
+When editing a role prompt, a rule the guard enforces can be one line pointing at it (R10).
 
 Two deploy paths, and the implementer must say which one a fix used: server code →
 `ssh lem '~/diffusers-workflow/scripts/deploy.sh <branch>'` (in the dw repo: fetch, ff-only pull,

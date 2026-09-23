@@ -10,9 +10,9 @@ rather than in a separate log.
 
 | ID  | Item                                              | Status  | Depends on |
 |-----|---------------------------------------------------|---------|------------|
-| R1  | Replay benchmark (measure the loop itself)        | todo    | —          |
-| R2  | Pre-hand-off reviewer subagent                    | todo    | —          |
-| R3  | Invariant hooks for the implementer               | todo    | —          |
+| R1  | Replay benchmark (measure the loop itself)        | built; baseline run pending | —   |
+| R2  | Pre-hand-off reviewer subagent                    | measured; re-scoped to a checklist | R1 baseline |
+| R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
 | R4  | Tester-authored acceptance specs for features     | todo    | —          |
 | R5  | Scheduled suite curation                          | todo    | —          |
 | R6  | Graduate mechanical cases to an executable client | todo    | R5 helps   |
@@ -43,8 +43,16 @@ The numbers later work gets compared against:
 
 - Issues on `dkackman/diffusers-workflow`: 280 total, 31 open. 179 carry `status:verified`,
   18 `wontfix`, 55 `regression`. 40 carry `owner:don` and 27 `status:needs-approval`. These
-  are labels issues carry now, open or closed, not their history. Bounce rate (hand-offs per
-  verified issue) hasn't been measured yet; getting that number is R2's first step.
+  are labels issues carry now, open or closed, not their history.
+- Bounce rate, over the 195 `status:verified` issues: 210 hand-offs, 18 of them sent back
+  (8.6%). 14 issues bounced at least once, 178 passed first time, and 3 predate hand-off
+  labels.
+- `develop` at `e5bfb9e` was red by CI's own standard: 2 real test failures
+  (`test_the_tool_surface_fits_the_budget` at 14,224 against a 13,890-token budget, and the
+  ltx-2.5 skill at 12,486 against a 12,288-byte cap). `ruff check` had 1 error and
+  `ruff format` 11 files. Each hand-off added a little, and nothing stopped it; R3's gate
+  now does. Two more `test_worker.py` failures are specific to this Mac (`/Volumes/NVME`),
+  and `test_download_watch` is flaky.
 - 555 sessions have logged a `usage:` line, with 0 `[audit] WARNING`s since audits landed.
   A typical tester verify runs 8–29 turns at $0.32–$0.71 with a 38–65k context peak. The
   worst recorded implementer session ran 269 turns, $37 and a 352k context peak.
@@ -90,6 +98,27 @@ for each.
 **First step.** Pick the issues. Query closed `status:verified` issues and bin them by label
 and bounce count (`handoff_count` logic already exists in `run-loop.sh`).
 
+**Built (2026-09-22).** `run-bench.sh` and `bench/`; `bench/README.md` has the details.
+- 17 cases chosen from fixes of 1–2 commits and 20–600 changed lines: 4 that bounced
+  twice, 1 security, 1 perf, 3 engine, 4 MCP, 3 validation, 1 skill-text, 1 template sweep.
+  None of the issue bodies was edited after filing.
+- Decisions on the open questions: implementer only, local, never touching `lem`. The real
+  role prompt runs with a fixed replay note appended. The note routes the hand-off to
+  `HANDOFF.md` and is enforced by deny rules. It cancels out of comparisons because every
+  configuration gets it.
+- Leak-proofing: each case is a fresh `git init` plus a fetch of the pre-fix sha, so no
+  later object exists in the clone. There's no remote and no MCP, and `gh`/`ssh`/push/web
+  are denied.
+- Scoring: new pytest failures against that commit's own failures, the real fix's tests on
+  the candidate tree, file recall, and an Opus judge (`JUDGE_MODEL`, no tools).
+- Dry run on #238 (sonnet): pass, 49 turns, $1.47, 87k peak context, no new failures, the
+  same file as the real fix.
+- Live implementer sessions ran $1.29 median ($3.28 p90). A full 17-case run should be
+  about $25–30, including roughly $0.10–0.30 of judge per case.
+
+**Next.** Run the baseline: `./run-bench.sh` on the current prompt with sonnet, then again
+with `IMPLEMENTER_MODEL=claude-opus-5-5` for comparison.
+
 ## R2 — Pre-hand-off reviewer
 
 **Why.** A bounce costs a full cycle: a tester session, another implementer session, and
@@ -112,6 +141,36 @@ log) or as a subagent inside the session (simpler, but shares the implementer's 
 
 **Done when.** The bounce rate (tester send-backs per hand-off, from `handoff_count`) drops
 over the ~30 issues after it lands, and R1 shows no pass-rate loss for the added cost.
+
+**Measured (2026-09-22).**
+- The bounce rate is 8.6% (18 of 210 hand-offs). A subagent classified all 18 bounce
+  comments:
+  - 11 DIFF-VISIBLE: a reviewer with the issue, the diff and read access to the tree could
+    have caught them;
+  - 4 RUNTIME-ONLY: real GPU/model/hub behavior (#186, #153, and the borderline #217 and
+    #198);
+  - 2 SPEC-GAP: scope grew during verification (#197's third bounce, #75);
+  - 1 OTHER: a dependency bump for #224 broke #223's verification.
+- The diff-visible misses fall into four patterns:
+  - **tests that mock the very thing the issue claims:** #223 twice, #197, #186;
+  - **a user-facing warning sent to `logger.warning`**, which never reaches the job over
+    MCP: #82, #108;
+  - **an item the issue names with no change or no test:** #220 (the second docstring
+    copy), #265 (the H3 half), #117 (the URL probe), #303;
+  - **hand-off prose the diff contradicts:** #108, #303, #85.
+
+**Decision: a checklist, not a reviewer, for now.** Eleven avoidable bounces at about $2
+each (a tester verify plus an implementer rerun) is about $22 over 210 hand-offs. A
+reviewer session on every hand-off would cost more than that. The four patterns are
+specific enough to go into the implementer's step 3e as a self-check before the label
+swap:
+- does every item the issue names have a change and a test that exercises it, unmocked?
+- is every run-time warning raised through `emit_warning`?
+- does each claim in the hand-off comment match the diff?
+
+That's a prompt change, so it goes through R1: a baseline run, the checklist, then a rerun.
+The 4 bounced cases in `bench/` are the ones to watch. Revisit the reviewer if the checklist
+doesn't move the bounce rate over the next ~30 hand-offs.
 
 ## R3 — Invariant hooks
 
@@ -139,6 +198,39 @@ suite every time (a stamp file keyed on HEAD).
 
 **Done when.** Each invariant in CLAUDE.md's "Ticket protocol" section is either enforced by
 a hook or explicitly marked as prompt-only, with a reason.
+
+**Done (2026-09-22).** `agent-settings/hooks/guard.py` is one `PreToolUse` hook on `Bash`
+for every role. The implementer loads it through `agent-settings/implementer.json`; tester
+and regression load it through `agent-settings/consumer.json` inside
+`CONSUMER_PERMISSION_FLAGS`. A 25-command table test covers it, and a headless `claude -p`
+under the drivers' isolation flags confirmed it fires.
+- **Hand-off gate, relative:** no test may fail that passed on `HARNEST_BASE_COMMIT`
+  (origin/develop when the session began). It isn't absolute because `develop` was red
+  (see Baseline) and an absolute gate would block every hand-off. The base's failures are
+  cached per commit, and a passing tree+base is stamped, both in the checkout's `.git`.
+  `ruff` runs only on changed files, for the same reason.
+- **Tester's "real MCP call" check:** reads the session transcript for an `mcp__dw__*`
+  tool use.
+
+| Invariant (CLAUDE.md "Ticket protocol") | How it is held |
+|---|---|
+| Exactly one `owner:*` label | **hook**: adding one requires removing one in the same command; `audit_issue` still checks after |
+| Only the tester closes as `completed` | **hook**: implementer `gh issue close` without `--reason "not planned"` is refused (gh's default is completed) |
+| `status:verified` only from a real MCP call | **hook**: consumer close-completed/`status:verified` refused in a session with no `mcp__dw__*` call; implementer can't add it at all |
+| Nobody touches a parked (`owner:don`) issue | **hook**, partly: removing `owner:don`/`status:needs-approval` is refused. Commenting on one stays prompt-only: parking an issue legitimately comments on it, and the hook can't tell the two apart without an API call per command |
+| Never push `master`; no force pushes | **hook** |
+| Hand-off only with tests passing | **hook** (the gate above) |
+| Branches merged to `develop`, deploy `develop` | driver: `check_lem_on_develop` redeploys and warns |
+| Third-party issues are parked | driver: `park_external_issues` before every cycle |
+| Commits reference the issue number | prompt-only: cosmetic, and the benchmark reads it but nothing breaks without it |
+| `breaking-change` label on interface changes | prompt-only: needs judgment about what counts as breaking |
+| `wontfix` reopened at most once; second is final | prompt-only: needs the issue's history, which is a `gh api` call, and it has never been violated in the logs |
+| Agents never poll or sleep in a session | prompt-only: `sleep` has legitimate short uses; per-session budget caps bound the damage |
+| Suite cases are add-only | driver: `commit_suite_changes` warns on removed lines |
+| Only issues with your own `owner:*` label | prompt-only: needs the issue's current labels, which is one `gh` call per command. The driver already chooses which issue a session works |
+
+Watch the next few cycles for `Blocked by the harness guard` in `logs/*.log`. A denial
+that recurs for a legitimate action is a bug in the guard, not in the agent.
 
 ## R4 — Tester-authored acceptance specs for features
 
