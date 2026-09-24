@@ -23,6 +23,7 @@ rather than in a separate log.
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); dw#378 stages A, B verified, C waits on dw#376 | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
 | R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | todo; profile drawn before R8, split during it; feature flag first | R8 |
+| R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | todo; 0.4.0 cut by hand from its checklist | R12 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1326,6 +1327,87 @@ release.
 **Done when.** A second MCP server runs unattended on the same framework code, with no
 `if target == dw` anywhere. The dw loop's behavior and costs are unchanged across the
 switch, checked against the offline suite and a day of live cycles.
+
+---
+
+## R14 — Releases: freeze, gates, whole-diff review, a private channel
+
+**Why.** The first `develop` → `master` merge after the loop took over (dw 0.4.0,
+2026-09-24; 184 commits since beta.7) was done by hand. It showed what the loop
+doesn't cover:
+- **Nobody reviews the diff as a whole.** Each fix was verified on its own, and the suites
+  passed. A four-area review of `master...develop` then found an untrusted-workflow gate
+  that let a re-exported `subprocess.Popen` through. Its first fix still let a
+  side-effecting class inside `torch` through. It also found a free `validate_workflow`
+  that reported metadata for any file on the server, a step-cache counter that only grew,
+  and two docs errors (dw#418–#420 filed; the security pair fixed by hand).
+- **There's no private channel.** The loop acts only on public issues. A security finding
+  filed normally publishes the exploit path, so the two above were fixed outside the loop.
+- **CI never ran on the range.** CI triggers on PRs, tags and pushes to `master`, and
+  agents push `develop` directly. The implementer's hand-off gate runs ruff and relative
+  pytest only, with no UI checks. `scripts/preflight.sh` (moved there 2026-09-24) covers
+  more than CI: ruff on the whole repo and Playwright e2e.
+- **The freeze was an accident.** The loop happened to be stopped.
+- **The release notes would have been empty.** GitHub's `--generate-notes` reads PRs,
+  there are none, and `docs/RELEASING.md`'s "Unreleased" was stale (it listed beta.7's
+  items).
+- **The branches diverge on every release.** `release.sh` makes its version-bump commit on
+  `master` only, and nothing merges it back, so `develop` still said beta.6 after beta.7.
+
+**Build.** Cutting a release stays Don's: no guard change, and no agent pushes `master`.
+The harness runs the gates, and blockers go through the normal fix-and-verify loop.
+1. **Freeze with a blocker label.** An open dw issue labeled `release` names the version.
+   While it's open, `lib/classify.jq` queues only issues labeled `release-blocker` for
+   the implementer and tester. Lead builds, design, and the tester's standing task wait.
+   Add a board per state to `tests/classify-cases.json`.
+2. **`run-release.sh <version> <next>`**, run by Don in stages. It is resumable, and its
+   state lives as comments on the `release` issue:
+   - `check`: the board is clear (nothing `fixed-pending-verify`, no half-built feature,
+     nothing stranded), `lem` is on `origin/develop`, and `develop` and `master` merge
+     cleanly (`git merge-tree`).
+   - `gates`: dispatch CI on `develop` and wait for it; run `scripts/preflight.sh` in a
+     detached worktree at the candidate commit; run `run-regression.sh all`, and record
+     the commit on the release issue.
+   - `review`: a new read-only session kind (the lead-design permission shape: read
+     source, read-only `git`, `gh issue`). It reviews `master...develop` in four areas
+     (security surface; engine; MCP interface and docs; templates, UI and packaging).
+     Each finding is fix-before-merge or follow-up, verified by reading the code.
+     Blockers become `release-blocker` issues and follow-ups plain ones. Security findings
+     never go into a public issue (item 3).
+   - `notes`: draft the version's section of `docs/RELEASING.md` from issues closed since
+     the last tag, with `breaking-change` first, and hand it to Don as a branch.
+   - `cut`: the PR `develop` → `master`, waiting for CI, the merge, `release.sh`,
+     `gh release edit --notes-file`, merging `master` back into `develop`, and bumping
+     `develop` to `<next>`. This runs as Don, not as an agent.
+3. **A private channel for security findings.** First version: the review and the
+   security suite put a finding in a private place (a private issue repo, or a GitHub
+   draft security advisory) with `owner:don`, and write only a pointer publicly.
+   Don hands it out by hand, as on 2026-09-24. Later: the implementer gets a queue that
+   reads it.
+4. **Smaller changes, each useful alone:**
+   - CI on push to `develop` (dw `ci.yml`);
+   - the implementer's hand-off gate runs the UI checks when `ui/` changed;
+   - `run-regression.sh` records `lem`'s commit per level (`deployed_head` moves to
+     `providers.sh`);
+   - `release.sh --next <version>` does the merge back and the bump;
+   - preflight's e2e step finds `.venv` or a worktree's venv, not only `./venv`.
+
+**Order.** Item 4 first, since it's cheap and makes the next manual release safer. Then
+item 1 with its classify boards. Then item 2's `check`, `gates` and `cut`; then `review`
+and `notes`. Item 3 before the next release that has a security finding.
+
+**Undecided.**
+- **Private channel:** a private repo is readable with the existing `gh` flow;
+  advisories are GitHub's intended place but need `gh api` and a new queue source.
+- **Review cost and model.** Today's four areas ran about 630k subagent tokens on Opus.
+  Decide whether `review` runs on every release or only past a size threshold.
+- **Whether `release-blocker` also blocks the curator** from applying suite edits
+  during a freeze.
+
+**Done when.** A release goes from `run-release.sh check` to a published tag with Don
+typing only the approvals: the freeze, the blocker merges and the cut. `develop` and
+`master` differ by nothing after the merge back, and the release body names the
+breaking changes.
 
 ---
 
