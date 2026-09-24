@@ -4014,4 +4014,39 @@ It is a **finding** if a film shot loses `overlap_frames`, if either seam is not
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F111 — a dissolve's shot samples survive a `pair_audio` rescore unchanged
+source: tester, verified in #401 (claude-opus-5-5 via anthropic)
+`dissolve_videos` has to convert a shot's frame boundary to a sample with the same rule as
+`pair_audio`: `round(frame × sample_rate / fps)`. If it doesn't, rescoring a cut shifts
+where its shots start by one sample. It is CPU only and takes one job of about 20 s.
+`asset:qa-cast/ep42-shot1-accuse.mp4` and `asset:qa-cast/ep42-shot2-deflect.mp4` are each
+124 f, 24 fps, 32 kHz stereo. At 12 dissolve frames the window is a whole 16000 samples;
+at 7 it is 9333.33, which isn't.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f111", "steps":
+   [{"name": "cut", "task": {"command": "dissolve_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep42-shot1-accuse.mp4", "asset:qa-cast/ep42-shot2-deflect.mp4",
+   "asset:qa-cast/ep42-shot1-accuse.mp4"], "dissolve_frames": 12, "fps": 24}}, "result":
+   {"content_type": "video/mp4"}}, {"name": "film", "task": {"command": "pair_audio",
+   "arguments": {"video": "previous_result:cut", "audio": "previous_result:cut", "fit":
+   "video"}}, "result": {"content_type": "video/mp4"}}, {"name": "cut7", "task": {"command":
+   "dissolve_videos", "arguments": {"videos": ["asset:qa-cast/ep42-shot1-accuse.mp4",
+   "asset:qa-cast/ep42-shot2-deflect.mp4", "asset:qa-cast/ep42-shot1-accuse.mp4"],
+   "dissolve_frames": 7, "fps": 24}}, "result": {"content_type": "video/mp4"}}, {"name":
+   "film7", "task": {"command": "pair_audio", "arguments": {"video": "previous_result:cut7",
+   "audio": "previous_result:cut7", "fit": "video"}}, "result": {"content_type":
+   "video/mp4"}}]}, acknowledged_cost=<bound from validate>, wait_seconds=55)`.
+expected:
+- `succeeded`.
+- `cut` and `film` manifest shots start at samples 0 / 149333 / 298667, with frames
+  0 / 112 / 224.
+- `cut7` and `film7` shots start at samples 0 / 156000 / 312000, with frames
+  0 / 117 / 234.
+- In each pair, every shot's `start_sample` is identical, and so is the first two shots'
+  `num_samples`. The last shot's `num_samples` may differ by one sample: `fit: "video"`
+  pads the dissolve's 463999-sample track to the video's 464000.
+It is a **finding** if any `start_sample` differs between a dissolve and its `pair_audio`
+rescore, or differs from `round(start_frame × 32000 / 24)`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
