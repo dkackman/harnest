@@ -3620,7 +3620,6 @@ before step 1's.
 metrics: none.
 
 ### C-F098 — the probes are listed as `assessment` tasks, and a probe must save JSON
-pending: #387
 source: tester, spec for #387 from #378's plan v2
 Stage B adds three probe tasks: `analyze_shots`, `analyze_seams` and
 `analyze_sync_drift`. `list_tasks` gets a fourth list, `assessment`, which holds them.
@@ -3647,7 +3646,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F099 — `analyze_seams` flags a level step at the one seam that has it; a clean cut has no finding
-pending: #387
 source: tester, spec for #387 from #378's plan v2
 Stage B's acceptance intent has two parts:
 - a `gain_audio` step between two shots flags `seam_level_step` at that seam only;
@@ -3693,7 +3691,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: `seam_level_step_db` (seam 2 of `seams_stepped`), from the probe's JSON.
 
 ### C-F100 — the level-spread threshold is one 6 dB line
-pending: #387
 source: tester, spec for #387 from #378's plan v2
 Plan v2's answer to Q3 is one level-spread threshold, kept at 6 dB. This case checks
 both sides of that line, plus the real-world pair it was drawn from:
