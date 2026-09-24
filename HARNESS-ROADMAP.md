@@ -700,7 +700,12 @@ The plan names:
 **The verdict: not everything that can be built should be.** A plan opens with a short
 assessment on these axes, each answered from evidence rather than asserted:
 - **Value.** Who gains, how often, and what shows the demand is real: issues filed,
-  agents or Don hitting the gap, or workarounds in use.
+  agents or Don hitting the gap, or workarounds in use. dw has two kinds of user: Don,
+  and the Claude sessions that drive it over MCP for him. It's a local, one-person
+  project, so "who gains" means Don's own work or those agents' friction, such as
+  misused tools, skill gaps and repeated errors in job records. It never means a
+  hypothetical wider audience. The harness's own agents exercise every feature on
+  purpose, so their workspaces (`qa-*`, `regression-*`) don't count as demand.
 - **Build cost.** The stage estimates, summed.
 - **Inertia.** What the product carries forever once this lands:
   - new MCP, REST or syntax surface every client and agent must learn;
@@ -757,6 +762,13 @@ the path the plan named, and hands the child to the tester.
   to look for. Independence is about who writes the verifier's instructions, not only about
   its tool fence. Verification stays a driver-launched tester session that reads only the
   issue record and the `pending:` cases.
+- **Stop and re-plan when the plan is wrong.** A stage can show that the approved plan
+  doesn't hold: an assumption fails against the code, a stage runs past twice its
+  estimate, or a later stage's shape changes. The lead then doesn't bend the code to fit.
+  It stops, posts plan vN+1 with a "changed since" note, and hands the parent back as
+  `owner:don` + `status:plan-review`, clearing `status:plan-approved`. Stages already
+  verified stand. The approval Don gave is for the plan as written, not for whatever the
+  build turns into.
 - **Stages land on `develop`, not a long-lived feature branch.** `lem` can only be on one
   commit, and `check_lem_on_develop` redeploys `develop` whenever it isn't. A feature-branch
   deploy would be wiped by the next cycle, as on 2026-09-21. The plan's "independently
@@ -771,6 +783,21 @@ one close-out session: it moves the plan into `docs/proposals/complete/<slug>.md
 the four existing `-complete.md` docs use) and updates user-facing docs and `todo.md`. Then
 it hands the parent to the tester, which closes it after a smoke pass over the feature's
 cases.
+
+**After close: is it earning its keep?** About a month after a parent closes, one short
+read-only session checks how the feature is being used. It counts job records and use of
+the new tools or tasks in Don's workspaces only, excluding `qa-*` and `regression-*`. It
+comments the figures on the closed parent. The comment reports data and gives no verdict.
+With one user, a month of non-use can just mean a month of other projects. Two things
+use these comments: a lead calibrating a later verdict, and the removal proposals below.
+It can run on the digest's (R9) schedule.
+
+**Proposing removals.** The same verdict axes apply to what has already shipped. A lead
+session may file a `feature` issue proposing to remove surface: an MCP tool, task type or
+option with little use outside the harness's own workspaces, and ongoing inertia. It
+parks as `owner:don` + `status:needs-approval` like any other proposal, and if approved
+it is built through the same phases, usually as a single stage with a `breaking-change`
+label. This is the only part of the harness that pushes inertia down rather than up.
 
 **Models: who plans and who builds.** The harness's own evidence points one way. Put the
 strong model where a mistake doesn't bounce back, and the cheap model where a mistake is
