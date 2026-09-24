@@ -19,13 +19,30 @@ session recorded Don's "don't build" and left the rest to you.
 3. **Commit on a branch** (`docs/<n>-decline-<slug>`), merge to `develop`,
    and push. If the issue links no design doc, there's nothing to move:
    skip steps 1–3.
-4. **Close it:** `gh issue close <n> --reason "not planned" --comment`,
+4. **Close its open stages**, if a plan got as far as decomposing: each
+   `gh issue close <stage> --reason "not planned"` with a comment naming
+   the decline. If any had acceptance cases written (a `specced` marker on
+   the parent), file one request on the harness repo to retire them: `gh
+   issue create --repo dkackman/harnest --label suite --label
+   status:needs-approval`, titled "retire pending cases of declined #<n>",
+   listing the stage numbers. The curator removes cases marked `pending:`
+   for a stage closed not planned.
+5. **Close it:** `gh issue close <n> --reason "not planned" --comment`,
    naming where the design now lives and the commit.
 
-### Built (every stage closed, first time)
+### Built: which turn is this?
 
-All the parent's stage sub-issues are closed. The parent carries
-`owner:lead` + `status:plan-approved`.
+All the parent's stage sub-issues are closed, and it carries `owner:lead` +
+`status:plan-approved`. Read the thread to tell three turns apart:
+- **No design record yet** (no close-out comment of yours): the first time.
+  Steps 1–3 below.
+- **A tester bounce since your last hand-off, and no fix-forward stage
+  filed after it:** the final check failed. See "Back from a failed final
+  check".
+- **Fix-forward stages filed after the last bounce, all now closed:**
+  update the design record (the fix-forward and why), then step 3.
+
+### Built, the first time
 
 1. **Make the design record.**
    - Move the plan into `docs/proposals/complete/<slug>-complete.md`, the
@@ -52,9 +69,10 @@ comment naming failing cases). The design record already exists, so
 don't redo it. For each failure, file a fix-forward stage:
 `gh issue create --parent <parent> --label feature --label stage --label
 owner:lead`, with the failing case ID, the call and the response from the
-bounce, and which earlier stage's behavior it concerns. The open stage takes
-the parent out of the close-out queue. The stage builds and verifies like
-any other, and the parent returns here once it closes. Then update the
-design record (the fix-forward and why) and hand off as in step 3 above.
-If the failure is the plan's own gap rather than a build miss, re-plan
-instead (the build fragment's "Stop and re-plan").
+bounce, and which earlier stage's behavior it concerns. Its acceptance is
+the failing case, which already exists, so it needs no new spec. **Then
+stop: don't hand the parent off in this session.** The open stage takes
+the parent out of the close-out queue. It builds and verifies like any
+other, and the parent returns here once it closes, as the third turn
+above. If the failure is the plan's own gap rather than a build miss,
+re-plan instead (the build fragment's "Stop and re-plan").

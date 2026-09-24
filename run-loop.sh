@@ -294,6 +294,15 @@ $note"
   # cumulative), so the checks after the pipe read only what this session
   # saw: a rejected rate limit sleeps the driver until the reset; a session
   # that died before its result event is retried once.
+  # A per-issue session is fingerprinted before and after, for the
+  # no-progress ledger (note_progress in providers.sh).
+  local issue_repo="" issue_n="" before=""
+  case "$tag" in
+    "#"*)        issue_repo="$TICKET_REPO";  issue_n="${tag#\#}" ;;
+    "harnest#"*) issue_repo="$HARNESS_REPO"; issue_n="${tag#harnest#}" ;;
+  esac
+  [ -z "$issue_n" ] || before="$(issue_fingerprint "$issue_repo" "$issue_n")"
+
   local attempt
   for attempt in 1 2; do
     : > "$LAST_SESSION"
@@ -319,44 +328,16 @@ $note"
   # A per-issue session ("#145") gets its issue audited against the label
   # invariants; triage/task/closures sessions span several issues and don't.
   case "$tag" in "#"*) audit_issue "${tag#\#}" "$role" ;; esac
-}
-
-# open_issues <owner-label> <fresh|verify|needsinfo|needsspec>
-# Issue numbers, ascending, of open issues carrying <owner-label> that are
-# ready for that role: `fresh` = no status:* label at all (the implementer's
-# work queue, and the tester's handoff queue), `verify` =
-# status:fixed-pending-verify (the tester's), `needsinfo` =
-# status:needs-info (a question bounced to whoever holds the owner label -
-# the implementer bounces to owner:tester per agents/implementer/core.md, "Needs info"),
-# `needsspec` = status:needs-spec (a feature parent waiting on the tester's
-# acceptance cases, agents/tester/spec.md).
-open_issues() {
-  local owner="$1" mode="$2" filter
-  case "$mode" in
-    fresh)     filter='([.labels[].name | select(startswith("status:"))] | length) == 0' ;;
-    verify)    filter='[.labels[].name] | index("status:fixed-pending-verify") != null' ;;
-    needsinfo) filter='[.labels[].name] | index("status:needs-info") != null' ;;
-    needsspec) filter='[.labels[].name] | index("status:needs-spec") != null' ;;
-    *) echo "open_issues: bad mode $mode" >&2; return 1 ;;
-  esac
-  local out
-  out="$(gh issue list --repo "$TICKET_REPO" --state open --label "$owner" --limit 200 \
-    --json number,labels --jq ".[] | select($filter) | .number" | sort -n)"
-  if [ -n "$ONLY_ISSUES" ]; then
-    local pat
-    pat="$(printf '%s' "$ONLY_ISSUES" | tr ',' ' ' | tr -s ' ' | sed 's/^ *//;s/ *$//;s/ /|/g')"
-    out="$(printf '%s\n' "$out" | grep -E "^($pat)$" || true)"
+  if [ -n "$issue_n" ] && session_ran "$LAST_SESSION"; then
+    note_progress "$issue_repo" "$issue_n" "$before" "$label" "$role:$kind"
   fi
-  [ -n "$out" ] && printf '%s\n' "$out"
+  return 0
 }
 
-# still_ready <n> <owner-label> <fresh|verify|needsinfo>
-# Re-check one issue just before its session starts: a triage session or an
-# earlier per-issue session (working a batch) may have handed it off already.
-still_ready() {
-  local n="$1" owner="$2" mode="$3"
-  open_issues "$owner" "$mode" | grep -qx "$n"
-}
+# Queues come from lib/classify.jq through queue_issues and still_ready
+# (providers.sh): one state machine for every driver, the digest and the
+# audit. The closure ledger below is the one queue it doesn't cover: those
+# issues are closed.
 
 # pending_closures
 # Numbers of closed issues carrying owner:tester plus wontfix or duplicate
@@ -366,7 +347,7 @@ still_ready() {
 # session - mark_closures_seen appends to it after the closure or task
 # session runs. A reopened issue that comes back wontfix a second time is
 # already in the ledger, which matches the rule that a second wontfix is
-# final. Honours ONLY_ISSUES like open_issues does.
+# final. Honours ONLY_ISSUES like the queues do.
 # The label filter is in the query, one query per closing label: filtering
 # afterwards meant listing every closed owner:tester issue - verified ones
 # keep the label - and at 181 of them (2026-09-22) the --limit 200 window was
@@ -475,7 +456,7 @@ set_base_commit() {
 implementer_pass() {
   local -a queue=()
   local n
-  while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(open_issues owner:implementer fresh)
+  while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(queue_issues implementer:fix | cut -f1)
   [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOGS/loop.log"; return 0; }
 
   if [ "${#queue[@]}" -ge 2 ]; then
@@ -498,7 +479,7 @@ $(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
     last_on=", the most recent on the tester's own model"
   fi
   for n in "${queue[@]}"; do
-    still_ready "$n" owner:implementer fresh \
+    still_ready "$n" implementer:fix \
       || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
     bounces="$(handoff_count "$n")"
     model="$IMPLEMENTER_MODEL"; provider="$IMPLEMENTER_PROVIDER"; escalation=""
@@ -528,58 +509,6 @@ $(issue_context "$n")" \
   done
 }
 
-# only_issues_filter: keep the numbers ONLY_ISSUES names, when it is set.
-only_issues_filter() {
-  if [ -z "$ONLY_ISSUES" ]; then cat; return; fi
-  local pat
-  pat="$(printf '%s' "$ONLY_ISSUES" | tr ',' ' ' | tr -s ' ' | sed 's/^ *//;s/ *$//;s/ /|/g')"
-  grep -E "^($pat)$" || true
-}
-
-# buildable_stages
-# Stage sub-issues the lead may build now, ascending: stage + owner:lead, no
-# status label, no open blocker (GitHub "blocked by" links, which hold both
-# a feature's stage order and any cross-feature dependency), and a parent
-# that carries status:plan-approved without status:needs-spec (its specs are
-# written, and no re-plan is waiting on Don). A blocker closed not planned
-# counts as closed: the build prompt applies the plan's fallback. ONLY_ISSUES
-# matches the stage or its parent.
-buildable_stages() {
-  local n parent labels
-  gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label stage --label owner:lead \
-    --json number,labels,parent,blockedBy \
-    --jq '.[] | select(([.labels[].name | select(startswith("status:"))] | length) == 0)
-               | select(([.blockedBy.nodes[] | select(.state == "OPEN")] | length) == 0)
-               | "\(.number) \(.parent.number // "")"' 2>/dev/null \
-  | sort -n \
-  | while read -r n parent; do
-      [ -n "$parent" ] || continue
-      if [ -n "$ONLY_ISSUES" ]; then
-        printf '%s\n%s\n' "$n" "$parent" | only_issues_filter | grep -q . || continue
-      fi
-      labels="$(gh issue view "$parent" --repo "$TICKET_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)" || continue
-      case ",$labels," in *,status:plan-approved,*) ;; *) continue ;; esac
-      case ",$labels," in *,status:needs-spec,*|*,status:plan-review,*) continue ;; esac
-      echo "$n $parent"
-    done
-}
-
-# closeout_features
-# Feature parents owed a close-out, ascending: owner:lead, not a stage, and
-# either wontfix (a design session recorded Don's decline and left the doc
-# move) or status:plan-approved with every sub-issue closed.
-closeout_features() {
-  gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label feature --label owner:lead \
-    --json number,labels,subIssuesSummary \
-    --jq '.[] | (.labels | map(.name)) as $l | select(($l | index("stage")) == null)
-               | select(($l | index("wontfix")) != null
-                        or (($l | index("status:plan-approved")) != null
-                            and .subIssuesSummary.total > 0
-                            and .subIssuesSummary.completed == .subIssuesSummary.total))
-               | .number' 2>/dev/null \
-  | sort -n | only_issues_filter
-}
-
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).
 # Runs after the implementer pass and before the tester pass, so a stage
 # handed off this cycle is verified this cycle, and lem is re-checked
@@ -587,7 +516,7 @@ closeout_features() {
 lead_pass() {
   local n parent built=0 bounces
   local -a stages=()
-  while IFS= read -r n; do [ -n "$n" ] && stages+=("$n"); done < <(buildable_stages)
+  while IFS= read -r n; do [ -n "$n" ] && stages+=("$n"); done < <(queue_issues lead:build | cut -f1,2 | tr '\t' ' ')
   for n in ${stages[@]+"${stages[@]}"}; do
     [ "$built" -lt "$LEAD_STAGES_PER_CYCLE" ] || break
     parent="${n#* }"; n="${n%% *}"
@@ -618,6 +547,8 @@ $(plan_text "$parent")" \
 
   while IFS= read -r n; do
     [ -n "$n" ] || continue
+    still_ready "$n" lead:closeout \
+      || { echo "[lead:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     # A parent the tester keeps failing at the final check goes to Don, the
     # same threshold as a stage. The close-out prompt files a fix-forward
     # stage for each failure, which takes the parent out of this queue until
@@ -644,7 +575,7 @@ $(issue_context "$n")
 
 $(plan_text "$n")" \
       "${IMPLEMENTER_FLAGS[@]}"
-  done < <(closeout_features)
+  done < <(queue_issues lead:closeout | cut -f1)
 }
 
 # tester_pass — one session per issue to verify, one session per issue handed
@@ -658,7 +589,7 @@ tester_pass() {
   # approved plan in full plus the stage list, never any code.
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    still_ready "$n" owner:tester needsspec \
+    still_ready "$n" tester:spec \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_SPEC_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" spec \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a SPEC session for feature #$n only - write its stages' acceptance cases from the approved plan. Do not verify anything and do not work the standing task. Then stop.
@@ -675,11 +606,11 @@ $(gh issue view "$n" --repo "$TICKET_REPO" --json subIssues --jq '.subIssues.nod
 
 $(plan_text "$n")" \
       "${TESTER_FLAGS[@]}"
-  done < <(open_issues owner:tester needsspec)
+  done < <(queue_issues tester:spec | cut -f1)
 
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    still_ready "$n" owner:tester verify \
+    still_ready "$n" tester:verify \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" verify \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a VERIFY session for issue #$n only. Do not work the standing task. Then stop.
@@ -690,7 +621,7 @@ The issue as of $(ts) — start from this rather than fetching it; gh is for act
 
 $(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
-  done < <(open_issues owner:tester verify)
+  done < <(queue_issues tester:verify | cut -f1)
 
   # owner:tester with no status label: not a verify (nothing to run over MCP)
   # and not a wontfix/duplicate closure - a suite-file or other harness-side
@@ -700,7 +631,7 @@ $(issue_context "$n")" \
   # implementer's `fresh` queue.
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    still_ready "$n" owner:tester fresh \
+    still_ready "$n" tester:handoff \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" handoff \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a HANDOFF session for issue #$n only - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
@@ -711,14 +642,14 @@ The issue as of $(ts) — start from this rather than fetching it; gh is for act
 
 $(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
-  done < <(open_issues owner:tester fresh)
+  done < <(queue_issues tester:handoff | cut -f1)
 
   # owner:tester with status:needs-info: the implementer bounced a question
   # here (agents/implementer/core.md, "Needs info") - e.g. "what were the job ids of the
   # failed run and the retry". Nothing else schedules these either.
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    still_ready "$n" owner:tester needsinfo \
+    still_ready "$n" tester:answer \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" answer \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is an ANSWER session for issue #$n only - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
@@ -729,7 +660,7 @@ The issue as of $(ts) — start from this rather than fetching it; gh is for act
 
 $(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
-  done < <(open_issues owner:tester needsinfo)
+  done < <(queue_issues tester:answer | cut -f1)
 
   # Closure responses (step 3) ride in the task session when one runs this
   # cycle; on the other cycles a pending closure gets a short session of its

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # shellcheck disable=SC2034  # MODEL_ENV / MODEL_LABEL / MODEL_CONTEXT_TOKENS / CO_AUTHOR* are read by the sourcing driver
-# providers.sh — model/provider resolution and the small set of helpers all
-# three drivers (run-loop.sh, run-regression.sh, run-research.sh) would
-# otherwise duplicate. Sourced, never executed.
+# providers.sh — model/provider resolution and the helpers the drivers
+# (run-loop.sh, run-regression.sh, run-features.sh, and the standalone ones)
+# would otherwise duplicate. Sourced, never executed.
 #
 # Claude Code takes its model from --model, and *where that model lives* from
 # ANTHROPIC_BASE_URL. Any endpoint that speaks the Anthropic Messages API
@@ -39,8 +39,8 @@
 #                                               text with per-turn/-session usage
 #   CONSUMER_PERMISSION_FLAGS                    array: permission flags for the
 #                                               consumer-only roles (tester, regression)
-#   RESEARCHER_PERMISSION_FLAGS                  array: permission flags for the
-#                                               read-only-source researcher role
+#   LEAD_DESIGN_PERMISSION_FLAGS                 array: permission flags for the
+#                                               feature lead's read-only sessions
 #
 # Providers, and why each is more than just a base URL:
 #   anthropic  Native Claude Code models, alias or full id. The default. Sets
@@ -316,28 +316,12 @@ CONSUMER_PERMISSION_FLAGS=(
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
 )
 
-# Permission flags for the researcher: read-only against the source
-# checkout (Read/Glob/Grep/git-read only — no Edit/Write, no git writes, no
-# ssh, no curl), read-only dw MCP discovery calls, and gh for issue
-# management. Distinct from CONSUMER_PERMISSION_FLAGS (which allows Edit/
-# Write for the suite files the tester/regression agent maintain) and from
-# the implementer's --permission-mode auto: the researcher assesses, it
-# never implements, and it has no durable file of its own to edit.
-RESEARCHER_PERMISSION_FLAGS=(
-  --permission-mode dontAsk
-  --allowedTools
-    "mcp__dw__list_workflows" "mcp__dw__list_guides" "mcp__dw__list_pipelines"
-    "mcp__dw__list_classes" "mcp__dw__list_tasks" "mcp__dw__get_server_info"
-    "mcp__dw__get_schema" "mcp__dw__get_guide" "mcp__dw__get_class"
-    "mcp__dw__get_pipeline_signature" "ToolSearch" "WebFetch" "TodoWrite"
-    "Read" "Glob" "Grep"
-    "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
-    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
-)
-
 # Permission flags for the feature lead's design and decompose sessions
-# (roadmap R11): the researcher's read-only fence, plus what those sessions
-# write.
+# (roadmap R11). Read-only against the source checkout (Read/Glob/Grep and
+# read-only git: no Edit, no git writes, no ssh, no curl), read-only dw
+# discovery, gh issue, and WebFetch for links an issue cites. This was the
+# researcher's fence until R12 folded that role into the lead's design
+# session. On top of it, what these sessions write:
 # - Write, to stage a plan or stage body in /tmp. Unscoped by path like
 #   the tester's, so staying out of the checkout is on the prompt, as it is
 #   there.
@@ -417,7 +401,6 @@ export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 # actually used across every logged session, and nothing else. MCP tools
 # are unaffected (they come from --mcp-config as deferred names).
 CONSUMER_TOOLS="Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,TodoWrite"
-RESEARCHER_TOOLS="Bash,Read,Glob,Grep,ToolSearch,WebFetch,TodoWrite"
 IMPLEMENTER_TOOLS="Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,Agent,WebFetch,WebSearch,TodoWrite"
 LEAD_DESIGN_TOOLS="Bash,Read,Write,Glob,Grep,ToolSearch,Agent,WebFetch,TodoWrite"
 
@@ -461,17 +444,16 @@ co_author_for() {
 # things is per role, and matches what each role prompt actually permits: the
 # implementer only *proposes* regression cases in a hand-off comment (it has
 # no checkout of this repo), so it is not told it edits the suite.
-# Roles: implementer, tester, regression, researcher, lead, curator. Returns 1 on any other role.
+# Roles: implementer, tester, regression, lead, curator. Returns 1 on any other role.
 runtime_note() {
   local role="$1" provider="$2" model="$3" examples
   case "$role" in
     implementer) examples="a ticket hand-off comment, a wontfix or needs-info reason, a regression case you propose in a hand-off" ;;
     tester)      examples="a verification comment, a bounce, a new issue, a regression-suite edit" ;;
     regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
-    researcher)  examples="a research/proposal comment, a reject reason, a question parked for Don" ;;
-    lead)        examples="a feature plan and its verdict, a stage issue, a hand-off comment, a re-plan" ;;
+    lead)        examples="a feature plan and its verdict, an idea's disposition, a stage issue, a hand-off comment, a re-plan" ;;
     curator)     examples="a curation proposal, a ruling on a suite request, an escalation to Don" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|researcher|lead|curator)" >&2; return 1 ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator)" >&2; return 1 ;;
   esac
   # An alias (`opus`) moves when a new model ships, so a comment that says
   # "opus" can't later be told apart from the next Opus. Claude Code's own
@@ -588,6 +570,12 @@ audit_issue() {
   if [ "$state" = CLOSED ] && [ "$reason" = COMPLETED ] && [ "$role" != tester ]; then
     echo "[audit] WARNING: #$n was closed as completed after a session as $role; only the tester may, from a real MCP call" | tee -a "$LOGS/loop.log"
   fi
+  # A session that leaves its issue where no queue will pick it up has
+  # found a hole in the protocol (lib/classify.jq), or made a label mistake.
+  local why
+  if [ "$state" = OPEN ] && why="$(classify_issues 2>/dev/null | awk -F'\t' -v n="$n" '$1 == n && $2 == "stranded" { print $4 }')" && [ -n "$why" ]; then
+    echo "[audit] WARNING: #$n is stranded after a session as $role: $why" | tee -a "$LOGS/loop.log"
+  fi
   return 0
 }
 
@@ -616,7 +604,7 @@ commit_suite_changes() {
       && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
   git -C "$REPO" add -- "${paths[@]}"
   # Suites only grow and regression-perf/ is append-only, except for an edit
-  # a human approved (a tester HANDOFF session applying one). Removed lines
+  # the curator approved and applied in a review session. Removed lines
   # are therefore worth a look, not a refusal: the commit goes ahead so the
   # tree stays clean, and the warning names it for review. One removal is
   # the protocol working, not drift: a `pending: #NN` line the tester drops
@@ -734,6 +722,15 @@ session_died() {
   [ -r "$1" ] && ! grep -q '^usage: ' "$1"
 }
 
+# session_ran <rendered-session-log>
+# True when the session actually ran: it reached its result event and was
+# not turned away by a rejected rate limit. A budget cut-off counts as
+# having run. What the no-progress ledger counts: a session that died or
+# was never admitted did no work, so it says nothing about the issue.
+session_ran() {
+  [ -r "$1" ] && grep -q '^usage: ' "$1" && ! grep -q 'rate-limit: status=rejected' "$1"
+}
+
 # session_ok <rendered-session-log>
 # True when the session ran to its own end: a usage line, no non-success
 # result (a budget cut-off, max turns, an error), and no rejected rate
@@ -845,6 +842,131 @@ issue_context() {
 plan_text() {
   gh issue view "$1" --repo "$TICKET_REPO" --json comments \
     --jq '[.comments[] | select(.body | startswith("<!-- harnest:plan"))] | last | .body // empty' 2>/dev/null || true
+}
+
+# issue_snapshot
+# Every open issue on TICKET_REPO, as the input lib/classify.jq reads: the
+# fields gh lists, plus `markers`:
+# - on a feature or idea issue, the first line of each harnest marker
+#   comment by TICKET_OWNER (the plan and its decomposed/specced/
+#   spec-questions markers);
+# - on an issue filed by another login, `<!-- harnest:external-parked -->`
+#   when park_external_issues has parked it once. It is Don's to hand back
+#   after that, and a hand-back puts it in the ordinary queues.
+# Four gh calls. Returns 1 on any gh failure, and prints nothing then: a
+# caller must never read a failed snapshot as an empty board. (gh returns an
+# issue's first 100 comments; a feature thread longer than that would lose
+# its later markers.)
+issue_snapshot() {
+  local issues markers
+  issues="$(gh issue list --repo "$TICKET_REPO" --state open --limit 500 \
+    --json number,title,labels,author,parent,blockedBy,subIssuesSummary 2>/dev/null)" || return 1
+  markers="$( { gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label feature --json number,comments \
+             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label idea --json number,comments \
+             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --search "-author:$TICKET_OWNER" --json number,comments; } 2>/dev/null \
+    | jq -s --arg me "$TICKET_OWNER" '[.[][] | {key: (.number | tostring), value:
+        [.comments[] | select(.author.login == $me) | .body
+         | if startswith("Parked for human review: filed by @") then "<!-- harnest:external-parked -->"
+           elif startswith("<!-- harnest:") then split("\n")[0] else empty end]}]
+        | group_by(.key) | map({key: .[0].key, value: (map(.value) | add | unique)}) | from_entries')" || return 1
+  printf '%s\n%s\n' "$issues" "$markers" \
+    | jq -s --arg me "$TICKET_OWNER" '.[1] as $m | {owner: $me, issues: [.[0][] | . + {markers: ($m[(.number | tostring)] // [])}]}'
+}
+
+# classify_issues
+# One line per open issue, ascending: number, queue, parent (or -), reason,
+# tab-separated, from lib/classify.jq, the protocol's one state machine.
+# Returns 1, printing nothing, when the snapshot fails.
+HARNEST_LIB="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib"
+classify_issues() {
+  local snap
+  snap="$(issue_snapshot)" || return 1
+  printf '%s\n' "$snap" | jq -r -f "$HARNEST_LIB/classify.jq" \
+    | jq -r '[.number, .queue, (.parent // "-"), .reason] | @tsv' | sort -n
+}
+
+# only_issues_filter
+# stdin: lines whose first field is an issue number and whose optional
+# third field is its parent. Keeps the lines ONLY_ISSUES names (the issue
+# or its parent), or all of them when it is unset.
+only_issues_filter() {
+  if [ -z "${ONLY_ISSUES:-}" ]; then cat; return 0; fi
+  awk -F'\t' -v only="$ONLY_ISSUES" 'BEGIN { n = split(only, a, /[ ,]+/); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
+    ($1 in want) || ($3 in want)'
+}
+
+# queue_issues <queue>
+# The issues waiting in one queue of lib/classify.jq, ascending, one per
+# line: number, parent (or -), reason, tab-separated, after ONLY_ISSUES.
+# Prints nothing, and logs, when the snapshot fails, so a gh blip skips a
+# queue for one pass rather than stopping the driver.
+queue_issues() {
+  local rows
+  if ! rows="$(classify_issues)"; then
+    echo "[loop] could not read the issue board for queue $1; skipping it this pass" | tee -a "$LOGS/loop.log" >&2
+    return 0
+  fi
+  printf '%s\n' "$rows" | awk -F'\t' -v q="$1" '$2 == q' | only_issues_filter | cut -f1,3,4
+}
+
+# still_ready <n> <queue>
+# Re-checks one issue just before its session: an earlier session this pass
+# (a triage, a batch, a hand-off) may have moved it on.
+still_ready() {
+  queue_issues "$2" | cut -f1 | grep -x "$1" >/dev/null
+}
+
+# issue_fingerprint <repo> <n>
+# State, sorted labels, and the first line of each harnest marker comment
+# (a feature's phase markers, including the plan's version), or empty on
+# failure. What "made progress" means to the ledger below: a session that
+# changes none of them left the issue where it found it. Markers count
+# because some lead sessions move a feature on with a marker alone.
+issue_fingerprint() {
+  gh issue view "$2" --repo "$1" --json state,labels,comments \
+    --jq '.state + "|" + ([.labels[].name] | sort | join(",")) + "|"
+          + ([.comments[].body | select(startswith("<!-- harnest:")) | split("\n")[0]] | join(","))' 2>/dev/null || true
+}
+
+# note_progress <repo> <n> <fingerprint-before> <tag> <kind>
+# The no-progress ledger (R12). A session that leaves its issue's state and
+# labels unchanged would be picked by the same queue next cycle, at full
+# cost, for ever: a budget cut-off every time, an agent that stops, a
+# prompt with no way out. After NO_PROGRESS_PARK_AFTER such sessions in a
+# row, the driver parks the issue with Don instead. A build or fix that
+# leaves a resumable progress comment gets NO_PROGRESS_PARK_AFTER - 1 of
+# those. Counts are per session kind (repo#n:kind), so a design session's
+# count never carries into a decompose. 0 disables. The ledger is
+# logs/progress.tsv: key, fingerprint, count.
+NO_PROGRESS_PARK_AFTER="${NO_PROGRESS_PARK_AFTER:-2}"
+note_progress() {
+  local repo="$1" n="$2" before="$3" tag="$4" kind="${5:-any}" after key ledger="$LOGS/progress.tsv" count=0 owner
+  [ "$NO_PROGRESS_PARK_AFTER" -gt 0 ] 2>/dev/null || return 0
+  [ -n "$before" ] || return 0
+  after="$(issue_fingerprint "$repo" "$n")"
+  [ -n "$after" ] || return 0
+  key="$repo#$n:$kind"
+  touch "$ledger"
+  if [ "$after" = "$before" ]; then
+    count="$(awk -F'\t' -v k="$key" -v f="$after" '$1 == k && $2 == f { print $3 }' "$ledger" | tail -n 1)"
+    count=$(( ${count:-0} + 1 ))
+  fi
+  { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp"
+  [ "$count" -eq 0 ] || printf '%s\t%s\t%s\n' "$key" "$after" "$count" >> "$ledger.tmp"
+  mv "$ledger.tmp" "$ledger"
+  [ "$count" -ge "$NO_PROGRESS_PARK_AFTER" ] || return 0
+  case "$after" in OPEN\|*) ;; *) return 0 ;; esac
+  echo "[$tag] $count sessions in a row left #$n unchanged; parking it with owner:don" | tee -a "$LOGS/loop.log"
+  owner="$(printf '%s' "$after" | cut -d'|' -f2 | tr ',' '\n' | grep '^owner:' | head -n 1 || true)"
+  local -a swap=()
+  [ -z "$owner" ] || [ "$owner" = owner:don ] || swap=(--remove-label "$owner")
+  local back="${owner:-the owner it had}"
+  if gh issue edit "$n" --repo "$repo" ${swap[@]+"${swap[@]}"} --add-label owner:don --add-label status:needs-approval >/dev/null 2>&1 \
+     && gh issue comment "$n" --repo "$repo" --body "Parked by the loop driver: $count sessions in a row ended without changing this issue's state or labels (NO_PROGRESS_PARK_AFTER=$NO_PROGRESS_PARK_AFTER), so the next cycle would run the same session again. Read the latest session comments, then hand it back with \`$back\` and without \`status:needs-approval\`, or decide it here." >/dev/null 2>&1; then
+    { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp"; mv "$ledger.tmp" "$ledger"
+  else
+    echo "[$tag] could not park #$n (gh failed)" | tee -a "$LOGS/loop.log"
+  fi
 }
 
 # role_prompt <role> <kind> <out-file>

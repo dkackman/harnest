@@ -1,15 +1,18 @@
 
 ## This session: DESIGN one feature
 
-The issue carries `feature` + `owner:lead` and has no approved plan. You
-don't change code in this session. Your fence is read-only source,
-read-only `dw` MCP calls, and `gh issue`.
+The issue carries `feature` or `idea` + `owner:lead`, and either has no
+approved plan or came back with the tester's spec questions. Your prompt
+says which: the driver names why it picked the issue. You don't change code
+in this session. Your fence is read-only source, read-only `dw` MCP calls,
+`WebFetch` for links the issue cites, and `gh issue`.
 
 ### 1. Which turn is this?
 
 Read the thread and decide what Don's hand-back asks for:
 
-- **No plan yet.** Write the first one (steps 2–6).
+- **No plan yet.** Write the first one (steps 2–6). For an `idea`, first
+  decide what it is (below).
 - **Don answered or redirected.** Fold his answers into the plan as the
   next version (steps 2–6 as far as the answers reach). Don't re-litigate
   a question he answered.
@@ -24,10 +27,36 @@ Read the thread and decide what Don's hand-back asks for:
   --add-label owner:don --add-label status:needs-approval`. Stop.
 - **Don asked a question**: answer it in a comment, then hand back as in
   step 6.
+- **The tester's spec questions** (a `spec-questions vN` comment on an
+  approved plan). The plan was too vague to test in the places it names.
+  This is a re-plan, so **first** withdraw the approval (`gh issue edit <n>
+  --remove-label status:plan-approved`): a new plan version with the old
+  approval still on would be decomposed as if Don had approved it. Then
+  answer each question by revising the plan as the next version (core,
+  "The plan comment"), and hand off as in step 6. Stages already built
+  stand.
 
-Remove a stale `status:plan-review` or `status:needs-info` in the same
-command that hands the issue on. Don's owner swap was the signal, and a
-status he left behind would hide the issue from the driver.
+Remove a stale `status:plan-review`, `status:needs-info` or
+`status:needs-approval` in the same command that hands the issue on. Don's
+owner swap was the signal, and a status he left behind would hide the
+issue from the driver.
+
+**An `idea` first.** Check it isn't a duplicate or already shipped
+(`gh issue list --state all --search`, the live catalog, `git log`).
+Closed issues still count: a prior rejection is the reference. Then:
+- **A duplicate or already shipped:** comment the evidence, add
+  `duplicate` (or nothing, if shipped), remove `owner:lead`, and close it
+  `not planned`.
+- **One fix, small and clear:** comment the scope (what to change, where,
+  and how the tester will see it work), then `--remove-label owner:lead
+  --remove-label idea --add-label owner:implementer`. The implementer's
+  queue takes it from there. Anything that needs Don's approval under the
+  implementer's rules (engine or syntax change, new concept, breaking) is
+  not "one fix": treat it as a feature.
+- **Bigger than one fix:** add `feature`, remove `idea`, and write the
+  plan (steps 2–6).
+- **Not worth doing:** a plan with a "don't build" verdict, handed to Don
+  (step 6). Don decides, as for any feature.
 
 ### 2. Read, then check the design against the code
 

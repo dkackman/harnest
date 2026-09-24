@@ -3,7 +3,15 @@
 
 The parent issue carries `feature` + `owner:tester` + `status:needs-spec`.
 Don approved its plan, the feature lead split it into stage sub-issues, and
-no stage's code exists yet. Your job is to turn each stage's "acceptance
+no code exists yet for the stages you spec.
+
+**After a re-plan** (plan v2 or later, where the lead's `decomposed vN`
+comment names new, reshaped and dropped stages): write cases only for the
+new and reshaped stages. Cases already written for a kept stage stand. For
+the dropped stages (closed `not planned`), file one request on the harness
+repo to retire their pending cases (`suite` + `status:needs-approval`,
+listing the stage numbers). The curator removes a case whose `pending:`
+stage was closed not planned. Your job is to turn each stage's "acceptance
 intent" into suite cases **now, from the plan alone**, so the build can't
 shape its own test. Your prompt holds the parent, its approved plan, and
 the stage list.
@@ -58,10 +66,17 @@ being verified yet.
 
 ### 2. Hand back
 
-Comment on the parent:
-- each stage and its case IDs, with the file each is in;
-- anything in the plan too vague to test, stated as a question the lead
-  should answer in the plan.
+Comment on the parent. The comment's first line is a marker with the
+current plan's version (`vN` from the plan comment's header):
+- `<!-- harnest:specced vN -->` when every stage you were asked to spec
+  has its cases. Then list each stage and its case IDs, with the file
+  each is in. A question that doesn't stop a case being written goes here
+  too, as a note.
+- `<!-- harnest:spec-questions vN -->` instead, when some stage can't be
+  specced until the plan says more. Write the cases you can, list them,
+  then state each blocking question. The lead answers them with a new plan
+  version, which Don approves, and you spec again. Nothing builds
+  meanwhile.
 
 Then hand the parent back:
 

@@ -18,7 +18,8 @@ Two standalone agents sit outside the alternation:
 
 - **Regression agent:** runs the growing `regression-suite-*.md` checks against the live
   server and files issues for failures and slowdowns.
-- **Researcher:** turns `idea` issues into a plan, a rejection, or a question for Don.
+- **Feature lead:** designs features and ideas with Don in issue comments, then builds
+  approved ones in stages (see below).
 
 This repo holds no application code, only the drivers, role prompts and regression suites.
 [`HARNESS-ROADMAP.md`](HARNESS-ROADMAP.md) is the plan for where the harness goes next.
@@ -91,7 +92,7 @@ Tickets are GitHub Issues on `dkackman/diffusers-workflow`, filed with its "MCP 
 ticket" template. Agents work on them only through `gh issue`.
 
 - **`owner:*` is a baton.** An open issue has exactly one of `owner:implementer`,
-  `owner:tester`, `owner:researcher`, `owner:lead` or `owner:don`, naming whoever acts next. An agent
+  `owner:tester`, `owner:lead` or `owner:don`, naming whoever acts next. An agent
   touches only issues with its own owner label, and only to act on them or hand them off.
 - **Only the tester closes an issue as `completed`** (with `status:verified`), and only
   after a real MCP call in that session. The implementer never verifies its own fixes.
@@ -123,8 +124,13 @@ open ──▶ status:needs-info ──▶ open
 open ──▶ wontfix (closed not planned) ──▶ (tester accepts, or reopens once)
 open ──▶ duplicate (closed not planned)
 open ──▶ status:needs-approval + owner:don ──▶ open | wontfix   (human decides)
-idea ──▶ owner:researcher ──▶ owner:implementer | owner:don | wontfix
+idea ──▶ owner:lead ──▶ feature plan | owner:implementer (one fix) | closed
 ```
+
+[`lib/classify.jq`](lib/classify.jq) is the protocol as code: it maps every open issue to
+the session that runs next, or to where it waits. Every driver queue, the digest and the
+post-session audit read it. An issue no queue will ever pick up is "stranded": the audit
+warns on it, and the digest lists it.
 
 GitHub is the only ticket history. Issues from before the 2026-09-12 migration that were
 still active then were carried forward and cite "migrated from T0xx" in their body.
@@ -180,24 +186,12 @@ Run it by hand, from cron, or with the `loop` skill. `run-loop.sh` and `run-regr
 share a lock (`logs/.driver.lock`) and wait for each other, because an implementer deploy
 would restart the server partway through a regression run.
 
-## The researcher
-
-`run-research.sh` gives each open `idea` issue (`owner:researcher`) its own session, on
-`sonnet` by default. The session ends with one of three outcomes:
-
-- a concrete plan, handed to `owner:implementer`;
-- a rejection (`wontfix`);
-- a question for Don (`owner:don` + `status:needs-approval`).
-
-The researcher can read the source checkout but not write to it. It can also make read-only
-`dw` discovery calls, use `gh issue`, and use `WebFetch` for links cited in the idea. It
-has no SSH and no write access to git. It takes no driver lock, because it never changes
-anything on the server.
-
 ## The feature lead
 
 Work bigger than one fix goes through the feature lead (roadmap R11). A feature is one
 issue labeled `feature`, and you start one by swapping its `owner:don` for `owner:lead`.
+An `idea` goes the same way: its first design session decides whether it is a feature, a
+single fix (handed to `owner:implementer`), a duplicate, or not worth doing.
 
 1. **Design** (`run-features.sh`). The lead first checks the proposal against the code
    with one read-only sweep, and measures demand (`field-report` issues, real use in your
@@ -222,7 +216,15 @@ issue labeled `feature`, and you start one by swapping its `owner:don` for `owne
 
 The lead can also stop mid-build and re-plan. That removes `status:plan-approved` and
 halts the feature until you approve again. If you decline a feature, a close-out moves
-its doc to `docs/proposals/declined/`.
+its doc to `docs/proposals/declined/` and closes any open stages.
+
+Each phase ends with a marker comment carrying the plan version it belongs to
+(`<!-- harnest:decomposed v2 -->`, `specced v2`, `spec-questions v2`). A stage builds only
+when its parent's current plan has both `decomposed` and `specced`. A new plan version
+makes the old markers stop counting, so after a re-plan decompose reconciles the stages
+and the tester specs what changed, without anyone arranging it. If the tester finds the
+plan too vague to test, it posts `spec-questions` instead, and the lead answers with a
+new plan version for you to approve.
 
 ```sh
 ./run-features.sh                      # design/decompose whatever is the lead's turn
@@ -308,19 +310,20 @@ tail -f logs/loop.log                           # watch from another terminal
 
 | var | default | what |
 |---|---|---|
-| `SOURCE_DIR` | `~/src/dkackman/dw-agent` | agents' clone of the dw repo, with its own `venv`; the implementer's and researcher's cwd |
+| `SOURCE_DIR` | `~/src/dkackman/dw-agent` | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
 | `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
 | `DW_URL` / `DW_TOKEN` | `http://lem:8765/mcp` / `xyz` | the MCP endpoint (dev token, LAN only) |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |
-| `REGRESSION_MODEL` / `RESEARCH_MODEL` | `sonnet` / `sonnet` | standalone drivers; same `*_PROVIDER` pattern |
+| `REGRESSION_MODEL` | `sonnet` | `run-regression.sh`; same `*_PROVIDER` pattern |
 | `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`sonnet`) runs its code subagents |
 | `LEAD_STAGE_BUDGET_USD` / `LEAD_CLOSEOUT_BUDGET_USD` / `TESTER_SPEC_BUDGET_USD` | `15` / `3` / `8` | per-session caps in `run-loop.sh`; `run-features.sh` has `LEAD_DESIGN_BUDGET_USD` (6) and `LEAD_DECOMPOSE_BUDGET_USD` (2) |
-| `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`RESEARCH_EFFORT` (triage follows the tester's) |
+| `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` (triage follows the tester's) |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
-| `REGRESSION_BUDGET_USD` / `RESEARCH_BUDGET_USD` | `6` / `3` | per regression chunk / per research session |
+| `REGRESSION_BUDGET_USD` | `6` | per regression chunk |
+| `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's labels unchanged before the driver parks it with Don; `0` = never |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
 | `TESTER_TASK_EVERY` | `4` | run the tester's standing-task session every Nth cycle |
 | `IMPLEMENTER_ESCALATE_AFTER` / `IMPLEMENTER_PARK_AFTER` | `2` / `4` | bounces before escalating to the tester's model / parking with Don; `0` = never |
@@ -410,8 +413,10 @@ differs by role is what gets approved automatically.
   denies destructive or exfiltrating actions. The classifier's description of the
   environment is [`agent-settings/implementer.json`](agent-settings/implementer.json),
   passed with `--settings`.
-- **Researcher:** `dontAsk` plus `RESEARCHER_PERMISSION_FLAGS`: read-only source,
-  read-only git, read-only `dw` discovery, `gh issue` and `WebFetch`.
+- **Feature lead, design and decompose:** `dontAsk` plus `LEAD_DESIGN_PERMISSION_FLAGS`:
+  read-only source, read-only git, read-only `dw`, `gh issue`, `WebFetch`, and writes only
+  to /tmp and to its own plan comment. Its builds and close-outs use the implementer's
+  flags.
 
 **Guard hooks.** A `PreToolUse` hook,
 [`agent-settings/hooks/guard.py`](agent-settings/hooks/guard.py), refuses the protocol
@@ -448,14 +453,17 @@ That leaves two deploy paths, and the implementer says which one a fix used:
 Everything streams to the terminal and to `logs/loop.log`, prefixed by session:
 `[implementer:triage]`, `[implementer:#145]`, `[tester:#145]`, `[tester:task]`,
 `[tester:closures]`, `[regression:smoke.2]`, `[regression:smoke.sweep]`,
-`[researcher:#N]`. Each role also has its own `.log` and a `.jsonl` of the raw events.
+`[lead:#N]`, `[curator:harnest#N]`. Each role also has its own `.log` and a `.jsonl` of the
+raw events.
 
 - `grep usage: logs/loop.log`: one line per session, with turns, duration, cost, peak
   context and token totals. Each session also logs a `model:` line with the resolved id.
 - `grep '\[audit\]' logs/loop.log`: drift from the protocol, checked after each session.
   It flags an open issue without exactly one `owner:*` label, a `completed` close by
-  anyone but the tester, and a suite commit that removed lines. The audit only logs; it
-  repairs nothing.
+  anyone but the tester, an issue a session left stranded, and a suite commit that removed
+  lines. The audit only logs; it repairs nothing.
+- `logs/progress.tsv`: the no-progress ledger. An issue that sessions leave unchanged
+  `NO_PROGRESS_PARK_AFTER` times in a row is parked with Don instead of re-run.
 - After every cycle, the driver prints a status board with one line per open issue:
   number, status, owner and title.
 
@@ -464,7 +472,6 @@ Everything streams to the terminal and to `logs/loop.log`, prefixed by session:
 ```
 run-loop.sh                         the cycle: implementer, feature lead builds, tester, curator review
 run-regression.sh                   regression driver
-run-research.sh                     researcher driver
 run-features.sh                     feature lead: design and decompose sessions (lock-free)
 run-bench.sh                        replay benchmark of the implementer (offline)
 run-curate.sh                       suite curation audit: one proposal issue per level
@@ -472,7 +479,8 @@ run-retro.sh                        retro: evidenced harness proposals, filed on
 run-digest.sh                       one-line-per-issue digest of the owner:don queue
 contract/                           script-run regression cases and their MCP client
 bench/                              benchmark cases, replay note, results (see bench/README.md)
-providers.sh                        provider table and shared helpers (isolation, permissions, logging, audits)
+providers.sh                        provider table and shared helpers (isolation, permissions, logging, audits, queues)
+lib/classify.jq                     the ticket protocol's state machine: issue -> queue
 measure-base-ctx.sh                 measures turn-1 context for a flag set
 agent-settings/implementer.json     auto-mode classifier's picture of the implementer's environment, plus its guard hook
 agent-settings/consumer.json        tester/regression guard hook
@@ -484,7 +492,6 @@ agents/                           role prompts; the drivers build each session's
   tester/                           core.md + verify/handoff/answer/closures/task/spec.md, cases.md, standing-task.md
   lead/                             core.md + design/decompose/build/closeout.md
   regression/                       core.md + run-cases.md + chunk.md or sweep.md
-  RESEARCHER.agent.md               researcher role
   curator/                          suite curator: audit (run-curate.sh), review (run-loop.sh)
   RETRO.agent.md                    retro role
 regression-suite-{smoke,complete,model-specific,security}.md

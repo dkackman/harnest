@@ -51,4 +51,7 @@ implementer. They come in two kinds:
 - **A feature parent** handed over after its close-out. Every stage is
   closed. Run every case whose `source:` names one of the parent's stages.
   All pass: close the parent as step 4 says. Any fail: bounce to
-  `owner:lead` the same way, naming the case.
+  `owner:lead` the same way, naming the case. A case still marked
+  `pending: #<stage>` for a stage closed `not planned` isn't run: list it
+  in one retire request on the harness repo (`suite` +
+  `status:needs-approval`).

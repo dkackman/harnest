@@ -21,7 +21,7 @@ rather than in a separate log.
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built (`run-features.sh`, `agents/lead/`, lead pass in `run-loop.sh`); dw#378 decomposed, waiting on its spec session | R4 (absorbs it), R1 |
-| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | phase A done; B next | before dw#378 runs live |
+| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | A and B done; C next | before dw#378 runs live |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -905,8 +905,8 @@ sees source. Nothing lets the lead write suite or `contract/` cases.
 - **One feature in build at a time**, as `LEAD_STAGES_PER_CYCLE=1`. A feature's own
   stages are serial through their "blocked by" links.
 - **Order and cross-feature dependencies are one mechanism**: GitHub "blocked by" links.
-  `buildable_stages` builds a stage only when it has no open blocker and its parent is
-  `status:plan-approved` without `status:needs-spec`. A dependency on another feature
+  A stage builds only when it has no open blocker and its parent's current plan is
+  decomposed and specced (R12's versioned markers; `lib/classify.jq`). A dependency on another feature
   blocks the stage that needs it, not the whole feature. The prerequisite feature goes
   through its own design and approval, never folded into the dependent plan, and the
   dependent plan names a fallback in case it's declined. First case: dw#388 (#378 stage C)
@@ -1072,6 +1072,62 @@ label logic in jq, in four files, which is where the holes come from.
   - `run-regression.sh` survives an empty case list under bash 3.2.
 - **Deferred to phase B,** since both need the ledger: the no-progress re-run loop and
   the three prompts that leave an issue unchanged.
+
+**Phase B done (2026-09-23).**
+- **`lib/classify.jq`** is the state machine. It is pure jq over one snapshot of the open
+  board (`issue_snapshot`: three `gh` calls, which returns 1 rather than an empty board
+  on failure). `queue_issues`/`still_ready` in `providers.sh` replace `open_issues`,
+  `buildable_stages`, `closeout_features` and `feature_queue`. Classifying the live board
+  gave the same answer as the old selectors, with nothing stranded.
+- **Versioned phase markers** (`decomposed vN`, `specced vN`, `spec-questions vN`,
+  against the plan's version) close four holes with one mechanism:
+  - a stage can't build before its specs exist (fixture-tested: with the check
+    reverted, the stage builds);
+  - a re-plan reruns decompose (which reconciles: keep, reshape, close dropped, add)
+    and spec, without anyone arranging it;
+  - the tester's spec questions send the plan back to the lead as a re-plan;
+  - a decompose cut off between its marker and its hand-off finishes the hand-off.
+
+  dw#378's marker was migrated to `decomposed v2`.
+- **No-progress ledger** (`note_progress`, `logs/progress.tsv`). After
+  `NO_PROGRESS_PARK_AFTER` (2) sessions in a row that ran and left the issue's state and
+  labels unchanged, the driver parks the issue with Don. Died and rate-limited sessions
+  don't count.
+- **The audit** also warns on an issue a session left stranded.
+- **Prompt exits for dead ends:**
+  - the tester's unanswerable question and unclear handoff go to Don;
+  - a handoff asking for a change to a case files the suite request and closes;
+  - a non-MCP stage is handed to Don to verify;
+  - the declined close-out closes open stages and files the retire request for their
+    pending cases;
+  - the curator may retire a pending case whose stage was closed not planned;
+  - close-out's three turns are told apart, and a fix-forward session doesn't hand off;
+  - "already rejected" is labeled `wontfix`;
+  - mixed curator rulings close as completed.
+- **The guard** lets any role clear a leftover `status:needs-approval` once `owner:don`
+  is gone. It asks GitHub, and fails closed.
+- **The digest's** commands come from each issue's state, not the model:
+  - a plan review gets an approve command;
+  - features, ideas and stages go back to `owner:lead`;
+  - every status is removed on the way back.
+
+  It adds sections for stranded issues and for harness proposals.
+- **The researcher is gone.** `run-research.sh`, `RESEARCHER.agent.md` and its fence were
+  deleted. The lead's design session takes `idea` issues and decides: a feature, one fix
+  for `owner:implementer`, a duplicate, or "don't build". An `owner:researcher` issue
+  classifies as stranded.
+- **`tests/test-classify.sh`** holds 44 expectations over 9 fixture boards, one per state
+  in the review's table. These are the first of phase C's tests.
+- **A review of the change found seven more problems, now fixed:**
+  - an outside issue Don handed back would never run: the snapshot now marks an issue
+    parked once, and a hand-back makes it ordinary;
+  - a re-plan cut off after bumping the plan version but before withdrawing the approval
+    would decompose an unapproved plan: the approval now comes off first;
+  - the digest's hand-back dropped a parked parent's `plan-approved`;
+  - the ledger carried counts across session kinds and ignored marker-only progress:
+    it is now keyed per kind, and markers are in the fingerprint;
+  - also: the decompose text, the tester's "not a bug after all" answer, and a re-check
+    before each close-out.
 
 **Done when.** A cycle survives a GitHub outage. The digest's stranded list is empty.
 `bats tests/` passes, and the queue logic is tested there, not reviewed by eye. Then dw#378

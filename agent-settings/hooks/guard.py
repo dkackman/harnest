@@ -13,7 +13,9 @@ implementer:
   - no `gh issue close` unless --reason "not planned" (gh's default reason
     is completed, and only the tester closes as completed)
   - no `status:verified` label
-  - no removing `owner:don` or `status:needs-approval` (a human's park)
+  - no removing `owner:don`, nor `status:needs-approval` while `owner:don`
+    is on the issue (a human's park; once Don swaps the owner away, a
+    leftover status is stale and may be cleared, which asks GitHub)
   - adding an `owner:*` label must remove one in the same call (exactly
     one owner at a time)
   - no push to master, no force push, no branch deletion on origin
@@ -112,6 +114,29 @@ def closes_completed(words):
 
 def adds_verified(words):
     return is_gh_issue(words, "edit") and "status:verified" in flag_values(words, "--add-label")
+
+
+def still_parked(words):
+    """True unless the issue an edit names is known to lack owner:don.
+
+    Removing status:needs-approval lifts a park only while owner:don is on
+    the issue. Once Don has handed an issue back by swapping the owner, a
+    status he left behind is stale, and the agent now holding it must be
+    able to clear it. Only this case asks GitHub; any doubt (no number, gh
+    failing) counts as parked, so the rule fails closed.
+    """
+    nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+    if not nums:
+        return True
+    repo = flag_values(words, "--repo", "-R")
+    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq", "[.labels[].name] | index(\"owner:don\") != null"]
+    if repo:
+        cmd += ["--repo", repo[-1]]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception:
+        return True
+    return out.returncode != 0 or out.stdout.strip() != "false"
 
 
 def git_push_problem(words):
@@ -237,7 +262,9 @@ def main():
                 deny("status:verified is the tester's to add, from a real MCP call.")
             if is_gh_issue(words, "edit"):
                 removed = flag_values(words, "--remove-label")
-                if "owner:don" in removed or "status:needs-approval" in removed:
+                if "owner:don" in removed:
+                    deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
+                if "status:needs-approval" in removed and still_parked(words):
                     deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
         if role == "implementer":
             problem = git_push_problem(words)

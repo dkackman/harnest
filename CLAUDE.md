@@ -24,8 +24,7 @@ files described below. There is no build, lint, or test step.
   2026-09-21). The driver re-checks an issue's labels right before its session so one already
   handed off by a batch is skipped. Every session runs with `--max-budget-usd`
   (`IMPLEMENTER_BUDGET_USD`/`TESTER_BUDGET_USD`/`TRIAGE_BUDGET_USD`, defaults 8/5/3, 0 = none;
-  `REGRESSION_BUDGET_USD` 6 per chunk session and `RESEARCH_BUDGET_USD` 3 in the standalone
-  drivers) and `--autocompact $AUTOCOMPACT_TOKENS` (default 120k). The reason is measured, not
+  `REGRESSION_BUDGET_USD` 6 per chunk session in `run-regression.sh`) and `--autocompact $AUTOCOMPACT_TOKENS` (default 120k). The reason is measured, not
   theoretical: one six-issue implementer session ran 269 turns to a 352k-token peak and 60M
   cached-input tokens, $37, because issue six re-read issues one to five on every turn. No
   state survives between sessions except what's written to GitHub Issues (or, per each role
@@ -50,7 +49,7 @@ files described below. There is no build, lint, or test step.
   memory and re-injecting them), `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` exported alongside it
   (auto-memory isn't a settings source; the implementer had been reading *and writing* Don's
   project memory under the source checkout), the per-role `--tools` lists (`CONSUMER_TOOLS`/
-  `RESEARCHER_TOOLS`/`IMPLEMENTER_TOOLS` — only the built-in tools a role has ever used; the
+  `LEAD_DESIGN_TOOLS`/`IMPLEMENTER_TOOLS` — only the built-in tools a role has ever used; the
   ~20k tokens of Artifact/Workflow/Agent/... schemas a role is denied anyway no longer ride
   on every turn), and `effort_flags` with the `EFFORT` default (`medium`, what sessions ran
   at while it was inherited from user settings; per-role `*_EFFORT` knobs in each driver).
@@ -59,7 +58,7 @@ files described below. There is no build, lint, or test step.
   Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
   (`claude-opus-5-5` — the exact id, not the `opus` alias, since an alias moves on the next
   release and a verification is only worth the model behind it), `REGRESSION_MODEL` (`sonnet`),
-  `RESEARCH_MODEL` (`sonnet`), each with a `*_PROVIDER`
+  `LEAD_MODEL` (the tester's), each with a `*_PROVIDER`
   that defaults to `PROVIDER` (`anthropic`). The implementer's triage session is the one
   exception: `TRIAGE_MODEL`/`TRIAGE_PROVIDER` default to the *tester's*, not the
   implementer's, because a wrong `wontfix`/`duplicate`/park call never bounces back — it
@@ -158,36 +157,33 @@ files described below. There is no build, lint, or test step.
   the drivers alongside the suite files (#135 is where the old "record it in `last run:`"
   instruction met the no-edit-on-pass rule and this replaced both).
 - `agents/lead/` / `run-features.sh` — the feature lead (roadmap R11). It owns `feature`
-  issues from design to delivery.
+  issues from design to delivery, and `idea` issues: a design session decides whether an
+  idea is a feature, a single fix it hands to `owner:implementer`, or not worth doing
+  (R12 folded the old researcher role in here).
   - **Design and decompose** run in `run-features.sh`. They are lock-free and read-only
     against a detached worktree at `origin/develop` (`LEAD_TREE`), behind
-    `LEAD_DESIGN_PERMISSION_FLAGS`. That fence is the researcher's, plus `Write` to /tmp,
-    a `gh api` PATCH to edit the plan comment in place, the `Agent` tool for the one
-    read-only code sweep, and read-only `dw` calls for measuring demand.
+    `LEAD_DESIGN_PERMISSION_FLAGS`: read-only source, `gh issue`, `WebFetch`, plus `Write`
+    to /tmp, a `gh api` PATCH to edit the plan comment in place, the `Agent` tool for the
+    one read-only code sweep, and read-only `dw` calls for measuring demand.
   - **Builds and close-outs** run in `run-loop.sh`'s `lead_pass`, between the implementer
     and tester passes. They use the implementer's flags, R3 gate included.
   - **The tester's `spec` kind** (`status:needs-spec`) writes `pending: #<stage>` cases
     from the approved plan before any code exists. Its verify kind judges a stage by
     those cases and bounces it to `owner:lead`.
-  - **Order.** Stages are GitHub sub-issues ordered by "blocked by" links, and
-    `buildable_stages` builds one only when it has no open blocker and its parent is
-    `status:plan-approved` without `status:needs-spec`.
+  - **Order.** Stages are GitHub sub-issues ordered by "blocked by" links. A stage builds
+    only when it has no open blocker and its parent is `owner:lead` +
+    `status:plan-approved` with `decomposed vN` and `specced vN` markers for the current
+    plan version N (`lib/classify.jq`). A re-plan bumps N, so decompose and spec run again
+    by themselves.
   - **Approval** (`status:plan-approved`) is Don's alone: `guard.py` refuses it from
     every role.
-- `agents/RESEARCHER.agent.md` / `run-research.sh` — a fourth, standalone
-  agent (not part of the implementer/tester alternation, and not the
-  regression agent) that turns an `idea`-labeled GitHub Issue into a
-  disposition: reject it (`wontfix`), propose a concrete plan to the
-  implementer (`owner:implementer`, ready to work), or park it for Don's
-  input (`owner:don` + `status:needs-approval`). It is read-only against the
-  `diffusers-workflow` source checkout (no write, no SSH to `lem`) plus
-  read-only `dw` MCP discovery calls and `gh` for issue management — a third
-  isolation shape distinct from both the implementer's full access and the
-  tester/regression agent's MCP-consumer-only fence. `./run-research.sh`
-  gives each open idea issue its own fresh session (never one long session
-  across issues, to keep context from accumulating across a batch), by
-  default on `sonnet` — deep feasibility judgment is
-  expected to land with the implementer pass and, where parked, Don.
+- `lib/classify.jq` (R12) — the ticket protocol's state machine, in one place. It maps
+  every open issue (labels, parent, blockers, sub-issue counts, the lead's phase markers)
+  to the queue that runs it next, or to `don`, `wait`, `external` or `stranded`. Every
+  driver queue (`queue_issues`/`still_ready` in `providers.sh`), the digest and the
+  post-session audit read it. "Stranded" means no queue will ever pick the issue up: the
+  audit warns on it, and the digest lists it. Change who acts on what here, not in a
+  driver.
 - `run-bench.sh` / `bench/` — the replay benchmark (roadmap R1). It re-runs the
   implementer, with its real role prompt plus `bench/replay-note.md`, on curated
   already-verified issues. Each run starts from a clone holding only history up to the
@@ -269,8 +265,8 @@ regression case in the same cycle isn't part of that check.)
 
 `run-loop.sh` and `run-regression.sh` never run at once: both take `logs/.driver.lock`
 (`acquire_driver_lock`, a `mkdir` lock; a stale one is taken over) and wait for the other,
-because an implementer deploy restarts the server under a regression run. `run-research.sh`
-makes only read-only MCP calls and takes no lock. Each driver keeps its own
+because an implementer deploy restarts the server under a regression run. `run-features.sh`
+and `run-curate.sh` make only read-only MCP calls (or none) and take no lock. Each driver keeps its own
 `logs/.last-session.<driver>` for the rate-limit and died-session checks.
 
 After every per-issue session (and on each triaged issue after triage) `audit_issue` checks
@@ -322,14 +318,12 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   actions. The classifier's picture of the environment (trusted repo, `lem`, what "routine"
   means here) is `agent-settings/implementer.json`, passed via `--settings`; it used to be
   inherited from user settings and described a different checkout.
-- Researcher: `--permission-mode dontAsk` + `RESEARCHER_PERMISSION_FLAGS`
-  (`providers.sh`) — read-only against the `diffusers-workflow` source
-  checkout (`Read`/`Grep`/`Glob`, read-only `git`) plus read-only `dw` MCP
-  discovery calls, `gh issue`, and `WebFetch` (to follow links cited in idea
-  issues). No `Edit`/`Write` on source, no write `git` subcommands, no
-  `ssh`, no `curl`. A third isolation shape: unlike the tester/regression
-  agent it does see source, and unlike the implementer it can never change
-  it.
+- Feature lead, design and decompose: `--permission-mode dontAsk` +
+  `LEAD_DESIGN_PERMISSION_FLAGS` (`providers.sh`) — read-only against the source
+  (`Read`/`Grep`/`Glob`, read-only `git`), read-only `dw` calls, `gh issue`, `WebFetch`,
+  `Write` for staging text in /tmp, and one `gh api` PATCH form for the plan comment. A
+  third isolation shape: it sees source, like the implementer, but can never change it.
+  Its build and close-out sessions run with the implementer's flags.
 
 Guard hooks (roadmap R3): `agent-settings/hooks/guard.py` is a `PreToolUse` hook on `Bash`.
 The implementer loads it via `agent-settings/implementer.json`; tester and regression load it
@@ -390,14 +384,14 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
 `close` / `list`). The invariants both role prompts and the status-board query depend on:
 
 - `owner` is a label, exactly one of `owner:implementer` / `owner:tester` /
-  `owner:don` / `owner:researcher` / `owner:lead` at a time — whoever's turn it is to act
+  `owner:don` / `owner:lead` at a time — whoever's turn it is to act
   next. Swap it with `gh issue edit <n> --remove-label owner:X --add-label
   owner:Y`. An agent only touches issues carrying its own owner label and
   never edits another agent's issue beyond the label/comment that hands it
-  off. An `idea`-labeled issue starts as `owner:researcher`; the researcher
-  agent (see above) moves it to `owner:implementer` (proposal ready to
-  work) or `owner:don` + `status:needs-approval` (parked for input), or
-  closes it `wontfix`, same conventions the implementer/tester already use.
+  off. An `idea`-labeled issue goes to `owner:lead`, whose design session
+  makes it a feature, hands it to `owner:implementer` as one fix, or closes
+  it. `lib/classify.jq` is the authoritative map from labels to the session
+  that runs next.
 - Status flow: no status label ("open", ready for the implementer) → (implementer fixes +
   deploys to `lem`) → `status:fixed-pending-verify` → (tester re-runs repro over MCP) → close the
   issue as `completed` with `status:verified` added, or back to no status label / owner back to
@@ -427,6 +421,8 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   that's a regression, not a duplicate: reopen the old issue (or link a new one to it) and fix it,
   never close the new report as `duplicate`/`wontfix` on the strength of the old verification alone.
   Only the tester may close an issue as `completed` (`verified`), and only from a real MCP call.
+  That rule is about the ticket repo: on this repo the curator closes the suite requests it
+  applies as `completed`.
 - Implementer commits reference the issue number (`fix(mcp): #42 - ...`), works on branches
   merged to `develop`, never `master`.
 - Breaking MCP interface changes get the `breaking-change` label plus a comment, so the tester

@@ -2,8 +2,9 @@
 ## This session: BUILD one stage
 
 The stage issue carries `stage` + `owner:lead` and no status. Its blockers
-are closed, and its parent carries `status:plan-approved` with specs
-written. Your prompt holds the stage issue and the parent's approved plan.
+are closed, and its parent carries `status:plan-approved` with the current
+plan's stages filed and specs written (its `decomposed` and `specced`
+markers). Your prompt holds the stage issue and the parent's approved plan.
 The plan is the specification. The tester has already written acceptance
 cases from it (`pending: #<this stage>` in the harness's suite files),
 which you can't see and must not try to. Build what the plan says, and
@@ -77,8 +78,10 @@ each is visible in `git diff`:
     hand off. Comment the output, then `--remove-label owner:lead
     --add-label owner:don --add-label status:needs-info`.
 - **Hand off.** `gh issue edit <stage> --remove-label owner:lead
-  --add-label owner:tester --add-label status:fixed-pending-verify`, then
-  comment:
+  --add-label owner:tester --add-label status:fixed-pending-verify`. A
+  stage the plan says isn't verifiable over MCP goes to its named verifier
+  instead: `--add-label owner:don` in place of `owner:tester`, with the
+  steps to check it in the comment; Don closes it himself. Then comment:
   - what shipped (commit and deploy line);
   - which plan items it covers;
   - any deviation from the plan and why. A deviation the tester doesn't
@@ -95,16 +98,21 @@ Sometimes building a stage shows the approved plan doesn't hold:
 - the stage is clearly bigger than one session;
 - a later stage's shape has to change.
 
-Then don't bend the code to fit the words. Stop:
+Then don't bend the code to fit the words. Stop, in this order:
 1. Push what you have to the branch, if anything is worth keeping.
-2. Comment on the stage what broke the plan.
-3. Revise the plan as the next version, with its "changed since" comment
+2. **Withdraw the approval first:** `gh issue edit <parent> --remove-label
+   status:plan-approved`. That stops every stage from building. Do it
+   before touching the plan: a new plan version with the old approval
+   still on would be decomposed as if Don had approved it.
+3. Comment on the stage what broke the plan.
+4. Revise the plan as the next version, with its "changed since" comment
    (core, "The plan comment").
-4. Hand the *parent* back: `gh issue edit <parent> --remove-label
-   status:plan-approved --add-label status:plan-review` plus the owner swap
-   from its current owner to `owner:don`. Removing the approval stops every
-   stage from building until Don re-approves.
-5. Leave the stage with `owner:lead`, no status.
+5. Hand the *parent* to Don: `gh issue edit <parent> --add-label
+   status:plan-review` plus the owner swap from its current owner to
+   `owner:don`. The new version makes the old `decomposed` and `specced`
+   markers stop counting, so after his approval decompose reconciles the
+   stages with the new plan and the tester specs what changed.
+6. Leave the stage with `owner:lead`, no status.
 
 Stages already verified stand. Don's approval covered the plan as written,
 not whatever the build turns into.

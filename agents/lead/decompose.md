@@ -1,17 +1,35 @@
 
 ## This session: DECOMPOSE an approved plan
 
-The parent carries `feature` + `owner:lead` + `status:plan-approved` and has
-not been decomposed yet. **An earlier session may have been cut off partway
-through:** check `gh issue view <parent> --json subIssues --jq
-'.subIssues.nodes[] | "#\(.number) \(.title)"'` first, and file only the
-stages that are missing. File one sub-issue per stage of the approved plan, link
-their order, and hand the parent to the tester for acceptance specs. You
-don't write code, and you don't change the plan. If Don's approval came
-with answers to the plan's questions, fold them in first as the next plan
-version, with its "changed since" comment. That is a record of what he
-decided, not a scope change. Anything more than that is a re-plan: see the
-build fragment's "Stop and re-plan", and don't decompose.
+The parent carries `feature` + `owner:lead` + `status:plan-approved`, and
+the current plan version, vN, has no `decomposed vN` marker yet, or has one
+but was never handed to the tester (your prompt says which). You make the
+parent's stages match plan vN, link their order, and hand the parent to
+the tester for acceptance specs. You don't write code, and you don't change
+the plan.
+
+If Don's approval came with answers to the plan's questions, fold them in
+first as the next plan version, with its "changed since" comment, and
+decompose that version. That is a record of what he decided, not a scope
+change. Anything more than that is a re-plan: see the build fragment's
+"Stop and re-plan", and don't decompose.
+
+### 0. What exists already
+
+`gh issue view <parent> --json subIssues --jq '.subIssues.nodes[] |
+"#\(.number) \(.state) \(.title)"'`. Four cases:
+- **None:** the first decomposition. File every stage (step 1).
+- **Some, from this plan version** (a session cut off partway): file only
+  the missing ones.
+- **Some, from an earlier plan version** (a re-plan): reconcile. Keep a
+  stage the new plan keeps. Edit the body of one it reshaped (`gh issue
+  edit --body-file`), saying what changed. Close one it dropped: `gh issue
+  close --reason "not planned"`, with a comment naming plan vN. File the
+  new ones. A closed stage stays closed: verified work stands.
+- **Marker present, hand-off missing** (a session cut off after its
+  `decomposed vN` comment): finish step 2 only. For a plan under step 2's
+  "One exception", that means posting the `specced vN` comment, not handing
+  the parent to the tester.
 
 ### 1. File the stages
 
@@ -43,10 +61,11 @@ his call.
 
 ### 2. Hand the parent to the tester
 
-Comment the stage list in build order, with each stage's blockers. The
-comment's first line is exactly `<!-- harnest:decomposed -->`: the driver
-reads that marker as "done", and without it the parent is decomposed again.
-Then hand the parent over:
+Comment the stage list in build order, with each stage's blockers. On a
+reconcile, say which stages are new or reshaped, since only those need new
+cases, and which were dropped. The comment's first line is exactly
+`<!-- harnest:decomposed vN -->`, with the current plan's version (core,
+"Phase markers"). Then hand the parent over:
 
     gh issue edit <parent> --remove-label owner:lead --add-label owner:tester --add-label status:needs-spec
 
@@ -55,5 +74,5 @@ approval, and the build reads it.
 
 **One exception.** If the approved plan says no stage has MCP-observable
 behavior and names the verifier for each, skip the spec step. Leave the
-parent with `owner:lead` and say so in the comment, which still carries
-the marker.
+parent with `owner:lead`, and post a second comment whose first line is
+`<!-- harnest:specced vN -->`, saying no cases are needed and why.

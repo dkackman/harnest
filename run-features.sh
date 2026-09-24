@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # Runs the feature lead's read-only sessions (roadmap R11): one fresh session
-# per feature issue that is the lead's turn to design, or to decompose into
-# stages. Standalone, like run-research.sh: no driver lock, because these
-# sessions never change code, deploy, or run anything on the GPU.
+# per feature or idea issue that is the lead's turn to design, or to
+# decompose into stages. Standalone: no driver lock, because these sessions
+# never change code, deploy, or run anything on the GPU.
 #
 #   ./run-features.sh                       # every feature waiting on the lead
 #   ONLY_ISSUES=378 ./run-features.sh       # just these
@@ -17,13 +17,14 @@
 # A close-out commits to develop in the shared checkout. run-loop holds the
 # lock for its whole life, so work that needs the lock can't live here.
 #
-# Which sessions run here:
-#   design     feature + owner:lead, not a stage, no status:plan-approved and
-#              no wontfix: the first plan, a revision after Don's answers,
-#              or recording his decline
-#   decompose  feature + owner:lead + status:plan-approved, not a stage, and no
-#              comment carrying <!-- harnest:decomposed --> yet: file (or finish
-#              filing) the stages, hand the parent to the tester
+# Which sessions run here (queues lead:design and lead:decompose of
+# lib/classify.jq, which holds the rules):
+#   design     a feature or idea with owner:lead and no approved plan: the
+#              first plan, a revision after Don's answers, recording his
+#              decline; or an approved plan the tester's spec questions
+#              sent back
+#   decompose  an approved plan whose current version has no decomposed
+#              marker yet (first time, a re-plan, or a cut-off session)
 #
 # The lead reads source from its own detached worktree at origin/develop
 # (LEAD_TREE, reset before every run), never from SOURCE_DIR. SOURCE_DIR is on
@@ -81,38 +82,16 @@ LEAD_DESIGN_FLAGS=(
   "${LEAD_DESIGN_PERMISSION_FLAGS[@]}"
 )
 
-# only_filter: keep the numbers ONLY_ISSUES names, when it is set.
-only_filter() {
-  if [ -z "$ONLY_ISSUES" ]; then cat; return; fi
-  local pat
-  pat="$(printf '%s' "$ONLY_ISSUES" | tr ',' ' ' | tr -s ' ' | sed 's/^ *//;s/ *$//;s/ /|/g')"
-  grep -E "^($pat)$" || true
-}
-
-# feature_queue <design|decompose>: issue numbers, ascending.
-feature_queue() {
-  local filter
-  case "$1" in
-    design)    filter='(.labels | map(.name)) as $l | ($l | index("stage")) == null and ($l | index("status:plan-approved")) == null and ($l | index("wontfix")) == null' ;;
-    # Approved and not yet marked decomposed. The marker is on the
-    # decompose hand-off comment, so a session cut off after filing some
-    # stages comes back here and resumes, rather than stranding the parent
-    # with a partial stage list that no queue matches.
-    decompose) filter='(.labels | map(.name)) as $l | ($l | index("stage")) == null and ($l | index("status:plan-approved")) != null and ($l | index("wontfix")) == null and ([.comments[].body | select(contains("<!-- harnest:decomposed -->"))] | length) == 0' ;;
-  esac
-  gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label feature --label owner:lead \
-    --json number,labels,comments --jq ".[] | select($filter) | .number" | sort -n | only_filter
-}
-
 # run_session <n> <kind> <budget> <instructions>
 run_session() {
-  local n="$1" kind="$2" budget="$3" instructions="$4" tag attempt prompt_file
+  local n="$1" kind="$2" budget="$3" instructions="$4" tag attempt prompt_file before
   tag="lead:#$n"; [ "$kind" = design ] || tag="lead:#$n $kind"
   prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.$kind.md")" || return 0
   local -a limits=(--autocompact "$AUTOCOMPACT_TOKENS")
   [ "$budget" = 0 ] || limits+=(--max-budget-usd "$budget")
   local plan
   plan="$(plan_text "$n")"
+  before="$(issue_fingerprint "$TICKET_REPO" "$n")"
   for attempt in 1 2; do
     : > "$LAST_SESSION"
     echo "=== $(ts) $tag ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
@@ -139,6 +118,8 @@ $(runtime_note lead "$LEAD_PROVIDER" "$LEAD_MODEL")" \
     sleep "$SESSION_RETRY_PAUSE_SECS"
   done
   audit_issue "$n" lead
+  session_ran "$LAST_SESSION" && note_progress "$TICKET_REPO" "$n" "$before" "$tag" "lead:$kind"
+  return 0
 }
 
 # main: in a function, and called with `exit` on the same line, so bash has
@@ -150,21 +131,23 @@ refresh_plugin_tree "$SOURCE_DIR" "$LEAD_TREE" >/dev/null \
   || { echo "could not create/refresh the lead worktree $LEAD_TREE from $SOURCE_DIR" >&2; exit 1; }
 
 design=(); decompose=()
-while read -r n; do [ -n "$n" ] && design+=("$n"); done < <(feature_queue design)
-while read -r n; do [ -n "$n" ] && decompose+=("$n"); done < <(feature_queue decompose)
+# Each entry is "<number><tab><the classifier's reason>".
+while IFS=$'\t' read -r n _ reason; do [ -n "$n" ] && design+=("$n"$'\t'"$reason"); done < <(queue_issues lead:design)
+while IFS=$'\t' read -r n _ reason; do [ -n "$n" ] && decompose+=("$n"$'\t'"$reason"); done < <(queue_issues lead:decompose)
 if [ "${#design[@]}" -eq 0 ] && [ "${#decompose[@]}" -eq 0 ]; then
   echo "$(ts) [lead] no feature waiting on a design or a decomposition" | tee -a "$LOGS/loop.log"
   exit 0
 fi
 
-echo "=== $(ts) feature run ($MODEL_LABEL): design ${design[*]:-none}; decompose ${decompose[*]:-none} ===" | tee -a "$LOGS/loop.log"
-for n in ${design[@]+"${design[@]}"}; do
-  run_session "$n" design "$LEAD_DESIGN_BUDGET_USD" \
-    "This is a DESIGN session for feature issue #$n only: your role instructions for it are in your system prompt."
+echo "=== $(ts) feature run ($MODEL_LABEL): design $(printf '%s ' ${design[@]+"${design[@]%%$'\t'*}"}); decompose $(printf '%s ' ${decompose[@]+"${decompose[@]%%$'\t'*}"}) ===" | tee -a "$LOGS/loop.log"
+local entry
+for entry in ${design[@]+"${design[@]}"}; do
+  run_session "${entry%%$'\t'*}" design "$LEAD_DESIGN_BUDGET_USD" \
+    "This is a DESIGN session for issue #${entry%%$'\t'*} only: your role instructions for it are in your system prompt. The driver selected it because: ${entry#*$'\t'}."
 done
-for n in ${decompose[@]+"${decompose[@]}"}; do
-  run_session "$n" decompose "$LEAD_DECOMPOSE_BUDGET_USD" \
-    "This is a DECOMPOSE session for feature issue #$n only: Don approved its plan; your role instructions for it are in your system prompt."
+for entry in ${decompose[@]+"${decompose[@]}"}; do
+  run_session "${entry%%$'\t'*}" decompose "$LEAD_DECOMPOSE_BUDGET_USD" \
+    "This is a DECOMPOSE session for feature issue #${entry%%$'\t'*} only: Don approved its plan; your role instructions for it are in your system prompt. The driver selected it because: ${entry#*$'\t'}."
 done
 }
 

@@ -58,6 +58,11 @@ role wrote. For each item:
 - **Retirement of removed behavior.** Only on a request from another
   agent, never on an audit item: a verified or `breaking-change` issue
   removed the behavior the case checks on purpose.
+- **Retirement of a pending case whose stage won't be built.** The case
+  still carries `pending: #N`, and stage #N is closed `not planned` (a
+  declined feature or a re-plan dropped it). It describes behavior that
+  never shipped, so the record settles it. Remove the whole case. Check
+  #N's state yourself, and `Grep` for every `pending: #N`.
 
 **Deny,** with the reason:
 - The edit would make a failing case pass by weakening what it expects,
@@ -83,7 +88,8 @@ bounces back.
 Edit the suite file with `Edit`:
 - exactly the approved change, and nothing else;
 - no other case, no reformatting, no renumbering;
-- never a `pending:` line;
+- never a `pending:` line, except by removing the whole case under the
+  pending-case retirement above;
 - never a `regression-perf/` file.
 
 A retirement deletes the whole case section. Don't commit; the driver
@@ -98,7 +104,9 @@ Comment once on the issue:
 - your model and provider.
 
 Then:
-- **Everything approved:** `gh issue close <n> --reason completed`.
+- **Everything approved, or some approved and the rest denied:** `gh issue
+  close <n> --reason completed`. Your ruling comment says which item went
+  which way.
 - **Everything denied:** `gh issue edit <n> --add-label wontfix`, then
   `gh issue close <n> --reason "not planned"`. The requester may refile
   once with new evidence. A second denial is final.
