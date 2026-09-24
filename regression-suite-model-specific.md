@@ -99,10 +99,7 @@ expected: `valid: true`, `checked_arguments` includes `shots`, `plan.list_entrie
 "observed"` on this box, `"catalog"` where no comparable run history exists. An `asset:` that
 names nothing must still come back as an error at the shot's reference path — the check being
 exercised is that a file reference is *resolved*, not that validation waves it through.
-Paid form (opt-in, ~15 min on an RTX 3090, run it when the template or the H3 pipeline changed):
-actually run it. The job succeeds; the concatenated `episode` output is stereo at the shots' own
-sample rate with the expected frame count (2 x `num_frames`), and each shot visibly carries the
-referenced cast.
+Paid form: asserted on M-F020's step 1 job; do not run separately.
 It becomes a **finding** if the free form stops validating, or if the run fails on a reference the
 validator accepted.
 Also assert, from 2026-09-13: `get_workflow("templates/minimax/dialogue-short")`'s **description**
@@ -526,7 +523,7 @@ cleanup: none — validation and discovery only, writes nothing.
 source: tester, model `opus` via provider `anthropic`, verified in #152 on 2026-09-14 against dw on
 `lem`. Bullets one through three are the implementer's proposed set, tightened: they proposed
 checking only that Deblur names Deblur, and a template naming *both* adapters would pass that. The
-`8n+1` refusal they also proposed is deliberately **not** repeated here — M-F005 already owns that
+`8n+1` refusal they also proposed is deliberately **not** repeated here — M-F016 and M-F022 already assert that
 rule for LTX-2.5. The bare-call bullet was added once #166 verified on 2026-09-16, same treatment
 as M-F013.
 
@@ -572,7 +569,7 @@ expected:
   taken the whole LTX-2.5 catalog out with it.
 - **It doesn't short-circuit the rest of validation.** `validate_workflow(name=
   "templates/ltx2/diffusion-decode", arguments={"num_frames": 10})` → `valid: false` with **two**
-  errors present, one at `arguments.num_frames` (the 8*n+1 grid rule M-F005 pins) and one at the
+  errors present, one at `arguments.num_frames` (the 8*n+1 grid rule) and one at the
   `attn_processor_type` path. The server's "every schema error comes back at once" contract has to
   survive a check that constructs objects; one error swallowing the other is a finding.
 It is a **finding** if the verdict starts costing a model load either way, if the run path stops
@@ -743,6 +740,9 @@ since the cache is in-memory and #244 (persistence across a restart) is a separa
 3. Adjacent: `validate_workflow` a third time with step 2's arguments unchanged.
 expected:
 - Step 1: `plan.cached_steps: 0`; the job succeeds with no `reused` on any manifest entry.
+  - M-F001's paid form, on this job: the concatenated `episode` output is stereo at the shots' own
+    sample rate with the expected frame count (2 x `num_frames`), and each shot visibly carries the
+    referenced cast. Log its latency to `regression-perf/M-F001.jsonl` per M-F001's `metrics:`.
 - Step 2: `plan.cached_steps: 1`. The job succeeds in roughly a third of step 1's time; events show
   `step_start shot@accuse` → `step_end … reused: true` within the first second, its `files`
   naming **step 1's** run dir (`<run-1>/intermediate/…shot@accuse.0-0.0.mp4`), then `shot@deflect`
@@ -813,7 +813,7 @@ Implementer proposed the case in its hand-off; placed here because it needs a Mu
 ### M-F022 — LTX-2.5 text-to-video refuses a (width, height, num_frames) that cannot fit VAE decode, at validate time
 `templates/ltx2/text-to-video` declares a top-level `vram_estimate` (`base_gb` + `bytes_per_voxel`
 over `width * height * num_frames`) that `validate_workflow` checks against the template's
-`cost[].vram_gb` (24 GB, RTX 3090). Before #265 the frame-count grid rule (`8*n+1`, M-F005) was the
+`cost[].vram_gb` (24 GB, RTX 3090). Before #265 the frame-count grid rule (`8*n+1`, also M-F016) was the
 only bound, so `num_frames: 345` validated clean, ran all eight denoise steps (~5 min of GPU) and
 then died in the VAE decoder's conv3d. The ceiling is the "refuse before cost" counterpart to that
 rule: a voxel count the decode can't fit is an **error**, not a warning, before anything loads.
@@ -962,7 +962,7 @@ its hand-off; both runs were confirmed over MCP before it was added.
 ### M-F026 — the 768p H3 template refuses a frame count its VRAM ceiling cannot fit, and declares a cost
 The H3 counterpart to M-F022. Before #324 none of the MiniMax H3 `shot` templates carried a `cost`
 array or a `vram_estimate`, so `templates/minimax/video-with-audio-768p` at `num_frames: 345` (the
-family's own grid ceiling, M-F005-style `17*n+5`) validated clean and OOM'd mid-denoise on lem's
+family's own grid ceiling, LTX-style `17*n+5`) validated clean and OOM'd mid-denoise on lem's
 RTX 3090 (job `282172105da1`: 20.25 GiB allocated + a refused 5.57 GiB). The fix declared
 `cost: [{cuda, RTX 3090, vram_gb: 24, minutes: 9.87}]` and a `vram_estimate` (`base_gb` +
 `bytes_per_voxel` over `width * height * num_frames`, fitted from that OOM and the 960x544x124
@@ -1024,7 +1024,7 @@ expected:
 It is a **finding** if the run is OOM-killed, if `release_pipeline` is gone from the template, if
 the release is missing or out of order, or if a later member reloads H3.
 Host RSS is asserted by M-F030 on the same job (#368, verified).
-cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole. Keep it only if
+cleanup: after M-F030 has read this job, `delete_output(job_id=<the run's job id>)` removes the run directory whole. Keep it only if
 the run failed and an issue needs it.
 source: tester, verified in #344, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-22
 against `lem` `develop @ e5bfb9e`: job `41e3ced1c3ce` succeeded in ~867 s. `shot@react` was
@@ -1083,7 +1083,7 @@ against `lem` `develop @ e5bfb9e`.
 ### M-F030 — releasing a pipeline mid-job returns its host memory, not only at job end
 Uses the same run as M-F027: `templates/minimax/dialogue-short` with MiniMax-H3 via ModularPipeline,
 Z-Image Turbo for the two `draw_character_*` steps, two 124-frame `shots`, and
-`num_inference_steps: 8`. The two cases can share one job. `release_pipeline` frees the GPU, but
+`num_inference_steps: 8`. Run this on M-F027's job; do not start a second one. `release_pipeline` frees the GPU, but
 before #368 the host side (torch's pinned-host cache and glibc malloc arenas) was returned only by
 `clear_memory`, and later only at job end. So `episode` (`concat_videos`) assembled the cut with
 ~10–15 GB of dead H3 residue still resident, and a released Z-Image left ~4 GB under the H3 load.
