@@ -706,6 +706,11 @@ assessment on these axes, each answered from evidence rather than asserted:
   misused tools, skill gaps and repeated errors in job records. It never means a
   hypothetical wider audience. The harness's own agents exercise every feature on
   purpose, so their workspaces (`qa-*`, `regression-*`) don't count as demand.
+  The best evidence is what Don's own driving sessions report. He asks them for bugs and
+  gaps at the end of each session, and they file those as issues (#265–#271 came from the
+  `hysteresis` project that way). They carry the label `field-report`, so the lead can
+  search them (open and closed) apart from the tester's standing-task findings, which are
+  exploration, not demand.
 - **Build cost.** The stage estimates, summed.
 - **Inertia.** What the product carries forever once this lands:
   - new MCP, REST or syntax surface every client and agent must learn;
@@ -787,6 +792,7 @@ cases.
 **After close: is it earning its keep?** About a month after a parent closes, one short
 read-only session checks how the feature is being used. It counts job records and use of
 the new tools or tasks in Don's workspaces only, excluding `qa-*` and `regression-*`. It
+also checks whether new `field-report` issues still hit the gap the feature closed. It
 comments the figures on the closed parent. The comment reports data and gives no verdict.
 With one user, a month of non-use can just mean a month of other projects. Two things
 use these comments: a lead calibrating a later verdict, and the removal proposals below.
