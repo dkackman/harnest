@@ -1812,6 +1812,37 @@ source: tester, verified in #381 on 2026-09-23 over MCP as model `claude-opus-5-
 provider `anthropic` against `develop @ 4aaeef7` (jobs 4a586838a916 and a859dba09c23,
 run in the default workspace and deleted afterwards).
 
+### S-F122 — a required task argument fed by a null variable is a warning on save, and an error only when the caller's arguments leave it null
+#364: `validate_workflow` and `save_workflow` refused a document whose required task
+argument came from a `variable:` with a null default, claiming the step "does not supply"
+it. After the first fix, `save_workflow` accepted it while `validate_workflow` with no
+`arguments` still failed it, so the two tools disagreed. Free: validate and save calls,
+nothing runs. Let D be `{"id": "regression_null_var", "variables": {"audio": null},
+"steps": [{"name": "n", "task": {"command": "normalize_audio", "arguments": {"audio":
+"variable:audio"}}, "result": {"content_type": "audio/wav"}}]}`.
+1. `validate_workflow(workflow=D)` with no `arguments`.
+2. `save_workflow(name="regression-null-var", workflow=D)`, then
+   `validate_workflow(name="regression-null-var")` with no `arguments`.
+3. `validate_workflow(workflow=D, arguments={})`, and again with `arguments={"audio": null}`.
+4. `validate_workflow(name="regression-null-var", arguments={"audio":
+   "https://example.com/a.mp3"})`.
+5. `validate_workflow(workflow=D)` with the step's `arguments` changed to `{}`, so nothing
+   feeds `audio`.
+expected:
+- Steps 1 and 2 are `valid: true` / saved. Each carries a warning at
+  `steps[0].task.arguments.audio` saying `audio` is fed by variable `audio`, which is null.
+- Step 3 is `valid: false` both times, with one error at `steps[0].task.arguments.audio`
+  that carries `"variable": "audio"` and names the variable.
+- Step 4 is `valid: true` with no warnings.
+- Step 5 is `valid: false` with the generic "which the step does not supply" error and no
+  `variable` key.
+It is a **finding** if `save_workflow` refuses D, if steps 1 and 2 disagree with the
+save, or if step 3 or step 5 comes back `valid: true`.
+cleanup: `delete_workflow(name="regression-null-var")`.
+metrics: none.
+source: tester, verified in #364 on 2026-09-23 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 773e9d6`.
+
 ## Performance
 
 ### S-P001 — default image generation latency

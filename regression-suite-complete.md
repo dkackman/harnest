@@ -3513,4 +3513,309 @@ source: tester, found while running TESTER_TASK.agent.md (ep37); verified on 202
 over MCP as model `claude-opus-5-5` via provider `anthropic` (job `5eb50a6fbc7b` in
 `qa-ep37`: 248 f, 24.0 fps, 32 kHz stereo, peak −1.84 dBFS).
 
+### C-F095 — a `concat_videos` cut records its shots, and `seams=true` works without `boundaries`
+pending: #385
+source: tester, spec for #385 from #378's plan v2
+Output assessment, stage A. A cut made by `concat_videos` now records its shots, each
+with a name, a start frame and a frame count. They appear in the output's manifest and
+in `get_gallery_metadata`'s `media.shots`. `get_output_frames(seams=true)` then finds
+the seams from those shots. Before this, it returned a 400 unless the caller passed
+`boundaries`. The case is CPU only and takes a few seconds. Workflow W (the gather cut):
+`{"id": "qa-c-f095", "variables": {"clips": [{"name": "incident", "clip":
+"asset:qa-cast/ep3-shot1-incident.mp4"}, {"name": "reply", "clip":
+"asset:qa-cast/ep3-shot2-reply.mp4"}]}, "steps": [{"name": "shot", "for_each":
+"variable:clips", "task": {"command": "grade", "arguments": {"media": "item:clip",
+"contrast": 1}}, "result": {"content_type": "video/mp4", "fps": 24, "subfolder":
+"intermediate", "save": false}}, {"name": "cut", "task": {"command": "concat_videos",
+"arguments": {"videos": "gather:shot", "fps": 24}}, "result": {"content_type":
+"video/mp4", "fps": 24, "subfolder": "final"}}]}`. Each fixture clip is 124 frames at
+24 fps.
+1. `validate_workflow(W)` returns `valid: true`. Then `run_workflow(inline_workflow=W,
+   acknowledged_cost=true, wait_seconds=55)` returns `succeeded` with one `final` file,
+   which is 248 frames.
+2. `get_gallery_metadata(<cut>)`.
+3. `get_output_frames(name=<cut>, seams=true)`, with no `boundaries`.
+4. `get_output_frames(name=<cut>, seams=[1])`, with no `boundaries`.
+expected:
+- Step 2: `media.shots` has exactly 2 entries, in order. The first is `shot@incident`,
+  starting at frame 0 with 124 frames. The second is `shot@reply`, starting at frame 124
+  with 124 frames. The frame counts sum to the file's `frame_count` (248). The run's
+  manifest, from `get_job`, carries the same `shots` for the cut file.
+- Step 3 returns one seam, at frame 124 (5.17 s), labelled `shot@incident | shot@reply`
+  (or those names in the tool's own seam-label form, as in C-F086). It carries the frames
+  on either side of the seam and a `difference`. It is not a 400.
+- Step 4 returns that same seam.
+It is a **finding** if `shots` is missing or has the wrong count or names, if the frame
+counts don't sum to 248, or if `seams=true` without `boundaries` still returns 400 for
+this cut.
+cleanup: `delete_output(job_id=…)`. The clips are shared fixtures, so leave them.
+metrics: none.
+
+### C-F096 — a `dissolve_videos` cut records its shots, and `boundaries` still overrides them
+pending: #385
+source: tester, spec for #385 from #378's plan v2
+Stage A, the dissolve branch. It checks that the shot frame counts still sum to the
+file's frames when neighbouring shots overlap, and that a caller's explicit `boundaries`
+still wins over the recorded shots. The case is CPU only. Workflow D: `{"id":
+"qa-c-f096", "steps": [{"name": "edit", "task": {"command": "dissolve_videos",
+"arguments": {"videos": ["asset:qa-cast/ep3-shot1-incident.mp4",
+"asset:qa-cast/ep3-shot2-reply.mp4", "asset:qa-cast/ep3-shot1-incident.mp4"],
+"dissolve_frames": 12, "fps": 24}}, "result": {"content_type": "video/mp4", "fps": 24,
+"subfolder": "final"}}]}`. If `get_task("dissolve_videos")` names the list or overlap
+argument differently, use its names. The shape of the case stays the same. Three
+124-frame clips with two 12-frame dissolves give 3·124 − 2·12 = 348 frames.
+1. `validate_workflow(D)`, then `run_workflow(inline_workflow=D, acknowledged_cost=true,
+   wait_seconds=55)` returns `succeeded`, and the file is 348 frames.
+2. `get_gallery_metadata(<cut>)`.
+3. `get_output_frames(name=<cut>, seams=true)`, with no `boundaries`.
+4. `get_output_frames(name=<cut>, seams=true, boundaries=[100])`.
+expected:
+- Step 2: `media.shots` has 3 entries in input order. Their frame counts sum to exactly
+  348. Their starts rise strictly, and the last shot ends at frame 348. Asset-literal
+  inputs give no `shot@` names, so whatever names they carry are not asserted.
+- Step 3 returns 2 seams, one at each dissolve. The first is near frame 112 (124 − 12),
+  within the dissolve's 12 frames. The second is near 224.
+- Step 4 returns one seam, at frame 100. The explicit `boundaries` override the recorded
+  shots.
+It is a **finding** if the frame counts sum to 372 (overlaps counted twice) or to any
+figure other than the file's frames, if there is no `shots` entry, or if an explicit
+`boundaries` is ignored in favour of the shots.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F097 — shot edges: trimmed cuts, a single-shot cut, `slice_audio`, and media with no shots
+pending: #385
+source: tester, spec for #385 from #378's plan v2
+Stage A's implied edges:
+- a shot's frame count is what landed in the file, after `trim_frames`;
+- a one-shot cut has no seams, which is an empty answer rather than an error;
+- `slice_audio` drops `shots`, as the plan says;
+- media made before the feature carries no shots, so `seams=true` without `boundaries`
+  must still refuse it clearly.
+
+The case is CPU only, with three short jobs.
+1. **Trimmed.** Inline one step `concat_videos` `{"videos":
+   ["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"],
+   "trim_frames": 4, "fps": 24}`, `result: {"content_type": "video/mp4", "fps": 24,
+   "subfolder": "final"}`. Check `get_task("concat_videos")` for how `trim_frames`
+   applies. Run it with `wait_seconds=55`, then call `get_gallery_metadata`.
+   Expected: the `media.shots` frame counts sum to exactly the file's `frame_count`, and
+   `seams=true` puts its one seam at the first shot's recorded length.
+2. **One shot.** The same step with `"videos": ["asset:qa-cast/ep3-shot1-incident.mp4"]`,
+   and no trim. Expected: `media.shots` has 1 entry of 124 frames.
+   `get_output_frames(seams=true)` returns zero seams, as an empty list or a message
+   saying there are none. It is not a 400 asking for `boundaries`, and not a 500.
+3. **`slice_audio` drops shots.** Inline one step `slice_audio` `{"audio": "output:<step
+   1's cut>", "start_seconds": 1, "duration_seconds": 3}`, `result: {"content_type":
+   "audio/wav", "subfolder": "final"}`. Expected: `succeeded`. `get_gallery_metadata`
+   on the result has no `media.shots` (absent or empty), and neither has its manifest
+   entry.
+4. **No shots recorded.** `get_output_frames(name="asset:qa-cast/ep25-episode.mp4",
+   seams=true)` without `boundaries`. That fixture predates the feature, and the plan
+   defers an mp4-embedded shot tag. Expected: a clear 400 that names `boundaries` as
+   the remedy. Then the same call with `boundaries=[236]` returns the seam at frame 236,
+   which is C-F086's result.
+It is a **finding** if any step 1 shot count disagrees with the file's frames, if a
+one-shot cut raises, if an audio slice carries `shots`, or if step 4 returns a 500 or an
+empty success instead of naming `boundaries`.
+cleanup: `delete_output(job_id=…)` for each of the three jobs. Delete step 3's job
+before step 1's.
+metrics: none.
+
+### C-F098 — the probes are listed as `assessment` tasks, and a probe must save JSON
+pending: #387
+source: tester, spec for #387 from #378's plan v2
+Stage B adds three probe tasks: `analyze_shots`, `analyze_seams` and
+`analyze_sync_drift`. `list_tasks` gets a fourth list, `assessment`, which holds them.
+A probe's result is a JSON document, so a probe step saved under any other content type
+must fail validation. This case runs nothing and makes no GPU calls.
+1. `list_tasks()`. Expected: a fourth list keyed `assessment` holds exactly the three
+   probes, and none of them also appears in another list. The three lists that were
+   there before keep their contents.
+2. `get_task` for each probe. Expected: each returns a schema, not "Unknown task
+   command", with an argument that takes the media to probe.
+3. `validate_workflow` on a one-step workflow `{"id": "qa-c-f098", "steps": [{"name":
+   "probe", "task": {"command": "analyze_seams", "arguments": {<media arg>:
+   "asset:qa-cast/ep25-episode.mp4"}}, "result": {"content_type": <ct>}}]}`, three
+   times:
+   - with `application/json`, expect `valid: true`;
+   - with `text/plain`, expect `valid: false`, with an error on `steps[0].result` (or its
+     `content_type`) that names `application/json`;
+   - with `video/mp4`, expect `valid: false` in the same form.
+   Repeat the `text/plain` validation for `analyze_shots` and `analyze_sync_drift`. It
+   must fail there too.
+It is a **finding** if the `assessment` list is missing or incomplete, if any probe is
+unknown to `get_task`, or if a non-JSON content type validates.
+cleanup: none.
+metrics: none.
+
+### C-F099 — `analyze_seams` flags a level step at the one seam that has it; a clean cut has no finding
+pending: #387
+source: tester, spec for #387 from #378's plan v2
+Stage B's acceptance intent has two parts:
+- a `gain_audio` step between two shots flags `seam_level_step` at that seam only;
+- a clean cut has no drift finding.
+
+Both halves are built from one clip repeated three times, so every shot starts at the
+same level and the only step is the one made on purpose. The case is CPU only.
+
+Workflow S has these steps:
+1. `cut`: `concat_videos` `{"videos": ["asset:qa-cast/ep3-shot1-incident.mp4",
+   "asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot1-incident.mp4"],
+   "fps": 24}`, with `video/mp4` in `final`. This makes 372 frames with seams at
+   frames 124 and 248.
+2. `stepped_audio`: `gain_audio` `{"audio": "previous_result:cut", "gain_db": -12,
+   "start_frame": 248, "num_frames": 124, "fps": 24}`. The last shot drops 12 dB, so
+   the only level change is at seam 2.
+3. `stepped`: `pair_audio` `{"video": "previous_result:cut", "audio":
+   "previous_result:stepped_audio"}`, with `video/mp4` in `final`.
+4. `seams_clean`: `analyze_seams` on `previous_result:cut`.
+5. `seams_stepped`: `analyze_seams` on `previous_result:stepped`.
+6. `drift_clean`: `analyze_sync_drift` on `previous_result:cut`.
+7. `shots_clean`: `analyze_shots` on `previous_result:cut`.
+
+Each probe step saves `application/json` to `final`. Use the media-argument name that
+`get_task` gives.
+
+Run it with `validate_workflow`, then `run_workflow(..., acknowledged_cost=true,
+wait_seconds=55)`, then read each probe's JSON with `get_output_text`.
+expected:
+- `seams_stepped` has a `seam_level_step` finding at seam 2 (frame 248). Its reported
+  step is about 12 dB (±1.5). There is no `seam_level_step` at seam 1 (frame 124).
+- `seams_clean` has no `seam_level_step` at either seam.
+- `drift_clean` has no drift finding. The file's own sync is intact.
+- `shots_clean` reports 3 shots, which match the cut's `media.shots` in starts and
+  frame counts, and puts them within 1 dB of each other in level.
+- Every seam a probe names lies within the file (0 < frame < 372).
+It is a **finding** if the stepped seam isn't flagged, if seam 1 is flagged too, if the
+clean cut has any level-step or drift finding, or if a probe returns something that
+isn't JSON.
+Positive checks for holes, clicks and video jumps aren't built here; see the note on
+#378. A later case can add them.
+cleanup: `delete_output(job_id=…)`.
+metrics: `seam_level_step_db` (seam 2 of `seams_stepped`), from the probe's JSON.
+
+### C-F100 — the level-spread threshold is one 6 dB line
+pending: #387
+source: tester, spec for #387 from #378's plan v2
+Plan v2's answer to Q3 is one level-spread threshold, kept at 6 dB. This case checks
+both sides of that line, plus the real-world pair it was drawn from:
+`ep3-shot1-incident` and `ep3-shot2-reply`, whose mean levels are about 11 dB apart. It
+is CPU only, and each workflow is a `concat_videos` of two shots followed by
+`analyze_shots` saving JSON. A 2-shot spread is made by ducking the second shot's
+region with `gain_audio` and pairing it back, as C-F099 does, starting at frame 124 of
+an incident+incident cut.
+- **Below.** Incident + incident with the second shot at −5 dB: no level-spread finding.
+- **Above.** The same with −7 dB: a level-spread finding that names both shots and a
+  spread of about 7 dB.
+- **Real pair.** Incident + reply, joined with no `match_levels`: a level-spread finding
+  of about 11 dB. The same pair joined with `match_levels: "rms"` has none.
+It is a **finding** if −5 dB is flagged, if −7 dB isn't, if the unmatched ep3 pair
+isn't, or if the threshold is plainly not 6 dB (the flip point lies outside 5–7). If the
+implementer puts the spread finding in `analyze_seams` rather than `analyze_shots`,
+read it there. The finding matters, not which probe carries it.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: `level_spread_db` for the real pair (unmatched), as a trend.
+
+### C-F101 — `assess_output` judges a cut, says which rules it applied, and gives each probe's full body on request
+pending: #388
+source: tester, spec for #388 from #378's plan v2
+Stage C adds the tool `assess_output(name, probe=None, detail=False, workspace=None)`,
+which runs the probes over an existing output and applies the rules. Setup: run
+C-F099's workflow S, or only its steps 1–3 if you want to skip the probes. That gives a
+clean `cut` and a `stepped` cut with a 12 dB step at seam 2.
+1. `assess_output(name=<stepped>)`.
+2. `assess_output(name=<cut>)`.
+3. `assess_output(name=<stepped>, detail=true)`.
+4. `assess_output(name=<stepped>, probe="analyze_seams")`, and the same call with
+   `analyze_shots` and `analyze_sync_drift`.
+5. `assess_output(name="asset:qa-cast/ep25-episode.mp4")`.
+6. `assess_output(name="asset:qa-cast/hal-portrait.jpg")`.
+expected:
+- 1: the result lists the `seam_level_step` finding at seam 2 and not at seam 1. It
+  carries `rules_applied`, a non-empty list that names the seam rule.
+- 2: no seam or drift finding, and `rules_applied` is still present.
+- 3: more than step 1 (per-shot or per-seam figures), with the same findings.
+- 4: each call returns that probe's full JSON body. The seams body agrees with C-F099's
+  `seams_stepped`.
+- 5: works on an `asset:` name. This is a 2-shot dissolve with no recorded shots, so
+  it returns a result that says which rules were skipped for lack of shots. It doesn't
+  raise, and it doesn't invent seams.
+- 6: a still returns `not_applicable` for the video and seam rules, not an error.
+- None of these calls creates a job: `list_jobs` shows no new entry.
+It is a **finding** if the step-1 seam finding or `rules_applied` is missing, if the
+still or the asset errors, or if a `probe=` call returns a summary rather than the
+body.
+cleanup: `delete_output(job_id=…)` on the setup run.
+metrics: none.
+
+### C-F102 — `assess_output` refusals, and it runs while the engine is busy
+pending: #388
+source: tester, spec for #388 from #378's plan v2
+These are the refusals and the concurrency promise from stage C. The probe name is
+checked first, so a bad probe is what gets reported, whatever else is wrong with the
+call.
+1. `assess_output(name="asset:qa-cast/ep25-episode.mp4", probe="analyze_everything")`
+   returns a 400 whose message names the whitelist: `analyze_shots`, `analyze_seams`
+   and `analyze_sync_drift`.
+2. `assess_output(name="no-such/run/file.mp4", probe="analyze_everything")` returns
+   the same probe 400. It is not a not-found error, because the probe is checked first.
+3. `assess_output(name="no-such/run/file.mp4")` returns a clear not-found that names
+   the input. It is not a 500.
+4. **While busy.** Queue a run that keeps the engine busy for at least 10 s, such as
+   `run_workflow(workflow="templates/dissolve-between-shots", arguments={"shots":
+   ["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"],
+   "score": "asset:qa-cast/ep20-score.wav", "total_frames": 236},
+   acknowledged_cost=true, wait_seconds=0)`. Immediately, before waiting, call
+   `assess_output(name="asset:qa-cast/ep25-episode.mp4")`. Then `get_job(<queued
+   job>)`. Expected: `assess_output` returns its result while the job is still
+   `running` or `queued`. It is not queued behind the job, and it doesn't add a job to
+   `list_jobs`. Then `wait_for_job` the run to `succeeded`. If the run ended before
+   the `assess_output` call, repeat with a longer run; the timing, not the tool, is at
+   fault.
+It is a **finding** if an unknown probe is accepted, if its 400 doesn't name the
+whitelist, if step 2 reports the missing file instead of the probe, or if step 4's
+call waits for the job or queues its own.
+cleanup: `delete_output(job_id=…)` on step 4's run.
+metrics: none.
+
+### C-F103 — the guide and `get_gallery_metadata` point at `assess_output`
+pending: #388
+source: tester, spec for #388 from #378's plan v2
+Stage C's discoverability promises. No run is needed.
+1. `list_guides()`. One guide's sections include `Assessing a run's output`.
+2. `get_guide(<that guide>, section="Assessing a run's output")` returns the section,
+   which names `assess_output` and the three probes.
+3. `get_gallery_metadata("asset:qa-cast/ep25-episode.mp4")`, a cut. Its `next` names
+   `assess_output`.
+It is a **finding** if the section is missing, or if a cut's `next` doesn't mention
+`assess_output`.
+cleanup: none.
+metrics: none.
+
+### C-F104 — `assess_output` over fixture cuts: a tracked reading and a positive control
+pending: #386
+source: tester, spec for #386 from #378's plan v2
+Stage D is a field test. The tester runs `assess_output` over a `music-video`, a
+`dialogue-short`, a chained-segments run and the #197 repro cut, and reports the
+numbers. The thresholds are settled from those numbers. That one-off field run is the
+stage's verification, not a suite case. This case is the durable remainder: after the
+thresholds are settled, the fixture cuts keep assessing as they did, and the known-bad
+pair keeps being flagged. It is CPU only.
+1. `assess_output(name=…, detail=true)` on each of `asset:qa-cast/ep25-episode.mp4`,
+   `asset:qa-cast/ep13-episode.mp4` and `asset:qa-cast/ep37-episode.mp4`. Each returns
+   a result with `rules_applied`. Every finding names a seam or shot inside the file's
+   frames.
+2. **Positive control.** Inline `concat_videos` of `ep3-shot1-incident.mp4` +
+   `ep3-shot2-reply.mp4` (no `match_levels`, `fps` 24, `video/mp4` in `final`), then
+   `assess_output(name=<cut>)`. The result has a level-spread finding of about 11 dB, at
+   or above the settled threshold.
+It is a **finding** if the positive control isn't flagged after the thresholds are
+settled, or if a fixture cut's findings change without a verified threshold change.
+Record each reading in `regression-perf/C-F104.jsonl`. A reading that moves by more than
+the per-case rule is a regression to file.
+cleanup: `delete_output(job_id=…)` on the control's run. The fixtures are shared.
+metrics: per fixture cut, the count of findings and the largest `seam_level_step_db`
+and `level_spread_db` that `detail=true` reports; the control's `level_spread_db`.
+
 ## Performance

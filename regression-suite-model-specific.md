@@ -1113,4 +1113,26 @@ against `lem` `develop @ 8e90e32`: job `66256e4ffbea` succeeded in 743 s. B = 1,
 after `shot@react` release 2,116 MB (seq 114); `episode` 2,434–2,440 MB; idle after job 2,119 MB.
 The implementer proposed the case in its hand-off, and it was added only after that run.
 
+### M-F031 — a chained-segments LTX run records one shot per segment
+pending: #385
+source: tester, spec for #385 from #378's plan v2
+Output assessment, stage A: the `AudioVideo.shots` that `run_chain` fills. A
+chained-segments run has one shot per segment, and the shots' frame counts sum to the
+frames in the file. It needs GPU time on LTX-2. Keep it small:
+`run_workflow(workflow="templates/ltx2/chained-segments", arguments={"width": 512,
+"height": 320, "num_frames": 25, "segments": 3, "seed": 7}, acknowledged_cost=true,
+wait_seconds=55)`, then `wait_for_job` until it finishes. `num_frames` must be 8n+1.
+Run `validate_workflow` first and quote its estimate. Keep the template's own `image`
+and `prompt`.
+expected:
+- `succeeded`. `get_gallery_metadata(<final video>)` has `media.shots` with exactly 3
+  entries (one per segment), in order, with rising starts. Their frame counts sum to the
+  file's `frame_count`, however much the chain overlaps or trims its segments.
+- `get_output_frames(name=<final video>, seams=true)` with no `boundaries` returns 2
+  seams, at the recorded shot starts 2 and 3. It is not a 400.
+It is a **finding** if `shots` is missing or its count isn't 3, if the frame counts
+don't sum to the file's frames, or if `seams=true` still needs `boundaries`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
