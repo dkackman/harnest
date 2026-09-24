@@ -2310,12 +2310,12 @@ The `result` blocks matter: a step nothing reads and that saves no file does not
 expected:
 - Run 1: `succeeded`; `warnings` holds **exactly one** entry, `past_end: slice_audio: the
   requested slice runs … past the end of …` (the C-F016 warning). No entry from either step
-  contains `near-silent`.
+  contains `decodes at a mean level` (neither `audio_near_silent` wording).
 - Run 2: `succeeded`; `warnings` holds exactly two entries, both prefixed `voice_diluted:`
-  — the past-end one and `voice_diluted-0.0.wav decodes at a mean level of … dBFS -
-  near-silent for a deliverable meant to be heard …`. Nothing from `voice_inside`.
-It is a **finding** if run 1 carries any `near-silent` entry (the suppression regressed),
-if run 2's `voice_diluted` does not (the check was dropped or widened to all slices), or
+  — the past-end one and `voice_diluted-0.0.wav decodes at a mean level of … dBFS but
+  peaks at … dBFS: quiet overall, not empty …` (#358: peak ≥ -30 dBFS). Nothing from `voice_inside`.
+It is a **finding** if run 1 carries any `audio_near_silent` entry, in either wording (the
+suppression regressed), if run 2's `voice_diluted` carries none (the check was dropped), or
 if either run's past-end warning is missing (that is C-F016's ground, but it is cheap to
 notice here).
 cleanup: `delete_output(job_id=<id>)` for both runs.
