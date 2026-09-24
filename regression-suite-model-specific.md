@@ -751,8 +751,8 @@ expected:
   steps is the bug back — and note `phase: cached` at 0.1 s on every step is the *pipeline*
   residency, not step reuse; only `reused` on `step_end`/the manifest counts.
 - Step 3: `plan.cached_steps: 3` — every member and the join are held.
-- (Not asserted here, tracked in #255: `plan.estimate.minutes` does not yet drop with
-  `cached_steps`.)
+- (#255, verified: the cached estimate is `plan.estimate.cached_minutes`; `minutes` is unchanged
+  by design. Not asserted here.)
 metrics: step 2's job `started_at`→`finished_at` in seconds (`latency`, `condition:
 one-shot-cached`), logged to `regression-perf/M-F020.jsonl`. A reading near step 1's full time is
 the miss back even if `reused` somehow survived.
@@ -841,9 +841,8 @@ expected:
 It is a **finding** if 900 frames or 1920x1088 validates clean, if the refusal degrades to a
 warning, if 345 or the default starts being refused, if the two errors at 900 stop co-reporting, or
 if the message loses the product, the projected GB, the declared ceiling or the issue reference.
-Not covered here (open on #265 at the time of writing): whether `run_workflow` refuses the same
-config on submission, and whether the H3 templates declare a ceiling at all — add those bullets
-when they verify, don't infer them from this one.
+Covered elsewhere: the `run_workflow` refusal is M-F024 (#265); the H3 templates' declared
+ceilings are M-F026 (#324).
 cleanup: none — four validate calls, nothing written.
 source: tester, verified in #265 (partial verify — this half passed, the run-path and H3 halves
 bounced), model `opus` via provider `anthropic`, on 2026-09-21 against `lem` `develop @ d5e3725`.
@@ -1024,9 +1023,7 @@ expected:
   happens after `episode` starts or on the first member, that is the #344 bug back.
 It is a **finding** if the run is OOM-killed, if `release_pipeline` is gone from the template, if
 the release is missing or out of order, or if a later member reloads H3.
-Host RSS is deliberately **not** asserted here. After the release it stays about 10.6 GB above the
-pre-load baseline and grows about 3.6 GB per member; that is open as #368. Once #368 is resolved,
-the issue that closes it should say whether this case should gain an RSS bullet.
+Host RSS is asserted by M-F030 on the same job (#368, verified).
 cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole. Keep it only if
 the run failed and an issue needs it.
 source: tester, verified in #344, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-22
