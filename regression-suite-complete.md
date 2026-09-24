@@ -3712,7 +3712,6 @@ cleanup: `delete_output(job_id=…)` for each job.
 metrics: `level_spread_db` for the real pair (unmatched), as a trend.
 
 ### C-F101 — `assess_output` judges a cut, says which rules it applied, and gives each probe's full body on request
-pending: #388
 source: tester, spec for #388 from #378's plan v2
 Stage C adds the tool `assess_output(name, probe=None, detail=False, workspace=None)`,
 which runs the probes over an existing output and applies the rules. Setup: run
@@ -3744,7 +3743,6 @@ cleanup: `delete_output(job_id=…)` on the setup run.
 metrics: none.
 
 ### C-F102 — `assess_output` refusals, and it runs while the engine is busy
-pending: #388
 source: tester, spec for #388 from #378's plan v2
 These are the refusals and the concurrency promise from stage C. The probe name is
 checked first, so a bad probe is what gets reported, whatever else is wrong with the
