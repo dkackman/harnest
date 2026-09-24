@@ -362,7 +362,6 @@ case on the refusal and its path.
 cleanup: none if refused. Otherwise `cancel_job` and `delete_output(job_id=…)`.
 
 ### SE-F032 — a `constant:` walk can't leave its package or pass through a private name
-pending: #409
 source: tester, spec for #409 from #407's plan v2
 SE-F004 covers `constant:os.environ`, which starts outside the ecosystem. This case covers a walk
 that starts inside an allowed package and reaches out through an attribute: `torch.os` is the
@@ -388,7 +387,6 @@ before the refusal.
 cleanup: none (validation only).
 
 ### SE-F033 — the tightened gate still lets the ecosystem's real classes, dtypes and constants through (negative control)
-pending: #409
 source: tester, spec for #409 from #407's plan v2
 SE-F031 and SE-F032 pass trivially if the gate refuses everything. This case pins the "must still
 pass" half of #409: the names the catalog actually uses. **Validate only.** Carrier as in
@@ -659,7 +657,6 @@ cleanup: `cancel_download` anything that appeared and name it in the issue.
 source: harness, initial security suite 2026-09-13.
 
 ### SE-F034 — a backslash anywhere in a URL is refused (media and `remote_text_encoder.url`)
-pending: #409
 source: tester, spec for #409 from #407's plan v2
 `http://169.254.169.254\@example.com/a.png` is two different URLs: Python's parser reads the host
 as `example.com`, while a WHATWG client reads it as the metadata address. The plan closes that
