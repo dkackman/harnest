@@ -1843,6 +1843,30 @@ metrics: none.
 source: tester, verified in #364 on 2026-09-23 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 773e9d6`.
 
+### S-F123 — `gain_audio` with no region gains the whole track by exactly `gain_db`, through a `pair_audio` chain
+Before #395, a `gain_audio` step with no region validated clean and then failed at run
+time. Now omitting every region argument means the whole track. Cheap: one ~6 s utility
+job, no model load.
+Validate, then run (`workspace="regression-smoke"`, `acknowledged_cost=<plan>`,
+`wait_seconds=55`) one inline workflow with `"seed": 1`:
+`quiet` = `gain_audio(audio="asset:qa-cast/ep31-shot2-shrug.mp4", gain_db=-8)`, result
+`audio/wav`; `repaired` = `pair_audio(video=<same asset>, audio="previous_result:quiet",
+fit="video")`, result `video/mp4`. Then `get_gallery_metadata` on the asset and on
+`repaired`'s output.
+expected:
+- `validate_workflow` is `valid: true` with no region warning, and the job succeeds.
+- `repaired`'s `peak_dbfs`, `mean_dbfs` and `integrated_lufs` each sit 8.0 dB (±0.2)
+  below the asset's. For reference, the asset reads peak -1.76 / -16.58 LUFS, and the
+  output read -9.77 / -24.63.
+- `repaired` keeps the asset's 124 frames, 24 fps and 32 kHz stereo.
+It is a **finding** if the run fails, or if the drop is 0 dB or only covers part of the
+track (then `mean_dbfs` moves by less than `peak_dbfs`).
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep41, confirms #395), on
+2026-09-24 over MCP as model `claude-opus-5-5` via provider `anthropic`, job
+`f8fe1be9fca1` in `qa-ep41`.
+
 ## Performance
 
 ### S-P001 — default image generation latency
