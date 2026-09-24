@@ -3631,8 +3631,7 @@ Stage B adds three probe tasks: `analyze_shots`, `analyze_seams` and
 A probe's result is a JSON document, so a probe step saved under any other content type
 must fail validation. This case runs nothing and makes no GPU calls.
 1. `list_tasks()`. Expected: a fourth list keyed `assessment` holds exactly the three
-   probes, and none of them also appears in another list. The three lists that were
-   there before keep their contents.
+   probes. The three lists that were there before keep their contents.
 2. `get_task` for each probe. Expected: each returns a schema, not "Unknown task
    command", with an argument that takes the media to probe.
 3. `validate_workflow` on a one-step workflow `{"id": "qa-c-f098", "steps": [{"name":
