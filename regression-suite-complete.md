@@ -579,55 +579,6 @@ against dw 0.4.0-beta.3 on `lem` (job `bf289b68b439`, three 8.8 dB-spread shots,
 unequal-shot arithmetic is from job `c35749b7ef07` the same evening, workspace
 `qa-ep11`. At complete rather than smoke level because it needs three video assets.
 
-### C-F021 — casting an H3 short from files actually skips the portrait steps
-`templates/minimax/dialogue-short` can be cast from portraits that already exist: a
-shot entry's subject reference takes `from_file: "asset:..."` exactly as its voice
-references do. Before #122 the two Z-Image `draw_character_a` / `draw_character_b`
-steps still ran and their output was discarded — about 55 s and two model loads
-bought and thrown away on every episode, with no argument a caller could pass to
-avoid it. A recurring cast is the headline use of this template, so the saving is the
-feature, and it is invisible from the deliverable: a cast run and an uncast run
-produce the same kind of file. S-F027 pins the *engine's* elision cheaply; this case
-pins that this template is actually wired to benefit, which takes a real run.
-expected:
-- **Before the run, which is the part the cost acknowledgement depends on.**
-  `validate_workflow(name="templates/minimax/dialogue-short", workspace=<one that can
-  reach the cast>, arguments={<voices>, "shots": [entries whose subject references use
-  `from_file: "asset:<portrait>"`]})` → a `plan` whose `elided_steps` names
-  **both** `draw_character_a` and `draw_character_b`, each with a reason, and whose
-  `steps` is reduced accordingly (2 for a one-entry `shots` list, against 8 for the
-  stock five-shot default). The count a caller acknowledges must be the count that runs.
-- **The run.** That workflow run for real → `succeeded`, with both draw steps named in
-  the job's **`warnings`** as not having run, each naming the argument that overrode them
-  (`overridden_by`, and `kind: "step_elided"` on the matching `warning` event). Per #157
-  the wording must **not** suggest a misspelled reference or a missing `result` when the
-  step was elided because an argument was supplied — that is the happy path, not a
-  suspected fault.
-- **Neither portrait is written.** The manifest contains only the shot(s) under
-  `intermediate/` and the assembled episode under `final/` — no Z-Image output.
-- **No Z-Image is ever loaded.** `progress` / `get_job_events` go straight to the first
-  shot step with `phase_detail` naming the H3 pipeline. There must be no `loading`
-  phase for the portrait model at all: a run that loads the weights and then discards
-  the image has not saved the expensive half.
-- **Control — the uncast default is unchanged.** `validate_workflow` on the same
-  template with **no** `shots` override → `steps: 8`, `elided_steps: []`,
-  `list_entries.shots: 5`. Both draw steps still run for a caller who did not supply
-  portraits, because the stock shots reference them. This control is the whole safety
-  margin: elision that fired here would silently break the default deliverable.
-- The template's `save: false` on the two draw steps is what lets elision reach them
-  (the engine keeps any step that saves — S-F027 guardrail 1), so the cast validate
-  above is itself the check that the template half is still in place.
-cleanup: delete the cast run's outputs (sweeps its run directory). Keep the cast
-assets — portraits and voice clips are durable fixtures.
-source: tester, model `opus` via provider `anthropic`, verified in #122 on 2026-09-14
-against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `af59273620ae`, run
-`20260914-044007-369fdaf5`, one-entry `shots` cast from
-`asset:qa-cast/{priya,hal}-portrait.jpg`, succeeded in 535.8 s against an 8.4 min
-`derived` estimate; both draw steps warned, manifest two entries, first `loading`
-phase was `pipeline: MiniMaxAI/MiniMax-H3`). Proposed by the implementer in that
-issue; the one-entry `shots` list is mine, to buy the same evidence for a quarter of
-the five-shot price.
-
 ### C-F023 — reloading one workflow against itself releases the resident pipeline first
 The worker keeps loaded pipelines between jobs so a repeat run is warm. When the *same* workflow is
 re-run with an argument that changes what a step loads — a LoRA scale, a canvas, a step count,
@@ -1028,7 +979,7 @@ true about it. A two-run probe identical except for `sample_rate`, with
 `total_frames` deliberately past the score's end, makes the past-end warning
 the assertion. Task-only, loads no model, uses the two C-F001 fixtures and the
 `ep15-song.mp3` fixture; ~10 s for both runs.
-expected: three parts.
+expected: four parts.
 (a) **The template's shape.** `get_workflow("templates/dissolve-between-shots")`:
 the `soundtrack` step calls `slice_audio` with `audio`/`start_frame`/
 `num_frames`/`fps` and **no** `sample_rate`; a `soundtrack_resampled` step
@@ -1054,6 +1005,10 @@ on the treatment run's `film` output reports `sample_rate: 32000`,
 `duration_seconds: 35.0` (±0.05), `frame_count: 236`, `fps: 24`, and `peak_dbfs`
 within ~0.1 dB of -3.0 (the template's `balanced` step). A relabel would have
 produced a 41.4 s track (35 × 44100/32000).
+(d) **An in-range run is clean.** The treatment arguments with `total_frames:
+236` (in range), `match_levels: "rms"` and `match_levels_dbfs: -24` validate
+clean and finish with `warnings` empty — no `sample_rate_mismatch`, no
+`slice_past_end`.
 It is a **finding** if (a)'s `soundtrack` step regains a `sample_rate` argument
 or the resample step is dropped or bypassed by `mixed`; if the treatment run's
 `slice_past_end` warning is missing while the control's is present (the
@@ -1076,6 +1031,7 @@ C-F001 fixtures are named above instead because they are the pair this suite
 already guarantees (same 124 frames / 24 fps / 32 kHz), and the case asserts
 nothing about the shots beyond their rate and frame count — as C-F020 does.
 Reads with C-F031, whose (b)/(c) are the same assertion on `assemble-and-score`.
+source: merged C-F045 (curation 2026-09-24)
 
 ### C-F035 — `templates/audio-trim-fade` carries the source rate through, and a `result.sample_rate` relabel warns at save time
 C-F031 (a) pins #180's guard on a task's `sample_rate` *argument*. #205 found the
@@ -1226,9 +1182,9 @@ if either run errors, or if either film's frame count, rate or duration is
 off. `score_gain: 0.0` must be accepted without a warning in both arms (a
 muted score is a legal mix). Levels are **not** the assertion: with
 `match_levels: "rms"` shot 1 is clip-held short of the −20 dBFS target and
-the seam still carries a ~2.6 dB step — #214 asks for that to be reported and
-#215 for the template to expose `match_levels_dbfs`; when either lands,
-extend this case rather than reading the silence as a pass.
+the seam still carries a ~2.6 dB step. #214 (clip-hold now reported, C-F069) and
+#215 (template exposes `match_levels_dbfs`, C-F038/C-F067) are verified; level
+matching is their subject, not this case's.
 cleanup: delete both runs and the score if it was built for this case. The
 ep21 fixtures are durable — keep them.
 source: tester, found while running TESTER_TASK.agent.md (episode 22) on
@@ -1401,38 +1357,6 @@ two-child call). Merged from a separate C-F043 during the 2026-09-22 suite
 audit — both cases built the identical inline composition against the same
 child with no run cost of their own, differing only in which estimate
 fields they scored.
-
-### C-F045 — `dissolve-between-shots` resamples a 44.1 kHz score onto 32 kHz shots when told the target rate
-One template run, no GPU (~5 s). The two shots are shared assets at 32000 Hz
-(`asset:qa-cast/ep28-shot1-wide.mp4`, `asset:qa-cast/ep28-shot2-close.mp4`,
-248 f between them at 24 fps — read both with `get_gallery_metadata` first;
-the case is void if either has been re-kept at another rate) and the score is
-44100 Hz (`asset:qa-cast/ep15-song.mp3`). Validate, bind the cost, run:
-`validate_workflow(name: "templates/dissolve-between-shots", workspace:
-"regression-complete", arguments: {shots: [<shot1>, <shot2>],
-dissolve_frames: 12, match_levels: "rms", match_levels_dbfs: -24, score:
-<song>, sample_rate: 32000, fps: 24, score_start_frame: 0, total_frames:
-236, score_gain: 1.0, world_gain: 1.8})` then `run_workflow` with the same
-arguments and the bound `acknowledged_cost`; `wait_for_job`; then
-`get_gallery_metadata(name: <final output>, envelope: true)` and
-`get_job_events`.
-expected: `validate_workflow` is `valid: true` with no warnings; the job
-`succeeded`; a `soundtrack_resampled` step ran (present in the events /
-`get_job` steps); the final video reports `media.sample_rate` **32000**,
-`frame_count` 236 (248 − 12), `fps` 24, stereo; `job.warnings` is
-empty — no `sample_rate_mismatch`, no `slice_past_end`. The template's
-`sample_rate` variable is what resampled the score onto the shots' rate;
-the regression is the job failing at step 0 with `dissolve_videos needs one
-sample rate, got [...]` or the rate leaking through as 44100 on the output.
-It is a **finding** if the run succeeds but the output rate is not the
-`sample_rate` given, or if the run needs an extra `resample_audio` the
-caller had to author. (The mirror case — shots at *different* rates from
-each other — is #287, verified — pinned by C-F057.)
-cleanup: `delete_output` on the run's outputs (the shared assets stay).
-source: tester, found while running TESTER_TASK.agent.md (episode 29; run
-over MCP 2026-09-21 in `qa-ep29` as job `13a766bd6a77`, model `opus` via
-provider `anthropic`; 236 f / 32000 Hz / peak −3.07, 10 envelope bins, no
-warnings).
 
 ### C-F046 — a lossless save of an over-full waveform warns twice: the prediction and the clipped file it wrote
 One inline task-only job, no GPU (~5 s). `resample_audio` on
@@ -2083,41 +2007,6 @@ on 2026-09-22: #306 raised `mix_audio_gain_not_db`'s threshold from `> 1.0` to `
 case's own gain of 12 is unaffected. The threshold's other side (1.8 silent, 12 warns) is
 pinned by C-F065.
 
-### C-F061 — `gain_audio` ducks exactly the second-based region it was given, by exactly the dB it was given, and nothing outside it
-`gain_audio` is the one region-scoped level tool (a duck under a line, a boost on a sting),
-and its failure modes — the gain applied to the whole track, the region converted with the
-wrong rate or channel layout, dB applied as a multiplier — all still "succeed". A consumer
-that cannot listen only catches them by measuring the envelope bin by bin, so this pins the
-arithmetic on one shot with a known, flat middle. Seeded, one job, seconds, one asset:
-1. `get_gallery_metadata(name="asset:qa-cast/ep31-shot1-return.mp4", envelope=true)` —
-   the source (5.167 s, 32 kHz stereo, 124 f @ 24 fps).
-2. `run_workflow(workspace=<suite workspace>, inline_workflow={"id":
-   "regression-gain-region", "seed": 1, "steps": [
-   {"name": "duck_middle", "task": {"command": "gain_audio", "arguments":
-   {"audio": "asset:qa-cast/ep31-shot1-return.mp4", "gain_db": -12, "start_seconds": 2.0,
-   "duration_seconds": 1.0}},
-   "result": {"content_type": "audio/wav", "subfolder": "final", "file_base_name": "gain-region"}}]},
-   acknowledged_cost=<bound from validate>)`, `wait_for_job`, then
-   `get_gallery_metadata(envelope=true)` on the output.
-expected:
-- `succeeded`, `warnings: []`; output is 5.167 ± 0.01 s, `sample_rate` 32000, 2 channels
-  (the video's soundtrack is taken, not relabeled or downmixed).
-- Envelope bin 2 (2–3 s): `rms_dbfs` and `peak_dbfs` are each the source's bin-2 figure
-  − 12.0 ± 0.1 dB (about −33.3 rms / −17.7 peak from −21.3 / −5.7).
-- Every other bin's `rms_dbfs` and `peak_dbfs` equal the source's within 0.05 dB — the
-  region did not leak into 1–2 s or 3–4 s (a wrong sample-rate or interleaving conversion
-  moves or stretches it), and the track-level `peak_dbfs` is unchanged (−4.81, which lives
-  in bin 3).
-It is a **finding** if bin 2 moves by anything other than −12 dB, if any other bin moves,
-if the duration or rate changes, or if the run fails.
-cleanup: `delete_output` the run folder.
-metrics: none.
-source: moved from S-F095 (curation 2026-09-22, harnest#2); tester, found while running TESTER_TASK.agent.md (ep35, `qa-ep35`, job
-`220b0347481a`) on 2026-09-21 over MCP as model `opus` via provider `anthropic`: bin 2
-−21.258 → −33.258 rms, −5.666 → −17.668 peak; bins 0/1/3/4/5 identical to the source to
-the third decimal; 5.1667 s / 32 kHz / 2 ch; 0.8 s end to end. The step's log of what it
-applied is pinned separately by C-F063 (#294).
-
 ### C-F062 — `mix_audio` and `crossfade_audio` resample tracks at different sample rates instead of failing
 #293: the two pure-audio joiners still died with `needs one sample rate, got [32000, 44100]`
 after #108 (`concat_videos`) and #287 (`dissolve_videos`, C-F057) had removed that constraint
@@ -2168,7 +2057,7 @@ rate behave the same way.
 ### C-F063 — `gain_audio` logs the dB and the resolved region it applied, in seconds and in samples, for both the seconds and the frames form
 #294: `gain_audio` applied its gain silently — nothing between `phase: task / gain_audio` and
 `phase: saving` — so a consumer that cannot listen could only prove a duck landed by
-measuring the envelope (C-F061), and could not prove it at all where the region fell on a
+measuring the envelope (C-F080), and could not prove it at all where the region fell on a
 quiet stretch. Now the step emits a log event in the shape #292 gave `mix_audio`, and the
 frame form shows its frame→second→sample conversion in that same event, so a wrong `fps`
 or rate is visible without a measurement. Cheap: one ~1 s task-only run, one shared asset,
@@ -2244,7 +2133,7 @@ source: moved from S-F098 (curation 2026-09-22, harnest#2); tester, found while 
 resampled wav read back 32000 Hz / 2 ch / 30.023406 s from a 30.02 s 44.1 kHz source, the
 224-frame slice 9.333344 s / 32000 Hz; whole chain 0.4 s. Two `gain_audio` frame-form
 ducks chained off the slice by `previous_result:` each landed exactly −9.00 dB in their
-bins (C-F061/C-F063 cover that arithmetic; this case is the conversion in front of it).
+bins (C-F080/C-F063 cover that arithmetic; this case is the conversion in front of it).
 
 ### C-F065 — `mix_audio`'s not-dB gain warning has a threshold: a modest multiplier like the templates' stock `world_gain: 1.8` is silent, a dB-shaped 12 still warns
 The `mix_audio_gain_not_db` heuristic C-F060 pins fired at any gain above 1.0 when it
@@ -3001,6 +2890,10 @@ expected:
   identical** to the source (not "close" — the same float). `duration_seconds`,
   `sample_rate` and `channels` unchanged. A shift outside the region, a region that
   moved by less than the asked gain, or a changed duration is the finding.
+- **Seconds, a video's stereo soundtrack.** The same seconds-form call on the
+  soundtrack of `asset:qa-cast/ep31-shot1-return.mp4` (`"start_seconds": 2.0,
+  "duration_seconds": 1.0`) returns 2 channels / 32 kHz / 5.167 s, with only the
+  addressed bin moved by −12 ± 0.1 dB.
 - **Frames, positive gain, region reaching past the end.** Same shape with
   `{"gain_db": 6, "start_frame": 400, "num_frames": 200, "fps": 24}` (frame 400 =
   16.667 s; the region would end at 25 s on a 19.67 s track) → `succeeded`, and
@@ -3024,6 +2917,7 @@ identical; 1.1 s) and job `bc12d804d750` (frames/+6 dB past the end: duration st
 19.666656 s, seconds 16–18 peak −28.886 → −22.884; 0.6 s). The implementer's
 proposed sample-level assertions (scaled-by-linear-gain inside, bit-identical outside)
 are the pytest form of the same properties and belong in the dw repo.
+source: merged C-F061 (curation 2026-09-24)
 
 ### C-F081 — the stock `generate-speech` template runs on its VITS defaults, and no longer declares `voice_preset`
 #226 moved `templates/generate-speech`'s default `model_name` from `suno/bark-small`

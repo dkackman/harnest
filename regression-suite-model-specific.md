@@ -1131,4 +1131,54 @@ don't sum to the file's frames, or if `seams=true` still needs `boundaries`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### M-F032 — casting an H3 short from files actually skips the portrait steps
+`templates/minimax/dialogue-short` can be cast from portraits that already exist: a
+shot entry's subject reference takes `from_file: "asset:..."` exactly as its voice
+references do. Before #122 the two Z-Image `draw_character_a` / `draw_character_b`
+steps still ran and their output was discarded — about 55 s and two model loads
+bought and thrown away on every episode, with no argument a caller could pass to
+avoid it. A recurring cast is the headline use of this template, so the saving is the
+feature, and it is invisible from the deliverable: a cast run and an uncast run
+produce the same kind of file. S-F027 pins the *engine's* elision cheaply; this case
+pins that this template is actually wired to benefit, which takes a real run.
+expected:
+- **Before the run, which is the part the cost acknowledgement depends on.**
+  `validate_workflow(name="templates/minimax/dialogue-short", workspace=<one that can
+  reach the cast>, arguments={<voices>, "shots": [entries whose subject references use
+  `from_file: "asset:<portrait>"`]})` → a `plan` whose `elided_steps` names
+  **both** `draw_character_a` and `draw_character_b`, each with a reason, and whose
+  `steps` is reduced accordingly (2 for a one-entry `shots` list, against 8 for the
+  stock five-shot default). The count a caller acknowledges must be the count that runs.
+- **The run.** That workflow run for real → `succeeded`, with both draw steps named in
+  the job's **`warnings`** as not having run, each naming the argument that overrode them
+  (`overridden_by`, and `kind: "step_elided"` on the matching `warning` event). Per #157
+  the wording must **not** suggest a misspelled reference or a missing `result` when the
+  step was elided because an argument was supplied — that is the happy path, not a
+  suspected fault.
+- **Neither portrait is written.** The manifest contains only the shot(s) under
+  `intermediate/` and the assembled episode under `final/` — no Z-Image output.
+- **No Z-Image is ever loaded.** `progress` / `get_job_events` go straight to the first
+  shot step with `phase_detail` naming the H3 pipeline. There must be no `loading`
+  phase for the portrait model at all: a run that loads the weights and then discards
+  the image has not saved the expensive half.
+- **Control — the uncast default is unchanged.** `validate_workflow` on the same
+  template with **no** `shots` override → `steps: 8`, `elided_steps: []`,
+  `list_entries.shots: 5`. Both draw steps still run for a caller who did not supply
+  portraits, because the stock shots reference them. This control is the whole safety
+  margin: elision that fired here would silently break the default deliverable.
+- The template's `save: false` on the two draw steps is what lets elision reach them
+  (the engine keeps any step that saves — S-F027 guardrail 1), so the cast validate
+  above is itself the check that the template half is still in place.
+cleanup: delete the cast run's outputs (sweeps its run directory). Keep the cast
+assets — portraits and voice clips are durable fixtures.
+source: tester, model `opus` via provider `anthropic`, verified in #122 on 2026-09-14
+against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep11` (job `af59273620ae`, run
+`20260914-044007-369fdaf5`, one-entry `shots` cast from
+`asset:qa-cast/{priya,hal}-portrait.jpg`, succeeded in 535.8 s against an 8.4 min
+`derived` estimate; both draw steps warned, manifest two entries, first `loading`
+phase was `pipeline: MiniMaxAI/MiniMax-H3`). Proposed by the implementer in that
+issue; the one-entry `shots` list is mine, to buy the same evidence for a quarter of
+the five-shot price.
+source: moved from C-F021 (curation 2026-09-24)
+
 ## Performance
