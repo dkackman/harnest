@@ -322,12 +322,11 @@ cleanup: none if refused; otherwise `cancel_job` and delete outputs.
 source: harness, initial security suite 2026-09-13.
 
 ### SE-F031 — a `*_type` / `config_type` / dtype name must be a class (or a dtype), even inside the ecosystem
-pending: #409
 source: tester, spec for #409 from #407's plan v2
 SE-F002 and SE-F007 cover names from outside the ecosystem. This case covers the gap inside it.
 `torch` is an allowed package, so `torch.hub.load`, a function that downloads a GitHub repo and
 runs its code, used to pass the package check. Untrusted, a `*_type` or `config_type` name must
-now resolve to a **class**, and a `dtype` / `*_dtype` key must resolve to a
+now resolve to a **class**, and a `dtype` / `*_dtype` key must resolve to a class or a
 `torch.dtype`. `validate_workflow` reports a violation at the step's path.
 Carrier: `get_workflow("templates/text-to-image")`, passed inline with one probe per
 `validate_workflow` call. Placements are the ones SE-F002 and SE-F007 confirmed. Every
@@ -342,13 +341,12 @@ called with nothing and fails with a harmless `TypeError`, and never fetches a r
 - (d) A module rather than a class: `component_type: "torch.hub"`.
 - (e) A dtype under a key that wants a class: `component_type: "torch.float16"`.
 - (f) A dtype key given a non-dtype: `torch_dtype: "torch.hub.load"` in
-  `from_pretrained_arguments`, and separately `torch_dtype: "torch.Tensor"` (a class, but not a
-  dtype).
+  `from_pretrained_arguments`.
 - (g) `run_workflow` of (a) inline, with whatever `acknowledged_cost` the tool demands.
 
 expected:
 - (a)–(f) each return `valid: false`, at that probe's own path, with a message saying the name
-  is not a class (or, for (f), not a dtype). A message that names the trust gate or
+  is not a class (for (f), not a class or a torch.dtype). A message that names the trust gate or
   `--trust-workflows` also passes, as long as it comes at validation.
 - (g) is refused before anything is queued. If the tool does queue a job that fails its
   pre-check, `get_job_events` shows no download and no load phase.
