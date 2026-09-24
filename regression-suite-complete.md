@@ -3895,4 +3895,41 @@ warning.
 cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
+### C-F108 — a joined shot from a `previous_result:` input is named after its step, in the manifest and in probe findings
+source: tester, verified in #396
+A join input from an earlier step used to be named `video N`. The first fix renamed it
+only in the manifest. The shot list on the artifact, which a later `previous_result:`
+probe reads, kept `video N`. So check the probe bodies, not only the manifest. The case
+is CPU only and takes one short job.
+1. `run_workflow(inline_workflow={"id": "qa-c-f108", "steps": [{"name": "duck2", "task":
+   {"command": "gain_audio", "arguments": {"audio": "asset:qa-cast/ep31-shot2-shrug.mp4",
+   "gain_db": -8, "start_frame": 0, "num_frames": 124, "fps": 24}}, "result":
+   {"content_type": "audio/wav", "save": false}}, {"name": "shot2d", "task": {"command":
+   "pair_audio", "arguments": {"video": "asset:qa-cast/ep31-shot2-shrug.mp4", "audio":
+   "previous_result:duck2", "fit": "video"}}, "result": {"content_type": "video/mp4",
+   "save": false}}, {"name": "cut", "task": {"command": "concat_videos", "arguments":
+   {"videos": ["asset:qa-cast/ep31-shot1-return.mp4", "previous_result:shot2d"], "fps":
+   24}}, "result": {"content_type": "video/mp4", "subfolder": "final"}}, {"name":
+   "seams_cut", "task": {"command": "analyze_seams", "arguments": {"video":
+   "previous_result:cut"}}, "result": {"content_type": "application/json"}}, {"name":
+   "drift_cut", "task": {"command": "analyze_sync_drift", "arguments": {"video":
+   "previous_result:cut"}}, "result": {"content_type": "application/json"}}, {"name":
+   "diss", "task": {"command": "dissolve_videos", "arguments": {"videos":
+   ["previous_result:shot2d", "previous_result:cut"], "fps": 24}}, "result":
+   {"content_type": "video/mp4", "subfolder": "intermediate"}}, {"name": "seams_diss",
+   "task": {"command": "analyze_seams", "arguments": {"video": "previous_result:diss"}},
+   "result": {"content_type": "application/json"}}]}, acknowledged_cost=true,
+   wait_seconds=55)`.
+2. `get_output_text` on the `seams_cut`, `drift_cut` and `seams_diss` files.
+expected:
+- Step 1 returns `succeeded`. Manifest `shots[].name`: `cut` has
+  `ep31-shot1-return.mp4`, `shot2d`, and `diss` has `shot2d`, `cut`.
+- Step 2: every body has `shots_source: "artifact"`. In `seams_cut`, the seam and each
+  finding read `between: ["ep31-shot1-return.mp4", "shot2d"]`. In `drift_cut`, `shots[]`
+  names are `ep31-shot1-return.mp4`, `shot2d`. In `seams_diss`, the seam and each finding
+  read `between: ["shot2d", "cut"]`.
+It is a **finding** if any name in the manifest or a probe body reads `video N`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
