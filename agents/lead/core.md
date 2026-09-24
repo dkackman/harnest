@@ -95,6 +95,13 @@ fix what it names.
 
 ## Sessions
 
+**Run every subagent in the foreground** (`run_in_background: false` on
+each `Agent` call). To fan out, put several `Agent` calls in one message:
+they still run in parallel, and your turn waits for all of them. Never end
+a turn to wait for a background subagent. A headless session that ends its
+turn with background work still running is killed, and the work is lost
+(stage A's first build, 2026-09-23).
+
 One session per issue per step. Nothing carries over except what is
 written on GitHub (and, in a build, pushed to a branch). Your prompt carries
 the issue and, for a stage, its parent's plan; start from those. Every

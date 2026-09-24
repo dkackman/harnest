@@ -28,7 +28,8 @@ you can't see can end the session. Once there's real progress that isn't
 yet a hand-off, comment the branch and where you got to on the stage issue,
 keeping `owner:lead` and no status. The next session resumes from that.
 
-Use subagents (`Agent`) for code-side work that splits cleanly:
+Use subagents (`Agent`, always in the foreground: core, "Sessions") for
+code-side work that splits cleanly:
 - the stage's code in separate git worktrees, where parts don't share files;
 - unit tests;
 - docs and skill text;

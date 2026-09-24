@@ -397,6 +397,12 @@ ISOLATION_FLAGS=(--setting-sources project,local)
 # driver inherits this from sourcing providers.sh.
 export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
 
+# A headless session whose turn ends while a background subagent is still
+# running waits this long for it, then kills the session. The default is
+# 600 s, which cut off stage A's first build (dw#385) mid-integration. The
+# prompts say to run subagents in the foreground; this is the backstop.
+export CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS="${CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS:-1800000}"
+
 # --tools: the built-in tools a role gets *schemas* for. Everything a role
 # actually used across every logged session, and nothing else. MCP tools
 # are unaffected (they come from --mcp-config as deferred names).
