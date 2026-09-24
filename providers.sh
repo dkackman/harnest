@@ -573,9 +573,16 @@ commit_suite_changes() {
   # Suites only grow and regression-perf/ is append-only, except for an edit
   # a human approved (a tester HANDOFF session applying one). Removed lines
   # are therefore worth a look, not a refusal: the commit goes ahead so the
-  # tree stays clean, and the warning names it for review.
+  # tree stays clean, and the warning names it for review. One removal is
+  # the protocol working, not drift: a `pending: #NN` line the tester drops
+  # when that feature stage verifies (agents/tester/verify.md, "Verifying a
+  # feature"). Those lines alone are not counted, so the warning stays
+  # meaningful; any other removed line in the same commit still is.
   local shrunk
-  shrunk="$(git -C "$REPO" diff --cached --numstat -- "${paths[@]}" | awk '$2 > 0 { printf "%s(-%s) ", $3, $2 }')"
+  shrunk="$(git -C "$REPO" diff --cached -U0 -- "${paths[@]}" | awk '
+      /^\+\+\+ / { f = substr($2, 3); next }
+      /^-/ && !/^--- / && !/^-pending: #[0-9]+[[:space:]]*$/ { n[f]++ }
+      END { for (k in n) printf "%s(-%s) ", k, n[k] }')"
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOGS/loop.log"
   [ -z "$shrunk" ] || echo "[audit] WARNING: $(git -C "$REPO" rev-parse --short HEAD) removed lines from ${shrunk}- cases and readings are add-only unless a human approved the change; review it" | tee -a "$LOGS/loop.log"
