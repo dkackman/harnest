@@ -494,7 +494,7 @@ runtime_note() {
 # commit trailer says claude-opus-5 rather than the alias that was asked for.
 resolved_model() {
   local id
-  id="$(grep '"subtype":"init"' "$LOGS/$1.jsonl" 2>/dev/null | tail -n 1 | jq -r '.model // empty' 2>/dev/null)"
+  id="$(grep '"subtype":"init"' "$LOGS/$1.jsonl" 2>/dev/null | tail -n 1 | jq -r '.model // empty' 2>/dev/null || true)"
   printf '%s\n' "${id:-$2}"
 }
 
@@ -512,6 +512,9 @@ refresh_plugin_tree() {
   local src="$1" tree="$2"
   git -C "$src" fetch -q origin develop 2>/dev/null || return 1
   if [ ! -e "$tree/.git" ]; then
+    # A tree deleted by hand stays registered, and `worktree add` then
+    # refuses the path for good; prune forgets it.
+    git -C "$src" worktree prune 2>/dev/null || true
     mkdir -p "$(dirname "$tree")"
     git -C "$src" worktree add -q --detach "$tree" origin/develop >/dev/null 2>&1 || return 1
   fi
@@ -526,13 +529,34 @@ refresh_plugin_tree() {
 # under $LOGS. mkdir is atomic, and macOS ships no flock(1). Waits for a
 # holder whose pid is alive; takes over a lock whose holder is gone. The
 # lock is released on exit by the trap this sets.
+# A stale lock is taken over by renaming it aside, which is atomic, and then
+# checking that what was renamed is the lock that was judged stale. With a
+# bare `rm -rf`, two waiters could both judge it stale, and the second
+# one's delete would remove the lock the first had just taken. A lock with
+# no owner file older than two minutes is a holder killed between its
+# mkdir and its write; it would otherwise be waited on forever.
 acquire_driver_lock() {
-  local lock="$LOGS/.driver.lock" holder waited=0
+  local lock="$LOGS/.driver.lock" holder waited=0 aside stale
   while ! mkdir "$lock" 2>/dev/null; do
     holder="$(cat "$lock/owner" 2>/dev/null || true)"
-    if [ -n "$holder" ] && ! kill -0 "${holder%% *}" 2>/dev/null; then
-      echo "[lock] taking over a stale lock from '$holder'" | tee -a "$LOGS/loop.log"
-      rm -rf "$lock"
+    stale=0
+    if [ -n "$holder" ]; then
+      kill -0 "${holder%% *}" 2>/dev/null || stale=1
+    elif [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+      stale=1
+    fi
+    if [ "$stale" = 1 ]; then
+      aside="$lock.stale.$$"
+      if mv "$lock" "$aside" 2>/dev/null; then
+        if [ "$(cat "$aside/owner" 2>/dev/null || true)" = "$holder" ]; then
+          echo "[lock] taking over a stale lock from '${holder:-no owner}'" | tee -a "$LOGS/loop.log"
+          rm -rf "$aside"
+        else
+          # Another waiter took it over first, and this rename moved its
+          # live lock. Put it back if the path is still free.
+          mv "$aside" "$lock" 2>/dev/null || rm -rf "$aside"
+        fi
+      fi
       continue
     fi
     [ "$waited" -eq 0 ] && echo "[lock] $1 waiting for '$holder' to finish" | tee -a "$LOGS/loop.log"
@@ -630,7 +654,9 @@ commit_suite_changes() {
 #                               resets_epoch=<secs> for sleep_if_rate_limited
 #   usage: turns=.. duration=.. cost=.. ctx_peak=.. in=.. cache_read=..
 #          cache_write=.. out=..  once, from the final result event
-# Thinking blocks are dropped. Needs LOGS from the driver.
+# Thinking blocks are dropped. An event the renderer can't handle prints a
+# `render-error:` line instead of stopping jq: a jq exit would close the pipe,
+# and claude's output would go with it mid-session. Needs LOGS from the driver.
 STREAM_FLAGS=(--output-format stream-json --verbose)
 
 # shellcheck disable=SC2016  # jq program: the \(...) interpolations are jq's, not the shell's
@@ -643,15 +669,18 @@ _STREAM_RENDER_JQ='
     elif type == "array" then (map((.text // "") | length) | add) // 0
     else (tojson | length) end;
   foreach inputs as $line ({id: null, max: 0};
-    (($line | fromjson?) // {type: "raw", line: $line}) as $j
-    | .j = $j
-    | .newmsg = ($j.type == "assistant" and $j.message.id != .id)
-    | if $j.type == "assistant" then
-        .id = $j.message.id
-        | .max = ([.max, ($j.message.usage | ctx)] | max)
-      else . end;
+    . as $st
+    | try (
+        (($line | fromjson?) // {type: "raw", line: $line}) as $j
+        | .j = $j
+        | .newmsg = ($j.type == "assistant" and $j.message.id != .id)
+        | if $j.type == "assistant" then
+            .id = $j.message.id
+            | .max = ([.max, ($j.message.usage | ctx)] | max)
+          else . end)
+      catch ($st | .j = {type: "raw", line: ("render-error: " + $line)} | .newmsg = false);
     .j as $j
-    | if $j.type == "raw" then $j.line
+    | try (if $j.type == "raw" then $j.line
       elif $j.type == "system" and $j.subtype == "init" then "model: \($j.model)"
       elif $j.type == "assistant" then
         (if .newmsg then "· ctx=\($j.message.usage | ctx | k) out=\($j.message.usage.output_tokens // 0)" else empty end),
@@ -668,14 +697,14 @@ _STREAM_RENDER_JQ='
       elif $j.type == "rate_limit_event" then
         ($j.rate_limit_info
           | if .status != "allowed" or .isUsingOverage then
-              "rate-limit: status=\(.status) type=\(.rateLimitType) overage=\(.isUsingOverage) resets=\(.resetsAt | todate) resets_epoch=\(.resetsAt)"
+              "rate-limit: status=\(.status) type=\(.rateLimitType) overage=\(.isUsingOverage) resets=\(.resetsAt // 0 | todate) resets_epoch=\(.resetsAt // 0)"
             else empty end)
       elif $j.type == "result" then
         "usage: turns=\($j.num_turns) duration=\(($j.duration_ms // 0) / 1000 | round)s cost=$\($j.total_cost_usd | usd) ctx_peak=\(.max | k) in=\($j.usage.input_tokens | k) cache_read=\($j.usage.cache_read_input_tokens | k) cache_write=\($j.usage.cache_creation_input_tokens | k) out=\($j.usage.output_tokens | k)",
         (if $j.subtype != "success" then "result: \($j.subtype) \($j.result // "" | tostring | trunc(300))" else empty end),
         ($j.modelUsage // {} | select(length > 1) | to_entries[]
           | "  \(.key): in=\(.value.inputTokens | k) cache_read=\(.value.cacheReadInputTokens | k) cache_write=\(.value.cacheCreationInputTokens | k) out=\(.value.outputTokens | k) cost=$\(.value.costUSD | usd)")
-      else empty end)
+      else empty end) catch "render-error: \(.)")
 '
 
 render_stream() {
@@ -704,6 +733,17 @@ render_stream() {
 session_died() {
   [ -r "$1" ] && ! grep -q '^usage: ' "$1"
 }
+
+# session_ok <rendered-session-log>
+# True when the session ran to its own end: a usage line, no non-success
+# result (a budget cut-off, max turns, an error), and no rejected rate
+# limit. A driver that records "this was handled" (mark_closures_seen) does
+# so only on this, never just because a session was launched.
+session_ok() {
+  [ -r "$1" ] && grep -q '^usage: ' "$1" \
+    && ! grep -q '^result: ' "$1" \
+    && ! grep -q 'rate-limit: status=rejected' "$1"
+}
 SESSION_RETRY_PAUSE_SECS="${SESSION_RETRY_PAUSE_SECS:-30}"
 
 sleep_if_rate_limited() {
@@ -729,21 +769,28 @@ sleep_if_rate_limited() {
 # public repo, which no unattended agent may pick up as ordinary work.
 # role-specific triage steps (e.g. the implementer's) repeat the check for
 # anything filed mid-run; this is the enforced copy, shared by every driver
-# that calls it. Already-parked issues are left alone. Needs TICKET_REPO,
-# TICKET_OWNER, and LOGS set by the caller.
+# that calls it. Already-parked issues are left alone, and so is any issue
+# that already carries a park comment: that one was parked once and a human
+# handed it back, which the next cycle must not undo. The list is fetched
+# first, so a gh failure is logged and skipped, never fatal to the driver.
+# Needs TICKET_REPO, TICKET_OWNER, and LOGS set by the caller.
 park_external_issues() {
   : "${TICKET_REPO:?park_external_issues: TICKET_REPO must be set by the driver}"
   : "${TICKET_OWNER:?park_external_issues: TICKET_OWNER must be set by the driver}"
   : "${LOGS:?park_external_issues: LOGS must be set by the driver}"
-  gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
-    --json number,author,labels \
-  | jq -r --arg me "$TICKET_OWNER" '.[]
+  local rows
+  rows="$(gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
+    --search "-author:$TICKET_OWNER" --json number,author,labels,comments 2>/dev/null \
+    | jq -r --arg me "$TICKET_OWNER" '.[]
       | select(.author.login != $me)
       | select(([.labels[].name] | index("status:needs-approval")) == null)
+      | select([.comments[] | select(.author.login == $me and (.body | startswith("Parked for human review: filed by @")))] | length == 0)
       | [(.number|tostring), .author.login,
          ([.labels[].name | select(startswith("owner:") or startswith("status:"))] | join(","))]
-      | @tsv' \
-  | while IFS=$'\t' read -r n author labels; do
+      | @tsv')" \
+    || { echo "[loop] could not list issues to check for external filings; skipping this cycle" | tee -a "$LOGS/loop.log"; return 0; }
+  [ -n "$rows" ] || return 0
+  printf '%s\n' "$rows" | while IFS=$'\t' read -r n author labels; do
       remove=()
       IFS=',' read -ra present <<< "$labels"
       for l in "${present[@]+"${present[@]}"}"; do

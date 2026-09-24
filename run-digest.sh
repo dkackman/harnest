@@ -22,6 +22,7 @@ PROVIDER="${PROVIDER:-anthropic}"
 DIGEST_MODEL="${DIGEST_MODEL:-sonnet}"
 DIGEST_PROVIDER="${DIGEST_PROVIDER:-$PROVIDER}"
 DIGEST_BUDGET_USD="${DIGEST_BUDGET_USD:-1}"
+DIGEST_LIMIT=(); [ "$DIGEST_BUDGET_USD" = 0 ] || DIGEST_LIMIT=(--max-budget-usd "$DIGEST_BUDGET_USD")   # 0 = none
 DIGEST_ISSUE="${DIGEST_ISSUE:-}"
 HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"
 # How far back the "curator rulings" section looks. Suite-change requests are
@@ -94,7 +95,7 @@ table="$(env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p "These GitHub issues on
 
 Output only the table.
 
-$context" --model "$DIGEST_MODEL" --max-budget-usd "$DIGEST_BUDGET_USD" \
+$context" --model "$DIGEST_MODEL" ${DIGEST_LIMIT[@]+"${DIGEST_LIMIT[@]}"} \
   --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "" < /dev/null)"
 
 out="# owner:don digest — $(date '+%F %H:%M')

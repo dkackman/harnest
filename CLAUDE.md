@@ -339,7 +339,9 @@ call time what `audit_issue` otherwise only finds afterwards:
 - lifting a `owner:don`/`needs-approval` park;
 - pushes to `master`, and force pushes;
 - stacking `owner:*` labels;
-- a consumer verifying in a session with no `mcp__dw__*` call.
+- a consumer verifying in a session with no `mcp__dw__*` call. A tester handoff session may
+  close as `completed` without one, since it applies a harness-side edit with nothing to verify
+  (`HARNEST_SESSION_KIND`, set by `run_agent`). It still can't add `status:verified`.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
 changed files, and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin/develop

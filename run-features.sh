@@ -43,8 +43,8 @@ PROVIDER="${PROVIDER:-anthropic}"
 # A wrong plan is the costliest error in the feature flow and the least
 # likely to be caught (the tester writes its cases from the plan), so the
 # lead runs on the tester's strong model by default. Exact id, not an alias.
-LEAD_MODEL="${LEAD_MODEL:-claude-opus-5-5}"
-LEAD_PROVIDER="${LEAD_PROVIDER:-$PROVIDER}"
+LEAD_MODEL="${LEAD_MODEL:-${TESTER_MODEL:-claude-opus-5-5}}"
+LEAD_PROVIDER="${LEAD_PROVIDER:-${TESTER_PROVIDER:-$PROVIDER}}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"
 # Per-session caps (0 = none). A design reads the proposal, runs one Explore
 # sweep and writes one plan. The first hand-run design (#378) sized these.
@@ -108,7 +108,7 @@ feature_queue() {
 run_session() {
   local n="$1" kind="$2" budget="$3" instructions="$4" tag attempt prompt_file
   tag="lead:#$n"; [ "$kind" = design ] || tag="lead:#$n $kind"
-  prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.md")" || return 0
+  prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.$kind.md")" || return 0
   local -a limits=(--autocompact "$AUTOCOMPACT_TOKENS")
   [ "$budget" = 0 ] || limits+=(--max-budget-usd "$budget")
   local plan
@@ -141,6 +141,10 @@ $(runtime_note lead "$LEAD_PROVIDER" "$LEAD_MODEL")" \
   audit_issue "$n" lead
 }
 
+# main: in a function, and called with `exit` on the same line, so bash has
+# parsed all of it before it runs, and editing this file mid-run can't make
+# bash resume at a stale byte offset. An edit takes effect at the next start.
+main() {
 park_external_issues
 refresh_plugin_tree "$SOURCE_DIR" "$LEAD_TREE" >/dev/null \
   || { echo "could not create/refresh the lead worktree $LEAD_TREE from $SOURCE_DIR" >&2; exit 1; }
@@ -162,3 +166,6 @@ for n in ${decompose[@]+"${decompose[@]}"}; do
   run_session "$n" decompose "$LEAD_DECOMPOSE_BUDGET_USD" \
     "This is a DECOMPOSE session for feature issue #$n only: Don approved its plan; your role instructions for it are in your system prompt."
 done
+}
+
+main "$@"; exit

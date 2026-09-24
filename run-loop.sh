@@ -200,6 +200,7 @@ validate_fallback_model "$IMPLEMENTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TRIAGE_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$LEAD_PROVIDER" "$FALLBACK_MODEL" || exit 1
+validate_fallback_model "$CURATOR_PROVIDER" "$FALLBACK_MODEL" || exit 1
 for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT" "$CURATOR_EFFORT"; do
   effort_flags anthropic "$e" >/dev/null || exit 1
 done
@@ -252,9 +253,14 @@ IMPLEMENTER_FLAGS=(
 # system prompt so it is in the cached prefix from turn one rather than a
 # tool result the agent has to Read first. Streams the agent's output to the terminal,
 # its own log, and the combined log.
+# Always returns 0 (callers call it bare under set -e). Sets SESSION_OK to 1
+# when the session ran to its own end (session_ok in providers.sh), 0
+# otherwise, for callers that record "handled" only on success.
+SESSION_OK=0
 run_agent() {
   local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" effort="$7" kind="$8" prompt="$9"; shift 9
   local label="$role:$tag"
+  SESSION_OK=0
 
   # Both pairs were validated at startup, so these can't fail on a bad pair —
   # but a bare failing call in the while body would take the whole driver down
@@ -263,7 +269,7 @@ run_agent() {
   local fb_words prompt_file
   if ! resolve_model_env "$provider" "$model" \
      || ! fb_words="$(fallback_model_flags "$provider" "$FALLBACK_MODEL")" \
-     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role.md")"; then
+     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role.$kind.md")"; then
     echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
     return 0
   fi
@@ -292,7 +298,9 @@ $note"
   for attempt in 1 2; do
     : > "$LAST_SESSION"
     echo "=== $(ts) cycle $cycle: $label ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
-    (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} \
+    # HARNEST_SESSION_KIND reaches the guard hook (guard.py), which
+    # allows a tester handoff to close without an MCP call.
+    (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} HARNEST_SESSION_KIND="$kind" \
         claude -p "$full_prompt" \
         --model "$model" ${fallback[@]+"${fallback[@]}"} ${effort_words[@]+"${effort_words[@]}"} "${limits[@]}" \
         --append-system-prompt-file "$prompt_file" \
@@ -307,6 +315,7 @@ $note"
     echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
     sleep "$SESSION_RETRY_PAUSE_SECS"
   done
+  session_ok "$LAST_SESSION" && SESSION_OK=1
   # A per-issue session ("#145") gets its issue audited against the label
   # invariants; triage/task/closures sessions span several issues and don't.
   case "$tag" in "#"*) audit_issue "${tag#\#}" "$role" ;; esac
@@ -406,14 +415,20 @@ deployed_head() {
 # runs, since its prompt names what lem is running and it can bounce a
 # mismatch. DEPLOY_ON_MISMATCH=0 reverts to warning only.
 DEPLOY_ON_MISMATCH="${DEPLOY_ON_MISMATCH:-1}"
+# lem reports an abbreviated hash whose length git picks from the repo's
+# size, so it is compared as a prefix of the full one, never against a
+# fixed-length cut (a 7-character cut stops matching the day lem's clone
+# starts printing 8, and every cycle would then redeploy).
 check_lem_on_develop() {
-  local want
-  want="$(git -C "$SOURCE_DIR" ls-remote -q origin refs/heads/develop 2>/dev/null | cut -c1-7)"
+  local want lem_sha
+  want="$(git -C "$SOURCE_DIR" ls-remote -q origin refs/heads/develop 2>/dev/null | cut -f1 || true)"
   [ -n "$want" ] || return 0
   case "$DEPLOYED_HEAD" in
-    "develop @ $want") return 0 ;;
+    "develop @ "?*)
+      lem_sha="${DEPLOYED_HEAD#develop @ }"
+      case "$want" in "$lem_sha"*) return 0 ;; esac ;;
   esac
-  echo "[loop] WARNING: lem is on '$DEPLOYED_HEAD' but origin/develop is $want — the tester would verify against a server that may lack this cycle's fixes" | tee -a "$LOGS/loop.log"
+  echo "[loop] WARNING: lem is on '$DEPLOYED_HEAD' but origin/develop is ${want:0:10} — the tester would verify against a server that may lack this cycle's fixes" | tee -a "$LOGS/loop.log"
   [ "$DEPLOY_ON_MISMATCH" = 1 ] || return 0
   echo "[loop] deploying develop to lem" | tee -a "$LOGS/loop.log"
   # shellcheck disable=SC2088  # the ~ is for lem's shell, not ours
@@ -441,6 +456,19 @@ handoff_count() {
   gh api --paginate "repos/$TICKET_REPO/issues/$1/events" \
     --jq '.[] | select(.event == "reopened" or (.event == "labeled" and .label.name == "status:fixed-pending-verify")) | .event' 2>/dev/null \
   | awk '$1 == "reopened" { s = 0; next } { s++ } END { print s + 0 }' || true
+}
+
+# set_base_commit
+# Exports HARNEST_BASE_COMMIT, origin/develop as of now, for the R3 hand-off
+# gate (guard.py), which fails a hand-off only for test failures the session
+# introduced. When it can't be read the gate runs without that comparison, so
+# say so in the log rather than leave it silent.
+set_base_commit() {
+  git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
+  HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
+  export HARNEST_BASE_COMMIT
+  [ -n "$HARNEST_BASE_COMMIT" ] \
+    || echo "[loop] WARNING: could not read origin/develop; the hand-off gate skips its tests-vs-base check this session" | tee -a "$LOGS/loop.log"
 }
 
 # implementer_pass — triage (when 2+ issues wait), then one session per issue.
@@ -487,12 +515,7 @@ $(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
 
 This issue has been handed off as fixed and sent back by the tester $bounces times. You are running on a stronger model than the sessions that produced those fixes, for that reason — say so in your hand-off comment. Read every bounce comment before touching code: the tester's objections are the specification now, and a fix that satisfies the original text but not those comments will bounce again."
     fi
-    # The R3 hand-off gate (agent-settings/hooks/guard.py) compares HEAD's
-    # tests against develop as it stood when this session began, so a fix is
-    # blocked only for failures it introduced, not ones already on develop.
-    git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
-    HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
-    export HARNEST_BASE_COMMIT
+    set_base_commit
     run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$provider" "$model" "$IMPLEMENTER_EFFORT" fix \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a fix session: your role instructions for it are in your system prompt; follow them exactly, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.$escalation
 
@@ -576,9 +599,7 @@ lead_pass() {
         || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOGS/loop.log"
       continue
     fi
-    git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
-    HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
-    export HARNEST_BASE_COMMIT
+    set_base_commit
     run_agent lead "#$n" "$LEAD_STAGE_BUDGET_USD" "$SOURCE_DIR" "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" build \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. This is a BUILD session for stage #$n of feature #$parent only: your role instructions for it are in your system prompt. Run code-writing subagents on model \"$LEAD_WORKER_MODEL\" unless the stage says otherwise.$([ "$bounces" -gt 0 ] && printf ' This stage has been handed off and sent back %s time(s): read every bounce comment before touching code.' "$bounces") Then stop.
 
@@ -611,9 +632,7 @@ $(plan_text "$parent")" \
     fi
     # A built close-out hands the parent to the tester through the same R3
     # gate as a fix, which compares against develop as of this session.
-    git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
-    HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
-    export HARNEST_BASE_COMMIT
+    set_base_commit
     run_agent lead "#$n" "$LEAD_CLOSEOUT_BUDGET_USD" "$SOURCE_DIR" "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" closeout \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. This is a CLOSE-OUT session for feature #$n only: your role instructions for it are in your system prompt. Its labels say which close-out it is (wontfix: declined; otherwise every stage is closed). Then stop.
 
@@ -725,14 +744,16 @@ $(issue_context "$n")" \
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
-    mark_closures_seen ${closures[@]+"${closures[@]}"}
+    # Only when the session ran to its end: a closure has one chance at a
+    # reopen, and a died or cut-off session may not have reached it.
+    [ "$SESSION_OK" = 1 ] && mark_closures_seen ${closures[@]+"${closures[@]}"}
   elif [ "${#closures[@]}" -gt 0 ]; then
     local list
     list="$(printf '#%s ' "${closures[@]}")"
     run_agent tester closures "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" closures \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a CLOSURES session for ${list}only - each was closed wontfix or duplicate with owner:tester; accept, or reopen once with materially new evidence. Do not work the standing task and do not verify anything. Then stop." \
       "${TESTER_FLAGS[@]}"
-    mark_closures_seen "${closures[@]}"
+    [ "$SESSION_OK" = 1 ] && mark_closures_seen "${closures[@]}"
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
   else
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
@@ -766,7 +787,8 @@ $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
   done
 }
 
-# One line per open issue: #NN  status-labels  owner-label  title
+# One line per open issue: #NN  status-labels  owner-label  title. Prints
+# nothing when gh fails: the board is a report, never a reason to stop.
 status_board() {
   gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
     --json number,title,labels \
@@ -776,31 +798,47 @@ status_board() {
       (([.labels[].name | select(startswith("owner:"))]) + ["unowned"])[0],
       .title
     ] | @tsv' \
-  | awk -F'\t' '{printf "  %-5s %-24s %-18s %s\n", $1, $2, $3, $4}'
+  | awk -F'\t' '{printf "  %-5s %-24s %-18s %s\n", $1, $2, $3, $4}' || true
 }
 
+# step <name> <command...>
+# Runs one top-level step of a cycle. A failure is logged and the cycle goes
+# on: this driver runs forever, and one GitHub or network blip must not
+# stop it. (Inside a step, set -e is off, as it is for any command on the
+# left of ||, so a step keeps going past a failed command too. Each step is
+# a pass over independent issues, so that is what's wanted.)
+step() {
+  local name="$1"; shift
+  "$@" || echo "[loop] WARNING: $name failed (exit $?); continuing the cycle" | tee -a "$LOGS/loop.log"
+}
+
+# main: the cycle loop. In a function, and called with `exit` on the same
+# line, so bash has parsed the whole of it before it runs, and editing this
+# file while the loop is live can't make bash resume at a stale byte offset.
+# An edit takes effect at the next start.
+main() {
 cycle=0
 while true; do
   cycle=$((cycle + 1))
-  park_external_issues
+  step park_external_issues park_external_issues
   before="$(status_board)"
   DEPLOYED_HEAD="$(deployed_head)"
   echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOGS/loop.log"
 
-  implementer_pass
-  lead_pass
+  step implementer_pass implementer_pass
+  step lead_pass lead_pass
   # Refresh after the implementer's and lead's deploys: the tester must be told what it
   # is actually verifying against, not what lem ran when the cycle began.
   DEPLOYED_HEAD="$(deployed_head)"
   echo "[loop] lem is running: $DEPLOYED_HEAD (after implementer pass)" | tee -a "$LOGS/loop.log"
-  check_lem_on_develop
+  step check_lem_on_develop check_lem_on_develop
   # Same commit as lem, for the plugin: pick up this cycle's merged skill fixes.
   if plugin_at="$(refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE")"; then
     echo "[loop] tester plugin tree: origin/develop @ $plugin_at" | tee -a "$LOGS/loop.log"
   else
     echo "[loop] WARNING: could not refresh the plugin tree; the tester loads the previous one" | tee -a "$LOGS/loop.log"
   fi
-  tester_pass
+  step tester_pass tester_pass
 
   # The tester is the only agent in this loop that edits the regression suite
   # files (it adds a case once it has verified it over MCP; the implementer
@@ -810,7 +848,7 @@ while true; do
   co_author_for "$TESTER_PROVIDER" "$(resolved_model tester "$TESTER_MODEL")"
   commit_suite_changes "regression: tester added case (cycle $cycle)" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
     || echo "[tester] suite commit failed, continuing" | tee -a "$LOGS/loop.log"
-  curator_pass
+  step curator_pass curator_pass
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board; } | tee -a "$LOGS/loop.log"
 
@@ -826,3 +864,6 @@ while true; do
     sleep "$SLEEP_SECS"
   fi
 done
+}
+
+main "$@"; exit

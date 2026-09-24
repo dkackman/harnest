@@ -203,7 +203,7 @@ REGRESSION_FLAGS=(
 # sessions are distinguishable in loop.log.
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" attempt prompt_file
-  prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.regression.md")" \
+  prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.regression.$kind.md")" \
     || { echo "[regression:$level$tag] no role prompt for '$kind'" | tee -a "$LOGS/loop.log"; return 0; }
   # $LAST_SESSION is this session's rendered output alone: a rejected rate
   # limit sleeps the driver until the reset, a session that died before its
@@ -299,7 +299,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
     done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
     total=${#ids[@]}
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOGS/loop.log"
-    for id in "${ids[@]}"; do
+    for id in ${ids[@]+"${ids[@]}"}; do
       chunk+=("$id"); seen=$((seen + 1))
       if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then
         session=$((session + 1))
@@ -330,6 +330,10 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
   fi
 }
 
+# main: in a function, and called with `exit` on the same line, so bash has
+# parsed all of it before it runs, and editing this file mid-run can't make
+# bash resume at a stale byte offset. An edit takes effect at the next start.
+main() {
 # Fallback only: run-loop.sh commits the tester's own suite edits under the
 # tester's identity, so anything still dirty here is of unknown origin (a
 # hand edit between runs, or a cycle that died before committing). It is
@@ -341,3 +345,6 @@ commit_suite_changes "regression: capture suite edits of unknown origin made out
 for spec in "${RUN_SPECS[@]}"; do
   run_level "${spec%%:*}" "${spec#*:}"
 done
+}
+
+main "$@"; exit

@@ -57,6 +57,7 @@ mkdir -p "$LOGS"
 CURATE_EFFORT="${CURATE_EFFORT:-$EFFORT}"
 
 resolve_model_env "$CURATE_PROVIDER" "$CURATE_MODEL" || exit 1
+effort_flags anthropic "$CURATE_EFFORT" >/dev/null || exit 1
 EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$CURATE_PROVIDER" "$CURATE_EFFORT")"
 fb_words="$(fallback_model_flags "$CURATE_PROVIDER" "$FALLBACK_MODEL")" || exit 1
 FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
@@ -119,15 +120,19 @@ run_level() {
     echo "[curate:$level] curated within $CURATE_EVERY_DAYS days, skipping" | tee -a "$LOGS/loop.log"; return 0
   fi
   local waiting
-  waiting="$(gh issue list --repo "$HARNESS_REPO" --state open --search "\"curation: $level suite\" in:title" \
-               --json number,title --jq ".[] | select(.title | startswith(\"curation: $level suite\")) | .number" | head -n 1)"
+  # A failed lookup skips the level: read as "none open", it would file a
+  # second proposal on top of one still waiting.
+  if ! waiting="$(gh issue list --repo "$HARNESS_REPO" --state open --search "\"curation: $level suite\" in:title" \
+               --json number,title --jq ".[] | select(.title | startswith(\"curation: $level suite\")) | .number" 2>/dev/null | head -n 1)"; then
+    echo "[curate:$level] could not check $HARNESS_REPO for an open curation issue; skipping" | tee -a "$LOGS/loop.log"; return 0
+  fi
   if [ -n "$waiting" ] && [ "$CURATE_FORCE" != 1 ]; then
     echo "[curate:$level] #$waiting is still open (in review or with Don), skipping" | tee -a "$LOGS/loop.log"; return 0
   fi
 
   local perf; perf="$(cd "$REPO" && ls regression-perf/"$prefix"-*.jsonl 2>/dev/null | tr '\n' ' ')"
   local prompt_file
-  prompt_file="$(role_prompt curator audit "$LOGS/.prompt.curator.md")" || return 0
+  prompt_file="$(role_prompt curator audit "$LOGS/.prompt.curator.audit.md")" || return 0
   local attempt
   for attempt in 1 2; do
     : > "$LAST_SESSION"
@@ -166,6 +171,13 @@ $(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL")" \
 gh label create suite --repo "$HARNESS_REPO" --color 0e8a16 --description "Proposed change to a regression suite" --force >/dev/null 2>&1 || true
 gh label create status:needs-approval --repo "$HARNESS_REPO" --color d93f0b --description "Waiting for a ruling: curator review, or Don with owner:don" --force >/dev/null 2>&1 || true
 
+# main: in a function, and called with `exit` on the same line, so bash has
+# parsed all of it before it runs, and editing this file mid-run can't make
+# bash resume at a stale byte offset. An edit takes effect at the next start.
+main() {
 levels=("$@")
 [ "${#levels[@]}" -gt 0 ] || levels=(smoke complete model-specific security)
 for l in "${levels[@]}"; do run_level "$l"; done
+}
+
+main "$@"; exit

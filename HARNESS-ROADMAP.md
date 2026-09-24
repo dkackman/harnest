@@ -21,9 +21,10 @@ rather than in a separate log.
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built (`run-features.sh`, `agents/lead/`, lead pass in `run-loop.sh`); dw#378 decomposed, waiting on its spec session | R4 (absorbs it), R1 |
+| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | phase A done; B next | before dw#378 runs live |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
-major changes. R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
+major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
 R4's spec step as R11's phase 3, not separately.
 
 ## Principles every item must keep
@@ -534,6 +535,13 @@ R4's parent/child flow and R7 are all candidates), rather than as a project of i
 **Done when.** The bash drivers are deleted, and `providers.sh`'s provider table lives in one
 Python module.
 
+**Trigger (2026-09-23, from R12's review).** The case is stronger than when this was written:
+the bash has more than doubled (about 3,080 lines, 9 drivers), and Python is already a
+dependency (`guard.py`, `contract/`, `bench/`). But porting now would port a state machine
+with known holes, before the feature flow has met live traffic. Port after R12 phases B and
+C, and after dw#378 has run end to end. R12's bats fixtures become the parity tests, and
+`classify_issue` is the first module to port.
+
 ## R9 — Approval digest for `owner:don`
 
 **Why.** As the loop takes on more (R4 especially), Don's approval queue is the ceiling.
@@ -959,6 +967,115 @@ consumer of a workspace name, and posted plan v1 with three questions (→ `owne
   (dw `05bc836`), 2026-09-23. Phases 2–6 weren't reached, so the "Done when" still needs a
   feature that gets built.
 
+
+## R12 — Hardening: driver defects, one state machine, tests
+
+**Why.** After R11 and the curator delegation, Don asked for a step back. Three independent
+read-only reviews (driver correctness, duplication, label-state consistency, 2026-09-23)
+agreed that the architecture holds: labels on GitHub are the only state, sessions are
+fresh, fences are built in, and 637 sessions logged zero `[audit]` warnings and zero guard
+refusals. The weak points are at the edges:
+- **Driver defects.**
+  - One `gh` blip at the top of a cycle kills `run-loop.sh`, the same `set -e` trap as
+    `handoff_count` and `plan_text` before it.
+  - An issue from another login is re-parked every cycle, even after Don hands it back.
+  - The check that lem is on develop compares a 7-character hash with git's auto-length
+    one.
+  - A session that never changes labels is re-run every cycle, forever.
+  - Closures are marked seen even when their session died.
+  - Lock-free drivers overwrite prompt files that `run-loop.sh` is about to use.
+  - One jq error in the stream renderer kills a live session's output.
+  - The stale-lock takeover can race.
+- **Holes in the state machine,** mostly in flows that haven't run live yet:
+  - a stage can build before its specs exist;
+  - a re-plan has no way back to decompose or spec;
+  - the guard refuses the handoff close that `handoff.md` instructs;
+  - the digest's one "approve" command is wrong for most of Don's states;
+  - three prompts leave an issue unchanged when they can't finish;
+  - `pending:` lines can be orphaned;
+  - retro proposals never reach the digest.
+- **Complexity and drift.**
+  - The session loop is copy-pasted 7 times, and the copies have drifted: a bad effort
+    value is silently ignored in 3 drivers, and `budget=0` means different things.
+  - There are 98 env knobs, about 40 of them undocumented.
+  - No tests: the guard's R3 table test was never checked in.
+
+**Phase A: fix the defects.**
+- Every top-level step in a forever loop runs as `step || log`.
+- Fix each defect listed above, plus the three silent validation drifts.
+- Wrap each driver's executable tail in `main`, so a driver file edited while it runs is
+  safe.
+
+**Phase B: one source of truth for the state machine.** Today each queue encodes its own
+label logic in jq, in four files, which is where the holes come from.
+- **`classify_issue`:** one function takes the labels, parent, blockers and markers, and
+  returns the queue and the session kind. Every driver, the digest and the audit use it.
+- **Stranded issues:** anything that classifies to no queue is "stranded", and the
+  digest lists it.
+- **No-progress ledger:** `run_agent` reports an outcome. After N sessions with no label
+  change, the driver parks the issue with Don.
+- **Feature-flow fixes, on top of it:**
+  - `needs-spec` is set before any stage is filed;
+  - a re-plan marker makes decompose and spec run again;
+  - the declined close-out closes open stages;
+  - a stage the tester can't verify over MCP goes to Don;
+  - an owner closes orphaned `pending:` lines;
+  - digest commands are per state;
+  - retro proposals appear in the digest.
+- **The researcher folds into the lead** (Don, 2026-09-23). The two did the same job:
+  idea → verdict → proposal. An `idea` becomes a `feature`, and a design whose verdict
+  is "just a fix" hands it to `owner:implementer`. That removes one role, one driver and
+  one fence.
+
+**Phase C: tests and dedupe.**
+- Bats tests, with a `gh` stub serving fixture JSON, over `classify_issue`,
+  `handoff_count`, the filters, `session_died`/`sleep_if_rate_limited` on canned logs, and
+  the stream renderer on real `.jsonl`.
+- The guard's table test, checked in.
+- One `run_claude_session` helper replaces the 7 copies.
+- Fence groups generate the `--tools` list and the allowlist together, and replace the
+  per-role settings JSONs.
+- One `<ROLE>_{MODEL,PROVIDER,EFFORT,BUDGET_USD}` resolution, and a generated knob table.
+
+**Phase A done (2026-09-23).**
+- **Top-level steps.** Each is wrapped in `step`, which logs a failure and goes on.
+  `status_board`, `park_external_issues`, `resolved_model` and the lem check can no
+  longer fail a step.
+- **A GitHub outage.** Tested with a `gh` stub that always fails: the old driver exited 1
+  at `park_external_issues`, and the new one finishes the cycle. `run-curate.sh` now
+  skips a level it can't check, rather than risk filing a second proposal.
+- **External issues.** An issue already carrying the park comment is never parked
+  again, so Don's hand-back holds. The list is fetched with `-author:`.
+- **The lem check.** It compares lem's short hash as a prefix of the full `ls-remote`
+  sha.
+- **The stream renderer.** A malformed event prints `render-error:` instead of killing
+  jq. Its output on a 400-event real log is byte-identical to before.
+- **The lock.** A stale lock is taken over by atomic rename plus an owner check. A lock
+  with no owner file older than 2 minutes is stale. Tested: dead pid, ownerless, and a
+  live holder (which it waits for).
+- **Session outcome.** `run_agent` sets `SESSION_OK` from `session_ok`: a usage line, no
+  non-success result, no rejected rate limit. Closures are marked seen only when it's 1.
+- **Prompt files.** They are per role and kind (`.prompt.<role>.<kind>.md`), so a
+  lock-free driver can't overwrite one that `run-loop.sh` is about to use.
+- **The handoff close.** The guard exempts a tester HANDOFF session's completed close
+  (`HARNEST_SESSION_KIND`), and still refuses its `status:verified`.
+- **`main` wrapper.** `run-loop.sh`, `run-regression.sh`, `run-features.sh` and
+  `run-curate.sh` run their tail as `main "$@"; exit`.
+- **Validation drift.**
+  - A bad effort value now stops curate, retro and bench at startup.
+  - `0 = none` is honored for the bench, judge and digest budgets.
+  - The curator's fallback model is validated.
+  - `LEAD_MODEL` and `LEAD_PROVIDER` follow the tester's in both drivers.
+- **Smaller fixes.**
+  - `git worktree prune` runs before re-adding a deleted plugin or lead tree.
+  - An unreadable base commit for the hand-off gate is logged.
+  - `run-regression.sh` survives an empty case list under bash 3.2.
+- **Deferred to phase B,** since both need the ledger: the no-progress re-run loop and
+  the three prompts that leave an issue unchanged.
+
+**Done when.** A cycle survives a GitHub outage. The digest's stranded list is empty.
+`bats tests/` passes, and the queue logic is tested there, not reviewed by eye. Then dw#378
+runs through spec → build → verify.
 
 ---
 

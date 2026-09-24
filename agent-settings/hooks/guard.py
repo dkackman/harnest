@@ -35,7 +35,10 @@ curator (suite review sessions, via curator.json):
     label, so escalating one is a bare --add-label owner:don
 consumer (tester, regression):
   - closing as completed or adding `status:verified` needs at least one
-    `mcp__dw__*` call earlier in the session ("only from a real MCP call")
+    `mcp__dw__*` call earlier in the session ("only from a real MCP call").
+    One exception: a HANDOFF session (HARNEST_SESSION_KIND=handoff, set by
+    run-loop.sh) may close as completed, since it applies a harness-side
+    edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
 
 Command matching is textual, on the Bash command line. It is a guard
@@ -243,9 +246,15 @@ def main():
             if is_gh_issue(words, "edit") and "status:fixed-pending-verify" in flag_values(words, "--add-label"):
                 handoff_gate(cwd)
         elif role == "consumer":
-            if (closes_completed(words) or adds_verified(words)) and not session_called_mcp(data.get("transcript_path", "")):
-                deny("verifying (closing as completed / status:verified) needs a real MCP call in this "
-                     "session, and this session has made none. Re-run the repro over the dw tools first.")
+            # A tester HANDOFF session applies a harness-side edit the
+            # implementer asked for and closes the issue as done: nothing
+            # to run over MCP, so its close is exempt. Adding
+            # status:verified is not: that label claims an MCP check.
+            handoff = os.environ.get("HARNEST_SESSION_KIND") == "handoff"
+            if adds_verified(words) or (closes_completed(words) and not handoff):
+                if not session_called_mcp(data.get("transcript_path", "")):
+                    deny("verifying (closing as completed / status:verified) needs a real MCP call in this "
+                         "session, and this session has made none. Re-run the repro over the dw tools first.")
 
 
 main()

@@ -33,6 +33,7 @@ mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 RETRO_EFFORT="${RETRO_EFFORT:-$EFFORT}"
 resolve_model_env "$RETRO_PROVIDER" "$RETRO_MODEL" || exit 1
+effort_flags anthropic "$RETRO_EFFORT" >/dev/null || exit 1
 EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$RETRO_PROVIDER" "$RETRO_EFFORT")"
 LIMIT_FLAGS=(--autocompact "$AUTOCOMPACT_TOKENS")
 [ "$RETRO_BUDGET_USD" = 0 ] || LIMIT_FLAGS+=(--max-budget-usd "$RETRO_BUDGET_USD")

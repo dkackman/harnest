@@ -126,7 +126,12 @@ resolve_model_env "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" || exit 1
 IMPL_ENV=(${MODEL_ENV[@]+"${MODEL_ENV[@]}"})
 resolve_model_env "$JUDGE_PROVIDER" "$JUDGE_MODEL" || exit 1
 JUDGE_ENV=(${MODEL_ENV[@]+"${MODEL_ENV[@]}"})
+effort_flags anthropic "$IMPLEMENTER_EFFORT" >/dev/null || exit 1
+effort_flags anthropic "$JUDGE_EFFORT" >/dev/null || exit 1
 EFFORT_WORDS=(); read -r -a EFFORT_WORDS <<<"$(effort_flags "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_EFFORT")"
+# "0 = none", as in every driver: --max-budget-usd 0 would be a $0 cap.
+BENCH_LIMIT=(); [ "$BENCH_BUDGET_USD" = 0 ] || BENCH_LIMIT=(--max-budget-usd "$BENCH_BUDGET_USD")
+JUDGE_LIMIT=(); [ "$JUDGE_BUDGET_USD" = 0 ] || JUDGE_LIMIT=(--max-budget-usd "$JUDGE_BUDGET_USD")
 
 ts() { date '+%H:%M:%S'; }
 
@@ -183,7 +188,7 @@ $(cat "$case/issue.md")
 
 $(runtime_note implementer "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL")" \
     --model "$IMPLEMENTER_MODEL" ${EFFORT_WORDS[@]+"${EFFORT_WORDS[@]}"} \
-    --autocompact "$AUTOCOMPACT_TOKENS" --max-budget-usd "$BENCH_BUDGET_USD" \
+    --autocompact "$AUTOCOMPACT_TOKENS" ${BENCH_LIMIT[@]+"${BENCH_LIMIT[@]}"} \
     --append-system-prompt-file "$PROMPT_FILE" \
     --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "$IMPLEMENTER_TOOLS" \
     --settings "$SETTINGS_FILE" --permission-mode auto \
@@ -287,7 +292,7 @@ End your answer with exactly one line of JSON: {\"verdict\": \"pass|partial|fail
   local jout="" try
   for try in $(seq 1 "$JUDGE_TRIES"); do
     jout="$(cd "$out" && env ${JUDGE_ENV[@]+"${JUDGE_ENV[@]}"} perl -e 'alarm shift; exec @ARGV' "$JUDGE_TIMEOUT_SECS" claude -p "$jprompt" --model "$JUDGE_MODEL" --effort "$JUDGE_EFFORT" \
-              --max-budget-usd "$JUDGE_BUDGET_USD" --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "" \
+              ${JUDGE_LIMIT[@]+"${JUDGE_LIMIT[@]}"} --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "" \
               --output-format json < /dev/null 2>/dev/null || true)"
     printf '%s' "$jout" | jq -r '.result // ""' 2>/dev/null | grep -q '{"verdict"' && break
     echo "$tag judge try $try gave no verdict${try:+, retrying}"
