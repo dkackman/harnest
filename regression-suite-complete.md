@@ -3514,7 +3514,6 @@ over MCP as model `claude-opus-5-5` via provider `anthropic` (job `5eb50a6fbc7b`
 `qa-ep37`: 248 f, 24.0 fps, 32 kHz stereo, peak −1.84 dBFS).
 
 ### C-F095 — a `concat_videos` cut records its shots, and `seams=true` works without `boundaries`
-pending: #385
 source: tester, spec for #385 from #378's plan v2
 Output assessment, stage A. A cut made by `concat_videos` now records its shots, each
 with a name, a start frame and a frame count. They appear in the output's manifest and
@@ -3552,7 +3551,6 @@ cleanup: `delete_output(job_id=…)`. The clips are shared fixtures, so leave th
 metrics: none.
 
 ### C-F096 — a `dissolve_videos` cut records its shots, and `boundaries` still overrides them
-pending: #385
 source: tester, spec for #385 from #378's plan v2
 Stage A, the dissolve branch. It checks that the shot frame counts still sum to the
 file's frames when neighbouring shots overlap, and that a caller's explicit `boundaries`
@@ -3584,7 +3582,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F097 — shot edges: trimmed cuts, a single-shot cut, `slice_audio`, and media with no shots
-pending: #385
 source: tester, spec for #385 from #378's plan v2
 Stage A's implied edges:
 - a shot's frame count is what landed in the file, after `trim_frames`;

@@ -1114,7 +1114,6 @@ after `shot@react` release 2,116 MB (seq 114); `episode` 2,434–2,440 MB; idle 
 The implementer proposed the case in its hand-off, and it was added only after that run.
 
 ### M-F031 — a chained-segments LTX run records one shot per segment
-pending: #385
 source: tester, spec for #385 from #378's plan v2
 Output assessment, stage A: the `AudioVideo.shots` that `run_chain` fills. A
 chained-segments run has one shot per segment, and the shots' frame counts sum to the
