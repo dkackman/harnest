@@ -4089,7 +4089,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F113 — tool descriptions hold the rule, not the model narrative (#376)
-pending: #403
 source: tester, spec for #403 from #376's plan v2
 #376 moved model-specific narrative and a transcription walkthrough out of the MCP tool
 descriptions into the guide. Each description keeps its rule and loses its example. This case
@@ -4193,7 +4192,6 @@ before its own delete.
 metrics: none.
 
 ### C-F115 — trimming the descriptions changed no behavior: H3 frame rule, catalog constraints, prompt filter (#376)
-pending: #403
 source: tester, spec for #403 from #376's plan v2
 #376 is descriptions only. The examples it removed describe behavior that must still hold.
 Values below were pinned 2026-09-24 against `templates/minimax/video-with-audio`, matching the
@@ -4258,7 +4256,6 @@ source: tester, verified in #404. Ran over MCP as model `claude-opus-5-5` via pr
 372 frames) is job `dbe050a44c46`.
 
 ### C-F117 — "The loop" step 6, reached through its `##` section, carries the transcription procedure, and following it works (#376)
-pending: #403
 source: tester, spec for #403 from #376's plan v4
 Plan v4's version of C-F114. The walkthrough `get_output_audio` used to carry now lives in
 step 6 of "The loop" in the `workflows` guide. "The loop" is an `###` subsection, and
