@@ -321,6 +321,99 @@ path is the `.url` one above.
 cleanup: none if refused; otherwise `cancel_job` and delete outputs.
 source: harness, initial security suite 2026-09-13.
 
+### SE-F031 — a `*_type` / `config_type` / dtype name must be a class (or a dtype), even inside the ecosystem
+pending: #409
+source: tester, spec for #409 from #407's plan v2
+SE-F002 and SE-F007 cover names from outside the ecosystem. This case covers the gap inside it.
+`torch` is an allowed package, so `torch.hub.load`, a function that downloads a GitHub repo and
+runs its code, used to pass the package check. Untrusted, a `*_type` or `config_type` name must
+now resolve to a **class**, and a `dtype` / `*_dtype` key must resolve to a class or a
+`torch.dtype`. `validate_workflow` reports a violation at the step's path.
+Carrier: `get_workflow("templates/text-to-image")`, passed inline with one probe per
+`validate_workflow` call. Placements are the ones SE-F002 and SE-F007 confirmed. Every
+`quantization_config` gets `arguments: {}`: if the gate is broken, a resolved function is then
+called with nothing and fails with a harmless `TypeError`, and never fetches a repo.
+- (a) `config_type: "torch.hub.load"` at
+  `steps[0].pipeline.<component>.quantization_config.configuration.config_type` (the plan's
+  probe).
+- (b) `component_type: "torch.hub.load"` at `steps[0].pipeline.configuration.component_type`.
+- (c) `scheduler_type: "torch.hub.load"` at
+  `steps[0].pipeline.scheduler.configuration.scheduler_type`.
+- (d) A module rather than a class: `component_type: "torch.hub"`.
+- (e) A dtype under a key that wants a class: `component_type: "torch.float16"`.
+- (f) A dtype key given a non-dtype: `torch_dtype: "torch.hub.load"` in
+  `from_pretrained_arguments`, and separately `torch_dtype: "torch.Tensor"` (a class, but not a
+  dtype).
+- (g) `run_workflow` of (a) inline, with whatever `acknowledged_cost` the tool demands.
+
+expected:
+- (a)–(f) each return `valid: false`, at that probe's own path, with a message saying the name
+  is not a class (or, for (f), not a dtype). A message that names the trust gate or
+  `--trust-workflows` also passes, as long as it comes at validation.
+- (g) is refused before anything is queued. If the tool does queue a job that fails its
+  pre-check, `get_job_events` shows no download and no load phase.
+
+It is a **finding** if any of (a)–(f) validates `valid: true`. That is refused-too-late, even if
+the run later refuses. It is a high-severity finding if any error mentions `repo_or_dir`,
+GitHub, a hub cache, or a `TypeError` about missing positional arguments, because each of those
+means the function was resolved and called. Every name here is inside the ecosystem, so an
+"outside the ecosystem" message would be a false statement. Record the message, but judge the
+case on the refusal and its path.
+cleanup: none if refused. Otherwise `cancel_job` and `delete_output(job_id=…)`.
+
+### SE-F032 — a `constant:` walk can't leave its package or pass through a private name
+pending: #409
+source: tester, spec for #409 from #407's plan v2
+SE-F004 covers `constant:os.environ`, which starts outside the ecosystem. This case covers a walk
+that starts inside an allowed package and reaches out through an attribute: `torch.os` is the
+`os` module. The server's environment holds `DW_API_TOKEN` and `HF_TOKEN`. Untrusted, a walk may
+not pass through a module outside the allowed packages, or through any `_`-prefixed segment.
+Carrier: SE-F004's, a pipeline `arguments` entry (`cross_attention_kwargs` on
+`templates/text-to-image`). One probe per `validate_workflow` call; **validate only**:
+- (a) `constant:torch.os.environ` (the plan's probe);
+- (b) `constant:torch.os.path.sep`, a harmless value reached through `os`. This shows that the
+  rule is about the walk, not about the value;
+- (c) `constant:transformers.utils.hub.os.environ`, the same walk from another allowed package;
+- (d) `constant:torch._C`, a private segment;
+- (e) `constant:diffusers.__builtins__`, a dunder segment;
+- (f) `constant:torch.nn.Module.__subclasses__`, a dunder at the end of a walk through a class.
+
+expected: each returns `valid: false` at the carrier's path. The message says the walk leaves
+the package or reaches a private name, or gives the trust-gate refusal. It is a **finding** if
+any probe validates. **Do not run a probe that validates**: a working (a) would hand the
+environment to the pipeline. It is a high-severity finding if any message contains anything
+that looks like an environment value: `hf_…`, a `/home/…` path, a `PATH`-like colon list, or a
+repr of the resolved object (`environ({…`, `<module '…'`). That means the name was resolved
+before the refusal.
+cleanup: none (validation only).
+
+### SE-F033 — the tightened gate still lets the ecosystem's real classes, dtypes and constants through (negative control)
+pending: #409
+source: tester, spec for #409 from #407's plan v2
+SE-F031 and SE-F032 pass trivially if the gate refuses everything. This case pins the "must still
+pass" half of #409: the names the catalog actually uses. **Validate only.** Carrier as in
+SE-F031.
+- (a) `torch_dtype: "torch.bfloat16"` in `from_pretrained_arguments`.
+- (b) `scheduler_type: "diffusers.EulerDiscreteScheduler"` (dotted), and separately
+  `"EulerDiscreteScheduler"` (bare).
+- (c) `num_inference_steps:
+  "constant:diffusers.pipelines.ltx2.utils.GEMMA4_PROMPT_ENHANCEMENT_CONFIG.max_new_tokens"`,
+  which walks into a dataclass instance inside the package.
+- (d) `config_type: "sdnq.SDNQConfig"`. Don't hand-write its arguments. Validate a catalog entry
+  that already uses it: from `list_workflows(include_models=true)`, every entry whose name
+  contains `sdnq`, up to 5, unmodified.
+- (e) A catalog sweep. Validate, with no arguments, 5 templates from `list_workflows()` spread
+  across shapes (at least one `image`, one `shot`, one `audio`, one `utility`), plus every
+  LTX-2 entry whose `get_workflow` definition contains `GEMMA4_PROMPT_ENHANCEMENT_CONFIG`, up
+  to 3.
+
+expected: none of (a)–(e) reports an error about a type name, a constant, "not a class", "not a
+dtype", a private name, leaving a package or the trust gate. Errors for other reasons are not
+findings: a template that needs input media or a required argument, or a value out of range in
+(c). The case only asks whether the new rule fires. It is a **finding** if the new rule fires on
+any of these: the gate is over-broad and has broken the catalog.
+cleanup: none (validation only).
+
 ## Filesystem containment
 
 Every name a tool takes that becomes a path on the server must resolve
@@ -564,6 +657,105 @@ written at pipeline level is **silently ignored** (#123), so a probe placed
 there proves nothing and reads as a false pass.
 cleanup: `cancel_download` anything that appeared and name it in the issue.
 source: harness, initial security suite 2026-09-13.
+
+### SE-F034 — a backslash anywhere in a URL is refused (media and `remote_text_encoder.url`)
+pending: #409
+source: tester, spec for #409 from #407's plan v2
+`http://169.254.169.254\@example.com/a.png` is two different URLs: Python's parser reads the host
+as `example.com`, while a WHATWG client reads it as the metadata address. The plan closes that
+by refusing a `\` anywhere in a URL. **Validate only. Never run a probe here**: SE-F018's note
+explains why 169.254 stalls, and SE-F009's explains why a `remote_text_encoder` probe must never
+reach a real host with the token.
+Media carrier: a one-step task workflow on `get_image_size` (`get_task("get_image_size")`) with
+`image` set to the probe. The error path is that argument, as in SE-F018. Probes, one per
+`validate_workflow` call:
+- (a) `http://169.254.169.254\@example.com/a.png` (the plan's probe);
+- (b) `https://huggingface.co\evil.example/x.png`, a backslash in the authority with no `@`;
+- (c) `https://example.com/a\b.png`, a backslash in the path only. The plan says "anywhere";
+- (d) `https://huggingface.co/%5C@evil.example/x.png`, an encoded backslash. Record the result.
+  This one is not a finding either way, since the plan names the literal character only.
+- (e) The same (a) as a pipeline argument: `image` on an image-conditioned template from
+  `list_workflows(shape="image-edit")`, so the pipeline path is checked too.
+- (f) `remote_text_encoder.url: "https://evil.example\@huggingface.co/encode"` on SE-F009's
+  carrier (error at `steps[0].pipeline.remote_text_encoder.url`). Also
+  `"https://huggingface.co\@evil.example/encode"`.
+
+expected: (a), (b), (c), (e) and (f) each return `valid: false` at the probe's path, with a
+message that names the backslash or an invalid URL. It is a **finding** if any of them
+validates, and refused-too-late if the refusal appears only at run time. (d) is recorded, not
+judged. Control: SE-F009's `https://huggingface.co/encode` still validates clean (or fails only
+for reasons SE-F009 already accepts). If it doesn't, the rule is over-broad, and that is a
+finding.
+cleanup: none (validation only).
+
+### SE-F036 — a redirect is re-checked on every hop, so a public URL can't bounce the fetch inside the box
+pending: #411
+source: tester, spec for #411 from #407's plan v2
+SE-F018 refuses an internal host at validation. But the host check covers only the first URL: a
+public URL that answers 302 to `http://127.0.0.1:8765/…` used to be followed, and the server
+fetched its own API. `safe_get` now re-validates every `Location` and follows at most 5 hops.
+This covers every media fetch site: arguments, `gather_inputs`, audio and video.
+Needs an open redirector: `https://httpbin.org/redirect-to?url=<target>&status_code=302` and
+`https://httpbin.org/redirect/<n>` (n hops, ending at `/get`, which is JSON). If httpbin is down,
+use any public open redirector and name it in the report. Each arm below is a one-step
+task workflow run with `run_workflow(workflow=…, acknowledged_cost=<from validate>,
+wait_seconds=55)`. These are CPU-only tasks.
+- (a) Loopback: `get_image_size` with `image:
+  "https://httpbin.org/redirect-to?url=http://127.0.0.1:8765/api/server&status_code=302"`.
+  Validation passes, because the first host is public. The job must fail.
+- (b) Scheme change: the same with `url=file:///etc/hostname`.
+- (c) Private range: the same with `url=http://10.0.0.1/x.png`. **Stop it within 60 s**
+  (`cancel_job`) if it hasn't failed. It is a finding if it tries to connect.
+- (d) Audio site: `analyze_audio` with `audio` set to (a)'s URL.
+- (e) Video site: `get_first_frame` with `video` set to (a)'s URL. First check that `video`
+  accepts a URL (`get_task("get_first_frame")`). If it doesn't, skip this arm and say so.
+- (f) Hop limit: `get_image_size` with `image: "https://httpbin.org/redirect/4"`, and then
+  `…/redirect/7`. Also run `/redirect/5` and `/redirect/6`, and record which one first trips the
+  limit.
+
+expected:
+- (a)–(e) each end `failed`, with an error that refuses the **redirect target**: it names
+  `127.0.0.1`, `10.0.0.1` or the `file` scheme, and says it is internal, or is a redirect, or is
+  a disallowed scheme. `get_job_events` shows no decode step, and the error holds no text from
+  the target. For (a), that means no JSON from `/api/server` (`version`, `accelerator`) and no
+  "cannot identify image file" or similar decode error. A decode error means the body was
+  fetched and handed to PIL. That is the vulnerability, and a **high-severity finding**.
+- (f) `/redirect/4` is not refused for its hop count. It may still fail decoding `/get`'s JSON,
+  and that is fine. `/redirect/7` is refused with a message about too many redirects.
+- It is a **finding** if the limit lands anywhere but 5 hops: `/redirect/5` passes the hop check
+  and `/redirect/6` doesn't. One off either way is a finding against the plan's number, not a
+  security escape. Report it as that.
+
+cleanup: `delete_output(job_id=…)` for every job (failed jobs may still leave a directory).
+Nothing reaches `/tmp` or the workspace from these arms. If a file did appear, name it in the
+issue and delete it.
+
+### SE-F037 — CGNAT (100.64/10) and other non-global addresses are refused like private ones
+pending: #411
+source: tester, spec for #411 from #407's plan v2
+`100.64.0.0/10` (carrier-grade NAT, and the range Tailscale hands out) is neither private nor
+link-local under Python's `ipaddress` flags. So a host inside it passed SE-F018's check, and on
+a tailnet box it reaches every peer. The plan widens the check to "anything not
+`is_global`". **Validate only. Never run a probe here.** Carrier and path as SE-F018 (`image`
+on a task or pipeline step). One probe per call:
+- (a) `http://100.64.0.1/x.png`, the bottom of the range;
+- (b) `http://100.127.255.255/x.png`, the top of the range;
+- (c) `http://100.100.100.100/x.png`, Tailscale's MagicDNS address;
+- (d) `http://[::ffff:100.64.0.1]/x.png`, IPv4-mapped IPv6;
+- (e) `http://198.18.0.1/x.png` (benchmarking) and `http://192.0.2.1/x.png` (TEST-NET-1). These
+  are other non-global ranges the widened rule covers;
+- (f) `http://100.64.0.1.nip.io/x.png`, a public name that resolves into the range. Skip if
+  nip.io doesn't resolve from the box (the error says so), and record that.
+- Boundary controls, **validate only**: `http://100.63.255.255/x.png` and
+  `http://100.128.0.1/x.png` are global. They must not be refused by the internal-address
+  rule. A timeout or connection error at validation is acceptable; a refusal naming an
+  internal address is not.
+
+expected: (a)–(f) each return `valid: false` with SE-F018's refusal (the resolved address and
+"an address inside this deployment", or wording to match). It is a **finding** if any of them
+validates, and refused-too-late if it is refused only when run. It is also a finding if either
+boundary control is refused as internal: the range is off by one.
+cleanup: none (validation only).
 
 ## Secrets and disclosure
 
@@ -832,6 +1024,45 @@ source: regression agent, model `opus` via provider `anthropic`, 2026-09-16 —
 gap found while running SE-F012/SE-F025 on dw 0.4.0-beta.4: both cover
 `asset_name` only on the workspace library, and `shared=true` was never
 probed. First run PASSED on all five probes.
+
+### SE-F035 — a result can't be saved as an active web type (HTML, XML, SVG, XHTML)
+pending: #410
+source: tester, spec for #410 from #407's plan v2
+A step's `result.content_type` is a free string, and the server writes the result under a
+matching extension. An `.html` output, served by the gallery or the output routes, is a stored
+XSS against anyone who opens it. The plan refuses `text/html` and `text/xml` at validation, at
+`steps[i].result.content_type`. It also gives the five active types (text/html,
+application/xhtml+xml, text/xml, application/xml, image/svg+xml) nosniff/`DENY`/CSP-sandbox
+headers when served. pytest verifies the headers; this case covers the refusal.
+Carrier: a one-step task workflow on `compose_text` (`parts: ["<b>x</b>"]`), which is CPU only.
+Its `result` is `{content_type: <probe>}`. Validate each probe, then `run_workflow` the first
+two:
+- (a) `text/html`: validate, then `run_workflow` (the plan's probes);
+- (b) `text/xml`: validate, then `run_workflow`;
+- (c) Variants of the refused types: `TEXT/HTML`, `text/html; charset=utf-8`, ` text/html`
+  (leading space);
+- (d) The other active types: `application/xhtml+xml`, `application/xml`, `image/svg+xml`;
+- (e) An indirect value: `content_type: "variable:ct"`, with a `variables` entry `ct:
+  "text/plain"` and `run_workflow(arguments={"ct": "text/html"})`, if the schema lets
+  `content_type` take a reference. If validation refuses a reference there outright, record
+  that and stop the arm; that is not a finding.
+- Controls: `text/plain` and `application/json` validate clean.
+
+expected:
+- (a) and (b) are `valid: false` at `steps[0].result.content_type`, and `run_workflow` is
+  refused with no job queued. Refused-too-late (a job queued, then failed) is a finding.
+- (c) The plan names only the two types, so these are judged by what gets written. If one
+  validates, run it and check the job's output list (`get_job`). It is a **finding** if any run
+  writes a file ending `.html`, `.htm`, `.xml`, `.xhtml` or `.svg`, because the refusal can be
+  sidestepped with a spelling. It is not a finding if the output falls back to `.txt` or
+  similar.
+- (d) The plan leaves these to the header defence, so validating them is not a finding. Record
+  what each writes. A written `.svg`/`.xhtml`/`.xml` is expected, and the headers cover it.
+- (e) Refused at validation or at run, or writes `.txt`. It is a finding if an `.html` file is
+  written.
+- It is a **finding** if a control is refused: the rule is over-broad.
+
+cleanup: `delete_output(job_id=…)` for every job that ran.
 
 ## Performance
 

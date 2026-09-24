@@ -4148,4 +4148,97 @@ cleanup: `delete_output(job_id=<setup job>)`. Also delete the transcribe job if 
 before its own delete.
 metrics: none.
 
+### C-F118 — ordinary text and image results still save, read back and keep after the active-type refusal
+pending: #410
+source: tester, spec for #410 from #407's plan v2
+The half of #410 that must not break: refusing `text/html`/`text/xml` (SE-F035) and adding
+headers to active types must leave plain text and PNG results working. Both steps are
+CPU-only tasks.
+1. Run a one-step task workflow on `compose_text` (`parts: ["alpha", "beta"]`, `separator: " "`)
+   with `result: {content_type: "text/plain"}`. Use `run_workflow(workflow=…,
+   acknowledged_cost=<bound from the validate plan>, wait_seconds=55)`.
+2. Call `get_output_text` on its output.
+3. Run a one-step task workflow on `qr_code` (`qr_code_contents: "c-f118"`, `width: 256`,
+   `height: 256`) with `result: {content_type: "image/png"}`.
+4. Call `get_output_image` on the PNG output.
+5. Call `keep_output(name=<png output>, asset_name="c-f118/qr.png")`, then `list_assets`.
+
+expected:
+- Steps 1 and 3 validate clean and complete.
+- Step 2 returns `alpha beta`.
+- Step 4 returns a 256×256 image.
+- Step 5 succeeds, and `list_assets` shows `c-f118/qr.png`.
+
+It is a **finding** if either `content_type` is refused, or any of those reads fails in a way it
+didn't before #410.
+cleanup: `delete_asset("c-f118/qr.png")`, `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F119 — a public-to-public redirect is still followed
+pending: #411
+source: tester, spec for #411 from #407's plan v2
+The half of #411 that must not break: `safe_get` re-checks each hop (SE-F036), but a redirect
+between public hosts must still be followed. Many real media URLs redirect: Hugging Face
+`resolve/` links 302 to a CDN.
+1. Run a one-step task workflow on `get_image_size` with `image:
+   "https://huggingface.co/datasets/huggingface/documentation-images/resolve/main/diffusers/astronaut.jpg"`.
+   That URL is itself a redirect to the CDN. Use `run_workflow(…, wait_seconds=55)`.
+2. The same, with `image` wrapped in one more public hop:
+   `https://httpbin.org/redirect-to?url=<the URL above, percent-encoded>&status_code=302`. If
+   httpbin is down, skip this step and say so.
+
+expected: both jobs complete, and the result reports the image's size (the same value both
+times). It is a **finding** if either is refused as a redirect, as internal or for its hop count.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F120 — gallery, asset, workflow and prompt listings and `export_job` are unchanged on an ordinary workspace
+pending: #412
+source: tester, spec for #412 from #407's plan v2
+#412 adds symlink containment to the listing and export walks (pytest covers the symlink cases).
+Over MCP, this case checks that nothing ordinary dropped out of those walks. Use workspace
+`regression-complete`.
+1. Run a `qr_code` one-step task workflow (`qr_code_contents: "c-f120"`, `width: 256`,
+   `height: 256`) with `result: {content_type: "image/png"}` and `wait_seconds=55`.
+2. Call `keep_output(name=<png output>, asset_name="c-f120/qr.png")`.
+3. `save_workflow` that same workflow as `c-f120-qr`.
+4. `save_prompt` a prompt named `c-f120` (any text).
+5. Call `list_gallery`, `list_assets`, `list_workflows` and `list_prompts`.
+6. Call `export_job(job_id=<step 1's job>)`.
+
+expected:
+- In step 5, each listing includes its item: the job's PNG, `c-f120/qr.png`, `c-f120-qr` and
+  `c-f120`.
+- Step 6 succeeds, and its listing names the PNG and the job's workflow/metadata files, as
+  before #412.
+
+It is a **finding** if any item is missing, or an ordinary file is reported as skipped or
+outside the root.
+cleanup: `delete_asset("c-f120/qr.png")`, `delete_workflow("c-f120-qr")`,
+`delete_prompt("c-f120")`, `delete_output(job_id=…)`. Also delete whatever `export_job` wrote,
+if its response names a separate location.
+metrics: none.
+
+### C-F121 — normal-sized image decode paths still work under the pixel limit
+pending: #413
+source: tester, spec for #413 from #407's plan v2
+#413 caps decode at 50M pixels (pytest covers the refusal of a decoder bomb). This case checks
+that every MCP path that decodes an image still handles an ordinary one.
+1. Run a `qr_code` one-step task workflow (`qr_code_contents: "c-f121"`, default 768×768) with
+   `result: {content_type: "image/png", embed_metadata: true}` and `wait_seconds=55`.
+2. Call `get_output_image(name=<png>)`, and again with `crop=[0, 0, 384, 384]` and with
+   `max_dimension=256`.
+3. Call `list_gallery(media="image", limit=5)`.
+4. Call `get_gallery_metadata` on the PNG.
+
+expected:
+- Step 2 returns a 768×768 image, a 384×384 crop and a 256-px downscale.
+- Step 3 lists the PNG (with its thumbnail/preview field, if the listing has one).
+- Step 4 returns the embedded workflow/metadata.
+
+It is a **finding** if any of them errors with a pixel-limit, decompression-bomb or decode
+refusal.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
