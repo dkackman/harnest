@@ -4191,7 +4191,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F120 — gallery, asset, workflow and prompt listings and `export_job` are unchanged on an ordinary workspace
-pending: #412
 source: tester, spec for #412 from #407's plan v2
 #412 adds symlink containment to the listing and export walks (pytest covers the symlink cases).
 Over MCP, this case checks that nothing ordinary dropped out of those walks. Use workspace
