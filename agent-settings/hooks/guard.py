@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse guard for the unattended roles (HARNESS-ROADMAP.md R3).
 
-    python3 guard.py implementer|consumer     (hook input JSON on stdin)
+    python3 guard.py implementer|lead|consumer     (hook input JSON on stdin)
 
 Turns ticket-protocol invariants that used to live only in prompt text, and
 were audited after the fact by audit_issue, into refusals at the moment of
@@ -20,6 +20,15 @@ implementer:
   - hand-off gate: adding `status:fixed-pending-verify` needs a clean tree,
     ruff clean on the changed files, and no pytest failure that isn't also
     failing on HARNEST_BASE_COMMIT (see handoff_gate)
+lead (the feature lead's design and decompose sessions, via lead.json; its
+build and close-out sessions commit and push, so they run with
+implementer.json and get the implementer's rules, push checks and
+hand-off gate):
+  - the implementer's issue rules above (no completed close, no
+    status:verified, no lifting a park, one owner at a time)
+every role:
+  - no adding `status:plan-approved`: approving a feature plan is Don's
+    alone (roadmap R11), so no agent can approve the plan it wrote
 consumer (tester, regression):
   - closing as completed or adding `status:verified` needs at least one
     `mcp__dw__*` call earlier in the session ("only from a real MCP call")
@@ -207,7 +216,10 @@ def main():
     for words in segments(cmd):
         if is_gh_issue(words, "edit"):
             owner_rule(words)
-        if role == "implementer":
+            if "status:plan-approved" in flag_values(words, "--add-label"):
+                deny("status:plan-approved is Don's to add: approving a feature plan is a human decision, "
+                     "and no agent may approve a plan, its own or another's.")
+        if role in ("implementer", "lead"):
             if closes_completed(words):
                 deny('only the tester closes an issue as completed. gh closes as completed by default: '
                      'pass --reason "not planned" for wontfix/duplicate.')
@@ -217,6 +229,7 @@ def main():
                 removed = flag_values(words, "--remove-label")
                 if "owner:don" in removed or "status:needs-approval" in removed:
                     deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
+        if role == "implementer":
             problem = git_push_problem(words)
             if problem:
                 deny(problem)

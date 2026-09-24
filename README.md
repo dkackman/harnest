@@ -91,7 +91,7 @@ Tickets are GitHub Issues on `dkackman/diffusers-workflow`, filed with its "MCP 
 ticket" template. Agents work on them only through `gh issue`.
 
 - **`owner:*` is a baton.** An open issue has exactly one of `owner:implementer`,
-  `owner:tester`, `owner:researcher` or `owner:don`, naming whoever acts next. An agent
+  `owner:tester`, `owner:researcher`, `owner:lead` or `owner:don`, naming whoever acts next. An agent
   touches only issues with its own owner label, and only to act on them or hand them off.
 - **Only the tester closes an issue as `completed`** (with `status:verified`), and only
   after a real MCP call in that session. The implementer never verifies its own fixes.
@@ -194,6 +194,41 @@ The researcher can read the source checkout but not write to it. It can also mak
 has no SSH and no write access to git. It takes no driver lock, because it never changes
 anything on the server.
 
+## The feature lead
+
+Work bigger than one fix goes through the feature lead (roadmap R11). A feature is one
+issue labeled `feature`, and you start one by swapping its `owner:don` for `owner:lead`.
+
+1. **Design** (`run-features.sh`). The lead first checks the proposal against the code
+   with one read-only sweep, and measures demand (`field-report` issues, real use in your
+   own workspaces). It then posts a plan that opens with a verdict: **build**, **build
+   smaller**, **defer** or **don't build**. After the verdict come the design, the stages,
+   and questions marked with defaults. The issue goes to `owner:don` +
+   `status:plan-review`. You answer in comments and swap the owner back. The plan is one
+   comment, edited in place.
+2. **Approve.** You add `status:plan-approved`. No agent can: the guard refuses it.
+3. **Decompose** (`run-features.sh`). Each stage becomes a sub-issue, ordered by "blocked
+   by" links. A stage that needs another feature is blocked by that issue.
+4. **Spec** (`run-loop.sh`, tester). The tester writes each stage's acceptance cases from
+   the plan, before any code, as `pending: #<stage>` suite cases. The regression agent
+   skips them.
+5. **Build** (`run-loop.sh`, lead pass). One stage per cycle, once it has no open blocker.
+   The lead fans code-only work out to `sonnet` subagents, then integrates, merges to
+   `develop`, deploys once, and hands off.
+6. **Verify** (`run-loop.sh`, tester). The tester checks the stage's repro plus its
+   pending cases. A pass removes the `pending:` lines; a bounce goes back to the lead.
+7. **Close out.** Once every stage is closed, the lead writes the design record, and the
+   tester closes the parent after running every case the feature added.
+
+The lead can also stop mid-build and re-plan. That removes `status:plan-approved` and
+halts the feature until you approve again. If you decline a feature, a close-out moves
+its doc to `docs/proposals/declined/`.
+
+```sh
+./run-features.sh                      # design/decompose whatever is the lead's turn
+ONLY_ISSUES=378 ./run-features.sh
+```
+
 ## The replay benchmark
 
 `run-bench.sh` measures the implementer against issues whose right answer is already known.
@@ -269,6 +304,8 @@ tail -f logs/loop.log                           # watch from another terminal
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |
 | `REGRESSION_MODEL` / `RESEARCH_MODEL` | `sonnet` / `sonnet` | standalone drivers; same `*_PROVIDER` pattern |
+| `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`sonnet`) runs its code subagents |
+| `LEAD_STAGE_BUDGET_USD` / `LEAD_CLOSEOUT_BUDGET_USD` / `TESTER_SPEC_BUDGET_USD` | `15` / `3` / `8` | per-session caps in `run-loop.sh`; `run-features.sh` has `LEAD_DESIGN_BUDGET_USD` (6) and `LEAD_DECOMPOSE_BUDGET_USD` (2) |
 | `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`RESEARCH_EFFORT` (triage follows the tester's) |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
 | `REGRESSION_BUDGET_USD` / `RESEARCH_BUDGET_USD` | `6` / `3` | per regression chunk / per research session |

@@ -11,7 +11,11 @@
    calls' compact default forms (the guide's index, one schema section, the
    summary catalog — S-F015 describes the contract) and drill into the full
    form only when a case needs it.
-3. Execute each case in order, against your level's workspace:
+3. Skip any case carrying a `pending: #NN` line: it is a feature lead's
+   acceptance case for behavior not built yet (the tester wrote it from an
+   approved plan). Its failure is expected, and not an issue to file. List
+   the skipped IDs in your summary and nothing else.
+4. Execute each other case in order, against your level's workspace:
    - **Functional case**: make the call(s) described and compare the result
      against the case's `expected:`. Pass or fail.
    - **Performance case**: make the call(s) and measure the operation itself
@@ -33,7 +37,7 @@
    - **Then its `cleanup:` line**: delete what the case made, unless it's
      kept for a repro. A delete that fails, or an output that still lists
      after deletion, is a finding in its own right.
-4. Report each failure or regression as you find it ("Reporting a
+5. Report each failure or regression as you find it ("Reporting a
    failure").
 
 ### Growing the suite

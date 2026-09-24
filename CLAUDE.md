@@ -149,6 +149,23 @@ files described below. There is no build, lint, or test step.
   agent reads only the history it needs, never the whole log. Checked in and committed by
   the drivers alongside the suite files (#135 is where the old "record it in `last run:`"
   instruction met the no-edit-on-pass rule and this replaced both).
+- `agents/lead/` / `run-features.sh` — the feature lead (roadmap R11). It owns `feature`
+  issues from design to delivery.
+  - **Design and decompose** run in `run-features.sh`. They are lock-free and read-only
+    against a detached worktree at `origin/develop` (`LEAD_TREE`), behind
+    `LEAD_DESIGN_PERMISSION_FLAGS`. That fence is the researcher's, plus `Write` to /tmp,
+    a `gh api` PATCH to edit the plan comment in place, the `Agent` tool for the one
+    read-only code sweep, and read-only `dw` calls for measuring demand.
+  - **Builds and close-outs** run in `run-loop.sh`'s `lead_pass`, between the implementer
+    and tester passes. They use the implementer's flags, R3 gate included.
+  - **The tester's `spec` kind** (`status:needs-spec`) writes `pending: #<stage>` cases
+    from the approved plan before any code exists. Its verify kind judges a stage by
+    those cases and bounces it to `owner:lead`.
+  - **Order.** Stages are GitHub sub-issues ordered by "blocked by" links, and
+    `buildable_stages` builds one only when it has no open blocker and its parent is
+    `status:plan-approved` without `status:needs-spec`.
+  - **Approval** (`status:plan-approved`) is Don's alone: `guard.py` refuses it from
+    every role.
 - `agents/RESEARCHER.agent.md` / `run-research.sh` — a fourth, standalone
   agent (not part of the implementer/tester alternation, and not the
   regression agent) that turns an `idea`-labeled GitHub Issue into a
@@ -363,7 +380,7 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
 `close` / `list`). The invariants both role prompts and the status-board query depend on:
 
 - `owner` is a label, exactly one of `owner:implementer` / `owner:tester` /
-  `owner:don` / `owner:researcher` at a time — whoever's turn it is to act
+  `owner:don` / `owner:researcher` / `owner:lead` at a time — whoever's turn it is to act
   next. Swap it with `gh issue edit <n> --remove-label owner:X --add-label
   owner:Y`. An agent only touches issues carrying its own owner label and
   never edits another agent's issue beyond the label/comment that hands it

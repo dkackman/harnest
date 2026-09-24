@@ -20,7 +20,7 @@ rather than in a separate log.
 | R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | labels created; hand run 1 (dw#375): declined at design, closed; needs a feature that gets built | R4 (absorbs it), R1 |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built (`run-features.sh`, `agents/lead/`, lead pass in `run-loop.sh`); dw#378 decomposed, waiting on its spec session | R4 (absorbs it), R1 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -670,8 +670,10 @@ feature issue ──(Don: "go")──► 1 design ◄──► Don (comments)
   optional comment for scope or priority. Don answers the lead's questions by commenting
   and swapping the owner back. Every agent posts as `TICKET_OWNER`, so a new comment can't
   signal a human turn. The label swap is that signal, as it is everywhere else.
-- Stages are child issues (R4's parent/child) linked to the parent. Each carries `feature`,
-  `stage`, `parent: #NN` in its body, and moves through the ordinary status flow. A child
+- Stages are GitHub sub-issues of the parent (`gh issue create --parent`), each carrying
+  `feature` and `stage`. Their order is GitHub "blocked by" links: each stage is blocked
+  by the one before it, plus any other feature it depends on. They move through the
+  ordinary status flow. A child
   issue's implementer role is the lead: a bounce returns it to `owner:lead`, not to
   `owner:implementer`, because the lead holds the plan.
 
@@ -685,7 +687,9 @@ thread and the source, then does one of three things:
 Design sessions are read-only against source and use read-only `dw` MCP discovery. That's
 the researcher's fence (`RESEARCHER_PERMISSION_FLAGS`) plus `gh issue`, so they take no
 driver lock and can run while the loop runs. The plan is **one comment, edited in place**
-(`gh issue comment --edit-last`) and headed `<!-- harnest:plan vN -->`. Each revision adds
+by its id (`gh api -X PATCH .../issues/comments/<id>`, never `--edit-last`: every agent and
+Don post as the same login, so "last" is usually Don's reply) and headed
+`<!-- harnest:plan vN -->`. Each revision adds
 a short "changed since vN-1" comment, so Don reviews one current document and not a scroll.
 The plan names:
 - the problem and non-goals;
@@ -852,6 +856,35 @@ sees source. Nothing lets the lead write suite or `contract/` cases.
   board sees them) or in `run-features.sh` under the shared lock. Design sessions stay
   outside either way.
 - R8: this is a large enough driver change to be the one that goes straight to the SDK.
+
+**Decided by the build (2026-09-24).**
+- Labels are as proposed, plus `status:needs-spec`.
+- **Placement.** Design and decompose sessions run in `run-features.sh`, lock-free, from
+  their own detached worktree at `origin/develop`. Builds, both kinds of close-out, and
+  the tester's spec sessions run in `run-loop.sh`'s cycle, under its lock. The lead pass
+  sits between the implementer and tester passes, so a stage handed off is verified the
+  same cycle. Close-outs had to go there too: `run-loop.sh` holds the lock for its whole
+  life, so a close-out in `run-features.sh` would wait forever.
+- **One design session per Don turn.** The design queue is `owner:lead`, and Don's owner
+  swap is the only way in.
+- **Skipping phase 3.** A stage with no MCP surface skips it, but only when the approved
+  plan says so and names that stage's verifier. If no stage has MCP surface, decompose
+  keeps the parent with the lead.
+- **One feature in build at a time**, as `LEAD_STAGES_PER_CYCLE=1`. A feature's own
+  stages are serial through their "blocked by" links.
+- **Order and cross-feature dependencies are one mechanism**: GitHub "blocked by" links.
+  `buildable_stages` builds a stage only when it has no open blocker and its parent is
+  `status:plan-approved` without `status:needs-spec`. A dependency on another feature
+  blocks the stage that needs it, not the whole feature. The prerequisite feature goes
+  through its own design and approval, never folded into the dependent plan, and the
+  dependent plan names a fallback in case it's declined. First case: dw#388 (#378 stage C)
+  is blocked by #376, with Don's fallback to raise the surface budget.
+- **A re-plan** removes `status:plan-approved` from the parent, which stops every stage
+  until Don approves again.
+- **A declined feature** is recorded by its design session (`wontfix`, left open). A
+  close-out in `run-loop.sh` moves the doc to `docs/proposals/declined/` and closes the
+  issue.
+- **R8.** Not taken. The change fit the bash drivers in about 300 lines.
 
 **Done when.** One proposal from `docs/proposals/` goes from issue to closed parent through
 this path. Don's only input is issue comments and label swaps, with no engine-surface
