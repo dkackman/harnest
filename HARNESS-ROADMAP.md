@@ -22,10 +22,12 @@ rather than in a separate log.
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built (`run-features.sh`, `agents/lead/`, lead pass in `run-loop.sh`); dw#378 decomposed, waiting on its spec session | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done (A, B, C) | before dw#378 runs live |
+| R13 | A reusable framework: target profile, per-target prompt packs, a second target | todo; profile drawn before R8, split during it | R8 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
-R4's spec step as R11's phase 3, not separately.
+R4's spec step as R11's phase 3, not separately. R13 goes with R8: draw its
+line between framework and target first, and port along it.
 
 ## Principles every item must keep
 
@@ -525,7 +527,8 @@ budget.
 
 **Build.** A Python package (such as `harness/`) that keeps the same CLI surface and
 environment variables as `run-loop.sh`, so the knobs documented in CLAUDE.md and the README
-still work. Port one driver at a time, starting with `run-research.sh` (the smallest), then
+still work. Port one driver at a time, starting with `run-retro.sh` or `run-digest.sh` (the smallest;
+`run-research.sh` was deleted in R12), then
 `run-regression.sh`, then `run-loop.sh`. Run the old and new drivers side by side for a few
 cycles each.
 
@@ -1166,6 +1169,70 @@ label logic in jq, in four files, which is where the holes come from.
 **Done when.** A cycle survives a GitHub outage. The digest's stranded list is empty.
 `bats tests/` passes, and the queue logic is tested there, not reviewed by eye. Then dw#378
 runs through spec → build → verify.
+
+## R13 — A reusable framework: target profile, prompt packs, a second target
+
+**Why.** The loop's design isn't specific to dw:
+- a tester that uses the server only over MCP and never sees source;
+- an implementer that never verifies its own fix;
+- a lead that designs features with Don and builds them in stages;
+- hand-offs through GitHub Issues, driven by one state machine (`lib/classify.jq`).
+
+Neither is most of the code that runs it: the ledger, the guard, the session loop, the
+stream renderer, rate-limit handling, the driver lock, and the curator, retro and
+digest. The dw-specific parts are in a few known places. Measured 2026-09-24 by grepping
+each file for dw-specific terms: `run-loop.sh` 107 references, `providers.sh` 46, `guard.py`
+22, the tester's and regression agent's prompts 45 and 34. `run-features.sh`, the curator,
+retro, digest and `classify.jq` have 4–7 each.
+
+**Scope: MCP servers, not any software.** The tester's isolation depends on using the
+software only over a protocol. A framework for "a server with an MCP surface, a source repo,
+a deploy step and GitHub Issues" keeps that. Widening it to any software gives it up.
+
+**Build.**
+1. **A target profile.** One file per target, read by every driver in place of today's
+   constants:
+   - the ticket repo, the harness repo and `TICKET_OWNER`;
+   - `SOURCE_DIR` and the plugin tree, if any;
+   - the MCP server name and its config;
+   - the deploy command, the health check, and a "what's deployed" command (today:
+     `ssh lem`, `deploy.sh`, `deployed_head`, `check_lem_on_develop`);
+   - the implementer's hand-off gate commands (today: `ruff` and pytest, hard-wired in
+     `guard.py`);
+   - the bench's scoring command.
+
+   This part is mechanical. The offline suite in `tests/` guards it, with the fake board
+   given a second profile.
+2. **Prompt packs.** Split each role prompt into a generic core that the framework owns and
+   a target pack that the target owns. The pack holds the domain parts: the standing task,
+   workspace rules and cast, what a deploy means, and the suite levels and their fixture
+   namespaces (dw's one workspace per level). The core-plus-kind-fragment layout from R10
+   is already the seam. This part needs judgment: every rule has to land in exactly one of
+   the two.
+3. **A second target.** A small MCP server of Don's own, run through fix → verify →
+   feature on its own profile and pack. Until it runs, the split is a guess.
+
+**Sequencing with R8.** Doing step 1 in bash and then porting it means doing it twice.
+Instead:
+1. Write the profile and the pack boundary down, as a list of every dw-specific knob and
+   prompt section and where each one goes.
+2. Port (R8) along that line, so the Python package reads a profile from its first module.
+3. Bring up the second target after the port.
+
+Step 1 on its own, still in bash, is worth doing only if R8 slips.
+
+**Undecided.**
+- **Packaging:** one repo with `targets/<name>/`, or the framework as a package and each
+  target as its own repo. Start with `targets/dw/` in this repo, and split it off when the
+  second target exists.
+- **Whether the lead and the curator need a target pack at all.** Their prompts are nearly
+  generic today.
+- **Measured claims in `CLAUDE.md` and the README.** They are dw's history. They stay with
+  the dw target's docs, not the framework's.
+
+**Done when.** A second MCP server runs unattended on the same framework code, with no
+`if target == dw` anywhere. The dw loop's behavior and costs are unchanged across the
+switch, checked against the offline suite and a day of live cycles.
 
 ---
 
