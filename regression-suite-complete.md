@@ -4089,4 +4089,141 @@ It is a **finding** if the film lists two shots (one per input) or none, if a
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F113 — tool descriptions hold the rule, not the model narrative (#376)
+pending: #403
+source: tester, spec for #403 from #376's plan v2
+#376 moved model-specific narrative and a transcription walkthrough out of the MCP tool
+descriptions into the guide. Each description keeps its rule and loses its example. This case
+checks that from the tool definitions a client actually loads. No run is needed.
+1. Load the definitions with `ToolSearch("select:mcp__dw__get_output_audio,mcp__dw__validate_workflow,mcp__dw__list_workflows,mcp__dw__list_prompts,mcp__dw__get_job_events,mcp__dw__wait_for_job,mcp__dw__get_memory")`.
+2. Load every other `mcp__dw__*` tool the same way, in batches, for the length check.
+expected:
+- `get_output_audio`:
+  - It still says the served format: the phrases "own encoding" (a whole file) and "WAV"
+    (extracted or excerpted) are both present.
+  - It still says that a text-only client can't consume the `AudioContent` block, and that
+    such a client confirms the *words* by transcribing.
+  - It points at "The loop" in the `workflows` guide for how to do that.
+  - It **no longer** carries the walkthrough. None of these appear: `templates/transcribe-audio`,
+    `get_output_text`, `wait_seconds=55`, `basis: "unknown"`, "a few seconds per clip",
+    "Four calls".
+- `validate_workflow` still states the rule: a value outside a bound the workflow declares is
+  an error at validate time, and one the workflow rounds up comes back as a warning naming what
+  it becomes. The H3 example "`17 * n + 5` from 124 to 345" is gone.
+- `list_workflows` still says `constraints` are terse. The example "`17*n+5, 124-345, rounds up`"
+  is gone from the description. It stays in the catalog data; C-F115 checks that.
+- `list_prompts` still says `intended_model` narrows to one family. The family list
+  (`minimax-h3`, `minimax-music3`, `ltx-2.5`, `z-image`, `flux`) is gone.
+- `get_job_events`:
+  - It still says a `kind: "phase_stall"` entry is a watchdog notice and not evidence of a hang
+    by itself.
+  - It still says some models are silent for minutes in normal operation, and to check the
+    model's skill or guide before treating one as a fault.
+  - The parenthetical "(a video reference encode, block-cache gaps)" is gone.
+- `wait_for_job` is **unchanged**. It still carries all of these:
+  - "a video reference's lead-in can run many minutes emitting nothing";
+  - "uneven under a transformer block cache";
+  - "whether `denoise_step` has moved since a poll minutes ago";
+  - the pointer to WORKFLOW_GUIDE's "The loop", step 5 for why `denoise_total_steps` can read
+    one less than asked.
+- `get_memory` is **unchanged**. It still names `host_pinned_reserved_mb` /
+  `host_pinned_allocated_mb` with the pointer to the `acceleration` guide's "Reading Memory
+  While Offloading". It still has the `live: true`/`live: false` paragraph with reasons
+  `job_running`, `worker_stopped`, `worker_busy` and `worker_unreachable`.
+- No `mcp__dw__*` description exceeds 2,048 characters, which is about 300 words or 25 lines of
+  the rendered definition. A consumer can't count exactly. Flag any description that clearly
+  runs past that, and name the tool.
+
+It is a **finding** if any named piece is still present, or if a kept rule is lost with its
+example. A description that points at the guide without saying the rule itself is a lost rule.
+cleanup: none.
+metrics: none.
+
+### C-F114 — the guide's "The loop" step 6 carries the transcription procedure, and following it works (#376)
+pending: #403
+source: tester, spec for #403 from #376's plan v2
+The walkthrough `get_output_audio` used to carry now lives in step 6 of "The loop" in the
+`workflows` guide. This case checks that the promised lookup resolves and that the procedure
+works end to end when followed exactly as written. CPU/short-GPU only: one VITS speech clip
+plus one transcription.
+
+Today "The loop" is an `###` subsection inside "Authoring a workflow from an agent", and
+`get_guide("workflows", section="The loop")` returns "no section 'The loop'" (checked
+2026-09-24 while specifying). The plan's acceptance names this exact call, so the build has to
+make it resolve.
+1. `get_guide(name="workflows", section="The loop")`.
+2. Setup: make a gallery output with known speech.
+   - `run_workflow(workflow_path="templates/generate-speech", arguments={"text": "The quick
+     brown fox jumps over the lazy dog."}, acknowledged_cost=<bound from validate>,
+     wait_seconds=55)`. This is C-F081's template: VITS, 16 kHz mono.
+   - Note the `.wav`'s `<workflow>/<run id>/<file>` name as `<speech>` and the job id as
+     `<setup job>`.
+3. Follow step 6's procedure as the guide words it, with `<speech>` as the output. At the time
+   of writing the plan, the procedure was:
+   - `validate_workflow(name="templates/transcribe-audio", arguments={"input_audio":
+     "output:<speech>"})`;
+   - `run_workflow` with the same arguments, `acknowledged_cost` bound from that validate's
+     `plan`, and `wait_seconds=55` (follow up with `wait_for_job` if `still_running: true`);
+   - `get_output_text` on the transcript;
+   - `delete_output(job_id=<transcribe job>)`.
+   If the guide's wording differs from this, follow the guide and note the difference.
+4. `list_gallery()` (or the listing the case's workspace uses) after step 3.
+expected:
+- Step 1 returns text, not an error. It contains step 6, and step 6 names all of these:
+  - `templates/transcribe-audio`;
+  - an `output:` reference as `input_audio`;
+  - `get_output_text`;
+  - `delete_output(job_id=`.
+  Step 6 still tells an image client to look with `get_output_image` and judge against the
+  request. The transcription part is added to that step and doesn't replace it.
+- Step 3:
+  - validate is `valid: true` with no errors;
+  - the run `succeeded`;
+  - `get_output_text` returns the spoken words: "the quick brown fox jumps over the lazy dog",
+    ignoring case and punctuation. One misheard word is tolerable on a VITS voice; a
+    transcript that's empty or unrelated is not.
+  - `delete_output(job_id=)` succeeds.
+- Step 4 shows no `transcribe-audio` run left behind. The only run from this case is the
+  setup's.
+
+It is a **finding** if step 1 errors or returns a section without the procedure, if any call in
+the procedure as the guide writes it is refused (a wrong argument name, a missing
+`acknowledged_cost` shape), or if the procedure leaves a scratch run.
+cleanup: `delete_output(job_id=<setup job>)`. Also delete the transcribe job if step 3 failed
+before its own delete.
+metrics: none.
+
+### C-F115 — trimming the descriptions changed no behavior: H3 frame rule, catalog constraints, prompt filter (#376)
+pending: #403
+source: tester, spec for #403 from #376's plan v2
+#376 is descriptions only. The examples it removed describe behavior that must still hold.
+Values below were pinned 2026-09-24 against `templates/minimax/video-with-audio`, matching the
+`workflows` guide's "What a variable is allowed to be". Validate only, no run.
+1. `validate_workflow(name="templates/minimax/video-with-audio", arguments={"num_frames": N})`
+   for N = 130, 108, 141, 345, 346 and 123.
+2. `list_workflows(shape="shot")`.
+3. `list_prompts(intended_model="minimax-h3")`, then `list_prompts(intended_model="no-such-family")`.
+expected:
+- Step 1:
+  - 130 is `valid: true`, with one warning that it rounds up to 141 and "The run generates
+    141, not 130".
+  - 108 is `valid: true`, with a warning that it becomes 124.
+  - 141 and 345 are `valid: true`, with no `num_frames` warning.
+  - 346 is `valid: false`, with an error at `arguments.num_frames` saying it rounds up to 362,
+    must be at most 345, and "Accepted: 124 to 345, 17 * n + 5".
+  - 123 is `valid: true`, with a warning that it rounds up to 124 ("The run generates 124,
+    not 123").
+- Step 2: every H3 shot template (`templates/minimax/…`) still shows `"constraints":
+  {"num_frames": "17*n+5, 124-345, rounds up"}`. `templates/minimax/shots-batch` shows it under
+  `lists.shots.constraints`. The LTX templates still show `"8*n+1, 9+"`.
+- Step 3:
+  - The `minimax-h3` call returns a non-empty list whose every `details[*].intended_model` is
+    `minimax-h3`. It had 36 entries on 2026-09-24; that count changes with the library.
+  - The unknown family returns `prompts: []`, not an error (checked 2026-09-24).
+
+It is a **finding** if any refusal, snap, warning text or catalog constraint differs from the
+above, or if `intended_model` stops filtering.
+cleanup: none.
+metrics: none.
+
 ## Performance
