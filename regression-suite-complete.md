@@ -82,8 +82,7 @@ when nothing uses it anymore.
 - `asset:qa-cast/ep3-shot1-incident.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4`
   — two independently generated 24 fps shots (124 frames / 5.175 s / 960x544,
   32 kHz stereo) whose soundtracks sit ~11 dB apart (`mean_dbfs` -20.0 and
-  -31.1). Used by C-F001, C-F002, C-F009, C-F011, C-F012 and C-F013's stereo
-  control. They live in the **shared**
+  -31.1). Used by C-F001, C-F002 and C-F009. They live in the **shared**
   `common/assets`, not in `regression-complete`, so every workspace can
   reach them by that same `asset:` reference — do not delete them in a
   cleanup sweep, and do not expect them under `regression-complete`'s own
@@ -91,8 +90,7 @@ when nothing uses it anymore.
   reproduce it on purpose.
 
 - `asset:qa-cast/priya-voice.wav` — a **mono** (1-channel) voice track. Used by
-  C-F013, where the channel count is the entire subject: it is what makes the
-  `video/mp4` encode fail, and a stereo file will not reproduce the case. Also in
+  C-F029 and C-F035 (which asserts its 7.453 s mono shape). Also in
   the shared `common/assets`, so do not sweep it and do not expect it under
   `regression-complete`. If it ever has to be replaced, the only property that
   matters is that it is 1-channel — `get_gallery_metadata` on a paired output
@@ -419,8 +417,7 @@ model `opus` via provider `anthropic`).
 `pair_audio` is handed frames loaded from a file and an audio track, and the
 output must be written at the rate those frames actually run at. Take a 24 fps
 fixture and run a one-step inline workflow: `pair_audio` with `video` = that
-asset and `audio` = a **stereo** track (the other C-F001 fixture serves — see
-C-F013 for why the channel count is not incidental), `result` =
+asset and `audio` = a **stereo** track (the other C-F001 fixture serves), `result` =
 `{"content_type": "video/mp4"}` **with no `fps` key**. Task-only, loads no model.
 expected: `get_gallery_metadata` on the output reports `fps: 24.0` and
 `duration_seconds` matching the source (5.167 s for a 124-frame fixture), not
@@ -538,7 +535,7 @@ rewiring of `assemble-and-score` (see C-F031) and was corrected during the
 0.4.0-beta.4+, where the template resamples instead.
 
 ### C-F020 — `templates/dissolve-between-shots` passes `match_levels` through, so its own warning is followable
-C-F018 and C-F019 exercise the `dissolve_videos` **task**. This case is about the
+C-F057 and C-F096 exercise the `dissolve_videos` **task**. This case is about the
 **template** that wraps it, which is what a caller actually runs, and about a
 different failure: the template used to emit a `dissolve_videos` level-spread
 warning telling the caller to "pass `match_levels`" while declaring no such
@@ -1198,8 +1195,7 @@ pins the passed-argument arm, and C-F029, the same template at its inputs'
 rate.
 
 ### C-F037 — `templates/assemble-and-score` honours the seam choice: `seam_fade_ms` on a speech tail is clean, `audio_bleed_ms` on the same tail warns
-C-F033 pins the `bleed_join` detector at the `concat_videos` task level with
-synthetic shots. This is the template-level pair on real dialogue: the same
+C-F073 pins the `bleed_join` detector at the `concat_videos` task level. This is the template-level pair on real dialogue: the same
 two-shot cut run twice through `templates/assemble-and-score`, once with the
 hard cut the warning recommends and once with the bleed it warns about, so a
 regression in how the template forwards `seam_fade_ms` / `audio_bleed_ms` to
@@ -2119,8 +2115,8 @@ metrics: none.
 source: moved from S-F095 (curation 2026-09-22, harnest#2); tester, found while running TESTER_TASK.agent.md (ep35, `qa-ep35`, job
 `220b0347481a`) on 2026-09-21 over MCP as model `opus` via provider `anthropic`: bin 2
 −21.258 → −33.258 rms, −5.666 → −17.668 peak; bins 0/1/3/4/5 identical to the source to
-the third decimal; 5.1667 s / 32 kHz / 2 ch; 0.8 s end to end. Note the step logs nothing
-about what it applied (#294) — the envelope is the only evidence until that lands.
+the third decimal; 5.1667 s / 32 kHz / 2 ch; 0.8 s end to end. The step's log of what it
+applied is pinned separately by C-F063 (#294).
 
 ### C-F062 — `mix_audio` and `crossfade_audio` resample tracks at different sample rates instead of failing
 #293: the two pure-audio joiners still died with `needs one sample rate, got [32000, 44100]`
@@ -2647,8 +2643,8 @@ source: moved from S-F089 (curation 2026-09-22, harnest#2); tester, found while 
 as model `opus` via provider `anthropic`: job `310af1018ea1` in `qa-ep32`, 7.5 s; seam
 bin −53.2 rms in control vs −32.0 in treatment, all other bins within 0.06 dB; both
 clip-held 0.1 dB short; `bleed_join` recommended `audio_bleed_ms: 0`. The
-`audio_bleed_gain_db`-with-`audio_bleed_ms: 0` combination is deliberately *not* in
-this case: it draws no warning today (#290).
+`audio_bleed_gain_db`-with-`audio_bleed_ms: 0` combination is not in this case: it
+warns at validate since #290, pinned by C-F072.
 
 ### C-F074 — a `match_levels_dbfs` that an unset `match_levels` makes inert is warned about at validate, on both join commands
 #291: `concat_videos` and `dissolve_videos` only call the level matcher when
