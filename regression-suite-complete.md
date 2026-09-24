@@ -3837,4 +3837,33 @@ directory (such as `/home/…/assets/…`).
 cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
+### C-F106 — a kept cut carries its shots, so a probe on the `asset:` finds its seams
+source: tester, verified in #393
+`keep_output` used to copy only the bytes of a joined cut. The kept asset had no
+`media.shots`, and `analyze_seams` on it returned `shots_source: "none"` with
+`findings: []`, which looked clean. The case is CPU only and takes two short jobs.
+1. `run_workflow(inline_workflow={"id": "qa-c-f106", "steps": [{"name": "cut", "task":
+   {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep31-shot1-return.mp4", "asset:qa-cast/ep31-shot2-shrug.mp4"], "fps":
+   24}}, "result": {"content_type": "video/mp4", "subfolder": "final"}}]},
+   acknowledged_cost=true, wait_seconds=55)`.
+2. `keep_output(name=<cut>, asset_name="qa-c-f106-shared.mp4", shared=true)` and
+   `keep_output(name=<cut>, asset_name="qa-c-f106-local.mp4")`.
+3. `get_gallery_metadata("asset:qa-c-f106-shared.mp4")` and
+   `get_gallery_metadata("asset:qa-c-f106-local.mp4")`.
+4. One inline job with an `analyze_seams` step (`video`: each kept asset) and an
+   `analyze_shots` step on the shared one, each saving `application/json` in `final`.
+   Read the results with `get_output_text`.
+expected:
+- Step 3: both kept assets report `media.shots` with 2 entries. They match step 1's
+  manifest `shots` (start frames 0 and 124).
+- Step 4: both `analyze_seams` bodies have `shots_source` other than `"none"` (it was
+  `"manifest"` when this case was verified) and exactly one seam, at frame 124 (about
+  5.17 s). `analyze_shots` lists 2 shots with the same `shots_source`.
+It is a **finding** if a kept asset has no `media.shots`, or if a probe on it reports
+`shots_source: "none"` or no seams.
+cleanup: `delete_output(job_id=…)` for both jobs, then
+`delete_asset("qa-c-f106-local.mp4")` and `delete_asset("qa-c-f106-shared.mp4")`.
+metrics: none.
+
 ## Performance
