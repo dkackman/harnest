@@ -1151,6 +1151,11 @@ label logic in jq, in four files, which is where the holes come from.
   The generated JSON is identical to those files, and a live haiku session confirmed the
   hook still fires. The curate and retro fences moved into `providers.sh`.
 - **`handoff_count`** moved into `providers.sh`, where it is tested.
+- **What `step` can't catch.** The uncapped loop running on pre-fix code hit the
+  `curator_pass` parse bug at 23:26 and exited. A bash "bad substitution" is fatal to the
+  shell, so `step`'s `||` never sees it. Only the tests stand between a parse-time error
+  and a dead loop, which is one more reason to run `tests/run.sh` before every driver
+  commit. The loop was restarted on the fixed code.
 - **Every knob a driver reads is in the README.** Forty-six were missing, and the lint
   test now fails on a new undocumented one.
 - **Not done:** fence groups for the four allowlists. Regrouping permissions is more risk
