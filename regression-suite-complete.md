@@ -4225,4 +4225,36 @@ above, or if `intended_model` stops filtering.
 cleanup: none.
 metrics: none.
 
+### C-F116 — a `previous_result:` passed into a composed workflow reaches the child's task as the live result, not its repr
+Before #404, a sub-workflow step's `previous_result:` argument was coerced through the child
+variable's string default. The child's `slice_audio` got the Python repr of the `AudioTrack`
+as a "path", and containment refused it at run time, even though `validate_workflow` was
+clean. C-F029 feeds the template a computed score only by going through `keep_output` first.
+This case covers the one-job form, which #402's past-end warning recommends. Task-only, about
+4 s.
+One inline workflow (`id` + `seed`, no `result` blocks):
+1. Step `bed`: `loop_audio` with `audio: "asset:uploads/qa-cast/room-bed.wav"`,
+   `target_frames: 248`, `fps: 24`.
+2. Step `cut`: a sub-workflow step, `workflow.path: "templates/assemble-and-score"`, with
+   `shots` = the two C-F001 fixtures (`asset:qa-cast/ep3-shot1-incident.mp4`,
+   `asset:qa-cast/ep3-shot2-reply.mp4`), `score: "previous_result:bed"` and
+   `total_frames: 248`.
+
+Validate it, then run it.
+expected: `validate_workflow` is `valid: true`. The run **succeeds**, and the manifest carries
+the child's whole chain through `film`, with one `final/…film…mp4` file and two
+`shots` of 124 frames each. There is exactly one warning: the `edit: concat_videos` level
+spread of 11.1 dB. That spread is the fixtures' own (see Fixtures) and is expected here,
+since `match_levels` is unset. There is **no** `slice_audio … past the end of a 4.96 s
+source` warning. That warning would mean the child sliced the raw room-bed file instead of
+the 10.33 s looped track, as C-F016's source would do.
+It is a **finding** if the run fails, above all with "resolves outside every directory
+this workflow may read" or an error quoting `<dw.result.AudioTrack object at …>`. It is also
+a finding if validation is clean but the run fails, or if the past-end warning appears.
+cleanup: delete the run with `delete_output(job_id=…)`. The inputs are all durable fixtures.
+source: tester, verified in #404. Ran over MCP as model `claude-opus-5-5` via provider
+`anthropic` on 2026-09-24, develop @ 8c6183a, workspace `qa-ep51`: job `3e4887ef323b`,
+3.7 s, only the 11.1 dB level-spread warning. The issue's own repro (three qa-cast shots,
+372 frames) is job `dbe050a44c46`.
+
 ## Performance
