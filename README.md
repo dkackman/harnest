@@ -106,6 +106,9 @@ ticket" template. Agents work on them only through `gh issue`.
   to learn, and breaking changes bigger than a rename, after writing a proposal in the
   source repo's `docs/proposals/`. Triage can escalate earlier, without a proposal. No
   agent touches a parked issue.
+- **`field-report`** marks an issue filed from Don's own dw sessions (real use) rather
+  than by the harness. The loop works it like any other issue. The feature lead (roadmap
+  R11) reads it as evidence of demand.
 - **`breaking-change`** tells the tester to adjust its calls rather than file the change
   as a bug.
 - **Commits** reference the issue (`fix(mcp): #42 - ...`), go on branches merged to
