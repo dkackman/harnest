@@ -4224,7 +4224,7 @@ that every MCP path that decodes an image still handles an ordinary one.
    `result: {content_type: "image/png", embed_metadata: true}` and `wait_seconds=55`.
 2. Call `get_output_image(name=<png>)`, and again with `crop=[0, 0, 384, 384]` and with
    `max_dimension=256`.
-3. Call `list_gallery(media="image", limit=5)`.
+3. Call `list_gallery(folder="c-f121", limit=5)`.
 4. Call `get_gallery_metadata` on the PNG.
 
 expected:
