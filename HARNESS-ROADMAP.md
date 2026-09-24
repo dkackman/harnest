@@ -22,7 +22,7 @@ rather than in a separate log.
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); dw#378 stages A, B verified, C waits on dw#376 | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
-| R13 | A reusable framework: target profile, per-target prompt packs, a second target | todo; profile drawn before R8, split during it | R8 |
+| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | todo; profile drawn before R8, split during it; feature flag first | R8 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1247,7 +1247,74 @@ Instead:
 
 Step 1 on its own, still in bash, is worth doing only if R8 slips.
 
+**Feature branches, and a way around the one `lem` server.** Today every stage merges to
+`develop` and deploys `develop` to `lem`, because `lem` runs one commit and a branch deployed
+alone is wiped by the next fix's deploy (2026-09-21). That has two costs:
+- **Half-built features sit on `develop`.** dw#378's stage A was there overnight while B and
+  C came after. It works because every stage has to be "landable alone", but that constraint
+  shapes the plan, and `develop` can't be cut to `master` mid-feature without judging what's
+  half-built.
+- **Everything queues on one server.** Feature stages and fixes deploy to it one at a time,
+  so feature work can't run alongside the fix loop (see "Parallel implementers" under
+  "Considered and deferred").
+
+The target profile (step 1) is what makes the fix possible. It already has to name the
+server and its deploy command, so it can name more than one. The mechanisms, cheapest first:
+
+1. **A feature flag, reached through the MCP connection.** Stages land on `develop` behind
+   a server-side flag, off by default. The tester's session for that feature connects with
+   a header that turns it on, such as `X-DW-Features: 378`. The server change is small:
+   read the header once per session and gate on it. The harness change is small too: the
+   MCP config becomes per session. `develop` stays releasable because the feature is off
+   for everyone else. This solves the first cost but not the second, since it is still one
+   server.
+2. **A second server on its own branch, for stages that don't need the GPU.** Many stages
+   change only the MCP surface: tool descriptions, validation, the catalog, guides.
+   dw#376 is one; `get_guide` and `validate_workflow` are free calls. A second `dw.serve`
+   can verify those: on this Mac (mps or cpu), or on `lem` with no GPU. It has its own
+   checkout of the feature branch, its own port and its own data directory, so its
+   workspaces never collide with `lem`'s.
+   - The plan marks each stage `tier: surface` or `tier: gpu`.
+   - A surface stage deploys to the feature's server and is verified there, in parallel with
+     the fix loop.
+   - A gpu stage takes the shared slot below.
+   - This is the "GPU-free test tier" the parallel-implementers entry waits for.
+3. **A composed deploy branch for the stages that need the GPU.** `lem` runs
+   `deploy/lem` instead of `develop`: `develop` with every active feature branch merged in,
+   rebuilt by the driver before each deploy. A feature reaches `develop` only at close-out,
+   when its branch merges whole.
+   - A merge conflict while composing the branch goes to the feature's lead as a bounce. A
+     fix isn't held up by a feature that doesn't merge.
+   - `check_lem_on_develop` becomes "each server is on its declared ref".
+
+**What this changes in the harness.**
+- **Locks.** One lock per server, not one driver lock. A surface stage's build and verify
+  take only its feature server's lock.
+- **Per-session wiring.** The MCP config and the plugin tree come from the stage's tier.
+- **The classifier.** It needs the stage's tier, from a marker or label written at
+  decompose.
+- **The lead's build.** It works on `feat/<parent>`, merging `develop` in at the start of
+  each build rather than rebasing, so pushed history never changes.
+- **Close-out.** It merges the feature branch into `develop`. Then the tester runs every
+  case the feature added against `lem` on `develop`, because a surface-tier pass on another
+  server says nothing about the GPU box.
+- **Regression.** `run-regression.sh` keeps testing `develop` on `lem` only.
+
+**Order.** Try the flag first, on one feature, since it needs the least harness change.
+Add the second server when a feature has several surface-only stages. By then the port
+(R8) should be done, and running two servers is a profile entry, not a bash change. The
+composed branch comes last, and only if half-built features on `develop` start to hurt a
+release.
+
 **Undecided.**
+- **Flag or branch as the default for a feature.** Could be the lead's call in the plan,
+  with Don approving it like the rest of the plan.
+- **How many features at once.** One active feature branch until the composed branch has
+  run for a while.
+- **Where the second server runs.** The Mac is free but slow on mps; `lem` with no GPU
+  shares the box with GPU jobs.
+
+**Undecided (framework).**
 - **Packaging:** one repo with `targets/<name>/`, or the framework as a package and each
   target as its own repo. Start with `targets/dw/` in this repo, and split it off when the
   second target exists.
@@ -1266,7 +1333,8 @@ switch, checked against the offline suite and a day of live cycles.
 
 - **Parallel implementers in worktrees.** The code could be done in parallel, but deploys to
   `lem` and GPU verification can't be, so parallel sessions would queue behind the deploy.
-  Revisit if there's ever a second box or a GPU-free test tier.
+  Revisit if there's ever a second box or a GPU-free test tier. R13's "Feature branches"
+  proposes that tier.
 - **Multi-agent workflows inside the unattended loop.** Fan-out adds cost without solving a
   problem the loop has. Workflows are useful for one-off audits Don runs interactively (like
   the 2026-09-22 suite audit), which R5 makes routine. R11 narrows this: a feature
