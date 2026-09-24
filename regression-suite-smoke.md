@@ -97,8 +97,9 @@ nothing uses it anymore.
   kinds matter here. Read-only, never deleted. The complete suite also uses them, and its
   Fixtures section records the properties its cases depend on.
 - `asset:qa-cast/hal-voice.wav` — a 6.48 s 24 kHz mono line in the shared asset
-  library. S-F070 transcribes it; any short spoken clip substitutes. Read-only, never
-  deleted. The complete suite also uses it.
+  library. S-F070 transcribes it; any short spoken clip substitutes. S-F127 slices it in a
+  validate-only call and depends on the 6.48 s length. Read-only, never deleted. The
+  complete suite also uses it.
 - `asset:qa-cast/ep42-shot1-accuse.mp4` and `asset:qa-cast/ep42-shot2-deflect.mp4`: two
   shots in the shared asset library, 124 frames each. S-F125 depends on that count in a
   validate-only call. They are read-only and never deleted.
@@ -1941,6 +1942,33 @@ metrics: none.
 source: tester, found while running TESTER_TASK.agent.md (ep48), on 2026-09-24 over MCP as
 model `claude-opus-5-5` via provider `anthropic`, job `d72297d8719b` in `qa-ep48` (step
 `dry_s3`, run there after a whole-track −6 dB step, which doesn't affect the logged region).
+
+### S-F127 — a `slice_audio` past the end of a known-length source is a warning at the free pre-flight
+#402: `validate_workflow` used to return no warnings when a `slice_audio` step asked for more
+than an `asset:` source holds. The overrun, padded with digital silence, was reported only
+after the run. Validate is where a caller can still change to `loop_audio`. A source whose
+length isn't known before the run (`previous_result:`) is left alone. Free: no job is queued.
+Every call is `validate_workflow(workspace="regression-smoke", workflow={"id": "s-slice-pre",
+"seed": 1, "steps": [<steps>]})`, and each step is `{"name": ..., "task": {"command":
+"slice_audio", "arguments": {...}}, "result": {"content_type": "audio/wav"}}`.
+V = `asset:qa-cast/hal-voice.wav` (6.48 s).
+1. Three steps: `long` = `{audio: V, start_seconds: 0, duration_seconds: 10}`. `short` =
+   `{audio: V, start_frame: 0, num_frames: 120, fps: 24}` (5 s). `chained` =
+   `{audio: "previous_result:short", start_seconds: 0, duration_seconds: 30}`.
+2. One step, `frames` = `{audio: V, start_frame: 48, num_frames: 144, fps: 24}` (2 s + 6 s).
+expected:
+- Call 1: `valid: true`, and exactly one warning, at `steps[0].task.arguments.audio`. It names
+  `3.52 s past the end of a 6.48 s source`, the asset reference, `10.00 s requested`, and
+  `loop_audio`. There's no warning for `short` (inside the source) or `chained`
+  (`previous_result:`).
+- Call 2: `valid: true`, one warning at `steps[0].task.arguments.audio` naming `1.52 s past the
+  end of a 6.48 s source` and `8.00 s requested`. This is the frame form, with the start offset counted.
+It is a **finding** if either overrun validates without a warning, if `short` or `chained` is
+flagged, or if the overrun is turned into an error (`valid: false`). A tail pad is legitimate.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #402 on 2026-09-24 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ fb4887d`.
 
 ## Performance
 
