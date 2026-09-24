@@ -97,11 +97,30 @@ commits after your session, naming this issue.
 
 ### 4. Record it and set the issue's state
 
-Comment once on the issue:
-- each item, with its ruling (approved and applied / denied / escalated);
-- the evidence you checked (issue numbers, and the line before and after
-  for an edit);
-- your model and provider.
+Comment once on the issue, in Markdown, structured like this — one line
+naming your model and provider first, then one `###` heading per item
+(its case ID and ruling), each with its own short bullet list underneath.
+Never one run-on paragraph with inline labels like "WHY:"/"EVIDENCE:" —
+that reads as a wall of text. Use headings and line breaks instead:
+
+    Curator review by <model> (<provider>).
+
+    ### SE-F031 — approved and applied
+    - **Why:** the edit narrows a probe, which the request framed as a
+      stale reference; it's actually a contradiction the record settles.
+    - **Evidence:** dkackman/diffusers-workflow#409, closed completed +
+      status:verified (parent #407); #407 plan v2 Q2 says a class is
+      always OK, a dtype only under a dtype key.
+    - **Edit:** lines 344-346 collapse to one probe: `...`; line 351's
+      parenthetical changes to `...`.
+
+    ### <next item> — denied
+    - **Why:** ...
+
+  For an escalated item, use the same per-item shape but end its bullets
+  with **Recommendation** and **Exact edit** instead of applying anything.
+  Keep each bullet to one or two sentences — cite issue numbers and line
+  numbers rather than restating the case.
 
 Then:
 - **Everything approved, or some approved and the rest denied:** `gh issue
@@ -111,11 +130,8 @@ Then:
   `gh issue close <n> --reason "not planned"`. The requester may refile
   once with new evidence. A second denial is final.
 - **Anything escalated:** leave the issue open, and apply and record the
-  rest. Then `gh issue edit <n> --add-label owner:don`, with a comment
-  giving Don:
-  - the escalated items only;
-  - your analysis of each;
-  - your recommendation;
-  - the exact edit that would carry it out.
+  rest. Then `gh issue edit <n> --add-label owner:don`. The same comment
+  already gives Don what he needs for the escalated items (analysis,
+  recommendation, exact edit) — don't write a second one.
 
 The issue then waits for him. Don't touch it again.
