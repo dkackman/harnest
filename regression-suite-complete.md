@@ -3974,4 +3974,44 @@ cleanup: `delete_output(job_id=…)` for both jobs, step 2's first (it reads ste
 output).
 metrics: none.
 
+### C-F110 — rescoring a kept *dissolve* cut keeps each shot's `overlap_frames`, so its seams stay dissolves
+source: tester, found while running TESTER_TASK.agent.md
+C-F109 covers rescoring a hard-cut episode. This case covers a cut joined by
+`dissolve_videos`, whose shot records also carry `overlap_frames`. If a rescore drops that
+field, `analyze_seams` would place the seams as hard cuts at the wrong time. It is CPU only
+and takes one job of about 10 s. `asset:qa-cast/ep45-episode.mp4` is three shots dissolved
+with `dissolve_frames: 12` (348 f, 24 fps, 32 kHz stereo). Its `media.shots` start at 0 /
+112 / 224 with num_frames 112 / 112 / 124, and the second and third shots carry
+`overlap_frames: 12`. `asset:uploads/qa-cast/room-bed.wav` is 4.96 s, 16 kHz mono.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f110", "seed": 1,
+   "steps": [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
+   "asset:uploads/qa-cast/room-bed.wav", "target_frames": 348, "fps": 24}}, "result":
+   {"content_type": "audio/wav", "save": false}}, {"name": "mix", "task": {"command":
+   "mix_audio", "arguments": {"audios": ["asset:qa-cast/ep45-episode.mp4",
+   "previous_result:bed"], "gains": [1, 0.251]}}, "result": {"content_type": "audio/wav",
+   "save": false}}, {"name": "level", "task": {"command": "normalize_audio", "arguments":
+   {"audio": "previous_result:mix", "peak_dbfs": -3}}, "result": {"content_type":
+   "audio/wav", "subfolder": "intermediate"}}, {"name": "film", "task": {"command":
+   "pair_audio", "arguments": {"video": "asset:qa-cast/ep45-episode.mp4", "audio":
+   "previous_result:level", "fit": "video"}}, "result": {"content_type": "video/mp4",
+   "subfolder": "final"}}, {"name": "seams", "task": {"command": "analyze_seams",
+   "arguments": {"video": "previous_result:film"}}, "result": {"content_type":
+   "application/json", "subfolder": "intermediate"}}]}, acknowledged_cost=<bound from
+   validate>, wait_seconds=55)`. Then call `get_gallery_metadata` on the `film` file and
+   `get_output_text` on the `seams` file.
+expected:
+- `succeeded`. Its only warning is `mix_audio`'s sample-rate mismatch (32000 vs 16000 Hz,
+  resampled to 32000).
+- The `film` manifest entry and `media.shots` list the same three shots. Frames are
+  0/112, 112/112 and 224/124. The second and third shots carry `overlap_frames: 12`.
+- The film is 348 frames, 24 fps, 14.5 s and 32 kHz stereo. `peak_dbfs` is at or below
+  −2.5.
+- The seams body has `shots_source` other than `"none"` (it was `"artifact"` when this case
+  was written) and `rules_skipped: []`. It has exactly two seams, both `"kind":
+  "dissolve"` and `"hard_cut": false`, at about 4.917 s and 9.583 s, and `findings: []`.
+It is a **finding** if a film shot loses `overlap_frames`, if either seam is not
+`dissolve`, or if either seam moves more than 0.05 s.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
