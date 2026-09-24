@@ -206,6 +206,11 @@ smoke's Fixtures lists the asset too.
   that arrived quiet" half of the near-silent rule: it decodes at about −50 dBFS mean,
   and any substitute must already be under −40 dBFS before it is sliced, or that case's
   negative arm proves nothing.
+- `asset:qa-cast/ep49-episode.mp4` — a 372-frame 24 fps 960x544 **44.1 kHz** stereo hard
+  cut of three 124-frame shots (`media.shots` named `ep42-shot1-accuse.mp4`,
+  `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`). C-F112 joins it with
+  `ep42-episode.mp4` (32 kHz), so any substitute needs a sample rate other than 32 kHz and
+  carried shots. Read-only, never deleted.
 
 ## Functional
 
@@ -4046,6 +4051,41 @@ expected:
   pads the dissolve's 463999-sample track to the video's 464000.
 It is a **finding** if any `start_sample` differs between a dissolve and its `pair_audio`
 rescore, or differs from `round(start_frame × 32000 / 24)`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F112 — a join of two kept cuts at different sample rates lists every inner shot, re-measured at the joined rate
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+A join of joins: `concat_videos` over two kept episodes, each already carrying
+`media.shots`. The joined film must list the inner shots of both (#399), not one shot per
+input. The inputs are at different rates, so the second episode's shot samples must be
+re-measured at the rate the join resamples to. CPU only, one job of about 10 s.
+`asset:qa-cast/ep49-episode.mp4` (372 f, 44.1 kHz, 3 shots) and
+`asset:qa-cast/ep42-episode.mp4` (248 f, 32 kHz, shots `shot@accuse`/`shot@deflect`).
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f112", "seed": 1,
+   "steps": [{"name": "film", "task": {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep49-episode.mp4", "asset:qa-cast/ep42-episode.mp4"], "fps": 24,
+   "match_levels": "rms", "match_levels_dbfs": -24}}, "result": {"content_type":
+   "video/mp4", "subfolder": "final"}}, {"name": "seams", "task": {"command":
+   "analyze_seams", "arguments": {"video": "previous_result:film"}}, "result":
+   {"content_type": "application/json", "subfolder": "intermediate"}}]},
+   acknowledged_cost=<bound from validate>, wait_seconds=55)`. Then `get_gallery_metadata`
+   on the `film` file and `get_output_text` on the `seams` file.
+expected:
+- `succeeded`. Its only warning is `concat_videos`' sample-rate mismatch (44100 vs 32000 Hz,
+  resampled to 44100).
+- The film is 620 frames, 24 fps, 25.833 s, 44.1 kHz stereo.
+- The `film` manifest entry and `media.shots` both list five shots, in order:
+  `ep42-shot1-accuse.mp4`, `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`,
+  `shot@accuse`, `shot@deflect`, at start_frame 0/124/248/372/496, num_frames 124 each,
+  start_sample 0/227850/455700/683550/911400 (`round(start_frame × 44100 / 24)`), and
+  num_samples 227850 (the last may read 227851: the resampled 32 kHz track rounds one
+  sample long).
+- The seams body has `shots_source: "artifact"`, `rules_skipped: []`, and four seams, all
+  `"kind": "cut"`, at about 5.167 / 10.333 / 15.5 / 20.667 s. Each `level_step_db` was
+  ≤ 1.44 when this case was written; its only findings were info-level `seam_frame_jump`.
+It is a **finding** if the film lists two shots (one per input) or none, if a
+`shot@…` entry keeps its 32 kHz sample figures (165333), or if any seam is missing.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
