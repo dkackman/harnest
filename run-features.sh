@@ -1,8 +1,11 @@
 #!/usr/bin/env bash
 # Runs the feature lead's read-only sessions (roadmap R11): one fresh session
 # per feature or idea issue that is the lead's turn to design, or to
-# decompose into stages. Standalone: no driver lock, because these sessions
-# never change code, deploy, or run anything on the GPU.
+# decompose into stages. No driver lock, because these sessions never change
+# code, deploy, or run anything on the GPU. run-loop.sh runs this script each
+# cycle when either queue holds an issue (features_pass; LEAD_DESIGN_IN_LOOP=0
+# turns that off), so running it by hand is only for when the loop is down or
+# for one issue now.
 #
 #   ./run-features.sh                       # every feature waiting on the lead
 #   ONLY_ISSUES=378 ./run-features.sh       # just these

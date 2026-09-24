@@ -227,7 +227,8 @@ issue labeled `feature`, and you start one by swapping its `owner:don` for `owne
 An `idea` goes the same way: its first design session decides whether it is a feature, a
 single fix (handed to `owner:implementer`), a duplicate, or not worth doing.
 
-1. **Design** (`run-features.sh`). The lead first checks the proposal against the code
+1. **Design** (`run-features.sh`, which `run-loop.sh` runs each cycle when a design or
+   decompose waits). The lead first checks the proposal against the code
    with one read-only sweep, and measures demand (`field-report` issues, real use in your
    own workspaces). It then posts a plan that opens with a verdict: **build**, **build
    smaller**, **defer** or **don't build**. After the verdict come the design, the stages,
@@ -261,7 +262,7 @@ plan too vague to test, it posts `spec-questions` instead, and the lead answers 
 new plan version for you to approve.
 
 ```sh
-./run-features.sh                      # design/decompose whatever is the lead's turn
+./run-features.sh                      # design/decompose whatever is the lead's turn, now (the loop also does)
 ONLY_ISSUES=378 ./run-features.sh
 ```
 
@@ -374,6 +375,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `CURATOR_MODEL` / `CURATOR_PROVIDER` | the tester's | the curator's review sessions in `run-loop.sh` |
 | `CURATOR_REVIEW_BUDGET_USD` | `3` | per curator review session |
 | `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
+| `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run |
 | `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` | `run-features.sh`: the lead's detached worktree at `origin/develop` |
 | `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | `1800000` | how long a headless session waits for a background subagent before it is killed (Claude Code's default is 600 s) |
 

@@ -39,7 +39,7 @@ board() { # board <json for o/r issues>
 }
 loop() { # loop <cycles>: run the real driver against the board
   (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
-     SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" MAX_CYCLES="$1" SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 \
+     SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" MAX_CYCLES="$1" SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 \
      ./run-loop.sh) > "$T/loop.out" 2>&1
 }
 labels_of() { jq -r --arg n "$1" '.["o/r"][] | select((.number|tostring) == $n) | [.labels[].name] | sort | join(",")' "$T/board.json"; }
@@ -95,6 +95,18 @@ board '[{"number": 20, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "o
 eq  "features: exits cleanly" 0 $?
 eq  "features: one design session, for the idea" 1 "$(grep -c 'DESIGN session for issue #20' "$FAKE_CLAUDE_LOG")"
 eq  "features: none for the issue with Don" 0 "$(grep -c '#21' "$FAKE_CLAUDE_LOG")"
+
+# --- 6b. run-loop runs the design queue itself (features_pass), unless told not to
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 22, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
+LEAD_DESIGN_IN_LOOP=0 loop 1
+eq  "loop design: off leaves it alone" 0 "$(grep -c 'DESIGN session' "$FAKE_CLAUDE_LOG")"
+loop 1
+eq  "loop design: the cycle designs the idea" 1 "$(grep -c 'DESIGN session for issue #22' "$FAKE_CLAUDE_LOG")"
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 1, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:needs-info"}]}]'
+loop 1
+eq  "loop design: nothing waiting, run-features not started" "" "$(grep 'feature run\|no feature waiting' "$T/loop.out" || true)"
 
 # --- 7. run-regression: a two-case override suite, one case per session
 : > "$FAKE_CLAUDE_LOG"

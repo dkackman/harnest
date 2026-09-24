@@ -20,8 +20,8 @@ rather than in a separate log.
 | R8  | Port the drivers to the Claude Agent SDK          | todo; trigger in R8 (after R12, dw#378 live) | R12 |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built (`run-features.sh`, `agents/lead/`, lead pass in `run-loop.sh`); dw#378 decomposed, waiting on its spec session | R4 (absorbs it), R1 |
-| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done (A, B, C) | before dw#378 runs live |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); dw#378 stages A, B verified, C waits on dw#376 | R4 (absorbs it), R1 |
+| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
 | R13 | A reusable framework: target profile, per-target prompt packs, a second target | todo; profile drawn before R8, split during it | R8 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
@@ -1169,6 +1169,32 @@ label logic in jq, in four files, which is where the holes come from.
 **Done when.** A cycle survives a GitHub outage. The digest's stranded list is empty.
 `bats tests/` passes, and the queue logic is tested there, not reviewed by eye. Then dw#378
 runs through spec → build → verify.
+
+**Closed 2026-09-24.** Against those criteria:
+- The tests pass: 274 checks, then more with the design-queue case. They're plain bash
+  on `tests/lib.sh`, not bats.
+- The live board classifies with nothing stranded.
+- dw#378's stages A and B were specced, built and verified live, B through two real
+  bounces. Stage C waits on dw#376, which is in its own plan-review loop.
+- A GitHub outage has only been survived in `test-drivers.sh`, not live.
+
+The overnight uncapped run found and fixed about fifteen bugs (dw#390, #392–#405), and
+exercised live:
+- a bounce leading to a rebuild;
+- a bounce leading to a re-plan and back to Don (dw#403);
+- an outside hand-back (harnest#4);
+- the curator applying Don's approvals;
+- Don's hand-back of a parked feature with its stale `needs-approval` (dw#374).
+
+Not yet seen live: the no-progress ledger parking an issue, and a re-plan's decompose
+keeping an existing stage.
+
+One gap it found: design and decompose ran only when someone started `run-features.sh`,
+so Don's hand-backs of dw#374 and dw#376 at 05:13 had no session to pick them up.
+`run-loop.sh` now runs `run-features.sh` as its `features_pass`, before the lead's build
+pass, in any cycle where either queue holds an issue (`LEAD_DESIGN_IN_LOOP=0` turns that
+off). It stays a subprocess rather than a copy, so the design and decompose sessions are
+still defined in one place.
 
 ## R13 — A reusable framework: target profile, prompt packs, a second target
 

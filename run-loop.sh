@@ -44,6 +44,10 @@
 #   tester closures      one session, only on a cycle where a wontfix/duplicate
 #                        closure the tester hasn't seen is waiting and no task
 #                        session runs: responds to those closures (step 3)
+#   lead #N (design)     run-features.sh, as a subprocess, when a feature or
+#                        idea waits on a design or a decomposition (queues
+#                        lead:design and lead:decompose; LEAD_DESIGN_IN_LOOP=0
+#                        leaves them to run-features.sh by hand)
 #   lead #N              one session per feature stage whose blockers are closed
 #                        and whose parent's plan is approved with specs written
 #                        (at most LEAD_STAGES_PER_CYCLE): builds, merges,
@@ -147,6 +151,9 @@ TRIAGE_BUDGET_USD="${TRIAGE_BUDGET_USD:-3}"
 # that turns out bigger than one session. The spec session writes every
 # stage's cases in one go.
 LEAD_STAGE_BUDGET_USD="${LEAD_STAGE_BUDGET_USD:-15}"
+# 1: every cycle runs run-features.sh when a design or decompose waits, so
+# Don's hand-back of a plan moves without anyone starting it. 0: by hand only.
+LEAD_DESIGN_IN_LOOP="${LEAD_DESIGN_IN_LOOP:-1}"
 LEAD_CLOSEOUT_BUDGET_USD="${LEAD_CLOSEOUT_BUDGET_USD:-3}"
 TESTER_SPEC_BUDGET_USD="${TESTER_SPEC_BUDGET_USD:-8}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
@@ -461,6 +468,19 @@ $(issue_context "$n")" \
   done
 }
 
+# features_pass — the lead's design and decompose sessions, by running
+# run-features.sh (the one place they are defined) when either queue holds an
+# issue. Before lead_pass and tester_pass, so a decompose this cycle gets its
+# spec session this cycle. The sessions are read-only and take no lock; running
+# them here only puts them in the cycle, so a hand-back from Don isn't left
+# waiting for someone to start run-features.sh. Its own queue read decides
+# which issues run; this check only saves starting it for nothing.
+features_pass() {
+  [ "$LEAD_DESIGN_IN_LOOP" = 1 ] || return 0
+  [ -n "$(queue_issues lead:design; queue_issues lead:decompose)" ] || return 0
+  env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$ONLY_ISSUES" "$REPO/run-features.sh"
+}
+
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).
 # Runs after the implementer pass and before the tester pass, so a stage
 # handed off this cycle is verified this cycle, and lem is re-checked
@@ -713,6 +733,7 @@ while true; do
   echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOGS/loop.log"
 
   step implementer_pass implementer_pass
+  step features_pass features_pass
   step lead_pass lead_pass
   # Refresh after the implementer's and lead's deploys: the tester must be told what it
   # is actually verifying against, not what lem ran when the cycle began.
