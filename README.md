@@ -261,7 +261,8 @@ review session in `run-loop.sh` (below), which escalates judgment calls to a hum
   against a per-level budget. A level is skipped for 7 days after a run, or while its last
   curation issue is still open.
   The first run (harnest#2, applied 2026-09-23) moved 40 cases from smoke to complete,
-  leaving smoke at 56 cases against a 30 min / $13 budget.
+  leaving smoke at 56 cases against a 30 min / $13 budget. The first measured run after
+  it (61 cases, 2026-09-23) took 61 min and $14.53, so smoke's budget is now 65 min / $16.
 - **Curator review** (`curator_pass` in `run-loop.sh`, on the tester's model). One session
   per open `suite` request on this repo, from any agent or from an audit.
   - It applies what the record settles: a stale reference, or an expectation that a

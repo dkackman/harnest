@@ -371,8 +371,8 @@ agent's copies of it, now point here too.
 - It has no Edit/Write and no MCP.
 - A level is skipped for `CURATE_EVERY_DAYS` (7) after a run, and while its last curation
   issue is still open, so proposals don't pile up.
-- Budgets per full run: smoke 30 min / $13 (raised from a proposed 20 / $8 when harnest#2
-  was decided), complete 60 / $20, model-specific 60 / $12, security 15 / $6
+- Budgets per full run: smoke 65 min / $16 (proposed 20 / $8, set to 30 / $13 when harnest#2
+  was decided, then raised to the measured cost below), complete 60 / $20, model-specific 60 / $12, security 15 / $6
   (`CURATE_BUDGET_<LEVEL>`). Only smoke's has been decided. Complete's needs revisiting
   now that it holds 40 more cases.
 - First run: **harnest#2** (smoke; filed as dw#373 and transferred), $1.91, 12 proposals: 5 moves, 3 merges, 1 contradiction
@@ -390,7 +390,11 @@ the higher budget:
   the cases, and `regression-perf/S-F031`/`S-F071` became `C-F078`/`C-F083`, with their
   rows unchanged.
 
-The next smoke run is the measurement: it should come in near $13 and 30 min.
+**Measured (2026-09-23).** The next smoke run held 61 cases, since the tester had added
+5 after curation. Its 8 chunks and sweep took 61 min and $14.53 against the 30 / $13
+estimate: cost was close, time was double, and no single chunk explains it. Smoke's
+budget was raised to 65 min / $16, the measurement plus a little headroom, rather than
+cutting 10–15 more cases. It filed one failure, dw#389.
 
 **Next.** Schedule `run-curate.sh` weekly (cron or the `loop` skill). Set complete's budget
 after its next run.

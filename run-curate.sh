@@ -42,7 +42,7 @@ AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"
 # level budgets: minutes and USD for one full run of that level on the
 # regression agent's default model
-BUDGET_smoke="${CURATE_BUDGET_SMOKE:-30 13}"
+BUDGET_smoke="${CURATE_BUDGET_SMOKE:-65 16}"
 BUDGET_complete="${CURATE_BUDGET_COMPLETE:-60 20}"
 BUDGET_model_specific="${CURATE_BUDGET_MODEL_SPECIFIC:-60 12}"
 BUDGET_security="${CURATE_BUDGET_SECURITY:-15 6}"
