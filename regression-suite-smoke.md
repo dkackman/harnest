@@ -1867,6 +1867,26 @@ source: tester, found while running TESTER_TASK.agent.md (ep41, confirms #395), 
 2026-09-24 over MCP as model `claude-opus-5-5` via provider `anthropic`, job
 `f8fe1be9fca1` in `qa-ep41`.
 
+### S-F124 — an unknown workflow name suggests the catalog entry it's a suffix or typo of
+#397: `get_workflow(name="dialogue-short")` used to answer a bare `Unknown workflow`, though
+the catalog holds `templates/minimax/dialogue-short`. The error now appends a suggestion for a
+unique path suffix or a close spelling match. Free: no job is queued.
+1. `get_workflow(name="dialogue-short", variables_only=true)` (unique suffix).
+2. `get_workflow(name="dialog-short", variables_only=true)` (typo on the short name).
+3. `validate_workflow(name="dialog-short")`.
+4. `get_workflow(name="music-vidoe", variables_only=true)` (typo with more than one near match).
+5. `get_workflow(name="zzqq-nothing-like-this", variables_only=true)`.
+expected:
+- Steps 1–2: error `Unknown workflow: <name> - did you mean templates/minimax/dialogue-short?`.
+- Step 3: error ending `... - did you mean templates/minimax/dialogue-short?`.
+- Step 4: error with `did you mean one of:` naming at least `templates/minimax/music-video`.
+- Step 5: plain `Unknown workflow: zzqq-nothing-like-this`, with no `did you mean`.
+It is a **finding** if steps 1–4 leave out the suggestion, or if step 5 invents one.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #397 on 2026-09-24 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 9fed519`.
+
 ## Performance
 
 ### S-P001 — default image generation latency
