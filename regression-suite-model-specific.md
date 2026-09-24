@@ -1181,4 +1181,27 @@ issue; the one-entry `shots` list is mine, to buy the same evidence for a quarte
 the five-shot price.
 source: moved from C-F021 (curation 2026-09-24)
 
+### M-F033 — each LTX-2.5 chained segment's audio spans its own frames, so sync doesn't drift per segment
+source: tester (`claude-opus-5-5` via `anthropic`), verified in #408
+The `chain:` pipeline-processor route behind `templates/ltx2/chained-segments` fits each
+segment's generated audio to that segment's frame count before trimming, joining or
+spilling it. Before #408, each segment came out ~31.7 ms short (48480 samples against
+25 frames), and the shortfall added up once per segment (-95 ms over 3). The job
+raised no warning. Only `assess_output` saw it. It needs GPU time on LTX-2, about
+20-40 s at this size. Keep it small:
+`run_workflow(workflow_path="templates/ltx2/chained-segments", arguments={"width": 512,
+"height": 320, "num_frames": 25, "segments": 3, "seed": 7}, acknowledged_cost=true,
+wait_seconds=55)`, then `wait_for_job` until it finishes. `num_frames` must be 8n+1.
+Keep the template's own `image` and `prompt`. Then call
+`assess_output(name=<final video>, probe="analyze_sync_drift")`.
+expected:
+- `succeeded`, no `warnings`. Each manifest `shots` entry's `num_samples` equals
+  `num_frames` × 48000 / 24: 25 → 50000 and 23 → 46000 (twice).
+- `analyze_sync_drift`: every shot's `end_offset_ms` is within 1 ms of 0,
+  `|length_delta_ms|` < 1, and `findings` is empty (no `sync_drift`, no `sync_length`).
+It is a **finding** if any segment's samples fall short of its frames, or if the offsets
+grow from segment to segment.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
