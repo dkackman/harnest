@@ -3815,4 +3815,29 @@ cleanup: `delete_output(job_id=…)` on the control's run. The fixtures are shar
 metrics: per fixture cut, the count of findings and the largest `seam_level_step_db`
 and `level_spread_db` that `detail=true` reports; the control's `level_spread_db`.
 
+### C-F105 — a joined shot from an `asset:` input is named by its file name, not its server path
+source: tester, verified in #390
+An asset-literal input to a join used to be named by its resolved absolute server path.
+That path showed up in the manifest's `shots`, in `get_gallery_metadata`'s `media.shots`
+and in every seam label. The case is CPU only and takes two short jobs.
+1. `run_workflow(inline_workflow={"id": "qa-c-f105", "steps": [{"name": "cut", "task":
+   {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"], "fps":
+   24}}, "result": {"content_type": "video/mp4", "fps": 24, "subfolder": "final"}}]},
+   acknowledged_cost=true, wait_seconds=55)`.
+2. `get_gallery_metadata(<cut>)`, then `get_output_frames(name=<cut>, seams=true,
+   max_dimension=128)`.
+3. The same workflow with `dissolve_videos` in place of `concat_videos` (id
+   `qa-c-f105-d`).
+expected:
+- Step 1 returns `succeeded`. The manifest `shots[].name` values are
+  `ep3-shot1-incident.mp4` and `ep3-shot2-reply.mp4`, in that order.
+- Step 2: `media.shots[].name` has the same two names. The seam label reads
+  `seam 1: ep3-shot1-incident.mp4 | ep3-shot2-reply.mp4` at frame 124.
+- Step 3's manifest shots carry the same two file names.
+It is a **finding** if any name, in any of the three places, contains a `/` or a server
+directory (such as `/home/…/assets/…`).
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
 ## Performance
