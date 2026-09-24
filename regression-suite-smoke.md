@@ -1919,6 +1919,29 @@ metrics: none.
 source: tester, verified in #400 on 2026-09-24 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 0fd6043`.
 
+### S-F126 — `gain_audio` with a frame region gains only that region, and logs the samples it covered
+S-F123 covers the whole-track form. A shot-sized region given as `start_frame`/`num_frames`/`fps`
+is how one shot of a cut gets rebalanced. A region that lands somewhere else, or gets ignored,
+still succeeds silently. Cheap: one ~3 s utility job, no model load.
+Validate, then run (`workspace="regression-smoke"`, `acknowledged_cost=<plan>`,
+`wait_seconds=55`) one inline workflow with `"seed": 1`:
+`lift` = `gain_audio(audio="asset:qa-cast/ep45-episode.mp4", gain_db=3, start_frame=224,
+num_frames=124, fps=24)`, result `audio/wav`. Then `get_job_events` on the job.
+expected:
+- `validate_workflow` is `valid: true`, and the job succeeds.
+- A `log` event with `command: "gain_audio"`, `gain_db: 3`, `sample_rate: 32000`,
+  `start_sample` 298666 or 298667 (224 × 32000/24 = 298666.67, and the floor-vs-round
+  choice is #401), and `end_sample: 464000` (the asset's 348 f end). `start_seconds` is ≈9.333 and
+  `duration_seconds` ≈5.167.
+It is a **finding** if the job fails, if there is no such log event, or if the logged region
+starts at 0 or ends anywhere but 464000. Either of those means the frame arguments were
+dropped or misconverted.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+source: tester, found while running TESTER_TASK.agent.md (ep48), on 2026-09-24 over MCP as
+model `claude-opus-5-5` via provider `anthropic`, job `d72297d8719b` in `qa-ep48` (step
+`dry_s3`, run there after a whole-track −6 dB step, which doesn't affect the logged region).
+
 ## Performance
 
 ### S-P001 — default image generation latency
