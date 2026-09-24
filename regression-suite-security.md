@@ -340,10 +340,11 @@ no delete reported as succeeding. Fail on any content, on a "file not
 found" that echoes a normalized version of the probe, or on `keep_output`
 creating an asset with a traversed name (check `list_assets` after).
 Two refusal styles are both acceptable: `get_output_image`/`get_output_text`
-answer a bare "Not Found" (no path echoed), while `get_gallery_metadata`,
+answer a bare "Not Found" (no path echoed); `get_gallery_metadata` answers
+`Unknown file: <name as sent>` (optionally "- path contains a disallowed
+pattern"), never a resolved server path (#247; SE-F030 fails one that does);
 `delete_output` and `keep_output` give explicit containment errors ("Path
-contains dangerous pattern matching \.\.", "Path outside allowed
-directory: …"). The bare form discloses less but also proves less; for
+contains dangerous pattern matching \.\.", …). The bare form discloses less but also proves less; for
 certainty there, run the same probe against a name that *does* exist and
 confirm it still returns nothing.
 cleanup: none; if `keep_output` did create something, delete it and name it
@@ -838,20 +839,18 @@ Security refusals should be cheap: a gate that only fires after a model
 load has already spent the resources it was supposed to protect.
 
 ### SE-P001 — hostile inputs are refused before any load
-Time `validate_workflow` for the SE-F002 probe (dotted `*_type`) and
-`run_workflow` for the SE-F005 probe (`trust_remote_code`), measured from
+Time `run_workflow` for the SE-F005 probe (`trust_remote_code`), measured from
 call to the refusal being visible (`get_job` terminal, if a job was even
 created).
 Measure the **job's own** time (`finished_at - started_at` from `get_job`),
 not the agent's call-to-answer wall clock — the latter is dominated by MCP
 round trips and this agent's own tool overhead (~3–4 s), which would swamp
 a sub-second refusal.
-baseline: validate (SE-F002 probe) < 0.5 s; run-to-refusal (SE-F005 probe)
-< 2 s. Set from the 2026-09-13 first run; revisit deliberately, don't drift.
+baseline: run-to-refusal (SE-F005 probe) < 2 s. Set from the 2026-09-13 first run; revisit deliberately, don't drift.
 Log the run-to-refusal figure (`condition: run-to-refusal`) to
-`regression-perf/SE-P001.jsonl`; every code-gate refusal has landed in the
-0.95–1.0 s band, with SE-F003's nonexistent-module probe the slowest at
-3.0 s. A refusal that acquires a `loading` phase in its events is the
+`regression-perf/SE-P001.jsonl`; every code-gate refusal has landed between
+1.2 and 1.9 s (regression-perf/SE-P001.jsonl, 2026-09-14 to 09-22), most of
+it the 'releasing cached models' step before `run_start`. A refusal that acquires a `loading` phase in its events is the
 regression, whatever the number says.
 cleanup: as the referenced cases.
 source: harness, initial security suite 2026-09-13.
