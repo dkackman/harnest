@@ -4257,4 +4257,65 @@ source: tester, verified in #404. Ran over MCP as model `claude-opus-5-5` via pr
 3.7 s, only the 11.1 dB level-spread warning. The issue's own repro (three qa-cast shots,
 372 frames) is job `dbe050a44c46`.
 
+### C-F117 — "The loop" step 6, reached through its `##` section, carries the transcription procedure, and following it works (#376)
+pending: #403
+source: tester, spec for #403 from #376's plan v4
+Plan v4's version of C-F114. The walkthrough `get_output_audio` used to carry now lives in
+step 6 of "The loop" in the `workflows` guide. "The loop" is an `###` subsection, and
+`get_guide` addresses only `##` sections. So an agent reaches it through the section that holds
+it, "Authoring a workflow from an agent", the form the server instructions already use.
+`section="The loop"` is not expected to resolve (plan v4, Q4). This case checks that the lookup
+returns the procedure and that the procedure works end to end when followed exactly as written.
+CPU/short-GPU only: one VITS speech clip plus one transcription.
+1. `get_guide(name="workflows", section="Authoring a workflow from an agent")`.
+2. Load `get_output_audio`'s definition (`ToolSearch("select:mcp__dw__get_output_audio")`) and
+   note the section its pointer names.
+3. Setup: make a gallery output with known speech.
+   - `validate_workflow(name="templates/generate-speech", arguments={"text": "The quick brown
+     fox jumps over the lazy dog."})`, then `run_workflow(workflow_path="templates/generate-speech",
+     arguments=<same>, acknowledged_cost=<bound from that plan>, wait_seconds=55)`. This is
+     C-F081's template: VITS, 16 kHz mono.
+   - Note the `.wav`'s `<workflow>/<run id>/<file>` name as `<speech>` and the job id as
+     `<setup job>`.
+4. Follow step 6's procedure as the guide words it, with `<speech>` as the output. On
+   2026-09-24 (develop @ 007717a, read while specifying) it was:
+   - `validate_workflow(name="templates/transcribe-audio", arguments={"input_audio":
+     "output:<speech>"})`;
+   - `run_workflow` with the same arguments, `acknowledged_cost={"fingerprint": …, "minutes":
+     …, "downloads": [...]}` bound to that plan, and `wait_seconds=55` (follow up with
+     `wait_for_job` if `still_running: true`);
+   - `get_output_text` on the result;
+   - `delete_output(job_id=<transcribe job>)`.
+   If the guide's wording differs from this, follow the guide and note the difference.
+5. `list_gallery()` after step 4.
+expected:
+- Step 1 returns `content`, not an error. Inside it, the `### The loop` subsection has a step 6
+  that still opens with `get_output_image` (look at what was made, judge it against the request),
+  and carries a transcription paragraph added to that step, not replacing it. The paragraph
+  names all of these:
+  - `templates/transcribe-audio`;
+  - an `output:` reference as `input_audio`;
+  - a bound `acknowledged_cost` and `wait_seconds`;
+  - `get_output_text`;
+  - `delete_output(job_id=`.
+- Step 2: the pointer names "The loop" and a `get_guide` form that resolves, meaning
+  `section="Authoring a workflow from an agent"` or equivalent wording naming that `##` section.
+  A pointer whose only lookup is `section="The loop"` dangles, and is a finding.
+- Step 4:
+  - validate is `valid: true` with no errors;
+  - the run `succeeded`;
+  - `get_output_text` returns the spoken words: "the quick brown fox jumps over the lazy dog",
+    ignoring case and punctuation. One misheard word is tolerable on a VITS voice; a
+    transcript that's empty or unrelated is not.
+  - `delete_output(job_id=)` succeeds.
+- Step 5 shows no `transcribe-audio` run left behind. The only run from this case is the
+  setup's.
+
+It is a **finding** if step 1 errors or returns a section without the procedure, if any call in
+the procedure as the guide writes it is refused (a wrong argument name, a missing
+`acknowledged_cost` shape), or if the procedure leaves a scratch run.
+cleanup: `delete_output(job_id=<setup job>)`. Also delete the transcribe job if step 4 failed
+before its own delete.
+metrics: none.
+
 ## Performance
