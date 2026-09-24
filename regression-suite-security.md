@@ -686,7 +686,6 @@ finding.
 cleanup: none (validation only).
 
 ### SE-F036 — a redirect is re-checked on every hop, so a public URL can't bounce the fetch inside the box
-pending: #411
 source: tester, spec for #411 from #407's plan v2
 SE-F018 refuses an internal host at validation. But the host check covers only the first URL: a
 public URL that answers 302 to `http://127.0.0.1:8765/…` used to be followed, and the server
@@ -728,7 +727,6 @@ Nothing reaches `/tmp` or the workspace from these arms. If a file did appear, n
 issue and delete it.
 
 ### SE-F037 — CGNAT (100.64/10) and other non-global addresses are refused like private ones
-pending: #411
 source: tester, spec for #411 from #407's plan v2
 `100.64.0.0/10` (carrier-grade NAT, and the range Tailscale hands out) is neither private nor
 link-local under Python's `ipaddress` flags. So a host inside it passed SE-F018's check, and on

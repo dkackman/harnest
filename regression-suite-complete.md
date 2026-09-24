@@ -4174,7 +4174,6 @@ cleanup: `delete_asset("c-f118/qr.png")`, `delete_output(job_id=…)` for both j
 metrics: none.
 
 ### C-F119 — a public-to-public redirect is still followed
-pending: #411
 source: tester, spec for #411 from #407's plan v2
 The half of #411 that must not break: `safe_get` re-checks each hop (SE-F036), but a redirect
 between public hosts must still be followed. Many real media URLs redirect: Hugging Face
