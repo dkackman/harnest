@@ -3932,4 +3932,46 @@ It is a **finding** if any name in the manifest or a probe body reads `video N`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F109 — rescoring a kept cut with `pair_audio` keeps its shots, from an `asset:` and from an `output:`
+source: tester, verified in #398
+This is the "rescore a kept episode" flow: lay a bed under a finished cut, then pair the
+new track back onto the same picture. `pair_audio` loaded a `video` given as a file path
+with no shot records. The rescored film had `media.shots: null`, and `analyze_seams` on
+it warned that it found no shot boundaries. The shots are still exactly right, because
+the picture is unchanged. C-F106 covers the step before this one (keeping the shots).
+The case is CPU only and takes two short jobs. `asset:qa-cast/ep42-episode.mp4` is a
+two-shot cut (248 f, 24 fps, 32 kHz) whose `media.shots` are `shot@accuse` 0/124 and
+`shot@deflect` 124/124.
+1. `run_workflow(inline_workflow={"id": "qa-c-f109", "seed": 1, "variables": {"episode":
+   "asset:qa-cast/ep42-episode.mp4", "bed": "asset:qa-cast/ep11-bed.wav"}, "steps":
+   [{"name": "mix", "task": {"command": "mix_audio", "arguments": {"audios":
+   ["variable:episode", "variable:bed"], "gains": [1, 4]}}, "result": {"content_type":
+   "audio/wav", "save": false}}, {"name": "norm", "task": {"command": "normalize_audio",
+   "arguments": {"audio": "previous_result:mix", "peak_dbfs": -3, "target_lufs": -16}},
+   "result": {"content_type": "audio/wav", "subfolder": "intermediate"}}, {"name": "film",
+   "task": {"command": "pair_audio", "arguments": {"video": "variable:episode", "audio":
+   "previous_result:norm", "fit": "video"}}, "result": {"content_type": "video/mp4",
+   "subfolder": "final"}}, {"name": "seams", "task": {"command": "analyze_seams",
+   "arguments": {"video": "previous_result:film"}}, "result": {"content_type":
+   "application/json", "subfolder": "final"}}]}, acknowledged_cost=true,
+   wait_seconds=55)`. Then `get_gallery_metadata` on the `film` file and `get_output_text`
+   on the `seams` file.
+2. Repeat with the `output:` form: a job with `pair_audio(video="output:<step 1's film
+   file>", audio="asset:qa-cast/ep11-bed.wav", fit="video")` → `analyze_seams(video=
+   "previous_result:film")`.
+expected:
+- Step 1: the `film` manifest entry and `get_gallery_metadata`'s `media.shots` both list
+  `shot@accuse` (start_frame 0, num_frames 124, start_sample 0, num_samples 165333) and
+  `shot@deflect` (124, 124, 165333, 165334). Frame boundaries are unchanged, and samples
+  are re-measured at 32 kHz. The job has no `seams: … found no shot boundaries` warning.
+  The seams body has `shots_source` other than `"none"` (it was `"artifact"` when this case
+  was verified), `rules_skipped: []`, and one seam at about 5.17 s.
+- Step 2: the `film` manifest entry has the same two shots, and there is no
+  no-shot-boundaries warning.
+It is a **finding** if either film has no `shots` / `media.shots: null`, or if a seams
+probe on it reports `shots_source: "none"`.
+cleanup: `delete_output(job_id=…)` for both jobs, step 2's first (it reads step 1's
+output).
+metrics: none.
+
 ## Performance
