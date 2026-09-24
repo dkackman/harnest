@@ -99,6 +99,9 @@ nothing uses it anymore.
 - `asset:qa-cast/hal-voice.wav` — a 6.48 s 24 kHz mono line in the shared asset
   library. S-F070 transcribes it; any short spoken clip substitutes. Read-only, never
   deleted. The complete suite also uses it.
+- `asset:qa-cast/ep42-shot1-accuse.mp4` and `asset:qa-cast/ep42-shot2-deflect.mp4`: two
+  shots in the shared asset library, 124 frames each. S-F125 depends on that count in a
+  validate-only call. They are read-only and never deleted.
 
 ## Functional
 
@@ -1886,6 +1889,35 @@ cleanup: none. Nothing is queued or written.
 metrics: none.
 source: tester, verified in #397 on 2026-09-24 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 9fed519`.
+
+### S-F125 — a `dissolve_frames` longer than a known input clip is refused by the free pre-flight
+#400: `dissolve_videos` used to validate clean when a literal `dissolve_frames` was longer than
+an `asset:` input's real frame count, and then fail at run time. A middle clip needs room
+for two dissolves, and an input whose length isn't known before the run (`previous_result:`)
+is left alone. Free: no job is queued. Every call is `validate_workflow(workspace="regression-smoke",
+workflow={"id": "s-dissolve", "seed": 1, "steps": [<steps>]})`, and each step is
+`{"name": ..., "task": {"command": "dissolve_videos", "arguments": {"videos": [...],
+"dissolve_frames": N, "fps": 24}}, "result": {"content_type": "video/mp4"}}`. A = `asset:qa-cast/ep42-shot1-accuse.mp4`,
+B = `asset:qa-cast/ep42-shot2-deflect.mp4` (124 f each).
+1. One step, videos `[A, B]`, `dissolve_frames: 130`.
+2. One step, videos `[A, B]`, `dissolve_frames: 12`.
+3. One step, videos `[A, B, A]`, `dissolve_frames: 70`.
+4. Two steps: `src` = videos `[A, B]`, 12. Then `film` = videos `["previous_result:src", B]`, 130.
+expected:
+- Step 1: `valid: false`, one error at `steps[0].task.arguments.dissolve_frames` naming
+  both `video 0 has 124 frames, too few for its 1 dissolve(s) of 130 frames` and the same
+  for `video 1`.
+- Step 2: `valid: true`, no errors.
+- Step 3: `valid: false`, and only `video 1 has 124 frames, too few for its 2 dissolve(s) of 70
+  frames` (videos 0 and 2 need only 70).
+- Step 4: `valid: false` at `steps[1].task.arguments.dissolve_frames` naming only `video 1`.
+  The `previous_result:` entry is not flagged.
+It is a **finding** if step 1 or 3 validates clean, if step 2 or step 4's `video 0` is flagged,
+or if the error lands at a different path.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #400 on 2026-09-24 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 0fd6043`.
 
 ## Performance
 
