@@ -254,21 +254,46 @@
       "completed": 0
      },
      "markers": []
+    },
+    {
+     "number": 12,
+     "title": "t12",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "status:needs-spec"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
     }
    ]
   },
   "expect": {
    "1": "implementer:fix",
-   "2": "stranded",
+   "2": "implementer:fix",
    "3": "tester:verify",
    "4": "tester:answer",
    "5": "tester:handoff",
-   "6": "stranded",
+   "6": "tester:handoff",
    "7": "don",
    "8": "stranded",
    "9": "stranded",
    "10": "stranded",
-   "11": "stranded"
+   "11": "stranded",
+   "12": "stranded"
   }
  },
  {
@@ -948,7 +973,7 @@
    "60": "wait",
    "61": "lead:build",
    "62": "wait",
-   "63": "stranded",
+   "63": "lead:build",
    "64": "tester:verify",
    "65": "don"
   }
@@ -1353,6 +1378,242 @@
    "93": "stranded",
    "94": "stranded",
    "95": "tester:verify"
+  }
+ },
+ {
+  "name": "Don's hand-back: the owner swap is the signal, leftover statuses don't strand",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 100,
+     "title": "t100",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 101,
+     "title": "t101",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "status:needs-info"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 102,
+     "title": "t102",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 103,
+     "title": "t103",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 104,
+     "title": "t104",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 105,
+     "title": "t105",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v2 -->",
+      "<!-- harnest:decomposed v2 -->",
+      "<!-- harnest:specced v2 -->"
+     ]
+    },
+    {
+     "number": 106,
+     "title": "t106",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 105
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 107,
+     "title": "t107",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:needs-info"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 105
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "100": "implementer:fix",
+   "101": "implementer:fix",
+   "102": "stranded",
+   "103": "tester:handoff",
+   "104": "lead:design",
+   "105": "wait",
+   "106": "lead:build",
+   "107": "lead:build"
   }
  }
 ]

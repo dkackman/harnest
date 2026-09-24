@@ -132,6 +132,40 @@ the session that runs next, or to where it waits. Every driver queue, the digest
 post-session audit read it. An issue no queue will ever pick up is "stranded": the audit
 warns on it, and the digest lists it.
 
+## Your moves
+
+**Only an owner change moves an issue.** Status labels are context for whoever holds it.
+A status addressed to you (`status:needs-approval`, `status:plan-review`, or
+`status:needs-info` on an issue you were asked about) goes stale once you hand the issue
+back, and the agent that receives it clears it. So you never need to tidy statuses: the
+owner swap is the whole move. `lib/classify.jq` encodes this, and
+`tests/classify-cases.json` holds a fixture for each hand-back below.
+
+| To | Do this |
+|---|---|
+| Hand back an issue you were asked about (a park, a question, a failed deploy) | Comment your answer, then swap `owner:don` for `owner:implementer` (a bug) or `owner:lead` (a feature, idea or stage). |
+| Start a feature or an idea | Swap `owner:don` for `owner:lead`. A comment on scope or priority is optional. |
+| Approve a plan | Add `status:plan-approved` and swap to `owner:lead`. Only you can add that label. |
+| Ask for changes to a plan | Comment what you want, then swap to `owner:lead`. |
+| Decline a feature or idea | Comment "don't build", then swap to `owner:lead`. The lead records it, and a close-out closes it. |
+| Defer one | Comment, and keep `owner:don`. |
+| Verify a stage the plan gave you (no MCP surface) | Check it, then `gh issue close <n> --reason completed`. |
+| Reject a bug | Add `wontfix`, then close it `not planned`. |
+| Answer a curator escalation (harnest) | Comment approve, deny or your amendment, then remove `owner:don`. |
+| Reverse a curator ruling (harnest) | Reopen it with a comment saying what you want instead. |
+| Let an outside filer's issue into the loop | Hand it back as in the first row. It is never re-parked after that. |
+
+**What doesn't move anything:**
+- A comment on its own, while you hold the issue. Agents read your comments when you
+  hand the issue back, not before.
+- Adding or removing a status without the owner swap.
+- `priority:*`, `field-report`, or other plain labels.
+- Any change to an issue an agent holds. It's mid-flight, so a change can race the
+  session working on it. To step in, swap its owner to `owner:don` first.
+
+`run-digest.sh` prints the exact command for each parked issue's approve and reject, from
+its state.
+
 GitHub is the only ticket history. Issues from before the 2026-09-12 migration that were
 still active then were carried forward and cite "migrated from T0xx" in their body.
 

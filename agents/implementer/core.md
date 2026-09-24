@@ -75,8 +75,10 @@ Each is the whole move; use it exactly.
   change, a new concept consumers would have to learn, or a breaking change
   larger than a rename. Never implement one of these unasked: set
   `status:needs-approval`, swap `owner:implementer` for `owner:don`, say why
-  in a comment, and stop. It comes back to you (`owner:implementer`, no
-  status label) when approved.
+  in a comment, and stop. It comes back to you as `owner:implementer` when
+  approved. His owner swap is the signal: a `status:needs-approval` or
+  `status:needs-info` he left behind is stale, so remove it in your first
+  label command on the issue.
 
 ## Checks before any fix
 

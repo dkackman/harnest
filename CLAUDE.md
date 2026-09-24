@@ -392,6 +392,10 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   makes it a feature, hands it to `owner:implementer` as one fix, or closes
   it. `lib/classify.jq` is the authoritative map from labels to the session
   that runs next.
+- **The owner label is the only signal.** A status addressed to Don (`needs-approval`,
+  `plan-review`, or `needs-info` on an implementer's or lead's issue) is stale once he
+  swaps the owner back. It never decides a queue, and the agent that receives the issue
+  clears it. README "Your moves" lists Don's actions.
 - Status flow: no status label ("open", ready for the implementer) → (implementer fixes +
   deploys to `lem`) → `status:fixed-pending-verify` → (tester re-runs repro over MCP) → close the
   issue as `completed` with `status:verified` added, or back to no status label / owner back to

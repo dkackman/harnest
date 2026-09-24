@@ -32,6 +32,11 @@
 # decompose and spec run again for the new one.
 
 def names: [.labels[].name];
+# Statuses addressed to Don: a park, a plan waiting on his review, a question
+# for him. Once he hands the issue back (swaps owner:don for an agent's
+# owner) they are stale, and never decide a queue: the owner label is the
+# only signal. The agent now holding the issue clears them.
+def don_statuses: ["status:needs-approval", "status:plan-review"];
 def has($l): names | index($l) != null;
 def statuses: names | map(select(startswith("status:")));
 def owners: names | map(select(startswith("owner:")));
@@ -71,19 +76,23 @@ def parent_phase:
   elif $o[0] == "owner:don" then
     {queue: "don", reason: ($st | join(",") | if . == "" then "no status" else . end)}
   elif $o[0] == "owner:implementer" then
-    if ($st | length) == 0 then {queue: "implementer:fix", reason: "ready"}
-    else {queue: "stranded", reason: "owner:implementer with \($st | join(","))"} end
+    # needs-info on an implementer's issue is a question Don was asked (a
+    # failed deploy) and has handed back: stale too.
+    ($st - don_statuses - ["status:needs-info"]) as $live
+    | if ($live | length) == 0 then
+        {queue: "implementer:fix", reason: (if ($st | length) > 0 then "ready (stale \($st | join(",")) to clear)" else "ready" end)}
+      else {queue: "stranded", reason: "owner:implementer with \($live | join(","))"} end
   elif $o[0] == "owner:tester" then
     if has("status:fixed-pending-verify") then {queue: "tester:verify", reason: "handed off"}
     elif has("status:needs-spec") then {queue: "tester:spec", reason: "plan approved and decomposed"}
     elif has("status:needs-info") then {queue: "tester:answer", reason: "question from the implementer"}
-    elif ($st | length) == 0 then {queue: "tester:handoff", reason: "harness-side edit requested"}
+    elif (($st - don_statuses) | length) == 0 then {queue: "tester:handoff", reason: "harness-side edit requested"}
     else {queue: "stranded", reason: "owner:tester with \($st | join(","))"} end
   elif $o[0] == "owner:lead" then
     if has("stage") then
       ($open[(.parent.number // -1) | tostring]) as $p
       | [(.blockedBy.nodes // [])[] | select(.state == "OPEN") | .number] as $blockers
-      | if ($st | length) > 0 then {queue: "stranded", reason: "stage with owner:lead and \($st | join(","))"}
+      | if (($st - don_statuses - ["status:needs-info"]) | length) > 0 then {queue: "stranded", reason: "stage with owner:lead and \($st | join(","))"}
         elif .parent == null then {queue: "stranded", reason: "stage with no parent"}
         elif $p == null then {queue: "stranded", reason: "stage whose parent #\(.parent.number) is closed"}
         elif ($blockers | length) > 0 then {queue: "wait", reason: "blocked by \($blockers | map("#\(.)") | join(","))"}
