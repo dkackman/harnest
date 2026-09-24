@@ -55,10 +55,14 @@ scroll.
 - **Find it** by the marker: `gh issue view <n> --json comments --jq
   '.comments[] | select(.body | startswith("<!-- harnest:plan")) | .url'`.
   The comment id is the number after `issuecomment-` in that URL.
+- **Read it** the same way, with `.body` in place of `.url`. Never read it
+  with `gh api`: the PATCH below is the only `gh api` form your session
+  allows, and a GET is denied. A denied read doesn't mean you can't write it.
 - **Revise it** by that id, never with `--edit-last`. Everyone posts as the
   same login, so "last" is whoever commented last, usually Don. Stage the
   new text with `Write` to `/tmp/plan-<n>.md`, then `gh api -X PATCH
-  repos/<repo>/issues/comments/<id> -F body=@/tmp/plan-<n>.md`.
+  repos/<repo>/issues/comments/<id> -F body=@/tmp/plan-<n>.md`, exactly
+  that form, as its own command with nothing chained before it.
 - **Every revision** bumps `vN` and adds one short comment, "Plan vN:
   changed since vN-1", naming what moved and whether scope changed.
 
