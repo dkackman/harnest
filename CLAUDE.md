@@ -7,7 +7,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 Not an application — an orchestration harness for two Claude Code agents that iterate on the
 `diffusers-workflow` MCP server in strictly alternating cycles, communicating through GitHub
 Issues (see "Ticket protocol" below) and, for regression coverage, the `regression-suite-*.md`
-files described below. There is no build, lint, or test step.
+files described below. There is no build step. **`tests/run.sh` is the test suite: run it
+before committing any change to a driver, `providers.sh`, `lib/classify.jq` or the guard.**
+It is offline (a fake `gh` over a JSON board, and stub `ssh`/`claude`), takes about a minute,
+and runs the real drivers end to end. See "Tests" below.
 
 - `run-loop.sh` — the driver. Runs the implementer's sessions, then the tester's, then prints a
   ticket status board; repeats. Sessions are **per issue, not per role**: the implementer gets a
@@ -294,6 +297,25 @@ it runs on. Both roles see MCP tools as deferred names (schemas load on first us
 `dw` surface costs each session well under 2k tokens at connect; per-call result size is the
 real budget (see issue #101).
 
+## Tests
+
+`tests/run.sh [name]` runs every `tests/test-*.sh` (plain bash on `tests/lib.sh`, no bats):
+- `test-classify.sh`: `lib/classify.jq` over fixture boards in `tests/classify-cases.json`,
+  one per protocol state. Add a board when you add or change a state.
+- `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).
+- `test-providers.sh`: the shared helpers. Session outcomes on canned logs, the stream
+  renderer against `tests/fixtures/stream.expected`, model/effort validation, the
+  no-progress ledger, `handoff_count`, `park_external_issues` and the driver lock.
+- `test-drivers.sh`: the real `run-loop.sh`, `run-features.sh`, `run-regression.sh`,
+  `run-curate.sh` and `run-retro.sh` against `tests/fake-gh.py` (a JSON board that edits
+  change) and a throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
+  fix-then-verify in one cycle, an outside filing, and the spec race.
+- `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses, and
+  every `${KNOB:-}` a driver reads is named in the README.
+
+Two bash 3.2 traps the suite has already caught: an apostrophe in a comment inside `<( )`
+("bad substitution"), and `source <(…)`, which 3.2 doesn't support.
+
 ## Permissions
 
 No agent runs with `--dangerously-skip-permissions`. A headless `claude -p` session never
@@ -327,7 +349,8 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
 
 Guard hooks (roadmap R3): `agent-settings/hooks/guard.py` is a `PreToolUse` hook on `Bash`.
 The implementer loads it via `agent-settings/implementer.json`; tester and regression load it
-via `agent-settings/consumer.json`, which is inside `CONSUMER_PERMISSION_FLAGS`. It refuses at
+via `guard_settings consumer` (`providers.sh`, which generates the `--settings` JSON for the
+consumer, lead and curator roles), inside `CONSUMER_PERMISSION_FLAGS`. It refuses at
 call time what `audit_issue` otherwise only finds afterwards:
 - `completed` closes and `status:verified` from the implementer;
 - lifting a `owner:don`/`needs-approval` park;

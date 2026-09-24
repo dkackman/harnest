@@ -17,11 +17,11 @@ rather than in a separate log.
 | R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56); schedule weekly | — |
 | R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
 | R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; watch denial counts | R1 |
-| R8  | Port the drivers to the Claude Agent SDK          | todo    | opportunistic |
+| R8  | Port the drivers to the Claude Agent SDK          | todo; trigger in R8 (after R12, dw#378 live) | R12 |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built (`run-features.sh`, `agents/lead/`, lead pass in `run-loop.sh`); dw#378 decomposed, waiting on its spec session | R4 (absorbs it), R1 |
-| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | A and B done; C next | before dw#378 runs live |
+| R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done (A, B, C) | before dw#378 runs live |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1128,6 +1128,35 @@ label logic in jq, in four files, which is where the holes come from.
     it is now keyed per kind, and markers are in the fingerprint;
   - also: the decompose text, the tester's "not a bug after all" answer, and a re-check
     before each close-out.
+
+**Phase C done (2026-09-23).**
+- **`tests/run.sh`** is offline and takes about a minute. It holds 274 checks in 5 files (see
+  CLAUDE.md "Tests"). It uses plain bash on a small assert library rather than bats,
+  which isn't installed.
+  - The driver tests run the real drivers against `tests/fake-gh.py`, a JSON board
+    that edits change.
+  - A mutation check (removing the outage guard from `status_board`) makes the outage
+    test fail.
+  - Their first run caught a live defect: `curator_pass` had an apostrophe in a comment
+    inside `<( )`, which bash 3.2 misparses. Fixed on main as `e8d66d1`.
+- **One session loop.** `run_claude_session` and `session_flags` (`providers.sh`) replace
+  the copies in `run-loop.sh`, `run-features.sh`, `run-curate.sh`, `run-regression.sh` and
+  `run-retro.sh`. Every session now validates its effort and fallback the same way,
+  honors `0 = none` for its budget, retries a died session once, and logs a `===` header.
+  Retro gained the retry it never had, plus the `jq` and `gh auth` checks.
+  `run-bench.sh` and `run-digest.sh` keep their own invocations: one writes per-case files
+  and runs judges in parallel, the other is a single tool-less call captured as text.
+- **`guard_settings <role>`** generates the guard's `--settings` JSON. It replaces
+  `consumer.json`, `lead.json` and `curator.json`, which differed only in the role word.
+  The generated JSON is identical to those files, and a live haiku session confirmed the
+  hook still fires. The curate and retro fences moved into `providers.sh`.
+- **`handoff_count`** moved into `providers.sh`, where it is tested.
+- **Every knob a driver reads is in the README.** Forty-six were missing, and the lint
+  test now fails on a new undocumented one.
+- **Not done:** fence groups for the four allowlists. Regrouping permissions is more risk
+  than the drift it prevents, and the lists are reviewed by eye already. Also not done:
+  one `<ROLE>_*` resolution function, since the defaults are now consistent and
+  documented.
 
 **Done when.** A cycle survives a GitHub outage. The digest's stranded list is empty.
 `bats tests/` passes, and the queue logic is tested there, not reviewed by eye. Then dw#378

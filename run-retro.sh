@@ -29,14 +29,13 @@ SEEN="$LOGS/retro-seen.json"
 
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
 command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
+command -v jq >/dev/null     || { echo "jq not on PATH" >&2; exit 1; }
+gh auth status >/dev/null 2>&1 || { echo "gh CLI not authenticated" >&2; exit 1; }
 mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 RETRO_EFFORT="${RETRO_EFFORT:-$EFFORT}"
 resolve_model_env "$RETRO_PROVIDER" "$RETRO_MODEL" || exit 1
-effort_flags anthropic "$RETRO_EFFORT" >/dev/null || exit 1
-EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$RETRO_PROVIDER" "$RETRO_EFFORT")"
-LIMIT_FLAGS=(--autocompact "$AUTOCOMPACT_TOKENS")
-[ "$RETRO_BUDGET_USD" = 0 ] || LIMIT_FLAGS+=(--max-budget-usd "$RETRO_BUDGET_USD")
+session_flags "$RETRO_PROVIDER" "$RETRO_MODEL" "$RETRO_EFFORT" "$RETRO_BUDGET_USD" || exit 1
 LAST_SESSION="$LOGS/.last-session.retro"
 
 NEXT_SEEN="$LOGS/.retro-seen.next.json"
@@ -144,23 +143,14 @@ fi
 gh label create harness --repo "$HARNESS_REPO" --color 5319e7 --description "Change to the harness itself" --force >/dev/null 2>&1 || true
 gh label create status:needs-approval --repo "$HARNESS_REPO" --color d93f0b --description "Waiting for Don" --force >/dev/null 2>&1 || true
 
-: > "$LAST_SESSION"
-echo "=== $(date '+%H:%M:%S') retro ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
-(cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
+run_claude_session retro retro "$REPO" "$AGENTS/RETRO.agent.md" \
 "Your role instructions are in your system prompt (the contents of $AGENTS/RETRO.agent.md). Harness repo: $HARNESS_REPO. Ticket repo: $TICKET_REPO. File at most three proposals, then stop.
 
 $EVIDENCE
 
-Runtime: you are the retro agent, running as model '$RETRO_MODEL' via the '$RETRO_PROVIDER' provider. Name that model and provider in every issue or comment you write; use the exact model id your system prompt states." \
-  --model "$RETRO_MODEL" ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${LIMIT_FLAGS[@]}" \
-  --append-system-prompt-file "$AGENTS/RETRO.agent.md" \
-  --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "Bash,Read,Glob,Grep,ToolSearch,TodoWrite" \
-  --permission-mode dontAsk --allowedTools "Read" "Glob" "Grep" "ToolSearch" "TodoWrite" \
-    "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)" "Bash(git log *)" "Bash(git show *)" "Bash(git diff *)" \
-  "${STREAM_FLAGS[@]}" 2>&1 < /dev/null | render_stream retro) \
-  | tee -a "$LOGS/retro.log" "$LAST_SESSION" | sed -u "s/^/[retro] /" | tee -a "$LOGS/loop.log" \
-  || echo "[retro] run failed" | tee -a "$LOGS/loop.log"
-sleep_if_rate_limited "$LAST_SESSION"
+$(runtime_note retro "$RETRO_PROVIDER" "$RETRO_MODEL")" \
+  "${SESSION_FLAGS[@]}" \
+  --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "$RETRO_TOOLS" "${RETRO_PERMISSION_FLAGS[@]}"
 if session_died "$LAST_SESSION"; then
   rm -f "$NEXT_SEEN"; echo "[retro] session ended without a result; window not advanced" | tee -a "$LOGS/loop.log"
 else

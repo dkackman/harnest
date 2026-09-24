@@ -299,13 +299,27 @@ fallback_model_flags() {
 # destructive ones (delete_workspace, clear_memory, download_model) are
 # exercised by suite cases, so they stay on the prompts' honor system.
 #
-# agent-settings/consumer.json adds the R3 guard hook (agent-settings/hooks/
+# guard_settings consumer adds the R3 guard hook (agent-settings/hooks/
 # guard.py): closing as completed or adding status:verified is refused in a
 # session that has made no mcp__dw__ call, and an owner:* label can only be
 # swapped, never stacked. The hook finds the script via HARNEST_HOOKS.
-export HARNEST_HOOKS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agent-settings/hooks"
+HARNEST_HOOKS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agent-settings/hooks"
+export HARNEST_HOOKS
+
+# guard_settings <role>
+# The --settings JSON that installs the R3 guard hook for <role>
+# (consumer, lead, curator). One generator instead of a settings file per
+# role that differed only in the role word. The implementer's settings stay
+# a file (agent-settings/implementer.json): they also carry its auto-mode
+# environment and a longer timeout for the hand-off gate's test run.
+# `$HARNEST_HOOKS` stays literal: the hook's shell expands it.
+guard_settings() {
+  jq -nc --arg role "$1" '{hooks: {PreToolUse: [{matcher: "Bash", hooks: [
+    {type: "command", command: ("python3 \"$HARNEST_HOOKS/guard.py\" " + $role), timeout: 30}]}]}}'
+}
+
 CONSUMER_PERMISSION_FLAGS=(
-  --settings "$HARNEST_HOOKS/../consumer.json"
+  --settings "$(guard_settings consumer)"
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__*" "ToolSearch" "Skill" "TodoWrite"
@@ -331,11 +345,11 @@ CONSUMER_PERMISSION_FLAGS=(
 # - Agent, for the one read-only Explore sweep a design owes. Subagents
 #   inherit this allowlist, so they are read-only too.
 # - A few more read-only dw calls, to measure demand from real use.
-# The guard hook (lead.json) refuses status:plan-approved and the
+# The guard hook (guard_settings lead) refuses status:plan-approved and the
 # implementer's issue rules. Build and close-out sessions don't use this:
 # they run in run-loop.sh with the implementer's flags.
 LEAD_DESIGN_PERMISSION_FLAGS=(
-  --settings "$HARNEST_HOOKS/../lead.json"
+  --settings "$(guard_settings lead)"
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__list_workflows" "mcp__dw__list_guides" "mcp__dw__list_pipelines"
@@ -356,11 +370,11 @@ LEAD_DESIGN_PERMISSION_FLAGS=(
 # ones it approves, so it gets Edit on this repo's files. Edit is unscoped
 # by path, as it is for the tester; the prompt limits it to the suite files.
 # It also gets gh issue on both repos, and read-only dw discovery to confirm
-# a renamed tool or field. The guard (curator.json) refuses lifting Don's
+# a renamed tool or field. The guard (guard_settings curator) refuses lifting Don's
 # owner:don and adding status:plan-approved. Audit sessions (run-curate.sh)
 # stay read-only and don't use this.
 CURATOR_REVIEW_PERMISSION_FLAGS=(
-  --settings "$HARNEST_HOOKS/../curator.json"
+  --settings "$(guard_settings curator)"
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__get_schema" "mcp__dw__list_tasks" "mcp__dw__get_task"
@@ -370,6 +384,24 @@ CURATOR_REVIEW_PERMISSION_FLAGS=(
     "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)"
 )
 CURATOR_REVIEW_TOOLS="Bash,Read,Edit,Glob,Grep,ToolSearch,TodoWrite"
+
+# The curator's audit sessions (run-curate.sh): read-only on this repo (no
+# Edit/Write: a suite changes only through a review session), gh issue for
+# searching history and filing the one proposal, no MCP.
+CURATOR_AUDIT_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
+CURATOR_AUDIT_PERMISSION_FLAGS=(
+  --permission-mode dontAsk
+  --allowedTools "Read" "Glob" "Grep" "ToolSearch" "TodoWrite" "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
+)
+
+# The retro session (run-retro.sh): read-only on this repo and its history,
+# gh issue for filing up to three proposals, no MCP.
+RETRO_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
+RETRO_PERMISSION_FLAGS=(
+  --permission-mode dontAsk
+  --allowedTools "Read" "Glob" "Grep" "ToolSearch" "TodoWrite"
+    "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)" "Bash(git log *)" "Bash(git show *)" "Bash(git diff *)"
+)
 
 # Context every session carries on every turn, and doesn't need. Measured
 # 2026-09-19 (measure-base-ctx.sh): a session started with ~42k tokens
@@ -450,7 +482,7 @@ co_author_for() {
 # things is per role, and matches what each role prompt actually permits: the
 # implementer only *proposes* regression cases in a hand-off comment (it has
 # no checkout of this repo), so it is not told it edits the suite.
-# Roles: implementer, tester, regression, lead, curator. Returns 1 on any other role.
+# Roles: implementer, tester, regression, lead, curator, retro. Returns 1 on any other role.
 runtime_note() {
   local role="$1" provider="$2" model="$3" examples
   case "$role" in
@@ -459,7 +491,8 @@ runtime_note() {
     regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
     lead)        examples="a feature plan and its verdict, an idea's disposition, a stage issue, a hand-off comment, a re-plan" ;;
     curator)     examples="a curation proposal, a ruling on a suite request, an escalation to Don" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator)" >&2; return 1 ;;
+    retro)       examples="a harness proposal and its evidence" ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator|retro)" >&2; return 1 ;;
   esac
   # An alias (`opus`) moves when a new model ships, so a comment that says
   # "opus" can't later be told apart from the next Opus. Claude Code's own
@@ -764,6 +797,59 @@ sleep_if_rate_limited() {
   fi
 }
 
+# session_flags <provider> <model> <effort> <budget_usd>
+# Sets SESSION_FLAGS to the per-session claude flags every driver builds:
+# --model, --fallback-model (FALLBACK_MODEL, when set and servable by the
+# provider), --effort (anthropic only), --autocompact, and --max-budget-usd
+# (omitted for a budget of 0, which means none, in every driver). Returns 1
+# with a message on a bad effort or fallback, so a driver that calls it at
+# startup fails there, not three minutes in.
+session_flags() {
+  local provider="$1" model="$2" effort="$3" budget="$4" words
+  local -a w=()
+  SESSION_FLAGS=(--model "$model")
+  words="$(fallback_model_flags "$provider" "${FALLBACK_MODEL:-}")" || return 1
+  [ -z "$words" ] || { read -r -a w <<<"$words"; SESSION_FLAGS+=("${w[@]}"); }
+  words="$(effort_flags "$provider" "$effort")" || return 1
+  [ -z "$words" ] || { read -r -a w <<<"$words"; SESSION_FLAGS+=("${w[@]}"); }
+  SESSION_FLAGS+=(--autocompact "${AUTOCOMPACT_TOKENS:-120000}")
+  [ "$budget" = 0 ] || SESSION_FLAGS+=(--max-budget-usd "$budget")
+}
+
+# run_claude_session <label> <log-name> <cwd> <prompt-file> <prompt> [claude flags...]
+# One fresh `claude -p` session, the way every driver runs one:
+# - the environment is MODEL_ENV (resolve_model_env for this session's pair
+#   first) plus SESSION_ENV, an optional array of VAR=value words;
+# - output is rendered (render_stream) to $LOGS/<log-name>.log, to
+#   $LAST_SESSION (this session alone), and to loop.log prefixed [<label>];
+# - a header "=== HH:MM:SS <SESSION_HEADER or label> (<MODEL_LABEL>) ===";
+# - a rejected rate limit sleeps until its reset (sleep_if_rate_limited);
+# - a session that died before its result is retried once (session_died).
+# Always returns 0: callers run it bare under set -e, and read the outcome
+# from $LAST_SESSION (session_ok, session_ran, session_died).
+run_claude_session() {
+  local label="$1" logname="$2" dir="$3" prompt_file="$4" prompt="$5" attempt
+  shift 5
+  : "${LAST_SESSION:?run_claude_session: LAST_SESSION must be set by the driver}"
+  for attempt in 1 2; do
+    : > "$LAST_SESSION"
+    echo "=== $(date '+%H:%M:%S') ${SESSION_HEADER:-$label} ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
+    (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} ${SESSION_ENV[@]+"${SESSION_ENV[@]}"} \
+        claude -p "$prompt" --append-system-prompt-file "$prompt_file" "${STREAM_FLAGS[@]}" "$@" \
+        2>&1 < /dev/null | render_stream "$logname") \
+      | tee -a "$LOGS/$logname.log" "$LAST_SESSION" \
+      | sed -u "s/^/[$label] /" \
+      | tee -a "$LOGS/loop.log" \
+      || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
+    sleep_if_rate_limited "$LAST_SESSION"
+    session_died "$LAST_SESSION" || break
+    [ "$attempt" -eq 1 ] || break
+    echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
+    sleep "$SESSION_RETRY_PAUSE_SECS"
+  done
+  return 0
+}
+
 # park_external_issues
 # Guardrail: an open issue filed by anyone other than TICKET_OWNER is parked
 # with the human (owner:don + status:needs-approval) before any driver's
@@ -920,6 +1006,23 @@ queue_issues() {
 # (a triage, a batch, a hand-off) may have moved it on.
 still_ready() {
   queue_issues "$2" | cut -f1 | grep -x "$1" >/dev/null
+}
+
+# handoff_count <n>
+# How many times an issue has been labeled status:fixed-pending-verify since
+# it was last reopened — one per implementer hand-off, so on an issue that is
+# owner:implementer again it is the number of bounces. Counting the whole
+# timeline would include hand-offs that passed verification before the issue
+# regressed and was reopened (as the implementer's prompt says to do), and a
+# reopened regression would escalate or park before its first new attempt.
+# Read from the issue's event timeline, oldest first; 0 on any failure so a
+# gh hiccup never escalates or parks by accident. Always returns 0: callers
+# assign it bare (`bounces="$(handoff_count n)"`), and under set -e/pipefail
+# a failed gh api would otherwise exit the whole driver.
+handoff_count() {
+  gh api --paginate "repos/$TICKET_REPO/issues/$1/events" \
+    --jq '.[] | select(.event == "reopened" or (.event == "labeled" and .label.name == "status:fixed-pending-verify")) | .event' 2>/dev/null \
+  | awk '$1 == "reopened" { s = 0; next } { s++ } END { print s + 0 }' || true
 }
 
 # issue_fingerprint <repo> <n>

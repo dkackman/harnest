@@ -66,10 +66,8 @@ mkdir -p "$LOGS"
 
 LEAD_EFFORT="${LEAD_EFFORT:-$EFFORT}"
 resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1
-effort_flags anthropic "$LEAD_EFFORT" >/dev/null || exit 1
-EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$LEAD_PROVIDER" "$LEAD_EFFORT")"
-fb_words="$(fallback_model_flags "$LEAD_PROVIDER" "$FALLBACK_MODEL")" || exit 1
-FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
+# Validate the effort and fallback now, not three minutes in.
+session_flags "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" 0 || exit 1
 
 LAST_SESSION="$LOGS/.last-session.features"
 ts() { date '+%H:%M:%S'; }
@@ -84,19 +82,14 @@ LEAD_DESIGN_FLAGS=(
 
 # run_session <n> <kind> <budget> <instructions>
 run_session() {
-  local n="$1" kind="$2" budget="$3" instructions="$4" tag attempt prompt_file before
+  local n="$1" kind="$2" budget="$3" instructions="$4" tag prompt_file before plan
   tag="lead:#$n"; [ "$kind" = design ] || tag="lead:#$n $kind"
   prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.$kind.md")" || return 0
-  local -a limits=(--autocompact "$AUTOCOMPACT_TOKENS")
-  [ "$budget" = 0 ] || limits+=(--max-budget-usd "$budget")
-  local plan
+  session_flags "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" "$budget" || return 0
   plan="$(plan_text "$n")"
   before="$(issue_fingerprint "$TICKET_REPO" "$n")"
-  for attempt in 1 2; do
-    : > "$LAST_SESSION"
-    echo "=== $(ts) $tag ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
-    (cd "$LEAD_TREE" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. $instructions Your working directory is a detached worktree of the diffusers-workflow source at origin/develop ($(git -C "$LEAD_TREE" rev-parse --short HEAD)); read it, never edit it. Then stop.
+  run_claude_session "$tag" lead "$LEAD_TREE" "$prompt_file" \
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. $instructions Your working directory is a detached worktree of the diffusers-workflow source at origin/develop ($(git -C "$LEAD_TREE" rev-parse --short HEAD)); read it, never edit it. Then stop.
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
@@ -104,19 +97,7 @@ $(issue_context "$n")
 $([ -n "$plan" ] && printf '\n## The current plan, in full (comment headed <!-- harnest:plan -->)\n\n%s\n' "$plan")
 
 $(runtime_note lead "$LEAD_PROVIDER" "$LEAD_MODEL")" \
-      --model "$LEAD_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${limits[@]}" \
-      --append-system-prompt-file "$prompt_file" \
-      "${STREAM_FLAGS[@]}" "${LEAD_DESIGN_FLAGS[@]}" 2>&1 < /dev/null | render_stream lead) \
-      | tee -a "$LOGS/lead.log" "$LAST_SESSION" \
-      | sed -u "s/^/[$tag] /" \
-      | tee -a "$LOGS/loop.log" \
-      || echo "[$tag] run failed" | tee -a "$LOGS/loop.log"
-    sleep_if_rate_limited "$LAST_SESSION"
-    session_died "$LAST_SESSION" || break
-    [ "$attempt" -eq 1 ] || break
-    echo "[$tag] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
-    sleep "$SESSION_RETRY_PAUSE_SECS"
-  done
+    "${SESSION_FLAGS[@]}" "${LEAD_DESIGN_FLAGS[@]}"
   audit_issue "$n" lead
   session_ran "$LAST_SESSION" && note_progress "$TICKET_REPO" "$n" "$before" "$tag" "lead:$kind"
   return 0

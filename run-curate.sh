@@ -57,23 +57,14 @@ mkdir -p "$LOGS"
 CURATE_EFFORT="${CURATE_EFFORT:-$EFFORT}"
 
 resolve_model_env "$CURATE_PROVIDER" "$CURATE_MODEL" || exit 1
-effort_flags anthropic "$CURATE_EFFORT" >/dev/null || exit 1
-EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$CURATE_PROVIDER" "$CURATE_EFFORT")"
-fb_words="$(fallback_model_flags "$CURATE_PROVIDER" "$FALLBACK_MODEL")" || exit 1
-FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
-LIMIT_FLAGS=(--autocompact "$AUTOCOMPACT_TOKENS")
-[ "$CURATE_BUDGET_USD" = 0 ] || LIMIT_FLAGS+=(--max-budget-usd "$CURATE_BUDGET_USD")
+session_flags "$CURATE_PROVIDER" "$CURATE_MODEL" "$CURATE_EFFORT" "$CURATE_BUDGET_USD" || exit 1
 LAST_SESSION="$LOGS/.last-session.curate"
 
-# Read-only on this repo (no Edit/Write: a suite changes only when a human
-# applies an approved proposal), gh issue for searching history and filing
-# the one issue, no MCP.
 CURATE_FLAGS=(
   --strict-mcp-config
   "${ISOLATION_FLAGS[@]}"
-  --tools "Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
-  --permission-mode dontAsk
-  --allowedTools "Read" "Glob" "Grep" "ToolSearch" "TodoWrite" "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
+  --tools "$CURATOR_AUDIT_TOOLS"
+  "${CURATOR_AUDIT_PERMISSION_FLAGS[@]}"
 )
 
 ts() { date '+%H:%M:%S'; }
@@ -133,11 +124,7 @@ run_level() {
   local perf; perf="$(cd "$REPO" && ls regression-perf/"$prefix"-*.jsonl 2>/dev/null | tr '\n' ' ')"
   local prompt_file
   prompt_file="$(role_prompt curator audit "$LOGS/.prompt.curator.audit.md")" || return 0
-  local attempt
-  for attempt in 1 2; do
-    : > "$LAST_SESSION"
-    echo "=== $(ts) curate: $level ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
-    (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
+  SESSION_HEADER="curate: $level" run_claude_session "curate:$level" curate "$REPO" "$prompt_file" \
 "Your role instructions are in your system prompt: this is an AUDIT session. Curate ONLY the $level level this session, then stop.
 
 File the proposal issue on: $HARNESS_REPO (labels: suite, status:needs-approval)
@@ -151,19 +138,7 @@ Recent runs of this level (from logs/loop.log, as of $(date '+%F %H:%M')):
 $(chunk_table "$level" "$CURATE_RUNS")
 
 $(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL")" \
-      --model "$CURATE_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${LIMIT_FLAGS[@]}" \
-      --append-system-prompt-file "$prompt_file" \
-      "${STREAM_FLAGS[@]}" "${CURATE_FLAGS[@]}" 2>&1 < /dev/null | render_stream curate) \
-      | tee -a "$LOGS/curate.log" "$LAST_SESSION" \
-      | sed -u "s/^/[curate:$level] /" \
-      | tee -a "$LOGS/loop.log" \
-      || echo "[curate:$level] run failed" | tee -a "$LOGS/loop.log"
-    sleep_if_rate_limited "$LAST_SESSION"
-    session_died "$LAST_SESSION" || break
-    [ "$attempt" -eq 1 ] || break
-    echo "[curate:$level] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
-    sleep "$SESSION_RETRY_PAUSE_SECS"
-  done
+    "${SESSION_FLAGS[@]}" "${CURATE_FLAGS[@]}"
   session_died "$LAST_SESSION" || touch "$stamp"
 }
 

@@ -266,34 +266,14 @@ run_agent() {
   # but a bare failing call in the while body would take the whole driver down
   # under set -e with no log line, so any failure is logged and skipped like a
   # failed session rather than propagated.
-  local fb_words prompt_file
+  local prompt_file
   if ! resolve_model_env "$provider" "$model" \
-     || ! fb_words="$(fallback_model_flags "$provider" "$FALLBACK_MODEL")" \
+     || ! session_flags "$provider" "$model" "$effort" "$budget" \
      || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role.$kind.md")"; then
     echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
     return 0
   fi
-  # An array, so a fallback like opus[1m] is never glob-expanded.
-  local -a fallback=()
-  [ -z "$fb_words" ] || read -r -a fallback <<<"$fb_words"
-  local -a limits=(--autocompact "$AUTOCOMPACT_TOKENS")
-  [ "$budget" = 0 ] || limits+=(--max-budget-usd "$budget")
-  local -a effort_words=()
-  read -r -a effort_words <<<"$(effort_flags "$provider" "$effort")"
 
-  # Each agent is a fresh session, so its model is otherwise unrecorded: a
-  # later reader can't tell an Opus verification from a 31B one. Say it in the
-  # prompt, where the agent can carry it into the comments it writes.
-  local note full_prompt
-  note="$(runtime_note "$role" "$provider" "$model")"
-  full_prompt="$prompt
-
-$note"
-
-  # $LAST_SESSION holds just this session's rendered output (the role log is
-  # cumulative), so the checks after the pipe read only what this session
-  # saw: a rejected rate limit sleeps the driver until the reset; a session
-  # that died before its result event is retried once.
   # A per-issue session is fingerprinted before and after, for the
   # no-progress ledger (note_progress in providers.sh).
   local issue_repo="" issue_n="" before=""
@@ -303,27 +283,16 @@ $note"
   esac
   [ -z "$issue_n" ] || before="$(issue_fingerprint "$issue_repo" "$issue_n")"
 
-  local attempt
-  for attempt in 1 2; do
-    : > "$LAST_SESSION"
-    echo "=== $(ts) cycle $cycle: $label ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
-    # HARNEST_SESSION_KIND reaches the guard hook (guard.py), which
-    # allows a tester handoff to close without an MCP call.
-    (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} HARNEST_SESSION_KIND="$kind" \
-        claude -p "$full_prompt" \
-        --model "$model" ${fallback[@]+"${fallback[@]}"} ${effort_words[@]+"${effort_words[@]}"} "${limits[@]}" \
-        --append-system-prompt-file "$prompt_file" \
-        "${STREAM_FLAGS[@]}" "$@" 2>&1 < /dev/null | render_stream "$role") \
-      | tee -a "$LOGS/$role.log" "$LAST_SESSION" \
-      | sed -u "s/^/[$label] /" \
-      | tee -a "$LOGS/loop.log" \
-      || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
-    sleep_if_rate_limited "$LAST_SESSION"
-    session_died "$LAST_SESSION" || break
-    [ "$attempt" -eq 1 ] || break
-    echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
-    sleep "$SESSION_RETRY_PAUSE_SECS"
-  done
+  # Each agent is a fresh session, so its model is otherwise unrecorded: the
+  # runtime note says it in the prompt, where the agent carries it into the
+  # comments it writes. HARNEST_SESSION_KIND reaches the guard hook
+  # (guard.py), which allows a tester handoff to close without an MCP call.
+  local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind")
+  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role" "$dir" "$prompt_file" \
+    "$prompt
+
+$(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
+
   session_ok "$LAST_SESSION" && SESSION_OK=1
   # A per-issue session ("#145") gets its issue audited against the label
   # invariants; triage/task/closures sessions span several issues and don't.
@@ -420,23 +389,6 @@ check_lem_on_develop() {
   else
     echo "[loop] driver deploy of develop failed; the tester runs against '$DEPLOYED_HEAD'" | tee -a "$LOGS/loop.log"
   fi
-}
-
-# handoff_count
-# How many times an issue has been labeled status:fixed-pending-verify since
-# it was last reopened — one per implementer hand-off, so on an issue that is
-# owner:implementer again it is the number of bounces. Counting the whole
-# timeline would include hand-offs that passed verification before the issue
-# regressed and was reopened (as the implementer's prompt says to do), and a
-# reopened regression would escalate or park before its first new attempt.
-# Read from the issue's event timeline, oldest first; 0 on any failure so a
-# gh hiccup never escalates or parks by accident. Always returns 0: callers
-# assign it bare (`bounces="$(handoff_count n)"`), and under set -e/pipefail
-# a failed gh api would otherwise exit the whole driver.
-handoff_count() {
-  gh api --paginate "repos/$TICKET_REPO/issues/$1/events" \
-    --jq '.[] | select(.event == "reopened" or (.event == "labeled" and .label.name == "status:fixed-pending-verify")) | .event' 2>/dev/null \
-  | awk '$1 == "reopened" { s = 0; next } { s++ } END { print s + 0 }' || true
 }
 
 # set_base_commit

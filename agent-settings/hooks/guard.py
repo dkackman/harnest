@@ -22,7 +22,7 @@ implementer:
   - hand-off gate: adding `status:fixed-pending-verify` needs a clean tree,
     ruff clean on the changed files, and no pytest failure that isn't also
     failing on HARNEST_BASE_COMMIT (see handoff_gate)
-lead (the feature lead's design and decompose sessions, via lead.json; its
+lead (the feature lead's design and decompose sessions, via `guard_settings lead` in providers.sh; its
 build and close-out sessions commit and push, so they run with
 implementer.json and get the implementer's rules, push checks and
 hand-off gate):
@@ -31,7 +31,7 @@ hand-off gate):
 every role:
   - no adding `status:plan-approved`: approving a feature plan is Don's
     alone (roadmap R11), so no agent can approve the plan it wrote
-curator (suite review sessions, via curator.json):
+curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
     label, so escalating one is a bare --add-label owner:don

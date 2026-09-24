@@ -131,13 +131,10 @@ refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
 REGRESSION_EFFORT="${REGRESSION_EFFORT:-$EFFORT}"
 
 # Reject a bad model/provider (or fallback) before touching the ticket board
-# or the workspace. FALLBACK_FLAGS is an array so a name like opus[1m] is
-# never glob-expanded on the claude command line.
+# or the workspace. session_flags keeps the flags in an array, so a name
+# like opus[1m] is never glob-expanded on the claude command line.
 resolve_model_env "$REGRESSION_PROVIDER" "$REGRESSION_MODEL" || exit 1
-effort_flags anthropic "$REGRESSION_EFFORT" >/dev/null || exit 1
-EFFORT_FLAGS=(); read -r -a EFFORT_FLAGS <<<"$(effort_flags "$REGRESSION_PROVIDER" "$REGRESSION_EFFORT")"
-fb_words="$(fallback_model_flags "$REGRESSION_PROVIDER" "$FALLBACK_MODEL")" || exit 1
-FALLBACK_FLAGS=(); [ -z "$fb_words" ] || read -r -a FALLBACK_FLAGS <<<"$fb_words"
+session_flags "$REGRESSION_PROVIDER" "$REGRESSION_MODEL" "$REGRESSION_EFFORT" "$REGRESSION_BUDGET_USD" || exit 1
 
 # Chunk by default always, sized to the provider's declared window (see the
 # header) — a small window (e.g. a 64k Ollama model) gets 3 cases per
@@ -156,8 +153,6 @@ case "$CASES_PER_SESSION" in
   ''|*[!0-9]*) echo "CASES_PER_SESSION must be a whole number, got '$CASES_PER_SESSION'" >&2; exit 1 ;;
 esac
 
-LIMIT_FLAGS=(--autocompact "$AUTOCOMPACT_TOKENS")
-[ "$REGRESSION_BUDGET_USD" = 0 ] || LIMIT_FLAGS+=(--max-budget-usd "$REGRESSION_BUDGET_USD")
 
 ts() { date '+%H:%M:%S'; }
 
@@ -202,31 +197,16 @@ REGRESSION_FLAGS=(
 # is appended to the log prefix ("[regression:smoke.2]") so a chunked run's
 # sessions are distinguishable in loop.log.
 run_session() {
-  local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" attempt prompt_file
+  local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" prompt_file
   prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.regression.$kind.md")" \
     || { echo "[regression:$level$tag] no role prompt for '$kind'" | tee -a "$LOGS/loop.log"; return 0; }
-  # $LAST_SESSION is this session's rendered output alone: a rejected rate
-  # limit sleeps the driver until the reset, a session that died before its
-  # result event is retried once (both in providers.sh).
-  for attempt in 1 2; do
-  : > "$LAST_SESSION"
-  (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
+  # One fresh session, retried once if it dies, asleep through a rejected
+  # rate limit (run_claude_session in providers.sh).
+  run_claude_session "regression:$level$tag" regression "$REPO" "$prompt_file" \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions for this kind of session are in your system prompt; follow them exactly, with these specifics: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
-    --model "$REGRESSION_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${LIMIT_FLAGS[@]}" \
-    --append-system-prompt-file "$prompt_file" \
-    "${STREAM_FLAGS[@]}" "${REGRESSION_FLAGS[@]}" 2>&1 < /dev/null | render_stream regression) \
-    | tee -a "$LOGS/regression.log" "$LAST_SESSION" \
-    | sed -u "s/^/[regression:$level$tag] /" \
-    | tee -a "$LOGS/loop.log" \
-    || echo "[regression:$level$tag] run failed" | tee -a "$LOGS/loop.log"
-  sleep_if_rate_limited "$LAST_SESSION"
-  session_died "$LAST_SESSION" || break
-  [ "$attempt" -eq 1 ] || break
-  echo "[regression:$level$tag] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
-  sleep "$SESSION_RETRY_PAUSE_SECS"
-  done
+    "${SESSION_FLAGS[@]}" "${REGRESSION_FLAGS[@]}"
 }
 
 # session_aborted

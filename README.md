@@ -368,6 +368,32 @@ tail -f logs/loop.log                           # watch from another terminal
 | `SESSION_RETRY_PAUSE_SECS` | `30` | a session that ends without a result is retried once; a rejected rate limit instead sleeps the driver until the reset |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | override the commit trailer on suite edits |
 | `SLEEP_SECS` / `MAX_CYCLES` | `120` / `0` | pause after an idle cycle; `0` = run forever |
+| `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` / `REGRESSION_PROVIDER` | `$PROVIDER` | where each role's model is served |
+| `IMPLEMENTER_EFFORT` / `TESTER_EFFORT` / `TRIAGE_EFFORT` / `REGRESSION_EFFORT` / `LEAD_EFFORT` | `$EFFORT` | per-role `--effort`; triage follows the tester's |
+| `HARNESS_REPO` | `dkackman/harnest` | this repo: where suite requests and harness proposals are filed |
+| `CURATOR_MODEL` / `CURATOR_PROVIDER` | the tester's | the curator's review sessions in `run-loop.sh` |
+| `CURATOR_REVIEW_BUDGET_USD` | `3` | per curator review session |
+| `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
+| `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` | `run-features.sh`: the lead's detached worktree at `origin/develop` |
+| `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | `1800000` | how long a headless session waits for a background subagent before it is killed (Claude Code's default is 600 s) |
+
+The standalone drivers have their own knobs:
+
+| var | default | what |
+|---|---|---|
+| `CURATE_MODEL` / `CURATE_PROVIDER` / `CURATE_EFFORT` | `claude-opus-5-5` / `$PROVIDER` / `$EFFORT` | `run-curate.sh` audit sessions |
+| `CURATE_BUDGET_USD` | `6` | per audit session |
+| `CURATE_EVERY_DAYS` / `CURATE_FORCE` | `7` / `0` | how often a level is due; `1` audits even if it was curated recently |
+| `CURATE_RUNS` | `3` | recent runs of a level in the audit's cost table |
+| `CURATE_BUDGET_SMOKE` / `_COMPLETE` / `_MODEL_SPECIFIC` / `_SECURITY` | `65 16` / `60 20` / `60 12` / `15 6` | a level's target for one full run: minutes, then USD |
+| `RETRO_MODEL` / `RETRO_PROVIDER` / `RETRO_EFFORT` / `RETRO_BUDGET_USD` | `claude-opus-5-5` / `$PROVIDER` / `$EFFORT` / `5` | `run-retro.sh` |
+| `DIGEST_MODEL` / `DIGEST_PROVIDER` / `DIGEST_BUDGET_USD` | `sonnet` / `$PROVIDER` / `1` | `run-digest.sh` |
+| `DIGEST_CURATOR_DAYS` | `7` | how far back the digest lists the curator's rulings |
+| `BENCH_BUDGET_USD` / `BENCH_JOBS` | `4` / `1` | `run-bench.sh`: per replayed session, and cases run in parallel |
+| `BENCH_LABEL` | `<provider>/<model>@<prompt commit>` | the label a run's results are grouped under in `--summary` |
+| `BENCH_WORK` / `BENCH_RESCORE` | `$TMPDIR/harnest-bench` / `0` | where replays run; `1` re-scores a kept session without a new one, `judge` re-judges only |
+| `JUDGE_MODEL` / `JUDGE_PROVIDER` / `JUDGE_EFFORT` / `JUDGE_BUDGET_USD` | `claude-opus-5-5` / `anthropic` / `high` / `1` | the bench's judge |
+| `JUDGE_TIMEOUT_SECS` / `JUDGE_TRIES` | `150` / `3` | bound on each judge try, and how many tries |
 
 ### Models and providers
 
@@ -466,7 +492,7 @@ gets the reason back and can correct itself, rather than the audit finding it la
 - No role can add an `owner:*` label without removing one in the same command.
 
 The hook is wired through `agent-settings/implementer.json` and
-`agent-settings/consumer.json`. It matches command text, so it catches mistakes, not a
+`guard_settings consumer` (`providers.sh`). It matches command text, so it catches mistakes, not a
 determined workaround; the audit is still the backstop.
 
 **What sessions don't get.** Every session runs with `--setting-sources project,local` and
@@ -517,9 +543,6 @@ providers.sh                        provider table and shared helpers (isolation
 lib/classify.jq                     the ticket protocol's state machine: issue -> queue
 measure-base-ctx.sh                 measures turn-1 context for a flag set
 agent-settings/implementer.json     auto-mode classifier's picture of the implementer's environment, plus its guard hook
-agent-settings/consumer.json        tester/regression guard hook
-agent-settings/lead.json            feature lead's design/decompose guard hook
-agent-settings/curator.json         curator review guard hook
 agent-settings/hooks/guard.py       the guard (protocol invariants and the hand-off gate)
 agents/                           role prompts; the drivers build each session's from parts (role_prompt)
   implementer/                      core.md + fix.md or triage.md

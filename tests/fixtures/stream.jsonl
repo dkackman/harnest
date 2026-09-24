@@ -1,0 +1,11 @@
+{"type":"system","subtype":"init","model":"claude-opus-5-5"}
+{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"cache_read_input_tokens":2000,"cache_creation_input_tokens":500,"output_tokens":7},"content":[{"type":"text","text":"Reading the issue."},{"type":"tool_use","name":"Bash","input":{"command":"gh issue view 5"}}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","content":"some output","is_error":false}]}}
+{"type":"user","message":{"content":[{"type":"tool_result","content":[{"type":"text","text":"abc"}],"is_error":true}]}}
+{"type":"assistant","message":{"id":"m1","usage":{"input_tokens":10,"cache_read_input_tokens":2000,"cache_creation_input_tokens":500,"output_tokens":7},"content":[{"type":"thinking","thinking":"hidden"}]}}
+{"type":"rate_limit_event","rate_limit_info":{"status":"allowed","rateLimitType":"five_hour","isUsingOverage":false,"resetsAt":1790221800}}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","isUsingOverage":false,"resetsAt":1790221800}}
+{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","isUsingOverage":false}}
+{"type":"assistant","message":"not an object"}
+plain stderr line
+{"type":"result","subtype":"error_max_budget_usd","num_turns":3,"duration_ms":4400,"total_cost_usd":0.1234,"result":"budget","usage":{"input_tokens":20,"cache_read_input_tokens":4000,"cache_creation_input_tokens":500,"output_tokens":14}}
