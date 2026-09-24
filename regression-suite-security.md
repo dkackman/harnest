@@ -327,7 +327,7 @@ source: tester, spec for #409 from #407's plan v2
 SE-F002 and SE-F007 cover names from outside the ecosystem. This case covers the gap inside it.
 `torch` is an allowed package, so `torch.hub.load`, a function that downloads a GitHub repo and
 runs its code, used to pass the package check. Untrusted, a `*_type` or `config_type` name must
-now resolve to a **class**, and a `dtype` / `*_dtype` key must resolve to a class or a
+now resolve to a **class**, and a `dtype` / `*_dtype` key must resolve to a
 `torch.dtype`. `validate_workflow` reports a violation at the step's path.
 Carrier: `get_workflow("templates/text-to-image")`, passed inline with one probe per
 `validate_workflow` call. Placements are the ones SE-F002 and SE-F007 confirmed. Every
