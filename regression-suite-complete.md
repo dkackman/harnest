@@ -3866,4 +3866,33 @@ cleanup: `delete_output(job_id=…)` for both jobs, then
 `delete_asset("qa-c-f106-local.mp4")` and `delete_asset("qa-c-f106-shared.mp4")`.
 metrics: none.
 
+### C-F107 — a probe on a file with no shots skips its shot rules and warns, instead of a false clean
+source: tester, verified in #394
+On a file with no shot records, `analyze_seams` used to list all four seam rules in
+`rules_applied` with `findings: []` and no warning, although it had measured no seam.
+The case is CPU only and takes two short jobs. `asset:qa-cast/ep38-episode.mp4` is a
+two-shot cut kept before #393, so it has no `media.shots`.
+1. `run_workflow(inline_workflow={"id": "qa-c-f107", "steps": [{"name": "seams", "task":
+   {"command": "analyze_seams", "arguments": {"video": "asset:qa-cast/ep38-episode.mp4"}},
+   "result": {"content_type": "application/json", "subfolder": "final"}}, {"name":
+   "shots", "task": {"command": "analyze_shots", "arguments": {"video":
+   "asset:qa-cast/ep38-episode.mp4"}}, "result": {"content_type": "application/json",
+   "subfolder": "final"}}]}, acknowledged_cost=true, wait_seconds=55)`. Read both
+   bodies with `get_output_text`.
+2. Control: the same `analyze_seams` step with `"shots": [{"name": "a", "start_frame":
+   0, "num_frames": 124}, {"name": "b", "start_frame": 124, "num_frames": 124}]` added
+   to its arguments, as its own job.
+expected:
+- Step 1: both bodies have `shots_source: "none"` and `rules_applied: []`.
+  `analyze_seams`'s `rules_skipped` names `seam_level_step`, `seam_click`, `seam_hole`
+  and `seam_frame_jump`, and `analyze_shots`'s names `shot_level_spread`, each with
+  `reason: "no shot boundaries"`. The job's `warnings` has one entry per step saying no
+  shot boundaries were found and that `shots=` can supply them.
+- Step 2: `shots_source: "argument"`, all four seam rules in `rules_applied`,
+  `rules_skipped: []`, one seam, and no job warnings.
+It is a **finding** if step 1 lists any shot rule in `rules_applied`, or if it has no
+warning.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
 ## Performance
