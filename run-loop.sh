@@ -699,10 +699,11 @@ $(issue_context "$n")" \
 curator_pass() {
   local n
   local -a reqs=()
+  # Not filtered on status:needs-approval: Don hands an escalation back by
+  # removing owner:don, and often clears the status too. Any open request
+  # not with him is for the curator. (No comments inside the <( ) below:
+  # bash 3.2 misparses an apostrophe in a comment there.)
   while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(
-    # Not filtered on status:needs-approval: Don hands an escalation back by
-    # removing owner:don, and often clears the status too. Any open request
-    # not with him is the curator's.
     gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite \
       --json number,labels,author \
       --jq ".[] | select(.author.login == \"$TICKET_OWNER\") | select([.labels[].name] | index(\"owner:don\") == null) | .number" 2>/dev/null \
