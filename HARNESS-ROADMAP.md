@@ -32,8 +32,19 @@ R4's spec step as R11's phase 3, not separately.
   and regression agent never see source code or `lem`. Any item that blurs this (R6 comes
   close) must say how it doesn't.
 - **Agents propose changes to the harness; a human approves them.** Changes to prompts,
-  drivers, suites and hooks go through `owner:don` + `status:needs-approval`, the same gate
-  as engine changes. Nothing here lets the loop edit its own instructions unattended.
+  drivers and hooks go through `owner:don` + `status:needs-approval`, the same gate as
+  engine changes. Nothing here lets the loop edit its own instructions unattended.
+  **Suite cases are the one delegation (2026-09-24).** A curator review session rules on
+  suite-change requests (`agents/curator/review.md`):
+  - it applies only what the record settles: a stale reference, or an expectation a
+    verified or `breaking-change` issue changed on purpose;
+  - it denies an edit that would make a failing case pass with no such record;
+  - it escalates every judgment call to Don.
+
+  Don skims its rulings in the digest and reverses one by reopening it. Why this is
+  safe: the failure the old rule prevented was a case changed *because it fails*, and
+  the curator's approval test is evidence of intent, which a failing case doesn't have.
+  Measure it by Don's reversal rate.
 - **Measure before and after.** Every item that claims to save cost or improve quality names
   the number that shows it: `usage:` lines, bounce counts, R1 scores, `measure-base-ctx.sh`.
 - **`lem` runs one job at a time and all work goes through it.** Parallelism is only worth
@@ -340,7 +351,16 @@ moving cases out.
 
 **Done when.** Smoke is back under its budget and stays there without any hand-run audit.
 
-**Built (2026-09-22).** `run-curate.sh` and `agents/CURATOR.agent.md` run one Opus session per
+**Review delegated (2026-09-24).** The curator is now a role with two kinds
+(`agents/curator/`). `audit` is the weekly proposal pass below, still read-only. `review`
+runs in `run-loop.sh`'s `curator_pass`, under the lock, and rules on each open `suite`
+request, its own audits included: it applies the stale and contradiction items and
+escalates moves, merges and retirements. Don asked for this because he was the
+bottleneck, and was asking sonnet for its take on most requests anyway. Review runs on
+the tester's model: a wrong approval never bounces back.
+
+**Built (2026-09-22).** `run-curate.sh` and `agents/CURATOR.agent.md` (now
+`agents/curator/audit.md`) run one Opus session per
 level (`CURATE_MODEL`). The session reads the suite, its `regression-perf/` files and a
 chunk table from `loop.log`: which cases ran in which session, and what that session cost,
 because cost is only known per chunk. It files one issue with at most 12 proposals on **this repo**, labeled `suite` +

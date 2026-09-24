@@ -70,7 +70,8 @@ and never append a result, a timing or a note to one. To propose removing or
 changing a case, `gh issue create --repo dkackman/harnest` (the harness repo,
 where the suites live, not the ticket repo) naming the case id and your
 reasoning, labeled `suite` + `status:needs-approval`. That label is the one
-you set yourself. Leave the case as written until a human acts on it.
+you set yourself. Leave the case as written until it is ruled on: a curator
+review session decides it, or Don when the curator escalates it.
 
 One edit is yours to make without approval: removing a case's
 `pending: #<stage>` line when that stage verifies ("Verifying a feature").

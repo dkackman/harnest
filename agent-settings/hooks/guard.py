@@ -29,6 +29,10 @@ hand-off gate):
 every role:
   - no adding `status:plan-approved`: approving a feature plan is Don's
     alone (roadmap R11), so no agent can approve the plan it wrote
+curator (suite review sessions, via curator.json):
+  - no removing `owner:don` (Don's hand-back is his to make)
+  - the one-owner rule is not applied: harness-repo issues carry no owner
+    label, so escalating one is a bare --add-label owner:don
 consumer (tester, regression):
   - closing as completed or adding `status:verified` needs at least one
     `mcp__dw__*` call earlier in the session ("only from a real MCP call")
@@ -215,7 +219,10 @@ def main():
     cwd = data.get("cwd") or os.getcwd()
     for words in segments(cmd):
         if is_gh_issue(words, "edit"):
-            owner_rule(words)
+            if role != "curator":
+                owner_rule(words)
+            elif "owner:don" in flag_values(words, "--remove-label"):
+                deny("removing owner:don is Don's hand-back, not the curator's.")
             if "status:plan-approved" in flag_values(words, "--add-label"):
                 deny("status:plan-approved is Don's to add: approving a feature plan is a human decision, "
                      "and no agent may approve a plan, its own or another's.")

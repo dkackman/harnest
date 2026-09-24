@@ -251,8 +251,9 @@ It never touches `lem`, so it takes no driver lock. See [`bench/README.md`](benc
 
 ## Curation, retro, digest and contract cases
 
-These are standalone, read-only drivers. Each one proposes changes and never applies them;
-a human approves.
+These are standalone, read-only drivers. Each one proposes changes and never applies
+them. Harness proposals go to a human. Suite proposals get a ruling from the curator's
+review session in `run-loop.sh` (below), which escalates judgment calls to a human.
 
 - **`run-curate.sh [level]`** runs one Opus session per regression level. It reads the
   suite, its perf history and what recent runs cost per chunk, then files one issue on this
@@ -261,6 +262,16 @@ a human approves.
   curation issue is still open.
   The first run (harnest#2, applied 2026-09-23) moved 40 cases from smoke to complete,
   leaving smoke at 56 cases against a 30 min / $13 budget.
+- **Curator review** (`curator_pass` in `run-loop.sh`, on the tester's model). One session
+  per open `suite` request on this repo, from any agent or from an audit.
+  - It applies what the record settles: a stale reference, or an expectation that a
+    verified or `breaking-change` issue changed on purpose.
+  - It denies an edit that would make a failing case pass with no such record.
+  - It escalates judgment calls to you with `owner:don`: moves, merges, audit retirements,
+    the security suite beyond a stale reference, and anything touching more than 3 cases.
+
+  Its rulings appear in `run-digest.sh`'s output; reverse one by reopening it with a
+  comment.
 - **`run-retro.sh`** reads the logs since the last retro and files up to three evidenced
   proposals on this repo, labeled `harness` + `status:needs-approval`. The logs cover
   cost per role, denials, guard refusals, audit warnings, bounces and bench results.
@@ -450,11 +461,12 @@ Everything streams to the terminal and to `logs/loop.log`, prefixed by session:
 ## Layout
 
 ```
-run-loop.sh                         implementer/tester driver
+run-loop.sh                         the cycle: implementer, feature lead builds, tester, curator review
 run-regression.sh                   regression driver
 run-research.sh                     researcher driver
+run-features.sh                     feature lead: design and decompose sessions (lock-free)
 run-bench.sh                        replay benchmark of the implementer (offline)
-run-curate.sh                       suite curation: one owner:don proposal issue per level
+run-curate.sh                       suite curation audit: one proposal issue per level
 run-retro.sh                        retro: evidenced harness proposals, filed on this repo
 run-digest.sh                       one-line-per-issue digest of the owner:don queue
 contract/                           script-run regression cases and their MCP client
@@ -463,13 +475,16 @@ providers.sh                        provider table and shared helpers (isolation
 measure-base-ctx.sh                 measures turn-1 context for a flag set
 agent-settings/implementer.json     auto-mode classifier's picture of the implementer's environment, plus its guard hook
 agent-settings/consumer.json        tester/regression guard hook
+agent-settings/lead.json            feature lead's design/decompose guard hook
+agent-settings/curator.json         curator review guard hook
 agent-settings/hooks/guard.py       the guard (protocol invariants and the hand-off gate)
 agents/                           role prompts; the drivers build each session's from parts (role_prompt)
   implementer/                      core.md + fix.md or triage.md
-  tester/                           core.md + verify/handoff/answer/closures/task.md, cases.md, standing-task.md
+  tester/                           core.md + verify/handoff/answer/closures/task/spec.md, cases.md, standing-task.md
+  lead/                             core.md + design/decompose/build/closeout.md
   regression/                       core.md + run-cases.md + chunk.md or sweep.md
   RESEARCHER.agent.md               researcher role
-  CURATOR.agent.md                  suite curator role
+  curator/                          suite curator: audit (run-curate.sh), review (run-loop.sh)
   RETRO.agent.md                    retro role
 regression-suite-{smoke,complete,model-specific,security}.md
 regression-perf/                    append-only per-case metric history (JSONL)

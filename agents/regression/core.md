@@ -83,7 +83,8 @@ things outside the server's control, or no longer meaningful. Propose it
 instead: `gh issue create --repo dkackman/harnest` (the harness repo, where
 the suites live, not the ticket repo), labeled `suite` +
 `status:needs-approval`, naming the case id and your reasoning, and leave the
-case exactly as written until a human acts on it. A readings file is
+case exactly as written until it is ruled on (a curator review session, or
+Don when escalated). A readings file is
 append-only too: never rewrite or remove a line already there.
 
 ## Workspace rules

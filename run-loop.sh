@@ -52,6 +52,9 @@
 #                        design record once every stage is closed
 #   tester #N (spec)     one session per feature parent with status:needs-spec:
 #                        acceptance cases from the approved plan, before code
+#   curator harnest#N    one session per open suite-change request on this repo
+#                        not yet sent to Don: rules on it, applies what it
+#                        approves, escalates judgment calls (owner:don)
 #   tester task          one session, every TESTER_TASK_EVERY cycles: responds
 #                        to wontfix/duplicate closures, then advances
 #                        the standing task one step
@@ -74,6 +77,7 @@ SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"
 PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 TICKET_OWNER="${TICKET_OWNER:-dkackman}"   # GitHub login whose issues the agents may act on unasked
+HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"   # this repo: where suite-change requests are filed
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
@@ -124,6 +128,13 @@ LEAD_WORKER_MODEL="${LEAD_WORKER_MODEL:-sonnet}"
 # develop make a bounce hard to attribute); a feature's own stages are serial
 # through their blocked-by links.
 LEAD_STAGES_PER_CYCLE="${LEAD_STAGES_PER_CYCLE:-1}"
+# The curator rules on suite-change requests (agents/curator/review.md). The
+# strong model by default, for the triage reason: a wrong approval never
+# bounces back, because a deleted case just stops catching things. The
+# sessions are short.
+CURATOR_MODEL="${CURATOR_MODEL:-$TESTER_MODEL}"
+CURATOR_PROVIDER="${CURATOR_PROVIDER:-$TESTER_PROVIDER}"
+CURATOR_REVIEW_BUDGET_USD="${CURATOR_REVIEW_BUDGET_USD:-3}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
 # size at which a session auto-compacts instead of growing. Non-Anthropic
@@ -175,6 +186,7 @@ IMPLEMENTER_EFFORT="${IMPLEMENTER_EFFORT:-$EFFORT}"
 TESTER_EFFORT="${TESTER_EFFORT:-$EFFORT}"
 TRIAGE_EFFORT="${TRIAGE_EFFORT:-$TESTER_EFFORT}"
 LEAD_EFFORT="${LEAD_EFFORT:-$EFFORT}"
+CURATOR_EFFORT="${CURATOR_EFFORT:-$EFFORT}"
 
 # Reject a bad model/provider (or a fallback the role's provider can't serve)
 # before the first cycle rather than three minutes into it. This is the only
@@ -183,11 +195,12 @@ resolve_model_env "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL" || exit 1
 resolve_model_env "$TESTER_PROVIDER" "$TESTER_MODEL" || exit 1
 resolve_model_env "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" || exit 1
 resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1
+resolve_model_env "$CURATOR_PROVIDER" "$CURATOR_MODEL" || exit 1
 validate_fallback_model "$IMPLEMENTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TRIAGE_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$LEAD_PROVIDER" "$FALLBACK_MODEL" || exit 1
-for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT"; do
+for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT" "$CURATOR_EFFORT"; do
   effort_flags anthropic "$e" >/dev/null || exit 1
 done
 
@@ -726,6 +739,33 @@ $(issue_context "$n")" \
   fi
 }
 
+# curator_pass — one review session per suite-change request on this repo
+# (suite + status:needs-approval, open, not escalated to Don), then a commit
+# of whatever it applied, under the curator's name and naming the request.
+# In the loop, under its lock, because approvals edit the suite files: a
+# regression run reads them, and the drivers commit them.
+curator_pass() {
+  local n
+  local -a reqs=()
+  while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(
+    gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite --label status:needs-approval \
+      --json number,labels,author \
+      --jq ".[] | select(.author.login == \"$TICKET_OWNER\") | select([.labels[].name] | index(\"owner:don\") == null) | .number" 2>/dev/null \
+    | sort -n | only_issues_filter)
+  for n in ${reqs[@]+"${reqs[@]}"}; do
+    run_agent curator "harnest#$n" "$CURATOR_REVIEW_BUDGET_USD" "$REPO" "$CURATOR_PROVIDER" "$CURATOR_MODEL" "$CURATOR_EFFORT" review \
+      "This is a REVIEW session for suite-change request #$n on $HARNESS_REPO (this repo) only: your role instructions for it are in your system prompt. Case history lives on the ticket repo, $TICKET_REPO. Then stop.
+
+The request as of $(ts):
+
+$(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
+      "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$CURATOR_REVIEW_TOOLS" "${CURATOR_REVIEW_PERMISSION_FLAGS[@]}"
+    co_author_for "$CURATOR_PROVIDER" "$(resolved_model curator "$CURATOR_MODEL")"
+    commit_suite_changes "regression: curator applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
+      || echo "[curator] suite commit failed, continuing" | tee -a "$LOGS/loop.log"
+  done
+}
+
 # One line per open issue: #NN  status-labels  owner-label  title
 status_board() {
   gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
@@ -770,6 +810,7 @@ while true; do
   co_author_for "$TESTER_PROVIDER" "$(resolved_model tester "$TESTER_MODEL")"
   commit_suite_changes "regression: tester added case (cycle $cycle)" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
     || echo "[tester] suite commit failed, continuing" | tee -a "$LOGS/loop.log"
+  curator_pass
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board; } | tee -a "$LOGS/loop.log"
 

@@ -49,15 +49,29 @@ notices gaps; a case either of you adds is the same kind of edit.
 
 ## Removing a case
 
-None of the three agents may remove or rewrite an existing case on their
-own judgment. If a case looks too expensive, too flaky against things
-outside the server's control, or no longer meaningful, propose dropping or
-changing it with a GitHub Issue on the harness repo, `dkackman/harnest`
-(where this file lives, not the ticket repo), naming the case id and the
-reasoning, labeled `suite` + `status:needs-approval`. All three agents file
+No agent may remove or rewrite an existing case on its own judgment. If a
+case looks too expensive, too flaky against things outside the server's
+control, or no longer meaningful, or its `expected:` predates a verified
+fix, propose dropping or changing it with a GitHub Issue on the harness
+repo, `dkackman/harnest` (where this file lives, not the ticket repo),
+naming the case id, the reasoning and the evidence (the issue that changed
+the behavior), labeled `suite` + `status:needs-approval`. Every agent files
 this directly, the implementer included (it has no suite files checked out
-to edit anyway), and so does the curator (`run-curate.sh`). Leave the case
-exactly as written until a human acts on it.
+to edit anyway), and so does the curator's audit (`run-curate.sh`). Leave
+the case exactly as written until it's ruled on.
+
+A curator review session (`run-loop.sh`) rules on each request:
+- it **applies** what the record settles: a stale reference, or an
+  expectation that a verified or `breaking-change` issue changed on
+  purpose;
+- it **denies** an edit that would make a failing case pass with no such
+  record;
+- it **escalates** judgment calls to Don (`owner:don`): cost against
+  coverage, moves and merges, retirements from an audit, the security
+  suite beyond a stale reference, and anything touching more than 3 cases.
+
+The one edit made without a request is the tester removing a feature
+stage's `pending: #NN` line when that stage verifies.
 
 ## Fixtures
 

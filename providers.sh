@@ -367,6 +367,26 @@ LEAD_DESIGN_PERMISSION_FLAGS=(
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
 )
 
+# Permission flags for the curator's review sessions (run-loop.sh,
+# curator_pass). The curator rules on suite-change requests and applies the
+# ones it approves, so it gets Edit on this repo's files. Edit is unscoped
+# by path, as it is for the tester; the prompt limits it to the suite files.
+# It also gets gh issue on both repos, and read-only dw discovery to confirm
+# a renamed tool or field. The guard (curator.json) refuses lifting Don's
+# owner:don and adding status:plan-approved. Audit sessions (run-curate.sh)
+# stay read-only and don't use this.
+CURATOR_REVIEW_PERMISSION_FLAGS=(
+  --settings "$HARNEST_HOOKS/../curator.json"
+  --permission-mode dontAsk
+  --allowedTools
+    "mcp__dw__get_schema" "mcp__dw__list_tasks" "mcp__dw__get_task"
+    "mcp__dw__list_workflows" "mcp__dw__get_guide" "mcp__dw__list_guides"
+    "ToolSearch" "TodoWrite" "Read" "Glob" "Grep" "Edit"
+    "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
+    "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)"
+)
+CURATOR_REVIEW_TOOLS="Bash,Read,Edit,Glob,Grep,ToolSearch,TodoWrite"
+
 # Context every session carries on every turn, and doesn't need. Measured
 # 2026-09-19 (measure-base-ctx.sh): a session started with ~42k tokens
 # before its first tool call, ~20k of it built-in tool schemas the role is
@@ -441,7 +461,7 @@ co_author_for() {
 # things is per role, and matches what each role prompt actually permits: the
 # implementer only *proposes* regression cases in a hand-off comment (it has
 # no checkout of this repo), so it is not told it edits the suite.
-# Roles: implementer, tester, regression, researcher, lead. Returns 1 on any other role.
+# Roles: implementer, tester, regression, researcher, lead, curator. Returns 1 on any other role.
 runtime_note() {
   local role="$1" provider="$2" model="$3" examples
   case "$role" in
@@ -450,7 +470,8 @@ runtime_note() {
     regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
     researcher)  examples="a research/proposal comment, a reject reason, a question parked for Don" ;;
     lead)        examples="a feature plan and its verdict, a stage issue, a hand-off comment, a re-plan" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|researcher|lead)" >&2; return 1 ;;
+    curator)     examples="a curation proposal, a ruling on a suite request, an escalation to Don" ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|researcher|lead|curator)" >&2; return 1 ;;
   esac
   # An alias (`opus`) moves when a new model ships, so a comment that says
   # "opus" can't later be told apart from the next Opus. Claude Code's own
@@ -803,6 +824,8 @@ role_prompt() {
     lead:decompose)     set -- core decompose ;;
     lead:build)         set -- core build ;;
     lead:closeout)      set -- core closeout ;;
+    curator:audit)      set -- core audit ;;
+    curator:review)     set -- core review ;;
     regression:whole)   set -- core run-cases sweep ;;
     regression:chunk)   set -- core run-cases chunk ;;
     regression:sweep)   set -- core sweep ;;

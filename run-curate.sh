@@ -3,8 +3,9 @@
 # that reads the suite file, its regression-perf/ history and what its
 # recent runs cost, and files a single issue of proposed moves, merges, contradictions, stale references and
 # retirements, on the harness repo (the suites live there), labeled
-# suite + status:needs-approval. It never edits a suite; a human applies what
-# they approve. Case history — the failures and fixes a case cites — stays
+# suite + status:needs-approval. It never edits a suite. A curator review
+# session in run-loop.sh rules on each item: it applies the objectively
+# checkable ones and escalates the judgment calls to Don (agents/curator/). Case history — the failures and fixes a case cites — stays
 # on the ticket repo, which the curator searches but never files on.
 #
 #   ./run-curate.sh                 # every level that is due
@@ -121,16 +122,18 @@ run_level() {
   waiting="$(gh issue list --repo "$HARNESS_REPO" --state open --search "\"curation: $level suite\" in:title" \
                --json number,title --jq ".[] | select(.title | startswith(\"curation: $level suite\")) | .number" | head -n 1)"
   if [ -n "$waiting" ] && [ "$CURATE_FORCE" != 1 ]; then
-    echo "[curate:$level] #$waiting is still waiting for Don, skipping" | tee -a "$LOGS/loop.log"; return 0
+    echo "[curate:$level] #$waiting is still open (in review or with Don), skipping" | tee -a "$LOGS/loop.log"; return 0
   fi
 
   local perf; perf="$(cd "$REPO" && ls regression-perf/"$prefix"-*.jsonl 2>/dev/null | tr '\n' ' ')"
+  local prompt_file
+  prompt_file="$(role_prompt curator audit "$LOGS/.prompt.curator.md")" || return 0
   local attempt
   for attempt in 1 2; do
     : > "$LAST_SESSION"
     echo "=== $(ts) curate: $level ($MODEL_LABEL) ===" | tee -a "$LOGS/loop.log"
     (cd "$REPO" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} claude -p \
-"Your role instructions are in your system prompt (the contents of $AGENTS/CURATOR.agent.md). Curate ONLY the $level level this session, then stop.
+"Your role instructions are in your system prompt: this is an AUDIT session. Curate ONLY the $level level this session, then stop.
 
 File the proposal issue on: $HARNESS_REPO (labels: suite, status:needs-approval)
 Search case history (failures, fixes, cited issues) on: $TICKET_REPO
@@ -142,9 +145,9 @@ Level budget for one full run: $(set -- $budget; echo "$1 minutes and \$$2")
 Recent runs of this level (from logs/loop.log, as of $(date '+%F %H:%M')):
 $(chunk_table "$level" "$CURATE_RUNS")
 
-$(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL" 2>/dev/null || printf 'Runtime: you are the curator agent, running as model %s via the %s provider. Name that model and provider in the issue you file.' "$CURATE_MODEL" "$CURATE_PROVIDER")" \
+$(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL")" \
       --model "$CURATE_MODEL" ${FALLBACK_FLAGS[@]+"${FALLBACK_FLAGS[@]}"} ${EFFORT_FLAGS[@]+"${EFFORT_FLAGS[@]}"} "${LIMIT_FLAGS[@]}" \
-      --append-system-prompt-file "$AGENTS/CURATOR.agent.md" \
+      --append-system-prompt-file "$prompt_file" \
       "${STREAM_FLAGS[@]}" "${CURATE_FLAGS[@]}" 2>&1 < /dev/null | render_stream curate) \
       | tee -a "$LOGS/curate.log" "$LAST_SESSION" \
       | sed -u "s/^/[curate:$level] /" \
@@ -161,7 +164,7 @@ $(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL" 2>/dev/null || printf 
 
 # The labels the proposals carry; idempotent.
 gh label create suite --repo "$HARNESS_REPO" --color 0e8a16 --description "Proposed change to a regression suite" --force >/dev/null 2>&1 || true
-gh label create status:needs-approval --repo "$HARNESS_REPO" --color d93f0b --description "Waiting for Don" --force >/dev/null 2>&1 || true
+gh label create status:needs-approval --repo "$HARNESS_REPO" --color d93f0b --description "Waiting for a ruling: curator review, or Don with owner:don" --force >/dev/null 2>&1 || true
 
 levels=("$@")
 [ "${#levels[@]}" -gt 0 ] || levels=(smoke complete model-specific security)

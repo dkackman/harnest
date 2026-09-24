@@ -135,9 +135,17 @@ files described below. There is no build, lint, or test step.
   cleanup — never a running log of results: a case is expected to keep passing, so a pass leaves
   no trace in the file, and a failure is a GitHub Issue, not a note appended to the case. None of
   the three agents may delete or rewrite a case to make it go away, however expensive or
-  low-value it looks from a single run; the only route to removing one is a comment/issue
+  low-value it looks from a single run; the only route to changing or removing one is an issue
   proposing it, filed on this repo (`dkackman/harnest`) labeled `suite` +
-  `status:needs-approval`, left for a human to act on.
+  `status:needs-approval`. A curator review session (`run-loop.sh`'s `curator_pass`,
+  `agents/curator/review.md`, on the tester's model) rules on it:
+  - it applies what the record settles: a stale reference, or an expectation a verified or
+    `breaking-change` issue changed on purpose;
+  - it denies an edit that would make a failing case pass with no such record;
+  - it escalates judgment calls to Don with `owner:don`: moves, merges, audit retirements,
+    the security suite beyond a stale reference, and anything touching more than 3 cases.
+
+  `run-digest.sh` lists its rulings, and Don reverses one by reopening it.
   Measurements are the complement of that rule, not an exception to it: `regression-perf/`
   holds one append-only JSONL per case (`S-P001.jsonl`, …; format in its `README.md`) where
   the regression agent records every `-P` case's timing and any metric a functional case
@@ -191,7 +199,7 @@ files described below. There is no build, lint, or test step.
   `bench/results/results.jsonl` (checked in, append-only); `--summary` groups them by
   `BENCH_LABEL`. Offline, so no driver lock. Use it before and after any change to
   `agents/implementer/` or the implementer's model.
-- `run-curate.sh` / `agents/CURATOR.agent.md` (R5), `run-retro.sh` / `agents/RETRO.agent.md`
+- `run-curate.sh` / `agents/curator/` (R5; `audit` kind here, `review` kind in `run-loop.sh`), `run-retro.sh` / `agents/RETRO.agent.md`
   (R7) and `run-digest.sh` (R9) are standalone drivers that only propose changes. None of
   them edits a suite, prompt or driver, and none takes the driver lock (no MCP).
   - **Curator:** files one issue per level on **this** repo, labeled `suite` +

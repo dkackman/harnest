@@ -23,6 +23,11 @@ DIGEST_MODEL="${DIGEST_MODEL:-sonnet}"
 DIGEST_PROVIDER="${DIGEST_PROVIDER:-$PROVIDER}"
 DIGEST_BUDGET_USD="${DIGEST_BUDGET_USD:-1}"
 DIGEST_ISSUE="${DIGEST_ISSUE:-}"
+HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"
+# How far back the "curator rulings" section looks. Suite-change requests are
+# ruled on by the curator (agents/curator/review.md); this list is how Don
+# skims its decisions and reverses one by reopening it with a comment.
+DIGEST_CURATOR_DAYS="${DIGEST_CURATOR_DAYS:-7}"
 
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
 command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
@@ -38,11 +43,30 @@ parked_since() {
   | tail -n 1 | grep . || date +%s
 }
 
+# curator_section: suite requests the curator closed in the window, with how
+# (completed = applied, not planned = denied), and the ones it escalated to
+# Don that are still open. No model call: titles and state say it.
+curator_section() {
+  local since closed escalated
+  since="$(date -v-"${DIGEST_CURATOR_DAYS}"d +%F 2>/dev/null || date -d "-${DIGEST_CURATOR_DAYS} days" +%F)"
+  closed="$(gh issue list --repo "$HARNESS_REPO" --state closed --label suite --limit 100 \
+      --search "closed:>=$since" --json number,title,stateReason,closedAt \
+      --jq '.[] | "- #\(.number) \(if .stateReason == "COMPLETED" then "applied" else "denied" end) \(.closedAt[0:10]): \(.title)"' 2>/dev/null || true)"
+  escalated="$(gh issue list --repo "$HARNESS_REPO" --state open --label suite --label owner:don --limit 100 \
+      --json number,title --jq '.[] | "- #\(.number) waiting for you: \(.title)"' 2>/dev/null || true)"
+  [ -n "$closed$escalated" ] || return 0
+  printf '\n## Curator rulings on suite requests (%s, last %s days)\n\nReverse one by reopening it with a comment saying what you want instead.\n\n%s\n%s\n' \
+    "$HARNESS_REPO" "$DIGEST_CURATOR_DAYS" "$escalated" "$closed"
+}
+curator="$(curator_section)"
+
 issues=()
 while read -r n; do [ -n "$n" ] && issues+=("$n"); done < <(
   gh issue list --repo "$TICKET_REPO" --state open --label owner:don --limit 200 --json number --jq '.[].number' | sort -n)
 if [ "${#issues[@]}" -eq 0 ]; then
-  echo "nothing parked with owner:don"; exit 0
+  echo "nothing parked with owner:don"
+  [ -z "$curator" ] || printf '%s\n' "$curator" | tee "$LOGS/digest.md"
+  exit 0
 fi
 
 now="$(date +%s)"; ages=(); context=""
@@ -77,7 +101,8 @@ out="# owner:don digest — $(date '+%F %H:%M')
 
 ${#issues[@]} parked; median $median days parked.
 
-$table"
+$table
+$curator"
 printf '%s\n' "$out" | tee "$LOGS/digest.md"
 if [ -n "$DIGEST_ISSUE" ]; then
   printf '%s\n' "$out" | gh issue comment "$DIGEST_ISSUE" --repo "$TICKET_REPO" --body-file - >/dev/null \
