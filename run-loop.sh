@@ -692,7 +692,7 @@ $(issue_context "$n")" \
 }
 
 # curator_pass — one review session per suite-change request on this repo
-# (suite + status:needs-approval, open, not escalated to Don), then a commit
+# (an open `suite` issue not waiting on Don), then a commit
 # of whatever it applied, under the curator's name and naming the request.
 # In the loop, under its lock, because approvals edit the suite files: a
 # regression run reads them, and the drivers commit them.
@@ -700,7 +700,10 @@ curator_pass() {
   local n
   local -a reqs=()
   while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(
-    gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite --label status:needs-approval \
+    # Not filtered on status:needs-approval: Don hands an escalation back by
+    # removing owner:don, and often clears the status too. Any open request
+    # not with him is the curator's.
+    gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite \
       --json number,labels,author \
       --jq ".[] | select(.author.login == \"$TICKET_OWNER\") | select([.labels[].name] | index(\"owner:don\") == null) | .number" 2>/dev/null \
     | sort -n | only_issues_filter)
