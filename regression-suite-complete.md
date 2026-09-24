@@ -3680,7 +3680,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F104 — `assess_output` over fixture cuts: a tracked reading and a positive control
-pending: #386
 source: tester, spec for #386 from #378's plan v2
 Stage D is a field test. The tester runs `assess_output` over a `music-video`, a
 `dialogue-short`, a chained-segments run and the #197 repro cut, and reports the
