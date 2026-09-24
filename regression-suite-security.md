@@ -1023,7 +1023,6 @@ gap found while running SE-F012/SE-F025 on dw 0.4.0-beta.4: both cover
 probed. First run PASSED on all five probes.
 
 ### SE-F035 — a result can't be saved as an active web type (HTML, XML, SVG, XHTML)
-pending: #410
 source: tester, spec for #410 from #407's plan v2
 A step's `result.content_type` is a free string, and the server writes the result under a
 matching extension. An `.html` output, served by the gallery or the output routes, is a stored

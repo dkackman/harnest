@@ -4149,7 +4149,6 @@ before its own delete.
 metrics: none.
 
 ### C-F118 — ordinary text and image results still save, read back and keep after the active-type refusal
-pending: #410
 source: tester, spec for #410 from #407's plan v2
 The half of #410 that must not break: refusing `text/html`/`text/xml` (SE-F035) and adding
 headers to active types must leave plain text and PNG results working. Both steps are
