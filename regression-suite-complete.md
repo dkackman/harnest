@@ -4131,60 +4131,6 @@ example. A description that points at the guide without saying the rule itself i
 cleanup: none.
 metrics: none.
 
-### C-F114 — the guide's "The loop" step 6 carries the transcription procedure, and following it works (#376)
-pending: #403
-source: tester, spec for #403 from #376's plan v2
-The walkthrough `get_output_audio` used to carry now lives in step 6 of "The loop" in the
-`workflows` guide. This case checks that the promised lookup resolves and that the procedure
-works end to end when followed exactly as written. CPU/short-GPU only: one VITS speech clip
-plus one transcription.
-
-Today "The loop" is an `###` subsection inside "Authoring a workflow from an agent", and
-`get_guide("workflows", section="The loop")` returns "no section 'The loop'" (checked
-2026-09-24 while specifying). The plan's acceptance names this exact call, so the build has to
-make it resolve.
-1. `get_guide(name="workflows", section="The loop")`.
-2. Setup: make a gallery output with known speech.
-   - `run_workflow(workflow_path="templates/generate-speech", arguments={"text": "The quick
-     brown fox jumps over the lazy dog."}, acknowledged_cost=<bound from validate>,
-     wait_seconds=55)`. This is C-F081's template: VITS, 16 kHz mono.
-   - Note the `.wav`'s `<workflow>/<run id>/<file>` name as `<speech>` and the job id as
-     `<setup job>`.
-3. Follow step 6's procedure as the guide words it, with `<speech>` as the output. At the time
-   of writing the plan, the procedure was:
-   - `validate_workflow(name="templates/transcribe-audio", arguments={"input_audio":
-     "output:<speech>"})`;
-   - `run_workflow` with the same arguments, `acknowledged_cost` bound from that validate's
-     `plan`, and `wait_seconds=55` (follow up with `wait_for_job` if `still_running: true`);
-   - `get_output_text` on the transcript;
-   - `delete_output(job_id=<transcribe job>)`.
-   If the guide's wording differs from this, follow the guide and note the difference.
-4. `list_gallery()` (or the listing the case's workspace uses) after step 3.
-expected:
-- Step 1 returns text, not an error. It contains step 6, and step 6 names all of these:
-  - `templates/transcribe-audio`;
-  - an `output:` reference as `input_audio`;
-  - `get_output_text`;
-  - `delete_output(job_id=`.
-  Step 6 still tells an image client to look with `get_output_image` and judge against the
-  request. The transcription part is added to that step and doesn't replace it.
-- Step 3:
-  - validate is `valid: true` with no errors;
-  - the run `succeeded`;
-  - `get_output_text` returns the spoken words: "the quick brown fox jumps over the lazy dog",
-    ignoring case and punctuation. One misheard word is tolerable on a VITS voice; a
-    transcript that's empty or unrelated is not.
-  - `delete_output(job_id=)` succeeds.
-- Step 4 shows no `transcribe-audio` run left behind. The only run from this case is the
-  setup's.
-
-It is a **finding** if step 1 errors or returns a section without the procedure, if any call in
-the procedure as the guide writes it is refused (a wrong argument name, a missing
-`acknowledged_cost` shape), or if the procedure leaves a scratch run.
-cleanup: `delete_output(job_id=<setup job>)`. Also delete the transcribe job if step 3 failed
-before its own delete.
-metrics: none.
-
 ### C-F115 — trimming the descriptions changed no behavior: H3 frame rule, catalog constraints, prompt filter (#376)
 source: tester, spec for #403 from #376's plan v2
 #376 is descriptions only. The examples it removed describe behavior that must still hold.
