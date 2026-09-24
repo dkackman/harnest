@@ -72,7 +72,7 @@ in `regression-perf/`; seed that file with the reading you just took, and do
 the same for a new `-P` case's timing), the next unused
 `SE-Fnnn`/`SE-Pnnn` ID, and a `source:` line naming who added it and why
 (e.g. `source: implementer, fix for #42` or `source: tester, found while
-running TESTER_TASK.agent.md`). Make the probe harmless even if the boundary is
+running agents/tester/standing-task.md`). Make the probe harmless even if the boundary is
 broken — target `/tmp`, loopback, or a stock system file, never anything
 that would damage the box if the check fails. State both failure modes:
 what "it worked" looks like *and* what "refused too late" looks like. No
@@ -130,7 +130,7 @@ implementer's territory), not in a live-server run:
   private ranges. The original reasoning is restored** — this stays excluded
   because the probe would stall the run, and the boundary is again believed to
   hold on SE-F018's evidence.)
-- A 25,000-character variable value (SE-F022 probe (b)) as a single literal:
+- A 25,000-character variable value (SE-F022's withdrawn long-string probe) as a single literal:
   the agent cannot emit one inside a tool call without blowing its output
   budget. The schema has no `maxLength` on argument values at any level, so
   the question is answered statically instead; see SE-F022.
@@ -150,9 +150,8 @@ fixtures — delete when the issue closes):
   issues were verified and closed. `list_gallery(workspace="regression-security")`
   should report `total: 0`.)
 
-Still on `lem` outside every workspace, from the 2026-09-13 SE-F016 run, and
-not removable by a consumer-only agent — asked for in #113:
-`/tmp/dw-se-f016-probe.jpg`, `/home/don/dw-se-f016-probe.jpg`.
+(none outside the workspaces — the two SE-F016 probe files from 2026-09-13
+were removed by the implementer in #113.)
 
 ## Code execution gate (default: untrusted)
 
@@ -592,7 +591,7 @@ segment starting with `/home/`, `/var/`, `/srv/`, `/mnt/`, or the workspace root
 does-not-exist/0000/nope.png`. Same with `name="../../etc/passwd"` → refused, the
 error echoes `../../etc/passwd` at most, and never a resolved `/etc/passwd` or a
 workspace-root-prefixed path. A positive control that a *real* `list_gallery`
-`name` still resolves is S-F013's job, not this case's.
+`name` still resolves is S-F119's job (smoke), not this case's.
 "It worked" looks like the error (or any response) carrying `/home/…` or the
 workspace's `outputs` directory. "Refused too late" does not apply — this is a
 read-only lookup; any leak is the failure.
