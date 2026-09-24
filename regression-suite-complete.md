@@ -4217,7 +4217,6 @@ if its response names a separate location.
 metrics: none.
 
 ### C-F121 — normal-sized image decode paths still work under the pixel limit
-pending: #413
 source: tester, spec for #413 from #407's plan v2
 #413 caps decode at 50M pixels (pytest covers the refusal of a decoder bomb). This case checks
 that every MCP path that decodes an image still handles an ordinary one.
@@ -4236,6 +4235,32 @@ expected:
 It is a **finding** if any of them errors with a pixel-limit, decompression-bomb or decode
 refusal.
 cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F122 — an argument that overrides an active `content_type` default to `text/plain` runs, as `validate_workflow` says
+source: tester, verified in #415 (claude-opus-5-5, anthropic)
+The mirror of SE-F035 (e). The document's default is active, the caller's argument isn't, and
+the substituted value is what gets written. `validate_workflow` accepted this all along, but
+`run_workflow` refused it at submit and then failed the job at execution. Both checks were
+reading the unsubstituted default. Use workspace `regression-complete`. Carrier (CPU only):
+`{"id": "c-f122", "variables": {"ct": "text/html"}, "steps": [{"name": "t", "task": {"command":
+"compose_text", "arguments": {"parts": ["<b>x</b>"]}}, "result": {"content_type": "variable:ct"}}]}`
+1. `validate_workflow(workflow=<carrier>, arguments={"ct": "text/plain"})`.
+2. `run_workflow(workflow=<carrier>, arguments={"ct": "text/plain"}, acknowledged_cost=<bound
+   from step 1's plan>, wait_seconds=55)`, then `get_output_text` on its output.
+3. `run_workflow(workflow=<carrier>, acknowledged_cost=true)` with no `arguments`, so the
+   `text/html` default stands.
+
+expected:
+- Step 1 returns `valid: true` with `checked_arguments: ["ct"]`.
+- In step 2 the job reaches `succeeded` and writes one `.txt` file. `get_output_text` returns
+  `<b>x</b>` with a `text/plain` content type.
+- Step 3 is refused up front at `steps[0].result.content_type` ("active content is not
+  written"), and no job is queued.
+
+It is a **finding** if step 2 is refused, fails at execution, or writes anything but `.txt`,
+because the two tools disagree again. It is a **finding** if step 3 queues a job.
+cleanup: `delete_output(job_id=…)` for step 2's job.
 metrics: none.
 
 ## Performance
