@@ -3666,17 +3666,17 @@ cleanup: `delete_output(job_id=…)` on step 4's run.
 metrics: none.
 
 ### C-F103 — the guide and `get_gallery_metadata` point at `assess_output`
-pending: #388
 source: tester, spec for #388 from #378's plan v2
-Stage C's discoverability promises. No run is needed.
+Stage C's discoverability promises. Step 3 needs a cut with recorded shots: C-F101's
+setup (C-F099 workflow S, steps 1–3), or that run if it is still present.
 1. `list_guides()`. One guide's sections include `Assessing a run's output`.
 2. `get_guide(<that guide>, section="Assessing a run's output")` returns the section,
    which names `assess_output` and the three probes.
-3. `get_gallery_metadata("asset:qa-cast/ep25-episode.mp4")`, a cut. Its `next` names
+3. `get_gallery_metadata(<stepped>)`, a cut whose `media.shots` is set. Its `next` names
    `assess_output`.
 It is a **finding** if the section is missing, or if a cut's `next` doesn't mention
 `assess_output`.
-cleanup: none.
+cleanup: `delete_output(job_id=…)` on the setup run, if this case made it.
 metrics: none.
 
 ### C-F104 — `assess_output` over fixture cuts: a tracked reading and a positive control
