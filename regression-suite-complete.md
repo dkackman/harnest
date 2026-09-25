@@ -217,6 +217,11 @@ smoke's Fixtures lists the asset too.
   eight shots and overlaps, peak about −3 dBFS. C-F124 dissolves it into `ep42-episode.mp4`
   (32 kHz), so a substitute needs carried shots that include dissolves, and a rate other
   than 32 kHz. Shared, read-only, never deleted.
+- `asset:qa-cast/ep65-episode.mp4` — a 469-frame 24 fps **48 kHz** stereo cut of four
+  shots (`shot@accuse`, `shot@deflect`, `ep65-shot-kf-priya-hal.mp4`,
+  `ep62-shot2-deflect.mp4`), the last two joined by 12-frame dissolves. C-F130 scores it
+  under `ep15-song.mp3` (44.1 kHz) at `sample_rate` 48000, so a substitute needs a 48 kHz
+  soundtrack and carried shots. Shared, read-only, never deleted.
 
 ## Functional
 
@@ -4484,6 +4489,32 @@ It is a **finding** if any name reads `video N` or `bridge`, or if bridge's inne
 flattened into one.
 Not asserted here: the last shot's `num_samples`, which read 247968 when this was written
 (#435).
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F130 — `templates/assemble-and-score` at `sample_rate` 48000 resamples a 44.1 kHz score under a 48 kHz cut and keeps its shot map
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+The template's `sample_rate` defaults to 44100. Overriding it for a 48 kHz (LTX-bearing) cut
+must *resample* the score, not relabel it (#180 is that trap in `slice_audio`/`fade_audio`).
+The film must stay at 48 kHz with the input's inner shots. CPU only, about 6 s.
+1. `validate_workflow(name="templates/assemble-and-score", workspace=<suite workspace>,
+   arguments={"shots": ["asset:qa-cast/ep65-episode.mp4"], "score":
+   "asset:qa-cast/ep15-song.mp3", "sample_rate": 48000, "total_frames": 469, "score_gain":
+   0.3, "world_gain": 1.0})`, then `run_workflow` with the same name, workspace and arguments,
+   `acknowledged_cost=<bound from the plan>`, `wait_seconds=55`.
+2. `get_job_events(job_id)`, and `get_gallery_metadata` on the `film` file.
+expected:
+- `succeeded`. Validation is clean, and the plan has 8 steps and no downloads.
+- The events carry `resample_audio` log lines `48000 → 48000` (the `world` step) and
+  `44100 → 48000` (the `soundtrack_resampled` step), plus `mix_audio: 2 tracks, gains [0.3, 1.0]`.
+- The film is 469 frames, 24 fps, 19.542 s, **48000 Hz** stereo, 960×544, with
+  `peak_dbfs` ≤ −2.5. Its `media.shots` (and the `film` manifest) list the same 4 shots as
+  the input: start_frame 0/124/236/345 and num_frames 124/112/109/124, the last two with
+  `overlap_frames: 12`.
+It is a **finding** if the film reads 44100 Hz, if the score's resample line is missing or
+reads `44100 → 44100` / `48000 → 48000` (a relabel), or if the shots collapse to one.
+Not asserted here: a `joined_audio_short_after_mux` warning of 32 samples appeared when this
+case was written (#435).
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
