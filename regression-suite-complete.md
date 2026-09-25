@@ -213,6 +213,10 @@ smoke's Fixtures lists the asset too.
   last three joined by 12-frame dissolves (`media.shots` carries `overlap_frames`), and
   `asset:qa-cast/ep51-bed.wav` — a quiet (~−50 dBFS mean) room bed. C-F123 scores the
   first under the second looped. Shared, read-only, never deleted.
+- `asset:qa-cast/ep54-episode.mp4` — `ep53-episode` scored: 956 frames, 44.1 kHz, the same
+  eight shots and overlaps, peak about −3 dBFS. C-F124 dissolves it into `ep42-episode.mp4`
+  (32 kHz), so a substitute needs carried shots that include dissolves, and a rate other
+  than 32 kHz. Shared, read-only, never deleted.
 
 ## Functional
 
@@ -4292,6 +4296,40 @@ expected:
   this case was written it had no findings, every `level_step_db` ≤ 1.16.
 It is a **finding** if the film lists one shot (the input as a whole), drops
 `overlap_frames`, or the probe reports seams 5–7 as cuts.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F124 — `templates/dissolve-between-shots` over a kept dissolve-and-cut join keeps its inner shots and adds its own dissolve
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+This is C-F123's nesting on the other assembly template, with two inputs at different
+rates: a 44.1 kHz join of 8 shots and a 32 kHz join of 2. The new dissolve must shorten
+only the last inner shot of input 1. It must mark only the first inner shot of input 2
+`overlap_frames`, and it must leave input 1's own dissolves alone. CPU only, one job of
+about 20 s.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f124", "seed": 1,
+   "steps": [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
+   "asset:qa-cast/ep51-bed.wav", "target_frames": 1192, "fps": 24}}, "result":
+   {"content_type": "audio/wav", "save": true, "subfolder": "intermediate"}}, {"name": "cut",
+   "workflow": {"path": "templates/dissolve-between-shots", "arguments": {"shots":
+   ["asset:qa-cast/ep54-episode.mp4", "asset:qa-cast/ep42-episode.mp4"], "score":
+   "previous_result:bed", "total_frames": 1192, "dissolve_frames": 12, "match_levels": "rms",
+   "match_levels_dbfs": -24, "score_gain": 0.251}}}]}, acknowledged_cost=<bound from
+   validate>, wait_seconds=55)`.
+2. `assess_output(name=<the film file>, probe="analyze_seams")`.
+expected:
+- `succeeded`. Its warnings are the `bed` step's quiet-overall note and the `edit` step's
+  `sample_rate_mismatch` (44100 vs 32000, resampled to 44100).
+- The `film` entry is in subfolder `final` and lists ten shots, at start_frame
+  0/124/248/372/496/608/720/832/944/1068 with num_frames 124/124/124/124/112/112/112/112/124/124.
+  Shots 6–9 carry `overlap_frames: 12`. Shot 8 (ep37-shot1-receipt, 124 frames in
+  `ep54-episode`) is now 112, because the new dissolve takes its tail.
+- The film is 1192 frames (956 + 248 − 12), 24 fps, 49.667 s, 44.1 kHz stereo, with a peak
+  of about −3 dBFS.
+- The probe gives `shots_source: "manifest"` and nine seams: 1–4 `cut`, 5–8 `dissolve`,
+  9 `cut`. When this case was written it had no findings, and every `level_step_db` was
+  ≤ 1.39.
+It is a **finding** if an input collapses to one shot, input 1's dissolves (seams 5–7) come
+back as cuts, the new seam 8 is not a dissolve, or shot 8 keeps 124 frames (#405).
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
