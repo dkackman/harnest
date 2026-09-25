@@ -1,0 +1,1 @@
+{"ts":"2026-09-25T16:11:37Z","level":"complete","case":"C-F100","metric":"level_spread_db","condition":"unmatched","value":11.1,"unit":"dB","server":null,"model":"claude-sonnet-5","provider":"anthropic","ref":"job d732f447accc"}
