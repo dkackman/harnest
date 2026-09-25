@@ -101,6 +101,52 @@ has "freeze: it was #32's" "implementer:#32" "$(grep '^=== ' "$T/loop.out")"
 has "freeze: the standing task is held" "[tester:task] held: release freeze #30 Release 0.5.0" "$(cat "$T/loop.out")"
 has "freeze: the board says so" "release freeze #30 Release 0.5.0: only release-blocker issues move" "$(cat "$T/loop.out")"
 
+# --- 3e. run-release.sh: freeze, check, the gates' lock refusal, accept,
+# status, and cut refusing without its gates. (pr/run/release/workflow have
+# no fake: the CI and preflight gates, review, notes and cut's GitHub steps
+# are not exercised here.)
+git -C "$T/seed" push -q origin HEAD:master 2>/dev/null
+git -C "$T/src" fetch -q origin
+rel() { (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman \
+          SOURCE_DIR="$T/src" RELEASE_TREE="$T/reltree" ./run-release.sh "$@") > "$T/rel.out" 2>&1; }
+board '[{"number": 50, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+rel 0.9.0 freeze
+eq  "release: freeze opens the release issue as Don's" "owner:don,release" "$(labels_of 51)"
+rel 0.9.0 check; rc=$?
+eq  "release: check passes while non-blockers are held" 0 "$rc"
+has "release: check records its marker" "harnest:release-gate check $sha pass" "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
+jq '.["o/r"] += [{"number": 52, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "release-blocker"}]}]' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/board.json"
+rel 0.9.0 check; rc=$?
+eq  "release: check fails with a blocker awaiting verification" 1 "$rc"
+has "release: and names it" "#52 waits on verification" "$(cat "$T/rel.out")"
+mkdir -p "$T/h/logs/.driver.lock" && echo "$$ run-loop" > "$T/h/logs/.driver.lock/owner"
+rel 0.9.0 gates ci; rc=$?
+rm -rf "$T/h/logs/.driver.lock"
+eq  "release: gates refuse while the loop holds the lock" 1 "$rc"
+has "release: and say how to stop it" "stop-after-cycle" "$(cat "$T/rel.out")"
+rel 0.9.0 accept regression "suite drift only"
+has "release: accept records Don's decision" "harnest:release-gate regression $sha accepted" "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
+rel 0.9.0 status
+has "release: status shows the accepted gate" "regression  accepted" "$(cat "$T/rel.out")"
+has "release: and the failed check" "check       fail" "$(cat "$T/rel.out")"
+# review: the driver files the public findings and keeps security ones local
+FAKE_CLAUDE_DO='out="$(printf "%s" "$*" | sed -n "s/.*to exactly this file: \([^ ]*json\).*/\1/p")"; case "$out" in *review-security-*) echo "[{\"area\":\"security\",\"severity\":\"blocker\",\"security\":true,\"title\":\"token-free path leak\",\"file\":\"app.py:1\",\"detail\":\"d\"}]" > "$out" ;; *review-engine-*) echo "[{\"area\":\"engine\",\"severity\":\"blocker\",\"security\":false,\"title\":\"cache never shrinks\",\"file\":\"c.py:2\",\"detail\":\"d\"},{\"area\":\"engine\",\"severity\":\"follow-up\",\"security\":false,\"title\":\"slow save\",\"file\":\"r.py:3\",\"detail\":\"d\"}]" > "$out" ;; *) echo "[]" > "$out" ;; esac' \
+  rel 0.9.0 review; rc=$?
+eq  "release review: completes" 0 "$rc"
+eq  "release review: the public blocker is a release-blocker" "owner:implementer,release-blocker" \
+  "$(jq -r '.["o/r"][] | select(.title == "[engine] cache never shrinks") | [.labels[].name] | sort | join(",")' "$T/board.json")"
+eq  "release review: the follow-up is plain" "owner:implementer" \
+  "$(jq -r '.["o/r"][] | select(.title == "[engine] slow save") | [.labels[].name] | sort | join(",")' "$T/board.json")"
+eq  "release review: the security finding never reaches the tracker" "" \
+  "$(jq -r '.. | strings | select(test("token-free path leak"))' "$T/board.json")"
+has "release review: it is kept locally" "token-free path leak" "$(cat "$T/h/logs/release-0.9.0/security.md")"
+has "release review: and blocks as the security gate" "harnest:release-gate security $sha fail" \
+  "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
+FAKE_CLAUDE_DO=''
+rel 0.9.0 cut --next 0.10.0; rc=$?
+eq  "release: cut refuses without its gates" 1 "$rc"
+has "release: naming what is missing" "check ci preflight security" "$(cat "$T/rel.out")"
+
 # --- 4. an outside filing is parked once, and stays out of the loop
 : > "$FAKE_CLAUDE_LOG"
 board '[{"number": 3, "state": "OPEN", "author": {"login": "stranger"}, "labels": [{"name": "owner:implementer"}]}]'

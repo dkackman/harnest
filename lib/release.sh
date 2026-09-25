@@ -6,7 +6,7 @@
 #
 #   <!-- harnest:release-gate <gate> <sha> <result> -->
 #
-# gate    check | ci | preflight | regression | review | notes | security
+# gate    check | ci | preflight | regression | review | security
 # sha     the full origin/develop commit it ran against
 # result  pass | fail | accepted
 #
@@ -14,7 +14,9 @@
 # that failed or ran on an earlier commit, taken as good enough for this one.
 # A later marker for the same gate and commit replaces an earlier one.
 
-RELEASE_GATES_FOR_CUT="check ci preflight regression review notes security"
+# Whether the notes exist is read from docs/RELEASING.md at the commit being
+# cut, not from a marker: it is a fact of the tree.
+RELEASE_GATES_FOR_CUT="check ci preflight regression review security"
 
 # release_marker <gate> <sha> <result>
 release_marker() {

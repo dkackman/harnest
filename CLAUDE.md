@@ -185,6 +185,16 @@ and runs the real drivers end to end. See "Tests" below.
     by themselves.
   - **Approval** (`status:plan-approved`) is Don's alone: `guard.py` refuses it from
     every role.
+- `run-release.sh` / `lib/release.sh` / `agents/release/` (R14) — cuts a release in stages
+  Don runs: `freeze`, `check`, `review`, `notes`, `gates`, `accept`, `status`, `cut`. It
+  records each gate as a marker comment on the release issue, keyed to the full
+  `origin/develop` commit (`<!-- harnest:release-gate <gate> <sha> <result> -->`). `cut`
+  refuses unless every gate passed, or was accepted, on the commit it merges. The review
+  and notes sessions are read-only and file nothing (`RELEASE_PERMISSION_FLAGS`). The
+  driver files their findings: public ones as issues, `release-blocker` for blockers, and
+  security ones only to `logs/release-<v>/security.md`. `guard.py` refuses the marker, and
+  both release labels, from every agent. The `gates` stage needs the driver lock free, so
+  stop the loop first. README "Releasing" has the stage list and knobs.
 - `lib/classify.jq` (R12) — the ticket protocol's state machine, in one place. It maps
   every open issue (labels, parent, blockers, sub-issue counts, the lead's phase markers)
   to the queue that runs it next, or to `don`, `wait`, `external` or `stranded`. Every

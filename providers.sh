@@ -45,6 +45,8 @@
 #                                               feature lead's read-only sessions
 #   REVIEWER_PERMISSION_FLAGS                    array: permission flags for the
 #                                               docs reviewer (read-only source)
+#   RELEASE_PERMISSION_FLAGS                     array: run-release.sh's review and
+#                                               notes sessions (read-only, files nothing)
 #
 # Providers, and why each is more than just a base URL:
 #   anthropic  Native Claude Code models, alias or full id. The default. Sets
@@ -393,6 +395,28 @@ REVIEWER_PERMISSION_FLAGS=(
 )
 REVIEWER_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
 
+# Permission flags for run-release.sh's review and notes sessions (R14
+# item 2). Read-only against the release candidate (its cwd, a detached
+# worktree), read-only git, `gh issue view`/`list` only - it files nothing:
+# it writes findings or notes to the one file its prompt names, and the
+# driver, which Don runs, files and labels (the guard refuses
+# `release-blocker` from every agent). Write is unscoped by path, as it is
+# for the lead; the prompt names the file. Agent is for the per-area sweep
+# subagents, which inherit this allowlist. No dw MCP: a review reads code.
+# Setting sources are local only, for the reason REVIEWER_PERMISSION_FLAGS
+# gives: the dw repo's checked-in project settings would widen this.
+RELEASE_PERMISSION_FLAGS=(
+  --settings "$(guard_settings lead)"
+  --permission-mode dontAsk
+  --strict-mcp-config --mcp-config '{"mcpServers":{}}'
+  --allowedTools
+    "Read" "Glob" "Grep" "Write" "Agent" "ToolSearch" "TodoWrite"
+    "Bash(gh issue view *)" "Bash(gh issue list *)" "Bash(date *)" "Bash(wc *)"
+    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
+)
+RELEASE_TOOLS="Bash,Read,Write,Glob,Grep,ToolSearch,Agent,TodoWrite"
+ISOLATION_FLAGS_RELEASE=(--setting-sources local)
+
 # Permission flags for the curator's review sessions (run-loop.sh,
 # curator_pass). The curator rules on suite-change requests and applies the
 # ones it approves, so it gets Edit on this repo's files. Edit is unscoped
@@ -520,8 +544,9 @@ runtime_note() {
     lead)        examples="a feature plan and its verdict, an idea's disposition, a stage issue, a hand-off comment, a re-plan" ;;
     curator)     examples="a curation proposal, a ruling on a suite request, an escalation to Don" ;;
     reviewer)    examples="a docs review verdict, a bounce" ;;
+    release)     examples="a release review finding, a release-notes draft" ;;
     retro)       examples="a harness proposal and its evidence" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator|reviewer|retro)" >&2; return 1 ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator|reviewer|release|retro)" >&2; return 1 ;;
   esac
   # An alias (`opus`) moves when a new model ships, so a comment that says
   # "opus" can't later be told apart from the next Opus. Claude Code's own
@@ -1161,6 +1186,8 @@ role_prompt() {
     curator:audit)      set -- core audit ;;
     curator:review)     set -- core review ;;
     reviewer:docs)      set -- core docs ;;
+    release:review)     set -- core review ;;
+    release:notes)      set -- core notes ;;
     regression:whole)   set -- core run-cases sweep ;;
     regression:chunk)   set -- core run-cases chunk ;;
     regression:sweep)   set -- core sweep ;;

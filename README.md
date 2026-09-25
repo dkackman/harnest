@@ -330,6 +330,46 @@ review session in `run-loop.sh` (below), which escalates judgment calls to a hum
   `run-regression.sh` uses it for any suite case marked `runner: script`. See
   [`contract/README.md`](contract/README.md).
 
+## Releasing
+
+`run-release.sh <version> <stage>` cuts a diffusers-workflow release (roadmap R14). You
+run each stage. The script records each result on the release issue as a marker keyed to
+the exact `origin/develop` commit, so a stage can be rerun or resumed. `cut` refuses until
+every gate has passed on the commit it merges.
+
+```sh
+./run-release.sh 0.5.0 freeze      # opens "Release 0.5.0": the loop now moves only release-blockers
+./run-release.sh 0.5.0 check       # nothing in flight, lem on develop, master merges cleanly
+./run-release.sh 0.5.0 review      # four read-only area reviews; blockers become release-blocker issues
+./run-release.sh 0.5.0 notes       # drafts the notes onto release/0.5.0-notes for you to edit and merge
+touch logs/stop-after-cycle         # then, once the loop has exited:
+./run-release.sh 0.5.0 gates       # CI + CodeQL, preflight in a worktree, regression (security complete)
+./run-release.sh 0.5.0 status      # what passed on which commit
+./run-release.sh 0.5.0 accept regression "filed #470-#472, all suite drift"
+./run-release.sh 0.5.0 cut --next 0.6.0-alpha.1   # PR, CI, merge, tag, notes, reopen develop, close the freeze
+```
+
+- **Gates are per commit.** A fix after the gates moves `develop`, and `cut` then wants
+  every gate again on the new commit. `accept <gate> <why>` records that you took an
+  earlier run as good enough. Nothing is inferred from what a commit touched.
+- **Security findings stay off GitHub.** The review keeps them in
+  `logs/release-<version>/security.md`, and the release issue gets only their count. `cut`
+  refuses while one is a blocker, unless you `accept security`.
+- **Tested offline:** `freeze`, `check`, `accept`, `status` and `cut`'s refusal, plus the
+  marker, findings and notes logic.
+- **Not yet run against real GitHub:** the CI waits, the agent sessions and `cut`'s PR,
+  merge, tag and release steps. Watch the first real release.
+
+| Variable | Default | Controls |
+|---|---|---|
+| `RELEASE_TREE` | `~/src/dkackman/dw-agent-release` | the detached worktree the review and preflight run in |
+| `RELEASE_MODEL` / `RELEASE_PROVIDER` | the tester's | the review and notes sessions |
+| `RELEASE_EFFORT` | `EFFORT` | their `--effort` |
+| `RELEASE_REVIEW_BUDGET_USD` | `8` | per review area (four areas) |
+| `RELEASE_NOTES_BUDGET_USD` | `3` | the notes session |
+| `RELEASE_REGRESSION_LEVELS` | `security complete` | the levels the regression gate runs (`complete` runs smoke first) |
+| `RELEASE_FORCE` | `0` | `1` reruns a gate or review area that already passed on this commit |
+
 ## Running it
 
 ```sh

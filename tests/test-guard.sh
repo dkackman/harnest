@@ -25,7 +25,11 @@ for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label status:plan-approved'
   row 2 $r "" $none 'gh issue edit 5 --add-label release-blocker'
   row 2 $r "" $none 'gh issue edit 5 --add-label bug,release'
+  row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:release-gate ci abc pass -->"'
 done
+printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
+row 2 consumer "" $none "gh issue comment 5 --body-file $T/marker.md"
+row 0 consumer "" $none 'gh issue comment 5 --body "the release gates ran fine"'
 # implementer and lead: closes, verified, parks, owners
 for r in implementer lead; do
   row 2 $r "" $none 'gh issue close 5'

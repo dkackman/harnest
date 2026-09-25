@@ -34,6 +34,10 @@ every role:
     alone (roadmap R11), so no agent can approve the plan it wrote
   - no adding `release` or `release-blocker`: a freeze, and what moves
     during one, are Don's (roadmap R14)
+  - no issue text carrying a release-gate marker (`harnest:release-gate`):
+    run-release.sh records a gate's result that way on the release issue,
+    and every agent posts as Don's login, so an agent's copy would read as
+    a gate that passed
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -263,6 +267,25 @@ def session_called_mcp(transcript):
         return False
 
 
+RELEASE_MARKER = "harnest:release-gate"
+
+
+def carries_release_marker(words):
+    """True when a gh issue comment/create/edit's text holds the marker,
+    given inline (--body/-b) or as a file (--body-file/-F) the hook can read."""
+    if not (is_gh_issue(words, "comment") or is_gh_issue(words, "create") or is_gh_issue(words, "edit")):
+        return False
+    if any(RELEASE_MARKER in b for b in flag_values(words, "--body", "-b")):
+        return True
+    for path in flag_values(words, "--body-file", "-F"):
+        try:
+            if RELEASE_MARKER in open(path).read():
+                return True
+        except OSError:
+            pass
+    return False
+
+
 def main():
     role = sys.argv[1] if len(sys.argv) > 1 else ""
     data = json.load(sys.stdin)
@@ -271,6 +294,8 @@ def main():
     cmd = data.get("tool_input", {}).get("command", "")
     cwd = data.get("cwd") or os.getcwd()
     for words in segments(cmd):
+        if carries_release_marker(words):
+            deny("a release-gate marker is run-release.sh's record of a gate Don ran; no agent writes one.")
         if is_gh_issue(words, "edit"):
             if role != "curator":
                 owner_rule(words)

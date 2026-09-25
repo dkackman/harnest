@@ -22,10 +22,10 @@ eq "markers: one row per gate and commit" 3 "$(printf '%s\n' "$results" | grep -
 eq "markers: the later ci marker wins" "ci $A pass" "$(printf '%s\n' "$results" | grep "^ci ")"
 ok "gate ok on its commit" release_gate_ok ci $A <<<"$results"
 fails "gate not ok on another commit" release_gate_ok regression $A <<<"$results"
-eq "missing: every gate not passed on this commit" "check regression review notes security" \
+eq "missing: every gate not passed on this commit" "check regression review security" \
   "$(printf '%s\n' "$results" | release_missing_gates $A)"
 results2="$(printf '%s\nregression %s accepted\n' "$results" $A)"
-eq "missing: an accepted gate counts" "check review notes security" \
+eq "missing: an accepted gate counts" "check review security" \
   "$(printf '%s\n' "$results2" | release_missing_gates $A)"
 
 # --- board: only work in flight blocks a release

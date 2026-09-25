@@ -1404,6 +1404,21 @@ and `notes`. Item 3 before the next release that has a security finding.
 - **Whether `release-blocker` also blocks the curator** from applying suite edits
   during a freeze.
 
+**Item 2 built (2026-09-25): `run-release.sh`.** The stages are `freeze`, `check`,
+`review`, `notes`, `gates`, `accept`, `status` and `cut`. `lib/release.sh` holds the
+offline-testable parts.
+- Gate results are marker comments keyed to the full commit. `accept` records Don taking
+  an earlier or failed run.
+- The guard refuses the marker from agents, because every agent posts as Don's login.
+- Security findings stay in a local file until item 3 exists.
+- **Tested offline:** `freeze`, `check`, `review`'s filing split, `accept`, `status`,
+  and `cut`'s refusal.
+- **Not yet run for real:** the CI waits, preflight and regression gates, the agent
+  sessions, and `cut`'s PR, merge, tag and release steps. The next release is their
+  first run.
+- `cut` checks the real state before each step (merged? tagged? released?), so an
+  interrupted cut is rerun, not repaired by hand.
+
 **Item 1 done (2026-09-25).** A `release` issue (owner:don) holds every agent queue at
 `wait` except `release-blocker` issues, and holds the standing task. It's in
 `lib/classify.jq` with two boards and a driver test. The curator still runs during a

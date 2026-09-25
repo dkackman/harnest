@@ -97,8 +97,16 @@ elif cmd == ["issue", "edit"]:
     save()
 elif cmd == ["issue", "comment"]:
     i = find(args[2])
-    i.setdefault("comments", []).append({"author": {"login": "dkackman"}, "body": opt("--body") or "", "createdAt": "2026-01-01T00:00:00Z"})
+    body = opt("--body") or (open(opt("--body-file")).read() if opt("--body-file") else "")
+    i.setdefault("comments", []).append({"author": {"login": "dkackman"}, "body": body, "createdAt": "2026-01-01T00:00:00Z"})
     save()
+elif cmd == ["issue", "create"]:
+    n = max([i["number"] for i in issues] + [0]) + 1
+    names = sum((v.split(",") for v in opt("--label", many=True)), [])
+    issues.append({"number": n, "state": "OPEN", "title": opt("--title") or "", "body": opt("--body") or "",
+                   "labels": [{"name": l} for l in names], "comments": []})
+    save()
+    print("https://github.com/%s/issues/%d" % (repo, n))
 elif cmd == ["issue", "close"]:
     i = find(args[2])
     i["state"] = "CLOSED"
