@@ -79,6 +79,16 @@ eq  "docs review: closed as reviewed" "CLOSED owner:tester,status:reviewed" "$(j
 eq  "docs review: runs in the plugin tree" "$(cd "$T/plugin" && pwd -P)" "$(cd "$(cat "$FAKE_CLAUDE_LOG.cwd")" && pwd -P)"
 eq  "docs review: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
 
+# --- 3c. stop-after-cycle: the loop finishes the cycle it is in, then exits,
+# and consumes the file so the next start runs normally
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 5, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+mkdir -p "$T/h/logs" && touch "$T/h/logs/stop-after-cycle"
+FAKE_CLAUDE_DO='' loop 5
+eq  "stop file: one cycle, not five" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "stop file: says why it stopped" "stop-after-cycle found" "$(cat "$T/loop.out")"
+eq  "stop file: consumed" "gone" "$([ -e "$T/h/logs/stop-after-cycle" ] && echo present || echo gone)"
+
 # --- 4. an outside filing is parked once, and stays out of the loop
 : > "$FAKE_CLAUDE_LOG"
 board '[{"number": 3, "state": "OPEN", "author": {"login": "stranger"}, "labels": [{"name": "owner:implementer"}]}]'
@@ -134,6 +144,7 @@ EOS
    PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg.out" 2>&1
 eq  "regression: exits cleanly" 0 $?
 eq  "regression: two chunks and a sweep" 3 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "regression: the level header names lem's commit" "lem=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
 has "regression: chunk sessions are labelled" "[regression:smoke.2] usage:" "$(cat "$T/reg.out")"
 
 # --- 8. run-curate: a forced audit of one level runs one session

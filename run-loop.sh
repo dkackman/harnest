@@ -359,15 +359,7 @@ mark_closures_seen() {
 
 # issue_context lives in providers.sh (shared with run-features.sh).
 
-# deployed_head
-# What lem is running when the cycle starts, for the implementer's "already
-# addressed?" check and the tester's record of what it verified against.
-# One ssh per cycle instead of one per session; "unknown" on any failure.
-deployed_head() {
-  ssh -o ConnectTimeout=8 -o BatchMode=yes lem \
-    'cd ~/diffusers-workflow && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"' 2>/dev/null \
-  || echo unknown
-}
+# deployed_head lives in providers.sh (run-regression.sh records it too).
 
 # check_lem_on_develop
 # lem can only be on one commit, and a cycle hands off several fixes, so the
@@ -803,6 +795,15 @@ while true; do
 
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then
     echo "Reached MAX_CYCLES=$MAX_CYCLES, exiting." | tee -a "$LOGS/loop.log"
+    break
+  fi
+  # A clean stop at the next cycle boundary, for a release freeze: every
+  # session this cycle started has finished and been audited, and nothing of
+  # the next has begun. Consumed, so a restart doesn't stop at once (R14;
+  # the 0.4.0 freeze was a hand-rolled watcher on the board line).
+  if [ -e "$LOGS/stop-after-cycle" ]; then
+    rm -f "$LOGS/stop-after-cycle"
+    echo "stop-after-cycle found, exiting after cycle $cycle." | tee -a "$LOGS/loop.log"
     break
   fi
 

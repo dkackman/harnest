@@ -336,6 +336,7 @@ review session in `run-loop.sh` (below), which escalates judgment calls to a hum
 MAX_CYCLES=1 ./run-loop.sh                      # one cycle, then stop
 ONLY_ISSUES=227 ./run-loop.sh                   # work only #227 (comma-separate for more)
 IMPLEMENTER_MODEL=haiku SLEEP_SECS=60 ./run-loop.sh
+touch logs/stop-after-cycle          # finish the current cycle, then exit (a release freeze)
 tail -f logs/loop.log                           # watch from another terminal
 ```
 
@@ -495,7 +496,8 @@ gets the reason back and can correct itself, rather than the audit finding it la
 - The implementer can't close an issue as `completed`, add `status:verified`, lift an
   `owner:don`/`status:needs-approval` park, push to `master`, or force-push.
 - The implementer can't hand off (`status:fixed-pending-verify`) with uncommitted changes,
-  with `ruff` failing on files it changed, or with a test failing that passed on `develop`
+  with `ruff` failing on files it changed, with the UI's `check`/`lint`/`test` failing when
+  it changed `ui/`, or with a test failing that passed on `develop`
   when the session began. The driver exports that commit as `HARNEST_BASE_COMMIT`.
 - The tester and regression agent can't close as `completed` or add `status:verified` in a
   session that has made no `mcp__dw__*` call.

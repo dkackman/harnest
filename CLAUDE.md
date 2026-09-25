@@ -373,7 +373,8 @@ call time what `audit_issue` otherwise only finds afterwards:
   and marks it `status:reviewed` instead.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
-changed files, and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin/develop
+changed files, the UI's `npm run check`/`lint`/`test` must pass when `ui/` changed (about
+15 s; absolute, since CI now holds `develop` to them), and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin/develop
 when the session began, exported by `implementer_pass`). The gate is relative because
 `develop` isn't always green. The result is stamped per tree in the checkout's `.git`.
 `HARNEST_HOOKS` (exported by `providers.sh`) is how the settings files find the script.

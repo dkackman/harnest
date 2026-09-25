@@ -15,7 +15,12 @@
    acceptance case for behavior not built yet (the tester wrote it from an
    approved plan). Its failure is expected, and not an issue to file. List
    the skipped IDs in your summary and nothing else.
-4. Execute each other case in order, against your level's workspace:
+4. Execute each other case in order, against your level's workspace. Every
+   one, every run: an open issue for a case, a reading from earlier today,
+   or a summary saying it already failed is not a reason to skip it. A run
+   is often a check of whether a fix landed, and a case skipped because it
+   failed last time is exactly the one that answers that. If it still
+   fails, the open issue gets a comment ("Reporting a failure").
    - **Functional case**: make the call(s) described and compare the result
      against the case's `expected:`. Pass or fail.
    - **Performance case**: make the call(s) and measure the operation itself

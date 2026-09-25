@@ -22,6 +22,7 @@
 #   resolved_model <log-name> <fallback>        the model id the last session
 #                                               logged actually ran on
 #   refresh_plugin_tree <src> <tree>            detached origin/develop worktree
+#   deployed_head                               "<branch> @ <sha>" lem is running
 #                                               the consumer roles load dw from
 #   acquire_driver_lock <name>                  one lem-touching driver at a time
 #   audit_issue <n> <role>                      [audit] WARNING on a broken
@@ -544,6 +545,20 @@ resolved_model() {
   local id
   id="$(grep '"subtype":"init"' "$LOGS/$1.jsonl" 2>/dev/null | tail -n 1 | jq -r '.model // empty' 2>/dev/null || true)"
   printf '%s\n' "${id:-$2}"
+}
+
+# deployed_head
+# What lem is running: for run-loop.sh, the implementer's "already
+# addressed?" check and the tester's record of what it verified against,
+# one ssh per cycle rather than per session; for run-regression.sh, the
+# commit each level ran against, which a result is only worth knowing
+# alongside (the 0.4.0 gates ran four levels across three deploys, and which
+# commit each had to be pieced together afterwards). "unknown" on any
+# failure.
+deployed_head() {
+  ssh -o ConnectTimeout=8 -o BatchMode=yes lem \
+    'cd ~/diffusers-workflow && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"' 2>/dev/null \
+  || echo unknown
 }
 
 # refresh_plugin_tree <source_dir> <plugin_tree>

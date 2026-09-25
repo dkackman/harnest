@@ -1404,6 +1404,32 @@ and `notes`. Item 3 before the next release that has a security finding.
 - **Whether `release-blocker` also blocks the curator** from applying suite edits
   during a freeze.
 
+**Item 4 done (2026-09-25), after the 0.4.0 cut:**
+- dw: CI and CodeQL run on pushes to `develop`. On 0.4.0, 14 CodeQL path-injection
+  alerts first appeared on the release PR; all were false positives except an adjacent
+  directory oracle.
+- dw: `release.sh <v> --next <next>` merges `master` back into `develop` and opens
+  `<next>` there.
+- dw: `preflight.sh` passes its interpreter to e2e (`DW_E2E_PYTHON`), and the Playwright
+  config also finds `.venv`.
+- Harness: the hand-off gate runs the UI's check, lint and test when `ui/` changed.
+- Harness: `run-regression.sh` records lem's commit per level and names it in every
+  session prompt (`deployed_head` moved to `providers.sh`).
+
+**Learned from the 0.4.0 cut, for items 1-2:**
+- `touch logs/stop-after-cycle` is the freeze. `run-loop.sh` exits at the next cycle
+  boundary. The first freeze was a hand-rolled watcher, and it was broken.
+- A confirmation run needs the cases it confirms. The regression agent skipped two cases
+  as "already run" because they had open issues. `run-cases.md` now says to run every
+  case every run. A one-off suite file of just those cases, via
+  `run-regression.sh complete <file>`, works for the confirmation.
+- Gates ran on three commits (`3a28146`, `0d3a6c9`, `e86fc20`), because the review and CI
+  each produced blockers. `run-release.sh gates` should record which gate passed on which
+  commit, and rerun only what a later commit touches.
+- The whole-diff review earned its cost. It found a token-free server-path leak, a warning
+  that fired on every stock join, and docs contradicting code merged the same night. None
+  of these was visible to per-issue verification.
+
 **Done when.** A release goes from `run-release.sh check` to a published tag with Don
 typing only the approvals: the freeze, the blocker merges and the cut. `develop` and
 `master` differ by nothing after the merge back, and the release body names the

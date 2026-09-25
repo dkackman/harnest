@@ -203,7 +203,7 @@ run_session() {
   # One fresh session, retried once if it dies, asleep through a rejected
   # rate limit (run_claude_session in providers.sh).
   run_claude_session "regression:$level$tag" regression "$REPO" "$prompt_file" \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions for this kind of session are in your system prompt; follow them exactly, with these specifics: suite file is $suite_file; level is '$level'; workspace is $workspace. $instructions Then stop.
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions for this kind of session are in your system prompt; follow them exactly, with these specifics: suite file is $suite_file; level is '$level'; workspace is $workspace; lem is running ${lem:-unknown} - name that commit in anything you file or comment. $instructions Then stop.
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     "${SESSION_FLAGS[@]}" "${REGRESSION_FLAGS[@]}"
@@ -264,8 +264,12 @@ $report
 For each case whose status is fail or error, report it ('Reporting a failure' in the role instructions) exactly as for a case you ran yourself, quoting its failures; a pass needs nothing. An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure."
   fi
 
+  # Which commit this level ran against, in its header line and in every
+  # session's prompt, so a filing names it too
+  local lem
+  lem="$(deployed_head)"
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
-    echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace) ===" | tee -a "$LOGS/loop.log"
+    echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace, lem=$lem) ===" | tee -a "$LOGS/loop.log"
     run_session "$level" "$suite_file" "$workspace" "" whole \
       "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.$script_note"
   else
@@ -278,7 +282,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       ids+=("$id")
     done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
     total=${#ids[@]}
-    echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOGS/loop.log"
+    echo "=== $(ts) regression run ($MODEL_LABEL, level=$level, suite=$suite_file, workspace=$workspace, lem=$lem, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOGS/loop.log"
     for id in ${ids[@]+"${ids[@]}"}; do
       chunk+=("$id"); seen=$((seen + 1))
       if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then

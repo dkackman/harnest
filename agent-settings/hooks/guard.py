@@ -20,8 +20,9 @@ implementer:
     one owner at a time)
   - no push to master, no force push, no branch deletion on origin
   - hand-off gate: adding `status:fixed-pending-verify` needs a clean tree,
-    ruff clean on the changed files, and no pytest failure that isn't also
-    failing on HARNEST_BASE_COMMIT (see handoff_gate)
+    ruff clean on the changed files, the UI's check/lint/test passing when
+    ui/ changed, and no pytest failure that isn't also failing on
+    HARNEST_BASE_COMMIT (see handoff_gate)
 lead (the feature lead's design and decompose sessions, via `guard_settings lead` in providers.sh; its
 build and close-out sessions commit and push, so they run with
 implementer.json and get the implementer's rules, push checks and
@@ -54,7 +55,7 @@ Command matching is textual, on the Bash command line. It is a guard
 against the model's mistakes, not against an adversary: a determined agent
 could spell a call so this misses it, which audit_issue still catches.
 """
-import json, os, re, shlex, subprocess, sys
+import json, os, re, shlex, shutil, subprocess, sys
 
 
 def deny(msg):
@@ -206,6 +207,21 @@ def handoff_gate(cwd):
             if r.returncode != 0 and "No module named ruff" not in r.stderr:
                 deny("`ruff %s` fails on files this work changed, as CI would:\n%s"
                      % (" ".join(args), (r.stdout + r.stderr)[-2000:]))
+
+    # The UI's own checks, when this work touched ui/: CI runs them, and
+    # before R14 nothing did between a hand-off and the release PR. Type
+    # check, lint and unit tests - about 15 s - not the build or e2e.
+    # Absolute rather than relative to the base, unlike pytest: they are
+    # green on develop by CI's standard, and there is no per-test list to
+    # compare. Skipped, not refused, where the checkout can't run them.
+    ui_changed = git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", "ui/")
+    ui_dir = os.path.join(top, "ui")
+    if ui_changed and os.path.isdir(os.path.join(ui_dir, "node_modules")) and shutil.which("npm"):
+        for script in ("check", "lint", "test"):
+            r = subprocess.run(["npm", "run", "--silent", script], cwd=ui_dir, capture_output=True, text=True)
+            if r.returncode != 0:
+                deny("`npm run %s` fails in ui/ on files this work changed, as CI would:\n%s"
+                     % (script, (r.stdout + r.stderr)[-2000:]))
 
     def failures(root):
         r = subprocess.run([py, "-m", "pytest", "-q", "-rfE", "-p", "no:cacheprovider"], cwd=root,

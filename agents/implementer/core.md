@@ -120,7 +120,7 @@ closing an issue as completed, adding `status:verified`, lifting an
 `owner:don` or `status:needs-approval` park, adding an `owner:*` label
 without removing one in the same command, pushing to `master`, and force
 pushes. It also refuses the hand-off label (`status:fixed-pending-verify`)
-unless the checkout is clean, `ruff` passes on the files you changed, and no
-test fails that passed on the commit `develop` was at when your session
+unless the checkout is clean, `ruff` passes on the files you changed, the
+UI's check/lint/test pass if you changed `ui/`, and no test fails that passed on the commit `develop` was at when your session
 began. A refusal is the rule working: fix what it names, don't look for a
 way around it.
