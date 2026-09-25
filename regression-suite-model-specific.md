@@ -1251,4 +1251,26 @@ source: tester, verified in #442, model `claude-opus-5-5` via provider `anthropi
 validate rule.
 metrics: none.
 
+### M-F036 — `templates/ltx2/reference-sheet` runs on its own default sheet and renders a picture, not blocky mush
+Before #444, `loop_frames` handed `LTX2ReferenceCondition.frames` a uint8 `[0,255]` array. Diffusers
+normalizes that as `2*x-1` without a `/255`, so the LTX-2.5 Ingredients IC-LoRA encoded garbage. Every run
+"succeeded" with `warnings: []`, but each frame was ~32 px blocks of dark blue and orange. The template's
+default `asset:reference_sheet.png` also did not exist, so it could not run stock. The fix scales
+`loop_frames` to float `[0,1]` and ships a stock sheet as `asset:reference_sheet.jpg` in `common/assets`.
+**Paid**: about 2.5 min of GPU (LTX-2.5 + Ingredients IC-LoRA load).
+expected:
+- `validate_workflow(name="templates/ltx2/reference-sheet", arguments={"seed": 72})` → `valid: true`, with
+  no asset-not-found error.
+- `run_workflow(workflow_path="templates/ltx2/reference-sheet", arguments={"seed": 72},
+  acknowledged_cost=<bound plan>, wait_seconds=55)`, then `wait_for_job` until finished → `status:
+  succeeded`, and one `final/*.mp4` from the `shot` step.
+- `get_output_frames(name=<that mp4>, at=[0.5, 2.5, 4.5])` → each frame is a recognisable scene: a
+  woman at a workshop bench, matching the stock sheet's woman / pocket-watch / workshop panels.
+It is a **finding** if validate can't resolve the default sheet, or if the frames are blocky, abstract
+colour fields with no recognisable figure or setting, whatever `status` and `warnings` say.
+cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole.
+source: tester, verified in #444, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-25 against
+`lem` `develop @ 3a28146`: job `432477f376e6` succeeded in ~2.4 min with coherent frames.
+metrics: none.
+
 ## Performance
