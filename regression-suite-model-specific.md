@@ -1226,4 +1226,29 @@ against `lem` `develop @ 5f2a766`: job `6e21948f98d7` succeeded cold in ~96 s. T
 the case for smoke. It lives here because it loads LTX-2.5.
 metrics: none.
 
+### M-F035 — `LTX2InContextPipeline` refuses an unknown component name at validate time, and the IC-LoRA templates carry none
+Before #442, `restore-decompression`, `restore-deblur` and `reference-sheet` configured a `duration_head`
+component that `LTX2InContextPipeline` (LTX-2.5 IC-LoRA) does not register. Each validated clean and then
+died about 2 minutes into `loading` with `LTX2InContextPipeline has no component 'duration_head'`. The fix
+removed the entry and made validate check `configuration.components` names against the pipeline class.
+**Free**: validate only.
+expected:
+- `validate_workflow(workflow={"id": "m-f035-probe", "steps": [{"name": "restored", "pipeline":
+  {"configuration": {"component_type": "LTX2InContextPipeline", "components": {"vae": {"device": "cuda"},
+  "duration_head": {"device": "cuda"}}}, "from_pretrained_arguments": {"model_name":
+  "Lightricks/LTX-2.5-Diffusers", "torch_dtype": "torch.bfloat16"}, "arguments": {"prompt": "a cat",
+  "num_frames": 9}}, "result": {"content_type": "video/mp4"}}]})` → `valid: false`, with exactly one error at
+  `steps[0].pipeline.configuration.components.duration_head` naming `LTX2InContextPipeline` and
+  `duration_head`. `vae` is not flagged.
+- `validate_workflow(name=...)` with default arguments, for each of `templates/ltx2/restore-decompression`,
+  `templates/ltx2/restore-deblur` and `templates/ltx2/reference-sheet`: no error under
+  `steps[*].pipeline.configuration.components`. An error about a default `asset:` input missing from the
+  workspace is not a finding.
+It is a **finding** if the probe validates clean, or if any of the three templates reports a component error.
+cleanup: none (nothing is queued or written).
+source: tester, verified in #442, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-25 against
+`lem` `develop @ f66edcd`. The implementer proposed the template half. The probe half covers the new
+validate rule.
+metrics: none.
+
 ## Performance
