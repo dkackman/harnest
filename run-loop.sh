@@ -799,6 +799,8 @@ while true; do
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board
     freeze="$(release_freeze)"; [ -z "$freeze" ] || echo "  release freeze $freeze: only release-blocker issues move"
+    drafts="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" --jq length 2>/dev/null || true)"
+    [ "${drafts:-0}" = 0 ] || echo "  $drafts private security finding(s) in draft advisories: ./scripts/file-advisory.sh --list"
   } | tee -a "$LOGS/loop.log"
 
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then

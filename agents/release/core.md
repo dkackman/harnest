@@ -33,3 +33,6 @@ output has room for it.
 The hook refuses a `completed` close, `status:verified`, lifting a park,
 stacking owners, `status:plan-approved`, `release` and `release-blocker`, and
 any issue text carrying a release-gate marker.
+
+The hook also refuses the `security` label on any issue: a hole is filed privately
+(`scripts/file-advisory.sh`), never on the public tracker.

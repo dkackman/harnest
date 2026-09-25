@@ -45,3 +45,6 @@ lines from a suite (other than a stage's `pending:` line) logs an
 
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.
+
+The hook also refuses the `security` label on any issue: a hole is filed privately
+(`scripts/file-advisory.sh`), never on the public tracker.

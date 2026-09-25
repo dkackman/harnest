@@ -40,8 +40,10 @@ refusal *is* the pass.
 Workspace: `regression-security`. Case IDs use the `SE-` prefix (`SE-F001`,
 `SE-P001`, ...) so they never collide with `S-`/`C-`/`M-` IDs — the
 regression agent's duplicate-issue search is keyed on the full prefixed ID.
-Issues filed from this file carry the `security` label in addition to
-`regression`. Full run mechanics (fixtures vs. outputs, cleanup, the final
+A probe that gets through is filed privately, as a draft security advisory
+(`scripts/file-advisory.sh`), never as a public issue. A case that fails
+while its boundary held is an ordinary `regression` issue. See "A boundary
+that didn't hold" in `agents/regression/core.md`. Full run mechanics (fixtures vs. outputs, cleanup, the final
 sweep) live in `agents/regression/`, not here.
 
 Maintained by the regression agent, run via `run-regression.sh`, and grown

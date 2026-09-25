@@ -62,6 +62,14 @@ issues = board.setdefault(repo, [])
 labels = lambda i: [l["name"] for l in i.get("labels", [])]
 
 
+def repo_of_api(argv):
+    """owner/repo out of a `gh api repos/<owner>/<repo>/...` path."""
+    for a in argv[1:]:
+        if a.startswith("repos/"):
+            return "/".join(a.split("/")[1:3])
+    return repo
+
+
 def find(n):
     for i in issues:
         if str(i["number"]) == str(n).lstrip("#"):
@@ -112,6 +120,24 @@ elif cmd == ["issue", "close"]:
     i["state"] = "CLOSED"
     i["stateReason"] = "NOT_PLANNED" if (opt("--reason") or "").lower() == "not planned" else "COMPLETED"
     save()
+elif cmd[0] == "api" and "security-advisories" in " ".join(args):
+    # Draft advisories live beside the issues, under "<repo>#advisories"
+    advs = board.setdefault(repo_of_api(args) + "#advisories", [])
+    path_arg = next(a for a in args[1:] if "security-advisories" in a)
+    method = (opt("-X") or opt("--method") or "GET").upper()
+    ghsa = path_arg.split("security-advisories")[1].strip("/").split("?")[0]
+    if method == "POST":
+        body = json.load(sys.stdin) if opt("--input") == "-" else {}
+        adv = dict(body, ghsa_id="GHSA-fake-%04d" % (len(advs) + 1), state="draft")
+        adv["html_url"] = "https://github.com/%s/security/advisories/%s" % (repo_of_api(args), adv["ghsa_id"])
+        advs.append(adv); save(); out(adv)
+    elif ghsa:
+        adv = next(a for a in advs if a["ghsa_id"] == ghsa)
+        if method == "PATCH":
+            adv.update(json.load(sys.stdin) if opt("--input") == "-" else {}); save()
+        out(adv)
+    else:
+        out([a for a in advs if a.get("state") == "draft"])
 elif cmd[0] == "api":
     out([])
 else:

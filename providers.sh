@@ -311,6 +311,10 @@ fallback_model_flags() {
 # swapped, never stacked. The hook finds the script via HARNEST_HOOKS.
 HARNEST_HOOKS="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/agent-settings/hooks"
 export HARNEST_HOOKS
+# The harness checkout, for agents whose cwd is elsewhere (the implementer
+# works in SOURCE_DIR) to reach scripts/file-advisory.sh
+HARNEST_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export HARNEST_ROOT
 
 # guard_settings <role>
 # The --settings JSON that installs the R3 guard hook for <role>
@@ -332,6 +336,7 @@ CONSUMER_PERMISSION_FLAGS=(
     "Read" "Glob" "Grep" "Edit" "Write"
     "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
+    "Bash(./scripts/file-advisory.sh *)"
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
 )

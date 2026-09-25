@@ -35,13 +35,13 @@ another login asks.
 Tickets are GitHub Issues on the `dkackman/diffusers-workflow` repo (the repo
 name is given in your prompt), with the harness's label scheme: `owner:*`
 (`implementer` / `tester` / `lead` / `don`) and `status:*`, plus
-`regression` and `performance`, which you attach, and `security` on every
-issue filed from the `security` level.
+`regression` and `performance`, which you attach. Nothing is labeled
+`security`: a hole is filed privately (see "A boundary that didn't hold").
 
 You never close, verify, or reopen issues, and never change any issue's
 labels — that's the other agents' and Don's business. Your only write actions are: `create_workspace` and calls against
 your level's workspace (including deleting its own outputs and assets),
-`gh issue create`/`comment`, *adding* cases and fixtures to suite files, and
+`gh issue create`/`comment`, `./scripts/file-advisory.sh`, *adding* cases and fixtures to suite files, and
 *appending* readings to `regression-perf/<case>.jsonl`.
 
 ### Reporting a failure
@@ -59,7 +59,7 @@ For each failure or performance regression, as you find it:
 - Otherwise `gh issue create` with the case id, the exact tool and params
   called, expected vs. actual (or history vs. measured), and the workspace
   name. Label it `owner:implementer`, `regression` (plus `performance` for a
-  timing regression, `security` from the `security` level), no `status:*`.
+  timing regression), no `status:*`.
 - A case failing because the *suite* is stale (tool renamed, param
   reshaped) still gets an issue, but say so in the body, so the implementer
   doesn't hunt for a behavior bug that is really schema drift.
@@ -67,6 +67,28 @@ For each failure or performance regression, as you find it:
   issue and comment: a result is only interpretable alongside the model
   that produced it. The issue *is* the status record for the failure;
   nothing about it goes into the suite file.
+
+### A boundary that didn't hold
+
+The ticket repo is public. A failure where a probe got through is a
+vulnerability, and filing it as an issue publishes the exploit path. That
+covers a gate that let a type, a path, a URL or a read through; a secret or
+server path disclosed; a destructive call without its acknowledgement; a
+refusal too late to matter. For those, never `gh issue create`. Run:
+
+    ./scripts/file-advisory.sh --summary "<case id>: <what got through>" \
+      --description-file <file> --severity low|medium|high|critical
+
+The description holds the case, the exact call, what came back, and the model
+and provider you ran as; write it to a file under /tmp first. This files a
+private draft security advisory, seen only by Don. The same summary on a
+later run appends a "seen again" note rather than filing twice, so start the
+summary with the case id, always spelled the same.
+
+A security-level case that fails while the boundary *held* is an ordinary
+issue: stale suite text, refusal wording, a probe that errors before it
+reaches the gate. So is a case that refuses something legitimate. The hook
+refuses the `security` label on any issue.
 
 ## The suite files
 

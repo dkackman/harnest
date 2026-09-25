@@ -121,7 +121,20 @@ commands() {
   printf '%s\t%s\n' "$approve" "$reject"
 }
 
+# advisories_section: private draft security advisories on the ticket repo,
+# filed by the agents or run-release.sh instead of public issues (R14 item
+# 3). Nothing in the loop works them yet: Don hands each out by hand. This
+# digest is written only to logs/, which is gitignored.
+advisories_section() {
+  local rows
+  rows="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" \
+      --jq '.[] | "- \(.ghsa_id) (\(.severity // "no severity")): \(.summary) - \(.html_url)"' 2>/dev/null || true)"
+  [ -n "$rows" ] || return 0
+  printf '\n## Private security findings (draft advisories)\n\nFiled privately instead of as issues. Fix out of band, then publish or close each.\n\n%s\n' "$rows"
+}
+
 curator="$(curator_section)"
+advisories="$(advisories_section)"
 stranded="$(stranded_section)"
 harness="$(harness_section)"
 
@@ -131,7 +144,7 @@ if [ "${#issues[@]}" -eq 0 ]; then
   out="# owner:don digest — $(date '+%F %H:%M')
 
 nothing parked with owner:don
-$stranded$harness$curator"
+$advisories$stranded$harness$curator"
   printf '%s\n' "$out" | tee "$LOGS/digest.md"
   exit 0
 fi
@@ -181,7 +194,7 @@ out="# owner:don digest — $(date '+%F %H:%M')
 ${#issues[@]} parked; median $median days parked.
 
 $table
-$stranded$harness$curator"
+$advisories$stranded$harness$curator"
 printf '%s\n' "$out" | tee "$LOGS/digest.md"
 if [ -n "$DIGEST_ISSUE" ]; then
   printf '%s\n' "$out" | gh issue comment "$DIGEST_ISSUE" --repo "$TICKET_REPO" --body-file - >/dev/null \

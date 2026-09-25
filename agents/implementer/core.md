@@ -46,6 +46,19 @@ acts next.
   prompt states them): a later reader has no other way to tell what kind of
   hands produced it.
 
+## A security hole you find
+
+If your work turns up a hole the public tracker shouldn't hear about, don't
+file it or describe it in an issue, a comment or a commit message. That
+covers an untrusted caller reaching code, a path, a URL or a secret. File it
+as a private draft advisory:
+
+    "$HARNEST_ROOT/scripts/file-advisory.sh" --summary "<one line>" \
+      --description-file <file under /tmp> --severity low|medium|high|critical
+
+Put the repro, where the fix goes, and your model in the description. Don
+decides when and how it's fixed.
+
 ## Dispositions other than a fix
 
 Each is the whole move; use it exactly.
@@ -127,3 +140,6 @@ is the rule working: fix what it names, don't look for a way around it.
 
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.
+
+The hook also refuses the `security` label on any issue: a hole is filed privately
+(`scripts/file-advisory.sh`), never on the public tracker.

@@ -34,6 +34,9 @@ every role:
     alone (roadmap R11), so no agent can approve the plan it wrote
   - no adding `release` or `release-blocker`: a freeze, and what moves
     during one, are Don's (roadmap R14)
+  - no `security` label on an issue: a security finding goes to a private
+    draft advisory (scripts/file-advisory.sh), never the public tracker,
+    where it would publish the exploit path (roadmap R14 item 3)
   - no issue text carrying a release-gate marker (`harnest:release-gate`):
     run-release.sh records a gate's result that way on the release issue,
     and every agent posts as Don's login, so an agent's copy would read as
@@ -294,6 +297,11 @@ def main():
     cmd = data.get("tool_input", {}).get("command", "")
     cwd = data.get("cwd") or os.getcwd()
     for words in segments(cmd):
+        if (is_gh_issue(words, "create") and "security" in flag_values(words, "--label", "-l")) \
+                or (is_gh_issue(words, "edit") and "security" in flag_values(words, "--add-label")):
+            deny("a security finding is filed privately, never as a public issue: "
+                 "scripts/file-advisory.sh --summary ... --description-file ... --severity ... "
+                 "(the implementer: $HARNEST_ROOT/scripts/file-advisory.sh).")
         if carries_release_marker(words):
             deny("a release-gate marker is run-release.sh's record of a gate Don ran; no agent writes one.")
         if is_gh_issue(words, "edit"):

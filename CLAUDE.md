@@ -444,6 +444,17 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   (`release_freeze` in `providers.sh`). Closing the release issue lifts it.
   `touch logs/stop-after-cycle` is the other freeze: the loop exits at the next cycle
   boundary.
+- **Security holes are private** (R14 item 3). A finding where a boundary didn't hold
+  goes to a draft GitHub security advisory via `scripts/file-advisory.sh`, never a public
+  issue. That covers a gate, a path, a URL, a disclosure, or a destructive call without
+  acknowledgement. Only Don and the repo's admins can see a draft. The script dedupes
+  by summary, appending "seen again" rather than filing twice. The tester and regression
+  agent may run it (`CONSUMER_PERMISSION_FLAGS`), and so may the implementer
+  (`$HARNEST_ROOT`), and `run-release.sh review` files its security findings the same
+  way. `guard.py` refuses the `security` label on any issue from every agent. A
+  security-level case that fails while its boundary held is an ordinary issue. The
+  board line and the digest count open drafts. Nothing in the loop works them: Don hands
+  each one out.
 - **The owner label is the only signal.** A status addressed to Don (`needs-approval`,
   `plan-review`, or `needs-info` on an implementer's or lead's issue) is stale once he
   swaps the owner back. It never decides a queue, and the agent that receives the issue

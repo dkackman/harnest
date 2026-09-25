@@ -160,6 +160,7 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Answer a curator escalation (harnest) | Comment approve, deny or your amendment, then remove `owner:don`. |
 | Reverse a curator ruling (harnest) | Reopen it with a comment saying what you want instead. |
 | Let an outside filer's issue into the loop | Hand it back as in the first row. It is never re-parked after that. |
+| Handle a private security finding | `./scripts/file-advisory.sh --list` (also on the board line and in the digest). Fix it out of band, or hand it to the implementer yourself without the details going public; publish the advisory once the fix ships, or close it. |
 | Freeze for a release | Open an issue titled with the version (`Release 0.5.0`), labeled `release` + `owner:don`. Until you close it, only issues labeled `release-blocker` move, and the tester's standing task is held. Add `release-blocker` to what must land first. |
 
 **What doesn't move anything:**
@@ -352,8 +353,8 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 - **Gates are per commit.** A fix after the gates moves `develop`, and `cut` then wants
   every gate again on the new commit. `accept <gate> <why>` records that you took an
   earlier run as good enough. Nothing is inferred from what a commit touched.
-- **Security findings stay off GitHub.** The review keeps them in
-  `logs/release-<version>/security.md`, and the release issue gets only their count. `cut`
+- **Security findings stay off the public tracker.** The review files each one as a
+  private draft security advisory, and the release issue gets only their count. `cut`
   refuses while one is a blocker, unless you `accept security`.
 - **Tested offline:** `freeze`, `check`, `accept`, `status` and `cut`'s refusal, plus the
   marker, findings and notes logic.

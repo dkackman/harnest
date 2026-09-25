@@ -138,8 +138,9 @@ eq  "release review: the public blocker is a release-blocker" "owner:implementer
 eq  "release review: the follow-up is plain" "owner:implementer" \
   "$(jq -r '.["o/r"][] | select(.title == "[engine] slow save") | [.labels[].name] | sort | join(",")' "$T/board.json")"
 eq  "release review: the security finding never reaches the tracker" "" \
-  "$(jq -r '.. | strings | select(test("token-free path leak"))' "$T/board.json")"
-has "release review: it is kept locally" "token-free path leak" "$(cat "$T/h/logs/release-0.9.0/security.md")"
+  "$(jq -r '.["o/r"] | .. | strings | select(test("token-free path leak"))' "$T/board.json")"
+eq  "release review: it is a private draft advisory" "0.9.0 review: token-free path leak|high|draft" \
+  "$(jq -r '.["o/r#advisories"][] | "\(.summary)|\(.severity)|\(.state)"' "$T/board.json")"
 has "release review: and blocks as the security gate" "harnest:release-gate security $sha fail" \
   "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
 FAKE_CLAUDE_DO=''

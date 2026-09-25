@@ -21,10 +21,10 @@
 # new commit - or for `accept <gate> <reason>`, which records that Don took an
 # earlier run as good enough. Nothing is inferred from what a commit touched.
 #
-# Security findings from `review` never reach GitHub (R14 item 3, a private
-# channel, is not built yet): they go to logs/release-<version>/security.md,
-# gitignored, and the release issue gets only their count. `cut` refuses
-# while that file holds a blocker, unless `accept security` says otherwise.
+# Security findings from `review` never reach the public tracker: each is
+# filed as a private draft security advisory (scripts/file-advisory.sh, R14
+# item 3), and the release issue gets only their count. `cut` refuses while
+# one is a blocker, unless `accept security` says otherwise.
 set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"
@@ -268,12 +268,25 @@ stage_review() {
     return 1
   fi
   jq -s 'add' "$WORK"/review-*-"${sha:0:10}".json > "$findings"
-  # Security findings stay local: the issue tracker is public
+  # Security findings go to private draft advisories, never the public
+  # tracker (R14 item 3). A blocker is filed high, a follow-up low; Don
+  # reassesses either in the advisory.
   sec="$(jq '[.[] | select(.security)] | length' "$findings")"
   secblock="$(jq '[.[] | select(.security and .severity == "blocker")] | length' "$findings")"
-  jq -r --arg v "$version" --arg s "${sha:0:10}" '
-    "# Release \($v) review: security findings on \($s)\n\nNot for the public tracker. Fix out of band, then rerun review or `accept security`.\n",
-    (.[] | select(.security) | "## [\(.severity)] \(.title)\n\n\(.file)\n\n\(.detail)\n")' "$findings" > "$WORK/security.md"
+  local j=0 advisories="" adv_desc="$WORK/advisory.md" adv_url severity
+  while [ "$j" -lt "$sec" ]; do
+    jq -r --argjson j "$j" --arg v "$version" --arg s "${sha:0:10}" --arg m "$RELEASE_MODEL" \
+      '[.[] | select(.security)][$j] | "Found by the \($v) release review on develop \($s) (\(.area), \(.severity)), model \($m).\n\n**Where:** \(.file)\n\n\(.detail)"' \
+      "$findings" > "$adv_desc"
+    severity="$(jq -r --argjson j "$j" '[.[] | select(.security)][$j] | if .severity == "blocker" then "high" else "low" end' "$findings")"
+    adv_url="$(TICKET_REPO="$TICKET_REPO" SOURCE_DIR="$SOURCE_DIR" "$REPO/scripts/file-advisory.sh" \
+      --summary "$version review: $(jq -r --argjson j "$j" '[.[] | select(.security)][$j].title' "$findings")" \
+      --description-file "$adv_desc" --severity "$severity")" \
+      || { cp "$findings" "$WORK/security-unfiled.json"; die "review: could not file a security advisory; the findings are in $WORK/security-unfiled.json, not on GitHub"; }
+    advisories="$advisories ${adv_url##*/}"
+    j=$((j + 1))
+  done
+  rm -f "$adv_desc"
   local i=0 n title body labels existing
   n="$(jq '[.[] | select(.security | not)] | length' "$findings")"
   # A counter, not seq: BSD seq counts down, so `seq 0 -1` is "0 -1"
@@ -291,9 +304,10 @@ stage_review() {
     filed="$filed $(gh issue create --repo "$TICKET_REPO" --title "$title" --body "$body" --label "$labels" | sed -n 's|.*/issues/\([0-9][0-9]*\)$|#\1|p')"
     i=$((i + 1))
   done
-  record review "$sha" pass "Areas: $REVIEW_AREAS. Filed:${filed:- nothing} ($blockers blocker(s)). Security: $sec finding(s), $secblock blocker(s), kept in \`$WORK/security.md\` on Don's machine, not here."
+  record review "$sha" pass "Areas: $REVIEW_AREAS. Filed:${filed:- nothing} ($blockers blocker(s)). Security: $sec finding(s), $secblock blocker(s), filed as private draft advisories."
+  [ -z "$advisories" ] || say "review: draft advisories:$advisories"
   if [ "$secblock" -eq 0 ]; then record security "$sha" pass "No security blocker."
-  else record security "$sha" fail "$secblock security blocker(s): see the local file. Fix out of band; rerun review or \`accept security\`."; fi
+  else record security "$sha" fail "$secblock security blocker(s), in private draft advisories. Fix them out of band, then rerun review or \`accept security\`."; fi
 }
 
 stage_notes() {

@@ -26,7 +26,11 @@ for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label release-blocker'
   row 2 $r "" $none 'gh issue edit 5 --add-label bug,release'
   row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:release-gate ci abc pass -->"'
+  row 2 $r "" $none 'gh issue create --title "SE-F001 fails" --label owner:implementer,regression,security'
+  row 2 $r "" $none 'gh issue edit 5 --add-label security'
 done
+row 0 consumer "" $none 'gh issue create --title "S-F001 fails" --label owner:implementer,regression'
+row 0 consumer "" $none './scripts/file-advisory.sh --summary x --description-file y --severity high'
 printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
 row 2 consumer "" $none "gh issue comment 5 --body-file $T/marker.md"
 row 0 consumer "" $none 'gh issue comment 5 --body "the release gates ran fine"'

@@ -1404,6 +1404,19 @@ and `notes`. Item 3 before the next release that has a security finding.
 - **Whether `release-blocker` also blocks the curator** from applying suite edits
   during a freeze.
 
+**Item 3 done (2026-09-25): draft security advisories.**
+- `scripts/file-advisory.sh` files a finding as a private draft advisory. It dedupes by
+  summary, and `--list` shows the open drafts. A test draft was filed and closed against
+  the real API.
+- The tester, regression agent and implementer file holes with it, and so does
+  `run-release.sh review`.
+- The guard refuses the `security` label on issues from every agent.
+- Drafts show on the board line and in the digest.
+- Private vulnerability reporting was already on for the repo.
+- **Later:** a queue that hands a draft to the implementer without publishing it. That
+  needs a fix branch the public can't read, such as the advisory's temporary private
+  fork.
+
 **Item 2 built (2026-09-25): `run-release.sh`.** The stages are `freeze`, `check`,
 `review`, `notes`, `gates`, `accept`, `status` and `cut`. `lib/release.sh` holds the
 offline-testable parts.
