@@ -4391,4 +4391,35 @@ the map ends past the file's last sample.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F127 — a dissolve that puts a 48 kHz LTX clip between two 32 kHz H3 shots resamples up and keeps its shot map exact
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+This is a cross-family join. LTX-2.5 writes its soundtrack at 48 kHz, and H3 shots are 32 kHz.
+The resample has to land the shot map on whole samples at the new rate (2000 per frame at
+24 fps), and the overlaps have to survive. CPU only, one job of about 12 s.
+The inputs are `asset:qa-cast/ep62-shot1-accuse.mp4` (124 f, 32 kHz),
+`asset:qa-cast/ep63-shot-ltx-priya.mp4` (121 f, 48 kHz, `templates/ltx2/image-to-video`) and
+`asset:qa-cast/ep62-shot2-deflect.mp4` (124 f, 32 kHz).
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f127", "seed": 1,
+   "steps": [{"name": "join", "task": {"command": "dissolve_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep62-shot1-accuse.mp4", "asset:qa-cast/ep63-shot-ltx-priya.mp4",
+   "asset:qa-cast/ep62-shot2-deflect.mp4"], "dissolve_frames": 12, "fps": 24, "match_levels":
+   "rms", "match_levels_dbfs": -24}}, "result": {"content_type": "video/mp4", "subfolder":
+   "final"}}]}, acknowledged_cost=<bound from validate>, wait_seconds=55)`.
+2. `get_gallery_metadata` and `assess_output` on the `join` file.
+expected:
+- `succeeded` with exactly one warning: the sample-rate mismatch, naming 32000/48000/32000 and
+  resampling to 48000 Hz.
+- 345 frames (124+121+124 − 2×12), 24 fps, 14.375 s, 48 kHz stereo, 960×544,
+  `audio_stream_seconds` equal to `duration_seconds`.
+- The manifest and `media.shots` list three shots at start_frame 0/112/221, num_frames
+  112/109/124, start_sample 0/224000/442000, num_samples 224000/218000/248000. The last two
+  carry `overlap_frames: 12`. The map ends at sample 690000 = 14.375 × 48000.
+- `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, and no findings when this
+  was written (seam 1's `after_rms_dbfs` reads about −65 because the LTX clip opens quiet, and
+  that is below `seam_hole`'s floor).
+It is a **finding** if the output is not at 48 kHz, if the map is off the 2000-samples-per-frame
+grid, or if an overlap is lost.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
