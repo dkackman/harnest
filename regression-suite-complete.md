@@ -4333,4 +4333,32 @@ back as cuts, the new seam 8 is not a dissolve, or shot 8 keeps 124 frames (#405
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F125 — `analyze_seams`' own `shots` argument overrides the manifest and carries `hard_cut` to its seam
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+A hand-written shot list is the only way to mark a cut as intended. The flag has to reach the
+seam it opens, and only that seam. CPU only, one job of about 5 s.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f125", "seed": 1,
+   "steps": [{"name": "control", "task": {"command": "analyze_seams", "arguments": {"video":
+   "asset:qa-cast/ep42-episode.mp4", "shots": [{"name": "accuse", "start_frame": 0,
+   "num_frames": 124}, {"name": "deflect", "start_frame": 124, "num_frames": 124}]}}, "result":
+   {"content_type": "application/json", "subfolder": "intermediate"}}, {"name": "marked", "task":
+   {"command": "analyze_seams", "arguments": {"video": "asset:qa-cast/ep42-episode.mp4", "shots":
+   [{"name": "accuse", "start_frame": 0, "num_frames": 124, "hard_cut": true}, {"name":
+   "deflect", "start_frame": 124, "num_frames": 124, "hard_cut": true}]}}, "result":
+   {"content_type": "application/json", "subfolder": "final"}}]}, acknowledged_cost=<bound from
+   validate>, wait_seconds=55)`.
+2. `get_output_text` on each step's JSON.
+expected:
+- `succeeded` with no warnings. Both outputs give `shots_source: "argument"` and exactly one
+  seam, `between: ["accuse", "deflect"]`, `kind: "cut"`, at about 5.167 s. The seam names come
+  from the argument, not the manifest's `shot@accuse`/`shot@deflect`.
+- `control` seam `hard_cut: false`. `marked` seam `hard_cut: true`: the flag on the incoming
+  shot applies, and the flag on the first shot opens no seam of its own.
+- Every measurement is identical between the two steps. When this case was written,
+  `level_step_db` was 1.44 and `jump_ratio` 20.29, with no findings.
+It is a **finding** if `shots_source` is `manifest` or the seam names are `shot@…`, if either
+step reports two seams, or if `marked` reads `hard_cut: false`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
