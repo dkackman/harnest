@@ -679,7 +679,10 @@ $(issue_context "$n")" \
 # tester, correctly, could neither see the README nor read the diff). The
 # reviewer reads the merged tree, so its cwd is the plugin tree, the
 # driver's detached worktree at origin/develop, refreshed just before the
-# tester pass. Read-only: it can't change the tree it reviews.
+# tester pass. Read-only: it can't change the tree it reviews. Setting
+# sources are local only, not ISOLATION_FLAGS' project,local: the dw repo's
+# checked-in .claude/settings.json allows pip install, pytest and curl, and
+# under dontAsk a project allow rule would widen this allowlist.
 reviewer_pass() {
   local n
   while IFS= read -r n; do
@@ -694,7 +697,7 @@ Your working directory is the merged tree at origin/develop @ $(git -C "$PLUGIN_
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
 $(issue_context "$n")" \
-      "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$REVIEWER_TOOLS" "${REVIEWER_PERMISSION_FLAGS[@]}"
+      "${MCP_FLAGS[@]}" --setting-sources local --tools "$REVIEWER_TOOLS" "${REVIEWER_PERMISSION_FLAGS[@]}"
   done < <(queue_issues reviewer:docs | cut -f1)
 }
 

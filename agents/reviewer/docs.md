@@ -37,4 +37,5 @@
      with the file, the line as it stands and what it should say.
    - **Can't tell** (the claim rests on a decision only Don can confirm):
      swap `owner:tester` for `owner:don`, keep the other labels, and
-     comment the one question he has to answer.
+     comment the one question he has to answer, ending with how to hand it
+     back: to `owner:tester` for another review, or close it himself.

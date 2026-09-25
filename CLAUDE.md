@@ -77,13 +77,16 @@ and runs the real drivers end to end. See "Tests" below.
   `run_session` and `run-bench.sh` pass the result as `--append-system-prompt-file`.
   Kinds: implementer `fix`/`triage`; tester `verify`/`handoff`/`answer`/`closures`/`task`
   (`task` also loads `standing-task.md`, and `verify`/`handoff`/`task` load `cases.md`);
-  regression `whole`/`chunk`/`sweep`. State each rule once, in the core if more than one
+  regression `whole`/`chunk`/`sweep`; reviewer `docs`. State each rule once, in the core if more than one
   kind needs it, and have fragments point at it by section name, never by step number
   across files. A rule enforced by `guard.py` stays in the core as a one-line pointer.
 - `agents/implementer/` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`,
   default `~/src/dkackman/dw-agent`: a clone kept for the agents, with its own `venv` from
   `install.sh` — not Don's working checkout, which it used to share and switch branches under).
+- `agents/reviewer/` — the docs reviewer: verifies a `docs-review` fix (text neither the
+  server nor the plugin serves) by reading the merged tree, since the tester can't see it
+  and must not read source. See "Ticket protocol".
 - `agents/tester/` — role prompt for the agent that talks to the MCP server *only* as a
   protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split
   plus an enforced tool allowlist (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`, see
@@ -276,7 +279,7 @@ and `run-curate.sh` make only read-only MCP calls (or none) and take no lock. Ea
 
 After every per-issue session (and on each triaged issue after triage) `audit_issue` checks
 the invariants the prompts state — an open issue has exactly one `owner:*` label; only the
-tester closes as `completed` — and `commit_suite_changes` flags a suite commit that removed
+tester (or the docs reviewer) closes as `completed` — and `commit_suite_changes` flags a suite commit that removed
 lines (cases and `regression-perf/` readings are add-only unless a human approved it). Both log
 `[audit] WARNING` to `loop.log` and repair nothing: `grep '\[audit\]' logs/loop.log` after a
 model change is how drift from the prompts shows up.
@@ -348,11 +351,16 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   `Write` for staging text in /tmp, and one `gh api` PATCH form for the plan comment. A
   third isolation shape: it sees source, like the implementer, but can never change it.
   Its build and close-out sessions run with the implementer's flags.
+- Docs reviewer: `--permission-mode dontAsk` + `REVIEWER_PERMISSION_FLAGS` — the lead-design
+  shape minus every write: `Read`/`Grep`/`Glob`, read-only `git`, read-only `dw` discovery,
+  `gh issue`. Its cwd is the plugin tree, and it runs with `--setting-sources local`, not
+  `project,local`: the dw repo's checked-in `.claude/settings.json` allows `pip install`,
+  `pytest` and `curl`, which a project source would add to its allowlist.
 
 Guard hooks (roadmap R3): `agent-settings/hooks/guard.py` is a `PreToolUse` hook on `Bash`.
 The implementer loads it via `agent-settings/implementer.json`; tester and regression load it
 via `guard_settings consumer` (`providers.sh`, which generates the `--settings` JSON for the
-consumer, lead and curator roles), inside `CONSUMER_PERMISSION_FLAGS`. It refuses at
+consumer, lead, curator and reviewer roles), inside `CONSUMER_PERMISSION_FLAGS`. It refuses at
 call time what `audit_issue` otherwise only finds afterwards:
 - `completed` closes and `status:verified` from the implementer;
 - lifting a `owner:don`/`needs-approval` park;
@@ -360,7 +368,9 @@ call time what `audit_issue` otherwise only finds afterwards:
 - stacking `owner:*` labels;
 - a consumer verifying in a session with no `mcp__dw__*` call. A tester handoff session may
   close as `completed` without one, since it applies a harness-side edit with nothing to verify
-  (`HARNEST_SESSION_KIND`, set by `run_agent`). It still can't add `status:verified`.
+  (`HARNEST_SESSION_KIND`, set by `run_agent`). It still can't add `status:verified`;
+- `status:verified` from the docs reviewer, which closes as `completed` without an MCP call
+  and marks it `status:reviewed` instead.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
 changed files, and no test may fail that passed on `HARNEST_BASE_COMMIT` (origin/develop

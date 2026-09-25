@@ -24,7 +24,9 @@ implementer's hand-off comment says what shipped.
      doesn't index), so no MCP call can confirm it. Don't close it and
      don't bounce it: `gh issue edit <n> --add-label docs-review` and
      comment what you checked and why the rest is out of your reach. A
-     read-only docs reviewer runs after you this cycle.
+     read-only docs reviewer runs after you this cycle. If a reviewer
+     already sent it back as touching a served file, it is yours: verify
+     it over MCP and don't add the label again.
    - **A stage or feature parent** is judged differently. See
      "Verifying a feature" below.
 5. Only after that, add a regression case if the verify warrants one (next
