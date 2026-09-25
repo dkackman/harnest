@@ -4453,4 +4453,38 @@ trailing asset takes the `paired` name.
 cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
+### C-F129 — a multi-shot `previous_result:` dissolved after a multi-shot asset keeps both sides' inner shots
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+C-F128 with inner shots on *both* sides of the join. The `bridge` step is itself a 2-shot
+dissolve, and it is then fed by reference after the kept 2-shot `ep62-episode`. Its inner names
+must survive: they must not be collapsed to `bridge` or renamed `video 2`. CPU only, one job of
+about 16 s. The inputs are `asset:qa-cast/ep65-shot-kf-priya-hal.mp4` (121 f, 48 kHz,
+`templates/ltx2/keyframes`), `asset:qa-cast/ep62-shot2-deflect.mp4` (124 f, 32 kHz) and
+`asset:qa-cast/ep62-episode.mp4` (248 f, 32 kHz, shots `shot@accuse`/`shot@deflect`).
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f129", "seed": 1,
+   "steps": [{"name": "bridge", "task": {"command": "dissolve_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep65-shot-kf-priya-hal.mp4", "asset:qa-cast/ep62-shot2-deflect.mp4"],
+   "dissolve_frames": 12, "fps": 24, "match_levels": "rms", "match_levels_dbfs": -24}},
+   "result": {"content_type": "video/mp4", "subfolder": "intermediate"}}, {"name": "episode",
+   "task": {"command": "dissolve_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep62-episode.mp4", "previous_result:bridge"], "dissolve_frames": 12, "fps":
+   24, "match_levels": "rms", "match_levels_dbfs": -24}}, "result": {"content_type":
+   "video/mp4", "subfolder": "final"}}]}, acknowledged_cost=<bound from validate>,
+   wait_seconds=55)`.
+2. `get_gallery_metadata` on the `episode` file.
+expected:
+- `succeeded`. Each step has a `sample_rate_mismatch` warning that resamples to 48000 Hz.
+- The `bridge` manifest has 2 shots: `ep65-shot-kf-priya-hal.mp4` at frame 0 (109 f) and
+  `ep62-shot2-deflect.mp4` at frame 109 (124 f, `overlap_frames: 12`).
+- The `episode` manifest and `media.shots` have 4 shots in this order: `shot@accuse` 0/124,
+  `shot@deflect` 124/112, `ep65-shot-kf-priya-hal.mp4` 236/109, and `ep62-shot2-deflect.mp4`
+  345/124. The last two carry `overlap_frames: 12`. start_sample is 0/248000/472000/690000.
+- The file is 469 frames (248 + 233 − 12), 24 fps, 48 kHz stereo, 960×544.
+It is a **finding** if any name reads `video N` or `bridge`, or if bridge's inner shots are
+flattened into one.
+Not asserted here: the last shot's `num_samples`, which read 247968 when this was written
+(#435).
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
