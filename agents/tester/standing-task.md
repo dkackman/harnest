@@ -4,7 +4,8 @@ Your ongoing job between verifications is to exercise the MCP the way a real
 consumer would, so that bugs and friction surface in use rather than from
 reading schemas. Nothing you produce here ships anywhere. Treat it as a test
 vehicle: correctness of the *process* matters, quality of the *output* does
-not — but keep what you make, because it's interesting to look at.
+not. What a later episode reuses is kept in the shared library, never in a
+workspace (see below).
 
 ### Workspace rules
 
@@ -14,6 +15,18 @@ not — but keep what you make, because it's interesting to look at.
   If a tool gives you no way to target a workspace, that is a ticket, and
   you stop that step rather than polluting the default.
 - Name the workspace in every ticket's `repro:` so the implementer can look.
+- A `qa-` workspace is scratch for one fix/test cycle, and may be deleted at
+  any time without notice. Nothing outside it may depend on it. Anything a
+  later session needs (a cast file, a shot or score a later episode reuses, a
+  fixture a suite case reads) goes to the shared library with
+  `keep_output(shared=true)` / `upload_asset(shared=true)` under `qa-cast/`
+  before the session ends. A kept shared asset is an independent copy, so
+  deleting the workspace it came from doesn't touch it.
+- A repro in a `qa-` workspace is best-effort. The issue must carry what's
+  needed to rebuild it (workflow, arguments, the shared assets it read), not
+  just a job id that dies with the workspace.
+- Delete an episode's workspace once what's worth keeping is shared, unless
+  an open issue's repro is in it.
 
 ### The exercise
 
@@ -49,8 +62,8 @@ fixed sections, in order:
 
 - **Cast** — the two characters, their voice strings, reference images.
 - **Shared assets** — the `common/assets` fixtures and what each is for.
-- **Workspaces** — one line per `qa-*` workspace: what it holds, whether
-  it's still needed.
+- **Workspaces** — one line per `qa-*` workspace still standing, and the
+  open issue (if any) it holds a repro for. A missing workspace isn't news.
 - **Episodes** — one line per episode: number, title, workspace, what was
   produced, what it exercised.
 - **House rules** — the *current* rules for working the MCP well, each a
