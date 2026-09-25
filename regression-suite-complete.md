@@ -209,6 +209,10 @@ smoke's Fixtures lists the asset too.
   `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`). C-F112 joins it with
   `ep42-episode.mp4` (32 kHz), so any substitute needs a sample rate other than 32 kHz and
   carried shots. Read-only, never deleted.
+- `asset:qa-cast/ep53-episode.mp4` — a 956-frame 24 fps 44.1 kHz cut of eight shots, the
+  last three joined by 12-frame dissolves (`media.shots` carries `overlap_frames`), and
+  `asset:qa-cast/ep51-bed.wav` — a quiet (~−50 dBFS mean) room bed. C-F123 scores the
+  first under the second looped. Shared, read-only, never deleted.
 
 ## Functional
 
@@ -4261,6 +4265,34 @@ expected:
 It is a **finding** if step 2 is refused, fails at execution, or writes anything but `.txt`,
 because the two tools disagree again. It is a **finding** if step 3 queues a job.
 cleanup: `delete_output(job_id=…)` for step 2's job.
+metrics: none.
+
+### C-F123 — scoring one kept joined cut through `templates/assemble-and-score` keeps every inner shot and its dissolve overlaps
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+A composed template given a *single* input that is itself a join of cuts and dissolves must
+carry that input's inner shots through its `film` step, `overlap_frames` included, so a
+probe still sees dissolves as dissolves. The bed comes from a `previous_result:` passed
+into the child (#404). CPU only, one job of about 10 s.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f123", "seed": 1,
+   "steps": [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
+   "asset:qa-cast/ep51-bed.wav", "target_frames": 956, "fps": 24}}, "result":
+   {"content_type": "audio/wav", "save": true, "subfolder": "intermediate"}}, {"name": "cut",
+   "workflow": {"path": "templates/assemble-and-score", "arguments": {"shots":
+   ["asset:qa-cast/ep53-episode.mp4"], "score": "previous_result:bed", "total_frames": 956,
+   "match_levels": "rms", "match_levels_dbfs": -24, "score_gain": 0.251}}}]},
+   acknowledged_cost=<bound from validate>, wait_seconds=55)`.
+2. `assess_output(name=<the film file>, probe="analyze_seams")`.
+expected:
+- `succeeded`; its only warning is the `bed` step's quiet-overall note.
+- The `film` manifest entry lists eight shots at start_frame 0/124/248/372/496/608/720/832,
+  num_frames 124/124/124/124/112/112/112/124, the last three with `overlap_frames: 12`
+  (the same list `get_gallery_metadata` gives for `ep53-episode.mp4`).
+- The film is 956 frames, 24 fps, 39.833 s, 44.1 kHz stereo, peak about −3 dBFS.
+- The probe says `shots_source: "manifest"`, seven seams: 1–4 `cut`, 5–7 `dissolve`. When
+  this case was written it had no findings, every `level_step_db` ≤ 1.16.
+It is a **finding** if the film lists one shot (the input as a whole), drops
+`overlap_frames`, or the probe reports seams 5–7 as cuts.
+cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ## Performance
