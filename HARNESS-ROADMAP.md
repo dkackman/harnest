@@ -1404,6 +1404,11 @@ and `notes`. Item 3 before the next release that has a security finding.
 - **Whether `release-blocker` also blocks the curator** from applying suite edits
   during a freeze.
 
+**Item 1 done (2026-09-25).** A `release` issue (owner:don) holds every agent queue at
+`wait` except `release-blocker` issues, and holds the standing task. It's in
+`lib/classify.jq` with two boards and a driver test. The curator still runs during a
+freeze: the open decision below stands.
+
 **Item 4 done (2026-09-25), after the 0.4.0 cut:**
 - dw: CI and CodeQL run on pushes to `develop`. On 0.4.0, 14 CodeQL path-injection
   alerts first appeared on the release PR; all were false positives except an adjacent

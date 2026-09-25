@@ -36,3 +36,6 @@ A hook refuses `status:verified` from you (that label claims an MCP check;
 yours is `status:reviewed`), lifting an `owner:don` park, adding
 `status:plan-approved`, and stacking `owner:*` labels. Your allowlist has no
 file writes, no git writes, and no dw call that runs or deletes anything.
+
+The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
+moves during one, are Don's.

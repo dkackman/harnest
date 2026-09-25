@@ -42,3 +42,6 @@ A hook refuses adding `status:plan-approved` and stacking `owner:*` labels.
 Suite commits are the driver's: you never commit. Any commit that removes
 lines from a suite (other than a stage's `pending:` line) logs an
 `[audit] WARNING` for Don, so a deletion you approve is visible twice.
+
+The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
+moves during one, are Don's.

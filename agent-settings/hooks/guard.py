@@ -32,6 +32,8 @@ hand-off gate):
 every role:
   - no adding `status:plan-approved`: approving a feature plan is Don's
     alone (roadmap R11), so no agent can approve the plan it wrote
+  - no adding `release` or `release-blocker`: a freeze, and what moves
+    during one, are Don's (roadmap R14)
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -277,6 +279,9 @@ def main():
             if "status:plan-approved" in flag_values(words, "--add-label"):
                 deny("status:plan-approved is Don's to add: approving a feature plan is a human decision, "
                      "and no agent may approve a plan, its own or another's.")
+            if {"release", "release-blocker"} & set(flag_values(words, "--add-label")):
+                deny("release and release-blocker are Don's to add: a freeze, and what may move during "
+                     "one, are his calls (R14).")
         if role == "reviewer":
             if adds_verified(words):
                 deny("status:verified claims an MCP check; a docs review adds status:reviewed instead.")

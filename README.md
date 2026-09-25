@@ -160,6 +160,7 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Answer a curator escalation (harnest) | Comment approve, deny or your amendment, then remove `owner:don`. |
 | Reverse a curator ruling (harnest) | Reopen it with a comment saying what you want instead. |
 | Let an outside filer's issue into the loop | Hand it back as in the first row. It is never re-parked after that. |
+| Freeze for a release | Open an issue titled with the version (`Release 0.5.0`), labeled `release` + `owner:don`. Until you close it, only issues labeled `release-blocker` move, and the tester's standing task is held. Add `release-blocker` to what must land first. |
 
 **What doesn't move anything:**
 - A comment on its own, while you hold the issue. Agents read your comments when you

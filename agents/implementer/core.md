@@ -124,3 +124,6 @@ unless the checkout is clean, `ruff` passes on the files you changed, the
 UI's check/lint/test pass if you changed `ui/`, and no test fails that passed on the commit `develop` was at when your session
 began. A refusal is the rule working: fix what it names, don't look for a
 way around it.
+
+The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
+moves during one, are Don's.

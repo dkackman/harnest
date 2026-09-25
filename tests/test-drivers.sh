@@ -89,6 +89,18 @@ eq  "stop file: one cycle, not five" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG"
 has "stop file: says why it stopped" "stop-after-cycle found" "$(cat "$T/loop.out")"
 eq  "stop file: consumed" "gone" "$([ -e "$T/h/logs/stop-after-cycle" ] && echo present || echo gone)"
 
+# --- 3d. a release freeze: only the release-blocker gets a session, and the
+# standing task is held even on a cycle it is due
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 30, "state": "OPEN", "title": "Release 0.5.0", "labels": [{"name": "release"}, {"name": "owner:don"}]},
+        {"number": 31, "state": "OPEN", "labels": [{"name": "owner:implementer"}]},
+        {"number": 32, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "release-blocker"}]}]'
+FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
+eq  "freeze: one session, the blocker's" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "freeze: it was #32's" "implementer:#32" "$(grep '^=== ' "$T/loop.out")"
+has "freeze: the standing task is held" "[tester:task] held: release freeze #30 Release 0.5.0" "$(cat "$T/loop.out")"
+has "freeze: the board says so" "release freeze #30 Release 0.5.0: only release-blocker issues move" "$(cat "$T/loop.out")"
+
 # --- 4. an outside filing is parked once, and stays out of the loop
 : > "$FAKE_CLAUDE_LOG"
 board '[{"number": 3, "state": "OPEN", "author": {"login": "stranger"}, "labels": [{"name": "owner:implementer"}]}]'

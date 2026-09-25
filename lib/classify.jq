@@ -21,6 +21,13 @@
 #              parks it. Once Don hands a parked one back, it is ordinary.
 #   stranded   no queue selects it and nothing will: a protocol hole to fix
 #
+# A release freeze (roadmap R14): while an open issue labeled `release`
+# exists (Don's, owner:don, titled with the version), every agent queue
+# (implementer, tester, lead, reviewer) holds its issues at `wait` except
+# the ones labeled `release-blocker`. The release issue itself is Don's.
+# The driver reads the freeze from that row, to hold the tester's standing
+# task too, which no issue queues.
+#
 # Every driver queue, the digest and the post-session audit read this.
 # Changing who acts on what means changing this file. Its fixtures live in
 # tests/ (R12 phase C).
@@ -66,6 +73,7 @@ def parent_phase:
 
 .owner as $me
 | (.issues | map({key: (.number | tostring), value: .}) | from_entries) as $open
+| ([.issues[] | select(any(.labels[]; .name == "release")) | .number] | min) as $release
 | .issues[]
 | . as $i
 | (owners) as $o
@@ -76,6 +84,9 @@ def parent_phase:
     {queue: "external", reason: "filed by @\(.author.login), not yet parked"}
   elif ($o | length) != 1 then
     {queue: "stranded", reason: "owner labels: \($o | join(",") | if . == "" then "none" else . end)"}
+  elif has("release") then
+    if $o[0] == "owner:don" then {queue: "don", reason: "release freeze: \(.title)"}
+    else {queue: "stranded", reason: "a release issue is owner:don's, not \($o[0])'s"} end
   elif $o[0] == "owner:don" then
     {queue: "don", reason: ($st | join(",") | if . == "" then "no status" else . end)}
   elif $o[0] == "owner:implementer" then
@@ -110,3 +121,9 @@ def parent_phase:
   elif $o[0] == "owner:researcher" then
     {queue: "stranded", reason: "owner:researcher is retired: hand it to owner:lead"}
   else {queue: "stranded", reason: "unknown owner \($o[0])"} end)
+| if $release != null
+     and (.queue | test("^(implementer|tester|lead|reviewer):"))
+     and ($i | has("release-blocker") | not)
+  then .reason = "release freeze (#\($release)): not a release-blocker (\(.queue) after it)"
+     | .queue = "wait"
+  else . end

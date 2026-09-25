@@ -643,9 +643,15 @@ $(issue_context "$n")" \
   local -a closures=()
   while IFS= read -r n; do [ -n "$n" ] && closures+=("$n"); done < <(pending_closures)
 
-  local clist="none pending"
+  local clist="none pending" freeze
   [ "${#closures[@]}" -eq 0 ] || clist="$(printf '#%s ' "${closures[@]}")"
-  if [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+  # A release freeze holds discovery too: the standing task files new issues,
+  # and nothing but release-blockers moves until the release ships (R14)
+  freeze="$(release_freeze)"
+  if [ -n "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+    echo "[tester:task] held: release freeze $freeze" | tee -a "$LOGS/loop.log"
+  fi
+  if [ -z "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
@@ -660,7 +666,7 @@ $(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
     [ "$SESSION_OK" = 1 ] && mark_closures_seen "${closures[@]}"
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
-  else
+  elif [ -z "$freeze" ]; then
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
   fi
 }
@@ -791,7 +797,9 @@ while true; do
     || echo "[tester] suite commit failed, continuing" | tee -a "$LOGS/loop.log"
   step curator_pass curator_pass
 
-  { echo "--- $(ts) cycle $cycle tickets ---"; status_board; } | tee -a "$LOGS/loop.log"
+  { echo "--- $(ts) cycle $cycle tickets ---"; status_board
+    freeze="$(release_freeze)"; [ -z "$freeze" ] || echo "  release freeze $freeze: only release-blocker issues move"
+  } | tee -a "$LOGS/loop.log"
 
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then
     echo "Reached MAX_CYCLES=$MAX_CYCLES, exiting." | tee -a "$LOGS/loop.log"

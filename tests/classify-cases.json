@@ -1731,5 +1731,278 @@
    "122": "implementer:fix",
    "123": "tester:handoff"
   }
+ },
+ {
+  "name": "release freeze: only release-blockers move",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 200,
+     "title": "Release 0.5.0",
+     "labels": [
+      {
+       "name": "release"
+      },
+      {
+       "name": "owner:don"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 201,
+     "title": "t201",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 202,
+     "title": "t202",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "release-blocker"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 203,
+     "title": "t203",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "release-blocker"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 204,
+     "title": "t204",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 205,
+     "title": "t205",
+     "labels": [
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "idea"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 206,
+     "title": "t206",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "docs-review"
+      },
+      {
+       "name": "release-blocker"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 207,
+     "title": "t207",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "200": "don",
+   "201": "wait",
+   "202": "implementer:fix",
+   "203": "tester:verify",
+   "204": "wait",
+   "205": "wait",
+   "206": "reviewer:docs",
+   "207": "don"
+  }
+ },
+ {
+  "name": "release freeze: the release issue is Don's",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 210,
+     "title": "Release 0.5.0",
+     "labels": [
+      {
+       "name": "release"
+      },
+      {
+       "name": "owner:implementer"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 211,
+     "title": "t211",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "210": "stranded",
+   "211": "wait"
+  }
  }
 ]

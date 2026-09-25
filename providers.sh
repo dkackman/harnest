@@ -23,6 +23,7 @@
 #                                               logged actually ran on
 #   refresh_plugin_tree <src> <tree>            detached origin/develop worktree
 #   deployed_head                               "<branch> @ <sha>" lem is running
+#   release_freeze                              "#<n> <title>" while a release freeze is on
 #                                               the consumer roles load dw from
 #   acquire_driver_lock <name>                  one lem-touching driver at a time
 #   audit_issue <n> <role>                      [audit] WARNING on a broken
@@ -1019,6 +1020,17 @@ classify_issues() {
   snap="$(issue_snapshot)" || return 1
   printf '%s\n' "$snap" | jq -r -f "$HARNEST_LIB/classify.jq" \
     | jq -r '[.number, .queue, (.parent // "-"), .reason] | @tsv' | sort -n
+}
+
+# release_freeze
+# "#<n> <title>" of the open `release` issue while a release freeze is on
+# (roadmap R14; lib/classify.jq holds every non-blocker at `wait`), nothing
+# otherwise. For what no issue queues: the tester's standing task. A board
+# that can't be read counts as no freeze, as it does for every queue.
+release_freeze() {
+  { classify_issues 2>/dev/null || true; } \
+    | awk -F'\t' '$2 == "don" && index($4, "release freeze: ") == 1 { sub(/^release freeze: /, "", $4); print "#" $1 " " $4; exit }'
+  return 0
 }
 
 # only_issues_filter

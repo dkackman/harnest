@@ -428,6 +428,12 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   makes it a feature, hands it to `owner:implementer` as one fix, or closes
   it. `lib/classify.jq` is the authoritative map from labels to the session
   that runs next.
+- **A release freeze** (R14): while an open issue labeled `release` exists (owner:don, titled
+  with the version), `lib/classify.jq` holds every agent queue at `wait` except issues
+  labeled `release-blocker`, and `run-loop.sh` holds the tester's standing task
+  (`release_freeze` in `providers.sh`). Closing the release issue lifts it.
+  `touch logs/stop-after-cycle` is the other freeze: the loop exits at the next cycle
+  boundary.
 - **The owner label is the only signal.** A status addressed to Don (`needs-approval`,
   `plan-review`, or `needs-info` on an implementer's or lead's issue) is stale once he
   swaps the owner back. It never decides a queue, and the agent that receives the issue

@@ -97,6 +97,9 @@ tree, `ruff`, no new test failures) on `status:fixed-pending-verify`, and
 refuses pushes to `master` and force pushes. A refusal is the rule working:
 fix what it names.
 
+The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
+moves during one, are Don's.
+
 ## Sessions
 
 **Run every subagent in the foreground** (`run_in_background: false` on

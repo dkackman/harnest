@@ -136,3 +136,6 @@ A hook refuses a `completed` close or `status:verified` in a session that
 has made no `mcp__dw__` call (a handoff session may close, but never add
 `status:verified`). It is a floor, not the rule: one unrelated call
 doesn't make a verification.
+
+The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
+moves during one, are Don's.

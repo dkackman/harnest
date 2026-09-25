@@ -23,6 +23,8 @@ none=/nonexistent
 # every role: approval is Don's
 for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label status:plan-approved'
+  row 2 $r "" $none 'gh issue edit 5 --add-label release-blocker'
+  row 2 $r "" $none 'gh issue edit 5 --add-label bug,release'
 done
 # implementer and lead: closes, verified, parks, owners
 for r in implementer lead; do
