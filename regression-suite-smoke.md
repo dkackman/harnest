@@ -103,6 +103,10 @@ nothing uses it anymore.
 - `asset:qa-cast/ep42-shot1-accuse.mp4` and `asset:qa-cast/ep42-shot2-deflect.mp4`: two
   shots in the shared asset library, 124 frames each. S-F125 depends on that count in a
   validate-only call. They are read-only and never deleted.
+- `asset:qa-cast/priya-portrait.jpg` and `asset:qa-cast/hal-portrait.jpg`: two stills in
+  the shared asset library. S-F128 binds them to `templates/ltx2/keyframes` in validate-only
+  calls, so only their existence matters. Any two images substitute. Read-only, never
+  deleted.
 
 ## Functional
 
@@ -1524,6 +1528,33 @@ cleanup: none. Nothing is queued or written.
 metrics: none.
 source: tester, verified in #338 on 2026-09-22 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ e5bfb9e`.
+
+### S-F128 — an object or list sent to a string-typed variable is refused, not stringified
+#433: coercion to a string-typed variable was a bare `str(v)`, which never raises. The old
+`{"location": "asset:..."}` shape for `templates/ltx2/keyframes`' `first_image` (a plain
+string since #431) validated clean. The run then failed on a path built from the dict's
+repr. Free: no job is queued.
+1. `validate_workflow(name="templates/ltx2/keyframes", arguments={"first_image":
+   {"location": "asset:qa-cast/priya-portrait.jpg"}, "last_image":
+   ["asset:qa-cast/hal-portrait.jpg"]})`.
+2. `run_workflow(workflow_path="templates/ltx2/keyframes",` with the same arguments,
+   `acknowledged_cost=true)`.
+3. `validate_workflow(name="templates/ltx2/keyframes", arguments={"first_image":
+   "asset:qa-cast/priya-portrait.jpg", "last_image": "asset:qa-cast/hal-portrait.jpg"})`.
+expected:
+- Step 1: `valid: false`, with one error at `arguments.first_image` and one at
+  `arguments.last_image`. Each names the variable and the value and says it takes a plain
+  string. Today's message ends `this variable takes a plain string (a URL, or an
+  'asset:'/'output:' reference), not an object`.
+- Step 2: refused before queueing, with the same two errors. No `job_id`.
+- Step 3: `valid: true`, no errors, both images in `checked_arguments`.
+It is a **finding** if step 1 validates or step 2 queues a job, because an object would
+again reach a string variable as its repr. It is also a finding if step 3 is refused, which
+would mean the guard catches the intended string form too.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #433 on 2026-09-25 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ b055573`.
 
 ### S-F110 — a `component_type`/`scheduler_type` the runtime cannot resolve is refused by the free pre-flight, with suggestions
 Before #345, `validate_workflow` returned `valid: true` for a pipeline step whose
