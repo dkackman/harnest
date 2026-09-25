@@ -4361,4 +4361,34 @@ step reports two seams, or if `marked` reads `hard_cut: false`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F126 — a same-rate join of two kept cuts keeps every inner shot and overlap, and its shot map ends where the file does
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+The counterpart of C-F112 with no resampling: both inputs are 32 kHz, and the second one is a
+dissolve join whose shots carry `overlap_frames`. The offset must move the inner shots
+without dropping the overlaps, and the shot map must end on the file's last sample (#426 was
+a map that overran it). CPU only, one job of about 6 s.
+`asset:qa-cast/ep42-episode.mp4` (248 f, 32 kHz, 2 shots) and
+`asset:qa-cast/ep45-episode.mp4` (348 f, 32 kHz, 3 shots, two with `overlap_frames: 12`).
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f126", "seed": 1,
+   "steps": [{"name": "join", "task": {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep42-episode.mp4", "asset:qa-cast/ep45-episode.mp4"], "fps": 24,
+   "match_levels": "rms", "match_levels_dbfs": -24}}, "result": {"content_type": "video/mp4",
+   "subfolder": "final"}}]}, acknowledged_cost=<bound from validate>, wait_seconds=55)`.
+2. `get_gallery_metadata` and `assess_output` on the `join` file.
+expected:
+- `succeeded` with **no** warnings (no `sample_rate_mismatch`: both inputs are 32 kHz).
+- 596 frames, 24 fps, 24.834 s, 32 kHz stereo, `audio_stream_seconds` equal to
+  `duration_seconds`.
+- The manifest entry and `media.shots` both list five shots, in order: `shot@accuse`,
+  `shot@deflect`, `ep42-shot1-accuse.mp4`, `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`,
+  at start_frame 0/124/248/360/472, num_frames 124/124/112/112/124. The last two keep
+  `overlap_frames: 12`; the first three have none.
+- start_sample 0/165333/330667/480000/629333. The last shot's `start_sample + num_samples`
+  equals `duration_seconds × 32000` (794688 when written, last num_samples 165355).
+- `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, no findings when written.
+It is a **finding** if there are fewer than five shots, if an `overlap_frames` is lost, or if
+the map ends past the file's last sample.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
