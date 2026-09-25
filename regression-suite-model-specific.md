@@ -1204,4 +1204,26 @@ grow from segment to segment.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### M-F034 — `templates/ltx2/keyframes` runs on its own default keyframe images
+`templates/ltx2/keyframes` builds two `LTX2VideoCondition(frames=...)` via `from_arguments`. `frames`
+is image-or-video, so key-based media auto-loading never applies to it. Before #431 the template's
+`first_image`/`last_image` defaults were bare `{"location": ...}` dicts. They reached diffusers
+unloaded, so every run failed with `Unsupported \`frames\` type for condition 0: <class 'dict'>`,
+while validate reported the plan clean. The fix made the variables plain strings and wrapped each
+condition's `frames` as `{"media_type": "image", "location": "variable:..."}`.
+**Paid**: about 100 s of GPU cold (LTX-2.5 load), ~10 s warm.
+expected:
+- `validate_workflow(name="templates/ltx2/keyframes", arguments={"num_frames": 9})` → `valid: true`.
+- `run_workflow(workflow_path="templates/ltx2/keyframes", arguments={"num_frames": 9},
+  acknowledged_cost=<bound plan>, wait_seconds=55)`, then `wait_for_job` if still running →
+  `status: succeeded`, no `error`, and the manifest has one `keyframes_to_video` step with one
+  `final/*.mp4`.
+It is a **finding** if the run fails with an `Unsupported \`frames\` type` error or any other error
+before the mp4 is written.
+cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole.
+source: tester, verified in #431, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-25
+against `lem` `develop @ 5f2a766`: job `6e21948f98d7` succeeded cold in ~96 s. The implementer proposed
+the case for smoke. It lives here because it loads LTX-2.5.
+metrics: none.
+
 ## Performance

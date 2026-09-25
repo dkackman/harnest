@@ -4422,4 +4422,35 @@ grid, or if an overlap is lost.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F128 — a `previous_result:` join input is still named after its step when an earlier input carries inner shots
+source: tester, verified in #432 (claude-opus-5-5 via anthropic)
+This is C-F108 with a multi-shot first input. `asset:qa-cast/ep63-episode.mp4` is a kept
+3-shot dissolve with its own `media.shots`. Before #432, the rename matched input index to
+flattened shot position, so the step's shot fell back to `video 2`. The dissolve puts an
+asset *after* the reference, so it also catches a shifted override. CPU only, two short jobs.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f128", "seed": 1,
+   "steps": [{"name": "paired", "task": {"command": "pair_audio", "arguments": {"video":
+   "asset:qa-cast/ep64-shot-ltx-hal.mp4", "audio": "asset:qa-cast/ep64-shot-ltx-hal.mp4",
+   "fit": "video"}}, "result": {"content_type": "video/mp4", "save": false}}, {"name": "cut",
+   "task": {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep63-episode.mp4", "previous_result:paired"], "fps": 24}}, "result":
+   {"content_type": "video/mp4", "subfolder": "final"}}]}, acknowledged_cost=true,
+   wait_seconds=55)`.
+2. The same call with the `cut` step replaced by `{"name": "diss", "task": {"command":
+   "dissolve_videos", "arguments": {"videos": ["asset:qa-cast/ep63-episode.mp4",
+   "previous_result:paired", "asset:qa-cast/ep62-shot1-accuse.mp4"], "fps": 24}}, "result":
+   {"content_type": "video/mp4", "subfolder": "final"}}`.
+3. `get_gallery_metadata` on the step 1 file.
+expected:
+- Both jobs return `succeeded`.
+- Step 1 manifest `shots[].name`: `ep62-shot1-accuse.mp4`, `LTX2I2V-image_to_video.0-0.0.mp4`,
+  `ep62-shot2-deflect.mp4`, `paired`. The last shot starts at frame 345 and runs 121 frames.
+  Step 3's `media.shots` has the same four names.
+- Step 2 manifest `shots[].name`: the same three inner names, then `paired`, then
+  `ep62-shot1-accuse.mp4`. Shots 2 to 5 carry `overlap_frames: 12`.
+It is a **finding** if any name reads `video N`, if ep63's inner names are replaced, or if the
+trailing asset takes the `paired` name.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
 ## Performance
