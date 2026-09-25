@@ -450,6 +450,13 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   that's a regression, not a duplicate: reopen the old issue (or link a new one to it) and fix it,
   never close the new report as `duplicate`/`wontfix` on the strength of the old verification alone.
   Only the tester may close an issue as `completed` (`verified`), and only from a real MCP call.
+  The one exception is a fix that changed only text neither the server nor the plugin serves
+  (README, non-guide `docs/`): the implementer labels it `docs-review` at hand-off (or the
+  tester does on meeting one it can't observe), `lib/classify.jq` routes it to
+  `reviewer:docs`, and `run-loop.sh`'s `reviewer_pass` (`agents/reviewer/`, on the tester's
+  model, read-only against the plugin tree at `origin/develop`) closes it as `completed` with
+  `status:reviewed` — never `status:verified`, which `guard.py` refuses it — or bounces it.
+  The tester stays source-blind: that is why this is a separate role, not a wider fence.
   That rule is about the ticket repo: on this repo the curator closes the suite requests it
   applies as `completed`.
 - Implementer commits reference the issue number (`fix(mcp): #42 - ...`), works on branches

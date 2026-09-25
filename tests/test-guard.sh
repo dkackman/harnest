@@ -21,7 +21,7 @@ row() {
 }
 none=/nonexistent
 # every role: approval is Don's
-for r in implementer lead consumer curator; do
+for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label status:plan-approved'
 done
 # implementer and lead: closes, verified, parks, owners
@@ -59,6 +59,15 @@ row 2 consumer verify $none 'gh issue edit 5 --add-label owner:implementer'
 row 0 curator "" $none 'gh issue edit 4 --repo dkackman/harnest --add-label owner:don'
 row 2 curator "" $none 'gh issue edit 4 --repo dkackman/harnest --remove-label owner:don'
 row 0 curator "" $none 'gh issue close 4 --repo dkackman/harnest --reason completed'
+# reviewer: closes a docs-only fix as completed with no MCP call, but never
+# claims one (status:verified), and lifts no park
+row 0 reviewer docs $none 'gh issue close 5 --reason completed'
+row 0 reviewer docs $none 'gh issue edit 5 --remove-label status:fixed-pending-verify --remove-label docs-review --add-label status:reviewed'
+row 2 reviewer docs $none 'gh issue edit 5 --add-label status:verified'
+row 2 reviewer docs $none 'gh issue edit 5 --remove-label owner:don --add-label owner:implementer'
+row 2 reviewer docs $none 'gh issue edit 7 --remove-label status:needs-approval'
+row 2 reviewer docs $none 'gh issue edit 5 --add-label owner:implementer'
+row 0 reviewer docs $none 'gh issue edit 5 --remove-label status:fixed-pending-verify --remove-label docs-review --remove-label owner:tester --add-label owner:implementer'
 # not Bash: never looked at
 jq -n '{tool_name: "Read", tool_input: {file_path: "/x"}}' | python3 "$guard" implementer >/dev/null 2>&1
 eq "non-Bash tool passes" 0 $?

@@ -139,6 +139,13 @@ LEAD_STAGES_PER_CYCLE="${LEAD_STAGES_PER_CYCLE:-1}"
 CURATOR_MODEL="${CURATOR_MODEL:-$TESTER_MODEL}"
 CURATOR_PROVIDER="${CURATOR_PROVIDER:-$TESTER_PROVIDER}"
 CURATOR_REVIEW_BUDGET_USD="${CURATOR_REVIEW_BUDGET_USD:-3}"
+# The docs reviewer verifies fixes that changed only files neither the server
+# nor the plugin serves (queue reviewer:docs, the docs-review label), by
+# reading the merged tree. It is a verification, so it follows the tester's
+# model: a close it makes never comes back to anyone. Sessions are short.
+REVIEWER_MODEL="${REVIEWER_MODEL:-$TESTER_MODEL}"
+REVIEWER_PROVIDER="${REVIEWER_PROVIDER:-$TESTER_PROVIDER}"
+REVIEWER_BUDGET_USD="${REVIEWER_BUDGET_USD:-2}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # Per-session spend caps (--max-budget-usd; 0 = uncapped) and the context
 # size at which a session auto-compacts instead of growing. Non-Anthropic
@@ -194,6 +201,7 @@ TESTER_EFFORT="${TESTER_EFFORT:-$EFFORT}"
 TRIAGE_EFFORT="${TRIAGE_EFFORT:-$TESTER_EFFORT}"
 LEAD_EFFORT="${LEAD_EFFORT:-$EFFORT}"
 CURATOR_EFFORT="${CURATOR_EFFORT:-$EFFORT}"
+REVIEWER_EFFORT="${REVIEWER_EFFORT:-$TESTER_EFFORT}"
 
 # Reject a bad model/provider (or a fallback the role's provider can't serve)
 # before the first cycle rather than three minutes into it. This is the only
@@ -203,12 +211,14 @@ resolve_model_env "$TESTER_PROVIDER" "$TESTER_MODEL" || exit 1
 resolve_model_env "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" || exit 1
 resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1
 resolve_model_env "$CURATOR_PROVIDER" "$CURATOR_MODEL" || exit 1
+resolve_model_env "$REVIEWER_PROVIDER" "$REVIEWER_MODEL" || exit 1
 validate_fallback_model "$IMPLEMENTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TESTER_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$TRIAGE_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$LEAD_PROVIDER" "$FALLBACK_MODEL" || exit 1
 validate_fallback_model "$CURATOR_PROVIDER" "$FALLBACK_MODEL" || exit 1
-for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT" "$CURATOR_EFFORT"; do
+validate_fallback_model "$REVIEWER_PROVIDER" "$FALLBACK_MODEL" || exit 1
+for e in "$IMPLEMENTER_EFFORT" "$TESTER_EFFORT" "$TRIAGE_EFFORT" "$LEAD_EFFORT" "$CURATOR_EFFORT" "$REVIEWER_EFFORT"; do
   effort_flags anthropic "$e" >/dev/null || exit 1
 done
 
@@ -663,6 +673,31 @@ $(issue_context "$n")" \
   fi
 }
 
+# reviewer_pass — one docs review per fix the tester can't observe: handed
+# off with the docs-review label because it changed only files neither the
+# server nor the plugin serves (#420 sat with Don for want of this: the
+# tester, correctly, could neither see the README nor read the diff). The
+# reviewer reads the merged tree, so its cwd is the plugin tree, the
+# driver's detached worktree at origin/develop, refreshed just before the
+# tester pass. Read-only: it can't change the tree it reviews.
+reviewer_pass() {
+  local n
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    still_ready "$n" reviewer:docs \
+      || { echo "[reviewer:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+    run_agent reviewer "#$n" "$REVIEWER_BUDGET_USD" "$PLUGIN_TREE" "$REVIEWER_PROVIDER" "$REVIEWER_MODEL" "$REVIEWER_EFFORT" docs \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a DOCS REVIEW session for issue #$n only. Then stop.
+
+Your working directory is the merged tree at origin/develop @ $(git -C "$PLUGIN_TREE" rev-parse --short HEAD 2>/dev/null || echo unknown).
+
+The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
+
+$(issue_context "$n")" \
+      "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$REVIEWER_TOOLS" "${REVIEWER_PERMISSION_FLAGS[@]}"
+  done < <(queue_issues reviewer:docs | cut -f1)
+}
+
 # curator_pass — one review session per suite-change request on this repo
 # (an open `suite` issue not waiting on Don), then a commit
 # of whatever it applied, under the curator's name and naming the request.
@@ -747,6 +782,9 @@ while true; do
     echo "[loop] WARNING: could not refresh the plugin tree; the tester loads the previous one" | tee -a "$LOGS/loop.log"
   fi
   step tester_pass tester_pass
+  # After the tester: a verify that finds a docs-only fix it can't observe
+  # reroutes it here (docs-review), and it is reviewed the same cycle.
+  step reviewer_pass reviewer_pass
 
   # The tester is the only agent in this loop that edits the regression suite
   # files (it adds a case once it has verified it over MCP; the implementer

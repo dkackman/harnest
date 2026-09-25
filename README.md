@@ -96,6 +96,10 @@ ticket" template. Agents work on them only through `gh issue`.
   touches only issues with its own owner label, and only to act on them or hand them off.
 - **Only the tester closes an issue as `completed`** (with `status:verified`), and only
   after a real MCP call in that session. The implementer never verifies its own fixes.
+  One exception: a fix that changed only text neither the server nor the plugin serves
+  (the README, a `docs/` page that isn't a guide) is labeled `docs-review`, and a
+  read-only docs reviewer closes it with `status:reviewed`. The tester can't see those
+  files, and must not read source to try.
 - **`wontfix`** is the implementer's call. It gives a reason and closes the issue as
   `not planned`. The tester may reopen once with new evidence, and a second `wontfix` is
   final. "Can't reproduce" goes through `status:needs-info` first.
@@ -120,6 +124,8 @@ ticket" template. Agents work on them only through `gh issue`.
 open ──▶ status:fixed-pending-verify ──▶ status:verified (closed completed)
  ▲                    │
  └────────────────────┘  (tester bounces it back to owner:implementer)
+open ──▶ status:fixed-pending-verify + docs-review ──▶ status:reviewed (closed completed)
+                                                       or back to owner:implementer
 open ──▶ status:needs-info ──▶ open
 open ──▶ wontfix (closed not planned) ──▶ (tester accepts, or reopens once)
 open ──▶ duplicate (closed not planned)
@@ -355,7 +361,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `REGRESSION_MODEL` | `sonnet` | `run-regression.sh`; same `*_PROVIDER` pattern |
 | `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`sonnet`) runs its code subagents |
 | `LEAD_STAGE_BUDGET_USD` / `LEAD_CLOSEOUT_BUDGET_USD` / `TESTER_SPEC_BUDGET_USD` | `15` / `3` / `8` | per-session caps in `run-loop.sh`; `run-features.sh` has `LEAD_DESIGN_BUDGET_USD` (6) and `LEAD_DECOMPOSE_BUDGET_USD` (2) |
-| `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` (triage follows the tester's) |
+| `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` and `REVIEWER_EFFORT` (triage and the docs reviewer follow the tester's) |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
 | `REGRESSION_BUDGET_USD` | `6` | per regression chunk |
 | `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's labels unchanged before the driver parks it with Don; `0` = never |
@@ -374,6 +380,8 @@ tail -f logs/loop.log                           # watch from another terminal
 | `HARNESS_REPO` | `dkackman/harnest` | this repo: where suite requests and harness proposals are filed |
 | `CURATOR_MODEL` / `CURATOR_PROVIDER` | the tester's | the curator's review sessions in `run-loop.sh` |
 | `CURATOR_REVIEW_BUDGET_USD` | `3` | per curator review session |
+| `REVIEWER_MODEL` / `REVIEWER_PROVIDER` | the tester's | the docs reviewer: verifies `docs-review` fixes (README, non-guide docs) the tester can't observe |
+| `REVIEWER_BUDGET_USD` | `2` | per docs review session |
 | `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
 | `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run |
 | `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` | `run-features.sh`: the lead's detached worktree at `origin/develop` |

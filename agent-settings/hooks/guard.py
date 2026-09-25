@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """PreToolUse guard for the unattended roles (HARNESS-ROADMAP.md R3).
 
-    python3 guard.py implementer|lead|consumer     (hook input JSON on stdin)
+    python3 guard.py implementer|lead|consumer|curator|reviewer   (hook input JSON on stdin)
 
 Turns ticket-protocol invariants that used to live only in prompt text, and
 were audited after the fact by audit_issue, into refusals at the moment of
@@ -35,6 +35,13 @@ curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
     label, so escalating one is a bare --add-label owner:don
+reviewer (docs review sessions, via `guard_settings reviewer`):
+  - may close as completed with no `mcp__dw__` call: it verifies a fix
+    that changed only files the server and plugin don't serve, by reading
+    them, so there is no MCP call to make
+  - never adds `status:verified`: that label claims an MCP check, and a
+    reviewed close carries `status:reviewed` instead
+  - no lifting a park, and the one-owner rule, as for the implementer
 consumer (tester, regression):
   - closing as completed or adding `status:verified` needs at least one
     `mcp__dw__*` call earlier in the session ("only from a real MCP call").
@@ -254,11 +261,14 @@ def main():
             if "status:plan-approved" in flag_values(words, "--add-label"):
                 deny("status:plan-approved is Don's to add: approving a feature plan is a human decision, "
                      "and no agent may approve a plan, its own or another's.")
-        if role in ("implementer", "lead"):
-            if closes_completed(words):
+        if role == "reviewer":
+            if adds_verified(words):
+                deny("status:verified claims an MCP check; a docs review adds status:reviewed instead.")
+        if role in ("implementer", "lead", "reviewer"):
+            if role != "reviewer" and closes_completed(words):
                 deny('only the tester closes an issue as completed. gh closes as completed by default: '
                      'pass --reason "not planned" for wontfix/duplicate.')
-            if adds_verified(words):
+            if role != "reviewer" and adds_verified(words):
                 deny("status:verified is the tester's to add, from a real MCP call.")
             if is_gh_issue(words, "edit"):
                 removed = flag_values(words, "--remove-label")

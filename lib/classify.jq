@@ -11,6 +11,9 @@
 # where queue is the session that runs next, or where the issue waits:
 #   implementer:fix
 #   tester:verify  tester:handoff  tester:answer  tester:spec
+#   reviewer:docs  a fix that changed only files neither the server nor the
+#              plugin serves (README, docs/ outside the guides), so the
+#              tester can't observe it: read-only source review instead
 #   lead:design  lead:decompose  lead:build  lead:closeout
 #   don        parked with Don; reason says why
 #   wait       a legitimate pause: blocked, or its parent isn't building yet
@@ -83,7 +86,8 @@ def parent_phase:
         {queue: "implementer:fix", reason: (if ($st | length) > 0 then "ready (stale \($st | join(",")) to clear)" else "ready" end)}
       else {queue: "stranded", reason: "owner:implementer with \($live | join(","))"} end
   elif $o[0] == "owner:tester" then
-    if has("status:fixed-pending-verify") then {queue: "tester:verify", reason: "handed off"}
+    if has("status:fixed-pending-verify") and has("docs-review") then {queue: "reviewer:docs", reason: "docs-only fix, not observable over MCP"}
+    elif has("status:fixed-pending-verify") then {queue: "tester:verify", reason: "handed off"}
     elif has("status:needs-spec") then {queue: "tester:spec", reason: "plan approved and decomposed"}
     elif has("status:needs-info") then {queue: "tester:answer", reason: "question from the implementer"}
     elif (($st - don_statuses) | length) == 0 then {queue: "tester:handoff", reason: "harness-side edit requested"}

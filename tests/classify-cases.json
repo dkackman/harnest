@@ -1615,5 +1615,121 @@
    "106": "lead:build",
    "107": "lead:build"
   }
+ },
+ {
+  "name": "docs-only fixes go to the reviewer, not the tester",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 120,
+     "title": "t120",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 121,
+     "title": "t121",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "documentation"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 122,
+     "title": "t122",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 123,
+     "title": "t123",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "120": "reviewer:docs",
+   "121": "tester:verify",
+   "122": "implementer:fix",
+   "123": "tester:handoff"
+  }
  }
 ]

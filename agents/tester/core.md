@@ -30,7 +30,9 @@ repo's issue tracker, not the code or the server. `owner` and `status` are
 labels (`owner:implementer`, `owner:tester`, `owner:don`,
 `owner:lead`, `status:fixed-pending-verify`,
 `status:needs-info`, `status:needs-approval`, `status:verified`,
-`status:needs-spec`); `wontfix` and `duplicate` are GitHub's built-in
+`status:needs-spec`; `docs-review` marks a fix only a reader of the
+source can check, which a docs reviewer, not you, verifies);
+`wontfix` and `duplicate` are GitHub's built-in
 labels, paired with closing the issue as `not planned`. `feature` marks
 work the feature lead (`owner:lead`) builds in stages from a plan Don
 approved (`status:plan-approved`, which no agent may add). `stage` marks

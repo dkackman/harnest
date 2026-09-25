@@ -41,6 +41,8 @@
 #                                               consumer-only roles (tester, regression)
 #   LEAD_DESIGN_PERMISSION_FLAGS                 array: permission flags for the
 #                                               feature lead's read-only sessions
+#   REVIEWER_PERMISSION_FLAGS                    array: permission flags for the
+#                                               docs reviewer (read-only source)
 #
 # Providers, and why each is more than just a base URL:
 #   anthropic  Native Claude Code models, alias or full id. The default. Sets
@@ -365,6 +367,30 @@ LEAD_DESIGN_PERMISSION_FLAGS=(
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
 )
 
+# Permission flags for the docs reviewer (run-loop.sh, reviewer_pass). It
+# verifies a fix that changed only files neither the server nor the plugin
+# serves (README, docs/ outside the guides), which the tester can't observe
+# over MCP and must not read: the tester's isolation from source is the
+# point of the loop, so this is a separate role rather than a widening of
+# the consumer's fence. Read-only, like the lead's design sessions: the
+# merged tree at origin/develop (its cwd), read-only git, gh issue, and
+# read-only dw discovery to check a doc's claim against what the server
+# says. The guard (guard_settings reviewer) lets it close as completed with
+# no MCP call, and refuses status:verified: its close carries
+# status:reviewed instead.
+REVIEWER_PERMISSION_FLAGS=(
+  --settings "$(guard_settings reviewer)"
+  --permission-mode dontAsk
+  --allowedTools
+    "mcp__dw__get_server_info" "mcp__dw__list_guides" "mcp__dw__get_guide"
+    "mcp__dw__get_schema" "mcp__dw__list_tasks" "mcp__dw__get_task"
+    "mcp__dw__list_workflows" "mcp__dw__get_workflow"
+    "ToolSearch" "TodoWrite" "Read" "Glob" "Grep"
+    "Bash(gh issue *)" "Bash(date *)"
+    "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
+)
+REVIEWER_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
+
 # Permission flags for the curator's review sessions (run-loop.sh,
 # curator_pass). The curator rules on suite-change requests and applies the
 # ones it approves, so it gets Edit on this repo's files. Edit is unscoped
@@ -491,8 +517,9 @@ runtime_note() {
     regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
     lead)        examples="a feature plan and its verdict, an idea's disposition, a stage issue, a hand-off comment, a re-plan" ;;
     curator)     examples="a curation proposal, a ruling on a suite request, an escalation to Don" ;;
+    reviewer)    examples="a docs review verdict, a bounce" ;;
     retro)       examples="a harness proposal and its evidence" ;;
-    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator|retro)" >&2; return 1 ;;
+    *) echo "run: runtime_note: unknown role '$role' (implementer|tester|regression|lead|curator|reviewer|retro)" >&2; return 1 ;;
   esac
   # An alias (`opus`) moves when a new model ships, so a comment that says
   # "opus" can't later be told apart from the next Opus. Claude Code's own
@@ -606,8 +633,10 @@ audit_issue() {
   if [ "$state" = OPEN ] && { [ -z "$owners" ] || [ "$owners" != "${owners%%,*}" ]; }; then
     echo "[audit] WARNING: #$n is open with owner labels '${owners:-none}' after a session as $role; exactly one is the invariant" | tee -a "$LOGS/loop.log"
   fi
-  if [ "$state" = CLOSED ] && [ "$reason" = COMPLETED ] && [ "$role" != tester ]; then
-    echo "[audit] WARNING: #$n was closed as completed after a session as $role; only the tester may, from a real MCP call" | tee -a "$LOGS/loop.log"
+  # The docs reviewer closes as completed too, for a fix the tester can't
+  # observe (a docs-only change it verifies by reading).
+  if [ "$state" = CLOSED ] && [ "$reason" = COMPLETED ] && [ "$role" != tester ] && [ "$role" != reviewer ]; then
+    echo "[audit] WARNING: #$n was closed as completed after a session as $role; only the tester (from a real MCP call) or the docs reviewer may" | tee -a "$LOGS/loop.log"
   fi
   # A session that leaves its issue where no queue will pick it up has
   # found a hole in the protocol (lib/classify.jq), or made a label mistake.
@@ -1104,6 +1133,7 @@ role_prompt() {
     lead:closeout)      set -- core closeout ;;
     curator:audit)      set -- core audit ;;
     curator:review)     set -- core review ;;
+    reviewer:docs)      set -- core docs ;;
     regression:whole)   set -- core run-cases sweep ;;
     regression:chunk)   set -- core run-cases chunk ;;
     regression:sweep)   set -- core sweep ;;

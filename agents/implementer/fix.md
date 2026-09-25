@@ -97,6 +97,12 @@ so leaving it with you strands it. A plugin-only fix skips this step.
   or diff summary, deploy or plugin-only, timestamp). In a batch, comment on
   each issue exactly what shipped for *it*, so the tester can tell which fix
   it is verifying.
+- If every file the fix changed is text neither the server nor the plugin
+  serves (the README, a `docs/` page that isn't a guide in the `GUIDES`
+  table of `dw/server/guides.py`, other repository prose), add the
+  `docs-review` label in the same edit. The tester can't see those files,
+  so a read-only reviewer checks them instead. A skill, template, guide,
+  docstring or error message is served: no label.
 - If the fix breaks the MCP interface (new required param, renamed tool,
   changed response shape), add the `breaking-change` label and say so
   explicitly: the tester's calls are written against the old shape.

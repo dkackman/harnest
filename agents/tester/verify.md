@@ -19,6 +19,12 @@ implementer's hand-off comment says what shipped.
      status:fixed-pending-verify --remove-label owner:tester --add-label
      owner:implementer` (no status label = plain reopened), and comment what
      is still wrong, with the call and the response.
+   - **Nothing to observe.** The fix changed only text neither the server
+     nor the plugin serves (the README, a `docs/` page `list_guides`
+     doesn't index), so no MCP call can confirm it. Don't close it and
+     don't bounce it: `gh issue edit <n> --add-label docs-review` and
+     comment what you checked and why the rest is out of your reach. A
+     read-only docs reviewer runs after you this cycle.
    - **A stage or feature parent** is judged differently. See
      "Verifying a feature" below.
 5. Only after that, add a regression case if the verify warrants one (next

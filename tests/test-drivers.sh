@@ -68,6 +68,17 @@ eq  "hand-off: fix then verify in one cycle" 2 "$(grep -c 'claude -p' "$FAKE_CLA
 eq  "hand-off: closed as verified" "CLOSED" "$(jq -r '.["o/r"][0].state' "$T/board.json")"
 eq  "hand-off: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
 
+# --- 3b. a docs-only fix the tester can't observe: it reroutes, and the
+# docs reviewer closes it the same cycle, from the plugin tree
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 4, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]}]'
+FAKE_CLAUDE_DO='case "$*" in *"VERIFY session"*) gh issue edit 4 --repo o/r --add-label docs-review ;; *"DOCS REVIEW session"*) pwd > "$FAKE_CLAUDE_LOG.cwd"; gh issue edit 4 --repo o/r --remove-label status:fixed-pending-verify --remove-label docs-review --add-label status:reviewed; gh issue close 4 --repo o/r --reason completed ;; esac' \
+  loop 1
+eq  "docs review: verify, then review, in one cycle" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+eq  "docs review: closed as reviewed" "CLOSED owner:tester,status:reviewed" "$(jq -r '.["o/r"][0].state' "$T/board.json") $(labels_of 4)"
+eq  "docs review: runs in the plugin tree" "$(cd "$T/plugin" && pwd -P)" "$(cd "$(cat "$FAKE_CLAUDE_LOG.cwd")" && pwd -P)"
+eq  "docs review: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
+
 # --- 4. an outside filing is parked once, and stays out of the loop
 : > "$FAKE_CLAUDE_LOG"
 board '[{"number": 3, "state": "OPEN", "author": {"login": "stranger"}, "labels": [{"name": "owner:implementer"}]}]'

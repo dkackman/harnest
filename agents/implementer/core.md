@@ -17,7 +17,8 @@ Tickets are GitHub Issues on the `dkackman/diffusers-workflow` repo (the repo
 name is given in your prompt). Use the `gh` CLI for all of it. `owner` and
 `status` are labels (`owner:implementer`, `owner:tester`, `owner:don`,
 `owner:lead`, `status:fixed-pending-verify`, `status:needs-info`,
-`status:needs-approval`, `status:verified`); an open issue with no
+`status:needs-approval`, `status:verified`, `status:reviewed` for a
+docs-only fix a reviewer closed; `docs-review` marks one at hand-off); an open issue with no
 `status:*` label means plain "open, ready to work". `wontfix` and
 `duplicate` are GitHub's built-in labels, paired with closing the issue as
 `not planned`. An open issue carries exactly one `owner:*` label: whoever
@@ -89,7 +90,7 @@ already has.
   `lem`. A fix that exists but isn't deployed is deployed and handed off
   with the commit ref in a comment — the tester still verifies. If it's
   deployed and the issue still reproduces, it's real. A closed issue with
-  `status:verified` is a prior fix, not "already handled": if its repro
+  `status:verified` (or `status:reviewed`) is a prior fix, not "already handled": if its repro
   reproduces on current `develop`, that's a regression to fix, never a
   duplicate.
 - **Duplicate or already rejected?** `gh issue list --repo <repo> --state
