@@ -297,10 +297,13 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
   - logs: `loop.local.log` and `<role>.local.log`;
   - state files: `progress.local.tsv`, `closures-seen.local`, `stop-after-cycle.local`;
   - clones: `dw-agent-mps`, `dw-agent-plugin-mps`, `dw-agent-lead-mps`, `dw-mps-serve`.
-- **Deploy.** `deploy_cmd` (`providers.sh`) runs the serving clone's `deploy.sh`. The
-  implementer's target section ([`agents/implementer/target.md`](agents/implementer/target.md))
-  says so, and `agent-settings/implementer.local.json` describes the same setup to the
-  auto-mode classifier.
+- **Deploy.** Only the driver deploys, between sessions: `deploy_cmd` (`providers.sh`)
+  runs the serving clone's `deploy.sh` through `scripts/deploy-local.sh`. The Mac
+  implementer merges, pushes and hands off, and the guard refuses it the deploy scripts.
+  A session's own MCP connection keeps the old server from exiting on the `screen`
+  restart path (#446, 2026-09-26). Its target section
+  ([`agents/implementer/target.md`](agents/implementer/target.md)) and
+  `agent-settings/implementer.local.json` say so.
 - **Verify.** The tester follows its target section
   ([`agents/tester/target.md`](agents/tester/target.md)). A verification here adds
   `verified-on:mps`, meaning CUDA hasn't re-verified the fix.
@@ -315,7 +318,7 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
 - **Budget.** `TESTER_BUDGET_USD` defaults to 8 here and 5 on lem, because MPS jobs run
   2-3x slower.
 - **Guard** (via `HARNEST_TARGET` and `HARNEST_ROLE`):
-  - the Mac implementer can't run `ssh`, `scp` or `rsync`;
+  - the Mac implementer can't run `ssh`, `scp`, `rsync` or a deploy script;
   - a Mac regression run can't edit a suite file (the Mac tester may);
   - nothing on the Mac writes to lem's perf history;
   - a new issue carries one `backend:mps` or `backend:shared` label, one owner, and no

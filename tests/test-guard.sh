@@ -147,6 +147,12 @@ irow 2 'FOO=1 ssh lem true'
 irow 2 'rsync -a lem:/x /y'
 irow 2 'scp lem:/x /y'
 irow 0 'git push origin develop'
+# on the Mac the driver deploys between sessions: a session's own MCP
+# connection holds the old server open (#446, 2026-09-26)
+irow 2 'DW_DIR=/x DW_PORT=8765 /Users/don/testing/harnest/scripts/deploy-local.sh'
+irow 2 'cd ~/src/dkackman/dw-mps-serve && ./scripts/deploy.sh develop'
+irow 2 'bash scripts/deploy.sh develop'
+row 0 implementer "" $none 'ssh lem "~/diffusers-workflow/scripts/deploy.sh develop"'
 irow 0 'gh issue edit 5 --remove-label target:local --add-label target:lem'
 irow 2 'gh issue edit 5 --add-label target:local'
 # on lem nobody adds a claim or a verified-on label

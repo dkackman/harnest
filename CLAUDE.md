@@ -305,7 +305,8 @@ on lem. That server runs from the serving clone `DW_LOCAL_DIR` (`dw-mps-serve`),
 - **Prompts.** The Mac implementer, tester and regression agent each get
   `agents/<role>/target.md` appended to the system prompt (`target_note`).
 - **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):
-  - no ssh, scp or rsync for the Mac implementer;
+  - no ssh, scp, rsync or deploy script for the Mac implementer (the driver deploys
+    between sessions: the session's own MCP connection holds the old server open);
   - no suite edit from a Mac regression run, though the Mac tester may add a case for a
     shared fix;
   - no write to lem's perf history;

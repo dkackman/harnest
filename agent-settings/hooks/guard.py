@@ -66,7 +66,10 @@ somewhere other than lem:
     server's session: `--remove-label target:<this> --add-label target:lem`
   - no adding `verified-on:*` except by a consumer on another server
 implementer on a server other than lem (HARNEST_TARGET, set by run-loop.sh):
-  - no `ssh`, `scp` or `rsync`: its deploy is local, and lem is off limits
+  - no `ssh`, `scp` or `rsync`: lem is off limits
+  - no running a deploy script (`deploy.sh`, `deploy-local.sh`): the driver
+    deploys between sessions, because the session's own MCP connection
+    keeps the old server from exiting (#446, 2026-09-26)
 consumer on a server other than lem (HARNEST_TARGET and HARNEST_ROLE, set
 by run-loop.sh and run-regression.sh; harnest#15). Also runs on Edit and
 Write:
@@ -393,8 +396,12 @@ def main():
         if role == "implementer" and server:
             cmdw = [w for w in words if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", w)]
             if cmdw and os.path.basename(cmdw[0]) in ("ssh", "scp", "rsync"):
-                deny("this loop runs against the %s server: no ssh, scp or rsync. Deploy with the "
-                     "command your Target section names; lem is off limits." % server)
+                deny("this loop runs against the %s server: no ssh, scp or rsync; lem is off "
+                     "limits." % server)
+            if any(os.path.basename(w) in ("deploy.sh", "deploy-local.sh") for w in cmdw):
+                deny("on the %s server the driver deploys develop after your session: your own "
+                     "MCP connection would hold the old server open. Merge, push and hand off."
+                     % server)
         if is_gh_issue(words, "edit"):
             claim_rule(words, server if role in ("consumer", "implementer") else "")
             if any(l.startswith("verified-on:") for l in flag_values(words, "--add-label")) and not target:

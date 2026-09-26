@@ -9,17 +9,19 @@ the ssh and label rules below.
 
 ### Deploy
 
-Every "deploy to lem" in your instructions means, here, this one command,
-from any directory:
+You don't deploy here. Every "deploy to lem" step in your instructions
+becomes: merge to `develop`, push, and hand off. The driver deploys
+`develop` to this server after your session ends and before the tester
+runs, with `{{DEPLOY}}`. Your session can't do it itself: its own MCP
+connection to the server stays open, and the old server won't exit while
+it does. The guard refuses the deploy scripts. "Plugin or skill: merge and
+push" is unchanged, and so is "merge to `develop`": lem's loop deploys the
+same branch. Never commit in {{SERVER_DIR}}; it is only deployed.
 
-    {{DEPLOY}}
-
-It fast-forwards the serving clone ({{SERVER_DIR}}) to `develop`,
-reinstalls when `pyproject.toml` changed, waits for a running job,
-restarts the server in the `dw-serve` screen session and polls health.
-"Server code: deploy. Plugin or skill: merge and push" is unchanged, and
-so is "merge to `develop`, deploy `develop`": lem's loop deploys the same
-branch. Never commit in {{SERVER_DIR}}; it is only deployed.
+Check your fix with the source checkout's tests before you hand off. The
+MCP server you can reach is still running the previous `develop`, so use
+it only to reproduce the bug, not to confirm the fix. Say in the hand-off
+that the driver deploys the fix.
 
 ### No lem
 

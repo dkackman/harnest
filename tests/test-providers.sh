@@ -135,7 +135,7 @@ has "the local note moves perf history" "regression-perf/local/<case>.jsonl" "$n
 has "the local note files with a backend label" "\`owner:implementer\` and \`backend:mps\`" "$note"
 has "the local note never comments on lem's issues" "Never comment on a \`target:lem\` issue" "$note"
 inote="$(tgt local 'target_note implementer "mps on mac"')"
-has "implementer note carries the local deploy" "$HARNEST/scripts/deploy-local.sh" "$inote"
+has "implementer note leaves the deploy to the driver" "The driver deploys" "$inote"
 has "implementer note names the serving clone" "git -C $T/dwlocal log -1" "$inote"
 has "implementer note hands cuda to lem" "--remove-label target:local --add-label target:lem" "$inote"
 eq  "implementer note leaves no placeholder" "" "$(printf '%s' "$inote" | grep -o '{{[A-Z_]*}}' || true)"
