@@ -2004,5 +2004,632 @@
    "210": "stranded",
    "211": "wait"
   }
+ },
+ {
+  "name": "target: implementer eligibility (local)",
+  "input": {
+   "owner": "dkackman",
+   "target": "local",
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "backend:shared"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "backend:mps"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 4,
+     "title": "t4",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "backend:cuda"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 5,
+     "title": "t5",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 6,
+     "title": "t6",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:local"
+      },
+      {
+       "name": "backend:shared"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 7,
+     "title": "t7",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:local"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "implementer:fix",
+   "2": "implementer:fix",
+   "3": "implementer:fix",
+   "4": "wait",
+   "5": "wait",
+   "6": "implementer:fix",
+   "7": "wait"
+  }
+ },
+ {
+  "name": "target: implementer eligibility (lem)",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "backend:shared"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "backend:mps"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 4,
+     "title": "t4",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "backend:cuda"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 5,
+     "title": "t5",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 6,
+     "title": "t6",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:local"
+      },
+      {
+       "name": "backend:shared"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 7,
+     "title": "t7",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:local"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "implementer:fix",
+   "2": "implementer:fix",
+   "3": "wait",
+   "4": "implementer:fix",
+   "5": "implementer:fix",
+   "6": "wait",
+   "7": "implementer:fix"
+  }
+ },
+ {
+  "name": "target: legacy and lem-only (local)",
+  "input": {
+   "owner": "dkackman",
+   "target": "local",
+   "issues": [
+    {
+     "number": 10,
+     "title": "t10",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 11,
+     "title": "t11",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "target:local"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 12,
+     "title": "t12",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-info"
+      },
+      {
+       "name": "target:local"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 13,
+     "title": "t13",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 14,
+     "title": "t14",
+     "labels": [
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "idea"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 15,
+     "title": "t15",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      },
+      {
+       "name": "feature"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "10": "wait",
+   "11": "tester:verify",
+   "12": "tester:answer",
+   "13": "reviewer:docs",
+   "14": "lead:design",
+   "15": "wait"
+  }
+ },
+ {
+  "name": "target: claims (lem)",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 20,
+     "title": "t20",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:local"
+      },
+      {
+       "name": "backend:cuda"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "20": "stranded"
+  }
+ },
+ {
+  "name": "target: claims (local)",
+  "input": {
+   "owner": "dkackman",
+   "target": "local",
+   "issues": [
+    {
+     "number": 20,
+     "title": "t20",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "target:local"
+      },
+      {
+       "name": "backend:cuda"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "20": "stranded"
+  }
  }
 ]

@@ -28,6 +28,11 @@
 # The driver reads the freeze from that row, to hold the tester's standing
 # task too, which no issue queues.
 #
+# A loop runs against one server (`target` in the snapshot, lem when it is
+# absent; harnest#15). An issue another loop holds, or whose backend this
+# server can't serve, waits here: see the target post-filter at the end. The
+# design is docs/superpowers/specs/2026-09-26-mac-loop-design.md.
+#
 # Every driver queue, the digest and the post-session audit read this.
 # Changing who acts on what means changing this file. Its fixtures live in
 # tests/ (R12 phase C).
@@ -50,6 +55,14 @@ def don_statuses: ["status:needs-approval", "status:plan-review"];
 def has($l): names | index($l) != null;
 def statuses: names | map(select(startswith("status:")));
 def owners: names | map(select(startswith("owner:")));
+# target:<server> is a loop's claim on an issue it took (the driver adds it);
+# backend:<shared|cuda|mps> is what the bug is about. Both labels at once
+# means two loops claimed it in the same moment: lem keeps it, and the other
+# loop's driver removes its own label.
+def claims: names | map(select(startswith("target:")) | ltrimstr("target:"));
+def backend: (names | map(select(startswith("backend:")) | ltrimstr("backend:")) | .[0]) // "";
+def holder: claims | if index("lem") != null then "lem" else .[0] end;
+def serves($t; $b): ($b == "" or $b == "shared") or ($b == "cuda" and $t == "lem") or ($b == "mps" and $t == "local");
 
 def marker_versions($kind):
   [ (.markers // [])[]
@@ -72,6 +85,7 @@ def parent_phase:
   else {queue: "lead:decompose", reason: "decomposed but never handed to the tester"} end;
 
 .owner as $me
+| (.target // "lem") as $target
 | (.issues | map({key: (.number | tostring), value: .}) | from_entries) as $open
 | ([.issues[] | select(any(.labels[]; .name == "release")) | .number] | min) as $release
 | .issues[]
@@ -127,3 +141,21 @@ def parent_phase:
   then .reason = "release freeze (#\($release)): not a release-blocker (\(.queue) after it)"
      | .queue = "wait"
   else . end
+# The target post-filter. Server-free queues (a design, a decompose, a docs
+# review) run in whichever loop runs them. A feature's spec, builds and
+# close-out run on lem only. The rest belong to the loop holding the claim;
+# an unclaimed fix to any loop whose server its backend allows; and an
+# unclaimed issue past the implementer to lem, which is where everything
+# handed off before claims existed was deployed.
+| if .queue == "wait" or (.queue | test("^(implementer|tester|lead|reviewer):") | not) then .
+  elif (.queue | IN("lead:design", "lead:decompose", "reviewer:docs")) then .
+  elif ($i | claims | length) > 0 and (serves($i | holder; $i | backend) | not) then
+    .reason = "target:\($i | holder) on a backend:\($i | backend) issue" | .queue = "stranded"
+  elif (.queue | IN("tester:spec", "lead:build", "lead:closeout")) and $target != "lem" then
+    .reason = "target: \(.queue) runs on lem only" | .queue = "wait"
+  elif ($i | claims | length) > 0 then
+    if ($i | holder) == $target then . else .reason = "target:\($i | holder) holds it" | .queue = "wait" end
+  elif .queue == "implementer:fix" then
+    if serves($target; $i | backend) then . else .reason = "target: backend:\($i | backend) is not served here" | .queue = "wait" end
+  elif $target == "lem" then .
+  else .reason = "target: handed off before claims existed, so deployed to lem" | .queue = "wait" end

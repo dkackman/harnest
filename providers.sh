@@ -1199,7 +1199,7 @@ issue_snapshot() {
            elif startswith("<!-- harnest:") then split("\n")[0] else empty end]}]
         | group_by(.key) | map({key: .[0].key, value: (map(.value) | add | unique)}) | from_entries')" || return 1
   printf '%s\n%s\n' "$issues" "$markers" \
-    | jq -s --arg me "$TICKET_OWNER" '.[1] as $m | {owner: $me, issues: [.[0][] | . + {markers: ($m[(.number | tostring)] // [])}]}'
+    | jq -s --arg me "$TICKET_OWNER" --arg target "${DW_TARGET:-lem}" '.[1] as $m | {owner: $me, target: $target, issues: [.[0][] | . + {markers: ($m[(.number | tostring)] // [])}]}'
 }
 
 # classify_issues
