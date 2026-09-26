@@ -46,6 +46,21 @@ acts next.
   prompt states them): a later reader has no other way to tell what kind of
   hands produced it.
 
+### Backend and target labels
+
+Two label families decide which server's loop works an issue:
+
+- **`backend:shared` / `backend:cuda` / `backend:mps`: what the bug is
+  about.** An open issue you work carries exactly one. If it has none, add
+  one before anything else: `backend:shared` unless the bug is about one
+  accelerator (a CUDA-only path, MPS memory or dtype behavior, a
+  device-specific kernel). Most bugs are shared. Correct a wrong one with a
+  one-line comment saying why.
+- **`target:lem` / `target:local`: which server's loop holds it.** The
+  driver adds this claim before your session. Never add or remove one
+  yourself, except for the hand-over your Target section describes (on lem
+  there is none).
+
 ## A security hole you find
 
 If your work turns up a hole the public tracker shouldn't hear about, don't

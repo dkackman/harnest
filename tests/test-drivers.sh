@@ -226,7 +226,7 @@ has "regression local: header names the target and its checkout" "target=local, 
 sysprompt="$(cat "$T/h/logs/.prompt.regression.local.whole.md")"
 has "regression local: prompt names the server it asked" "the local server (mps on $(hostname)) is running develop @ " "$(cat "$T/local-prompt")"
 has "regression local: system prompt moves perf history" "regression-perf/local/<case>.jsonl" "$sysprompt"
-has "regression local: system prompt files to Don" "\`owner:don\` and \`target:local\`" "$sysprompt"
+has "regression local: system prompt files for the implementer with a backend" "\`owner:implementer\` and \`backend:mps\`" "$sysprompt"
 has "regression local: system prompt forbids suite edits" "The suite files. Every case in them runs on lem" "$sysprompt"
 eq  "regression local: the guard is told the target" "local" "$(cat "$T/local-prompt.target")"
 has "regression local: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/reg-local.out")"

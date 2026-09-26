@@ -11,8 +11,9 @@ triage is for, and the other issue's own session is about to start.
 
 ### Checks
 
-Run "Checks before any fix" above, unless a `triage:` comment already did —
-then trust it. `triage: already fixed in <commit> on develop, needs deploy`
+No `backend:` label on the issue? Add one first ("Backend and target
+labels"). Then run "Checks before any fix" above, unless a `triage:` comment
+already did — then trust it. `triage: already fixed in <commit> on develop, needs deploy`
 means deploy and hand off without re-fixing. If a check ends in a
 disposition other than a fix, make it and stop.
 

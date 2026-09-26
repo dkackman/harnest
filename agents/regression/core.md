@@ -58,16 +58,16 @@ For each failure or performance regression, as you find it:
   this search can't match a same-numbered case in another suite file.
 - If an open issue already covers this exact case, `gh issue comment` on it,
   whoever owns it, with today's date, what you ran and the actual result.
-  Don't file a duplicate. An issue labeled `target:<name>` for a server
-  other than the one your prompt names doesn't cover your failure (one
-  with no `target:` label is lem's): file your own, referencing it (`also
-  fails on <name>: #NN`). If the matching issue is closed (a `wontfix`, or
+  Don't file a duplicate. On lem, every open issue for the case covers it.
+  On another server, your Target section says which do. If the matching issue is closed (a `wontfix`, or
   `verified` after a prior fix but failing again), file a **new** issue
   that references it (`regression of #NN`); reopening is the tester's call.
 - Otherwise `gh issue create` with the case id, the exact tool and params
   called, expected vs. actual (or history vs. measured), and the workspace
   name. Label it `owner:implementer`, `regression` (plus `performance` for a
-  timing regression), no `status:*`.
+  timing regression), and one `backend:` label (`backend:shared`, or
+  `backend:cuda`/`backend:mps` when the failure is about that accelerator),
+  no `status:*` and no `target:`.
 - A case failing because the *suite* is stale (tool renamed, param
   reshaped) still gets an issue, but say so in the body, so the implementer
   doesn't hunt for a behavior bug that is really schema drift.

@@ -6,22 +6,24 @@ The suites were written on lem: a Linux box with a 24 GB CUDA GPU (RTX
 agents made there by hand. This server starts from the same code and the
 same bundled templates, and nothing else. It is also several times slower.
 Where your role instructions or the suite file say otherwise, this section
-wins. The harness guard enforces the file and owner rules below.
+wins. The harness guard enforces the file and label rules below.
 
 ### What you file
 
-- Only an open issue labeled `target:{{TARGET}}` covers a failure here. An
-  issue without that label is lem's, even for the same case: file your own
-  and reference it (`also fails on lem: #NN`). Never comment on it. The
-  tester reads its latest comments while verifying a fix on lem, and a
-  symptom from this server would bounce a fix that works there.
-- A new issue gets the labels `owner:don` and `target:{{TARGET}}`, never
-  `owner:implementer`, plus `regression`/`performance` as usual. The loop
-  reproduces, deploys and verifies on lem only. Name the target and
-  accelerator ({{SERVER}}) in its body.
+- An open issue for the same case covers a failure here when it is
+  neither `backend:cuda` nor claimed by lem's loop (`target:lem`): comment
+  on it. Never comment on a `target:lem` issue, even for the same case.
+  The tester there reads its latest comments while verifying a fix on lem,
+  and a symptom from this server would bounce a fix that works there. File
+  your own instead, and reference it (`also fails on lem: #NN`).
+- A new issue gets `owner:implementer` and `backend:mps`, plus
+  `regression`/`performance` as usual. Use `backend:shared` instead when
+  the same case also fails on lem (there's a lem issue for it): the bug is
+  not about the accelerator. Never add a `target:` label; claims are the
+  loop driver's. Name the target and accelerator ({{SERVER}}) in its body.
 - The MCP server down is this server's outage, not lem's. Search with
-  `--label target:{{TARGET}}`, and file it the same way, never
-  `owner:implementer`. The REGRESSION-ABORT line is unchanged.
+  `--label backend:mps`, and file it the same way. The REGRESSION-ABORT
+  line is unchanged.
 - Stage issue bodies at `/tmp/<case>-{{TARGET}}-issue.md`. A run on lem
   may be staging the same case at the same time.
 - An advisory's summary starts with `[{{TARGET}}] <case id>:`, and its
@@ -33,7 +35,8 @@ wins. The harness guard enforces the file and owner rules below.
 
 - The suite files. Every case in them runs on lem, and an expectation this
   server shows would fail there. Propose a case worth adding in the issue
-  or comment body instead.
+  or comment body instead. (The loop's tester here may add one for a
+  shared fix it verified; a regression run never does.)
 - Performance history anywhere but `regression-perf/{{TARGET}}/<case>.jsonl`.
   The top-level files are lem's. When this server's file doesn't exist yet,
   create it with `Write` (your reading is its first line); after that,
@@ -99,5 +102,5 @@ stop the security level as the suite says.
 
 ### Sweep
 
-A repro artifact is kept only when an open `target:{{TARGET}}` issue names
-it. Everything else this run made goes, as usual.
+A repro artifact is kept only when an open issue that lem's loop doesn't
+hold (no `target:lem`) names it. Everything else this run made goes, as usual.

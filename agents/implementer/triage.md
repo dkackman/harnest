@@ -10,14 +10,16 @@ For each listed issue, in order:
    fix". Make any disposition they call for (park, duplicate, already
    rejected). For a fix already on `develop` but not deployed, note the
    commit for the fix session rather than deploying it here.
-3. Read only the source a disposition needs, such as a `grep` to see
+3. Give each issue its `backend:` label if it has none ("Backend and target
+   labels").
+4. Read only the source a disposition needs, such as a `grep` to see
    whether two issues share a file.
-4. From the issue text, decide whether the fix would add **new engine or
+5. From the issue text, decide whether the fix would add **new engine or
    validation surface**: a new task/command, a new `validate_workflow` rule,
    or a wider argument matrix with unchecked edge cases. This is an earlier,
    lower bar than "Park for Don": escalate when a narrow repro-only
    verification could pass while new code paths remain untested.
-5. Leave exactly one `triage:` comment on each issue that still needs work,
+6. Leave exactly one `triage:` comment on each issue that still needs work,
    in one of these forms:
 
 - `triage: work` — a self-contained fix; its own session will handle it.
