@@ -201,11 +201,11 @@ gate_regression() {
     say "regression: $level on ${sha:0:10}"
     "$REPO/run-regression.sh" "$level" >> "$WORK/regression-${sha:0:10}.log" 2>&1 || rc=$?
   done
-  # A target:<name> issue came from a run on another server (harnest#15),
-  # which may be filing at the same time; lem's gate is about lem.
+  # Every regression filed during the gate blocks, whichever server filed
+  # it or holds it: a backend:mps regression blocks a release too (Don,
+  # 2026-09-26; harnest#15).
   filed="$(gh issue list --repo "$TICKET_REPO" --state all --label regression --search "created:>=$start" \
-    --json number,title,labels \
-    --jq '.[] | select([.labels[].name | startswith("target:")] | any | not) | "- #\(.number) \(.title)"')"
+    --json number,title --jq '.[] | "- #\(.number) \(.title)"')"
   if [ "$rc" -eq 0 ] && [ -z "$filed" ]; then
     record regression "$sha" pass "Levels: $RELEASE_REGRESSION_LEVELS, lem $lem. Nothing filed."
   else

@@ -124,6 +124,13 @@ rel 0.9.0 gates ci; rc=$?
 rm -rf "$T/h/logs/.driver.lock"
 eq  "release: gates refuse while the loop holds the lock" 1 "$rc"
 has "release: and say how to stop it" "stop-after-cycle" "$(cat "$T/rel.out")"
+# the regression gate: a backend:mps regression filed (and claimed) by the Mac during
+# the gate blocks it like any other (Don, 2026-09-26)
+: > "$FAKE_CLAUDE_LOG"
+FAKE_CLAUDE_DO='[ -e "$T/mps-filed" ] || { touch "$T/mps-filed"; gh issue create --repo o/r --title "S-F034 fails on mps" --label regression,backend:mps,owner:implementer,target:local >/dev/null; }' \
+  RELEASE_REGRESSION_LEVELS=smoke rel 0.9.0 gates regression; rc=$?
+eq  "release gate: a backend:mps regression fails it" 1 "$rc"
+has "release gate: and is listed" "S-F034 fails on mps" "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
 rel 0.9.0 accept regression "suite drift only"
 has "release: accept records Don's decision" "harnest:release-gate regression $sha accepted" "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
 rel 0.9.0 status
