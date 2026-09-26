@@ -37,6 +37,17 @@ it's what drives reuse across episodes, and reuse (of cast, assets and
 outputs between jobs) is where the interesting bugs live. Keep the episodes
 tiny: two to four shots, short lines.
 
+Not every episode should be a template run. Real consumers outgrow the
+catalog: a field session's ensemble number needed its own inline `for_each`
+workflow, each entry with its own cast `references` and length, because
+the stock templates give every shot the same references and the same length.
+That session's bugs came out of that workflow, not out of the templates
+(#478, #479). About one episode in three, build a shot list as your own
+inline workflow instead: a `for_each` over entries that each carry their own
+`references`, including an item-level `from_previous_result`. Then check
+whether `validate_workflow`'s verdict and `plan` hold up in the run. A run
+that fails on something validate passed is a ticket.
+
 Each task session (the driver runs one every few cycles — `TESTER_TASK_EVERY`,
 default every fourth — separate from the per-issue verify sessions):
 
