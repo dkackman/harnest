@@ -1273,4 +1273,34 @@ source: tester, verified in #444, model `claude-opus-5-5` via provider `anthropi
 `lem` `develop @ 3a28146`: job `432477f376e6` succeeded in ~2.4 min with coherent frames.
 metrics: none.
 
+### M-F037 — `templates/ltx2/extend-clip` extends an existing clip passed as `clip`, with `opening` elided
+Before #446, extend-clip always generated its opening, and no variable took an input clip. The first
+fix added `clip` (default `previous_result:opening`), and supplying it elided `opening`. The run then
+died at once with `Cannot reuse component 'transformer' - no earlier step shared it`, because
+`extended` reused components from the step that had just been elided. The second fix made `extended`
+load its own components. Model: LTX-2.5 (`Lightricks/LTX-2.5-Diffusers`, SDNQ transformer/text encoder).
+**Paid**: one LTX-2.5 load plus 8 denoise steps for 241 frames at 960×544. On MPS this took ~9 min.
+The clip is `asset:qa-cast/ep63-shot-ltx-priya.mp4` (121 f, 960×544, 24 fps, from
+`templates/ltx2/image-to-video`). If the workspace can't reach it, that is a setup gap, not a finding. Any
+121-frame 960×544 LTX-2.5 clip the workspace can reference may stand in.
+expected:
+- `validate_workflow(name="templates/ltx2/extend-clip")` with no arguments → `valid: true`, `plan.steps: 3`,
+  `plan.elided_steps: []` (the generate-then-extend default is unchanged).
+- `validate_workflow(name="templates/ltx2/extend-clip", arguments={"clip": "asset:qa-cast/ep63-shot-ltx-priya.mp4",
+  "width": 960, "height": 544, "clip_frames": 121, "num_frames": 241, "prompt": "A woman stands in an office, calm.",
+  "continuation_prompt": "She folds her arms and looks at the camera."})` → `valid: true`, `plan.steps: 2`, and
+  `plan.elided_steps` holds one entry with `step: "opening"` and `overridden_by: "clip"`.
+- `run_workflow` with the same arguments, `acknowledged_cost=<bound plan>`, `wait_seconds=55`, then
+  `wait_for_job` until finished → `status: succeeded`, no `error`. The only warning is that `opening` did not
+  run. The manifest has one `extended` `final/*.mp4`.
+- `get_output_frames(name=<that mp4>, at=["frame:120", "frame:121", "frame:240"])` → `frame_count: 241`.
+  Frames 120 and 121 show the same subject and framing, with no jump where the source clip ends.
+It is a **finding** if the clip-supplied run fails, especially with a `Cannot reuse component` error, if
+`opening` is not elided, or if the default plan loses its `opening` step.
+cleanup: `delete_output(job_id=<the run's job id>)` removes the run directory whole.
+source: tester, verified in #446, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-26 against the
+local server (mps on Mac-mini.lan) `develop @ eb482ba`: job `880d989470b3` succeeded in ~8.9 min, 241 frames,
+seamless at 120→121. The implementer proposed the case for smoke. It lives here because it loads LTX-2.5.
+metrics: none.
+
 ## Performance
