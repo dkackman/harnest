@@ -125,13 +125,50 @@ eq  "lem commits suites and perf" "regression-suite-*.md regression-perf" "$(tgt
 eq  "local commits only its own perf" "regression-perf/local" "$(tgt local suite_commit_paths)"
 has "lem's regression runtime note lists suite edits" "a suite-file edit" "$(tgt lem 'runtime_note regression anthropic sonnet')"
 eq  "a local one does not" "" "$(tgt local 'runtime_note regression anthropic sonnet' | grep 'suite-file' || true)"
-eq  "no target note for lem" "" "$(tgt lem 'target_note "cuda on lem"')"
-note="$(tgt local 'target_note "mps on mac"')"
+eq  "no target note for lem" "" "$(tgt lem 'target_note regression "cuda on lem"')"
+note="$(tgt local 'target_note regression "mps on mac"')"
 has "the local note moves perf history" "regression-perf/local/<case>.jsonl" "$note"
 has "the local note files to Don with a target label" "\`owner:don\` and \`target:local\`" "$note"
 has "the local note keeps the suite files lem's" "The suite files. Every case in them runs on lem" "$note"
 has "the local note names the server" "(mps on mac, http://localhost:8765/mcp)" "$note"
 eq  "the local note leaves no placeholder" "" "$(printf '%s' "$note" | grep -o '{{[A-Z]*}}' || true)"
+
+# --- per-target resources for the loop (harnest#15 part 2)
+eq  "local: its own loop log" "$LOGS/loop.local.log" "$(tgt local 'echo "$LOOP_LOG"')"
+eq  "lem: the loop log is unchanged" "$LOGS/loop.log" "$(tgt lem 'echo "$LOOP_LOG"')"
+eq  "target_default picks the target's value" "a|b" "$(tgt lem 'target_default a b')|$(tgt local 'target_default a b')"
+dc="$(tgt local deploy_cmd)"
+has "local: deploy runs the serving clone's deploy.sh" "$T/dwlocal/scripts/deploy.sh develop" "$dc"
+has "local: deploy points at the serving clone" "DW_DIR=$T/dwlocal " "$dc"
+has "local: deploy binds loopback only" "DW_HOST=127.0.0.1" "$dc"
+has "local: deploy uses the local workspace" "DW_WORKSPACE=$HOME/dw-mps-workspace" "$dc"
+has "local: deploy uses the URL's port" "DW_PORT=9000" "$(TGT_URL=http://127.0.0.1:9000/mcp tgt local deploy_cmd)"
+eq  "local: no ssh in the deploy" "" "$(printf '%s' "$dc" | grep -o ssh || true)"
+has "lem: deploy over ssh" "ssh -o ConnectTimeout=8 -o BatchMode=yes lem" "$(tgt lem deploy_cmd)"
+eq  "lem: server name" "lem" "$(tgt lem server_name)"
+eq  "local: server name" "the local server (mps on mac)" "$(tgt local 'TARGET_HEALTH="mps on mac"; server_name')"
+printf '#!/usr/bin/env bash\necho "deploy $*"\n' > "$T/dwlocal-deploy"; chmod +x "$T/dwlocal-deploy"
+mkdir -p "$T/dwlocal/scripts"; cp "$T/dwlocal-deploy" "$T/dwlocal/scripts/deploy.sh"
+ok  "local: deploy_target runs it" tgt local deploy_target
+has "local: and logs it" "[loop:deploy] deploy develop" "$(cat "$LOGS/loop.local.log")"
+printf '#!/usr/bin/env bash\necho dirty; exit 1\n' > "$T/dwlocal/scripts/deploy.sh"
+fails "local: a failed deploy fails" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; deploy_target' _ "$HARNEST"
+rm -rf "$T/dwlocal/scripts"
+# claim_issue: a clean claim holds; a tie with lem is lost and the label removed
+stub_gh 'case "$*" in *"issue view 5"*) echo target:local ;; *"issue view 6"*) printf "target:local\ntarget:lem\n" ;; *"issue view 7"*) echo target:lem ;; *) exit 0 ;; esac'
+ok    "claim: an unclaimed issue is held" tgt local 'TICKET_REPO=o/r claim_issue 5'
+fails "claim: a tie goes to lem" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; TICKET_REPO=o/r claim_issue 6' _ "$HARNEST"
+has   "claim: the lost claim is removed" "gh issue edit 6 --repo o/r --remove-label target:local" "$(cat "$GH_CALLS")"
+ok    "claim: lem keeps a tie" tgt lem 'TICKET_REPO=o/r claim_issue 7'
+# lem_loop_running: only a live run-loop holder counts
+mkdir -p "$LOGS/.driver.lock"
+echo "$$ run-loop" > "$LOGS/.driver.lock/owner"
+ok    "lem loop: a live run-loop holds lem's lock" tgt local lem_loop_running
+echo "$$ run-regression" > "$LOGS/.driver.lock/owner"
+fails "lem loop: a regression run is not the loop" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; lem_loop_running' _ "$HARNEST"
+echo "999999 run-loop" > "$LOGS/.driver.lock/owner"
+fails "lem loop: a dead holder" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; lem_loop_running' _ "$HARNEST"
+rm -rf "$LOGS/.driver.lock"
 
 # --- suite commits are serialized
 git init -q "$T/hr"; echo x > "$T/hr/regression-suite-a.md"; mkdir "$T/hr/regression-perf"; echo "{}" > "$T/hr/regression-perf/S-P001.jsonl"

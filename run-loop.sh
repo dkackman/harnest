@@ -292,7 +292,7 @@ run_agent() {
   if ! resolve_model_env "$provider" "$model" \
      || ! session_flags "$provider" "$model" "$effort" "$budget" \
      || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role.$kind.md")"; then
-    echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
+    echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
     return 0
   fi
 
@@ -392,16 +392,16 @@ check_lem_on_develop() {
       lem_sha="${DEPLOYED_HEAD#develop @ }"
       case "$want" in "$lem_sha"*) return 0 ;; esac ;;
   esac
-  echo "[loop] WARNING: lem is on '$DEPLOYED_HEAD' but origin/develop is ${want:0:10} — the tester would verify against a server that may lack this cycle's fixes" | tee -a "$LOGS/loop.log"
+  echo "[loop] WARNING: lem is on '$DEPLOYED_HEAD' but origin/develop is ${want:0:10} — the tester would verify against a server that may lack this cycle's fixes" | tee -a "$LOOP_LOG"
   [ "$DEPLOY_ON_MISMATCH" = 1 ] || return 0
-  echo "[loop] deploying develop to lem" | tee -a "$LOGS/loop.log"
+  echo "[loop] deploying develop to lem" | tee -a "$LOOP_LOG"
   # shellcheck disable=SC2088  # the ~ is for lem's shell, not ours
   if ssh -o ConnectTimeout=8 -o BatchMode=yes lem '~/diffusers-workflow/scripts/deploy.sh develop' 2>&1 \
-       | tail -n 3 | sed -u 's/^/[loop:deploy] /' | tee -a "$LOGS/loop.log"; then
+       | tail -n 3 | sed -u 's/^/[loop:deploy] /' | tee -a "$LOOP_LOG"; then
     DEPLOYED_HEAD="$(deployed_head)"
-    echo "[loop] lem is running: $DEPLOYED_HEAD (after driver deploy)" | tee -a "$LOGS/loop.log"
+    echo "[loop] lem is running: $DEPLOYED_HEAD (after driver deploy)" | tee -a "$LOOP_LOG"
   else
-    echo "[loop] driver deploy of develop failed; the tester runs against '$DEPLOYED_HEAD'" | tee -a "$LOGS/loop.log"
+    echo "[loop] driver deploy of develop failed; the tester runs against '$DEPLOYED_HEAD'" | tee -a "$LOOP_LOG"
   fi
 }
 
@@ -415,7 +415,7 @@ set_base_commit() {
   HARNEST_BASE_COMMIT="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null || true)"
   export HARNEST_BASE_COMMIT
   [ -n "$HARNEST_BASE_COMMIT" ] \
-    || echo "[loop] WARNING: could not read origin/develop; the hand-off gate skips its tests-vs-base check this session" | tee -a "$LOGS/loop.log"
+    || echo "[loop] WARNING: could not read origin/develop; the hand-off gate skips its tests-vs-base check this session" | tee -a "$LOOP_LOG"
 }
 
 # implementer_pass — triage (when 2+ issues wait), then one session per issue.
@@ -423,7 +423,7 @@ implementer_pass() {
   local -a queue=()
   local n
   while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(queue_issues implementer:fix | cut -f1)
-  [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOGS/loop.log"; return 0; }
+  [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOOP_LOG"; return 0; }
 
   if [ "${#queue[@]}" -ge 2 ]; then
     run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" triage \
@@ -446,18 +446,18 @@ $(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
   fi
   for n in "${queue[@]}"; do
     still_ready "$n" implementer:fix \
-      || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOOP_LOG"; continue; }
     bounces="$(handoff_count "$n")"
     model="$IMPLEMENTER_MODEL"; provider="$IMPLEMENTER_PROVIDER"; escalation=""
     if [ "$IMPLEMENTER_PARK_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_PARK_AFTER" ]; then
-      echo "[implementer:#$n] bounced $bounces times; parking with owner:don instead of another retry" | tee -a "$LOGS/loop.log"
+      echo "[implementer:#$n] bounced $bounces times; parking with owner:don instead of another retry" | tee -a "$LOOP_LOG"
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:implementer --add-label owner:don --add-label status:needs-approval >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this issue has been handed off as fixed and bounced back by the tester $bounces times since it was last opened (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER)$last_on. The two roles are not converging on what \"fixed\" means here; a human should look at the bounce comments and either narrow the ask or say which side is right, then hand it back with \`owner:implementer\`." >/dev/null \
-        || echo "[implementer:#$n] could not park (gh failed); skipping this cycle" | tee -a "$LOGS/loop.log"
+        || echo "[implementer:#$n] could not park (gh failed); skipping this cycle" | tee -a "$LOOP_LOG"
       continue
     elif [ "$IMPLEMENTER_ESCALATE_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_ESCALATE_AFTER" ]; then
       model="$TESTER_MODEL"; provider="$TESTER_PROVIDER"
-      echo "[implementer:#$n] bounced $bounces times; escalating this session to $provider/$model" | tee -a "$LOGS/loop.log"
+      echo "[implementer:#$n] bounced $bounces times; escalating this session to $provider/$model" | tee -a "$LOOP_LOG"
       escalation="
 
 This issue has been handed off as fixed and sent back by the tester $bounces times. You are running on a stronger model than the sessions that produced those fixes, for that reason — say so in your hand-off comment. Read every bounce comment before touching code: the tester's objections are the specification now, and a fix that satisfies the original text but not those comments will bounce again."
@@ -501,10 +501,10 @@ lead_pass() {
     parent="${n#* }"; n="${n%% *}"
     bounces="$(handoff_count "$n")"
     if [ "$IMPLEMENTER_PARK_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_PARK_AFTER" ]; then
-      echo "[lead:#$n] stage bounced $bounces times; parking with owner:don" | tee -a "$LOGS/loop.log"
+      echo "[lead:#$n] stage bounced $bounces times; parking with owner:don" | tee -a "$LOOP_LOG"
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label status:needs-approval >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this stage of #$parent has been handed off and bounced back by the tester $bounces times since it was last opened (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER). The lead and the tester's acceptance cases are not converging; a human should read the bounce comments and either amend the plan (a new version on #$parent) or say which side is right, then hand it back with \`owner:lead\`." >/dev/null \
-        || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOGS/loop.log"
+        || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"
       continue
     fi
     set_base_commit
@@ -527,17 +527,17 @@ $(plan_text "$parent")" \
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" lead:closeout \
-      || { echo "[lead:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[lead:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     # A parent the tester keeps failing at the final check goes to Don, the
     # same threshold as a stage. The close-out prompt files a fix-forward
     # stage for each failure, which takes the parent out of this queue until
     # it closes, so this only fires if that isn't converging either.
     bounces="$(handoff_count "$n")"
     if [ "$IMPLEMENTER_PARK_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_PARK_AFTER" ]; then
-      echo "[lead:#$n] feature failed its final check $bounces times; parking with owner:don" | tee -a "$LOGS/loop.log"
+      echo "[lead:#$n] feature failed its final check $bounces times; parking with owner:don" | tee -a "$LOOP_LOG"
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label status:needs-approval >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this feature has been handed to the tester for its final check and failed it $bounces times (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER). A human should read the bounce comments and decide." >/dev/null \
-        || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOGS/loop.log"
+        || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"
       continue
     fi
     # A built close-out hands the parent to the tester through the same R3
@@ -569,7 +569,7 @@ tester_pass() {
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" tester:spec \
-      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     run_agent tester "#$n" "$TESTER_SPEC_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" spec \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a SPEC session for feature #$n only - write its stages' acceptance cases from the approved plan. Do not verify anything and do not work the standing task. Then stop.
 
@@ -590,7 +590,7 @@ $(plan_text "$n")" \
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" tester:verify \
-      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" verify \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a VERIFY session for issue #$n only. Do not work the standing task. Then stop.
 
@@ -611,7 +611,7 @@ $(issue_context "$n")" \
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" tester:handoff \
-      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" handoff \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a HANDOFF session for issue #$n only - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
 
@@ -629,7 +629,7 @@ $(issue_context "$n")" \
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" tester:answer \
-      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" answer \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is an ANSWER session for issue #$n only - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
 
@@ -654,7 +654,7 @@ $(issue_context "$n")" \
   # and nothing but release-blockers moves until the release ships (R14)
   freeze="$(release_freeze)"
   if [ -n "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
-    echo "[tester:task] held: release freeze $freeze" | tee -a "$LOGS/loop.log"
+    echo "[tester:task] held: release freeze $freeze" | tee -a "$LOOP_LOG"
   fi
   if [ -z "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
@@ -670,9 +670,9 @@ $(issue_context "$n")" \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a CLOSURES session for ${list}only - each was closed wontfix or duplicate with owner:tester; accept, or reopen once with materially new evidence. Do not work the standing task and do not verify anything. Then stop." \
       "${TESTER_FLAGS[@]}"
     [ "$SESSION_OK" = 1 ] && mark_closures_seen "${closures[@]}"
-    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
+    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
   elif [ -z "$freeze" ]; then
-    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOGS/loop.log"
+    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
   fi
 }
 
@@ -691,7 +691,7 @@ reviewer_pass() {
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" reviewer:docs \
-      || { echo "[reviewer:#$n] no longer ready, skipping" | tee -a "$LOGS/loop.log"; continue; }
+      || { echo "[reviewer:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     run_agent reviewer "#$n" "$REVIEWER_BUDGET_USD" "$PLUGIN_TREE" "$REVIEWER_PROVIDER" "$REVIEWER_MODEL" "$REVIEWER_EFFORT" docs \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a DOCS REVIEW session for issue #$n only. Then stop.
 
@@ -731,7 +731,7 @@ $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
       "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$CURATOR_REVIEW_TOOLS" "${CURATOR_REVIEW_PERMISSION_FLAGS[@]}"
     co_author_for "$CURATOR_PROVIDER" "$(resolved_model curator "$CURATOR_MODEL")"
     commit_suite_changes "regression: curator applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
-      || echo "[curator] suite commit failed, continuing" | tee -a "$LOGS/loop.log"
+      || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   done
 }
 
@@ -757,7 +757,7 @@ status_board() {
 # a pass over independent issues, so that is what's wanted.)
 step() {
   local name="$1"; shift
-  "$@" || echo "[loop] WARNING: $name failed (exit $?); continuing the cycle" | tee -a "$LOGS/loop.log"
+  "$@" || echo "[loop] WARNING: $name failed (exit $?); continuing the cycle" | tee -a "$LOOP_LOG"
 }
 
 # main: the cycle loop. In a function, and called with `exit` on the same
@@ -771,7 +771,7 @@ while true; do
   step park_external_issues park_external_issues
   before="$(status_board)"
   DEPLOYED_HEAD="$(deployed_head)"
-  echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOGS/loop.log"
+  echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOOP_LOG"
 
   step implementer_pass implementer_pass
   step features_pass features_pass
@@ -779,13 +779,13 @@ while true; do
   # Refresh after the implementer's and lead's deploys: the tester must be told what it
   # is actually verifying against, not what lem ran when the cycle began.
   DEPLOYED_HEAD="$(deployed_head)"
-  echo "[loop] lem is running: $DEPLOYED_HEAD (after implementer pass)" | tee -a "$LOGS/loop.log"
+  echo "[loop] lem is running: $DEPLOYED_HEAD (after implementer pass)" | tee -a "$LOOP_LOG"
   step check_lem_on_develop check_lem_on_develop
   # Same commit as lem, for the plugin: pick up this cycle's merged skill fixes.
   if plugin_at="$(refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE")"; then
-    echo "[loop] tester plugin tree: origin/develop @ $plugin_at" | tee -a "$LOGS/loop.log"
+    echo "[loop] tester plugin tree: origin/develop @ $plugin_at" | tee -a "$LOOP_LOG"
   else
-    echo "[loop] WARNING: could not refresh the plugin tree; the tester loads the previous one" | tee -a "$LOGS/loop.log"
+    echo "[loop] WARNING: could not refresh the plugin tree; the tester loads the previous one" | tee -a "$LOOP_LOG"
   fi
   step tester_pass tester_pass
   # After the tester: a verify that finds a docs-only fix it can't observe
@@ -799,17 +799,17 @@ while true; do
   # the case. A no-op when the suite files are clean.
   co_author_for "$TESTER_PROVIDER" "$(resolved_model tester "$TESTER_MODEL")"
   commit_suite_changes "regression: tester added case (cycle $cycle)" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
-    || echo "[tester] suite commit failed, continuing" | tee -a "$LOGS/loop.log"
+    || echo "[tester] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   step curator_pass curator_pass
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board
     freeze="$(release_freeze)"; [ -z "$freeze" ] || echo "  release freeze $freeze: only release-blocker issues move"
     drafts="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" --jq length 2>/dev/null || true)"
     [ "${drafts:-0}" = 0 ] || echo "  $drafts private security finding(s) in draft advisories: ./scripts/file-advisory.sh --list"
-  } | tee -a "$LOGS/loop.log"
+  } | tee -a "$LOOP_LOG"
 
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then
-    echo "Reached MAX_CYCLES=$MAX_CYCLES, exiting." | tee -a "$LOGS/loop.log"
+    echo "Reached MAX_CYCLES=$MAX_CYCLES, exiting." | tee -a "$LOOP_LOG"
     break
   fi
   # A clean stop at the next cycle boundary, for a release freeze: every
@@ -818,14 +818,14 @@ while true; do
   # the 0.4.0 freeze was a hand-rolled watcher on the board line).
   if [ -e "$LOGS/stop-after-cycle" ]; then
     rm -f "$LOGS/stop-after-cycle"
-    echo "stop-after-cycle found, exiting after cycle $cycle." | tee -a "$LOGS/loop.log"
+    echo "stop-after-cycle found, exiting after cycle $cycle." | tee -a "$LOOP_LOG"
     break
   fi
 
   if [ "$(status_board)" != "$before" ]; then
-    echo "tickets changed this cycle, starting next cycle now" | tee -a "$LOGS/loop.log"
+    echo "tickets changed this cycle, starting next cycle now" | tee -a "$LOOP_LOG"
   else
-    echo "idle, sleeping ${SLEEP_SECS}s" | tee -a "$LOGS/loop.log"
+    echo "idle, sleeping ${SLEEP_SECS}s" | tee -a "$LOOP_LOG"
     sleep "$SLEEP_SECS"
   fi
 done

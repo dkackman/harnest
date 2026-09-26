@@ -594,8 +594,15 @@ resolved_model() {
 # run-release.sh refuse any other target. The local server is started by
 # hand; nothing here deploys or restarts it.
 DW_TARGET="${DW_TARGET:-lem}"
-DW_LOCAL_DIR="${DW_LOCAL_DIR:-$HOME/src/dkackman/diffusers-workflow}"
+# The serving clone: only deploy_target changes it (setup-mac-loop.sh makes it).
+DW_LOCAL_DIR="${DW_LOCAL_DIR:-$HOME/src/dkackman/dw-mps-serve}"
+DW_LOCAL_WORKSPACE="${DW_LOCAL_WORKSPACE:-$HOME/dw-mps-workspace}"
 TARGET_SUFFIX=""   # set by resolve_target; lem's names until then
+TARGET_HEALTH=""  # target_preflight sets it: "<device> on <host>"
+LOOP_LOG="$LOGS/loop.log"   # resolve_target sets the target's own; every driver sets LOGS first
+
+# target_default <lem> <other>: a knob's default for this target.
+target_default() { if [ "${DW_TARGET:-lem}" = lem ]; then printf '%s\n' "$1"; else printf '%s\n' "$2"; fi; }
 
 # resolve_target
 # Validates DW_TARGET and sets:
@@ -610,9 +617,11 @@ resolve_target() {
   case "$DW_TARGET" in
     lem)
       TARGET_SUFFIX=""
+      LOOP_LOG="$LOGS/loop.log"
       DW_URL="${DW_URL:-http://lem:8765/mcp}" ;;
     local)
       TARGET_SUFFIX=".local"
+      LOOP_LOG="$LOGS/loop$TARGET_SUFFIX.log"
       DW_URL="${DW_URL:-http://localhost:8765/mcp}"
       git -C "$DW_LOCAL_DIR" rev-parse --git-dir >/dev/null 2>&1 \
         || { echo "DW_LOCAL_DIR is not a git checkout: $DW_LOCAL_DIR (the checkout the local server runs from)" >&2; return 1; }
@@ -701,17 +710,71 @@ deployed_head() {
   || echo unknown
 }
 
-# target_note <server>
-# The rules a regression session on a server other than lem follows, from
-# agents/regression/target.md with {{TARGET}}, {{SERVER}} and {{URL}}
-# filled in; prints nothing for lem. <server> is TARGET_HEALTH. The file
-# says why each rule exists; guard.py enforces the two a mistake could
-# not be taken back from (suite and perf files, the owner on a new issue).
+# target_note <role> <server>
+# The rules a <role> session on a server other than lem follows, from
+# agents/<role>/target.md with {{TARGET}}, {{SERVER}}, {{URL}}, {{DEPLOY}}
+# and {{SERVER_DIR}} filled in; prints nothing for lem. <server> is
+# TARGET_HEALTH. Each file says why its rules exist; guard.py enforces the
+# ones a mistake could not be taken back from.
 target_note() {
   [ "${DW_TARGET:-lem}" = lem ] && return 0
-  local f="$HARNEST_ROOT/agents/regression/target.md"
+  local f="$HARNEST_ROOT/agents/$1/target.md"
   [ -f "$f" ] || { echo "target_note: $f is missing" >&2; return 1; }
-  sed -e "s|{{TARGET}}|$DW_TARGET|g" -e "s|{{SERVER}}|$1|g" -e "s|{{URL}}|$DW_URL|g" "$f"
+  sed -e "s|{{TARGET}}|$DW_TARGET|g" -e "s|{{SERVER}}|$2|g" -e "s|{{URL}}|$DW_URL|g" \
+      -e "s|{{DEPLOY}}|$(deploy_cmd)|g" -e "s|{{SERVER_DIR}}|$DW_LOCAL_DIR|g" "$f"
+}
+
+# deploy_cmd / deploy_target
+# How this target gets develop. lem pulls and restarts over ssh; local runs
+# the same dw scripts/deploy.sh against the serving clone (DW_LOCAL_DIR),
+# bound to loopback, on the port DW_URL names. deploy.sh waits for a
+# running job and polls health on both. deploy_cmd is the line prompts and
+# the log show (no "|" in it: target_note seds it in); deploy_target runs
+# it, logs its last lines, and returns its status.
+deploy_cmd() {
+  if [ "${DW_TARGET:-lem}" = lem ]; then
+    # shellcheck disable=SC2088  # the ~ is for lem's shell
+    echo "ssh -o ConnectTimeout=8 -o BatchMode=yes lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+  else
+    local port
+    port="$(printf '%s' "${DW_URL#*://}" | sed -n 's|^[^/]*:\([0-9][0-9]*\).*|\1|p')"
+    echo "DW_DIR=$DW_LOCAL_DIR DW_WORKSPACE=$DW_LOCAL_WORKSPACE DW_HOST=127.0.0.1 DW_PORT=${port:-8765} DW_TOKEN=${DW_TOKEN:-xyz} $DW_LOCAL_DIR/scripts/deploy.sh develop"
+  fi
+}
+deploy_target() {
+  local rc
+  bash -c "$(deploy_cmd)" > "$LOGS/.deploy$TARGET_SUFFIX.out" 2>&1 && rc=0 || rc=$?
+  tail -n 3 "$LOGS/.deploy$TARGET_SUFFIX.out" | sed 's/^/[loop:deploy] /' | tee -a "$LOOP_LOG"
+  return "$rc"
+}
+
+# server_name: how prompts and the log name the server this loop deploys to.
+server_name() {
+  if [ "${DW_TARGET:-lem}" = lem ]; then echo lem; else echo "the $DW_TARGET server ($TARGET_HEALTH)"; fi
+}
+
+# claim_issue <n>
+# Marks <n> as this loop's (target:<DW_TARGET>) and reads it back. Two loops
+# can read an issue as unclaimed at the same moment; lem keeps a tie, and
+# the other loop removes its own label. Returns 1 when this loop doesn't
+# hold the issue afterwards, or gh failed (not held: skip it this pass).
+claim_issue() {
+  local n="$1" labels
+  gh issue edit "$n" --repo "$TICKET_REPO" --add-label "target:$DW_TARGET" >/dev/null 2>&1 || return 1
+  labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
+  printf '%s\n' "$labels" | grep -qx "target:$DW_TARGET" || return 1
+  if [ "$DW_TARGET" != lem ] && printf '%s\n' "$labels" | grep -qx target:lem; then
+    gh issue edit "$n" --repo "$TICKET_REPO" --remove-label "target:$DW_TARGET" >/dev/null 2>&1 || true
+    return 1
+  fi
+}
+
+# lem_loop_running: lem's loop holds its lock now (not a regression run,
+# which takes the same lock). Another loop leaves the server-free passes to it.
+lem_loop_running() {
+  local pid name
+  read -r pid name < "$LOGS/.driver.lock/owner" 2>/dev/null || return 1
+  [ "$name" = run-loop ] && kill -0 "$pid" 2>/dev/null
 }
 
 # refresh_plugin_tree <source_dir> <plugin_tree>
@@ -766,7 +829,7 @@ acquire_driver_lock() {
       aside="$lock.stale.$$"
       if mv "$lock" "$aside" 2>/dev/null; then
         if [ "$(cat "$aside/owner" 2>/dev/null || true)" = "$holder" ]; then
-          echo "[lock] taking over a stale lock from '${holder:-no owner}'" | tee -a "$LOGS/loop.log"
+          echo "[lock] taking over a stale lock from '${holder:-no owner}'" | tee -a "$LOOP_LOG"
           rm -rf "$aside"
         else
           # Another waiter took it over first, and this rename moved its
@@ -776,7 +839,7 @@ acquire_driver_lock() {
       fi
       continue
     fi
-    [ "$waited" -eq 0 ] && echo "[lock] $1 waiting for '$holder' to finish" | tee -a "$LOGS/loop.log"
+    [ "$waited" -eq 0 ] && echo "[lock] $1 waiting for '$holder' to finish" | tee -a "$LOOP_LOG"
     waited=1
     sleep 30
   done
@@ -800,18 +863,18 @@ audit_issue() {
     --jq '[.state, (.stateReason // ""), ([.labels[].name | select(startswith("owner:"))] | join(","))] | join("|")' 2>/dev/null)" || return 0
   IFS='|' read -r state reason owners <<<"$facts"
   if [ "$state" = OPEN ] && { [ -z "$owners" ] || [ "$owners" != "${owners%%,*}" ]; }; then
-    echo "[audit] WARNING: #$n is open with owner labels '${owners:-none}' after a session as $role; exactly one is the invariant" | tee -a "$LOGS/loop.log"
+    echo "[audit] WARNING: #$n is open with owner labels '${owners:-none}' after a session as $role; exactly one is the invariant" | tee -a "$LOOP_LOG"
   fi
   # The docs reviewer closes as completed too, for a fix the tester can't
   # observe (a docs-only change it verifies by reading).
   if [ "$state" = CLOSED ] && [ "$reason" = COMPLETED ] && [ "$role" != tester ] && [ "$role" != reviewer ]; then
-    echo "[audit] WARNING: #$n was closed as completed after a session as $role; only the tester (from a real MCP call) or the docs reviewer may" | tee -a "$LOGS/loop.log"
+    echo "[audit] WARNING: #$n was closed as completed after a session as $role; only the tester (from a real MCP call) or the docs reviewer may" | tee -a "$LOOP_LOG"
   fi
   # A session that leaves its issue where no queue will pick it up has
   # found a hole in the protocol (lib/classify.jq), or made a label mistake.
   local why
   if [ "$state" = OPEN ] && why="$(classify_issues 2>/dev/null | awk -F'\t' -v n="$n" '$1 == n && $2 == "stranded" { print $4 }')" && [ -n "$why" ]; then
-    echo "[audit] WARNING: #$n is stranded after a session as $role: $why" | tee -a "$LOGS/loop.log"
+    echo "[audit] WARNING: #$n is stranded after a session as $role: $why" | tee -a "$LOOP_LOG"
   fi
   return 0
 }
@@ -893,8 +956,8 @@ commit_suite_changes_locked() {
       /^-/ && !/^--- / && !/^-pending: #[0-9]+[[:space:]]*$/ { n[f]++ }
       END { for (k in n) printf "%s(-%s) ", k, n[k] }')"
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
-  echo "$msg" | tee -a "$LOGS/loop.log"
-  [ -z "$shrunk" ] || echo "[audit] WARNING: $(git -C "$REPO" rev-parse --short HEAD) removed lines from ${shrunk}- cases and readings are add-only unless a human approved the change; review it" | tee -a "$LOGS/loop.log"
+  echo "$msg" | tee -a "$LOOP_LOG"
+  [ -z "$shrunk" ] || echo "[audit] WARNING: $(git -C "$REPO" rev-parse --short HEAD) removed lines from ${shrunk}- cases and readings are add-only unless a human approved the change; review it" | tee -a "$LOOP_LOG"
 }
 
 # STREAM_FLAGS / render_stream <name>
@@ -1029,7 +1092,7 @@ sleep_if_rate_limited() {
   now="$(date +%s)"
   wait=$((epoch + 60 - now))
   if [ "$wait" -gt 0 ]; then
-    echo "[loop] rate limit rejected; sleeping ${wait}s until $(date -r "$epoch" '+%H:%M:%S') + 60s" | tee -a "$LOGS/loop.log"
+    echo "[loop] rate limit rejected; sleeping ${wait}s until $(date -r "$epoch" '+%H:%M:%S') + 60s" | tee -a "$LOOP_LOG"
     sleep "$wait"
   fi
 }
@@ -1070,18 +1133,18 @@ run_claude_session() {
   : "${LAST_SESSION:?run_claude_session: LAST_SESSION must be set by the driver}"
   for attempt in 1 2; do
     : > "$LAST_SESSION"
-    echo "=== $(date '+%H:%M:%S') ${SESSION_HEADER:-$label} ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOGS/loop.log"
+    echo "=== $(date '+%H:%M:%S') ${SESSION_HEADER:-$label} ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOOP_LOG"
     (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} ${SESSION_ENV[@]+"${SESSION_ENV[@]}"} \
         claude -p "$prompt" --append-system-prompt-file "$prompt_file" "${STREAM_FLAGS[@]}" "$@" \
         2>&1 < /dev/null | render_stream "$logname") \
       | tee -a "$LOGS/$logname.log" "$LAST_SESSION" \
       | sed -u "s/^/[$label] /" \
-      | tee -a "$LOGS/loop.log" \
-      || echo "[$label] session failed, continuing" | tee -a "$LOGS/loop.log"
+      | tee -a "$LOOP_LOG" \
+      || echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
     sleep_if_rate_limited "$LAST_SESSION"
     session_died "$LAST_SESSION" || break
     [ "$attempt" -eq 1 ] || break
-    echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOGS/loop.log"
+    echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOOP_LOG"
     sleep "$SESSION_RETRY_PAUSE_SECS"
   done
   return 0
@@ -1114,7 +1177,7 @@ park_external_issues() {
       | [(.number|tostring), .author.login,
          ([.labels[].name | select(startswith("owner:") or startswith("status:"))] | join(","))]
       | @tsv')" \
-    || { echo "[loop] could not list issues to check for external filings; skipping this cycle" | tee -a "$LOGS/loop.log"; return 0; }
+    || { echo "[loop] could not list issues to check for external filings; skipping this cycle" | tee -a "$LOOP_LOG"; return 0; }
   [ -n "$rows" ] || return 0
   printf '%s\n' "$rows" | while IFS=$'\t' read -r n author labels; do
       remove=()
@@ -1125,8 +1188,8 @@ park_external_issues() {
       gh issue edit "$n" --repo "$TICKET_REPO" ${remove[@]+"${remove[@]}"} \
         --add-label owner:don --add-label status:needs-approval >/dev/null \
       && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off (\`owner:implementer\`, drop \`status:needs-approval\`) if it should enter the loop." >/dev/null \
-      && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOGS/loop.log" \
-      || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOGS/loop.log"
+      && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOOP_LOG" \
+      || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOOP_LOG"
     done
 }
 
@@ -1243,7 +1306,7 @@ only_issues_filter() {
 queue_issues() {
   local rows
   if ! rows="$(classify_issues)"; then
-    echo "[loop] could not read the issue board for queue $1; skipping it this pass" | tee -a "$LOGS/loop.log" >&2
+    echo "[loop] could not read the issue board for queue $1; skipping it this pass" | tee -a "$LOOP_LOG" >&2
     return 0
   fi
   printf '%s\n' "$rows" | awk -F'\t' -v q="$1" '$2 == q' | only_issues_filter | cut -f1,3,4
@@ -1313,7 +1376,7 @@ note_progress() {
   mv "$ledger.tmp" "$ledger"
   [ "$count" -ge "$NO_PROGRESS_PARK_AFTER" ] || return 0
   case "$after" in OPEN\|*) ;; *) return 0 ;; esac
-  echo "[$tag] $count sessions in a row left #$n unchanged; parking it with owner:don" | tee -a "$LOGS/loop.log"
+  echo "[$tag] $count sessions in a row left #$n unchanged; parking it with owner:don" | tee -a "$LOOP_LOG"
   owner="$(printf '%s' "$after" | cut -d'|' -f2 | tr ',' '\n' | grep '^owner:' | head -n 1 || true)"
   local -a swap=()
   [ -z "$owner" ] || [ "$owner" = owner:don ] || swap=(--remove-label "$owner")
@@ -1322,7 +1385,7 @@ note_progress() {
      && gh issue comment "$n" --repo "$repo" --body "Parked by the loop driver: $count sessions in a row ended without changing this issue's state or labels (NO_PROGRESS_PARK_AFTER=$NO_PROGRESS_PARK_AFTER), so the next cycle would run the same session again. Read the latest session comments, then hand it back with \`$back\` and without \`status:needs-approval\`, or decide it here." >/dev/null 2>&1; then
     { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp"; mv "$ledger.tmp" "$ledger"
   else
-    echo "[$tag] could not park #$n (gh failed)" | tee -a "$LOGS/loop.log"
+    echo "[$tag] could not park #$n (gh failed)" | tee -a "$LOOP_LOG"
   fi
 }
 

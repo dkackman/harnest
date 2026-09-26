@@ -222,7 +222,7 @@ before_head="$(git -C "$T/h" rev-parse HEAD)"
 reg_local
 eq  "regression local: runs while lem's lock is held" 0 $?
 eq  "regression local: one whole-level session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
-has "regression local: header names the target and its checkout" "target=local, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
+has "regression local: header names the target and its checkout" "target=local, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.local.log" | tail -1)"
 sysprompt="$(cat "$T/h/logs/.prompt.regression.local.whole.md")"
 has "regression local: prompt names the server it asked" "the local server (mps on $(hostname)) is running develop @ " "$(cat "$T/local-prompt")"
 has "regression local: system prompt moves perf history" "regression-perf/local/<case>.jsonl" "$sysprompt"
@@ -231,7 +231,7 @@ has "regression local: system prompt forbids suite edits" "The suite files. Ever
 eq  "regression local: the guard is told the target" "local" "$(cat "$T/local-prompt.target")"
 has "regression local: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/reg-local.out")"
 eq  "regression local: no suite commit on a local run" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
-has "regression local: header tags the level for the curator" "level=smoke.local," "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
+has "regression local: header tags the level for the curator" "level=smoke.local," "$(grep 'regression run (' "$T/h/logs/loop.local.log" | tail -1)"
 has "regression local: sessions are labelled for retro" "[regression-local:smoke] usage:" "$(cat "$T/reg-local.out")"
 has "regression local: the note names the accelerator once" "the local server (mps on $(hostname), http://localhost:8765/mcp)" "$sysprompt"
 has "regression local: plugin is the local checkout's" "--plugin-dir
@@ -256,7 +256,7 @@ EOM
 eq  "regression local: held-back case runs no session (one chunk + sweep)" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "regression local: the held-back case is logged as skipped" "REGRESSION-SKIP: S-F079 memory" "$(cat "$T/reg-mem.out")"
 has "regression local: and counted" "1 case(s) skipped" "$(cat "$T/reg-mem.out")"
-eq  "regression local: only S-F001 is handed out" "" "$(grep 'session .*: .*S-F079' "$T/h/logs/loop.log" || true)"
+eq  "regression local: only S-F001 is handed out" "" "$(grep 'session .*: .*S-F079' "$T/h/logs/loop.local.log" || true)"
 rm -rf "$T/h/logs/.driver.lock"
 printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"
 : > "$FAKE_CLAUDE_LOG"

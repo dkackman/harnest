@@ -250,10 +250,10 @@ REGRESSION_FLAGS=(
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" prompt_file
   prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.$LOGNAME_REGRESSION.$kind.md")" \
-    || { echo "[$RPFX:$level$tag] no role prompt for '$kind'" | tee -a "$LOGS/loop.log"; return 0; }
+    || { echo "[$RPFX:$level$tag] no role prompt for '$kind'" | tee -a "$LOOP_LOG"; return 0; }
   # On another server, its rules (agents/regression/target.md) join the
   # system prompt, after the role's own, so they read as the last word.
-  [ -z "$TARGET_SUFFIX" ] || { printf '\n'; target_note "$TARGET_HEALTH"; } >> "$prompt_file"
+  [ -z "$TARGET_SUFFIX" ] || { printf '\n'; target_note regression "$TARGET_HEALTH"; } >> "$prompt_file"
   # One fresh session, retried once if it dies, asleep through a rejected
   # rate limit (run_claude_session in providers.sh).
   run_claude_session "regression${TARGET_SUFFIX:+-$DW_TARGET}:$level$tag" "$LOGNAME_REGRESSION" "$REPO" "$prompt_file" \
@@ -305,7 +305,7 @@ run_level() {
   workspace="$(workspace_for_suite_file "$suite_file")"
 
   if ! grep -q '^### ' "$suite_file"; then
-    echo "$(ts) $level${TARGET_SUFFIX}: $(basename "$suite_file") has no cases yet, skipping" | tee -a "$LOGS/loop.log"
+    echo "$(ts) $level${TARGET_SUFFIX}: $(basename "$suite_file") has no cases yet, skipping" | tee -a "$LOOP_LOG"
     return 0
   fi
 
@@ -315,7 +315,7 @@ run_level() {
   if [ "${#script_ids[@]}" -gt 0 ]; then
     local report
     report="$(python3 "$REPO/contract/run.py" --url "$DW_URL" --token "$DW_TOKEN" "${script_ids[@]}" 2>&1 || true)"
-    echo "[$RPFX:$level] script cases: $(printf '%s' "$report" | jq -r '"\(.passed // 0) passed, \(.failed // 0) failed, \(.errors // 0) errored\(if .error then " - " + .error else "" end)"' 2>/dev/null || echo "report unreadable")" | tee -a "$LOGS/loop.log"
+    echo "[$RPFX:$level] script cases: $(printf '%s' "$report" | jq -r '"\(.passed // 0) passed, \(.failed // 0) failed, \(.errors // 0) errored\(if .error then " - " + .error else "" end)"' 2>/dev/null || echo "report unreadable")" | tee -a "$LOOP_LOG"
     script_note="
 
 These cases ran as scripts before this session (contract/run.py, a plain MCP client; see 'runner: script' on each): ${script_ids[*]}. Do not execute them. Their report:
@@ -337,11 +337,11 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       grep -q "^### $id " "$suite_file" || continue
       held="$held $id"
       LEVEL_SKIPS=$((LEVEL_SKIPS + 1))
-      echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOGS/loop.log"
+      echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOOP_LOG"
     done
   fi
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
-    echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOGS/loop.log"
+    echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOOP_LOG"
     run_session "$level" "$suite_file" "$workspace" "" whole \
       "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.${held:+ Never run these cases on this server, whatever the suite says; the driver already counted them as skipped:$held.}$script_note"
   else
@@ -355,36 +355,36 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       ids+=("$id")
     done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
     total=${#ids[@]}
-    echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOGS/loop.log"
+    echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOOP_LOG"
     for id in ${ids[@]+"${ids[@]}"}; do
       chunk+=("$id"); seen=$((seen + 1))
       if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then
         session=$((session + 1))
-        echo "--- $(ts) $tag session $session: ${chunk[*]} ---" | tee -a "$LOGS/loop.log"
+        echo "--- $(ts) $tag session $session: ${chunk[*]} ---" | tee -a "$LOOP_LOG"
         run_session "$level" "$suite_file" "$workspace" ".$session" chunk \
           "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
         chunk=()
         if session_aborted; then
-          echo "[$RPFX:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOGS/loop.log"
+          echo "[$RPFX:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOOP_LOG"
           break
         fi
       fi
     done
     if ! session_aborted; then
-      echo "--- $(ts) $tag session $((session + 1)): final sweep ---" | tee -a "$LOGS/loop.log"
+      echo "--- $(ts) $tag session $((session + 1)): final sweep ---" | tee -a "$LOOP_LOG"
       run_session "$level" "$suite_file" "$workspace" ".sweep" sweep \
         "This is the final sweep of a chunked run: every case was already exercised in earlier sessions. Do only the final sweep against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases.$script_note"
     fi
   fi
 
   [ -z "$TARGET_SUFFIX" ] \
-    || echo "[$RPFX:$level] $LEVEL_SKIPS case(s) skipped, $LEVEL_DIFFERS expectation(s) differ on this server (REGRESSION-SKIP / REGRESSION-DIFFERS lines above)" | tee -a "$LOGS/loop.log"
+    || echo "[$RPFX:$level] $LEVEL_SKIPS case(s) skipped, $LEVEL_DIFFERS expectation(s) differ on this server (REGRESSION-SKIP / REGRESSION-DIFFERS lines above)" | tee -a "$LOOP_LOG"
   # The trailer names the id the model alias actually resolved to.
   co_author_for "$REGRESSION_PROVIDER" "$(resolved_model "$LOGNAME_REGRESSION" "$REGRESSION_MODEL")"
   commit_suite_changes "regression: update $level suite from $(ts) run ($MODEL_LABEL${TARGET_SUFFIX:+, target $DW_TARGET})"
   # An unreachable server fails every later level the same way.
   if session_aborted; then
-    echo "[$RPFX] stopping: MCP unreachable" | tee -a "$LOGS/loop.log"
+    echo "[$RPFX] stopping: MCP unreachable" | tee -a "$LOOP_LOG"
     exit 1
   fi
 }

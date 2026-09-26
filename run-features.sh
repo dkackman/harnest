@@ -119,11 +119,11 @@ design=(); decompose=()
 while IFS=$'\t' read -r n _ reason; do [ -n "$n" ] && design+=("$n"$'\t'"$reason"); done < <(queue_issues lead:design)
 while IFS=$'\t' read -r n _ reason; do [ -n "$n" ] && decompose+=("$n"$'\t'"$reason"); done < <(queue_issues lead:decompose)
 if [ "${#design[@]}" -eq 0 ] && [ "${#decompose[@]}" -eq 0 ]; then
-  echo "$(ts) [lead] no feature waiting on a design or a decomposition" | tee -a "$LOGS/loop.log"
+  echo "$(ts) [lead] no feature waiting on a design or a decomposition" | tee -a "$LOOP_LOG"
   exit 0
 fi
 
-echo "=== $(ts) feature run ($MODEL_LABEL): design $(printf '%s ' ${design[@]+"${design[@]%%$'\t'*}"}); decompose $(printf '%s ' ${decompose[@]+"${decompose[@]%%$'\t'*}"}) ===" | tee -a "$LOGS/loop.log"
+echo "=== $(ts) feature run ($MODEL_LABEL): design $(printf '%s ' ${design[@]+"${design[@]%%$'\t'*}"}); decompose $(printf '%s ' ${decompose[@]+"${decompose[@]%%$'\t'*}"}) ===" | tee -a "$LOOP_LOG"
 local entry
 for entry in ${design[@]+"${design[@]}"}; do
   run_session "${entry%%$'\t'*}" design "$LEAD_DESIGN_BUDGET_USD" \
