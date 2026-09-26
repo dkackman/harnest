@@ -116,5 +116,21 @@ trow 0 'gh issue create --title "S-F070 fails" -l owner:don -l target:local -l r
 trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,regression'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:don,regression'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:don,owner:implementer,target:local'
-trow 0 'gh issue comment 5 --body "also fails on local"'
+# comments: the stub says #7 carries the asked-for label, #8 doesn't, and
+# anything else is a gh failure
+trow 0 'gh issue comment 7 --body "fails here too"'
+trow 2 'gh issue comment 8 --body "also fails on local"'
+trow 2 'gh issue comment 9 --body "gh cannot say"'
+# rrow <expect> <command>: with the ticket repo named, as the driver sets it
+rrow() {
+  jq -n --arg c "$2" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
+    | HARNEST_ROOT="$root" HARNEST_TARGET=local HARNEST_TICKET_REPO=o/r python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer@local o/r: $2" "$1" $?
+}
+rrow 0 'gh issue create --repo o/r --title x --label owner:don,target:local,regression'
+rrow 2 'gh issue create --title x --label owner:don,target:local,regression'
+rrow 2 'gh issue create --repo dkackman/harnest --title x --label suite,status:needs-approval'
+rrow 0 'gh issue comment 7 --repo o/r --body x'
+rrow 2 'gh issue comment 7 --repo dkackman/harnest --body x'
+rrow 0 'gh issue list --repo o/r --label target:local'
 finish

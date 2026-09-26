@@ -68,6 +68,12 @@ run-regression.sh; harnest#15). Also runs on Edit and Write:
     is allowed.
   - `gh issue create` carries `owner:don` and `target:<target>`: the loop
     reproduces, deploys and verifies on lem only
+  - `gh issue create`/`comment` names the ticket repo (HARNEST_TICKET_REPO):
+    a suite proposal to the harness repo would be one written from this
+    server's behavior
+  - `gh issue comment N` only when issue N carries `target:<target>` (asks
+    GitHub; any doubt refuses): lem's issues feed the implementer's and the
+    tester's prompts, where a symptom from this server would mislead them
 
 Command matching is textual, on the Bash command line. It is a guard
 against the model's mistakes, not against an adversary: a determined agent
@@ -163,6 +169,24 @@ def still_parked(words):
     except Exception:
         return True
     return out.returncode != 0 or out.stdout.strip() != "false"
+
+
+def issue_has_label(words, label):
+    """True only when GitHub says the issue this command names carries
+    <label>. No number, or gh failing, is False: the rule fails closed."""
+    nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+    if not nums:
+        return False
+    repo = flag_values(words, "--repo", "-R")
+    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq",
+           "[.labels[].name] | index(\"%s\") != null" % label]
+    if repo:
+        cmd += ["--repo", repo[-1]]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception:
+        return False
+    return out.returncode == 0 and out.stdout.strip() == "true"
 
 
 def git_push_problem(words):
@@ -332,6 +356,17 @@ def main():
         return
     cmd = data.get("tool_input", {}).get("command", "")
     for words in segments(cmd):
+        if target and (is_gh_issue(words, "create") or is_gh_issue(words, "comment")):
+            ticket_repo = os.environ.get("HARNEST_TICKET_REPO", "")
+            repo = flag_values(words, "--repo", "-R")
+            if ticket_repo and (not repo or repo[-1] != ticket_repo):
+                deny("from the %s server, issues are filed and commented on %s only (--repo %s). "
+                     "A suite proposal can't be made from here: describe the case in the issue body."
+                     % (target, ticket_repo, ticket_repo))
+        if target and is_gh_issue(words, "comment") and not issue_has_label(words, "target:" + target):
+            deny("from the %s server, comment only on an issue labeled target:%s. This one is lem's (or "
+                 "couldn't be checked): file your own with owner:don and target:%s and reference it."
+                 % (target, target, target))
         if target and is_gh_issue(words, "create"):
             labels = flag_values(words, "--label", "-l")
             if "owner:don" not in labels or "target:" + target not in labels \

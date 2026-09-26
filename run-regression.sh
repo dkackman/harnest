@@ -96,6 +96,12 @@ CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick fr
 REGRESSION_BUDGET_USD="${REGRESSION_BUDGET_USD:-6}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 DW_URL="${DW_URL:-}"           # empty: the target's own (resolve_target)
+# On a target other than lem, cases the driver never hands the agent: each
+# can take a 64 GB unified-memory machine down with the session running it
+# (S-F079 SD 1.5 at 8192x8192, which OOMs a 24 GB card; C-F005's H3 arm;
+# C-F007 and C-F023 near 61 GB of host RSS; C-F047 tens of GB). Not left to
+# the agent's reading of target.md: one misjudged case is an outage.
+TARGET_SKIP_CASES="${TARGET_SKIP_CASES:-S-F079 C-F005 C-F007 C-F023 C-F047}"
 DW_TOKEN="${DW_TOKEN:-xyz}"
 
 LEVEL="${1:-smoke}"
@@ -153,7 +159,7 @@ if [ "$DW_TARGET" != lem ]; then
 fi
 # guard.py reads it: on another target, lem's suite and perf files are off
 # limits and a new issue goes to owner:don + target:<target>.
-SESSION_ENV=(HARNEST_TARGET="$DW_TARGET")
+SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_TICKET_REPO="$TICKET_REPO")
 
 # Never alongside run-loop.sh on the same target: an implementer deploy
 # restarts the server mid-case, and both drivers keep per-session state
@@ -256,8 +262,9 @@ run_session() {
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     "${SESSION_FLAGS[@]}" "${REGRESSION_FLAGS[@]}"
   # What target.md tells an agent on another server to list rather than file
-  LEVEL_SKIPS=$((LEVEL_SKIPS + $(grep -c '^REGRESSION-SKIP:' "$LAST_SESSION" 2>/dev/null || true)))
-  LEVEL_DIFFERS=$((LEVEL_DIFFERS + $(grep -c '^REGRESSION-DIFFERS:' "$LAST_SESSION" 2>/dev/null || true)))
+  # A leading bullet or backtick is tolerated: a model writes a list as one.
+  LEVEL_SKIPS=$((LEVEL_SKIPS + $(grep -cE '^[-*` ]*REGRESSION-SKIP:' "$LAST_SESSION" 2>/dev/null || true)))
+  LEVEL_DIFFERS=$((LEVEL_DIFFERS + $(grep -cE '^[-*` ]*REGRESSION-DIFFERS:' "$LAST_SESSION" 2>/dev/null || true)))
 }
 
 # session_aborted
@@ -322,12 +329,20 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
   # Another target's header and session lines carry its tag (smoke.local),
   # so run-curate.sh's per-chunk cost table, which reads lem's runs out of
   # loop.log, neither counts them nor mixes their sessions into lem's.
-  local tag="$level$TARGET_SUFFIX"
+  local tag="$level$TARGET_SUFFIX" held="" id
   LEVEL_SKIPS=0 LEVEL_DIFFERS=0
+  if [ -n "$TARGET_SUFFIX" ]; then
+    for id in $TARGET_SKIP_CASES; do
+      grep -q "^### $id " "$suite_file" || continue
+      held="$held $id"
+      LEVEL_SKIPS=$((LEVEL_SKIPS + 1))
+      echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOGS/loop.log"
+    done
+  fi
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOGS/loop.log"
     run_session "$level" "$suite_file" "$workspace" "" whole \
-      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.$script_note"
+      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.${held:+ Never run these cases on this server, whatever the suite says; the driver already counted them as skipped:$held.}$script_note"
   else
     # Case IDs in file order, from the `### <ID> — title` headings. The
     # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
@@ -335,6 +350,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
     local ids=() chunk=() seen=0 total=0 session=0
     while read -r id; do
       case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
+      case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
       ids+=("$id")
     done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
     total=${#ids[@]}

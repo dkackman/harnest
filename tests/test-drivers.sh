@@ -239,6 +239,24 @@ $T/src/plugins/dw" "$(cat "$T/local-prompt.args")"
 ok  "regression local: its own log" test -s "$T/h/logs/regression.local.log"
 eq  "regression local: lem's plugin tree is never created" "" "$(ls -d "$T/plugin-untouched" 2>/dev/null)"
 eq  "regression local: the lem lock is left as it was" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
+# memory-heavy cases are never handed out on another server
+cat > "$T/h/regression-suite-tinymem.md" <<'EOM'
+# tiny suite with a memory-heavy case
+## Fixtures
+none
+### S-F001 — first
+steps
+### S-F079 — 8192 squared
+steps
+EOM
+: > "$FAKE_CLAUDE_LOG"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
+   DW_TARGET=local DW_LOCAL_DIR="$T/src" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 \
+   ./run-regression.sh smoke regression-suite-tinymem.md) > "$T/reg-mem.out" 2>&1
+eq  "regression local: held-back case runs no session (one chunk + sweep)" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "regression local: the held-back case is logged as skipped" "REGRESSION-SKIP: S-F079 memory" "$(cat "$T/reg-mem.out")"
+has "regression local: and counted" "1 case(s) skipped" "$(cat "$T/reg-mem.out")"
+eq  "regression local: only S-F001 is handed out" "" "$(grep 'session .*: .*S-F079' "$T/h/logs/loop.log" || true)"
 rm -rf "$T/h/logs/.driver.lock"
 printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"
 : > "$FAKE_CLAUDE_LOG"

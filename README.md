@@ -270,7 +270,10 @@ system prompt:
 - **Security probes:** Linux-only paths get macOS stand-ins for reads, and leak checks
   also catch `/Users/` and `/private/`.
 
-`all` on a local target is smoke, complete and security. `model-specific` runs only when you
+The driver never hands out the cases in `TARGET_SKIP_CASES` on a local target. The
+default is S-F079, C-F005, C-F007, C-F023 and C-F047, each of which can run a 64 GB
+machine out of memory. It logs them as skipped. `all` on a local target is smoke, complete
+and security. `model-specific` runs only when you
 name it, since H3 and LTX at full size are a memory risk on 64 GB of unified memory.
 
 **Fixtures.** Most cases that need fixtures use media the tester made on lem

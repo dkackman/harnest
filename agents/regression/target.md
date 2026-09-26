@@ -53,8 +53,9 @@ reading that includes a first-time model download is not a baseline: note
 
 ### Skipped, not failed
 
-Skip a case, and say so on its own line of your final message as
-`REGRESSION-SKIP: <case> <reason> <what>`, when one of these holds:
+Skip a case, and say so in your final message on a line of its own that
+starts with `REGRESSION-SKIP: <case> <reason> <what>` (no bullet, no
+backticks: the driver counts these lines), when one of these holds:
 
 - `fixture`: an asset, prompt, workflow, job or output the case needs
   before it starts is not on this server. Check before running it
@@ -64,10 +65,11 @@ Skip a case, and say so on its own line of your final message as
 - `cuda`: the expectation is about CUDA hardware itself: `device: cuda`
   behavior, VRAM or `gpu_memory_*` figures, an RTX 3090 or 24 GB ceiling,
   the caching allocator, or a model the case says needs a 24 GB card.
-- `memory`: running it would load MiniMax H3, LTX-2.5 at full size, or
-  anything the case puts near 50 GB. This machine has 64 GB of unified
-  memory shared with the OS, and running out takes the server down
-  mid-run.
+- `memory`: running it would load MiniMax H3, LTX-2.5 at full size, a
+  very large image (thousands of pixels a side), or anything the case puts
+  in the tens of GB. This machine has 64 GB of unified memory shared with
+  the OS, and running out takes the server down mid-run. The driver
+  already holds back the cases it knows of; your prompt names them.
 
 Never skip because of an error the case's own calls produced. A missing
 asset that a case probes on purpose (a `…-NOPE` name, a bad path) is the
@@ -80,8 +82,9 @@ Some expectations are really about lem's history or hardware, and the
 difference is what this run is for: a quote's `basis` (here likely
 `other_device`), `measured_on`, `observed` runs, a device name, `runtime`
 fields such as `cuda_version`. Don't file these as failures. List each on
-its own line of your final message as
-`REGRESSION-DIFFERS: <case> <field>: expected <lem's> got <this server's>`.
+a line of its own in your final message, starting
+`REGRESSION-DIFFERS: <case> <field>: expected <lem's> got <this server's>`
+(no bullet, no backticks).
 
 ### Security probes
 
