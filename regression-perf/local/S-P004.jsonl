@@ -1,0 +1,1 @@
+{"ts":"2026-09-26T17:06:04Z","level":"smoke","case":"S-P004","metric":"latency","condition":"-","value":37.03,"unit":"s","server":"0.5.0-alpha.1","model":"sonnet","provider":"anthropic","ref":"job b1db0b9ca1cc","note":"first local reading; target=local (mps, Mac-mini.lan); started_at->finished_at, includes Bark-small load"}

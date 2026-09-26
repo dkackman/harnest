@@ -1,0 +1,1 @@
+{"ts":"2026-09-26T15:44:14Z","level":"smoke","case":"S-P002","metric":"latency","condition":"wall","value":7.43,"unit":"s","server":"0.5.0-alpha.1","model":"sonnet","provider":"anthropic","ref":"list_gallery + get_output_image on s-f004/20260926-155128-b7f90e24/final/s_f004_b-0.0.jpg","note":"first local reading; target=local (mps, Mac-mini.lan)"}
