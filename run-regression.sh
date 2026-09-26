@@ -159,7 +159,7 @@ if [ "$DW_TARGET" != lem ]; then
 fi
 # guard.py reads it: on another target, lem's suite and perf files are off
 # limits and a new issue goes to owner:don + target:<target>.
-SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_TICKET_REPO="$TICKET_REPO")
+SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_REPO="$TICKET_REPO")
 
 # Never alongside run-loop.sh on the same target: an implementer deploy
 # restarts the server mid-case, and both drivers keep per-session state

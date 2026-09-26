@@ -59,21 +59,33 @@ consumer (tester, regression):
     run-loop.sh) may close as completed, since it applies a harness-side
     edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
-consumer on a server other than lem (HARNEST_TARGET, set by
-run-regression.sh; harnest#15). Also runs on Edit and Write:
-  - no Edit/Write to a `regression-suite-*.md` or to lem's perf history
-    (a top-level `regression-perf/*.jsonl`, or another target's
-    directory): every case runs on lem, and a case or reading taken from
-    this server would fail or skew there. Its own `regression-perf/<target>/`
-    is allowed.
-  - `gh issue create` carries `owner:don` and `target:<target>`: the loop
-    reproduces, deploys and verifies on lem only
+every role, claims (harnest#15 part 2): `target:<server>` labels are the
+loop driver's claims, and `verified-on:*` says a verification was made
+somewhere other than lem:
+  - no adding a `target:` label, except the hand-over to lem from another
+    server's session: `--remove-label target:<this> --add-label target:lem`
+  - no adding `verified-on:*` except by a consumer on another server
+implementer on a server other than lem (HARNEST_TARGET, set by run-loop.sh):
+  - no `ssh`, `scp` or `rsync`: its deploy is local, and lem is off limits
+consumer on a server other than lem (HARNEST_TARGET and HARNEST_ROLE, set
+by run-loop.sh and run-regression.sh; harnest#15). Also runs on Edit and
+Write:
+  - no Edit/Write to lem's perf history (a top-level
+    `regression-perf/*.jsonl`, or another target's directory); its own
+    `regression-perf/<target>/` is allowed
+  - no Edit/Write to a `regression-suite-*.md` from a regression run: every
+    case runs on lem. The loop's tester may add one (a verified
+    backend:shared fix; its prompt says when)
+  - `gh issue create` carries exactly one `backend:mps` or `backend:shared`
+    (a cuda bug can't be observed here), at most one `owner:*`, and no
+    `target:` label
   - `gh issue create`/`comment` names the ticket repo (HARNEST_TICKET_REPO):
     a suite proposal to the harness repo would be one written from this
     server's behavior
-  - `gh issue comment N` only when issue N carries `target:<target>` (asks
-    GitHub; any doubt refuses): lem's issues feed the implementer's and the
-    tester's prompts, where a symptom from this server would mislead them
+  - no `gh issue comment N` on an issue lem's loop holds (`target:lem`;
+    asks GitHub, and any doubt refuses): the tester there reads its latest
+    comments while verifying on lem
+  - adding `status:verified` also adds `verified-on:mps`
 
 Command matching is textual, on the Bash command line. It is a guard
 against the model's mistakes, not against an adversary: a determined agent
@@ -171,12 +183,12 @@ def still_parked(words):
     return out.returncode != 0 or out.stdout.strip() != "false"
 
 
-def issue_has_label(words, label):
-    """True only when GitHub says the issue this command names carries
-    <label>. No number, or gh failing, is False: the rule fails closed."""
+def label_lookup(words, label):
+    """Whether the issue this command names carries <label>, as GitHub says:
+    True or False, or None when it can't say (no number, gh failing)."""
     nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
     if not nums:
-        return False
+        return None
     repo = flag_values(words, "--repo", "-R")
     cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq",
            "[.labels[].name] | index(\"%s\") != null" % label]
@@ -185,8 +197,15 @@ def issue_has_label(words, label):
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
     except Exception:
-        return False
-    return out.returncode == 0 and out.stdout.strip() == "true"
+        return None
+    if out.returncode != 0 or out.stdout.strip() not in ("true", "false"):
+        return None
+    return out.stdout.strip() == "true"
+
+
+def issue_has_label(words, label):
+    """True only when GitHub says so; any doubt is False (fails closed)."""
+    return label_lookup(words, label) is True
 
 
 def git_push_problem(words):
@@ -323,19 +342,32 @@ def carries_release_marker(words):
 
 
 def other_target():
-    """The server target a consumer session runs against, when it isn't lem."""
+    """The server this session's loop or run targets, when it isn't lem."""
     t = os.environ.get("HARNEST_TARGET", "lem")
     return "" if t in ("", "lem") else t
 
 
-def target_file_rule(path, cwd, target):
+def claim_rule(words, target):
+    """target: labels are the driver's claims; the one an agent adds is the
+    hand-over from another server to lem."""
+    claims = [l for l in flag_values(words, "--add-label") if l.startswith("target:")]
+    if not claims:
+        return
+    if target and claims == ["target:lem"] and "target:" + target in flag_values(words, "--remove-label"):
+        return
+    deny("target: labels are the loop driver's claims. The one change a session makes is "
+         "the hand-over to lem: --remove-label target:<this server> --add-label target:lem.")
+
+
+def target_file_rule(path, cwd, target, role):
     """Refuse a write to lem's suite or perf files from a non-lem session."""
     root = os.path.realpath(os.environ.get("HARNEST_ROOT", ""))
     full = os.path.realpath(os.path.join(cwd, path))
     if not root or os.path.commonpath([root, full]) != root:
         return
     parts = os.path.relpath(full, root).split(os.sep)
-    if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md"):
+    if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md") \
+            and role != "tester":
         deny("on the %s server the suite files are read-only: every case in them runs on lem, "
              "so propose a case in the issue or comment instead." % target)
     if parts[0] == "regression-perf" and len(parts) > 1 and not (len(parts) > 2 and parts[1] == target):
@@ -347,15 +379,30 @@ def main():
     role = sys.argv[1] if len(sys.argv) > 1 else ""
     data = json.load(sys.stdin)
     cwd = data.get("cwd") or os.getcwd()
-    target = other_target() if role == "consumer" else ""
+    server = other_target()
+    target = server if role == "consumer" else ""
     if data.get("tool_name") in ("Edit", "Write"):
         if target:
-            target_file_rule(data.get("tool_input", {}).get("file_path", ""), cwd, target)
+            target_file_rule(data.get("tool_input", {}).get("file_path", ""), cwd, target,
+                             os.environ.get("HARNEST_ROLE", "regression"))
         return
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
     for words in segments(cmd):
+        if role == "implementer" and server:
+            cmdw = [w for w in words if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", w)]
+            if cmdw and os.path.basename(cmdw[0]) in ("ssh", "scp", "rsync"):
+                deny("this loop runs against the %s server: no ssh, scp or rsync. Deploy with the "
+                     "command your Target section names; lem is off limits." % server)
+        if is_gh_issue(words, "edit"):
+            claim_rule(words, server if role in ("consumer", "implementer") else "")
+            if any(l.startswith("verified-on:") for l in flag_values(words, "--add-label")) and not target:
+                deny("verified-on: marks a verification made on another server, by that server's tester.")
+        if target and is_gh_issue(words, "edit") and adds_verified(words) \
+                and "verified-on:mps" not in flag_values(words, "--add-label"):
+            deny("on the %s server a verification adds verified-on:mps with status:verified, so lem "
+                 "can tell CUDA hasn't re-verified it." % target)
         if target and (is_gh_issue(words, "create") or is_gh_issue(words, "comment")):
             ticket_repo = os.environ.get("HARNEST_TICKET_REPO", "")
             repo = flag_values(words, "--repo", "-R")
@@ -363,16 +410,19 @@ def main():
                 deny("from the %s server, issues are filed and commented on %s only (--repo %s). "
                      "A suite proposal can't be made from here: describe the case in the issue body."
                      % (target, ticket_repo, ticket_repo))
-        if target and is_gh_issue(words, "comment") and not issue_has_label(words, "target:" + target):
-            deny("from the %s server, comment only on an issue labeled target:%s. This one is lem's (or "
-                 "couldn't be checked): file your own with owner:don and target:%s and reference it."
-                 % (target, target, target))
+        if target and is_gh_issue(words, "comment") and label_lookup(words, "target:lem") is not False:
+            deny("from the %s server, no comment on an issue lem's loop holds (target:lem), or one "
+                 "that couldn't be checked: file your own with a backend: label and reference it."
+                 % target)
         if target and is_gh_issue(words, "create"):
             labels = flag_values(words, "--label", "-l")
-            if "owner:don" not in labels or "target:" + target not in labels \
-                    or any(l.startswith("owner:") and l != "owner:don" for l in labels):
-                deny("an issue from the %s server is filed with owner:don and target:%s, and no other "
-                     "owner: the loop reproduces and verifies on lem only." % (target, target))
+            backends = [l for l in labels if l.startswith("backend:")]
+            if backends not in (["backend:mps"], ["backend:shared"]) \
+                    or any(l.startswith("target:") for l in labels) \
+                    or len([l for l in labels if l.startswith("owner:")]) > 1:
+                deny("an issue from the %s server carries exactly one backend:mps or backend:shared "
+                     "(a cuda bug can't be seen here), one owner, and no target: label (claims are "
+                     "the driver's)." % target)
         if (is_gh_issue(words, "create") and "security" in flag_values(words, "--label", "-l")) \
                 or (is_gh_issue(words, "edit") and "security" in flag_values(words, "--add-label")):
             deny("a security finding is filed privately, never as a public issue: "
