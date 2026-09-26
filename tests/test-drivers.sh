@@ -203,8 +203,47 @@ EOS
    PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg.out" 2>&1
 eq  "regression: exits cleanly" 0 $?
 eq  "regression: two chunks and a sweep" 3 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
-has "regression: the level header names lem's commit" "lem=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
+has "regression: the level header names lem's commit" "target=lem, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
 has "regression: chunk sessions are labelled" "[regression:smoke.2] usage:" "$(cat "$T/reg.out")"
+
+# --- 7b. run-regression against a local server (harnest#15), with the
+# loop's lock held: it must not wait on lem's
+: > "$FAKE_CLAUDE_LOG"
+printf '#!/usr/bin/env bash\necho '"'"'{"status":"ok","device":"mps","hostname":"mac"}'"'"'\n' > "$T/bin/curl"; chmod +x "$T/bin/curl"
+mkdir "$T/h/logs/.driver.lock"; echo "$$ run-loop" > "$T/h/logs/.driver.lock/owner"
+reg_local() {
+  (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
+     PLUGIN_TREE="$T/plugin-untouched" DW_TARGET=local DW_LOCAL_DIR="$T/src" CASES_PER_SESSION=0 SESSION_RETRY_PAUSE_SECS=0 \
+     FAKE_CLAUDE_DO='printf "%s" "$2" > "$FAKE_PROMPT"; printf "%s\n" "$@" > "$FAKE_PROMPT.args"' FAKE_PROMPT="$T/local-prompt" \
+     ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg-local.out" 2>&1
+}
+reg_local
+eq  "regression local: runs while lem's lock is held" 0 $?
+eq  "regression local: one whole-level session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "regression local: header names the target and its checkout" "target=local, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
+has "regression local: prompt names the server it asked" "the local server (mps on mac) is running develop @ " "$(cat "$T/local-prompt")"
+has "regression local: prompt moves perf history" "regression-perf/local/<case>.jsonl" "$(cat "$T/local-prompt")"
+has "regression local: prompt files to Don" "owner:don and target:local" "$(cat "$T/local-prompt")"
+has "regression local: prompt forbids suite edits" "don't add or change a case or fixture" "$(cat "$T/local-prompt")"
+has "regression local: header tags the level for the curator" "level=smoke.local," "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
+has "regression local: sessions are labelled for retro" "[regression-local:smoke] usage:" "$(cat "$T/reg-local.out")"
+has "regression local: the note names the accelerator once" "the 'local' server (mps on mac, http://localhost:8765/mcp)" "$(cat "$T/local-prompt")"
+has "regression local: plugin is the local checkout's" "--plugin-dir
+$T/src/plugins/dw" "$(cat "$T/local-prompt.args")"
+ok  "regression local: its own log" test -s "$T/h/logs/regression.local.log"
+eq  "regression local: lem's plugin tree is never created" "" "$(ls -d "$T/plugin-untouched" 2>/dev/null)"
+eq  "regression local: the lem lock is left as it was" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
+rm -rf "$T/h/logs/.driver.lock"
+printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"
+: > "$FAKE_CLAUDE_LOG"
+reg_local
+eq  "regression local: no server answering stops it" 1 $?
+has "regression local: and says so" "no dw server answering at http://localhost:8765/mcp" "$(cat "$T/reg-local.out")"
+eq  "regression local: before any session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+rm -f "$T/bin/curl"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" DW_TARGET=local MAX_CYCLES=1 ./run-loop.sh) > "$T/loop-local.out" 2>&1
+eq  "loop: refuses a non-lem target" 1 $?
+has "loop: and says why" "runs against lem only" "$(cat "$T/loop-local.out")"
 
 # --- 8. run-curate: a forced audit of one level runs one session
 : > "$FAKE_CLAUDE_LOG"

@@ -283,7 +283,14 @@ regression case in the same cycle isn't part of that check.)
 
 `run-loop.sh` and `run-regression.sh` never run at once: both take `logs/.driver.lock`
 (`acquire_driver_lock`, a `mkdir` lock; a stale one is taken over) and wait for the other,
-because an implementer deploy restarts the server under a regression run. `run-features.sh`
+because an implementer deploy restarts the server under a regression run. The lock is per
+server target: `DW_TARGET=local ./run-regression.sh` (harnest#15; `resolve_target` and
+friends in `providers.sh`) runs against a hand-started server on this machine out of
+`DW_LOCAL_DIR` (the Mac, MPS) under `.driver.lock.local`, alongside the loop on lem. Its
+logs and session state carry a `.local` suffix, its plugin is `DW_LOCAL_DIR/plugins/dw`,
+its perf readings go to `regression-perf/local/`, and what it files goes to `owner:don` +
+`target:local`, since only lem can reproduce and verify; it leaves the suite files alone. `run-loop.sh` and `run-release.sh`
+refuse any target but lem. `run-features.sh`
 and `run-curate.sh` make only read-only MCP calls (or none) and take no lock. Each driver keeps its own
 `logs/.last-session.<driver>` for the rate-limit and died-session checks.
 

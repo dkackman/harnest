@@ -32,6 +32,11 @@ One object per line, keys in this order:
   a call, or the fixture used. Optional `note` for anything a reader
   comparing two lines would need (`"71 entries"`, `"time approximate"`).
 
+A run against a server other than lem (`DW_TARGET=local`, the Mac) keeps its
+own history in a subdirectory named for the target (`regression-perf/local/S-P001.jsonl`),
+same format. Its timings are not comparable with lem's, and pooled into one median they
+would flag false regressions and hide real ones.
+
 Reading: an agent reads only the file for the case it is about to compare
 (`Read regression-perf/<case>.jsonl`) — never the whole directory. Append by
 reading that file and writing it back with the new line last; never rewrite or

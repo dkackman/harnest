@@ -228,6 +228,36 @@ Run it by hand, from cron, or with the `loop` skill. `run-loop.sh` and `run-regr
 share a lock (`logs/.driver.lock`) and wait for each other, because an implementer deploy
 would restart the server partway through a regression run.
 
+### Another server: `DW_TARGET=local`
+
+To run a suite against a `dw` server on this machine (the Mac, MPS), for example while lem
+is busy with the loop, start that server yourself from `DW_LOCAL_DIR`, then:
+
+```sh
+DW_TARGET=local ./run-regression.sh smoke
+tail -f logs/regression.local.log
+```
+
+- **Preflight:** the driver checks the server's `/api/health` first and stops if nothing
+  answers. The device and hostname it reports go into the log and the agent's prompt.
+- **Commit:** "what it runs" is `DW_LOCAL_DIR`'s branch and commit, with `+dirty` when
+  tracked files have uncommitted changes.
+- **Runs alongside the loop:** the lock is `logs/.driver.lock.local`, and session state
+  and logs carry a `.local` suffix.
+- **Plugin:** loaded from `DW_LOCAL_DIR/plugins/dw`, what that server serves. The shared
+  `PLUGIN_TREE` stays on lem's commit.
+- **Performance:** readings go to `regression-perf/local/`, so Mac timings never mix into
+  lem's history.
+- **Filing:** a new issue is labeled `owner:don` + `target:local`, not `owner:implementer`,
+  because the loop can only reproduce, deploy and verify on lem. You decide whether it
+  goes to the implementer.
+- **Suite files:** a local run doesn't add or change cases. It proposes one in the issue
+  instead, since every case in them runs on lem. MPS cases get their own level
+  (harnest#16).
+
+`run-loop.sh` and `run-release.sh` refuse any target but `lem`, since nothing deploys to
+another server yet.
+
 ## The feature lead
 
 Work bigger than one fix goes through the feature lead (roadmap R11). A feature is one
@@ -397,7 +427,8 @@ tail -f logs/loop.log                           # watch from another terminal
 | `SOURCE_DIR` | `~/src/dkackman/dw-agent` | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
 | `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
-| `DW_URL` / `DW_TOKEN` | `http://lem:8765/mcp` / `xyz` | the MCP endpoint (dev token, LAN only) |
+| `DW_URL` / `DW_TOKEN` | the target's (`http://lem:8765/mcp`) / `xyz` | the MCP endpoint (dev token, LAN only) |
+| `DW_TARGET` / `DW_LOCAL_DIR` | `lem` / `~/src/dkackman/diffusers-workflow` | which server `run-regression.sh` runs against: `lem`, or `local`, a server this machine runs from `DW_LOCAL_DIR` (see "Another server") |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |

@@ -22,7 +22,10 @@
 #   resolved_model <log-name> <fallback>        the model id the last session
 #                                               logged actually ran on
 #   refresh_plugin_tree <src> <tree>            detached origin/develop worktree
-#   deployed_head                               "<branch> @ <sha>" lem is running
+#   resolve_target                              DW_TARGET → TARGET_SUFFIX, DW_URL
+#   target_health                               "<device> on <host>" from /api/health
+#   target_note <server>                        prompt paragraph for a non-lem target
+#   deployed_head                               "<branch> @ <sha>" the target runs
 #   release_freeze                              "#<n> <title>" while a release freeze is on
 #                                               the consumer roles load dw from
 #   acquire_driver_lock <name>                  one lem-touching driver at a time
@@ -578,18 +581,101 @@ resolved_model() {
   printf '%s\n' "${id:-$2}"
 }
 
+# DW_TARGET / DW_LOCAL_DIR
+# Which dw server a driver talks to (harnest#15). `lem`, the default, is the
+# CUDA box the loop deploys to. `local` is a server this machine runs out of
+# DW_LOCAL_DIR - the Mac (MPS) target - for a regression run while lem is
+# busy with the loop. Only run-regression.sh accepts `local` so far: the
+# implementer and the lead can only deploy to lem, so run-loop.sh and
+# run-release.sh refuse any other target. The local server is started by
+# hand; nothing here deploys or restarts it.
+DW_TARGET="${DW_TARGET:-lem}"
+DW_LOCAL_DIR="${DW_LOCAL_DIR:-$HOME/src/dkackman/diffusers-workflow}"
+TARGET_SUFFIX=""   # set by resolve_target; lem's names until then
+
+# resolve_target
+# Validates DW_TARGET and sets:
+#   TARGET_SUFFIX  "" for lem, so every name a running loop already holds
+#                  is unchanged; ".<target>" otherwise. It is appended to
+#                  the driver lock and to per-session state under $LOGS, so
+#                  a local run and a lem run share neither.
+#   DW_URL         the target's endpoint, unless the caller set one.
+# Returns 1 (stderr) on an unknown target or a DW_LOCAL_DIR that isn't a
+# checkout.
+resolve_target() {
+  case "$DW_TARGET" in
+    lem)
+      TARGET_SUFFIX=""
+      DW_URL="${DW_URL:-http://lem:8765/mcp}" ;;
+    local)
+      TARGET_SUFFIX=".local"
+      DW_URL="${DW_URL:-http://localhost:8765/mcp}"
+      git -C "$DW_LOCAL_DIR" rev-parse --git-dir >/dev/null 2>&1 \
+        || { echo "DW_LOCAL_DIR is not a git checkout: $DW_LOCAL_DIR (the checkout the local server runs from)" >&2; return 1; } ;;
+    *)
+      echo "DW_TARGET must be lem or local, got '$DW_TARGET'" >&2
+      return 1 ;;
+  esac
+}
+
+# target_health
+# One GET of the target's /api/health (DW_URL without its /mcp path).
+# Prints "<device> on <hostname>" (e.g. "mps on dons-mac"), or returns 1
+# when nothing answers - the fail-fast a local server needs, since it is
+# started by hand and is often simply not running.
+target_health() {
+  local base="${DW_URL%/}" h
+  base="${base%/mcp}"
+  h="$(curl -s -m 5 -H "Authorization: Bearer ${DW_TOKEN:-}" "$base/api/health" 2>/dev/null)" || return 1
+  jq -er 'select(.status == "ok") | "\(.device) on \(.hostname)"' <<<"$h" 2>/dev/null
+}
+
 # deployed_head
-# What lem is running: for run-loop.sh, the implementer's "already
+# What the target is running: for run-loop.sh, the implementer's "already
 # addressed?" check and the tester's record of what it verified against,
 # one ssh per cycle rather than per session; for run-regression.sh, the
 # commit each level ran against, which a result is only worth knowing
 # alongside (the 0.4.0 gates ran four levels across three deploys, and which
 # commit each had to be pieced together afterwards). "unknown" on any
-# failure.
+# failure. For `local` it is DW_LOCAL_DIR's checkout, with " +dirty" when
+# tracked files have uncommitted changes: a hand-run server often runs
+# them. That is the checkout now, which is what the server runs only if it
+# was restarted since the last change.
 deployed_head() {
+  if [ "${DW_TARGET:-lem}" = local ]; then
+    local branch sha dirty=""
+    sha="$(git -C "$DW_LOCAL_DIR" rev-parse --short HEAD 2>/dev/null)" || { echo unknown; return 0; }
+    branch="$(git -C "$DW_LOCAL_DIR" branch --show-current 2>/dev/null)"
+    [ -z "$(git -C "$DW_LOCAL_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ] || dirty=" +dirty"
+    echo "${branch:-detached} @ $sha$dirty"
+    return 0
+  fi
   ssh -o ConnectTimeout=8 -o BatchMode=yes lem \
     'cd ~/diffusers-workflow && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"' 2>/dev/null \
   || echo unknown
+}
+
+# target_note <server>
+# The paragraph a regression session's prompt carries when DW_TARGET isn't
+# lem; prints nothing for lem. <server> is target_health's "<device> on
+# <host>". It overrides three things the role prompt and the suite files say
+# with lem in mind:
+# - perf history goes to regression-perf/<target>/, because Mac timings
+#   compared against lem's medians file false regressions and hide real
+#   ones, and the files are append-only, so a mixed reading stays;
+# - a new issue goes to owner:don + target:<target>, not owner:implementer,
+#   because the loop reproduces, deploys and verifies on lem only, where an
+#   MPS-only failure would be closed as fixed without ever failing there.
+# - the suite files are read-only: lem runs every case in them, so a case
+#   written from what this server shows (device: mps, unified memory) would
+#   fail there, and only the curator can take a case back out.
+target_note() {
+  [ "${DW_TARGET:-lem}" = lem ] && return 0
+  printf '%s\n' \
+    "Target: this run is against the '$DW_TARGET' server ($1, $DW_URL), not lem. Where your role instructions or the suite file say otherwise, this paragraph wins, on three points:" \
+    "- Performance history: read and append readings in regression-perf/$DW_TARGET/<case>.jsonl, never regression-perf/<case>.jsonl (that history is lem's). Compare only against this target's file. When it doesn't exist yet, your reading seeds it, as for a new case." \
+    "- Filing: a new issue gets the labels owner:don and target:$DW_TARGET in place of owner:implementer (the loop can't reproduce or verify on this machine), plus regression/performance as usual, and its body names the target and accelerator ($1). When an open issue already covers the case, comment on it with the target and accelerator named, as usual." \
+    "- Suite files: don't add or change a case or fixture in any regression-suite-*.md on this run. They are lem's, and an expectation this server shows would fail there. Propose a case worth adding in the issue or comment body instead."
 }
 
 # refresh_plugin_tree <source_dir> <plugin_tree>
@@ -617,7 +703,8 @@ refresh_plugin_tree() {
 }
 
 # acquire_driver_lock <name>
-# One driver at a time against lem. run-loop's implementer restarts the
+# One driver at a time per target (the lock name carries TARGET_SUFFIX, so
+# a local run never waits on the loop against lem). run-loop's implementer restarts the
 # server mid-cycle (deploy.sh), and a regression run measures timings and
 # expects the server to stay up; each driver also keeps per-session state
 # under $LOGS. mkdir is atomic, and macOS ships no flock(1). Waits for a
@@ -630,7 +717,7 @@ refresh_plugin_tree() {
 # no owner file older than two minutes is a holder killed between its
 # mkdir and its write; it would otherwise be waited on forever.
 acquire_driver_lock() {
-  local lock="$LOGS/.driver.lock" holder waited=0 aside stale
+  local lock="$LOGS/.driver.lock$TARGET_SUFFIX" holder waited=0 aside stale
   while ! mkdir "$lock" 2>/dev/null; do
     holder="$(cat "$lock/owner" 2>/dev/null || true)"
     stale=0
@@ -714,6 +801,30 @@ commit_suite_changes() {
     return 1
   fi
   local paths=("regression-suite-*.md" "regression-perf")
+  ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
+      && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
+  # The loop against lem and a regression run against another target can
+  # commit at once, and git refuses a second writer (.git/index.lock). A
+  # commit takes well under a second, so a lock held two minutes is one
+  # whose holder died between the mkdir and the rmdir.
+  local lock="$LOGS/.suite-commit.lock" tries=0
+  until mkdir "$lock" 2>/dev/null; do
+    tries=$((tries + 1))
+    if [ "$tries" -ge 120 ] || [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
+      rmdir "$lock" 2>/dev/null || true
+      tries=0
+    fi
+    sleep 1
+  done
+  local rc=0
+  commit_suite_changes_locked "$msg" "$name" "$email" || rc=$?
+  rmdir "$lock" 2>/dev/null || true
+  return "$rc"
+}
+
+commit_suite_changes_locked() {
+  local msg="$1" name="$2" email="$3" paths=("regression-suite-*.md" "regression-perf")
+  # Again, under the lock: the other writer may have just committed these.
   ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
       && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
   git -C "$REPO" add -- "${paths[@]}"

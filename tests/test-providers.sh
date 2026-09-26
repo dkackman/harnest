@@ -84,4 +84,46 @@ has "a dead holder's lock is taken over" " t" "$(lock_test)"
 mkdir "$LOGS/.driver.lock"; touch -t 202601010000 "$LOGS/.driver.lock"
 has "an ownerless old lock is taken over" " t" "$(lock_test)"
 eq  "the lock is released at exit" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
+
+# --- server targets (harnest#15)
+git init -q "$T/dwlocal"
+git -C "$T/dwlocal" -c user.name=t -c user.email=t@t commit -q --allow-empty -m one
+git -C "$T/dwlocal" checkout -q -b feat/mps
+echo a > "$T/dwlocal/f"; git -C "$T/dwlocal" add f; git -C "$T/dwlocal" -c user.name=t -c user.email=t@t commit -qm two
+tgt() { # tgt <target> <snippet>: providers.sh sourced under DW_TARGET=<target>
+  env DW_TARGET="$1" DW_LOCAL_DIR="$T/dwlocal" DW_URL="${TGT_URL:-}" bash -c '. "$1/providers.sh"; resolve_target || exit 1; eval "$2"' _ "$HARNEST" "$2" 2>&1
+}
+eq  "lem keeps the lock name a running loop holds" "|http://lem:8765/mcp" "$(tgt lem 'echo "$TARGET_SUFFIX|$DW_URL"')"
+eq  "local gets its own suffix and localhost" ".local|http://localhost:8765/mcp" "$(tgt local 'echo "$TARGET_SUFFIX|$DW_URL"')"
+eq  "an explicit DW_URL wins" "http://mac:9000/mcp" "$(TGT_URL=http://mac:9000/mcp tgt local 'echo "$DW_URL"')"
+has "an unknown target is refused" "must be lem or local" "$(tgt cuda2 'echo ran')"
+has "a DW_LOCAL_DIR that isn't a checkout is refused" "not a git checkout" "$(env DW_TARGET=local DW_LOCAL_DIR="$T/nope" bash -c '. "$1/providers.sh"; resolve_target' _ "$HARNEST" 2>&1)"
+sha2="$(git -C "$T/dwlocal" rev-parse --short HEAD)"
+eq  "local head is the checkout's branch and commit" "feat/mps @ $sha2" "$(tgt local deployed_head)"
+echo b > "$T/dwlocal/f"
+eq  "local head says +dirty over uncommitted changes" "feat/mps @ $sha2 +dirty" "$(tgt local deployed_head)"
+eq  "the local lock is its own" "run-x" "$(tgt local 'acquire_driver_lock run-x; cut -d" " -f2 "$LOGS/.driver.lock.local/owner"')"
+eq  "lem's lock is untouched by a local run" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
+printf '#!/usr/bin/env bash\necho "curl $*" >> "%s"\necho '"'"'{"status":"ok","device":"mps","hostname":"mac"}'"'"'\n' "$T/curl-calls" > "$T/bin/curl"; chmod +x "$T/bin/curl"
+eq  "health reports device and host" "mps on mac" "$(tgt local target_health)"
+has "health asks the base URL, not /mcp" "http://localhost:8765/api/health" "$(cat "$T/curl-calls")"
+printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"
+fails "health fails when nothing answers" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; target_health' _ "$HARNEST"
+rm -f "$T/bin/curl"
+eq  "no target note for lem" "" "$(tgt lem 'target_note "cuda on lem"')"
+note="$(tgt local 'target_note "mps on mac"')"
+has "the local note moves perf history" "regression-perf/local/<case>.jsonl" "$note"
+has "the local note files to Don with a target label" "owner:don and target:local" "$note"
+has "the local note keeps the suite files lem's" "don't add or change a case or fixture" "$note"
+
+# --- suite commits are serialized
+git init -q "$T/hr"; echo x > "$T/hr/regression-suite-a.md"; mkdir "$T/hr/regression-perf"; echo "{}" > "$T/hr/regression-perf/S-P001.jsonl"
+git -C "$T/hr" add -A; git -C "$T/hr" -c user.name=t -c user.email=t@t commit -qm init
+echo y >> "$T/hr/regression-suite-a.md"
+commit_test() { REPO="$T/hr" bash -c '. "$1/providers.sh"; git -C "$REPO" config user.name t; git -C "$REPO" config user.email t@t; commit_suite_changes "suite: y" n n@x' _ "$HARNEST"; }
+mkdir "$LOGS/.suite-commit.lock"; touch -t 202601010000 "$LOGS/.suite-commit.lock"
+ok  "a stale commit lock is taken over" commit_test
+eq  "the suite change was committed" "suite: y" "$(git -C "$T/hr" log -1 --format=%s)"
+eq  "the commit lock is released" "" "$(ls -d "$LOGS/.suite-commit.lock" 2>/dev/null)"
+ok  "nothing dirty is a no-op" commit_test
 finish

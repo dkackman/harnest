@@ -187,6 +187,11 @@ mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
 
+# The implementer and the lead deploy with `ssh lem`, and nothing deploys to
+# any other server yet, so a fix built here would be verified on a server
+# that never got it. DW_TARGET=local is for run-regression.sh (harnest#15).
+[ "$DW_TARGET" = lem ] || { echo "run-loop.sh runs against lem only; DW_TARGET=$DW_TARGET is for run-regression.sh" >&2; exit 1; }
+
 acquire_driver_lock run-loop
 LAST_SESSION="$LOGS/.last-session.loop"
 refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
