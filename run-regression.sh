@@ -263,8 +263,9 @@ $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     "${SESSION_FLAGS[@]}" "${REGRESSION_FLAGS[@]}"
   # What target.md tells an agent on another server to list rather than file
   # A leading bullet or backtick is tolerated: a model writes a list as one.
-  LEVEL_SKIPS=$((LEVEL_SKIPS + $(grep -cE '^[-*` ]*REGRESSION-SKIP:' "$LAST_SESSION" 2>/dev/null || true)))
-  LEVEL_DIFFERS=$((LEVEL_DIFFERS + $(grep -cE '^[-*` ]*REGRESSION-DIFFERS:' "$LAST_SESSION" 2>/dev/null || true)))
+  # A case ID must follow, so "REGRESSION-SKIP: none" is not a skip.
+  LEVEL_SKIPS=$((LEVEL_SKIPS + $(grep -cE '^[-*` ]*REGRESSION-SKIP:[[:space:]]*[A-Z]+-[A-Z][0-9]' "$LAST_SESSION" 2>/dev/null || true)))
+  LEVEL_DIFFERS=$((LEVEL_DIFFERS + $(grep -cE '^[-*` ]*REGRESSION-DIFFERS:[[:space:]]*[A-Z]+-[A-Z][0-9]' "$LAST_SESSION" 2>/dev/null || true)))
 }
 
 # session_aborted

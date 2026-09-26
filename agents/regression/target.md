@@ -55,7 +55,8 @@ reading that includes a first-time model download is not a baseline: note
 
 Skip a case, and say so in your final message on a line of its own that
 starts with `REGRESSION-SKIP: <case> <reason> <what>` (no bullet, no
-backticks: the driver counts these lines), when one of these holds:
+backticks: the driver counts these lines; when there are none, write no
+such line), when one of these holds:
 
 - `fixture`: an asset, prompt, workflow, job or output the case needs
   before it starts is not on this server. Check before running it
