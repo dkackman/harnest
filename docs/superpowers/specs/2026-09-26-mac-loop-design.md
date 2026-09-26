@@ -1,6 +1,6 @@
 # The loop on another server: backend labels and target claims (harnest#15, part 2)
 
-Status: draft for Don's review, 2026-09-26.
+Status: approved by Don, 2026-09-26 (rulings in "Decisions on the open questions").
 
 ## Goal
 
@@ -133,7 +133,7 @@ as waiting, not as stranded.
     (`lsof -ti tcp:$DW_PORT -sTCP:LISTEN`), falling back to today's `pgrep` where `lsof`
     is missing. That behaves the same on lem.
   - **Who makes it.** This is a dw-repo change (`scripts/deploy.sh`), and the implementer
-    can't deploy it while lem is off limits. Proposed: I make it on a branch in the dw repo
+    can't deploy it while lem is off limits. Decided: Claude writes it on a branch in the dw repo
     as `docs-review`-style text-only tooling, and Don merges it to `develop`. It changes
     nothing the server or plugin serves.
 - **One-time switch.** Don stops his hand-started server, and the first
@@ -159,7 +159,7 @@ hand-over, and MPS timing. The tester's verify and handoff sessions get
 - security path equivalents;
 - suite cases, per "Suite edits" below.
 
-## Suite edits from the Mac loop (a change to what you approved: rule on it)
+## Suite edits from the Mac loop (the shared exception: accepted)
 
 You approved the Mac loop without suite edits. This proposes one exception, for you to
 accept or strike. If you strike it, the Mac tester proposes every case in its verify
@@ -212,7 +212,7 @@ means a claim, not "filed from the Mac":
   `target:lem`.
 
 The release gate stops excluding every `target:` issue. It blocks on open regressions
-except `backend:mps`, which it lists but doesn't block on (Don can change that).
+including `backend:mps` ones: an open MPS regression blocks a release too.
 
 ## Tests
 
@@ -242,19 +242,17 @@ except `backend:mps`, which it lists but doesn't block on (Don can change that).
 - Relabeling the open backlog in one go. Triage does it as it meets issues. A one-off
   `gh` sweep is possible if Don wants it sooner.
 
-## Open questions
+## Decisions on the open questions (Don, 2026-09-26)
 
-1. The release gate for `backend:mps`: listed but not blocking (proposed above), or
-   blocking?
-2. **How CUDA sees a shared fix verified only on MPS.** It merges to `develop`, and lem
-   deploys it at the lem loop's next `check_lem_on_develop`. Nothing re-verifies it on
-   CUDA, which is the argument that kept lead builds off the Mac. Options:
-   - accept lem's next regression run as the check;
-   - have the Mac tester close it with a `verified-on:mps` label, and the lem tester
-     re-verify such issues when it has a free cycle.
-
-   Proposed: the label, which is cheap and visible, with the re-verify deferred.
-3. **The `deploy.sh` fix.** Proposed above: I write it, you merge it. Or you'd rather
-   make it yourself.
-4. Budgets: MPS is 2-3× slower, so tester sessions wait longer on jobs. Keep
-   `TESTER_BUDGET_USD` at 5 for the Mac loop, or give it a per-target default?
+1. **Release gate.** Open `backend:mps` regressions block a release, like every other open
+   regression.
+2. **A shared fix verified only on MPS.** The Mac tester closes it with
+   `status:verified` plus a `verified-on:mps` label. A CUDA re-verify on lem is deferred.
+   The guard allows `verified-on:mps` only from a tester session on a non-lem target.
+3. **The `deploy.sh` fix.** Claude writes it on a dw-repo branch, and Don merges it to
+   `develop`.
+4. **Budgets.** Each target has its own default. On local, `TESTER_BUDGET_USD` defaults
+   to 8 (lem: 5), since MPS jobs run 2-3x slower and the tester waits on them.
+   `IMPLEMENTER_BUDGET_USD` stays 8, because the implementer's work doesn't wait on the
+   GPU. An explicit setting wins either way.
+5. **Suite edits.** The `backend:shared` exception is accepted.
