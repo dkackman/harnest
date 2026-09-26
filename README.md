@@ -245,8 +245,11 @@ scripts/setup-mac-loop.sh --dry-run    # what it would make
 scripts/setup-mac-loop.sh              # dw-agent-mps (implementer clone), dw-mps-serve (serving clone), venvs, ~/dw-mps-workspace
 ```
 
-Then stop any `dw` server you started by hand. The loop's first develop check deploys the
-serving clone with `DW_LOCAL_DIR/scripts/deploy.sh develop`. The server binds to
+Then stop any `dw` server you started by hand. When the loop starts and nothing answers,
+it deploys the serving clone (`scripts/deploy-local.sh`, which runs
+`DW_LOCAL_DIR/scripts/deploy.sh develop` and records what it deployed in
+`logs/.deployed.local`; that record, not the clone's checkout, is what the prompts call
+"running"). The server binds to
 127.0.0.1 in a `screen` session named `dw-serve` (`screen -r dw-serve`) and logs to
 `~/dw-serve.log`. The deploy needs the dw `deploy.sh` that finds the server by its port
 (branch `fix/deploy-find-server-by-port`).
@@ -275,8 +278,10 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
 | unclaimed `backend:shared`, or no backend | yes | yes (triage labels it) |
 | unclaimed, past the implementer (handed off before claims existed) | yes | no: it was deployed to lem |
 
-- **Claiming.** A loop claims every fix in its queue before triage. When both loops claim
-  the same issue in the same moment, lem keeps it.
+- **Claiming.** A loop claims every fix in its queue before triage, and never over another
+  loop's claim. When both claim the same issue in the same moment, the one that reads
+  back both labels removes its own. If both do, neither holds it, and it is claimed next
+  cycle.
 - **Handing over to lem.** A session that finds an issue belongs on lem hands the claim
   over with `--remove-label target:local --add-label target:lem`. That's the Mac
   implementer for a cuda bug, and the Mac tester for a repro it can't run here: a lem-only

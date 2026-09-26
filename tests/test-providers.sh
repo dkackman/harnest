@@ -102,10 +102,10 @@ eq  "url_host strips scheme, port and path" "lem|::1|localhost" "$(tgt lem 'echo
 eq  "short_host drops the domain and case" "mac-mini" "$(tgt lem 'short_host Mac-mini.lan')"
 has "an unknown target is refused" "must be lem or local" "$(tgt cuda2 'echo ran')"
 has "a DW_LOCAL_DIR that isn't a checkout is refused" "not a git checkout" "$(env DW_TARGET=local DW_LOCAL_DIR="$T/nope" bash -c '. "$1/providers.sh"; resolve_target' _ "$HARNEST" 2>&1)"
-sha2="$(git -C "$T/dwlocal" rev-parse --short HEAD)"
-eq  "local head is the checkout's branch and commit" "feat/mps @ $sha2" "$(tgt local deployed_head)"
-echo b > "$T/dwlocal/f"
-eq  "local head says +dirty over uncommitted changes" "feat/mps @ $sha2 +dirty" "$(tgt local deployed_head)"
+eq  "local head is unknown until a deploy records one" "unknown" "$(tgt local deployed_head)"
+echo "develop @ abc1234" > "$LOGS/.deployed.local"
+eq  "local head is what the last deploy recorded" "develop @ abc1234" "$(tgt local deployed_head)"
+rm -f "$LOGS/.deployed.local"
 eq  "the local lock is its own" "run-x" "$(tgt local 'acquire_driver_lock run-x; cut -d" " -f2 "$LOGS/.driver.lock.local/owner"')"
 eq  "lem's lock is untouched by a local run" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
 printf '#!/usr/bin/env bash\necho "curl $*" >> "%s"\necho '"'"'{"status":"ok","device":"mps","hostname":"mac"}'"'"'\n' "$T/curl-calls" > "$T/bin/curl"; chmod +x "$T/bin/curl"
@@ -124,6 +124,9 @@ has "preflight refuses when nothing answers" "no dw server answering" "$(tgt loc
 eq  "lem commits suites and perf" "regression-suite-*.md regression-perf" "$(tgt lem suite_commit_paths)"
 eq  "local commits only its own perf" "regression-perf/local" "$(tgt local suite_commit_paths)"
 eq  "the local loop also commits a tester's shared case" "regression-suite-*.md regression-perf/local" "$(tgt local 'SUITE_EDITS=1; suite_commit_paths')"
+mkdir -p "$LOGS/.driver.lock"; echo "$$ run-loop" > "$LOGS/.driver.lock/owner"
+eq  "but leaves suite files to lem's loop while it runs (it may be mid-edit)" "regression-perf/local" "$(tgt local 'SUITE_EDITS=1; suite_commit_paths')"
+rm -rf "$LOGS/.driver.lock"
 has "lem's regression runtime note lists suite edits" "a suite-file edit" "$(tgt lem 'runtime_note regression anthropic sonnet')"
 eq  "a local one does not" "" "$(tgt local 'runtime_note regression anthropic sonnet' | grep 'suite-file' || true)"
 eq  "no target note for lem" "" "$(tgt lem 'target_note regression "cuda on lem"')"
@@ -132,13 +135,14 @@ has "the local note moves perf history" "regression-perf/local/<case>.jsonl" "$n
 has "the local note files with a backend label" "\`owner:implementer\` and \`backend:mps\`" "$note"
 has "the local note never comments on lem's issues" "Never comment on a \`target:lem\` issue" "$note"
 inote="$(tgt local 'target_note implementer "mps on mac"')"
-has "implementer note carries the local deploy" "$T/dwlocal/scripts/deploy.sh develop" "$inote"
+has "implementer note carries the local deploy" "$HARNEST/scripts/deploy-local.sh" "$inote"
 has "implementer note names the serving clone" "git -C $T/dwlocal log -1" "$inote"
 has "implementer note hands cuda to lem" "--remove-label target:local --add-label target:lem" "$inote"
 eq  "implementer note leaves no placeholder" "" "$(printf '%s' "$inote" | grep -o '{{[A-Z_]*}}' || true)"
 tnote="$(tgt local 'target_note tester "mps on mac"')"
 has "tester note requires verified-on:mps" "\`verified-on:mps\` next to \`status:verified\`" "$tnote"
 has "tester note limits suite edits to shared fixes" "Proposed case (mps level, harnest#16)" "$tnote"
+has "tester note comments before the hand-over (the guard refuses comments on target:lem)" "comment what's missing first" "$tnote"
 eq  "tester note leaves no placeholder" "" "$(printf '%s' "$tnote" | grep -o '{{[A-Z_]*}}' || true)"
 has "the local note keeps the suite files lem's" "The suite files. Every case in them runs on lem" "$note"
 has "the local note names the server" "(mps on mac, http://localhost:8765/mcp)" "$note"
@@ -149,7 +153,7 @@ eq  "local: its own loop log" "$LOGS/loop.local.log" "$(tgt local 'echo "$LOOP_L
 eq  "lem: the loop log is unchanged" "$LOGS/loop.log" "$(tgt lem 'echo "$LOOP_LOG"')"
 eq  "target_default picks the target's value" "a|b" "$(tgt lem 'target_default a b')|$(tgt local 'target_default a b')"
 dc="$(tgt local deploy_cmd)"
-has "local: deploy runs the serving clone's deploy.sh" "$T/dwlocal/scripts/deploy.sh develop" "$dc"
+has "local: deploy runs the harness's recording wrapper" "$HARNEST/scripts/deploy-local.sh" "$dc"
 has "local: deploy points at the serving clone" "DW_DIR=$T/dwlocal " "$dc"
 has "local: deploy binds loopback only" "DW_HOST=127.0.0.1" "$dc"
 has "local: deploy uses the local workspace" "DW_WORKSPACE=$HOME/dw-mps-workspace" "$dc"
@@ -162,15 +166,30 @@ printf '#!/usr/bin/env bash\necho "deploy $*"\n' > "$T/dwlocal-deploy"; chmod +x
 mkdir -p "$T/dwlocal/scripts"; cp "$T/dwlocal-deploy" "$T/dwlocal/scripts/deploy.sh"
 ok  "local: deploy_target runs it" tgt local deploy_target
 has "local: and logs it" "[loop:deploy] deploy develop" "$(cat "$LOGS/loop.local.log")"
+eq  "local: a deploy records what it deployed" "$(git -C "$T/dwlocal" branch --show-current) @ $(git -C "$T/dwlocal" rev-parse --short HEAD)" "$(tgt local deployed_head)"
+rm -f "$LOGS/.deployed.local"
 printf '#!/usr/bin/env bash\necho dirty; exit 1\n' > "$T/dwlocal/scripts/deploy.sh"
 fails "local: a failed deploy fails" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; deploy_target' _ "$HARNEST"
+eq  "local: and records nothing" "unknown" "$(tgt local deployed_head)"
 rm -rf "$T/dwlocal/scripts"
 # claim_issue: a clean claim holds; a tie with lem is lost and the label removed
-stub_gh 'case "$*" in *"issue view 5"*) echo target:local ;; *"issue view 6"*) printf "target:local\ntarget:lem\n" ;; *"issue view 7"*) echo target:lem ;; *) exit 0 ;; esac'
+# The stub answers an issue view from $T/views/<n>: one line per call (the
+# pre-check, then the read-back), the last line repeating.
+mkdir -p "$T/views"
+stub_gh 'case "$1 $2" in "issue view") f="'"$T"'/views/$3"; c="$f.n"; k=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 )); echo $k > "$c"; l=$(sed -n "${k}p" "$f"); [ -n "$l" ] || l=$(tail -1 "$f"); printf "%s\n" $l ;; *) exit 0 ;; esac'
+printf 'none\ntarget:local\n' > "$T/views/5"
 ok    "claim: an unclaimed issue is held" tgt local 'TICKET_REPO=o/r claim_issue 5'
-fails "claim: a tie goes to lem" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; TICKET_REPO=o/r claim_issue 6' _ "$HARNEST"
-has   "claim: the lost claim is removed" "gh issue edit 6 --repo o/r --remove-label target:local" "$(cat "$GH_CALLS")"
-ok    "claim: lem keeps a tie" tgt lem 'TICKET_REPO=o/r claim_issue 7'
+printf 'none\ntarget:local target:lem\n' > "$T/views/6"
+fails "claim: a tie at read-back is yielded" env DW_TARGET=local DW_LOCAL_DIR="$T/dwlocal" bash -c '. "$1/providers.sh"; resolve_target; TICKET_REPO=o/r claim_issue 6' _ "$HARNEST"
+has   "claim: the yielded claim is removed" "gh issue edit 6 --repo o/r --remove-label target:local" "$(cat "$GH_CALLS")"
+printf 'none\ntarget:lem target:local\n' > "$T/views/7"
+fails "claim: lem yields a tie too (the other loop may already be working it)" tgt lem 'TICKET_REPO=o/r claim_issue 7'
+has   "claim: lem removes its own" "gh issue edit 7 --repo o/r --remove-label target:lem" "$(cat "$GH_CALLS")"
+printf 'target:local\n' > "$T/views/8"
+fails "claim: an issue another loop holds is skipped" tgt lem 'TICKET_REPO=o/r claim_issue 8'
+eq    "claim: without adding a label" "" "$(grep 'issue edit 8' "$GH_CALLS" || true)"
+printf 'target:lem\n' > "$T/views/9"
+ok    "claim: a loop keeps its own earlier claim" tgt lem 'TICKET_REPO=o/r claim_issue 9'
 # lem_loop_running: only a live run-loop holder counts
 mkdir -p "$LOGS/.driver.lock"
 echo "$$ run-loop" > "$LOGS/.driver.lock/owner"

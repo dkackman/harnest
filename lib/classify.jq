@@ -56,9 +56,9 @@ def has($l): names | index($l) != null;
 def statuses: names | map(select(startswith("status:")));
 def owners: names | map(select(startswith("owner:")));
 # target:<server> is a loop's claim on an issue it took (the driver adds it);
-# backend:<shared|cuda|mps> is what the bug is about. Both labels at once
-# means two loops claimed it in the same moment: lem keeps it, and the other
-# loop's driver removes its own label.
+# backend:<shared|cuda|mps> is what the bug is about. Both labels at once is
+# the moment two loops claimed it together; claim_issue has the loser remove
+# its own, and until then only lem's loop sees it as its own.
 def claims: names | map(select(startswith("target:")) | ltrimstr("target:"));
 def backend: (names | map(select(startswith("backend:")) | ltrimstr("backend:")) | .[0]) // "";
 def holder: claims | if index("lem") != null then "lem" else .[0] end;

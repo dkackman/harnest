@@ -699,11 +699,9 @@ target_preflight() {
 # was restarted since the last change.
 deployed_head() {
   if [ "${DW_TARGET:-lem}" = local ]; then
-    local branch sha dirty=""
-    sha="$(git -C "$DW_LOCAL_DIR" rev-parse --short HEAD 2>/dev/null)" || { echo unknown; return 0; }
-    branch="$(git -C "$DW_LOCAL_DIR" branch --show-current 2>/dev/null)"
-    [ -z "$(git -C "$DW_LOCAL_DIR" status --porcelain --untracked-files=no 2>/dev/null)" ] || dirty=" +dirty"
-    echo "${branch:-detached} @ $sha$dirty"
+    # What the last successful deploy-local.sh recorded; "unknown" before
+    # the first, which makes the develop check deploy.
+    head -n 1 "$LOGS/.deployed.local" 2>/dev/null | grep . || echo unknown
     return 0
   fi
   ssh -o ConnectTimeout=8 -o BatchMode=yes lem \
@@ -728,7 +726,8 @@ target_note() {
 # deploy_cmd / deploy_target
 # How this target gets develop. lem pulls and restarts over ssh; local runs
 # the same dw scripts/deploy.sh against the serving clone (DW_LOCAL_DIR),
-# bound to loopback, on the port DW_URL names. deploy.sh waits for a
+# bound to loopback, on the port DW_URL names, through
+# scripts/deploy-local.sh, which records what it deployed. deploy.sh waits for a
 # running job and polls health on both. deploy_cmd is the line prompts and
 # the log show (no "|" in it: target_note seds it in); deploy_target runs
 # it, logs its last lines, and returns its status.
@@ -739,7 +738,7 @@ deploy_cmd() {
   else
     local port
     port="$(printf '%s' "${DW_URL#*://}" | sed -n 's|^[^/]*:\([0-9][0-9]*\).*|\1|p')"
-    echo "DW_DIR=$DW_LOCAL_DIR DW_WORKSPACE=$DW_LOCAL_WORKSPACE DW_HOST=127.0.0.1 DW_PORT=${port:-8765} DW_TOKEN=${DW_TOKEN:-xyz} $DW_LOCAL_DIR/scripts/deploy.sh develop"
+    echo "DW_DIR=$DW_LOCAL_DIR DW_WORKSPACE=$DW_LOCAL_WORKSPACE DW_HOST=127.0.0.1 DW_PORT=${port:-8765} DEPLOY_RECORD=$LOGS/.deployed.local $HARNEST_ROOT/scripts/deploy-local.sh"
   fi
 }
 deploy_target() {
@@ -755,17 +754,25 @@ server_name() {
 }
 
 # claim_issue <n>
-# Marks <n> as this loop's (target:<DW_TARGET>) and reads it back. Two loops
-# can read an issue as unclaimed at the same moment; lem keeps a tie, and
-# the other loop removes its own label. Returns 1 when this loop doesn't
-# hold the issue afterwards, or gh failed (not held: skip it this pass).
+# Marks <n> as this loop's (target:<DW_TARGET>). Returns 0 when this loop
+# holds it, 1 when it doesn't or gh failed (skip it this pass):
+# - already this loop's: held, nothing to add;
+# - another loop's claim already on it: skipped, nothing added;
+# - otherwise add ours and read it back. Another claim there too means both
+#   loops read it unclaimed at once, and either may already have started a
+#   session on its read-back. Whoever reads back both yields and removes its
+#   own label: the loop that read back only its own keeps it, and if both
+#   read back both, neither does and the issue is claimed next cycle.
 claim_issue() {
-  local n="$1" labels
-  gh issue edit "$n" --repo "$TICKET_REPO" --add-label "target:$DW_TARGET" >/dev/null 2>&1 || return 1
+  local n="$1" labels mine="target:$DW_TARGET"
   labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
-  printf '%s\n' "$labels" | grep -qx "target:$DW_TARGET" || return 1
-  if [ "$DW_TARGET" != lem ] && printf '%s\n' "$labels" | grep -qx target:lem; then
-    gh issue edit "$n" --repo "$TICKET_REPO" --remove-label "target:$DW_TARGET" >/dev/null 2>&1 || true
+  printf '%s\n' "$labels" | grep -qx "$mine" && return 0
+  printf '%s\n' "$labels" | grep -q '^target:' && return 1
+  gh issue edit "$n" --repo "$TICKET_REPO" --add-label "$mine" >/dev/null 2>&1 || return 1
+  labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
+  printf '%s\n' "$labels" | grep -qx "$mine" || return 1
+  if printf '%s\n' "$labels" | grep '^target:' | grep -vqx "$mine"; then
+    gh issue edit "$n" --repo "$TICKET_REPO" --remove-label "$mine" >/dev/null 2>&1 || true
     return 1
   fi
 }
@@ -774,7 +781,8 @@ claim_issue() {
 # which takes the same lock). Another loop leaves the server-free passes to it.
 lem_loop_running() {
   local pid name
-  read -r pid name < "$LOGS/.driver.lock/owner" 2>/dev/null || return 1
+  [ -f "$LOGS/.driver.lock/owner" ] || return 1
+  read -r pid name < "$LOGS/.driver.lock/owner" || return 1
   [ "$name" = run-loop ] && kill -0 "$pid" 2>/dev/null
 }
 
@@ -929,9 +937,11 @@ commit_suite_changes() {
 # belong to runs on lem, and a local run's commit would otherwise take the
 # loop tester's edit in progress under the local run's name.
 suite_commit_paths() {
-  if [ -n "$TARGET_SUFFIX" ] && [ "$SUITE_EDITS" = 1 ]; then
+  if [ -n "$TARGET_SUFFIX" ] && [ "$SUITE_EDITS" = 1 ] && ! lem_loop_running; then
     # The loop on another server: its tester may add a case for a shared
-    # fix (agents/tester/target.md), and its readings are its own.
+    # fix (agents/tester/target.md), and its readings are its own. While
+    # lem's loop runs, its tester may be mid-edit in the same tree, so the
+    # suite files are left for lem's loop to commit.
     echo "regression-suite-*.md regression-perf/$DW_TARGET"
   elif [ -n "$TARGET_SUFFIX" ]; then
     echo "regression-perf/$DW_TARGET"

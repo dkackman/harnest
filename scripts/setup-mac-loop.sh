@@ -73,6 +73,6 @@ Next:
      lsof -ti tcp:8765 -sTCP:LISTEN).
   2. Deploy the serving clone:
      DW_TARGET=local LOGS="$PWD/logs" bash -c '. ./providers.sh; resolve_target; deploy_target'
-     or just start the loop, whose develop check deploys it:
+     or just start the loop: with nothing answering, it deploys the clone first:
      DW_TARGET=local SHARED_PASSES=1 MAX_CYCLES=1 ./run-loop.sh
 EOM

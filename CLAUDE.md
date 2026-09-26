@@ -295,7 +295,8 @@ on lem. That server runs from the serving clone `DW_LOCAL_DIR` (`dw-mps-serve`),
 - **Which loop works which issue:** two label families, read by `lib/classify.jq` with
   the snapshot's `target`.
   - `backend:shared|cuda|mps` says what the bug is about.
-  - `target:lem|local` is the claim `claim_issue` adds before triage. lem keeps a tie.
+  - `target:lem|local` is the claim `claim_issue` adds before triage. A loop never
+    claims over another's, and one that reads back both labels removes its own.
   - The legacy rule: an unclaimed issue past the implementer is lem's.
   - A session hands an issue to lem by swapping `target:local` for `target:lem`.
 - **What stays on lem.** Feature specs, lead builds and close-outs, and the tester's

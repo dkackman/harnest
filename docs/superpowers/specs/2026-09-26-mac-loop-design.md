@@ -66,9 +66,12 @@ as waiting, not as stranded.
 - **Adding it.** At the start of the implementer pass, before triage, the driver claims
   every unclaimed issue in its queue: it adds `target:<this loop>` and then re-reads the
   labels.
-  - **The race.** An issue that ends up with both `target:` labels is lem's, and the Mac
-    loop removes its own label and drops the issue. Triage and fix sessions only ever see
-    issues this loop holds, so two loops' triage never disposition the same issue.
+  - **The race** (revised in the final review). A loop never claims over another loop's
+    claim. A loop that reads back both labels removes its own and drops the issue, lem
+    included: by then the other loop may have read back only its own and started a
+    session. If both read back both, neither holds it, and it is claimed next cycle.
+    The earlier "lem keeps a tie" rule let a Mac session already running on the issue
+    and a lem session run at once.
   - **A later session.** `still_ready` re-reads the labels just before each session, as
     it does today.
 - **Releasing it.** The only release is a hand-over. A session that finds the issue

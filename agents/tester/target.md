@@ -21,11 +21,11 @@ When the repro needs something this server can't provide, don't bounce
 the fix. Examples: a fixture only lem has (most `asset:qa-cast/…`,
 `asset:cast/…` and `asset:reference_sheet.jpg`), CUDA hardware itself, a
 model too large for 64 GB of unified memory shared with the OS. Hand the
-issue to lem's loop instead: keep `owner:tester` and
-`status:fixed-pending-verify`, run
-`gh issue edit N --remove-label target:{{TARGET}} --add-label target:lem`,
-and comment what's missing. lem deploys `develop`, which has the fix,
-before its tester runs.
+issue to lem's loop instead: comment what's missing first (once the issue
+is lem's, the guard refuses your comments on it), then keep `owner:tester`
+and `status:fixed-pending-verify` and run
+`gh issue edit N --remove-label target:{{TARGET}} --add-label target:lem`.
+lem deploys `develop`, which has the fix, before its tester runs.
 
 ### Timing
 

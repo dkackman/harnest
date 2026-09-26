@@ -67,6 +67,8 @@ FAKE_CLAUDE_DO='case "$*" in *"fix session"*) gh issue edit 2 --repo o/r --remov
 eq  "hand-off: fix then verify in one cycle" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 eq  "hand-off: closed as verified" "CLOSED" "$(jq -r '.["o/r"][0].state' "$T/board.json")"
 eq  "hand-off: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
+has "lem loop: makes sure its claim label exists" "gh label create target:lem --repo o/r" "$(cat "$T/gh-calls")"
+has "lem loop: and the backend labels its prompts file with" "gh label create backend:shared --repo o/r" "$(cat "$T/gh-calls")"
 
 # --- 3b. a docs-only fix the tester can't observe: it reroutes, and the
 # docs reviewer closes it the same cycle, from the plugin tree
@@ -225,6 +227,7 @@ reg_local() {
      ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg-local.out" 2>&1
 }
 echo "dirty" >> "$T/h/regression-suite-tiny.md"   # a lem-side edit in progress
+echo "develop @ ${sha:0:7}" > "$T/h/logs/.deployed.local"   # what the last local deploy recorded
 before_head="$(git -C "$T/h" rev-parse HEAD)"
 reg_local
 eq  "regression local: runs while lem's lock is held" 0 $?
@@ -296,22 +299,24 @@ board '[{"number": 30, "state": "OPEN", "labels": [{"name": "owner:implementer"}
         {"number": 32, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]},
         {"number": 33, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "target:lem"}]}]'
 mkdir "$T/h/logs/.driver.lock"; echo "$$ run-loop" > "$T/h/logs/.driver.lock/owner"   # lem's loop, live
+rm -f "$T/h/logs/.deployed.local"   # no local deploy on record yet
 local_loop TESTER_TASK_EVERY=1 FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}/${HARNEST_ROLE:-unset}" >> "$FAKE_PROMPT.env"' FAKE_PROMPT="$T/local-loop"
 eq  "local loop: runs beside lem's lock" 0 $?
 eq  "local loop: claims the shared issue" "backend:shared,owner:implementer,target:local" "$(labels_of 30)"
 eq  "local loop: leaves the cuda issue alone" "backend:cuda,owner:implementer" "$(labels_of 31)"
 eq  "local loop: leaves lem's claim alone" "owner:implementer,target:lem" "$(labels_of 33)"
 eq  "local loop: one session, the shared fix (lem's hand-off waits)" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
-has "local loop: the prompt names the local server" "the local server (mps on $(hostname)) is running: develop @ " "$(cat "$T/local-loop.args")"
+has "local loop: the prompt names the local server" "the local server (mps on $(hostname)) is running: " "$(cat "$T/local-loop.args")"
 has "local loop: the implementer's settings are the local ones" "agent-settings/implementer.local.json" "$(cat "$T/local-loop.args")"
-has "local loop: deploy command in the system prompt" "$T/serve/scripts/deploy.sh develop" "$(cat "$T/h/logs/.prompt.implementer.local.fix.md")"
+has "local loop: deploy command in the system prompt" "DW_DIR=$T/serve " "$(cat "$T/h/logs/.prompt.implementer.local.fix.md")"
 eq  "local loop: the guard is told" "local/implementer" "$(head -1 "$T/local-loop.env")"
 ok  "local loop: its own log" test -s "$T/h/logs/loop.local.log"
 ok  "local loop: its own implementer log" test -s "$T/h/logs/implementer.local.log"
 has "local loop: shared passes stay with lem's loop" "skipping: lem's loop runs it" "$(cat "$T/h/logs/loop.local.log")"
 has "local loop: no standing task" "standing task: lem only" "$(cat "$T/h/logs/loop.local.log")"
 eq  "local loop: lem's lock untouched" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
-eq  "local loop: no deploy while the serving clone is on develop" "" "$(cat "$T/deploys" 2>/dev/null)"
+has "local loop: with no deploy on record, it deploys develop" "deploy develop" "$(cat "$T/deploys" 2>/dev/null)"
+has "local loop: and records it" "develop @ " "$(cat "$T/h/logs/.deployed.local")"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'
@@ -319,8 +324,8 @@ board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}
 local_loop FAKE_GH_ON_EDIT_40=target:lem
 eq  "tie: no session on the Mac" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 eq  "tie: lem keeps it" "backend:shared,owner:implementer,target:lem" "$(labels_of 40)"
-# the serving clone off develop: the driver deploys develop, locally
-(cd "$T/serve" && git checkout -q -b other)
+# the recorded deploy is behind develop: the driver deploys develop, locally
+: > "$T/deploys"; echo "develop @ 0000000" > "$T/h/logs/.deployed.local"
 board '[{"number": 41, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "target:local"}]}]'
 : > "$FAKE_CLAUDE_LOG"
 local_loop
@@ -329,11 +334,32 @@ eq  "deploy: never over ssh" "" "$(grep 'ssh' "$T/loop-local.out" | grep -v 'no 
 eq  "deploy: the claimed hand-off is verified here" 1 "$(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
 # a failed deploy is logged, and the tester still runs
 deploy_stub 1
-: > "$FAKE_CLAUDE_LOG"
+: > "$FAKE_CLAUDE_LOG"; echo "develop @ 0000000" > "$T/h/logs/.deployed.local"
 local_loop
 has "deploy fails: logged" "driver deploy of develop failed" "$(cat "$T/h/logs/loop.local.log")"
 eq  "deploy fails: the tester still verifies" 1 "$(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
 deploy_stub 0
+# no server answering: the loop deploys the serving clone, then checks it
+rm -f "$T/h/logs/.deployed.local" "$T/up"
+printf '#!/usr/bin/env bash\n[ -e "%s" ] || exit 7\necho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "$T/up" "$(hostname)" > "$T/bin/curl"
+printf '#!/usr/bin/env bash\necho "deploy $*" >> "%s"\ntouch "%s"\n' "$T/deploys" "$T/up" > "$T/serve/scripts/deploy.sh"
+board '[]'
+local_loop
+eq  "bootstrap: the loop starts with no server up" 0 $?
+has "bootstrap: by deploying the serving clone" "no server answering" "$(cat "$T/h/logs/loop.local.log")"
+printf '#!/usr/bin/env bash\necho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "$(hostname)" > "$T/bin/curl"
+deploy_stub 0
+# closures: the Mac tester answers only closures it holds; lem's skip them
+board '[{"number": 60, "state": "CLOSED", "labels": [{"name": "owner:tester"}, {"name": "wontfix"}, {"name": "target:local"}]},
+        {"number": 61, "state": "CLOSED", "labels": [{"name": "owner:tester"}, {"name": "wontfix"}]}]'
+: > "$FAKE_CLAUDE_LOG"
+: > "$T/prompts"
+local_loop FAKE_CLAUDE_DO='printf "%s\n" "$2" >> "'"$T"'/prompts"'
+has "closures: the Mac takes its own" "CLOSURES session for #60 only" "$(cat "$T/prompts")"
+eq  "closures: not lem's" "" "$(grep 'CLOSURES session' "$T/prompts" | grep '#61' || true)"
+: > "$T/prompts"
+FAKE_CLAUDE_DO='printf "%s\n" "$2" >> "'"$T"'/prompts"' loop 1
+has "closures: lem takes its own" "CLOSURES session for #61 only" "$(cat "$T/prompts")"
 # a Mac regression run waits on the Mac loop's lock, not lem's
 mkdir "$T/h/logs/.driver.lock.local"; echo "$$ run-loop" > "$T/h/logs/.driver.lock.local/owner"
 (cd "$T/h" && exec env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \

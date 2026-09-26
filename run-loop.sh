@@ -200,13 +200,21 @@ mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 
 resolve_target || exit 1
+# The claim and backend labels (harnest#15) must exist before anything adds
+# them: gh refuses a label the repo doesn't have, which would fail every
+# claim and every filing. Idempotent.
+for l in target:lem target:local backend:shared backend:cuda backend:mps verified-on:mps; do
+  gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
+done
 if [ "$DW_TARGET" != lem ]; then
-  # A server here is started by deploy_target, or by hand: refuse to start
-  # against nothing, or against lem behind a tunnel.
+  # Nothing answering is the normal first start (or a server a failed
+  # deploy left down): deploy the serving clone. Then refuse to run against
+  # nothing, or against lem behind a tunnel.
+  if ! target_health >/dev/null; then
+    echo "[loop] no server answering at $DW_URL; deploying the serving clone" | tee -a "$LOOP_LOG"
+    deploy_target || true
+  fi
   target_preflight || exit 1
-  for l in target:lem target:local backend:shared backend:cuda backend:mps verified-on:mps; do
-    gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
-  done
 fi
 SERVER_NAME="$(server_name)"
 # The Mac loop's tester may add a case for a shared fix it verified
@@ -370,11 +378,14 @@ $(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
 # afterwards meant listing every closed owner:tester issue - verified ones
 # keep the label - and at 181 of them (2026-09-22) the --limit 200 window was
 # about to start silently dropping older wontfix closures.
+# Each loop answers the closures of issues it held: another server's loop
+# only its claimed ones, lem's every other (harnest#15).
 pending_closures() {
-  local out seen="$LOGS/closures-seen$TARGET_SUFFIX" l
+  local out seen="$LOGS/closures-seen$TARGET_SUFFIX" l mine="target:$DW_TARGET"
   out="$(for l in wontfix duplicate; do
       gh issue list --repo "$TICKET_REPO" --state closed --label owner:tester --label "$l" \
-        --limit 500 --json number --jq '.[].number'
+        --limit 500 --json number,labels \
+        --jq ".[] | select([.labels[].name | select(startswith(\"target:\"))] as \$c | (\$c | index(\"$mine\")) != null or (\"$DW_TARGET\" == \"lem\" and (\$c | length) == 0)) | .number"
     done | sort -nu)"
   if [ -n "$ONLY_ISSUES" ]; then
     local pat
