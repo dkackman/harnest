@@ -134,12 +134,26 @@ resolve_target || exit 1
 # carries TARGET_SUFFIX, so a lem run and a local run never share a log,
 # a last-session file or a prompt file.
 LOGNAME_REGRESSION="regression$TARGET_SUFFIX"
-SERVER="lem" HEALTH=""
+# Log prefix: [regression:smoke.2] on lem, [regression-local:smoke.2] here.
+RPFX="regression${TARGET_SUFFIX:+-$DW_TARGET}"
+SERVER="lem" TARGET_HEALTH=""
 if [ "$DW_TARGET" != lem ]; then
-  HEALTH="$(target_health)" \
-    || { echo "no dw server answering at $DW_URL (DW_TARGET=$DW_TARGET): start it from $DW_LOCAL_DIR first" >&2; exit 1; }
-  SERVER="the $DW_TARGET server ($HEALTH)"
+  # A server answers at DW_URL, and it is this machine, not lem through a
+  # tunnel. Nothing below runs otherwise.
+  target_preflight || exit 1
+  SERVER="the $DW_TARGET server ($TARGET_HEALTH)"
+  # model-specific loads H3 (~50 GB) and full-size LTX: on a 64 GB unified
+  # memory machine that is an outage, not a result. It runs only when named.
+  [ "$LEVEL" = all ] && RUN_SPECS=("smoke:" "complete:" "security:")
+  # What the agent files must carry this label, and gh refuses one that
+  # doesn't exist.
+  gh label create "target:$DW_TARGET" --repo "$TICKET_REPO" --force --color 5319e7 \
+    --description "Found against a non-lem server (DW_TARGET=$DW_TARGET); Don triages" >/dev/null 2>&1 || true
+  mkdir -p "$REPO/regression-perf/$DW_TARGET"
 fi
+# guard.py reads it: on another target, lem's suite and perf files are off
+# limits and a new issue goes to owner:don + target:<target>.
+SESSION_ENV=(HARNEST_TARGET="$DW_TARGET")
 
 # Never alongside run-loop.sh on the same target: an implementer deploy
 # restarts the server mid-case, and both drivers keep per-session state
@@ -230,15 +244,20 @@ REGRESSION_FLAGS=(
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" prompt_file
   prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.$LOGNAME_REGRESSION.$kind.md")" \
-    || { echo "[regression:$level$tag] no role prompt for '$kind'" | tee -a "$LOGS/loop.log"; return 0; }
+    || { echo "[$RPFX:$level$tag] no role prompt for '$kind'" | tee -a "$LOGS/loop.log"; return 0; }
+  # On another server, its rules (agents/regression/target.md) join the
+  # system prompt, after the role's own, so they read as the last word.
+  [ -z "$TARGET_SUFFIX" ] || { printf '\n'; target_note "$TARGET_HEALTH"; } >> "$prompt_file"
   # One fresh session, retried once if it dies, asleep through a rejected
   # rate limit (run_claude_session in providers.sh).
   run_claude_session "regression${TARGET_SUFFIX:+-$DW_TARGET}:$level$tag" "$LOGNAME_REGRESSION" "$REPO" "$prompt_file" \
-    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions for this kind of session are in your system prompt; follow them exactly, with these specifics: suite file is $suite_file; level is '$level'; workspace is $workspace; $SERVER is running ${head:-unknown} - name that commit in anything you file or comment. $instructions Then stop.
-$(target_note "$HEALTH")
+    "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to file/comment on them. Your role instructions for this kind of session are in your system prompt; follow them exactly, with these specifics: suite file is $suite_file; level is '$level'; workspace is $workspace; $SERVER is running ${head:-unknown} - name that commit in anything you file or comment.${TARGET_SUFFIX:+ The Target section at the end of your system prompt applies to this whole run.} $instructions Then stop.
 
 $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
     "${SESSION_FLAGS[@]}" "${REGRESSION_FLAGS[@]}"
+  # What target.md tells an agent on another server to list rather than file
+  LEVEL_SKIPS=$((LEVEL_SKIPS + $(grep -c '^REGRESSION-SKIP:' "$LAST_SESSION" 2>/dev/null || true)))
+  LEVEL_DIFFERS=$((LEVEL_DIFFERS + $(grep -c '^REGRESSION-DIFFERS:' "$LAST_SESSION" 2>/dev/null || true)))
 }
 
 # session_aborted
@@ -278,7 +297,7 @@ run_level() {
   workspace="$(workspace_for_suite_file "$suite_file")"
 
   if ! grep -q '^### ' "$suite_file"; then
-    echo "$(ts) $level: $(basename "$suite_file") has no cases yet, skipping" | tee -a "$LOGS/loop.log"
+    echo "$(ts) $level${TARGET_SUFFIX}: $(basename "$suite_file") has no cases yet, skipping" | tee -a "$LOGS/loop.log"
     return 0
   fi
 
@@ -288,7 +307,7 @@ run_level() {
   if [ "${#script_ids[@]}" -gt 0 ]; then
     local report
     report="$(python3 "$REPO/contract/run.py" --url "$DW_URL" --token "$DW_TOKEN" "${script_ids[@]}" 2>&1 || true)"
-    echo "[regression:$level] script cases: $(printf '%s' "$report" | jq -r '"\(.passed // 0) passed, \(.failed // 0) failed, \(.errors // 0) errored\(if .error then " - " + .error else "" end)"' 2>/dev/null || echo "report unreadable")" | tee -a "$LOGS/loop.log"
+    echo "[$RPFX:$level] script cases: $(printf '%s' "$report" | jq -r '"\(.passed // 0) passed, \(.failed // 0) failed, \(.errors // 0) errored\(if .error then " - " + .error else "" end)"' 2>/dev/null || echo "report unreadable")" | tee -a "$LOGS/loop.log"
     script_note="
 
 These cases ran as scripts before this session (contract/run.py, a plain MCP client; see 'runner: script' on each): ${script_ids[*]}. Do not execute them. Their report:
@@ -304,6 +323,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
   # so run-curate.sh's per-chunk cost table, which reads lem's runs out of
   # loop.log, neither counts them nor mixes their sessions into lem's.
   local tag="$level$TARGET_SUFFIX"
+  LEVEL_SKIPS=0 LEVEL_DIFFERS=0
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOGS/loop.log"
     run_session "$level" "$suite_file" "$workspace" "" whole \
@@ -328,7 +348,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
           "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
         chunk=()
         if session_aborted; then
-          echo "[regression:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOGS/loop.log"
+          echo "[$RPFX:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOGS/loop.log"
           break
         fi
       fi
@@ -340,12 +360,14 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
     fi
   fi
 
+  [ -z "$TARGET_SUFFIX" ] \
+    || echo "[$RPFX:$level] $LEVEL_SKIPS case(s) skipped, $LEVEL_DIFFERS expectation(s) differ on this server (REGRESSION-SKIP / REGRESSION-DIFFERS lines above)" | tee -a "$LOGS/loop.log"
   # The trailer names the id the model alias actually resolved to.
   co_author_for "$REGRESSION_PROVIDER" "$(resolved_model "$LOGNAME_REGRESSION" "$REGRESSION_MODEL")"
   commit_suite_changes "regression: update $level suite from $(ts) run ($MODEL_LABEL${TARGET_SUFFIX:+, target $DW_TARGET})"
   # An unreachable server fails every later level the same way.
   if session_aborted; then
-    echo "[regression] stopping: MCP unreachable" | tee -a "$LOGS/loop.log"
+    echo "[$RPFX] stopping: MCP unreachable" | tee -a "$LOGS/loop.log"
     exit 1
   fi
 }
@@ -359,8 +381,11 @@ main() {
 # hand edit between runs, or a cycle that died before committing). It is
 # committed so this run's commit stays attributable to this run — but under a
 # neutral name, never the regression model, which didn't write it.
-commit_suite_changes "regression: capture suite edits of unknown origin made outside a regression run" \
-  "unknown (edited outside a regression run)" "noreply@localhost"
+# On another server this commit would take lem's files, which a run here
+# never writes, and the loop's tester may be mid-edit in them.
+[ -n "$TARGET_SUFFIX" ] \
+  || commit_suite_changes "regression: capture suite edits of unknown origin made outside a regression run" \
+       "unknown (edited outside a regression run)" "noreply@localhost"
 
 for spec in "${RUN_SPECS[@]}"; do
   run_level "${spec%%:*}" "${spec#*:}"

@@ -230,30 +230,61 @@ would restart the server partway through a regression run.
 
 ### Another server: `DW_TARGET=local`
 
-To run a suite against a `dw` server on this machine (the Mac, MPS), for example while lem
-is busy with the loop, start that server yourself from `DW_LOCAL_DIR`, then:
+To run a suite against a `dw` server on this machine (the Mac, MPS) while lem is busy
+with the loop, start that server yourself from `DW_LOCAL_DIR`, then:
 
 ```sh
 DW_TARGET=local ./run-regression.sh smoke
 tail -f logs/regression.local.log
 ```
 
-- **Preflight:** the driver checks the server's `/api/health` first and stops if nothing
-  answers. The device and hostname it reports go into the log and the agent's prompt.
-- **Commit:** "what it runs" is `DW_LOCAL_DIR`'s branch and commit, with `+dirty` when
-  tracked files have uncommitted changes.
-- **Runs alongside the loop:** the lock is `logs/.driver.lock.local`, and session state
-  and logs carry a `.local` suffix.
-- **Plugin:** loaded from `DW_LOCAL_DIR/plugins/dw`, what that server serves. The shared
-  `PLUGIN_TREE` stays on lem's commit.
-- **Performance:** readings go to `regression-perf/local/`, so Mac timings never mix into
-  lem's history.
-- **Filing:** a new issue is labeled `owner:don` + `target:local`, not `owner:implementer`,
-  because the loop can only reproduce, deploy and verify on lem. You decide whether it
-  goes to the implementer.
-- **Suite files:** a local run doesn't add or change cases. It proposes one in the issue
-  instead, since every case in them runs on lem. MPS cases get their own level
-  (harnest#16).
+A local run can't touch lem:
+- **Identity:** `DW_URL` must name this machine, so a leftover lem URL is refused.
+  `/api/health` must then answer with this machine's hostname, so an ssh tunnel to lem is
+  refused too.
+- **Lock, logs and plugin:** the run takes its own lock (`logs/.driver.lock.local`), and
+  its logs and session state carry a `.local` suffix. It loads the plugin from
+  `DW_LOCAL_DIR/plugins/dw`, so lem's `PLUGIN_TREE` is never reset.
+- **Commits:** it commits only `regression-perf/local/`, never the suite files or lem's
+  readings, so it can't sweep up the loop tester's work in progress. It makes no startup
+  commit either.
+- **Guard:** `guard.py`, which gets `HARNEST_TARGET`, refuses the agent's `Edit`/`Write`
+  on a suite file or lem's perf history. It also refuses a new issue without
+  `owner:don` + `target:local`.
+- **Release gate:** it ignores `target:*` issues.
+
+The agent follows
+[`agents/regression/target.md`](agents/regression/target.md), which is added to its
+system prompt:
+- **Issues:** only an issue labeled `target:local` counts as already filed, including
+  "MCP unreachable". A failure never becomes a comment on lem's issue for the same case.
+- **Timing:** figures in case text were measured on lem's CUDA GPU. A reading is judged
+  only against `regression-perf/local/` history, and one that includes a first-time
+  download is marked as such.
+- **Skipped:** a case whose fixture is missing here, whose expectation is about CUDA
+  hardware, or that would load H3 or full-size LTX is listed as
+  `REGRESSION-SKIP: <case> <reason> <what>`, not filed.
+- **Differs:** an expectation about lem's history or hardware (a quote's `basis`,
+  `measured_on`) is listed as `REGRESSION-DIFFERS:`. The driver logs both counts per
+  level.
+- **Security probes:** Linux-only paths get macOS stand-ins for reads, and leak checks
+  also catch `/Users/` and `/private/`.
+
+`all` on a local target is smoke, complete and security. `model-specific` runs only when you
+name it, since H3 and LTX at full size are a memory risk on 64 GB of unified memory.
+
+**Fixtures.** Most cases that need fixtures use media the tester made on lem
+(`asset:qa-cast/...`), and those cases are skipped until the media is here. To copy it,
+run this when lem isn't busy:
+
+```sh
+scripts/sync-fixtures.sh --dry-run   # what would come across
+scripts/sync-fixtures.sh             # copy lem's qa-cast/, uploads/qa-cast/, cast/, reference_sheet.jpg
+```
+
+It reads lem at idle priority with a bandwidth cap. It writes into the local server's
+`common/assets`, never overwriting a file already there. Knobs: `FIXTURE_SOURCE`,
+`DW_LOCAL_WORKSPACE`, `FIXTURE_BWLIMIT_KBPS`.
 
 `run-loop.sh` and `run-release.sh` refuse any target but `lem`, since nothing deploys to
 another server yet.

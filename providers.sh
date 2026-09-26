@@ -327,7 +327,9 @@ export HARNEST_ROOT
 # environment and a longer timeout for the hand-off gate's test run.
 # `$HARNEST_HOOKS` stays literal: the hook's shell expands it.
 guard_settings() {
-  jq -nc --arg role "$1" '{hooks: {PreToolUse: [{matcher: "Bash", hooks: [
+  # A consumer's Edit and Write go through the guard too: on a server other
+  # than lem (HARNEST_TARGET) it keeps them off lem's suite and perf files.
+  jq -nc --arg role "$1" '{hooks: {PreToolUse: [{matcher: (if $role == "consumer" then "Bash|Edit|Write" else "Bash" end), hooks: [
     {type: "command", command: ("python3 \"$HARNEST_HOOKS/guard.py\" " + $role), timeout: 30}]}]}}'
 }
 
@@ -548,7 +550,9 @@ runtime_note() {
   case "$role" in
     implementer) examples="a ticket hand-off comment, a wontfix or needs-info reason, a regression case you propose in a hand-off" ;;
     tester)      examples="a verification comment, a bounce, a new issue, a regression-suite edit" ;;
-    regression)  examples="an issue body, a comment on an existing issue, a suite-file edit" ;;
+    regression)  examples="an issue body, a comment on an existing issue"
+                 # a run on another server may not edit a suite (target.md)
+                 [ -n "$TARGET_SUFFIX" ] || examples="$examples, a suite-file edit" ;;
     lead)        examples="a feature plan and its verdict, an idea's disposition, a stage issue, a hand-off comment, a re-plan" ;;
     curator)     examples="a curation proposal, a ruling on a suite request, an escalation to Don" ;;
     reviewer)    examples="a docs review verdict, a bounce" ;;
@@ -611,16 +615,43 @@ resolve_target() {
       TARGET_SUFFIX=".local"
       DW_URL="${DW_URL:-http://localhost:8765/mcp}"
       git -C "$DW_LOCAL_DIR" rev-parse --git-dir >/dev/null 2>&1 \
-        || { echo "DW_LOCAL_DIR is not a git checkout: $DW_LOCAL_DIR (the checkout the local server runs from)" >&2; return 1; } ;;
+        || { echo "DW_LOCAL_DIR is not a git checkout: $DW_LOCAL_DIR (the checkout the local server runs from)" >&2; return 1; }
+      # A DW_URL left over from a lem run (it was lem's knob first) would
+      # otherwise send a "local" run, under the local lock, at lem while
+      # the loop deploys to it. target_preflight checks the other way in: a
+      # tunnel to lem is localhost here, but lem answers.
+      case "$(url_host "$DW_URL")" in
+        localhost|127.0.0.1|::1) ;;
+        *) [ "$(short_host "$(url_host "$DW_URL")")" = "$(short_host "$(hostname)")" ] \
+             || { echo "DW_TARGET=local needs a DW_URL on this machine, got $DW_URL (unset DW_URL for the default)" >&2; return 1; } ;;
+      esac ;;
     *)
       echo "DW_TARGET must be lem or local, got '$DW_TARGET'" >&2
       return 1 ;;
   esac
 }
 
+# url_host <url> / short_host <name>
+# The host part of a URL ([::1] unbracketed), and a hostname lowercased and
+# cut at its first dot: /api/health says "Mac-mini.lan", hostname(1) may
+# say "Mac-mini" or "mac-mini.local".
+url_host() {
+  local h="${1#*://}"
+  h="${h%%/*}"
+  case "$h" in
+    \[*) h="${h#[}"; h="${h%%]*}" ;;
+    *) h="${h%%:*}" ;;
+  esac
+  printf '%s\n' "$h"
+}
+short_host() {
+  local h="${1%%.*}"
+  printf '%s\n' "$h" | tr '[:upper:]' '[:lower:]'
+}
+
 # target_health
 # One GET of the target's /api/health (DW_URL without its /mcp path).
-# Prints "<device> on <hostname>" (e.g. "mps on dons-mac"), or returns 1
+# Prints "<device> on <hostname>" (e.g. "mps on Mac-mini.lan"), or returns 1
 # when nothing answers - the fail-fast a local server needs, since it is
 # started by hand and is often simply not running.
 target_health() {
@@ -628,6 +659,21 @@ target_health() {
   base="${base%/mcp}"
   h="$(curl -s -m 5 -H "Authorization: Bearer ${DW_TOKEN:-}" "$base/api/health" 2>/dev/null)" || return 1
   jq -er 'select(.status == "ok") | "\(.device) on \(.hostname)"' <<<"$h" 2>/dev/null
+}
+
+# target_preflight
+# For a target other than lem: sets TARGET_HEALTH ("<device> on <host>")
+# and returns 0 only when a server answers at DW_URL and the host it names
+# is this machine. The second half is the guard that matters: an ssh
+# tunnel to lem is localhost in the URL, but lem is what answers, and a
+# local run would then run every level against lem under the local lock.
+# Prints why on stderr and returns 1 otherwise.
+target_preflight() {
+  TARGET_HEALTH="$(target_health)" \
+    || { echo "no dw server answering at $DW_URL (DW_TARGET=$DW_TARGET): start it from $DW_LOCAL_DIR first" >&2; return 1; }
+  local host="${TARGET_HEALTH##* on }"
+  [ "$(short_host "$host")" = "$(short_host "$(hostname)")" ] \
+    || { echo "the server at $DW_URL is $host, not this machine ($(hostname)): DW_TARGET=$DW_TARGET runs only against a server here" >&2; return 1; }
 }
 
 # deployed_head
@@ -656,26 +702,16 @@ deployed_head() {
 }
 
 # target_note <server>
-# The paragraph a regression session's prompt carries when DW_TARGET isn't
-# lem; prints nothing for lem. <server> is target_health's "<device> on
-# <host>". It overrides three things the role prompt and the suite files say
-# with lem in mind:
-# - perf history goes to regression-perf/<target>/, because Mac timings
-#   compared against lem's medians file false regressions and hide real
-#   ones, and the files are append-only, so a mixed reading stays;
-# - a new issue goes to owner:don + target:<target>, not owner:implementer,
-#   because the loop reproduces, deploys and verifies on lem only, where an
-#   MPS-only failure would be closed as fixed without ever failing there.
-# - the suite files are read-only: lem runs every case in them, so a case
-#   written from what this server shows (device: mps, unified memory) would
-#   fail there, and only the curator can take a case back out.
+# The rules a regression session on a server other than lem follows, from
+# agents/regression/target.md with {{TARGET}}, {{SERVER}} and {{URL}}
+# filled in; prints nothing for lem. <server> is TARGET_HEALTH. The file
+# says why each rule exists; guard.py enforces the two a mistake could
+# not be taken back from (suite and perf files, the owner on a new issue).
 target_note() {
   [ "${DW_TARGET:-lem}" = lem ] && return 0
-  printf '%s\n' \
-    "Target: this run is against the '$DW_TARGET' server ($1, $DW_URL), not lem. Where your role instructions or the suite file say otherwise, this paragraph wins, on three points:" \
-    "- Performance history: read and append readings in regression-perf/$DW_TARGET/<case>.jsonl, never regression-perf/<case>.jsonl (that history is lem's). Compare only against this target's file. When it doesn't exist yet, your reading seeds it, as for a new case." \
-    "- Filing: a new issue gets the labels owner:don and target:$DW_TARGET in place of owner:implementer (the loop can't reproduce or verify on this machine), plus regression/performance as usual, and its body names the target and accelerator ($1). When an open issue already covers the case, comment on it with the target and accelerator named, as usual." \
-    "- Suite files: don't add or change a case or fixture in any regression-suite-*.md on this run. They are lem's, and an expectation this server shows would fail there. Propose a case worth adding in the issue or comment body instead."
+  local f="$HARNEST_ROOT/agents/regression/target.md"
+  [ -f "$f" ] || { echo "target_note: $f is missing" >&2; return 1; }
+  sed -e "s|{{TARGET}}|$DW_TARGET|g" -e "s|{{SERVER}}|$1|g" -e "s|{{URL}}|$DW_URL|g" "$f"
 }
 
 # refresh_plugin_tree <source_dir> <plugin_tree>
@@ -800,7 +836,8 @@ commit_suite_changes() {
     echo "run: commit_suite_changes: no co-author name/email — call co_author_for <provider> <model> first" >&2
     return 1
   fi
-  local paths=("regression-suite-*.md" "regression-perf")
+  local paths
+  read -r -a paths <<<"$(suite_commit_paths)"   # read -a: the glob goes to git as a pathspec
   ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
       && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
   # The loop against lem and a regression run against another target can
@@ -822,8 +859,22 @@ commit_suite_changes() {
   return "$rc"
 }
 
+# suite_commit_paths
+# What a commit_suite_changes may stage. On a server other than lem, only
+# that server's own perf directory: the suite files and lem's readings
+# belong to runs on lem, and a local run's commit would otherwise take the
+# loop tester's edit in progress under the local run's name.
+suite_commit_paths() {
+  if [ -n "$TARGET_SUFFIX" ]; then
+    echo "regression-perf/$DW_TARGET"
+  else
+    echo "regression-suite-*.md regression-perf"
+  fi
+}
+
 commit_suite_changes_locked() {
-  local msg="$1" name="$2" email="$3" paths=("regression-suite-*.md" "regression-perf")
+  local msg="$1" name="$2" email="$3" paths
+  read -r -a paths <<<"$(suite_commit_paths)"
   # Again, under the lock: the other writer may have just committed these.
   ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
       && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0

@@ -59,6 +59,15 @@ consumer (tester, regression):
     run-loop.sh) may close as completed, since it applies a harness-side
     edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
+consumer on a server other than lem (HARNEST_TARGET, set by
+run-regression.sh; harnest#15). Also runs on Edit and Write:
+  - no Edit/Write to a `regression-suite-*.md` or to lem's perf history
+    (a top-level `regression-perf/*.jsonl`, or another target's
+    directory): every case runs on lem, and a case or reading taken from
+    this server would fail or skew there. Its own `regression-perf/<target>/`
+    is allowed.
+  - `gh issue create` carries `owner:don` and `target:<target>`: the loop
+    reproduces, deploys and verifies on lem only
 
 Command matching is textual, on the Bash command line. It is a guard
 against the model's mistakes, not against an adversary: a determined agent
@@ -289,14 +298,46 @@ def carries_release_marker(words):
     return False
 
 
+def other_target():
+    """The server target a consumer session runs against, when it isn't lem."""
+    t = os.environ.get("HARNEST_TARGET", "lem")
+    return "" if t in ("", "lem") else t
+
+
+def target_file_rule(path, cwd, target):
+    """Refuse a write to lem's suite or perf files from a non-lem session."""
+    root = os.path.realpath(os.environ.get("HARNEST_ROOT", ""))
+    full = os.path.realpath(os.path.join(cwd, path))
+    if not root or os.path.commonpath([root, full]) != root:
+        return
+    parts = os.path.relpath(full, root).split(os.sep)
+    if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md"):
+        deny("on the %s server the suite files are read-only: every case in them runs on lem, "
+             "so propose a case in the issue or comment instead." % target)
+    if parts[0] == "regression-perf" and len(parts) > 1 and not (len(parts) > 2 and parts[1] == target):
+        deny("on the %s server, readings go to regression-perf/%s/<case>.jsonl; the rest of "
+             "regression-perf/ is another server's history." % (target, target))
+
+
 def main():
     role = sys.argv[1] if len(sys.argv) > 1 else ""
     data = json.load(sys.stdin)
+    cwd = data.get("cwd") or os.getcwd()
+    target = other_target() if role == "consumer" else ""
+    if data.get("tool_name") in ("Edit", "Write"):
+        if target:
+            target_file_rule(data.get("tool_input", {}).get("file_path", ""), cwd, target)
+        return
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    cwd = data.get("cwd") or os.getcwd()
     for words in segments(cmd):
+        if target and is_gh_issue(words, "create"):
+            labels = flag_values(words, "--label", "-l")
+            if "owner:don" not in labels or "target:" + target not in labels \
+                    or any(l.startswith("owner:") and l != "owner:don" for l in labels):
+                deny("an issue from the %s server is filed with owner:don and target:%s, and no other "
+                     "owner: the loop reproduces and verifies on lem only." % (target, target))
         if (is_gh_issue(words, "create") and "security" in flag_values(words, "--label", "-l")) \
                 or (is_gh_issue(words, "edit") and "security" in flag_values(words, "--add-label")):
             deny("a security finding is filed privately, never as a public issue: "

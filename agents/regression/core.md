@@ -44,10 +44,10 @@ your level's workspace (including deleting its own outputs and assets),
 `gh issue create`/`comment`, `./scripts/file-advisory.sh`, *adding* cases and fixtures to suite files, and
 *appending* readings to `regression-perf/<case>.jsonl`.
 
-Your prompt names the server you run against. When it isn't `lem`, its
-"Target:" paragraph says where readings go, how a new issue is labeled
-and what you may not edit on that server; follow it over this file and the
-suite file.
+Your prompt names the server you run against. When it isn't `lem`, a
+"Target" section at the end of your system prompt says what you file, what
+you may not edit, how timings are judged and when a case is skipped on that
+server; follow it over this file and the suite file.
 
 ### Reporting a failure
 

@@ -201,8 +201,11 @@ gate_regression() {
     say "regression: $level on ${sha:0:10}"
     "$REPO/run-regression.sh" "$level" >> "$WORK/regression-${sha:0:10}.log" 2>&1 || rc=$?
   done
+  # A target:<name> issue came from a run on another server (harnest#15),
+  # which may be filing at the same time; lem's gate is about lem.
   filed="$(gh issue list --repo "$TICKET_REPO" --state all --label regression --search "created:>=$start" \
-    --json number,title --jq '.[] | "- #\(.number) \(.title)"')"
+    --json number,title,labels \
+    --jq '.[] | select([.labels[].name | startswith("target:")] | any | not) | "- #\(.number) \(.title)"')"
   if [ "$rc" -eq 0 ] && [ -z "$filed" ]; then
     record regression "$sha" pass "Levels: $RELEASE_REGRESSION_LEVELS, lem $lem. Nothing filed."
   else

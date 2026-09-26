@@ -288,8 +288,16 @@ server target: `DW_TARGET=local ./run-regression.sh` (harnest#15; `resolve_targe
 friends in `providers.sh`) runs against a hand-started server on this machine out of
 `DW_LOCAL_DIR` (the Mac, MPS) under `.driver.lock.local`, alongside the loop on lem. Its
 logs and session state carry a `.local` suffix, its plugin is `DW_LOCAL_DIR/plugins/dw`,
-its perf readings go to `regression-perf/local/`, and what it files goes to `owner:don` +
-`target:local`, since only lem can reproduce and verify; it leaves the suite files alone. `run-loop.sh` and `run-release.sh`
+its perf readings go to `regression-perf/local/` (the only path it commits), and what it
+files goes to `owner:don` + `target:local`, since only lem can reproduce and verify.
+`target_preflight` refuses a server whose `/api/health` hostname isn't this machine, so a
+tunnel to lem can't pass as local. The agent's rules there (only `target:local` issues
+count, timings judged against its own history, `REGRESSION-SKIP` for lem-only fixtures,
+CUDA and memory-heavy cases) are `agents/regression/target.md`, appended to its system
+prompt. `guard.py` (`HARNEST_TARGET`) refuses its `Edit`/`Write` to suite files and lem's
+perf history, and any new issue that isn't `owner:don` + `target:local`.
+`scripts/sync-fixtures.sh` copies lem's `qa-cast` fixture media to the local server when
+Don runs it. `run-loop.sh` and `run-release.sh`
 refuse any target but lem. `run-features.sh`
 and `run-curate.sh` make only read-only MCP calls (or none) and take no lock. Each driver keeps its own
 `logs/.last-session.<driver>` for the rate-limit and died-session checks.

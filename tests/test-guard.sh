@@ -81,4 +81,40 @@ row 0 reviewer docs $none 'gh issue edit 5 --remove-label status:fixed-pending-v
 # not Bash: never looked at
 jq -n '{tool_name: "Read", tool_input: {file_path: "/x"}}' | python3 "$guard" implementer >/dev/null 2>&1
 eq "non-Bash tool passes" 0 $?
+
+# --- a consumer on a server other than lem (HARNEST_TARGET; harnest#15)
+# frow <expect> <target> <tool> <path, relative to a fake harness root>
+root="$T/root"; mkdir -p "$root/regression-perf/local"
+frow() {
+  jq -n --arg t "$3" --arg p "$root/$4" '{tool_name: $t, tool_input: {file_path: $p}, cwd: "/tmp"}' \
+    | HARNEST_ROOT="$root" HARNEST_TARGET="$2" python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer@$2 $3 $4" "$1" $?
+}
+frow 2 local Edit  regression-suite-smoke.md
+frow 2 local Write regression-suite-mps.md
+frow 2 local Edit  regression-perf/S-P001.jsonl
+frow 2 local Write regression-perf/other/S-P001.jsonl
+frow 0 local Write regression-perf/local/S-P001.jsonl
+frow 0 local Edit  regression-perf/local/S-P001.jsonl
+frow 0 local Write qa-bible.md
+frow 0 lem   Edit  regression-suite-smoke.md
+frow 0 ""    Edit  regression-perf/S-P001.jsonl
+jq -n --arg p "/tmp/S-F001-local-issue.md" '{tool_name: "Write", tool_input: {file_path: $p}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" HARNEST_TARGET=local python3 "$guard" consumer >/dev/null 2>&1
+eq "consumer@local: a write outside the harness passes" 0 $?
+jq -n --arg p "$root/regression-suite-smoke.md" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" HARNEST_TARGET=local python3 "$guard" implementer >/dev/null 2>&1
+eq "the target rule is the consumer's only" 0 $?
+# trow <expect> <command>: gh on the local target
+trow() {
+  jq -n --arg c "$2" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
+    | HARNEST_ROOT="$root" HARNEST_TARGET=local python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer@local: $2" "$1" $?
+}
+trow 0 'gh issue create --title "S-F070 fails" --label owner:don,target:local,regression --body-file /tmp/x'
+trow 0 'gh issue create --title "S-F070 fails" -l owner:don -l target:local -l regression'
+trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,regression'
+trow 2 'gh issue create --title "S-F070 fails" --label owner:don,regression'
+trow 2 'gh issue create --title "S-F070 fails" --label owner:don,owner:implementer,target:local'
+trow 0 'gh issue comment 5 --body "also fails on local"'
 finish
