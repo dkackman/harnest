@@ -284,21 +284,41 @@ regression case in the same cycle isn't part of that check.)
 `run-loop.sh` and `run-regression.sh` never run at once: both take `logs/.driver.lock`
 (`acquire_driver_lock`, a `mkdir` lock; a stale one is taken over) and wait for the other,
 because an implementer deploy restarts the server under a regression run. The lock is per
-server target: `DW_TARGET=local ./run-regression.sh` (harnest#15; `resolve_target` and
-friends in `providers.sh`) runs against a hand-started server on this machine out of
-`DW_LOCAL_DIR` (the Mac, MPS) under `.driver.lock.local`, alongside the loop on lem. Its
-logs and session state carry a `.local` suffix, its plugin is `DW_LOCAL_DIR/plugins/dw`,
-its perf readings go to `regression-perf/local/` (the only path it commits), and what it
-files goes to `owner:don` + `target:local`, since only lem can reproduce and verify.
-`target_preflight` refuses a server whose `/api/health` hostname isn't this machine, so a
-tunnel to lem can't pass as local. The agent's rules there (only `target:local` issues
-count, timings judged against its own history, `REGRESSION-SKIP` for lem-only fixtures,
-CUDA and memory-heavy cases) are `agents/regression/target.md`, appended to its system
-prompt. `guard.py` (`HARNEST_TARGET`) refuses its `Edit`/`Write` to suite files and lem's
-perf history, and any new issue that isn't `owner:don` + `target:local`.
-`scripts/sync-fixtures.sh` copies lem's `qa-cast` fixture media to the local server when
-Don runs it. `run-loop.sh` and `run-release.sh`
-refuse any target but lem. `run-features.sh`
+server target (harnest#15; `resolve_target` and friends in `providers.sh`). With
+`DW_TARGET=local`, `run-loop.sh`, `run-features.sh` and `run-regression.sh` run against a
+dw server on this machine (the Mac, MPS) under `.driver.lock.local`, alongside the loop
+on lem. That server runs from the serving clone `DW_LOCAL_DIR` (`dw-mps-serve`), which
+`deploy_target` redeploys with its own `scripts/deploy.sh`, never over ssh.
+- **Per-target state.** Logs and state files carry a `.local` suffix (`loop.local.log`,
+  `progress.local.tsv`, …), and the clones a `-mps` one (`dw-agent-mps`,
+  `dw-agent-plugin-mps`, `dw-agent-lead-mps`), so two loops never share a tree.
+- **Which loop works which issue:** two label families, read by `lib/classify.jq` with
+  the snapshot's `target`.
+  - `backend:shared|cuda|mps` says what the bug is about.
+  - `target:lem|local` is the claim `claim_issue` adds before triage. lem keeps a tie.
+  - The legacy rule: an unclaimed issue past the implementer is lem's.
+  - A session hands an issue to lem by swapping `target:local` for `target:lem`.
+- **What stays on lem.** Feature specs, lead builds and close-outs, and the tester's
+  standing task. The server-free passes (features, reviewer, curator) run on the Mac
+  only while lem's loop isn't running (`lem_loop_running`, `SHARED_PASSES`).
+- **Prompts.** The Mac implementer, tester and regression agent each get
+  `agents/<role>/target.md` appended to the system prompt (`target_note`).
+- **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):
+  - no ssh, scp or rsync for the Mac implementer;
+  - no suite edit from a Mac regression run, though the Mac tester may add a case for a
+    shared fix;
+  - no write to lem's perf history;
+  - a new Mac issue carries exactly one `backend:mps|shared` and no `target:`;
+  - no comment on a `target:lem` issue;
+  - a Mac verification adds `verified-on:mps`.
+- **Regression runs.** A Mac run commits only `regression-perf/local/`.
+- **Preflight.** `target_preflight` refuses a server whose `/api/health` hostname isn't
+  this machine, so a tunnel to lem can't pass as local.
+- **Setup and fixtures.** `scripts/setup-mac-loop.sh` makes the clones.
+  `scripts/sync-fixtures.sh` copies lem's `qa-cast` fixture media when Don runs it.
+
+`run-release.sh` refuses any target but lem, and its regression gate counts every
+regression filed during it, `backend:mps` included. `run-features.sh`
 and `run-curate.sh` make only read-only MCP calls (or none) and take no lock. Each driver keeps its own
 `logs/.last-session.<driver>` for the rate-limit and died-session checks.
 
@@ -420,8 +440,8 @@ who *filed* an issue, and the implementer that reads the prompt runs in auto mod
 and ssh; every agent posts as `TICKET_OWNER`, so nothing the loop wrote is lost. The role
 prompts say the same of comments met via `gh`. `DEPLOYED_HEAD` is refreshed between the implementer and tester
 passes (the tester must be told what it is actually verifying against), and
-`check_lem_on_develop` logs a warning and redeploys `develop` itself (`DEPLOY_ON_MISMATCH=0`
-to only warn) if lem isn't on `origin/develop` at that point —
+`check_target_on_develop` logs a warning and redeploys `develop` itself (`deploy_target`; `DEPLOY_ON_MISMATCH=0`
+to only warn) if the server isn't on `origin/develop` at that point —
 the implementer merges every fix into `develop` and deploys `develop` (the "Fix" and "Deploy" sections of `agents/implementer/fix.md`)
 because lem can only be on one commit and a cycle hands off several fixes; on 2026-09-21
 three branch-only deploys were wiped by a fourth session's `develop` deploy and had to be
@@ -444,6 +464,9 @@ Tickets are **GitHub Issues on `dkackman/diffusers-workflow`**, not entries in a
 repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `comment` /
 `close` / `list`). The invariants both role prompts and the status-board query depend on:
 
+- **Which server's loop** (harnest#15): `backend:shared|cuda|mps` says what a bug is about
+  and `target:lem|local` is the claim of the loop working it; `lib/classify.jq` holds
+  another loop's issues at `wait` (README "Another server").
 - `owner` is a label, exactly one of `owner:implementer` / `owner:tester` /
   `owner:don` / `owner:lead` at a time — whoever's turn it is to act
   next. Swap it with `gh issue edit <n> --remove-label owner:X --add-label

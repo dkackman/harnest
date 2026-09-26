@@ -289,7 +289,7 @@ under the drivers' isolation flags confirmed it fires.
 | Nobody touches a parked (`owner:don`) issue | **hook**, partly: removing `owner:don`/`status:needs-approval` is refused. Commenting on one stays prompt-only: parking an issue legitimately comments on it, and the hook can't tell the two apart without an API call per command |
 | Never push `master`; no force pushes | **hook** |
 | Hand-off only with tests passing | **hook** (the gate above) |
-| Branches merged to `develop`, deploy `develop` | driver: `check_lem_on_develop` redeploys and warns |
+| Branches merged to `develop`, deploy `develop` | driver: `check_target_on_develop` redeploys and warns |
 | Third-party issues are parked | driver: `park_external_issues` before every cycle |
 | Commits reference the issue number | prompt-only: cosmetic, and the benchmark reads it but nothing breaks without it |
 | `breaking-change` label on interface changes | prompt-only: needs judgment about what counts as breaking |

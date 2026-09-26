@@ -162,6 +162,9 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Let an outside filer's issue into the loop | Hand it back as in the first row. It is never re-parked after that. |
 | Handle a private security finding | `./scripts/file-advisory.sh --list` (also on the board line and in the digest). Fix it out of band, or hand it to the implementer yourself without the details going public; publish the advisory once the fix ships, or close it. |
 | Freeze for a release | Open an issue titled with the version (`Release 0.5.0`), labeled `release` + `owner:don`. Until you close it, only issues labeled `release-blocker` move, and the tester's standing task is held. Add `release-blocker` to what must land first. |
+| Send a Mac issue to lem (or fix a wrong claim) | `gh issue edit <n> --remove-label target:local --add-label target:lem`. lem's loop deploys `develop`, which has any Mac fix. |
+| Correct an issue's backend | Swap its `backend:` label. `cuda` keeps it off the Mac loop, `mps` off lem's. |
+| Check a Mac-only verification on CUDA | Issues with `verified-on:mps` were verified on the Mac only. Reopen one as `owner:tester` + `status:fixed-pending-verify` + `target:lem` and lem's tester re-verifies it. |
 
 **What doesn't move anything:**
 - A comment on its own, while you hold the issue. Agents read your comments when you
@@ -230,34 +233,110 @@ would restart the server partway through a regression run.
 
 ### Another server: `DW_TARGET=local`
 
-To run a suite against a `dw` server on this machine (the Mac, MPS) while lem is busy
-with the loop, start that server yourself from `DW_LOCAL_DIR`, then:
+A second `dw` server on this machine (the Mac: Apple silicon, MPS) runs the loop and the
+regression suites while lem is busy, and covers MPS. Everything for it is keyed by
+`DW_TARGET=local`, and nothing it does reaches lem. The design is in
+[`docs/superpowers/specs/2026-09-26-mac-loop-design.md`](docs/superpowers/specs/2026-09-26-mac-loop-design.md).
+
+**One-time setup.**
 
 ```sh
-DW_TARGET=local ./run-regression.sh smoke
-tail -f logs/regression.local.log
+scripts/setup-mac-loop.sh --dry-run    # what it would make
+scripts/setup-mac-loop.sh              # dw-agent-mps (implementer clone), dw-mps-serve (serving clone), venvs, ~/dw-mps-workspace
 ```
 
-A local run can't touch lem:
-- **Identity:** `DW_URL` must name this machine, so a leftover lem URL is refused.
-  `/api/health` must then answer with this machine's hostname, so an ssh tunnel to lem is
-  refused too.
-- **Lock, logs and plugin:** the run takes its own lock (`logs/.driver.lock.local`), and
-  its logs and session state carry a `.local` suffix. It loads the plugin from
-  `DW_LOCAL_DIR/plugins/dw`, so lem's `PLUGIN_TREE` is never reset.
-- **Commits:** it commits only `regression-perf/local/`, never the suite files or lem's
-  readings, so it can't sweep up the loop tester's work in progress. It makes no startup
-  commit either.
-- **Guard:** `guard.py`, which gets `HARNEST_TARGET`, refuses the agent's `Edit`/`Write`
-  on a suite file or lem's perf history. It also refuses a new issue without
-  `owner:don` + `target:local`.
-- **Release gate:** it ignores `target:*` issues.
+Then stop any `dw` server you started by hand. The loop's first develop check deploys the
+serving clone with `DW_LOCAL_DIR/scripts/deploy.sh develop`. The server binds to
+127.0.0.1 in a `screen` session named `dw-serve` (`screen -r dw-serve`) and logs to
+`~/dw-serve.log`. The deploy needs the dw `deploy.sh` that finds the server by its port
+(branch `fix/deploy-find-server-by-port`).
+
+**Running it.**
+
+```sh
+DW_TARGET=local SHARED_PASSES=1 ./run-loop.sh    # SHARED_PASSES=1 while lem's loop is off
+DW_TARGET=local ./run-regression.sh smoke
+tail -f logs/loop.local.log
+scripts/sync-fixtures.sh                          # lem's qa-cast media, when lem isn't busy (below)
+```
+
+**Which loop works which issue.** Two label families decide it:
+
+| label | question | set by |
+|---|---|---|
+| `backend:shared` / `backend:cuda` / `backend:mps` | what is the bug about? | the filer, or triage when it's missing |
+| `target:lem` / `target:local` | which server's loop holds it? | the driver, when a loop takes it; kept until it closes |
+
+| issue | lem loop | Mac loop |
+|---|---|---|
+| claimed `target:lem` / `target:local` | its own claims only | its own claims only |
+| unclaimed `backend:cuda` | yes | no |
+| unclaimed `backend:mps` | no | yes |
+| unclaimed `backend:shared`, or no backend | yes | yes (triage labels it) |
+| unclaimed, past the implementer (handed off before claims existed) | yes | no: it was deployed to lem |
+
+- **Claiming.** A loop claims every fix in its queue before triage. When both loops claim
+  the same issue in the same moment, lem keeps it.
+- **Handing over to lem.** A session that finds an issue belongs on lem hands the claim
+  over with `--remove-label target:local --add-label target:lem`. That's the Mac
+  implementer for a cuda bug, and the Mac tester for a repro it can't run here: a lem-only
+  fixture, CUDA, or a model too big for 64 GB. Both loops deploy `develop`, so lem's
+  tester gets the fix.
+- **A contradiction.** A `backend:cuda` issue claimed `target:local` is `stranded`, and
+  the audit flags it.
+
+**What the Mac loop does differently.**
+- **Its own state:**
+  - its lock is `logs/.driver.lock.local`. A Mac regression run uses the same lock, so
+    the two take turns; neither ever waits on lem's lock.
+  - logs: `loop.local.log` and `<role>.local.log`;
+  - state files: `progress.local.tsv`, `closures-seen.local`, `stop-after-cycle.local`;
+  - clones: `dw-agent-mps`, `dw-agent-plugin-mps`, `dw-agent-lead-mps`, `dw-mps-serve`.
+- **Deploy.** `deploy_cmd` (`providers.sh`) runs the serving clone's `deploy.sh`. The
+  implementer's target section ([`agents/implementer/target.md`](agents/implementer/target.md))
+  says so, and `agent-settings/implementer.local.json` describes the same setup to the
+  auto-mode classifier.
+- **Verify.** The tester follows its target section
+  ([`agents/tester/target.md`](agents/tester/target.md)). A verification here adds
+  `verified-on:mps`, meaning CUDA hasn't re-verified the fix.
+- **Suite cases.** The Mac tester adds a case only for a verified `backend:shared` fix,
+  since every suite runs on lem too. For a `backend:mps` fix it proposes the case in its
+  verify comment, until the MPS level exists (harnest#16).
+- **Not on the Mac:** the tester's standing task (its `qa-bible.md` and series media are
+  lem's), feature specs, lead builds and close-outs. Those issues wait for lem.
+- **Server-free passes.** Feature design, docs review and curator review run in one loop
+  only: lem's while it's running, the Mac's otherwise. `SHARED_PASSES=1` or `0`
+  overrides that.
+- **Budget.** `TESTER_BUDGET_USD` defaults to 8 here and 5 on lem, because MPS jobs run
+  2-3x slower.
+- **Guard** (via `HARNEST_TARGET` and `HARNEST_ROLE`):
+  - the Mac implementer can't run `ssh`, `scp` or `rsync`;
+  - a Mac regression run can't edit a suite file (the Mac tester may);
+  - nothing on the Mac writes to lem's perf history;
+  - a new issue carries one `backend:mps` or `backend:shared` label, one owner, and no
+    `target:` label;
+  - no comment on a `target:lem` issue;
+  - a Mac verification must add `verified-on:mps`;
+  - the only `target:` label an agent may add is the hand-over to lem, and only a Mac
+    tester may add `verified-on:`.
+- **Release gate.** Every regression filed during the gate blocks it, `backend:mps`
+  included.
+
+**A regression run here can't touch lem either.**
+- **Identity.** `DW_URL` must name this machine, so a leftover lem URL is refused. Then
+  `/api/health` must answer with this machine's hostname, so an ssh tunnel to lem is
+  refused too. The Mac loop runs the same check before it starts.
+- **Plugin and commits.** It loads the plugin from `DW_LOCAL_DIR/plugins/dw`, so lem's
+  `PLUGIN_TREE` is never reset. It commits only `regression-perf/local/`, never the suite
+  files or lem's readings, and makes no startup commit.
 
 The agent follows
 [`agents/regression/target.md`](agents/regression/target.md), which is added to its
 system prompt:
-- **Issues:** only an issue labeled `target:local` counts as already filed, including
-  "MCP unreachable". A failure never becomes a comment on lem's issue for the same case.
+- **Issues:** an open issue for the same case counts as already filed unless it is
+  `backend:cuda` or claimed `target:lem`. A failure never becomes a comment on a
+  `target:lem` issue. A new one is `owner:implementer` + `backend:mps` (`backend:shared`
+  when the case also fails on lem), so the Mac loop can work it.
 - **Timing:** figures in case text were measured on lem's CUDA GPU. A reading is judged
   only against `regression-perf/local/` history, and one that includes a first-time
   download is marked as such.
@@ -289,8 +368,7 @@ It reads lem at idle priority with a bandwidth cap. It writes into the local ser
 `common/assets`, never overwriting a file already there. Knobs: `FIXTURE_SOURCE`,
 `DW_LOCAL_WORKSPACE`, `FIXTURE_BWLIMIT_KBPS`.
 
-`run-loop.sh` and `run-release.sh` refuse any target but `lem`, since nothing deploys to
-another server yet.
+`run-release.sh` refuses any target but `lem`.
 
 ## The feature lead
 
@@ -458,12 +536,13 @@ tail -f logs/loop.log                           # watch from another terminal
 
 | var | default | what |
 |---|---|---|
-| `SOURCE_DIR` | `~/src/dkackman/dw-agent` | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
-| `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
+| `SOURCE_DIR` | `~/src/dkackman/dw-agent` (`-mps` on `DW_TARGET=local`) | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
+| `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` (`-mps` on local) | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
 | `DW_URL` / `DW_TOKEN` | the target's (`http://lem:8765/mcp`) / `xyz` | the MCP endpoint (dev token, LAN only) |
 | `DW_TARGET` / `DW_LOCAL_DIR` | `lem` / `~/src/dkackman/dw-mps-serve` | which server `run-loop.sh`, `run-features.sh` and `run-regression.sh` run against: `lem`, or `local`, a server this machine runs from the serving clone `DW_LOCAL_DIR` (see "Another server") |
 | `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running |
+| `DW_LOCAL_WORKSPACE` / `DW_ORIGIN_URL` | `~/dw-mps-workspace` / the dw repo on GitHub | the local server's `--workspace`, and what `scripts/setup-mac-loop.sh` clones |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |
@@ -471,7 +550,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`sonnet`) runs its code subagents |
 | `LEAD_STAGE_BUDGET_USD` / `LEAD_CLOSEOUT_BUDGET_USD` / `TESTER_SPEC_BUDGET_USD` | `15` / `3` / `8` | per-session caps in `run-loop.sh`; `run-features.sh` has `LEAD_DESIGN_BUDGET_USD` (6) and `LEAD_DECOMPOSE_BUDGET_USD` (2) |
 | `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` and `REVIEWER_EFFORT` (triage and the docs reviewer follow the tester's) |
-| `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` / `3` | `--max-budget-usd` per session; `0` = uncapped |
+| `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` (`8` on local) / `3` | `--max-budget-usd` per session; `0` = uncapped |
 | `REGRESSION_BUDGET_USD` | `6` | per regression chunk |
 | `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's labels unchanged before the driver parks it with Don; `0` = never |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
@@ -493,7 +572,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `REVIEWER_BUDGET_USD` | `2` | per docs review session |
 | `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
 | `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run |
-| `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` | `run-features.sh`: the lead's detached worktree at `origin/develop` |
+| `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` (`-mps` on local) | `run-features.sh`: the lead's detached worktree at `origin/develop` |
 | `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | `1800000` | how long a headless session waits for a background subagent before it is killed (Claude Code's default is 600 s) |
 
 The standalone drivers have their own knobs:
