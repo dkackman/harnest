@@ -37,8 +37,10 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"
-LEAD_TREE="${LEAD_TREE:-$HOME/src/dkackman/dw-agent-lead}"
+# Per-target clones, as in run-loop.sh (harnest#15).
+tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo -mps )"
+SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent$tsfx}"
+LEAD_TREE="${LEAD_TREE:-$HOME/src/dkackman/dw-agent-lead$tsfx}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 TICKET_OWNER="${TICKET_OWNER:-dkackman}"
 LOGS="$REPO/logs"
@@ -55,7 +57,7 @@ FALLBACK_MODEL="${FALLBACK_MODEL:-}"
 LEAD_DESIGN_BUDGET_USD="${LEAD_DESIGN_BUDGET_USD:-6}"
 LEAD_DECOMPOSE_BUDGET_USD="${LEAD_DECOMPOSE_BUDGET_USD:-4}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
-DW_URL="${DW_URL:-http://lem:8765/mcp}"
+DW_URL="${DW_URL:-}"            # resolve_target fills in the target's
 DW_TOKEN="${DW_TOKEN:-xyz}"
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
@@ -66,6 +68,7 @@ gh auth status >/dev/null 2>&1 || { echo "gh CLI not authenticated" >&2; exit 1;
 mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
+resolve_target || exit 1
 
 LEAD_EFFORT="${LEAD_EFFORT:-$EFFORT}"
 resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1

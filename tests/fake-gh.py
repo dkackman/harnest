@@ -101,6 +101,11 @@ elif cmd == ["issue", "edit"]:
         have = [x for x in have if x != l]
     for l in sum((v.split(",") for v in opt("--add-label", many=True)), []):
         have.append(l) if l not in have else None
+    # FAKE_GH_ON_EDIT_<n>=<label>: another loop's claim lands on <n> at the
+    # moment this one edits it (the claim race)
+    other = os.environ.get("FAKE_GH_ON_EDIT_%s" % args[2])
+    if other and other not in have:
+        have.append(other)
     i["labels"] = [{"name": l} for l in have]
     save()
 elif cmd == ["issue", "comment"]:

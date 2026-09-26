@@ -1,0 +1,34 @@
+{
+  "autoMode": {
+    "environment": [
+      "### Org-wide",
+      "- **Organization**: dkackman (personal GitHub account); one maintainer",
+      "- **Repository visibility**: dkackman/diffusers-workflow is PUBLIC on GitHub. Issue comments and commits pushed there are public.",
+      "- **Source control**: the trusted repo is the diffusers-workflow checkout this session starts in and its `origin` remote (github.com/dkackman/diffusers-workflow). Work on feature branches merged to `develop`; never commit to or push `master`.",
+      "- **Default / protected branches**: `master` is the release branch and is protected by convention (never pushed to by an agent); `develop` is the integration branch.",
+      "- **CI/CD deploy targets**: none. Deployment is a restart of the dw server on THIS machine: `scripts/deploy.sh develop` in the serving clone `~/src/dkackman/dw-mps-serve`, run with the environment variables the session's prompt gives. It fast-forwards that clone and restarts the server in a `screen` session named `dw-serve`.",
+      "- **Sensitive remote targets**: none. This loop runs against the local server only: `ssh`, `scp` or `rsync` to any host (including `lem`, which another loop owns) is not routine and not needed. Stopping or killing any process other than through that deploy script is not routine.",
+      "- **Network posture**: LAN only. Outbound network is expected for `gh` (GitHub API), `git` to origin, `pip`/`uv` package installs and Hugging Face model downloads. Posting data anywhere else is exfiltration.",
+      "- **Secrets management**: none configured. The dw server dev token is `xyz` and not secret; anything else that looks like a credential must not leave the machine.",
+      "- **Sensitive data locations**: none in this repo. Generated media under dw workspaces is test output.",
+      "### User-specific",
+      "- **Primary use of Claude Code**: this session is the unattended implementer agent of an implementer/tester loop (see the harness repo's CLAUDE.md). It fixes one GitHub issue per session, runs the test suite, pushes a branch, deploys to the dw server on this machine (Apple silicon, MPS), and hands the issue to the tester with a comment. There is no human watching; a denial comes back as a tool result.",
+      "- **Routine and approved**: editing source in the checkout, `git add/commit/push` on a feature branch, `git merge` into `develop` and `git push origin develop` after that merge, `gh issue view/comment/edit/close`, `pytest`, `uv`/`pip` installs into the project venv, running the deploy script as the prompt gives it, reading `~/dw-serve.log`.",
+      "- **Never**: force-pushes, history rewrites, branch deletion on origin, pushes to `master`, `rm -rf` outside the checkout or the project venv, modifying `~/.claude`, `~/.ssh`, shell rc files, or any credential store."
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$HARNEST_HOOKS/guard.py\" implementer",
+            "timeout": 900
+          }
+        ]
+      }
+    ]
+  }
+}

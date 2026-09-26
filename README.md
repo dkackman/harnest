@@ -462,7 +462,8 @@ tail -f logs/loop.log                           # watch from another terminal
 | `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
 | `DW_URL` / `DW_TOKEN` | the target's (`http://lem:8765/mcp`) / `xyz` | the MCP endpoint (dev token, LAN only) |
-| `DW_TARGET` / `DW_LOCAL_DIR` | `lem` / `~/src/dkackman/diffusers-workflow` | which server `run-regression.sh` runs against: `lem`, or `local`, a server this machine runs from `DW_LOCAL_DIR` (see "Another server") |
+| `DW_TARGET` / `DW_LOCAL_DIR` | `lem` / `~/src/dkackman/dw-mps-serve` | which server `run-loop.sh`, `run-features.sh` and `run-regression.sh` run against: `lem`, or `local`, a server this machine runs from the serving clone `DW_LOCAL_DIR` (see "Another server") |
+| `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |

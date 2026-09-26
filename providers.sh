@@ -599,6 +599,7 @@ DW_LOCAL_DIR="${DW_LOCAL_DIR:-$HOME/src/dkackman/dw-mps-serve}"
 DW_LOCAL_WORKSPACE="${DW_LOCAL_WORKSPACE:-$HOME/dw-mps-workspace}"
 TARGET_SUFFIX=""   # set by resolve_target; lem's names until then
 TARGET_HEALTH=""  # target_preflight sets it: "<device> on <host>"
+SUITE_EDITS=0     # run-loop.sh sets 1 after sourcing: its tester may add cases
 LOOP_LOG="$LOGS/loop.log"   # resolve_target sets the target's own; every driver sets LOGS first
 
 # target_default <lem> <other>: a knob's default for this target.
@@ -928,7 +929,11 @@ commit_suite_changes() {
 # belong to runs on lem, and a local run's commit would otherwise take the
 # loop tester's edit in progress under the local run's name.
 suite_commit_paths() {
-  if [ -n "$TARGET_SUFFIX" ]; then
+  if [ -n "$TARGET_SUFFIX" ] && [ "$SUITE_EDITS" = 1 ]; then
+    # The loop on another server: its tester may add a case for a shared
+    # fix (agents/tester/target.md), and its readings are its own.
+    echo "regression-suite-*.md regression-perf/$DW_TARGET"
+  elif [ -n "$TARGET_SUFFIX" ]; then
     echo "regression-perf/$DW_TARGET"
   else
     echo "regression-suite-*.md regression-perf"
@@ -1360,7 +1365,7 @@ issue_fingerprint() {
 # logs/progress.tsv: key, fingerprint, count.
 NO_PROGRESS_PARK_AFTER="${NO_PROGRESS_PARK_AFTER:-2}"
 note_progress() {
-  local repo="$1" n="$2" before="$3" tag="$4" kind="${5:-any}" after key ledger="$LOGS/progress.tsv" count=0 owner
+  local repo="$1" n="$2" before="$3" tag="$4" kind="${5:-any}" after key ledger="$LOGS/progress$TARGET_SUFFIX.tsv" count=0 owner
   [ "$NO_PROGRESS_PARK_AFTER" -gt 0 ] 2>/dev/null || return 0
   [ -n "$before" ] || return 0
   after="$(issue_fingerprint "$repo" "$n")"

@@ -72,13 +72,20 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# DW_TARGET=local runs this loop against a dw server on this machine (the
+# Mac, MPS) instead of lem (harnest#15; resolve_target in providers.sh).
+# Each target has its own clones, so two loops never switch branches or
+# reset a tree under each other: the defaults below take a -mps suffix.
+tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo -mps )"
 # The agents' own clone, not Don's working checkout: the implementer switches
 # branches, merges and runs tests here, and on 2026-09-22 Don's checkout was
 # mid-feature (feat/run-versions) under it. It has its own venv (install.sh).
-SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"
+SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent$tsfx}"
 # Detached worktree of SOURCE_DIR at origin/develop; the consumer roles load
 # the dw plugin from here (refresh_plugin_tree in providers.sh).
-PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin}"
+PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin$tsfx}"
+# The feature lead's read-only tree, handed to run-features.sh.
+LEAD_TREE="${LEAD_TREE:-$HOME/src/dkackman/dw-agent-lead$tsfx}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 TICKET_OWNER="${TICKET_OWNER:-dkackman}"   # GitHub login whose issues the agents may act on unasked
 HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"   # this repo: where suite-change requests are filed
@@ -151,7 +158,8 @@ FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 # size at which a session auto-compacts instead of growing. Non-Anthropic
 # providers report zero cost, so a cap never fires there.
 IMPLEMENTER_BUDGET_USD="${IMPLEMENTER_BUDGET_USD:-8}"
-TESTER_BUDGET_USD="${TESTER_BUDGET_USD:-5}"
+# MPS jobs run 2-3x slower, and the tester waits on them (Don, 2026-09-26).
+TESTER_BUDGET_USD="${TESTER_BUDGET_USD:-$( [ -z "$tsfx" ] && echo 5 || echo 8 )}"
 TRIAGE_BUDGET_USD="${TRIAGE_BUDGET_USD:-3}"
 # A stage is planned at $4-10 of work. The cap is above that, so a stage
 # isn't cut off mid-integration; the build prompt says to re-plan a stage
@@ -171,8 +179,12 @@ AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 # have waited up to four cycles; they now get their own cheap session on any
 # cycle where one is pending (see tester_pass).
 TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-4}"   # standing task on every Nth cycle
-DW_URL="${DW_URL:-http://lem:8765/mcp}"
+DW_URL="${DW_URL:-}"            # resolve_target fills in the target's
 DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
+# The server-free passes (feature design, docs review, curator review) run
+# in one loop only. 1 or 0 forces it; unset, lem's loop always runs them and
+# another target's runs them only while lem's loop isn't running.
+SHARED_PASSES="${SHARED_PASSES:-}"
 PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR (clone it: git clone -b develop https://github.com/$TICKET_REPO.git \"$SOURCE_DIR\" && (cd \"$SOURCE_DIR\" && bash ./install.sh))" >&2; exit 1; }
@@ -187,13 +199,22 @@ mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
 
-# The implementer and the lead deploy with `ssh lem`, and nothing deploys to
-# any other server yet, so a fix built here would be verified on a server
-# that never got it. DW_TARGET=local is for run-regression.sh (harnest#15).
-[ "$DW_TARGET" = lem ] || { echo "run-loop.sh runs against lem only; DW_TARGET=$DW_TARGET is for run-regression.sh" >&2; exit 1; }
+resolve_target || exit 1
+if [ "$DW_TARGET" != lem ]; then
+  # A server here is started by deploy_target, or by hand: refuse to start
+  # against nothing, or against lem behind a tunnel.
+  target_preflight || exit 1
+  for l in target:lem target:local backend:shared backend:cuda backend:mps verified-on:mps; do
+    gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
+  done
+fi
+SERVER_NAME="$(server_name)"
+# The Mac loop's tester may add a case for a shared fix it verified
+# (agents/tester/target.md); suite_commit_paths then commits suite files.
+export SUITE_EDITS=1
 
 acquire_driver_lock run-loop
-LAST_SESSION="$LOGS/.last-session.loop"
+LAST_SESSION="$LOGS/.last-session.loop$TARGET_SUFFIX"
 refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
   || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
 [ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
@@ -262,7 +283,7 @@ IMPLEMENTER_FLAGS=(
   "${MCP_FLAGS[@]}"
   "${ISOLATION_FLAGS[@]}"
   --tools "$IMPLEMENTER_TOOLS"
-  --settings "$REPO/agent-settings/implementer.json"
+  --settings "$REPO/agent-settings/implementer$TARGET_SUFFIX.json"
   --permission-mode auto
 )
 
@@ -291,7 +312,7 @@ run_agent() {
   local prompt_file
   if ! resolve_model_env "$provider" "$model" \
      || ! session_flags "$provider" "$model" "$effort" "$budget" \
-     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role.$kind.md")"; then
+     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role$TARGET_SUFFIX.$kind.md")"; then
     echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
     return 0
   fi
@@ -309,8 +330,14 @@ run_agent() {
   # runtime note says it in the prompt, where the agent carries it into the
   # comments it writes. HARNEST_SESSION_KIND reaches the guard hook
   # (guard.py), which allows a tester handoff to close without an MCP call.
-  local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind")
-  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role" "$dir" "$prompt_file" \
+  # On another server, the role's Target section follows its instructions
+  # (agents/<role>/target.md), and the guard is told the target and role.
+  if [ -n "$TARGET_SUFFIX" ] && [ -f "$REPO/agents/$role/target.md" ]; then
+    { printf '\n'; target_note "$role" "$TARGET_HEALTH"; } >> "$prompt_file"
+  fi
+  local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind" HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE="$role"
+                        HARNEST_TICKET_REPO="$TICKET_REPO")
+  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX" "$dir" "$prompt_file" \
     "$prompt
 
 $(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
@@ -344,7 +371,7 @@ $(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
 # keep the label - and at 181 of them (2026-09-22) the --limit 200 window was
 # about to start silently dropping older wontfix closures.
 pending_closures() {
-  local out seen="$LOGS/closures-seen" l
+  local out seen="$LOGS/closures-seen$TARGET_SUFFIX" l
   out="$(for l in wontfix duplicate; do
       gh issue list --repo "$TICKET_REPO" --state closed --label owner:tester --label "$l" \
         --limit 500 --json number --jq '.[].number'
@@ -359,47 +386,45 @@ pending_closures() {
 }
 
 mark_closures_seen() {
-  [ $# -eq 0 ] || printf '%s\n' "$@" >> "$LOGS/closures-seen"
+  [ $# -eq 0 ] || printf '%s\n' "$@" >> "$LOGS/closures-seen$TARGET_SUFFIX"
 }
 
 # issue_context lives in providers.sh (shared with run-features.sh).
 
 # deployed_head lives in providers.sh (run-regression.sh records it too).
 
-# check_lem_on_develop
-# lem can only be on one commit, and a cycle hands off several fixes, so the
+# check_target_on_develop
+# The server can only be on one commit, and a cycle hands off several fixes, so the
 # implementer merges each fix into develop and deploys develop (its role
-# prompt, step 3c/3d). If lem is on anything else when the tester's turn
+# prompt, step 3c/3d). If the server is on anything else when the tester's turn
 # comes, the tester is about to verify against a server missing some of the
 # fixes it was handed (2026-09-21: three fix branches deployed one over the
 # other, then a fourth session deployed develop, which had none of them).
-# The remedy is one idempotent call, so the driver makes it (deploy.sh waits
-# for a running job and polls health) rather than leaving a warning for a
-# human who isn't watching; a failed deploy is logged and the tester still
-# runs, since its prompt names what lem is running and it can bounce a
-# mismatch. DEPLOY_ON_MISMATCH=0 reverts to warning only.
+# The remedy is one idempotent call, so the driver makes it (deploy_target:
+# deploy.sh waits for a running job and polls health) rather than leaving a
+# warning for a human who isn't watching; a failed deploy is logged and the
+# tester still runs, since its prompt names what the server is running and
+# it can bounce a mismatch. DEPLOY_ON_MISMATCH=0 reverts to warning only.
 DEPLOY_ON_MISMATCH="${DEPLOY_ON_MISMATCH:-1}"
-# lem reports an abbreviated hash whose length git picks from the repo's
+# The server reports an abbreviated hash whose length git picks from the repo's
 # size, so it is compared as a prefix of the full one, never against a
 # fixed-length cut (a 7-character cut stops matching the day lem's clone
 # starts printing 8, and every cycle would then redeploy).
-check_lem_on_develop() {
-  local want lem_sha
+check_target_on_develop() {
+  local want head_sha
   want="$(git -C "$SOURCE_DIR" ls-remote -q origin refs/heads/develop 2>/dev/null | cut -f1 || true)"
   [ -n "$want" ] || return 0
   case "$DEPLOYED_HEAD" in
     "develop @ "?*)
-      lem_sha="${DEPLOYED_HEAD#develop @ }"
-      case "$want" in "$lem_sha"*) return 0 ;; esac ;;
+      head_sha="${DEPLOYED_HEAD#develop @ }"
+      case "$want" in "$head_sha"*) return 0 ;; esac ;;
   esac
-  echo "[loop] WARNING: lem is on '$DEPLOYED_HEAD' but origin/develop is ${want:0:10} — the tester would verify against a server that may lack this cycle's fixes" | tee -a "$LOOP_LOG"
+  echo "[loop] WARNING: $SERVER_NAME is on '$DEPLOYED_HEAD' but origin/develop is ${want:0:10} — the tester would verify against a server that may lack this cycle's fixes" | tee -a "$LOOP_LOG"
   [ "$DEPLOY_ON_MISMATCH" = 1 ] || return 0
-  echo "[loop] deploying develop to lem" | tee -a "$LOOP_LOG"
-  # shellcheck disable=SC2088  # the ~ is for lem's shell, not ours
-  if ssh -o ConnectTimeout=8 -o BatchMode=yes lem '~/diffusers-workflow/scripts/deploy.sh develop' 2>&1 \
-       | tail -n 3 | sed -u 's/^/[loop:deploy] /' | tee -a "$LOOP_LOG"; then
+  echo "[loop] deploying develop to $SERVER_NAME" | tee -a "$LOOP_LOG"
+  if deploy_target; then
     DEPLOYED_HEAD="$(deployed_head)"
-    echo "[loop] lem is running: $DEPLOYED_HEAD (after driver deploy)" | tee -a "$LOOP_LOG"
+    echo "[loop] $SERVER_NAME is running: $DEPLOYED_HEAD (after driver deploy)" | tee -a "$LOOP_LOG"
   else
     echo "[loop] driver deploy of develop failed; the tester runs against '$DEPLOYED_HEAD'" | tee -a "$LOOP_LOG"
   fi
@@ -423,13 +448,21 @@ implementer_pass() {
   local -a queue=()
   local n
   while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(queue_issues implementer:fix | cut -f1)
+  # Claim before triage, so two loops never triage or fix the same issue
+  # (claim_issue in providers.sh; lem keeps a tie).
+  local -a held=()
+  for n in ${queue[@]+"${queue[@]}"}; do
+    if claim_issue "$n"; then held+=("$n")
+    else echo "[implementer:#$n] held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"; fi
+  done
+  queue=(${held[@]+"${held[@]}"})
   [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOOP_LOG"; return 0; }
 
   if [ "${#queue[@]}" -ge 2 ]; then
     run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" triage \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions for it are in your system prompt; triage exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop.
 
-lem is running: $DEPLOYED_HEAD (as of $(ts)).
+$SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The issues as of $(ts), bodies only — start from these; gh is for acting on them, for their comments, and for anything newer:
 
@@ -466,7 +499,7 @@ This issue has been handed off as fixed and sent back by the tester $bounces tim
     run_agent implementer "#$n" "$IMPLEMENTER_BUDGET_USD" "$SOURCE_DIR" "$provider" "$model" "$IMPLEMENTER_EFFORT" fix \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a fix session: your role instructions for it are in your system prompt; follow them exactly, working ONLY issue #$n — plus any issue a \`triage:\` comment on #$n tells you to batch with it. Then stop.$escalation
 
-lem is running: $DEPLOYED_HEAD (as of $(ts)).
+$SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
@@ -484,8 +517,9 @@ $(issue_context "$n")" \
 # which issues run; this check only saves starting it for nothing.
 features_pass() {
   [ "$LEAD_DESIGN_IN_LOOP" = 1 ] || return 0
+  shared_passes_here || { echo "[features] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
   [ -n "$(queue_issues lead:design; queue_issues lead:decompose)" ] || return 0
-  env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$ONLY_ISSUES" "$REPO/run-features.sh"
+  env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$ONLY_ISSUES" "$REPO/run-features.sh"
 }
 
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).
@@ -511,7 +545,7 @@ lead_pass() {
     run_agent lead "#$n" "$LEAD_STAGE_BUDGET_USD" "$SOURCE_DIR" "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" build \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. This is a BUILD session for stage #$n of feature #$parent only: your role instructions for it are in your system prompt. Run code-writing subagents on model \"$LEAD_WORKER_MODEL\" unless the stage says otherwise.$([ "$bounces" -gt 0 ] && printf ' This stage has been handed off and sent back %s time(s): read every bounce comment before touching code.' "$bounces") Then stop.
 
-lem is running: $DEPLOYED_HEAD (as of $(ts)).
+$SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The stage issue as of $(ts):
 
@@ -594,7 +628,7 @@ $(plan_text "$n")" \
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" verify \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a VERIFY session for issue #$n only. Do not work the standing task. Then stop.
 
-lem is running: $DEPLOYED_HEAD (as of $(ts)).
+$SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
@@ -615,7 +649,7 @@ $(issue_context "$n")" \
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" handoff \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a HANDOFF session for issue #$n only - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
 
-lem is running: $DEPLOYED_HEAD (as of $(ts)).
+$SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
@@ -633,7 +667,7 @@ $(issue_context "$n")" \
     run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" answer \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is an ANSWER session for issue #$n only - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
 
-lem is running: $DEPLOYED_HEAD (as of $(ts)).
+$SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:
 
@@ -656,7 +690,14 @@ $(issue_context "$n")" \
   if [ -n "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     echo "[tester:task] held: release freeze $freeze" | tee -a "$LOOP_LOG"
   fi
-  if [ -z "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+  # The standing task's memory (qa-bible.md) and its series' media are
+  # lem's, so another server's loop never runs it; closures still do.
+  local task_here=1
+  if [ -n "$TARGET_SUFFIX" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+    echo "[tester:task] standing task: lem only (its bible and fixtures are lem's)" | tee -a "$LOOP_LOG"
+    task_here=0
+  fi
+  if [ -z "$freeze" ] && [ "$task_here" = 1 ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
     run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
       "${TESTER_FLAGS[@]}"
@@ -671,7 +712,7 @@ $(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
     [ "$SESSION_OK" = 1 ] && mark_closures_seen "${closures[@]}"
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
-  elif [ -z "$freeze" ]; then
+  elif [ -z "$freeze" ] && [ "$task_here" = 1 ]; then
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
   fi
 }
@@ -688,6 +729,7 @@ $(issue_context "$n")" \
 # under dontAsk a project allow rule would widen this allowlist.
 reviewer_pass() {
   local n
+  shared_passes_here || { echo "[reviewer] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
   while IFS= read -r n; do
     [ -n "$n" ] || continue
     still_ready "$n" reviewer:docs \
@@ -711,6 +753,7 @@ $(issue_context "$n")" \
 # regression run reads them, and the drivers commit them.
 curator_pass() {
   local n
+  shared_passes_here || { echo "[curator] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
   local -a reqs=()
   # Not filtered on status:needs-approval: Don hands an escalation back by
   # removing owner:don, and often clears the status too. Any open request
@@ -733,6 +776,13 @@ $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
     commit_suite_changes "regression: curator applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
       || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   done
+}
+
+# shared_passes_here: whether this loop runs the server-free passes
+# (SHARED_PASSES above).
+shared_passes_here() {
+  case "$SHARED_PASSES" in 1) return 0 ;; 0) return 1 ;; esac
+  [ "$DW_TARGET" = lem ] || ! lem_loop_running
 }
 
 # One line per open issue: #NN  status-labels  owner-label  title. Prints
@@ -771,16 +821,16 @@ while true; do
   step park_external_issues park_external_issues
   before="$(status_board)"
   DEPLOYED_HEAD="$(deployed_head)"
-  echo "[loop] lem is running: $DEPLOYED_HEAD" | tee -a "$LOOP_LOG"
+  echo "[loop] $SERVER_NAME is running: $DEPLOYED_HEAD" | tee -a "$LOOP_LOG"
 
   step implementer_pass implementer_pass
   step features_pass features_pass
   step lead_pass lead_pass
   # Refresh after the implementer's and lead's deploys: the tester must be told what it
-  # is actually verifying against, not what lem ran when the cycle began.
+  # is actually verifying against, not what the server ran when the cycle began.
   DEPLOYED_HEAD="$(deployed_head)"
-  echo "[loop] lem is running: $DEPLOYED_HEAD (after implementer pass)" | tee -a "$LOOP_LOG"
-  step check_lem_on_develop check_lem_on_develop
+  echo "[loop] $SERVER_NAME is running: $DEPLOYED_HEAD (after implementer pass)" | tee -a "$LOOP_LOG"
+  step check_target_on_develop check_target_on_develop
   # Same commit as lem, for the plugin: pick up this cycle's merged skill fixes.
   if plugin_at="$(refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE")"; then
     echo "[loop] tester plugin tree: origin/develop @ $plugin_at" | tee -a "$LOOP_LOG"
@@ -816,8 +866,8 @@ while true; do
   # session this cycle started has finished and been audited, and nothing of
   # the next has begun. Consumed, so a restart doesn't stop at once (R14;
   # the 0.4.0 freeze was a hand-rolled watcher on the board line).
-  if [ -e "$LOGS/stop-after-cycle" ]; then
-    rm -f "$LOGS/stop-after-cycle"
+  if [ -e "$LOGS/stop-after-cycle$TARGET_SUFFIX" ]; then
+    rm -f "$LOGS/stop-after-cycle$TARGET_SUFFIX"
     echo "stop-after-cycle found, exiting after cycle $cycle." | tee -a "$LOOP_LOG"
     break
   fi
