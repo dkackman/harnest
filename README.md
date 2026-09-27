@@ -741,6 +741,17 @@ raw events.
   `NO_PROGRESS_PARK_AFTER` times in a row is parked with Don instead of re-run.
 - After every cycle, the driver prints a status board with one line per open issue:
   number, status, owner and title.
+- `python3 dashboard/serve.py` (port 8780, or `--port`/`DASHBOARD_PORT`), then open
+  http://127.0.0.1:8780. It's a local, read-only page, served from this machine only, that
+  refreshes every few seconds. It shows:
+  - the drivers running, with the lock each target holds;
+  - what the current session on lem (`loop.log`) and on the Mac (`loop.local.log`) is doing:
+    turns, context, last tool call;
+  - the recent sessions, with their cost;
+  - a release's gate log, while one is running;
+  - a live tail of any file in `logs/`, with a filter.
+
+  It only reads files and `ps`: no gh, no ssh, no lock.
 
 ## Layout
 
@@ -752,6 +763,7 @@ run-bench.sh                        replay benchmark of the implementer (offline
 run-curate.sh                       suite curation audit: one proposal issue per level
 run-retro.sh                        retro: evidenced harness proposals, filed on this repo
 run-digest.sh                       one-line-per-issue digest of the owner:don queue
+dashboard/                          local read-only dashboard of running drivers and logs (serve.py)
 contract/                           script-run regression cases and their MCP client
 bench/                              benchmark cases, replay note, results (see bench/README.md)
 providers.sh                        provider table and shared helpers (isolation, permissions, logging, audits, queues)

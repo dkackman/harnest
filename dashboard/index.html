@@ -1,0 +1,296 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>harnest dashboard</title>
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #6b7382; --line: #e2e5ea;
+  --ok: #1f9d55; --warn: #c27c0e; --bad: #c9362b; --idle: #9aa1ad; --accent: #3b6fd8;
+  --code: #f1f3f6; --tool: #3b6fd8; --result: #8a93a3; --usage: #1f9d55; --hdr: #7b4bc4;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --panel: #1a1e26; --ink: #e3e7ee; --muted: #8d95a3; --line: #2a303b;
+    --ok: #3ccf7a; --warn: #e5a53a; --bad: #ef5d50; --idle: #5d6573; --accent: #6f9bff;
+    --code: #141820; --tool: #7aa6ff; --result: #6b7483; --usage: #3ccf7a; --hdr: #b48cf2;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px;
+  border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header .spacer { flex: 1; }
+header .stamp { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+main { padding: 16px 20px; display: grid; gap: 16px; max-width: 1500px; margin: 0 auto; }
+.row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  display: flex; align-items: center; gap: 8px; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); display: inline-block; flex: none; }
+.dot.ok { background: var(--ok); box-shadow: 0 0 0 0 var(--ok); animation: pulse 1.6s infinite; }
+.dot.warn { background: var(--warn); }
+.dot.bad { background: var(--bad); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); }
+  100% { box-shadow: 0 0 0 7px transparent; } }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12.5px;
+  display: inline-flex; gap: 6px; align-items: center; background: var(--code); }
+.chip b { font-weight: 600; }
+.chip.warn { border-color: var(--warn); color: var(--warn); }
+.muted { color: var(--muted); }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+.now { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin-bottom: 12px; }
+.now dt { color: var(--muted); }
+.now dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.big { font-size: 17px; font-weight: 650; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+tr.live td { background: color-mix(in srgb, var(--ok) 10%, transparent); }
+tr.note td { color: var(--muted); }
+td a, .link { color: var(--accent); cursor: pointer; text-decoration: none; }
+.scroll { max-height: 260px; overflow: auto; }
+.gates div { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
+.gates .pass { color: var(--ok); } .gates .fail { color: var(--bad); }
+#logbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
+#logbar select, #logbar input { background: var(--code); color: var(--ink); border: 1px solid var(--line);
+  border-radius: 6px; padding: 4px 8px; font: inherit; font-size: 13px; }
+#logbar input[type=text] { flex: 1; min-width: 180px; }
+#logbar label { font-size: 13px; color: var(--muted); display: flex; gap: 4px; align-items: center; }
+#log { background: var(--code); border: 1px solid var(--line); border-radius: 8px; height: 520px; overflow: auto;
+  font-family: var(--mono); font-size: 12px; line-height: 1.5; padding: 8px 10px; white-space: pre-wrap; word-break: break-word; }
+#log .t { color: var(--tool); } #log .r { color: var(--result); } #log .u { color: var(--usage); font-weight: 600; }
+#log .h { color: var(--hdr); font-weight: 600; } #log .c { color: var(--result); opacity: .7; }
+#log .w { color: var(--bad); }
+.empty { color: var(--muted); font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="hdot"></span>
+  <h1>harnest</h1>
+  <span class="muted" id="hsummary">loading…</span>
+  <span class="spacer"></span>
+  <span class="stamp" id="stamp"></span>
+</header>
+<main>
+  <section class="card">
+    <h2>Running</h2>
+    <div class="chips" id="drivers"></div>
+  </section>
+
+  <div class="row" id="targets"></div>
+
+  <section class="card" id="release-card" hidden>
+    <h2>Release gates <span class="muted mono" id="release-file"></span></h2>
+    <div class="gates" id="release"></div>
+  </section>
+
+  <section class="card">
+    <h2>Log</h2>
+    <div id="logbar">
+      <select id="logfile"></select>
+      <input type="text" id="filter" placeholder="filter, e.g. [regression:complete.2] or usage:">
+      <label><input type="checkbox" id="hidenoise"> hide turns &amp; result sizes</label>
+      <label><input type="checkbox" id="follow" checked> follow</label>
+    </div>
+    <div id="log"></div>
+  </section>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const STATE_MS = 3000, LOG_MS = 2000, MAX_LINES = 4000;
+const LS = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+             set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+function ago(sec) {
+  if (sec == null) return "–";
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return sec + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m " + (sec % 60) + "s";
+  return Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m";
+}
+function dur(sec) { return sec == null ? "–" : ago(sec); }
+// A header carries a clock time, not a date: the most recent past instance of it
+function sinceClock(hms, now) {
+  const [h, m, s] = hms.split(":").map(Number);
+  const d = new Date(now * 1000); d.setHours(h, m, s, 0);
+  let t = d.getTime() / 1000; if (t > now + 60) t -= 86400;
+  return now - t;
+}
+
+// ---- state -------------------------------------------------------------
+async function pollState() {
+  try {
+    const r = await fetch("/api/state"); const st = await r.json();
+    render(st);
+    $("stamp").textContent = new Date(st.now * 1000).toLocaleTimeString();
+  } catch (e) {
+    $("hsummary").textContent = "dashboard server unreachable";
+    $("hdot").className = "dot bad";
+  }
+}
+
+function render(st) {
+  // drivers
+  const d = st.drivers;
+  $("drivers").innerHTML = d.length ? d.map((x) =>
+    `<span class="chip"><span class="dot ok"></span><b>run-${esc(x.driver)}.sh</b> ${esc(x.args)}
+     ${x.local ? '<span class="muted">· mac</span>' : ""}
+     ${x.parent ? `<span class="muted">· under ${x.parent}</span>` : ""}
+     <span class="muted mono">pid ${x.pid} · ${esc(x.elapsed)}</span></span>`).join("")
+    + `<span class="chip"><span class="muted">claude -p sessions</span> <b>${st.claude_sessions}</b></span>`
+    : '<span class="empty">no drivers running</span>';
+  for (const f of st.stop_flags)
+    $("drivers").insertAdjacentHTML("beforeend", `<span class="chip warn">⚑ logs/${esc(f)}</span>`);
+
+  // targets
+  let anyLive = false, summary = [];
+  $("targets").innerHTML = Object.entries(st.streams).map(([name, s]) => {
+    const quiet = s.mtime ? st.now - s.mtime : null;
+    const held = s.lock && s.lock.alive;
+    const sessions = s.sessions.filter((x) => x.turns || x.usage || x.model);
+    const cur = sessions[sessions.length - 1];
+    const running = held && cur && !cur.usage;
+    const cls = running && quiet < 180 ? "ok" : held ? "warn" : s.lock ? "bad" : "";
+    if (running) { anyLive = true; summary.push(`${name}: ${cur.tag}`); }
+    const lockTxt = s.lock ? (s.lock.alive ? `held by ${esc(s.lock.owner)}` : `stale (${esc(s.lock.owner)})`) : "free";
+    let now = "";
+    if (cur) {
+      const el = running ? ago(sinceClock(cur.time, st.now)) : dur(cur.usage && cur.usage.duration);
+      now = `<dl class="now">
+        <dt>${running ? "now" : "last"}</dt><dd><span class="big">${esc(cur.tag)}</span>
+          <span class="muted">${esc(cur.model || "")}</span></dd>
+        <dt>${running ? "running" : "took"}</dt><dd>${el} · ${cur.turns} turns · ctx ${esc(cur.ctx || "–")}
+          ${cur.usage ? ` · $${cur.usage.cost.toFixed(2)}` : ""}</dd>
+        <dt>tool</dt><dd class="mono" title="${esc(cur.last_tool)}">${esc(cur.last_tool || "–")}</dd>
+        <dt>said</dt><dd title="${esc(cur.last_line)}">${esc(cur.last_line || "–")}</dd>
+        ${s.run ? `<dt>run</dt><dd class="muted" title="${esc(s.run.label)}">${esc(s.run.time)} ${esc(s.run.label)}</dd>` : ""}
+      </dl>`;
+    }
+    const rows = sessions.slice(-25).reverse();
+    const total = rows.reduce((a, x) => a + (x.usage ? x.usage.cost : 0), 0);
+    return `<section class="card">
+      <h2><span class="dot ${cls}"></span>${esc(name)} <span class="muted mono">${esc(s.file)}</span>
+        <span class="spacer" style="flex:1"></span>
+        <span class="muted" style="text-transform:none;letter-spacing:0">lock ${lockTxt} · last write ${quiet == null ? "never" : ago(quiet) + " ago"}</span></h2>
+      ${now || '<p class="empty">no sessions in this log</p>'}
+      <div class="scroll"><table>
+        <tr><th>start</th><th>session</th><th>model</th><th class="num">turns</th><th class="num">time</th><th class="num">ctx peak</th><th class="num">cost</th></tr>
+        ${rows.map((x) => `<tr class="${x === cur && running ? "live" : ""}">
+          <td class="mono">${esc(x.time)}</td>
+          <td><a data-file="${esc(s.file)}" data-tag="${esc(x.tag)}">${esc(x.tag)}</a></td>
+          <td class="muted">${esc((x.model || "").replace(/^claude-/, ""))}</td>
+          <td class="num">${x.usage ? x.usage.turns : x.turns}</td>
+          <td class="num">${x.usage ? dur(x.usage.duration) : (x === cur && running ? "…" : "–")}</td>
+          <td class="num">${esc(x.usage ? x.usage.ctx_peak : x.ctx || "–")}</td>
+          <td class="num">${x.usage ? "$" + x.usage.cost.toFixed(2) : "–"}</td></tr>`).join("")}
+        <tr><td></td><td class="muted">last ${rows.length} sessions</td><td></td><td></td><td></td><td></td>
+          <td class="num"><b>$${total.toFixed(2)}</b></td></tr>
+      </table></div>
+    </section>`;
+  }).join("");
+
+  // release
+  const rel = st.release;
+  $("release-card").hidden = !rel;
+  if (rel) {
+    $("release-file").textContent = "logs/" + rel.file;
+    $("release").innerHTML = rel.lines.map((l) =>
+      `<div class="${/\bpass\b|success/.test(l) ? "pass" : /\bfail|failure/.test(l) ? "fail" : ""}">${esc(l)}</div>`).join("");
+  }
+
+  $("hdot").className = "dot " + (anyLive ? "ok" : d.length ? "warn" : "");
+  $("hsummary").textContent = anyLive ? summary.join("  ·  ") : d.length ? "drivers running, no session live" : "idle";
+}
+
+$("targets").addEventListener("click", (e) => {
+  const a = e.target.closest("a[data-tag]"); if (!a) return;
+  $("filter").value = "[" + a.dataset.tag + "]";
+  if ($("logfile").value !== a.dataset.file) { $("logfile").value = a.dataset.file; resetLog(); } else redrawLog();
+  $("log").scrollIntoView({ behavior: "smooth", block: "start" });
+});
+
+// ---- log ---------------------------------------------------------------
+let logOffset = -1, logLines = [], logBusy = false;
+
+async function loadFiles() {
+  const files = await (await fetch("/api/logs")).json();
+  const sel = $("logfile"), keep = sel.value || LS.get("file", "loop.log");
+  sel.innerHTML = files.map((f) => `<option value="${esc(f.name)}">${esc(f.name)}  (${(f.size / 1024).toFixed(0)} KB)</option>`).join("");
+  if (files.some((f) => f.name === keep)) sel.value = keep;
+}
+
+function resetLog() { logOffset = -1; logLines = []; $("log").innerHTML = ""; LS.set("file", $("logfile").value); pollLog(); }
+
+function classify(line) {
+  if (line.startsWith("=== ")) return "h";
+  const rest = line.replace(/^\[[^\]]+\] /, "");
+  if (rest.startsWith("> ")) return "t";
+  if (rest.startsWith("< ")) return "r";
+  if (rest.startsWith("usage:")) return "u";
+  if (rest.startsWith("· ctx=")) return "c";
+  if (/\[audit\] WARNING|ERROR|Traceback|error:/.test(line)) return "w";
+  return "";
+}
+function visible(line) {
+  const f = $("filter").value.trim();
+  if ($("hidenoise").checked && /^\[[^\]]+\] (· ctx=|< \d+ chars)/.test(line)) return false;
+  return !f || line.includes(f);
+}
+function lineHTML(l) { const c = classify(l); return c ? `<span class="${c}">${esc(l)}</span>\n` : esc(l) + "\n"; }
+
+function redrawLog() {
+  const el = $("log");
+  const shown = logLines.filter(visible);
+  el.innerHTML = shown.length ? shown.map(lineHTML).join("") : '<span class="empty">no matching lines in the loaded tail</span>';
+  if ($("follow").checked) el.scrollTop = el.scrollHeight;
+}
+
+async function pollLog() {
+  if (logBusy) return; logBusy = true;
+  const file = $("logfile").value;
+  try {
+    if (!file) return;
+    const r = await (await fetch(`/api/log?file=${encodeURIComponent(file)}&offset=${logOffset}`)).json();
+    if (file !== $("logfile").value || r.error) return;
+    if (r.size < logOffset) { logOffset = -1; logLines = []; return; } // truncated or rotated
+    logOffset = r.offset;
+    if (!r.text) return;
+    const fresh = r.text.replace(/\n$/, "").split("\n");
+    const el = $("log");
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+    logLines.push(...fresh);
+    if (logLines.length > MAX_LINES) { logLines = logLines.slice(-MAX_LINES); redrawLog(); }
+    else {
+      if (el.querySelector(".empty")) el.innerHTML = "";
+      el.insertAdjacentHTML("beforeend", fresh.filter(visible).map(lineHTML).join(""));
+      if ($("follow").checked && atBottom) el.scrollTop = el.scrollHeight;
+    }
+  } catch (e) { /* the next poll retries */ }
+  finally { logBusy = false; }
+}
+
+$("logfile").addEventListener("change", resetLog);
+$("filter").addEventListener("input", () => { LS.set("filter", $("filter").value); redrawLog(); });
+$("hidenoise").addEventListener("change", () => { LS.set("noise", $("hidenoise").checked ? "1" : ""); redrawLog(); });
+$("follow").addEventListener("change", () => { if ($("follow").checked) $("log").scrollTop = $("log").scrollHeight; });
+$("filter").value = LS.get("filter", "");
+$("hidenoise").checked = LS.get("noise", "1") === "1";
+
+(async () => {
+  await loadFiles(); pollState(); resetLog();
+  setInterval(pollState, STATE_MS);
+  setInterval(pollLog, LOG_MS);
+  setInterval(loadFiles, 30000);
+})();
+</script>
+</body>
+</html>
