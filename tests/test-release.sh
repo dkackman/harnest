@@ -38,19 +38,19 @@ board="$(printf '%s\t%s\t%s\t%s\n' \
   45 don - "status:needs-approval" \
   46 wait - building \
   47 wait - "release freeze (#40): not a release-blocker (tester:verify after it)" \
-  48 wait 60 "release freeze (#40): not a release-blocker (lead:build after it)" \
-  50 wait 61 "release freeze (#40): not a release-blocker (lead:build after it)" \
+  48 wait 46 "release freeze (#40): not a release-blocker (lead:build after it)" \
+  50 wait - building \
   49 wait - "release freeze (#40): not a release-blocker (reviewer:docs after it)")"
-problems="$(printf '%s\n' "$board" | release_board_problems 40 "60 62")"
-eq "board: seven problems" 7 "$(printf '%s\n' "$problems" | grep -c .)"
+problems="$(printf '%s\n' "$board" | release_board_problems 40 "46 62")"
+eq "board: six problems" 6 "$(printf '%s\n' "$problems" | grep -c .)"
 has "board: a frozen fix awaiting verification is merged work" "#47 is merged but unverified (tester:verify" "$problems"
-has "board: a frozen build" "#48 is a feature being built (held by the freeze)" "$problems"
-eq "board: a frozen build with no stage closed is not" "" "$(printf '%s\n' "$problems" | grep '#50 ' || true)"
+eq "board: a held stage is not (its feature is)" "" "$(printf '%s\n' "$problems" | grep '#48 ' || true)"
+eq "board: a feature with no stage closed is not" "" "$(printf '%s\n' "$problems" | grep '#50 ' || true)"
 has "board: a frozen docs review" "#49 is merged but unverified (reviewer:docs" "$problems"
 has "board: a verify in flight" "#42 waits on verification" "$problems"
 has "board: stranded" "#43 is stranded" "$problems"
 has "board: an open blocker" "#44 is open work in implementer:fix" "$problems"
-has "board: a feature mid-build" "#46 is a feature being built" "$problems"
+has "board: a feature mid-build" "#46 is a feature with stages merged" "$problems"
 eq "board: held and parked issues are not problems" "" "$(printf '%s\n' "$board" | grep -E '^4[015]' | release_board_problems 40)"
 
 # --- findings: exactly the shape, or the stage fails

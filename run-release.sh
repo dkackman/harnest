@@ -85,7 +85,10 @@ release_issue() {
     | head -n 1
 }
 need_release_issue() {
+  # GitHub's issue list lags a just-created issue by a few seconds
+  local tries=0
   REL="$(release_issue)"
+  while [ -z "$REL" ] && [ "$tries" -lt 3 ]; do sleep 5; tries=$((tries + 1)); REL="$(release_issue)"; done
   [ -n "$REL" ] || die "no open issue labeled 'release' names $version: run '$0 $version freeze' first"
 }
 develop_sha() {

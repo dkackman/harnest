@@ -59,12 +59,12 @@ release_missing_gates() {
 # flight - a fix waiting on verification or review, a feature stage being
 # built, an issue no queue will pick up - lands in the release half-done.
 # Issues with Don are not in flight. Nor is one the freeze holds before
-# its work starts (a fix not yet made, a spec, a design), but the freeze
-# also holds work already merged to develop - a fix awaiting verification,
-# a feature with stages built - and that lands in the release unverified
-# unless it is finished or labeled release-blocker first. A held build
-# counts only when its parent (column 3) is in the space-separated list:
-# a feature with no stage closed has nothing on develop yet.
+# its work starts (a fix not yet made, a stage, a spec, a design), but the
+# freeze also holds a fix already merged and awaiting verification, which
+# lands in the release unverified unless it is finished or labeled
+# release-blocker first. A feature counts as mid-build only when it is in
+# the space-separated list of parents with a stage closed: until then
+# nothing of it is on develop.
 release_board_problems() {
   awk -F'\t' -v rel="$1" -v started=" ${2:-} " '
     $1 == rel { next }
@@ -72,12 +72,11 @@ release_board_problems() {
       q = $4; sub(/^.*not a release-blocker \(/, "", q); sub(/ after it\)$/, "", q)
       if (q == "tester:verify" || q == "reviewer:docs")
         print "#" $1 " is merged but unverified (" q ", held by the freeze): let it verify, or label it release-blocker"
-      else if (q == "lead:build" && index(started, " " $3 " "))
-        print "#" $1 " is a feature being built (held by the freeze): finish it, or revert its merged stages"
       next
     }
     $2 == "tester:verify" || $2 == "reviewer:docs" { print "#" $1 " waits on verification (" $2 ")"; next }
-    $2 == "lead:build" || ($2 == "wait" && $4 == "building") { print "#" $1 " is a feature being built"; next }
+    $2 == "lead:build" { print "#" $1 " is a stage being built (a release-blocker)"; next }
+    $2 == "wait" && $4 == "building" && index(started, " " $1 " ") { print "#" $1 " is a feature with stages merged and more to build"; next }
     $2 == "stranded" { print "#" $1 " is stranded: " $4; next }
     $2 == "implementer:fix" || $2 == "tester:handoff" || $2 == "tester:answer" || $2 == "tester:spec" { print "#" $1 " is open work in " $2 " (a release-blocker)"; next }
   '
