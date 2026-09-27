@@ -1502,7 +1502,6 @@ metrics: `latency_s` from `get_job`, recorded in `regression-perf/M-F042.jsonl` 
 `template-defaults`. The first run seeds it.
 
 ### M-F043 — the Ref2VA VRAM ceiling adds a per-reference term: every non-null reference costs, of any kind, and a null one doesn't
-pending: #501
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA (`ModularPipeline`, `MiniMaxAI/MiniMax-H3`, `workflow: "ref2va"`)
 via `templates/minimax/reference-to-video`, against its RTX 3090 24 GB `cost` entry.
@@ -1569,7 +1568,6 @@ cleanup: none (nothing is queued or written).
 metrics: none.
 
 ### M-F044 — a `for_each` Ref2VA template is checked per member after expansion, and reports one error, for the largest member
-pending: #501
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA via `templates/minimax/dialogue-short`, a `for_each` step `shot`
 over `variable:shots`. Each entry has `name`, `num_frames`, `prompt` and `references`.
@@ -1638,7 +1636,6 @@ cleanup: none (nothing is queued or written).
 metrics: none.
 
 ### M-F045 — the ceiling reads a step's own substituted arguments before the workflow's variables
-pending: #501
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, via an inline copy of `templates/minimax/reference-to-video`.
 Plan v1 reads `voxel_variables` (width, height, num_frames) from each step's substituted
@@ -1667,7 +1664,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F046 — `run_workflow` refuses a Ref2VA shot over its ceiling before a job exists, `for_each` members included
-pending: #501
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA via `templates/minimax/reference-to-video` and
 `templates/minimax/dialogue-short`.
@@ -1693,7 +1689,6 @@ Otherwise none.
 metrics: none.
 
 ### M-F047 — every H3 template still validates at its defaults, the Ref2VA templates declare the per-reference term, and the LTX ceiling is untouched
-pending: #501
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: every `templates/minimax/*` entry, plus LTX-2.5 `templates/ltx2/text-to-video`.
 Plan v1 gives `vram_estimate` blocks to:
@@ -1728,7 +1723,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F048 — `vram_estimate.gb_per_reference` is an optional non-negative number in the schema, and omitting it means no per-reference term
-pending: #501
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, using R3 from M-F043: the inline reference-to-video copy with
 three references.
