@@ -157,7 +157,7 @@ async function pollState() {
   try {
     const r = await fetch("/api/state"); const st = await r.json();
     render(st);
-    $("stamp").textContent = new Date(st.now * 1000).toLocaleTimeString();
+    $("stamp").textContent = new Date(st.now * 1000).toLocaleTimeString([], { hour12: false });
   } catch (e) {
     $("hsummary").textContent = "dashboard server unreachable";
     $("hdot").className = "dot bad";
@@ -189,7 +189,7 @@ function events(st) {
 }
 
 function announce(e) {
-  const when = new Date().toLocaleTimeString();
+  const when = new Date().toLocaleTimeString([], { hour12: false });
   $("events-card").hidden = false;
   const list = $("events");
   list.insertAdjacentHTML("afterbegin", `<div class="${e.cls}" title="${esc(e.text)}"><time>${when}</time>${esc(e.text)}</div>`);
