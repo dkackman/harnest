@@ -53,7 +53,7 @@ release_missing_gates() {
   printf '%s\n' "${missing# }"
 }
 
-# release_board_problems <release_issue>
+# release_board_problems <release_issue> [<parents with a stage closed>]
 # stdin: classify_issues rows (number, queue, parent, reason; tab-separated).
 # stdout: one line per reason the board isn't ready to release. Work in
 # flight - a fix waiting on verification or review, a feature stage being
@@ -62,15 +62,17 @@ release_missing_gates() {
 # its work starts (a fix not yet made, a spec, a design), but the freeze
 # also holds work already merged to develop - a fix awaiting verification,
 # a feature with stages built - and that lands in the release unverified
-# unless it is finished or labeled release-blocker first.
+# unless it is finished or labeled release-blocker first. A held build
+# counts only when its parent (column 3) is in the space-separated list:
+# a feature with no stage closed has nothing on develop yet.
 release_board_problems() {
-  awk -F'\t' -v rel="$1" '
+  awk -F'\t' -v rel="$1" -v started=" ${2:-} " '
     $1 == rel { next }
     $2 == "wait" && match($4, /^release freeze \(#[0-9]+\): not a release-blocker \([a-z]+:[a-z]+ after it\)$/) {
       q = $4; sub(/^.*not a release-blocker \(/, "", q); sub(/ after it\)$/, "", q)
       if (q == "tester:verify" || q == "reviewer:docs")
         print "#" $1 " is merged but unverified (" q ", held by the freeze): let it verify, or label it release-blocker"
-      else if (q == "lead:build")
+      else if (q == "lead:build" && index(started, " " $3 " "))
         print "#" $1 " is a feature being built (held by the freeze): finish it, or revert its merged stages"
       next
     }

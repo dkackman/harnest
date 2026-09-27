@@ -149,10 +149,13 @@ stage_freeze() {
 
 stage_check() {
   need_release_issue
-  local sha problems="" board lem
+  local sha problems="" board lem started
   sha="$(develop_sha)"
   board="$(classify_issues)" || die "could not read the issue board"
-  problems="$(printf '%s\n' "$board" | release_board_problems "$REL")"
+  started="$(gh issue list --repo "$TICKET_REPO" --state open --limit 300 --json number,subIssuesSummary \
+    --jq '[.[] | select((.subIssuesSummary.completed // 0) > 0) | .number] | join(" ")')" \
+    || die "could not read the features' stages"
+  problems="$(printf '%s\n' "$board" | release_board_problems "$REL" "$started")"
   lem="$(lem_at "$sha")" \
     || problems="$problems${problems:+$'\n'}lem runs $lem, not origin/develop ${sha:0:10}"
   git -C "$SOURCE_DIR" merge-tree --write-tree origin/master origin/develop >/dev/null 2>&1 \
