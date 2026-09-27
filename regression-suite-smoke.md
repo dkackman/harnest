@@ -2095,6 +2095,29 @@ metrics: none.
 source: tester, verified in #483 on 2026-09-26 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 57c3fc6`.
 
+### S-F132 — a frame-size mismatch between known join inputs is refused by the free pre-flight
+#504: `dissolve_videos`/`concat_videos` used to validate clean on `asset:` videos of different
+sizes and then fail at run time. Nothing reconciles a size mismatch the way a sample-rate one is
+resampled. Free: no job is queued. Every call is `validate_workflow(workspace="regression-smoke",
+workflow={"id": "s-join-size", "steps": [{"name": "join", "task": {"command": <cmd>, "arguments":
+{"videos": [...]}}, "result": {"content_type": "video/mp4"}}]})`. A = `asset:qa-cast/ep62-shot1-accuse.mp4`
+(960x544), B = `asset:qa-cast/ep62-shot2-deflect.mp4` (960x544), L = `asset:qa-cast/ep75-shot-ltx2stage-hal.mp4`
+(1536x896).
+1. `concat_videos`, videos `[A, L]`.
+2. `dissolve_videos`, videos `[A, L, B]`.
+3. `concat_videos`, videos `[A, B]`.
+expected:
+- Step 1: `valid: false`, one error at `steps[0].task.arguments.videos`: `concat_videos needs every
+  video at one size: video 0 is 960x544, video 1 is 1536x896`.
+- Step 2: the same error at the same path, naming `dissolve_videos`.
+- Step 3: `valid: true`, no errors.
+It is a **finding** if step 1 or 2 validates clean, if step 3 is flagged, or if the error lands at
+a different path.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #504 on 2026-09-27 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ b8fd862`.
+
 ## Performance
 
 ### S-P001 — default image generation latency
