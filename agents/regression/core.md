@@ -68,9 +68,25 @@ For each failure or performance regression, as you find it:
   timing regression), and one `backend:` label (`backend:shared`, or
   `backend:cuda`/`backend:mps` when the failure is about that accelerator),
   no `status:*` and no `target:`.
-- A case failing because the *suite* is stale (tool renamed, param
-  reshaped) still gets an issue, but say so in the body, so the implementer
-  doesn't hunt for a behavior bug that is really schema drift.
+- **Suite drift is a suite request, not a ticket.** When a case fails
+  only because its text is stale, and you can name the change that made it
+  so, file no ticket. The change must be a closed issue labeled
+  `status:verified` or `breaking-change` whose fix did exactly what you
+  observed: a field removed on purpose, a new refusal, a count a template
+  change moved. Instead:
+  - Search `dkackman/harnest` for an open `suite` request on the case
+    (`gh issue list --repo dkackman/harnest --label suite --search "<case id>"`).
+    If there is one, comment "seen again" with today's run.
+  - Otherwise `gh issue create --repo dkackman/harnest --label suite --label
+    status:needs-approval`, titled `suite: <case id> - <what changed>`. The
+    body gives the case, the issue that changed the behaviour, the exact call
+    and what came back, and a proposed rewording. The curator rules on it.
+
+  If you can't name such an issue, it isn't drift as far as you can tell:
+  file the ticket as usual, and say in the body that it may be suite drift.
+  A release's regression gate counts tickets, not suite requests. Filing
+  drift as a ticket blocks a release on stale text, and filing a real
+  regression as drift ships it.
 - Name the model and provider you ran as (your prompt states them) in every
   issue and comment: a result is only interpretable alongside the model
   that produced it. The issue *is* the status record for the failure;

@@ -82,9 +82,11 @@ Write:
   - `gh issue create` carries exactly one `backend:mps` or `backend:shared`
     (a cuda bug can't be observed here), at most one `owner:*`, and no
     `target:` label
-  - `gh issue create`/`comment` names the ticket repo (HARNEST_TICKET_REPO):
-    a suite proposal to the harness repo would be one written from this
-    server's behavior
+  - `gh issue create`/`comment` names the ticket repo (HARNEST_TICKET_REPO),
+    with one exception: a suite-change request on the harness repo
+    (HARNEST_HARNESS_REPO, default dkackman/harnest) labeled exactly `suite`
+    + `status:needs-approval`, which the curator rules on. The 0.5.0 cut
+    found a C-F029 amendment stalled two days for want of it
   - no `gh issue comment N` on an issue lem's loop holds (`target:lem`;
     asks GitHub, and any doubt refuses): the tester there reads its latest
     comments while verifying on lem
@@ -345,6 +347,17 @@ def carries_release_marker(words):
     return False
 
 
+def suite_request(words):
+    """A suite-change request on the harness repo: `gh issue create --repo
+    <HARNEST_HARNESS_REPO>` labeled exactly suite + status:needs-approval.
+    The one filing a consumer on another server may make there."""
+    repo = flag_values(words, "--repo", "-R")
+    labels = sorted(l for v in flag_values(words, "--label", "-l") for l in v.split(","))
+    return is_gh_issue(words, "create") and bool(repo) \
+        and repo[-1] == os.environ.get("HARNEST_HARNESS_REPO", "dkackman/harnest") \
+        and labels == ["status:needs-approval", "suite"]
+
+
 def other_target():
     """The server this session's loop or run targets, when it isn't lem."""
     t = os.environ.get("HARNEST_TARGET", "lem")
@@ -413,16 +426,18 @@ def main():
                  "can tell CUDA hasn't re-verified it." % target)
         if target and (is_gh_issue(words, "create") or is_gh_issue(words, "comment")):
             ticket_repo = os.environ.get("HARNEST_TICKET_REPO", "")
+            harness_repo = os.environ.get("HARNEST_HARNESS_REPO", "dkackman/harnest")
             repo = flag_values(words, "--repo", "-R")
-            if ticket_repo and (not repo or repo[-1] != ticket_repo):
+            if ticket_repo and (not repo or repo[-1] != ticket_repo) and not suite_request(words):
                 deny("from the %s server, issues are filed and commented on %s only (--repo %s). "
-                     "A suite proposal can't be made from here: describe the case in the issue body."
-                     % (target, ticket_repo, ticket_repo))
+                     "The one exception is a suite-change request: --repo %s with exactly "
+                     "--label suite --label status:needs-approval."
+                     % (target, ticket_repo, ticket_repo, harness_repo))
         if target and is_gh_issue(words, "comment") and label_lookup(words, "target:lem") is not False:
             deny("from the %s server, no comment on an issue lem's loop holds (target:lem), or one "
                  "that couldn't be checked: file your own with a backend: label and reference it."
                  % target)
-        if target and is_gh_issue(words, "create"):
+        if target and is_gh_issue(words, "create") and not suite_request(words):
             labels = flag_values(words, "--label", "-l")
             backends = [l for l in labels if l.startswith("backend:")]
             if backends not in (["backend:mps"], ["backend:shared"]) \

@@ -51,6 +51,13 @@ labeled `target:lem`: file your own and reference it.
 - A verified fix labeled `backend:mps`: don't edit a suite file. Put the
   case in your verify comment, under the heading
   `Proposed case (mps level, harnest#16)`.
+- A change to an existing case (your core, "The regression suites") may be
+  filed from here: `gh issue create --repo dkackman/harnest` with exactly
+  the labels `suite` and `status:needs-approval`, naming this server in the
+  title. It is the only filing allowed on that repo from here. Propose only
+  what holds on every server, never a timing or anything about the
+  accelerator. (#454's C-F029 amendment stalled for two days because this
+  wasn't allowed.)
 
 ### Security probes
 

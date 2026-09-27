@@ -109,7 +109,7 @@ has "freeze: the board says so" "release freeze #30 Release 0.5.0: only release-
 # are not exercised here.)
 git -C "$T/seed" push -q origin HEAD:master 2>/dev/null
 git -C "$T/src" fetch -q origin
-rel() { (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman \
+rel() { (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
           SOURCE_DIR="$T/src" RELEASE_TREE="$T/reltree" ./run-release.sh "$@") > "$T/rel.out" 2>&1; }
 board '[{"number": 50, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
 rel 0.9.0 freeze
@@ -451,6 +451,12 @@ printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${s3:0:9}" > "$T/bin/ssh"
 rel 0.9.1 status
 has "carry: regression carries across the notes alone" "regression  carried" "$(cat "$T/rel.out")"
 has "waive: status lists waivers" "waived      #71" "$(cat "$T/rel.out")"
+# the regression gate: suite drift goes to the harness repo and doesn't count
+FAKE_CLAUDE_DO='gh issue list --repo h/r --label suite --json number --jq length | grep -q "^0$" && gh issue create --repo h/r --title "suite: C-F037 - the template plans 8 steps" --label suite --label status:needs-approval >/dev/null; true' \
+  RELEASE_FORCE=1 RELEASE_REGRESSION_LEVELS=smoke rel 0.9.1 gates regression; rc=$?
+FAKE_CLAUDE_DO=''
+eq  "drift: a suite request alone passes the gate" 0 "$rc"
+has "drift: and is listed, not counted" "h/r#1 suite: C-F037 - the template plans 8 steps" "$(jq -r '.["o/r"][] | select(.number == 70) | .comments[].body' "$T/board.json")"
 
 for f in loop features reg curate retro; do cp "$T/$f.out" "/tmp/claude-501/last-$f.out" 2>/dev/null; done
 finish

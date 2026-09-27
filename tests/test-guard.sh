@@ -168,7 +168,11 @@ rrow() {
 }
 rrow 0 'gh issue create --repo o/r --title x --label owner:implementer,backend:mps,regression'
 rrow 2 'gh issue create --title x --label owner:implementer,backend:mps,regression'
-rrow 2 'gh issue create --repo dkackman/harnest --title x --label suite,status:needs-approval'
+rrow 0 'gh issue create --repo dkackman/harnest --title x --label suite,status:needs-approval'
+rrow 0 'gh issue create --repo dkackman/harnest --title x --label suite --label status:needs-approval'
+rrow 2 'gh issue create --repo dkackman/harnest --title x --label suite,status:needs-approval,owner:implementer'
+rrow 2 'gh issue create --repo dkackman/harnest --title x --label harness,status:needs-approval'
+rrow 2 'gh issue create --repo other/repo --title x --label suite,status:needs-approval'
 rrow 0 'gh issue comment 8 --repo o/r --body x'
 rrow 2 'gh issue comment 8 --repo dkackman/harnest --body x'
 rrow 0 'gh issue list --repo o/r --label target:local'

@@ -41,6 +41,7 @@ SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"
 RELEASE_TREE="${RELEASE_TREE:-$HOME/src/dkackman/dw-agent-release}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 TICKET_OWNER="${TICKET_OWNER:-dkackman}"
+HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"   # where suite-drift requests go
 LOGS="$REPO/logs"
 PROVIDER="${PROVIDER:-anthropic}"
 # Review and notes are judgment on the whole release, so they run on the
@@ -260,7 +261,7 @@ gate_preflight() {
 }
 
 gate_regression() {
-  local sha="$1" lem start level filed rc=0
+  local sha="$1" lem start level filed drift rc=0
   lem="$(lem_at "$sha")" || { record regression "$sha" fail "lem runs $lem, not ${sha:0:10}, and deploying develop did not change that."; return 1; }
   start="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   for level in $RELEASE_REGRESSION_LEVELS; do
@@ -272,11 +273,19 @@ gate_regression() {
   # 2026-09-26; harnest#15).
   filed="$(gh issue list --repo "$TICKET_REPO" --state all --label regression --search "created:>=$start" \
     --json number,title --jq '.[] | "- #\(.number) \(.title)"')"
+  # Stale suite text goes to the harness repo as a suite request, not a
+  # ticket (agents/regression/core.md): listed, never counted
+  drift="$(gh issue list --repo "$HARNESS_REPO" --state all --label suite --search "created:>=$start" \
+    --json number,title --jq '.[] | "- '"$HARNESS_REPO"'#\(.number) \(.title)"' 2>/dev/null || true)"
+  drift="${drift:+
+
+Suite drift, filed as suite requests for the curator (not counted):
+$drift}"
   if [ "$rc" -eq 0 ] && [ -z "$filed" ]; then
-    record regression "$sha" pass "Levels: $RELEASE_REGRESSION_LEVELS, lem $lem. Nothing filed."
+    record regression "$sha" pass "Levels: $RELEASE_REGRESSION_LEVELS, lem $lem. No tickets filed.$drift"
   else
     record regression "$sha" fail "Levels: $RELEASE_REGRESSION_LEVELS, lem $lem, exit $rc. Filed:
-$filed
+$filed$drift
 
 Suite drift is not a blocker: \`run-release.sh $version accept regression <why>\` records that."
     return 1

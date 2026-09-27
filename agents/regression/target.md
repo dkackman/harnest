@@ -24,6 +24,12 @@ wins. The harness guard enforces the file and label rules below.
 - The MCP server down is this server's outage, not lem's. Search with
   `--label backend:mps`, and file it the same way. The REGRESSION-ABORT
   line is unchanged.
+- A suite-drift request (core, "Suite drift is a suite request") is the
+  one filing allowed on `dkackman/harnest` from this server, with exactly
+  the labels `suite` and `status:needs-approval`. Name the target in its
+  title (`suite: <case id> [{{TARGET}}] - ...`), and file it only for drift
+  the same on every server: a field, a message or a count, never a timing
+  or anything about the accelerator.
 - Stage issue bodies at `/tmp/<case>-{{TARGET}}-issue.md`. A run on lem
   may be staging the same case at the same time.
 - An advisory's summary starts with `[{{TARGET}}] <case id>:`, and its

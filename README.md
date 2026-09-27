@@ -556,6 +556,12 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
   labels say, and on a held fix awaiting verification. Let it finish, label it
   `release-blocker` so the loop moves it, or withdraw it in a commit whose subject says
   "withdraw" or "revert" and names `#N`. `notes` gets the same list, plus merged PRs.
+- **Stale suite text doesn't block.** A regression agent that finds a case failing only
+  because a verified or `breaking-change` issue changed the behaviour on purpose files
+  a harness `suite` request, not a ticket. The gate counts tickets, and lists those
+  requests separately for the curator. A consumer on the Mac may file that one kind of
+  request too (`HARNEST_HARNESS_REPO`, default `dkackman/harnest`, names where). On
+  0.5.0, 9 of the 12 tickets the gate filed were suite drift.
 - **Security findings stay off the public tracker.** The review files each one as a
   private draft security advisory, and the release issue gets only their count. `cut`
   refuses while one is a blocker, unless you `accept security`.

@@ -54,6 +54,14 @@ running TESTER_TASK.agent.md`). No separate approval step — the regression age
 already grows these files unsupervised when it notices gaps; a case either
 of you adds is the same kind of edit.
 
+**No case may depend on chance.** A generative model with no seed draws a
+different take each run, so a case never asserts what an unseeded output
+*contains*: its loudness, its content, what a judge scores it. Pin `seed`,
+or assert only what the server owes on every take, such as a shape, a
+duration, or a warning when the take is unusable (S-F007 is the model). A
+case that fails one run in ten teaches every agent to ignore it, and a
+release gate can't tell that from a regression.
+
 ## Removing a case
 
 No agent may remove or rewrite an existing case on its own judgment. If a

@@ -80,6 +80,14 @@ that would damage the box if the check fails. State both failure modes:
 what "it worked" looks like *and* what "refused too late" looks like. No
 separate approval step for adding one.
 
+**No case may depend on chance.** A generative model with no seed draws a
+different take each run, so a case never asserts what an unseeded output
+*contains*: its loudness, its content, what a judge scores it. Pin `seed`,
+or assert only what the server owes on every take, such as a shape, a
+duration, or a warning when the take is unusable (S-F007 is the model). A
+case that fails one run in ten teaches every agent to ignore it, and a
+release gate can't tell that from a regression.
+
 ## Removing a case
 
 No agent may remove or rewrite an existing case on its own judgment. If a
