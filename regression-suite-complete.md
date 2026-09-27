@@ -4632,16 +4632,15 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F133 — `normalize_audio(limit=true)` warns `limiter_heavy` past 6 dB of reduction, stops at 12 dB with `target_lufs_capped` and `limited: true`, and still holds the ceiling
-pending: #496
 source: tester, spec for #496 from #474's plan v1 (claude-opus-5-5 via anthropic)
 The limiter never reduces by more than 12 dB, so a target past what 12 dB buys stops short and
 says so with the existing warning, now marked as limited; beyond 6 dB it warns that pumping is
-audible. On the fixture (16.47 dB gap): −12 LUFS at −3 needs about 7.5 dB (heavy, not capped);
-−5 needs about 14.5 dB (capped). The ceiling itself is a boundary too: `peak_dbfs: 0` is a
+audible. On this dense fixture limiting costs loudness, so 12 dB at −3 reaches only about
+−13.7 LUFS: −14.5 at −3 needs between 6 and 12 dB (heavy, not capped); −5 is capped. The ceiling itself is a boundary too: `peak_dbfs: 0` is a
 0 dBTP ceiling, and the limiter must hold it there as well. CPU only, seconds.
 1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f133", "steps": [
    {"name": "heavy", "task": {"command": "normalize_audio", "arguments": {"audio":
-   "asset:qa-cast/ep11-coldopen.mp4", "target_lufs": -12, "peak_dbfs": -3, "limit": true}},
+   "asset:qa-cast/ep11-coldopen.mp4", "target_lufs": -14.5, "peak_dbfs": -3, "limit": true}},
    "result": {"content_type": "audio/wav", "save": true}},
    {"name": "squashed", <same with "target_lufs": -5>},
    {"name": "full_scale", <same with "target_lufs": -12, "peak_dbfs": 0>}]},
@@ -4649,19 +4648,19 @@ audible. On the fixture (16.47 dB gap): −12 LUFS at −3 needs about 7.5 dB (h
 2. `get_job`, `get_job_events`, and `get_gallery_metadata` on each file.
 expected:
 - `heavy`: a `limiter_heavy` warning naming the step; **no** `target_lufs_capped`. Log
-  `max_gain_reduction_db` > 6 and ≤ 12. File `integrated_lufs` within 0.5 of −12,
+  `max_gain_reduction_db` > 6 and ≤ 12. File `integrated_lufs` within 0.5 of −14.5,
   `true_peak_dbfs` ≤ −2.9.
 - `squashed`: a `target_lufs_capped` warning naming the step, carrying `limited: true` and
   `shortfall_lu` > 0 (on the warning or on the step's log event; either placement meets the
   plan, and the case records which), **and** a `limiter_heavy` warning. Log
   `max_gain_reduction_db` ≤ 12.05. File `true_peak_dbfs` ≤ −2.9; `integrated_lufs` below −5,
-  within 0.5 of −5 − `shortfall_lu`, and louder than `heavy`'s.
-- `full_scale`: `true_peak_dbfs` ≤ 0.1 and `integrated_lufs` within 0.5 of −12; log
-  `max_gain_reduction_db` about 4.5, so no `limiter_heavy` and no `target_lufs_capped`.
+  within 0.5 of −5 − `shortfall_lu`, and at least as loud as `heavy`'s.
+- `full_scale`: `true_peak_dbfs` ≤ 0.1 and `integrated_lufs` within 0.5 of −12; no
+  `target_lufs_capped`; `limiter_heavy` iff log `max_gain_reduction_db` > 6.
 It is a **finding** if either ceiling is exceeded, if reduction passes 12 dB, if `squashed`
 reaches −5 anyway (the cap is missing) or stops silently (no `target_lufs_capped`), if
-`limited: true` or `shortfall_lu` is missing, or if `limiter_heavy` fires on `full_scale` or is
-missing on `heavy`.
+`limited: true` or `shortfall_lu` is missing, or if `limiter_heavy` disagrees with
+`full_scale`'s reduction or is missing on `heavy`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
