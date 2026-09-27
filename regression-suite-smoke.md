@@ -2001,6 +2001,69 @@ metrics: none.
 source: tester, verified in #402 on 2026-09-24 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ fb4887d`.
 
+### S-F129 — `save_workflow`/`delete_workflow`/`upload_asset`/`delete_asset` honour a per-call `workspace=`, and their replies name it
+#463: with no `workspace=`, `delete_workflow` acted on the shared session pin. It deleted the
+good copy in one workspace while the stray in another survived, and its reply didn't say where.
+Free: no job is queued. Make two throwaway workspaces, `s-f129-a` and `s-f129-b`
+(`create_workspace("s-f129-b", use=true)`), so the session is pinned to B. W is a one-step
+workflow `{"id": "s-f129", "variables": {"marker": "<X>"}, "steps": [{"name": "s", "task":
+{"command": "compose_text", "arguments": {"parts": ["variable:marker"]}}}]}`.
+1. `save_workflow("s-f129", workflow=W with marker "B")`, with no `workspace=`.
+2. `save_workflow("s-f129", workflow=W with marker "A", workspace="s-f129-a")`.
+3. `delete_workflow("s-f129", workspace="s-f129-a")`, then `get_workflow("s-f129",
+   variables_only=true)`, still pinned to B.
+4. `delete_workflow("s-f129", workspace="s-f129-a")` again.
+5. `upload_asset(content=<any tiny base64 PNG>, asset_name="px.png", workspace="s-f129-a")`,
+   then the same upload with no `workspace=`.
+6. `delete_asset("uploads/px.png", workspace="s-f129-a")`, then `list_assets(workspace="s-f129-a")`
+   and `list_assets()`.
+7. `delete_workflow("s-f129")` and `delete_asset("uploads/px.png")`, with no `workspace=`.
+expected:
+- 1: `workspace: "s-f129-b"`, `path` under `s-f129-b/workflows/`.
+- 2: `workspace: "s-f129-a"`, `path` under `s-f129-a/workflows/`.
+- 3: the delete returns `workspace: "s-f129-a"`, a `path` under `s-f129-a/workflows/`, and
+  `deleted: true`. `get_workflow` still answers `marker: "B"`.
+- 4: `Unknown workflow`. It never falls through to B's copy.
+- 5: the replies name `s-f129-a` and `s-f129-b` respectively.
+- 6: the delete returns `workspace: "s-f129-a"`, with `path` under `s-f129-a/assets/`. A's listing
+  no longer has `uploads/px.png`. B's (pinned) still lists it with `origin: "workspace"`.
+- 7: both replies name `workspace: "s-f129-b"` and a `path` under it. Omitting `workspace=`
+  follows the pin.
+It is a **finding** if any `workspace=` call touches the pinned workspace, or if a delete reply
+omits `workspace` or `path`.
+cleanup: `use_workspace("regression-smoke")`, then `delete_workspace` both `s-f129-*` with
+`acknowledged_cost=true`.
+metrics: none.
+source: tester, verified in #463 on 2026-09-26 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 3e8bf8d` (mps on Mac-mini.lan).
+
+### S-F130 — a keyed media reference that resolves to null is refused by the free pre-flight; one inside a list is not
+#478: `validate_workflow` passed a `for_each` item whose references held a dict-keyed object
+with a null `from_file`. The run's prepare step then failed with "'ref_b' names an object to
+build but the media it would be built from is null". A null inside a *list* is different: the
+run drops it on purpose, and that is how a template makes a reference optional. Free: no job is
+queued. Every call is `validate_workflow(name="templates/minimax/dialogue-short",
+workspace="regression-smoke", arguments={"shots": [{"name": "s1", "num_frames": 124, "prompt":
+"a man talks", "references": R}]})`, where A = `{"reference_type":
+"variable:subject_reference_type", "from_previous_result": "draw_character_a"}`.
+1. R = `{"ref_a": A, "ref_b": {"reference_type": "variable:subject_reference_type",
+   "from_file": null}}`.
+2. R = `[A, {"reference_type": "variable:subject_reference_type", "from_file": null}]`.
+3. R = `{"ref_a": A, "voice": {"reference_type": "variable:voice_reference_type", "from_file":
+   "variable:character_a_voice"}}`. That variable defaults to null.
+expected:
+- Call 1: `valid: false`, one error at `steps[<n>].pipeline.arguments.references.ref_b.from_file`.
+  Its message names `'ref_b'`, "the media it would be built from is null", and member `shot@s1`.
+- Call 2: `valid: true`, no errors.
+- Call 3: `valid: false`, the same error at `...references.voice.from_file`. A null reached
+  through a `variable:` is caught too.
+It is a **finding** if call 1 or 3 validates, or if call 2 is refused. The template's own default
+shots depend on a null inside a list being dropped silently.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #478 on 2026-09-26 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 3e8bf8d`.
+
 ## Performance
 
 ### S-P001 — default image generation latency

@@ -704,7 +704,7 @@ wait_seconds=55)`. These are CPU-only tasks.
   (`cancel_job`) if it hasn't failed. It is a finding if it tries to connect.
 - (d) Audio site: `analyze_audio` with `audio` set to (a)'s URL.
 - (e) Video site: `get_first_frame` with `video` set to (a)'s URL. First check that `video`
-  accepts a URL (`get_task("get_first_frame")`). If it doesn't, skip this arm and say so.
+  accepts a URL (`get_task(command="get_first_frame")`). If it doesn't, skip this arm and say so.
 - (f) Hop limit: `get_image_size` with `image: "https://httpbin.org/redirect/4"`, and then
   `…/redirect/7`. Also run `/redirect/5` and `/redirect/6`, and record which one first trips the
   limit.

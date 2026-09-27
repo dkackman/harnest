@@ -4518,4 +4518,33 @@ case was written (#435).
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F131 — `shot_dead_air` flags a near-silent gap inside a voiced shot, a room-tone bed clears it, and a quiet-throughout clip is spared
+source: tester, verified in #465 (claude-opus-5-5 via anthropic)
+A gap of digital near-silence between lines inside a shot plays as a dropout when hard-cut, and
+`seam_hole` only looks at the joins. CPU only: two jobs of about 1 s each, plus read-only probes.
+1. `assess_output(name="asset:qa-cast/ep62-episode.mp4")`, then the same with
+   `probe="analyze_shots"`.
+2. `assess_output(name="asset:qa-cast/priya-voice.wav", probe="analyze_shots")`.
+3. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f131", "steps":
+   [{"name": "bed", "task": {"command": "loop_audio", "arguments": {"audio":
+   "asset:uploads/qa-cast/room-bed.wav", "target_frames": 248, "fps": 24}}}, {"name": "mix",
+   "task": {"command": "mix_audio", "arguments": {"audios": ["asset:qa-cast/ep62-episode.mp4",
+   "previous_result:bed"], "gains": [1.0, <g>]}}, "result": {"content_type": "audio/wav",
+   "save": true}}]}, acknowledged_cost=true, wait_seconds=55)` twice: `<g>` = `1.0` (bedded) and
+   `0.0` (bare control). Then `assess_output` on each `mix` file's `output:` reference.
+expected:
+- Step 1: exactly one finding, `shot_dead_air`, severity `warn`, `at.shot: "shot@deflect"`,
+  `at.seconds` about 8.6, `threshold: 0.4`, `value` about 0.75. In `analyze_shots`,
+  `shot@deflect` carries `dead_air_seconds` about 0.75, `dead_air_at` about 8.62 and
+  `dead_air_floor_dbfs` about −77. `shot@accuse` reads `0.0` / `null` / `null`.
+  `rules_applied` includes `shot_dead_air`.
+- Step 2: `rms_dbfs` about −37 and `dead_air_seconds` about 1.6, but **no** finding: the
+  guard skips a shot at or below −30 dBFS.
+- Step 3: the bare control reports `shot_dead_air` at about 8.6 s with a value of about 0.75.
+  The bedded mix reports no finding, with `dead_air_seconds` ≤ 0.4.
+It is a **finding** if step 1 has no `shot_dead_air`, if step 2 fires, if the bedded mix still
+fires, or if the bare control doesn't.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
 ## Performance

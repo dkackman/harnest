@@ -1303,4 +1303,24 @@ local server (mps on Mac-mini.lan) `develop @ eb482ba`: job `880d989470b3` succe
 seamless at 120→121. The implementer proposed the case for smoke. It lives here because it loads LTX-2.5.
 metrics: none.
 
+### M-F038 — a null `lora_model_name` turns an H3 template's turbo LoRA off, and validate says so
+Before #469, nulling the `lora_*` variables of a MiniMax H3 template (`MiniMaxAI/MiniMax-H3`, turbo LoRA
+`lightx2v/Minimax-h3-Turbo`) validated clean. The job then loaded H3 for minutes and died in `load_loras`
+with `float() argument must be ... not 'NoneType'`. The fix treats a null `model_name` as the off switch: the
+entry is skipped, and a null scale or adapter name on a LoRA that does load falls back to its default.
+**Free**: validate only (the paid half, a 28-step no-LoRA run, was confirmed once in #469).
+expected:
+- `validate_workflow(name="templates/minimax/video-with-audio", arguments={"lora_model_name": null})` →
+  `valid: true`, with exactly one warning, which starts `arguments.lora_model_name:` and says the lora is not
+  loaded. `plan.downloads_required` does not list `lightx2v/Minimax-h3-Turbo`.
+- The same call with all five of `lora_model_name`, `lora_weight_name`, `lora_adapter_name`, `lora_scale`,
+  `lora_alpha` set to null → `valid: true`, with the same single warning and no error.
+- The same call with no arguments → `valid: true`, `warnings: []`.
+It is a **finding** if a nulled call returns an error or no warning, or if the default call warns.
+cleanup: none (nothing is queued or written).
+source: tester, verified in #469, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-26 against
+`lem` `develop @ 3e8bf8d`. Job `6e865a125fe1` (all nulls, 28 steps) succeeded in ~9.9 min with a
+`lora_disabled` warning and no `LoRA:` phase. The defaults job `e3d9dd9d3d21` loaded the LoRA with no warning.
+metrics: none.
+
 ## Performance
