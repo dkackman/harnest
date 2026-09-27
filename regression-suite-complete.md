@@ -4803,7 +4803,7 @@ Then add these steps, each saving `application/json` to `final`:
      in-ref"}, {"start": 11.2, "end": 13.6, "text": "hal held-out"}, {"start": 15.0,
      "end": 19.5, "text": "bed only"}]`;
    - `"windows"`: `[{"name": "shot_priya", "start": 0.0, "end": 7.0}, {"name":
-     "shot_join", "start": 6.0, "end": 9.5}, {"name": "shot_hal", "start": 8.0, "end":
+     "shot_join", "start": 4.5, "end": 9.5}, {"name": "shot_hal", "start": 8.0, "end":
      13.5}, {"name": "shot_bed", "start": 15.0, "end": 19.5}]`.
 6. `attr_alt_shape`: the same, except `lines` uses the other accepted shape,
    `{"start_seconds", "duration_seconds"}` (3.3/2.7, 3.8/3.2, 8.0/2.5, 11.2/2.4,
