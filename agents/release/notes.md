@@ -1,8 +1,11 @@
 
 ## This session: draft the release NOTES
 
-Your prompt names the last release's tag and a file listing every issue
-closed as completed since then, one per line with its labels. Write the
+Your prompt names the last release's tag and three files of what shipped
+since then: the issues closed as completed (one per line with its labels),
+the pull requests merged into develop, and the open issues whose commits are
+in this candidate. A PR or an open issue has no closing comment; read its
+commits instead (`git log <tag>..HEAD --grep '#<n>'`, then `git show`). Write the
 body of this release's section of `docs/RELEASING.md` (no `### <version>`
 heading: the driver adds it) to the exact file your prompt names.
 

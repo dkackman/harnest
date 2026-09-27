@@ -152,13 +152,17 @@ stage_freeze() {
 
 stage_check() {
   need_release_issue
-  local sha problems="" board lem started
+  local sha problems="" board lem started unfinished
   sha="$(develop_sha)"
   board="$(classify_issues)" || die "could not read the issue board"
   started="$(gh issue list --repo "$TICKET_REPO" --state open --limit 300 --json number,subIssuesSummary \
     --jq '[.[] | select((.subIssuesSummary.completed // 0) > 0) | .number] | join(" ")')" \
     || die "could not read the features' stages"
   problems="$(printf '%s\n' "$board" | release_board_problems "$REL" "$started")"
+  unfinished="$(git -C "$SOURCE_DIR" log --format='%h %s' origin/master..origin/develop \
+    | release_open_with_commits "$(printf '%s\n' "$board" | cut -f1 | tr '\n' ' ')" \
+        "$(printf '%s\n' "$problems" | sed -n 's/^#\([0-9][0-9]*\) .*/\1/p' | tr '\n' ' ')")"
+  problems="$problems${problems:+${unfinished:+$'\n'}}$unfinished"
   lem="$(lem_at "$sha")" \
     || problems="$problems${problems:+$'\n'}lem runs $lem, not origin/develop ${sha:0:10}"
   git -C "$SOURCE_DIR" merge-tree --write-tree origin/master origin/develop >/dev/null 2>&1 \
@@ -351,9 +355,16 @@ stage_notes() {
   issues="$(gh issue list --repo "$TICKET_REPO" --state closed --limit 300 --search "closed:>=${since%%T*} reason:completed" \
     --json number,title,labels --jq '.[] | "#\(.number) [\([.labels[].name] | join(","))] \(.title)"')"
   printf '%s\n' "$issues" > "$WORK/closed-since-$tag.txt"
+  # What ships without a closed issue: PRs merged into develop (0.5.0's
+  # Mac support was one), and open issues develop carries commits for
+  gh pr list --repo "$TICKET_REPO" --state merged --base develop --limit 200 --search "merged:>=${since%%T*}" \
+    --json number,title --jq '.[] | "PR #\(.number) \(.title)"' > "$WORK/merged-prs-since-$tag.txt" || true
+  git -C "$SOURCE_DIR" log --format='%h %s' "$tag..$sha" \
+    | release_open_with_commits "$(gh issue list --repo "$TICKET_REPO" --state open --limit 300 --json number --jq '[.[].number] | join(" ")')" \
+    > "$WORK/open-with-commits.txt" || true
   rm -f "$out"
   run_release_session notes notes "$RELEASE_NOTES_BUDGET_USD" \
-    "This is a NOTES session for release $version: draft its section of docs/RELEASING.md. The last release is $tag; the issues closed as completed since then are listed one per line in $WORK/closed-since-$tag.txt. Write the section body (no heading) to exactly this file: $out" || true
+    "This is a NOTES session for release $version: draft its section of docs/RELEASING.md. The last release is $tag. What shipped since then is listed one per line in three files: the issues closed as completed in $WORK/closed-since-$tag.txt, the pull requests merged into develop in $WORK/merged-prs-since-$tag.txt, and the issues still open whose commits are in this candidate in $WORK/open-with-commits.txt (describe what their commits ship, and say they are unfinished). Write the section body (no heading) to exactly this file: $out" || true
   [ -s "$out" ] || die "notes: the session wrote nothing to $out"
   wt="$(mktemp -d "${TMPDIR:-/tmp}/release-notes.XXXXXX")"
   git -C "$SOURCE_DIR" worktree add -q --detach "$wt" "$sha"

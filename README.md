@@ -506,9 +506,11 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 - **lem follows develop.** When lem is behind `origin/develop` (merging the notes moves
   it), `check` and the regression gate deploy develop themselves if no loop holds the
   driver lock; a running loop redeploys it each cycle.
-- **The freeze doesn't hide merged work.** `check` fails on an issue the freeze holds
-  whose code is already on develop: a fix awaiting verification or docs review, or a
-  feature being built. Let it finish, or label it `release-blocker` so the loop moves it.
+- **The freeze doesn't hide merged work.** `check` fails on any open issue develop
+  carries commits for (`type(scope): #N` subjects in `master..develop`), whatever its
+  labels say, and on a held fix awaiting verification. Let it finish, label it
+  `release-blocker` so the loop moves it, or withdraw it in a commit whose subject says
+  "withdraw" or "revert" and names `#N`. `notes` gets the same list, plus merged PRs.
 - **Security findings stay off the public tracker.** The review files each one as a
   private draft security advisory, and the release issue gets only their count. `cut`
   refuses while one is a blocker, unless you `accept security`.

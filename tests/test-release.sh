@@ -53,6 +53,23 @@ has "board: an open blocker" "#44 is open work in implementer:fix" "$problems"
 has "board: a feature mid-build" "#46 is a feature with stages merged" "$problems"
 eq "board: held and parked issues are not problems" "" "$(printf '%s\n' "$board" | grep -E '^4[015]' | release_board_problems 40)"
 
+# --- commits: an open issue develop carries commits for ships unfinished
+log="$(printf '%s\n' \
+  "a1 fix(tasks): #70 - withdraw the upscaler (#71) for 0.9.0" \
+  "b2 fix(result): #71 - a missing property is an error" \
+  "c3 feat(tasks): #71 - the upscaler" \
+  "d4 feat(templates): #72 - expose limit" \
+  "e5 fix(mcp): #73 - already flagged" \
+  "f6 fix: #74 - closed and verified" \
+  "g7 docs: mention #75 in passing")"
+unfinished="$(printf '%s\n' "$log" | release_open_with_commits "70 71 72 73 75" "73")"
+eq "commits: one line per unfinished open issue" 2 "$(printf '%s\n' "$unfinished" | grep -c .)"
+has "commits: the withdrawal itself, until it is verified" "#70 is open, but develop carries its commits" "$unfinished"
+has "commits: a stage merged under an old plan" "#72 is open, but develop carries its commits (latest d4 feat(templates): #72" "$unfinished"
+eq "commits: a withdrawn issue is not" "" "$(printf '%s\n' "$unfinished" | grep '#71 ' || true)"
+eq "commits: an issue named only in passing is not" "" "$(printf '%s\n' "$unfinished" | grep '#75 ' || true)"
+eq "commits: without its withdrawal it is" "#71" "$(printf '%s\n' "$log" | grep -v withdraw | release_open_with_commits "71" | cut -d' ' -f1)"
+
 # --- findings: exactly the shape, or the stage fails
 f="$T/findings.json"
 echo '[{"area":"security","severity":"blocker","security":true,"title":"t","file":"a.py:1","detail":"d"}]' > "$f"

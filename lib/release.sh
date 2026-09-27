@@ -82,6 +82,35 @@ release_board_problems() {
   '
 }
 
+# release_open_with_commits <open issue numbers> [<numbers already flagged>]
+# stdin: `git log --format='%h %s' origin/master..origin/develop`.
+# stdout: one line per open issue that develop carries commits for, which
+# ships unfinished whatever its labels say: a stage parked with Don after
+# failed verifications, a stage merged under an older plan. A commit is an
+# issue's when its subject starts `type(scope): #N` (the implementer's
+# convention). An issue a later commit withdraws or reverts, naming it as
+# `#N` in a subject that says so, is not flagged.
+release_open_with_commits() {
+  awk -v open=" $1 " -v flagged=" ${2:-} " '
+    { subj = $0; sub(/^[^ ]+ /, "", subj) }
+    match(subj, /^[a-z]+(\([^)]*\))?!?: #[0-9]+/) {
+      n = substr(subj, RSTART, RLENGTH); sub(/^.*#/, "", n)
+      if (!(n in first)) { first[n] = $1 " " subj; order[++k] = n }
+    }
+    tolower(subj) ~ /withdraw|revert/ {
+      s = subj; sub(/^[a-z]+(\([^)]*\))?!?: #[0-9]+/, "", s)
+      while (match(s, /#[0-9]+/)) { withdrawn[substr(s, RSTART + 1, RLENGTH - 1)] = 1; s = substr(s, RSTART + RLENGTH) }
+    }
+    END {
+      for (i = 1; i <= k; i++) {
+        n = order[i]
+        if (index(open, " " n " ") && !index(flagged, " " n " ") && !(n in withdrawn))
+          print "#" n " is open, but develop carries its commits (latest " first[n] ")"
+      }
+    }
+  '
+}
+
 # release_findings_valid <file>
 # A review session's findings: a JSON array of objects with area, severity
 # (blocker | follow-up), security (bool), title, file, detail. True when the
