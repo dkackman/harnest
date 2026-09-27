@@ -626,6 +626,44 @@ A hole here goes to `scripts/file-advisory.sh`, not a public issue.
 cleanup: none (validation only, no job should exist; delete any that does).
 metrics: none.
 
+### SE-F039 — `upscale_h3_latents`' `model_name`/`weight_name` hold the repo-id and weight-file boundary
+pending: #499
+source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
+#471 adds a task, `upscale_h3_latents`, that loads a vendored upscaler module inside the task.
+Its default weights are `LBH-123-AI/Minimax_h3_latent_Upscaler`, bf16 safetensors, pinned to
+a revision. The task also takes an optional `model_name` and `weight_name`. The plan says the
+trust boundary is not widened. So these two new arguments must hold what SE-F019 holds for
+`model_name` elsewhere, and must not become a way to unpickle an arbitrary file.
+
+Carrier: the documented base → upscale → decode workflow (M-F039, model-specific suite), as an
+inline workflow. Only the `upscale_h3_latents` step's arguments change.
+
+Probes, all through `validate_workflow`:
+- (a) `model_name` = each of these: `../../etc`, `/etc/passwd`, `http://127.0.0.1:8765/`,
+  `org/name/../../x`, `https://evil.example.com/model`;
+- (b) `weight_name` = each of these: `../../../../etc/passwd`, `/etc/passwd`,
+  `sub/../../x.safetensors`;
+- (c) `weight_name` = a non-safetensors file: `upscaler.pth`, `model.bin`, `x.pt`, `x.ckpt`.
+
+For any probe that validates clean, run it with `run_workflow(..., acknowledged_cost=true,
+wait_seconds=55)` and read `get_job`'s error. The upscale step must refuse before any download
+or unpickling.
+expected:
+- (a) is refused as an invalid repo id, in the same words SE-F019 records ("Repo id must be in
+  the form…"). Validate refuses it and no download entry appears in `list_downloads`.
+- (b) is refused as a path, never resolved against the server's filesystem.
+- (c) is refused by name: only `.safetensors` is accepted. Validate refusing it is best. A
+  run-time refusal is acceptable only if the job fails at the `up` step before anything loads,
+  with no download started.
+- No error echoes a resolved server path.
+- The control, `model_name`/`weight_name` omitted, validates clean.
+It is a **finding** if any (a)/(b) probe validates, or if a `.pth`/`.bin`/`.pt`/`.ckpt`
+weight is fetched or loaded. `get_job_events` shows a fetch or a load phase for it, or
+`list_downloads` gains an entry. A load of a pickle-format weight is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything that appeared.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

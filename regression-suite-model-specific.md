@@ -1323,4 +1323,588 @@ source: tester, verified in #469, model `claude-opus-5-5` via provider `anthropi
 `lora_disabled` warning and no `LoRA:` phase. The defaults job `e3d9dd9d3d21` loaded the LoRA with no warning.
 metrics: none.
 
+### M-F039 — `upscale_h3_latents` and `decode_h3_latents` are listed and documented, and the documented workflow validates
+pending: #499
+source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (`LBH-123-AI/Minimax_h3_latent_Upscaler` for the upscaler).
+Stage 1 of #471 adds two tasks and ships an inline workflow that composes them (in a
+WORKFLOW_GUIDE paragraph or a task docstring). This case is free: discovery and validation only.
+Steps:
+1. `list_tasks`. Then `get_task("upscale_h3_latents")` and `get_task("decode_h3_latents")`.
+2. Find the documented workflow: `list_guides`, then `get_guide` on the section naming
+   `upscale_h3_latents`. If no guide section names it, use the task description from step 1.
+3. `validate_workflow` the documented workflow's JSON exactly as printed. Put it in workspace
+   `regression-model-specific`, with no edits except any `num_frames` the docs say to set.
+expected:
+- `list_tasks` lists both tasks.
+- `upscale_h3_latents` documents these arguments:
+  - `latents`;
+  - `width` and `height`, described as target pixels and multiples of 16;
+  - optional `model_name` and `weight_name`.
+
+  Its description or default names `LBH-123-AI/Minimax_h3_latent_Upscaler`.
+- `decode_h3_latents` documents `latents` and an optional `model_name`.
+- The documented workflow has these steps, in order:
+  - an H3 base step with `latents` in its `output` list;
+  - an `upscale_h3_latents` step at 1344×768;
+  - a `decode_h3_latents` step;
+  - a `pair_audio` step taking `sample_rate` from `previous_result:<base>.sampling_rate`, with
+    `fit: "video"`.
+- It validates `valid: true` with no errors. `plan.estimate` is present.
+It is a **finding** if either task is missing from `list_tasks`, or an argument the plan
+names is missing from its schema. It is also a finding if the documented workflow can't be
+found through `list_guides`/`get_guide` or `get_task`, or doesn't validate as printed.
+cleanup: none (nothing is queued or written).
+metrics: none.
+
+### M-F040 — `upscale_h3_latents` refuses a bad target or non-latent input by naming the argument; boundary scales are accepted
+pending: #499
+source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 + `upscale_h3_latents`.
+The plan's refusals are these:
+- an input that isn't a 5-D, 24-channel latent;
+- a target that isn't a multiple of 16;
+- a per-axis scale outside 1.0–4.0;
+- a target over the 768×1344 canvas cap.
+
+Each must come back as an error naming the argument, not as a raw tensor-shape error or an OOM
+from deep in the model. The base is 960×544 (a 60×34 latent grid).
+Setup: in workspace `regression-model-specific`, `save_workflow` a case workflow
+`m-f040-h3-upscale`. Start from the documented workflow (M-F039), then make these edits:
+- `num_frames` = the smallest 17n+5 value the base's `variable_constraints` allow;
+- the `up` step's `width`/`height` become `variable:width` / `variable:height`, defaulting to
+  1344 / 768;
+- the `up` step's `latents` becomes `variable:latents`, defaulting to
+  `previous_result:base.latents`. Probe (f) overrides it.
+
+Probes. Validate each with `validate_workflow(name=..., arguments={...})`. Run it only when
+validation passes it:
+- (a) `width: 0`;
+- (b) `width: -16`;
+- (c) `width: 1350`, which isn't a multiple of 16;
+- (d) `width: 4000`, which is over 4× and over the cap;
+- (e) `width: 944, height: 544`, which is a downscale (scale 0.98 < 1.0);
+- (f) `latents` = an image: any still image asset from the Fixtures of
+  `regression-suite-complete.md` (`asset:qa-cast/...`). If a variable can't carry a reference
+  there, edit the `up` step's `latents` in an inline copy instead;
+- (g) `width: 1920, height: 1088`, which is inside 4× but over the 768×1344 cap.
+
+Accepted boundaries, which must run to success:
+- (h) `width: 960, height: 544`, scale 1.0 on both axes;
+- (i) `width: 960, height: 768`, one axis at 1.0 and the other at about 1.41.
+
+Before (h) and (i), `validate_workflow` must show the base step in `plan.cached_steps` when an
+earlier run of this saved workflow already produced it. Only the `up` arguments changed, so the
+plan's step cache should serve `base`. Run with
+`run_workflow(..., acknowledged_cost=true, wait_seconds=55)`.
+expected:
+- (a) and (b) are `valid: false` at validate. `task_domains` require >0.
+- Each of (c)–(g) is refused, at validate or when the `up` step runs. The error names the
+  argument (`width`, `height` or `latents`) and says why: a multiple of 16, a scale range or
+  the canvas cap, or not a 5-D 24-channel latent. A refusal at run time must fail the job
+  before `decode`, with that message in `get_job`'s error.
+- (h) and (i) succeed. The mp4 is 960×544 for (h) and 960×768 for (i), with the base's frame
+  count.
+- The second and later runs show `base` in `plan.cached_steps` and don't re-run it. Check
+  `get_job_events`: there are no base denoise events.
+It is a **finding** if:
+- any of (c)–(g) queues and fails with a raw shape error, a CUDA OOM or a message that
+  doesn't name the argument;
+- any of (c)–(g) succeeds;
+- (h) or (i) is refused;
+- a re-run with only `up`'s arguments changed re-denoises `base`.
+cleanup: `delete_output(job_id=...)` for every job; `delete_workflow("m-f040-h3-upscale")`.
+metrics: none.
+
+### M-F041 — the documented base → upscale → decode → pair_audio workflow renders 1344×768 with the base's frames, colour and audio
+pending: #499
+source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va at 960×544 + `upscale_h3_latents` +
+`decode_h3_latents` + `pair_audio`.
+This is the stage's positive run. It checks two things:
+- the upscale is real: 1344×768, not 960×544 resized;
+- decode normalization is right. A wrong one shows up as a colour cast or a washed-out
+  picture.
+
+Steps:
+1. In workspace `regression-model-specific`, `save_workflow` the documented workflow (M-F039)
+   as `m-f041-h3-upscale`, with `num_frames` 124.
+2. Add a second output from the base: a saved mp4 of the base's own `videos`, with its
+   audio. This is the reference.
+3. Add a step `ident` that runs `decode_h3_latents` on `previous_result:base.latents`
+   directly, without the upscale.
+4. `run_workflow(name="m-f041-h3-upscale", acknowledged_cost=true, wait_seconds=55)`, then
+   `wait_for_job` until it is done.
+5. Look at both videos with `get_output_frames` at the same 3–4 moments (start, 1/3, 2/3,
+   end). Look at `ident`'s output too. Compare the audio with `get_output_audio`.
+6. Note decode peak VRAM from `get_job_events` (the `decode` step's memory reading), or from
+   `get_memory` right after the job if events don't carry one.
+expected:
+- The job succeeds.
+- The upscaled mp4 is 1344×768, has a `frame_count` equal to the base mp4's (124 at 24 fps),
+  and has 32000 Hz audio.
+- Its audio duration matches the base's to within one video frame, and it sounds the same:
+  the same speech or sound, at the same level.
+- Its frames show the base's content, sharper or equal. Colours match the base's, with no
+  cast. Contrast and black level match, and nothing is washed out.
+- `ident` gives a 960×544 video whose frames match the base's own decode.
+It is a **finding** if:
+- the dimensions or frame count differ;
+- the audio is missing, silent, or shifted by more than one frame;
+- either decode shows a colour cast, a washed-out or grey picture, or noise;
+- `ident` differs visibly from the base's decode, which means denormalization is wrong
+  regardless of the upscaler.
+cleanup: `delete_output(job_id=...)`; `delete_workflow("m-f041-h3-upscale")`.
+metrics: `latency_s` (the whole job, from `get_job`), `upscale_s` and `decode_s` (per-step
+durations from `get_job_events`), `decode_peak_vram_gb`. Record them in
+`regression-perf/M-F041.jsonl` with condition `124f-960x544-to-1344x768`. The first run seeds
+the file. Flag a reading more than 50% over the median.
+
+### M-F042 — `templates/minimax/upscale-preview` is a catalog shot with a cost, renders 1344×768, and leaves the other minimax entries unchanged
+pending: #500
+source: tester, spec for #500 from #471's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 + `upscale_h3_latents` (template `templates/minimax/upscale-preview`).
+Stage 2 of #471 adds the template and one line in the `minimax-h3` skill, and changes nothing
+else. The baseline for the existing minimax entries was captured on 2026-09-26, before the
+stage. Two examples from it:
+- `templates/minimax/video-with-audio` has cost 6.6;
+- `templates/minimax/video-with-audio-768p` has cost 9.87, with `variable_constraints` num_frames
+  "17*n+5, 124-345, rounds up".
+
+The case compares every minimax entry except the new one against the same entry on
+`origin/develop` *before* #500 merged. If the regression run has no stored copy, compare
+against the entry's own `get_workflow` and the skill's stated defaults.
+Steps:
+1. `list_workflows(shape="shot")`.
+2. `get_workflow("templates/minimax/upscale-preview")`.
+3. `validate_workflow(name="templates/minimax/upscale-preview")` with no arguments.
+4. `run_workflow(name="templates/minimax/upscale-preview", acknowledged_cost=true,
+   wait_seconds=55)`, in workspace `regression-model-specific`. Then `wait_for_job`.
+5. Read the `minimax-h3` skill (plugin `dw`).
+expected:
+- In step 1, `templates/minimax/upscale-preview` is listed with a numeric cost. Its
+  `variable_constraints` give num_frames as 17n+5.
+- In step 1, every other `templates/minimax/*` entry is unchanged: name, cost, shape, traits,
+  `variable_constraints` and description.
+- The workflow has `final`/`intermediate` subfolders, and its latents are not saved.
+- Step 3 is `valid: true`, with a `plan.estimate` whose `basis` is `catalog`.
+- Step 4 succeeds with one mp4 under `final/`. It is 1344×768 and carries audio.
+- In step 5, the skill's list of tested combinations has one new line naming
+  `upscale-preview`. The skill's defaults (resolution, frames, steps, guidance) read as before.
+It is a **finding** if:
+- the template is missing from `shape="shot"`, or has no cost;
+- its estimate `basis` isn't `catalog`;
+- the run doesn't produce 1344×768 under `final/`;
+- any other minimax entry's catalog line changed;
+- the skill line is missing, or a default moved.
+cleanup: `delete_output(job_id=...)`.
+metrics: `latency_s` from `get_job`, recorded in `regression-perf/M-F042.jsonl` with condition
+`template-defaults`. The first run seeds it.
+
+### M-F043 — the Ref2VA VRAM ceiling adds a per-reference term: every non-null reference costs, of any kind, and a null one doesn't
+pending: #501
+source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA (`ModularPipeline`, `MiniMaxAI/MiniMax-H3`, `workflow: "ref2va"`)
+via `templates/minimax/reference-to-video`, against its RTX 3090 24 GB `cost` entry.
+Before #479 the template's ceiling (`base_gb` + `bytes_per_voxel` over width × height ×
+num_frames) ignored references, so a shot that OOMs with three references validated clean. Plan v1
+recalibrates it to `base_gb` 16.0, `bytes_per_voxel` 28.71 and a new `gb_per_reference` 1.0, and
+counts each non-null `from_file`/`from_previous_result` reference as 1.0 GB, whatever its kind.
+At 1344x768 its projections are:
+
+| shot | projected | verdict |
+|---|---|---|
+| 209 frames × 2 refs | ~23.8 GB | valid |
+| 175 × 3 | ~23.8 GB | valid |
+| 209 × 3 | ~24.8 GB | refused |
+| 260 × 1 | ~24.2 GB | refused |
+
+The margins are ~0.2 GB, so this case pins the verdicts at those four points. A recalibration that
+flips one is a finding, even if the new numbers are defensible, because the four points are the
+measured OOM/pass evidence the plan fitted to. The exact GB may move by a few hundredths.
+
+The template's `references` list is not a variable: it holds one image reference
+(`from_file: variable:subject`) and one audio reference (`from_file: variable:voice`). A third
+reference needs an inline copy. Free: validate calls only.
+Setup: `get_workflow("templates/minimax/reference-to-video")`. Take its definition as
+**R3**: the same JSON with a third entry appended to the step's `arguments.references`:
+`{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": "variable:subject"}`.
+Leave R3's `vram_estimate` and `cost` exactly as the template has them.
+Steps (all `validate_workflow`, workspace `regression-model-specific`):
+1. `name="templates/minimax/reference-to-video"`, `arguments={"width": 1344, "height": 768, "num_frames": 209}`
+   (2 refs).
+2. `workflow=R3`, the same arguments (3 refs).
+3. `workflow=R3`, `arguments={"width": 1344, "height": 768, "num_frames": 175}`.
+4. `name="templates/minimax/reference-to-video"`, `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}`
+   (1 ref, the image).
+5. The same as step 4 but `{"subject": null}` in place of `"voice": null`, with `voice` left at
+   its default (1 ref, the audio).
+6. `name="templates/minimax/reference-to-video"`, `arguments={"width": 1344, "height": 768, "num_frames": 260}`
+   (2 refs).
+7. `get_workflow("templates/minimax/reference-to-video")`.
+expected:
+- Steps 1 and 3 are `valid: true`, with no error and no warning about VRAM.
+- Step 2 is `valid: false` with exactly **one** VRAM error, at path `arguments`. Its message
+  names:
+  - the product `1344*768*209`;
+  - the reference count (3);
+  - the formula, or at least the per-reference term;
+  - the projected figure (`~24.8 GB`, to within 0.1);
+  - `above the 24 GB declared for RTX 3090`;
+  - `#479`.
+- Steps 4 and 5 are each `valid: false` with the same shape of error: 1 reference, ~24.2 GB. The
+  two projections are **equal**, since an audio reference costs what an image reference costs.
+- Step 6 is `valid: false` (2 refs, ~25.2 GB).
+- Step 7: `vram_estimate` has `gb_per_reference: 1.0` and `base_gb: 16.0`, and its `reason`
+  cites `#479`.
+It is a **finding** if:
+- any of the four table points flips verdict;
+- step 2 reports more or fewer than one VRAM error, or the message omits the reference count or
+  the issue;
+- steps 4 and 5 project different figures (a kind weighted differently, or a null reference
+  counted);
+- step 6 passes, since nulling a reference must be what brings 260 frames down, not something
+  else.
+cleanup: none (nothing is queued or written).
+metrics: none.
+
+### M-F044 — a `for_each` Ref2VA template is checked per member after expansion, and reports one error, for the largest member
+pending: #501
+source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA via `templates/minimax/dialogue-short`, a `for_each` step `shot`
+over `variable:shots`. Each entry has `name`, `num_frames`, `prompt` and `references`.
+Today the template's default `shots` are:
+
+| name | frames | refs |
+|---|---|---|
+| `cold_open` | 124 | 4 |
+| `deflect`, `react`, `button` | 124 | 2 each |
+| `tag` | 141 | 4 |
+
+The 4-ref shots carry two portraits (`from_previous_result`) plus the two voices
+(`variable:character_a_voice`/`character_b_voice`), which default to null.
+
+Before #479 the ceiling was checked against the unexpanded definition, so it never saw a member.
+Plan v1 moves the check after expansion. Each member is checked with its own frames and its own
+non-null reference count. Only one error is reported, for the largest member. Its path is
+`arguments.shots[i]` when the caller supplied `shots`, else `variables.shots[i]`. Its message
+names `shot@<name>`, the frames, the size, the reference count and the formula.
+
+Free: validate calls only. The GB figures below are at the plan v1 calibration: base 16.0,
+28.71 bytes per voxel, 1.0 GB per reference.
+Setup:
+1. `get_workflow("templates/minimax/dialogue-short", variables_only=true)`, and take its `shots`
+   array as **S**.
+2. Take the template's `voice` default URL from `get_workflow("templates/minimax/reference-to-video", variables_only=true)`
+   as **V**.
+3. Build:
+   - **S1**: S with `cold_open.num_frames` set to 209. The rest are unchanged.
+   - **S2**: S1 with `tag.num_frames` also set to 226, which is on the 17n+5 grid.
+Steps (all `validate_workflow`, `name="templates/minimax/dialogue-short"`, workspace
+`regression-model-specific`; every call also passes `"width": 1344, "height": 768`):
+1. Arguments `{"shots": S1, "character_a_voice": V}`. `cold_open` then has 3 non-null refs at 209
+   frames (~24.8 GB). `tag` has 3 at 141 frames (~22.9). The others are 124 frames with 2 or
+   fewer refs.
+2. Arguments `{"shots": S1}`, with voices at their null defaults. `cold_open` then has 2 refs at
+   209 frames (~23.8).
+3. Arguments `{"shots": S2, "character_a_voice": V}`. `cold_open` is ~24.8 and `tag` is 3 refs
+   at 226 frames (~25.2).
+4. The same shape at the template's own defaults, with only the size overridden:
+   `{"character_a_voice": V, "character_b_voice": V}`.
+5. An inline copy of the whole template (`get_workflow` definition) whose `shots` variable
+   default is S1. Validate it as `workflow=<copy>` with `{"character_a_voice": V}`, and with no
+   `shots` argument.
+expected:
+- Step 1 is `valid: false` with exactly **one** VRAM error, at path `arguments.shots[0]`. Its
+  message names:
+  - `shot@cold_open`;
+  - 209 frames and 1344x768 (or the product `1344*768*209`);
+  - 3 references;
+  - ~24.8 GB and the 24 GB RTX 3090 ceiling;
+  - `#479`.
+- Step 2 is `valid: true`, so nulling one reference in the heavy shot clears it.
+- Step 3 is `valid: false` with exactly one VRAM error, at `arguments.shots[4]`, naming
+  `shot@tag` and 226 frames. That is the largest member, even though `cold_open` is also over.
+- Step 4 is `valid: true`, since `tag` at 141 × 4 is ~23.9.
+- Step 5 is `valid: false` with the one error at **`variables.shots[0]`**, naming `shot@cold_open`.
+It is a **finding** if:
+- any over-ceiling member validates clean;
+- more than one VRAM error is reported for one workflow;
+- the error names a member other than the largest;
+- the path is not the `arguments.`/`variables.` form the caller's input dictates;
+- a null voice is counted, which step 2 or 4 refuses;
+- the message lacks the member name or reference count.
+cleanup: none (nothing is queued or written).
+metrics: none.
+
+### M-F045 — the ceiling reads a step's own substituted arguments before the workflow's variables
+pending: #501
+source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, via an inline copy of `templates/minimax/reference-to-video`.
+Plan v1 reads `voxel_variables` (width, height, num_frames) from each step's substituted
+`arguments` first, and falls back to the workflow's variables. So a step that hard-codes
+its frame count is judged by that count, not by the variable, which may no longer feed it.
+Free: validate calls only.
+Setup: `get_workflow("templates/minimax/reference-to-video")`. Build two inline copies with
+`vram_estimate` and `cost` untouched:
+- **L260**: the step's `arguments.num_frames` (today `variable:num_frames`) replaced by the literal
+  `260`.
+- **L124**: the same with the literal `124`.
+Steps (`validate_workflow`, workspace `regression-model-specific`):
+1. `workflow=L260`, `arguments={"width": 1344, "height": 768, "voice": null}`. The variable
+   `num_frames` stays at its default, 124.
+2. `workflow=L124`, `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}`.
+expected:
+- Step 1 is `valid: false` with one VRAM error whose message names 260 frames (the product
+  `1344*768*260`), 1 reference and ~24.2 GB.
+- Step 2 is `valid: true` with no VRAM error. The step runs at 124 frames, whatever the unused
+  variable says.
+It is a **finding** if step 1 passes, since that means the variable was read and the literal
+ignored. It is also a finding if step 2 is refused, which is the same mistake the other way. An
+error path of `arguments` or one naming the step both meet step 1. What matters is the number
+judged.
+cleanup: none.
+metrics: none.
+
+### M-F046 — `run_workflow` refuses a Ref2VA shot over its ceiling before a job exists, `for_each` members included
+pending: #501
+source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA via `templates/minimax/reference-to-video` and
+`templates/minimax/dialogue-short`.
+Plan v1 moves the run-time backstop after expansion too, so the refusal validate gives is also
+what `run_workflow` gives, before anything queues. M-F024 pins the LTX form of that refusal.
+Free if the refusal holds. If a step queues instead, that is the finding: cancel it at once.
+Steps (workspace `regression-model-specific`):
+1. `list_jobs` and note the newest job id.
+2. `run_workflow(name="templates/minimax/reference-to-video", arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}, acknowledged_cost=true)`.
+3. `run_workflow(name="templates/minimax/dialogue-short", arguments=<step 1 of M-F044: S1 + character_a_voice V, 1344x768>, acknowledged_cost=true)`.
+4. `list_jobs` again.
+expected:
+- Steps 2 and 3 each return a refusal:
+  - `status: failed`, `run_id: null`;
+  - an error carrying the same ceiling message `validate_workflow` gives for the same input
+    (M-F043 step 4, M-F044 step 1), including `shot@cold_open` for step 3.
+- Step 4 shows no new queued or running job, and nothing loaded a model.
+It is a **finding** if either call queues a job. It is also one if the refusal comes only after
+the job starts (a loading phase, a job id with events), or if its message differs from
+validate's.
+cleanup: if a job was created, `cancel_job` it at once, then `delete_output(job_id=...)`.
+Otherwise none.
+metrics: none.
+
+### M-F047 — every H3 template still validates at its defaults, the Ref2VA templates declare the per-reference term, and the LTX ceiling is untouched
+pending: #501
+source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: every `templates/minimax/*` entry, plus LTX-2.5 `templates/ltx2/text-to-video`.
+Plan v1 gives `vram_estimate` blocks to:
+- `dialogue-short`, `music-video` and `composable-references`, which had none;
+- `reference-to-video`, which it recalibrates.
+
+It leaves the T2VA/FL2VA templates as they were. A tighter ceiling that refuses a template's
+own defaults would break the catalog. Free: listing, `get_workflow` and validate calls only.
+Steps:
+1. `list_workflows()`, and collect every `templates/minimax/*` name.
+2. For each one, `validate_workflow(name=<it>)` with no arguments.
+3. `get_workflow` on `templates/minimax/reference-to-video`, `dialogue-short`, `music-video`
+   and `composable-references`.
+4. `get_workflow("templates/minimax/video-with-audio")` and
+   `get_workflow("templates/minimax/video-with-audio-768p")`.
+5. `validate_workflow(name="templates/ltx2/text-to-video", arguments={"num_frames": 900})` and
+   `arguments={"num_frames": 121}`.
+expected:
+- Step 2: every H3 template is `valid: true` with no VRAM error. Existing unrelated warnings,
+  such as no seed, are fine.
+- Step 3: all four carry a `vram_estimate` with a `gb_per_reference` (1.0 at the plan v1
+  calibration) and `voxel_variables` covering width, height and num_frames.
+  `composable-references` counts its `motion` video reference like any other.
+- Step 4: the T2VA templates' `vram_estimate` is unchanged from before #479. Per M-F026 that
+  means no `gb_per_reference` is required, and the 768p breakpoint is between 277 and 294
+  frames.
+- Step 5: 900 frames is still `valid: false`, with the two co-reported errors M-F022 pins. 121
+  is still `valid: true`.
+It is a **finding** if any H3 template's defaults are refused, if one of the four lacks the
+per-reference term, or if the T2VA or LTX ceilings moved.
+cleanup: none.
+metrics: none.
+
+### M-F048 — `vram_estimate.gb_per_reference` is an optional non-negative number in the schema, and omitting it means no per-reference term
+pending: #501
+source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, using R3 from M-F043: the inline reference-to-video copy with
+three references.
+Plan v1 adds `gb_per_reference` as an optional schema field, a number ≥ 0. The edges are the
+field's absence, zero, and a negative value. Free: schema and validate calls only.
+Steps:
+1. `get_schema` (the section covering a workflow's `vram_estimate`).
+2. `validate_workflow(workflow=R3 with vram_estimate.gb_per_reference: -1, arguments={"width": 1344, "height": 768, "num_frames": 209})`.
+3. The same with `gb_per_reference: 0`.
+4. The same with the `gb_per_reference` key removed.
+5. The same with `gb_per_reference: "1.0"` (a string).
+expected:
+- Step 1 lists `gb_per_reference` under `vram_estimate`: optional, numeric, minimum 0.
+- Step 2 is `valid: false` with a schema error at a path ending `vram_estimate.gb_per_reference`.
+- Steps 3 and 4 are `valid: true` with no VRAM error: 16.0 + ~5.8 GB is ~21.8 GB, under 24.
+- Step 5 is `valid: false` with a type error at the same path.
+It is a **finding** if:
+- a negative value or a string is accepted;
+- an absent or zero term still adds per-reference GB (step 3 or 4 refused);
+- the schema doesn't document the field.
+cleanup: none.
+metrics: none.
+
+### M-F049 — a copied Ref2VA workflow with no ceiling of its own inherits the catalog's, as a warning naming the source template
+pending: #502
+source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, via an inline copy of `templates/minimax/reference-to-video`
+with no `vram_estimate` and no `cost`.
+This is how #478's author worked: copy a template, drop its cost block, and validate clean
+into an OOM. Plan v1 indexes the catalog by pipeline identity: pipeline type, plus
+`from_pretrained_arguments.model_name`, plus `.workflow`. A workflow with no `vram_estimate`
+whose step matches an identity gets a **warning**, never an error. The warning (e.g.
+`vram_projection_inherited`) names the source template, gives the projection, and says the
+config may differ.
+
+Free: validate calls only.
+Setup: build **N3** from R3 (M-F043: the inline copy with 3 references) by deleting its
+top-level `vram_estimate` and `cost`.
+Steps (`validate_workflow(workflow=N3, ...)`, workspace `regression-model-specific`):
+1. `arguments={"width": 1344, "height": 768, "num_frames": 209}` (3 refs, ~24.8 GB).
+2. `arguments={"width": 1344, "height": 768, "num_frames": 175}` (~23.8 GB).
+3. `arguments={"num_frames": 124}` (960x544, the template's size).
+4. `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}` (1 ref, ~24.2).
+expected:
+- Step 1 is **`valid: true`** with exactly one inherited-ceiling warning. It names:
+  - `templates/minimax/reference-to-video`;
+  - the projected GB (~24.8), the 24 GB it is over, and the reference count;
+  - that the copy's config may differ from the template's.
+
+  Any other warning, such as no seed, stays as it is today.
+- Steps 2 and 3 carry no inherited-ceiling warning.
+- Step 4 carries the warning at ~24.2 GB.
+It is a **finding** if:
+- step 1 is refused, since an inherited ceiling must never be an error;
+- step 1 has no warning, or its warning doesn't name the source template;
+- an under-ceiling point warns;
+- the warning ignores references (step 1 silent while step 4 warns).
+cleanup: none.
+metrics: none.
+
+### M-F050 — the inherited-ceiling warning on a `for_each` Ref2VA workflow names the heavy member
+pending: #502
+source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, via an inline copy of `templates/minimax/dialogue-short` with
+no `vram_estimate` and no `cost`. It is shaped like the #478 repro: a `for_each` over
+`variable:shots` with `"references": "item:references"`.
+Plan v1's warning follows stage A's expansion: each member is judged, and the warning names the
+member.
+
+Free: validate calls only.
+Setup: `get_workflow("templates/minimax/dialogue-short")`. Build **ND** by deleting the top-level
+`vram_estimate` and `cost`. S1 and V are as in M-F044.
+Steps (`validate_workflow(workflow=ND, ...)`):
+1. `arguments={"width": 1344, "height": 768, "shots": S1, "character_a_voice": V}`.
+2. `arguments={"width": 1344, "height": 768, "shots": S1}`, with the voices null.
+expected:
+- Step 1 is `valid: true` with exactly one inherited-ceiling warning:
+  - it names `shot@cold_open` (or sits at path `arguments.shots[0]`), and 209 frames, 3
+    references and ~24.8 GB;
+  - it names a catalog template with the ref2va identity as its source. The plan names
+    `reference-to-video` for the single-shot copy. Any `templates/minimax/*` Ref2VA template
+    meets this, as long as its ceiling is the one the figure was computed from.
+- Step 2 carries no inherited-ceiling warning.
+It is a **finding** if step 1 is refused, carries no warning, warns without naming the member,
+or warns more than once. It is also one if step 2 warns.
+cleanup: none.
+metrics: none.
+
+### M-F051 — an inherited ceiling comes only from the same pipeline identity: T2VA copies get T2VA's, other models get none
+pending: #502
+source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA (`workflow: "t2va"`) and Ref2VA, via inline copies.
+Plan v1 keys the index on pipeline type + `model_name` + `workflow`. So a T2VA workflow never
+borrows the Ref2VA ceiling or its per-reference term, and an identity no template shares gets
+nothing. Free: validate calls only.
+Setup:
+- **NT**: `get_workflow("templates/minimax/video-with-audio-768p")` with its top-level
+  `vram_estimate` and `cost` deleted.
+- **NM**: N3 (M-F049) with the step's `from_pretrained_arguments.model_name` changed to
+  `"example-org/not-a-catalog-model"`.
+Steps:
+1. `validate_workflow(workflow=NT, arguments={"num_frames": 345})`. M-F026's template refuses
+   this at its own ceiling.
+2. `validate_workflow(workflow=NT)` with no arguments.
+3. `validate_workflow(workflow=NM, arguments={"width": 1344, "height": 768, "num_frames": 209})`.
+expected:
+- Step 1 is `valid: true` with one inherited-ceiling warning. It names a T2VA template
+  (`templates/minimax/video-with-audio-768p` or `video-with-audio`), **never**
+  `reference-to-video`, and its figure counts no references.
+- Step 2 has no inherited-ceiling warning.
+- Step 3 has no inherited-ceiling warning. Any error or warning about the unknown model itself is
+  outside this case.
+It is a **finding** if a T2VA copy's warning names a Ref2VA template or counts references. It is
+also one if NM inherits any ceiling, or if step 1 is refused or silent.
+cleanup: none.
+metrics: none.
+
+### M-F052 — a workflow's own `vram_estimate` wins over the inherited one, stricter or looser
+pending: #502
+source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, via inline copies of `templates/minimax/reference-to-video`.
+Plan v1: an inherited ceiling applies only where the workflow declares none. A declared one is
+judged as in stage A (an error), and brings no inherited warning alongside it. Free: validate
+calls only.
+Setup:
+- R3, as in M-F043: its own `vram_estimate` and `cost` are the template's.
+- **RL**: R3 with `vram_estimate.base_gb` set to `1.0`, so its own ceiling is far looser than the
+  catalog's.
+Steps (`arguments={"width": 1344, "height": 768, "num_frames": 209}` for both):
+1. `validate_workflow(workflow=R3, ...)`.
+2. `validate_workflow(workflow=RL, ...)`.
+expected:
+- Step 1 is `valid: false` with the one stage A VRAM error (M-F043 step 2), and **no**
+  inherited-ceiling warning.
+- Step 2 is `valid: true` with **no** inherited-ceiling warning. The workflow's own looser
+  estimate is what counts.
+It is a **finding** if either step carries an inherited warning, or if step 2 is refused (the
+catalog ceiling applied over a declared one).
+cleanup: none.
+metrics: none.
+
+### M-F053 — an inherited-ceiling warning never blocks `run_workflow`
+pending: #502
+source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, N3 from M-F049.
+Plan v1 has no run-time backstop for inherited ceilings. The warning informs, and the run queues.
+**Paid, briefly:** the job is queued and cancelled at once, so a model load may start. Run it
+only in a full regression pass.
+Steps (workspace `regression-model-specific`):
+1. `run_workflow(workflow=N3, arguments={"width": 1344, "height": 768, "num_frames": 209}, acknowledged_cost=true)`,
+   with no `wait_seconds`.
+2. `cancel_job(job_id=<step 1's>)` immediately.
+expected:
+- Step 1 returns a queued (or running) job with a job id and a `run_id`, not a refusal.
+- Step 2 cancels it.
+It is a **finding** if step 1 is refused on VRAM grounds.
+cleanup: `cancel_job` if still live, then `delete_output(job_id=...)`.
+metrics: none.
+
+### M-F054 — the authoring guidance tells an agent that validate warns with an inherited ceiling
+pending: #502
+source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (the feature's scope), via the server's docs.
+Plan v1 extends the MCP instructions' sentence "A workflow you wrote has no measured cost: quote
+the `models/` entry ...". It now says validate will warn with an inherited ceiling. The
+`workflows` guide's authoring section says the same. Free: docs calls only.
+Steps:
+1. Read the `dw` server's MCP instructions, which a session receives at connect.
+2. `get_guide("workflows", section="Authoring a workflow from an agent")`.
+expected:
+- Both texts state that a workflow with no `vram_estimate` of its own gets a validate
+  **warning** carrying the ceiling inherited from the catalog template with the same pipeline,
+  and that the config may differ.
+- Neither calls it an error or a refusal.
+It is a **finding** if either text is missing the point, or describes it as blocking.
+cleanup: none.
+metrics: none.
+
 ## Performance

@@ -5183,4 +5183,27 @@ skill omit the rule.
 cleanup: `delete_output(job_id=...)` and `delete_asset` for anything step 2 created.
 metrics: none.
 
+### C-F149 — `upload_asset`'s off-server refusal gives a runnable upload-route command for a remote client
+source: tester, verified in #481 (claude-opus-5-5 via anthropic)
+A client on another machine can't name its own file with `file_path`, and the refusal is
+where it learns about the `POST /api/uploads` route. All the calls below are free and are refused.
+1. `upload_asset(file_path="/nonexistent-client-path/x.png", asset_name="qa/x.png", workspace="regression-complete")`.
+2. The same call without `workspace`.
+
+expected:
+- Both calls are refused, and nothing is uploaded.
+- Each refusal contains a curl command with `Authorization: Bearer $DW_API_TOKEN` and
+  `--data-binary @<file>`. The URL is `http://<host>:8765/api/uploads?filename=<name>&asset_name=<folder/name>&workspace=...`.
+- It is a **finding** if the command's host is `127.0.0.1`, `localhost` or `0.0.0.0`. That address is
+  the client's own machine. `<host>` is right, and so is an address that is really external.
+- Step 1 fills in `&workspace=regression-complete`. Step 2 fills in the session's workspace. A
+  `<ws>` placeholder or a missing `workspace=` is a finding.
+- The refusal says the route answers 201 with `path`, the `asset:` reference. It gives the route's
+  limit as 200MB and never says "no size cap". The upload bullet in
+  `get_guide("workflows", section="Authoring a workflow from an agent")` → References → `asset:`
+  carries the same command and the same 200MB limit.
+
+cleanup: none (nothing is created).
+metrics: none.
+
 ## Performance
