@@ -818,14 +818,16 @@ normalizer's target both have four hops to get lost in.
 shared=true)` returns `reference: asset:qa-cast/ep17-score.wav`, and
 `templates/assemble-and-score` run with `shots` = the two 32 kHz C-F001 fixtures,
 `score` = that reference, `sample_rate: 32000`, `fps: 24`, `total_frames: 248`,
-`seam_fade_ms: 80`, `match_levels: "rms"` succeeds with `warnings: []` — in
-particular **no `slice_past_end`**, the score being 10.83 s against a 10.33 s
-cut — and the film reports 248 frames / `duration_seconds` ≈ 10.334 / `fps: 24.0`
+`seam_fade_ms: 80`, `match_levels: "rms"` succeeds with exactly one warning:
+`slice_audio`'s tail-drop (`slice_trimmed_tail`, #342) on the `soundtrack` step,
+the score being 10.83 s against a 10.33 s cut — and in particular **no
+`slice_past_end`** and no `concat_videos` pad or sample-rate warning — and the film reports 248 frames / `duration_seconds` ≈ 10.334 / `fps: 24.0`
 / `sample_rate: 32000` / `channels: 2` and `peak_dbfs` **below 0** (the template
 normalizes to -3 before the mux; the AAC overshoot on this material is a few
 hundredths of a dB, so -3 has ample headroom — cf. C-F024, where a lossy source
 overshoots by ~0.44 dB).
-It is a **finding** if either job warns, if the bed's duration is not exactly
+It is a **finding** if either job warns beyond that one warning (or #342's
+warning goes quiet), if the bed's duration is not exactly
 260/24, if the score is not 32 kHz mono at -3 dBFS (a rate or a gain dropped
 mid-chain), if `keep_output`'s reference is not resolvable by the stored template
 (`asset:` reference errors at validation), if the film's frame count, rate or
@@ -1187,7 +1189,7 @@ asset:qa-cast/ep21-shot2-verdict.mp4]`, `score: "asset:<the score>"`,
 `sample_rate: 32000`, `fps: 24`, `total_frames: 248`, `match_levels: "rms"`,
 `score_gain: 0.0`, `world_gain: 1.0`.
 (a) **Hard cut.** `audio_bleed_ms: 0`, `seam_fade_ms: 80`. `validate_workflow`
-is valid with `plan.steps: 7`; the run succeeds with **no `bleed_join:`
+is valid (the template plans 8 steps; the count is not this case's subject); the run succeeds with **no `bleed_join:`
 warning**, and the film decodes at 248 frames / 24 fps / `sample_rate: 32000`
 / 2 channels / `duration_seconds` 10.333 ± 0.01, `peak_dbfs` strictly below 0.
 (b) **Bleed.** `audio_bleed_ms: 1800`, `seam_fade_ms` omitted. Same
@@ -2318,7 +2320,8 @@ expected:
   `…/s_f061-shot@reply.1-0.0.mp4` — no `final/` entry at all. Copy the names from the
   manifest; do not retype them.
 - (a) → **`valid: true`**, `checked_arguments` containing `shots` (so the references
-  were actually resolved, not skipped), plan of 7 steps.
+  were actually resolved, not skipped), and a `plan` (its step count is the template's,
+  8 today, and not this case's subject).
 - (b) → **`valid: false`**, single error at path **`arguments.shots[0]`** whose message
   names the missing name and the workspace's outputs directory (`Output
   's_f061/<run id>/final/open.mp4' not found under …/regression-complete/outputs`). A
@@ -2678,8 +2681,9 @@ expected:
   `"domain": "positive"`. Before the fix these reported `annotation: null` and
   no domain, which is why a consumer could not tell a negative count from a
   supported trim-from-the-end idiom.
-- **4. At run time, which is the half a validator cannot cover.** `run_workflow`
-  does **not** re-run the static pass, so a bad value reaches the command: run a
+- **4. At `run_workflow`, before any job exists.** `run_workflow` checks caller
+  `arguments` against declared domains too (0.5.0; amended per harnest#32, dw#538:
+  Don, 2026-09-27, 0.5.0 release), so the bad value never reaches the command: run a
   one-step `resample_audio` over a **real** audio track (any track the run has
   to hand — a `generate_speech` wav kept from S-F007, or any asset in the shared
   library) whose step declares `target_sample_rate: "variable:rate"`, with the
@@ -2692,9 +2696,13 @@ expected:
   the resolved JSON body by the time the check fires and gets refused
   pre-flight, at `run_workflow` too, same as part 1. Only a value that arrives
   purely from the caller's `arguments` at run time — never touching the
-  workflow's own declared default — reaches the command unchecked. The job must
-  **fail** — `status: "failed"`, `manifest: []`, `error` naming
-  `target_sample_rate` — and must not succeed. This is the layer that produced
+  workflow's own declared default — used to reach the command unchecked. It is now
+  refused up front: `run_workflow` returns a tool error naming
+  `steps[0].task.arguments.target_sample_rate`, **no job is created**, and
+  `list_gallery(only_orphans=true)` shows no new run directory. A job that queues
+  and then fails is the old, weaker behaviour and a finding; a job that succeeds
+  is the #140 regression. The command's own execution-time check is covered by
+  the dw repo's pytest suite, since a consumer can no longer reach it. This is the layer that produced
   #140's wrong deliverable, since the rate there came from a `variable:` inside
   a chain. (`validate_workflow` given the same `name`/`workflow` and the same
   `arguments` also refuses, because it substitutes caller arguments the same

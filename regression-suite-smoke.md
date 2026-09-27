@@ -210,6 +210,13 @@ For the chain above: `get_gallery_metadata` on the final wav reports
 `duration_seconds: 1.5` and `sample_rate: 24000`, its envelope shows the
 fades and a non-silent level, and the unsaved intermediate steps report empty
 file lists. S-P004 times this same job.
+Loudness is not this case's subject, and an unseeded Bark take is random: a run
+that draws a near-silent take is not a failure as long as the job says so. The
+final wav either decodes audibly, **or** the job carries the near-silent warning
+(`near-silent for a deliverable meant to be heard`). Either passes. A near-silent
+wav with **no** warning is the finding (the #261 regression). Pin `seed` on
+`generate_speech` so S-P004 always times the same take. (Amended per
+harnest#26, dw#530: Don, 2026-09-27, 0.5.0 release.)
 cleanup: delete every intermediate and final output the template
 produced, plus any asset `keep_output`-style steps may have linked, unless
 one is needed for a repro.
@@ -327,17 +334,17 @@ which is why it is in smoke and not `complete`.
 session is not in (S-F013). Check what can then be done with that asset from
 outside: call the asset-listing and asset-deleting tools, from a session in
 `default`, against an asset that lives in `regression-smoke`.
-expected: documents the pin's coverage on the asset side, which as of
-0.4.0-beta.3 is *absent* — `list_assets` and `delete_asset` declare no
-`workspace` parameter, so an asset created by a pinned `keep_output` is invisible
-and undeletable until `use_workspace` switches the session to it. That asymmetry
-is the case's subject, not a pass/fail on its own: record it. It becomes a
-**finding** if it gets worse (a pinned `keep_output` starts writing somewhere
-`use_workspace` cannot reach either), and the case should be rewritten as a
-happy-path pin check if the two tools gain the argument.
-Assert regardless: after `use_workspace("regression-smoke")`, `list_assets` shows
-the asset with `origin: "workspace"` and `delete_asset` removes it — a pinned
-write must never strand a file the API cannot clean up.
+expected: the asset side takes the same per-call pin (#463). From the session in
+`default`, without switching it:
+1. `list_assets()` with no pin does **not** show the asset.
+2. `list_assets(workspace="regression-smoke")` shows it with `origin: "workspace"`,
+   and the session's own pin is unchanged afterwards.
+3. `delete_asset(name, workspace="regression-smoke")` → `deleted: true`,
+   `origin: "workspace"`, and a second pinned `list_assets` no longer shows it.
+It is a **finding** if a pinned call touches `default`, if the unpinned listing
+shows the other workspace's asset, or if a pinned write leaves a file neither a
+pinned call nor `use_workspace` can clean up. (Rewritten from the documented-gap
+form per harnest#27, dw#531: Don, 2026-09-27, 0.5.0 release.)
 cleanup: delete the generated output (pinned) and the kept asset (after
 switching), leaving no asset behind either way.
 source: regression agent, noticed while running S-F013 on 2026-09-13 as model
@@ -826,12 +833,14 @@ expected:
   `valid: false`, `segment '@shot.mp4' starts with '@', and every segment must start with
   a letter, digit or underscore`. The widening admitted one character inside a segment; it
   did not make `@` free.
-- **Shape, not existence.** A well-formed `shot@no_such_entry...` name that is not on disk
-  → `valid: true`. Deliberate, not a gap: whether a run id is still on disk depends on the
-  workspace and on pruning, and validate resolves `arguments` against the workspace but
-  not inline step references. Pinned so a later reader knows this boundary was chosen
-  rather than missed — if it ever *should* become an existence check, that is a new issue,
-  not a silent change to this bullet.
+- **Shape first, then existence.** A well-formed `shot@no_such_entry...` name that is not
+  on disk, written inline in a step or as a declared variable's default → `valid: false`,
+  one error at the reference's own path (`steps[0].task.arguments.video`, or
+  `variables.<name>`), saying the output was not found. Since #494 validate checks that
+  references written into a step exist, not just caller `arguments`. The point kept from
+  the old bullet: a not-found error is distinct from the shape errors in the two bullets
+  above, and a malformed name gets the shape message, never not-found. (Amended per
+  harnest#28, dw#532: Don, 2026-09-27, 0.5.0 release.)
 Traversal in the same reference form is SE-F028, in the security suite, where a boundary
 escape belongs.
 cleanup: delete the run directory the mux wrote (`delete_output` on the run id); the three
@@ -964,8 +973,11 @@ expected:
   registry rather than pattern-matching `type/subtype`; a fix that only rejects
   shapes without a slash passes the first bullet and fails here.
 - **No over-tightening — the legitimate value still passes.** The same document with
-  `content_type: "video/mp4"` → `valid: true`, a `plan` with a fingerprint, and no
-  error at `steps[0].result.content_type`. A suite that only asserts refusals is
+  `content_type: "video/mp4"`, and with its `pair_audio` inputs pointed at media that
+  exist (`asset:qa-cast/ep6-cold-open.mp4` and `asset:qa-cast/ep20-score.wav`; since
+  #494 validate refuses `output:` references that don't exist) → `valid: true`, a
+  `plan` with a fingerprint, and no error at `steps[0].result.content_type`. (Amended
+  per harnest#28, dw#533: Don, 2026-09-27, 0.5.0 release.) A suite that only asserts refusals is
   satisfied by a check that refuses everything.
 - **The check runs after substitution.** The same document with `content_type:
   "variable:ct"`, a declared `ct` variable, and `arguments: {"ct": "video"}` →
@@ -2028,16 +2040,17 @@ workflow `{"id": "s-f129", "variables": {"marker": "<X>"}, "steps": [{"name": "s
 expected:
 - 1: `workspace: "s-f129-b"`, `path` under `s-f129-b/workflows/`.
 - 2: `workspace: "s-f129-a"`, `path` under `s-f129-a/workflows/`.
-- 3: the delete returns `workspace: "s-f129-a"`, a `path` under `s-f129-a/workflows/`, and
-  `deleted: true`. `get_workflow` still answers `marker: "B"`.
+- 3: the delete returns `workspace: "s-f129-a"`, `name: "s-f129"`, `origin: "workspace"` and
+  `deleted: true`, and no server path (#521). `get_workflow` still answers `marker: "B"`.
 - 4: `Unknown workflow`. It never falls through to B's copy.
 - 5: the replies name `s-f129-a` and `s-f129-b` respectively.
-- 6: the delete returns `workspace: "s-f129-a"`, with `path` under `s-f129-a/assets/`. A's listing
+- 6: the delete returns `workspace: "s-f129-a"` and `reference: "asset:uploads/px.png"`. A's listing
   no longer has `uploads/px.png`. B's (pinned) still lists it with `origin: "workspace"`.
-- 7: both replies name `workspace: "s-f129-b"` and a `path` under it. Omitting `workspace=`
-  follows the pin.
+- 7: both replies name `workspace: "s-f129-b"`. Omitting `workspace=` follows the pin.
 It is a **finding** if any `workspace=` call touches the pinned workspace, or if a delete reply
-omits `workspace` or `path`.
+omits `workspace` or carries an absolute server path. Steps 1 and 2 still assert `path` on
+`save_workflow` today; dw#527 may take that out for 0.6. (Delete replies amended per
+harnest#29, dw#534: Don, 2026-09-27, 0.5.0 release.)
 cleanup: `use_workspace("regression-smoke")`, then `delete_workspace` both `s-f129-*` with
 `acknowledged_cost=true`.
 metrics: none.
