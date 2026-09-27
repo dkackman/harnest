@@ -513,7 +513,7 @@ review session in `run-loop.sh` (below), which escalates judgment calls to a hum
 `run-release.sh <version> <stage>` cuts a diffusers-workflow release (roadmap R14). You
 run each stage. The script records each result on the release issue as a marker keyed to
 the exact `origin/develop` commit, so a stage can be rerun or resumed. `cut` refuses until
-every gate has passed on the commit it merges.
+every gate has passed, been accepted, or been carried forward on the commit it merges.
 
 ```sh
 ./run-release.sh 0.5.0 freeze      # opens "Release 0.5.0": the loop now moves only release-blockers
@@ -524,12 +524,25 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 ./run-release.sh 0.5.0 gates       # CI + CodeQL, preflight in a worktree, regression (security complete)
 ./run-release.sh 0.5.0 status      # what passed on which commit
 ./run-release.sh 0.5.0 accept regression "filed #470-#472, all suite drift"
+./run-release.sh 0.5.0 accept check --waive 474,497 "stage 1 ships alone; v2 in 0.6"
 ./run-release.sh 0.5.0 cut --next 0.6.0-alpha.1   # PR, CI, merge, tag, notes, reopen develop, close the freeze
 ```
 
-- **Gates are per commit.** A fix after the gates moves `develop`, and `cut` then wants
-  every gate again on the new commit. `accept <gate> <why>` records that you took an
-  earlier run as good enough. Nothing is inferred from what a commit touched.
+- **Gates are per commit, and some carry.** A fix after the gates moves `develop`, and
+  `cut` then wants the gates again on the new commit. `status`, `gates` and `cut` first
+  carry a gate forward when every commit since its last pass is one it may cross:
+  - the release notes (a commit touching only `docs/RELEASING.md`), for review,
+    security and regression;
+  - a closed, verified `release-blocker`'s fix (`type(scope): #N`), for review and
+    security only. Regression never carries across code.
+
+  The carried marker lists the commits. ci and preflight always rerun, and so does
+  check, since the board moves without develop moving. Anything else takes
+  `accept <gate> <why>`: you took an earlier run as good enough.
+- **Waive a known problem once.** `accept check --waive <n>,... <why>` records a waiver
+  for each issue, and every later `check` drops those issues' problems, so a known,
+  accepted problem (a feature shipping one stage early) doesn't fail check on each new
+  commit. `status` lists the waivers.
 - **lem follows develop.** When lem is behind `origin/develop` (merging the notes moves
   it), `check` and the regression gate deploy develop themselves if no loop holds the
   driver lock; a running loop redeploys it each cycle.
@@ -546,10 +559,10 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 - **Security findings stay off the public tracker.** The review files each one as a
   private draft security advisory, and the release issue gets only their count. `cut`
   refuses while one is a blocker, unless you `accept security`.
-- **Tested offline:** `freeze`, `check`, `accept`, `status` and `cut`'s refusal, plus the
-  marker, findings and notes logic.
-- **Not yet run against real GitHub:** the CI waits, the agent sessions and `cut`'s PR,
-  merge, tag and release steps. Watch the first real release.
+- **Tested offline:** `freeze`, `check`, `accept` and waivers, carrying, `status`, the
+  gates' lock and `cut`'s refusal, plus the marker, findings and notes logic.
+- **Run for real:** 0.5.0 (2026-09-27) went from freeze to published tag with this
+  script. Waivers and carrying came after it, from what it cost (roadmap R14).
 
 | Variable | Default | Controls |
 |---|---|---|

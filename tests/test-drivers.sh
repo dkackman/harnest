@@ -415,5 +415,42 @@ eq  "curate: one audit session" 1 "$(grep -c 'AUDIT session' "$FAKE_CLAUDE_LOG")
    SESSION_RETRY_PAUSE_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
 eq  "retro: exits cleanly" 0 $?
 eq  "retro: one session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+# --- 10. run-release.sh across a moving develop: a waiver holds check, and
+# gates carry across the notes and a verified blocker's fix (last: it moves
+# develop, which every section above reads)
+board '[{"number": 70, "state": "OPEN", "title": "Release 0.9.1", "labels": [{"name": "release"}, {"name": "owner:don"}]},
+        {"number": 71, "state": "OPEN", "labels": [{"name": "owner:don"}, {"name": "feature"}]},
+        {"number": 72, "state": "CLOSED", "labels": [{"name": "release-blocker"}, {"name": "status:verified"}]}]'
+commit_dev() { # commit_dev <file> <subject>: a commit on origin/develop
+  git -C "$T/seed" pull -q origin develop 2>/dev/null; mkdir -p "$T/seed/$(dirname "$1")"
+  echo "$2" >> "$T/seed/$1"; git -C "$T/seed" add -A
+  git -C "$T/seed" -c user.name=t -c user.email=t@t commit -qm "$2"; git -C "$T/seed" push -q origin HEAD:develop 2>/dev/null
+  git -C "$T/src" fetch -q origin; git -C "$T/src" rev-parse origin/develop
+}
+s0="$(commit_dev dw/a.py "feat(tasks): #71 - stage one")"
+printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${s0:0:9}" > "$T/bin/ssh"
+rel 0.9.1 check; rc=$?
+eq  "waive: an open issue with commits on develop fails check" 1 "$rc"
+rel 0.9.1 accept check --waive 71 "stage one ships alone"
+has "waive: recorded as a marker" "harnest:release-waive 71" "$(jq -r '.["o/r"][] | select(.number == 70) | .comments[].body' "$T/board.json")"
+rel 0.9.1 accept review "reviewed"; rel 0.9.1 accept security "reviewed"; rel 0.9.1 accept regression "ran"
+s1="$(commit_dev dw/b.py "fix(mcp): #72 - the blocker")"
+s2="$(commit_dev docs/RELEASING.md "docs(release): 0.9.1 notes")"
+printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${s2:0:9}" > "$T/bin/ssh"
+rel 0.9.1 check; rc=$?
+eq  "waive: the next commit's check passes by itself" 0 "$rc"
+has "waive: and says what it waived" "Waived: #71" "$(jq -r '.["o/r"][] | select(.number == 70) | .comments[].body' "$T/board.json")"
+rel 0.9.1 status
+has "carry: review carried across the blocker fix and the notes" "review      carried" "$(cat "$T/rel.out")"
+has "carry: security too" "security    carried" "$(cat "$T/rel.out")"
+has "carry: regression is not, across a code fix" "regression: not carried from ${s0:0:10}" "$(cat "$T/rel.out")"
+has "carry: the marker lists the commits" "- ${s1:0:10} fix(mcp): #72 - the blocker" "$(jq -r '.["o/r"][] | select(.number == 70) | .comments[].body' "$T/board.json")"
+rel 0.9.1 accept regression "blocker verified"
+s3="$(commit_dev docs/RELEASING.md "docs(release): notes typo")"
+printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${s3:0:9}" > "$T/bin/ssh"
+rel 0.9.1 status
+has "carry: regression carries across the notes alone" "regression  carried" "$(cat "$T/rel.out")"
+has "waive: status lists waivers" "waived      #71" "$(cat "$T/rel.out")"
+
 for f in loop features reg curate retro; do cp "$T/$f.out" "/tmp/claude-501/last-$f.out" 2>/dev/null; done
 finish

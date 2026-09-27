@@ -37,10 +37,10 @@ every role:
   - no `security` label on an issue: a security finding goes to a private
     draft advisory (scripts/file-advisory.sh), never the public tracker,
     where it would publish the exploit path (roadmap R14 item 3)
-  - no issue text carrying a release-gate marker (`harnest:release-gate`):
-    run-release.sh records a gate's result that way on the release issue,
-    and every agent posts as Don's login, so an agent's copy would read as
-    a gate that passed
+  - no issue text carrying a release marker (`harnest:release-gate`, or a
+    waiver, `harnest:release-waive`): run-release.sh records a gate's result
+    and Don's waivers that way on the release issue, and every agent posts
+    as Don's login, so an agent's copy would read as a gate that passed
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -325,7 +325,8 @@ def session_called_mcp(transcript):
         return False
 
 
-RELEASE_MARKER = "harnest:release-gate"
+# a gate result (harnest:release-gate) or a waiver (harnest:release-waive)
+RELEASE_MARKER = "harnest:release-"
 
 
 def carries_release_marker(words):
@@ -436,7 +437,7 @@ def main():
                  "scripts/file-advisory.sh --summary ... --description-file ... --severity ... "
                  "(the implementer: $HARNEST_ROOT/scripts/file-advisory.sh).")
         if carries_release_marker(words):
-            deny("a release-gate marker is run-release.sh's record of a gate Don ran; no agent writes one.")
+            deny("a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one.")
         if is_gh_issue(words, "edit"):
             if role != "curator":
                 owner_rule(words)

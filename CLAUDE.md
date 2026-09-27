@@ -189,10 +189,13 @@ and runs the real drivers end to end. See "Tests" below.
   Don runs: `freeze`, `check`, `review`, `notes`, `gates`, `accept`, `status`, `cut`. It
   records each gate as a marker comment on the release issue, keyed to the full
   `origin/develop` commit (`<!-- harnest:release-gate <gate> <sha> <result> -->`). `cut`
-  refuses unless every gate passed, or was accepted, on the commit it merges. The review
+  refuses unless every gate passed, was accepted, or was carried on the commit it merges.
+  Review, security and regression carry across the notes, and review and security
+  across a verified release-blocker's fix (`release_carry_ok`). `accept check --waive`
+  records `harnest:release-waive` markers that later checks honour. The review
   and notes sessions are read-only and file nothing (`RELEASE_PERMISSION_FLAGS`). The
   driver files their findings: public ones as issues, `release-blocker` for blockers, and
-  security ones only to `logs/release-<v>/security.md`. `guard.py` refuses the marker, and
+  security ones only to `logs/release-<v>/security.md`. `guard.py` refuses both markers, and
   both release labels, from every agent. The `gates` stage needs the driver lock free, so
   stop the loop first. README "Releasing" has the stage list and knobs.
 - `lib/classify.jq` (R12) — the ticket protocol's state machine, in one place. It maps

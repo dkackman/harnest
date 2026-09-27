@@ -1525,6 +1525,11 @@ last release's publish time. What cost the most:
    - Guard: let the Mac tester file a harnest `suite` + `status:needs-approval` request,
      which is the #535 stall.
    - Tests: a guard table row; `release_regression_blocking` over a fixture list.
+   **Items 1 and 2 done (2026-09-27).** A change from the plan: check doesn't carry,
+   because the board moves without develop moving; waivers are what keep it passing.
+   Tested in `tests/test-release.sh` (the carry table, waivers) and `test-drivers.sh`
+   sections 3e, 3f and 10 (lock held through gates, curator held, a waiver, and carrying
+   across a blocker fix and the notes on a moving develop).
 4. **Notes get closing comments.** The driver writes each closed issue's last
    `TICKET_OWNER` comment into the notes input, so the session no longer calls `gh`
    per issue.

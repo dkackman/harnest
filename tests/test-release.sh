@@ -70,6 +70,31 @@ eq "commits: a withdrawn issue is not" "" "$(printf '%s\n' "$unfinished" | grep 
 eq "commits: an issue named only in passing is not" "" "$(printf '%s\n' "$unfinished" | grep '#75 ' || true)"
 eq "commits: without its withdrawal it is" "#71" "$(printf '%s\n' "$log" | grep -v withdraw | release_open_with_commits "71" | cut -d' ' -f1)"
 
+# --- waivers: Don's accepted problems, honoured by every later check
+wv="$(comments "$(release_waive_marker 474)$(printf '\n')$(release_waive_marker 497)" "prose naming harnest:release-waive 12" | release_waivers)"
+eq "waivers: parsed from their markers only" "474 497" "$wv"
+kept="$(printf '%s\n' "#474 is open, but develop carries its commits" "#497 is a stage being built" "#50 waits on verification" "lem runs develop @ 0000000" | release_drop_waived "$wv")"
+eq "waivers: waived issues dropped, the rest kept" "#50 waits on verification|lem runs develop @ 0000000" "$(printf '%s\n' "$kept" | paste -sd'|' -)"
+eq "waivers: #4740 is not #474" "#4740 x" "$(echo "#4740 x" | release_drop_waived 474)"
+
+# --- carry: which commits a gate may be carried across
+tab() { printf '%s\t%s\t%s\t%s\n' "$@"; }
+notes="$(tab aaaaaaaaaaaa 1 "docs(release): 0.9.0 notes" docs/RELEASING.md)"
+fix="$(tab bbbbbbbbbbbb 1 "fix(mcp): #521 - no server path in delete replies" "dw/server/app.py tests/test_app.py")"
+merge="$(tab cccccccccccc 2 "Merge branch 'fix/521' into develop" "")"
+other="$(tab dddddddddddd 1 "feat(tasks): #600 - something new" dw/tasks.py)"
+wide="$(tab eeeeeeeeeeee 1 "docs: notes and a guide" "docs/RELEASING.md docs/guide.md")"
+ok  "carry: the notes merge, for regression" release_carry_ok regression "521" <<<"$notes"
+ok  "carry: a verified blocker's fix and its merge, for review" release_carry_ok review "521" <<<"$(printf '%s\n' "$fix" "$merge" "$notes")"
+fails "carry: never regression across a code fix" release_carry_ok regression "521" <<<"$fix"
+fails "carry: not across an issue that isn't a verified blocker" release_carry_ok security "521" <<<"$other"
+fails "carry: docs beyond the notes are not the notes" release_carry_ok regression "" <<<"$wide"
+eq  "carry: names what stopped it" "dddddddddd feat(tasks): #600 - something new" \
+  "$(printf '%s\n' "$fix" "$other" | release_carry_ok review "521" || true)"
+eq  "carry: a carried marker counts as good" "check ci preflight regression review security" \
+  "$(printf 'review %s carried\nsecurity %s carried\n' $A $A | release_missing_gates $B)"
+ok  "carry: carried is ok on its commit" release_gate_ok review $A <<<"review $A carried"
+
 # --- findings: exactly the shape, or the stage fails
 f="$T/findings.json"
 echo '[{"area":"security","severity":"blocker","security":true,"title":"t","file":"a.py:1","detail":"d"}]' > "$f"

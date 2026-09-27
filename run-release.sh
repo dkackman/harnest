@@ -11,15 +11,22 @@
 #   ./run-release.sh 0.5.0 gates              # CI + CodeQL, preflight, regression (the loop must be stopped)
 #   ./run-release.sh 0.5.0 gates preflight    # just one
 #   ./run-release.sh 0.5.0 accept regression "filed #470-#472, all suite drift"
+#   ./run-release.sh 0.5.0 accept check --waive 474,497 "stage 1 ships alone; v2 in 0.6"
 #   ./run-release.sh 0.5.0 status             # what has passed on which commit
 #   ./run-release.sh 0.5.0 cut --next 0.6.0-alpha.1   # PR, CI, merge, tag, notes, reopen develop, lift the freeze
 #
 # The usual order is freeze, check, review (the loop fixes what it files),
 # notes, then stop the loop (touch logs/stop-after-cycle) and run gates and
 # cut. Every gate is keyed to the full origin/develop commit it ran on. A fix
-# after gates moves develop, and cut then asks for every gate again on the
-# new commit - or for `accept <gate> <reason>`, which records that Don took an
-# earlier run as good enough. Nothing is inferred from what a commit touched.
+# after gates moves develop, and cut then asks for the gates again on the new
+# commit - or for `accept <gate> <reason>`, which records that Don took an
+# earlier run as good enough. Two things save most of that:
+# - review, security and regression carry forward by themselves across
+#   commits release_carry_ok allows (the notes merge for all three; a
+#   verified release-blocker's fix for review and security);
+# - `accept check --waive <n>,...` waives a known problem for the rest of
+#   the release, so check passes on the next commit without another accept.
+# ci and preflight are automatic, so they always rerun.
 #
 # Security findings from `review` never reach the public tracker: each is
 # filed as a private draft security advisory (scripts/file-advisory.sh, R14
@@ -104,6 +111,33 @@ record() {
 **$1: $3** on \`${2:0:10}\` ($(date '+%Y-%m-%d %H:%M')). $4" >/dev/null
   say "$1: $3 on ${2:0:10}"
 }
+# carry_forward <sha>: records `carried` on <sha> for each carryable gate
+# not already good there whose last pass or acceptance is on an ancestor,
+# when release_carry_ok allows every commit since.
+RELEASE_CARRY_GATES="review security regression"
+carry_forward() {
+  local sha="$1" results gate from lines ok bad
+  results="$(gate_results)"
+  ok="$(gh issue list --repo "$TICKET_REPO" --state closed --label release-blocker --limit 200 --json number,labels \
+    --jq '[.[] | select(any(.labels[]; .name == "status:verified" or .name == "status:reviewed")) | .number] | map(tostring) | join(" ")' 2>/dev/null || true)"
+  for gate in $RELEASE_CARRY_GATES; do
+    printf '%s\n' "$results" | release_gate_ok "$gate" "$sha" && continue
+    from="$(printf '%s\n' "$results" | awk -v g="$gate" '$1 == g && ($3 == "pass" || $3 == "accepted" || $3 == "carried") { s = $2 } END { print s }')"
+    [ -n "$from" ] && [ "$from" != "$sha" ] || continue
+    git -C "$SOURCE_DIR" merge-base --is-ancestor "$from" "$sha" 2>/dev/null || continue
+    lines="$(git -C "$SOURCE_DIR" log --format='%H%x09%P%x09%s' "$from..$sha" | while IFS=$'\t' read -r c parents subj; do
+      printf '%s\t%s\t%s\t%s\n' "$c" "$(echo "$parents" | wc -w | tr -d ' ')" "$subj" \
+        "$(git -C "$SOURCE_DIR" diff-tree --no-commit-id --name-only -r "$c" | tr '\n' ' ' | sed 's/ $//')"
+    done)"
+    if bad="$(printf '%s\n' "$lines" | release_carry_ok "$gate" "$ok")"; then
+      record "$gate" "$sha" carried "Carried from \`${from:0:10}\`: every commit since is the release notes or a verified release-blocker's fix$([ "$gate" = regression ] && echo " (regression: the notes only)").
+$(printf '%s\n' "$lines" | awk -F'\t' '{ print "- " substr($1, 1, 10) " " $3 }')"
+    else
+      say "$gate: not carried from ${from:0:10}; it needs a run or an accept on ${sha:0:10} ($(printf '%s\n' "$bad" | head -3 | tr '\n' ';' | sed 's/;$//'))"
+    fi
+  done
+}
+
 # tree_at <sha>: RELEASE_TREE, detached at <sha>, clean
 tree_at() {
   if [ ! -e "$RELEASE_TREE/.git" ]; then
@@ -153,7 +187,7 @@ stage_freeze() {
 
 stage_check() {
   need_release_issue
-  local sha problems="" board lem started unfinished
+  local sha problems="" board lem started unfinished waived
   sha="$(develop_sha)"
   board="$(classify_issues)" || die "could not read the issue board"
   started="$(gh issue list --repo "$TICKET_REPO" --state open --limit 300 --json number,subIssuesSummary \
@@ -164,12 +198,16 @@ stage_check() {
     | release_open_with_commits "$(printf '%s\n' "$board" | cut -f1 | tr '\n' ' ')" \
         "$(printf '%s\n' "$problems" | sed -n 's/^#\([0-9][0-9]*\) .*/\1/p' | tr '\n' ' ')")"
   problems="$problems${problems:+${unfinished:+$'\n'}}$unfinished"
+  waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers)"
+  if [ -n "$waived" ] && [ -n "$problems" ]; then
+    problems="$(printf '%s\n' "$problems" | release_drop_waived "$waived")"
+  fi
   lem="$(lem_at "$sha")" \
     || problems="$problems${problems:+$'\n'}lem runs $lem, not origin/develop ${sha:0:10}"
   git -C "$SOURCE_DIR" merge-tree --write-tree origin/master origin/develop >/dev/null 2>&1 \
     || problems="$problems${problems:+$'\n'}origin/develop does not merge cleanly into origin/master"
   if [ -z "$problems" ]; then
-    record check "$sha" pass "Board clear, lem on develop, and master merges cleanly."
+    record check "$sha" pass "Board clear, lem on develop, and master merges cleanly.${waived:+ Waived: $(printf '#%s ' $waived | sed 's/ $//').}"
   else
     printf '%s\n' "$problems" | sed 's/^/  /'
     record check "$sha" fail "$(printf '\n%s\n' "$problems" | sed 's/^#/- #/; s/^\([a-z]\)/- \1/')"
@@ -258,6 +296,7 @@ stage_gates() {
   # run-regression.sh runs under it (HARNEST_HELD_LOCK).
   acquire_driver_lock run-release
   export HARNEST_HELD_LOCK="$$ run-release"
+  carry_forward "$sha"
   results="$(gate_results)"
   for gate in $gates; do
     if [ "${RELEASE_FORCE:-0}" != 1 ] && printf '%s\n' "$results" | release_gate_ok "$gate" "$sha"; then
@@ -387,17 +426,30 @@ stage_notes() {
 
 stage_accept() {
   need_release_issue
-  local gate="${1:-}" why="${2:-}" sha
-  [ -n "$gate" ] && [ -n "$why" ] || die "usage: $0 $version accept <gate> <why>"
+  local gate="${1:-}" why sha waive="" n markers=""
+  shift || true
+  if [ "${1:-}" = --waive ]; then
+    [ "$gate" = check ] || die "--waive is for check: it names the issues check stops reporting"
+    waive="$(printf '%s' "${2:-}" | tr -c '0-9' ' ')"; shift 2 || true
+    [ -n "${waive// /}" ] || die "usage: $0 $version accept check --waive <n>[,<n>...] <why>"
+  fi
+  why="${1:-}"
+  [ -n "$gate" ] && [ -n "$why" ] || die "usage: $0 $version accept <gate> [--waive <n>,...] <why>"
   case " $RELEASE_GATES_FOR_CUT " in *" $gate "*) ;; *) die "no gate '$gate' ($RELEASE_GATES_FOR_CUT)" ;; esac
   sha="$(develop_sha)"
+  if [ -n "${waive// /}" ]; then
+    for n in $waive; do markers="$markers$(release_waive_marker "$n")"$'\n'; done
+    gh issue comment "$REL" --repo "$TICKET_REPO" --body "$markers**check waives $(printf '#%s ' $waive | sed 's/ $//')** for the rest of $version: $why" >/dev/null
+    say "check: waived $(printf '#%s ' $waive | sed 's/ $//') for the rest of the release"
+  fi
   record "$gate" "$sha" accepted "Accepted by Don: $why"
 }
 
 stage_status() {
   need_release_issue
-  local sha results
+  local sha results waived
   sha="$(develop_sha)"
+  carry_forward "$sha"
   results="$(gate_results)"
   echo "Release $version: issue #$REL, origin/develop ${sha:0:10}"
   local gate state
@@ -408,6 +460,8 @@ stage_status() {
     fi
     printf '  %-11s %s\n' "$gate" "$state"
   done
+  waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers)"
+  [ -z "$waived" ] || printf '  %-11s %s\n' waived "$(printf '#%s ' $waived | sed 's/ $//') (check ignores them)"
   printf '  %-11s %s\n' notes "$(git -C "$SOURCE_DIR" show "$sha:docs/RELEASING.md" 2>/dev/null | grep -q "^### $version\$" && echo present || echo "missing on develop")"
   echo "  open release-blockers: $(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --json number --jq '[.[].number | "#\(.)"] | join(" ")')"
   local flags
@@ -421,6 +475,7 @@ stage_cut() {
   [ "${1:-}" = --next ] && next="${2:-}"
   [ -n "$next" ] || die "usage: $0 $version cut --next <version develop opens next>"
   sha="$(develop_sha)"
+  carry_forward "$sha"
   missing="$(gate_results | release_missing_gates "$sha")"
   [ -z "$missing" ] || die "cut: not passed or accepted on ${sha:0:10}: $missing (see '$0 $version status')"
   blockers="$(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --json number --jq '[.[].number | "#\(.)"] | join(" ")')"

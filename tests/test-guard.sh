@@ -26,6 +26,7 @@ for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label release-blocker'
   row 2 $r "" $none 'gh issue edit 5 --add-label bug,release'
   row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:release-gate ci abc pass -->"'
+  row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:release-waive 474 -->"'
   row 2 $r "" $none 'gh issue create --title "SE-F001 fails" --label owner:implementer,regression,security'
   row 2 $r "" $none 'gh issue edit 5 --add-label security'
 done

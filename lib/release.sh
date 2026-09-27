@@ -8,11 +8,19 @@
 #
 # gate    check | ci | preflight | regression | review | security
 # sha     the full origin/develop commit it ran against
-# result  pass | fail | accepted
+# result  pass | fail | accepted | carried
 #
 # `accepted` is Don's decision recorded by `run-release.sh <v> accept`: a gate
 # that failed or ran on an earlier commit, taken as good enough for this one.
-# A later marker for the same gate and commit replaces an earlier one.
+# `carried` is a pass or acceptance on an earlier commit that the driver
+# carried forward, because every commit since was one it may carry across
+# (release_carry_ok). A later marker for the same gate and commit replaces
+# an earlier one.
+#
+# A known problem Don has accepted for the whole release is a waiver, one
+# marker per issue, which every later `check` honours:
+#
+#   <!-- harnest:release-waive <n> -->
 
 # Whether the notes exist is read from docs/RELEASING.md at the commit being
 # cut, not from a marker: it is a fact of the tree.
@@ -35,10 +43,57 @@ release_gate_results() {
 }
 
 # release_gate_ok <gate> <sha>
-# stdin: release_gate_results output. True when the gate passed, or was
-# accepted, on exactly this commit.
+# stdin: release_gate_results output. True when the gate passed, was
+# accepted, or was carried, on exactly this commit.
 release_gate_ok() {
-  awk -v g="$1" -v s="$2" '$1 == g && $2 == s && ($3 == "pass" || $3 == "accepted") { ok = 1 } END { exit !ok }'
+  awk -v g="$1" -v s="$2" '$1 == g && $2 == s && ($3 == "pass" || $3 == "accepted" || $3 == "carried") { ok = 1 } END { exit !ok }'
+}
+
+# release_waive_marker <n>
+release_waive_marker() {
+  printf '<!-- harnest:release-waive %s -->\n' "$1"
+}
+
+# release_waivers
+# stdin: the release issue's comments, as for release_gate_results.
+# stdout: the waived issue numbers, space-separated.
+release_waivers() {
+  jq -r '.comments[]?.body' \
+    | { grep -oE '<!-- harnest:release-waive [0-9]+ -->' || true; } | tr -cd '0-9\n' \
+    | sort -un | tr '\n' ' ' | sed 's/ $//'
+}
+
+# release_drop_waived <waived numbers>
+# stdin: problem lines as check builds them ("#N ..."). stdout: the lines
+# whose issue is not waived. A line not about one issue is always kept.
+release_drop_waived() {
+  awk -v w=" $1 " '
+    match($0, /^#[0-9]+ /) { n = substr($0, 2, RLENGTH - 2); if (index(w, " " n " ")) next }
+    { print }
+  '
+}
+
+# release_carry_ok <gate> <carryable issue numbers>
+# stdin: one line per commit since the gate last passed, tab-separated:
+#   <sha> <parent count> <subject> <files, space-separated>
+# stdout: each commit the gate may not be carried across. True when there is
+# none. A merge is carried (its own commits are judged in the range too). A
+# commit that touches only docs/RELEASING.md (the notes) is carried for every
+# gate. A commit whose subject names a carryable issue - a closed
+# release-blocker that was verified or reviewed - is carried for review and
+# security, whose findings the loop fixed and verified, but never for
+# regression: the suite is the only check of what that fix did elsewhere.
+release_carry_ok() {
+  awk -F'\t' -v gate="$1" -v ok=" $2 " '
+    $2 > 1 { next }
+    $4 == "docs/RELEASING.md" { next }
+    gate != "regression" && match($3, /^[a-z]+(\([^)]*\))?!?: #[0-9]+/) {
+      n = substr($3, RSTART, RLENGTH); sub(/^.*#/, "", n)
+      if (index(ok, " " n " ")) next
+    }
+    { print substr($1, 1, 10) " " $3; bad = 1 }
+    END { exit bad }
+  '
 }
 
 # release_missing_gates <sha>
