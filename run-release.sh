@@ -351,13 +351,17 @@ stage_notes() {
   sha="$(develop_sha)"
   tree_at "$sha"
   tag="$(git -C "$SOURCE_DIR" describe --tags --abbrev=0 origin/master)"
-  since="$(git -C "$SOURCE_DIR" log -1 --format=%cI "$tag")"
-  issues="$(gh issue list --repo "$TICKET_REPO" --state closed --limit 300 --search "closed:>=${since%%T*} reason:completed" \
+  # From when the last release was published, not its tag's commit: issues
+  # closed between the two are in that release's notes (0.5.0's list carried
+  # two dozen of 0.4.0's)
+  since="$(gh release view "$tag" --repo "$TICKET_REPO" --json publishedAt --jq .publishedAt 2>/dev/null)" \
+    || since="$(git -C "$SOURCE_DIR" log -1 --format=%cI "$tag")"
+  issues="$(gh issue list --repo "$TICKET_REPO" --state closed --limit 300 --search "closed:>=$since reason:completed" \
     --json number,title,labels --jq '.[] | "#\(.number) [\([.labels[].name] | join(","))] \(.title)"')"
   printf '%s\n' "$issues" > "$WORK/closed-since-$tag.txt"
   # What ships without a closed issue: PRs merged into develop (0.5.0's
   # Mac support was one), and open issues develop carries commits for
-  gh pr list --repo "$TICKET_REPO" --state merged --base develop --limit 200 --search "merged:>=${since%%T*}" \
+  gh pr list --repo "$TICKET_REPO" --state merged --base develop --limit 200 --search "merged:>=$since" \
     --json number,title --jq '.[] | "PR #\(.number) \(.title)"' > "$WORK/merged-prs-since-$tag.txt" || true
   git -C "$SOURCE_DIR" log --format='%h %s' "$tag..$sha" \
     | release_open_with_commits "$(gh issue list --repo "$TICKET_REPO" --state open --limit 300 --json number --jq '[.[].number] | join(" ")')" \
