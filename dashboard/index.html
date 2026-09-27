@@ -69,6 +69,13 @@ td a, .link { color: var(--accent); cursor: pointer; text-decoration: none; }
 #log .h { color: var(--hdr); font-weight: 600; } #log .c { color: var(--result); opacity: .7; }
 #log .w { color: var(--bad); }
 .empty { color: var(--muted); font-style: italic; }
+header button { background: var(--code); color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
+  padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
+header button.on { border-color: var(--ok); color: var(--ok); }
+#events { display: flex; flex-direction: column; gap: 6px; }
+#events div { font-size: 13px; border-left: 3px solid var(--accent); padding: 2px 8px; }
+#events div.fail { border-color: var(--bad); } #events div.pass { border-color: var(--ok); }
+#events time { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
 </style>
 </head>
 <body>
@@ -77,12 +84,18 @@ td a, .link { color: var(--accent); cursor: pointer; text-decoration: none; }
   <h1>harnest</h1>
   <span class="muted" id="hsummary">loading…</span>
   <span class="spacer"></span>
+  <button id="notify" title="Browser notifications when a driver exits or a gate result lands">🔔 notify</button>
   <span class="stamp" id="stamp"></span>
 </header>
 <main>
   <section class="card">
     <h2>Running</h2>
     <div class="chips" id="drivers"></div>
+  </section>
+
+  <section class="card" id="events-card" hidden>
+    <h2>Events <span class="link" id="events-clear" style="text-transform:none;letter-spacing:0">clear</span></h2>
+    <div id="events"></div>
   </section>
 
   <div class="row" id="targets"></div>
@@ -138,7 +151,59 @@ async function pollState() {
   }
 }
 
+// ---- events: a driver exiting, a gate result landing ------------------
+let prev = null, unseen = 0;
+const BASE_TITLE = document.title;
+
+function events(st) {
+  const cur = {
+    drivers: new Map(st.drivers.map((d) => [d.pid, `run-${d.driver}.sh ${d.args}`.trim()])),
+    gates: st.release ? st.release.lines : [],
+  };
+  const out = [];
+  if (prev) {
+    for (const [pid, name] of prev.drivers)
+      if (!cur.drivers.has(pid)) out.push({ text: `${name} finished (pid ${pid})`, cls: "" });
+    for (const [pid, name] of cur.drivers)
+      if (!prev.drivers.has(pid)) out.push({ text: `${name} started (pid ${pid})`, cls: "" });
+    const seen = new Set(prev.gates);
+    for (const l of cur.gates)
+      if (!seen.has(l) && /: (pass|fail|accepted)\b| (pass|fail) on /.test(l))
+        out.push({ text: l, cls: /\bfail/.test(l) ? "fail" : "pass" });
+  }
+  prev = cur;
+  for (const e of out) announce(e);
+}
+
+function announce(e) {
+  const when = new Date().toLocaleTimeString();
+  $("events-card").hidden = false;
+  $("events").insertAdjacentHTML("afterbegin", `<div class="${e.cls}"><time>${when}</time>${esc(e.text)}</div>`);
+  if (document.hidden) { unseen++; document.title = `(${unseen}) ${BASE_TITLE}`; }
+  if (LS.get("notify", "") === "1" && "Notification" in window && Notification.permission === "granted")
+    new Notification("harnest", { body: e.text, tag: e.text });
+}
+
+document.addEventListener("visibilitychange", () => { if (!document.hidden) { unseen = 0; document.title = BASE_TITLE; } });
+$("events-clear").addEventListener("click", () => { $("events").innerHTML = ""; $("events-card").hidden = true; });
+
+function paintNotify() {
+  const on = LS.get("notify", "") === "1" && "Notification" in window && Notification.permission === "granted";
+  $("notify").classList.toggle("on", on);
+  $("notify").textContent = on ? "🔔 notifying" : "🔕 notify";
+}
+$("notify").addEventListener("click", async () => {
+  if (!("Notification" in window)) { alert("This browser has no notifications."); return; }
+  if (LS.get("notify", "") === "1" && Notification.permission === "granted") { LS.set("notify", ""); paintNotify(); return; }
+  const p = await Notification.requestPermission();
+  LS.set("notify", p === "granted" ? "1" : "");
+  paintNotify();
+  if (p === "granted") new Notification("harnest", { body: "Notifications on: a driver exiting or a gate result will show here." });
+});
+paintNotify();
+
 function render(st) {
+  events(st);
   // drivers
   const d = st.drivers;
   $("drivers").innerHTML = d.length ? d.map((x) =>
