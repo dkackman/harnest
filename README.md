@@ -533,6 +533,11 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 - **lem follows develop.** When lem is behind `origin/develop` (merging the notes moves
   it), `check` and the regression gate deploy develop themselves if no loop holds the
   driver lock; a running loop redeploys it each cycle.
+- **The gates hold lem.** `gates` takes the driver lock for its whole run, so a loop
+  started mid-gate waits instead of redeploying lem. `run-regression.sh` runs under
+  the lock (`HARNEST_HELD_LOCK` names the holder it may run under). During a freeze the
+  curator holds suite-change requests, and `cut` removes any `stop-after-cycle*` flag
+  left behind.
 - **The freeze doesn't hide merged work.** `check` fails on any open issue develop
   carries commits for (`type(scope): #N` subjects in `master..develop`), whatever its
   labels say, and on a held fix awaiting verification. Let it finish, label it

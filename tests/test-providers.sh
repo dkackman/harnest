@@ -120,7 +120,8 @@ eq  "preflight passes when this machine answers" "ok|mps on $me" "$(tgt local 't
 health "lem"
 has "preflight refuses lem behind a localhost tunnel" "is lem, not this machine" "$(tgt local 'target_preflight && echo ran')"
 rm -f "$T/bin/curl"
-has "preflight refuses when nothing answers" "no dw server answering" "$(tgt local 'target_preflight && echo ran')"
+# port 1, not 8765: a dw server Don runs by hand on this machine must not answer the test
+has "preflight refuses when nothing answers" "no dw server answering" "$(TGT_URL=http://localhost:1/mcp tgt local 'target_preflight && echo ran')"
 eq  "lem commits suites and perf" "regression-suite-*.md regression-perf" "$(tgt lem suite_commit_paths)"
 eq  "local commits only its own perf" "regression-perf/local" "$(tgt local suite_commit_paths)"
 eq  "the local loop also commits a tester's shared case" "regression-suite-*.md regression-perf/local" "$(tgt local 'SUITE_EDITS=1; suite_commit_paths')"
