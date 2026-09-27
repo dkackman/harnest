@@ -1137,7 +1137,7 @@ read by the second). The output decodes at `duration_seconds` 10.33 ± 0.01,
 "templates/assemble-and-score", arguments={shots: [the two C-F001 fixtures],
 score: "asset:<the kept score>", fps: 24, total_frames: 248, seam_fade_ms:
 80, match_levels: "rms"})` — **no `sample_rate`** — is valid with
-`checked_arguments` naming exactly those six and `plan.steps: 7`; run it with
+`checked_arguments` naming exactly those six and `plan.steps: 8`; run it with
 the bound `acknowledged_cost`. It succeeds with `warnings: []` (nothing is
 overridden, so the C-F031 guard has nothing to say, and the score covers the
 cut exactly). The film decodes at **248 frames / 24 fps / `sample_rate:
@@ -1340,7 +1340,7 @@ height: 544}}, result: {content_type: "video/mp4", file_base_name: "clip",
 subfolder: "final"}}`, `seed: 7`, and **no** `cost` block on the parent:
 1. `id: "c-f042-pure"` — that one step only;
 2. `id: "c-f042-mixed"` — the same step plus a second, own step `{name:
-   "frames", task: {command: "extract_frames", arguments: {video:
+   "frames", task: {command: "frame_grid", arguments: {video:
    "previous_result:clip", count: 4}}, result: {content_type: "image/png",
    file_base_name: "frame", subfolder: "frames"}}` with no `cost` anywhere;
 3. `validate_workflow(name: <child>)` — note `plan.estimate.runs` and
@@ -1353,7 +1353,7 @@ expected: (1) `plan.estimate.basis: "observed"`, `partial: false`,
 `unpriced: []`, and `minutes` equal to the child's own `observed_minutes` —
 every declared step is a `workflow` step, so the children's figures are the
 whole story; (2) `basis: "unknown"`, `partial: true`, `unpriced` naming the
-parent — the `extract_frames` step is real declared work nobody priced, and
+parent — the `frame_grid` step is real declared work nobody priced, and
 inheriting the child's number as a trusted total is exactly #242's hazard.
 (4) `basis: "observed"`, `partial: false`, `minutes` equal to (3)'s, and
 `runs` and `measured_on` equal to (3)'s — populated, not null; (5) `basis:
@@ -2413,7 +2413,7 @@ expected:
   "final"`; no other step has a `result` block.
 - Steps 2–3: both jobs succeed. In each manifest the `film` entry has `"subfolder":
   "final"` and its one file name reads `templates/<template>/<run id>/final/<template>-
-  film.6-0.0.mp4` — the `final/` segment present in the name, not just the field. Every
+  film.<n>-0.0.mp4` (`<n>` any integer: an ordinal, not a step count, per dw#458) — the `final/` segment present in the name, not just the field. Every
   other step reports `"files": []` and `"subfolder": ""` (they save nothing; that is
   correct, not a regression).
 - Step 4: the two films are listed, each with `subfolder: "final"` and `folder:
