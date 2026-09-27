@@ -1401,8 +1401,8 @@ and `notes`. Item 3 before the next release that has a security finding.
   advisories are GitHub's intended place but need `gh api` and a new queue source.
 - **Review cost and model.** Today's four areas ran about 630k subagent tokens on Opus.
   Decide whether `review` runs on every release or only past a size threshold.
-- **Whether `release-blocker` also blocks the curator** from applying suite edits
-  during a freeze.
+- ~~**Whether `release-blocker` also blocks the curator** from applying suite edits
+  during a freeze.~~ Yes: see "Plan, in order", item 1, from the 0.5.0 cut.
 
 **Item 3 done (2026-09-25): draft security advisories.**
 - `scripts/file-advisory.sh` files a finding as a private draft advisory. It dedupes by
@@ -1462,6 +1462,78 @@ freeze: the open decision below stands.
 - The whole-diff review earned its cost. It found a token-free server-path leak, a warning
   that fired on every stock join, and docs contradicting code merged the same night. None
   of these was visible to per-issue verification.
+
+**Learned from the 0.5.0 cut (2026-09-27), the first `run-release.sh` run end to end.**
+It worked: freeze to published tag in one day, and `cut` needed no hand repair. Three
+fixes were made during the run: `check` deploys lem when it lags develop, it flags open
+issues develop carries commits for, and `notes` reads merged PRs and counts from the
+last release's publish time. What cost the most:
+- **Re-accepting.** Gates ran on 5 commits (b8fd8625 → c6939806). Every verified
+  blocker fix and the notes merge moved develop, and each move needed check, review and
+  security accepted again: 4 rounds, 12 `accept` calls. `check` failed on all 5 commits
+  for the same known cause (#474 stage 1 shipping without #497).
+- **Regression time.** The gate took 5h34m and $67.68 over 35 Sonnet sessions: security
+  39 min and $9.52, smoke 82 min and $17.85, complete 213 min and $40.31. Complete's
+  chunks averaged 11 min, against 6 for smoke.
+- **Triage after the gate.** Regression filed 12 issues, and 9 of them were stale suite
+  text. The agent said so itself in 7 of the bodies. One (#535, C-F029) had been known
+  since 09-25: the Mac tester's amendment stalled because the guard wouldn't let it file
+  on harnest. One (S-F007) was a flaky case asserting on an unseeded Bark take.
+- **Gaps.** The curator ran during the freeze. The gates checked the driver lock only
+  when they started, so a loop could have started between preflight and regression and
+  redeployed lem. A `stop-after-cycle.local` from the freeze was left behind. The notes
+  session couldn't get closing comments, because `gh --json` doesn't combine with
+  `--comments`.
+
+**Plan, in order.** Each item is its own commit, with tests (`tests/run.sh`).
+1. **Close the freeze's gaps.** Cheap, and each is a safety fix.
+   - `stage_gates` holds the driver lock for the whole run. It runs
+     `run-regression.sh` with the lock marked as already held, so the regression
+     driver doesn't wait on its own parent.
+   - `curator_pass` waits while `release_freeze` is set. This settles the open decision
+     below: yes, because a suite edit mid-freeze changes what the gate tests.
+   - `cut` removes any `stop-after-cycle*` flag once the freeze lifts, and `status` and
+     the dashboard list them.
+   - Tests: a driver test that the curator waits under a freeze, and one that `gates`
+     refuses to start and holds the lock.
+2. **Waive a known problem, and carry a gate forward.**
+   - `accept check --waive #474 "<why>"` records a waiver marker. Later `check` runs
+     drop problems for waived issues, so check passes on the next commit by itself.
+   - A review, security or check result carries from commit S to HEAD when every
+     commit in S..HEAD is safe. Safe means one of three things:
+     - its subject names a `release-blocker` issue that is closed as verified or
+       reviewed;
+     - it touches only `docs/RELEASING.md`;
+     - it's a merge whose own commits are all safe.
+
+     The stage records `<gate> <sha> carried` with the commit list. ci and preflight
+     are cheap and automated, so they always rerun. Regression carries only across
+     docs-only commits; anything else needs an explicit `accept`.
+   - A pure `release_carry_ok` in `lib/release.sh`, table-tested like
+     `release_open_with_commits`. On 0.5.0 this would have taken 12 `accept` calls
+     to 1.
+3. **Sort drift from regressions when filing, not after the gate.**
+   - When a failure's expectation contradicts a change that a closed verified or
+     `breaking-change` issue made on purpose, the regression agent files the harnest
+     suite request itself, naming that issue. It then files the dw issue with a new
+     `suite-drift` label, or files none.
+   - The gate counts only issues without `suite-drift`, and lists the drift separately
+     in its marker comment.
+   - Each suite's "Adding a case" gains one rule: no assertion on the content of an
+     unseeded generative output; seed it, or accept either outcome as long as it's
+     reported (S-F007's rewrite is the model).
+   - Guard: let the Mac tester file a harnest `suite` + `status:needs-approval` request,
+     which is the #535 stall.
+   - Tests: a guard table row; `release_regression_blocking` over a fixture list.
+4. **Notes get closing comments.** The driver writes each closed issue's last
+   `TICKET_OWNER` comment into the notes input, so the session no longer calls `gh`
+   per issue.
+5. **Make the gate a formality: a nightly full run before any freeze.**
+   `run-regression.sh all` from cron against develop when no loop holds the lock (or
+   a `LOOP_NIGHTLY_REGRESSION` hour in `run-loop.sh`). Drift and real regressions then
+   land in the normal loop days before a freeze, and the release gate mostly confirms
+   a clean board. It costs about $68 a night at 0.5.0's suite size, so decide the
+   cadence first: nightly, or only the night before a planned freeze.
 
 **Done when.** A release goes from `run-release.sh check` to a published tag with Don
 typing only the approvals: the freeze, the blocker merges and the cut. `develop` and
