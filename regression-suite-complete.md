@@ -4800,7 +4800,7 @@ Then add these steps, each saving `application/json` to `final`:
    - `"audio": "previous_result:duet"`;
    - `"voices": {"priya": [{"start_seconds": 0.0, "duration_seconds": 3.5}], "hal":
      [{"start_seconds": 7.8, "duration_seconds": 3.2}]}`;
-   - `"lines"`: `[{"start": 0.5, "end": 3.0, "text": "priya in-ref"}, {"start": 3.8,
+   - `"lines"`: `[{"start": 3.3, "end": 6.0, "text": "priya in-ref"}, {"start": 3.8,
      "end": 7.0, "text": "priya held-out"}, {"start": 8.0, "end": 10.5, "text": "hal
      in-ref"}, {"start": 11.2, "end": 13.6, "text": "hal held-out"}, {"start": 15.0,
      "end": 19.5, "text": "bed only"}]`;
@@ -4808,7 +4808,7 @@ Then add these steps, each saving `application/json` to `final`:
      "shot_join", "start": 6.0, "end": 9.5}, {"name": "shot_hal", "start": 8.0, "end":
      13.5}, {"name": "shot_bed", "start": 15.0, "end": 19.5}]`.
 6. `attr_alt_shape`: the same, except `lines` uses the other accepted shape,
-   `{"start_seconds", "duration_seconds"}` (0.5/2.5, 3.8/3.2, 8.0/2.5, 11.2/2.4,
+   `{"start_seconds", "duration_seconds"}` (3.3/2.7, 3.8/3.2, 8.0/2.5, 11.2/2.4,
    15.0/4.5), and `text` is dropped from every line (`text` is optional).
 7. `attr_clip_refs`: the same as `attr`, except `voices` names separate clips,
    `{"priya": "asset:qa-cast/priya-voice.wav", "hal": "asset:qa-cast/hal-voice.wav"}`.
@@ -4862,9 +4862,10 @@ expected:
   `get_task` / `docs/TASKS.md` says fixed windows go). The first starts at 0, each starts
   where the last ended, and the last ends at D (±0.05). The count is `ceil(D / 2)`, and
   only the last window may be shorter than 2.0 s. None is dropped and none runs past D.
-- In `attr_fixed`, the windows lying wholly inside 0–6 s name `priya`, the ones wholly
+- In `attr_fixed`, the windows lying wholly inside 2–6 s name `priya`, the ones wholly
   inside 8–13 s name `hal`, and the ones wholly after 14.5 s have `voice: null` and
-  `uncertain: true`. It reports `separated: true` (the default).
+  `uncertain: true`. It reports `separated: true` (the default). The 0–2 s window may be
+  `voice: null` (the fixture's opening holds one ~0.4 s word).
 - `attr_fixed5` has `ceil(D / 5)` windows of 5 s, covering 0–D in the same way.
 - `attr_dry` completes and reports `separated: false`. Its held-out lines name the right
   voice, as in C-F138.
