@@ -798,13 +798,17 @@ raw events.
   http://127.0.0.1:8780. It's a local, read-only page, served from this machine only, that
   refreshes every few seconds. It shows:
   - the drivers running, with the lock each target holds;
+  - what needs you, each linked to GitHub: `owner:don` issues on both repos, `harness`
+    proposals awaiting approval, and draft security advisories. It re-checks when a session
+    starts or ends in either loop (at most every 30 s, at least every 5 min), and a new item
+    shows in Events;
   - what the current session on lem (`loop.log`) and on the Mac (`loop.local.log`) is doing:
     turns, context, last tool call;
   - the recent sessions, with their cost;
   - a release's gate log, while one is running;
   - a live tail of any file in `logs/`, with a filter.
 
-  It only reads files and `ps`: no gh, no ssh, no lock.
+  It reads files and `ps`, plus read-only `gh` for that list: no ssh, no lock.
 
   <img width="965" height="832" alt="The dashboard during the 0.5.0 release gates: the release and regression drivers running, lem's current regression session, the Mac loop idle, and the gate log" src="https://github.com/user-attachments/assets/f5ad647f-b65c-48b3-8e7b-cd1de3d57441" />
 
