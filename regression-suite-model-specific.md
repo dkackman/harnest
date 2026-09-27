@@ -1765,7 +1765,7 @@ Steps (`validate_workflow(workflow=N3, ...)`, workspace `regression-model-specif
 1. `arguments={"width": 1344, "height": 768, "num_frames": 209}` (3 refs, ~24.8 GB).
 2. `arguments={"width": 1344, "height": 768, "num_frames": 175}` (~23.8 GB).
 3. `arguments={"num_frames": 124}` (960x544, the template's size).
-4. `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}` (1 ref, ~24.2).
+4. `arguments={"width": 1344, "height": 768, "num_frames": 260, "voice": null}` (2 refs, ~25.2).
 expected:
 - Step 1 is **`valid: true`** with exactly one inherited-ceiling warning. It names:
   - `templates/minimax/reference-to-video`;
@@ -1774,7 +1774,7 @@ expected:
 
   Any other warning, such as no seed, stays as it is today.
 - Steps 2 and 3 carry no inherited-ceiling warning.
-- Step 4 carries the warning at ~24.2 GB.
+- Step 4 carries the warning at ~25.2 GB.
 It is a **finding** if:
 - step 1 is refused, since an inherited ceiling must never be an error;
 - step 1 has no warning, or its warning doesn't name the source template;
