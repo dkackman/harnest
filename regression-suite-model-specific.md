@@ -1907,4 +1907,35 @@ It is a **finding** if either text is missing the point, or describes it as bloc
 cleanup: none.
 metrics: none.
 
+### M-F055 — an H3 `for_each` entry's own `references` resolve an item-level `step@entry` ref, and validate's elision of the unread member holds at run
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA, inline `for_each` workflow (ep74 shape). Paid: one job, ~26 min
+(≈6 min load + two shots ≈8 min each).
+Setup: workspace `regression-model-specific`. Inline workflow, `id` `m_f055`, `"seed": 55`,
+variable `shots` = two entries, each with `name`, `num_frames`, `source`, `references`, `prompt`:
+- `accuse`: 124 f, `source={"location":"asset:qa-cast/ep62-shot1-accuse.mp4"}`, references =
+  `[{"reference_type": <MiniMaxH3ImageReference>, "from_file": "asset:qa-cast/priya-portrait.jpg"},
+  {"reference_type": <image>, "from_previous_result": "still@deflect"},
+  {"reference_type": <MiniMaxH3AudioReference>, "from_file": "asset:qa-cast/priya-voice.wav"}]`.
+- `deflect`: 141 f, `source=…ep62-shot2-deflect.mp4`, references = `still@deflect` (image) +
+  `asset:qa-cast/hal-voice.wav` (audio).
+Steps: `still` — `for_each` over `shots`, task `get_last_frame(video="item:source")`, result
+`image/jpeg`, `save: false`. `shot` — `for_each`, the H3 pipeline block copied from
+`templates/minimax/dialogue-short` (read it with `get_workflow`; int4, turbo LoRA, 960×544),
+with `prompt`/`references`/`num_frames` from `item:`, result `video/mp4` fps 24 intermediate.
+`episode` — `concat_videos(videos="gather:shot", fps=24, match_levels="rms", audio_bleed_ms=0,
+seam_fade_ms=30)`, final. `validate_workflow` → bind cost → `run_workflow` → wait.
+expected:
+- validate is `valid: true`, and its plan elides `still@accuse` (nothing reads it, it saves
+  nothing) while keeping `still@deflect`.
+- The job succeeds. `job.warnings` carries the `still@accuse` "did not run" warning, and the
+  manifest lists `still@deflect` (no files), `shot@accuse`, `shot@deflect`, `episode`.
+- The episode (`get_gallery_metadata`) is 265 f at 24 fps, 32 kHz stereo, with
+  `audio_stream_seconds` equal to `duration_seconds` and `media.shots` 124 + 141 at start frame 124.
+It is a **finding** if validate passes and the run fails on resolving `still@deflect` from an
+entry's `references`, if `still@deflect` is elided too, or if the frame counts drift.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-inline`, to
+`regression-perf/M-F055.jsonl`.
+
 ## Performance
