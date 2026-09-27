@@ -222,6 +222,14 @@ smoke's Fixtures lists the asset too.
   `ep62-shot2-deflect.mp4`), the last two joined by 12-frame dissolves. C-F130 scores it
   under `ep15-song.mp3` (44.1 kHz) at `sample_rate` 48000, so a substitute needs a 48 kHz
   soundtrack and carried shots. Shared, read-only, never deleted.
+- `asset:qa-cast/ep11-coldopen.mp4`, above, is also the **crest** fixture for the
+  `normalize_audio(limit=true)` cases C-F132–C-F134 and, with `asset:qa-cast/ep11-bed.wav`
+  (the same 472 frames long) under it, for C-F135. What matters is its gap between true peak
+  and loudness: 2026-09-26 it read `integrated_lufs` −17.43 and `true_peak_dbfs` −0.96, a
+  16.47 dB gap, so with a −3 ceiling no target above about −19.5 LUFS is reachable by gain
+  alone. The cases' target arithmetic (how many dB of limiting a target needs) is derived
+  from that gap; a substitute needs a gap of at least 14 dB, and the cases' targets are then
+  re-derived from its own `get_gallery_metadata` numbers.
 
 ## Functional
 
@@ -4545,6 +4553,634 @@ expected:
 It is a **finding** if step 1 has no `shot_dead_air`, if step 2 fires, if the bedded mix still
 fires, or if the bare control doesn't.
 cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F132 — `normalize_audio(limit=true)` reaches a `target_lufs` the peak ceiling used to cap, under a true-peak ceiling, and leaves the default path alone
+pending: #496
+source: tester, spec for #496 from #474's plan v1 (claude-opus-5-5 via anthropic)
+Without a limiter, one transient sets the peak and `target_lufs` stops at the `peak_dbfs`
+ceiling with `target_lufs_capped` (#467). `limit: true` applies the full loudness gain and
+limits the transients to a **true-peak** (dBTP, 4x oversampled) ceiling instead, with a
+look-ahead on the gain curve only, so the signal is not delayed. The fixture's 16.47 dB
+true-peak-to-loudness gap (see "Fixtures") means −16 LUFS at a −3 ceiling needs about 3.5 dB
+of limiting: past the cap, under the 6 dB `limiter_heavy` line. The unlimited branches are the
+positive control: a case that only checks the limited file passes when the fixture has
+stopped needing a limiter at all. CPU only, seconds.
+1. `get_task("normalize_audio")`.
+2. `get_gallery_metadata("asset:qa-cast/ep11-coldopen.mp4")`, confirming the gap in "Fixtures".
+3. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f132", "steps": [
+   {"name": "capped", "task": {"command": "normalize_audio", "arguments": {"audio":
+   "asset:qa-cast/ep11-coldopen.mp4", "target_lufs": -16, "peak_dbfs": -3}}, "result":
+   {"content_type": "audio/wav", "save": true}},
+   {"name": "capped_false", <same, arguments plus "limit": false>},
+   {"name": "limited", <same, arguments plus "limit": true>},
+   {"name": "limited_mux", "task": {"command": "pair_audio", "arguments": {"video":
+   "asset:qa-cast/ep11-coldopen.mp4", "audio": "previous_result:limited", "sample_rate": 32000,
+   "fit": "video"}}, "result": {"content_type": "video/mp4", "fps": 24, "save": true}}]},
+   acknowledged_cost=true, wait_seconds=55)`. Validate the same inline workflow first; it is
+   free.
+4. `get_job(job_id)` for `warnings`, `get_job_events(job_id)` for the log events, and
+   `get_gallery_metadata` on each saved file (the `limited_mux` one also with `envelope=true`,
+   and the source asset with `envelope=true`).
+expected:
+- Step 1: `parameters` lists `limit`, default `false`, with a description that says it
+  limits to reach `target_lufs` past the ceiling and that `peak_dbfs` is then a true-peak
+  ceiling. `validate_workflow` on step 3's workflow is clean: `limit` is an accepted argument.
+- **Default path unchanged.** `capped` and `capped_false` each carry a `target_lufs_capped`
+  warning naming their step, and each step's log event reads `constraint: "peak_ceiling"`.
+  Their files agree: `integrated_lufs` within 0.05 of each other (about −19.5), `peak_dbfs`
+  within 0.05 (about −3.0). Neither log carries the limiter fields below.
+- **The limited file reaches the target under the ceiling.** `limited`'s file: `integrated_lufs`
+  within 0.5 LU of −16, and `true_peak_dbfs` ≤ −2.9 (−3.0 plus the plan's 0.1 tolerance).
+  `job.warnings` has **no** `target_lufs_capped` and no `limiter_heavy` naming `limited`.
+- **It says what it did.** `limited`'s log event carries `constraint: "limiter"`, `gain_db` > 0
+  (about +1.4, the loudness gain; not the capped −2), `max_gain_reduction_db` > 0 and ≤ 6,
+  `limited_fraction` strictly between 0 and 1, `output_true_peak_dbfs` ≤ −2.9 and `output_lufs`
+  within 0.5 of −16. `output_lufs` and `output_true_peak_dbfs` agree with
+  `get_gallery_metadata`'s reading of the file within 0.2.
+- **No delay, no change of shape.** `limited`'s file is 19.667 s (±0.001), 32000 Hz, 2
+  channels, the same as the source's audio.
+- **The mux of it does not clip.** No `audio_clipped` (or `audio_no_headroom`) warning names
+  `limited_mux`; its `peak_dbfs` is strictly below 0. It is 472 frames, 24 fps, 960×544,
+  19.667 s. Its envelope has the same number of bins as the source's, and the loudest-rms bin
+  and the first bin above −40 dBFS rms are at the same index in both: speech sits where the
+  picture has it. (Per-second bins catch a gross offset only; sample-exact length is the
+  bullet above, and sub-bin alignment is the server's own tests.)
+It is a **finding** if `capped` no longer warns `target_lufs_capped` (the fixture or the
+default path moved), if `capped` and `capped_false` differ, if `limited` misses −16 by more
+than 0.5 LU, if its true peak is over −2.9, if its log reads `peak_ceiling` or lacks a limiter
+field, if its length differs from the source's, or if its mux clips.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F133 — `normalize_audio(limit=true)` warns `limiter_heavy` past 6 dB of reduction, stops at 12 dB with `target_lufs_capped` and `limited: true`, and still holds the ceiling
+pending: #496
+source: tester, spec for #496 from #474's plan v1 (claude-opus-5-5 via anthropic)
+The limiter never reduces by more than 12 dB, so a target past what 12 dB buys stops short and
+says so with the existing warning, now marked as limited; beyond 6 dB it warns that pumping is
+audible. On the fixture (16.47 dB gap): −12 LUFS at −3 needs about 7.5 dB (heavy, not capped);
+−5 needs about 14.5 dB (capped). The ceiling itself is a boundary too: `peak_dbfs: 0` is a
+0 dBTP ceiling, and the limiter must hold it there as well. CPU only, seconds.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f133", "steps": [
+   {"name": "heavy", "task": {"command": "normalize_audio", "arguments": {"audio":
+   "asset:qa-cast/ep11-coldopen.mp4", "target_lufs": -12, "peak_dbfs": -3, "limit": true}},
+   "result": {"content_type": "audio/wav", "save": true}},
+   {"name": "squashed", <same with "target_lufs": -5>},
+   {"name": "full_scale", <same with "target_lufs": -12, "peak_dbfs": 0>}]},
+   acknowledged_cost=true, wait_seconds=55)`.
+2. `get_job`, `get_job_events`, and `get_gallery_metadata` on each file.
+expected:
+- `heavy`: a `limiter_heavy` warning naming the step; **no** `target_lufs_capped`. Log
+  `max_gain_reduction_db` > 6 and ≤ 12. File `integrated_lufs` within 0.5 of −12,
+  `true_peak_dbfs` ≤ −2.9.
+- `squashed`: a `target_lufs_capped` warning naming the step, carrying `limited: true` and
+  `shortfall_lu` > 0 (on the warning or on the step's log event; either placement meets the
+  plan, and the case records which), **and** a `limiter_heavy` warning. Log
+  `max_gain_reduction_db` ≤ 12.05. File `true_peak_dbfs` ≤ −2.9; `integrated_lufs` below −5,
+  within 0.5 of −5 − `shortfall_lu`, and louder than `heavy`'s.
+- `full_scale`: `true_peak_dbfs` ≤ 0.1 and `integrated_lufs` within 0.5 of −12; log
+  `max_gain_reduction_db` about 4.5, so no `limiter_heavy` and no `target_lufs_capped`.
+It is a **finding** if either ceiling is exceeded, if reduction passes 12 dB, if `squashed`
+reaches −5 anyway (the cap is missing) or stops silently (no `target_lufs_capped`), if
+`limited: true` or `shortfall_lu` is missing, or if `limiter_heavy` fires on `full_scale` or is
+missing on `heavy`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F134 — `normalize_audio(limit=true)` touches nothing when the ceiling isn't in the way, holds a true-peak ceiling without `target_lufs`, and passes silence through
+pending: #496
+source: tester, spec for #496 from #474's plan v1 (claude-opus-5-5 via anthropic)
+The limiter must be a no-op when the gain already fits under the ceiling (−22 LUFS on the
+fixture puts its true peak near −5.5), must still read `peak_dbfs` as true peak when only
+peak-normalising, and must not divide by a silent track's zero peak. CPU only, seconds.
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f134", "steps": [
+   {"name": "quiet_false", "task": {"command": "normalize_audio", "arguments": {"audio":
+   "asset:qa-cast/ep11-coldopen.mp4", "target_lufs": -22, "peak_dbfs": -3}}, "result":
+   {"content_type": "audio/wav", "save": true}},
+   {"name": "quiet_true", <same plus "limit": true>},
+   {"name": "peak_false", <audio as above, "peak_dbfs": -3 only>},
+   {"name": "peak_true", <audio as above, "peak_dbfs": -3, "limit": true>},
+   {"name": "silence", "task": {"command": "mix_audio", "arguments": {"audios":
+   ["asset:qa-cast/ep11-coldopen.mp4"], "gains": [0.0]}}, "result": {"content_type":
+   "audio/wav", "save": false}},
+   {"name": "silent_false", "task": {"command": "normalize_audio", "arguments": {"audio":
+   "previous_result:silence", "target_lufs": -16, "peak_dbfs": -3}}, "result":
+   {"content_type": "audio/wav", "save": true}},
+   {"name": "silent_true", <same plus "limit": true>}]},
+   acknowledged_cost=true, wait_seconds=55)`. If a one-track `mix_audio` is refused, use
+   two copies of the asset with `gains: [0.0, 0.0]`; the step only has to make digital
+   silence of the fixture's length.
+2. `get_job`, `get_job_events`, and `get_gallery_metadata` on each saved file.
+expected:
+- `succeeded`.
+- **No-op:** `quiet_true`'s log reads `limited_fraction: 0` and `max_gain_reduction_db: 0`; no
+  `target_lufs_capped` and no `limiter_heavy` names it. Its `integrated_lufs` and
+  `true_peak_dbfs` equal `quiet_false`'s within 0.05, and the LUFS is within 0.5 of −22.
+- **Peak-only:** `peak_true`'s `true_peak_dbfs` ≤ −2.9, and its log reads `limited_fraction`
+  0 (a peak-normalising gain needs no limiting). Its `integrated_lufs` is at or a little
+  below `peak_false`'s (within 0.3; the only difference is true peak vs sample peak), whose
+  `peak_dbfs` is about −3.0.
+- **Silence:** `silent_false` and `silent_true` both succeed with a silent file (same
+  duration as the source, peak reported as silent in the same way on both). `silent_true`
+  carries the same silent-track warning kind(s) as `silent_false`, no `limiter_heavy`, and no
+  log claiming reduction (`limited_fraction`, if present, is 0).
+It is a **finding** if `quiet_true` differs from `quiet_false`, if `peak_true` is over the
+ceiling in true peak, or if either silent step fails, returns non-silence, or warns
+differently from the other.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F135 — `templates/assemble-and-score` exposes `limit`: off by default with the capped result as before, and on it reaches −16 LUFS under the ceiling without clipping
+pending: #497
+source: tester, spec for #497 from #474's plan v1 (claude-opus-5-5 via anthropic)
+Stage 2 carries `limit` (default `false`) to the template's `balanced` step beside
+`target_lufs`. The fixture shot's crest (see "Fixtures") under a quiet bed must still cap at
+−16 without the limiter; that capped control is what makes the limited run mean anything.
+CPU only, three short runs.
+1. `list_workflows(shape="sequence")`, and `get_workflow("templates/assemble-and-score")`
+   for the variable's default.
+2. Common arguments: `{"shots": ["asset:qa-cast/ep11-coldopen.mp4"], "score":
+   "asset:qa-cast/ep11-bed.wav", "total_frames": 472, "score_gain": 0.3, "world_gain": 1.0,
+   "target_lufs": -16}`. `validate_workflow` then `run_workflow(name=
+   "templates/assemble-and-score", workspace=<suite workspace>, arguments=…,
+   acknowledged_cost=<bound from the plan>, wait_seconds=55)` three times: (a) as given,
+   (b) plus `"limit": false`, (c) plus `"limit": true`.
+3. For each: `get_job` warnings, `get_job_events`, and `get_gallery_metadata` on the `film`.
+expected:
+- Step 1: `assemble-and-score`'s `variable_names` include `limit` (and `target_lufs`); its
+  default is `false`. `validate_workflow` is clean for all three argument sets.
+- (a) and (b): each carries `target_lufs_capped` naming `balanced` (if neither does, the mix
+  no longer needs a limiter: lower `score_gain` until (a) caps, and note it; that is a
+  fixture problem, not a finding). Their films agree within 0.05 in `integrated_lufs` and
+  `peak_dbfs`: the default is `false` and means the old behavior.
+- (c): the film's `integrated_lufs` is within 0.5 LU of −16 and its `true_peak_dbfs` is
+  ≤ −2.9 (the plan's ≤ −3.0 plus 0.1). No `audio_clipped` and no `target_lufs_capped` in
+  `job.warnings`. The `balanced` step's log event reads `constraint: "limiter"`.
+- All three films are 472 frames, 24 fps, 960×544, the same `duration_seconds`.
+It is a **finding** if `limit` isn't a variable, if it defaults on, if (a) and (b) differ, if
+(c) misses −16 or exceeds the ceiling after the mux, or if (c) warns `audio_clipped`.
+cleanup: `delete_output(job_id=…)` for all three jobs.
+metrics: none.
+
+### C-F136 — the series-episodes and minimax-music3 skills say when to pass `limit: true`, and that the default is to match downward
+pending: #497
+source: tester, spec for #497 from #474's plan v1 (claude-opus-5-5 via anthropic)
+The plugin has no MCP surface, but its skills are what a driving session reads. Load them
+with the `Skill` tool (`dw:series-episodes`, `dw:minimax-music3`); the plugin tree follows
+`develop`.
+expected:
+- `dw:series-episodes`, in its normalize step and its loudness paragraph: episodes are matched
+  **downward** to a series loudness every episode reaches, by default; `limit: true` is for a
+  series that should sit louder than its most dynamic episode allows (an example such as −16
+  for streaming); a `limiter_heavy` warning means lower the series target. It names
+  `assemble-and-score`'s `limit` variable, or `normalize_audio`'s `limit`, as the way to pass it.
+- `dw:minimax-music3`: one line saying the same for a song master (limit only to sit louder
+  than the song's peaks allow; `limiter_heavy` means aim lower).
+- Neither skill tells an agent to turn `limit` on by default.
+It is a **finding** if either skill lacks the rule, recommends `limit: true` unconditionally,
+or names a variable or warning the template and task don't have (check against C-F135 step 1
+and C-F133's warning names).
+cleanup: none.
+metrics: none.
+
+### C-F137 — `attribute_voices` is a listed command, not an assessment probe, and it must save JSON
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+Stage A adds the task `attribute_voices`. It returns JSON, like the probes, but the plan
+gives `register_command` an explicit `assessment` flag so that a JSON return no longer
+files a task under `assessment`. This case runs nothing and makes no GPU calls.
+1. `list_tasks()`. Expected: `commands` contains `attribute_voices`. `assessment` is
+   still exactly `analyze_seams`, `analyze_shots` and `analyze_sync_drift`: three
+   entries, and `attribute_voices` is not among them.
+2. `get_task("attribute_voices")`. Expected: a schema, not "Unknown task command". It
+   has arguments `audio`, `voices`, `lines`, `windows`, `window_seconds`, `separate`
+   (default `true`) and `device`. The minimum reference length (3 s, named
+   `min_reference_seconds` in the plan) is either an argument or is named in a
+   description. There is **no** model-name argument: the plan fixes htdemucs and ECAPA,
+   so that nothing free-form reaches `torch.hub.load`.
+3. `validate_workflow` on `{"id": "qa-c-f137", "steps": [{"name": "attr", "task":
+   {"command": "attribute_voices", "arguments": {"audio":
+   "asset:qa-cast/priya-voice.wav", "voices": {"a": [{"start_seconds": 0.0,
+   "duration_seconds": 3.5}], "b": [{"start_seconds": 3.8, "duration_seconds": 3.5}]}}},
+   "result": {"content_type": <ct>}}]}`, three times:
+   - with `application/json`, expect `valid: true`;
+   - with `text/plain`, expect `valid: false`, with an error on `steps[0].result` (or on
+     its `content_type`) that names `application/json`;
+   - with `audio/wav`, expect `valid: false` in the same form.
+It is a **finding** if the task is missing from `commands`, if it appears under
+`assessment` or the probe list changed, if `get_task` exposes a model-name argument, or if
+a non-JSON content type validates.
+cleanup: none.
+metrics: none.
+
+### C-F138 — known answer: `attribute_voices` names the right voice for each line and splits a window that straddles the join
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+This is the plan's known-answer check, and the test of its risk that ECAPA, a speech
+encoder, may not tell voices apart. The clip is built from fixtures, so the singer at
+each moment is known. The build runs on the CPU. The attribution loads htdemucs and
+ECAPA, a few GPU-seconds.
+
+**The duet steps.** C-F139 to C-F142 reuse these steps; in each case they come first in
+the same workflow:
+1. `bed`: `loop_audio` `{"audio": "asset:qa-cast/ep20-score.wav", "duration_seconds":
+   20.5}`. This is a music bed, so the separation has work to do.
+2. `hush`: `gain_audio` `{"audio": "asset:qa-cast/hal-voice.wav", "gain_db": -120}`.
+   This gives 6.48 s of effective silence.
+3. `voices_track`: `crossfade_audio` `{"audios": ["asset:qa-cast/priya-voice.wav",
+   "asset:qa-cast/hal-voice.wav", "previous_result:hush"], "crossfade_ms": 10}`.
+4. `duet`: `mix_audio` `{"audios": ["previous_result:voices_track",
+   "previous_result:bed"], "gains": [1.0, 0.5]}`, saved as `audio/wav` to `final`.
+
+The timeline, from the fixtures' lengths: Priya from 0 to about 7.44 s, then HAL to about
+13.91 s, then the bed alone to the end. Read the end with `get_gallery_metadata` on the
+`duet` output. Listen once with `get_output_audio` to confirm the two voices are audibly
+different speakers. If they aren't, the fixtures have changed and the case can't run.
+
+Then add these steps, each saving `application/json` to `final`:
+5. `attr`: `attribute_voices` with:
+   - `"audio": "previous_result:duet"`;
+   - `"voices": {"priya": [{"start_seconds": 0.0, "duration_seconds": 3.5}], "hal":
+     [{"start_seconds": 7.8, "duration_seconds": 3.2}]}`;
+   - `"lines"`: `[{"start": 0.5, "end": 3.0, "text": "priya in-ref"}, {"start": 3.8,
+     "end": 7.0, "text": "priya held-out"}, {"start": 8.0, "end": 10.5, "text": "hal
+     in-ref"}, {"start": 11.2, "end": 13.6, "text": "hal held-out"}, {"start": 15.0,
+     "end": 19.5, "text": "bed only"}]`;
+   - `"windows"`: `[{"name": "shot_priya", "start": 0.0, "end": 7.0}, {"name":
+     "shot_join", "start": 6.0, "end": 9.5}, {"name": "shot_hal", "start": 8.0, "end":
+     13.5}, {"name": "shot_bed", "start": 15.0, "end": 19.5}]`.
+6. `attr_alt_shape`: the same, except `lines` uses the other accepted shape,
+   `{"start_seconds", "duration_seconds"}` (0.5/2.5, 3.8/3.2, 8.0/2.5, 11.2/2.4,
+   15.0/4.5), and `text` is dropped from every line (`text` is optional).
+7. `attr_clip_refs`: the same as `attr`, except `voices` names separate clips,
+   `{"priya": "asset:qa-cast/priya-voice.wav", "hal": "asset:qa-cast/hal-voice.wav"}`.
+   Use the reference form `get_task` shows for a clip.
+
+Run `validate_workflow`, then `run_workflow(..., acknowledged_cost=true,
+wait_seconds=55)`. Read each JSON with `get_output_text`.
+expected:
+- `attr.separated` is `true`, and `attr.voices` names `priya` and `hal`.
+- Every line has `scores` for both voices, plus `voice`, `margin`, `voiced_seconds` and
+  `uncertain`, and `text` is echoed unchanged.
+- The two Priya lines have `voice: "priya"`, and the two HAL lines have `voice: "hal"`.
+  The **held-out** lines (3.8–7.0 and 11.2–13.6) are the real test, because neither
+  overlaps its reference span. All four lines have `uncertain: false` and `margin > 0`.
+- The `bed only` line has `voice: null` and `uncertain: true`, with a stated reason (too
+  little voiced audio). Its `voiced_seconds` is well under the line's 4.5 s.
+- For windows: `shot_priya` has `voice: "priya"` and `shot_hal` has `voice: "hal"`, each
+  with its own voice's `share` ≥ 0.8. `shot_join` has a split `share`, with each voice
+  between 0.2 and 0.8, and its `voice` is the one with the larger share. Every window
+  with voiced overlap has a `share` that sums to 1 (±0.05). `shot_bed` is `uncertain:
+  true` and doesn't confidently name a voice.
+- `reference_similarity` is present for the pair, and `voices_too_similar` is **not**
+  reported.
+- `attr_alt_shape` gives every line the same `voice` as `attr`, with scores within 0.02,
+  and its lines carry no `text` (or `null`), not an error.
+- `attr_clip_refs` gives the same `voice` on the four voiced lines, and `null` on `bed
+  only`.
+It is a **finding** if any held-out line names the wrong voice or is `uncertain`, if the
+bed-only line names a voice, if `shot_join` isn't split, if a voiced window's `share`
+doesn't sum to ~1, or if either alternative input form is refused. If ECAPA misnames a
+held-out line here, that is the plan's stated trigger for Q2 (Resemblyzer): say so in the
+issue.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F139 — `attribute_voices` without `lines` cuts fixed windows over the whole song, and `separate: false` runs on a dry stem
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+Use C-F138's duet steps (1–4). Then add these steps, each saving `application/json` to
+`final`:
+5. `attr_fixed`: `attribute_voices` with `audio: "previous_result:duet"` and C-F138's
+   `voices`, and no `lines`, `windows` or `window_seconds`.
+6. `attr_fixed5`: the same, with `"window_seconds": 5`.
+7. `attr_dry`: `attribute_voices` on `"audio": "previous_result:voices_track"` (the
+   voices with no bed, which is a dry stem), with C-F138's `voices` and `lines` and
+   `"separate": false`.
+
+Run it and read each JSON. Let D be the `duet` output's `duration_seconds` from
+`get_gallery_metadata`.
+expected:
+- `attr_fixed` returns fixed 2.0 s windows as its per-line entries (or wherever
+  `get_task` / `docs/TASKS.md` says fixed windows go). The first starts at 0, each starts
+  where the last ended, and the last ends at D (±0.05). The count is `ceil(D / 2)`, and
+  only the last window may be shorter than 2.0 s. None is dropped and none runs past D.
+- In `attr_fixed`, the windows lying wholly inside 0–6 s name `priya`, the ones wholly
+  inside 8–13 s name `hal`, and the ones wholly after 14.5 s have `voice: null` and
+  `uncertain: true`. It reports `separated: true` (the default).
+- `attr_fixed5` has `ceil(D / 5)` windows of 5 s, covering 0–D in the same way.
+- `attr_dry` completes and reports `separated: false`. Its held-out lines name the right
+  voice, as in C-F138.
+It is a **finding** if the fixed windows leave a gap, overlap, or stop short of D, if
+`window_seconds` is ignored, if `separate: false` errors or still reports `separated:
+true`, or if the default run reports `separated: false`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F140 — one span under two names reports `voices_too_similar`, and every line is `uncertain`
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+Use C-F138's duet steps (1–4). Then add step 5, `attr_same`: `attribute_voices` with
+`"audio": "previous_result:duet"`, `"voices": {"a": [{"start_seconds": 0.0,
+"duration_seconds": 3.5}], "b": [{"start_seconds": 0.0, "duration_seconds": 3.5}]}`, and
+C-F138's `lines`. It saves `application/json` to `final`. Run it and read the JSON.
+expected:
+- `reference_similarity` for `a`–`b` is about 1 (≥ 0.99).
+- `voices_too_similar` is reported, in the result JSON or among the job's warnings
+  (`get_job`).
+- **Every** line has `uncertain: true`, including the ones that plainly contain Priya.
+- The step completes: this is a warning, not a refusal.
+It is a **finding** if the step refuses, if no `voices_too_similar` warning appears, or if
+any line comes back `uncertain: false` and confidently names `a` or `b`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F141 — `attribute_voices` refuses bad voices, short or out-of-range references and bad windows, and accepts the boundary
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+Each arm is a one-step workflow `attr` running `attribute_voices` on `"audio":
+"asset:qa-cast/priya-voice.wav"` (7.453 s), with `"lines": [{"start": 0.5, "end": 3.0}]`
+and `application/json` saved to `final`. Only `voices` (or `window_seconds`) differs.
+Call `validate_workflow` on each arm. The plan allows a refusal "at validation or on the
+step". If an arm validates, run it (`acknowledged_cost=true, wait_seconds=55`):
+- a failure on the `attr` step whose error says the same thing counts as refused;
+- a run that completes is a **finding**.
+Refusal arms:
+- (a) **One voice:** `{"a": [{"start_seconds": 0.0, "duration_seconds": 3.5}]}`. Refused;
+  the message says at least 2 voices are needed.
+- (b) **No voices:** `{}`. Refused the same way.
+- (c) **Reference too short, in total:** `{"short": [{"start_seconds": 0.0,
+  "duration_seconds": 1.5}, {"start_seconds": 2.0, "duration_seconds": 1.4}], "other":
+  [{"start_seconds": 4.0, "duration_seconds": 3.0}]}`. That is 2.9 s in total. Refused,
+  and the message **names `short`**.
+- (d) **Span past the end:** `other` is `[{"start_seconds": 8.0, "duration_seconds":
+  3.0}]`, with `short` as in (e). Refused, saying the span lies past the audio.
+- (e) **Span straddling the end:** `other` is `[{"start_seconds": 5.0,
+  "duration_seconds": 3.0}]` (ends at 8.0 > 7.453). Refused the same way. This must not
+  be silently clamped.
+- (f) **Bad voice name:** the key `"hal voice"` (a space) is refused. Then `"hal/../x"`
+  is refused too. The message names the rule or the key.
+- (g) **Missing asset:** `"other": "asset:qa-cast/no-such-voice.wav"` is refused at
+  validation, as any missing `asset:` is.
+- (h) **Bad window length:** no `lines`, and `"window_seconds": 0`, then `-1`. Refused.
+  This is implied by the plan's fixed-window default rather than named by it.
+
+Boundary control:
+- (i) `{"priya_2": [{"start_seconds": 0.0, "duration_seconds": 1.5}, {"start_seconds":
+  2.0, "duration_seconds": 1.5}], "other": [{"start_seconds": 4.0, "duration_seconds":
+  3.0}]}`. That is exactly 3.0 s for `priya_2`, which is an underscore-and-digit name,
+  and a span ending at 7.0 s. It validates and **runs to completion**. Its output may
+  well say `voices_too_similar`, since both references are Priya; that is not a finding
+  here.
+expected: arms (a)–(h) are each refused, (c) names the voice, and none of them
+completes. Arm (i) completes. A refusal at `validate_workflow` is preferred. A refusal on
+the step passes, but note in any issue which arms were refused only at run time.
+It is a **finding** if any refusal arm completes, if (e) is clamped instead of refused, if
+(c)'s message doesn't name `short`, or if (i) is refused, since 3.0 s is the minimum, not
+below it.
+cleanup: `delete_output(job_id=…)` for every arm that ran.
+metrics: none.
+
+### C-F142 — a second `attribute_voices` run on the same box downloads nothing
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+The htdemucs weights come from Meta's CDN via torch.hub, not from HF, so
+`plan.downloads_required` can't see them. The plan promises they are cached all the same.
+Run C-F141's arm (i) workflow. Once it finishes, run it again with `rerun_job` or an
+identical `run_workflow`. For each run, call `get_job_events` and `list_downloads`.
+expected:
+- The second run's events show no download or fetch of demucs or ECAPA weights.
+- `list_downloads` shows no new entry started by the second run.
+- The second run completes.
+If the first run showed such a download (cold box), that is expected once. Note it as a
+cold start.
+It is a **finding** if the second run downloads either model again.
+cleanup: `delete_output(job_id=…)` for both runs.
+metrics: none.
+
+### C-F143 — the minimax-music3 skill sends a duet to `attribute_voices`, not to pitch
+pending: #495
+source: tester, spec for #495 from #485's plan v1 (claude-opus-5-5 via anthropic)
+Stage B is plugin-only. Load `dw:minimax-music3` with the `Skill` tool (the plugin tree
+follows `develop`), and call `list_tasks()`.
+expected:
+- The skill says Music 3 ignores per-section singer directions.
+- It says to run `attribute_voices`, with a reference span per singer, before staging
+  lip-sync shots.
+- It says not to infer the singer from pitch.
+- `list_tasks().commands` contains `attribute_voices`.
+- Any argument the skill names (e.g. `voices`, `lines`, `windows`) exists in
+  `get_task("attribute_voices")`.
+It is a **finding** if the skill doesn't name the task, still suggests a pitch method, or
+names an argument the task doesn't have (the issue's own proposal said `references`,
+which the plan replaced with `voices`).
+cleanup: none.
+metrics: none.
+
+### C-F144 — a cut leaked 2.5 s or less into a shot is reported as `shot_opening_cut`, on the output and on a kept asset
+pending: #493
+source: tester, spec for #493 from #487's plan v2 (claude-opus-5-5 via anthropic)
+#487: a generation whose first 1.5 s held the previous shot's picture before cutting to its
+own passed every probe, because `analyze_seams` only looks at frame 0 of a shot and
+`jump_ratio` is measured across the whole shot. Plan v2 adds two fields to each
+`analyze_shots` per-shot record:
+- `opening_jump_ratio`: the largest frame-to-frame delta in frames 1 through 2.0 s,
+  divided by the shot's typical delta over the rest of the shot (the same scale as
+  `jump_ratio`);
+- `opening_cut_s`: when that frame falls, counted from the shot's start.
+It also adds a rule, `shot_opening_cut`, with a measured threshold. This case builds a
+leak with no shot records, so the whole file is one shot, and it runs CPU only (no model).
+
+**Fixture** (one `run_workflow` in this suite's workspace, `wait_seconds=55`). The steps,
+in order:
+1. `still`: `loop_frames(video="asset:qa-cast/ep13-episode.mp4", num_frames=1)`.
+2. `held`: `loop_frames(video="previous_result:still", num_frames=60)`, i.e. 2.5 s at
+   24 fps of one unchanging picture.
+3. `heldav`: `pair_audio(video="previous_result:held",
+   audio="asset:uploads/qa-cast/room-bed.wav", fit="video")`. An `audio_trimmed_to_video`
+   warning is expected.
+4. `join`: `concat_videos(videos=["previous_result:heldav",
+   "asset:qa-cast/ep3-shot1-incident.mp4"], fps=24)`. This makes 184 frames with 2 recorded
+   shots, and the cut is at frame 60.
+5. `frames`: `loop_frames(video="previous_result:join", num_frames=184)`.
+6. `leak`: `pair_audio(video="previous_result:frames", audio="previous_result:join",
+   fit="video")`, with `result` `{"content_type": "video/mp4", "fps": 24}`.
+
+Steps 5–6 launder the join's shot records away. The gallery item for step 6 is the "leak
+file". Its precondition: `get_gallery_metadata` shows `media.frame_count` 184 and no
+`media.shots`. If shots are still present, record that in the run and go straight to the
+`shots` override in C-F146 (shot `[0,184]`), which asserts the same thing. Also check
+that the two frames either side of frame 60 differ visibly (`get_output_frames` on the
+`join` output). The fixture is only valid if the cut is a real change of picture.
+
+That leak file cuts at 2.5 s, outside the window. So this case asserts on a second leak
+file built the same way with `held` at `num_frames=36` (a 1.5 s leak, 160 frames). Build
+both in one workflow by duplicating steps 2–6 with a `36` suffix, or run the workflow
+twice.
+
+**Steps:**
+1. `assess_output(name=<the 36-frame leak file>)` with the default probes.
+2. `keep_output` that file as `qa-c-f144-leak` in this workspace, then
+   `assess_output(name="asset:qa-c-f144-leak")` (or whichever form `assess_output` documents
+   for an asset).
+3. `assess_output` on the 60-frame (2.5 s) leak file.
+
+expected:
+- Steps 1–2: both carry one finding with rule `shot_opening_cut`.
+  - Its `at` names the shot (the only one) and carries `opening_cut_s` within 1.5 ± 0.1.
+  - The finding's measured value is above its own stated threshold.
+  - The per-shot record (`probe="analyze_shots"`, or the detail form) has a non-null
+    `opening_jump_ratio` and the same `opening_cut_s`.
+  - Steps 1 and 2 agree.
+- Step 3: `opening_cut_s` is no more than 2.0. The cut at 2.5 s is outside the window, so
+  there is no `shot_opening_cut` finding, and both fields are non-null (the shot is
+  7.67 s long).
+- Nothing else about the report changes. `analyze_shots` still runs, and no new probe
+  name appears.
+
+It is a **finding** if:
+- the 1.5 s leak passes with no `shot_opening_cut` (the #487 bug);
+- `opening_cut_s` is off by more than 0.1 s;
+- the kept-asset form disagrees with the output form;
+- the 2.5 s leak fires, or reports an `opening_cut_s` beyond 2.0.
+
+cleanup: `delete_output(job_id=...)` for every job, and `delete_asset("qa-c-f144-leak")`.
+metrics: `opening_jump_ratio` of the 1.5 s leak (condition `leak-1.5s`).
+
+### C-F145 — in a join with recorded shots, a shot's own hard cut at frame 0 is not an opening cut, and a short shot is skipped
+pending: #493
+source: tester, spec for #493 from #487's plan v2 (claude-opus-5-5 via anthropic)
+The plan excludes frame 0 from the window, because the seam belongs to `analyze_seams`. It
+also nulls both fields for a shot under 4 s and lists the rule in `rules_skipped`. This case
+uses the `join` output from C-F144's fixture, built on its own if C-F144 already cleaned
+up. That output has two shots:
+- 0–60, which is 2.5 s, so short;
+- 60–184, which is 5.17 s and opens on a hard cut at frame 0.
+
+1. `get_gallery_metadata` on `join` confirms 2 entries in `media.shots`.
+2. `assess_output(name=<join>, probe="analyze_shots", detail=true)` (or the detail form it
+   documents).
+3. `assess_output(name=<join>, probe="analyze_seams")`.
+
+expected:
+- Step 2: shot 1's record has `opening_jump_ratio: null` and `opening_cut_s: null`.
+  - `rules_skipped` carries `shot_opening_cut`, with a reason naming the short shot or the
+    4 s minimum.
+  - Shot 2's record has both fields non-null.
+  - Shot 2's `opening_cut_s` is not 0, since frame 0 is excluded.
+  - There is no `shot_opening_cut` finding for either shot.
+- Step 3 still reports the seam at frame 60 as before, so the seam stays `analyze_seams`'s.
+
+It is a **finding** if:
+- shot 2 fires `shot_opening_cut` at `opening_cut_s` ≈ 0 (the seam counted twice);
+- shot 1 gets values or a finding instead of null + skipped;
+- the whole report errors because one shot is short.
+
+cleanup: `delete_output(job_id=...)` for any job this case ran.
+metrics: none.
+
+### C-F146 — window and length boundaries for `shot_opening_cut`, set through `analyze_shots`' `shots` override
+pending: #493
+source: tester, spec for #493 from #487's plan v2 (claude-opus-5-5 via anthropic)
+This case pins the edges the plan implies, using the task form, which takes `shots=`. Each
+step is one CPU `run_workflow` with a single `analyze_shots` step.
+- The `video` is the `join` output from C-F144's fixture (60 held frames, then incident,
+  184 frames, with the cut at frame 60), unless the step says otherwise.
+- `shots` is a one-entry list shaped like the records `get_gallery_metadata(...).media.shots`
+  returns for that join: copy one record and change its start and end frames to the values
+  given.
+- Read each run's per-shot record from its result (`get_output_text` or `get_job`).
+
+Steps, with shot start–end frames (end exclusive):
+1. `[24,184]`: the cut is 36 frames in (1.5 s).
+2. `[13,184]`: the cut is 47 frames in (1.958 s), just inside the 2.0 s window.
+3. `[11,184]`: the cut is 49 frames in (2.04 s), just outside.
+4. `[59,184]`: the cut is 1 frame in (0.042 s), the earliest frame the window holds.
+5. `[60,184]`: the cut is at frame 0, which is excluded.
+6. `[0,184]`: the whole join as one shot, with the cut at 2.5 s.
+7. The `video` is `asset:qa-cast/ep3-shot1-incident.mp4` with shot `[0,95]` (3.958 s), then
+   `[0,96]` (4.000 s).
+
+expected:
+- Steps 1, 2 and 4: a `shot_opening_cut` finding each, with `opening_cut_s` within one frame
+  (±0.042 s) of 1.5, 1.958 and 0.042 respectively.
+- Steps 3, 5 and 6: no `shot_opening_cut` finding. `opening_cut_s` is non-null and at most
+  2.0 in every one.
+- Step 7:
+  - `[0,95]` gives both fields `null` and `shot_opening_cut` in `rules_skipped`;
+  - `[0,96]` gives both fields non-null and no finding (the incident is clean).
+  - The plan says "under 4 s", so exactly 4.0 s is measured.
+
+It is a **finding** if any step disagrees, or if `opening_cut_s` ever exceeds 2.0 or equals
+0.
+
+cleanup: `delete_output(job_id=...)` for each run, and for C-F144's fixture if this case
+built it.
+metrics: `opening_jump_ratio` of step 4 (condition `leak-1-frame`).
+
+### C-F147 — clean shots stay clean: no `shot_opening_cut` on the incident or on a three-shot join of it
+pending: #493
+source: tester, spec for #493 from #487's plan v2 (claude-opus-5-5 via anthropic)
+The threshold is "measured", so the guard against false positives is real footage with no
+leak. This case uses the same fixture as C-F099:
+1. `assess_output(name="asset:qa-cast/ep3-shot1-incident.mp4")`.
+2. Run `concat_videos(videos=["asset:qa-cast/ep3-shot1-incident.mp4"] ×3, fps=24)` in this
+   suite's workspace. That makes 372 frames, with shots at 0/124/248.
+3. `assess_output` on the output of step 2.
+
+expected:
+- Neither report contains a `shot_opening_cut` finding.
+- Every shot's `analyze_shots` record has non-null `opening_jump_ratio` and `opening_cut_s`
+  (each shot is 5.17 s).
+- In the join, the seams at 124 and 248 are not reported as opening cuts. Frame 0 of
+  shots 2 and 3 is excluded.
+
+It is a **finding** if clean footage fires the rule, or if a ≥4 s shot has null fields.
+
+cleanup: `delete_output(job_id=...)` for step 2.
+metrics: `opening_jump_ratio` of step 1 (condition `clean-incident`). That is the margin
+the measured threshold has over clean footage.
+
+### C-F148 — `shot_opening_cut` adds no new surface: no thumbnails, audio gate, probe whitelist, still, task schema and docs
+pending: #493
+source: tester, spec for #493 from #487's plan v2 (claude-opus-5-5 via anthropic)
+The plan changes neither the tool, the probe list, the task's arguments nor the audio gate
+(D2), and nulls the fields when there is no picture. All steps are free or CPU:
+1. `assess_output(name="asset:qa-cast/priya-voice.wav", probe="analyze_shots")`. The file is
+   audio only, so there are no thumbnails.
+2. Take the `frames` output from C-F144's fixture (silent: `loop_frames` output, no
+   `pair_audio`), with `keep_output` if a gallery name is needed, and run
+   `assess_output(..., probe="analyze_shots")` on it.
+3. `assess_output(name="asset:qa-cast/ep3-shot1-incident.mp4", probe="analyze_everything")`.
+4. `assess_output(name="asset:qa-cast/hal-portrait.jpg")`.
+5. `get_task("analyze_shots")`.
+6. `list_guides`, then `get_guide` on the section holding `assess_output`'s rules table
+   (the WORKFLOW_GUIDE's). Then the tasks guide's `analyze_shots` entry (`get_guide`
+   "tasks").
+7. Load the `dw:minimax-h3` skill with `Skill`.
+
+expected:
+- Step 1: the per-shot record is still returned (rms, dead_air, as in C-F131), with
+  `opening_jump_ratio: null` and `opening_cut_s: null`. `shot_opening_cut` is in
+  `rules_skipped`, with no error and no finding.
+- Step 2: `analyze_shots` is not applicable because there is no audio, just as before #493.
+  There is no error and no `shot_opening_cut` finding.
+- Step 3: the same 400 as C-F102, naming exactly `analyze_shots`, `analyze_seams` and
+  `analyze_sync_drift`.
+- Step 4: not applicable for all three probes, as in C-F101.
+- Step 5: the parameters are still exactly `video`, `shots` and `device`.
+- Step 6:
+  - the rules table lists `shot_opening_cut` with its threshold;
+  - the tasks guide's `analyze_shots` answer names `opening_jump_ratio` and `opening_cut_s`;
+  - no documented threshold contradicts the one reported in C-F144's finding.
+- Step 7: the skill points to `shot_opening_cut` and no longer says to check the opening by
+  eye or cites #487 as open.
+
+It is a **finding** if any step disagrees, and in particular if the rule fires on an
+audio-less file or with no picture, if a new probe or argument appears, or if the docs or
+skill omit the rule.
+
+cleanup: `delete_output(job_id=...)` and `delete_asset` for anything step 2 created.
 metrics: none.
 
 ## Performance

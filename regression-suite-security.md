@@ -584,6 +584,48 @@ made harmless. Note the exposure in the issue instead.
 cleanup: delete the generated output.
 source: harness, initial security suite 2026-09-13.
 
+### SE-F038 — `attribute_voices` holds the path gate on `audio` and on every nested voice reference
+pending: #494
+source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
+Stage A of #485 adds `attribute_voices`, whose `voices` argument maps a name to either a
+list of spans or a clip reference. That clip reference is new nested input. The plan
+requires "the path gates of every existing audio task": a raw path is refused wherever
+it sits, the same way SE-F014 refuses one on an existing task.
+
+Carrier: a one-step workflow, `attr`, running `attribute_voices` and saving
+`application/json` to `final`. Its baseline arguments:
+- `"audio": "asset:qa-cast/priya-voice.wav"`;
+- `"voices": {"a": [{"start_seconds": 0.0, "duration_seconds": 3.5}], "b":
+  "asset:qa-cast/hal-voice.wav"}`;
+- `"lines": [{"start": 0.5, "end": 3.0}]`.
+
+Probe paths:
+- `P1` = `/usr/share/sounds/alsa/Front_Center.wav`, which exists on most Debian boxes;
+- `P2` = `/nonexistent-dw-probe/x.wav`, which is missing;
+- `P3` = `../../../../../usr/share/sounds/alsa/Front_Center.wav`.
+
+Call `validate_workflow` with each probe in each position:
+- (a) `audio` = the probe;
+- (b) voice `b` = the probe, as a bare string;
+- (c) voice `b` = `"asset:" + <probe>` (for `P3`, the `asset:../…` spelling);
+- (d) the probe in any other clip-reference form `get_task("attribute_voices")` documents
+  for a voice. For example, a list entry naming a clip, if the schema has one.
+
+Control: the baseline validates clean.
+expected:
+- Every probe is `valid: false`, with the error at the argument's path (e.g.
+  `steps[0].task.arguments.voices.b`).
+- `P1` and `P2` are refused **identically**, so the reply doesn't reveal whether a file
+  exists.
+- No error echoes a resolved server path beyond what the probe itself gave.
+- `run_workflow` on any probe is refused with no job queued. A job that queues and then
+  fails is refused too late, and counts as a **finding**.
+- It is a **finding** if any probe validates or runs, or if `P1` and `P2` get different
+  errors. A pass requires that the control validates.
+A hole here goes to `scripts/file-advisory.sh`, not a public issue.
+cleanup: none (validation only, no job should exist; delete any that does).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

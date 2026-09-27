@@ -107,6 +107,9 @@ nothing uses it anymore.
   the shared asset library. S-F128 binds them to `templates/ltx2/keyframes` in validate-only
   calls, so only their existence matters. Any two images substitute. Read-only, never
   deleted.
+- `asset:qa-cast/priya-voice.wav`: about 6 s of speech in the shared asset library.
+  S-F131 transcribes it with word and segment timestamps. Any short spoken clip under 30 s
+  substitutes. Read-only, never deleted.
 
 ## Functional
 
@@ -2063,6 +2066,30 @@ cleanup: none. Nothing is queued or written.
 metrics: none.
 source: tester, verified in #478 on 2026-09-26 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 3e8bf8d`.
+
+### S-F131 — `transcribe_audio(timestamps=…)` returns timed chunks under 30 s, and unset stays text
+#483 added an opt-in `timestamps: "segment" | "word"` to `transcribe_audio`. Past 30 s Whisper
+already asked for timestamps and the task threw them away. An explicit request on a short clip
+must take effect too, not be silently ignored because the long-form branch didn't fire. Run one
+inline workflow in workspace `regression-smoke`, `acknowledged_cost` bound to its validate plan,
+with three `transcribe_audio` steps on `asset:qa-cast/priya-voice.wav` (about 6 s of speech), all
+with `device: "cuda"`:
+1. `timestamps: "word"`, `result.content_type: "application/json"`.
+2. `timestamps: "segment"`, `result.content_type: "application/json"`.
+3. No `timestamps`, `result.content_type: "text/plain"`.
+Read each file with `get_output_text`.
+expected:
+- The job succeeds in about 15 s.
+- Step 1 decodes as `{"text": <non-empty>, "chunks": [...]}` with more than one chunk. Each chunk
+  has numeric `start` ≤ `end`, both within the clip, and non-empty `text`.
+- Step 2 has the same shape with at least one chunk.
+- Step 3 is plain text (`text/plain`), not JSON.
+It is a **finding** if step 1 or 2 comes back as a bare string, has empty `chunks`, or errors
+about `return_timestamps`, or if step 3 comes back as JSON.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+source: tester, verified in #483 on 2026-09-26 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 57c3fc6`.
 
 ## Performance
 
