@@ -1958,4 +1958,36 @@ source: tester, verified in #505, model `claude-opus-5-5` via provider `anthropi
 `lem` `develop @ 6a5cbd5`.
 metrics: none.
 
+### M-F057 — an LTX-2.5 `for_each` entry's own `image` given as a `previous_result:` string reaches the pipeline, with per-entry `num_frames`
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic), ep76, job `39d59595d6fb`
+Model/pipeline: LTX-2.5 `LTX2ImageToVideoPipeline`, inline `for_each` workflow. Paid: one job, ~3.5 min.
+This differs from M-F055: the item-level reference is a bare `"previous_result:still@deflect"` string in an
+entry field, passed whole through `item:image` as a pipeline argument, not a `from_previous_result` reference dict.
+Setup: workspace `regression-model-specific`. Inline workflow, `id` `m_f057`, `"seed": 76`,
+variable `shots` = two entries, each with `name`, `num_frames`, `source`, `image`, `prompt`:
+- `accuse`: 97 f, `source={"location":"asset:qa-cast/ep63-shot-ltx-priya.mp4"}`,
+  `image={"location":"asset:qa-cast/priya-portrait.jpg"}`, a one-line PRIYA prompt with the line quoted.
+- `deflect`: 121 f, `source={"location":"asset:qa-cast/ep64-shot-ltx-hal.mp4"}`,
+  `image="previous_result:still@deflect"`, a one-line HAL prompt with the line quoted.
+Steps: `still` — `for_each` over `shots`, task `get_last_frame(video="item:source")`, result
+`image/jpeg`, `save: false`. `shot` — `for_each`, the pipeline block copied from
+`templates/ltx2/image-to-video` (read it with `get_workflow`; its `variable:` refs replaced by
+`{uint4}`/`{int8}` literals), with `prompt`/`image`/`num_frames` from `item:`, `width: 960`,
+`height: 544`, `frame_rate: 24.0`, result `video/mp4` fps 24 intermediate. `episode` —
+`concat_videos(videos="gather:shot", fps=24, match_levels="rms", match_levels_dbfs=-24,
+audio_bleed_ms=0, seam_fade_ms=30)`, final. `validate_workflow` → bind cost → `run_workflow` → wait.
+expected:
+- validate is `valid: true`, `warnings: []`, and its plan has `steps: 4` and elides only `still@accuse`.
+- The job succeeds. `job.warnings` holds only the `still@accuse` "did not run" warning. The manifest
+  lists `still@deflect` (no files), `shot@accuse`, `shot@deflect` and `episode`.
+- `get_output_frames(shot@deflect, at=["frame:0"])` matches
+  `get_output_frames("asset:qa-cast/ep64-shot-ltx-hal.mp4", at=["frame:120"])`, so the reference resolved to that still.
+- Each shot is 960×544 at 24 fps with the entry's own frame count (97, 121). The episode is 218 f,
+  48 kHz stereo, with `media.shots` 97 + 121 and the second starting at frame 97, sample 194000.
+It is a **finding** if validate passes and the run fails resolving the string reference, if the
+string reaches the pipeline unresolved, if `still@deflect` is elided, or if an entry's frame count drifts.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-inline`, to
+`regression-perf/M-F057.jsonl`.
+
 ## Performance
