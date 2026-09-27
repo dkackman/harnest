@@ -166,6 +166,18 @@ release_open_with_commits() {
   '
 }
 
+# release_closing_comments <owner>
+# stdin: `gh issue list --json number,title,comments` output. stdout: one
+# markdown section per issue with its last comment by <owner> (the loop's
+# closing verification, which says what shipped), cut to 1500 characters.
+# The notes session reads this rather than calling gh once per issue: gh
+# can't combine --json with --comments, and 0.5.0's session fought that.
+release_closing_comments() {
+  jq -r --arg who "$1" '.[] |
+    ([.comments[]? | select(.author.login == $who) | .body] | last // "") as $c |
+    "## #\(.number) \(.title)\n\n\(if $c == "" then "(no closing comment)" elif ($c | length) > 1500 then $c[0:1500] + " [...]" else $c end)\n"'
+}
+
 # release_findings_valid <file>
 # A review session's findings: a JSON array of objects with area, severity
 # (blocker | follow-up), security (bool), title, file, detail. True when the

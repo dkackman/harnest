@@ -410,9 +410,11 @@ stage_notes() {
   # two dozen of 0.4.0's)
   since="$(gh release view "$tag" --repo "$TICKET_REPO" --json publishedAt --jq .publishedAt 2>/dev/null)" \
     || since="$(git -C "$SOURCE_DIR" log -1 --format=%cI "$tag")"
-  issues="$(gh issue list --repo "$TICKET_REPO" --state closed --limit 300 --search "closed:>=$since reason:completed" \
-    --json number,title,labels --jq '.[] | "#\(.number) [\([.labels[].name] | join(","))] \(.title)"')"
+  gh issue list --repo "$TICKET_REPO" --state closed --limit 300 --search "closed:>=$since reason:completed" \
+    --json number,title,labels,comments > "$WORK/closed-since-$tag.json" || die "notes: could not list the closed issues"
+  issues="$(jq -r '.[] | "#\(.number) [\([.labels[].name] | join(","))] \(.title)"' "$WORK/closed-since-$tag.json")"
   printf '%s\n' "$issues" > "$WORK/closed-since-$tag.txt"
+  release_closing_comments "$TICKET_OWNER" < "$WORK/closed-since-$tag.json" > "$WORK/closing-comments-since-$tag.md"
   # What ships without a closed issue: PRs merged into develop (0.5.0's
   # Mac support was one), and open issues develop carries commits for
   gh pr list --repo "$TICKET_REPO" --state merged --base develop --limit 200 --search "merged:>=$since" \
@@ -422,7 +424,7 @@ stage_notes() {
     > "$WORK/open-with-commits.txt" || true
   rm -f "$out"
   run_release_session notes notes "$RELEASE_NOTES_BUDGET_USD" \
-    "This is a NOTES session for release $version: draft its section of docs/RELEASING.md. The last release is $tag. What shipped since then is listed one per line in three files: the issues closed as completed in $WORK/closed-since-$tag.txt, the pull requests merged into develop in $WORK/merged-prs-since-$tag.txt, and the issues still open whose commits are in this candidate in $WORK/open-with-commits.txt (describe what their commits ship, and say they are unfinished). Write the section body (no heading) to exactly this file: $out" || true
+    "This is a NOTES session for release $version: draft its section of docs/RELEASING.md. The last release is $tag. What shipped since then is listed one per line in three files: the issues closed as completed in $WORK/closed-since-$tag.txt, the pull requests merged into develop in $WORK/merged-prs-since-$tag.txt, and the issues still open whose commits are in this candidate in $WORK/open-with-commits.txt (describe what their commits ship, and say they are unfinished). Each closed issue's closing comment, which says what actually shipped, is in $WORK/closing-comments-since-$tag.md: read it there rather than with gh. Write the section body (no heading) to exactly this file: $out" || true
   [ -s "$out" ] || die "notes: the session wrote nothing to $out"
   wt="$(mktemp -d "${TMPDIR:-/tmp}/release-notes.XXXXXX")"
   git -C "$SOURCE_DIR" worktree add -q --detach "$wt" "$sha"

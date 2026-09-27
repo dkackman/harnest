@@ -95,6 +95,17 @@ eq  "carry: a carried marker counts as good" "check ci preflight regression revi
   "$(printf 'review %s carried\nsecurity %s carried\n' $A $A | release_missing_gates $B)"
 ok  "carry: carried is ok on its commit" release_gate_ok review $A <<<"review $A carried"
 
+# --- closing comments: the owner's last comment per issue, for the notes
+cc="$(jq -n '[{number: 5, title: "a bug", comments: [{author: {login: "dkackman"}, body: "first"}, {author: {login: "stranger"}, body: "spam"}, {author: {login: "dkackman"}, body: "Verified: it ships X."}]},
+             {number: 6, title: "quiet", comments: []},
+             {number: 7, title: "long", comments: [{author: {login: "dkackman"}, body: ("y" * 2000)}]}]' | release_closing_comments dkackman)"
+has "closing: the owner's last comment" "## #5 a bug
+
+Verified: it ships X." "$cc"
+eq  "closing: never another login's" "" "$(printf '%s' "$cc" | grep spam || true)"
+has "closing: says when there is none" "(no closing comment)" "$cc"
+has "closing: cuts a long one" "[...]" "$cc"
+
 # --- findings: exactly the shape, or the stage fails
 f="$T/findings.json"
 echo '[{"area":"security","severity":"blocker","security":true,"title":"t","file":"a.py:1","detail":"d"}]' > "$f"
