@@ -850,18 +850,18 @@ run directory containing only `manifest.json` and `workflow.json`, no media file
 it, and no other call can address it. If the form decays into "404 unless a media file
 names it", those directories accumulate with no way to reach them and every later sweep
 is wrong about what a workspace holds.
-Two fast runtime failures that reliably write nothing are now known, and both are already
-run by other cases — this case costs only the two deletes.
+Two fast runtime failures that reliably write nothing are known; the pipeline one is already
+run by S-F005(c)/S-F011, the task one is built here from one upload.
 expected:
 - **From a failed pipeline run.** Take S-F005(c)/S-F011's 383x383 SD 1.5 job (fails in
   ~2.5 s on "`height` and `width` have to be divisible by 8", `manifest: []`). Note its
   `run_id`, then `delete_output(name="<workflow id>/<run id>")` → `deleted: true` and
   `run_swept` equal to that run id.
-- **From a failed task run.** Take C-F076 part 4's `resample_audio` job
-  (`target_sample_rate` arriving as 0 through a **caller's `arguments` override**
-  on a `variable:` reference — not baked into the workflow's own declared
-  default, which is refused pre-flight instead, see part 4's note per #328;
-  fails in ~1.3 s, `manifest: []`) and delete it the same way → `deleted: true`,
+- **From a failed task run.** `upload_asset` a few bytes of plain text under a valid
+  audio name, `sf034-not-audio.wav`, then run an inline one-step `resample_audio`
+  workflow on `asset:sf034-not-audio.wav` with `target_sample_rate: 16000` → it passes
+  pre-flight (name and rate are valid; only the task can see the content), queues, and
+  fails at the task layer with `manifest: []`. Delete it the same way → `deleted: true`,
   `run_swept` the run id. Two different failure layers, because a form wired
   only into the pipeline path would pass the first bullet alone.
 - **The delete is the assertion.** Either call answering "not found", or answering
@@ -871,7 +871,7 @@ expected:
   down by exactly 2 per swept run (the two sidecars). A `deleted: true` that does not move
   `usage` is the same finding as a refusal.
 cleanup: none of its own — the case *is* the cleanup those two cases would otherwise have
-to do, and it leaves nothing behind.
+to do, and it leaves nothing behind. `delete_asset` of `sf034-not-audio.wav`.
 metrics: none. The timings above are context for recognising the failures, not figures to
 log; S-P001 already tracks this box's SD 1.5 latency.
 source: regression agent, model `opus` via provider `anthropic`, found on 2026-09-16 while
@@ -895,19 +895,20 @@ verdicts depending on whether the caller happened to restate a default —
 bare path deferred the failure until after the weights had loaded. The general
 property, not the template: **a reference is checked wherever the effective value
 comes from.**
+Let `W` be an inline workflow `{"id": "s-f035", "variables": {"reference_sheet":
+"asset:s-f035-never-uploaded.png", "prompt": "prompt:<any stored prompt>"}, ...}` with one
+step that uses both variables.
 expected:
-- **Bare call reports the unresolvable default.** `validate_workflow(name=
-  "templates/ltx2/reference-sheet")`, no arguments → `valid: false`, one error whose
+- **Bare call reports the unresolvable default.** `validate_workflow(workflow=W)`, no
+  arguments → `valid: false`, one error whose
   path is **`variables.reference_sheet`** (not `arguments.`, not a step path), its
-  text naming the missing asset `reference_sheet.png` and the asset roots searched.
+  text naming the missing asset `s-f035-never-uploaded.png` and the asset roots searched.
   `checked_arguments: []`. A `valid: true` here is the regression.
-- **The default really is unresolvable.** `get_workflow(name=
-  "templates/ltx2/reference-sheet", variables_only=true)` → `"reference_sheet":
-  "asset:reference_sheet.png"`, and `list_assets()` reports no such asset in any
-  root. If a later run of this suite finds the template's default changed or that
-  asset present, the case's premise is gone — file an issue rather than editing it.
+- **The default really is unresolvable.** `list_assets()` reports no
+  `s-f035-never-uploaded.png` in any root. If one ever appears, the premise is gone —
+  file an issue rather than editing the case.
 - **The two paths agree.** The same call with `arguments={"reference_sheet":
-  "asset:reference_sheet.png"}` → `valid: false` too, same message, but at
+  "asset:s-f035-never-uploaded.png"}` → `valid: false` too, same message, but at
   **`arguments.reference_sheet`**. Identical verdict, different path: the path is
   what tells a caller "you wrote a bad reference" from "you did not override a bad
   default", so a fix that reports both as `arguments.` is a partial fix.
@@ -916,7 +917,7 @@ expected:
   `valid: true`, `checked_arguments: ["reference_sheet"]`, and a `plan`. This is the
   assertion that separates a correct fix from one that just fails any workflow
   carrying a placeholder default: the caller's value replaces the default before the
-  check, and the workflow's *other* defaults (its `prompt:` and `constant:` ones)
+  check, and the workflow's *other* defaults (its `prompt:` one)
   resolve and are not falsely flagged.
 cleanup: none — all four calls are free discovery/validate calls that load nothing,
 queue nothing and write nothing.
@@ -930,6 +931,9 @@ because the failure mode is silent — a bare `validate_workflow` answering
 `valid: true` looks exactly like a healthy one. Note the intended side effect the
 implementer flagged: any catalog template shipping a placeholder `asset:` default
 now answers `valid: false` on a bare call in a workspace without that file.
+source: rebased from `templates/ltx2/reference-sheet` onto the inline `W` after
+dkackman/diffusers-workflow#450 found that template's default now resolving from
+`common/assets`; approved by Don in dkackman/harnest#17.
 
 ### S-F036 — an unwritable `result.content_type` is refused by the free pre-flight, not by the writer
 S-F018 (and, for the objects it no longer covers itself, unit tests) pins that an
