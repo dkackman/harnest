@@ -116,11 +116,12 @@ tree_at() {
     || die "could not reset $RELEASE_TREE to ${1:0:10}"
 }
 
-# loop_holder: prints who holds lem's driver lock when a live process does.
+# loop_holder: prints who holds lem's driver lock when a live process
+# other than this one does (the gates hold it themselves).
 loop_holder() {
   local holder
   holder="$(cat "$LOGS/.driver.lock/owner" 2>/dev/null || true)"
-  if [ -n "$holder" ] && kill -0 "${holder%% *}" 2>/dev/null; then printf '%s\n' "$holder"; fi
+  if [ -n "$holder" ] && [ "${holder%% *}" != "$$" ] && kill -0 "${holder%% *}" 2>/dev/null; then printf '%s\n' "$holder"; fi
 }
 # lem_at <sha>: prints what lem runs and succeeds when that is <sha>. When
 # lem is behind and no loop holds the lock, deploys develop first: merging
@@ -252,6 +253,11 @@ stage_gates() {
   if [ -n "$holder" ]; then
     die "the driver lock is held by '${holder#* }' (pid ${holder%% *}): the regression gate needs lem to itself. Stop it with 'touch logs/stop-after-cycle' and rerun."
   fi
+  # Held for the whole stage, not checked once: a loop started between
+  # preflight and regression would otherwise redeploy lem under the gate.
+  # run-regression.sh runs under it (HARNEST_HELD_LOCK).
+  acquire_driver_lock run-release
+  export HARNEST_HELD_LOCK="$$ run-release"
   results="$(gate_results)"
   for gate in $gates; do
     if [ "${RELEASE_FORCE:-0}" != 1 ] && printf '%s\n' "$results" | release_gate_ok "$gate" "$sha"; then
@@ -404,6 +410,9 @@ stage_status() {
   done
   printf '  %-11s %s\n' notes "$(git -C "$SOURCE_DIR" show "$sha:docs/RELEASING.md" 2>/dev/null | grep -q "^### $version\$" && echo present || echo "missing on develop")"
   echo "  open release-blockers: $(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --json number --jq '[.[].number | "#\(.)"] | join(" ")')"
+  local flags
+  flags="$(cd "$LOGS" && ls stop-after-cycle* 2>/dev/null | tr '\n' ' ' || true)"
+  [ -z "$flags" ] || echo "  stop flags: $flags(cut removes them)"
 }
 
 stage_cut() {
@@ -470,6 +479,13 @@ stage_cut() {
   gh issue close "$REL" --repo "$TICKET_REPO" --reason completed \
     --comment "Released as $tag (https://github.com/$TICKET_REPO/releases/tag/$tag); develop reopened as $next. Freeze lifted." >/dev/null
   say "cut: #$REL closed - the freeze is lifted"
+  # A stop flag touched for the freeze would stop the next loop after one
+  # cycle (0.5.0 left logs/stop-after-cycle.local behind)
+  local flag
+  for flag in "$LOGS"/stop-after-cycle*; do
+    [ -e "$flag" ] || continue
+    rm -f "$flag"; say "cut: removed ${flag#"$REPO/"}, left from the freeze"
+  done
 }
 
 # main: in a function, called with exit on the same line, so an edit to this

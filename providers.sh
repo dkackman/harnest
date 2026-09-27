@@ -824,8 +824,16 @@ refresh_plugin_tree() {
 # one's delete would remove the lock the first had just taken. A lock with
 # no owner file older than two minutes is a holder killed between its
 # mkdir and its write; it would otherwise be waited on forever.
+# A driver started by one that already holds the lock (run-release.sh's
+# gates run run-regression.sh) is named by HARNEST_HELD_LOCK, the parent's
+# owner line: it runs under the parent's lock rather than waiting on it,
+# and leaves releasing it to the parent.
 acquire_driver_lock() {
   local lock="$LOGS/.driver.lock$TARGET_SUFFIX" holder waited=0 aside stale
+  if [ -n "${HARNEST_HELD_LOCK:-}" ] && [ "$(cat "$lock/owner" 2>/dev/null || true)" = "$HARNEST_HELD_LOCK" ]; then
+    echo "[lock] $1 runs under '$HARNEST_HELD_LOCK'" | tee -a "$LOOP_LOG"
+    return 0
+  fi
   while ! mkdir "$lock" 2>/dev/null; do
     holder="$(cat "$lock/owner" 2>/dev/null || true)"
     stale=0

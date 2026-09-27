@@ -763,8 +763,12 @@ $(issue_context "$n")" \
 # In the loop, under its lock, because approvals edit the suite files: a
 # regression run reads them, and the drivers commit them.
 curator_pass() {
-  local n
+  local n freeze
   shared_passes_here || { echo "[curator] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
+  # A suite edit mid-freeze changes what the release's regression gate
+  # tests (R14; settled after the 0.5.0 cut). Requests wait for the cut.
+  freeze="$(release_freeze)"
+  if [ -n "$freeze" ]; then echo "[curator] held: release freeze $freeze" | tee -a "$LOOP_LOG"; return 0; fi
   local -a reqs=()
   # Not filtered on status:needs-approval: Don hands an escalation back by
   # removing owner:don, and often clears the status too. Any open request

@@ -143,14 +143,20 @@ mv "$T/ssh.saved" "$T/bin/ssh"; rm -f "$T/lem-deployed"
 # the regression gate: a backend:mps regression filed (and claimed) by the Mac during
 # the gate blocks it like any other (Don, 2026-09-26)
 : > "$FAKE_CLAUDE_LOG"
-FAKE_CLAUDE_DO='[ -e "$T/mps-filed" ] || { touch "$T/mps-filed"; gh issue create --repo o/r --title "S-F034 fails on mps" --label regression,backend:mps,owner:implementer,target:local >/dev/null; }' \
+FAKE_CLAUDE_DO="cat '$T/h/logs/.driver.lock/owner' >> '$T/lock-seen' 2>/dev/null; "'[ -e "$T/mps-filed" ] || { touch "$T/mps-filed"; gh issue create --repo o/r --title "S-F034 fails on mps" --label regression,backend:mps,owner:implementer,target:local >/dev/null; }' \
   RELEASE_REGRESSION_LEVELS=smoke rel 0.9.0 gates regression; rc=$?
 eq  "release gate: a backend:mps regression fails it" 1 "$rc"
+has "release gate: holds the driver lock through the regression run" "run-release" "$(cat "$T/lock-seen")"
+has "release gate: run-regression.sh runs under it, not waiting" "run-regression runs under" "$(cat "$T/h/logs/loop.log")"
+eq  "release gate: and releases it at the end" "" "$(ls -d "$T/h/logs/.driver.lock" 2>/dev/null)"
 has "release gate: and is listed" "S-F034 fails on mps" "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
 rel 0.9.0 accept regression "suite drift only"
 has "release: accept records Don's decision" "harnest:release-gate regression $sha accepted" "$(jq -r '.["o/r"][] | select(.number == 51) | .comments[].body' "$T/board.json")"
+touch "$T/h/logs/stop-after-cycle.local"
 rel 0.9.0 status
+rm -f "$T/h/logs/stop-after-cycle.local"
 has "release: status shows the accepted gate" "regression  accepted" "$(cat "$T/rel.out")"
+has "release: and a leftover stop flag" "stop flags: stop-after-cycle.local" "$(cat "$T/rel.out")"
 has "release: and the failed check" "check       fail" "$(cat "$T/rel.out")"
 # review: the driver files the public findings and keeps security ones local
 FAKE_CLAUDE_DO='out="$(printf "%s" "$*" | sed -n "s/.*to exactly this file: \([^ ]*json\).*/\1/p")"; case "$out" in *review-security-*) echo "[{\"area\":\"security\",\"severity\":\"blocker\",\"security\":true,\"title\":\"token-free path leak\",\"file\":\"app.py:1\",\"detail\":\"d\"}]" > "$out" ;; *review-engine-*) echo "[{\"area\":\"engine\",\"severity\":\"blocker\",\"security\":false,\"title\":\"cache never shrinks\",\"file\":\"c.py:2\",\"detail\":\"d\"},{\"area\":\"engine\",\"severity\":\"follow-up\",\"security\":false,\"title\":\"slow save\",\"file\":\"r.py:3\",\"detail\":\"d\"}]" > "$out" ;; *) echo "[]" > "$out" ;; esac' \
@@ -170,6 +176,18 @@ FAKE_CLAUDE_DO=''
 rel 0.9.0 cut --next 0.10.0; rc=$?
 eq  "release: cut refuses without its gates" 1 "$rc"
 has "release: naming what is missing" "check ci preflight security" "$(cat "$T/rel.out")"
+
+# --- 3f. the curator waits out a release freeze: a suite edit mid-freeze
+# changes what the regression gate tests
+: > "$FAKE_CLAUDE_LOG"
+printf '%s\n' '{"o/r": [{"number": 60, "state": "OPEN", "title": "Release 0.9.0", "labels": [{"name": "release"}, {"name": "owner:don"}]}],
+  "h/r": [{"number": 7, "state": "OPEN", "labels": [{"name": "suite"}, {"name": "status:needs-approval"}]}]}' > "$T/board.json"
+loop 1
+eq  "curator: held during a freeze" 0 "$(grep -c 'suite-change request #7' "$FAKE_CLAUDE_LOG")"
+has "curator: and says why" "[curator] held: release freeze #60" "$(cat "$T/loop.out")"
+jq '.["o/r"][0].state = "CLOSED"' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/board.json"
+loop 1
+eq  "curator: runs once the freeze lifts" 1 "$(grep -c 'suite-change request #7' "$FAKE_CLAUDE_LOG")"
 
 # --- 4. an outside filing is parked once, and stays out of the loop
 : > "$FAKE_CLAUDE_LOG"
