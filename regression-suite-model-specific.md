@@ -1747,7 +1747,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F049 — a copied Ref2VA workflow with no ceiling of its own inherits the catalog's, as a warning naming the source template
-pending: #502
 source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, via an inline copy of `templates/minimax/reference-to-video`
 with no `vram_estimate` and no `cost`.
@@ -1784,7 +1783,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F050 — the inherited-ceiling warning on a `for_each` Ref2VA workflow names the heavy member
-pending: #502
 source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, via an inline copy of `templates/minimax/dialogue-short` with
 no `vram_estimate` and no `cost`. It is shaped like the #478 repro: a `for_each` over
@@ -1812,7 +1810,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F051 — an inherited ceiling comes only from the same pipeline identity: T2VA copies get T2VA's, other models get none
-pending: #502
 source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA (`workflow: "t2va"`) and Ref2VA, via inline copies.
 Plan v1 keys the index on pipeline type + `model_name` + `workflow`. So a T2VA workflow never
@@ -1841,7 +1838,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F052 — a workflow's own `vram_estimate` wins over the inherited one, stricter or looser
-pending: #502
 source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, via inline copies of `templates/minimax/reference-to-video`.
 Plan v1: an inherited ceiling applies only where the workflow declares none. A declared one is
@@ -1865,7 +1861,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F053 — an inherited-ceiling warning never blocks `run_workflow`
-pending: #502
 source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA, N3 from M-F049.
 Plan v1 has no run-time backstop for inherited ceilings. The warning informs, and the run queues.
@@ -1883,7 +1878,6 @@ cleanup: `cancel_job` if still live, then `delete_output(job_id=...)`.
 metrics: none.
 
 ### M-F054 — the authoring guidance tells an agent that validate warns with an inherited ceiling
-pending: #502
 source: tester, spec for #502 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (the feature's scope), via the server's docs.
 Plan v1 extends the MCP instructions' sentence "A workflow you wrote has no measured cost: quote
