@@ -1530,6 +1530,11 @@ last release's publish time. What cost the most:
    Tested in `tests/test-release.sh` (the carry table, waivers) and `test-drivers.sh`
    sections 3e, 3f and 10 (lock held through gates, curator held, a waiver, and carrying
    across a blocker fix and the notes on a moving develop).
+   **Items 3, 4 and 5 built (2026-09-27).** Item 3 files drift as no ticket at all (a
+   harness suite request only), not a `suite-drift`-labeled one, so the gate's ticket
+   count is already right. Item 5 is `REGRESSION_NIGHTLY_AT` in `run-loop.sh`, off by
+   default: a cron job would never find the lock free while the loop runs. The cadence
+   is still Don's call.
 4. **Notes get closing comments.** The driver writes each closed issue's last
    `TICKET_OWNER` comment into the notes input, so the session no longer calls `gh`
    per issue.

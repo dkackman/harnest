@@ -415,6 +415,18 @@ eq  "curate: one audit session" 1 "$(grep -c 'AUDIT session' "$FAKE_CLAUDE_LOG")
    SESSION_RETRY_PAUSE_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
 eq  "retro: exits cleanly" 0 $?
 eq  "retro: one session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+# --- 9b. the nightly regression run: once a day, inside the loop, under its lock
+: > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/.nightly-regression"
+board '[]'
+REGRESSION_NIGHTLY_AT=0 REGRESSION_NIGHTLY_LEVEL="smoke regression-suite-tiny.md" loop 1
+has "nightly: runs at the cycle boundary" "[nightly] run-regression.sh smoke regression-suite-tiny.md" "$(cat "$T/loop.out")"
+has "nightly: under the loop's lock, not waiting on it" "run-regression runs under" "$(cat "$T/h/logs/loop.log")"
+has "nightly: the level ran, logged apart" "regression run (" "$(cat "$T/h/logs/nightly-regression.log")"
+REGRESSION_NIGHTLY_AT=0 REGRESSION_NIGHTLY_LEVEL="smoke regression-suite-tiny.md" loop 1
+eq  "nightly: once a day" 1 "$(grep -c '\[nightly\] run-regression' "$T/h/logs/loop.log")"
+loop 1
+eq  "nightly: off unless asked" 1 "$(grep -c '\[nightly\] run-regression' "$T/h/logs/loop.log")"
+
 # --- 10. run-release.sh across a moving develop: a waiver holds check, and
 # gates carry across the notes and a verified blocker's fix (last: it moves
 # develop, which every section above reads)

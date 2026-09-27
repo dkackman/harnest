@@ -92,6 +92,14 @@ HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"   # this repo: where suite-chan
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
+# A full regression run once a day, at the first cycle boundary at or after
+# this hour (0-23, local time), so drift and regressions reach the loop days
+# before a freeze and a release's gate confirms rather than discovers (R14,
+# from the 0.5.0 cut). Empty = off. It runs under the loop's own lock, so a
+# continuously running loop doesn't starve it the way a cron job would be.
+# 0.5.0's security + complete gate cost $68 and 5.5 h.
+REGRESSION_NIGHTLY_AT="${REGRESSION_NIGHTLY_AT:-}"
+REGRESSION_NIGHTLY_LEVEL="${REGRESSION_NIGHTLY_LEVEL:-all}"   # run-regression.sh's arguments: a level, optionally a suite file
 # Comma-separated issue numbers. Set, it narrows *every* role's queue to those
 # issues, so one cycle works them and nothing else — the way to drive a single
 # issue through both agents without spending a session on each of the others.
@@ -793,6 +801,26 @@ $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
   done
 }
 
+# nightly_regression_pass: run-regression.sh once a day (REGRESSION_NIGHTLY_AT),
+# under this loop's lock. Held during a release freeze: the gate is that run.
+nightly_regression_pass() {
+  [ -n "$REGRESSION_NIGHTLY_AT" ] || return 0
+  local stamp="$LOGS/.nightly-regression$TARGET_SUFFIX" today freeze rc=0
+  today="$(date +%F)"
+  [ "$((10#$(date +%H)))" -ge "$REGRESSION_NIGHTLY_AT" ] || return 0
+  [ "$(cat "$stamp" 2>/dev/null || true)" != "$today" ] || return 0
+  freeze="$(release_freeze)"
+  if [ -n "$freeze" ]; then echo "[nightly] held: release freeze $freeze" | tee -a "$LOOP_LOG"; return 0; fi
+  echo "$today" > "$stamp"
+  echo "[nightly] run-regression.sh $REGRESSION_NIGHTLY_LEVEL (log logs/nightly-regression$TARGET_SUFFIX.log)" | tee -a "$LOOP_LOG"
+  # shellcheck disable=SC2086  # a level and an optional suite file
+  env HARNEST_HELD_LOCK="$$ run-loop" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO" TICKET_OWNER="$TICKET_OWNER" \
+    SOURCE_DIR="$SOURCE_DIR" PLUGIN_TREE="$PLUGIN_TREE" PROVIDER="$PROVIDER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN" \
+    FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS" \
+    "$REPO/run-regression.sh" $REGRESSION_NIGHTLY_LEVEL >> "$LOGS/nightly-regression$TARGET_SUFFIX.log" 2>&1 || rc=$?
+  echo "[nightly] done (exit $rc); what it filed is on the board" | tee -a "$LOOP_LOG"
+}
+
 # shared_passes_here: whether this loop runs the server-free passes
 # (SHARED_PASSES above).
 shared_passes_here() {
@@ -872,6 +900,7 @@ while true; do
     drafts="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" --jq length 2>/dev/null || true)"
     [ "${drafts:-0}" = 0 ] || echo "  $drafts private security finding(s) in draft advisories: ./scripts/file-advisory.sh --list"
   } | tee -a "$LOOP_LOG"
+  step nightly_regression_pass nightly_regression_pass
 
   if [ "$MAX_CYCLES" -gt 0 ] && [ "$cycle" -ge "$MAX_CYCLES" ]; then
     echo "Reached MAX_CYCLES=$MAX_CYCLES, exiting." | tee -a "$LOOP_LOG"
