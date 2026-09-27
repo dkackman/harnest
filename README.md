@@ -14,30 +14,39 @@ The only channel between them is GitHub Issues. Because the tester can't read th
 fix can only convince it through the interface. A fix that reads correctly but doesn't
 behave correctly gets sent back.
 
-Two standalone agents sit outside the alternation:
+Other agents work alongside them, each through the same issues:
 
-- **Regression agent:** runs the growing `regression-suite-*.md` checks against the live
-  server and files issues for failures and slowdowns.
 - **Feature lead:** designs features and ideas with Don in issue comments, then builds
-  approved ones in stages (see below).
+  approved ones in stages (see below). Its builds run inside the loop, and its design
+  sessions run from `run-features.sh`, which the loop starts whenever one is waiting.
+- **Docs reviewer:** closes a fix to text the tester can't see (the README, a `docs/` page
+  that isn't a guide) by reading the merged tree. It is read-only.
+- **Curator:** rules on requests to change a regression case, filed on this repo.
+- **Regression agent:** runs on its own (`run-regression.sh`), not in the loop. It runs
+  the growing `regression-suite-*.md` checks against the live server and files issues for
+  failures and slowdowns.
+- **Release sessions:** `run-release.sh` adds a read-only code review and a notes draft
+  when a release is cut (see "Releasing").
 
-This repo holds no application code, only the drivers, role prompts and regression suites.
-[`HARNESS-ROADMAP.md`](HARNESS-ROADMAP.md) is the plan for where the harness goes next.
-
-<img width="965" height="832" alt="image" src="https://github.com/user-attachments/assets/f5ad647f-b65c-48b3-8e7b-cd1de3d57441" />
+The loop normally runs against `lem`. A second copy can run against a dw server on the Mac
+(`DW_TARGET=local`), and labels decide which loop works which issue (see "Another
+server"). This repo holds no application code, only the drivers, role prompts and
+regression suites. [`HARNESS-ROADMAP.md`](HARNESS-ROADMAP.md) is the plan for where the
+harness goes next.
 
 ## How a cycle goes
 
 ```
 ┌─────────────┐   GitHub Issues     ┌─────────────┐
 │ implementer │ ──────────────────▶ │   tester    │
-│             │ ◀────────────────── │             │
+│ lead builds │ ◀────────────────── │ docs review │
 │ source repo │                     │ MCP only    │
 │ ssh lem     │                     │ qa-* spaces │
 └──────┬──────┘                     └──────┬──────┘
-       │ deploy                            │ tools/skills
+       │ deploy develop                    │ tools/skills
        ▼                                   ▼
-   ┌──────────────── dw MCP server on lem ────────────────┐
+┌───────────────────── dw MCP server on lem ─────────────────────┐
+└────────────────────────────────────────────────────────────────┘
 ```
 
 `run-loop.sh` repeats the following. Every session is a fresh `claude -p`, one per issue,
@@ -46,27 +55,43 @@ never one per role.
 1. **Park outside filings.** An issue filed by any login other than `TICKET_OWNER` is
    parked for Don (`owner:don` + `status:needs-approval`). The repo is public, and nothing
    a stranger files is worked unattended.
-2. **Implementer triage.** This runs when two or more issues are waiting. For each one it
-   asks: is it a duplicate, already fixed on `develop`, or a restated `wontfix`? Should it
-   be batched with a related issue? Would the fix add new engine or validation surface
-   that a narrow verify can't cover? In that last case it escalates the issue to Don.
-   Every outcome is recorded as a `triage:` comment.
+2. **Claim, then triage.** The implementer's queue is claimed for this loop with a
+   `target:` label first, so two loops never work the same issue. Triage runs when two or
+   more issues are waiting. For each one it asks: is it a duplicate, already fixed on
+   `develop`, or a restated `wontfix`? Should it be batched with a related issue? Would
+   the fix add new engine or validation surface that a narrow verify can't cover? In that
+   last case it escalates the issue to Don. Every outcome is recorded as a `triage:`
+   comment.
 3. **One implementer session per remaining issue.** The session reproduces the bug,
    fixes it on a branch, and merges to `develop`. It then deploys `develop` (never the
    branch) with one call: `ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'`.
    `lem` can only be on one commit, and a cycle hands off several fixes, which is why only
    `develop` is deployed. The session ends by handing the issue to the tester with a
    comment saying what changed.
-4. **One tester session per handed-off issue.** It reruns the repro and one or two nearby
-   cases over MCP. It then either closes the issue as `verified` or sends it back with
-   what's still wrong.
-   - Every `TESTER_TASK_EVERY` cycles, a *task* session also moves forward a throwaway
-     series in `qa-` workspaces ([`agents/tester/standing-task.md`](agents/tester/standing-task.md))
-     and files anything it hits.
-   - On the cycles in between, a pending `wontfix`/`duplicate` closure gets its own
-     short session, so the tester can accept it or reopen it once.
-5. **Print a status board** queried live from GitHub, then start the next cycle. The
-   driver sleeps only when a cycle left the board unchanged.
+4. **The feature lead.** A waiting design or decompose starts `run-features.sh`. Then
+   the lead builds at most `LEAD_STAGES_PER_CYCLE` approved stages (default 1), each
+   handed to the tester like a fix, and closes out finished features.
+5. **Re-check `lem`.** The driver makes sure `lem` is on `origin/develop` and resets the
+   tester's plugin tree to the same commit.
+6. **One tester session per issue it holds.** The session kind depends on the issue:
+   - *verify* reruns a handed-off fix or stage's repro and one or two nearby cases over
+     MCP, then closes the issue as `verified` or sends it back with what's still wrong.
+   - *spec* writes a stage's cases from its approved plan before any code exists.
+   - *answer* replies to an implementer's `status:needs-info` question.
+   - *handoff* applies an edit to this repo the implementer asked for.
+
+   Every `TESTER_TASK_EVERY` cycles, a *task* session also moves forward a throwaway
+   series in `qa-` workspaces ([`agents/tester/standing-task.md`](agents/tester/standing-task.md))
+   and files anything it hits. On the cycles in between, a pending `wontfix`/`duplicate`
+   closure gets its own short session, so the tester can accept it or reopen it once.
+7. **Docs review.** The docs reviewer closes or bounces each `docs-review` fix, including
+   one the tester rerouted this cycle.
+8. **Suite upkeep.** The driver commits any cases the tester added, and the curator rules
+   on pending requests to change a case.
+9. **Print a status board** queried live from GitHub, with a line for a release freeze
+   and for any private security drafts, then start the next cycle. The driver sleeps
+   only when a cycle left the board unchanged. `touch logs/stop-after-cycle` makes it
+   exit here instead.
 
 A few things the driver does so the sessions don't have to:
 
@@ -754,6 +779,8 @@ raw events.
   - a live tail of any file in `logs/`, with a filter.
 
   It only reads files and `ps`: no gh, no ssh, no lock.
+
+  <img width="965" height="832" alt="The dashboard during the 0.5.0 release gates: the release and regression drivers running, lem's current regression session, the Mac loop idle, and the gate log" src="https://github.com/user-attachments/assets/f5ad647f-b65c-48b3-8e7b-cd1de3d57441" />
 
 ## Layout
 
