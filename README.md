@@ -503,6 +503,12 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 - **Gates are per commit.** A fix after the gates moves `develop`, and `cut` then wants
   every gate again on the new commit. `accept <gate> <why>` records that you took an
   earlier run as good enough. Nothing is inferred from what a commit touched.
+- **lem follows develop.** When lem is behind `origin/develop` (merging the notes moves
+  it), `check` and the regression gate deploy develop themselves if no loop holds the
+  driver lock; a running loop redeploys it each cycle.
+- **The freeze doesn't hide merged work.** `check` fails on an issue the freeze holds
+  whose code is already on develop: a fix awaiting verification or docs review, or a
+  feature being built. Let it finish, or label it `release-blocker` so the loop moves it.
 - **Security findings stay off the public tracker.** The review files each one as a
   private draft security advisory, and the release issue gets only their count. `cut`
   refuses while one is a blocker, unless you `accept security`.

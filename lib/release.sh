@@ -58,10 +58,22 @@ release_missing_gates() {
 # stdout: one line per reason the board isn't ready to release. Work in
 # flight - a fix waiting on verification or review, a feature stage being
 # built, an issue no queue will pick up - lands in the release half-done.
-# Issues held by the freeze, or with Don, are not in flight.
+# Issues with Don are not in flight. Nor is one the freeze holds before
+# its work starts (a fix not yet made, a spec, a design), but the freeze
+# also holds work already merged to develop - a fix awaiting verification,
+# a feature with stages built - and that lands in the release unverified
+# unless it is finished or labeled release-blocker first.
 release_board_problems() {
   awk -F'\t' -v rel="$1" '
     $1 == rel { next }
+    $2 == "wait" && match($4, /^release freeze \(#[0-9]+\): not a release-blocker \([a-z]+:[a-z]+ after it\)$/) {
+      q = $4; sub(/^.*not a release-blocker \(/, "", q); sub(/ after it\)$/, "", q)
+      if (q == "tester:verify" || q == "reviewer:docs")
+        print "#" $1 " is merged but unverified (" q ", held by the freeze): let it verify, or label it release-blocker"
+      else if (q == "lead:build")
+        print "#" $1 " is a feature being built (held by the freeze): finish it, or revert its merged stages"
+      next
+    }
     $2 == "tester:verify" || $2 == "reviewer:docs" { print "#" $1 " waits on verification (" $2 ")"; next }
     $2 == "lead:build" || ($2 == "wait" && $4 == "building") { print "#" $1 " is a feature being built"; next }
     $2 == "stranded" { print "#" $1 " is stranded: " $4; next }

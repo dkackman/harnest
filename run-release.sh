@@ -113,6 +113,29 @@ tree_at() {
     || die "could not reset $RELEASE_TREE to ${1:0:10}"
 }
 
+# loop_holder: prints who holds lem's driver lock when a live process does.
+loop_holder() {
+  local holder
+  holder="$(cat "$LOGS/.driver.lock/owner" 2>/dev/null || true)"
+  if [ -n "$holder" ] && kill -0 "${holder%% *}" 2>/dev/null; then printf '%s\n' "$holder"; fi
+}
+# lem_at <sha>: prints what lem runs and succeeds when that is <sha>. When
+# lem is behind and no loop holds the lock, deploys develop first: merging
+# the release notes moves develop after the loop has stopped, and nothing
+# else would redeploy it. A running loop redeploys develop itself each cycle.
+lem_at() {
+  local sha="$1" lem
+  lem="$(deployed_head)"
+  case "$lem" in *" @ "*) [ "${sha#"${lem##* @ }"}" = "$sha" ] || { echo "$lem"; return 0; } ;; esac
+  if [ -z "$(loop_holder)" ]; then
+    say "lem runs $lem, not origin/develop ${sha:0:10}: deploying develop" >&2
+    deploy_target >&2 || true
+    lem="$(deployed_head)"
+    case "$lem" in *" @ "*) [ "${sha#"${lem##* @ }"}" = "$sha" ] || { echo "$lem"; return 0; } ;; esac
+  fi
+  echo "$lem"; return 1
+}
+
 stage_freeze() {
   REL="$(release_issue)"
   if [ -n "$REL" ]; then say "already frozen: #$REL"; return 0; fi
@@ -130,12 +153,8 @@ stage_check() {
   sha="$(develop_sha)"
   board="$(classify_issues)" || die "could not read the issue board"
   problems="$(printf '%s\n' "$board" | release_board_problems "$REL")"
-  lem="$(deployed_head)"
-  case "$lem" in
-    *" @ "*) [ "${sha#"${lem##* @ }"}" != "$sha" ] \
-               || problems="$problems${problems:+$'\n'}lem runs $lem, not origin/develop ${sha:0:10}" ;;
-    *) problems="$problems${problems:+$'\n'}could not ask lem what it runs" ;;
-  esac
+  lem="$(lem_at "$sha")" \
+    || problems="$problems${problems:+$'\n'}lem runs $lem, not origin/develop ${sha:0:10}"
   git -C "$SOURCE_DIR" merge-tree --write-tree origin/master origin/develop >/dev/null 2>&1 \
     || problems="$problems${problems:+$'\n'}origin/develop does not merge cleanly into origin/master"
   if [ -z "$problems" ]; then
@@ -193,9 +212,7 @@ gate_preflight() {
 
 gate_regression() {
   local sha="$1" lem start level filed rc=0
-  lem="$(deployed_head)"
-  case "$lem" in *" @ "*) [ "${sha#"${lem##* @ }"}" != "$sha" ] || { record regression "$sha" fail "lem runs $lem, not ${sha:0:10}: deploy develop first."; return 1; } ;;
-    *) record regression "$sha" fail "could not ask lem what it runs."; return 1 ;; esac
+  lem="$(lem_at "$sha")" || { record regression "$sha" fail "lem runs $lem, not ${sha:0:10}, and deploying develop did not change that."; return 1; }
   start="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
   for level in $RELEASE_REGRESSION_LEVELS; do
     say "regression: $level on ${sha:0:10}"
@@ -221,8 +238,8 @@ stage_gates() {
   need_release_issue
   local sha holder results gates="${1:-ci preflight regression}" gate failed=0
   sha="$(develop_sha)"
-  holder="$(cat "$LOGS/.driver.lock/owner" 2>/dev/null || true)"
-  if [ -n "$holder" ] && kill -0 "${holder%% *}" 2>/dev/null; then
+  holder="$(loop_holder)"
+  if [ -n "$holder" ]; then
     die "the driver lock is held by '${holder#* }' (pid ${holder%% *}): the regression gate needs lem to itself. Stop it with 'touch logs/stop-after-cycle' and rerun."
   fi
   results="$(gate_results)"

@@ -126,6 +126,20 @@ rel 0.9.0 gates ci; rc=$?
 rm -rf "$T/h/logs/.driver.lock"
 eq  "release: gates refuse while the loop holds the lock" 1 "$rc"
 has "release: and say how to stop it" "stop-after-cycle" "$(cat "$T/rel.out")"
+# lem behind develop (the notes merge moved it): check deploys develop when
+# no loop is running, and leaves it to the loop when one is
+cp "$T/bin/ssh" "$T/ssh.saved"
+printf '#!/usr/bin/env bash\ncase "$*" in *deploy.sh*) touch "%s"; exit 0 ;; esac\n[ -e "%s" ] && echo "develop @ %s" || echo "develop @ 0000000"\n' \
+  "$T/lem-deployed" "$T/lem-deployed" "${sha:0:9}" > "$T/bin/ssh"
+mkdir -p "$T/h/logs/.driver.lock" && echo "$$ run-loop" > "$T/h/logs/.driver.lock/owner"
+rel 0.9.0 check
+rm -rf "$T/h/logs/.driver.lock"
+has "release: lem behind is a check problem" "lem runs develop @ 0000000" "$(cat "$T/rel.out")"
+eq  "release: and a running loop is left to deploy it" "" "$(ls "$T/lem-deployed" 2>/dev/null)"
+rel 0.9.0 check
+ok  "release: with no loop running, check deploys develop" test -e "$T/lem-deployed"
+eq  "release: and lem then counts as on develop" "" "$(grep 'lem runs develop @ 0000000,' "$T/rel.out" | grep -v 'deploying develop' || true)"
+mv "$T/ssh.saved" "$T/bin/ssh"; rm -f "$T/lem-deployed"
 # the regression gate: a backend:mps regression filed (and claimed) by the Mac during
 # the gate blocks it like any other (Don, 2026-09-26)
 : > "$FAKE_CLAUDE_LOG"

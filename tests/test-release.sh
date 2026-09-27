@@ -36,9 +36,15 @@ board="$(printf '%s\t%s\t%s\t%s\n' \
   43 stranded - "owner labels: none" \
   44 implementer:fix - ready \
   45 don - "status:needs-approval" \
-  46 wait - building)"
+  46 wait - building \
+  47 wait - "release freeze (#40): not a release-blocker (tester:verify after it)" \
+  48 wait - "release freeze (#40): not a release-blocker (lead:build after it)" \
+  49 wait - "release freeze (#40): not a release-blocker (reviewer:docs after it)")"
 problems="$(printf '%s\n' "$board" | release_board_problems 40)"
-eq "board: four problems" 4 "$(printf '%s\n' "$problems" | grep -c .)"
+eq "board: seven problems" 7 "$(printf '%s\n' "$problems" | grep -c .)"
+has "board: a frozen fix awaiting verification is merged work" "#47 is merged but unverified (tester:verify" "$problems"
+has "board: a frozen build" "#48 is a feature being built (held by the freeze)" "$problems"
+has "board: a frozen docs review" "#49 is merged but unverified (reviewer:docs" "$problems"
 has "board: a verify in flight" "#42 waits on verification" "$problems"
 has "board: stranded" "#43 is stranded" "$problems"
 has "board: an open blocker" "#44 is open work in implementer:fix" "$problems"
