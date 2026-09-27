@@ -3851,11 +3851,14 @@ is CPU only and takes one short job.
 2. `get_output_text` on the `seams_cut`, `drift_cut` and `seams_diss` files.
 expected:
 - Step 1 returns `succeeded`. Manifest `shots[].name`: `cut` has
-  `ep31-shot1-return.mp4`, `shot2d`, and `diss` has `shot2d`, `cut`.
+  `ep31-shot1-return.mp4`, `shot2d`, and `diss` has `shot2d`, `ep31-shot1-return.mp4`,
+  `shot2d` (a join nests an input's own shots, dw#399).
 - Step 2: every body has `shots_source: "artifact"`. In `seams_cut`, the seam and each
   finding read `between: ["ep31-shot1-return.mp4", "shot2d"]`. In `drift_cut`, `shots[]`
-  names are `ep31-shot1-return.mp4`, `shot2d`. In `seams_diss`, the seam and each finding
-  read `between: ["shot2d", "cut"]`.
+  names are `ep31-shot1-return.mp4`, `shot2d`. In `seams_diss`, the seams read
+  `between: ["shot2d", "ep31-shot1-return.mp4"]` and `["ep31-shot1-return.mp4", "shot2d"]`,
+  and each finding names one of those pairs (seam pairs unconfirmed: the first run after
+  harnest#18 confirms them, and files a suite request if they differ).
 It is a **finding** if any name in the manifest or a probe body reads `video N`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
