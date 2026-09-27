@@ -4737,7 +4737,6 @@ cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ### C-F136 — the series-episodes and minimax-music3 skills say when to pass `limit: true`, and that the default is to match downward
-pending: #497
 source: tester, spec for #497 from #474's plan v1 (claude-opus-5-5 via anthropic)
 The plugin has no MCP surface, but its skills are what a driving session reads. Load them
 with the `Skill` tool (`dw:series-episodes`, `dw:minimax-music3`); the plugin tree follows
@@ -5215,7 +5214,6 @@ cleanup: none (nothing is created).
 metrics: none.
 
 ### C-F150 — `templates/assemble-and-score` with `limit: true` holds −3 dBTP on the mix, lands the film within 1 dB of it without clipping, and its description says so
-pending: #497
 source: tester, spec for #497 from #474's plan v2 (claude-opus-5-5 via anthropic)
 Plan v2 (Q6 default (a)) moves where the ceiling is judged: the limiter holds −3.0 dBTP on
 the `balanced` mix, and the AAC mux of the film may land up to about 1 dB above it (−2.54
@@ -5578,6 +5576,395 @@ It is a **finding** if:
 - or the verbatim recipe gives a film whose placement, shot records or headroom differ
   from the above. Say whether the recipe text or the task is at fault.
 cleanup: `delete_output(job_id=…)` for every job the recipe ran.
+metrics: none.
+
+### C-F159 — `find_loop_bed` is discoverable as a command, not an assessment probe, with the plan's arguments and defaults
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+The task is registered `returns="json"`, `assessment=False`. It must be listed with the
+utility commands, and the assessment list must not grow. Read-only.
+
+**Calls:**
+- `list_tasks()`
+- `get_task(name="find_loop_bed")`
+- `list_guides()`, then `get_guide("tasks", section=<the find_loop_bed section>)`
+expected:
+- `list_tasks` lists `find_loop_bed` under `commands`. `assessment` is exactly the three
+  probes it held before this stage, and `find_loop_bed` is not one of them.
+- `get_task` shows `audio` as required, and these optional arguments with these defaults:
+
+  | argument | default |
+  |---|---|
+  | `start_seconds` / `end_seconds` | whole file (null or absent) |
+  | `min_seconds` | 0.5 |
+  | `max_seconds` | 2.0 |
+  | `max_bin_dbfs` | −55 |
+  | `max_mean_dbfs` | −60 |
+  | `max_spike_db` | 12 |
+  | `crossfade_ms` | 250 |
+  | `loop_seconds` | 10 |
+  | `target_bed_dbfs` | −60 |
+  | `max_candidates` | 5 |
+  | `device` | the server default |
+
+  It also states that the result is JSON.
+- The tasks guide has a `find_loop_bed` section. It names the output's `candidates` and
+  `rejected` blocks, and says the candidate's `start_seconds`/`duration_seconds` feed
+  `slice_audio` and its `gain` feeds `mix_audio`.
+It is a **finding** if:
+- the task is missing, or is listed under `assessment`;
+- the assessment list changed;
+- any default differs from the table;
+- or there is no guide section.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F160 — `find_loop_bed` on a quiet bed with one click: ranked, non-overlapping candidates that avoid the click, with the full reading set
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+The known-answer case. It uses a bed quiet enough to pass the default thresholds, with a
+single 1 ms click at 5.5 s. The click sits clear of the ~−47.8 dB bumps that
+`ep51-bed.wav` carries in seconds 3, 7, 11 and 15.
+
+**Setup:** one inline workflow in the suite workspace, `acknowledged_cost=true,
+wait_seconds=55`, with three steps:
+1. `bed`: `gain_audio(audio="asset:qa-cast/ep51-bed.wav", gain_db=-30)`, saved as
+   `audio/wav`. The mean is about −80 dBFS. No sample can exceed about −58.9, so every bin
+   is ≤ −55.
+2. `clicked`: `gain_audio(audio="previous_result:bed", gain_db=20, start_seconds=5.5,
+   duration_seconds=0.001)`, saved as `audio/wav`.
+3. `find`: `find_loop_bed(audio="previous_result:clicked")`, all defaults, with
+   `result: {"content_type": "application/json", "save": true}`.
+
+**Control:** the same workflow with `find` pointed at `previous_result:bed`, or a
+fourth step `find_control` over `bed`. Read both JSONs with `get_output_text`.
+expected:
+- The workflow validates clean, and the job succeeds.
+- The top level has `source`, `criteria`, `candidates`, `rejected` and `findings`.
+  - `source.duration_seconds` is 15.5 (±0.05) and `source.sample_rate` is 16000.
+  - `source.searched` is `[0, 15.5]` (±0.05), and `source.shots_source` is null.
+  - `criteria` echoes the defaults: `max_bin_dbfs` −55, `max_mean_dbfs` −60,
+    `max_spike_db` 12, `crossfade_ms` 250, `loop_seconds` 10. It also carries
+    `tonal_flatness` 0.3 and `harmonicity` 0.45.
+- The control returns at least one candidate. If it returns none, the fixture is too
+  spiky for the default 12 dB crest test. That is a **fixture note**, not a task finding:
+  re-run both arms with `max_spike_db: 25` and `gain_db: 30` on the click, and judge them
+  against the rest of this list.
+- In the clicked arm:
+  - Between 1 and 5 candidates, never more than `max_candidates`. `rank` runs 1..n.
+  - `looped.ripple_db` is non-decreasing with rank.
+  - Every candidate has `start_seconds`, `duration_seconds`, `end_seconds`, `shot` (null
+    here), `mean_dbfs`, `max_bin_dbfs`, `spike_db`, `flatness`, `harmonicity`, `looped`,
+    `gain_db`, `gain` and `warnings`. `looped` has `ripple_db`, `envelope_peak_db`,
+    `envelope_peak_hz`, `lap_hz` and `lap_component_db`.
+  - `duration_seconds` is in [0.5, 2.0] and on the 50 ms grid (a multiple of 0.05,
+    ±0.001). `end_seconds` = `start_seconds` + `duration_seconds` (±0.001), and the
+    candidate lies inside [0, 15.5].
+  - No two candidates overlap in time.
+  - No candidate's [start, end] contains 5.5 s.
+  - Each candidate's `mean_dbfs` ≤ −60, `max_bin_dbfs` ≤ −55, `spike_db` ≤ 12,
+    `flatness` ≥ 0.3 and `harmonicity` < 0.45.
+  - `gain` = 10^(`gain_db`/20) (±1 %), and `mean_dbfs` + `gain_db` ≈ −60 (±1 dB), the
+    default `target_bed_dbfs`.
+  - A candidate whose `looped.envelope_peak_db` is above −15 has `"lap_modulation"` in
+    `warnings`. Any other candidate does not.
+- `rejected` has `too_loud`, `silent`, `spike` and `tonal`, each an integer ≥ 0. The
+  clicked arm's `rejected.spike` is ≥ 1 and greater than the control's.
+It is a **finding** if:
+- any expectation above fails;
+- or a candidate covers the click, since the spike test missed it.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F161 — `find_loop_bed` rejects a window with a voice under it (the near-programme trap)
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+A voice mixed far down under a bed can pass the level tests. The plan's tonal test
+(flatness ≥ 0.3 and harmonicity < 0.45 to pass) is what must catch it.
+
+**Setup:** an inline workflow, `acknowledged_cost=true, wait_seconds=55`:
+1. `bed`: `gain_audio(audio="asset:qa-cast/ep51-bed.wav", gain_db=-10)`, mean about
+   −60, saved as wav.
+2. `voiced`: `mix_audio` of `previous_result:bed` and `asset:qa-cast/priya-voice.wav` with
+   gains `[1.0, 0.01]`, a −40 dB voice at an rms of about −77, saved as wav.
+3. `find`: `find_loop_bed(audio="previous_result:voiced", start_seconds=0,
+   end_seconds=7.0, max_bin_dbfs=-40, max_mean_dbfs=-50, max_spike_db=30,
+   max_candidates=20)`, saved as `application/json`.
+
+The level thresholds are loosened so only the tonal test can separate voiced windows from
+bed-only ones.
+
+**Control:** the same workflow with voice gain `0.0` in step 2.
+expected:
+- Both jobs succeed.
+- The voiced arm's `rejected.tonal` is greater than the control's.
+- Every candidate in either arm has `flatness` ≥ 0.3 and `harmonicity` < 0.45.
+- The voiced arm has no more candidates than the control.
+It is a **finding** if the voice changes nothing in `rejected.tonal`, or a returned
+candidate fails its own tonal criteria. In the finding, quote the voiced candidate's
+`flatness`/`harmonicity`.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F162 — `find_loop_bed` with nothing to find: an empty answer with a reason, not a failed job (too loud; digital silence)
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+The plan says "no candidates" is an answer: `candidates: []`, the rejected counts, and one
+finding naming what to relax. It also says digital silence is rejected as `silent`, never
+offered as a bed.
+
+**Loud arm:** `find_loop_bed(audio="asset:qa-cast/ep15-song.mp3", start_seconds=2,
+end_seconds=4)`, all other arguments default, saved as `application/json`.
+
+**Silent arm:**
+1. `pad`: `slice_audio(audio="asset:uploads/qa-cast/room-bed.wav", start_seconds=0,
+   duration_seconds=8.0)`. The source is 4.96 s, so this pads with digital zeros; saved
+   as wav.
+2. `find`: `find_loop_bed(audio="previous_result:pad", start_seconds=5.2,
+   end_seconds=7.9)`, saved as `application/json`.
+
+If `slice_audio` refuses to read past the end rather than padding, build the silence
+another way, e.g. `gain_audio(audio=<room-bed>, gain_db=-200)` if that yields exact zeros.
+Note the substitution.
+expected:
+- Both jobs **succeed**. Neither is a failed job or a validation refusal.
+- Loud arm:
+  - `candidates` is `[]` and `rejected.too_loud` > 0.
+  - `findings` has exactly one entry, and it names at least one argument to relax (e.g.
+    `max_bin_dbfs` / `max_mean_dbfs`).
+  - `source.searched` is `[2, 4]`.
+- Silent arm:
+  - `candidates` is `[]` and `rejected.silent` > 0.
+  - No window there is reported under `too_loud` or `spike`, and there is one finding.
+It is a **finding** if:
+- an empty search fails the job;
+- the findings list is empty or has several entries;
+- digital silence is returned as a candidate;
+- or silence is counted under a bucket other than `silent`.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F163 — `find_loop_bed` arguments move the answer in the right direction
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+Every threshold must act in its stated direction and be echoed in `criteria`. Uses C-F160's
+`clicked` setup: re-run it, or point `audio` at C-F160's saved clicked wav via `output:`
+before its cleanup. Take its default result as the baseline `D`.
+
+**Arms:** each is one `find_loop_bed` call over the clicked bed, saved as
+`application/json`:
+1. `max_spike_db` = (the smallest `spike_db` among `D`'s candidates) − 0.5.
+2. `max_bin_dbfs` = (the smallest `max_bin_dbfs` among `D`'s candidates) − 0.5.
+3. `max_candidates: 1`.
+4. `min_seconds: 1.0, max_seconds: 1.0`.
+5. `target_bed_dbfs: -50`.
+expected:
+- Every job succeeds, and each arm's `criteria` shows the value it passed.
+- Arm 1: `rejected.spike` is greater than in `D`, and every candidate has `spike_db` ≤ the
+  new ceiling.
+- Arm 2: `rejected.too_loud` is greater than in `D`, and every candidate has
+  `max_bin_dbfs` ≤ the new ceiling.
+- Arm 3: exactly one candidate. It has the same `start_seconds`/`duration_seconds` as
+  `D`'s rank 1 (±0.001).
+- Arm 4: every candidate has `duration_seconds` 1.0 (±0.001).
+- Arm 5: for the candidate at the same start as in `D`, `gain_db` is 10 dB higher than
+  in `D` (±0.5).
+It is a **finding** if a threshold moves the counts the wrong way or not at all, a
+returned candidate breaks the criteria it was searched under, or `criteria` misreports a
+passed value.
+cleanup: `delete_output(job_id=…)` for every arm.
+metrics: none.
+
+### C-F164 — `find_loop_bed` on video sources: decodes audio only, from an asset, an `output:` and a `previous_result:` AudioVideo
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+The plan says a video source is decoded audio-only (no frames). It also says the task
+accepts a `previous_result:` AudioTrack or AudioVideo.
+
+**Arms:** each saves as `application/json`, `acknowledged_cost=true, wait_seconds=55`:
+1. **Asset:** `find_loop_bed(audio="asset:qa-cast/long-film-4089.mp4")`. The film is
+   170.4 s long.
+2. **`output:`:**
+   - A first run: `concat_videos` of `asset:qa-cast/ep3-shot1-incident.mp4` and
+     `asset:qa-cast/ep3-shot2-reply.mp4`, saved as `video/mp4`.
+   - A second run: `find_loop_bed(audio="output:<that run's mp4>")`.
+3. **`previous_result:`:** one workflow with a `concat_videos` step as in arm 2 and a
+   `find_loop_bed(audio="previous_result:<concat step>")` step.
+expected:
+- All three jobs succeed. None fails the output type, and none says "audio required".
+- Arm 1:
+  - `source.duration_seconds` is 170.4 (±0.1).
+  - The job completes in under 60 s wall clock (`get_job` timing). At ≥ 120 s it is a
+    finding: frames were decoded, or the search is quadratic.
+- Arms 2 and 3:
+  - `source.duration_seconds` is 10.33 (±0.05): 248 frames at 24 fps.
+  - `source.sample_rate` is the clips' audio rate, 32000.
+  - The two arms report the same `candidates` and `rejected` counts. The ep3 audio is
+    loud, so `candidates: []` with a `too_loud` count and one finding is a correct
+    answer here.
+It is a **finding** if a video source is refused, or the durations are wrong. Also if the
+`previous_result:` and `output:` forms disagree, or arm 1 exceeds the time bound.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F165 — `find_loop_bed` argument domains are refused at validate, with the boundaries accepted; JSON-only saving
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only. Each arm is a one-step inline workflow,
+`find_loop_bed(audio="asset:uploads/qa-cast/room-bed.wav", <arm>)` saved as
+`application/json` unless the arm says otherwise.
+
+| arm | argument | expected |
+|---|---|---|
+| r1 | `min_seconds: 0` | refused |
+| r2 | `min_seconds: -1` | refused |
+| r3 | `max_candidates: 0` | refused |
+| r4 | `crossfade_ms: -1` | refused |
+| r5 | save as `text/plain` | refused |
+| r6 | save as `audio/wav` | refused |
+| a1 | `crossfade_ms: 0` | valid |
+| a2 | `max_candidates: 1` | valid |
+| a3 | `min_seconds: 0.05` | valid |
+| a4 | all defaults, `application/json` | valid |
+
+expected:
+- r1–r4: `valid: false`. The error names the step and the argument, and states the domain
+  (e.g. "> 0", "≥ 0").
+- r5–r6: `valid: false`, saying the task returns JSON.
+- a1–a4: `valid: true`, with no error.
+It is a **finding** if:
+- a bad value validates. Say whether it then fails at run time, or runs;
+- a boundary value is refused;
+- or the error omits the argument name.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F166 — `find_loop_bed` run-time refusals: an impossible range or window fails the job naming the argument
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+These depend on the source's length, so the plan puts them at run time. A refusal at
+validate is also acceptable wherever the server can know the length. Source for every arm:
+`asset:uploads/qa-cast/room-bed.wav`, 4.96 s. Each arm is one `find_loop_bed` step saved
+as `application/json`, `acknowledged_cost=true, wait_seconds=55`.
+
+| arm | arguments | refuses because |
+|---|---|---|
+| f1 | `start_seconds: 2, end_seconds: 2` | end ≤ start |
+| f2 | `start_seconds: 3, end_seconds: 1` | end ≤ start |
+| f3 | `min_seconds: 1.5, max_seconds: 1.0` | min > max |
+| f4 | `end_seconds: 6.0` | range past the end of the file |
+| f5 | `start_seconds: 5.5` | range past the end of the file |
+| f6 | `min_seconds: 5, max_seconds: 6` | source shorter than `min_seconds` |
+| ok | `end_seconds: 4.96` | accepted: the exact end of the file |
+
+expected:
+- f1–f6 are each a validation refusal or a failed job. The error names the offending
+  argument or arguments (`end_seconds`/`start_seconds`, `min_seconds`/`max_seconds`)
+  and, for f4–f6, the source's duration.
+- No arm among f1–f6 succeeds with an empty or clamped result.
+- `ok` succeeds with `source.searched` `[0, 4.96]` (±0.01).
+It is a **finding** if any of f1–f6 succeeds, fails without naming the argument, or fails
+as a traceback. Also if `ok` is refused as past the end.
+cleanup: `delete_output(job_id=…)` for every job that ran.
+metrics: none.
+
+### C-F167 — `bleed_join` gives unchanged readings after the harmonicity refactor
+pending: #544
+source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
+Stage A moves `_harmonicity` onto an FFT path shared with `find_loop_bed`, and promises
+`bleed_join`'s outputs are unchanged. C-F037 is the case that pinned them.
+
+**Run:** C-F037's arms (a) and (b), exactly as that case writes them.
+expected:
+- Arm (a) still carries no `bleed_join` tonal warning.
+- Arm (b) still warns, quoting flatness 0.22 and harmonicity 0.33 (±0.01 each), the values
+  recorded before the refactor.
+- Everything else C-F037 expects still holds.
+It is a **finding** if either arm changes verdict, or (b)'s readings move by more than
+0.01. Quote the new numbers.
+cleanup: as in C-F037.
+metrics: none.
+
+### C-F168 — `find_loop_bed` keeps candidates inside one shot, resolving shots from an argument, a carried AudioVideo or the run manifest
+pending: #545
+source: tester, spec for #545 from #218's plan v1 (claude-opus-5-5 via anthropic)
+Stage B adds a `shots` argument (`[{name, start_frame, num_frames}]` plus `fps`). Shots
+resolve in this order: the argument, then a carried `AudioVideo.shots`, then the run
+manifest's `recorded_shots`, then none. No candidate may straddle a shot boundary, and each
+names its `shot`. `source.shots_source` reports where the shots came from.
+
+**Setup:**
+1. Quiet score: `gain_audio(audio="asset:qa-cast/ep51-bed.wav", gain_db=-30)`, saved as
+   `audio/wav`. Keep the `output:` reference.
+2. Film: run `templates/assemble-and-score` with:
+   - shots `[asset:qa-cast/ep3-shot1-incident.mp4, asset:qa-cast/ep3-shot2-reply.mp4]`;
+   - score = step 1's `output:`;
+   - `sample_rate` 32000, `fps` 24, `total_frames` 248;
+   - `world_gain` 0.0 and `score_gain` 1.0, so the film's audio is only the quiet bed.
+   Record `get_job`'s `media.shots`. The boundary is at 124 f, 5.1667 s.
+
+**Arms:** each has `max_candidates: 20` and is saved as `application/json`:
+1. **Manifest:** `find_loop_bed(audio="output:<film mp4>")`, with no `shots`.
+2. **Argument:** the same, plus `shots: [{"name": "a", "start_frame": 0, "num_frames":
+   100}, {"name": "b", "start_frame": 100, "num_frames": 148}]` and `fps: 24`. The
+   boundary is at 4.1667 s.
+3. **None:** `find_loop_bed(audio=<step 1's output: wav>)`.
+4. **Carried:** one workflow with three steps:
+   - `concat_videos` of the two ep3 shots;
+   - `pair_audio` of that with step 1's quiet bed;
+   - `find_loop_bed(audio="previous_result:<pair step>")`.
+expected:
+- Every job succeeds, and each arm returns ≥ 1 candidate. Arm 3 matches C-F160's control
+  arm, so the same fixture note applies.
+- Arm 1: `source.shots_source` is `"manifest"`. Every candidate's `shot` is one of the
+  names in `media.shots`, and no candidate spans 5.1667 s.
+- Arm 2: `shots_source` is `"argument"`. Every candidate's `shot` is `"a"` or `"b"`, and
+  no candidate spans 4.1667 s. The argument overrides the manifest, so a candidate may
+  span 5.1667 s here.
+- Arm 3: `shots_source` is null, and every candidate's `shot` is null.
+- Arm 4: `shots_source` is non-null and is neither `"argument"` nor `"manifest"`. The plan
+  doesn't fix the exact string, so record it. Each candidate names a carried shot, and no
+  candidate spans the concat's 5.1667 s boundary.
+It is a **finding** if:
+- a candidate straddles the boundary of the shots in force;
+- `shot` is missing or wrong;
+- `shots_source` misreports the source;
+- or the argument fails to take precedence over the manifest.
+cleanup: `delete_output(job_id=…)` for every job, including the setup runs.
+metrics: none.
+
+### C-F169 — the dialogue-cut skills, the tasks guide and `shot_dead_air` point callers at `find_loop_bed`
+pending: #545
+source: tester, spec for #545 from #218's plan v1 (claude-opus-5-5 via anthropic)
+Stage B teaches the task where a caller meets the problem:
+- the `dw:minimax-h3` skill (dialogue cuts need a room-tone bed);
+- the `dw:series-episodes` skill (the bed beat);
+- the tasks guide's `shots` argument;
+- #465's `shot_dead_air` message.
+
+**Read:**
+- Load the `dw:minimax-h3` and `dw:series-episodes` skills. There is no MCP call for skill
+  text, so the skill loader is the read.
+- `get_task(name="find_loop_bed")`, and the tasks guide section from C-F159.
+- `assess_output(name="asset:qa-cast/ep62-episode.mp4")`. Its `shot_dead_air` finding is
+  at shot `deflect`, 8.62 s.
+expected:
+- `dw:minimax-h3` says a dialogue cut needs a bed under it and names `find_loop_bed` as how
+  to find one. It includes the `slice_audio` → `loop_audio` → `mix_audio` hand-off, using
+  the candidate's `start_seconds`/`duration_seconds` and `gain`.
+- `dw:series-episodes`'s bed beat names `find_loop_bed`.
+- Any threshold or default either skill states matches `get_task`'s defaults.
+- The tasks guide documents `shots` (`name`, `start_frame`, `num_frames`, `fps`), the
+  resolution order, and `source.shots_source`.
+- The `shot_dead_air` finding's text names `find_loop_bed`. Before this stage it read "cut
+  a room-tone bed from the take with slice_audio, loop it to the gap's length with
+  loop_audio, and mix it under the line with mix_audio …".
+It is a **finding** if:
+- either skill omits the task;
+- a skill states a default that disagrees with `get_task`;
+- the guide omits `shots`;
+- or `shot_dead_air` still omits `find_loop_bed`.
+cleanup: none (read-only).
 metrics: none.
 
 ## Performance
