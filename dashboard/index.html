@@ -87,6 +87,15 @@ header button.on { border-color: var(--ok); color: var(--ok); }
 #events div { font-size: 13px; border-left: 3px solid var(--accent); padding: 2px 8px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #events div.fail { border-color: var(--bad); } #events div.pass { border-color: var(--ok); }
+#attn table td { vertical-align: top; }
+#attn tr.parked { opacity: .55; }
+#attn .repo { font-size: 11.5px; font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+#attn .tag { font-size: 11.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px;
+  color: var(--muted); white-space: nowrap; margin-left: 4px; }
+#attn .tag.hot { border-color: var(--warn); color: var(--warn); }
+#attn-count { background: var(--warn); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11.5px;
+  text-transform: none; letter-spacing: 0; }
+#attn-count.zero { background: var(--idle); }
 #events time { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
 </style>
 </head>
@@ -103,6 +112,14 @@ header button.on { border-color: var(--ok); color: var(--ok); }
   <section class="card">
     <h2>Running</h2>
     <div class="chips" id="drivers"></div>
+  </section>
+
+  <section class="card">
+    <h2>Needs you <span id="attn-count" class="zero">–</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted" style="text-transform:none;letter-spacing:0"><span id="attn-when"></span> ·
+        <span class="link" id="attn-refresh">refresh</span></span></h2>
+    <div id="attn"><p class="empty">asking GitHub…</p></div>
   </section>
 
   <details class="card" id="events-card" hidden>
@@ -172,6 +189,7 @@ function events(st) {
   const cur = {
     drivers: new Map(st.drivers.map((d) => [d.pid, `run-${d.driver}.sh ${d.args}`.trim()])),
     gates: st.release ? st.release.lines : [],
+    attn: st.attention && st.attention.fetched ? new Set(st.attention.items.map(attnKey)) : null,
   };
   const out = [];
   if (prev) {
@@ -183,7 +201,11 @@ function events(st) {
     for (const l of cur.gates)
       if (!seen.has(l) && /: (pass|fail|accepted)\b| (pass|fail) on /.test(l))
         out.push({ text: l, cls: /\bfail/.test(l) ? "fail" : "pass" });
+    if (prev.attn && cur.attn)
+      for (const i of st.attention.items)
+        if (!prev.attn.has(attnKey(i))) out.push({ text: `needs you: ${attnKey(i)} ${i.title}`, cls: "" });
   }
+  if (prev && !cur.attn) cur.attn = prev.attn;
   prev = cur;
   for (const e of out) announce(e);
 }
@@ -224,8 +246,36 @@ $("notify").addEventListener("click", async () => {
 });
 paintNotify();
 
+const attnKey = (i) => i.repo === "advisory" ? i.number : `${i.repo}#${i.number}`;
+const HOT = /^(release-blocker|release|status:needs-approval|status:plan-review|status:needs-info|critical|high)$/;
+
+function renderAttention(a) {
+  if (!a) return;
+  $("attn-when").textContent = a.busy ? "checking GitHub…" : a.fetched ? `checked ${ago(Date.now() / 1000 - a.fetched)} ago` : "not checked yet";
+  if (!a.fetched) return;
+  const items = [...a.items].sort((x, y) => (x.repo === "advisory") - (y.repo === "advisory")
+    || (x.repo === "harnest") - (y.repo === "harnest")
+    || x.tags.includes("parked") - y.tags.includes("parked") || String(y.updated).localeCompare(String(x.updated)));
+  $("attn-count").textContent = items.length;
+  $("attn-count").className = items.length ? "" : "zero";
+  const errs = a.errors.map((e) => `<p class="w" style="color:var(--bad);margin:4px 0">${esc(e)}</p>`).join("");
+  $("attn").innerHTML = errs + (items.length ? `<div class="scroll"><table>
+    ${items.map((i) => `<tr class="${i.tags.includes("parked") ? "parked" : ""}">
+      <td class="repo">${esc(i.repo)}</td>
+      <td class="mono"><a href="${esc(i.url)}" target="_blank" rel="noopener">${i.repo === "advisory" ? esc(i.number) : "#" + i.number}</a></td>
+      <td>${esc(i.title)}${i.tags.map((t) => `<span class="tag ${HOT.test(t) ? "hot" : ""}">${esc(t.replace(/^status:/, ""))}</span>`).join("")}</td>
+      <td class="num muted">${i.updated ? ago(Date.now() / 1000 - Date.parse(i.updated) / 1000) + " ago" : ""}</td></tr>`).join("")}
+    </table></div>` : '<p class="empty">nothing waiting on you</p>');
+}
+$("attn-refresh").addEventListener("click", async () => {
+  $("attn-when").textContent = "checking GitHub…";
+  try { await fetch("/api/attention"); } catch {}
+  setTimeout(pollState, 2500);
+});
+
 function render(st) {
   events(st);
+  renderAttention(st.attention);
   // drivers
   const d = st.drivers;
   $("drivers").innerHTML = d.length ? d.map((x) =>

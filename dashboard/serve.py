@@ -7,7 +7,10 @@ Standard library only. It reads what the drivers already write - the
 processes, the driver locks, the `=== ... ===` session headers and `[tag]`
 lines in logs/loop.log and logs/loop.local.log, the `usage:` line that
 closes each session, and a release's gates.out - and never writes, calls
-gh or ssh, or touches a lock. The page polls /api/state and /api/log.
+ssh, or touches a lock. Its one outside call is read-only `gh` for what
+waits on Don (Attention), made when a session starts or ends in either
+loop, and at least every ATTN_MAX_SECS. The page polls /api/state and
+/api/log.
 """
 
 import argparse
@@ -15,6 +18,7 @@ import json
 import os
 import re
 import subprocess
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -41,6 +45,12 @@ CTX_RE = re.compile(r"· ctx=([\d.]+k?)")
 STREAMS = {"lem": "loop.log", "mac": "loop.local.log"}
 LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.local"}
 LOG_TAIL_BYTES = 64 * 1024
+
+TICKET_REPO = os.environ.get("TICKET_REPO", "dkackman/diffusers-workflow")
+HARNESS_REPO = os.environ.get("HARNESS_REPO", "dkackman/harnest")
+ATTN_MIN_SECS = 30  # never re-ask GitHub sooner than this
+ATTN_MAX_SECS = 300  # and never go longer, loops or not
+ISSUE_FIELDS = "number,title,labels,updatedAt,url"
 
 
 class StreamIndex:
@@ -139,6 +149,98 @@ class StreamIndex:
 
 
 INDEXES = {name: StreamIndex(LOGS / f) for name, f in STREAMS.items()}
+
+
+def _gh(args):
+    r = subprocess.run(["gh", *args], capture_output=True, text=True, timeout=60)
+    if r.returncode:
+        said = (r.stderr or r.stdout).strip().splitlines()
+        raise RuntimeError(said[-1] if said else f"gh exit {r.returncode}")
+    return json.loads(r.stdout or "[]")
+
+
+def _issues(repo, *labels):
+    args = ["issue", "list", "--repo", repo, "--state", "open", "--limit", "100", "--json", ISSUE_FIELDS]
+    for label in labels:
+        args += ["--label", label]
+    return _gh(args)
+
+
+class Attention:
+    """What waits on Don, from GitHub: owner:don on both repos, harness
+    proposals awaiting approval, and draft security advisories. Fetched in a
+    background thread when the loops move (a session starts or ends), so a
+    poll of /api/state never waits on gh."""
+
+    def __init__(self):
+        self.mu = threading.Lock()
+        self.items, self.errors = [], []
+        self.fetched = 0.0
+        self.key = None
+        self.busy = False
+
+    def poke(self, key, force=False):
+        with self.mu:
+            now = time.time()
+            due = now - self.fetched >= ATTN_MAX_SECS or key != self.key or force
+            if self.busy or not due or now - self.fetched < (5 if force else ATTN_MIN_SECS):
+                return
+            self.busy, self.key = True, key
+        threading.Thread(target=self._fetch, daemon=True).start()
+
+    def _fetch(self):
+        items, errors = [], []
+
+        def issues(repo, name, *queries):
+            seen = set()
+            for labels in queries:
+                try:
+                    for i in _issues(repo, *labels):
+                        if i["number"] in seen:
+                            continue
+                        seen.add(i["number"])
+                        names = [lb["name"] for lb in i["labels"]]
+                        items.append({
+                            "repo": name, "number": i["number"], "title": i["title"], "url": i["url"],
+                            "updated": i["updatedAt"],
+                            "tags": [n for n in names if not n.startswith("owner:")],
+                        })
+                except Exception as e:  # noqa: BLE001 - shown on the card
+                    errors.append(f"{name}: {e}")
+
+        issues(TICKET_REPO, "dw", ["owner:don"])
+        issues(HARNESS_REPO, "harnest", ["owner:don"], ["harness", "status:needs-approval"])
+        try:
+            for a in _gh(["api", f"repos/{TICKET_REPO}/security-advisories?state=draft&per_page=100"]):
+                items.append({
+                    "repo": "advisory", "number": a["ghsa_id"], "title": a.get("summary") or "",
+                    "url": a["html_url"], "updated": a.get("updated_at") or "",
+                    "tags": [a.get("severity") or "no severity"],
+                })
+        except Exception as e:  # noqa: BLE001
+            errors.append(f"advisories: {e}")
+        with self.mu:
+            self.items, self.errors = items, errors
+            self.fetched, self.busy = time.time(), False
+
+    def snapshot(self):
+        with self.mu:
+            return {"items": self.items, "errors": self.errors, "fetched": self.fetched or None, "busy": self.busy}
+
+
+ATTENTION = Attention()
+
+
+def _loop_key():
+    """Changes when a session starts or ends, or a cycle begins, in either loop."""
+    key = []
+    for idx in INDEXES.values():
+        last = idx.sessions[-1] if idx.sessions else None
+        key.append((
+            idx.run_header and idx.run_header["time"],
+            last and (last["time"], last["label"], last["usage"] is not None),
+        ))
+    return tuple(key)
 
 
 def processes():
@@ -292,6 +394,7 @@ def state():
             "sessions": recent,
         }
     flags = sorted(p.name for p in LOGS.glob("stop-after-cycle*"))
+    ATTENTION.poke(_loop_key())
     return {
         "now": time.time(),
         "drivers": procs,
@@ -299,6 +402,7 @@ def state():
         "streams": streams,
         "stop_flags": flags,
         "release": release(),
+        "attention": ATTENTION.snapshot(),
     }
 
 
@@ -351,6 +455,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif u.path == "/api/state":
                 self._json(state())
+            elif u.path == "/api/attention":
+                ATTENTION.poke(_loop_key(), force=True)
+                self._json(ATTENTION.snapshot())
             elif u.path == "/api/logs":
                 self._json(log_files())
             elif u.path == "/api/log":
