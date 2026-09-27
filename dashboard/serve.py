@@ -24,8 +24,11 @@ ROOT = Path(__file__).resolve().parent.parent
 LOGS = ROOT / "logs"
 PAGE = Path(__file__).resolve().parent / "index.html"
 
+# The script must be what runs (`bash ./run-loop.sh …` or `./run-loop.sh …`),
+# not an argument: test-lint's shellcheck names every driver on one line
 DRIVER_RE = re.compile(
-    r"run-(loop|regression|features|release|curate|retro|digest|bench)\.sh(\s.*)?$"
+    r"^(?:(?:\S*/)?(?:ba|z)?sh\s+)?"
+    r"(\S*run-(loop|regression|features|release|curate|retro|digest|bench)\.sh)(\s.*)?$"
 )
 HEADER_RE = re.compile(r"^=== (\d\d:\d\d:\d\d) (.*?) ===$")
 TAG_RE = re.compile(r"^\[([^\]]+)\] (.*)$")
@@ -158,10 +161,10 @@ def processes():
         if re.search(r"(^|/)claude\s.*(-p|--print)\b", cmd):
             claude += 1
         m = DRIVER_RE.search(cmd)
-        if m and "grep" not in cmd:
+        if m and _is_ours(pid, m.group(1)):
             rows[pid] = {
                 "pid": int(pid), "ppid": ppid, "elapsed": etime.strip(),
-                "driver": m.group(1), "args": (m.group(2) or "").strip(),
+                "driver": m.group(2), "args": (m.group(3) or "").strip(),
                 "local": "DW_TARGET=local" in cmd, "cmd": cmd,
             }
 
@@ -184,6 +187,36 @@ def processes():
     for r in top:
         r["local"] = r["local"] or _env_says_local(r["pid"])
     return sorted(top, key=lambda r: r["pid"]), claude
+
+
+_OURS = {}
+
+
+def _is_ours(pid, script):
+    """True when the script is this checkout's: tests/test-drivers.sh runs
+    the real drivers from a copy of the harness in a temp dir."""
+    key = (pid, script)
+    if key not in _OURS:
+        path = Path(script)
+        if not path.is_absolute():
+            cwd = _cwd(pid)
+            path = Path(cwd) / path if cwd else None
+        try:
+            _OURS[key] = bool(path) and path.resolve().parent == ROOT
+        except OSError:
+            _OURS[key] = False
+        if len(_OURS) > 2000:
+            _OURS.clear()
+    return _OURS[key]
+
+
+def _cwd(pid):
+    try:
+        out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
+                             capture_output=True, text=True, timeout=3).stdout
+    except Exception:
+        return None
+    return next((l[1:] for l in out.splitlines() if l.startswith("n")), None)
 
 
 def _driver_ancestor(ppid, drivers):

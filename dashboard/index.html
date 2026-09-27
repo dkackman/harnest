@@ -72,8 +72,19 @@ td a, .link { color: var(--accent); cursor: pointer; text-decoration: none; }
 header button { background: var(--code); color: var(--ink); border: 1px solid var(--line); border-radius: 6px;
   padding: 3px 10px; font: inherit; font-size: 12.5px; cursor: pointer; }
 header button.on { border-color: var(--ok); color: var(--ok); }
-#events { display: flex; flex-direction: column; gap: 6px; }
-#events div { font-size: 13px; border-left: 3px solid var(--accent); padding: 2px 8px; }
+#events-card { padding: 8px 16px; }
+#events-card summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 8px;
+  font-size: 13px; min-width: 0; }
+#events-card summary::-webkit-details-marker { display: none; }
+#events-card summary::before { content: "▸"; color: var(--muted); flex: none; }
+#events-card[open] summary::before { content: "▾"; }
+#events-card summary .lbl { font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); flex: none; }
+#events-count { background: var(--accent); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11.5px; flex: none; }
+#events-latest { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+#events-card[open] #events-latest { visibility: hidden; }
+#events { display: flex; flex-direction: column; gap: 6px; max-height: 220px; overflow: auto; margin-top: 8px; }
+#events div { font-size: 13px; border-left: 3px solid var(--accent); padding: 2px 8px;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #events div.fail { border-color: var(--bad); } #events div.pass { border-color: var(--ok); }
 #events time { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
 </style>
@@ -93,10 +104,11 @@ header button.on { border-color: var(--ok); color: var(--ok); }
     <div class="chips" id="drivers"></div>
   </section>
 
-  <section class="card" id="events-card" hidden>
-    <h2>Events <span class="link" id="events-clear" style="text-transform:none;letter-spacing:0">clear</span></h2>
+  <details class="card" id="events-card" hidden>
+    <summary><span class="lbl">Events</span><span id="events-count">0</span>
+      <span id="events-latest"></span><span class="link" id="events-clear">clear</span></summary>
     <div id="events"></div>
-  </section>
+  </details>
 
   <div class="row" id="targets"></div>
 
@@ -119,7 +131,7 @@ header button.on { border-color: var(--ok); color: var(--ok); }
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const STATE_MS = 3000, LOG_MS = 2000, MAX_LINES = 4000;
+const STATE_MS = 3000, LOG_MS = 2000, MAX_LINES = 4000, MAX_EVENTS = 200;
 const LS = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
              set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
 
@@ -178,14 +190,23 @@ function events(st) {
 function announce(e) {
   const when = new Date().toLocaleTimeString();
   $("events-card").hidden = false;
-  $("events").insertAdjacentHTML("afterbegin", `<div class="${e.cls}"><time>${when}</time>${esc(e.text)}</div>`);
+  const list = $("events");
+  list.insertAdjacentHTML("afterbegin", `<div class="${e.cls}" title="${esc(e.text)}"><time>${when}</time>${esc(e.text)}</div>`);
+  while (list.children.length > MAX_EVENTS) list.lastElementChild.remove();
+  $("events-count").textContent = list.children.length;
+  $("events-latest").textContent = `${when} ${e.text}`;
   if (document.hidden) { unseen++; document.title = `(${unseen}) ${BASE_TITLE}`; }
   if (LS.get("notify", "") === "1" && "Notification" in window && Notification.permission === "granted")
     new Notification("harnest", { body: e.text, tag: e.text });
 }
 
 document.addEventListener("visibilitychange", () => { if (!document.hidden) { unseen = 0; document.title = BASE_TITLE; } });
-$("events-clear").addEventListener("click", () => { $("events").innerHTML = ""; $("events-card").hidden = true; });
+$("events-clear").addEventListener("click", (ev) => {
+  ev.preventDefault(); // a click inside <summary> would otherwise toggle it
+  $("events").innerHTML = ""; $("events-card").hidden = true; $("events-card").open = false;
+});
+$("events-card").addEventListener("toggle", () => LS.set("events-open", $("events-card").open ? "1" : ""));
+$("events-card").open = LS.get("events-open", "") === "1";
 
 function paintNotify() {
   const on = LS.get("notify", "") === "1" && "Notification" in window && Notification.permission === "granted";
