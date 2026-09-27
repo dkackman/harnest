@@ -4744,7 +4744,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F137 — `attribute_voices` is a listed command, not an assessment probe, and it must save JSON
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 Stage A adds the task `attribute_voices`. It returns JSON, like the probes, but the plan
 gives `register_command` an explicit `assessment` flag so that a JSON return no longer
@@ -4774,7 +4773,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F138 — known answer: `attribute_voices` names the right voice for each line and splits a window that straddles the join
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 This is the plan's known-answer check, and the test of its risk that ECAPA, a speech
 encoder, may not tell voices apart. The clip is built from fixtures, so the singer at
@@ -4847,7 +4845,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F139 — `attribute_voices` without `lines` cuts fixed windows over the whole song, and `separate: false` runs on a dry stem
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 Use C-F138's duet steps (1–4). Then add these steps, each saving `application/json` to
 `final`:
@@ -4878,7 +4875,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F140 — one span under two names reports `voices_too_similar`, and every line is `uncertain`
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 Use C-F138's duet steps (1–4). Then add step 5, `attr_same`: `attribute_voices` with
 `"audio": "previous_result:duet"`, `"voices": {"a": [{"start_seconds": 0.0,
@@ -4896,7 +4892,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F141 — `attribute_voices` refuses bad voices, short or out-of-range references and bad windows, and accepts the boundary
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 Each arm is a one-step workflow `attr` running `attribute_voices` on `"audio":
 "asset:qa-cast/priya-voice.wav"` (7.453 s), with `"lines": [{"start": 0.5, "end": 3.0}]`
@@ -4942,7 +4937,6 @@ cleanup: `delete_output(job_id=…)` for every arm that ran.
 metrics: none.
 
 ### C-F142 — a second `attribute_voices` run on the same box downloads nothing
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 The htdemucs weights come from Meta's CDN via torch.hub, not from HF, so
 `plan.downloads_required` can't see them. The plan promises they are cached all the same.

@@ -585,7 +585,6 @@ cleanup: delete the generated output.
 source: harness, initial security suite 2026-09-13.
 
 ### SE-F038 — `attribute_voices` holds the path gate on `audio` and on every nested voice reference
-pending: #494
 source: tester, spec for #494 from #485's plan v1 (claude-opus-5-5 via anthropic)
 Stage A of #485 adds `attribute_voices`, whose `voices` argument maps a name to either a
 list of spans or a clip reference. That clip reference is new nested input. The plan
