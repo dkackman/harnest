@@ -5198,4 +5198,370 @@ expected:
 cleanup: none (nothing is created).
 metrics: none.
 
+### C-F150 — `templates/assemble-and-score` with `limit: true` holds −3 dBTP on the mix, lands the film within 1 dB of it without clipping, and its description says so
+pending: #497
+source: tester, spec for #497 from #474's plan v2 (claude-opus-5-5 via anthropic)
+Plan v2 (Q6 default (a)) moves where the ceiling is judged: the limiter holds −3.0 dBTP on
+the `balanced` mix, and the AAC mux of the film may land up to about 1 dB above it (−2.54
+measured on the first run). This replaces C-F135's film check (≤ −2.9 dBTP), which the
+approved v2 plan changed on purpose. The fixture shot's crest (see "Fixtures") under a quiet
+bed must still cap at −16 without the limiter; that capped control is what makes the
+limited run mean anything. CPU only, three short runs.
+1. `list_workflows(shape="sequence")` (read `assemble-and-score`'s entry and its
+   description) and `get_workflow("templates/assemble-and-score")` for the full
+   `description` and the `limit` default.
+2. Common arguments: `{"shots": ["asset:qa-cast/ep11-coldopen.mp4"], "score":
+   "asset:qa-cast/ep11-bed.wav", "total_frames": 472, "score_gain": 0.3, "world_gain": 1.0,
+   "target_lufs": -16}`. `validate_workflow` then `run_workflow(name=
+   "templates/assemble-and-score", workspace=<suite workspace>, arguments=…,
+   acknowledged_cost=<bound from the plan>, wait_seconds=55)` three times: (a) as given,
+   (b) plus `"limit": false`, (c) plus `"limit": true`.
+3. For each: `get_job` warnings, `get_job_events` (the `balanced` step's log event), and
+   `get_gallery_metadata` on the `film`.
+expected:
+- Step 1: `variable_names` include `limit` and `target_lufs`; `limit` defaults to `false`.
+  The description says that with `limit` the −3 dBTP ceiling holds on the *mix* and that
+  the encoded (AAC) film can land up to about 1 dB above it. It does **not** promise
+  −3 dBTP (or "no overs past −3") on the film itself. `validate_workflow` is clean for all
+  three argument sets.
+- (a) and (b): each carries `target_lufs_capped` naming `balanced` (if neither does, the
+  mix no longer needs a limiter: lower `score_gain` until (a) caps, and note it; that is a
+  fixture problem, not a finding). Their `balanced` log reads `constraint: "peak_ceiling"`.
+  Their films agree within 0.05 in `integrated_lufs` and `peak_dbfs`: the default is
+  `false` and means the old behavior.
+- (c): the `balanced` step's log event reads `constraint: "limiter"`, with
+  `output_true_peak_dbfs` ≤ −3.0 (+0.05) and `max_gain_reduction_db` > 0. The film's
+  `integrated_lufs` is within 0.5 LU of −16 and its `true_peak_dbfs` is ≤ −2.0. No
+  `audio_clipped` and no `target_lufs_capped` in `job.warnings`. Record the film's
+  `true_peak_dbfs` and the log's `output_true_peak_dbfs` in the report (the encode
+  overshoot is their difference).
+- All three films are 472 frames, 24 fps, 960×544, the same `duration_seconds`.
+It is a **finding** if `limit` isn't a variable or defaults on; if (a) and (b) differ; if
+(c)'s mix exceeds −3.0 dBTP, its film misses −16 by more than 0.5 LU or exceeds −2.0 dBTP,
+or it warns `audio_clipped`; or if the description still promises −3 dBTP on the film.
+cleanup: `delete_output(job_id=…)` for all three jobs.
+metrics: none.
+
+### C-F151 — `join_into_song` is discoverable: its arguments, defaults and domains are readable before anything runs
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+The task joins dialogue shots to song shots and lays a song under the join. A caller has
+to be able to read its contract without running it. Read-only, free.
+expected:
+- `list_tasks` → `commands` contains `join_into_song`.
+- `get_task("join_into_song")` lists exactly `dialogue`, `song_shots`, `song`,
+  `cue_seconds`, `dialogue_target_lufs`, `duck_delay_ms`, `duck_db`, `duck_ramp_ms`
+  (plus the usual `device`):
+  - `dialogue`, `song_shots` and `song` are required;
+  - `cue_seconds` defaults to `0` with `"domain": "non_negative"`;
+  - `dialogue_target_lufs` is optional with default `null` (omitted means no matching);
+  - `duck_delay_ms` defaults to `0` (`non_negative`);
+  - `duck_db` defaults to `-12` with a domain that refuses positive values (whatever
+    its name, e.g. `non_positive`);
+  - `duck_ramp_ms` defaults to `250` (`non_negative`).
+  - Each parameter's `description` says what it does. `cue_seconds` must say it is the
+    song time that lands on the first song shot's first frame. `song_shots` must say
+    their own audio is discarded.
+- `get_guide("tasks")` (or whichever guide `list_guides` indexes the task reference
+  under) has a section for `join_into_song`.
+It is a **finding** if the task is missing, a parameter above is missing or extra, a
+default differs, a domain is absent, or `cue_seconds`'s description doesn't define the cue.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F152 — `join_into_song` places the song so its cue lands on the first song-shot frame, discards the song shots' audio, and records every shot
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+Plan v1's placement rule: the song starts at D − cue, where D is the joined dialogue's
+length. So the song is audible under the tail of the dialogue, and song time `cue_seconds`
+falls on the seam into the song shots. The song runs to the end of the picture. The song
+shots' own audio contributes nothing, and the dialogue is gone once it ends.
+
+The check is a marker. A 0.5 s hole cut into the song right at the cue has to land exactly
+on the seam, and only there. The dialogue and song-shot fixtures all have loud audio of their
+own, so silence in the hole proves both the placement and the discard. CPU only, no model.
+
+Fixtures, all shared and listed under "Fixtures":
+- dialogue: `asset:qa-cast/ep3-shot1-incident.mp4` then `asset:qa-cast/ep3-shot2-reply.mp4`.
+  Each is 124 f, 24 fps, 960×544, with loud audio.
+- song_shots: `asset:qa-cast/ep6-cold-open.mp4` then `asset:qa-cast/ep6-shot1-priya.mp4`.
+  Same shape, loud own audio.
+- song: `asset:qa-cast/ep15-song.mp3`, 30.02 s, 44.1 kHz stereo. It is loud around 2–4 s
+  and its peak is +0.76 dBFS.
+
+So D = 248 frames (10.333 s). With `cue_seconds: 3.0` the song enters at 7.333 s
+(frame 176), and the seam S is frame 248.
+
+**Steps:**
+1. `validate_workflow`, then `run_workflow(..., wait_seconds=55)`, on an inline workflow
+   with two steps:
+   - `marked`: `gain_audio(audio="asset:qa-cast/ep15-song.mp3", gain_db=-60,
+     start_seconds=3.0, duration_seconds=0.5)`. This cuts a hole over song time
+     [3.0, 3.5).
+   - `film`: `join_into_song(dialogue=[incident, reply], song_shots=[cold-open, priya],
+     song="previous_result:marked", cue_seconds=3.0)` with `result:
+     {"content_type": "video/mp4"}`. Leave every other argument at its default.
+2. Measure windows of the film's audio. In one measurement workflow, add one `slice_audio`
+   step per window: `audio` is the film's `output:` reference (as `get_job`'s manifest
+   names it), with `start_frame`, `num_frames` and `fps: 24`, and each result is saved as
+   `audio/wav`. Read each window's `mean_dbfs` with `get_gallery_metadata`. Windows are
+   `[first, last)` in film frames:
+   - A = [224, 247), the song under the dialogue's tail;
+   - H = [249, 259), inside the hole;
+   - R = [261, 285), the song after the hole.
+   Also measure `asset:qa-cast/ep3-shot2-reply.mp4` frames [100, 123) the same way; call it
+   Ref.
+3. Run `get_gallery_metadata` on the film, then `assess_output(name=<film>,
+   probe="analyze_sync_drift")`, `get_job_workflow(job_id)`, `list_gallery` and
+   `export_job(job_id)`.
+expected:
+- `validate_workflow` is clean. The job `succeeded`, with one video/mp4 output.
+- The film is 496 frames, 24 fps, 960×544, `duration_seconds` 20.667 (±1 frame).
+- Placement, within one frame:
+  - A is at least 6 dB above Ref: the song is audible before the first song-shot frame.
+  - H is ≤ −50 dBFS: the song's cue sits on the seam, the dialogue has ended, and the
+    song shots' audio is absent.
+  - R is ≥ −35 dBFS: the song resumes after the hole.
+- `media.shots` has 4 records named `ep3-shot1-incident.mp4`, `ep3-shot2-reply.mp4`,
+  `ep6-cold-open.mp4` and `ep6-shot1-priya.mp4`, in that order. They cover
+  [0,124), [124,248), [248,372) and [372,496), contiguously, summing to the film's
+  `frame_count`, and each carries measured samples.
+- The audio has one sample rate. The plan implies the song's (44100). Another rate is a
+  note, not a finding, as long as the timing above holds.
+- `job.warnings` carries `audio_no_headroom` and/or `audio_clipped`: the song peaks above
+  full scale and the plan does no final normalization.
+- `analyze_sync_drift` reports no drift.
+- `get_job_workflow` shows all five `asset:` references (four shots and the song).
+  `list_gallery` lists the film, and `export_job`'s bundle includes it.
+It is a **finding** if:
+- H is audible, meaning the song is misplaced or song-shot or dialogue audio leaks past
+  the seam;
+- A is not above Ref, meaning the song doesn't start before the seam;
+- the shots are misnamed, missing or non-contiguous;
+- no headroom warning appears on a mix this hot;
+- sync drift is reported;
+- or the job fails.
+cleanup: `delete_output(job_id=…)` for the film job and the measurement job.
+metrics: none.
+
+### C-F153 — `join_into_song` ducks the dialogue by `duck_db` from song entry + `duck_delay_ms`, over a `duck_ramp_ms` ramp
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+The song enters under the dialogue. From song entry plus `duck_delay_ms`, the dialogue drops
+by `duck_db`, and it gets there over a linear ramp of `duck_ramp_ms` rather than a step.
+
+To measure the dialogue alone, mute the part of the song that plays under it:
+`gain_audio(audio="asset:qa-cast/ep15-song.mp3", gain_db=-60, start_seconds=0,
+duration_seconds=3.0)`, as step `quiet`. Use dialogue `[reply, incident]`, so the shot
+under the song is the loud one, and song shots `[cold-open, priya]`. With `cue_seconds: 3.0`
+the song enters at frame 176, and incident occupies film frames [124, 248).
+
+Measure windows as C-F152 step 2 does, against the same frames of
+`asset:qa-cast/ep3-shot1-incident.mp4`: film frame f corresponds to incident frame f − 124.
+The level difference d(window) = film − incident, from `integrated_lufs` or `mean_dbfs`
+(state which in the report).
+
+Three runs, one `join_into_song` each, with song `previous_result:quiet`:
+- (a) `duck_delay_ms: 1000`, `duck_db: -12`, ramp left at its default. The duck starts at
+  frame 200 and is full by frame 206.
+- (b) `duck_delay_ms: 0`, `duck_ramp_ms: 2000`, `duck_db: -12`. The duck ramps over frames
+  [176, 224).
+- (c) `duck_delay_ms: 0`, `duck_db: 0`. This is the zero-duck boundary.
+expected:
+- All three validate clean and succeed, each giving a 496-frame film.
+- (a):
+  - d([124,176)) is within ±0.5 dB: no duck before song entry.
+  - d([176,200)) is within ±0.5 dB: no duck during the delay.
+  - d([206,224)) is −12 ± 1 dB.
+- (b): d for the 12-frame windows [176,188), [188,200), [200,212) and [212,224)
+  never rises by more than 0.3 dB from one window to the next. The first window is
+  ≥ −6.5 dB, and the last is between −13 and −8 dB: a ramp, not a step at either end.
+- (c): d([176,224)) is within ±0.5 dB: `duck_db: 0` is accepted and ducks nothing.
+It is a **finding** if:
+- the duck starts before the delay or is missing;
+- its depth misses −12 by more than 1 dB;
+- (b)'s first window is already at full depth (a step);
+- or `0` is refused for `duck_db` or `duck_delay_ms`.
+cleanup: `delete_output(job_id=…)` for all three runs and the measurement jobs.
+metrics: none.
+
+### C-F154 — `dialogue_target_lufs` levels each dialogue shot statically, omitting it leaves them alone, and a sub-400 ms shot is warned about, not failed
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+The two dialogue fixtures sit about 11 LU apart: incident's integrated loudness is −16.4
+LUFS and reply's is −27.4. With a target, each shot gets one static gain to reach it. With
+no target, nothing changes.
+
+Use the song muted over the part that plays under the dialogue: `gain_audio(audio=
+"asset:qa-cast/ep15-song.mp3", gain_db=-60, start_seconds=0, duration_seconds=0.5)`.
+Use `cue_seconds: 0.5`, so the song enters at frame 236. Dialogue is `[incident, reply]`,
+and song shots are `[cold-open, priya]`. Measure `integrated_lufs` of film windows
+W1 = [0,124) and W2 = [124,236) as in C-F152 step 2.
+- (a) `dialogue_target_lufs: -23`.
+- (b) The same run without `dialogue_target_lufs`.
+- (c) As (a), but the dialogue is `[incident, short8, reply]`. `short8` is an 8-frame
+  (333 ms) shot with audio, built in the same workflow:
+  - `loop_frames(video="asset:qa-cast/ep3-shot1-incident.mp4", num_frames=8)`;
+  - `slice_audio(audio="asset:qa-cast/ep3-shot1-incident.mp4", start_frame=0,
+    num_frames=8, fps=24)`;
+  - `pair_audio` of those two, with `fit: "video"`, at 24 fps. Set the rate with
+    `result.fps` if the frames don't carry one (C-F009).
+
+  If the join refuses `short8` for a rate mismatch, the fixture is wrong: fix it, don't
+  file it. The film is then 504 frames. Measure W1 = [0,124) and W2' = [132,244), using
+  song entry at frame 244 for this D.
+expected:
+- (a):
+  - W1 and W2 are each within 1.5 LU of −23, and within 1.0 LU of each other.
+  - `job.warnings` carries no clipping warning for the dialogue.
+- (b): W1 and W2 are each within 0.5 LU of their source shots' own levels (the ~11 LU
+  spread survives).
+- (c):
+  - The job `succeeded`.
+  - `job.warnings` has an entry naming the short shot (by its `shot@…` name or index)
+    that says it was left unmatched because it is under 400 ms.
+  - W1 and W2' are still within 1.5 LU of −23.
+  - `media.shots` has 5 records.
+It is a **finding** if:
+- (a) leaves a spread over 1 LU or misses the target;
+- (b) changes the levels;
+- or (c) fails, or passes the short shot without a warning.
+cleanup: `delete_output(job_id=…)` for every run and measurement job.
+metrics: none.
+
+### C-F155 — a dialogue input with no audio track becomes silence of its own length, not a shift of everything after it
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+`concat_videos` has a known desync when an input has no audio. Plan v1 says `join_into_song`
+fills silence for such an input instead of inheriting that desync.
+
+**Setup:** a silent 124-frame, 24 fps mp4. Run a one-step workflow: `loop_frames(video=
+"asset:qa-cast/ep3-shot2-reply.mp4", num_frames=124)` with `result: {"content_type":
+"video/mp4", "fps": 24}`. Confirm with `get_gallery_metadata` that the file has no audio
+stream. If it has one, the fixture is wrong: fix it, don't file it.
+
+**Run:** `join_into_song(dialogue=[<the silent mp4's output: reference>,
+"asset:qa-cast/ep3-shot2-reply.mp4"], song_shots=[cold-open, priya], song=<the C-F154
+muted song>, cue_seconds=0.5)`. Measure windows as in C-F152 step 2.
+expected:
+- The job `succeeded`, and the film is 496 frames.
+- Film [0,124) has `mean_dbfs` ≤ −50.
+- Film [124,236) is within 0.5 dB (`mean_dbfs`) of reply's own frames [0,112): reply's
+  audio sits under reply's pictures, not 124 frames early.
+- `media.shots` has 4 records at [0,124), [124,248), [248,372) and [372,496).
+- `analyze_sync_drift` reports no drift.
+It is a **finding** if:
+- the join refuses or fails on an input without audio;
+- the reply audio is shifted onto the first shot;
+- or the film's audio runs shorter than its picture by a shot.
+cleanup: `delete_output(job_id=…)` for the setup, run and measurement jobs.
+metrics: none.
+
+### C-F156 — `join_into_song` refuses out-of-domain arguments, empty lists, an over-long cue and a frame-rate mismatch, each pointed at its cause
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+The refusals the plan names, plus the boundaries either side of them.
+
+In every arm, the base step is `join_into_song(dialogue=[incident, reply],
+song_shots=[cold-open, priya], song="asset:qa-cast/ep15-song.mp3")`.
+expected:
+- **1. Domains, statically.** `validate_workflow` with `cue_seconds: -1`,
+  `duck_delay_ms: -1`, `duck_ramp_ms: -1` and `duck_db: 3` returns `valid: false` with
+  **four** errors, one per argument. Each error's path is
+  `steps[0].task.arguments.<name>` and its message names that argument.
+- **2. The legal zeros.** `cue_seconds: 0`, `duck_delay_ms: 0`, `duck_ramp_ms: 0` and
+  `duck_db: 0` together validate clean.
+- **3. Empty lists.** `song_shots: []` is refused, and so, separately, is `dialogue: []`.
+  The refusal comes either from `validate_workflow` with a path ending in the argument's
+  name, or from a run that `failed` with an empty manifest and an error naming the
+  argument. Either layer satisfies the case. A `succeeded` job is the finding.
+- **4. Cue past the dialogue.** D = 248 frames = 10.333 s.
+  - `cue_seconds: 10.375` (D + 1 frame): the run is refused or fails before writing a
+    film. The error names `cue_seconds` and the dialogue's length (~10.33 s), so a
+    caller knows what to shorten.
+  - `cue_seconds: 10.29` (D − 1 frame): succeeds with a 496-frame film.
+- **5. Frame-rate mismatch.** Replace `song_shots[0]` with a 12 fps copy of the cold open,
+  made in the same workflow by `pair_audio(video="asset:qa-cast/ep6-cold-open.mp4",
+  audio="asset:qa-cast/ep6-cold-open.mp4")` with `result.fps: 12` (as C-F009's override
+  arm does). The join is refused or fails with no film written, and the error names both
+  rates (24 and 12). A mismatched frame size is refused by the plan too, but no CPU fixture
+  makes one, so it isn't covered here.
+It is a **finding** if:
+- any arm in 1, 3, 4 or 5 produces a film;
+- part 1 reports fewer than four errors, or errors at the wrong paths;
+- part 2 is refused;
+- or part 4's error doesn't name `cue_seconds` and the dialogue length.
+cleanup: `delete_output(job_id=…)` for every job that ran, failed ones included.
+metrics: none.
+
+### C-F157 — `join_into_song` edges: a cue of 0 starts the song on the seam, and a song too short for the picture is padded with silence and warned
+pending: #513
+source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
+- (a) **Cue 0.** Run C-F152's `film` step with the unmarked song
+  (`asset:qa-cast/ep15-song.mp3`) and `cue_seconds: 0`.
+- (b) **Short song.** Run the same step with `song: "asset:uploads/qa-cast/room-bed.wav"`
+  (4.96 s, 16 kHz mono, so it is also resampled) and `cue_seconds: 1.0`. The song enters at
+  frame 224 and runs out near frame 343, but the picture runs to frame 496.
+
+Measure windows as in C-F152 step 2.
+expected:
+- (a):
+  - The job `succeeded`, and the film is 496 frames.
+  - Film [0,124) is within 0.5 dB (`mean_dbfs`) of incident's own frames, and [124,248)
+    of reply's: no song and no duck before the seam.
+  - Film [249,260) is ≥ −35 dBFS: the song opens on the seam.
+- (b):
+  - The job `succeeded`, with a `job.warnings` entry `song_short`.
+  - The film is 496 frames, and its audio runs the picture's length (per `media.shots`,
+    which has 4 records).
+  - Film [360,496) is ≤ −50 dBFS: padded silence, with no song-shot audio.
+  - Film [250,330) is at least 20 dB above that.
+It is a **finding** if:
+- (a) puts song audio before the seam;
+- (b) fails, trims the picture to the song, or doesn't warn `song_short`;
+- or (b)'s tail carries audio.
+cleanup: `delete_output(job_id=…)` for both runs and the measurement jobs.
+metrics: none.
+
+### C-F158 — the dialogue-into-song recipe the skill and guide teach produces C-F152's placement when followed verbatim
+pending: #514
+source: tester, spec for #514 from #486's plan v1 (claude-opus-5-5 via anthropic)
+Stage B teaches the recipe: `slice_audio` slices starting at `cue_seconds` (to condition
+the song shots), then `join_into_song`, then `normalize_audio`, then `pair_audio`. The
+point of the case is that a caller who reads only the docs gets the cue right.
+
+**Read:**
+- Load the `dw:minimax-music3` and `dw:minimax-h3` skills; the recipe is in one of them.
+- Read the `docs/WORKFLOW_GUIDE.md` content via `get_guide` (the guide `list_guides`
+  indexes it under, and the section the skill cross-references).
+
+**Run:** follow the recipe verbatim with C-F152's fixtures:
+- the marked song from C-F152 step 1, with `cue_seconds: 3.0`;
+- dialogue `[incident, reply]`;
+- song shots `[cold-open, priya]` standing in for the generated song shots. Skip the
+  generation step, and nothing else.
+expected:
+- The skill states the four-step order above. It says in so many words that `cue_seconds`
+  is the start of the first song shot's `slice_audio` slice.
+- The skill links to the guide section, and the guide section exists and agrees with the
+  skill.
+- The recipe's first song-shot `slice_audio(song, start_seconds=3.0, …)` of the marked
+  song opens with the hole: its first 10 frames are ≤ −50 dBFS. So the slice and the join
+  share one cue.
+- The final film:
+  - 496 frames, with `media.shots` still at 4 records named as in C-F152.
+  - C-F152's H window is ≤ −50 dBFS, and its A window is at least 6 dB above Ref.
+  - No `audio_clipped` or `audio_no_headroom` in the last step's warnings, because
+    `normalize_audio` took the headroom C-F152 warns about.
+  - `analyze_sync_drift` reports no drift.
+It is a **finding** if:
+- the recipe is missing from both skills;
+- the order differs;
+- `cue_seconds` is described as anything but the slice start;
+- the guide cross-reference is dead;
+- or the verbatim recipe gives a film whose placement, shot records or headroom differ
+  from the above. Say whether the recipe text or the task is at fault.
+cleanup: `delete_output(job_id=…)` for every job the recipe ran.
+metrics: none.
+
 ## Performance
