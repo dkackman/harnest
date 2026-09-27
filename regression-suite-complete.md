@@ -232,7 +232,7 @@ smoke's Fixtures lists the asset too.
   soundtrack and carried shots. Shared, read-only, never deleted.
 - `asset:qa-cast/ep11-coldopen.mp4`, above, is also the **crest** fixture for the
   `normalize_audio(limit=true)` cases C-F132–C-F134 and, with `asset:qa-cast/ep11-bed.wav`
-  (the same 472 frames long) under it, for C-F135. What matters is its gap between true peak
+  (the same 472 frames long) under it, for C-F150. What matters is its gap between true peak
   and loudness: 2026-09-26 it read `integrated_lufs` −17.43 and `true_peak_dbfs` −0.96, a
   16.47 dB gap, so with a −3 ceiling no target above about −19.5 LUFS is reachable by gain
   alone. The cases' target arithmetic (how many dB of limiting a target needs) is derived
@@ -4706,38 +4706,6 @@ differently from the other.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
-### C-F135 — `templates/assemble-and-score` exposes `limit`: off by default with the capped result as before, and on it reaches −16 LUFS under the ceiling without clipping
-pending: #497
-source: tester, spec for #497 from #474's plan v1 (claude-opus-5-5 via anthropic)
-Stage 2 carries `limit` (default `false`) to the template's `balanced` step beside
-`target_lufs`. The fixture shot's crest (see "Fixtures") under a quiet bed must still cap at
-−16 without the limiter; that capped control is what makes the limited run mean anything.
-CPU only, three short runs.
-1. `list_workflows(shape="sequence")`, and `get_workflow("templates/assemble-and-score")`
-   for the variable's default.
-2. Common arguments: `{"shots": ["asset:qa-cast/ep11-coldopen.mp4"], "score":
-   "asset:qa-cast/ep11-bed.wav", "total_frames": 472, "score_gain": 0.3, "world_gain": 1.0,
-   "target_lufs": -16}`. `validate_workflow` then `run_workflow(name=
-   "templates/assemble-and-score", workspace=<suite workspace>, arguments=…,
-   acknowledged_cost=<bound from the plan>, wait_seconds=55)` three times: (a) as given,
-   (b) plus `"limit": false`, (c) plus `"limit": true`.
-3. For each: `get_job` warnings, `get_job_events`, and `get_gallery_metadata` on the `film`.
-expected:
-- Step 1: `assemble-and-score`'s `variable_names` include `limit` (and `target_lufs`); its
-  default is `false`. `validate_workflow` is clean for all three argument sets.
-- (a) and (b): each carries `target_lufs_capped` naming `balanced` (if neither does, the mix
-  no longer needs a limiter: lower `score_gain` until (a) caps, and note it; that is a
-  fixture problem, not a finding). Their films agree within 0.05 in `integrated_lufs` and
-  `peak_dbfs`: the default is `false` and means the old behavior.
-- (c): the film's `integrated_lufs` is within 0.5 LU of −16 and its `true_peak_dbfs` is
-  ≤ −2.9 (the plan's ≤ −3.0 plus 0.1). No `audio_clipped` and no `target_lufs_capped` in
-  `job.warnings`. The `balanced` step's log event reads `constraint: "limiter"`.
-- All three films are 472 frames, 24 fps, 960×544, the same `duration_seconds`.
-It is a **finding** if `limit` isn't a variable, if it defaults on, if (a) and (b) differ, if
-(c) misses −16 or exceeds the ceiling after the mux, or if (c) warns `audio_clipped`.
-cleanup: `delete_output(job_id=…)` for all three jobs.
-metrics: none.
-
 ### C-F136 — the series-episodes and minimax-music3 skills say when to pass `limit: true`, and that the default is to match downward
 source: tester, spec for #497 from #474's plan v1 (claude-opus-5-5 via anthropic)
 The plugin has no MCP surface, but its skills are what a driving session reads. Load them
@@ -4753,7 +4721,7 @@ expected:
   than the song's peaks allow; `limiter_heavy` means aim lower).
 - Neither skill tells an agent to turn `limit` on by default.
 It is a **finding** if either skill lacks the rule, recommends `limit: true` unconditionally,
-or names a variable or warning the template and task don't have (check against C-F135 step 1
+or names a variable or warning the template and task don't have (check against C-F150 step 1
 and C-F133's warning names).
 cleanup: none.
 metrics: none.
