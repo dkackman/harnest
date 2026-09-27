@@ -1938,4 +1938,24 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-inline`, to
 `regression-perf/M-F055.jsonl`.
 
+### M-F056 — an LTX-2.5 width/height not divisible by 32 is refused at validate, not after the pipeline load
+Before #505, `templates/ltx2/two-stage` with `height: 272` validated clean. The run then failed about 80 s
+in, inside diffusers' own `check_inputs` ("have to be divisible by 32"). The fix declared the rule as a
+variable constraint on every LTX-2.5 template that takes `width`/`height`.
+**Free**: validate and get_workflow only.
+expected:
+- `get_workflow("templates/ltx2/two-stage", variables_only=true)` → `constraints.width` and
+  `constraints.height` each have `modulus: 32`, `remainder: 0`.
+- `validate_workflow(name="templates/ltx2/two-stage", arguments={"prompt": "a lighthouse at dusk",
+  "seed": 75, "width": 480, "height": 272})` → `valid: false`, with exactly one error, at
+  `arguments.height`, naming the 32 rule.
+- The same call with `height: 288` → `valid: true`.
+- `validate_workflow(name="templates/ltx2/text-to-video", arguments={"width": 950})` → `valid: false`,
+  with the error at `arguments.width`.
+It is a **finding** if an off-grid size validates clean, or if an on-grid size is refused.
+cleanup: none (nothing is queued or written).
+source: tester, verified in #505, model `claude-opus-5-5` via provider `anthropic`, on 2026-09-27 against
+`lem` `develop @ 6a5cbd5`.
+metrics: none.
+
 ## Performance

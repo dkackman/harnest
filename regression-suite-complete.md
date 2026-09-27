@@ -4556,7 +4556,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F132 — `normalize_audio(limit=true)` reaches a `target_lufs` the peak ceiling used to cap, under a true-peak ceiling, and leaves the default path alone
-pending: #496
 source: tester, spec for #496 from #474's plan v1 (claude-opus-5-5 via anthropic)
 Without a limiter, one transient sets the peak and `target_lufs` stops at the `peak_dbfs`
 ceiling with `target_lufs_capped` (#467). `limit: true` applies the full loudness gain and
@@ -4648,7 +4647,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F134 — `normalize_audio(limit=true)` touches nothing when the ceiling isn't in the way, holds a true-peak ceiling without `target_lufs`, and passes silence through
-pending: #496
 source: tester, spec for #496 from #474's plan v1 (claude-opus-5-5 via anthropic)
 The limiter must be a no-op when the gain already fits under the ceiling (−22 LUFS on the
 fixture puts its true peak near −5.5), must still read `peak_dbfs` as true peak when only
