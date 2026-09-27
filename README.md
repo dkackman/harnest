@@ -799,9 +799,10 @@ raw events.
   refreshes every few seconds. It shows:
   - the drivers running, with the lock each target holds;
   - what needs you, each linked to GitHub: `owner:don` issues on both repos, `harness`
-    proposals awaiting approval, and draft security advisories. It re-checks when a session
-    starts or ends in either loop (at most every 30 s, at least every 5 min), and a new item
-    shows in Events;
+    proposals awaiting approval, and draft security advisories. It re-checks once the loops
+    have been quiet 20 s after a session starts or ends (at most once a minute, at least every
+    5 min), backs off 15 min if GitHub answers with a rate limit, and a new item shows in
+    Events;
   - what the current session on lem (`loop.log`) and on the Mac (`loop.local.log`) is doing:
     turns, context, last tool call;
   - the recent sessions, with their cost;

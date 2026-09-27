@@ -256,7 +256,9 @@ const HOT = /^(release-blocker|release|status:needs-approval|status:plan-review|
 
 function renderAttention(a) {
   if (!a) return;
-  $("attn-when").textContent = a.busy ? "checking GitHub…" : a.fetched ? `checked ${ago(Date.now() / 1000 - a.fetched)} ago` : "not checked yet";
+  $("attn-when").textContent = a.busy ? "checking GitHub…"
+    : a.held_until ? `rate limited · next check in ${ago(a.held_until - Date.now() / 1000)}`
+    : a.fetched ? `checked ${ago(Date.now() / 1000 - a.fetched)} ago` : "not checked yet";
   if (!a.fetched) return;
   const items = [...a.items].sort((x, y) => (x.repo === "advisory") - (y.repo === "advisory")
     || (x.repo === "harnest") - (y.repo === "harnest")

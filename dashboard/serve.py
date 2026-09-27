@@ -8,8 +8,9 @@ processes, the driver locks, the `=== ... ===` session headers and `[tag]`
 lines in logs/loop.log and logs/loop.local.log, the `usage:` line that
 closes each session, and a release's gates.out - and never writes, calls
 ssh, or touches a lock. Its one outside call is read-only `gh` for what
-waits on Don (Attention), made when a session starts or ends in either
-loop, and at least every ATTN_MAX_SECS. The page polls /api/state and
+waits on Don (Attention), made once the loops settle after a session
+starts or ends, no more than once a minute, and at least every
+ATTN_MAX_SECS. The page polls /api/state and
 /api/log.
 """
 
@@ -48,8 +49,13 @@ LOG_TAIL_BYTES = 64 * 1024
 
 TICKET_REPO = os.environ.get("TICKET_REPO", "dkackman/diffusers-workflow")
 HARNESS_REPO = os.environ.get("HARNESS_REPO", "dkackman/harnest")
-ATTN_MIN_SECS = 30  # never re-ask GitHub sooner than this
+# Each fetch is four gh calls (GraphQL and REST). The loops share the
+# account's rate limit, so this stays well under 5% of it.
+ATTN_SETTLE_SECS = 20  # debounce: the loops must be quiet this long after a transition
+ATTN_MIN_SECS = 60  # never re-ask GitHub sooner than this
+ATTN_FORCE_MIN_SECS = 15  # the refresh link's floor
 ATTN_MAX_SECS = 300  # and never go longer, loops or not
+ATTN_LIMITED_SECS = 900  # after a rate-limit answer, leave GitHub alone this long
 ISSUE_FIELDS = "number,title,labels,updatedAt,url"
 
 
@@ -176,14 +182,28 @@ class Attention:
         self.mu = threading.Lock()
         self.items, self.errors = [], []
         self.fetched = 0.0
-        self.key = None
+        self.key = None  # the loop state the last fetch saw
+        self.seen, self.changed = None, 0.0  # the latest loop state, and when it last moved
+        self.hold_until = 0.0
         self.busy = False
 
     def poke(self, key, force=False):
+        """Called on every /api/state poll; fetches only when a rule says so.
+        A burst of transitions (a session ending, the next starting) is one
+        fetch, ATTN_SETTLE_SECS after the last of them."""
         with self.mu:
             now = time.time()
-            due = now - self.fetched >= ATTN_MAX_SECS or key != self.key or force
-            if self.busy or not due or now - self.fetched < (5 if force else ATTN_MIN_SECS):
+            if key != self.seen:
+                self.seen, self.changed = key, now
+            if self.busy or now < self.hold_until:
+                return
+            since = now - self.fetched
+            settled = key != self.key and now - self.changed >= ATTN_SETTLE_SECS
+            if not (
+                since >= ATTN_MAX_SECS
+                or (settled and since >= ATTN_MIN_SECS)
+                or (force and since >= ATTN_FORCE_MIN_SECS)
+            ):
                 return
             self.busy, self.key = True, key
         threading.Thread(target=self._fetch, daemon=True).start()
@@ -220,12 +240,20 @@ class Attention:
         except Exception as e:  # noqa: BLE001
             errors.append(f"advisories: {e}")
         with self.mu:
+            now = time.time()
+            if any("rate limit" in e.lower() for e in errors):
+                self.hold_until = now + ATTN_LIMITED_SECS
+                errors.append(f"GitHub rate limit: not asking again for {ATTN_LIMITED_SECS // 60} min")
+                items = items or self.items  # keep showing the last good list
             self.items, self.errors = items, errors
-            self.fetched, self.busy = time.time(), False
+            self.fetched, self.busy = now, False
 
     def snapshot(self):
         with self.mu:
-            return {"items": self.items, "errors": self.errors, "fetched": self.fetched or None, "busy": self.busy}
+            return {
+                "items": self.items, "errors": self.errors, "fetched": self.fetched or None, "busy": self.busy,
+                "held_until": self.hold_until if self.hold_until > time.time() else None,
+            }
 
 
 ATTENTION = Attention()
