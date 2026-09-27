@@ -24,6 +24,8 @@ Two standalone agents sit outside the alternation:
 This repo holds no application code, only the drivers, role prompts and regression suites.
 [`HARNESS-ROADMAP.md`](HARNESS-ROADMAP.md) is the plan for where the harness goes next.
 
+<img width="965" height="832" alt="image" src="https://github.com/user-attachments/assets/f5ad647f-b65c-48b3-8e7b-cd1de3d57441" />
+
 ## How a cycle goes
 
 ```
