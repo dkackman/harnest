@@ -4954,7 +4954,6 @@ cleanup: `delete_output(job_id=…)` for both runs.
 metrics: none.
 
 ### C-F143 — the minimax-music3 skill sends a duet to `attribute_voices`, not to pitch
-pending: #495
 source: tester, spec for #495 from #485's plan v1 (claude-opus-5-5 via anthropic)
 Stage B is plugin-only. Load `dw:minimax-music3` with the `Skill` tool (the plugin tree
 follows `develop`), and call `list_tasks()`.
