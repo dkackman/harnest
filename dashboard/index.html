@@ -252,6 +252,7 @@ $("notify").addEventListener("click", async () => {
 paintNotify();
 
 const attnKey = (i) => i.repo === "advisory" ? i.number : `${i.repo}#${i.number}`;
+const idle = (i) => i.tags.includes("parked") || i.waiting.length > 0;
 const HOT = /^(release-blocker|release|status:needs-approval|status:plan-review|status:needs-info|critical|high)$/;
 
 function renderAttention(a) {
@@ -262,15 +263,18 @@ function renderAttention(a) {
   if (!a.fetched) return;
   const items = [...a.items].sort((x, y) => (x.repo === "advisory") - (y.repo === "advisory")
     || (x.repo === "harnest") - (y.repo === "harnest")
-    || x.tags.includes("parked") - y.tags.includes("parked") || String(y.updated).localeCompare(String(x.updated)));
-  $("attn-count").textContent = items.length;
-  $("attn-count").className = items.length ? "" : "zero";
+    || idle(x) - idle(y) || String(y.updated).localeCompare(String(x.updated)));
+  const live = items.filter((i) => !idle(i)).length;
+  $("attn-count").textContent = live;
+  $("attn-count").className = live ? "" : "zero";
+  $("attn-count").title = `${live} to act on, ${items.length - live} parked or waiting on another issue`;
   const errs = a.errors.map((e) => `<p class="w" style="color:var(--bad);margin:4px 0">${esc(e)}</p>`).join("");
   $("attn").innerHTML = errs + (items.length ? `<div class="scroll"><table>
-    ${items.map((i) => `<tr class="${i.tags.includes("parked") ? "parked" : ""}">
+    ${items.map((i) => `<tr class="${idle(i) ? "parked" : ""}">
       <td class="repo">${esc(i.repo)}</td>
       <td class="mono"><a href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.number)}">${i.repo === "advisory" ? esc(String(i.number).slice(0, 9)) + "…" : "#" + i.number}</a></td>
-      <td class="title">${esc(i.title)}${i.tags.map((t) => `<span class="tag ${HOT.test(t) ? "hot" : ""}">${esc(t.replace(/^status:/, ""))}</span>`).join("")}</td>
+      <td class="title">${esc(i.title)}${i.tags.map((t) => `<span class="tag ${HOT.test(t) ? "hot" : ""}">${esc(t.replace(/^status:/, ""))}</span>`).join("")}${i.waiting.length ? `<span class="tag">waiting on ${i.waiting.map((b) =>
+        `<a href="${esc(b.url)}" target="_blank" rel="noopener">#${b.number}</a>`).join(", ")}</span>` : ""}</td>
       <td class="num muted">${i.updated ? ago(Date.now() / 1000 - Date.parse(i.updated) / 1000).replace(/ \d+s$/, "") : ""}</td></tr>`).join("")}
     </table></div>` : '<p class="empty">nothing waiting on you</p>');
 }

@@ -56,7 +56,7 @@ ATTN_MIN_SECS = 60  # never re-ask GitHub sooner than this
 ATTN_FORCE_MIN_SECS = 15  # the refresh link's floor
 ATTN_MAX_SECS = 300  # and never go longer, loops or not
 ATTN_LIMITED_SECS = 900  # after a rate-limit answer, leave GitHub alone this long
-ISSUE_FIELDS = "number,title,labels,updatedAt,url"
+ISSUE_FIELDS = "number,title,labels,updatedAt,url,blockedBy"
 
 
 class StreamIndex:
@@ -224,6 +224,12 @@ class Attention:
                             "repo": name, "number": i["number"], "title": i["title"], "url": i["url"],
                             "updated": i["updatedAt"],
                             "tags": [n for n in names if not n.startswith("owner:")],
+                            # open blockers: nothing to decide until they close
+                            "waiting": [
+                                {"number": b["number"], "url": b["url"]}
+                                for b in (i.get("blockedBy") or {}).get("nodes") or []
+                                if b.get("state") == "OPEN"
+                            ],
                         })
                 except Exception as e:  # noqa: BLE001 - shown on the card
                     errors.append(f"{name}: {e}")
@@ -236,6 +242,7 @@ class Attention:
                     "repo": "advisory", "number": a["ghsa_id"], "title": a.get("summary") or "",
                     "url": a["html_url"], "updated": a.get("updated_at") or "",
                     "tags": [a.get("severity") or "no severity"],
+                    "waiting": [],
                 })
         except Exception as e:  # noqa: BLE001
             errors.append(f"advisories: {e}")
