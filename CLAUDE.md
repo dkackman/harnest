@@ -167,8 +167,9 @@ and runs the real drivers end to end. See "Tests" below.
   idea is a feature, a single fix it hands to `owner:implementer`, or not worth doing
   (R12 folded the old researcher role in here).
   - **Design and decompose** run in `run-features.sh`, which `run-loop.sh`'s
-    `features_pass` starts in any cycle where one waits (`LEAD_DESIGN_IN_LOOP=0` to
-    leave them to a hand run). They are lock-free and read-only
+    `features_pass` starts in any cycle where one waits, first in the cycle so a
+    single fix design hands to `owner:implementer` is fixed that cycle
+    (`LEAD_DESIGN_IN_LOOP=0` to leave them to a hand run). They are lock-free and read-only
     against a detached worktree at `origin/develop` (`LEAD_TREE`), behind
     `LEAD_DESIGN_PERMISSION_FLAGS`: read-only source, `gh issue`, `WebFetch`, plus `Write`
     to /tmp, a `gh api` PATCH to edit the plan comment in place, the `Agent` tool for the

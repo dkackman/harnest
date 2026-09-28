@@ -1197,6 +1197,10 @@ pass, in any cycle where either queue holds an issue (`LEAD_DESIGN_IN_LOOP=0` tu
 off). It stays a subprocess rather than a copy, so the design and decompose sessions are
 still defined in one place.
 
+Later moved to the start of the cycle, before the implementer pass: design can hand an
+idea to `owner:implementer` as a single fix, and after the implementer pass that fix
+waited out the rest of the cycle, tester pass included, before anyone picked it up.
+
 ## R13 — A reusable framework: target profile, prompt packs, a second target
 
 **Why.** The loop's design isn't specific to dw:

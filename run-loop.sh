@@ -529,8 +529,9 @@ $(issue_context "$n")" \
 
 # features_pass — the lead's design and decompose sessions, by running
 # run-features.sh (the one place they are defined) when either queue holds an
-# issue. Before lead_pass and tester_pass, so a decompose this cycle gets its
-# spec session this cycle. The sessions are read-only and take no lock; running
+# issue. Before implementer_pass, so an idea design hands to owner:implementer
+# as a single fix is triaged and fixed this cycle; and before tester_pass, so a
+# decompose this cycle gets its spec session this cycle. The sessions are read-only and take no lock; running
 # them here only puts them in the cycle, so a hand-back from Don isn't left
 # waiting for someone to start run-features.sh. Its own queue read decides
 # which issues run; this check only saves starting it for nothing.
@@ -866,8 +867,8 @@ while true; do
   DEPLOYED_HEAD="$(deployed_head)"
   echo "[loop] $SERVER_NAME is running: $DEPLOYED_HEAD" | tee -a "$LOOP_LOG"
 
-  step implementer_pass implementer_pass
   step features_pass features_pass
+  step implementer_pass implementer_pass
   step lead_pass lead_pass
   # Refresh after the implementer's and lead's deploys: the tester must be told what it
   # is actually verifying against, not what the server ran when the cycle began.
