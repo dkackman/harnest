@@ -488,7 +488,9 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   labeled `release-blocker`, and `run-loop.sh` holds the tester's standing task
   (`release_freeze` in `providers.sh`). Closing the release issue lifts it.
   `touch logs/stop-after-cycle` is the other freeze: the loop exits at the next cycle
-  boundary.
+  boundary. **dw's stabilization freeze** (`docs/stabilization/FREEZE` on its `develop`, read by
+  `lib/freeze.py`) stops features and lead builds and has `guard.py` refuse new surface and
+  hot-zone edits; HARNESS-ROADMAP.md "dw stabilization freeze, stage A".
 - **Security holes are private** (R14 item 3). A finding where a boundary didn't hold
   goes to a draft GitHub security advisory via `scripts/file-advisory.sh`, never a public
   issue. That covers a gate, a path, a URL, a disclosure, or a destructive call without

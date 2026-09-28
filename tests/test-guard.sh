@@ -176,4 +176,81 @@ rrow 2 'gh issue create --repo other/repo --title x --label suite,status:needs-a
 rrow 0 'gh issue comment 8 --repo o/r --body x'
 rrow 2 'gh issue comment 8 --repo dkackman/harnest --body x'
 rrow 0 'gh issue list --repo o/r --label target:local'
+
+# --- dw's stabilization freeze (lib/freeze.py, freeze_gate): a real checkout
+# with a throwaway origin, whose develop holds FREEZE and hot-zone.txt. The
+# stub says #7 carries arch-approved, #8 doesn't.
+for r in implementer lead consumer; do
+  row 2 $r "" $none 'gh issue edit 5 --add-label arch-approved'
+  row 2 $r "" $none 'gh issue create --title x --label bug,arch-approved'
+done
+row 0 implementer "" $none 'gh issue edit 5 --add-label stabilization'
+g() { git -C "$1" -c user.name=t -c user.email=t@t "${@:2}" >/dev/null 2>&1; }
+git init -q --bare "$T/origin.git"; git init -q -b develop "$T/seed"
+mkdir -p "$T/seed/dw" "$T/seed/tests" "$T/seed/docs/stabilization"
+echo frozen > "$T/seed/docs/stabilization/FREEZE"
+printf '# Phase 0\ndw/realize.py\ndocs/stabilization/\n' > "$T/seed/docs/stabilization/hot-zone.txt"
+echo a > "$T/seed/dw/realize.py"; echo a > "$T/seed/dw/runner.py"; echo a > "$T/seed/tests/test_a.py"
+g "$T/seed" add -A; g "$T/seed" commit -m base; g "$T/seed" remote add origin "$T/origin.git"; g "$T/seed" push origin develop
+git clone -q -b develop "$T/origin.git" "$T/work"
+w="$T/work"
+# branch <name> <file> <content>: a branch off origin/develop with one commit
+branch() { g "$w" checkout -q -B "$1" origin/develop; mkdir -p "$w/$(dirname "$2")"; echo "$3" > "$w/$2"; g "$w" add -A; g "$w" commit -m "$1"; }
+# hrow <expect> <issue> <label>: the hand-off, from the checkout's HEAD
+hrow() {
+  jq -n --arg c "gh issue edit $2 --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify" \
+     --arg d "$w" '{tool_name: "Bash", tool_input: {command: $c}, cwd: $d}' \
+    | python3 "$guard" implementer >/dev/null 2>&1
+  eq "freeze hand-off #$2: $3" "$1" $?
+}
+# prow <expect> <HARNEST_ISSUE> <command>: a push, as the session carries it
+prow() {
+  jq -n --arg c "$3" --arg d "$w" '{tool_name: "Bash", tool_input: {command: $c}, cwd: $d}' \
+    | HARNEST_ISSUE="$2" python3 "$guard" implementer >/dev/null 2>&1
+  eq "freeze push (HARNEST_ISSUE=$2): $3" "$1" $?
+}
+branch fix-existing dw/runner.py b
+hrow 0 8 "an edit to an existing, non-hot file"
+g "$w" checkout -q -B develop fix-existing
+prow 0 8 'git push origin HEAD'
+g "$w" checkout -q fix-existing
+prow 0 8 'git push origin HEAD'
+branch fix-new dw/new_module.py x
+hrow 2 8 "a new file under dw/"
+hrow 0 7 "a new file under dw/, arch-approved"
+g "$w" checkout -q -B develop fix-new
+prow 2 8 'git push origin develop'
+prow 2 8 'git -C . push origin fix-new:develop'
+prow 0 7 'git push origin develop'
+prow 0 "" 'git push origin develop'
+prow 0 8 'git push origin fix-new'
+prow 2 8 'git push origin HEAD'
+prow 2 8 'git push'
+# a PR merge into develop never shows up as a push: refused outright while
+# frozen. The stub says PR 12's base is develop, PR 13's master.
+stub_gh 'case "$*" in *"pr view 12"*) echo develop ;; *"pr view 13"*) echo master ;;
+  *"view 7"*) echo true ;; *"view 8"*) echo false ;; *) exit 1 ;; esac'
+prow 2 "" 'gh pr merge 12 --merge'
+prow 2 "" 'gh api -X PUT repos/o/r/pulls/12/merge'
+prow 2 "" 'gh pr merge 99 --squash'
+prow 0 "" 'gh pr merge 13 --merge'
+prow 0 "" 'gh api -X PUT /repos/o/r/pulls/13/merge'
+prow 0 "" 'gh pr view 12'
+branch fix-hot dw/realize.py b
+hrow 2 8 "a hot-zone file"
+hrow 2 7 "a hot-zone file, arch-approved"
+branch fix-unfreeze docs/stabilization/FREEZE lifted
+hrow 2 7 "editing the FREEZE file itself (hot zone)"
+# the refactor lands a hot-zone change on develop; a branch cut before it
+# merges it in, with only a tests/ change of its own
+branch fix-merged tests/test_a.py b
+echo refactored > "$T/seed/dw/realize.py"; g "$T/seed" commit -am refactor; g "$T/seed" push origin develop
+g "$w" fetch -q origin; g "$w" merge -q --no-edit origin/develop
+hrow 0 8 "merged a newer develop's hot-zone change, none of its own"
+# the freeze lifts when FREEZE leaves develop, with no harness change
+g "$T/seed" rm -q docs/stabilization/FREEZE; g "$T/seed" commit -m lift; g "$T/seed" push origin develop
+g "$w" checkout -q fix-new; hrow 0 8 "a new file under dw/, freeze lifted"
+prow 0 "" 'gh pr merge 12 --merge'
+g "$w" checkout -q fix-hot; hrow 0 8 "a hot-zone file, freeze lifted"
+ok "freeze.py active: lifted" bash -c "! python3 '$HARNEST/lib/freeze.py' active '$w'"
 finish

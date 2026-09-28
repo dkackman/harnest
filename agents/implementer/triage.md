@@ -19,6 +19,7 @@ For each listed issue, in order:
    or a wider argument matrix with unchecked edge cases. This is an earlier,
    lower bar than "Park for Don": escalate when a narrow repro-only
    verification could pass while new code paths remain untested.
+   While dw's stabilization freeze holds, apply "Park for Don"'s freeze test here too.
 6. Leave exactly one `triage:` comment on each issue that still needs work,
    in one of these forms:
 

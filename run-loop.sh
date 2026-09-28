@@ -177,6 +177,7 @@ LEAD_STAGE_BUDGET_USD="${LEAD_STAGE_BUDGET_USD:-15}"
 # 1: every cycle runs run-features.sh when a design or decompose waits, so
 # Don's hand-back of a plan moves without anyone starting it. 0: by hand only.
 LEAD_DESIGN_IN_LOOP="${LEAD_DESIGN_IN_LOOP:-1}"
+DW_FROZEN=0   # set per cycle by dw_frozen (providers.sh)
 LEAD_CLOSEOUT_BUDGET_USD="${LEAD_CLOSEOUT_BUDGET_USD:-3}"
 TESTER_SPEC_BUDGET_USD="${TESTER_SPEC_BUDGET_USD:-8}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
@@ -351,8 +352,10 @@ run_agent() {
   if [ -n "$TARGET_SUFFIX" ] && [ -f "$REPO/agents/$role/target.md" ]; then
     { printf '\n'; target_note "$role" "$TARGET_HEALTH"; } >> "$prompt_file"
   fi
+  # HARNEST_ISSUE is the issue a per-issue session works, for the guard's
+  # freeze check on a push of develop; empty for triage, task and the like.
   local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind" HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE="$role"
-                        HARNEST_TICKET_REPO="$TICKET_REPO")
+                        HARNEST_TICKET_REPO="$TICKET_REPO" HARNEST_ISSUE="$([ "$issue_repo" = "$TICKET_REPO" ] && printf '%s' "$issue_n")")
   SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX" "$dir" "$prompt_file" \
     "$prompt
 
@@ -537,6 +540,7 @@ $(issue_context "$n")" \
 # which issues run; this check only saves starting it for nothing.
 features_pass() {
   [ "$LEAD_DESIGN_IN_LOOP" = 1 ] || return 0
+  [ "$DW_FROZEN" = 0 ] || { echo "[features] skipping: dw stabilization freeze (docs/stabilization/FREEZE on develop), no design or decompose" | tee -a "$LOOP_LOG"; return 0; }
   shared_passes_here || { echo "[features] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
   [ -n "$(queue_issues lead:design; queue_issues lead:decompose)" ] || return 0
   env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$ONLY_ISSUES" "$REPO/run-features.sh"
@@ -546,11 +550,26 @@ features_pass() {
 # Runs after the implementer pass and before the tester pass, so a stage
 # handed off this cycle is verified this cycle, and lem is re-checked
 # against develop in between as for any fix.
+# During dw's stabilization freeze no stage builds: a feature with one ready
+# parks with Don (stabilization + owner:don), which holds its stages at
+# wait, and he hands it back to owner:lead once the freeze lifts. Close-outs
+# of work already in flight still run.
 lead_pass() {
-  local n parent built=0 bounces
+  local n parent built=0 bounces parked=" "
   local -a stages=()
   while IFS= read -r n; do [ -n "$n" ] && stages+=("$n"); done < <(queue_issues lead:build | cut -f1,2 | tr '\t' ' ')
+  [ "$DW_FROZEN" = 0 ] || echo "[lead] skipping builds: dw stabilization freeze (docs/stabilization/FREEZE on develop)" | tee -a "$LOOP_LOG"
   for n in ${stages[@]+"${stages[@]}"}; do
+    if [ "$DW_FROZEN" != 0 ]; then
+      parent="${n#* }"
+      case "$parked" in *" $parent "*) continue ;; esac
+      parked="$parked$parent "
+      echo "[lead:#$parent] parking for the stabilization freeze (stage #${n%% *} was ready to build)" | tee -a "$LOOP_LOG"
+      gh issue edit "$parent" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label stabilization >/dev/null \
+        && gh issue comment "$parent" --repo "$TICKET_REPO" --body "Paused by the loop driver for dw's stabilization freeze (\`docs/stabilization/FREEZE\` is on \`develop\`; see \`docs/stabilization/ROADMAP.md\`): no stage builds while it holds. Stage #${n%% *} was next. Hand this back with \`owner:lead\` (and drop \`stabilization\`) once the freeze lifts, and the build resumes where it stopped." >/dev/null \
+        || echo "[lead:#$parent] could not park (gh failed)" | tee -a "$LOOP_LOG"
+      continue
+    fi
     [ "$built" -lt "$LEAD_STAGES_PER_CYCLE" ] || break
     parent="${n#* }"; n="${n%% *}"
     bounces="$(handoff_count "$n")"
@@ -866,6 +885,10 @@ while true; do
   before="$(status_board)"
   DEPLOYED_HEAD="$(deployed_head)"
   echo "[loop] $SERVER_NAME is running: $DEPLOYED_HEAD" | tee -a "$LOOP_LOG"
+  # dw's stabilization freeze (lib/freeze.py): features_pass and lead_pass
+  # hold new work; guard.py refuses new surface at hand-off and push.
+  if dw_frozen; then DW_FROZEN=1; echo "[loop] dw stabilization freeze: docs/stabilization/FREEZE is on develop" | tee -a "$LOOP_LOG"
+  else DW_FROZEN=0; fi
 
   step features_pass features_pass
   step implementer_pass implementer_pass

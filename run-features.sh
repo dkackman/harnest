@@ -113,6 +113,10 @@ $(runtime_note lead "$LEAD_PROVIDER" "$LEAD_MODEL")" \
 # parsed all of it before it runs, and editing this file mid-run can't make
 # bash resume at a stale byte offset. An edit takes effect at the next start.
 main() {
+if dw_frozen; then
+  echo "$(ts) [lead] dw stabilization freeze (docs/stabilization/FREEZE on develop): no design or decompose" | tee -a "$LOOP_LOG"
+  return 0
+fi
 park_external_issues
 refresh_plugin_tree "$SOURCE_DIR" "$LEAD_TREE" >/dev/null \
   || { echo "could not create/refresh the lead worktree $LEAD_TREE from $SOURCE_DIR" >&2; exit 1; }

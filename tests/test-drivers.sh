@@ -229,6 +229,31 @@ board '[{"number": 1, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"na
 loop 1
 eq  "loop design: nothing waiting, run-features not started" "" "$(grep 'feature run\|no feature waiting' "$T/loop.out" || true)"
 
+# --- 6c. dw's stabilization freeze (FREEZE on origin/develop): no design, no
+# build; the feature with a ready stage parks with Don; lifting it is dw's
+dev_file() { # dev_file add|rm <path>: a commit on origin/develop
+  git -C "$T/seed" pull -q origin develop 2>/dev/null; mkdir -p "$T/seed/$(dirname "$2")"
+  if [ "$1" = add ]; then echo frozen > "$T/seed/$2"; git -C "$T/seed" add "$2"; else git -C "$T/seed" rm -q "$2"; fi
+  git -C "$T/seed" -c user.name=t -c user.email=t@t commit -qm "$1 $2"; git -C "$T/seed" push -q origin HEAD:develop 2>/dev/null
+}
+dev_file add docs/stabilization/FREEZE
+: > "$FAKE_CLAUDE_LOG"
+specced='"comments": [{"author": {"login": "dkackman"}, "body": "<!-- harnest:plan v1 -->\nplan"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:decomposed v1 -->"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:specced v1 -->"}]'
+board "[{\"number\": 22, \"state\": \"OPEN\", \"labels\": [{\"name\": \"idea\"}, {\"name\": \"owner:lead\"}]},
+        {\"number\": 10, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:lead\"}, {\"name\": \"status:plan-approved\"}], $specced, \"subIssuesSummary\": {\"total\": 1, \"completed\": 0}},
+        {\"number\": 11, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:lead\"}], \"parent\": {\"number\": 10}}]"
+loop 1
+eq  "freeze: no design session" 0 "$(grep -c 'DESIGN session' "$FAKE_CLAUDE_LOG")"
+eq  "freeze: no build session" 0 "$(grep -c 'BUILD session' "$FAKE_CLAUDE_LOG")"
+has "freeze: features_pass says why" "[features] skipping: dw stabilization freeze" "$(cat "$T/loop.out")"
+has "freeze: lead_pass says why" "[lead] skipping builds: dw stabilization freeze" "$(cat "$T/loop.out")"
+eq  "freeze: the feature parks with Don" "feature,owner:don,stabilization,status:plan-approved" "$(labels_of 10)"
+eq  "freeze: its stage waits" "feature,owner:lead,stage" "$(labels_of 11)"
+dev_file rm docs/stabilization/FREEZE
+: > "$FAKE_CLAUDE_LOG"
+loop 1
+eq  "freeze lifted: the idea is designed" 1 "$(grep -c 'DESIGN session for issue #22' "$FAKE_CLAUDE_LOG")"
+
 # --- 7. run-regression: a two-case override suite, one case per session
 : > "$FAKE_CLAUDE_LOG"
 cat > "$T/h/regression-suite-tiny.md" <<'EOS'

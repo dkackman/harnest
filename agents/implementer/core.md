@@ -108,6 +108,9 @@ Each is the whole move; use it exactly.
   approved. His owner swap is the signal: a `status:needs-approval` or
   `status:needs-info` he left behind is stale, so remove it in your first
   label command on the issue.
+  While `docs/stabilization/FREEZE` is on `develop`, fix defects only: a fix that adds surface, touches
+  a hot-zone path, or needs the same edit in two places goes to Don with the `stabilization` label
+  (guard.py enforces the first two). Never add a bullet to dw's `CLAUDE.md`; rationale goes in the owning module's docstring.
 
 ## Checks before any fix
 

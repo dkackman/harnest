@@ -1629,6 +1629,16 @@ breaking changes.
 missed the first: 12 `accept` calls on top of the approvals. Plan items 1–2 are meant to
 close that, and the next release will show whether they do.
 
+## dw stabilization freeze, stage A (2026-09-28)
+
+In place while `docs/stabilization/FREEZE` is on dw's `develop` (dw's own `ROADMAP.md`
+and `harness/stage-a-freeze.md` say why). `lib/freeze.py` is the one check: `run-loop.sh`
+skips design, decompose and builds and parks a feature with a ready stage
+(`stabilization` + `owner:don`); `guard.py` refuses a hand-off, or a push of `develop`
+from a session with `HARNEST_ISSUE`, whose own commits add surface (unless `arch-approved`,
+Don's label) or touch `hot-zone.txt`, and any PR merge into `develop`. Stage B, dw's
+permanent architecture guardrails at its Phase 4 gate, replaces it; deleting `FREEZE` lifts it.
+
 ---
 
 ## Considered and deferred

@@ -1311,6 +1311,14 @@ release_freeze() {
   return 0
 }
 
+# dw_frozen [checkout]
+# Succeeds while dw's stabilization freeze is on: docs/stabilization/FREEZE on
+# the checkout's origin/develop (fetched). lib/freeze.py is the one check;
+# guard.py imports it, so the driver and the hook can't disagree.
+dw_frozen() {
+  python3 "$HARNEST_LIB/freeze.py" active "${1:-$SOURCE_DIR}" 2>/dev/null
+}
+
 # only_issues_filter
 # stdin: lines whose first field is an issue number and whose optional
 # third field is its parent. Keeps the lines ONLY_ISSUES names (the issue

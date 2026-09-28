@@ -23,6 +23,14 @@ implementer:
     ruff clean on the changed files, the UI's check/lint/test passing when
     ui/ changed, and no pytest failure that isn't also failing on
     HARNEST_BASE_COMMIT (see handoff_gate)
+  - dw's stabilization freeze (lib/freeze.py; while docs/stabilization/FREEZE
+    is on origin/develop): a hand-off, or a push of develop from a session
+    the driver gave an issue (HARNEST_ISSUE), whose own commits add a file
+    under dw/, dw_mcp/, workflows/, prompts/ or plugins/ (unless the issue
+    carries `arch-approved`), or change a hot-zone.txt path (no escape).
+    See freeze_gate. Also any `gh pr merge`, or `gh api` call to a PR's
+    merge endpoint, into develop (or whose base can't be read): a merge
+    there never shows up as a push. See pr_merge_base
 lead (the feature lead's design and decompose sessions, via `guard_settings lead` in providers.sh; its
 build and close-out sessions commit and push, so they run with
 implementer.json and get the implementer's rules, push checks and
@@ -34,6 +42,8 @@ every role:
     alone (roadmap R11), so no agent can approve the plan it wrote
   - no adding `release` or `release-blocker`: a freeze, and what moves
     during one, are Don's (roadmap R14)
+  - no adding `arch-approved` (edit or create): new surface during dw's
+    stabilization freeze is Don's call
   - no `security` label on an issue: a security finding goes to a private
     draft advisory (scripts/file-advisory.sh), never the public tracker,
     where it would publish the exploit path (roadmap R14 item 3)
@@ -97,6 +107,9 @@ against the model's mistakes, not against an adversary: a determined agent
 could spell a call so this misses it, which audit_issue still catches.
 """
 import json, os, re, shlex, shutil, subprocess, sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
+import freeze  # noqa: E402  (lib/freeze.py, shared with the driver)
 
 
 def deny(msg):
@@ -195,10 +208,15 @@ def label_lookup(words, label):
     if not nums:
         return None
     repo = flag_values(words, "--repo", "-R")
-    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq",
+    return label_on(nums[0].lstrip("#"), repo[-1] if repo else "", label)
+
+
+def label_on(num, repo, label):
+    """label_lookup for an issue number (and repo, "" for gh's default)."""
+    cmd = ["gh", "issue", "view", num, "--json", "labels", "--jq",
            "[.labels[].name] | index(\"%s\") != null" % label]
     if repo:
-        cmd += ["--repo", repo[-1]]
+        cmd += ["--repo", repo]
     try:
         out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
     except Exception:
@@ -213,16 +231,48 @@ def issue_has_label(words, label):
     return label_lookup(words, label) is True
 
 
-def git_push_problem(words):
+def git_push_args(words):
+    """(dir from -C or None, the push's arguments), or None if not a git push."""
     if len(words) < 2 or os.path.basename(words[0]) != "git":
         return None
     # skip git's own global options (-C dir, -c k=v)
-    i = 1
+    i, at = 1, None
     while i < len(words) and words[i] in ("-C", "-c"):
+        if words[i] == "-C" and i + 1 < len(words):
+            at = words[i + 1]
         i += 2
     if i >= len(words) or words[i] != "push":
         return None
-    args = words[i + 1:]
+    return at, words[i + 1:]
+
+
+def pushed_develop(words, cwd):
+    """(checkout, source ref) when this is a push to develop, else None.
+    A bare `git push [remote]`, or `git push <remote> HEAD`, counts when the
+    checkout is on develop."""
+    pa = git_push_args(words)
+    if not pa:
+        return None
+    at, args = pa
+    top = os.path.join(cwd, at) if at else cwd
+    specs = [a for a in args if not a.startswith("-")][1:]  # after the remote
+    for a in specs:
+        src, _, dst = a.lstrip("+").rpartition(":")
+        if dst in ("develop", "refs/heads/develop"):
+            return top, src or dst
+    if not specs or any(a.lstrip("+") in ("HEAD", "@") for a in specs):
+        head = subprocess.run(["git", "-C", top, "rev-parse", "--abbrev-ref", "HEAD"],
+                              capture_output=True, text=True).stdout.strip()
+        if head == "develop":
+            return top, "HEAD"
+    return None
+
+
+def git_push_problem(words):
+    pa = git_push_args(words)
+    if not pa:
+        return None
+    args = pa[1]
     if any(a in ("-f", "--force", "--force-with-lease", "--mirror", "--delete", "-d") or a.startswith("--force")
            for a in args):
         return "no force pushes, mirror pushes or remote branch deletion."
@@ -317,6 +367,59 @@ def handoff_gate(cwd):
              % (base[:10], "\n".join(new[:30])))
     with open(stamp, "w") as fh:
         fh.write(tree + " " + base + "\n")
+
+
+def freeze_gate(checkout, src, arch_approved):
+    """dw's stabilization freeze: refuse when src's own commits (three dots
+    from origin/develop, see lib/freeze.py) add surface or touch the hot
+    zone. arch_approved() asks GitHub, and only when a new file needs it.
+    The same gate at a hand-off and at a push of develop, because a fix is
+    usually merged and pushed before it's handed off."""
+    if subprocess.run(["git", "-C", checkout, "rev-parse", "--git-dir"], capture_output=True).returncode:
+        return
+    hot = freeze.freeze_state(checkout)
+    if hot is None:
+        return
+    found = freeze.violations(checkout, src, hot)
+    hot_paths = [p for r, p in found if r == "hot-zone"]
+    if hot_paths:
+        rule, why = "hot-zone", ("change %s, which the refactor is restructuring "
+                                 "(docs/stabilization/hot-zone.txt; no label lifts this)" % hot_paths[0])
+    elif found and not arch_approved():
+        rule, why = "new-surface", ("add %s: new surface, which needs Don's `arch-approved` label "
+                                    "on the issue" % found[0][1])
+    else:
+        return
+    deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and this "
+         "work's own commits %s. Don't work around it: `gh issue edit N --remove-label owner:<yours> "
+         "--add-label owner:don --add-label stabilization`, then comment which rule fired (%s) and on "
+         "which path, and stop." % (why, rule))
+
+
+def pr_merge_base(words):
+    """The base branch of the PR a `gh pr merge [N]` or `gh api
+    repos/O/R/pulls/N/merge` merges, as GitHub says; "" when it can't say.
+    None when the command is neither."""
+    if not (len(words) >= 2 and os.path.basename(words[0]) == "gh"):
+        return None
+    repo = flag_values(words, "--repo", "-R")
+    if words[1:3] == ["pr", "merge"]:
+        nums = [w.lstrip("#") for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+        cmd = ["gh", "pr", "view", *nums[:1], "--json", "baseRefName", "--jq", ".baseRefName"]
+        cmd += ["--repo", repo[-1]] if repo else []
+    elif words[1] == "api":
+        m = next((re.fullmatch(r"/?repos/([^/]+/[^/]+)/pulls/(\d+)/merge/?", w) for w in words[2:]
+                  if re.fullmatch(r"/?repos/[^/]+/[^/]+/pulls/\d+/merge/?", w)), None)
+        if not m:
+            return None
+        cmd = ["gh", "pr", "view", m.group(2), "--repo", m.group(1), "--json", "baseRefName", "--jq", ".baseRefName"]
+    else:
+        return None
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception:
+        return ""
+    return out.stdout.strip() if out.returncode == 0 else ""
 
 
 def session_called_mcp(transcript):
@@ -464,6 +567,9 @@ def main():
             if {"release", "release-blocker"} & set(flag_values(words, "--add-label")):
                 deny("release and release-blocker are Don's to add: a freeze, and what may move during "
                      "one, are his calls (R14).")
+        if (is_gh_issue(words, "edit") and "arch-approved" in flag_values(words, "--add-label")) \
+                or (is_gh_issue(words, "create") and "arch-approved" in flag_values(words, "--label", "-l")):
+            deny("arch-approved is Don's to add: new surface during dw's stabilization freeze is his call.")
         if role == "reviewer":
             if adds_verified(words):
                 deny("status:verified claims an MCP check; a docs review adds status:reviewed instead.")
@@ -484,7 +590,20 @@ def main():
             if problem:
                 deny(problem)
             if is_gh_issue(words, "edit") and "status:fixed-pending-verify" in flag_values(words, "--add-label"):
+                freeze_gate(cwd, "HEAD", lambda: issue_has_label(words, "arch-approved"))
                 handoff_gate(cwd)
+            base = pr_merge_base(words)
+            if base in ("", "develop") and freeze.freeze_state(cwd) is not None:
+                deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and "
+                     "this merges a PR into develop%s, where the freeze gate can't see what it adds. Don't "
+                     "work around it: `gh issue edit N --remove-label owner:<yours> --add-label owner:don "
+                     "--add-label stabilization`, then comment which rule fired (pr-merge) and on which PR, "
+                     "and stop." % ("" if base else " (or its base couldn't be read)"))
+            issue = os.environ.get("HARNEST_ISSUE", "")
+            push = issue and pushed_develop(words, cwd)
+            if push:
+                freeze_gate(push[0], push[1], lambda: label_on(
+                    issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True)
         elif role == "consumer":
             # A tester HANDOFF session applies a harness-side edit the
             # implementer asked for and closes the issue as done: nothing
