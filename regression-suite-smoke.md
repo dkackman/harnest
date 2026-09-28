@@ -118,6 +118,11 @@ nothing uses it anymore.
 - `asset:qa-cast/priya-voice.wav`: about 6 s of speech in the shared asset library.
   S-F131 transcribes it with word and segment timestamps. Any short spoken clip under 30 s
   substitutes. Read-only, never deleted.
+- `asset:qa-cast/ep86-episode.mp4`, `asset:qa-cast/ep84-episode.mp4` and
+  `asset:qa-cast/ep68-score.mp3`: two cut episodes and a score in the shared asset library.
+  S-F133 cuts them with `templates/assemble-and-score` in a ~6 s utility job. Only their
+  existence matters: any two same-size 24 fps clips with audio and a score substitute (with
+  `total_frames` adjusted). Read-only, never deleted.
 
 ## Functional
 
@@ -2137,6 +2142,39 @@ cleanup: none. Nothing is queued or written.
 metrics: none.
 source: tester, verified in #504 on 2026-09-27 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ b8fd862`.
+
+### S-F133 — a kept output's asset remembers the job and run it came from
+#556: `keep_output` used to drop provenance, so `get_gallery_metadata(asset:…)` on a kept file
+answered `job: null` even though the keep call named a gallery file with a known job. The guide
+tells consumers to keep anything a later run relies on, so the link to the recipe has to
+survive the keep. Workspace `regression-smoke`:
+1. `run_workflow(workflow_path="templates/assemble-and-score", workspace="regression-smoke",
+   arguments={"shots": ["asset:qa-cast/ep86-episode.mp4", "asset:qa-cast/ep84-episode.mp4"],
+   "score": "asset:qa-cast/ep68-score.mp3", "total_frames": 294, "score_start_frame": 24,
+   "score_gain": 0.3, "world_fade_out_ms": 500, "match_levels": "rms", "match_levels_dbfs": -24,
+   "target_lufs": -16, "limit": true}, acknowledged_cost=true, wait_seconds=55)`. Note the
+   job id, `run_id` and the `film` step's `final/` file.
+2. `keep_output(name=<that file>, workspace="regression-smoke", asset_name="regress/s-f133-kept.mp4",
+   shared=true)`.
+3. `keep_output(name=<that file>, workspace="regression-smoke", asset_name="s-f133-local.mp4")`
+   (workspace-local).
+4. `get_gallery_metadata(name="asset:regress/s-f133-kept.mp4")` and
+   `get_gallery_metadata(name="asset:s-f133-local.mp4", workspace="regression-smoke")`.
+5. `delete_output(job_id=<id>)`, then repeat the first read in step 4.
+expected:
+- Step 1 succeeds in about 6 s.
+- Steps 2 and 3: `linked: true`, `shared` true and false respectively.
+- Step 4, both reads: `job.id` is the step 1 job id, `run_id` its run id, `version` an integer
+  ≥ 1, and `next` names `get_job_workflow(job_id="<id>")`.
+- Step 5: after the source run is deleted, the shared asset still reports the same `job.id`,
+  `run_id` and `version`.
+It is a **finding** if either read answers `job: null` or `run_id: ""`, names a different job, or
+loses the provenance once the source run is gone.
+cleanup: `delete_asset("regress/s-f133-kept.mp4")`,
+`delete_asset("s-f133-local.mp4", workspace="regression-smoke")`. The run was deleted in step 5.
+metrics: none.
+source: tester, verified in #556 on 2026-09-28 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 5370ac9`.
 
 ## Performance
 
