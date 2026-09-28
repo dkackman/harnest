@@ -427,7 +427,7 @@ single fix (handed to `owner:implementer`), a duplicate, or not worth doing.
    the plan, before any code, as `pending: #<stage>` suite cases. The regression agent
    skips them.
 5. **Build** (`run-loop.sh`, lead pass). One stage per cycle, once it has no open blocker.
-   The lead fans code-only work out to `sonnet` subagents, then integrates, merges to
+   The lead fans code-only work out to `claude-sonnet-5-5` subagents, then integrates, merges to
    `develop`, deploys once, and hands off.
 6. **Verify** (`run-loop.sh`, tester). The tester checks the stage's repro plus its
    pending cases. A pass removes the `pending:` lines; a bounce goes back to the lead.
@@ -463,7 +463,7 @@ just before the real fix. The clone holds no later history and has no remote, an
 - a verdict (`pass`/`partial`/`fail`) from a separate Opus judge.
 
 ```sh
-./run-bench.sh                              # all cases: sonnet, the working-tree prompt
+./run-bench.sh                              # all cases: claude-sonnet-5-5, the working-tree prompt
 IMPLEMENTER_MODEL=opus ./run-bench.sh       # a different model
 BENCH_PROMPT_REV=<commit> ./run-bench.sh    # the implementer prompt as of a commit
 ./run-bench.sh --summary                    # pass rate, cost and turns per configuration
@@ -618,10 +618,10 @@ tail -f logs/loop.log                           # watch from another terminal
 | `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running |
 | `DW_LOCAL_WORKSPACE` / `DW_ORIGIN_URL` | `~/dw-mps-workspace` / the dw repo on GitHub | the local server's `--workspace`, and what `scripts/setup-mac-loop.sh` clones |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
-| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `sonnet` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
+| `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `claude-sonnet-5-5` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |
-| `REGRESSION_MODEL` | `sonnet` | `run-regression.sh`; same `*_PROVIDER` pattern |
-| `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`sonnet`) runs its code subagents |
+| `REGRESSION_MODEL` | `claude-sonnet-5-5` | `run-regression.sh`; same `*_PROVIDER` pattern |
+| `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`claude-sonnet-5-5`) runs its code subagents |
 | `LEAD_STAGE_BUDGET_USD` / `LEAD_CLOSEOUT_BUDGET_USD` / `TESTER_SPEC_BUDGET_USD` | `15` / `3` / `8` | per-session caps in `run-loop.sh`; `run-features.sh` has `LEAD_DESIGN_BUDGET_USD` (6) and `LEAD_DECOMPOSE_BUDGET_USD` (2) |
 | `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` and `REVIEWER_EFFORT` (triage and the docs reviewer follow the tester's) |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` (`8` on local) / `3` | `--max-budget-usd` per session; `0` = uncapped |
@@ -661,7 +661,7 @@ The standalone drivers have their own knobs:
 | `CURATE_RUNS` | `3` | recent runs of a level in the audit's cost table |
 | `CURATE_BUDGET_SMOKE` / `_COMPLETE` / `_MODEL_SPECIFIC` / `_SECURITY` | `65 16` / `60 20` / `60 12` / `15 6` | a level's target for one full run: minutes, then USD |
 | `RETRO_MODEL` / `RETRO_PROVIDER` / `RETRO_EFFORT` / `RETRO_BUDGET_USD` | `claude-opus-5-5` / `$PROVIDER` / `$EFFORT` / `5` | `run-retro.sh` |
-| `DIGEST_MODEL` / `DIGEST_PROVIDER` / `DIGEST_BUDGET_USD` | `sonnet` / `$PROVIDER` / `1` | `run-digest.sh` |
+| `DIGEST_MODEL` / `DIGEST_PROVIDER` / `DIGEST_BUDGET_USD` | `claude-sonnet-5-5` / `$PROVIDER` / `1` | `run-digest.sh` |
 | `DIGEST_CURATOR_DAYS` | `7` | how far back the digest lists the curator's rulings |
 | `BENCH_BUDGET_USD` / `BENCH_JOBS` | `4` / `1` | `run-bench.sh`: per replayed session, and cases run in parallel |
 | `BENCH_LABEL` | `<provider>/<model>@<prompt commit>` | the label a run's results are grouped under in `--summary` |

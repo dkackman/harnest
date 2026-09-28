@@ -58,9 +58,9 @@ and runs the real drivers end to end. See "Tests" below.
   at while it was inherited from user settings; per-role `*_EFFORT` knobs in each driver).
   `measure-base-ctx.sh` is how a flag set's turn-1 context is measured before and after a
   change like this.
-  Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `sonnet`), `TESTER_MODEL`
+  Model choice is one knob per role: `IMPLEMENTER_MODEL` (default `claude-sonnet-5-5`), `TESTER_MODEL`
   (`claude-opus-5-5` — the exact id, not the `opus` alias, since an alias moves on the next
-  release and a verification is only worth the model behind it), `REGRESSION_MODEL` (`sonnet`),
+  release and a verification is only worth the model behind it), `REGRESSION_MODEL` (`claude-sonnet-5-5`),
   `LEAD_MODEL` (the tester's), each with a `*_PROVIDER`
   that defaults to `PROVIDER` (`anthropic`). The implementer's triage session is the one
   exception: `TRIAGE_MODEL`/`TRIAGE_PROVIDER` default to the *tester's*, not the
@@ -258,7 +258,7 @@ structural change to the drivers or role prompts.
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/dw-agent
 MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh                # three cycles, then stop
-TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults claude-opus-5-5 / sonnet)
+TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults claude-opus-5-5 / claude-sonnet-5-5)
 PROVIDER=ollama IMPLEMENTER_MODEL=qwen2.5:32b TESTER_MODEL=qwen2.5:32b ./run-loop.sh   # non-Anthropic: name every role
 IMPLEMENTER_BUDGET_USD=0 TESTER_TASK_EVERY=1 ./run-loop.sh   # no implementer cap; standing task every cycle
 tail -f logs/loop.log                  # combined stream, prefixed [implementer:#145] / [tester:task] etc.
@@ -273,7 +273,7 @@ vary the implementer (its mistakes show up in its patches) and keep the tester o
 The regression agent is the measured exception: its work is executing written cases, not judging,
 and a same-day smoke run on each (2026-09-21) cost $32.64 on Opus vs $17.85 on Sonnet with no loss
 in what was filed (#310–#312, one of them a wrong literal the Opus run had committed an hour
-earlier) — so it defaults to `sonnet`. Each agent's prompt now states the model and provider it is running as,
+earlier) — so it defaults to Sonnet (`claude-sonnet-5-5` since 2026-09-28). Each agent's prompt now states the model and provider it is running as,
 and each role prompt requires the agent to name them in the comments it writes — a fresh session
 is otherwise unidentifiable afterwards, and a verification is only worth what the model behind it
 was. An alias (`opus`) moves when a new model ships, so the runtime note tells the agent to use

@@ -5,7 +5,7 @@
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
 #   IMPLEMENTER_MODEL=haiku TESTER_MODEL=opus ./run-loop.sh
-#                                       # per-role models; defaults sonnet / opus
+#                                       # per-role models; defaults claude-sonnet-5-5 / claude-opus-5-5
 #   TRIAGE_MODEL=sonnet ./run-loop.sh   # triage session's model; defaults to TESTER_MODEL
 #   TESTER_EFFORT=high ./run-loop.sh    # per-role --effort; defaults medium (EFFORT)
 #   PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
@@ -110,11 +110,11 @@ PROVIDER="${PROVIDER:-anthropic}"  # where the models live: anthropic|ollama|gat
 # One model knob per role, no shared default: which role may run a weak model
 # is a design decision, not a config detail. The tester defaults to opus —
 # its independence is the point of the setup and a weak tester rubber-stamps
-# silently. The implementer defaults to sonnet — its mistakes show up in the
+# silently. The implementer defaults to Sonnet (claude-sonnet-5-5) — its mistakes show up in the
 # tester's verification, and it is the role that burns the most tokens. Under
 # a non-anthropic PROVIDER both must be named (a Claude alias can't be served
 # there; resolve_model_env rejects it at startup).
-IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
+IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-claude-sonnet-5-5}"
 TESTER_MODEL="${TESTER_MODEL:-claude-opus-5-5}"   # exact id, not the "opus" alias: an alias moves on the next release and a verification is only worth the model behind it (see resolved_model)
 IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
 TESTER_PROVIDER="${TESTER_PROVIDER:-$PROVIDER}"
@@ -142,7 +142,7 @@ IMPLEMENTER_PARK_AFTER="${IMPLEMENTER_PARK_AFTER:-4}"
 # hand-off gate and the tester.
 LEAD_MODEL="${LEAD_MODEL:-$TESTER_MODEL}"
 LEAD_PROVIDER="${LEAD_PROVIDER:-$TESTER_PROVIDER}"
-LEAD_WORKER_MODEL="${LEAD_WORKER_MODEL:-sonnet}"
+LEAD_WORKER_MODEL="${LEAD_WORKER_MODEL:-claude-sonnet-5-5}"
 # One feature in build at a time (stages from two features interleaving on
 # develop make a bounce hard to attribute); a feature's own stages are serial
 # through their blocked-by links.

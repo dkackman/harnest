@@ -38,7 +38,7 @@ LOGS="$REPO/logs/bench"
 RESULTS="$BENCH/results/results.jsonl"
 WORK="${BENCH_WORK:-${TMPDIR:-/tmp}/harnest-bench}"
 PROVIDER="${PROVIDER:-anthropic}"
-IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-sonnet}"
+IMPLEMENTER_MODEL="${IMPLEMENTER_MODEL:-claude-sonnet-5-5}"
 IMPLEMENTER_PROVIDER="${IMPLEMENTER_PROVIDER:-$PROVIDER}"
 # The judge must be strong and fixed across the configurations it compares;
 # an exact id, not an alias, for the same reason TESTER_MODEL is one.

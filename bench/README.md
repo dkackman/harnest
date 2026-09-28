@@ -5,7 +5,7 @@ and verified. Each case starts from the `develop` commit just before the real
 fix and is scored against that fix. See `HARNESS-ROADMAP.md` R1 for why.
 
 ```sh
-./run-bench.sh                              # all cases, default config (sonnet, working-tree prompt)
+./run-bench.sh                              # all cases, default config (claude-sonnet-5-5, working-tree prompt)
 IMPLEMENTER_MODEL=opus ./run-bench.sh       # compare a model
 BENCH_PROMPT_REV=<commit> ./run-bench.sh    # compare a prompt revision
 BENCH_JOBS=3 ./run-bench.sh 289 74 238      # a subset, in parallel

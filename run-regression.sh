@@ -14,7 +14,7 @@
 #   ./run-regression.sh security             # security only (hostile-input probes, opt-in)
 #   ./run-regression.sh all                  # smoke, complete, model-specific, security
 #   ./run-regression.sh smoke my-suite.md    # override the suite file for just that level
-#   REGRESSION_MODEL=opus ./run-regression.sh     # defaults to sonnet
+#   REGRESSION_MODEL=opus ./run-regression.sh     # defaults to claude-sonnet-5-5
 #   REGRESSION_EFFORT=high ./run-regression.sh   # --effort; defaults medium
 #   PROVIDER=ollama REGRESSION_MODEL=qwen2.5:32b ./run-regression.sh   # a non-Anthropic model
 #   CASES_PER_SESSION=3 ./run-regression.sh  # split each level into 3-case sessions
@@ -85,7 +85,7 @@ PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|ga
 # execution of a written case, so the "keep the judging roles strong" rule
 # (CLAUDE.md "Running") costs more here than it buys; the tester stays on
 # opus.
-REGRESSION_MODEL="${REGRESSION_MODEL:-sonnet}"
+REGRESSION_MODEL="${REGRESSION_MODEL:-claude-sonnet-5-5}"
 REGRESSION_PROVIDER="${REGRESSION_PROVIDER:-$PROVIDER}"
 FALLBACK_MODEL="${FALLBACK_MODEL:-}"   # optional; passed as --fallback-model
 CASES_PER_SESSION="${CASES_PER_SESSION:-}"  # cases per session; empty = pick from the context window (see header); 0 = one session per level
