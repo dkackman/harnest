@@ -2361,4 +2361,25 @@ cleanup: if a job ran, `delete_output(job_id=<id>, workspace="regression-model-s
 fixture.
 metrics: none.
 
+### M-F067 — a declared `vram_estimate` is checked against the device's capacity when the workflow has no `cost` block
+source: tester, verified in #552 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA (plus Z-Image and MiniMax-Music3 steps), via an inline trimmed copy
+of `templates/minimax/music-video`. Free: validate calls only.
+Setup: **W** is `templates/minimax/music-video` (read with `get_workflow`) with its top-level `cost`
+array **deleted**. Keep `vram_estimate` exactly as the template has it. Keep the steps `draw_singer`,
+`write_song`, `slice` and `shot` (both references), and drop `edit`, `balanced` and `music_video`.
+`shots` is one entry, `{"name": "one", "start_frame": 0, "prompt": "the otter sings"}`. You may drop
+the `shot` step's quantization, offload and LoRA configuration, and the variables only they use.
+Steps:
+1. `validate_workflow(workflow=W, arguments={"num_frames": 345, "width": 4096, "height": 4096})`.
+2. The same call, with `inline_workflow=W` in place of `workflow=W`.
+3. `validate_workflow(workflow=W)`, with no arguments (the defaults 960x544x124 project to about 20 GB).
+expected:
+- Steps 1 and 2 are each `valid: false`, with an error at `variables.shots[0]` naming `shot@one`, the
+  projected VRAM (172.76 GB with 2 references), and the device's own ceiling it exceeds.
+- Step 3 is `valid: true` with no VRAM error or warning.
+It is a **finding** if step 1 or step 2 is `valid: true`. A missing `cost` must not skip the check.
+cleanup: none.
+metrics: none.
+
 ## Performance
