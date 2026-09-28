@@ -4005,13 +4005,15 @@ expected:
   `ep42-shot1-accuse.mp4`, `ep42-shot2-deflect.mp4`, `ep37-shot1-receipt.mp4`,
   `shot@accuse`, `shot@deflect`, at start_frame 0/124/248/372/496, num_frames 124 each,
   start_sample 0/227850/455700/683550/911400 (`round(start_frame × 44100 / 24)`), and
-  num_samples 227850 (the last may read 227851: the resampled 32 kHz track rounds one
-  sample long).
+  num_samples 227850 for the first four. The last shot's `start_sample + num_samples`
+  equals the file's decoded audio length, `audio_stream_seconds × 44100` (#426; 1139235
+  when written, last num_samples 227835).
 - The seams body has `shots_source: "artifact"`, `rules_skipped: []`, and four seams, all
   `"kind": "cut"`, at about 5.167 / 10.333 / 15.5 / 20.667 s. Each `level_step_db` was
   ≤ 1.44 when this case was written; its only findings were info-level `seam_frame_jump`.
 It is a **finding** if the film lists two shots (one per input) or none, if a
-`shot@…` entry keeps its 32 kHz sample figures (165333), or if any seam is missing.
+`shot@…` entry keeps its 32 kHz sample figures (165333), if any seam is missing, or if the
+map ends past the file's last sample.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
