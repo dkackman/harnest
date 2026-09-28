@@ -1,0 +1,2 @@
+{"ts":"2026-09-28T05:40:53Z","level":"model-specific","case":"M-F065","metric":"latency","condition":"aspect-384x288","value":112.7,"unit":"s","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job 6715cfe45b34","note":"first run, seeds the file; verify of #549"}
+{"ts":"2026-09-28T05:40:53Z","level":"model-specific","case":"M-F065","metric":"latency","condition":"short-97f","value":103.0,"unit":"s","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job d14dc0453bfa","note":"arm failed: output kept 121 frames, not 97"}
