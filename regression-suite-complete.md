@@ -5891,7 +5891,6 @@ cleanup: `delete_output(job_id=…)` for every job, including the setup runs.
 metrics: none.
 
 ### C-F169 — the dialogue-cut skills, the tasks guide and `shot_dead_air` point callers at `find_loop_bed`
-pending: #545
 source: tester, spec for #545 from #218's plan v1 (claude-opus-5-5 via anthropic)
 Stage B teaches the task where a caller meets the problem:
 - the `dw:minimax-h3` skill (dialogue cuts need a room-tone bed);
