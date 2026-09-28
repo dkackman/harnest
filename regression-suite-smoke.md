@@ -2046,8 +2046,8 @@ workflow `{"id": "s-f129", "variables": {"marker": "<X>"}, "steps": [{"name": "s
    and `list_assets()`.
 7. `delete_workflow("s-f129")` and `delete_asset("uploads/px.png")`, with no `workspace=`.
 expected:
-- 1: `workspace: "s-f129-b"`, `path` under `s-f129-b/workflows/`.
-- 2: `workspace: "s-f129-a"`, `path` under `s-f129-a/workflows/`.
+- 1: `workspace: "s-f129-b"`, `origin: "workspace"`, and no `path` or absolute server path (dw#527).
+- 2: `workspace: "s-f129-a"`, `origin: "workspace"`, and no `path` or absolute server path.
 - 3: the delete returns `workspace: "s-f129-a"`, `name: "s-f129"`, `origin: "workspace"` and
   `deleted: true`, and no server path (#521). `get_workflow` still answers `marker: "B"`.
 - 4: `Unknown workflow`. It never falls through to B's copy.
@@ -2055,9 +2055,8 @@ expected:
 - 6: the delete returns `workspace: "s-f129-a"` and `reference: "asset:uploads/px.png"`. A's listing
   no longer has `uploads/px.png`. B's (pinned) still lists it with `origin: "workspace"`.
 - 7: both replies name `workspace: "s-f129-b"`. Omitting `workspace=` follows the pin.
-It is a **finding** if any `workspace=` call touches the pinned workspace, or if a delete reply
-omits `workspace` or carries an absolute server path. Steps 1 and 2 still assert `path` on
-`save_workflow` today; dw#527 may take that out for 0.6. (Delete replies amended per
+It is a **finding** if any `workspace=` call touches the pinned workspace, or if a save or delete reply
+omits `workspace` or carries an absolute server path. (Delete replies amended per
 harnest#29, dw#534: Don, 2026-09-27, 0.5.0 release.)
 cleanup: `use_workspace("regression-smoke")`, then `delete_workspace` both `s-f129-*` with
 `acknowledged_cost=true`.
