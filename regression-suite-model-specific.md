@@ -2381,4 +2381,42 @@ It is a **finding** if step 1 or step 2 is `valid: true`. A missing `cost` must 
 cleanup: none.
 metrics: none.
 
+### M-F068 — inserting an entry mid-list in a named `for_each` leaves the other members cached, and validate's `cached_steps` predicts it
+source: tester, found while running TESTER_TASK.agent.md (ep86), claude-opus-5-5 via anthropic
+The workflows guide says the step cache keys on the member name, so a shot inserted in the middle
+of a named list leaves every other shot cached (an indexed list would shift them all). M-F020 covers
+an edited entry on H3. This case covers an inserted one, cheaply, on LTX.
+Model/pipeline: `Lightricks/LTX-2.5-Diffusers` `LTX2ImageToVideoPipeline`, `device: cuda`. Paid,
+about 1.7 min for step 1 and under 30 s for step 3 on lem.
+Setup: **W** is an inline workflow with `id: "QAM068"`, `seed: 86` and a `shots` variable. Its step
+`shot` is `for_each: "variable:shots"`, with the `image_to_video` step of `templates/ltx2/image-to-video`
+copied verbatim. Its arguments are `prompt: "item:prompt"`, `image: "item:image"`,
+`num_frames: "item:num_frames"`, `width: 512` and `height: 288`, and its result is
+`video/mp4 fps 24 intermediate`. After it comes `edit`, a `concat_videos` task with
+`videos: "gather:shot"`, `fps: 24`, `match_levels: "rms"` and `match_levels_dbfs: -24`, whose result
+is `video/mp4 fps 24 final`. **L2** is two entries. `accuse` uses
+`asset:qa-cast/priya-portrait.jpg` with 49 frames and a quoted line. `deflect` uses
+`asset:qa-cast/hal-portrait.jpg` with 57 frames and a quoted line. **L3** is L2 with `gasp` inserted
+between them, using the priya portrait and 41 frames.
+Steps (workspace = this suite's, passed on every call):
+1. `validate_workflow(workflow=W, arguments={"shots": L2})`, then `run_workflow` with the bound
+   acknowledgement and `wait_for_job`.
+2. `validate_workflow(workflow=W, arguments={"shots": L3})`.
+3. `run_workflow` with step 2's plan bound, then `wait_for_job`.
+expected:
+- Step 1: `plan.cached_steps: 0`, `list_entries.shots: 2`. The job succeeds, and the `edit` manifest
+  entry places the two shots at 0/49 and 49/57.
+- Step 2: `plan.cached_steps: 2`, `list_entries.shots: 3`, `steps: 4`.
+- Step 3: `shot@accuse` and `shot@deflect` carry `reused: true`, and their `files` name **step 1's**
+  run directory (deflect's file still carries step 1's index, `.1-0.0`). `shot@gasp` is a new file,
+  and `edit` places the shots at 0/49, 49/41 and 90/57 (147 frames).
+- It is a **finding** if `shot@deflect` regenerates in step 3: the cache keyed on the index, not the
+  name. It is also a finding if step 2 predicts a number other than what step 3 reuses.
+- (A `gasp` prompt with no quoted line renders near-silent and warns, per #434. That is expected, and
+  not this case's concern.)
+metrics: step 3's job `started_at`→`finished_at` in seconds (`latency`, condition `insert-cached`),
+logged to `regression-perf/M-F068.jsonl`. A reading near step 1's time means the cache missed, even if
+`reused` somehow survived.
+cleanup: `delete_output(job_id=…)` for both jobs.
+
 ## Performance
