@@ -5501,7 +5501,6 @@ cleanup: `delete_output(job_id=…)` for both runs and the measurement jobs.
 metrics: none.
 
 ### C-F158 — the dialogue-into-song recipe the skill and guide teach produces C-F152's placement when followed verbatim
-pending: #514
 source: tester, spec for #514 from #486's plan v1 (claude-opus-5-5 via anthropic)
 Stage B teaches the recipe: `slice_audio` slices starting at `cue_seconds` (to condition
 the song shots), then `join_into_song`, then `normalize_audio`, then `pair_audio`. The
@@ -6158,6 +6157,32 @@ It is a **finding** if any call:
 - or takes noticeably longer than before the change: more than 5 s for 1–3 and 5–8.
 
 cleanup: `delete_output(job_id=<that job>)`.
+metrics: none.
+
+### C-F176 — an off-size shot is resized over `video_frames`, has its soundtrack put back with `pair_audio`, and then dissolves with 960×544 shots
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic); #504, #551
+Since #504, a join refuses shots of different sizes at validate. The route that reconciles them
+chains image-processor tasks, so a dropped frame rate, size or soundtrack anywhere in it would
+break a join silently. This case fixes that route. It runs on the CPU in about 10 s.
+1. `validate_workflow(workspace=<suite workspace>, workflow=W)`, then `run_workflow` with the same
+   `inline_workflow`, `acknowledged_cost=<bound from the plan>` and `wait_seconds=55`. W:
+   `{"id": "c-f176-resize-dissolve", "seed": 1, "steps": [`
+   `{"name": "hal_frames", "task": {"command": "video_frames", "arguments": {"video": "asset:qa-cast/ep75-shot-ltx2stage-hal.mp4"}}, "result": {"content_type": "video/mp4", "fps": 24, "save": false}},`
+   `{"name": "hal_fit", "task": {"command": "resize_rescale", "arguments": {"image": "previous_result:hal_frames", "width": 960, "height": 544}}, "result": {"content_type": "video/mp4", "fps": 24, "save": false}},`
+   `{"name": "hal_shot", "task": {"command": "pair_audio", "arguments": {"video": "previous_result:hal_fit", "audio": "asset:qa-cast/ep75-shot-ltx2stage-hal.mp4", "fps": 24, "fit": "video"}}, "result": {"content_type": "video/mp4", "fps": 24, "subfolder": "intermediate"}},`
+   `{"name": "film", "task": {"command": "dissolve_videos", "arguments": {"videos": ["asset:qa-cast/ep62-shot1-accuse.mp4", "previous_result:hal_shot", "asset:qa-cast/ep62-shot2-deflect.mp4"], "dissolve_frames": 12, "fps": 24, "match_levels": "rms", "match_levels_dbfs": -24}}, "result": {"content_type": "video/mp4", "fps": 24, "subfolder": "final"}}]}`
+2. `get_gallery_metadata` on the `film` file, and `assess_output` on it.
+expected:
+- Validation is clean and plans 4 steps. The run `succeeds`, and its only warning is `dissolve_videos`' sample-rate
+  resample to 48000 Hz (32000/48000/32000 in).
+- The film is **960×544**, 345 frames, 24 fps, 14.375 s, 48000 Hz stereo, and `audio_stream_seconds`
+  equals the duration. Its `media.shots` read start_frame 0/112/221 and num_frames 112/109/124, with the last two
+  at `overlap_frames: 12`.
+- `assess_output` raises no `seam_*`, `sync_drift` or `sync_length` finding.
+It is a **finding** if the film isn't 960×544, if `hal_shot` is silent or missing from the shot map
+(the soundtrack was lost in the round trip), or if the frame count isn't 345.
+Not asserted here: `shot_dead_air` warnings in `hal_shot` and `ep62-shot2-deflect` (those takes' own gaps).
+cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ## Performance
