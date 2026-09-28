@@ -2159,7 +2159,6 @@ metrics: `latency` (s) per arm, conditions `larger-960x544`, `crop-640x360`, `lo
 `regression-perf/M-F061.jsonl`. The first run seeds the file.
 
 ### M-F062 — `templates/ltx2/refine-clip` is a catalog shot with a curated cost, built from the upsampler's own `video=` encode, and `two-stage` is untouched
-pending: #549
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: LTX-2.5, with `LTX2LatentUpsamplePipeline` (fed `video=`) followed by `LTX2Pipeline` refine
 on the stage-two sigmas, via `templates/ltx2/refine-clip`. Free: discovery calls and a skill read only,
@@ -2224,7 +2223,6 @@ cleanup: none. Discovery only, writes nothing.
 metrics: none.
 
 ### M-F063 — `refine-clip` validates a real clip with an estimate, and refuses a missing asset, off-grid sizes and frame counts, and the bare call before anything queues
-pending: #549
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F062. Free: `validate_workflow`, plus `run_workflow` calls that must be refused
 before a job exists. No GPU. `A` below is `asset:qa-cast/ep3-shot1-incident.mp4` (shared, 960×544,
@@ -2261,7 +2259,6 @@ cleanup: none. Nothing is written. If a refused `run_workflow` created a job any
 metrics: none.
 
 ### M-F064 — `refine-clip` doubles a 512×288 clip to 1024×576, keeping its composition, its motion and its own soundtrack at −3 dBFS
-pending: #549
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F062. Paid: one LTX-2.5 refine job at the defaults (512×288 → 1024×576, 121 frames).
 Setup: fixture `asset:refine/src-512x288.mp4` (see Fixtures). Make it first if it is missing.
@@ -2298,7 +2295,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `512x288-121
 `regression-perf/M-F064.jsonl`. The first run seeds the file.
 
 ### M-F065 — `refine-clip` stretches a source of the wrong aspect instead of refusing it, and a `num_frames` shorter than the source cuts picture and soundtrack together
-pending: #549
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F062. Paid: two LTX-2.5 refine jobs, run one at a time. Validation passes both
 (the plan documents this behavior and does not refuse it). Each arm uses `"seed": 543` in workspace
@@ -2331,7 +2327,6 @@ metrics: `latency` (s) per arm, conditions `aspect-384x288` and `short-97f`, to
 `regression-perf/M-F065.jsonl`. The first run seeds the file.
 
 ### M-F066 — `refine-clip` refuses a silent source before the pipeline load, naming the missing soundtrack
-pending: #549
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F062. At most one job, which must fail fast. The plan's Q2 decision is "refuse
 early, before the ~80s pipeline load". It does not say whether that happens at validate or as a
