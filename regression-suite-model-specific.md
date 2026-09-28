@@ -2181,7 +2181,11 @@ expected:
   `modulus: 8, remainder: 1, min_frames: 9` and no snap. Each has a `reason` matching `two-stage`'s
   text for the same variable. The plan says they are copied.
 - In `get_workflow`'s full document:
-  - Step `upscale` is `LTX2LatentUpsamplePipeline`. Its `video` argument reads `variable:source_video`,
+  - Step `source_audio` is `normalize_audio` of `variable:source_video` to a −3 dBFS peak, and saves
+    nothing. It is also the silent-source check (M-F066).
+  - Step `source_frames` is `loop_frames(video=variable:source_video, num_frames=variable:num_frames)`,
+    `save: false`. It trims (or laps) the source to `num_frames` before the upsampler.
+  - Step `upscale` is `LTX2LatentUpsamplePipeline`. Its `video` argument reads `previous_result:source_frames`,
     and it has no `latents`. It passes `height`/`width`/`num_frames` from the variables and
     `output_type: "latent"`, is `save: false`, and publishes `shared_components` with `vae`.
   - Step `refine` has these values:
@@ -2192,10 +2196,10 @@ expected:
     - `reused_components` includes `vae`;
     - its result is intermediate.
 
-    Its width/height express 2× the `width`/`height` variables, however that is written. M-F064
-    checks the real output size.
-  - Step `with_source_audio` is `pair_audio(video=previous_result:refine, audio=variable:source_video,
-    fit="video")`. It normalizes to a −3 dBFS peak, and its result is final.
+    Its width/height are the source size (the `width`/`height` variables), not 2×; the output comes
+    out at 2× that. M-F064 checks the real output size.
+  - Step `with_source_audio` is `pair_audio(video=previous_result:refine, audio=previous_result:source_audio,
+    fit="video")`, and its result is final.
   - `cost_drivers` names `num_frames`, `width` and `height`, and there is no `vram_estimate`.
 - The description (from the full `get_workflow` document or the full `list_workflows` entry) says five
   things:
