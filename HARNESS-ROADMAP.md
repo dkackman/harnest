@@ -17,12 +17,12 @@ rather than in a separate log.
 | R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56); schedule weekly | — |
 | R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
 | R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; watch denial counts | R1 |
-| R8  | Port the drivers to the Claude Agent SDK          | todo; trigger in R8 (after R12, dw#378 live) | R12 |
+| R8  | Port the drivers to Python (Agent SDK optional, later) | planned 2026-09-28: `docs/superpowers/specs/2026-09-27-r8-port-inputs.md`, `plans/2026-09-27-r8-port.md`; decisions accepted | R12 |
 | R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`); the dashboard's Needs you card lists the queue live | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); first two features delivered: dw#376 and dw#378 (stages A–D) closed verified; design now runs first in the cycle | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
-| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | todo; profile drawn before R8, split during it; feature flag first. A second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
+| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | step 1 (profile and pack line) drafted in R8's inputs spec; split during R8; feature flag first. A second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
 | R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; nightly regression cadence is Don's call | R12 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
@@ -518,7 +518,7 @@ loop and an `awk` pipeline once each.
 `agents/tester/core.md` and `agents/regression/core.md` lists what the fence allows and the
 tool to use instead of each denied pattern. The next retro's denial counts are the measure.
 
-## R8 — Port the drivers to the Claude Agent SDK
+## R8 — Port the drivers to Python (the Agent SDK optional, later)
 
 **Why.** About 75 KB of bash now carries the status board, escalation, bounce counting,
 rate-limit sleeps, stream-json rendering and locking. Bash makes each of those harder to
@@ -538,6 +538,24 @@ R4's parent/child flow and R7 are all candidates), rather than as a project of i
 
 **Done when.** The bash drivers are deleted, and `providers.sh`'s provider table lives in one
 Python module.
+
+**Decided 2026-09-28** (spec `docs/superpowers/specs/2026-09-27-r8-port-inputs.md`, plan
+`docs/superpowers/plans/2026-09-27-r8-port.md`). The trigger below has been met. The port
+runs `claude -p` as a subprocess from stdlib-only Python and keeps the same argv, so the
+offline suite's stub and flag assertions keep working. The Agent SDK becomes an optional
+second session backend (plan phase 7), adopted when a feature needs it. The reason is in the
+spec's "What the Agent SDK changes":
+- its bundled CLI would bypass the test stub and start billed sessions;
+- its `initialize` handshake breaks the stub;
+- it can't unset env vars;
+- it needs a venv.
+
+Meanwhile a Python driver gets structured results from stream-json with `json.loads`. The
+other decisions:
+- harnest#15's "target" becomes "server" in code;
+- `targets/dw/` lives in this repo;
+- the guard stays a command hook;
+- `run-release.sh` becomes a dw plug-in, ported last.
 
 **Trigger (2026-09-23, from R12's review).** The case is stronger than when this was written:
 the bash has more than doubled (about 3,080 lines, 9 drivers), and Python is already a
