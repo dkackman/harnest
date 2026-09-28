@@ -4612,7 +4612,8 @@ expected:
   within 0.5 LU of −16, and `true_peak_dbfs` ≤ −2.9 (−3.0 plus the plan's 0.1 tolerance).
   `job.warnings` has **no** `target_lufs_capped` and no `limiter_heavy` naming `limited`.
 - **It says what it did.** `limited`'s log event carries `constraint: "limiter"`, `gain_db` > 0
-  (about +1.4, the loudness gain; not the capped −2), `max_gain_reduction_db` > 0 and ≤ 6,
+  and at least the plain loudness gain (about +1.4 here; the searched static gain runs past it
+  on this material, about +2.4; not the capped −2), `max_gain_reduction_db` > 0 and ≤ 6,
   `limited_fraction` strictly between 0 and 1, `output_true_peak_dbfs` ≤ −2.9 and `output_lufs`
   within 0.5 of −16. `output_lufs` and `output_true_peak_dbfs` agree with
   `get_gallery_metadata`'s reading of the file within 0.2.
