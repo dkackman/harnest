@@ -562,6 +562,13 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
   requests separately for the curator. A consumer on the Mac may file that one kind of
   request too (`HARNEST_HARNESS_REPO`, default `dkackman/harnest`, names where). On
   0.5.0, 9 of the 12 tickets the gate filed were suite drift.
+- **Real models run on this machine, twice.** dw's `scripts/preflight.sh` (the
+  preflight gate) and `scripts/release.sh` (inside `cut`) both run `pytest -m
+  integration`: SD 1.5 and mms-tts on the Mac's MPS, from the HF cache. release.sh
+  refuses without an accelerator. Neither checks for the Mac loop, whose `dw-mps-serve`
+  shares that memory, so stop it (`DW_TARGET=local`) before `gates` and `cut`. The
+  release PR's checks, which `cut` waits on, include a Playwright e2e job that runs only
+  on PRs into `master`.
 - **Security findings stay off the public tracker.** The review files each one as a
   private draft security advisory, and the release issue gets only their count. `cut`
   refuses while one is a blocker, unless you `accept security`.

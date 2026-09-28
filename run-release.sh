@@ -248,8 +248,11 @@ gate_preflight() {
   stale="$(lsof -tiTCP:8971 -sTCP:LISTEN 2>/dev/null || true)"
   [ -z "$stale" ] || kill $stale 2>/dev/null || true
   say "preflight: running in $RELEASE_TREE (log $log)"
-  (cd "$RELEASE_TREE" && PATH="$SOURCE_DIR/venv/bin:$PATH" DW_E2E_PYTHON="$SOURCE_DIR/venv/bin/python" \
-     scripts/preflight.sh) > "$log" 2>&1 || rc=$?
+  # PYTHONPATH: the shared venv's editable install otherwise imports
+  # SOURCE_DIR's dw - into the e2e fixture server (started from ui/) and the
+  # integration tests' worker processes - not the commit being gated
+  (cd "$RELEASE_TREE" && PATH="$SOURCE_DIR/venv/bin:$PATH" PYTHONPATH="$RELEASE_TREE" \
+     DW_E2E_PYTHON="$SOURCE_DIR/venv/bin/python" scripts/preflight.sh) > "$log" 2>&1 || rc=$?
   # preflight's ruff steps rewrite files and still succeed; CI's check would fail on them
   dirty="$(git -C "$RELEASE_TREE" status --porcelain --untracked-files=no)"
   if [ "$rc" -eq 0 ] && [ -z "$dirty" ]; then
@@ -531,7 +534,11 @@ stage_cut() {
     [ -e "$master_wt/.git" ] || git -C "$SOURCE_DIR" worktree add -q "$master_wt" master 2>/dev/null \
       || git -C "$SOURCE_DIR" worktree add -q -B master "$master_wt" origin/master
     git -C "$master_wt" pull -q --ff-only origin master
-    (cd "$master_wt" && scripts/release.sh "$version" --next "$next") || die "cut: release.sh failed (rerun cut: it resumes)"
+    # release.sh runs the integration tests (pytest -m integration) on this
+    # machine's accelerator, with a bare `python`: the venv's, importing the
+    # master tree being released rather than SOURCE_DIR's editable install
+    (cd "$master_wt" && PATH="$SOURCE_DIR/venv/bin:$PATH" PYTHONPATH="$master_wt" \
+       scripts/release.sh "$version" --next "$next") || die "cut: release.sh failed (rerun cut: it resumes)"
     git -C "$SOURCE_DIR" worktree remove --force "$master_wt" || true
   fi
 
