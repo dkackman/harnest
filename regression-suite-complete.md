@@ -6206,4 +6206,26 @@ soundtrack.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F178 — a `for_each` over a composed template tags each child manifest entry with its own member
+source: tester, verified in #560 (claude-opus-5-5 via anthropic)
+The members of a `for_each` that composes a catalog template all produce a child step with the same
+name. With no `result` on the composing step, `parent_step` is the only thing in the manifest that
+says which member wrote which file. A consumer that keys by `step` gets a collision without it.
+This case runs on the GPU in about 10 s.
+1. `validate_workflow(workspace=<suite workspace>, workflow=W)`, then `run_workflow` with the same
+   `inline_workflow`, `acknowledged_cost=<bound from the plan>` and `wait_seconds=55`. W:
+   `{"id": "c-f178-foreach-compose", "variables": {"shots": [{"name": "answer"}, {"name": "insist"}]}, "steps": [`
+   `{"name": "shot", "for_each": "variable:shots", "workflow": {"path": "templates/upscale-spandrel", "arguments": {"input_image": "asset:qa-cast/priya-portrait.jpg"}}}]}`
+2. `get_job` on the job.
+expected:
+- Validation is clean, apart from the no-`seed` step-cache warning, and plans 2 steps. The run `succeeds`.
+- The manifest has 4 entries, the same in the `run_workflow` reply and in `get_job`: `shot@answer` and
+  `shot@insist` with `files: []`, and two `upscale` entries. Each `upscale` entry lists one file. Its
+  `parent_step` is `shot@answer` or `shot@insist`, and the file name starts with that same member name.
+It is a **finding** if an `upscale` entry has no `parent_step`, if both carry the same value, or if an entry's
+`parent_step` doesn't match the member its file is named after.
+Not asserted here: the child's `final` subfolder showing up on member files (#560 left that as a separate design question).
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
