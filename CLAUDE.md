@@ -196,7 +196,8 @@ and runs the real drivers end to end. See "Tests" below.
   records `harnest:release-waive` markers that later checks honour. The review
   and notes sessions are read-only and file nothing (`RELEASE_PERMISSION_FLAGS`). The
   driver files their findings: public ones as issues, `release-blocker` for blockers, and
-  security ones only to `logs/release-<v>/security.md`. `guard.py` refuses both markers, and
+  security ones only as private draft advisories (`scripts/file-advisory.sh`; if filing
+  fails, the findings stay in `logs/release-<v>/security-unfiled.json`). `guard.py` refuses both markers, and
   both release labels, from every agent. The `gates` stage needs the driver lock free, so
   stop the loop first. README "Releasing" has the stage list and knobs.
 - `lib/classify.jq` (R12) — the ticket protocol's state machine, in one place. It maps

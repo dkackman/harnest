@@ -18,12 +18,12 @@ rather than in a separate log.
 | R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
 | R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; watch denial counts | R1 |
 | R8  | Port the drivers to the Claude Agent SDK          | todo; trigger in R8 (after R12, dw#378 live) | R12 |
-| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`) | — |
+| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`); the dashboard's Needs you card lists the queue live | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); dw#378 stages A, B verified, C waits on dw#376 | R4 (absorbs it), R1 |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); first two features delivered: dw#376 and dw#378 (stages A–D) closed verified; design now runs first in the cycle | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
-| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | todo; profile drawn before R8, split during it; feature flag first | R8 |
-| R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | todo; 0.4.0 cut by hand from its checklist | R12 |
+| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | todo; profile drawn before R8, split during it; feature flag first. A second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
+| R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; nightly regression cadence is Don's call | R12 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -568,6 +568,12 @@ default is still open.
 - First run: 4 parked, median 3.5 days. #195, #218 and #244 each got a concrete
   "needs a proposal" ask; #300 got "read it yourself", since its thread has no
   recommendation.
+
+**Later (2026-09-27): the dashboard.** `dashboard/` is a local read-only page that shows
+running drivers, sessions and logs. Its Needs you card lists `owner:don` on both repos,
+harness proposals and draft advisories, and dims an issue that waits on an open blocker.
+That gives the queue a second place Don already looks. It has no recommendations,
+though, so where to post the digest by default is still open.
 
 ## R10 — Role prompts: remove duplication, then build each prompt per session kind
 
@@ -1319,6 +1325,21 @@ release.
 - **Where the second server runs.** The Mac is free but slow on mps; `lem` with no GPU
   shares the box with GPU jobs.
 
+**Built alongside: a second dw server (harnest#15, closed 2026-09-27).** `DW_TARGET=local`
+runs `run-loop.sh`, `run-features.sh` and `run-regression.sh` against a dw server on the
+Mac (mps), next to lem's loop. The pieces:
+- a lock per server target;
+- per-target logs, state and clones;
+- `backend:*` and `target:*` labels that `lib/classify.jq` uses to hold another loop's
+  issues at `wait`;
+- `agents/<role>/target.md` prompt sections;
+- guard rules for the second target.
+
+The purpose was backend coverage (mps bugs), not feature branches. It is still the same
+target (dw) with its constants in bash, so it builds none of the profile, the packs or
+the surface tier. It does settle "one lock per server" from the list above, and "the Mac"
+as one answer to where a second server runs.
+
 **Undecided (framework).**
 - **Packaging:** one repo with `targets/<name>/`, or the framework as a package and each
   target as its own repo. Start with `targets/dw/` in this repo, and split it off when the
@@ -1401,10 +1422,15 @@ item 1 with its classify boards. Then item 2's `check`, `gates` and `cut`; then 
 and `notes`. Item 3 before the next release that has a security finding.
 
 **Undecided.**
-- **Private channel:** a private repo is readable with the existing `gh` flow;
-  advisories are GitHub's intended place but need `gh api` and a new queue source.
-- **Review cost and model.** Today's four areas ran about 630k subagent tokens on Opus.
-  Decide whether `review` runs on every release or only past a size threshold.
+- ~~**Private channel:** a private repo is readable with the existing `gh` flow;
+  advisories are GitHub's intended place but need `gh api` and a new queue source.~~
+  Draft advisories: see "Item 3 done".
+- ~~**Review cost and model.** Today's four areas ran about 630k subagent tokens on Opus.
+  Decide whether `review` runs on every release or only past a size threshold.~~ Every
+  release. On 0.5.0 the four areas were four Opus sessions, $6.25 and about 14 minutes
+  together, with 10 findings: 2 blockers (dw#519, dw#523), 1 follow-up promoted to a
+  blocker (dw#521, server paths in delete responses) and 7 follow-ups. Nothing reached
+  the security area.
 - ~~**Whether `release-blocker` also blocks the curator** from applying suite edits
   during a freeze.~~ Yes: see "Plan, in order", item 1, from the 0.5.0 cut.
 
@@ -1427,19 +1453,20 @@ offline-testable parts.
 - Gate results are marker comments keyed to the full commit. `accept` records Don taking
   an earlier or failed run.
 - The guard refuses the marker from agents, because every agent posts as Don's login.
-- Security findings stay in a local file until item 3 exists.
+- Security findings stay in a local file until item 3 exists. (Since item 3,
+  `review` files them as draft advisories.)
 - **Tested offline:** `freeze`, `check`, `review`'s filing split, `accept`, `status`,
   and `cut`'s refusal.
 - **Not yet run for real:** the CI waits, preflight and regression gates, the agent
   sessions, and `cut`'s PR, merge, tag and release steps. The next release is their
-  first run.
+  first run. (0.5.0 was that run; see "Learned from the 0.5.0 cut".)
 - `cut` checks the real state before each step (merged? tagged? released?), so an
   interrupted cut is rerun, not repaired by hand.
 
 **Item 1 done (2026-09-25).** A `release` issue (owner:don) holds every agent queue at
 `wait` except `release-blocker` issues, and holds the standing task. It's in
 `lib/classify.jq` with two boards and a driver test. The curator still runs during a
-freeze: the open decision below stands.
+freeze: the open decision below stands. (Settled after 0.5.0: the curator waits too.)
 
 **Item 4 done (2026-09-25), after the 0.4.0 cut:**
 - dw: CI and CodeQL run on pushes to `develop`. On 0.4.0, 14 CodeQL path-injection
@@ -1529,16 +1556,6 @@ last release's publish time. What cost the most:
    - Guard: let the Mac tester file a harnest `suite` + `status:needs-approval` request,
      which is the #535 stall.
    - Tests: a guard table row; `release_regression_blocking` over a fixture list.
-   **Items 1 and 2 done (2026-09-27).** A change from the plan: check doesn't carry,
-   because the board moves without develop moving; waivers are what keep it passing.
-   Tested in `tests/test-release.sh` (the carry table, waivers) and `test-drivers.sh`
-   sections 3e, 3f and 10 (lock held through gates, curator held, a waiver, and carrying
-   across a blocker fix and the notes on a moving develop).
-   **Items 3, 4 and 5 built (2026-09-27).** Item 3 files drift as no ticket at all (a
-   harness suite request only), not a `suite-drift`-labeled one, so the gate's ticket
-   count is already right. Item 5 is `REGRESSION_NIGHTLY_AT` in `run-loop.sh`, off by
-   default: a cron job would never find the lock free while the loop runs. The cadence
-   is still Don's call.
 4. **Notes get closing comments.** The driver writes each closed issue's last
    `TICKET_OWNER` comment into the notes input, so the session no longer calls `gh`
    per issue.
@@ -1549,10 +1566,50 @@ last release's publish time. What cost the most:
    a clean board. It costs about $68 a night at 0.5.0's suite size, so decide the
    cadence first: nightly, or only the night before a planned freeze.
 
+**Status of the plan (2026-09-27): all five built, the same day.** Each is its own
+commit with tests; `tests/run.sh` passes. Changes from the plan:
+- **Item 1** (`20ad4e0`): as planned. `status` and the dashboard both list leftover
+  `stop-after-cycle*` flags.
+- **Item 2** (`acf9c53`): check doesn't carry, because the board moves without develop
+  moving; `accept check --waive <n>,...` is what keeps it passing. Review, security and
+  regression carry as planned, and the guard refuses the waiver marker from agents.
+  Tested in `tests/test-release.sh` (the carry table, waivers) and `test-drivers.sh`
+  sections 3e, 3f and 10 (lock held through gates, curator held, a waiver, and carrying
+  across a blocker fix and the notes on a moving develop).
+- **Item 3** (`b399427`): drift is filed as no ticket at all, only a harness suite
+  request naming the issue that changed the behavior, not a `suite-drift`-labeled
+  ticket. The gate's ticket count is therefore already right, so there is no
+  `release_regression_blocking`; `run-release.sh`'s regression gate lists the suite
+  requests filed during it apart from the tickets it counts. A failure with no such
+  issue behind it is still a ticket, marked as possible drift. The no-chance rule is in
+  all four suites, and the guard lets a consumer on another server file the suite
+  request (`HARNEST_HARNESS_REPO`).
+- **Item 4** (`f5ff015`): `notes` writes `closing-comments-since-<tag>.md` from one list
+  call (the loop's last comment per issue, capped at 1500 chars;
+  `release_closing_comments`).
+- **Item 5** (`50e5d92`): `REGRESSION_NIGHTLY_AT` (an hour; empty, the default, is off)
+  in `run-loop.sh`, not cron, since a cron job would never find the lock free while the
+  loop runs. It runs `REGRESSION_NIGHTLY_LEVEL` (default `all`) once a day at the first
+  cycle boundary at or after that hour, under the loop's own lock, logs to
+  `logs/nightly-regression.log`, and holds during a freeze.
+
+**Still open.**
+- **The nightly cadence.** Nightly, or only the night before a planned freeze, at about
+  $68 a run. Nothing turns it on yet.
+- **The first release on the new plan.** Waivers, carrying and filing drift as suite
+  requests haven't met a live release. The next cut should need about one `accept`
+  where 0.5.0 needed 12. Count them.
+- **Advisories into the loop** (item 3's "Later"), still by hand.
+
 **Done when.** A release goes from `run-release.sh check` to a published tag with Don
 typing only the approvals: the freeze, the blocker merges and the cut. `develop` and
 `master` differ by nothing after the merge back, and the release body names the
 breaking changes.
+
+0.5.0 met the last two: `cut` merged `master` back and opened `0.6.0-alpha.1` on
+`develop`, and the published body leads with "Breaking and behaviour changes". It
+missed the first: 12 `accept` calls on top of the approvals. Plan items 1–2 are meant to
+close that, and the next release will show whether they do.
 
 ---
 
