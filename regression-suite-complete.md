@@ -5236,7 +5236,7 @@ to be able to read its contract without running it. Read-only, free.
 expected:
 - `list_tasks` → `commands` contains `join_into_song`.
 - `get_task("join_into_song")` lists exactly `dialogue`, `song_shots`, `song`,
-  `cue_seconds`, `dialogue_target_lufs`, `duck_delay_ms`, `duck_db`, `duck_ramp_ms`
+  `cue_seconds`, `dialogue_target_lufs`, `duck_delay_ms`, `duck_db`, `duck_ramp_ms`, `fps`
   (plus the usual `device`):
   - `dialogue`, `song_shots` and `song` are required;
   - `cue_seconds` defaults to `0` with `"domain": "non_negative"`;
@@ -5245,6 +5245,8 @@ expected:
   - `duck_db` defaults to `-12` with a domain that refuses positive values (whatever
     its name, e.g. `non_positive`);
   - `duck_ramp_ms` defaults to `250` (`non_negative`).
+  - `fps` is optional with default `null` and `"domain": "positive"` (used only when the
+    videos carry no rate of their own).
   - Each parameter's `description` says what it does. `cue_seconds` must say it is the
     song time that lands on the first song shot's first frame. `song_shots` must say
     their own audio is discarded.
@@ -5736,7 +5738,6 @@ cleanup: `delete_output(job_id=…)` for every arm.
 metrics: none.
 
 ### C-F164 — `find_loop_bed` on video sources: decodes audio only, from an asset, an `output:` and a `previous_result:` AudioVideo
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 The plan says a video source is decoded audio-only (no frames). It also says the task
 accepts a `previous_result:` AudioTrack or AudioVideo.
@@ -5759,7 +5760,10 @@ expected:
 - Arms 2 and 3:
   - `source.duration_seconds` is 10.33 (±0.05): 248 frames at 24 fps.
   - `source.sample_rate` is the clips' audio rate, 32000.
-  - The two arms report the same `candidates` and `rejected` counts. The ep3 audio is
+  - The two arms agree up to the lossy re-encode the `output:` form went through: the same
+    number of candidates, each with the same `start_seconds`/`duration_seconds` (±0.05);
+    each `rejected` bucket equal to within ±3; the same findings `rule`/`rejected_by`. A
+    wider gap is a finding. The ep3 audio is
     loud, so `candidates: []` with a `too_loud` count and one finding is a correct
     answer here.
 It is a **finding** if a video source is refused, or the durations are wrong. Also if the
@@ -5843,7 +5847,6 @@ cleanup: as in C-F037.
 metrics: none.
 
 ### C-F168 — `find_loop_bed` keeps candidates inside one shot, resolving shots from an argument, a carried AudioVideo or the run manifest
-pending: #545
 source: tester, spec for #545 from #218's plan v1 (claude-opus-5-5 via anthropic)
 Stage B adds a `shots` argument (`[{name, start_frame, num_frames}]` plus `fps`). Shots
 resolve in this order: the argument, then a carried `AudioVideo.shots`, then the run
@@ -5861,8 +5864,9 @@ names its `shot`. `source.shots_source` reports where the shots came from.
    Record `get_job`'s `media.shots`. The boundary is at 124 f, 5.1667 s.
 
 **Arms:** each has `max_candidates: 20` and is saved as `application/json`:
-1. **Manifest:** `find_loop_bed(audio="output:<film mp4>")`, with no `shots`.
-2. **Argument:** the same, plus `shots: [{"name": "a", "start_frame": 0, "num_frames":
+1. **Manifest:** `find_loop_bed(audio="output:<film mp4>", max_bin_dbfs=0, max_mean_dbfs=0,
+   max_spike_db=60)`, with no `shots`.
+2. **Argument:** the same (with the same three gate overrides), plus `shots: [{"name": "a", "start_frame": 0, "num_frames":
    100}, {"name": "b", "start_frame": 100, "num_frames": 148}]` and `fps: 24`. The
    boundary is at 4.1667 s.
 3. **None:** `find_loop_bed(audio=<step 1's output: wav>)`.
@@ -5870,6 +5874,10 @@ names its `shot`. `source.shots_source` reports where the shots came from.
    - `concat_videos` of the two ep3 shots;
    - `pair_audio` of that with step 1's quiet bed;
    - `find_loop_bed(audio="previous_result:<pair step>")`.
+
+Arms 1 and 2 open the level gates because assemble-and-score's `balanced` step normalizes
+the film to a −3 dBFS peak (#467), which leaves no quiet bed. These arms test shot
+resolution, not the level gates.
 expected:
 - Every job succeeds, and each arm returns ≥ 1 candidate. Arm 3 matches C-F160's control
   arm, so the same fixture note applies.

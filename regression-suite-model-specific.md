@@ -112,9 +112,12 @@ fixture) when nothing uses it anymore.
   3. Confirm with `get_gallery_metadata` that the asset is the stated size, has 121 frames at
      24 fps, and has an audio stream.
 
-  M-F066 also needs a source with **no** audio stream. It uses `asset:upscale/src-480x272-silent.mp4`,
-  the M-F061 fixture above. Any mp4 whose `get_gallery_metadata` shows no audio stream will do. If
-  none exists, M-F066 records "fixture missing" and skips.
+  M-F066 also needs a source with **no** audio stream. It uses `asset:refine/src-512x288-silent.mp4`,
+  made on-box with an inline `loop_frames` workflow (as in #549's verify) in workspace
+  `regression-model-specific`, then `keep_output` of its mp4 as that asset. Confirm with
+  `get_gallery_metadata` that it is 512×288, has 121 frames and has no audio stream. The M-F061
+  fixture `asset:upscale/src-480x272-silent.mp4`, or any mp4 whose `get_gallery_metadata` shows no
+  audio stream, will also do. If none exists, M-F066 records "fixture missing" and skips.
 
 ## Functional
 
@@ -2334,8 +2337,8 @@ metrics: `latency` (s) per arm, conditions `aspect-384x288` and `short-97f`, to
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F062. At most one job, which must fail fast. The plan's Q2 decision is "refuse
 early, before the ~80s pipeline load". It does not say whether that happens at validate or as a
-first-step check, so either counts. Fixture: `asset:upscale/src-480x272-silent.mp4`, or any mp4 with no
-audio stream (see Fixtures). Confirm with `get_gallery_metadata` that it has no audio stream. If none
+first-step check, so either counts. Fixture: `asset:refine/src-512x288-silent.mp4` (or
+`asset:upscale/src-480x272-silent.mp4`, or any mp4 with no audio stream; see Fixtures). Confirm with `get_gallery_metadata` that it has no audio stream. If none
 exists, record "fixture missing" and skip. Pass `width: 512, height: 288`, so the size isn't what gets
 refused.
 Steps:
