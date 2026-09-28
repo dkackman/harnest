@@ -5544,7 +5544,6 @@ cleanup: `delete_output(job_id=…)` for every job the recipe ran.
 metrics: none.
 
 ### C-F159 — `find_loop_bed` is discoverable as a command, not an assessment probe, with the plan's arguments and defaults
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 The task is registered `returns="json"`, `assessment=False`. It must be listed with the
 utility commands, and the assessment list must not grow. Read-only.
@@ -5585,7 +5584,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F160 — `find_loop_bed` on a quiet bed with one click: ranked, non-overlapping candidates that avoid the click, with the full reading set
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 The known-answer case. It uses a bed quiet enough to pass the default thresholds, with a
 single 1 ms click at 5.5 s. The click sits clear of the ~−47.8 dB bumps that
@@ -5642,7 +5640,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F161 — `find_loop_bed` rejects a window with a voice under it (the near-programme trap)
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 A voice mixed far down under a bed can pass the level tests. The plan's tonal test
 (flatness ≥ 0.3 and harmonicity < 0.45 to pass) is what must catch it.
@@ -5672,7 +5669,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F162 — `find_loop_bed` with nothing to find: an empty answer with a reason, not a failed job (too loud; digital silence)
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 The plan says "no candidates" is an answer: `candidates: []`, the rejected counts, and one
 finding naming what to relax. It also says digital silence is rejected as `silent`, never
@@ -5710,7 +5706,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F163 — `find_loop_bed` arguments move the answer in the right direction
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 Every threshold must act in its stated direction and be echoed in `criteria`. Uses C-F160's
 `clicked` setup: re-run it, or point `audio` at C-F160's saved clicked wav via `output:`
@@ -5773,7 +5768,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F165 — `find_loop_bed` argument domains are refused at validate, with the boundaries accepted; JSON-only saving
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 Free: `validate_workflow` only. Each arm is a one-step inline workflow,
 `find_loop_bed(audio="asset:uploads/qa-cast/room-bed.wav", <arm>)` saved as
@@ -5805,7 +5799,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F166 — `find_loop_bed` run-time refusals: an impossible range or window fails the job naming the argument
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 These depend on the source's length, so the plan puts them at run time. A refusal at
 validate is also acceptable wherever the server can know the length. Source for every arm:
@@ -5834,7 +5827,6 @@ cleanup: `delete_output(job_id=…)` for every job that ran.
 metrics: none.
 
 ### C-F167 — `bleed_join` gives unchanged readings after the harmonicity refactor
-pending: #544
 source: tester, spec for #544 from #218's plan v1 (claude-opus-5-5 via anthropic)
 Stage A moves `_harmonicity` onto an FFT path shared with `find_loop_bed`, and promises
 `bleed_join`'s outputs are unchanged. C-F037 is the case that pinned them.
