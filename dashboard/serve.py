@@ -2,6 +2,7 @@
 """A local, read-only dashboard of what the harness drivers are doing.
 
     python3 dashboard/serve.py [--port 8780]     # then open http://127.0.0.1:8780
+    python3 dashboard/serve.py --host 0.0.0.0    # also from the LAN, never beyond it
 
 Standard library only. It reads what the drivers already write - the
 processes, the driver locks, the `=== ... ===` session headers and `[tag]`
@@ -15,6 +16,7 @@ ATTN_MAX_SECS. The page polls /api/state and
 """
 
 import argparse
+import ipaddress
 import json
 import os
 import re
@@ -482,7 +484,31 @@ class Handler(BaseHTTPRequestHandler):
     def _json(self, obj, code=200):
         self._send(code, json.dumps(obj).encode(), "application/json")
 
+    def _local_only(self):
+        """Refuse anyone off the local network, whatever --host binds to:
+        a router port-forward must not make this page public. The Host
+        check stops DNS rebinding (a web page's own domain pointed here),
+        so only an IP, localhost or a .local name reaches the page."""
+        try:
+            peer = ipaddress.ip_address(self.client_address[0])
+        except ValueError:
+            peer = None
+        if peer and getattr(peer, "ipv4_mapped", None):
+            peer = peer.ipv4_mapped
+        host = (self.headers.get("Host") or "").rsplit(":", 1)[0].strip("[]").lower()
+        try:
+            ipaddress.ip_address(host)
+            host_ok = True
+        except ValueError:
+            host_ok = host == "localhost" or host.endswith(".local")
+        if peer and (peer.is_loopback or peer.is_private or peer.is_link_local) and host_ok:
+            return True
+        self._send(403, b"local network only", "text/plain")
+        return False
+
     def do_GET(self):
+        if not self._local_only():
+            return
         u = urlparse(self.path)
         q = parse_qs(u.query)
         try:

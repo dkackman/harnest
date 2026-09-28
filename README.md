@@ -796,7 +796,11 @@ raw events.
   number, status, owner and title.
 - `python3 dashboard/serve.py` (port 8780, or `--port`/`DASHBOARD_PORT`), then open
   http://127.0.0.1:8780. It's a local, read-only page, served from this machine only, that
-  refreshes every few seconds. It shows:
+  refreshes every few seconds. `--host 0.0.0.0` shares it on the LAN
+  (`http://<this-mac>.local:8780`). Whatever it binds to, it answers only loopback,
+  private-range and link-local clients, and only an IP, `localhost` or `.local` in the
+  `Host` header, so a port-forward can't publish it and a web page can't reach it through
+  DNS rebinding. It shows:
   - the drivers running, with the lock each target holds;
   - what needs you, each linked to GitHub: `owner:don` issues on both repos, `harness`
     proposals awaiting approval, and draft security advisories. It re-checks once the loops
