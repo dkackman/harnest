@@ -6188,4 +6188,31 @@ Not asserted here: `shot_dead_air` warnings in `hal_shot` and `ep62-shot2-deflec
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F177 — `concat_videos` fills a silent input with silence of its own length, so later shots stay in sync; all-silent stays audio-less
+source: tester, verified in #553 (claude-opus-5-5 via anthropic)
+Every multi-shot template joins through `concat_videos`. A silent input used to be skipped in
+the audio, which pulled every later shot's sound early by the silent shot's length. Nothing
+fails when that happens, so the drift is easy to miss. This case runs on the CPU in about 6 s.
+1. `validate_workflow(workspace=<suite workspace>, workflow=W)`, then `run_workflow` with the same
+   `inline_workflow`, `acknowledged_cost=<bound from the plan>` and `wait_seconds=55`. W:
+   `{"id": "c-f177-silent-fill", "steps": [`
+   `{"name": "silent", "task": {"command": "video_frames", "arguments": {"video": "asset:qa-cast/ep4-shot1-amnesty.mp4"}}},`
+   `{"name": "mid", "task": {"command": "concat_videos", "arguments": {"videos": ["asset:qa-cast/ep4-shot1-amnesty.mp4", "previous_result:silent", "asset:qa-cast/ep4-shot2-desk.mp4"], "fps": 24}}, "result": {"content_type": "video/mp4", "subfolder": "final", "file_base_name": "mid"}},`
+   `{"name": "first", "task": {"command": "concat_videos", "arguments": {"videos": ["previous_result:silent", "asset:qa-cast/ep4-shot2-desk.mp4"], "fps": 24}}, "result": {"content_type": "video/mp4", "subfolder": "final", "file_base_name": "first"}},`
+   `{"name": "allsilent", "task": {"command": "concat_videos", "arguments": {"videos": ["previous_result:silent", "previous_result:silent"], "fps": 24}}, "result": {"content_type": "video/mp4", "subfolder": "final", "file_base_name": "allsilent"}}]}`
+   (Both ep4 shots are 124 frames at 24 fps with 32 kHz stereo audio.)
+2. `get_gallery_metadata(<mid file>, envelope=true)`.
+expected:
+- The run `succeeds`.
+- `mid`'s shots start at samples 0 / 165333 / 330666, so shot 3 starts at 248/24×32000. The
+  shots are contiguous, and the file's audio is 15.5 s, the same as its 372 frames.
+- `mid`'s envelope reads −120 dBFS in bins 6–9 and has sound again by bin 10.
+- `first`'s second shot starts at sample 165333.
+- `allsilent`'s shots carry `start_sample: null`, so the output has no audio.
+It is a **finding** if shot 3's `start_sample` is 165333 or less (the silent shot was
+skipped), if `mid`'s audio runs shorter than its picture, or if `allsilent` gains a
+soundtrack.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
