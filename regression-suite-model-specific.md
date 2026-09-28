@@ -87,7 +87,34 @@ Durable contents of `regression-model-specific` that persist across runs.
 Add a line when a case starts relying on one; remove the line (and the
 fixture) when nothing uses it anymore.
 
-- (none yet)
+- `asset:upscale/src-480x272.mp4`, `asset:upscale/src-480x272-silent.mp4`,
+  `asset:upscale/src-640x360.mp4` (M-F060, M-F061; `pending: #548`). No dw task resizes
+  a video, and LTX can't render 272 rows, so these are made off-box, once, from the shared
+  `asset:qa-cast/ep3-shot1-incident.mp4` (960×544, 24 fps, stereo). Download that file with
+  `download_output`, then:
+  - `ffmpeg -i in.mp4 -vf scale=480:272 -r 24 -frames:v 121 -c:v libx264 -c:a aac -shortest src-480x272.mp4`
+  - the same command with `-an` in place of `-c:a aac -shortest`, giving `src-480x272-silent.mp4`
+  - the first command with `scale=640:360` (16:9), giving `src-640x360.mp4`
+
+  Upload each with `upload_asset(content=<base64>, asset_name="upscale/<file>",
+  workspace="regression-model-specific")`; each is well under the 4 MB cap. Until they exist,
+  M-F060 and M-F061 record "fixture missing" and skip. That is a note for Don, not an issue.
+
+- `asset:refine/src-512x288.mp4` and `asset:refine/src-384x288.mp4` (M-F064, M-F065;
+  `pending: #549`). These are LTX-2.5 clips with their own soundtracks, made on-box. The
+  first is 512×288 (16:9, the refine-clip default size) and the second 384×288 (4:3, the
+  wrong aspect). For each one:
+  1. Run `templates/ltx2/text-to-video` in workspace `regression-model-specific` with
+     `arguments={"width": 512, "height": 288, "num_frames": 121, "seed": 543}`, or `"width": 384`
+     for the second. Quote its `plan.estimate` as `acknowledged_cost`.
+  2. `keep_output` its final mp4 as asset `refine/src-512x288.mp4` (or `refine/src-384x288.mp4`)
+     in the same workspace, then `delete_output(job_id=<id>)`.
+  3. Confirm with `get_gallery_metadata` that the asset is the stated size, has 121 frames at
+     24 fps, and has an audio stream.
+
+  M-F066 also needs a source with **no** audio stream. It uses `asset:upscale/src-480x272-silent.mp4`,
+  the M-F061 fixture above. Any mp4 whose `get_gallery_metadata` shows no audio stream will do. If
+  none exists, M-F066 records "fixture missing" and skips.
 
 ## Functional
 
@@ -1985,5 +2012,353 @@ string reaches the pipeline unresolved, if `still@deflect` is elided, or if an e
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-inline`, to
 `regression-perf/M-F057.jsonl`.
+
+### M-F058 — `templates/ltx2/upscale-clip` is in the catalog as a shot that reads the caller's clip, with its bucket rules and trade-offs stated
+pending: #548
+source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5 `LTX2InContextPipeline` with `Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler`
+(`ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors`), via `templates/ltx2/upscale-clip`.
+Free: discovery calls and a skill read only, no GPU.
+expected:
+- `list_workflows(shape="shot")` lists `templates/ltx2/upscale-clip`. Its traits include `needs-input-media`
+  and `has-audio`, and do not include `image-conditioned` (the siblings `restore-deblur` and
+  `restore-decompression` carry the same two). The compact constraints read `32*n+0` for width and
+  height and `8*n+1, 9+` for `num_frames`, the form the siblings show.
+- `get_workflow(name="templates/ltx2/upscale-clip", variables_only=true)` gives these defaults:
+  - `source_video` `asset:clip.mp4`, `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0, `lora_scale` 1.0;
+  - a `prompt`, a `negative_prompt` and a `seed`.
+- Its `constraints` are:
+  - `width` and `height`: `modulus: 32, remainder: 0`;
+  - `num_frames`: `modulus: 8, remainder: 1, min_frames: 9`, with no snap.
+
+  Each has a non-empty `reason`, matching `restore-deblur`'s text for the same variable.
+- The workflow's description (from `get_workflow` without `variables_only`, or the full `list_workflows`
+  entry) says four things:
+  1. a source whose aspect differs from width×height is center-cropped, and a source larger than half the
+     target is downscaled first;
+  2. `num_frames` must not exceed the source's length;
+  3. to call `get_gallery_metadata` on the source first, for its size, frame count and fps;
+  4. that it is a re-render (generative, not a pixel-exact upscale).
+
+  Its `cost_drivers` name `num_frames`, `width` and `height`. A description missing any of the four is a finding.
+- In `get_workflow`'s full document:
+  - step `upscaled` uses `reference_downscale_factor: 2`, a reference of `{"media_type": "video",
+    "location": "variable:source_video"}` and the Pixel-Spatial-Upscaler LoRA above, and its result is
+    intermediate;
+  - step `with_source_audio` is `pair_audio(video=previous_result:upscaled, audio=variable:source_video,
+    fit="video")`, and its result is final.
+- The `dw` plugin's LTX-2.5 skill names `upscale-clip` in two places: its "Repairing the user's own
+  footage" guidance, and next to `generative-upscale` as the route for a clip dw didn't make.
+It is a **finding** if the template is missing from `shape="shot"`, if a trait or constraint above is
+absent or differs from the siblings' form, or if the skill still sends a user's own clip only to
+`generative-upscale`.
+cleanup: none. Discovery only, writes nothing.
+metrics: none.
+
+### M-F059 — `upscale-clip` validates a real clip, names its adapter only when absent, and refuses off-bucket sizes and the bare call
+pending: #548
+source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F058. Free: `validate_workflow` and `list_models` only, no GPU. `A` below is
+`asset:qa-cast/ep3-shot1-incident.mp4` (shared, 960×544, 124 frames).
+expected:
+- **A real clip is clean.** `validate_workflow(name="templates/ltx2/upscale-clip", arguments={"source_video": A})`
+  gives `valid: true` and `warnings: []`, with `checked_arguments` including `source_video`.
+- **The adapter is named only when it's absent.** Check `list_models()` first, as M-F013 does:
+  - If it does not list `Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler`, the call above has an
+    entry in `plan.downloads_required` whose `repo` is that repo.
+  - If it does list it (the box already serves `generative-upscale`), `downloads_required` is `[]`.
+    A non-empty list naming it here is the "every `loras` entry reported" bug.
+
+  Record which arm ran.
+- **`num_frames` is bounded both ways.** With `source_video: A`:
+  - `num_frames: 120` → `valid: false`, one error at `arguments.num_frames` naming the 8n+1 rule;
+  - `num_frames: 1` → `valid: false` at `arguments.num_frames`, since 1 is below the minimum of 9;
+  - `num_frames: 121` and `num_frames: 9` → `valid: true`, since both are on the bucket and the minimum is inclusive;
+  - `num_frames: 161` → `valid: true`. Validate can't know the source length, and M-F061 covers the run.
+- **Width and height are bounded.** With `source_video: A`:
+  - `width: 970` → `valid: false`, one error at `arguments.width` naming 32;
+  - `height: 550` → `valid: false` at `arguments.height`;
+  - `width: 960` and `height: 544` → `valid: true`.
+- **The bare call is refused.** `validate_workflow(name="templates/ltx2/upscale-clip")` with no `arguments` gives
+  `valid: false`, with an error at `variables.source_video` naming the missing default `asset:clip.mp4`, as M-F013 and
+  M-F014 do (#166).
+It is a **finding** if an off-bucket value passes, an on-bucket boundary is refused, an error lands at a
+different path, or the bare call answers `valid: true`.
+cleanup: none. Validation only, writes nothing.
+metrics: none.
+
+### M-F060 — `upscale-clip` doubles a 480×272 clip to 960×544 at the same length and rate, carrying the source's own soundtrack
+pending: #548
+source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F058. Paid: one LTX-2.5 job at 960×544×121 frames (the shape of M-F014's
+restore runs). Setup: fixture `asset:upscale/src-480x272.mp4` (see Fixtures: 480×272, 121 frames, 24 fps,
+with audio). If it's missing, record "fixture missing" and skip.
+Steps:
+1. `get_gallery_metadata("asset:upscale/src-480x272.mp4", workspace="regression-model-specific")` to pin the
+   source's size, frame count, fps, sample rate, channels and duration.
+2. `validate_workflow(name="templates/ltx2/upscale-clip", arguments={"source_video": "asset:upscale/src-480x272.mp4",
+   "seed": 548})` gives `valid: true`. Bind cost from `plan.estimate`.
+3. `run_workflow` with the same arguments in workspace `regression-model-specific`, `wait_seconds=55`, then
+   `wait_for_job` to the end.
+expected:
+- The job succeeds with no warning except, at most, `pair_audio`'s `audio_padded_to_video` or
+  `audio_trimmed_to_video` from `pair_audio` for an off-by-a-few-ms audio length.
+- The manifest has:
+  - the `upscaled` file under `intermediate/`, 960×544 and 121 frames;
+  - one `with_source_audio` file under `final/`, 960×544, **121 frames, 24 fps**, according to
+    `get_gallery_metadata` on it.
+- **The soundtrack is the source's.** On the final file, `get_output_audio` has the source's sample rate and
+  channel count, and a duration within one frame (≈42 ms) of the source's. Its RMS and peak are within 1 dB
+  of `get_output_audio` on the source. Generated LTX audio would differ.
+- `assess_output` on the final file has no sync-drift (audio/video length mismatch) finding.
+- **Same framing.** `get_output_frames` at `frame:0`, `frame:60` and `frame:120` on the final file shows the same
+  composition as the source at the same frames: same subject, same position, no crop or stretch. The detail may
+  differ, since this is a re-render.
+It is a **finding** if the output isn't 960×544×121 at 24 fps, if the final carries generated rather than source
+audio, if sync drifts, if the framing shifts, or if the upscale isn't kept in `intermediate/`.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `480x272-121f`, to `regression-perf/M-F060.jsonl`.
+The first run seeds the file.
+
+### M-F061 — `upscale-clip` on off-shape sources: larger is downscaled, wider is center-cropped, too long a `num_frames` runs past the source, and a silent source fails at the audio step
+pending: #548
+source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F058. Paid: up to four LTX-2.5 jobs, run one at a time. The plan records these as behavior,
+not refusals: validate passes each one (M-F059). Each arm uses `"seed": 548` in workspace
+`regression-model-specific`, with a `get_gallery_metadata` on its source first. If a fixture is missing,
+record "fixture missing" for that arm and skip it.
+expected:
+- **Larger source, downscaled.** `source_video: "asset:qa-cast/ep3-shot1-incident.mp4"` (960×544, 124 frames) with
+  the default `num_frames` 121:
+  - the job succeeds, and the final is 960×544, 121 frames, 24 fps, carrying the source's audio;
+  - frames `0` and `120` show the source's framing at the same frames, uncropped, since the aspect already matches.
+- **16:9 source, center-cropped.** `source_video: "asset:upscale/src-640x360.mp4"`:
+  - the final is 960×544, 121 frames;
+  - its `frame:60` matches the source's `frame:60` with a thin equal band trimmed left and right (1.778 → 1.765),
+    and is not squeezed. A stretched subject or a one-sided crop is a finding.
+- **`num_frames` past the source.** `source_video: "asset:upscale/src-480x272.mp4"` (121 frames), `num_frames: 161`:
+  - the job succeeds, and the final is 161 frames at 24 fps;
+  - frames 0–120 follow the source;
+  - `frame:160` is not a frame of the source, which is the tail the description warns of;
+  - with `fit: "video"`, the source audio is padded to the video, so an `audio_padded_to_video` warning is
+    expected and is not a finding;
+  - the final's audio duration is within a frame of 161/24 s.
+- **Silent source.** `source_video: "asset:upscale/src-480x272-silent.mp4"`:
+  - the job **fails at step `with_source_audio`**, not at `upscaled` and not at validate;
+  - its error names the missing audio: the source has no audio stream;
+  - the `upscaled` output is already saved under `intermediate/` at 960×544, 121 frames, so the GPU work
+    isn't lost.
+
+  A job that succeeds with silent or generated audio in `final/` is a finding. So is an error that doesn't say
+  the audio is what's missing.
+It is a **finding** if an arm's behavior differs from the above in the direction the plan rules out: a refusal
+where it promises a run, a stretch where it promises a crop, a truncation at 121 where 161 was asked, or a silent
+success.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each arm's job, the failed one included.
+metrics: `latency` (s) per arm, conditions `larger-960x544`, `crop-640x360`, `long-161f`, `silent-fail`, to
+`regression-perf/M-F061.jsonl`. The first run seeds the file.
+
+### M-F062 — `templates/ltx2/refine-clip` is a catalog shot with a curated cost, built from the upsampler's own `video=` encode, and `two-stage` is untouched
+pending: #549
+source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5, with `LTX2LatentUpsamplePipeline` (fed `video=`) followed by `LTX2Pipeline` refine
+on the stage-two sigmas, via `templates/ltx2/refine-clip`. Free: discovery calls and a skill read only,
+no GPU.
+expected:
+- `list_workflows(shape="shot")` lists `templates/ltx2/refine-clip` with:
+  - traits that include `needs-input-media` and `has-audio`, and do not include `image-conditioned`
+    or `chained`;
+  - a non-null curated `cost`, which is the mark that it has been run on a real device;
+  - compact constraints of `32*n+0` for `width` and `height`, and `8*n+1, 9+` for `num_frames`.
+    This is the same form `templates/ltx2/two-stage` shows.
+- `get_workflow(name="templates/ltx2/refine-clip", variables_only=true)` gives these defaults:
+  - `source_video` `asset:clip.mp4`;
+  - `width` 512, `height` 288, `num_frames` 121, `frame_rate` 24.0;
+  - `negative_prompt` `constant:diffusers.pipelines.ltx2.utils.DEFAULT_NEGATIVE_PROMPT`;
+  - a `prompt`, a `seed`, and the two weight dtypes `transformer_weights_dtype` and
+    `text_encoder_weights_dtype`.
+
+  Its `constraints` are `width`/`height` with `modulus: 32, remainder: 0`, and `num_frames` with
+  `modulus: 8, remainder: 1, min_frames: 9` and no snap. Each has a `reason` matching `two-stage`'s
+  text for the same variable. The plan says they are copied.
+- In `get_workflow`'s full document:
+  - Step `upscale` is `LTX2LatentUpsamplePipeline`. Its `video` argument reads `variable:source_video`,
+    and it has no `latents`. It passes `height`/`width`/`num_frames` from the variables and
+    `output_type: "latent"`, is `save: false`, and publishes `shared_components` with `vae`.
+  - Step `refine` has these values:
+    - `latents` is `previous_result:upscale.frames`;
+    - there is **no** `audio_latents` key;
+    - `noise_scale` is `0.909375` (`STAGE_2_DISTILLED_SIGMA_VALUES[0]`);
+    - `sigmas` is `constant:diffusers.pipelines.ltx2.utils.STAGE_2_DISTILLED_SIGMA_VALUES`;
+    - `reused_components` includes `vae`;
+    - its result is intermediate.
+
+    Its width/height express 2× the `width`/`height` variables, however that is written. M-F064
+    checks the real output size.
+  - Step `with_source_audio` is `pair_audio(video=previous_result:refine, audio=variable:source_video,
+    fit="video")`. It normalizes to a −3 dBFS peak, and its result is final.
+  - `cost_drivers` names `num_frames`, `width` and `height`, and there is no `vram_estimate`.
+- The description (from the full `get_workflow` document or the full `list_workflows` entry) says five
+  things:
+  1. The output is exactly 2× `width`×`height`.
+  2. Set `width`/`height` to the source's size. A source of a different aspect is *resized*
+     (stretched), not cropped.
+  3. `num_frames` must not exceed the source's length.
+  4. The soundtrack is the source's own, not generated.
+  5. A source with no soundtrack is refused.
+
+  If `templates/ltx2/upscale-clip` (#542) is in the catalog at run time, the description or summary
+  also contrasts the two routes.
+- **`two-stage` is unchanged** (a non-goal). `get_workflow(name="templates/ltx2/two-stage",
+  variables_only=true)` still gives `width` 768, `height` 448, `num_frames` 121, `frame_rate` 24.0,
+  `seed` 42 and `prompt` `prompt:ltx2/fox_dawn_choir`, with the same three constraints.
+- The `dw` plugin's `ltx-2-5` skill names `refine-clip`:
+  - as a route for a clip dw did not make ("only templates that read a clip dw did not make");
+  - beside the `two-stage` entry;
+  - in its audio lines, where it says refine-clip carries the source's soundtrack.
+It is a **finding** if the template is missing from `shape="shot"`, if its `cost` is null, or if a
+trait, constraint or pinned value above is absent or different. It is also a finding if the
+description misses any of the five points, if `two-stage` changed, or if the skill doesn't mention
+refine-clip.
+cleanup: none. Discovery only, writes nothing.
+metrics: none.
+
+### M-F063 — `refine-clip` validates a real clip with an estimate, and refuses a missing asset, off-grid sizes and frame counts, and the bare call before anything queues
+pending: #549
+source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F062. Free: `validate_workflow`, plus `run_workflow` calls that must be refused
+before a job exists. No GPU. `A` below is `asset:qa-cast/ep3-shot1-incident.mp4` (shared, 960×544,
+124 frames, with audio). The plan puts no source probe at validate (non-goal), so validation reads only
+that the asset exists.
+expected:
+- **A real clip is clean.** `validate_workflow(name="templates/ltx2/refine-clip",
+  arguments={"source_video": A})` gives `valid: true` with no errors. `checked_arguments` includes
+  `source_video`, and there is a `plan` whose `estimate` has a non-null minutes figure (curated or
+  observed, which one is recorded). A `warnings` entry is recorded but is not a finding unless it is
+  an error in disguise.
+- **A missing asset.** `source_video: "asset:refine/no-such-clip.mp4"` gives `valid: false`, with an
+  error at `arguments.source_video` that names the missing asset.
+- **`num_frames` bounds.** With `source_video: A`:
+  - `num_frames: 120` → `valid: false`, with one error at `arguments.num_frames` naming the 8n+1 rule;
+  - `num_frames: 1` → `valid: false` at `arguments.num_frames`, below the minimum of 9;
+  - `num_frames: 9` and `num_frames: 121` → `valid: true`. Both are on the grid, and the minimum is
+    inclusive.
+- **`width`/`height` bounds.** With `source_video: A`:
+  - `width: 500` → `valid: false`, with one error at `arguments.width` naming 32;
+  - `height: 300` → `valid: false` at `arguments.height`;
+  - `width: 480, height: 256` → `valid: true`. Both are multiples of 32 other than the defaults.
+- **Refused before anything queues.** `run_workflow` with `source_video: A` and `num_frames: 120`,
+  passing the `acknowledged_cost` from the clean call above, is refused. It returns no `job_id`, and
+  `list_jobs` shows no new `refine-clip` job. Do the same for `width: 500`.
+- **The bare call is refused.** `validate_workflow(name="templates/ltx2/refine-clip")` with no
+  `arguments` gives `valid: false`, with an error at `variables.source_video` naming the placeholder
+  default `asset:clip.mp4`. M-F059 checks the same for `upscale-clip`.
+It is a **finding** if an off-grid value or a missing asset passes, if an on-grid boundary is refused,
+if an error lands at a different path, if a refused `run_workflow` creates a job, if the clean call has
+no estimate, or if the bare call answers `valid: true`.
+cleanup: none. Nothing is written. If a refused `run_workflow` created a job anyway, `cancel_job` and
+`delete_output` it, and record that as the finding.
+metrics: none.
+
+### M-F064 — `refine-clip` doubles a 512×288 clip to 1024×576, keeping its composition, its motion and its own soundtrack at −3 dBFS
+pending: #549
+source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F062. Paid: one LTX-2.5 refine job at the defaults (512×288 → 1024×576, 121 frames).
+Setup: fixture `asset:refine/src-512x288.mp4` (see Fixtures). Make it first if it is missing.
+Steps:
+1. `get_gallery_metadata("asset:refine/src-512x288.mp4", workspace="regression-model-specific")` pins the
+   source's size, frame count, fps, sample rate, channels and duration. Also take
+   `get_output_audio` on it for its envelope.
+2. `validate_workflow(name="templates/ltx2/refine-clip", arguments={"source_video":
+   "asset:refine/src-512x288.mp4", "seed": 543})` gives `valid: true`. Bind the cost from `plan.estimate`.
+3. `run_workflow` with the same arguments in workspace `regression-model-specific`, with
+   `wait_seconds=55`, then `wait_for_job` to the end.
+expected:
+- The job succeeds. It has no `audio_no_headroom` or `audio_clipped` warning, from `pair_audio` or
+  anywhere else. `pair_audio`'s `audio_padded_to_video`/`audio_trimmed_to_video` for an off-by-a-few-ms
+  length is not a finding.
+- The manifest has:
+  - one `with_source_audio` file under `final/`, which `get_gallery_metadata` reads as exactly
+    **1024×576, 121 frames, 24 fps**;
+  - the `refine` file under `intermediate/`;
+  - no saved file from `upscale`, which is `save: false`.
+- **The soundtrack is the source's.** `get_output_audio` on the final file has the source's sample rate
+  and channel count. Its duration is within one frame (≈42 ms) of 121/24 s, and `peak_dbfs` ≤ −3.0.
+  Its per-second envelope follows the source's: loud and quiet seconds fall in the same places, offset
+  by roughly one constant gain. A track denoised from noise would not follow it.
+- **Same scene, not a new one.** `get_output_frames` at `frame:0`, `frame:60` and `frame:120` on the
+  final file shows the source's composition at the same frames: same subjects, same positions, same
+  framing. Motion runs the same direction between those frames. Finer texture may differ, since σ≈0.91
+  regenerates it. `assess_output` on the final file has no sync-drift finding.
+It is a **finding** if the final is not exactly 1024×576×121 at 24 fps, if its audio is generated rather
+than the source's, if the peak is above −3 dBFS or a headroom/clipping warning fires, if the scene or
+framing changes, or if the refine isn't kept in `intermediate/`.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the fixture.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `512x288-121f`, to
+`regression-perf/M-F064.jsonl`. The first run seeds the file.
+
+### M-F065 — `refine-clip` stretches a source of the wrong aspect instead of refusing it, and a `num_frames` shorter than the source cuts picture and soundtrack together
+pending: #549
+source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F062. Paid: two LTX-2.5 refine jobs, run one at a time. Validation passes both
+(the plan documents this behavior and does not refuse it). Each arm uses `"seed": 543` in workspace
+`regression-model-specific`, with `get_gallery_metadata` on its source first. Fixtures:
+`asset:refine/src-384x288.mp4` and `asset:refine/src-512x288.mp4` (see Fixtures). Make them if they
+are missing.
+expected:
+- **Wrong aspect, stretched.** Run `source_video: "asset:refine/src-384x288.mp4"` (4:3) at the default
+  `width` 512 / `height` 288:
+  - validate is `valid: true` and gives no refusal, and the job succeeds;
+  - the final is **1024×576**, 121 frames, 24 fps, carrying the source's soundtrack, as in M-F064;
+  - its `frame:60`, next to the source's `frame:60`, shows the whole source picture widened by about
+    4/3: content at the source's left and right edges is still there (not center-cropped), and round
+    shapes read as wider.
+
+  A crop, a letterbox/pillarbox, or a refusal is a finding.
+- **Shorter than the source.** Run `source_video: "asset:refine/src-512x288.mp4"` (121 frames) with
+  `num_frames: 97`:
+  - the job succeeds, and the final is 1024×576, **97 frames**, 24 fps;
+  - frames 0 and 96 follow the source's frames 0 and 96;
+  - the final's audio lasts within one frame of 97/24 s (≈4.04 s), and its envelope follows the
+    source's first ≈4 s. The plan says "cut to the video's length".
+  - A `pair_audio` `audio_trimmed_to_video` warning is expected with `fit: "video"`, and is not a
+    finding. `peak_dbfs` is ≤ −3.0.
+It is a **finding** if either arm is refused, if the aspect arm crops instead of stretching, if the output
+is not 2× the stated size, or if the short arm's picture and audio lengths disagree.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each arm's job. Keep the
+fixtures.
+metrics: `latency` (s) per arm, conditions `aspect-384x288` and `short-97f`, to
+`regression-perf/M-F065.jsonl`. The first run seeds the file.
+
+### M-F066 — `refine-clip` refuses a silent source before the pipeline load, naming the missing soundtrack
+pending: #549
+source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F062. At most one job, which must fail fast. The plan's Q2 decision is "refuse
+early, before the ~80s pipeline load". It does not say whether that happens at validate or as a
+first-step check, so either counts. Fixture: `asset:upscale/src-480x272-silent.mp4`, or any mp4 with no
+audio stream (see Fixtures). Confirm with `get_gallery_metadata` that it has no audio stream. If none
+exists, record "fixture missing" and skip. Pass `width: 512, height: 288`, so the size isn't what gets
+refused.
+Steps:
+1. `validate_workflow(name="templates/ltx2/refine-clip", arguments={"source_video": <silent>, "width": 512,
+   "height": 288, "seed": 543})`.
+2. If that is `valid: true`, `run_workflow` with the same arguments and the quoted `acknowledged_cost`,
+   `wait_seconds=55`, then `wait_for_job` to the end. Then read `get_job` and `get_job_events`.
+expected, either one:
+- **(a) Refused at validate.** `valid: false`, with an error at `arguments.source_video` saying the
+  source has no soundtrack or audio stream. `run_workflow` with the same arguments is refused too, with
+  no `job_id`.
+- **(b) Refused as the job's first act.** The job **fails**, and its error names the missing soundtrack
+  or audio stream in the source:
+  - `get_job_events` shows no load of `LTX2LatentUpsamplePipeline` or `LTX2Pipeline` before the
+    failure;
+  - job `started_at`→`finished_at` is well under the ~80 s load (under 60 s);
+  - the manifest has no `final/` file and no `refine` output.
+In either case, a success, or a failure at `with_source_audio` after the refine has run (the late
+failure `upscale-clip`'s M-F061 accepts, and this plan's Q2 rules out), is a **finding**. So is an
+error that doesn't say the soundtrack is what's missing.
+cleanup: if a job ran, `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the
+fixture.
+metrics: none.
 
 ## Performance

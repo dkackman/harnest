@@ -5937,4 +5937,234 @@ It is a **finding** if:
 cleanup: none (read-only).
 metrics: none.
 
+### C-F170 — `wait_for_job` advertises lem's 1800 s cap, and the clamp holds at the boundary
+pending: #546
+source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
+lem's deploy sets `DW_MCP_MAX_WAIT_SECONDS=1800`. The code default stays 55 and
+`timeout_seconds` still defaults to 20, so a caller only gets a long call by asking for one.
+S-F073 checks that the description and the clamp agree on whatever the cap is. This case
+pins lem's value and the edges around it. No model, and nothing queued: every call runs
+against an already-finished job, which returns at once but still fills the timeout fields.
+
+**Setup:** `list_jobs(status="succeeded", limit=1)` gives `<finished>`.
+
+**Calls:**
+- the `wait_for_job` and `run_workflow` tool descriptions, as the MCP client loads them;
+- `wait_for_job(job_id=<finished>, timeout_seconds=5000)`;
+- `wait_for_job(job_id=<finished>, timeout_seconds=1800)`;
+- `wait_for_job(job_id=<finished>, timeout_seconds=1801)`;
+- `wait_for_job(job_id=<finished>)`, with no `timeout_seconds`.
+
+expected:
+- The `wait_for_job` description says one call blocks for at most 1800 seconds (`1800` or
+  `1800.0`). `run_workflow`'s description names the same cap for its folded `wait_seconds`
+  wait. Neither says 55 anywhere.
+- `5000` → `timeout_requested_seconds: 5000`, `timeout_applied_seconds: 1800`,
+  `timeout_capped: true`, `still_running: false`, and a terminal `status`.
+- `1800` → `timeout_applied_seconds: 1800`, `timeout_capped: false`. The cap itself is
+  honoured, not clamped.
+- `1801` → `timeout_applied_seconds: 1800`, `timeout_capped: true`.
+- No `timeout_seconds` → `timeout_applied_seconds: 20`, `timeout_capped: false`. The
+  default did not move with the cap.
+- Every reply returns at once (a finished job), with `waited_seconds` under 2.
+
+It is a **finding** if:
+- either description states a cap other than 1800, or the two disagree;
+- any arm's `timeout_applied_seconds` or `timeout_capped` differs from the above;
+- or the default is no longer 20.
+
+cleanup: none (read-only).
+metrics: none.
+
+### C-F171 — a long `wait_for_job` on a job id that does not exist fails at once
+pending: #546
+source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
+The #300 edge. A server restart drops a queued or running job, and its id then answers
+"Unknown job". With an 1800 s cap, a wait that blocked on a vanished id would hang the
+caller for half an hour. Nothing is queued.
+
+**Calls:** time each call from your side.
+- `wait_for_job(job_id="000000000000", timeout_seconds=1800)` (well-formed, never issued);
+- `wait_for_job(job_id="qa-no-such-job-377", timeout_seconds=1800)`;
+- `wait_for_job(job_id="", timeout_seconds=1800)`.
+
+expected:
+- The first two fail with an error whose text says "Unknown job" and names the id. Each
+  returns in under 5 seconds.
+- The empty id is refused, as an unknown job or as an invalid argument, also in under 5
+  seconds.
+- None of the three comes back as `still_running: true`, and none reports a
+  `waited_seconds` near the budget.
+
+It is a **finding** if any call blocks for more than 5 seconds, returns `still_running`,
+or answers with anything that reads like a live job.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F172 — one `wait_for_job` call covers a job longer than ten minutes, and the default wait still returns at about 20 s
+pending: #546
+source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
+The field report behind #377: a 41-minute render needed about 45 polls at a 55 s cap. With
+the cap at 1800, one call should cover the whole job. The HTTP mount answers a call with no
+bytes until it returns. So this case is also the measurement of whether an intermediary or
+the client cuts a silent 10-plus-minute request. **This spends GPU time: about 12 minutes of
+H3 on lem.**
+
+**Setup:** `validate_workflow(name="templates/minimax/shots-batch", arguments={"seed": 377,
+"shots": <the template's own first three shots, unchanged: shot_1 and shot_2 at 124 frames,
+shot_3 at 158>})`. Read `plan.estimate.minutes` as `<est>`. Expect roughly 12 (the curated
+figure is 3.49 per entry, plus load). If `<est>` is under 10, add the template's `shot_4` to
+reach 10 or more. Queue it with `run_workflow(..., acknowledged_cost=<bound from the plan>)`,
+with no `wait_seconds`, giving `<job>`.
+
+**Calls:**
+1. `wait_for_job(job_id=<job>)` with no `timeout_seconds`. Time it from your side.
+2. `get_job(job_id=<job>)` to confirm the job is running or queued.
+3. One call, `wait_for_job(job_id=<job>, timeout_seconds=T)`, where
+   `T = min(1800, ceil(<est> × 60 × 1.5))`. That is the documented rule: the plan estimate,
+   plus margin. Note the wall-clock second you sent it and the second it came back.
+
+expected:
+- Call 1 returns within about 20 s: `still_running: true`, `timeout_applied_seconds: 20`,
+  `timeout_capped: false`, and `waited_seconds` between 18 and 25.
+- Call 3 returns with:
+  - `still_running: false` and a terminal `status` (`succeeded` expected);
+  - `timeout_requested_seconds: T`, `timeout_applied_seconds: T`, `timeout_capped: false`;
+  - `waited_seconds` above 55, and above 600 when the job ran ten minutes or more.
+
+  One call covered the whole job.
+- A slim job, and the manifest once finished.
+
+**The transport cut is recorded, not failed.** Call 3 may instead end in a transport or
+client error (a timeout, a closed connection, an HTTP error) before the job finishes. Record
+the exact error text and the second it came, counted from sending the call. Then confirm with
+`get_job` that the job itself was unaffected, and let it finish with 55 s waits.
+- While #547 (stage 2, the heartbeat) is open, that cut is the stage-2 trigger: comment it
+  on #547, and file nothing.
+- Once #547 is verified or closed `not planned`, a cut is a **finding**. Reference #377 and
+  C-F174.
+
+It is a **finding** if:
+- call 1 blocks well past 20 s or reports a different applied timeout;
+- call 3 returns `still_running: true` before `T` elapsed;
+- call 3 reports `timeout_capped: true` for a `T` at or under 1800;
+- or `waited_seconds` disagrees with your own wall-clock by more than 10 s.
+
+metrics: `long_wait_seconds`, call 3's `waited_seconds`, recorded on success;
+`cut_after_seconds`, the second a cut came, recorded only when there was one.
+cleanup: `delete_output(job_id=<job>)`.
+
+### C-F173 — the skills and the guide teach "ask for the estimate", not `wait_seconds=55`
+pending: #546
+source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
+Design item 4 of the plan. Every place that told an agent to wait 55 s per call now states
+one rule, with no deployment number in it:
+- ask for the job's `plan.estimate` (plus margin) as `timeout_seconds`;
+- the reply's `timeout_applied_seconds`/`timeout_capped` say what you got;
+- call again if `still_running`.
+
+Read-only.
+
+**Calls:**
+- `get_guide("workflows", section=<"The loop">)`, then read step 5;
+- load each skill with `Skill`: `dw:ltx-2-5`, `dw:minimax-h3`, `dw:minimax-music3`,
+  `dw:series-episodes`, `dw:script-to-video`.
+
+expected:
+- None of the six texts says `wait_seconds=55` or tells the caller to wait 55 s per call.
+  None states 1800 as a limit either. A number there would be wrong on another deployment.
+- The guide's step 5, and each skill that tells the caller how to wait on a run, gives the
+  rule above in substance:
+  - the estimate (plus margin) as the timeout;
+  - the reply's `timeout_applied_seconds`/`timeout_capped` as what was granted;
+  - call again on `still_running`.
+- No skill teaches a background-shell or `curl` wait instead (the plan's Q3 default is no).
+
+It is a **finding** if any of the six still carries `55` as the per-call wait, if one states
+a different rule from the guide, or if a skill that told the caller how to wait before now
+says nothing on it.
+
+Not covered here: `docs/MCP.md` and `dw_mcp/CLAUDE.md` change in the same stage, but
+neither the server nor the plugin serves them. Their check is `docs-review`'s.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F174 — with the heartbeat, a ten-minute-plus wait survives the transport, both standalone and folded into `run_workflow`
+pending: #547
+source: tester, spec for #547 from #377's plan v1 (claude-opus-5-5 via anthropic)
+Stage 2 is built only if C-F172 recorded a cut. It sends a progress notification about every
+20 s while a `wait_for_job` or `run_workflow(wait_seconds=)` wait is blocked. The HTTP mount
+answers such a call as an SSE stream, so the connection never goes idle. No new parameter,
+and no description text. **This spends GPU time: about 12 minutes of H3 on lem.**
+
+**Setup:** C-F172's workflow, arguments and `<est>` (`seed` 377, three shots, or four if
+`<est>` is under 10). Validate as there.
+
+**Calls:**
+1. `run_workflow(..., acknowledged_cost=<bound>, wait_seconds=600)`. This is the folded
+   wait, blocked for 10 minutes. Note when it returns.
+2. On `still_running: true`, one
+   `wait_for_job(job_id=<job>, timeout_seconds=min(1800, ceil(<est> × 60 × 1.5)))`.
+
+expected:
+- Call 1 comes back normally after about 600 s with `still_running: true`, `waited_seconds`
+  between 595 and 610, `timeout_applied_seconds: 600` and `timeout_capped: false`. It also
+  carries the job id and the slim `job` with its `progress`. If the job finished first, it
+  comes back earlier with a terminal status, and call 2 is skipped.
+- Call 2 comes back with `still_running: false`, a terminal `status` and
+  `timeout_capped: false`. Its `waited_seconds` agrees with the wall clock.
+- Neither call ends in a transport or client error. In particular, neither fails at the
+  second C-F172 recorded as `cut_after_seconds` on #547.
+- The final reply is an ordinary tool result, the same shape C-F172 asserts.
+- If the client surfaces progress notifications, note what they carried (phase, denoise
+  step). It is not asserted: the plan promises them to the transport, not to every client's
+  UI.
+
+It is a **finding** if either call is cut, if a reply arrives malformed or empty, or if the
+waits return early with `still_running: true`.
+
+metrics: `folded_wait_seconds` (call 1) and `long_wait_seconds` (call 2).
+cleanup: `delete_output(job_id=<job>)`.
+
+### C-F175 — every other tool still answers normally across the SSE framing change, errors included
+pending: #547
+source: tester, spec for #547 from #377's plan v1 (claude-opus-5-5 via anthropic)
+Stage 2 switches the HTTP MCP mount to `json_response=False` for every tool, which is the
+plan's one broad change. A non-waiting call, a refusal and a tool error must still
+round-trip as ordinary tool results. A short wait that emits no heartbeat, or at most one,
+must too. Cheap: one task-only job, about a second of work, and no model.
+
+**Setup:** the inline `frame_grid` workflow from C-F083, as `<grid>`, over
+`asset:qa-cast/ep6-cold-open.mp4` with its defaults.
+
+**Calls:**
+1. `list_workflows(shape="utility")` returns the usual compact catalog, with `workflows` and
+   `details`.
+2. `validate_workflow(workflow=<grid>)` returns `valid: true` and a `plan`.
+3. `validate_workflow(workflow=<grid>, arguments={"count": 0})` returns `valid: false`, with
+   the error at `steps[0].task.arguments.count`, as a normal reply and not a transport
+   error.
+4. `run_workflow(workflow=<grid>, acknowledged_cost=<bound or true, as the plan says>,
+   wait_seconds=30)` comes back folded: `still_running: false`, `succeeded`, and a manifest
+   with one `.png`.
+5. `get_output_image(name=<that png>)` returns the image and its size part, with
+   `original_size: [1280, 543]`.
+6. `wait_for_job(job_id=<that job>, timeout_seconds=60)` on the finished job returns at
+   once, terminal, with the timeout fields.
+7. `wait_for_job(job_id="000000000000", timeout_seconds=60)` fails at once with
+   "Unknown job" as a tool error, not a hung stream.
+8. `get_job(job_id=<that job>)` returns the full job, arguments included.
+
+expected: each call returns as stated, in one response, with nothing truncated, doubled or
+wrapped in stream framing text.
+
+It is a **finding** if any call:
+- errors at the transport;
+- returns an empty or malformed result;
+- turns a refusal (3, 7) into a transport failure;
+- or takes noticeably longer than before the change: more than 5 s for 1–3 and 5–8.
+
+cleanup: `delete_output(job_id=<that job>)`.
+metrics: none.
+
 ## Performance
