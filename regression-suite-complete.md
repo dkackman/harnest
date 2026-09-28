@@ -5227,7 +5227,6 @@ cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ### C-F151 — `join_into_song` is discoverable: its arguments, defaults and domains are readable before anything runs
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 The task joins dialogue shots to song shots and lays a song under the join. A caller has
 to be able to read its contract without running it. Read-only, free.
@@ -5254,7 +5253,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F152 — `join_into_song` places the song so its cue lands on the first song-shot frame, discards the song shots' audio, and records every shot
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 Plan v1's placement rule: the song starts at D − cue, where D is the joined dialogue's
 length. So the song is audible under the tail of the dialogue, and song time `cue_seconds`
@@ -5329,7 +5327,6 @@ cleanup: `delete_output(job_id=…)` for the film job and the measurement job.
 metrics: none.
 
 ### C-F153 — `join_into_song` ducks the dialogue by `duck_db` from song entry + `duck_delay_ms`, over a `duck_ramp_ms` ramp
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 The song enters under the dialogue. From song entry plus `duck_delay_ms`, the dialogue drops
 by `duck_db`, and it gets there over a linear ramp of `duck_ramp_ms` rather than a step.
@@ -5370,7 +5367,6 @@ cleanup: `delete_output(job_id=…)` for all three runs and the measurement jobs
 metrics: none.
 
 ### C-F154 — `dialogue_target_lufs` levels each dialogue shot statically, omitting it leaves them alone, and a sub-400 ms shot is warned about, not failed
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 The two dialogue fixtures sit about 11 LU apart: incident's integrated loudness is −16.4
 LUFS and reply's is −27.4. With a target, each shot gets one static gain to reach it. With
@@ -5414,7 +5410,6 @@ cleanup: `delete_output(job_id=…)` for every run and measurement job.
 metrics: none.
 
 ### C-F155 — a dialogue input with no audio track becomes silence of its own length, not a shift of everything after it
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 `concat_videos` has a known desync when an input has no audio. Plan v1 says `join_into_song`
 fills silence for such an input instead of inheriting that desync.
@@ -5442,7 +5437,6 @@ cleanup: `delete_output(job_id=…)` for the setup, run and measurement jobs.
 metrics: none.
 
 ### C-F156 — `join_into_song` refuses out-of-domain arguments, empty lists, an over-long cue and a frame-rate mismatch, each pointed at its cause
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 The refusals the plan names, plus the boundaries either side of them.
 
@@ -5479,7 +5473,6 @@ cleanup: `delete_output(job_id=…)` for every job that ran, failed ones include
 metrics: none.
 
 ### C-F157 — `join_into_song` edges: a cue of 0 starts the song on the seam, and a song too short for the picture is padded with silence and warned
-pending: #513
 source: tester, spec for #513 from #486's plan v1 (claude-opus-5-5 via anthropic)
 - (a) **Cue 0.** Run C-F152's `film` step with the unmarked song
   (`asset:qa-cast/ep15-song.mp3`) and `cue_seconds: 0`.
