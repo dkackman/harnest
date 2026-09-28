@@ -1,1 +1,2 @@
 {"ts":"2026-09-28T05:40:53Z","level":"model-specific","case":"M-F064","metric":"latency","condition":"512x288-121f","value":117.4,"unit":"s","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job 9de7afb598ec","note":"first run, seeds the file; verify of #549"}
+{"ts":"2026-09-28T06:20:48Z","level":"model-specific","case":"M-F064","metric":"latency","condition":"512x288-121f","value":128.5,"unit":"s","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job 33eb0e08ebe1","note":"verify of feature parent #543"}

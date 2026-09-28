@@ -100,8 +100,8 @@ fixture) when nothing uses it anymore.
   workspace="regression-model-specific")`; each is well under the 4 MB cap. Until they exist,
   M-F060 and M-F061 record "fixture missing" and skip. That is a note for Don, not an issue.
 
-- `asset:refine/src-512x288.mp4` and `asset:refine/src-384x288.mp4` (M-F064, M-F065;
-  `pending: #549`). These are LTX-2.5 clips with their own soundtracks, made on-box. The
+- `asset:refine/src-512x288.mp4` and `asset:refine/src-384x288.mp4` (M-F064, M-F065).
+  These are LTX-2.5 clips with their own soundtracks, made on-box. The
   first is 512×288 (16:9, the refine-clip default size) and the second 384×288 (4:3, the
   wrong aspect). For each one:
   1. Run `templates/ltx2/text-to-video` in workspace `regression-model-specific` with
