@@ -2422,4 +2422,31 @@ logged to `regression-perf/M-F068.jsonl`. A reading near step 1's time means the
 `reused` somehow survived.
 cleanup: `delete_output(job_id=…)` for both jobs.
 
+### M-F069 — a `for_each` composing `templates/ltx2/image-to-video` writes 24 fps members, and their join lands on the frame grid with zero sync drift
+source: tester, found while running TESTER_TASK.agent.md (ep94, job `c27ae74f2e00`), claude-opus-5-5 via anthropic; locks in #561 and #562
+Model/pipeline: `Lightricks/LTX-2.5-Diffusers` `LTX2ImageToVideoPipeline`, reached by composing the catalog
+template by `path` (not a copied pipeline block, which M-F057/M-F068 cover). Paid, about 1.6 min on lem.
+Setup: workspace = this suite's, passed on every call. Inline workflow, `id: "QAM069"`, `seed: 94`,
+variable `shots` = two entries, each with `name`, `prompt`, `image`, `num_frames`:
+- `dodge`: 49 f, `image: "previous_result:last"`, a one-line HAL prompt with a quoted line.
+- `pounce`: 41 f, `image: {"location": "asset:qa-cast/priya-portrait.jpg"}`, a one-line PRIYA prompt with a quoted line.
+Steps: `last` — task `get_last_frame(video={"location": "asset:qa-cast/ep92-episode.mp4"})`, result
+`image/jpeg`, `save: false`. `shot` — `for_each: "variable:shots"`, `workflow: {path: "templates/ltx2/image-to-video",
+arguments: {prompt: "item:prompt", image: "item:image", num_frames: "item:num_frames", width: 512, height: 288,
+seed: 94}}`, result `video/mp4` intermediate (no `fps` on the result). `edit` — `concat_videos(videos: "gather:shot",
+fps: 24, match_levels: "rms", match_levels_dbfs: -24)`, result `video/mp4` final. `validate_workflow` → bind
+cost → `run_workflow(wait_seconds=55)` → `wait_for_job`.
+expected:
+- validate is `valid: true`, `warnings: []`, `list_entries.shots: 2`. The job succeeds with `warnings: []`.
+- `get_gallery_metadata` on each `shot@<entry>` file: `fps: 24.0`, 512×288, `frame_count` 49 / 41,
+  `sample_rate` 48000. (Before #561 the members were written at 8 fps.)
+- The `edit` manifest's shots: `shot@dodge` 0/49 frames, 0/98000 samples; `shot@pounce` at frame 49, sample
+  98000, 41 frames, 82000 samples, `hard_cut: true`.
+- `assess_output(<edit file>, probe="analyze_sync_drift")`: `max_offset_ms: 0.0`, `length_delta_ms: 0.0`,
+  `findings: []`. (Before #562 the second shot started at sample 96480, −31.67 ms.)
+It is a **finding** if a member's `fps` isn't 24, if a shot's `num_samples` isn't `num_frames × 2000`, or if
+the drift probe reads any offset. A `shot_dead_air` warning from the full assessment is take-dependent, not this case's concern.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-composed-512`, to `regression-perf/M-F069.jsonl`.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+
 ## Performance
