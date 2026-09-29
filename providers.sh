@@ -1319,6 +1319,39 @@ dw_frozen() {
   python3 "$HARNEST_LIB/freeze.py" active "${1:-$SOURCE_DIR}" 2>/dev/null
 }
 
+# ensure_arch_tools [checkout]
+# The architecture ratchet (lib/arch_ratchet.py) needs dw's dev extras in the
+# venv dw runs on. Installs them when they can't be imported, and again
+# whenever pyproject.toml changes on origin/develop (stamped in the checkout's
+# .git). A no-op while the ratchet is off. The stamp is written only when the
+# working tree's pyproject is origin/develop's, since the install reads the
+# tree. Warns, never blocks: guard.py fails closed on a missing tool anyway.
+ensure_arch_tools() {
+  local co="${1:-$SOURCE_DIR}" want have gitdir py
+  python3 "$HARNEST_LIB/arch_ratchet.py" ready "$co" >/dev/null 2>&1 && ratchet_deps_current "$co" && return 0
+  git -C "$co" cat-file -e origin/develop:scripts/arch_metrics.py 2>/dev/null || return 0
+  py="$co/venv/bin/python"; [ -x "$py" ] || py=python3
+  echo "[loop] installing dw's dev extras for the architecture ratchet ($co)" | tee -a "$LOOP_LOG"
+  ( cd "$co" && "$py" -m pip install -q -e '.[dev]' ) >>"$LOOP_LOG" 2>&1 \
+    || echo "[loop] WARNING: pip install -e '.[dev]' failed in $co; the ratchet will refuse hand-offs until it works" | tee -a "$LOOP_LOG"
+  want="$(git -C "$co" rev-parse -q --verify origin/develop:pyproject.toml 2>/dev/null)"
+  have="$(git -C "$co" hash-object "$co/pyproject.toml" 2>/dev/null)"
+  gitdir="$(git -C "$co" rev-parse --absolute-git-dir 2>/dev/null)"
+  if [ -n "$want" ] && [ "$want" = "$have" ] && python3 "$HARNEST_LIB/arch_ratchet.py" ready "$co" >/dev/null 2>&1; then
+    echo "$want" > "$gitdir/harnest-arch-deps"
+  else
+    echo "[loop] WARNING: the architecture ratchet's tools are still not ready in $co (checkout behind origin/develop, or install failed)" | tee -a "$LOOP_LOG"
+  fi
+  return 0
+}
+
+# ratchet_deps_current <checkout>: succeeds when the stamp names origin/develop's pyproject.toml
+ratchet_deps_current() {
+  local co="$1" gitdir
+  gitdir="$(git -C "$co" rev-parse --absolute-git-dir 2>/dev/null)" || return 1
+  [ "$(cat "$gitdir/harnest-arch-deps" 2>/dev/null)" = "$(git -C "$co" rev-parse -q --verify origin/develop:pyproject.toml 2>/dev/null)" ]
+}
+
 # only_issues_filter
 # stdin: lines whose first field is an issue number and whose optional
 # third field is its parent. Keeps the lines ONLY_ISSUES names (the issue

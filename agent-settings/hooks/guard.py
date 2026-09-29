@@ -31,6 +31,11 @@ implementer:
     See freeze_gate. Also any `gh pr merge`, or `gh api` call to a PR's
     merge endpoint, into develop (or whose base can't be read): a merge
     there never shows up as a push. See pr_merge_base
+  - dw's architecture ratchet (lib/arch_ratchet.py; on while
+    scripts/arch_metrics.py exists on origin/develop, freeze or not): a
+    hand-off, or any push of develop, whose own commits make a metric worse
+    than at their merge base with origin/develop. Fails closed when the
+    script can't run. No label waives it. See ratchet_gate
 lead (the feature lead's design and decompose sessions, via `guard_settings lead` in providers.sh; its
 build and close-out sessions commit and push, so they run with
 implementer.json and get the implementer's rules, push checks and
@@ -110,6 +115,7 @@ import json, os, re, shlex, shutil, subprocess, sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
 import freeze  # noqa: E402  (lib/freeze.py, shared with the driver)
+import arch_ratchet  # noqa: E402  (lib/arch_ratchet.py, likewise)
 
 
 def deny(msg):
@@ -396,6 +402,21 @@ def freeze_gate(checkout, src, arch_approved):
          "which path, and stop." % (why, rule))
 
 
+def ratchet_gate(checkout, src):
+    """dw's architecture ratchet (lib/arch_ratchet.py): refuse when src's own
+    commits make any scripts/arch_metrics.py number worse than the merge base
+    with origin/develop. Independent of the freeze. Fails closed: a script
+    that can't run refuses, with the install command."""
+    if subprocess.run(["git", "-C", checkout, "rev-parse", "--git-dir"], capture_output=True).returncode:
+        return
+    try:
+        worse = arch_ratchet.check(checkout, src)
+    except arch_ratchet.ToolError as e:
+        deny(str(e))
+    if worse:
+        deny("dw's architecture ratchet: " + arch_ratchet.refusal(worse))
+
+
 def pr_merge_base(words):
     """The base branch of the PR a `gh pr merge [N]` or `gh api
     repos/O/R/pulls/N/merge` merges, as GitHub says; "" when it can't say.
@@ -591,6 +612,7 @@ def main():
                 deny(problem)
             if is_gh_issue(words, "edit") and "status:fixed-pending-verify" in flag_values(words, "--add-label"):
                 freeze_gate(cwd, "HEAD", lambda: issue_has_label(words, "arch-approved"))
+                ratchet_gate(cwd, "HEAD")
                 handoff_gate(cwd)
             base = pr_merge_base(words)
             if base in ("", "develop") and freeze.freeze_state(cwd) is not None:
@@ -600,10 +622,12 @@ def main():
                      "--add-label stabilization`, then comment which rule fired (pr-merge) and on which PR, "
                      "and stop." % ("" if base else " (or its base couldn't be read)"))
             issue = os.environ.get("HARNEST_ISSUE", "")
-            push = issue and pushed_develop(words, cwd)
+            push = pushed_develop(words, cwd)
             if push:
-                freeze_gate(push[0], push[1], lambda: label_on(
-                    issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True)
+                if issue:
+                    freeze_gate(push[0], push[1], lambda: label_on(
+                        issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True)
+                ratchet_gate(push[0], push[1])  # needs no issue, so it sees sessions the freeze push check can't
         elif role == "consumer":
             # A tester HANDOFF session applies a harness-side edit the
             # implementer asked for and closes the issue as done: nothing

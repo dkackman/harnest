@@ -1639,6 +1639,15 @@ from a session with `HARNEST_ISSUE`, whose own commits add surface (unless `arch
 Don's label) or touch `hot-zone.txt`, and any PR merge into `develop`. Stage B, dw's
 permanent architecture guardrails at its Phase 4 gate, replaces it; deleting `FREEZE` lifts it.
 
+## dw stabilization, stage B: the metrics ratchet (2026-09-28)
+
+`lib/arch_ratchet.py` refuses work whose own commits make a `scripts/arch_metrics.py` number
+worse than at their merge base with `origin/develop` (both trees measured by develop's copy
+of the script). `guard.py` runs it at a hand-off and at any push of `develop`; it fails closed
+when the tools are missing, and `ensure_arch_tools` installs dw's dev extras between sessions.
+On while the script exists on `develop`, freeze or not; no label waives it. Stage C, the
+permanent guardrails (seam map, architecture reviewer, consolidation cadence, dw CI ratchet), follows at dw's Phase 4.
+
 ---
 
 ## Considered and deferred

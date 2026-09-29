@@ -463,6 +463,7 @@ set_base_commit() {
   export HARNEST_BASE_COMMIT
   [ -n "$HARNEST_BASE_COMMIT" ] \
     || echo "[loop] WARNING: could not read origin/develop; the hand-off gate skips its tests-vs-base check this session" | tee -a "$LOOP_LOG"
+  ensure_arch_tools "$SOURCE_DIR"  # the architecture ratchet's tools, between sessions
 }
 
 # implementer_pass — triage (when 2+ issues wait), then one session per issue.

@@ -431,6 +431,8 @@ when the session began, exported by `implementer_pass`). The gate is relative be
 `develop` isn't always green. The result is stamped per tree in the checkout's `.git`.
 `HARNEST_HOOKS` (exported by `providers.sh`) is how the settings files find the script.
 The role prompts' cores carry each guard rule as one line under "Enforced by the harness".
+The architecture ratchet (`lib/arch_ratchet.py`, `ratchet_gate`) also refuses a hand-off or a push of `develop`
+whose own commits worsen a `scripts/arch_metrics.py` metric against the merge base, fails closed, and no label waives it.
 
 Two deploy paths, and the implementer must say which one a fix used: server code →
 `ssh lem '~/diffusers-workflow/scripts/deploy.sh <branch>'` (in the dw repo: fetch, ff-only pull,
