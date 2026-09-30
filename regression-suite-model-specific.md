@@ -2449,4 +2449,27 @@ the drift probe reads any offset. A `shot_dead_air` warning from the full assess
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-composed-512`, to `regression-perf/M-F069.jsonl`.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 
+### M-F070 — `gather:<step>` inside a join's `videos` list, beside an `asset:` cut, flattens in order with the cut's inner shots
+source: tester, found while running TESTER_TASK.agent.md (ep96, job `c63e21f40b91`), claude-opus-5-5 via anthropic
+Model/pipeline: `Lightricks/LTX-2.5-Diffusers` `LTX2ImageToVideoPipeline`, via `templates/ltx2/image-to-video`
+composed by `path`. Paid, about 1.8 min on lem. M-F069 covers `gather:` as the whole `videos` argument; this case
+covers it as one element of a list.
+Setup: workspace = this suite's, passed on every call. Same inline workflow as M-F069 with `id: "QAM070"`,
+`seed: 96`, `last` reading `asset:qa-cast/ep95-episode.mp4` (512×288, 180 f, 44.1 kHz, 4 inner shots
+`shot@dodge/pounce/retort/confess`), entries `alibi` (49 f, `previous_result:last`) and `glare` (57 f,
+priya portrait), and `edit` = `concat_videos(videos: ["asset:qa-cast/ep95-episode.mp4", "gather:shot"], fps: 24,
+match_levels: "rms", match_levels_dbfs: -24)`, result `video/mp4` final. validate → bind cost → run → wait.
+expected:
+- validate is `valid: true`, `warnings: []`, `list_entries.shots: 2`, `steps: 4`.
+- The job succeeds. Its one warning is `concat_videos`' `sample_rate_mismatch` (44100 vs 48000, resampling to 48000)
+  naming **three** videos: the gather expanded to two inputs, not one.
+- The `edit` file: 286 frames, 24 fps, 512×288, 48000 Hz. Its `media.shots` lists six shots in order —
+  `shot@dodge`, `shot@pounce`, `shot@retort`, `shot@confess` (the asset's inner shots, flattened) at frames
+  0/49/90/139, then `shot@alibi` at frame 180 and `shot@glare` at 229 (57 f) — every seam after the first `hard_cut: true`.
+It is a **finding** if the gather element is refused, passed through as a literal string, joined as one input, or
+reordered, or if the asset's inner shots are lost. A few samples missing from the last shot is the mux shortfall
+(#455), logged as a `shortfall_samples` event, not this case's concern; so is a `shot_dead_air` warning.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `asset-plus-gather-512`, to `regression-perf/M-F070.jsonl`.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+
 ## Performance
