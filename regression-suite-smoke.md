@@ -148,6 +148,7 @@ their absence is the first thing to suspect. `list_workflows()` is the call;
 its default answer is the summary view S-F015 pins. This is the schema
 sanity check every other case leans on.
 cleanup: none (read-only).
+runner: script
 
 ### S-F003 — generate a single image, default params
 Using the server's basic image-generation tool/template, generate one image
@@ -756,6 +757,7 @@ expected:
   mistake rather than catching it.
 cleanup: none — all four calls are free discovery/validate calls that write
 nothing.
+runner: script
 source: tester, model `opus` via provider `anthropic`, verified in #96 on
 2026-09-14 against dw 0.4.0-beta.4 on `lem`. The implementer proposed the first,
 second and fourth bullets; the snap-then-range pair is mine, added because the
