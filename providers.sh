@@ -1329,7 +1329,7 @@ dw_frozen() {
 ensure_arch_tools() {
   local co="${1:-$SOURCE_DIR}" want have gitdir py
   python3 "$HARNEST_LIB/arch_ratchet.py" ready "$co" >/dev/null 2>&1 && ratchet_deps_current "$co" && return 0
-  git -C "$co" cat-file -e origin/develop:scripts/arch_metrics.py 2>/dev/null || return 0
+  python3 "$HARNEST_LIB/arch_ratchet.py" active "$co" >/dev/null 2>&1 || return 0  # the switch, as ready just fetched it
   py="$co/venv/bin/python"; [ -x "$py" ] || py=python3
   echo "[loop] installing dw's dev extras for the architecture ratchet ($co)" | tee -a "$LOOP_LOG"
   ( cd "$co" && "$py" -m pip install -q -e '.[dev]' ) >>"$LOOP_LOG" 2>&1 \
@@ -1480,6 +1480,7 @@ role_prompt() {
     curator:audit)      set -- core audit ;;
     curator:review)     set -- core review ;;
     reviewer:docs)      set -- core docs ;;
+    reviewer:arch)      set -- core arch ;;
     release:review)     set -- core review ;;
     release:notes)      set -- core notes ;;
     regression:whole)   set -- core run-cases sweep ;;

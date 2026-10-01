@@ -108,9 +108,6 @@ Each is the whole move; use it exactly.
   approved. His owner swap is the signal: a `status:needs-approval` or
   `status:needs-info` he left behind is stale, so remove it in your first
   label command on the issue.
-  While `docs/stabilization/FREEZE` is on `develop`, fix defects only: a fix that adds surface, touches
-  a hot-zone path, or needs the same edit in two places goes to Don with the `stabilization` label
-  (guard.py enforces the first two). Never add a bullet to dw's `CLAUDE.md`; rationale goes in the owning module's docstring.
 
 ## Checks before any fix
 
@@ -156,9 +153,8 @@ UI's check/lint/test pass if you changed `ui/`, and no test fails that
 passed on the commit `develop` was at when your session began. A refusal
 is the rule working: fix what it names, don't look for a way around it.
 
-The hook also refuses a hand-off, and a push of `develop`, when `scripts/arch_metrics.py`
-gets worse against your merge base with `origin/develop`. Run it before handing off:
-`venv/bin/python scripts/arch_metrics.py --root .`. Its message says what to do; no label waives it.
+`guard.py` also holds dw's hot zone and metrics ratchet (`venv/bin/python scripts/arch_metrics.py --root .`) on a push of `develop` and a hand-off; a new `dw/` or `dw_mcp/` module is a rise only Don approves.
+A hand-off that changes `dw/` or `dw_mcp/` gets an architecture review against `docs/ARCHITECTURE.md`, the map: call the owner a row names, never re-derive its rule.
 
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.

@@ -77,16 +77,17 @@ and runs the real drivers end to end. See "Tests" below.
   `run_session` and `run-bench.sh` pass the result as `--append-system-prompt-file`.
   Kinds: implementer `fix`/`triage`; tester `verify`/`handoff`/`answer`/`closures`/`task`
   (`task` also loads `standing-task.md`, and `verify`/`handoff`/`task` load `cases.md`);
-  regression `whole`/`chunk`/`sweep`; reviewer `docs`. State each rule once, in the core if more than one
+  regression `whole`/`chunk`/`sweep`; reviewer `docs`/`arch`. State each rule once, in the core if more than one
   kind needs it, and have fragments point at it by section name, never by step number
   across files. A rule enforced by `guard.py` stays in the core as a one-line pointer.
 - `agents/implementer/` — role prompt for the agent with source access and SSH to the
   `lem` box where the MCP server runs. It executes with cwd = the source checkout (`SOURCE_DIR`,
   default `~/src/dkackman/dw-agent`: a clone kept for the agents, with its own `venv` from
   `install.sh` — not Don's working checkout, which it used to share and switch branches under).
-- `agents/reviewer/` — the docs reviewer: verifies a `docs-review` fix (text neither the
+- `agents/reviewer/` — the reviewer: verifies a `docs-review` fix (text neither the
   server nor the plugin serves) by reading the merged tree, since the tester can't see it
-  and must not read source. See "Ticket protocol".
+  and must not read source. See "Ticket protocol". Its `arch` kind reviews a hand-off that
+  changed `dw/`/`dw_mcp/` against dw's `docs/ARCHITECTURE.md` before the tester (`arch-review`).
 - `agents/tester/` — role prompt for the agent that talks to the MCP server *only* as a
   protocol consumer. It executes with cwd = this repo, which contains no code. That cwd split
   plus an enforced tool allowlist (`CONSUMER_PERMISSION_FLAGS` in `providers.sh`, see
@@ -223,7 +224,8 @@ and runs the real drivers end to end. See "Tests" below.
   them edits a suite, prompt or driver, and none takes the driver lock (no MCP).
   - **Curator:** files one issue per level on **this** repo, labeled `suite` +
     `status:needs-approval`, and searches the ticket repo for case history. Its evidence is
-    a per-chunk cost table parsed from `loop.log`.
+    a per-chunk cost table parsed from `loop.log`. Weekly, `curator_pass` files coupling that moved
+    in dw's `arch_report.py` as `consolidation` + `owner:don` issues (`lib/consolidation.py`).
   - **Retro:** files up to three `harness` + `status:needs-approval` issues on **this**
     repo (`dkackman/harnest`), from an evidence digest the driver computes. The window
     since the last retro is byte offsets in `logs/retro-seen.json`.
@@ -431,8 +433,8 @@ when the session began, exported by `implementer_pass`). The gate is relative be
 `develop` isn't always green. The result is stamped per tree in the checkout's `.git`.
 `HARNEST_HOOKS` (exported by `providers.sh`) is how the settings files find the script.
 The role prompts' cores carry each guard rule as one line under "Enforced by the harness".
-The architecture ratchet (`lib/arch_ratchet.py`, `ratchet_gate`) also refuses a hand-off or a push of `develop`
-whose own commits worsen a `scripts/arch_metrics.py` metric against the merge base, fails closed, and no label waives it.
+`arch_gate` also refuses a hand-off or a push of `develop` whose own commits touch dw's hot zone or worsen a
+`scripts/arch_metrics.py` metric (`lib/arch_ratchet.py`, fails closed); only Don's `arch-approved` with a matching `baseline.json` raise waives a rise.
 
 Two deploy paths, and the implementer must say which one a fix used: server code →
 `ssh lem '~/diffusers-workflow/scripts/deploy.sh <branch>'` (in the dw repo: fetch, ff-only pull,
@@ -491,8 +493,8 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   (`release_freeze` in `providers.sh`). Closing the release issue lifts it.
   `touch logs/stop-after-cycle` is the other freeze: the loop exits at the next cycle
   boundary. **dw's stabilization freeze** (`docs/stabilization/FREEZE` on its `develop`, read by
-  `lib/freeze.py`) stops features and lead builds and has `guard.py` refuse new surface and
-  hot-zone edits; HARNESS-ROADMAP.md "dw stabilization freeze, stage A".
+  `lib/freeze.py`) stops features and lead builds and has `guard.py` refuse new surface; the hot
+  zone and ratchet outlive it, and `unpark_pass` hands back what it parked (roadmap "stage C").
 - **Security holes are private** (R14 item 3). A finding where a boundary didn't hold
   goes to a draft GitHub security advisory via `scripts/file-advisory.sh`, never a public
   issue. That covers a gate, a path, a URL, a disclosure, or a destructive call without

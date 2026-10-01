@@ -14,6 +14,9 @@
 #   reviewer:docs  a fix that changed only files neither the server nor the
 #              plugin serves (README, docs/ outside the guides), so the
 #              tester can't observe it: read-only source review instead
+#   reviewer:arch  a hand-off that changed dw/ or dw_mcp/ (the driver adds
+#              `arch-review`): the architecture review comes before the
+#              tester's verify, against dw's docs/ARCHITECTURE.md
 #   lead:design  lead:decompose  lead:build  lead:closeout
 #   don        parked with Don; reason says why
 #   wait       a legitimate pause: blocked, or its parent isn't building yet
@@ -111,7 +114,8 @@ def parent_phase:
         {queue: "implementer:fix", reason: (if ($st | length) > 0 then "ready (stale \($st | join(",")) to clear)" else "ready" end)}
       else {queue: "stranded", reason: "owner:implementer with \($live | join(","))"} end
   elif $o[0] == "owner:tester" then
-    if has("status:fixed-pending-verify") and has("docs-review") then {queue: "reviewer:docs", reason: "docs-only fix, not observable over MCP"}
+    if has("status:fixed-pending-verify") and has("arch-review") then {queue: "reviewer:arch", reason: "changed dw/ or dw_mcp/: architecture review first"}
+    elif has("status:fixed-pending-verify") and has("docs-review") then {queue: "reviewer:docs", reason: "docs-only fix, not observable over MCP"}
     elif has("status:fixed-pending-verify") then {queue: "tester:verify", reason: "handed off"}
     elif has("status:needs-spec") then {queue: "tester:spec", reason: "plan approved and decomposed"}
     elif has("status:needs-info") then {queue: "tester:answer", reason: "question from the implementer"}
@@ -142,13 +146,13 @@ def parent_phase:
      | .queue = "wait"
   else . end
 # The target post-filter. Server-free queues (a design, a decompose, a docs
-# review) run in whichever loop runs them. A feature's spec, builds and
+# or architecture review) run in whichever loop runs them. A feature's spec, builds and
 # close-out run on lem only. The rest belong to the loop holding the claim;
 # an unclaimed fix to any loop whose server its backend allows; and an
 # unclaimed issue past the implementer to lem, which is where everything
 # handed off before claims existed was deployed.
 | if .queue == "wait" or (.queue | test("^(implementer|tester|lead|reviewer):") | not) then .
-  elif (.queue | IN("lead:design", "lead:decompose", "reviewer:docs")) then .
+  elif (.queue | IN("lead:design", "lead:decompose", "reviewer:docs", "reviewer:arch")) then .
   elif ($i | claims | length) > 0 and (serves($i | holder; $i | backend) | not) then
     .reason = "target:\($i | holder) on a backend:\($i | backend) issue" | .queue = "stranded"
   elif (.queue | IN("tester:spec", "lead:build", "lead:closeout")) and $target != "lem" then

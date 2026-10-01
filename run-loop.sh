@@ -212,7 +212,7 @@ resolve_target || exit 1
 # The claim and backend labels (harnest#15) must exist before anything adds
 # them: gh refuses a label the repo doesn't have, which would fail every
 # claim and every filing. Idempotent.
-for l in target:lem target:local backend:shared backend:cuda backend:mps verified-on:mps; do
+for l in target:lem target:local backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
   gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
 done
 if [ "$DW_TARGET" != lem ]; then
@@ -368,7 +368,36 @@ $(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
   if [ -n "$issue_n" ] && session_ran "$LAST_SESSION"; then
     note_progress "$issue_repo" "$issue_n" "$before" "$label" "$role:$kind"
   fi
+  case "$role:$kind" in
+    implementer:fix|lead:build|lead:closeout) [ "$issue_repo" != "$TICKET_REPO" ] || arch_review_after "$issue_n" ;;
+  esac
   return 0
+}
+
+# arch_review_after <n>
+# After a session that may hand off code: when #n is now handed off
+# (status:fixed-pending-verify) and develop moved under dw/ or dw_mcp/
+# during the session (HARNEST_BASE_COMMIT, set by set_base_commit just
+# before it, to origin/develop now), queue the architecture review ahead of
+# the tester's verify: the arch-review label, and a marker comment naming
+# the range, which reviewer_pass reads back. The driver decides this, from
+# git, so no session can skip it.
+arch_review_after() {
+  local n="$1" base="${HARNEST_BASE_COMMIT:-}" head labels files
+  [ -n "$base" ] || return 0
+  labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '[.labels[].name] | join(",")' 2>/dev/null)" || return 0
+  case ",$labels," in *",status:fixed-pending-verify,"*) ;; *) return 0 ;; esac
+  case ",$labels," in *",arch-review,"*) return 0 ;; esac
+  git -C "$SOURCE_DIR" fetch -q origin develop 2>/dev/null || true
+  head="$(git -C "$SOURCE_DIR" rev-parse -q --verify origin/develop 2>/dev/null)" || return 0
+  [ "$head" != "$base" ] || return 0
+  files="$(git -C "$SOURCE_DIR" diff --name-only "$base" "$head" -- dw dw_mcp 2>/dev/null)"
+  [ -n "$files" ] || return 0
+  echo "[reviewer:#$n] hand-off changed dw/ or dw_mcp/ (${base:0:10}..${head:0:10}): architecture review before the tester" | tee -a "$LOOP_LOG"
+  gh issue edit "$n" --repo "$TICKET_REPO" --add-label arch-review >/dev/null \
+    && gh issue comment "$n" --repo "$TICKET_REPO" --body "<!-- harnest:arch-review $base $head -->
+Architecture review queued by the loop driver: this hand-off changed \`dw/\` or \`dw_mcp/\` on \`develop\` (\`${base:0:10}..${head:0:10}\`: $(printf '%s' "$files" | head -8 | tr '\n' ' ')). The reviewer checks it against \`docs/ARCHITECTURE.md\` before the tester verifies." >/dev/null \
+    || echo "[reviewer:#$n] could not queue the architecture review (gh failed); the tester verifies it unreviewed" | tee -a "$LOOP_LOG"
 }
 
 # Queues come from lib/classify.jq through queue_issues and still_ready
@@ -553,8 +582,8 @@ features_pass() {
 # against develop in between as for any fix.
 # During dw's stabilization freeze no stage builds: a feature with one ready
 # parks with Don (stabilization + owner:don), which holds its stages at
-# wait, and he hands it back to owner:lead once the freeze lifts. Close-outs
-# of work already in flight still run.
+# wait, and unpark_pass hands it back to owner:lead once the freeze lifts.
+# Close-outs of work already in flight still run.
 lead_pass() {
   local n parent built=0 bounces parked=" "
   local -a stages=()
@@ -567,7 +596,7 @@ lead_pass() {
       parked="$parked$parent "
       echo "[lead:#$parent] parking for the stabilization freeze (stage #${n%% *} was ready to build)" | tee -a "$LOOP_LOG"
       gh issue edit "$parent" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label stabilization >/dev/null \
-        && gh issue comment "$parent" --repo "$TICKET_REPO" --body "Paused by the loop driver for dw's stabilization freeze (\`docs/stabilization/FREEZE\` is on \`develop\`; see \`docs/stabilization/ROADMAP.md\`): no stage builds while it holds. Stage #${n%% *} was next. Hand this back with \`owner:lead\` (and drop \`stabilization\`) once the freeze lifts, and the build resumes where it stopped." >/dev/null \
+        && gh issue comment "$parent" --repo "$TICKET_REPO" --body "Paused by the loop driver for dw's stabilization freeze (\`docs/stabilization/FREEZE\` is on \`develop\`; see \`docs/stabilization/ROADMAP.md\`): no stage builds while it holds. Stage #${n%% *} was next. When the freeze lifts the loop hands this back to \`owner:lead\` itself, and the build resumes where it stopped." >/dev/null \
         || echo "[lead:#$parent] could not park (gh failed)" | tee -a "$LOOP_LOG"
       continue
     fi
@@ -757,25 +786,41 @@ $(issue_context "$n")" \
   fi
 }
 
-# reviewer_pass — one docs review per fix the tester can't observe: handed
-# off with the docs-review label because it changed only files neither the
-# server nor the plugin serves (#420 sat with Don for want of this: the
-# tester, correctly, could neither see the README nor read the diff). The
-# reviewer reads the merged tree, so its cwd is the plugin tree, the
+# reviewer_pass docs|arch — the read-only reviewer, one session per issue in
+# its queue. docs: a fix the tester can't observe, handed off with the
+# docs-review label because it changed only files neither the server nor the
+# plugin serves (#420 sat with Don for want of this: the tester, correctly,
+# could neither see the README nor read the diff). arch: a hand-off that
+# changed dw/ or dw_mcp/ (arch_review_after), reviewed against dw's
+# docs/ARCHITECTURE.md as it stands in the tree, before the tester verifies.
+# The reviewer reads the merged tree, so its cwd is the plugin tree, the
 # driver's detached worktree at origin/develop, refreshed just before the
 # tester pass. Read-only: it can't change the tree it reviews. Setting
 # sources are local only, not ISOLATION_FLAGS' project,local: the dw repo's
 # checked-in .claude/settings.json allows pip install, pytest and curl, and
 # under dontAsk a project allow rule would widen this allowlist.
 reviewer_pass() {
-  local n
+  local kind="$1" n what range
   shared_passes_here || { echo "[reviewer] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
   while IFS= read -r n; do
     [ -n "$n" ] || continue
-    still_ready "$n" reviewer:docs \
+    still_ready "$n" "reviewer:$kind" \
       || { echo "[reviewer:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
-    run_agent reviewer "#$n" "$REVIEWER_BUDGET_USD" "$PLUGIN_TREE" "$REVIEWER_PROVIDER" "$REVIEWER_MODEL" "$REVIEWER_EFFORT" docs \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a DOCS REVIEW session for issue #$n only. Then stop.
+    what="a DOCS REVIEW session"
+    if [ "$kind" = arch ]; then
+      range="$(gh issue view "$n" --repo "$TICKET_REPO" --json comments \
+        --jq '[.comments[].body | select(startswith("<!-- harnest:arch-review ")) | split("\n")[0] | ltrimstr("<!-- harnest:arch-review ") | rtrimstr(" -->")] | last // ""' 2>/dev/null)"
+      if [ -z "$range" ]; then  # no driver marker: the label was added by hand
+        what="an ARCHITECTURE REVIEW session. There is no arch-review marker from the driver: the hand-off comment names the commits."
+      else
+        what="an ARCHITECTURE REVIEW session. The change is \`git diff ${range% *} ${range#* }\` under dw/ and dw_mcp/ (from the driver's arch-review marker); its commits that name #$n are this issue's, the rest of the range is other work:
+$(git -C "$PLUGIN_TREE" log --format='%h %s' "${range% *}..${range#* }" -- dw dw_mcp 2>/dev/null | head -30)"
+      fi
+    fi
+    run_agent reviewer "#$n" "$REVIEWER_BUDGET_USD" "$PLUGIN_TREE" "$REVIEWER_PROVIDER" "$REVIEWER_MODEL" "$REVIEWER_EFFORT" "$kind" \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is $what
+
+It is for issue #$n only. Then stop.
 
 Your working directory is the merged tree at origin/develop @ $(git -C "$PLUGIN_TREE" rev-parse --short HEAD 2>/dev/null || echo unknown).
 
@@ -783,7 +828,7 @@ The issue as of $(ts) — start from this rather than fetching it; gh is for act
 
 $(issue_context "$n")" \
       "${MCP_FLAGS[@]}" --setting-sources local --tools "$REVIEWER_TOOLS" "${REVIEWER_PERMISSION_FLAGS[@]}"
-  done < <(queue_issues reviewer:docs | cut -f1)
+  done < <(queue_issues "reviewer:$kind" | cut -f1)
 }
 
 # curator_pass — one review session per suite-change request on this repo
@@ -798,6 +843,7 @@ curator_pass() {
   # tests (R14; settled after the 0.5.0 cut). Requests wait for the cut.
   freeze="$(release_freeze)"
   if [ -n "$freeze" ]; then echo "[curator] held: release freeze $freeze" | tee -a "$LOOP_LOG"; return 0; fi
+  consolidation_pass
   local -a reqs=()
   # Not filtered on status:needs-approval: Don hands an escalation back by
   # removing owner:don, and often clears the status too. Any open request
@@ -820,6 +866,66 @@ $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
     commit_suite_changes "regression: curator applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
       || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   done
+}
+
+# consolidation_pass — the curator's weekly cadence (lib/consolidation.py):
+# dw's scripts/arch_report.py on the plugin tree (origin/develop), its
+# change-coupling and hotspot tables compared with last week's, kept in
+# logs/consolidation.json. Files at most three `consolidation` + owner:don
+# issues for coupling that moved, nothing when nothing did, and fixes
+# nothing. Off while develop has no arch_report.py; a failed report is
+# logged and retried next cycle.
+consolidation_pass() {
+  local py="$SOURCE_DIR/venv/bin/python"
+  [ -x "$py" ] || py=python3
+  python3 "$HARNEST_LIB/consolidation.py" run --tree "$PLUGIN_TREE" --python "$py" \
+    --state "$LOGS/consolidation.json" --repo "$TICKET_REPO" 2>&1 | sed 's/^/[curator:consolidation] /' | tee -a "$LOOP_LOG" || true
+}
+
+# unpark_pass — once each time dw's stabilization freeze lifts (stamped in
+# logs/.unparked-stabilization, cleared while frozen): every open issue the
+# freeze parked (stabilization + owner:don) gets the owner it had before the
+# park back, from its label history, or stays with Don with a one-line
+# comment saying why. It stays when the history has no owner to restore,
+# when Don's own park (status:needs-approval) is on it, or when the park
+# names a rule that outlives the freeze (the hot zone, the ratchet).
+unpark_pass() {
+  local stamp="$LOGS/.unparked-stabilization" n prev why since text report=""
+  if [ "$DW_FROZEN" != 0 ]; then rm -f "$stamp"; return 0; fi
+  [ ! -e "$stamp" ] || return 0
+  shared_passes_here || return 0
+  local -a parked=()
+  while IFS= read -r n; do [ -n "$n" ] && parked+=("$n"); done < <(
+    gh issue list --repo "$TICKET_REPO" --state open --label stabilization --label owner:don --limit 100 \
+      --json number --jq '.[].number' || echo FAILED)
+  case " ${parked[*]-} " in *" FAILED "*) echo "[lead:unpark] could not list stabilization issues; next cycle" | tee -a "$LOOP_LOG"; return 0 ;; esac
+  for n in ${parked[@]+"${parked[@]}"}; do
+    # When the park landed (the latest stabilization label), and the owner
+    # removed at or before that moment: one gh edit moved both.
+    since="$(gh api --paginate "repos/$TICKET_REPO/issues/$n/events" \
+      --jq '.[] | select(.event == "labeled" and .label.name == "stabilization") | .created_at' 2>/dev/null | tail -1)"
+    prev="$(gh api --paginate "repos/$TICKET_REPO/issues/$n/events" \
+      --jq '.[] | select(.event == "unlabeled" and (.label.name | startswith("owner:")) and .label.name != "owner:don") | "\(.created_at)\t\(.label.name)"' 2>/dev/null \
+      | awk -F'\t' -v t="$since" 't == "" || $1 <= t { p = $2 } END { print p }')"
+    text="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels,comments 2>/dev/null \
+      | jq -r --arg t "$since" '([.labels[].name] | join(",")) + "\n" + ([.comments[] | select(.createdAt >= $t) | .body] | join("\n"))' 2>/dev/null)"
+    why=""
+    if [ -z "$prev" ]; then why="its label history has no owner from before the park to restore"
+    elif printf '%s' "$text" | head -1 | grep -q 'status:needs-approval'; then why="it also carries status:needs-approval, your park"
+    elif printf '%s' "$text" | grep -qiE 'hot[- ]zone'; then why="it was parked by the hot-zone rule, which outlives the freeze"
+    elif printf '%s' "$text" | grep -qiE 'ratchet|arch_metrics|[a-z_]+: [0-9]+ -> [0-9]+'; then why="it was parked by the architecture ratchet, which outlives the freeze (arch-approved and a baseline.json raise waive it)"
+    fi
+    if [ -z "$why" ]; then
+      gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:don --remove-label stabilization --add-label "$prev" >/dev/null \
+        && gh issue comment "$n" --repo "$TICKET_REPO" --body "Unparked by the loop driver: dw's stabilization freeze has lifted (\`docs/stabilization/FREEZE\` left \`develop\`), so this goes back to \`$prev\`, its owner before the park." >/dev/null \
+        && report="$report #$n->$prev" || report="$report #$n:gh-failed"
+    else
+      gh issue comment "$n" --repo "$TICKET_REPO" --body "Left with Don after dw's stabilization freeze lifted: $why." >/dev/null \
+        && report="$report #$n:left($why)" || report="$report #$n:gh-failed"
+    fi
+  done
+  echo "[lead:unpark] freeze lifted; stabilization issues:${report:- none}" | tee -a "$LOOP_LOG"
+  date > "$stamp"
 }
 
 # nightly_regression_pass: run-regression.sh once a day (REGRESSION_NIGHTLY_AT),
@@ -887,9 +993,11 @@ while true; do
   DEPLOYED_HEAD="$(deployed_head)"
   echo "[loop] $SERVER_NAME is running: $DEPLOYED_HEAD" | tee -a "$LOOP_LOG"
   # dw's stabilization freeze (lib/freeze.py): features_pass and lead_pass
-  # hold new work; guard.py refuses new surface at hand-off and push.
+  # hold new work; guard.py refuses new surface at hand-off and push. When
+  # it lifts, unpark_pass hands back what it parked, once.
   if dw_frozen; then DW_FROZEN=1; echo "[loop] dw stabilization freeze: docs/stabilization/FREEZE is on develop" | tee -a "$LOOP_LOG"
   else DW_FROZEN=0; fi
+  step unpark_pass unpark_pass
 
   step features_pass features_pass
   step implementer_pass implementer_pass
@@ -905,10 +1013,13 @@ while true; do
   else
     echo "[loop] WARNING: could not refresh the plugin tree; the tester loads the previous one" | tee -a "$LOOP_LOG"
   fi
+  # Before the tester: a hand-off that changed dw/ or dw_mcp/ is reviewed
+  # against dw's map first, so a bounce costs no GPU verify.
+  step arch_review_pass reviewer_pass arch
   step tester_pass tester_pass
   # After the tester: a verify that finds a docs-only fix it can't observe
   # reroutes it here (docs-review), and it is reviewed the same cycle.
-  step reviewer_pass reviewer_pass
+  step reviewer_pass reviewer_pass docs
 
   # The tester is the only agent in this loop that edits the regression suite
   # files (it adds a case once it has verified it over MCP; the implementer

@@ -6,6 +6,8 @@
 . "$(dirname "$0")/lib.sh"
 guard="$HARNEST/agent-settings/hooks/guard.py"
 export HARNEST_ARCH_TOOLS="json"   # the stand-in needs nothing beyond the standard library
+# A rise asks GitHub whether the issue carries arch-approved: #7 does, #8 doesn't
+stub_gh 'case "$*" in *"view 7"*) echo true ;; *"view 8"*) echo false ;; *) exit 1 ;; esac'
 
 g() { git -C "$1" -c user.name=t -c user.email=t@t "${@:2}" >/dev/null 2>&1; }
 script() {  # script <version-tag>: the stand-in, whose only difference between versions is what it counts
@@ -44,9 +46,9 @@ mkdir "$T/a" "$T/b"; mk "$T/a" 1; mk "$T/b" 0
 w="$T/a/work"; s="$T/a/seed"
 branch() { g "$w" checkout -q -B "$1" origin/develop; }
 edit() { mkdir -p "$w/$(dirname "$2")"; printf '%s\n' "$3" >> "$w/$2"; g "$w" add -A; g "$w" commit -m "$1 $2"; }
-# hrow <expect> <name> [dir]: the hand-off, from that checkout's HEAD; the message lands in $out
+# hrow <expect> <name> [dir] [issue]: the hand-off, from that checkout's HEAD; the message lands in $out
 hrow() {
-  out="$(jq -n --arg c "gh issue edit 8 --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify" \
+  out="$(jq -n --arg c "gh issue edit ${4:-8} --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify" \
      --arg d "${3:-$w}" '{tool_name: "Bash", tool_input: {command: $c}, cwd: $d}' | python3 "$guard" implementer 2>&1 >/dev/null)"
   eq "ratchet hand-off: $2" "$1" $?
 }
@@ -66,8 +68,8 @@ branch fix-worse; edit fix-worse dw/a.py '# complex'
 hrow 2 "a complex function added"
 has "  names the metric and both values" "complex_functions: 1 -> 2" "$out"
 has "  says how to bring it down" "patch.object" "$out"
-has "  says what to do if it can't" "--add-label stabilization" "$out"
-has "  says no label waives it" "No label waives the ratchet" "$out"
+has "  says what to do if it can't: park for Don" "--add-label owner:don --add-label status:needs-approval" "$out"
+has "  says only Don's label, with a baseline raise, waives it" "Only Don's \`arch-approved\` waives it, and only with a matching docs/stabilization/baseline.json raise" "$out"
 # unchanged, and an improvement, are allowed
 branch fix-same; edit fix-same README.md 'more'
 hrow 0 "no metric moved"
@@ -76,6 +78,51 @@ hrow 0 "a metric improved"
 branch fix-mixed; edit fix-mixed dw/c.py 'new module'
 hrow 2 "one metric up (modules) is enough, even beside an unchanged one"
 has "  the message says which" "modules: 2 -> 3" "$out"
+
+# --- the one waiver (stage C): a new dw/ module raises `modules`. Refused
+# without arch-approved; with it, only when the same commits raise
+# baseline.json by exactly what rose, in a commit naming the rise and why.
+# The hot zone covers docs/stabilization/, and stays out of the way only
+# for a waived raise.
+mkdir -p "$s/docs/stabilization"
+printf '{\n  "modules": 2,\n  "complex_functions": 1\n}\n' > "$s/docs/stabilization/baseline.json"
+printf 'docs/stabilization/\n' > "$s/docs/stabilization/hot-zone.txt"
+g "$s" add -A; g "$s" commit -m "baseline and hot zone"; g "$s" push origin develop; g "$w" fetch -q origin
+raise() {  # raise <modules> <message>: a commit setting baseline.json's modules
+  printf '{\n  "modules": %s,\n  "complex_functions": 1\n}\n' "$1" > "$w/docs/stabilization/baseline.json"
+  g "$w" add -A; g "$w" commit -m "$2"
+}
+why='baseline: raise modules 2 -> 3
+
+dw/c.py is the new owner of the X rule (approved on the issue).'
+branch mod-bare; edit mod-bare dw/c.py 'new module'
+hrow 2 "a new dw/ module, without arch-approved"
+has "  names the metric and both values" "modules: 2 -> 3" "$out"
+hrow 2 "  with arch-approved but no baseline.json raise" "$w" 7
+has "  says the paperwork is missing" "does not raise it" "$out"
+branch mod-ok; edit mod-ok dw/c.py 'new module'; raise 3 "$why"
+hrow 0 "  with arch-approved and the matching raise" "$w" 7
+hrow 2 "  the same commits without the label: refused (the hot zone, then the ratchet)" "$w" 8
+has "  by the hot zone first" "hot-zone.txt" "$out"
+g "$w" checkout -q -B develop mod-ok
+prow_issue() { out="$(jq -n --arg c "git push origin develop" --arg d "$w" '{tool_name: "Bash", tool_input: {command: $c}, cwd: $d}' \
+  | HARNEST_ISSUE="$1" python3 "$guard" implementer 2>&1 >/dev/null)"; eq "ratchet push (HARNEST_ISSUE=$1): $2" "$3" $?; }
+prow_issue 7 "the waived rise, pushed from its issue's session" 0
+prow_issue "" "the same push from a session with no issue" 2
+branch mod-big; edit mod-big dw/c.py 'new module'; raise 5 "$why"
+hrow 2 "  a raise bigger than the rise" "$w" 7
+has "  says by how much" "should raise it to 3, not 5" "$out"
+branch mod-terse; edit mod-terse dw/c.py 'new module'; raise 3 "baseline: raise modules 2 -> 3"
+hrow 2 "  a raise whose commit gives no why (no body)" "$w" 7
+has "  says so" "says why in its body" "$out"
+branch mod-extra; edit mod-extra dw/c.py 'new module'
+printf '{\n  "modules": 3,\n  "complex_functions": 2\n}\n' > "$w/docs/stabilization/baseline.json"; g "$w" add -A
+g "$w" commit -m "$why"
+hrow 2 "  a raise of a metric that didn't rise" "$w" 7
+has "  names it" "raises complex_functions, which did not rise" "$out"
+branch mod-replace; g "$w" rm -q dw/b.py; edit mod-replace dw/c.py 'replaces b'
+hrow 0 "a module that replaces another raises nothing" "$w" 8
+g "$s" rm -q docs/stabilization/hot-zone.txt; g "$s" commit -m "no hot zone"; g "$s" push origin develop; g "$w" fetch -q origin
 
 # develop improves while a session runs (a marker goes away): a branch cut
 # before it, with a neutral change of its own, is not blamed, merged or not

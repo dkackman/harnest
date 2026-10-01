@@ -23,19 +23,24 @@ implementer:
     ruff clean on the changed files, the UI's check/lint/test passing when
     ui/ changed, and no pytest failure that isn't also failing on
     HARNEST_BASE_COMMIT (see handoff_gate)
-  - dw's stabilization freeze (lib/freeze.py; while docs/stabilization/FREEZE
-    is on origin/develop): a hand-off, or a push of develop from a session
-    the driver gave an issue (HARNEST_ISSUE), whose own commits add a file
-    under dw/, dw_mcp/, workflows/, prompts/ or plugins/ (unless the issue
-    carries `arch-approved`), or change a hot-zone.txt path (no escape).
-    See freeze_gate. Also any `gh pr merge`, or `gh api` call to a PR's
-    merge endpoint, into develop (or whose base can't be read): a merge
-    there never shows up as a push. See pr_merge_base
-  - dw's architecture ratchet (lib/arch_ratchet.py; on while
-    scripts/arch_metrics.py exists on origin/develop, freeze or not): a
-    hand-off, or any push of develop, whose own commits make a metric worse
-    than at their merge base with origin/develop. Fails closed when the
-    script can't run. No label waives it. See ratchet_gate
+  - dw's architecture, at a hand-off and at any push of develop, on the
+    work's own commits (three dots from origin/develop). See arch_gate.
+    Each switch is a file on origin/develop, read by lib/:
+    - the hot zone (hot-zone.txt, FREEZE or not): no change to a listed
+      path, and no label lifts it; the one exception is baseline.json in
+      a waived ratchet rise
+    - the metrics ratchet (scripts/arch_metrics.py): no metric worse than
+      at the merge base. Fails closed when the script can't run. Waived
+      only by `arch-approved` with matching paperwork: the same commits
+      raise baseline.json by exactly what rose, in a commit that names the
+      rise and why (arch_ratchet.waiver_problems)
+    - the stabilization freeze (FREEZE): no new file under dw/, dw_mcp/,
+      workflows/, prompts/ or plugins/ unless the issue carries
+      `arch-approved` (a push checks this only when the driver gave the
+      session an issue, HARNEST_ISSUE)
+    Also any `gh pr merge`, or `gh api` call to a PR's merge endpoint, into
+    develop (or whose base can't be read) while any of the three is on: a
+    merge there never shows up as a push. See pr_merge_base
 lead (the feature lead's design and decompose sessions, via `guard_settings lead` in providers.sh; its
 build and close-out sessions commit and push, so they run with
 implementer.json and get the implementer's rules, push checks and
@@ -47,8 +52,12 @@ every role:
     alone (roadmap R11), so no agent can approve the plan it wrote
   - no adding `release` or `release-blocker`: a freeze, and what moves
     during one, are Don's (roadmap R14)
-  - no adding `arch-approved` (edit or create): new surface during dw's
-    stabilization freeze is Don's call
+  - no adding `arch-approved` (edit or create): it waives a freeze's
+    new-surface refusal, a ratchet rise, and an architecture review's
+    blocking finding, all Don's calls
+  - no adding `arch-review`, and no removing it except by the reviewer: the
+    driver adds it to queue an architecture review of a hand-off that
+    changed dw/ or dw_mcp/, and the reviewer's verdict removes it
   - no `security` label on an issue: a security finding goes to a private
     draft advisory (scripts/file-advisory.sh), never the public tracker,
     where it would publish the exploit path (roadmap R14 item 3)
@@ -67,6 +76,8 @@ reviewer (docs review sessions, via `guard_settings reviewer`):
   - never adds `status:verified`: that label claims an MCP check, and a
     reviewed close carries `status:reviewed` instead
   - no lifting a park, and the one-owner rule, as for the implementer
+  - in an architecture review (HARNEST_SESSION_KIND=arch), no close at all:
+    a review passes the fix on to the tester or bounces it
 consumer (tester, regression):
   - closing as completed or adding `status:verified` needs at least one
     `mcp__dw__*` call earlier in the session ("only from a real MCP call").
@@ -375,46 +386,54 @@ def handoff_gate(cwd):
         fh.write(tree + " " + base + "\n")
 
 
-def freeze_gate(checkout, src, arch_approved):
-    """dw's stabilization freeze: refuse when src's own commits (three dots
-    from origin/develop, see lib/freeze.py) add surface or touch the hot
-    zone. arch_approved() asks GitHub, and only when a new file needs it.
-    The same gate at a hand-off and at a push of develop, because a fix is
-    usually merged and pushed before it's handed off."""
+def arch_gate(checkout, src, arch_approved=None):
+    """dw's architecture at a hand-off or a push of develop: the hot zone,
+    the metrics ratchet and, while frozen, new surface, on src's own commits
+    (three dots from origin/develop; lib/freeze.py and lib/arch_ratchet.py
+    hold the switches). arch_approved() asks GitHub whether the issue carries
+    `arch-approved`, and is asked only when a rule could be waived by it;
+    None when no issue is known (a push without HARNEST_ISSUE), which waives
+    nothing and skips the new-surface rule, as before. The same gate at both
+    moments, because a fix is usually merged and pushed before it's handed off."""
     if subprocess.run(["git", "-C", checkout, "rev-parse", "--git-dir"], capture_output=True).returncode:
         return
-    hot = freeze.freeze_state(checkout)
-    if hot is None:
-        return
-    found = freeze.violations(checkout, src, hot)
-    hot_paths = [p for r, p in found if r == "hot-zone"]
-    if hot_paths:
-        rule, why = "hot-zone", ("change %s, which the refactor is restructuring "
-                                 "(docs/stabilization/hot-zone.txt; no label lifts this)" % hot_paths[0])
-    elif found and not arch_approved():
-        rule, why = "new-surface", ("add %s: new surface, which needs Don's `arch-approved` label "
-                                    "on the issue" % found[0][1])
-    else:
-        return
-    deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and this "
-         "work's own commits %s. Don't work around it: `gh issue edit N --remove-label owner:<yours> "
-         "--add-label owner:don --add-label stabilization`, then comment which rule fired (%s) and on "
-         "which path, and stop." % (why, rule))
-
-
-def ratchet_gate(checkout, src):
-    """dw's architecture ratchet (lib/arch_ratchet.py): refuse when src's own
-    commits make any scripts/arch_metrics.py number worse than the merge base
-    with origin/develop. Independent of the freeze. Fails closed: a script
-    that can't run refuses, with the install command."""
-    if subprocess.run(["git", "-C", checkout, "rev-parse", "--git-dir"], capture_output=True).returncode:
-        return
+    is_frozen = freeze.frozen(checkout)
+    found = freeze.violations(checkout, src, freeze.hot_zone(checkout, fetch=False), is_frozen)
     try:
         worse = arch_ratchet.check(checkout, src)
     except arch_ratchet.ToolError as e:
         deny(str(e))
-    if worse:
-        deny("dw's architecture ratchet: " + arch_ratchet.refusal(worse))
+    approved = []
+    def is_approved():
+        if not approved:
+            approved.append(arch_approved is not None and arch_approved())
+        return approved[0]
+    problems = arch_ratchet.waiver_problems(checkout, worse, src) if worse and is_approved() else None
+    waived = bool(worse) and problems == []
+    park = ("Don't work around it: `gh issue edit N --remove-label owner:<yours> --add-label owner:don "
+            "--add-label stabilization`, then comment which rule fired (%s) and on which path, and stop.")
+    # baseline.json in an approved rise is the waiver's to judge: refused below unless its paperwork holds
+    hot = [p for r, p in found if r == "hot-zone" and not (problems is not None and p == arch_ratchet.BASELINE)]
+    if hot:
+        deny("this work's own commits change %s, which dw is restructuring (docs/stabilization/hot-zone.txt "
+             "on origin/develop; no label lifts this). %s" % (hot[0], park % "hot-zone"))
+    new = [p for r, p in found if r == "new-surface"]
+    if new and arch_approved is not None and not is_approved():
+        deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and this work's "
+             "own commits add %s: new surface, which needs Don's `arch-approved` label on the issue. %s"
+             % (new[0], park % "new-surface"))
+    if worse and not waived:
+        deny("dw's architecture ratchet: " + arch_ratchet.refusal(worse, problems))
+
+
+def merge_gated(cwd):
+    """Whether a PR merge into develop must be refused: true while any of
+    arch_gate's switches is on, since a merge on GitHub is never a push
+    the gate sees. A switch that can't be read counts as on."""
+    try:
+        return freeze.frozen(cwd) or bool(freeze.hot_zone(cwd, fetch=False)) or arch_ratchet.active(cwd, fetch=False)
+    except arch_ratchet.ToolError:
+        return True
 
 
 def pr_merge_base(words):
@@ -588,10 +607,20 @@ def main():
             if {"release", "release-blocker"} & set(flag_values(words, "--add-label")):
                 deny("release and release-blocker are Don's to add: a freeze, and what may move during "
                      "one, are his calls (R14).")
-        if (is_gh_issue(words, "edit") and "arch-approved" in flag_values(words, "--add-label")) \
-                or (is_gh_issue(words, "create") and "arch-approved" in flag_values(words, "--label", "-l")):
-            deny("arch-approved is Don's to add: new surface during dw's stabilization freeze is his call.")
+        added = flag_values(words, "--add-label") if is_gh_issue(words, "edit") else \
+            flag_values(words, "--label", "-l") if is_gh_issue(words, "create") else []
+        if "arch-approved" in added:
+            deny("arch-approved is Don's to add: it waives new surface during a freeze, a ratchet rise and an "
+                 "architecture review's blocking finding, each his call.")
+        if "arch-review" in added:
+            deny("arch-review is the loop driver's: it queues the architecture review of a hand-off that "
+                 "changed dw/ or dw_mcp/.")
+        if is_gh_issue(words, "edit") and "arch-review" in flag_values(words, "--remove-label") and role != "reviewer":
+            deny("only the reviewer removes arch-review, with its verdict: the architecture review comes "
+                 "before the tester's.")
         if role == "reviewer":
+            if os.environ.get("HARNEST_SESSION_KIND") == "arch" and is_gh_issue(words, "close"):
+                deny("an architecture review closes nothing: pass the fix on (remove arch-review) or bounce it.")
             if adds_verified(words):
                 deny("status:verified claims an MCP check; a docs review adds status:reviewed instead.")
         if role in ("implementer", "lead", "reviewer"):
@@ -611,23 +640,18 @@ def main():
             if problem:
                 deny(problem)
             if is_gh_issue(words, "edit") and "status:fixed-pending-verify" in flag_values(words, "--add-label"):
-                freeze_gate(cwd, "HEAD", lambda: issue_has_label(words, "arch-approved"))
-                ratchet_gate(cwd, "HEAD")
+                arch_gate(cwd, "HEAD", lambda: issue_has_label(words, "arch-approved"))
                 handoff_gate(cwd)
             base = pr_merge_base(words)
-            if base in ("", "develop") and freeze.freeze_state(cwd) is not None:
-                deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and "
-                     "this merges a PR into develop%s, where the freeze gate can't see what it adds. Don't "
-                     "work around it: `gh issue edit N --remove-label owner:<yours> --add-label owner:don "
-                     "--add-label stabilization`, then comment which rule fired (pr-merge) and on which PR, "
-                     "and stop." % ("" if base else " (or its base couldn't be read)"))
+            if base in ("", "develop") and merge_gated(cwd):
+                deny("this merges a PR into develop%s on GitHub, where the hot zone, the architecture ratchet "
+                     "and the freeze can't see what it adds. Merge it locally and push develop, which they "
+                     "check." % ("" if base else " (or its base couldn't be read)"))
             issue = os.environ.get("HARNEST_ISSUE", "")
             push = pushed_develop(words, cwd)
-            if push:
-                if issue:
-                    freeze_gate(push[0], push[1], lambda: label_on(
-                        issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True)
-                ratchet_gate(push[0], push[1])  # needs no issue, so it sees sessions the freeze push check can't
+            if push:  # the hot zone and ratchet need no issue; the waiver and new surface do
+                arch_gate(push[0], push[1], (lambda: label_on(
+                    issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True) if issue else None)
         elif role == "consumer":
             # A tester HANDOFF session applies a harness-side edit the
             # implementer asked for and closes the issue as done: nothing

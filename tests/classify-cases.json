@@ -1733,6 +1733,204 @@
   }
  },
  {
+  "name": "architecture review: a hand-off that changed dw/ is reviewed before it is verified",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 130,
+     "title": "t130",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 131,
+     "title": "t131",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-review"
+      },
+      {
+       "name": "arch-approved"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 132,
+     "title": "t132",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-review"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 133,
+     "title": "t133",
+     "labels": [
+      {
+       "name": "owner:implementer"
+      },
+      {
+       "name": "arch-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 134,
+     "title": "t134",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "130": "reviewer:arch",
+   "131": "reviewer:arch",
+   "132": "reviewer:arch",
+   "133": "implementer:fix",
+   "134": "tester:verify"
+  }
+ },
+ {
+  "name": "architecture review: server-free, so another server's loop runs it too",
+  "input": {
+   "owner": "dkackman",
+   "target": "local",
+   "issues": [
+    {
+     "number": 135,
+     "title": "t135",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-review"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "135": "reviewer:arch"
+  }
+ },
+ {
   "name": "release freeze: only release-blockers move",
   "input": {
    "owner": "dkackman",

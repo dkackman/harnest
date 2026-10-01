@@ -81,6 +81,44 @@ eq  "docs review: closed as reviewed" "CLOSED owner:tester,status:reviewed" "$(j
 eq  "docs review: runs in the plugin tree" "$(cd "$T/plugin" && pwd -P)" "$(cd "$(cat "$FAKE_CLAUDE_LOG.cwd")" && pwd -P)"
 eq  "docs review: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
 
+# --- 3b2. an architecture review (stage C): a hand-off whose session moved
+# develop under dw/ is queued for the reviewer by the driver, reviewed from
+# the plugin tree against the map as it stands there, then verified. The
+# map reaches the reviewer only through its tree, never its prompt.
+printf '# Architecture: the seam map\n| Concept | Owner |\n| SENTINEL-ROW | dw/owner.py |\n' > "$T/seed/docs-ARCH.tmp"
+git -C "$T/seed" pull -q origin develop 2>/dev/null; mkdir -p "$T/seed/docs"; mv "$T/seed/docs-ARCH.tmp" "$T/seed/docs/ARCHITECTURE.md"
+git -C "$T/seed" add -A; git -C "$T/seed" -c user.name=t -c user.email=t@t commit -qm map; git -C "$T/seed" push -q origin HEAD:develop 2>/dev/null
+export SHIP='git pull -q origin develop 2>/dev/null; mkdir -p dw; echo "$RANDOM" >> dw/owner.py; git add -A; git -c user.name=t -c user.email=t@t commit -qm "fix: #$N"; git push -q origin HEAD:develop 2>/dev/null; gh issue edit $N --repo o/r --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify'
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 6, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+FAKE_CLAUDE_DO='case "$*" in *"fix session"*) N=6; eval "$SHIP" ;; *"ARCHITECTURE REVIEW session"*) pwd > "$FAKE_CLAUDE_LOG.cwd"; grep -c SENTINEL-ROW docs/ARCHITECTURE.md > "$FAKE_CLAUDE_LOG.map"; gh issue edit 6 --repo o/r --remove-label arch-review ;; *"VERIFY session"*) gh issue edit 6 --repo o/r --remove-label status:fixed-pending-verify --add-label status:verified; gh issue close 6 --repo o/r --reason completed ;; esac' \
+  loop 1
+eq  "arch review: fix, review, verify in one cycle" "implementer:#6 reviewer:#6 tester:#6" "$(grep '^=== ' "$T/loop.out" | sed 's/.*cycle 1: \([a-z]*:#[0-9]*\).*/\1/' | tr '\n' ' ' | sed 's/ $//')"
+has "arch review: the driver queued it, naming the range" "<!-- harnest:arch-review " "$(jq -r '.["o/r"][0].comments[].body' "$T/board.json")"
+eq  "arch review: then verified and closed" "CLOSED owner:tester,status:verified,target:lem" "$(jq -r '.["o/r"][0].state' "$T/board.json") $(labels_of 6)"
+eq  "arch review: runs in the plugin tree" "$(cd "$T/plugin" && pwd -P)" "$(cd "$(cat "$FAKE_CLAUDE_LOG.cwd")" && pwd -P)"
+eq  "arch review: the fixture map is there, read at run time" 1 "$(cat "$FAKE_CLAUDE_LOG.map")"
+has "arch review: its system prompt points at the map" "docs/ARCHITECTURE.md" "$(cat "$T/h/logs/.prompt.reviewer.arch.md")"
+fails "arch review: and never inlines it" grep -q SENTINEL-ROW "$T/h/logs/.prompt.reviewer.arch.md" "$FAKE_CLAUDE_LOG"
+eq  "arch review: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
+# a finding bounces it to the implementer, and the tester never sees it
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 7, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+FAKE_CLAUDE_DO='case "$*" in *"fix session"*) N=7; eval "$SHIP" ;; *"ARCHITECTURE REVIEW session"*) gh issue edit 7 --repo o/r --remove-label arch-review --remove-label status:fixed-pending-verify --remove-label owner:tester --add-label owner:implementer ;; esac' \
+  loop 1
+eq  "arch review bounce: no verify" 0 "$(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
+eq  "arch review bounce: back with the implementer" "owner:implementer,target:lem" "$(labels_of 7)"
+# a hand-off that moved nothing under dw/ or dw_mcp/ goes straight to the tester
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 8, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+FAKE_CLAUDE_DO='case "$*" in *"fix session"*) git pull -q origin develop 2>/dev/null; echo y >> plugins/dw/README; git add -A; git -c user.name=t -c user.email=t@t commit -qm "fix: #8"; git push -q origin HEAD:develop 2>/dev/null; gh issue edit 8 --repo o/r --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify ;; esac' \
+  loop 1
+eq  "no dw/ change: no review, verified directly" "0 1" "$(grep -c 'ARCHITECTURE REVIEW' "$FAKE_CLAUDE_LOG") $(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
+# what follows expects lem, the seed and origin/develop on one commit
+git -C "$T/seed" pull -q origin develop 2>/dev/null; git -C "$T/src" fetch -q origin
+sha="$(git -C "$T/src" rev-parse origin/develop)"
+printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${sha:0:9}" > "$T/bin/ssh"
+
 # --- 3c. stop-after-cycle: the loop finishes the cycle it is in, then exits,
 # and consumes the file so the next start runs normally
 : > "$FAKE_CLAUDE_LOG"
@@ -249,10 +287,27 @@ has "freeze: features_pass says why" "[features] skipping: dw stabilization free
 has "freeze: lead_pass says why" "[lead] skipping builds: dw stabilization freeze" "$(cat "$T/loop.out")"
 eq  "freeze: the feature parks with Don" "feature,owner:don,stabilization,status:plan-approved" "$(labels_of 10)"
 eq  "freeze: its stage waits" "feature,owner:lead,stage" "$(labels_of 11)"
+# The parks' label history (the fake records none), and two more parks:
+# #40 by the hot-zone rule, which outlives the freeze; #41 with no history.
+ev='[{"event": "unlabeled", "label": {"name": "owner:OWNER"}, "created_at": "2026-09-29T10:00:00Z"},
+     {"event": "labeled", "label": {"name": "owner:don"}, "created_at": "2026-09-29T10:00:00Z"},
+     {"event": "labeled", "label": {"name": "stabilization"}, "created_at": "2026-09-29T10:00:00Z"}]'
+jq --argjson e10 "${ev//OWNER/lead}" --argjson e40 "${ev//OWNER/implementer}" '.["o/r"] |= map(if .number == 10 then .events = $e10 else . end)
+  | .["o/r"] += [{"number": 40, "state": "OPEN", "labels": [{"name": "owner:don"}, {"name": "stabilization"}], "events": $e40,
+                  "comments": [{"author": {"login": "dkackman"}, "createdAt": "2026-09-29T10:01:00Z", "body": "Parked: guard refused, rule hot-zone on dw/realize.py"}]},
+                 {"number": 41, "state": "OPEN", "labels": [{"name": "owner:don"}, {"name": "stabilization"}]}]' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/board.json"
 dev_file rm docs/stabilization/FREEZE
 : > "$FAKE_CLAUDE_LOG"
 loop 1
 eq  "freeze lifted: the idea is designed" 1 "$(grep -c 'DESIGN session for issue #22' "$FAKE_CLAUDE_LOG")"
+eq  "unpark: the parked feature has its owner back" "feature,owner:lead,status:plan-approved" "$(labels_of 10)"
+eq  "unpark: and its build resumes" 1 "$(grep -c 'BUILD session for stage #11' "$FAKE_CLAUDE_LOG")"
+eq  "unpark: a hot-zone park stays with Don" "owner:don,stabilization" "$(labels_of 40)"
+has "  with a one-line comment saying why" "Left with Don after dw's stabilization freeze lifted: it was parked by the hot-zone rule" "$(jq -r '.["o/r"][] | select(.number == 40) | .comments[-1].body' "$T/board.json")"
+has "  as does one with no owner in its history" "no owner from before the park" "$(jq -r '.["o/r"][] | select(.number == 41) | .comments[-1].body' "$T/board.json")"
+has "unpark: the log lists what it touched" "[lead:unpark] freeze lifted; stabilization issues: #10->owner:lead #40:left" "$(cat "$T/loop.out")"
+loop 1
+eq  "unpark: once per lift" 0 "$(grep -c '\[lead:unpark\]' "$T/loop.out")"
 
 # --- 7. run-regression: a two-case override suite, one case per session
 : > "$FAKE_CLAUDE_LOG"

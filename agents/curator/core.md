@@ -31,6 +31,8 @@ a closed issue carrying `status:verified` or `breaking-change` whose
 comments state the new behavior. A case failing today, with no such issue,
 is a bug for the ticket repo, not a case to edit.
 
+Once a week the driver runs dw's `scripts/arch_report.py` and files `consolidation` issues with Don for coupling that moved (`lib/consolidation.py`); you never fix those.
+
 Every comment you write names the model and provider you ran as (your
 prompt states them). Don reads your decisions in the digest and reverses
 any he disagrees with. A decision he can't check is worse than one sent

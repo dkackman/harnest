@@ -9,7 +9,7 @@
     FAKE_GH_LOG=<file>     every call is appended, one line each
 
 Covers what the drivers call: issue list/view/edit/comment/close/create,
-api (events, and the comment PATCH), and auth status. --json projects the
+api (events, from an issue's "events" list, and the comment PATCH), and auth status. --json projects the
 fields asked for, and --jq is applied with the real jq.
 """
 import json, os, subprocess, sys
@@ -143,6 +143,12 @@ elif cmd[0] == "api" and "security-advisories" in " ".join(args):
         out(adv)
     else:
         out([a for a in advs if a.get("state") == "draft"])
+elif cmd[0] == "api" and any(a.startswith("repos/") and a.split("?")[0].endswith("/events") for a in args):
+    # an issue's label history: the board issue's own "events", if it has any
+    path_arg = next(a for a in args if a.startswith("repos/") and a.split("?")[0].endswith("/events"))
+    repo, n = repo_of_api(args), path_arg.split("/")[-2]
+    issues = board.setdefault(repo, [])
+    out(next((i.get("events", []) for i in issues if str(i["number"]) == n), []))
 elif cmd[0] == "api":
     out([])
 else:

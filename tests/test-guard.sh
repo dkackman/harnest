@@ -180,10 +180,21 @@ rrow 0 'gh issue list --repo o/r --label target:local'
 # --- dw's stabilization freeze (lib/freeze.py, freeze_gate): a real checkout
 # with a throwaway origin, whose develop holds FREEZE and hot-zone.txt. The
 # stub says #7 carries arch-approved, #8 doesn't.
-for r in implementer lead consumer; do
+for r in implementer lead consumer reviewer curator; do
   row 2 $r "" $none 'gh issue edit 5 --add-label arch-approved'
   row 2 $r "" $none 'gh issue create --title x --label bug,arch-approved'
+  row 2 $r "" $none 'gh issue edit 5 --add-label arch-review'
 done
+# arch-review is the driver's; only the reviewer's verdict removes it, and an
+# architecture review closes nothing
+for r in implementer lead consumer; do
+  row 2 $r "" $none 'gh issue edit 5 --remove-label arch-review'
+done
+row 0 reviewer arch $none 'gh issue edit 5 --remove-label arch-review'
+row 0 reviewer arch $none 'gh issue edit 5 --remove-label arch-review --remove-label status:fixed-pending-verify --remove-label owner:tester --add-label owner:implementer'
+row 2 reviewer arch $none 'gh issue close 5 --reason completed'
+row 2 reviewer arch $none 'gh issue close 5 --reason "not planned"'
+row 0 reviewer docs $none 'gh issue close 5 --reason completed'
 row 0 implementer "" $none 'gh issue edit 5 --add-label stabilization'
 g() { git -C "$1" -c user.name=t -c user.email=t@t "${@:2}" >/dev/null 2>&1; }
 git init -q --bare "$T/origin.git"; git init -q -b develop "$T/seed"
@@ -236,6 +247,8 @@ prow 2 "" 'gh pr merge 99 --squash'
 prow 0 "" 'gh pr merge 13 --merge'
 prow 0 "" 'gh api -X PUT /repos/o/r/pulls/13/merge'
 prow 0 "" 'gh pr view 12'
+branch fix-template workflows/templates/new.json '{}'
+hrow 2 8 "a new workflows/ template, frozen"
 branch fix-hot dw/realize.py b
 hrow 2 8 "a hot-zone file"
 hrow 2 7 "a hot-zone file, arch-approved"
@@ -247,10 +260,26 @@ branch fix-merged tests/test_a.py b
 echo refactored > "$T/seed/dw/realize.py"; g "$T/seed" commit -am refactor; g "$T/seed" push origin develop
 g "$w" fetch -q origin; g "$w" merge -q --no-edit origin/develop
 hrow 0 8 "merged a newer develop's hot-zone change, none of its own"
-# the freeze lifts when FREEZE leaves develop, with no harness change
+# the hot zone is read from origin/develop, not the session's commit: a branch
+# cut before dw/runner.py went hot is refused once it is, and even its own
+# copy of hot-zone.txt (without the entry) doesn't count
+branch fix-late dw/runner.py c
+printf '# Phase 0\ndw/realize.py\ndw/runner.py\ndocs/stabilization/\n' > "$T/seed/docs/stabilization/hot-zone.txt"
+g "$T/seed" commit -am "runner goes hot"; g "$T/seed" push origin develop; g "$w" fetch -q origin
+hrow 2 8 "a path that went hot on develop after the branch was cut"
+# the freeze lifts when FREEZE leaves develop, with no harness change: new
+# surface is ordinary work again, the hot zone stays for as long as
+# hot-zone.txt does, and so does the PR-merge refusal it needs
 g "$T/seed" rm -q docs/stabilization/FREEZE; g "$T/seed" commit -m lift; g "$T/seed" push origin develop
-g "$w" checkout -q fix-new; hrow 0 8 "a new file under dw/, freeze lifted"
-prow 0 "" 'gh pr merge 12 --merge'
-g "$w" checkout -q fix-hot; hrow 0 8 "a hot-zone file, freeze lifted"
+g "$w" checkout -q fix-new; hrow 0 8 "a new file under dw/, freeze lifted (no ratchet in this fixture)"
+g "$w" checkout -q fix-template; hrow 0 8 "a new workflows/ template, freeze lifted"
+g "$w" checkout -q fix-hot; hrow 2 8 "a hot-zone file, freeze lifted: the hot zone outlives it"
+hrow 2 7 "  and arch-approved doesn't lift it"
+g "$w" checkout -q -B develop fix-hot; prow 2 "" 'git push origin develop'
+prow 2 "" 'gh pr merge 12 --merge'
 ok "freeze.py active: lifted" bash -c "! python3 '$HARNEST/lib/freeze.py' active '$w'"
+# with hot-zone.txt gone too, nothing here is gated
+g "$T/seed" rm -q docs/stabilization/hot-zone.txt; g "$T/seed" commit -m "no hot zone"; g "$T/seed" push origin develop
+g "$w" checkout -q fix-hot; hrow 0 8 "a former hot-zone file, hot-zone.txt gone"
+prow 0 "" 'gh pr merge 12 --merge'
 finish

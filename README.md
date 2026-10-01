@@ -85,7 +85,8 @@ never one per role.
    and files anything it hits. On the cycles in between, a pending `wontfix`/`duplicate`
    closure gets its own short session, so the tester can accept it or reopen it once.
 7. **Docs review.** The docs reviewer closes or bounces each `docs-review` fix, including
-   one the tester rerouted this cycle.
+   one the tester rerouted this cycle. (A hand-off that changed `dw/` or `dw_mcp/` gets the
+   same reviewer's architecture review, against dw's `docs/ARCHITECTURE.md`, just before step 6.)
 8. **Suite upkeep.** The driver commits any cases the tester added, and the curator rules
    on pending requests to change a case.
 9. **Print a status board** queried live from GitHub, with a line for a release freeze
@@ -188,6 +189,8 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Reverse a curator ruling (harnest) | Reopen it with a comment saying what you want instead. |
 | Let an outside filer's issue into the loop | Hand it back as in the first row. It is never re-parked after that. |
 | Handle a private security finding | `./scripts/file-advisory.sh --list` (also on the board line and in the digest). Fix it out of band, or hand it to the implementer yourself without the details going public; publish the advisory once the fix ships, or close it. |
+| Approve an architecture exception | Add `arch-approved` to the issue and hand it back. It waives a blocking architecture-review finding, and a metrics-ratchet rise (a new `dw/` module) when the same work raises `docs/stabilization/baseline.json` by exactly that rise, in a commit saying why. |
+| Rule on a `consolidation` issue (filed weekly from dw's `arch_report.py`) | Plan it: swap `owner:don` for `owner:lead`. Or close it. |
 | Freeze for a release | Open an issue titled with the version (`Release 0.5.0`), labeled `release` + `owner:don`. Until you close it, only issues labeled `release-blocker` move, and the tester's standing task is held. Add `release-blocker` to what must land first. |
 | Send a Mac issue to lem (or fix a wrong claim) | `gh issue edit <n> --remove-label target:local --add-label target:lem`. lem's loop deploys `develop`, which has any Mac fix. |
 | Correct an issue's backend | Swap its `backend:` label. `cuda` keeps it off the Mac loop, `mps` off lem's. |

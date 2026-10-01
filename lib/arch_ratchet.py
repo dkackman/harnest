@@ -4,6 +4,7 @@ make any of dw's scripts/arch_metrics.py numbers worse.
 
     python3 lib/arch_ratchet.py check <checkout> [src]   exit 0 ok, 1 regressed, 2 tool failure
     python3 lib/arch_ratchet.py ready <checkout>         exit 0 when the tools import (or the ratchet is off)
+    python3 lib/arch_ratchet.py active <checkout>        exit 0 while on, 1 off, 2 can't tell (no fetch)
 
 "Worse" is HEAD (or src) against its merge base with origin/develop, never
 against docs/stabilization/baseline.json: the refactor improves develop while
@@ -20,11 +21,18 @@ loaded from that same file, key by key, skipping a key either side lacks.
 On while scripts/arch_metrics.py exists on origin/develop, FREEZE or not.
 A script that cannot run raises ToolError: the caller fails closed. guard.py
 (hand-off, push of develop) and the driver (ensure_arch_tools) both use this.
+
+One waiver (stage C): Don's `arch-approved` on the issue, honoured only with
+its paperwork (waiver_problems): the same commits raise
+docs/stabilization/baseline.json by exactly the metrics that rose, in a
+commit whose message names each and says why. That check is the only
+reader of baseline.json; the detector never compares against it.
 """
 import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, tempfile
 
 REF = "origin/develop"
 SCRIPT = "scripts/arch_metrics.py"
+BASELINE = "docs/stabilization/baseline.json"
 PYPROJECT = "pyproject.toml"
 INSTALL = "pip install -e '.[dev]'"
 # What the script imports beyond the standard library (grimp comes with
@@ -119,8 +127,8 @@ def _measure(script, tree, python):
         gone = re.search(r"No module named '([\w.]+)'", r.stderr)
         what = "needs %s, which is not installed" % gone.group(1).split(".")[0] if gone else "failed (exit %d): %s" % (r.returncode, r.stderr[-400:].strip())
         raise ToolError("scripts/arch_metrics.py %s. The architecture ratchet fails closed: %s." % (what, _install_hint(python)))
-    try:
-        return json.loads(r.stdout)
+    try:  # the JSON comes first; `warning:` lines for a module near the size ceiling follow it
+        return json.JSONDecoder().raw_decode(r.stdout.lstrip())[0]
     except ValueError:
         raise ToolError("scripts/arch_metrics.py printed no JSON: %s" % r.stdout[-300:])
 
@@ -173,14 +181,75 @@ def check(checkout, src="HEAD", python=None):
         shutil.rmtree(work, ignore_errors=True)
 
 
-def refusal(worse):
-    """The message a regression earns: each metric, then the way out."""
-    return ("this work's own commits make dw's architecture metrics worse than their merge base with %s: %s. "
-            "Bring the number back down in this session: split the function, remove the duplicate, reuse an "
-            "existing module instead of adding one, patch with `patch.object` or an injected fake instead of a "
-            "`patch(\"dw...\")` string. If that is not possible: `gh issue edit N --remove-label owner:<yours> "
-            "--add-label owner:don --add-label stabilization`, comment the metric and why, and stop. No label "
-            "waives the ratchet." % (REF, "; ".join(worse)))
+def _number(text):
+    try:
+        return json.loads(text)
+    except ValueError:
+        return None
+
+
+def waiver_problems(checkout, worse, src="HEAD"):
+    """The `arch-approved` waiver's paperwork for these regressions (check's
+    lines): [] when src's own commits raise baseline.json by exactly the
+    metrics that rose, each by the amount it rose, and every raised key is
+    named, with its new value, in the message of a commit that changes the
+    file, which also has a body (the why). Else what is missing, one line each."""
+    rose, problems = {}, []
+    for line in worse:
+        m = re.match(r"^(\S+): (\S+) -> (\S+)$", line)
+        old, new = (_number(m.group(2)), _number(m.group(3))) if m else (None, None)
+        if not all(isinstance(v, (int, float)) for v in (old, new)):
+            problems.append("%r is not a numeric rise the waiver can match" % line)
+            continue
+        rose[m.group(1)] = (old, new)
+    base = _git(checkout, "merge-base", REF, src).stdout.strip()
+
+    def baseline_at(rev):
+        r = _git(checkout, "show", "%s:%s" % (rev, BASELINE))
+        try:
+            return json.loads(r.stdout) if r.returncode == 0 else None
+        except ValueError:
+            return None
+    before, after = baseline_at(base) if base else None, baseline_at(src)
+    if after is None:
+        return ["%s is missing or unreadable at %s" % (BASELINE, src)]
+    before = before or {}
+    raised = {k: v for k, v in after.items()
+              if isinstance(v, (int, float)) and (not isinstance(before.get(k), (int, float)) or v > before[k])}
+    for k, (old, new) in sorted(rose.items()):
+        if k not in raised:
+            problems.append("%s rose %s -> %s, and %s does not raise it" % (k, old, new, BASELINE))
+            continue
+        want = new if not isinstance(before.get(k), (int, float)) else before[k] + (new - old)
+        if raised[k] != want:
+            problems.append("%s rose by %s, so %s should raise it to %s, not %s"
+                            % (k, new - old, BASELINE, want, raised[k]))
+    for k in sorted(set(raised) - set(rose)):
+        problems.append("%s raises %s, which did not rise" % (BASELINE, k))
+    log = _git(checkout, "log", "--format=%B%x1e", "%s..%s" % (base, src), "--", BASELINE).stdout if base else ""
+    messages = [m.strip() for m in log.split("\x1e") if m.strip()]
+    for k in sorted(set(raised) & set(rose)):
+        if not any(re.search(r"\b%s\b" % re.escape(k), m) and re.search(r"\b%s\b" % re.escape(str(raised[k])), m)
+                   and len(m.splitlines()) > 1 for m in messages):
+            problems.append("no commit changing %s names the %s rise to %s and says why in its body"
+                            % (BASELINE, k, raised[k]))
+    return problems
+
+
+def refusal(worse, problems=None):
+    """The message a regression earns: each metric, then the way out.
+    problems: the waiver's missing paperwork, when the issue carries the label."""
+    out = ("this work's own commits make dw's architecture metrics worse than their merge base with %s: %s. "
+           "Bring the number back down in this session: split the function, remove the duplicate, reuse an "
+           "existing module instead of adding one, patch with `patch.object` or an injected fake instead of a "
+           "`patch(\"dw...\")` string. " % (REF, "; ".join(worse)))
+    if problems:
+        return out + ("The issue carries `arch-approved`, but the waiver's paperwork is incomplete: %s. Raise "
+                      "%s by exactly the metrics that rose, in a commit whose message names each rise (key and "
+                      "new value) and, in its body, why." % ("; ".join(problems), BASELINE))
+    return out + ("If the rise is needed (a planned new module): `gh issue edit N --remove-label owner:<yours> "
+                  "--add-label owner:don --add-label status:needs-approval`, comment the metric and why, and stop. "
+                  "Only Don's `arch-approved` waives it, and only with a matching %s raise." % BASELINE)
 
 
 if __name__ == "__main__":
@@ -190,6 +259,8 @@ if __name__ == "__main__":
             worse = check(args[0], *args[1:2])
             print("\n".join(worse))
             sys.exit(1 if worse else 0)
+        if cmd == "active":  # the driver's switch, as of the last fetch
+            sys.exit(0 if active(args[0], fetch=False) else 1)
         if cmd == "ready":
             missing = _missing(python_for(args[0])) if active(args[0]) else []
             print(" ".join(missing))
@@ -197,4 +268,4 @@ if __name__ == "__main__":
     except ToolError as e:
         print("arch_ratchet: %s" % e, file=sys.stderr)
         sys.exit(2)
-    sys.exit("usage: arch_ratchet.py check <checkout> [src] | ready <checkout>")
+    sys.exit("usage: arch_ratchet.py check <checkout> [src] | ready <checkout> | active <checkout>")

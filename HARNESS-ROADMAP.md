@@ -1648,6 +1648,17 @@ when the tools are missing, and `ensure_arch_tools` installs dw's dev extras bet
 On while the script exists on `develop`, freeze or not; no label waives it. Stage C, the
 permanent guardrails (seam map, architecture reviewer, consolidation cadence, dw CI ratchet), follows at dw's Phase 4.
 
+## dw stabilization, stage C: guardrails without the freeze (2026-10-01)
+
+Stage C replaced the freeze gates. `FREEZE` now gates only features, design, decompose, builds
+and new surface; deleting it lifts them, and `unpark_pass` hands back what it parked, once. The hot
+zone (from `origin/develop`) and the ratchet stay on while their files exist. `arch-approved` is
+the one ratchet waiver, honoured only with a `baseline.json` raise of exactly what rose, in a commit
+naming it and why (`waiver_problems`, the only reader of the baseline). A hand-off that moves `dw/`
+or `dw_mcp/` gets the reviewer's `arch` session against dw's map first; a second owner or a
+hand-rolled dependency bounces unless Don adds `arch-approved`. The curator files coupling that
+moved, weekly (`lib/consolidation.py`). PR merges into `develop` stay refused while any gate is on.
+
 ---
 
 ## Considered and deferred
