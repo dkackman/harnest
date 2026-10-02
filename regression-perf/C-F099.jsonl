@@ -1,2 +1,3 @@
 {"ts":"2026-09-25T16:08:30Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5","provider":"anthropic","ref":"job 94b94d76a956"}
 {"ts":"2026-09-27T00:00:00Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5","provider":"anthropic","ref":"job 6927d4f0e912"}
+{"ts":"2026-10-02T21:44:00Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job baa82e7dd045"}

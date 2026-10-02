@@ -2787,13 +2787,14 @@ expected:
 - **Rounding travels with an inline workflow.** The constraint above is declared
   in the submitted JSON rather than by a stored template, and is honoured anyway.
   A fix that only consulted the catalog's bounds would pass S-F028 and fail here.
-- **The realized workflow reports the value as submitted.** `get_job_workflow`
-  on that job → `workflow.variables.num_frames` is **`130`**, with
-  `variable_constraints` alongside it. This is correct and deliberate, not a
-  discrepancy to "fix": re-running that definition rounds to 141 again, so it
-  still reproduces the run. It is written down because the obvious reading — that
-  a realized workflow shows effective values — is wrong here, and a future change
-  that rewrote it to 141 would need a deliberate decision rather than a silent one.
+- **The realized workflow reports the value the run used.** `get_job_workflow`
+  on that job → `workflow.variables.num_frames` is **`141`**, the snapped value, with
+  `variable_constraints` alongside it. This is deliberate since dw 9566bd1f
+  (2026-09-28, "validation and the realized record see constraint-snapped values";
+  test `test_the_realized_record_carries_the_snapped_value`): the record beside the
+  run's manifest matches what the run did, and 141 is on the grid, so re-running the
+  definition still reproduces the run. Until then it recorded the submitted `130`.
+  A value of `130` here is a finding (filed as drift in #576 when this was reworded).
 cleanup: `delete_output` the run directory of both jobs. The asset it reads is a
 durable fixture (see "Fixtures") and is never written to.
 source: moved from S-F029 (curation 2026-09-22, harnest#2); tester, model `opus` via provider `anthropic`, found while running
@@ -2802,6 +2803,7 @@ TESTER_TASK.agent.md on 2026-09-14 against dw 0.4.0-beta.4 on `lem`. Measured tw
 (2 x 141) with both warnings on the job, and this audio-only probe isolated the
 question the expensive run could not answer on its own — whether `slice_audio` saw
 130 or 141. It saw 141.
+Realized-record bullet reworded 2026-10-02 for dw 9566bd1f.
 
 ### C-F078 — normalizing before a mux is what puts headroom in the deliverable, and the warning tracks it
 Every audio deliverable this box makes is muxed or encoded at least once more after the
@@ -3823,15 +3825,19 @@ two-shot cut kept before #393, so it has no `media.shots`.
    0, "num_frames": 124}, {"name": "b", "start_frame": 124, "num_frames": 124}]` added
    to its arguments, as its own job.
 expected:
-- Step 1: both bodies have `shots_source: "none"` and `rules_applied: []`.
+- Step 1: both bodies have `shots_source: "none"`. `analyze_seams` has `rules_applied: []`.
+  `analyze_shots` has `rules_applied: ["shot_dead_air"]`: that rule is a per-file
+  measurement, not shot-dependent (only `shot_level_spread` is, `shot_dependent=` in
+  `dw/tasks/assess.py`), and it runs over the one synthetic `whole` shot (#465, after this
+  case was written; filed as drift in #577).
   `analyze_seams`'s `rules_skipped` names `seam_level_step`, `seam_click`, `seam_hole`
   and `seam_frame_jump`, and `analyze_shots`'s names `shot_level_spread`, each with
   `reason: "no shot boundaries"`. The job's `warnings` has one entry per step saying no
   shot boundaries were found and that `shots=` can supply them.
 - Step 2: `shots_source: "argument"`, all four seam rules in `rules_applied`,
   `rules_skipped: []`, one seam, and no job warnings.
-It is a **finding** if step 1 lists any shot rule in `rules_applied`, or if it has no
-warning.
+It is a **finding** if step 1 lists `shot_level_spread` or any seam rule in `rules_applied`,
+or if it has no warning.
 cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
@@ -4549,11 +4555,13 @@ expected:
 - The events carry `resample_audio` log lines `48000 → 48000` (the `world` step) and
   `44100 → 48000` (the `soundtrack_resampled` step), plus `mix_audio: 2 tracks, gains [0.3, 1.0]`.
 - The film is 469 frames, 24 fps, 19.542 s, **48000 Hz** stereo, 960×544, with
-  `peak_dbfs` ≤ −2.5. Its `media.shots` (and the `film` manifest) list the same 4 shots as
+  `peak_dbfs` ≤ −2.0 (the `balanced` step holds −3.0 on the mix; the AAC mux into the mp4 can
+  land up to about 1 dB above it, per the template description, #497 — −2.17 measured
+  2026-10-02, job `053a5047fd1c`; above −1.0 would be a finding). Its `media.shots` (and the `film` manifest) list the same 4 shots as
   the input: start_frame 0/124/236/345 and num_frames 124/112/109/124, the last two with
   `overlap_frames: 12`.
 It is a **finding** if the film reads 44100 Hz, if the score's resample line is missing or
-reads `44100 → 44100` / `48000 → 48000` (a relabel), or if the shots collapse to one.
+reads `44100 → 44100` / `48000 → 48000` (a relabel), or if the shots collapse to one, or if the film's peak is above −1.0 dBFS.
 Not asserted here: a `joined_audio_short_after_mux` warning of 32 samples appeared when this
 case was written (#435).
 cleanup: `delete_output(job_id=…)`.
@@ -5190,10 +5198,12 @@ expected:
   the client's own machine. `<host>` is right, and so is an address that is really external.
 - Step 1 fills in `&workspace=regression-complete`. Step 2 fills in the session's workspace. A
   `<ws>` placeholder or a missing `workspace=` is a finding.
-- The refusal says the route answers 201 with `path`, the `asset:` reference. It gives the route's
-  limit as 200MB and never says "no size cap". The upload bullet in
+- The refusal says the route answers 201 with `reference`, the `asset:` reference (the field
+  was `path` until dw a90e3878, #527, dropped absolute server paths; `reference` is the real
+  key). It gives the route's limit as 200MB and never says "no size cap". The upload bullet in
   `get_guide("workflows", section="Authoring a workflow from an agent")` → References → `asset:`
-  carries the same command and the same 200MB limit.
+  carries the same command, the same 200MB limit and the same field name `reference`; a guide
+  that still says `path` is a finding (#579).
 
 cleanup: none (nothing is created).
 metrics: none.
