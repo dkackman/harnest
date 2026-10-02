@@ -1312,32 +1312,39 @@ survives a server restart is #281, not this case.) Step 3 was rebound to the
 `valid: false` there and so carries no `plan`; the regression agent's run with these
 arguments answered `plan.workspace: "regression-smoke"`.
 
-### S-F083 — the `get_gallery_metadata` docstring's tasks-guide cross-reference resolves through `get_guide`
+### S-F083 — the `get_gallery_metadata` description points at `findings`, and the tasks guide still carries the thresholds
 #282: the tool description told the reader to "see \"Headroom and clipping warnings\" in
 the tasks guide", but `get_guide` indexes only top-level headings, so that name errored
-and the thresholds paragraph was unreachable from the cross-reference. The fix repointed
-the docstring at a section that resolves. Free — one schema read and one guide read.
+and the thresholds paragraph was unreachable. The fix repointed the docstring at a section
+that resolves. Then dw f5940477 (2026-10-01, #574) moved the levels into the metadata
+route's own `findings` (each with its threshold and the fix) and dropped the docstring's
+guide cross-reference on purpose, so the description no longer names a guide. What remains
+worth guarding: the description still tells the reader where the level problems are, and
+the thresholds paragraph is still fetchable from the guide. Free — one schema read and one
+guide read.
 1. Read the `get_gallery_metadata` tool description as served (the deferred-tool schema,
-   e.g. via `ToolSearch select:mcp__dw__get_gallery_metadata`); note the guide name and
-   section it names for the `-0.5` / `0.0` dBFS thresholds.
-2. `get_guide(name="tasks", section=<that section>)` — currently
-   `section="Video Processing"`, with `normalize_audio` as the sub-section to look for.
+   e.g. via `ToolSearch select:mcp__dw__get_gallery_metadata`).
+2. `get_guide(name="tasks", section="Video Processing")`, with `normalize_audio` as the
+   sub-section to look for.
 expected:
-- Step 1's description names a guide *and* a section (not just a bold paragraph title).
+- Step 1's description says `findings` lists the level problems the server measured, with
+  their threshold and fix. It need not name a guide, and must not restate the numeric
+  thresholds (the server owns them).
 - Step 2 resolves (no `has no section` error) and its `content` contains the string
   `Headroom and clipping warnings` together with both threshold names `audio_no_headroom`
   and `audio_clipped`.
-It is a **finding** if step 2 errors, or resolves to content that no longer carries the
-thresholds paragraph — either way the docstring is pointing at something a reader can't
-fetch. If the docstring's target moves to another section that does resolve and does
-carry the paragraph, that is a pass, not a finding.
+It is a **finding** if step 1's description no longer mentions `findings` (or, if it names a
+guide section instead, that section errors or lacks the paragraph), or if step 2 errors or
+resolves to content that no longer carries the thresholds paragraph. Not naming a guide in
+step 1 is a pass, not a finding.
 cleanup: none — nothing is written.
 metrics: none.
 source: tester, verified in #282 on 2026-09-21 over MCP as model `opus` via provider
 `anthropic`: the description named `normalize_audio` in "Video Processing";
 `get_guide(name="tasks", section="Video Processing")` returned the `### normalize_audio`
 sub-section with the `**Headroom and clipping warnings.**` paragraph and both warning
-names; the old title still errors, by design (sub-headings are not indexed).
+names; the old title still errors, by design (sub-headings are not indexed). Reworded
+2026-10-02 for the intentional change in dw f5940477, filed as drift in #574.
 
 ### S-F084 — the `workflow_end` event's manifest names files exactly as `get_job` and `step_end` do
 #284: the last content event of a finished job, `workflow_end`, carried a `manifest[]`
