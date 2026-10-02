@@ -58,6 +58,8 @@ hrow 2 "a complex function added under ui/src"
 has "  names the metric and both values" "complex_functions: 1 -> 2" "$out"
 has "  says it is the UI's ratchet" "UI" "$out"
 has "  names the UI baseline" "docs/stabilization/ui/baseline.json" "$out"
+has "  says how to bring it down, in the UI's terms" "split the component" "$out"
+fails "  not with the engine's Python hints" grep -q "patch.object" <<<"$out"
 branch ui-dw; edit ui-dw dw/b.py 'engine only'
 hrow 0 "a change outside ui/ measures no UI rise"
 branch ui-same; edit ui-same ui/src/a.ts 'plain line'
@@ -90,6 +92,7 @@ g "$w" fetch -q origin
 branch ui-old; edit ui-old ui/src/a.ts '// complex'
 hrow 2 "develop's UI script has no --compare"
 has "  says the script cannot compare" "--compare" "$out"
+has "  and, since no branch can fix develop's script, to park for Don" "--add-label owner:don" "$out"
 
 # a --compare that crashes (node exits 1, prints nothing) is not a pass
 uiscript > "$s/ui/scripts/arch-metrics.mjs"
@@ -146,4 +149,43 @@ eq "  and not again for the same lockfile" "" "$(cat "$T/npm.log" 2>/dev/null)"
 printf '{"lockfileVersion": 3, "bumped": 1}\n' > "$s/ui/package-lock.json"; g "$s" commit -qam "lockfile bump"; g "$s" push origin develop; g "$w" fetch -q origin
 rm -f "$T/npm.log"; PATH="$T/bin:$PATH" ensure_ui_tools "$w"
 has "  a bumped lockfile on develop: npm ci again" "npm ci --prefix ui" "$(cat "$T/npm.log" 2>/dev/null)"
+
+# --- both ratchets on at once: develop carries the engine's script and the UI's
+export HARNEST_ARCH_TOOLS="json"   # the engine stand-in needs only the standard library
+enginescript() {
+  cat <<'EOF2'
+import argparse, json, pathlib
+def measure(root):
+    text = [p.read_text() for p in sorted((pathlib.Path(root) / "dw").rglob("*.py"))]
+    return {"complex_functions": sum(t.count("# complex") for t in text)}
+def regressions(current, baseline):
+    return [f"{k}: {v} -> {current[k]}" for k, v in baseline.items() if k in current and current[k] > v]
+if __name__ == "__main__":
+    p = argparse.ArgumentParser(); p.add_argument("--root"); a = p.parse_args()
+    print(json.dumps(measure(a.root), indent=2))
+EOF2
+}
+mkdir "$T/c"; mk "$T/c" 1
+c="$T/c/seed"; mkdir -p "$c/scripts"; enginescript > "$c/scripts/arch_metrics.py"
+printf 'a\n# complex\n' > "$c/dw/a.py"
+printf '{\n  "complex_functions": 1\n}\n' > "$c/docs/stabilization/baseline.json"
+g "$c" add -A; g "$c" commit -m "engine ratchet too"; g "$c" push origin develop
+w="$T/c/work"; g "$w" fetch -q origin
+both() {  # both <branch>: one complex function more on each side
+  branch "$1"; edit "$1" dw/a.py '# complex'; edit "$1" ui/src/a.ts '// complex'
+}
+both dual-bare
+hrow 2 "both ratchets rise: refused"
+has "  naming the engine's rise" "dw's architecture ratchet" "$out"
+has "  and the UI's, in the same refusal" "dw's UI architecture ratchet" "$out"
+engine_why='baseline: raise complex_functions 1 -> 2
+
+the engine side of the widget (approved on the issue).'
+both dual-half
+printf '{\n  "complex_functions": 2\n}\n' > "$w/docs/stabilization/baseline.json"; g "$w" add -A; g "$w" commit -m "$engine_why"
+hrow 2 "  the engine's waiver complete, the UI's not" "$w" 7
+has "  names the UI's missing raise" "docs/stabilization/ui/baseline.json" "$out"
+fails "  and not the engine's, which holds" grep -q "dw's architecture ratchet:" <<<"$out"
+raise 2 "$why"
+hrow 0 "  both waivers complete" "$w" 7
 finish

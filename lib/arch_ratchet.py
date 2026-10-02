@@ -309,7 +309,9 @@ def check_ui(checkout, src="HEAD"):
                 or (r.returncode == 1 and lines and all(RISE.match(line) for line in lines))):
             raise ToolError("develop's ui/scripts/arch-metrics.mjs could not compare two measurements (exit %d: %s). "
                             "The UI architecture ratchet fails closed until it can: develop's script needs a working "
-                            "--compare." % (r.returncode, (r.stderr.strip() or r.stdout.strip())[-200:] or "no output"))
+                            "--compare, which no branch can fix. `gh issue edit N --remove-label owner:<yours> "
+                            "--add-label owner:don --add-label stabilization`, comment that develop's "
+                            "ui/scripts/arch-metrics.mjs cannot compare, and stop." % (r.returncode, (r.stderr.strip() or r.stdout.strip())[-200:] or "no output"))
         return lines
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -370,13 +372,18 @@ def waiver_problems(checkout, worse, src="HEAD", baseline=BASELINE):
     return problems
 
 
-def refusal(worse, problems=None, baseline=BASELINE, what="dw's architecture metrics"):
+ENGINE_HINTS = ("split the function, remove the duplicate, reuse an existing module instead of adding one, patch "
+                "with `patch.object` or an injected fake instead of a `patch(\"dw...\")` string")
+UI_HINTS = ("split the component or function, move code into its own module rather than growing a file past the "
+            "size ceiling, break the import cycle, use the reference-prefix constants instead of a string literal, "
+            "fix the accessibility warning instead of suppressing it")
+
+
+def refusal(worse, problems=None, baseline=BASELINE, what="dw's architecture metrics", hints=ENGINE_HINTS):
     """The message a regression earns: each metric, then the way out.
     problems: the waiver's missing paperwork, when the issue carries the label."""
     out = ("this work's own commits make %s worse than their merge base with %s: %s. "
-           "Bring the number back down in this session: split the function, remove the duplicate, reuse an "
-           "existing module instead of adding one, patch with `patch.object` or an injected fake instead of a "
-           "`patch(\"dw...\")` string. " % (what, REF, "; ".join(worse)))
+           "Bring the number back down in this session: %s. " % (what, REF, "; ".join(worse), hints))
     if problems:
         return out + ("The issue carries `arch-approved`, but the waiver's paperwork is incomplete: %s. Raise "
                       "%s by exactly the metrics that rose, in a commit whose message names each rise (key and "

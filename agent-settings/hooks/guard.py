@@ -432,11 +432,15 @@ def arch_gate(checkout, src, arch_approved=None):
         deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and this work's "
              "own commits add %s: new surface, which needs Don's `arch-approved` label on the issue. %s"
              % (new[0], park % "new-surface"))
+    # Both ratchets in one refusal, so a fix to one is not handed off only to meet the other
+    refused = []
     if worse and not waived:
-        deny("dw's architecture ratchet: " + arch_ratchet.refusal(worse, problems))
+        refused.append("dw's architecture ratchet: " + arch_ratchet.refusal(worse, problems))
     if worse_ui and not waived_ui:
-        deny("dw's UI architecture ratchet: " + arch_ratchet.refusal(
-            worse_ui, problems_ui, arch_ratchet.UI_BASELINE, "the UI's architecture metrics"))
+        refused.append("dw's UI architecture ratchet: " + arch_ratchet.refusal(
+            worse_ui, problems_ui, arch_ratchet.UI_BASELINE, "the UI's architecture metrics", arch_ratchet.UI_HINTS))
+    if refused:
+        deny(" | ".join(refused))
 
 
 def merge_gated(cwd):
