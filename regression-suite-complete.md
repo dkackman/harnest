@@ -523,9 +523,13 @@ Needs the `room-bed.wav` fixture; seconds to run, generates nothing.
 expected: (a) one inline `slice_audio` step against
 `asset:uploads/qa-cast/room-bed.wav` (4.96 s) asking for `num_frames: 372` at
 `fps: 24` — 15.5 s — **succeeds**, writes a file of the full requested length,
-and `get_job(...)["warnings"]` holds **exactly one** entry, prefixed with the
-step's name, containing `past the end of` and naming `loop_audio` with its
-`target_frames`+`fps` pair as the remedy. The numbers in it must be the real
+and `get_job(...)["warnings"]` holds **exactly two** entries about the slice
+(since dw 39a97862, 2026-09-28, a submitted job records the full warning set
+validate reports, #402's pre-flight included): the pre-flight one, keyed by
+argument path (`steps[0].task.arguments.audio: slice_audio will run ... past the
+end of ...`), and the run-time one, prefixed with the step's name (`cut:
+slice_audio: ... past the end of ...`). Each names `loop_audio` with its
+`target_frames`+`fps` pair as the remedy. The numbers in both must be the real
 ones: source ≈ 4.96 s, ≈ 10.5 s padded, 15.50 s returned. (b) Counter-case, a
 slice **inside** the source (`num_frames: 48`, `fps: 24`) → `warnings: []`.
 (c) Counter-case, a slice a few ms past the end (`start_seconds: 0`,
@@ -534,7 +538,8 @@ sample or two past the end routinely and a warning fired on that is noise
 nobody can act on. (d) The end-to-end path, which is where it bit:
 `run_workflow("templates/assemble-and-score", arguments={shots: three
 `common/assets` shots, score: the room-bed asset, sample_rate: 32000, fps: 24,
-total_frames: 372})` → succeeds, and its `warnings` carries the same entry
+total_frames: 372})` → succeeds, and its `warnings` carries the same pair: the
+pre-flight entry on the `score` slice's argument path and the run-time entry
 attributed to the `soundtrack` step. The source reads at its real ~4.96 s here,
 not a reinterpreted length: since #180 (see C-F031(b)/(c)) the `soundtrack`
 step calls `slice_audio` with no `sample_rate` and a separate `resample_audio`
@@ -544,7 +549,10 @@ the task actually saw.
 It is a **finding** if (a) or (d) comes back `warnings: []` (the original bug —
 79% of a track padded in silence), if the padding turns into an error or a
 short track (that breaks the legitimate tail pad), or if (b) or (c) starts
-warning. Also a finding if the warning is only a server-side log line: score
+warning. Fewer than the two entries in (a)/(d) is a finding only if the run-time
+entry is the one missing; the pre-flight entry is the validate-time warning
+carried into the job and may be absent for a source it cannot probe. More than two
+(a third copy) is a finding. Also a finding if the warning is only a server-side log line: score
 the job's `warnings` list, which is what a consumer can see.
 The documentation half of the fix is checkable too, and free:
 `get_guide("tasks", section="Video Processing")` → `slice_audio` must still
@@ -561,7 +569,8 @@ provider `anthropic`, workspace `qa-ep9`, dw 0.4.0-beta.3 — jobs
 to `soundtrack`). Bullet (d)'s reinterpretation claim was stale against #180's
 rewiring of `assemble-and-score` (see C-F031) and was corrected during the
 2026-09-22 suite audit — it had never been re-verified against dw
-0.4.0-beta.4+, where the template resamples instead.
+0.4.0-beta.4+, where the template resamples instead. Reworded
+2026-10-02 for the two-entry warning set (dw 39a97862, filed as drift in #575).
 
 ### C-F020 — `templates/dissolve-between-shots` passes `match_levels` through, so its own warning is followable
 C-F057 and C-F096 exercise the `dissolve_videos` **task**. This case is about the
