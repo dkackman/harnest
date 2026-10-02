@@ -1317,8 +1317,13 @@ dw_frozen() {
 # working tree's pyproject is origin/develop's, since the install reads the
 # tree. Warns, never blocks: guard.py fails closed on a missing tool anyway.
 ensure_arch_tools() {
+  _ensure_engine_tools "$@"
+  ensure_ui_tools "${1:-$SOURCE_DIR}"  # after the engine side's fetch, so it reads today's develop
+  return 0
+}
+
+_ensure_engine_tools() {
   local co="${1:-$SOURCE_DIR}" want have gitdir py
-  ensure_ui_tools "$co"
   python3 "$HARNEST_LIB/arch_ratchet.py" ready "$co" >/dev/null 2>&1 && ratchet_deps_current "$co" && return 0
   python3 "$HARNEST_LIB/arch_ratchet.py" active "$co" >/dev/null 2>&1 || return 0  # the switch, as ready just fetched it
   py="$co/venv/bin/python"; [ -x "$py" ] || py=python3
@@ -1337,15 +1342,27 @@ ensure_arch_tools() {
 }
 
 # ensure_ui_tools <checkout>: the UI ratchet's tools (ui/node_modules, for
-# ESLint) when develop carries the UI metrics script and they are missing.
-# A failed install is a warning: check_ui fails closed until it works.
+# ESLint) when develop carries the UI metrics script - installed when
+# missing, and again whenever origin/develop's ui/package-lock.json is not
+# the one they were installed from (the stamp in the git dir), as the
+# engine's dev extras follow pyproject.toml. Reads origin/develop as the
+# engine side's `ready` just fetched it. A failed install is a warning:
+# check_ui fails closed until it works.
 ensure_ui_tools() {
-  local co="${1:-$SOURCE_DIR}"
+  local co="${1:-$SOURCE_DIR}" want gitdir
   python3 "$HARNEST_LIB/arch_ratchet.py" active-ui "$co" >/dev/null 2>&1 || return 0
-  [ -f "$co/ui/node_modules/eslint/package.json" ] && return 0
+  want="$(git -C "$co" rev-parse -q --verify origin/develop:ui/package-lock.json 2>/dev/null)"
+  gitdir="$(git -C "$co" rev-parse --absolute-git-dir 2>/dev/null)" || return 0
+  if [ -f "$co/ui/node_modules/eslint/package.json" ] \
+     && [ "$(cat "$gitdir/harnest-ui-deps" 2>/dev/null)" = "$want" ]; then
+    return 0
+  fi
   echo "[loop] installing the UI's tools for the UI architecture ratchet ($co)" | tee -a "$LOOP_LOG"
-  ( cd "$co" && npm ci --prefix ui ) >>"$LOOP_LOG" 2>&1 \
-    || echo "[loop] WARNING: npm ci --prefix ui failed in $co; the UI ratchet will refuse hand-offs until it works" | tee -a "$LOOP_LOG"
+  if ( cd "$co" && npm ci --prefix ui ) >>"$LOOP_LOG" 2>&1; then
+    echo "$want" > "$gitdir/harnest-ui-deps"
+  else
+    echo "[loop] WARNING: npm ci --prefix ui failed in $co; the UI ratchet will refuse hand-offs until it works" | tee -a "$LOOP_LOG"
+  fi
   return 0
 }
 

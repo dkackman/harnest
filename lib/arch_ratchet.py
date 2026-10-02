@@ -204,12 +204,41 @@ def _ui_tools(checkout):
 
 
 def _ui_versions(node, modules):
+    """What a measurement depends on besides the tree and the script: node,
+    and the whole installed toolchain - the lockfile npm wrote, so a parser
+    bump that leaves eslint's own version alone still measures afresh."""
     node_version = subprocess.run([node, "--version"], capture_output=True, text=True).stdout.strip()
     try:
         eslint = json.load(open(os.path.join(modules, "eslint", "package.json"))).get("version")
     except (OSError, ValueError):
         eslint = None
-    return {"node": node_version, "eslint": eslint}
+    try:
+        with open(os.path.join(modules, ".package-lock.json"), "rb") as fh:
+            installed = hashlib.sha256(fh.read()).hexdigest()
+    except OSError:
+        installed = None
+    return {"node": node_version, "eslint": eslint, "installed": installed}
+
+
+def _read_stamp(stamp):
+    """A cached measurement, or None when it is missing or unreadable (a
+    write cut short) - then it is measured again rather than trusted."""
+    try:
+        with open(stamp) as fh:
+            metrics = json.load(fh)
+    except (OSError, ValueError):
+        return None
+    return metrics if isinstance(metrics, dict) and metrics else None
+
+
+def _write_stamp(stamp, metrics):
+    tmp = stamp + ".tmp"
+    with open(tmp, "w") as fh:
+        json.dump(metrics, fh)
+    os.replace(tmp, stamp)
+
+
+RISE = re.compile(r"^\S+: \S+ -> \S+$")
 
 
 def _ui_tree(checkout, treeish, work, script_text, modules):
@@ -254,7 +283,7 @@ def check_ui(checkout, src="HEAD"):
         for rev in (base, src):
             tree = _git(checkout, "rev-parse", "-q", "--verify", rev + "^{tree}").stdout.strip()
             stamp = os.path.join(cache, cache_key(tree, script_text, versions) + ".json")
-            if os.path.exists(stamp):
+            if _read_stamp(stamp) is not None:
                 measured.append(stamp)
                 continue
             ui = _ui_tree(checkout, rev, work, script_text, modules)
@@ -267,17 +296,21 @@ def check_ui(checkout, src="HEAD"):
             except ValueError:
                 raise ToolError("ui/scripts/arch-metrics.mjs printed no JSON: %s" % r.stdout[-300:])
             metrics.pop("detail", None)
-            with open(stamp, "w") as fh:
-                json.dump(metrics, fh)
+            _write_stamp(stamp, metrics)
             measured.append(stamp)
         ui = _ui_tree(checkout, src, work, script_text, modules)
         r = subprocess.run([node, UI_SCRIPT[len("ui/"):], "--compare", measured[1], measured[0]],
                            capture_output=True, text=True, cwd=ui)
-        if r.returncode not in (0, 1) or r.stdout.lstrip().startswith("{"):
-            raise ToolError("develop's ui/scripts/arch-metrics.mjs could not --compare two measurements (exit %d). "
-                            "The UI architecture ratchet fails closed until develop's script has --compare."
-                            % r.returncode)
-        return [line for line in r.stdout.splitlines() if line.strip()]
+        # The contract: exit 0 and nothing printed, or exit 1 and only rise
+        # lines. Anything else - a crash (node exits 1 too), a script that
+        # predates --compare and prints JSON - is a failure, never a pass
+        lines = [line for line in r.stdout.splitlines() if line.strip()]
+        if not ((r.returncode == 0 and not lines)
+                or (r.returncode == 1 and lines and all(RISE.match(line) for line in lines))):
+            raise ToolError("develop's ui/scripts/arch-metrics.mjs could not compare two measurements (exit %d: %s). "
+                            "The UI architecture ratchet fails closed until it can: develop's script needs a working "
+                            "--compare." % (r.returncode, (r.stderr.strip() or r.stdout.strip())[-200:] or "no output"))
+        return lines
     finally:
         shutil.rmtree(work, ignore_errors=True)
 

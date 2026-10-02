@@ -405,6 +405,9 @@ def arch_gate(checkout, src, arch_approved=None):
         worse_ui = arch_ratchet.check_ui(checkout, src)
     except arch_ratchet.ToolError as e:
         deny(str(e))
+    except Exception as e:  # a traceback would be a non-blocking hook error: fail closed here instead
+        deny("dw's architecture ratchet could not run (%s: %s). It fails closed: fix the checkout (permissions, "
+             "disk, node) and hand off again." % (type(e).__name__, e))
     approved = []
     def is_approved():
         if not approved:

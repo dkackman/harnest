@@ -91,6 +91,37 @@ branch ui-old; edit ui-old ui/src/a.ts '// complex'
 hrow 2 "develop's UI script has no --compare"
 has "  says the script cannot compare" "--compare" "$out"
 
+# a --compare that crashes (node exits 1, prints nothing) is not a pass
+uiscript > "$s/ui/scripts/arch-metrics.mjs"
+printf "\nif (process.argv[2] === '--compare-crash') throw new Error('x')\n" >> "$s/ui/scripts/arch-metrics.mjs"
+sed -i.bak "s/argv\[0\] === '--compare'/argv[0] === '--never'/" "$s/ui/scripts/arch-metrics.mjs"; rm -f "$s/ui/scripts/arch-metrics.mjs.bak"
+printf "if (process.argv[2] === '--compare') throw new Error('compare crashed')\n" | cat - "$s/ui/scripts/arch-metrics.mjs" > "$T/crash.mjs"; cp "$T/crash.mjs" "$s/ui/scripts/arch-metrics.mjs"
+g "$s" commit -qam "script whose --compare crashes"; g "$s" push origin develop; g "$w" fetch -q origin
+branch ui-crash; edit ui-crash ui/src/a.ts '// complex'
+hrow 2 "a --compare that crashes is refused, not passed"
+has "  as a tool failure" "fails closed" "$out"
+uiscript > "$s/ui/scripts/arch-metrics.mjs"; g "$s" commit -qam "working script again"; g "$s" push origin develop; g "$w" fetch -q origin
+
+# a corrupted cached measurement is measured again, not trusted
+branch ui-stamp; edit ui-stamp ui/src/b.ts '// complex'
+hrow 2 "a rise, measured and stamped"
+for f in "$w/.git/harnest-arch-ui"/*.json; do : > "$f"; done
+hrow 2 "  the same rise with every stamp truncated"
+has "  still named" "complex_functions: 1 -> 2" "$out"
+
+# a failure that is not a ToolError is a deny, not a traceback the hook ignores
+chmod 500 "$w/.git/harnest-arch-ui"; rm -f "$w/.git/harnest-arch-ui"/*.json 2>/dev/null
+branch ui-perm; edit ui-perm ui/src/c.ts '// complex'
+hrow 2 "the stamp cannot be written (an OSError)"
+has "  says the ratchet could not run" "fails closed" "$out"
+chmod 700 "$w/.git/harnest-arch-ui"
+
+# a different install measures again: the lockfile is part of the cache key
+n1="$(ls "$w/.git/harnest-arch-ui" | wc -l | tr -d ' ')"
+printf '{"lockfileVersion": 3, "x": 1}\n' > "$w/ui/node_modules/.package-lock.json"
+hrow 2 "  same trees, another install"
+ok "  measured afresh (a new stamp)" test "$(ls "$w/.git/harnest-arch-ui" | wc -l | tr -d ' ')" -gt "$n1"
+
 # no UI script on develop: the UI ratchet is off
 w2="$T/b/work"; g "$w2" checkout -q -B ui-x origin/develop; echo '// complex' >> "$w2/ui/src/a.ts"; g "$w2" commit -qam x
 hrow 0 "the UI ratchet is off while develop has no UI script" "$w2"
@@ -107,4 +138,12 @@ rm -f "$T/npm.log"; PATH="$T/bin:$PATH" ensure_ui_tools "$w"
 eq "  and does nothing when they are there" "" "$(cat "$T/npm.log" 2>/dev/null)"
 rm -f "$T/npm.log"; PATH="$T/bin:$PATH" ensure_ui_tools "$w2"
 eq "  nor when develop has no UI script" "" "$(cat "$T/npm.log" 2>/dev/null)"
+printf '{"lockfileVersion": 3}\n' > "$s/ui/package-lock.json"; g "$s" add -A; g "$s" commit -qm "a lockfile"; g "$s" push origin develop; g "$w" fetch -q origin
+rm -f "$T/npm.log"; PATH="$T/bin:$PATH" ensure_ui_tools "$w"
+has "  a lockfile on develop it has not installed from: npm ci" "npm ci --prefix ui" "$(cat "$T/npm.log" 2>/dev/null)"
+rm -f "$T/npm.log"; PATH="$T/bin:$PATH" ensure_ui_tools "$w"
+eq "  and not again for the same lockfile" "" "$(cat "$T/npm.log" 2>/dev/null)"
+printf '{"lockfileVersion": 3, "bumped": 1}\n' > "$s/ui/package-lock.json"; g "$s" commit -qam "lockfile bump"; g "$s" push origin develop; g "$w" fetch -q origin
+rm -f "$T/npm.log"; PATH="$T/bin:$PATH" ensure_ui_tools "$w"
+has "  a bumped lockfile on develop: npm ci again" "npm ci --prefix ui" "$(cat "$T/npm.log" 2>/dev/null)"
 finish
