@@ -33,6 +33,10 @@ import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, tempfile
 REF = "origin/develop"
 SCRIPT = "scripts/arch_metrics.py"
 BASELINE = "docs/stabilization/baseline.json"
+# The UI's half (dw's UI stabilization Phase 4): measured by its own node
+# script, compared by that script's `--compare`, waived the same way
+UI_SCRIPT = "ui/scripts/arch-metrics.mjs"
+UI_BASELINE = "docs/stabilization/ui/baseline.json"
 PYPROJECT = "pyproject.toml"
 INSTALL = "pip install -e '.[dev]'"
 # What the script imports beyond the standard library (grimp comes with
@@ -49,7 +53,7 @@ def _git(checkout, *args, **kw):
     return subprocess.run(["git", "-C", checkout, *args], capture_output=True, text=True, **kw)
 
 
-def active(checkout, fetch=True):
+def active(checkout, fetch=True, script=SCRIPT):
     """True when origin/develop carries the script, False when it is readable
     and doesn't. Off only in that second case: a failed fetch, a missing
     remote or an unreadable origin/develop is a broken environment, and
@@ -63,7 +67,7 @@ def active(checkout, fetch=True):
     if _git(checkout, "rev-parse", "-q", "--verify", REF + "^{commit}").returncode != 0:
         raise ToolError("the baseline could not be read: %s does not resolve. The architecture ratchet "
                         "fails closed: %s." % (REF, fix))
-    return _git(checkout, "cat-file", "-e", "%s:%s" % (REF, SCRIPT)).returncode == 0
+    return _git(checkout, "cat-file", "-e", "%s:%s" % (REF, script)).returncode == 0
 
 
 def python_for(checkout):
@@ -112,8 +116,8 @@ def _load_regressions(script):
         raise ToolError("scripts/arch_metrics.py did not load (%s: %s). The architecture ratchet fails closed." % (type(e).__name__, e))
 
 
-def _archive(checkout, treeish, dest):
-    git = subprocess.Popen(["git", "-C", checkout, "archive", treeish], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+def _archive(checkout, treeish, dest, paths=()):
+    git = subprocess.Popen(["git", "-C", checkout, "archive", treeish, *paths], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     tar = subprocess.run(["tar", "-x", "-C", dest], stdin=git.stdout, capture_output=True)
     git.stdout.close()
     if git.wait() or tar.returncode:
@@ -181,6 +185,103 @@ def check(checkout, src="HEAD", python=None):
         shutil.rmtree(work, ignore_errors=True)
 
 
+UI_INPUTS = ("ui", "dw/references.py")  # what the UI script reads: its tree, and the prefixes' owner
+
+
+def _ui_tools(checkout):
+    """node, and the checkout's ui/node_modules (ESLint), or ToolError."""
+    top = _git(checkout, "rev-parse", "--show-toplevel").stdout.strip() or checkout
+    modules = os.path.join(top, "ui", "node_modules")
+    fix = "run `npm ci --prefix ui` in %s" % top
+    node = shutil.which("node")
+    if node is None:
+        raise ToolError("the UI architecture ratchet needs node, which is not on PATH. It fails closed: install "
+                        "Node, then %s." % fix)
+    if not os.path.exists(os.path.join(modules, "eslint", "package.json")):
+        raise ToolError("the UI architecture ratchet needs ui/node_modules (ESLint), which %s does not have. "
+                        "It fails closed: %s." % (top, fix))
+    return node, modules
+
+
+def _ui_versions(node, modules):
+    node_version = subprocess.run([node, "--version"], capture_output=True, text=True).stdout.strip()
+    try:
+        eslint = json.load(open(os.path.join(modules, "eslint", "package.json"))).get("version")
+    except (OSError, ValueError):
+        eslint = None
+    return {"node": node_version, "eslint": eslint}
+
+
+def _ui_tree(checkout, treeish, work, script_text, modules):
+    """An extracted tree with develop's UI script in place and the checkout's
+    node_modules beside it, so its imports (ESLint) resolve. Returns ui/."""
+    dest = tempfile.mkdtemp(dir=work)
+    present = [p for p in UI_INPUTS if _git(checkout, "cat-file", "-e", "%s:%s" % (treeish, p)).returncode == 0]
+    _archive(checkout, treeish, dest, present)
+    ui = os.path.join(dest, "ui")
+    os.makedirs(os.path.join(ui, "scripts"), exist_ok=True)
+    os.symlink(modules, os.path.join(ui, "node_modules"))
+    with open(os.path.join(ui, UI_SCRIPT[len("ui/"):]), "w") as fh:
+        fh.write(script_text)
+    return ui
+
+
+def check_ui(checkout, src="HEAD"):
+    """check, for the UI: [] when src's own commits made none of the UI's
+    metrics worse than at their merge base (or the UI ratchet is off), else
+    'metric: before -> after' lines - develop's ui/scripts/arch-metrics.mjs
+    measures both trees and its `--compare` says which rose. Raises
+    ToolError when it can't say."""
+    if not active(checkout, script=UI_SCRIPT):
+        return []
+    base = _git(checkout, "merge-base", REF, src).stdout.strip()
+    if not base:
+        raise ToolError("no merge base between %s and %s, so the UI ratchet can't tell what this work changed." % (REF, src))
+
+    def inputs(rev):
+        return [_git(checkout, "rev-parse", "-q", "--verify", "%s:%s" % (rev, path)).stdout.strip() for path in UI_INPUTS]
+    if inputs(base) == inputs(src):
+        return []
+    node, modules = _ui_tools(checkout)
+    script_text = _git(checkout, "show", "%s:%s" % (REF, UI_SCRIPT)).stdout
+    versions = _ui_versions(node, modules)
+    gitdir = _git(checkout, "rev-parse", "--absolute-git-dir").stdout.strip()
+    cache = os.path.join(gitdir, "harnest-arch-ui")
+    os.makedirs(cache, exist_ok=True)
+    work = tempfile.mkdtemp(prefix="harnest-arch-ui-")
+    try:
+        measured = []
+        for rev in (base, src):
+            tree = _git(checkout, "rev-parse", "-q", "--verify", rev + "^{tree}").stdout.strip()
+            stamp = os.path.join(cache, cache_key(tree, script_text, versions) + ".json")
+            if os.path.exists(stamp):
+                measured.append(stamp)
+                continue
+            ui = _ui_tree(checkout, rev, work, script_text, modules)
+            r = subprocess.run([node, UI_SCRIPT[len("ui/"):]], capture_output=True, text=True, cwd=ui)
+            if r.returncode != 0:
+                raise ToolError("ui/scripts/arch-metrics.mjs failed (exit %d): %s. The UI architecture ratchet "
+                                "fails closed: run `npm ci --prefix ui` in the dw checkout." % (r.returncode, r.stderr[-400:].strip()))
+            try:
+                metrics = json.JSONDecoder().raw_decode(r.stdout.lstrip())[0]
+            except ValueError:
+                raise ToolError("ui/scripts/arch-metrics.mjs printed no JSON: %s" % r.stdout[-300:])
+            metrics.pop("detail", None)
+            with open(stamp, "w") as fh:
+                json.dump(metrics, fh)
+            measured.append(stamp)
+        ui = _ui_tree(checkout, src, work, script_text, modules)
+        r = subprocess.run([node, UI_SCRIPT[len("ui/"):], "--compare", measured[1], measured[0]],
+                           capture_output=True, text=True, cwd=ui)
+        if r.returncode not in (0, 1) or r.stdout.lstrip().startswith("{"):
+            raise ToolError("develop's ui/scripts/arch-metrics.mjs could not --compare two measurements (exit %d). "
+                            "The UI architecture ratchet fails closed until develop's script has --compare."
+                            % r.returncode)
+        return [line for line in r.stdout.splitlines() if line.strip()]
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+
+
 def _number(text):
     try:
         return json.loads(text)
@@ -188,7 +289,7 @@ def _number(text):
         return None
 
 
-def waiver_problems(checkout, worse, src="HEAD"):
+def waiver_problems(checkout, worse, src="HEAD", baseline=BASELINE):
     """The `arch-approved` waiver's paperwork for these regressions (check's
     lines): [] when src's own commits raise baseline.json by exactly the
     metrics that rose, each by the amount it rose, and every raised key is
@@ -205,51 +306,51 @@ def waiver_problems(checkout, worse, src="HEAD"):
     base = _git(checkout, "merge-base", REF, src).stdout.strip()
 
     def baseline_at(rev):
-        r = _git(checkout, "show", "%s:%s" % (rev, BASELINE))
+        r = _git(checkout, "show", "%s:%s" % (rev, baseline))
         try:
             return json.loads(r.stdout) if r.returncode == 0 else None
         except ValueError:
             return None
     before, after = baseline_at(base) if base else None, baseline_at(src)
     if after is None:
-        return ["%s is missing or unreadable at %s" % (BASELINE, src)]
+        return ["%s is missing or unreadable at %s" % (baseline, src)]
     before = before or {}
     raised = {k: v for k, v in after.items()
               if isinstance(v, (int, float)) and (not isinstance(before.get(k), (int, float)) or v > before[k])}
     for k, (old, new) in sorted(rose.items()):
         if k not in raised:
-            problems.append("%s rose %s -> %s, and %s does not raise it" % (k, old, new, BASELINE))
+            problems.append("%s rose %s -> %s, and %s does not raise it" % (k, old, new, baseline))
             continue
         want = new if not isinstance(before.get(k), (int, float)) else before[k] + (new - old)
         if raised[k] != want:
             problems.append("%s rose by %s, so %s should raise it to %s, not %s"
-                            % (k, new - old, BASELINE, want, raised[k]))
+                            % (k, new - old, baseline, want, raised[k]))
     for k in sorted(set(raised) - set(rose)):
-        problems.append("%s raises %s, which did not rise" % (BASELINE, k))
-    log = _git(checkout, "log", "--format=%B%x1e", "%s..%s" % (base, src), "--", BASELINE).stdout if base else ""
+        problems.append("%s raises %s, which did not rise" % (baseline, k))
+    log = _git(checkout, "log", "--format=%B%x1e", "%s..%s" % (base, src), "--", baseline).stdout if base else ""
     messages = [m.strip() for m in log.split("\x1e") if m.strip()]
     for k in sorted(set(raised) & set(rose)):
         if not any(re.search(r"\b%s\b" % re.escape(k), m) and re.search(r"\b%s\b" % re.escape(str(raised[k])), m)
                    and len(m.splitlines()) > 1 for m in messages):
             problems.append("no commit changing %s names the %s rise to %s and says why in its body"
-                            % (BASELINE, k, raised[k]))
+                            % (baseline, k, raised[k]))
     return problems
 
 
-def refusal(worse, problems=None):
+def refusal(worse, problems=None, baseline=BASELINE, what="dw's architecture metrics"):
     """The message a regression earns: each metric, then the way out.
     problems: the waiver's missing paperwork, when the issue carries the label."""
-    out = ("this work's own commits make dw's architecture metrics worse than their merge base with %s: %s. "
+    out = ("this work's own commits make %s worse than their merge base with %s: %s. "
            "Bring the number back down in this session: split the function, remove the duplicate, reuse an "
            "existing module instead of adding one, patch with `patch.object` or an injected fake instead of a "
-           "`patch(\"dw...\")` string. " % (REF, "; ".join(worse)))
+           "`patch(\"dw...\")` string. " % (what, REF, "; ".join(worse)))
     if problems:
         return out + ("The issue carries `arch-approved`, but the waiver's paperwork is incomplete: %s. Raise "
                       "%s by exactly the metrics that rose, in a commit whose message names each rise (key and "
-                      "new value) and, in its body, why." % ("; ".join(problems), BASELINE))
+                      "new value) and, in its body, why." % ("; ".join(problems), baseline))
     return out + ("If the rise is needed (a planned new module): `gh issue edit N --remove-label owner:<yours> "
                   "--add-label owner:don --add-label status:needs-approval`, comment the metric and why, and stop. "
-                  "Only Don's `arch-approved` waives it, and only with a matching %s raise." % BASELINE)
+                  "Only Don's `arch-approved` waives it, and only with a matching %s raise." % baseline)
 
 
 if __name__ == "__main__":
@@ -259,6 +360,12 @@ if __name__ == "__main__":
             worse = check(args[0], *args[1:2])
             print("\n".join(worse))
             sys.exit(1 if worse else 0)
+        if cmd == "check-ui":
+            worse = check_ui(args[0], *args[1:2])
+            print("\n".join(worse))
+            sys.exit(1 if worse else 0)
+        if cmd == "active-ui":  # the UI ratchet's switch, as of the last fetch
+            sys.exit(0 if active(args[0], fetch=False, script=UI_SCRIPT) else 1)
         if cmd == "active":  # the driver's switch, as of the last fetch
             sys.exit(0 if active(args[0], fetch=False) else 1)
         if cmd == "ready":
@@ -268,4 +375,4 @@ if __name__ == "__main__":
     except ToolError as e:
         print("arch_ratchet: %s" % e, file=sys.stderr)
         sys.exit(2)
-    sys.exit("usage: arch_ratchet.py check <checkout> [src] | ready <checkout> | active <checkout>")
+    sys.exit("usage: arch_ratchet.py check|check-ui <checkout> [src] | ready|active|active-ui <checkout>")

@@ -402,6 +402,7 @@ def arch_gate(checkout, src, arch_approved=None):
     found = freeze.violations(checkout, src, freeze.hot_zone(checkout, fetch=False), is_frozen)
     try:
         worse = arch_ratchet.check(checkout, src)
+        worse_ui = arch_ratchet.check_ui(checkout, src)
     except arch_ratchet.ToolError as e:
         deny(str(e))
     approved = []
@@ -411,10 +412,15 @@ def arch_gate(checkout, src, arch_approved=None):
         return approved[0]
     problems = arch_ratchet.waiver_problems(checkout, worse, src) if worse and is_approved() else None
     waived = bool(worse) and problems == []
+    problems_ui = (arch_ratchet.waiver_problems(checkout, worse_ui, src, arch_ratchet.UI_BASELINE)
+                   if worse_ui and is_approved() else None)
+    waived_ui = bool(worse_ui) and problems_ui == []
     park = ("Don't work around it: `gh issue edit N --remove-label owner:<yours> --add-label owner:don "
             "--add-label stabilization`, then comment which rule fired (%s) and on which path, and stop.")
     # baseline.json in an approved rise is the waiver's to judge: refused below unless its paperwork holds
-    hot = [p for r, p in found if r == "hot-zone" and not (problems is not None and p == arch_ratchet.BASELINE)]
+    hot = [p for r, p in found if r == "hot-zone"
+           and not (problems is not None and p == arch_ratchet.BASELINE)
+           and not (problems_ui is not None and p == arch_ratchet.UI_BASELINE)]
     if hot:
         deny("this work's own commits change %s, which dw is restructuring (docs/stabilization/hot-zone.txt "
              "on origin/develop; no label lifts this). %s" % (hot[0], park % "hot-zone"))
@@ -425,6 +431,9 @@ def arch_gate(checkout, src, arch_approved=None):
              % (new[0], park % "new-surface"))
     if worse and not waived:
         deny("dw's architecture ratchet: " + arch_ratchet.refusal(worse, problems))
+    if worse_ui and not waived_ui:
+        deny("dw's UI architecture ratchet: " + arch_ratchet.refusal(
+            worse_ui, problems_ui, arch_ratchet.UI_BASELINE, "the UI's architecture metrics"))
 
 
 def merge_gated(cwd):
@@ -432,7 +441,9 @@ def merge_gated(cwd):
     arch_gate's switches is on, since a merge on GitHub is never a push
     the gate sees. A switch that can't be read counts as on."""
     try:
-        return freeze.frozen(cwd) or bool(freeze.hot_zone(cwd, fetch=False)) or arch_ratchet.active(cwd, fetch=False)
+        return (freeze.frozen(cwd) or bool(freeze.hot_zone(cwd, fetch=False))
+                or arch_ratchet.active(cwd, fetch=False)
+                or arch_ratchet.active(cwd, fetch=False, script=arch_ratchet.UI_SCRIPT))
     except arch_ratchet.ToolError:
         return True
 

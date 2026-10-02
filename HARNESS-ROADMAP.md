@@ -1674,3 +1674,12 @@ moved, weekly (`lib/consolidation.py`). PR merges into `develop` stay refused wh
   none of it touches `lem`. Deploys and verification stay serial.
 - **Letting the retro agent apply its own proposals.** Rejected on principle; see
   "Principles every item must keep".
+
+## dw UI stabilization Phase 4: the UI's metrics ratchet (2026-10-02)
+
+`lib/arch_ratchet.py`'s `check_ui` ratchets dw's UI the way `check` ratchets the engine: both
+trees' `ui/` measured by develop's `ui/scripts/arch-metrics.mjs` (run with the checkout's
+`ui/node_modules`), the rise read from that script's own `--compare`, and the same `arch-approved`
+waiver against `docs/stabilization/ui/baseline.json`. On while develop carries the script; fails
+closed without node, without `ui/node_modules` (`ensure_ui_tools` runs `npm ci --prefix ui`), or
+when develop's script cannot `--compare`. Tests: `tests/test-ui-ratchet.sh`.

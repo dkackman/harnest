@@ -1318,6 +1318,7 @@ dw_frozen() {
 # tree. Warns, never blocks: guard.py fails closed on a missing tool anyway.
 ensure_arch_tools() {
   local co="${1:-$SOURCE_DIR}" want have gitdir py
+  ensure_ui_tools "$co"
   python3 "$HARNEST_LIB/arch_ratchet.py" ready "$co" >/dev/null 2>&1 && ratchet_deps_current "$co" && return 0
   python3 "$HARNEST_LIB/arch_ratchet.py" active "$co" >/dev/null 2>&1 || return 0  # the switch, as ready just fetched it
   py="$co/venv/bin/python"; [ -x "$py" ] || py=python3
@@ -1332,6 +1333,19 @@ ensure_arch_tools() {
   else
     echo "[loop] WARNING: the architecture ratchet's tools are still not ready in $co (checkout behind origin/develop, or install failed)" | tee -a "$LOOP_LOG"
   fi
+  return 0
+}
+
+# ensure_ui_tools <checkout>: the UI ratchet's tools (ui/node_modules, for
+# ESLint) when develop carries the UI metrics script and they are missing.
+# A failed install is a warning: check_ui fails closed until it works.
+ensure_ui_tools() {
+  local co="${1:-$SOURCE_DIR}"
+  python3 "$HARNEST_LIB/arch_ratchet.py" active-ui "$co" >/dev/null 2>&1 || return 0
+  [ -f "$co/ui/node_modules/eslint/package.json" ] && return 0
+  echo "[loop] installing the UI's tools for the UI architecture ratchet ($co)" | tee -a "$LOOP_LOG"
+  ( cd "$co" && npm ci --prefix ui ) >>"$LOOP_LOG" 2>&1 \
+    || echo "[loop] WARNING: npm ci --prefix ui failed in $co; the UI ratchet will refuse hand-offs until it works" | tee -a "$LOOP_LOG"
   return 0
 }
 
