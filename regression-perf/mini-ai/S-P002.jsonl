@@ -1,0 +1,1 @@
+{"ts":"2026-10-02T01:53:30Z","level":"smoke","case":"S-P002","metric":"latency","condition":"wall","value":0.32,"unit":"s","server":"develop@2b2b82ce","model":"claude-sonnet-5-5","provider":"anthropic","ref":"list_gallery(folder=templates/text-to-image) on regression-smoke","note":"wall clock between two date calls; metadata read not timed"}
