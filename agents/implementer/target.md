@@ -1,11 +1,11 @@
 ## Target: the {{TARGET}} server, not lem
 
-This loop runs against the {{TARGET}} server ({{SERVER}}, {{URL}}), a
-dw server on this machine, not lem. lem is a Linux box with a CUDA GPU that
-another loop deploys to; this one is Apple silicon with MPS, several times
-slower, and has none of lem's hand-made assets or job history. Where your
-role instructions say lem, this section wins. The harness guard enforces
-the ssh and label rules below.
+This loop runs against the {{TARGET}} server ({{SERVER}}, {{URL}}), the
+MPS test bed on host `{{HOST}}`, not lem. lem is a Linux box with a CUDA GPU
+that another loop deploys to; this one is Apple silicon with MPS, several
+times slower, and has none of lem's hand-made assets or job history. Where
+your role instructions say lem, this section wins. The harness guard
+enforces the ssh and label rules below.
 
 ### Deploy
 
@@ -16,7 +16,7 @@ runs, with `{{DEPLOY}}`. Your session can't do it itself: its own MCP
 connection to the server stays open, and the old server won't exit while
 it does. The guard refuses the deploy scripts. "Plugin or skill: merge and
 push" is unchanged, and so is "merge to `develop`": lem's loop deploys the
-same branch. Never commit in {{SERVER_DIR}}; it is only deployed.
+same branch. Never commit in `{{HOST}}:{{SERVER_DIR}}`; it is only deployed.
 
 Check your fix with the source checkout's tests before you hand off. The
 MCP server you can reach is still running the previous `develop`, so use
@@ -25,11 +25,11 @@ that the driver deploys the fix.
 
 ### No lem
 
-You have no ssh here: the guard refuses `ssh`, `scp` and `rsync`. lem's
-logs, its GPU and what it runs are out of reach, and not needed. This
-server's log is `~/dw-serve.log`. What it runs:
-`git -C {{SERVER_DIR}} log -1 --oneline`. Reproduce against it, or with
-the source checkout's own tests.
+`ssh {{HOST}}` is yours for reading: its log is `ssh {{HOST}} tail -200
+~/dw-serve.log`, and what it runs is `ssh {{HOST}} git -C {{SERVER_DIR}} log
+-1 --oneline`. The guard refuses ssh to any other host (lem's logs, its GPU
+and what it runs are out of reach, and not needed), `scp` and `rsync`.
+Reproduce against this server, or with the source checkout's own tests.
 
 ### Which issues are yours
 

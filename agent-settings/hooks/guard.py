@@ -92,8 +92,9 @@ somewhere other than lem:
     server's session: `--remove-label target:<this> --add-label target:lem`
   - no adding `verified-on:*` except by a consumer on another server
 implementer on a server other than lem (HARNEST_TARGET, set by run-loop.sh):
-  - no `ssh`, `scp` or `rsync`: lem is off limits
-  - no running a deploy script (`deploy.sh`, `deploy-local.sh`): the driver
+  - `ssh` only to its own test bed (HARNEST_TARGET_HOST), to read its log
+    and checkout; no `scp` or `rsync`; lem is off limits
+  - no running dw's deploy script (`deploy.sh`, even over ssh): the driver
     deploys between sessions, because the session's own MCP connection
     keeps the old server from exiting (#446, 2026-09-26)
 consumer on a server other than lem (HARNEST_TARGET and HARNEST_ROLE, set
@@ -507,6 +508,25 @@ def other_target():
     return "" if t in ("", "lem") else t
 
 
+def own_host():
+    """The ssh host of this session's target (HARNEST_TARGET_HOST, set by the
+    driver from target_row), short and lowercased; "" when unknown."""
+    return os.environ.get("HARNEST_TARGET_HOST", "").split(".")[0].lower()
+
+
+def ssh_host(words):
+    """The destination host of an ssh command line, short and lowercased:
+    the first argument that isn't an option or an option's value."""
+    i, takes = 1, set("bcDEeFIiJLlmOoPpQRSWw")
+    while i < len(words):
+        w = words[i]
+        if w.startswith("-") and len(w) > 1:
+            i += 2 if (w[-1] in takes and len(w) == 2) else 1
+            continue
+        return w.split("@")[-1].split(".")[0].lower()
+    return ""
+
+
 def claim_rule(words, target):
     """target: labels are the driver's claims; the one an agent adds is the
     hand-over from another server to lem."""
@@ -551,11 +571,15 @@ def main():
     cmd = data.get("tool_input", {}).get("command", "")
     for words in segments(cmd):
         if role == "implementer" and server:
-            cmdw = [w for w in words if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", w)]
-            if cmdw and os.path.basename(cmdw[0]) in ("ssh", "scp", "rsync"):
-                deny("this loop runs against the %s server: no ssh, scp or rsync; lem is off "
-                     "limits." % server)
-            if any(os.path.basename(w) in ("deploy.sh", "deploy-local.sh") for w in cmdw):
+            lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
+            while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
+                lead += 1
+            cmdw = words[lead:]
+            if cmdw and os.path.basename(cmdw[0]) in ("ssh", "scp", "rsync") \
+                    and not (os.path.basename(cmdw[0]) == "ssh" and ssh_host(cmdw) == own_host()):
+                deny("this loop runs against the %s server: ssh only to its host (%s), to read; no "
+                     "scp or rsync; lem is off limits." % (server, own_host() or "unknown"))
+            if any(os.path.basename(w) == "deploy.sh" or w.endswith("/deploy.sh") or "deploy.sh " in w for w in cmdw):
                 deny("on the %s server the driver deploys develop after your session: your own "
                      "MCP connection would hold the old server open. Merge, push and hand off."
                      % server)

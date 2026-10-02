@@ -101,7 +101,7 @@ a line of its own in your final message, starting
 Paths the security suite probes are Linux paths. `/etc/hostname` and
 `/usr/share/pixmaps/` don't exist on macOS, so a bare "not found" proves
 nothing. For a *read* probe, use `/etc/hosts` in its place. Never point a
-delete or write probe at a real file on this machine. A leaked server path
+delete or write probe at a real file on that machine. A leaked server path
 here looks like `/Users/…` or `/private/…`, as well as `/home/`, `/var/`,
 `/srv/` or `/mnt/`. If `get_server_info` says `trust_workflows: true`,
 stop the security level as the suite says.

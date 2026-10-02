@@ -56,7 +56,7 @@ Two label families decide which server's loop works an issue:
   accelerator (a CUDA-only path, MPS memory or dtype behavior, a
   device-specific kernel). Most bugs are shared. Correct a wrong one with a
   one-line comment saying why.
-- **`target:lem` / `target:local`: which server's loop holds it.** The
+- **`target:lem` / `target:mini-ai`: which server's loop holds it.** The
   driver adds this claim before your session. Never add or remove one
   yourself, except for the hand-over your Target section describes (on lem
   there is none).

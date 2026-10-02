@@ -291,40 +291,42 @@ regression case in the same cycle isn't part of that check.)
 `run-loop.sh` and `run-regression.sh` never run at once: both take `logs/.driver.lock`
 (`acquire_driver_lock`, a `mkdir` lock; a stale one is taken over) and wait for the other,
 because an implementer deploy restarts the server under a regression run. The lock is per
-server target (harnest#15; `resolve_target` and friends in `providers.sh`). With
-`DW_TARGET=local`, `run-loop.sh`, `run-features.sh` and `run-regression.sh` run against a
-dw server on this machine (the Mac, MPS) under `.driver.lock.local`, alongside the loop
-on lem. That server runs from the serving clone `DW_LOCAL_DIR` (`dw-mps-serve`), which
-`deploy_target` redeploys with its own `scripts/deploy.sh`, never over ssh.
-- **Per-target state.** Logs and state files carry a `.local` suffix (`loop.local.log`,
-  `progress.local.tsv`, …), and the clones a `-mps` one (`dw-agent-mps`,
-  `dw-agent-plugin-mps`, `dw-agent-lead-mps`), so two loops never share a tree.
+server target (harnest#15; `target_row`, `resolve_target` and friends in `providers.sh`).
+Every target is an ssh host running dw from `~/diffusers-workflow`, deployed with dw's own
+`scripts/deploy.sh`; `scripts/testbed.sh <target> status|update|start|stop|logs` runs one by
+hand. With `DW_TARGET=mini-ai`, `run-loop.sh`, `run-features.sh` and `run-regression.sh` run
+against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongside the loop on lem.
+- **Per-target state.** Logs and state files carry a `.mini-ai` suffix (`loop.mini-ai.log`,
+  `progress.mini-ai.tsv`, …), and the clones here a `-mini-ai` one (`dw-agent-mini-ai`,
+  `dw-agent-plugin-mini-ai`, `dw-agent-lead-mini-ai`), so two loops never share a tree.
 - **Which loop works which issue:** two label families, read by `lib/classify.jq` with
   the snapshot's `target`.
   - `backend:shared|cuda|mps` says what the bug is about.
-  - `target:lem|local` is the claim `claim_issue` adds before triage. A loop never
+  - `target:lem|mini-ai` is the claim `claim_issue` adds before triage. A loop never
     claims over another's, and one that reads back both labels removes its own.
   - The legacy rule: an unclaimed issue past the implementer is lem's.
-  - A session hands an issue to lem by swapping `target:local` for `target:lem`.
+  - A session hands an issue to lem by swapping `target:mini-ai` for `target:lem`.
 - **What stays on lem.** Feature specs, lead builds and close-outs, and the tester's
   standing task. The server-free passes (features, reviewer, curator) run on the Mac
   only while lem's loop isn't running (`lem_loop_running`, `SHARED_PASSES`).
 - **Prompts.** The Mac implementer, tester and regression agent each get
   `agents/<role>/target.md` appended to the system prompt (`target_note`).
 - **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):
-  - no ssh, scp, rsync or deploy script for the Mac implementer (the driver deploys
-    between sessions: the session's own MCP connection holds the old server open);
+  - for the Mac implementer, ssh only to its own test bed (`HARNEST_TARGET_HOST`), no
+    scp/rsync, and no `deploy.sh` (the driver deploys between sessions: the session's own
+    MCP connection holds the old server open);
   - no suite edit from a Mac regression run, though the Mac tester may add a case for a
     shared fix;
   - no write to lem's perf history;
   - a new Mac issue carries exactly one `backend:mps|shared` and no `target:`;
   - no comment on a `target:lem` issue;
   - a Mac verification adds `verified-on:mps`.
-- **Regression runs.** A Mac run commits only `regression-perf/local/`.
+- **Regression runs.** A Mac run commits only `regression-perf/mini-ai/`
+  (`regression-perf/local/` is the earlier local server's history, other hardware).
 - **Preflight.** `target_preflight` refuses a server whose `/api/health` hostname isn't
-  this machine, so a tunnel to lem can't pass as local.
-- **Setup and fixtures.** `scripts/setup-mac-loop.sh` makes the clones.
-  `scripts/sync-fixtures.sh` copies lem's `qa-cast` fixture media when Don runs it.
+  the target's host, so a tunnel to lem can't pass as the test bed.
+- **Setup and fixtures.** README "Another server" sets up a box; `scripts/setup-mac-loop.sh`
+  makes the clones here. `scripts/sync-fixtures.sh` copies lem's `qa-cast` media, via a stage here.
 
 `run-release.sh` refuses any target but lem, and its regression gate counts every
 regression filed during it, `backend:mps` included. `run-features.sh`
@@ -476,7 +478,7 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
 `close` / `list`). The invariants both role prompts and the status-board query depend on:
 
 - **Which server's loop** (harnest#15): `backend:shared|cuda|mps` says what a bug is about
-  and `target:lem|local` is the claim of the loop working it; `lib/classify.jq` holds
+  and `target:lem|mini-ai` is the claim of the loop working it; `lib/classify.jq` holds
   another loop's issues at `wait` (README "Another server").
 - `owner` is a label, exactly one of `owner:implementer` / `owner:tester` /
   `owner:don` / `owner:lead` at a time — whoever's turn it is to act

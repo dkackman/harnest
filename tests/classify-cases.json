@@ -1892,7 +1892,7 @@
   "name": "architecture review: server-free, so another server's loop runs it too",
   "input": {
    "owner": "dkackman",
-   "target": "local",
+   "target": "mini-ai",
    "issues": [
     {
      "number": 135,
@@ -2204,10 +2204,10 @@
   }
  },
  {
-  "name": "target: implementer eligibility (local)",
+  "name": "target: implementer eligibility (mini-ai)",
   "input": {
    "owner": "dkackman",
-   "target": "local",
+   "target": "mini-ai",
    "issues": [
     {
      "number": 1,
@@ -2334,7 +2334,7 @@
        "name": "owner:implementer"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       },
       {
        "name": "backend:shared"
@@ -2361,7 +2361,7 @@
        "name": "owner:implementer"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       },
       {
        "name": "target:lem"
@@ -2522,7 +2522,7 @@
        "name": "owner:implementer"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       },
       {
        "name": "backend:shared"
@@ -2549,7 +2549,7 @@
        "name": "owner:implementer"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       },
       {
        "name": "target:lem"
@@ -2581,10 +2581,10 @@
   }
  },
  {
-  "name": "target: legacy and lem-only (local)",
+  "name": "target: legacy and lem-only (mini-ai)",
   "input": {
    "owner": "dkackman",
-   "target": "local",
+   "target": "mini-ai",
    "issues": [
     {
      "number": 10,
@@ -2621,7 +2621,7 @@
        "name": "status:fixed-pending-verify"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       }
      ],
      "author": {
@@ -2648,7 +2648,7 @@
        "name": "status:needs-info"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       }
      ],
      "author": {
@@ -2766,7 +2766,7 @@
        "name": "owner:implementer"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       },
       {
        "name": "backend:cuda"
@@ -2792,10 +2792,10 @@
   }
  },
  {
-  "name": "target: claims (local)",
+  "name": "target: claims (mini-ai)",
   "input": {
    "owner": "dkackman",
-   "target": "local",
+   "target": "mini-ai",
    "issues": [
     {
      "number": 20,
@@ -2805,7 +2805,7 @@
        "name": "owner:implementer"
       },
       {
-       "name": "target:local"
+       "name": "target:mini-ai"
       },
       {
        "name": "backend:cuda"

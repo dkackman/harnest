@@ -72,11 +72,11 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-# DW_TARGET=local runs this loop against a dw server on this machine (the
-# Mac, MPS) instead of lem (harnest#15; resolve_target in providers.sh).
-# Each target has its own clones, so two loops never switch branches or
-# reset a tree under each other: the defaults below take a -mps suffix.
-tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo -mps )"
+# DW_TARGET=mini-ai runs this loop against the MPS test bed instead of lem
+# (harnest#15; target_row and resolve_target in providers.sh). Each target
+# has its own clones here, so two loops never switch branches or reset a
+# tree under each other: the defaults below take a -<target> suffix.
+tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo "-$DW_TARGET" )"
 # The agents' own clone, not Don's working checkout: the implementer switches
 # branches, merges and runs tests here, and on 2026-09-22 Don's checkout was
 # mid-feature (feat/run-versions) under it. It has its own venv (install.sh).
@@ -212,15 +212,15 @@ resolve_target || exit 1
 # The claim and backend labels (harnest#15) must exist before anything adds
 # them: gh refuses a label the repo doesn't have, which would fail every
 # claim and every filing. Idempotent.
-for l in target:lem target:local backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
+for l in $(printf 'target:%s ' $TARGETS) backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
   gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
 done
 if [ "$DW_TARGET" != lem ]; then
-  # Nothing answering is the normal first start (or a server a failed
-  # deploy left down): deploy the serving clone. Then refuse to run against
-  # nothing, or against lem behind a tunnel.
+  # Nothing answering is a test bed left stopped (or a failed deploy):
+  # deploy develop there. Then refuse to run against nothing, or against
+  # another host behind a tunnel.
   if ! target_health >/dev/null; then
-    echo "[loop] no server answering at $DW_URL; deploying the serving clone" | tee -a "$LOOP_LOG"
+    echo "[loop] no server answering at $DW_URL; deploying develop to $TARGET_HOST" | tee -a "$LOOP_LOG"
     deploy_target || true
   fi
   target_preflight || exit 1
@@ -354,7 +354,7 @@ run_agent() {
   fi
   # HARNEST_ISSUE is the issue a per-issue session works, for the guard's
   # freeze check on a push of develop; empty for triage, task and the like.
-  local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind" HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE="$role"
+  local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind" HARNEST_TARGET="$DW_TARGET" HARNEST_TARGET_HOST="$TARGET_HOST" HARNEST_ROLE="$role"
                         HARNEST_TICKET_REPO="$TICKET_REPO" HARNEST_ISSUE="$([ "$issue_repo" = "$TICKET_REPO" ] && printf '%s' "$issue_n")")
   SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX" "$dir" "$prompt_file" \
     "$prompt

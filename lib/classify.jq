@@ -65,7 +65,7 @@ def owners: names | map(select(startswith("owner:")));
 def claims: names | map(select(startswith("target:")) | ltrimstr("target:"));
 def backend: (names | map(select(startswith("backend:")) | ltrimstr("backend:")) | .[0]) // "";
 def holder: claims | if index("lem") != null then "lem" else .[0] end;
-def serves($t; $b): ($b == "" or $b == "shared") or ($b == "cuda" and $t == "lem") or ($b == "mps" and $t == "local");
+def serves($t; $b): ($b == "" or $b == "shared") or ($b == "cuda" and $t == "lem") or ($b == "mps" and $t != "lem");
 
 def marker_versions($kind):
   [ (.markers // [])[]

@@ -25,16 +25,16 @@
 #   DW_URL=... DW_TOKEN=... ./run-regression.sh
 #   tail -f logs/regression.log              # watch from another terminal
 #
-# Another server (harnest#15). DW_TARGET=local runs against a dw server this
-# machine runs out of DW_LOCAL_DIR (the Mac, MPS), which you start by hand:
-#   DW_TARGET=local ./run-regression.sh smoke
-#   tail -f logs/regression.local.log
-# It takes its own lock (logs/.driver.lock.local), so it runs alongside the
-# loop against lem; its session state and logs carry a .local suffix; it
-# loads the plugin from DW_LOCAL_DIR, the copy that server serves; its perf
-# readings go to regression-perf/local/; and what it files goes to owner:don
-# with target:local, since the loop can only reproduce and verify on lem
-# (target_note in providers.sh).
+# Another server (harnest#15). DW_TARGET=mini-ai runs against the MPS test
+# bed (target_row in providers.sh; scripts/testbed.sh starts and updates it):
+#   DW_TARGET=mini-ai ./run-regression.sh smoke
+#   tail -f logs/regression.mini-ai.log
+# It takes its own lock (logs/.driver.lock.mini-ai), so it runs alongside
+# the loop against lem; its session state and logs carry a .mini-ai suffix;
+# it loads the plugin from its own worktree at origin/develop (what the test
+# bed deploys); its perf readings go to regression-perf/mini-ai/; and what
+# it files carries backend:mps or backend:shared (target_note in
+# providers.sh).
 #
 # Model/provider resolution lives in providers.sh — see its header for the
 # supported providers and the per-provider knobs (OLLAMA_*, GW_*).
@@ -73,8 +73,9 @@
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent}"          # the agents' clone (see run-loop.sh)
-PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin}"  # origin/develop, shared with run-loop.sh (lem target only)
+tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo "-$DW_TARGET" )"   # per-target clones, as in run-loop.sh
+SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent$tsfx}"          # the agents' clone (see run-loop.sh)
+PLUGIN_TREE="${PLUGIN_TREE:-$HOME/src/dkackman/dw-agent-plugin$tsfx}"  # origin/develop, shared with this target's run-loop.sh
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
 LOGS="$REPO/logs"
 PROVIDER="${PROVIDER:-anthropic}"  # where that model lives: anthropic|ollama|gateway
@@ -140,12 +141,12 @@ resolve_target || exit 1
 # carries TARGET_SUFFIX, so a lem run and a local run never share a log,
 # a last-session file or a prompt file.
 LOGNAME_REGRESSION="regression$TARGET_SUFFIX"
-# Log prefix: [regression:smoke.2] on lem, [regression-local:smoke.2] here.
+# Log prefix: [regression:smoke.2] on lem, [regression-mini-ai:smoke.2] on mini-ai.
 RPFX="regression${TARGET_SUFFIX:+-$DW_TARGET}"
 SERVER="lem" TARGET_HEALTH=""
 if [ "$DW_TARGET" != lem ]; then
-  # A server answers at DW_URL, and it is this machine, not lem through a
-  # tunnel. Nothing below runs otherwise.
+  # A server answers at DW_URL, and it is the target's host, not lem
+  # through a tunnel. Nothing below runs otherwise.
   target_preflight || exit 1
   SERVER="the $DW_TARGET server ($TARGET_HEALTH)"
   # model-specific loads H3 (~50 GB) and full-size LTX: on a 64 GB unified
@@ -166,16 +167,11 @@ SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_
 # under logs/.
 acquire_driver_lock run-regression
 LAST_SESSION="$LOGS/.last-session.$LOGNAME_REGRESSION"
-if [ "$DW_TARGET" = lem ]; then
-  PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
-  refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
-    || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
-else
-  # What a hand-run server serves is its own checkout, branch and all. The
-  # shared worktree is lem's: resetting it here would swap the lem
-  # tester's skills mid-cycle.
-  PLUGIN_DIR="$DW_LOCAL_DIR/plugins/dw"
-fi
+# Every target deploys origin/develop, and each has its own worktree, so
+# resetting it never swaps another target's tester's skills mid-cycle.
+PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
+refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
+  || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
 [ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
 
 # --effort; medium unless set. Defaults to EFFORT (providers.sh).
@@ -327,7 +323,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
   # session's prompt, so a filing names it too
   local head
   head="$(deployed_head)"
-  # Another target's header and session lines carry its tag (smoke.local),
+  # Another target's header and session lines carry its tag (smoke.mini-ai),
   # so run-curate.sh's per-chunk cost table, which reads lem's runs out of
   # loop.log, neither counts them nor mixes their sessions into lem's.
   local tag="$level$TARGET_SUFFIX" held="" id

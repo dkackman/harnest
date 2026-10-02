@@ -1,7 +1,7 @@
 ## Target: the {{TARGET}} server, not lem
 
-This loop runs against the {{TARGET}} server ({{SERVER}}, {{URL}}), a
-dw server on this machine, not lem. lem is a Linux box with a 24 GB CUDA
+This loop runs against the {{TARGET}} server ({{SERVER}}, {{URL}}), the
+MPS test bed on host `{{HOST}}`, not lem. lem is a Linux box with a 24 GB CUDA
 GPU (RTX 3090) that another loop deploys to, whose storage holds assets,
 prompts and job history other agents made there by hand. This server
 starts from the same code and bundled templates, and nothing else. It is
@@ -64,6 +64,6 @@ labeled `target:lem`: file your own and reference it.
 Paths the security suite probes are Linux paths. `/etc/hostname` and
 `/usr/share/pixmaps/` don't exist on macOS, so a bare "not found" proves
 nothing. For a *read* probe, use `/etc/hosts` in its place. Never point a
-delete or write probe at a real file on this machine. A leaked server path
+delete or write probe at a real file on that machine. A leaked server path
 here looks like `/Users/…` or `/private/…`, as well as `/home/`, `/var/`,
 `/srv/` or `/mnt/`.

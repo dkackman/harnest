@@ -29,7 +29,7 @@ Other agents work alongside them, each through the same issues:
   when a release is cut (see "Releasing").
 
 The loop normally runs against `lem`. A second copy can run against a dw server on the Mac
-(`DW_TARGET=local`), and labels decide which loop works which issue (see "Another
+(`DW_TARGET=mini-ai`, the MPS test bed), and labels decide which loop works which issue (see "Another
 server"). This repo holds no application code, only the drivers, role prompts and
 regression suites. [`HARNESS-ROADMAP.md`](HARNESS-ROADMAP.md) is the plan for where the
 harness goes next.
@@ -192,7 +192,7 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Approve an architecture exception | Add `arch-approved` to the issue and hand it back. It waives a blocking architecture-review finding, and a metrics-ratchet rise (a new `dw/` module) when the same work raises `docs/stabilization/baseline.json` by exactly that rise, in a commit saying why. |
 | Rule on a `consolidation` issue (filed weekly from dw's `arch_report.py`) | Plan it: swap `owner:don` for `owner:lead`. Or close it. |
 | Freeze for a release | Open an issue titled with the version (`Release 0.5.0`), labeled `release` + `owner:don`. Until you close it, only issues labeled `release-blocker` move, and the tester's standing task is held. Add `release-blocker` to what must land first. |
-| Send a Mac issue to lem (or fix a wrong claim) | `gh issue edit <n> --remove-label target:local --add-label target:lem`. lem's loop deploys `develop`, which has any Mac fix. |
+| Send a Mac issue to lem (or fix a wrong claim) | `gh issue edit <n> --remove-label target:mini-ai --add-label target:lem`. lem's loop deploys `develop`, which has any Mac fix. |
 | Correct an issue's backend | Swap its `backend:` label. `cuda` keeps it off the Mac loop, `mps` off lem's. |
 | Check a Mac-only verification on CUDA | Issues with `verified-on:mps` were verified on the Mac only. Reopen one as `owner:tester` + `status:fixed-pending-verify` + `target:lem` and lem's tester re-verifies it. |
 
@@ -261,36 +261,53 @@ Run it by hand, from cron, or with the `loop` skill. `run-loop.sh` and `run-regr
 share a lock (`logs/.driver.lock`) and wait for each other, because an implementer deploy
 would restart the server partway through a regression run.
 
-### Another server: `DW_TARGET=local`
+### Another server: `DW_TARGET=mini-ai`
 
-A second `dw` server on this machine (the Mac: Apple silicon, MPS) runs the loop and the
-regression suites while lem is busy, and covers MPS. Everything for it is keyed by
-`DW_TARGET=local`, and nothing it does reaches lem. The design is in
+A second `dw` server, the MPS test bed on the LAN host `mini-ai` (Apple M5 Pro, 64 GB),
+runs the loop and the regression suites while lem is busy, and covers MPS. The driver
+reaches it over ssh and updates it with dw's own `scripts/deploy.sh`, exactly as it does
+lem: both are rows in `target_row` (`providers.sh`). Everything for it is keyed by
+`DW_TARGET=mini-ai`, and nothing it does reaches lem. The design is in
 [`docs/superpowers/specs/2026-09-26-mac-loop-design.md`](docs/superpowers/specs/2026-09-26-mac-loop-design.md).
 
-**One-time setup.**
+**One-time setup.** On `mini-ai` (done 2026-10-01; repeat it for a new box):
 
 ```sh
-scripts/setup-mac-loop.sh --dry-run    # what it would make
-scripts/setup-mac-loop.sh              # dw-agent-mps (implementer clone), dw-mps-serve (serving clone), venvs, ~/dw-mps-workspace
+echo 'eval "$(/opt/homebrew/bin/brew shellenv)"' >> ~/.zshenv   # ssh commands don't read .zprofile
+brew install python@3.12 node                                   # dw needs Python >= 3.12 (numpy); node builds the UI
+git clone -b develop https://github.com/dkackman/diffusers-workflow.git ~/diffusers-workflow
+cd ~/diffusers-workflow && INSTALL_PYTHON_VERSION=3.12 bash ./install.sh
+(cd ui && npm run build)                                        # deploy.sh rebuilds it only when a pull touches ui/
+venv/bin/hf auth login                                          # gated models
+scripts/deploy.sh develop                                       # first start: screen session dw-serve, log ~/dw-serve.log
 ```
 
-Then stop any `dw` server you started by hand. When the loop starts and nothing answers,
-it deploys the serving clone (`scripts/deploy-local.sh`, which runs
-`DW_LOCAL_DIR/scripts/deploy.sh develop` and records what it deployed in
-`logs/.deployed.local`; that record, not the clone's checkout, is what the prompts call
-"running"). The server binds to
-127.0.0.1 in a `screen` session named `dw-serve` (`screen -r dw-serve`) and logs to
-`~/dw-serve.log`. The deploy needs the dw `deploy.sh` that finds the server by its port
-(branch `fix/deploy-find-server-by-port`).
+The server binds to all interfaces on port 8765 (deploy.sh's default), so `minid` reaches
+it at `http://mini-ai:8765/mcp`; MPS works from an ssh session, no desktop login needed.
+On this machine, `scripts/setup-mac-loop.sh` makes the implementer's clone
+(`dw-agent-mini-ai`, with its venv). A new target is a row in `target_row`, and
+`classify.jq`'s `serves()` reads "lem is the CUDA box, every other target is a Mac".
+
+**Running the test bed** (any target, lem too):
+
+```sh
+scripts/testbed.sh mini-ai status         # health and the commit it serves
+scripts/testbed.sh mini-ai update         # deploy.sh develop: fetch, fast-forward, reinstall, restart
+scripts/testbed.sh mini-ai update feat/x  # any branch
+scripts/testbed.sh mini-ai stop|start|restart|logs [n]
+```
+
+`stop`, `start` and `update` refuse while a loop or regression run holds that target's
+driver lock (`--force` overrides), since a restart fails its running cases. When the loop
+starts and nothing answers, it deploys `develop` there itself.
 
 **Running it.**
 
 ```sh
-DW_TARGET=local SHARED_PASSES=1 ./run-loop.sh    # SHARED_PASSES=1 while lem's loop is off
-DW_TARGET=local ./run-regression.sh smoke
-tail -f logs/loop.local.log
-scripts/sync-fixtures.sh                          # lem's qa-cast media, when lem isn't busy (below)
+DW_TARGET=mini-ai SHARED_PASSES=1 ./run-loop.sh    # SHARED_PASSES=1 while lem's loop is off
+DW_TARGET=mini-ai ./run-regression.sh smoke
+tail -f logs/loop.mini-ai.log
+scripts/sync-fixtures.sh                            # lem's qa-cast media, when lem isn't busy (below)
 ```
 
 **Which loop works which issue.** Two label families decide it:
@@ -298,11 +315,11 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
 | label | question | set by |
 |---|---|---|
 | `backend:shared` / `backend:cuda` / `backend:mps` | what is the bug about? | the filer, or triage when it's missing |
-| `target:lem` / `target:local` | which server's loop holds it? | the driver, when a loop takes it; kept until it closes |
+| `target:lem` / `target:mini-ai` | which server's loop holds it? | the driver, when a loop takes it; kept until it closes |
 
 | issue | lem loop | Mac loop |
 |---|---|---|
-| claimed `target:lem` / `target:local` | its own claims only | its own claims only |
+| claimed `target:lem` / `target:mini-ai` | its own claims only | its own claims only |
 | unclaimed `backend:cuda` | yes | no |
 | unclaimed `backend:mps` | no | yes |
 | unclaimed `backend:shared`, or no backend | yes | yes (triage labels it) |
@@ -313,27 +330,27 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
   back both labels removes its own. If both do, neither holds it, and it is claimed next
   cycle.
 - **Handing over to lem.** A session that finds an issue belongs on lem hands the claim
-  over with `--remove-label target:local --add-label target:lem`. That's the Mac
+  over with `--remove-label target:mini-ai --add-label target:lem`. That's the Mac
   implementer for a cuda bug, and the Mac tester for a repro it can't run here: a lem-only
   fixture, CUDA, or a model too big for 64 GB. Both loops deploy `develop`, so lem's
   tester gets the fix.
-- **A contradiction.** A `backend:cuda` issue claimed `target:local` is `stranded`, and
+- **A contradiction.** A `backend:cuda` issue claimed `target:mini-ai` is `stranded`, and
   the audit flags it.
 
 **What the Mac loop does differently.**
 - **Its own state:**
-  - its lock is `logs/.driver.lock.local`. A Mac regression run uses the same lock, so
+  - its lock is `logs/.driver.lock.mini-ai`. A Mac regression run uses the same lock, so
     the two take turns; neither ever waits on lem's lock.
-  - logs: `loop.local.log` and `<role>.local.log`;
-  - state files: `progress.local.tsv`, `closures-seen.local`, `stop-after-cycle.local`;
-  - clones: `dw-agent-mps`, `dw-agent-plugin-mps`, `dw-agent-lead-mps`, `dw-mps-serve`.
+  - logs: `loop.mini-ai.log` and `<role>.mini-ai.log`;
+  - state files: `progress.mini-ai.tsv`, `closures-seen.mini-ai`, `stop-after-cycle.mini-ai`;
+  - clones here: `dw-agent-mini-ai`, `dw-agent-plugin-mini-ai`, `dw-agent-lead-mini-ai`.
 - **Deploy.** Only the driver deploys, between sessions: `deploy_cmd` (`providers.sh`)
-  runs the serving clone's `deploy.sh` through `scripts/deploy-local.sh`. The Mac
-  implementer merges, pushes and hands off, and the guard refuses it the deploy scripts.
+  runs `ssh mini-ai '~/diffusers-workflow/scripts/deploy.sh develop'`. The Mac
+  implementer merges, pushes and hands off, and the guard refuses it `deploy.sh`.
   A session's own MCP connection keeps the old server from exiting on the `screen`
   restart path (#446, 2026-09-26). Its target section
   ([`agents/implementer/target.md`](agents/implementer/target.md)) and
-  `agent-settings/implementer.local.json` say so.
+  `agent-settings/implementer.mini-ai.json` say so.
 - **Verify.** The tester follows its target section
   ([`agents/tester/target.md`](agents/tester/target.md)). A verification here adds
   `verified-on:mps`, meaning CUDA hasn't re-verified the fix.
@@ -348,7 +365,8 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
 - **Budget.** `TESTER_BUDGET_USD` defaults to 8 here and 5 on lem, because MPS jobs run
   2-3x slower.
 - **Guard** (via `HARNEST_TARGET` and `HARNEST_ROLE`):
-  - the Mac implementer can't run `ssh`, `scp`, `rsync` or a deploy script;
+  - the Mac implementer may `ssh mini-ai` to read its log and checkout, and nothing
+    else: no ssh to lem, no `scp`/`rsync`, no `deploy.sh`;
   - a Mac regression run can't edit a suite file (the Mac tester may);
   - nothing on the Mac writes to lem's perf history;
   - a new issue carries one `backend:mps` or `backend:shared` label, one owner, and no
@@ -361,12 +379,14 @@ scripts/sync-fixtures.sh                          # lem's qa-cast media, when le
   included.
 
 **A regression run here can't touch lem either.**
-- **Identity.** `DW_URL` must name this machine, so a leftover lem URL is refused. Then
-  `/api/health` must answer with this machine's hostname, so an ssh tunnel to lem is
-  refused too. The Mac loop runs the same check before it starts.
-- **Plugin and commits.** It loads the plugin from `DW_LOCAL_DIR/plugins/dw`, so lem's
-  `PLUGIN_TREE` is never reset. It commits only `regression-perf/local/`, never the suite
-  files or lem's readings, and makes no startup commit.
+- **Identity.** `DW_URL` must name the target's host, so a leftover lem URL is refused.
+  Then `/api/health` must answer with that hostname, so a tunnel to lem is refused too.
+  The Mac loop runs the same check before it starts.
+- **Plugin and commits.** It loads the plugin from its own worktree at `origin/develop`
+  (`dw-agent-plugin-mini-ai`), so lem's `PLUGIN_TREE` is never reset. It commits only
+  `regression-perf/mini-ai/`, never the suite files or lem's readings, and makes no
+  startup commit. (`regression-perf/local/` is history from the earlier local server, on
+  other hardware: kept, never compared with.)
 
 The agent follows
 [`agents/regression/target.md`](agents/regression/target.md), which is added to its
@@ -376,7 +396,7 @@ system prompt:
   `target:lem` issue. A new one is `owner:implementer` + `backend:mps` (`backend:shared`
   when the case also fails on lem), so the Mac loop can work it.
 - **Timing:** figures in case text were measured on lem's CUDA GPU. A reading is judged
-  only against `regression-perf/local/` history, and one that includes a first-time
+  only against `regression-perf/mini-ai/` history, and one that includes a first-time
   download is marked as such.
 - **Skipped:** a case whose fixture is missing here, whose expectation is about CUDA
   hardware, or that would load H3 or full-size LTX is listed as
@@ -387,9 +407,9 @@ system prompt:
 - **Security probes:** Linux-only paths get macOS stand-ins for reads, and leak checks
   also catch `/Users/` and `/private/`.
 
-The driver never hands out the cases in `TARGET_SKIP_CASES` on a local target. The
+The driver never hands out the cases in `TARGET_SKIP_CASES` on another target. The
 default is S-F079, C-F005, C-F007, C-F023 and C-F047, each of which can run a 64 GB
-machine out of memory. It logs them as skipped. `all` on a local target is smoke, complete
+machine out of memory. It logs them as skipped. `all` on another target is smoke, complete
 and security. `model-specific` runs only when you
 name it, since H3 and LTX at full size are a memory risk on 64 GB of unified memory.
 
@@ -402,9 +422,10 @@ scripts/sync-fixtures.sh --dry-run   # what would come across
 scripts/sync-fixtures.sh             # copy lem's qa-cast/, uploads/qa-cast/, cast/, reference_sheet.jpg
 ```
 
-It reads lem at idle priority with a bandwidth cap. It writes into the local server's
-`common/assets`, never overwriting a file already there. Knobs: `FIXTURE_SOURCE`,
-`DW_LOCAL_WORKSPACE`, `FIXTURE_BWLIMIT_KBPS`.
+It reads lem at idle priority with a bandwidth cap into a stage here
+(`logs/.fixtures-stage`; rsync can't copy remote to remote), then into the test bed's
+`common/assets`, never overwriting a file already there. Knobs: `DW_TARGET`,
+`FIXTURE_SOURCE`, `DW_TARGET_WORKSPACE`, `FIXTURE_STAGE`, `FIXTURE_BWLIMIT_KBPS`.
 
 `run-release.sh` refuses any target but `lem`.
 
@@ -568,8 +589,8 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 - **Real models run on this machine, twice.** dw's `scripts/preflight.sh` (the
   preflight gate) and `scripts/release.sh` (inside `cut`) both run `pytest -m
   integration`: SD 1.5 and mms-tts on the Mac's MPS, from the HF cache. release.sh
-  refuses without an accelerator. Neither checks for the Mac loop, whose `dw-mps-serve`
-  shares that memory, so stop it (`DW_TARGET=local`) before `gates` and `cut`. The
+  refuses without an accelerator. Neither checks for the Mac loop (`DW_TARGET=mini-ai`);
+  its server is on another box now, but stop the loop before `gates` and `cut`. The
   release PR's checks, which `cut` waits on, include a Playwright e2e job that runs only
   on PRs into `master`.
 - **Security findings stay off the public tracker.** The review files each one as a
@@ -613,13 +634,13 @@ tail -f logs/loop.log                           # watch from another terminal
 
 | var | default | what |
 |---|---|---|
-| `SOURCE_DIR` | `~/src/dkackman/dw-agent` (`-mps` on `DW_TARGET=local`) | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
-| `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` (`-mps` on local) | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
+| `SOURCE_DIR` | `~/src/dkackman/dw-agent` (`-<target>` on another target) | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
+| `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` (`-<target>` on another target) | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
 | `DW_URL` / `DW_TOKEN` | the target's (`http://lem:8765/mcp`) / `xyz` | the MCP endpoint (dev token, LAN only) |
-| `DW_TARGET` / `DW_LOCAL_DIR` | `lem` / `~/src/dkackman/dw-mps-serve` | which server `run-loop.sh`, `run-features.sh` and `run-regression.sh` run against: `lem`, or `local`, a server this machine runs from the serving clone `DW_LOCAL_DIR` (see "Another server") |
+| `DW_TARGET` | `lem` | which test bed `run-loop.sh`, `run-features.sh`, `run-regression.sh` and `scripts/testbed.sh` run against: a row of `target_row` in `providers.sh` (`lem`, `mini-ai`); `run-release.sh` is lem only |
 | `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running |
-| `DW_LOCAL_WORKSPACE` / `DW_ORIGIN_URL` | `~/dw-mps-workspace` / the dw repo on GitHub | the local server's `--workspace`, and what `scripts/setup-mac-loop.sh` clones |
+| `DW_TARGET_WORKSPACE` / `DW_ORIGIN_URL` | asked of the server / the dw repo on GitHub | the test bed's `--workspace` root, for `scripts/sync-fixtures.sh`; what `scripts/setup-mac-loop.sh` clones |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `claude-sonnet-5-5` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |
 | `TRIAGE_MODEL` / `TRIAGE_PROVIDER` | the tester's | triage is strong by default: a wrong `wontfix`/`duplicate` never bounces back |
@@ -651,7 +672,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `REVIEWER_BUDGET_USD` | `2` | per docs review session |
 | `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
 | `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run |
-| `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` (`-mps` on local) | `run-features.sh`: the lead's detached worktree at `origin/develop` |
+| `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` (`-<target>` on another target) | `run-features.sh`: the lead's detached worktree at `origin/develop` |
 | `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | `1800000` | how long a headless session waits for a background subagent before it is killed (Claude Code's default is 600 s) |
 
 The standalone drivers have their own knobs:
@@ -817,7 +838,7 @@ raw events.
     have been quiet 20 s after a session starts or ends (at most once a minute, at least every
     5 min), backs off 15 min if GitHub answers with a rate limit, and a new item shows in
     Events;
-  - what the current session on lem (`loop.log`) and on the Mac (`loop.local.log`) is doing:
+  - what the current session on lem (`loop.log`) and on the Mac (`loop.mini-ai.log`) is doing:
     turns, context, last tool call;
   - the recent sessions, with their cost;
   - a release's gate log, while one is running;

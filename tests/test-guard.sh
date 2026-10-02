@@ -86,35 +86,35 @@ eq "non-Bash tool passes" 0 $?
 # --- a consumer on a server other than lem (HARNEST_TARGET; harnest#15)
 # frow <expect> <target> <tool> <path, relative to a fake harness root> [role]
 # role is HARNEST_ROLE: regression (the default) or tester
-root="$T/root"; mkdir -p "$root/regression-perf/local"
+root="$T/root"; mkdir -p "$root/regression-perf/mini-ai"
 frow() {
   jq -n --arg t "$3" --arg p "$root/$4" '{tool_name: $t, tool_input: {file_path: $p}, cwd: "/tmp"}' \
     | HARNEST_ROOT="$root" HARNEST_TARGET="$2" HARNEST_ROLE="${5:-regression}" python3 "$guard" consumer >/dev/null 2>&1
   eq "consumer(${5:-regression})@$2 $3 $4" "$1" $?
 }
-frow 2 local Edit  regression-suite-smoke.md
-frow 2 local Write regression-suite-mps.md
-frow 2 local Edit  regression-perf/S-P001.jsonl
-frow 2 local Write regression-perf/other/S-P001.jsonl
-frow 0 local Write regression-perf/local/S-P001.jsonl
-frow 0 local Edit  regression-perf/local/S-P001.jsonl
-frow 0 local Write qa-bible.md
+frow 2 mini-ai Edit  regression-suite-smoke.md
+frow 2 mini-ai Write regression-suite-mps.md
+frow 2 mini-ai Edit  regression-perf/S-P001.jsonl
+frow 2 mini-ai Write regression-perf/other/S-P001.jsonl
+frow 0 mini-ai Write regression-perf/mini-ai/S-P001.jsonl
+frow 0 mini-ai Edit  regression-perf/mini-ai/S-P001.jsonl
+frow 0 mini-ai Write qa-bible.md
 frow 0 lem   Edit  regression-suite-smoke.md
 frow 0 ""    Edit  regression-perf/S-P001.jsonl
 # the Mac loop's tester may add a case for a shared fix; not perf history
-frow 0 local Edit  regression-suite-smoke.md tester
-frow 2 local Write regression-perf/S-P001.jsonl tester
+frow 0 mini-ai Edit  regression-suite-smoke.md tester
+frow 2 mini-ai Write regression-perf/S-P001.jsonl tester
 jq -n --arg p "/tmp/S-F001-local-issue.md" '{tool_name: "Write", tool_input: {file_path: $p}, cwd: "/tmp"}' \
-  | HARNEST_ROOT="$root" HARNEST_TARGET=local python3 "$guard" consumer >/dev/null 2>&1
-eq "consumer@local: a write outside the harness passes" 0 $?
+  | HARNEST_ROOT="$root" HARNEST_TARGET=mini-ai HARNEST_TARGET_HOST=mini-ai python3 "$guard" consumer >/dev/null 2>&1
+eq "consumer@mini-ai: a write outside the harness passes" 0 $?
 jq -n --arg p "$root/regression-suite-smoke.md" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: "/tmp"}' \
-  | HARNEST_ROOT="$root" HARNEST_TARGET=local python3 "$guard" implementer >/dev/null 2>&1
+  | HARNEST_ROOT="$root" HARNEST_TARGET=mini-ai HARNEST_TARGET_HOST=mini-ai python3 "$guard" implementer >/dev/null 2>&1
 eq "the target rule is the consumer's only" 0 $?
-# trow <expect> <command>: gh on the local target
+# trow <expect> <command>: gh on the mini-ai target
 trow() {
   jq -n --arg c "$2" --arg t "${3:-/nonexistent}" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: $t, cwd: "/tmp"}' \
-    | HARNEST_ROOT="$root" HARNEST_TARGET=local HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
-  eq "consumer@local: $2" "$1" $?
+    | HARNEST_ROOT="$root" HARNEST_TARGET=mini-ai HARNEST_TARGET_HOST=mini-ai HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer@mini-ai: $2" "$1" $?
 }
 # a new issue names its backend (one this server can observe), an owner,
 # and no claim: claims are the driver's
@@ -122,7 +122,7 @@ trow 0 'gh issue create --title "S-F070 fails" --label owner:implementer,backend
 trow 0 'gh issue create --title "S-F070 fails" -l owner:implementer -l backend:shared'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,regression'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,backend:cuda'
-trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,backend:mps,target:local'
+trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,backend:mps,target:mini-ai'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:don,owner:implementer,backend:mps'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,backend:mps,backend:shared'
 # comments: the stub says #7 carries the asked-for label (target:lem here),
@@ -133,14 +133,14 @@ trow 2 'gh issue comment 9 --body "gh cannot say"'
 # a verification here says where it was verified; a claim moves only to lem
 trow 2 'gh issue edit 5 --add-label status:verified' "$mcp_transcript"
 trow 0 'gh issue edit 5 --add-label status:verified --add-label verified-on:mps' "$mcp_transcript"
-trow 0 'gh issue edit 5 --remove-label target:local --add-label target:lem'
-trow 2 'gh issue edit 5 --add-label target:local'
+trow 0 'gh issue edit 5 --remove-label target:mini-ai --add-label target:lem'
+trow 2 'gh issue edit 5 --add-label target:mini-ai'
 trow 2 'gh issue edit 5 --add-label target:lem'
-# the implementer on the local target: no ssh anywhere, the cuda hand-over
+# the implementer on another target: ssh to its own test bed only, the cuda hand-over
 irow() {
   jq -n --arg c "$2" '{tool_name: "Bash", tool_input: {command: $c}, cwd: "/tmp"}' \
-    | HARNEST_TARGET=local python3 "$guard" implementer >/dev/null 2>&1
-  eq "implementer@local: $2" "$1" $?
+    | HARNEST_TARGET=mini-ai HARNEST_TARGET_HOST=mini-ai python3 "$guard" implementer >/dev/null 2>&1
+  eq "implementer@mini-ai: $2" "$1" $?
 }
 irow 2 'ssh lem uptime'
 irow 2 'cd /x && ssh -o BatchMode=yes lem "~/diffusers-workflow/scripts/deploy.sh develop"'
@@ -150,12 +150,18 @@ irow 2 'scp lem:/x /y'
 irow 0 'git push origin develop'
 # on the Mac the driver deploys between sessions: a session's own MCP
 # connection holds the old server open (#446, 2026-09-26)
-irow 2 'DW_DIR=/x DW_PORT=8765 /Users/don/testing/harnest/scripts/deploy-local.sh'
+irow 2 "ssh mini-ai '~/diffusers-workflow/scripts/deploy.sh develop'"
+irow 2 'ssh -o BatchMode=yes mini-ai.lan "cd ~/diffusers-workflow && ./scripts/deploy.sh"'
+# its own test bed is readable over ssh, as lem is from lem's loop
+irow 0 'ssh mini-ai tail -200 ~/dw-serve.log'
+irow 0 'ssh -o ConnectTimeout=8 don@mini-ai.lan git -C ~/diffusers-workflow log -1 --oneline'
+irow 2 'ssh -o BatchMode=yes lem "tail ~/dw-serve.log"'
+irow 2 'scp mini-ai:dw-serve.log /tmp/'
 irow 2 'cd ~/src/dkackman/dw-mps-serve && ./scripts/deploy.sh develop'
 irow 2 'bash scripts/deploy.sh develop'
 row 0 implementer "" $none 'ssh lem "~/diffusers-workflow/scripts/deploy.sh develop"'
-irow 0 'gh issue edit 5 --remove-label target:local --add-label target:lem'
-irow 2 'gh issue edit 5 --add-label target:local'
+irow 0 'gh issue edit 5 --remove-label target:mini-ai --add-label target:lem'
+irow 2 'gh issue edit 5 --add-label target:mini-ai'
 # on lem nobody adds a claim or a verified-on label
 row 2 implementer "" $none 'gh issue edit 5 --add-label target:lem'
 row 2 consumer verify "$mcp_transcript" 'gh issue edit 5 --add-label status:verified,verified-on:mps'
@@ -163,8 +169,8 @@ row 0 implementer "" $none 'ssh lem uptime'
 # rrow <expect> <command>: with the ticket repo named, as the driver sets it
 rrow() {
   jq -n --arg c "$2" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
-    | HARNEST_ROOT="$root" HARNEST_TARGET=local HARNEST_TICKET_REPO=o/r python3 "$guard" consumer >/dev/null 2>&1
-  eq "consumer@local o/r: $2" "$1" $?
+    | HARNEST_ROOT="$root" HARNEST_TARGET=mini-ai HARNEST_TARGET_HOST=mini-ai HARNEST_TICKET_REPO=o/r python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer@mini-ai o/r: $2" "$1" $?
 }
 rrow 0 'gh issue create --repo o/r --title x --label owner:implementer,backend:mps,regression'
 rrow 2 'gh issue create --title x --label owner:implementer,backend:mps,regression'
@@ -175,7 +181,7 @@ rrow 2 'gh issue create --repo dkackman/harnest --title x --label harness,status
 rrow 2 'gh issue create --repo other/repo --title x --label suite,status:needs-approval'
 rrow 0 'gh issue comment 8 --repo o/r --body x'
 rrow 2 'gh issue comment 8 --repo dkackman/harnest --body x'
-rrow 0 'gh issue list --repo o/r --label target:local'
+rrow 0 'gh issue list --repo o/r --label target:mini-ai'
 
 # --- dw's stabilization freeze (lib/freeze.py, freeze_gate): a real checkout
 # with a throwaway origin, whose develop holds FREEZE and hot-zone.txt. The

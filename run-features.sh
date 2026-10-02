@@ -38,7 +38,7 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # Per-target clones, as in run-loop.sh (harnest#15).
-tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo -mps )"
+tsfx="$( [ "${DW_TARGET:-lem}" = lem ] || echo "-$DW_TARGET" )"
 SOURCE_DIR="${SOURCE_DIR:-$HOME/src/dkackman/dw-agent$tsfx}"
 LEAD_TREE="${LEAD_TREE:-$HOME/src/dkackman/dw-agent-lead$tsfx}"
 TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"

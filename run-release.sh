@@ -73,7 +73,7 @@ mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 
 # A release is gated on what lem runs: its check reads lem's commit, and
-# its regression gate runs the levels there. DW_TARGET=local is for
+# its regression gate runs the levels there. DW_TARGET=mini-ai is for
 # run-regression.sh by hand (harnest#15).
 [ "$DW_TARGET" = lem ] || { echo "run-release.sh runs against lem only; DW_TARGET=$DW_TARGET is for run-regression.sh" >&2; exit 1; }
 . "$REPO/lib/release.sh"

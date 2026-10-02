@@ -22,7 +22,7 @@
 #   resolved_model <log-name> <fallback>        the model id the last session
 #                                               logged actually ran on
 #   refresh_plugin_tree <src> <tree>            detached origin/develop worktree
-#   resolve_target                              DW_TARGET → TARGET_SUFFIX, DW_URL
+#   resolve_target                              DW_TARGET → TARGET_SUFFIX, TARGET_HOST/DIR, DW_URL
 #   target_health                               "<device> on <host>" from /api/health
 #   target_note <server>                        prompt paragraph for a non-lem target
 #   deployed_head                               "<branch> @ <sha>" the target runs
@@ -585,22 +585,33 @@ resolved_model() {
   printf '%s\n' "${id:-$2}"
 }
 
-# DW_TARGET / DW_LOCAL_DIR
-# Which dw server a driver talks to (harnest#15). `lem`, the default, is the
-# CUDA box the loop deploys to. `local` is a server this machine runs out of
-# DW_LOCAL_DIR - the Mac (MPS) target - for a regression run while lem is
-# busy with the loop. Only run-regression.sh accepts `local` so far: the
-# implementer and the lead can only deploy to lem, so run-loop.sh and
-# run-release.sh refuse any other target. The local server is started by
-# hand; nothing here deploys or restarts it.
+# DW_TARGET
+# Which dw server a driver talks to (harnest#15). Every target is a box the
+# driver reaches over ssh and updates with dw's own scripts/deploy.sh, the way
+# lem always was; target_row is the one table of them. `lem` (the default) is
+# the CUDA box; `mini-ai` the MPS test bed. run-release.sh runs on lem only.
 DW_TARGET="${DW_TARGET:-lem}"
-# The serving clone: only deploy_target changes it (setup-mac-loop.sh makes it).
-DW_LOCAL_DIR="${DW_LOCAL_DIR:-$HOME/src/dkackman/dw-mps-serve}"
-DW_LOCAL_WORKSPACE="${DW_LOCAL_WORKSPACE:-$HOME/dw-mps-workspace}"
 TARGET_SUFFIX=""   # set by resolve_target; lem's names until then
+TARGET_HOST=""     # resolve_target: the ssh host, which /api/health must name
+TARGET_DIR=""      # resolve_target: the dw checkout on that host
 TARGET_HEALTH=""  # target_preflight sets it: "<device> on <host>"
 SUITE_EDITS=0     # run-loop.sh sets 1 after sourcing: its tester may add cases
 LOOP_LOG="$LOGS/loop.log"   # resolve_target sets the target's own; every driver sets LOGS first
+
+# target_row <target>: "<ssh host> <checkout on it> <backend>", or 1 for an
+# unknown target. The checkout is ~-relative, for the remote shell.
+# classify.jq's serves() reads only "lem is the CUDA box, every other
+# target is a Mac", so a new target here needs no change there unless it
+# breaks that.
+# shellcheck disable=SC2088  # the ~ is for the remote shell
+target_row() {
+  case "$1" in
+    lem)     echo "lem ~/diffusers-workflow cuda" ;;
+    mini-ai) echo "mini-ai ~/diffusers-workflow mps" ;;
+    *) return 1 ;;
+  esac
+}
+TARGETS="lem mini-ai"   # what target_row knows, for messages
 
 # target_default <lem> <other>: a knob's default for this target.
 target_default() { if [ "${DW_TARGET:-lem}" = lem ]; then printf '%s\n' "$1"; else printf '%s\n' "$2"; fi; }
@@ -610,35 +621,22 @@ target_default() { if [ "${DW_TARGET:-lem}" = lem ]; then printf '%s\n' "$1"; el
 #   TARGET_SUFFIX  "" for lem, so every name a running loop already holds
 #                  is unchanged; ".<target>" otherwise. It is appended to
 #                  the driver lock and to per-session state under $LOGS, so
-#                  a local run and a lem run share neither.
-#   DW_URL         the target's endpoint, unless the caller set one.
-# Returns 1 (stderr) on an unknown target or a DW_LOCAL_DIR that isn't a
-# checkout.
+#                  two targets' runs share neither.
+#   TARGET_HOST / TARGET_DIR  the target's ssh host and dw checkout
+#   DW_URL         the target's endpoint, unless the caller set one
+# Returns 1 (stderr) on an unknown target, or a DW_URL naming another host
+# (one left over from a lem run would send this target's run at lem, under
+# this target's lock, while lem's loop deploys to it).
 resolve_target() {
-  case "$DW_TARGET" in
-    lem)
-      TARGET_SUFFIX=""
-      LOOP_LOG="$LOGS/loop.log"
-      DW_URL="${DW_URL:-http://lem:8765/mcp}" ;;
-    local)
-      TARGET_SUFFIX=".local"
-      LOOP_LOG="$LOGS/loop$TARGET_SUFFIX.log"
-      DW_URL="${DW_URL:-http://localhost:8765/mcp}"
-      git -C "$DW_LOCAL_DIR" rev-parse --git-dir >/dev/null 2>&1 \
-        || { echo "DW_LOCAL_DIR is not a git checkout: $DW_LOCAL_DIR (the checkout the local server runs from)" >&2; return 1; }
-      # A DW_URL left over from a lem run (it was lem's knob first) would
-      # otherwise send a "local" run, under the local lock, at lem while
-      # the loop deploys to it. target_preflight checks the other way in: a
-      # tunnel to lem is localhost here, but lem answers.
-      case "$(url_host "$DW_URL")" in
-        localhost|127.0.0.1|::1) ;;
-        *) [ "$(short_host "$(url_host "$DW_URL")")" = "$(short_host "$(hostname)")" ] \
-             || { echo "DW_TARGET=local needs a DW_URL on this machine, got $DW_URL (unset DW_URL for the default)" >&2; return 1; } ;;
-      esac ;;
-    *)
-      echo "DW_TARGET must be lem or local, got '$DW_TARGET'" >&2
-      return 1 ;;
-  esac
+  local row
+  row="$(target_row "$DW_TARGET")" \
+    || { echo "DW_TARGET must be one of: $TARGETS (got '$DW_TARGET')" >&2; return 1; }
+  read -r TARGET_HOST TARGET_DIR _ <<<"$row"
+  if [ "$DW_TARGET" = lem ]; then TARGET_SUFFIX=""; else TARGET_SUFFIX=".$DW_TARGET"; fi
+  LOOP_LOG="$LOGS/loop$TARGET_SUFFIX.log"
+  DW_URL="${DW_URL:-http://$TARGET_HOST:8765/mcp}"
+  [ "$DW_TARGET" = lem ] || [ "$(short_host "$(url_host "$DW_URL")")" = "$(short_host "$TARGET_HOST")" ] \
+    || { echo "DW_TARGET=$DW_TARGET needs a DW_URL on $TARGET_HOST, got $DW_URL (unset DW_URL for the default)" >&2; return 1; }
 }
 
 # url_host <url> / short_host <name>
@@ -674,16 +672,15 @@ target_health() {
 # target_preflight
 # For a target other than lem: sets TARGET_HEALTH ("<device> on <host>")
 # and returns 0 only when a server answers at DW_URL and the host it names
-# is this machine. The second half is the guard that matters: an ssh
-# tunnel to lem is localhost in the URL, but lem is what answers, and a
-# local run would then run every level against lem under the local lock.
+# is the target's. A tunnel or a stale DW_URL that reaches some other box
+# would otherwise run every level there under this target's lock.
 # Prints why on stderr and returns 1 otherwise.
 target_preflight() {
   TARGET_HEALTH="$(target_health)" \
-    || { echo "no dw server answering at $DW_URL (DW_TARGET=$DW_TARGET): start it from $DW_LOCAL_DIR first" >&2; return 1; }
+    || { echo "no dw server answering at $DW_URL (DW_TARGET=$DW_TARGET): scripts/testbed.sh $DW_TARGET start" >&2; return 1; }
   local host="${TARGET_HEALTH##* on }"
-  [ "$(short_host "$host")" = "$(short_host "$(hostname)")" ] \
-    || { echo "the server at $DW_URL is $host, not this machine ($(hostname)): DW_TARGET=$DW_TARGET runs only against a server here" >&2; return 1; }
+  [ "$(short_host "$host")" = "$(short_host "$TARGET_HOST")" ] \
+    || { echo "the server at $DW_URL is $host, not $TARGET_HOST: DW_TARGET=$DW_TARGET runs only against that host" >&2; return 1; }
 }
 
 # deployed_head
@@ -693,26 +690,19 @@ target_preflight() {
 # commit each level ran against, which a result is only worth knowing
 # alongside (the 0.4.0 gates ran four levels across three deploys, and which
 # commit each had to be pieced together afterwards). "unknown" on any
-# failure. For `local` it is DW_LOCAL_DIR's checkout, with " +dirty" when
-# tracked files have uncommitted changes: a hand-run server often runs
-# them. That is the checkout now, which is what the server runs only if it
-# was restarted since the last change.
+# failure. It is the target's checkout, which is what the server runs
+# because only deploy.sh moves it.
 deployed_head() {
-  if [ "${DW_TARGET:-lem}" = local ]; then
-    # What the last successful deploy-local.sh recorded; "unknown" before
-    # the first, which makes the develop check deploy.
-    head -n 1 "$LOGS/.deployed.local" 2>/dev/null | grep . || echo unknown
-    return 0
-  fi
-  ssh -o ConnectTimeout=8 -o BatchMode=yes lem \
-    'cd ~/diffusers-workflow && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"' 2>/dev/null \
+  [ -n "$TARGET_HOST" ] || resolve_target >/dev/null 2>&1 || { echo unknown; return 0; }
+  ssh -o ConnectTimeout=8 -o BatchMode=yes "$TARGET_HOST" \
+    "cd $TARGET_DIR && echo \"\$(git branch --show-current) @ \$(git rev-parse --short HEAD)\"" 2>/dev/null \
   || echo unknown
 }
 
 # target_note <role> <server>
 # The rules a <role> session on a server other than lem follows, from
-# agents/<role>/target.md with {{TARGET}}, {{SERVER}}, {{URL}}, {{DEPLOY}}
-# and {{SERVER_DIR}} filled in; prints nothing for lem. <server> is
+# agents/<role>/target.md with {{TARGET}}, {{SERVER}}, {{URL}}, {{DEPLOY}},
+# {{HOST}} and {{SERVER_DIR}} filled in; prints nothing for lem. <server> is
 # TARGET_HEALTH. Each file says why its rules exist; guard.py enforces the
 # ones a mistake could not be taken back from.
 target_note() {
@@ -720,26 +710,18 @@ target_note() {
   local f="$HARNEST_ROOT/agents/$1/target.md"
   [ -f "$f" ] || { echo "target_note: $f is missing" >&2; return 1; }
   sed -e "s|{{TARGET}}|$DW_TARGET|g" -e "s|{{SERVER}}|$2|g" -e "s|{{URL}}|$DW_URL|g" \
-      -e "s|{{DEPLOY}}|$(deploy_cmd)|g" -e "s|{{SERVER_DIR}}|$DW_LOCAL_DIR|g" "$f"
+      -e "s|{{DEPLOY}}|$(deploy_cmd)|g" -e "s|{{HOST}}|$TARGET_HOST|g" -e "s|{{SERVER_DIR}}|$TARGET_DIR|g" "$f"
 }
 
 # deploy_cmd / deploy_target
-# How this target gets develop. lem pulls and restarts over ssh; local runs
-# the same dw scripts/deploy.sh against the serving clone (DW_LOCAL_DIR),
-# bound to loopback, on the port DW_URL names, through
-# scripts/deploy-local.sh, which records what it deployed. deploy.sh waits for a
-# running job and polls health on both. deploy_cmd is the line prompts and
-# the log show (no "|" in it: target_note seds it in); deploy_target runs
-# it, logs its last lines, and returns its status.
+# How a target gets develop: dw's own scripts/deploy.sh in the target's
+# checkout, over ssh (fetch, fast-forward, reinstall if pyproject moved,
+# wait for a running job, restart, poll health). deploy_cmd is the line
+# prompts and the log show (no "|" in it: target_note seds it in);
+# deploy_target runs it, logs its last lines, and returns its status.
 deploy_cmd() {
-  if [ "${DW_TARGET:-lem}" = lem ]; then
-    # shellcheck disable=SC2088  # the ~ is for lem's shell
-    echo "ssh -o ConnectTimeout=8 -o BatchMode=yes lem '~/diffusers-workflow/scripts/deploy.sh develop'"
-  else
-    local port
-    port="$(printf '%s' "${DW_URL#*://}" | sed -n 's|^[^/]*:\([0-9][0-9]*\).*|\1|p')"
-    echo "DW_DIR=$DW_LOCAL_DIR DW_WORKSPACE=$DW_LOCAL_WORKSPACE DW_HOST=127.0.0.1 DW_PORT=${port:-8765} DEPLOY_RECORD=$LOGS/.deployed.local $HARNEST_ROOT/scripts/deploy-local.sh"
-  fi
+  [ -n "$TARGET_HOST" ] || resolve_target >/dev/null 2>&1 || return 1
+  echo "ssh -o ConnectTimeout=8 -o BatchMode=yes $TARGET_HOST '$TARGET_DIR/scripts/deploy.sh develop'"
 }
 deploy_target() {
   local rc

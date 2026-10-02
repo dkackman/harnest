@@ -6,7 +6,7 @@
 
 Standard library only. It reads what the drivers already write - the
 processes, the driver locks, the `=== ... ===` session headers and `[tag]`
-lines in logs/loop.log and logs/loop.local.log, the `usage:` line that
+lines in logs/loop.log and logs/loop.mini-ai.log, the `usage:` line that
 closes each session, and a release's gates.out - and never writes, calls
 ssh, or touches a lock. Its one outside call is read-only `gh` for what
 waits on Don (Attention), made once the loops settle after a session
@@ -45,8 +45,10 @@ USAGE_RE = re.compile(
 CTX_RE = re.compile(r"· ctx=([\d.]+k?)")
 
 # The two combined streams, one per server target
-STREAMS = {"lem": "loop.log", "mac": "loop.local.log"}
-LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.local"}
+STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log"}   # mac: the mini-ai test bed (DW_TARGET=mini-ai)
+LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.mini-ai"}
+# a driver run against any target but lem ("local" is the field the page reads)
+OTHER_TARGET = re.compile(r"DW_TARGET=(?!lem\b)\S")
 LOG_TAIL_BYTES = 64 * 1024
 
 TICKET_REPO = os.environ.get("TICKET_REPO", "dkackman/diffusers-workflow")
@@ -304,7 +306,7 @@ def processes():
             rows[pid] = {
                 "pid": int(pid), "ppid": ppid, "elapsed": etime.strip(),
                 "driver": m.group(2), "args": (m.group(3) or "").strip(),
-                "local": "DW_TARGET=local" in cmd, "cmd": cmd,
+                "local": bool(OTHER_TARGET.search(cmd)), "cmd": cmd,
             }
 
     def outer(r):
@@ -379,7 +381,7 @@ def _env_says_local(pid):
             ["ps", "eww", "-o", "command=", "-p", str(pid)],
             capture_output=True, text=True, timeout=3,
         ).stdout
-        return "DW_TARGET=local" in out
+        return bool(OTHER_TARGET.search(out))
     except Exception:
         return False
 

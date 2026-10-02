@@ -181,7 +181,7 @@ mv "$T/ssh.saved" "$T/bin/ssh"; rm -f "$T/lem-deployed"
 # the regression gate: a backend:mps regression filed (and claimed) by the Mac during
 # the gate blocks it like any other (Don, 2026-09-26)
 : > "$FAKE_CLAUDE_LOG"
-FAKE_CLAUDE_DO="cat '$T/h/logs/.driver.lock/owner' >> '$T/lock-seen' 2>/dev/null; "'[ -e "$T/mps-filed" ] || { touch "$T/mps-filed"; gh issue create --repo o/r --title "S-F034 fails on mps" --label regression,backend:mps,owner:implementer,target:local >/dev/null; }' \
+FAKE_CLAUDE_DO="cat '$T/h/logs/.driver.lock/owner' >> '$T/lock-seen' 2>/dev/null; "'[ -e "$T/mps-filed" ] || { touch "$T/mps-filed"; gh issue create --repo o/r --title "S-F034 fails on mps" --label regression,backend:mps,owner:implementer,target:mini-ai >/dev/null; }' \
   RELEASE_REGRESSION_LEVELS=smoke rel 0.9.0 gates regression; rc=$?
 eq  "release gate: a backend:mps regression fails it" 1 "$rc"
 has "release gate: holds the driver lock through the regression run" "run-release" "$(cat "$T/lock-seen")"
@@ -327,40 +327,57 @@ eq  "regression: two chunks and a sweep" 3 "$(grep -c 'claude -p' "$FAKE_CLAUDE_
 has "regression: the level header names lem's commit" "target=lem, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
 has "regression: chunk sessions are labelled" "[regression:smoke.2] usage:" "$(cat "$T/reg.out")"
 
-# --- 7b. run-regression against a local server (harnest#15), with the
-# loop's lock held: it must not wait on lem's
+# --- 7b. run-regression against the mini-ai test bed (harnest#15), with
+# the loop's lock held: it must not wait on lem's. ssh: lem reports its
+# commit; mini-ai reports $T/mini-head, and a deploy there is logged to
+# $T/deploys, exits $T/deploy-rc (0 when absent), and on success moves
+# mini-ai to origin/develop and brings its server up ($T/up).
+printf '%s\n' "${sha:0:9}" > "$T/lem-head"
+cat > "$T/bin/ssh" <<EOS
+#!/usr/bin/env bash
+echo "ssh \$*" >> "$T/ssh-calls"
+case "\$*" in
+  *mini-ai*deploy.sh*) echo "deploy develop" >> "$T/deploys"; rc=\$(cat "$T/deploy-rc" 2>/dev/null || echo 0)
+                       [ "\$rc" != 0 ] || { git -C "$T/src" rev-parse --short=9 origin/develop > "$T/mini-head"; touch "$T/up"; }
+                       echo "[deploy] done"; exit "\$rc" ;;
+  *mini-ai*) echo "develop @ \$(cat "$T/mini-head" 2>/dev/null || echo 0000000)" ;;
+  *) echo "develop @ \$(cat "$T/lem-head")" ;;
+esac
+EOS
+chmod +x "$T/bin/ssh"
+mini_health() { printf '#!/usr/bin/env bash\n%secho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "${2:-}" "${1:-mini-ai.lan}" > "$T/bin/curl"; chmod +x "$T/bin/curl"; }
 : > "$FAKE_CLAUDE_LOG"
-printf '#!/usr/bin/env bash\necho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "$(hostname)" > "$T/bin/curl"; chmod +x "$T/bin/curl"
+mini_health
 mkdir "$T/h/logs/.driver.lock"; echo "$$ run-loop" > "$T/h/logs/.driver.lock/owner"
-reg_local() {
+reg_mini() {
   (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
-     PLUGIN_TREE="$T/plugin-untouched" DW_TARGET=local DW_LOCAL_DIR="$T/src" CASES_PER_SESSION=0 SESSION_RETRY_PAUSE_SECS=0 \
-     FAKE_CLAUDE_DO='printf "%s" "$2" > "$FAKE_PROMPT"; printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}" > "$FAKE_PROMPT.target"' FAKE_PROMPT="$T/local-prompt" \
-     ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg-local.out" 2>&1
+     PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=0 SESSION_RETRY_PAUSE_SECS=0 \
+     FAKE_CLAUDE_DO='printf "%s" "$2" > "$FAKE_PROMPT"; printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}" > "$FAKE_PROMPT.target"' FAKE_PROMPT="$T/mini-prompt" \
+     ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg-mini.out" 2>&1
 }
 echo "dirty" >> "$T/h/regression-suite-tiny.md"   # a lem-side edit in progress
-echo "develop @ ${sha:0:7}" > "$T/h/logs/.deployed.local"   # what the last local deploy recorded
+printf '%s\n' "${sha:0:7}" > "$T/mini-head"
 before_head="$(git -C "$T/h" rev-parse HEAD)"
-reg_local
-eq  "regression local: runs while lem's lock is held" 0 $?
-eq  "regression local: one whole-level session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
-has "regression local: header names the target and its checkout" "target=local, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.local.log" | tail -1)"
-sysprompt="$(cat "$T/h/logs/.prompt.regression.local.whole.md")"
-has "regression local: prompt names the server it asked" "the local server (mps on $(hostname)) is running develop @ " "$(cat "$T/local-prompt")"
-has "regression local: system prompt moves perf history" "regression-perf/local/<case>.jsonl" "$sysprompt"
-has "regression local: system prompt files for the implementer with a backend" "\`owner:implementer\` and \`backend:mps\`" "$sysprompt"
-has "regression local: system prompt forbids suite edits" "The suite files. Every case in them runs on lem" "$sysprompt"
-eq  "regression local: the guard is told the target" "local" "$(cat "$T/local-prompt.target")"
-has "regression local: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/reg-local.out")"
-eq  "regression local: no suite commit on a local run" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
-has "regression local: header tags the level for the curator" "level=smoke.local," "$(grep 'regression run (' "$T/h/logs/loop.local.log" | tail -1)"
-has "regression local: sessions are labelled for retro" "[regression-local:smoke] usage:" "$(cat "$T/reg-local.out")"
-has "regression local: the note names the accelerator once" "the local server (mps on $(hostname), http://localhost:8765/mcp)" "$sysprompt"
-has "regression local: plugin is the local checkout's" "--plugin-dir
-$T/src/plugins/dw" "$(cat "$T/local-prompt.args")"
-ok  "regression local: its own log" test -s "$T/h/logs/regression.local.log"
-eq  "regression local: lem's plugin tree is never created" "" "$(ls -d "$T/plugin-untouched" 2>/dev/null)"
-eq  "regression local: the lem lock is left as it was" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
+reg_mini
+eq  "regression mini-ai: runs while lem's lock is held" 0 $?
+eq  "regression mini-ai: one whole-level session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "regression mini-ai: header names the target and its checkout" "target=mini-ai, head=develop @ ${sha:0:7}" "$(grep 'regression run (' "$T/h/logs/loop.mini-ai.log" | tail -1)"
+sysprompt="$(cat "$T/h/logs/.prompt.regression.mini-ai.whole.md")"
+has "regression mini-ai: prompt names the server it asked" "the mini-ai server (mps on mini-ai.lan) is running develop @ " "$(cat "$T/mini-prompt")"
+has "regression mini-ai: system prompt moves perf history" "regression-perf/mini-ai/<case>.jsonl" "$sysprompt"
+has "regression mini-ai: system prompt files for the implementer with a backend" "\`owner:implementer\` and \`backend:mps\`" "$sysprompt"
+has "regression mini-ai: system prompt forbids suite edits" "The suite files. Every case in them runs on lem" "$sysprompt"
+eq  "regression mini-ai: the guard is told the target" "mini-ai" "$(cat "$T/mini-prompt.target")"
+has "regression mini-ai: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/reg-mini.out")"
+eq  "regression mini-ai: no suite commit" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
+has "regression mini-ai: header tags the level for the curator" "level=smoke.mini-ai," "$(grep 'regression run (' "$T/h/logs/loop.mini-ai.log" | tail -1)"
+has "regression mini-ai: sessions are labelled for retro" "[regression-mini-ai:smoke] usage:" "$(cat "$T/reg-mini.out")"
+# what the test bed deploys is origin/develop, so its plugin is its own worktree there
+has "regression mini-ai: plugin is its own worktree's" "--plugin-dir
+$T/plugin-mini/plugins/dw" "$(cat "$T/mini-prompt.args")"
+eq  "  at origin/develop" "$(git -C "$T/src" rev-parse origin/develop)" "$(git -C "$T/plugin-mini" rev-parse HEAD)"
+ok  "regression mini-ai: its own log" test -s "$T/h/logs/regression.mini-ai.log"
+eq  "regression mini-ai: the lem lock is left as it was" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
 # memory-heavy cases are never handed out on another server
 cat > "$T/h/regression-suite-tinymem.md" <<'EOM'
 # tiny suite with a memory-heavy case
@@ -373,114 +390,111 @@ steps
 EOM
 : > "$FAKE_CLAUDE_LOG"
 (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
-   DW_TARGET=local DW_LOCAL_DIR="$T/src" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 \
+   PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 \
    ./run-regression.sh smoke regression-suite-tinymem.md) > "$T/reg-mem.out" 2>&1
-eq  "regression local: held-back case runs no session (one chunk + sweep)" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
-has "regression local: the held-back case is logged as skipped" "REGRESSION-SKIP: S-F079 memory" "$(cat "$T/reg-mem.out")"
-has "regression local: and counted" "1 case(s) skipped" "$(cat "$T/reg-mem.out")"
-eq  "regression local: only S-F001 is handed out" "" "$(grep 'session .*: .*S-F079' "$T/h/logs/loop.local.log" || true)"
+eq  "regression mini-ai: held-back case runs no session (one chunk + sweep)" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "regression mini-ai: the held-back case is logged as skipped" "REGRESSION-SKIP: S-F079 memory" "$(cat "$T/reg-mem.out")"
+has "regression mini-ai: and counted" "1 case(s) skipped" "$(cat "$T/reg-mem.out")"
+eq  "regression mini-ai: only S-F001 is handed out" "" "$(grep 'session .*: .*S-F079' "$T/h/logs/loop.mini-ai.log" || true)"
 rm -rf "$T/h/logs/.driver.lock"
 printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"
 : > "$FAKE_CLAUDE_LOG"
-reg_local
-eq  "regression local: no server answering stops it" 1 $?
-has "regression local: and says so" "no dw server answering at http://localhost:8765/mcp" "$(cat "$T/reg-local.out")"
-eq  "regression local: before any session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+reg_mini
+eq  "regression mini-ai: no server answering stops it" 1 $?
+has "regression mini-ai: and says so, and how to start it" "no dw server answering at http://mini-ai:8765/mcp (DW_TARGET=mini-ai): scripts/testbed.sh mini-ai start" "$(cat "$T/reg-mini.out")"
+eq  "regression mini-ai: before any session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+mini_health lem
+reg_mini
+eq  "regression mini-ai: another host answering stops it" 1 $?
+has "  and says which" "is lem, not mini-ai" "$(cat "$T/reg-mini.out")"
 rm -f "$T/bin/curl"
-(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" DW_TARGET=local DW_LOCAL_DIR="$T/nope" MAX_CYCLES=1 ./run-loop.sh) > "$T/loop-local.out" 2>&1
-eq  "loop local: refuses without a serving clone" 1 $?
-has "loop local: and says why" "DW_LOCAL_DIR is not a git checkout" "$(cat "$T/loop-local.out")"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" DW_TARGET=local MAX_CYCLES=1 ./run-loop.sh) > "$T/loop-local.out" 2>&1
+eq  "loop: the retired local target is refused" 1 $?
+has "  naming the targets there are" "must be one of: lem mini-ai" "$(cat "$T/loop-local.out")"
 
-# --- 10. the loop on the local server (harnest#15 part 2): its own lock,
+# --- 10. the loop on the mini-ai test bed (harnest#15 part 2): its own lock,
 # log and clones; it claims what it works, leaves lem's and cuda issues
-# alone, deploys with the serving clone's deploy.sh, never ssh
-printf '#!/usr/bin/env bash\necho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "$(hostname)" > "$T/bin/curl"; chmod +x "$T/bin/curl"
-git clone -q -b develop "$T/origin.git" "$T/serve"
-mkdir -p "$T/serve/scripts"
-deploy_stub() { printf '#!/usr/bin/env bash\necho "deploy $*" >> "%s"\nexit %s\n' "$T/deploys" "$1" > "$T/serve/scripts/deploy.sh"; chmod +x "$T/serve/scripts/deploy.sh"; }
-deploy_stub 0
-printf '#!/usr/bin/env bash\necho "ssh $*" >> "%s"\n' "$T/ssh-calls" > "$T/bin/ssh-local"; chmod +x "$T/bin/ssh-local"
-local_loop() {
+# alone, and deploys develop there over ssh, as lem's loop does to lem
+mini_health
+mini_loop() {
   (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
-     DW_TARGET=local DW_LOCAL_DIR="$T/serve" SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin-mps" LEAD_TREE="$T/lead-mps" \
-     MAX_CYCLES=1 SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 "$@" ./run-loop.sh) > "$T/loop-local.out" 2>&1
+     DW_TARGET=mini-ai SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin-mini" LEAD_TREE="$T/lead-mini" \
+     MAX_CYCLES=1 SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 "$@" ./run-loop.sh) > "$T/loop-mini.out" 2>&1
 }
-: > "$FAKE_CLAUDE_LOG"
+: > "$FAKE_CLAUDE_LOG"; : > "$T/deploys"; : > "$T/ssh-calls"
 board '[{"number": 30, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]},
         {"number": 31, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:cuda"}]},
         {"number": 32, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]},
         {"number": 33, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "target:lem"}]}]'
 mkdir "$T/h/logs/.driver.lock"; echo "$$ run-loop" > "$T/h/logs/.driver.lock/owner"   # lem's loop, live
-rm -f "$T/h/logs/.deployed.local"   # no local deploy on record yet
-local_loop TESTER_TASK_EVERY=1 FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}/${HARNEST_ROLE:-unset}" >> "$FAKE_PROMPT.env"' FAKE_PROMPT="$T/local-loop"
-eq  "local loop: runs beside lem's lock" 0 $?
-eq  "local loop: claims the shared issue" "backend:shared,owner:implementer,target:local" "$(labels_of 30)"
-eq  "local loop: leaves the cuda issue alone" "backend:cuda,owner:implementer" "$(labels_of 31)"
-eq  "local loop: leaves lem's claim alone" "owner:implementer,target:lem" "$(labels_of 33)"
-eq  "local loop: one session, the shared fix (lem's hand-off waits)" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
-has "local loop: the prompt names the local server" "the local server (mps on $(hostname)) is running: " "$(cat "$T/local-loop.args")"
-has "local loop: the implementer's settings are the local ones" "agent-settings/implementer.local.json" "$(cat "$T/local-loop.args")"
-has "local loop: deploy command in the system prompt" "DW_DIR=$T/serve " "$(cat "$T/h/logs/.prompt.implementer.local.fix.md")"
-eq  "local loop: the guard is told" "local/implementer" "$(head -1 "$T/local-loop.env")"
-ok  "local loop: its own log" test -s "$T/h/logs/loop.local.log"
-ok  "local loop: its own implementer log" test -s "$T/h/logs/implementer.local.log"
-has "local loop: shared passes stay with lem's loop" "skipping: lem's loop runs it" "$(cat "$T/h/logs/loop.local.log")"
-has "local loop: no standing task" "standing task: lem only" "$(cat "$T/h/logs/loop.local.log")"
-eq  "local loop: lem's lock untouched" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
-has "local loop: with no deploy on record, it deploys develop" "deploy develop" "$(cat "$T/deploys" 2>/dev/null)"
-has "local loop: and records it" "develop @ " "$(cat "$T/h/logs/.deployed.local")"
+echo 0000000 > "$T/mini-head"   # mini-ai behind develop
+mini_loop TESTER_TASK_EVERY=1 FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}/${HARNEST_ROLE:-unset}/${HARNEST_TARGET_HOST:-unset}" >> "$FAKE_PROMPT.env"' FAKE_PROMPT="$T/mini-loop"
+eq  "mini-ai loop: runs beside lem's lock" 0 $?
+eq  "mini-ai loop: claims the shared issue" "backend:shared,owner:implementer,target:mini-ai" "$(labels_of 30)"
+eq  "mini-ai loop: leaves the cuda issue alone" "backend:cuda,owner:implementer" "$(labels_of 31)"
+eq  "mini-ai loop: leaves lem's claim alone" "owner:implementer,target:lem" "$(labels_of 33)"
+eq  "mini-ai loop: one session, the shared fix (lem's hand-off waits)" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "mini-ai loop: the prompt names the test bed" "the mini-ai server (mps on mini-ai.lan) is running: " "$(cat "$T/mini-loop.args")"
+has "mini-ai loop: the implementer's settings are the test bed's" "agent-settings/implementer.mini-ai.json" "$(cat "$T/mini-loop.args")"
+has "mini-ai loop: deploy command in the system prompt" "ssh -o ConnectTimeout=8 -o BatchMode=yes mini-ai '~/diffusers-workflow/scripts/deploy.sh develop'" "$(cat "$T/h/logs/.prompt.implementer.mini-ai.fix.md")"
+eq  "mini-ai loop: the guard is told the target and its host" "mini-ai/implementer/mini-ai" "$(head -1 "$T/mini-loop.env")"
+ok  "mini-ai loop: its own log" test -s "$T/h/logs/loop.mini-ai.log"
+ok  "mini-ai loop: its own implementer log" test -s "$T/h/logs/implementer.mini-ai.log"
+has "mini-ai loop: shared passes stay with lem's loop" "skipping: lem's loop runs it" "$(cat "$T/h/logs/loop.mini-ai.log")"
+has "mini-ai loop: no standing task" "standing task: lem only" "$(cat "$T/h/logs/loop.mini-ai.log")"
+eq  "mini-ai loop: lem's lock untouched" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
+has "mini-ai loop: behind develop, it deploys develop" "deploy develop" "$(cat "$T/deploys")"
+eq  "mini-ai loop: over ssh to mini-ai, never lem" "" "$(grep 'deploy.sh' "$T/ssh-calls" | grep -v ' mini-ai ' || true)"
+eq  "mini-ai loop: and the test bed is on develop after" "$(git -C "$T/src" rev-parse --short=9 origin/develop)" "$(cat "$T/mini-head")"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'
 : > "$FAKE_CLAUDE_LOG"
-local_loop FAKE_GH_ON_EDIT_40=target:lem
+mini_loop FAKE_GH_ON_EDIT_40=target:lem
 eq  "tie: no session on the Mac" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 eq  "tie: lem keeps it" "backend:shared,owner:implementer,target:lem" "$(labels_of 40)"
-# the recorded deploy is behind develop: the driver deploys develop, locally
-: > "$T/deploys"; echo "develop @ 0000000" > "$T/h/logs/.deployed.local"
-board '[{"number": 41, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "target:local"}]}]'
+# behind develop again: the driver deploys develop there, and the claimed hand-off is verified
+: > "$T/deploys"; echo 0000000 > "$T/mini-head"
+board '[{"number": 41, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "target:mini-ai"}]}]'
 : > "$FAKE_CLAUDE_LOG"
-local_loop
-has "deploy: the develop check deploys locally" "deploy develop" "$(cat "$T/deploys" 2>/dev/null)"
-eq  "deploy: never over ssh" "" "$(grep 'ssh' "$T/loop-local.out" | grep -v 'no ssh' || true)"
+mini_loop
+has "deploy: the develop check deploys to the test bed" "deploy develop" "$(cat "$T/deploys")"
 eq  "deploy: the claimed hand-off is verified here" 1 "$(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
 # a failed deploy is logged, and the tester still runs
-deploy_stub 1
-: > "$FAKE_CLAUDE_LOG"; echo "develop @ 0000000" > "$T/h/logs/.deployed.local"
-local_loop
-has "deploy fails: logged" "driver deploy of develop failed" "$(cat "$T/h/logs/loop.local.log")"
+echo 1 > "$T/deploy-rc"
+: > "$FAKE_CLAUDE_LOG"; echo 0000000 > "$T/mini-head"
+mini_loop
+has "deploy fails: logged" "driver deploy of develop failed" "$(cat "$T/h/logs/loop.mini-ai.log")"
 eq  "deploy fails: the tester still verifies" 1 "$(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
-deploy_stub 0
-# no server answering: the loop deploys the serving clone, then checks it
-rm -f "$T/h/logs/.deployed.local" "$T/up"
-printf '#!/usr/bin/env bash\n[ -e "%s" ] || exit 7\necho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "$T/up" "$(hostname)" > "$T/bin/curl"
-printf '#!/usr/bin/env bash\necho "deploy $*" >> "%s"\ntouch "%s"\n' "$T/deploys" "$T/up" > "$T/serve/scripts/deploy.sh"
+rm -f "$T/deploy-rc"
+# no server answering (the test bed left stopped): the loop deploys develop there, then checks it
+rm -f "$T/up"; echo 0000000 > "$T/mini-head"
+mini_health mini-ai.lan "[ -e '$T/up' ] || exit 7; "
 board '[]'
-local_loop
-eq  "bootstrap: the loop starts with no server up" 0 $?
-has "bootstrap: by deploying the serving clone" "no server answering" "$(cat "$T/h/logs/loop.local.log")"
-printf '#!/usr/bin/env bash\necho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "$(hostname)" > "$T/bin/curl"
-deploy_stub 0
+mini_loop
+eq  "bootstrap: the loop starts with the test bed stopped" 0 $?
+has "bootstrap: by deploying develop to it" "no server answering at http://mini-ai:8765/mcp; deploying develop to mini-ai" "$(cat "$T/h/logs/loop.mini-ai.log")"
+mini_health
 # closures: the Mac tester answers only closures it holds; lem's skip them
-board '[{"number": 60, "state": "CLOSED", "labels": [{"name": "owner:tester"}, {"name": "wontfix"}, {"name": "target:local"}]},
+board '[{"number": 60, "state": "CLOSED", "labels": [{"name": "owner:tester"}, {"name": "wontfix"}, {"name": "target:mini-ai"}]},
         {"number": 61, "state": "CLOSED", "labels": [{"name": "owner:tester"}, {"name": "wontfix"}]}]'
 : > "$FAKE_CLAUDE_LOG"
 : > "$T/prompts"
-local_loop FAKE_CLAUDE_DO='printf "%s\n" "$2" >> "'"$T"'/prompts"'
+mini_loop FAKE_CLAUDE_DO='printf "%s\n" "$2" >> "'"$T"'/prompts"'
 has "closures: the Mac takes its own" "CLOSURES session for #60 only" "$(cat "$T/prompts")"
 eq  "closures: not lem's" "" "$(grep 'CLOSURES session' "$T/prompts" | grep '#61' || true)"
 : > "$T/prompts"
 FAKE_CLAUDE_DO='printf "%s\n" "$2" >> "'"$T"'/prompts"' loop 1
 has "closures: lem takes its own" "CLOSURES session for #61 only" "$(cat "$T/prompts")"
-# a Mac regression run waits on the Mac loop's lock, not lem's
-mkdir "$T/h/logs/.driver.lock.local"; echo "$$ run-loop" > "$T/h/logs/.driver.lock.local/owner"
+# a mini-ai regression run waits on the mini-ai loop's lock, not lem's
+mkdir "$T/h/logs/.driver.lock.mini-ai"; echo "$$ run-loop" > "$T/h/logs/.driver.lock.mini-ai/owner"
 (cd "$T/h" && exec env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
-   DW_TARGET=local DW_LOCAL_DIR="$T/serve" CASES_PER_SESSION=0 ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg-wait.out" 2>&1 &
+   PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=0 ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg-wait.out" 2>&1 &
 regpid=$!
 for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q waiting "$T/reg-wait.out" 2>/dev/null && break; sleep 1; done
 kill "$regpid" 2>/dev/null; wait "$regpid" 2>/dev/null
-has "regression waits on the Mac loop" "waiting for '$$ run-loop'" "$(cat "$T/reg-wait.out")"
-rm -rf "$T/h/logs/.driver.lock.local"; rm -f "$T/bin/curl"
+has "regression waits on the mini-ai loop" "waiting for '$$ run-loop'" "$(cat "$T/reg-wait.out")"
+rm -rf "$T/h/logs/.driver.lock.mini-ai"; rm -f "$T/bin/curl"
 
 # --- 8. run-curate: a forced audit of one level runs one session
 : > "$FAKE_CLAUDE_LOG"
