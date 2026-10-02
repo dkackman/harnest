@@ -96,9 +96,15 @@ fixture) when nothing uses it anymore.
   - the same command with `-an` in place of `-c:a aac -shortest`, giving `src-480x272-silent.mp4`
   - the first command with `scale=640:360` (16:9), giving `src-640x360.mp4`
 
-  Upload each with `upload_asset(content=<base64>, asset_name="upscale/<file>",
-  workspace="regression-model-specific")`; each is well under the 4 MB cap. Until they exist,
-  M-F060 and M-F061 record "fixture missing" and skip. That is a note for Don, not an issue.
+  Put each in the workspace's own asset library, `upscale/` under the `workspace`-origin
+  root `list_assets(workspace="regression-model-specific")` reports (on lem,
+  `~/diffusers-workspace/regression-model-specific/assets/upscale/`), and confirm with
+  `get_gallery_metadata("asset:upscale/<file>")`. Not `upload_asset`: an upload always
+  lands under `uploads/`, so `asset_name="upscale/<file>"` gives `asset:uploads/upscale/<file>`,
+  which no case names. Made this way on 2026-10-01 for #548 (480×272 and 640×360, 24 fps,
+  121 frames, 5.04 s, 32 kHz stereo at −16.42 LUFS, the silent one with no audio stream).
+  Until they exist, M-F060 and M-F061 record "fixture missing" and skip. That is a note for
+  Don, not an issue.
 
 - `asset:refine/src-512x288.mp4` and `asset:refine/src-384x288.mp4` (M-F064, M-F065).
   These are LTX-2.5 clips with their own soundtracks, made on-box. The
