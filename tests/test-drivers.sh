@@ -308,6 +308,21 @@ has "  as does one with no owner in its history" "no owner from before the park"
 has "unpark: the log lists what it touched" "[lead:unpark] freeze lifted; stabilization issues: #10->owner:lead #40:left" "$(cat "$T/loop.out")"
 loop 1
 eq  "unpark: once per lift" 0 "$(grep -c '\[lead:unpark\]' "$T/loop.out")"
+# a stage parked after four bounces that Don hands back gets a build, not
+# another park (#499 was re-parked twice with no session in between)
+fpv='{"event": "labeled", "label": {"name": "status:fixed-pending-verify"}}'
+board "[{\"number\": 10, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:lead\"}, {\"name\": \"status:plan-approved\"}], $specced, \"subIssuesSummary\": {\"total\": 1, \"completed\": 0}},
+        {\"number\": 11, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:lead\"}], \"parent\": {\"number\": 10},
+         \"events\": [$fpv, $fpv, $fpv, $fpv, {\"event\": \"labeled\", \"label\": {\"name\": \"owner:don\"}}, {\"event\": \"unlabeled\", \"label\": {\"name\": \"owner:don\"}}]}]"
+: > "$FAKE_CLAUDE_LOG"
+loop 1
+eq  "hand-back: the four-bounce stage is built" 1 "$(grep -c 'BUILD session for stage #11' "$FAKE_CLAUDE_LOG")"
+eq  "  and not re-parked" "" "$(grep 'stage bounced' "$T/loop.out" || true)"
+jq '(.["o/r"][] | select(.number == 11) | .events) |= .[0:4]' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/board.json"
+jq '(.["o/r"][] | select(.number == 11) | .labels) = [{"name": "feature"}, {"name": "stage"}, {"name": "owner:lead"}]' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/board.json"
+: > "$FAKE_CLAUDE_LOG"
+loop 1
+eq  "without a hand-back, four bounces still park" "stage bounced 4 times; parking with owner:don" "$(grep -o 'stage bounced 4 times; parking with owner:don' "$T/loop.out")"
 
 # --- 7. run-regression: a two-case override suite, one case per session
 : > "$FAKE_CLAUDE_LOG"

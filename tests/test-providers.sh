@@ -57,9 +57,20 @@ has "second unchanged build parks with Don" "issue edit 5 --repo o/r --remove-la
 NO_PROGRESS_PARK_AFTER=2 note_progress o/r 5 "OPEN|other|" t lead:decompose
 eq "a change resets that kind's count" "0" "$(grep -c ':lead:decompose' "$LOGS/progress.tsv" || true)"
 
-# --- handoff_count: hand-offs since the last reopen
+# --- handoff_count: hand-offs since the last reopen, or Don's last hand-back
 stub_gh 'printf "%s\n" labeled labeled reopened labeled'
 eq "hand-offs since the last reopen" "1" "$(handoff_count 5)"
+stub_gh 'printf "%s\n" labeled labeled labeled labeled handback'
+eq "Don's hand-back starts the count again (#499 was re-parked without a session)" "0" "$(handoff_count 5)"
+stub_gh 'printf "%s\n" labeled labeled handback labeled'
+eq "and hand-offs after it count" "1" "$(handoff_count 5)"
+# the jq itself, over a real-shaped timeline (the stub above prints what it emits)
+ev='[{"event":"labeled","label":{"name":"status:fixed-pending-verify"}},{"event":"labeled","label":{"name":"owner:don"}},
+     {"event":"labeled","label":{"name":"status:fixed-pending-verify"}},{"event":"unlabeled","label":{"name":"owner:don"}},
+     {"event":"labeled","label":{"name":"status:fixed-pending-verify"}},{"event":"unlabeled","label":{"name":"owner:lead"}}]'
+printf '%s\n' "$ev" > "$T/events.json"
+stub_gh 'while [ $# -gt 0 ]; do [ "$1" = --jq ] && q="$2"; shift; done; jq -r "$q" "'"$T"'/events.json"'
+eq "the timeline query: one hand-off after Don's hand-back" "1" "$(handoff_count 5)"
 stub_gh 'exit 1'
 eq "gh failure counts as zero, and returns 0" "0" "$(handoff_count 5)"
 

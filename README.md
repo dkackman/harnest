@@ -638,6 +638,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `PLUGIN_TREE` | `~/src/dkackman/dw-agent-plugin` (`-<target>` on another target) | detached worktree reset to `origin/develop`; where the tester and regression agent load the `dw` plugin from |
 | `TICKET_REPO` / `TICKET_OWNER` | `dkackman/diffusers-workflow` / `dkackman` | where the tickets live; the only login whose issues and comments are trusted |
 | `DW_URL` / `DW_TOKEN` | the target's (`http://lem:8765/mcp`) / `xyz` | the MCP endpoint (dev token, LAN only) |
+| `MCP_TOOL_TIMEOUT` / `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` | `1900000` / `1900000` | Claude Code's per-call MCP limits in ms (wall clock / no progress), exported for every agent session: a little over dw's 1800 s `wait_for_job` cap, so the server's clamp answers first (#546). Unset, the idle limit is 5 min for an HTTP server |
 | `DW_TARGET` | `lem` | which test bed `run-loop.sh`, `run-features.sh`, `run-regression.sh` and `scripts/testbed.sh` run against: a row of `target_row` in `providers.sh` (`lem`, `mini-ai`); `run-release.sh` is lem only |
 | `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running |
 | `DW_TARGET_WORKSPACE` / `DW_ORIGIN_URL` | asked of the server / the dw repo on GitHub | the test bed's `--workspace` root, for `scripts/sync-fixtures.sh`; what `scripts/setup-mac-loop.sh` clones |

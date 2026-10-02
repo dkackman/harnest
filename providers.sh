@@ -490,6 +490,14 @@ ISOLATION_FLAGS=(--setting-sources project,local)
 # too (implementer-cycle-*.md files in Don's project memory). Every
 # driver inherits this from sourcing providers.sh.
 export CLAUDE_CODE_DISABLE_AUTO_MEMORY=1
+# dw's wait_for_job blocks up to DW_MCP_MAX_WAIT_SECONDS (1800 on lem and
+# mini-ai, #546). Claude Code's own limits must outlast it, or the client cuts
+# the call off first: MCP_TOOL_TIMEOUT (ms, wall clock; ~28 h unset) and,
+# the one that bites, CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT (ms with no progress;
+# 5 min unset for an HTTP server such as dw). A little over 1800 s, so dw's
+# clamp always answers first.
+export MCP_TOOL_TIMEOUT="${MCP_TOOL_TIMEOUT:-1900000}"
+export CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT="${CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT:-1900000}"
 
 # A headless session whose turn ends while a background subagent is still
 # running waits this long for it, then kills the session. The default is
@@ -1367,19 +1375,27 @@ still_ready() {
 
 # handoff_count <n>
 # How many times an issue has been labeled status:fixed-pending-verify since
-# it was last reopened — one per implementer hand-off, so on an issue that is
-# owner:implementer again it is the number of bounces. Counting the whole
-# timeline would include hand-offs that passed verification before the issue
-# regressed and was reopened (as the implementer's prompt says to do), and a
-# reopened regression would escalate or park before its first new attempt.
+# the later of its last reopen and Don's last hand-back (owner:don removed) —
+# one per hand-off, so on an issue that is owner:implementer or owner:lead
+# again it is the number of bounces. Counting the whole timeline would
+# include hand-offs that passed verification before the issue regressed and
+# was reopened (as the implementer's prompt says to do), and a reopened
+# regression would escalate or park before its first new attempt. Don's
+# hand-back resets it for the same reason: a park at IMPLEMENTER_PARK_AFTER
+# asks him to decide, and a count that ignored his answer re-parked #499
+# before any session ran, twice (2026-09-27). No agent removes owner:don (the
+# guard refuses it), so that event is always Don's, or the driver's unpark.
 # Read from the issue's event timeline, oldest first; 0 on any failure so a
 # gh hiccup never escalates or parks by accident. Always returns 0: callers
 # assign it bare (`bounces="$(handoff_count n)"`), and under set -e/pipefail
 # a failed gh api would otherwise exit the whole driver.
 handoff_count() {
   gh api --paginate "repos/$TICKET_REPO/issues/$1/events" \
-    --jq '.[] | select(.event == "reopened" or (.event == "labeled" and .label.name == "status:fixed-pending-verify")) | .event' 2>/dev/null \
-  | awk '$1 == "reopened" { s = 0; next } { s++ } END { print s + 0 }' || true
+    --jq '.[] | if .event == "reopened" then "reopened"
+                elif .event == "unlabeled" and .label.name == "owner:don" then "handback"
+                elif .event == "labeled" and .label.name == "status:fixed-pending-verify" then "labeled"
+                else empty end' 2>/dev/null \
+  | awk '$1 == "reopened" || $1 == "handback" { s = 0; next } { s++ } END { print s + 0 }' || true
 }
 
 # issue_fingerprint <repo> <n>
