@@ -1220,9 +1220,10 @@ expected:
 - `list_workspaces(detail=true)` → every entry additionally has `root`, `workflows`,
   `assets`, `outputs`, `prompts`, `common_assets`; **no** top-level `note`.
 - `list_assets()` → every `assets[]` (and `shadowed[]`) entry has exactly the keys `name`,
-  `reference`, `kind`, `size`, `origin`; a top-level `note` names `detail=True`; `asset_dir`,
-  `asset_dirs`, `folders`, `libraries` (each with `origin`/`dir`/`writable`) and `shadowed`
-  all present.
+  `reference`, `kind`, `size`, `origin`; a top-level `note` names `detail=True`; `workspace`,
+  `folders`, `libraries` (the search path, nearest first, each with `origin`/`root`/`writable`)
+  and `shadowed` all present. `asset_dir`, `asset_dirs` and `libraries[].dir` are gone (dw
+  46940b1b, one listing envelope for workflows, prompts and assets): their absence is not a finding.
 - `list_assets(detail=true)` → every entry additionally has `folder`, `mtime`, `url`; **no**
   top-level `note`.
 It becomes a **finding** if a compact entry carries any of the detail-only keys, if a detail
@@ -1231,6 +1232,8 @@ reply, or if any top-level field listed above disappears in either mode.
 cleanup: none — nothing is created.
 source: tester, verified in #249 on 2026-09-19 over MCP as model `opus` via provider
 `anthropic` — 19 workspaces / 47 assets in `default`, both modes exactly as above.
+Amended 2026-10-01 (#572, approved by Don): the top-level fields follow dw 46940b1b's shared
+library envelope, as the mini-ai smoke run observed it.
 
 ### S-F079 — a failed job keeps the phase it died in, frozen at `finished_at`
 #269: `progress` went `null` the moment a job left `running`, so the only way to learn which

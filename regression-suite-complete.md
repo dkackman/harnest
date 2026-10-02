@@ -732,8 +732,9 @@ a throwaway workspace, which is not recoverable.
 Costs nothing — no jobs, no model loads, four metadata calls.
 expected: in a workspace created fresh for the case, uploading a file whose stored name
 collides with an existing `common/assets` entry, then —
-- **Every `list_assets` entry carries an `origin`**, and the response carries `asset_dir`,
-  `asset_dirs` (nearest library first) and a precomputed `folders` list. An entry missing
+- **Every `list_assets` entry carries an `origin`**, and the response carries `libraries`
+  (the search path, nearest first, each `{origin, root, writable}`) and a precomputed
+  `folders` list. An entry missing
   `origin` is the finding: the UI's source badge and the delete affordance both key off it.
 - **The freshly uploaded entries report `origin: "workspace"`** and everything inherited
   reports `origin: "common"`. Both values must actually appear; a listing where everything
@@ -758,9 +759,11 @@ once as `origin: "workspace"`, deleted with `{"deleted": true, "origin": "worksp
 `get_gallery_metadata` then still resolved the reference to the shared 4.96 s / 16 kHz /
 mono original. #165 itself is a web-UI ticket with no MCP surface — this case pins the
 server behaviour the page rests on, not the page. No `examples`-origin library was
-observable on this server (`/home/don/diffusers-workflow/assets` is on `asset_dirs` but
+observable on this server (`/home/don/diffusers-workflow/assets` was on the search path but
 contributed no entries), so the read-only-refusal branch of `delete_asset` is deliberately
 not asserted here; it belongs in the dw repo's pytest suite, where a fixture can exist.
+Amended 2026-10-01 (#572, approved by Don): `asset_dir`/`asset_dirs` became `libraries`
+(`{origin, root, writable}`) in dw 46940b1b; the intent is unchanged.
 
 ### C-F028 — a phase that goes silent past the threshold draws no false positive while it is still talking
 A job that is working but emitting nothing is indistinguishable from a hung one over MCP, and
