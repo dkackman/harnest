@@ -655,8 +655,8 @@ For any probe that validates clean, run it with `run_workflow(..., acknowledged_
 wait_seconds=55)` and read `get_job`'s error. The upscale step must refuse before any download
 or unpickling.
 expected:
-- (a) is refused as an invalid repo id, in the same words SE-F019 records ("Repo id must be in
-  the form…"). Validate refuses it and no download entry appears in `list_downloads`.
+- (a) is refused at validate, at `steps[…].task.arguments.model_name`, as not a Hugging Face
+  repo id (`owner/name`). No download entry appears in `list_downloads`.
 - (b) is refused as a path, never resolved against the server's filesystem.
 - (c) is refused by name: only `.safetensors` is accepted. Validate refusing it is best. A
   run-time refusal is acceptable only if the job fails at the `up` step before anything loads,
