@@ -2239,12 +2239,16 @@ genuinely attenuated slice goes unremarked. Two CPU-only runs, seconds each, no 
 The `result` blocks matter: a step nothing reads and that saves no file does not run
 (S-F027), and the check is at save time.
 expected:
-- Run 1: `succeeded`; `warnings` holds **exactly one** entry, `past_end: slice_audio: the
-  requested slice runs … past the end of …` (the C-F016 warning). No entry from either step
-  contains `decodes at a mean level` (neither `audio_near_silent` wording).
-- Run 2: `succeeded`; `warnings` holds exactly two entries, both prefixed `voice_diluted:`
-  — the past-end one and `voice_diluted-0.0.wav decodes at a mean level of … dBFS but
-  peaks at … dBFS: quiet overall, not empty …` (#358: peak ≥ -30 dBFS). Nothing from `voice_inside`.
+- Run 1: `succeeded`; `warnings` holds **exactly two** entries, both the C-F016 past-end
+  pair (since dw 39a97862 a job records #402's pre-flight warning too): the pre-flight
+  `steps[0].task.arguments.audio: slice_audio will run … past the end of …` and the run-time
+  `past_end: slice_audio: the requested slice runs … past the end of …`. No entry from either
+  step contains `decodes at a mean level` (neither `audio_near_silent` wording).
+- Run 2: `succeeded`; `warnings` holds exactly three entries: the pre-flight
+  `steps[1].task.arguments.audio: slice_audio will run … past the end of …`, and two prefixed
+  `voice_diluted:` — the run-time past-end one and `voice_diluted-0.0.wav decodes at a mean
+  level of … dBFS but peaks at … dBFS: quiet overall, not empty …` (#358: peak ≥ -30 dBFS).
+  Nothing from `voice_inside`. A third copy of a past-end warning in either run is a finding.
 It is a **finding** if run 1 carries any `audio_near_silent` entry, in either wording (the
 suppression regressed), if run 2's `voice_diluted` carries none (the check was dropped), or
 if either run's past-end warning is missing (that is C-F016's ground, but it is cheap to
