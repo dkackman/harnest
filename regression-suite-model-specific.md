@@ -1368,7 +1368,6 @@ source: tester, verified in #469, model `claude-opus-5-5` via provider `anthropi
 metrics: none.
 
 ### M-F039 — `upscale_h3_latents` and `decode_h3_latents` are listed and documented, and the documented workflow validates
-pending: #499
 source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (`LBH-123-AI/Minimax_h3_latent_Upscaler` for the upscaler).
 Stage 1 of #471 adds two tasks and ships an inline workflow that composes them (in a
@@ -1402,7 +1401,6 @@ cleanup: none (nothing is queued or written).
 metrics: none.
 
 ### M-F040 — `upscale_h3_latents` refuses a bad target or non-latent input by naming the argument; boundary scales are accepted
-pending: #499
 source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 + `upscale_h3_latents`.
 The plan's refusals are these:
@@ -1461,7 +1459,6 @@ cleanup: `delete_output(job_id=...)` for every job; `delete_workflow("m-f040-h3-
 metrics: none.
 
 ### M-F041 — the documented base → upscale → decode → pair_audio workflow renders 1344×768 with the base's frames, colour and audio
-pending: #499
 source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va at 960×544 + `upscale_h3_latents` +
 `decode_h3_latents` + `pair_audio`.
