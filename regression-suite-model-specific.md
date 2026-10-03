@@ -2023,7 +2023,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `2shot-inlin
 `regression-perf/M-F057.jsonl`.
 
 ### M-F058 — `templates/ltx2/upscale-clip` is in the catalog as a shot that reads the caller's clip, with its bucket rules and trade-offs stated
-pending: #548
 source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: LTX-2.5 `LTX2InContextPipeline` with `Lightricks/LTX-2.5-22b-IC-LoRA-Pixel-Spatial-Upscaler`
 (`ltx-2.5-22b-ic-lora-pixel-spatial-upscaler-x2-1.0.safetensors`), via `templates/ltx2/upscale-clip`.
@@ -2065,7 +2064,6 @@ cleanup: none. Discovery only, writes nothing.
 metrics: none.
 
 ### M-F059 — `upscale-clip` validates a real clip, names its adapter only when absent, and refuses off-bucket sizes and the bare call
-pending: #548
 source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F058. Free: `validate_workflow` and `list_models` only, no GPU. `A` below is
 `asset:qa-cast/ep3-shot1-incident.mp4` (shared, 960×544, 124 frames).
@@ -2097,7 +2095,6 @@ cleanup: none. Validation only, writes nothing.
 metrics: none.
 
 ### M-F060 — `upscale-clip` doubles a 480×272 clip to 960×544 at the same length and rate, carrying the source's own soundtrack
-pending: #548
 source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F058. Paid: one LTX-2.5 job at 960×544×121 frames (the shape of M-F014's
 restore runs). Setup: fixture `asset:upscale/src-480x272.mp4` (see Fixtures: 480×272, 121 frames, 24 fps,
@@ -2130,7 +2127,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `480x272-121
 The first run seeds the file.
 
 ### M-F061 — `upscale-clip` on off-shape sources: larger is downscaled, wider is center-cropped, too long a `num_frames` runs past the source, and a silent source fails at the audio step
-pending: #548
 source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F058. Paid: up to four LTX-2.5 jobs, run one at a time. The plan records these as behavior,
 not refusals: validate passes each one (M-F059). Each arm uses `"seed": 548` in workspace
