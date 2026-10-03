@@ -1501,47 +1501,6 @@ durations from `get_job_events`), `decode_peak_vram_gb`. Record them in
 `regression-perf/M-F041.jsonl` with condition `124f-960x544-to-1344x768`. The first run seeds
 the file. Flag a reading more than 50% over the median.
 
-### M-F042 — `templates/minimax/upscale-preview` is a catalog shot with a cost, renders 1344×768, and leaves the other minimax entries unchanged
-pending: #500
-source: tester, spec for #500 from #471's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 + `upscale_h3_latents` (template `templates/minimax/upscale-preview`).
-Stage 2 of #471 adds the template and one line in the `minimax-h3` skill, and changes nothing
-else. The baseline for the existing minimax entries was captured on 2026-09-26, before the
-stage. Two examples from it:
-- `templates/minimax/video-with-audio` has cost 6.6;
-- `templates/minimax/video-with-audio-768p` has cost 9.87, with `variable_constraints` num_frames
-  "17*n+5, 124-345, rounds up".
-
-The case compares every minimax entry except the new one against the same entry on
-`origin/develop` *before* #500 merged. If the regression run has no stored copy, compare
-against the entry's own `get_workflow` and the skill's stated defaults.
-Steps:
-1. `list_workflows(shape="shot")`.
-2. `get_workflow("templates/minimax/upscale-preview")`.
-3. `validate_workflow(name="templates/minimax/upscale-preview")` with no arguments.
-4. `run_workflow(name="templates/minimax/upscale-preview", acknowledged_cost=true,
-   wait_seconds=55)`, in workspace `regression-model-specific`. Then `wait_for_job`.
-5. Read the `minimax-h3` skill (plugin `dw`).
-expected:
-- In step 1, `templates/minimax/upscale-preview` is listed with a numeric cost. Its
-  `variable_constraints` give num_frames as 17n+5.
-- In step 1, every other `templates/minimax/*` entry is unchanged: name, cost, shape, traits,
-  `variable_constraints` and description.
-- The workflow has `final`/`intermediate` subfolders, and its latents are not saved.
-- Step 3 is `valid: true`, with a `plan.estimate` whose `basis` is `catalog`.
-- Step 4 succeeds with one mp4 under `final/`. It is 1344×768 and carries audio.
-- In step 5, the skill's list of tested combinations has one new line naming
-  `upscale-preview`. The skill's defaults (resolution, frames, steps, guidance) read as before.
-It is a **finding** if:
-- the template is missing from `shape="shot"`, or has no cost;
-- its estimate `basis` isn't `catalog`;
-- the run doesn't produce 1344×768 under `final/`;
-- any other minimax entry's catalog line changed;
-- the skill line is missing, or a default moved.
-cleanup: `delete_output(job_id=...)`.
-metrics: `latency_s` from `get_job`, recorded in `regression-perf/M-F042.jsonl` with condition
-`template-defaults`. The first run seeds it.
-
 ### M-F043 — the Ref2VA VRAM ceiling adds a per-reference term: every non-null reference costs, of any kind, and a null one doesn't
 source: tester, spec for #501 from #479's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA (`ModularPipeline`, `MiniMaxAI/MiniMax-H3`, `workflow: "ref2va"`)
