@@ -498,10 +498,12 @@ expected:
   and the defaults are the trained bucket: `width` 768, `height` 448, `num_frames` 121,
   `frame_rate` 24, `lora_scale` 1.0. A default that drifts off that bucket is a finding — the
   weights are trained for it.
-- **The bare call is refused, not silently accepted.**
-  `validate_workflow(name="templates/ltx2/reference-sheet")` with no `arguments` → `valid: false`,
-  one error at `variables.reference_sheet` naming the missing default `asset:reference_sheet.png`
-  (#166). A bare call answering `valid: true` here is that bug back.
+- **A missing reference sheet is refused, not silently accepted.**
+  `validate_workflow(name="templates/ltx2/reference-sheet",
+  arguments={"reference_sheet": "asset:m-f013-never-uploaded.png"})` → `valid: false`, one error
+  at `arguments.reference_sheet` naming `m-f013-never-uploaded.png` (#166). An answer of
+  `valid: true` here is that bug back. (A bare call with no `arguments` is now `valid: true`: the
+  default `asset:reference_sheet.jpg` exists in the common library, dw#450, harnest#47.)
 Not covered here: an actual generation. It needs a real reference sheet (a composite panel sheet is
 an authoring job, not a fixture this suite can synthesise), and the adapter is an 0.9 preview whose
 output quality is a judgement call rather than a pass/fail.
