@@ -4585,8 +4585,10 @@ A gap of digital near-silence between lines inside a shot plays as a dropout whe
    "save": true}}]}, acknowledged_cost=true, wait_seconds=55)` twice: `<g>` = `1.0` (bedded) and
    `0.0` (bare control). Then `assess_output` on each `mix` file's `output:` reference.
 expected:
-- Step 1: exactly one finding, `shot_dead_air`, severity `warn`, `at.shot: "shot@deflect"`,
-  `at.seconds` about 8.6, `threshold: 0.4`, `value` about 0.75. In `analyze_shots`,
+- Step 1: a `shot_dead_air` finding, severity `warn`, `at.shot: "shot@deflect"`,
+  `at.seconds` about 8.6, `threshold: 0.4`, `value` about 0.75. The fixture's manifest also
+  overruns the file by 21 samples, so a `shot_span_overrun` finding at shot@deflect (#425) is
+  allowed; it must be the only other finding, in both calls. In `analyze_shots`,
   `shot@deflect` carries `dead_air_seconds` about 0.75, `dead_air_at` about 8.62 and
   `dead_air_floor_dbfs` about −77. `shot@accuse` reads `0.0` / `null` / `null`.
   `rules_applied` includes `shot_dead_air`.
