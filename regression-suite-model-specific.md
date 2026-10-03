@@ -194,8 +194,8 @@ expected:
   `enhance-prompt-with-image` (all 960x544); `first-and-last-frame`, `last-frame-only` (544x544 —
   same 544 short edge, square because they pin a square still).
 - **768p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors`,
-  1344x768, `video_shift: 6.0`, `audio_shift: 3.0`, `lora_alpha: 128`, 9 steps. Template:
-  `video-with-audio-768p` only. This is the one row whose shift and alpha differ; the skill says
+  1344x768, `video_shift: 6.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Template:
+  `video-with-audio-768p` only. This is the one row whose shift differs; the skill says
   so explicitly ("the two 768p LoRAs differ in shift; do not generalise").
 - **768p Ref2VA turbo** — `lora_weight_name: minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors`,
   960x544, `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Every template
@@ -279,10 +279,10 @@ whole-song bullet and the carried-forward six-shot direction are mine.
 ### M-F008 — the 768p H3 path renders at its trained canvas on its trained schedule
 `templates/minimax/video-with-audio-768p` pins a combination rather than leaving it to arguments:
 the `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16` checkpoint, 1344x768, `video_shift: 6.0`,
-`lora_alpha: 128`, `num_inference_steps: 9`. Every one of those has to reach a different part of
+`lora_alpha: null`, `num_inference_steps: 9`. Every one of those has to reach a different part of
 the stack — the canvas to the pipeline, the shift to the scheduler, the alpha to the peft layers
 after load — and none of them fails loudly if it doesn't. A 768p LoRA run on the 544p sigma
-schedule at the file's own `alpha: 8` (a sixteenth of what upstream passes) produces a clip that
+schedule at a stated `alpha: 128` (16x the file's own `alpha: 8`, #468) produces a clip that
 completes, saves, and simply looks mediocre. M-F003 pins that the catalog *declares* these
 numbers; this case is the other half — that a render on them actually happens. The two together
 are why a checkpoint swap can be trusted to be three numbers rather than one.
