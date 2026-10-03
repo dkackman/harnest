@@ -4439,7 +4439,8 @@ expected:
   `overlap_frames: 12`; the first three have none.
 - start_sample 0/165333/330667/480000/629333. The last shot's `start_sample + num_samples`
   equals `duration_seconds × 32000` (794688 when written, last num_samples 165355).
-- `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, no findings when written.
+- `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, no findings other than
+  `shot_dead_air` (#465) warnings on the near-silent gaps inside the shots.
 It is a **finding** if there are fewer than five shots, if an `overlap_frames` is lost, or if
 the map ends past the file's last sample.
 cleanup: `delete_output(job_id=…)`.
@@ -4468,8 +4469,8 @@ expected:
 - The manifest and `media.shots` list three shots at start_frame 0/112/221, num_frames
   112/109/124, start_sample 0/224000/442000, num_samples 224000/218000/248000. The last two
   carry `overlap_frames: 12`. The map ends at sample 690000 = 14.375 × 48000.
-- `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, and no findings when this
-  was written (seam 1's `after_rms_dbfs` reads about −65 because the LTX clip opens quiet, and
+- `assess_output`: `shots_source: "manifest"`, `rules_skipped: []`, and no findings other than
+  `shot_dead_air` (#465) warnings on the near-silent gaps inside the shots (seam 1's `after_rms_dbfs` reads about −65 because the LTX clip opens quiet, and
   that is below `seam_hole`'s floor).
 It is a **finding** if the output is not at 48 kHz, if the map is off the 2000-samples-per-frame
 grid, or if an overlap is lost.
