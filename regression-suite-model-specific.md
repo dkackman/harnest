@@ -191,7 +191,7 @@ expected:
 - **544p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_bf16.safetensors`,
   `video_shift: 12.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Templates:
   `video-with-audio`, `image-to-video`, `chained-segments`, `enhance-prompt`,
-  `enhance-prompt-with-image` (all 960x544); `first-and-last-frame`, `last-frame-only` (544x544 —
+  `enhance-prompt-with-image`, `shots-batch` (all 960x544); `first-and-last-frame`, `last-frame-only` (544x544 —
   same 544 short edge, square because they pin a square still).
 - **768p FL2VA turbo** — `lora_weight_name: minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors`,
   1344x768, `video_shift: 6.0`, `audio_shift: 3.0`, `lora_alpha: null`, 9 steps. Template:
