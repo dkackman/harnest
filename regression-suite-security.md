@@ -634,7 +634,6 @@ cleanup: none (validation only, no job should exist; delete any that does).
 metrics: none.
 
 ### SE-F039 — `upscale_h3_latents`' `model_name`/`weight_name` hold the repo-id and weight-file boundary
-pending: #499
 source: tester, spec for #499 from #471's plan v1 (claude-opus-5-5 via anthropic)
 #471 adds a task, `upscale_h3_latents`, that loads a vendored upscaler module inside the task.
 Its default weights are `LBH-123-AI/Minimax_h3_latent_Upscaler`, bf16 safetensors, pinned to
