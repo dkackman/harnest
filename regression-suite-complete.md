@@ -6008,8 +6008,8 @@ caller for half an hour. Nothing is queued.
 - `wait_for_job(job_id="", timeout_seconds=1800)`.
 
 expected:
-- The first two fail with an error whose text says "Unknown job" and names the id. Each
-  returns in under 5 seconds.
+- The first two fail with an error whose text says "Unknown job". Each returns in under
+  5 seconds.
 - The empty id is refused, as an unknown job or as an invalid argument, also in under 5
   seconds.
 - None of the three comes back as `still_running: true`, and none reports a
