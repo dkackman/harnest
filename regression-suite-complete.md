@@ -5957,7 +5957,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F170 — `wait_for_job` advertises lem's 1800 s cap, and the clamp holds at the boundary
-pending: #546
 source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
 lem's deploy sets `DW_MCP_MAX_WAIT_SECONDS=1800`. The code default stays 55 and
 `timeout_seconds` still defaults to 20, so a caller only gets a long call by asking for one.
@@ -5996,7 +5995,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F171 — a long `wait_for_job` on a job id that does not exist fails at once
-pending: #546
 source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
 The #300 edge. A server restart drops a queued or running job, and its id then answers
 "Unknown job". With an 1800 s cap, a wait that blocked on a vanished id would hang the
@@ -6021,7 +6019,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F172 — one `wait_for_job` call covers a job longer than ten minutes, and the default wait still returns at about 20 s
-pending: #546
 source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
 The field report behind #377: a 41-minute render needed about 45 polls at a 55 s cap. With
 the cap at 1800, one call should cover the whole job. The HTTP mount answers a call with no
@@ -6074,7 +6071,6 @@ metrics: `long_wait_seconds`, call 3's `waited_seconds`, recorded on success;
 cleanup: `delete_output(job_id=<job>)`.
 
 ### C-F173 — the skills and the guide teach "ask for the estimate", not `wait_seconds=55`
-pending: #546
 source: tester, spec for #546 from #377's plan v1 (claude-opus-5-5 via anthropic)
 Design item 4 of the plan. Every place that told an agent to wait 55 s per call now states
 one rule, with no deployment number in it:
