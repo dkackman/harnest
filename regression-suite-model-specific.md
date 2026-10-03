@@ -364,11 +364,9 @@ expected: after any run that writes a soundtrack —
   landing under target by -0.92 and -1.11 dB against the +1.94 dB over that #161 first measured on an
   mp3). What must hold on the warned side is only that the warning fires whenever the *source* is at
   or above the -0.5 dBFS threshold, not a sign on the decoded number.
-- **The hint teaches both ends of the range.** The `next` text carries `mean_dbfs`
-  below -40 as the near-silent failure **and** `peak_dbfs` at or above 0 as the
-  no-headroom one, with the caveat that a decoded lossy file overshoots by a few tenths
-  and that +1 or more is the real signal. A hint that teaches only the quiet end is a
-  regression — an agent that cannot listen has nothing else to read.
+- **A level problem is listed in `findings`.** When a file's level is a problem,
+  `get_gallery_metadata` lists it in `findings` with its threshold and fix, without
+  restating numbers; a clean file returns `findings: []`.
 - **It covers the muxed deliverable, not only the audio file.** On a `music-video` or
   `assemble-and-score` run the warning names the final mp4's soundtrack as well as the
   saved audio. Source and deliverable is the useful pair: #158 was filed because the
