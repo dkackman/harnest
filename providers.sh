@@ -431,6 +431,9 @@ ISOLATION_FLAGS_RELEASE=(--setting-sources local)
 # curator_pass). The curator rules on suite-change requests and applies the
 # ones it approves, so it gets Edit on this repo's files. Edit is unscoped
 # by path, as it is for the tester; the prompt limits it to the suite files.
+# Write stages the ruling comment in /tmp: a permission rule never matches a
+# Bash command with a newline in it, so a multi-line `gh issue comment --body`
+# is denied (#47-#49, 2026-10-03) while `--body-file` is one line.
 # It also gets gh issue on both repos, and read-only dw discovery to confirm
 # a renamed tool or field. The guard (guard_settings curator) refuses lifting Don's
 # owner:don and adding status:plan-approved. Audit sessions (run-curate.sh)
@@ -441,11 +444,11 @@ CURATOR_REVIEW_PERMISSION_FLAGS=(
   --allowedTools
     "mcp__dw__get_schema" "mcp__dw__list_tasks" "mcp__dw__get_task"
     "mcp__dw__list_workflows" "mcp__dw__get_guide" "mcp__dw__list_guides"
-    "ToolSearch" "TodoWrite" "Read" "Glob" "Grep" "Edit"
+    "ToolSearch" "TodoWrite" "Read" "Glob" "Grep" "Edit" "Write"
     "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)"
 )
-CURATOR_REVIEW_TOOLS="Bash,Read,Edit,Glob,Grep,ToolSearch,TodoWrite"
+CURATOR_REVIEW_TOOLS="Bash,Read,Edit,Write,Glob,Grep,ToolSearch,TodoWrite"
 
 # The curator's audit sessions (run-curate.sh): read-only on this repo (no
 # Edit/Write: a suite changes only through a review session), gh issue for

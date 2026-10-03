@@ -97,6 +97,9 @@ commits after your session, naming this issue.
 
 ### 4. Record it and set the issue's state
 
+Write the comment to a file under /tmp with Write, then post it with `gh
+issue comment <n> --body-file <path>`. Never pass a multi-line `--body` or
+a heredoc: your permissions refuse any shell command with a newline in it.
 Comment once on the issue, in Markdown, structured like this — one line
 naming your model and provider first, then one `###` heading per item
 (its case ID and ruling), each with its own short bullet list underneath.
