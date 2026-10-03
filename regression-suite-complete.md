@@ -1500,19 +1500,17 @@ never run it.
    from this same never-run workspace.
 expected: (3) `valid: true`, `warnings: []`, `plan.estimate.basis:
 "unknown"`, `runs: null` — none of `regression-complete`'s runs of the name
-leak in; (4) one warning beginning `Projected host memory for this run (~N MB,
-32 entries held resident together) exceeds this machine's usable RAM` citing
-exactly `based on 1 run(s) of this workflow's own history` — this workspace's
-run counted, nobody else's (on a box with much more than 64 GB RAM (4) may be
-silent because 32 × a bare ~1.9 GB peak fits; say so rather than fail it, and
-lean on (5)'s `basis`/`runs` instead); (5) back to `warnings: []`, `basis:
+leak in; (4) `valid: true`, `warnings: []` — the fixture is task-only, so
+#348's gate (`_has_seedable_step`) suppresses the host-memory projection even
+with this workspace's run in history; the scoping check rests on (3) and (5)'s
+`basis`/`runs`; (5) back to `warnings: []`, `basis:
 "unknown"`, `cached_minutes: null` — the deleted copy's row is gone with it
 (`cached_steps` may still read non-zero: the step cache is content-keyed and
 only cost rows are purged; merged from smoke's S-F104 (curation 2026-09-22, harnest#2)); (6) `observed` present
 with `runs` ≥ 1 and no run of the template in this workspace — a shared
 catalog source still pools across workspaces (#154). The regressions: a
 warning or `runs` > 0 on (3) (history keyed on name alone again — #274),
-`based on N run(s)` with N > 1 on (4), a warning on (5) (`delete_workflow`
+any warning on (4) (the task-only gate stopped suppressing), a warning on (5) (`delete_workflow`
 stopped purging — C-F040 step 1 then fails on every second cycle), or (6)
 losing `observed` (workspace scoping applied to a read-only source too).
 cleanup: `delete_output(job_id=<the run>)`, then
