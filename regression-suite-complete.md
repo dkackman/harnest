@@ -6207,7 +6207,6 @@ cleanup: none. Nothing is created.
 metrics: none.
 
 ### C-F180 — on a server with a token, `export_job` reports its zip as fetchable and tells the agent to fetch it
-pending: #595
 source: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
 #592: `/exports/<id>.zip` is ungated by design, like `/outputs`, but `export_job` set
 `auth_required` from whether the *server* has a token. On a token-bearing server it then told
@@ -6247,7 +6246,6 @@ directory. If none can, say so in the report and leave it.
 metrics: none.
 
 ### C-F181 — `export_job` refusals are unchanged: running or queued job, unknown id, a repeat without `overwrite`; `overwrite=true` replaces
-pending: #595
 source: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
 #595 changes what `export_job` says about a finished job. Its plan says the refusals stay as
 they are. Use workspace `regression-complete`. This costs about 10 s of GPU (the spandrel
@@ -6278,7 +6276,6 @@ cleanup: `delete_output(job_id=…)` for A and B. Also delete what `export_job` 
 metrics: none.
 
 ### C-F182 — the served `export_job` description and the multi-job skills point at fetching the export zip
-pending: #595
 source: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
 #595 shortens the `export_job` description: the "do NOT fetch it" branch goes. It also gives
 the `series-episodes` and `script-to-video` skills a "taking the project home" line. Free, no
