@@ -9239,4 +9239,34 @@ name the template, or names a variable the template lacks.
 cleanup: none.
 metrics: none.
 
+### C-F294 — `ingredients_grid` refuses a bad literal `layout`/`fit`/`background` and an over-max `images` list at validate, and leaves references to run time
+source: tester, verified in #646 (claude-opus-5-5 via anthropic)
+Free: validates only. P = `asset:qa-cast/priya-portrait.jpg` (any reachable still
+substitutes). Each step is `{"task": {"command": "ingredients_grid", "arguments": {...}},
+"result": {"content_type": "image/png"}}`.
+1. `validate_workflow` on one inline workflow (`"variables": {"lay": "grid"}`) whose steps'
+   arguments are, in order:
+   0. `images`: 13 × P
+   1. `images: [P], layout: "grid"`
+   2. `images: [P], fit: "stretchy"`
+   3. `images: [P], background: "notacolour"`
+   4. `images: [P, P, P], max_images: 2`
+   5. `images: [P, P, P], max_images: 3, layout: "rows", background: "#202020"`
+   6. `images: [P], layout: "variable:lay"`
+2. `validate_workflow` on a workflow with the same `variables` and two steps:
+   `{"name": "a", ... images: [P], layout: "variable:lay", fit: "cover", background: "white"}`
+   and `images: "previous_result:a", layout: "panels"`, passing `arguments={"lay": "rows"}`.
+expected:
+- Call 1 is `valid: false` with exactly six errors, at `steps[0].task.arguments.images`
+  (13 images, `'max_images' is 12`), `steps[1]….layout` and `steps[6]….layout` (listing
+  `['auto', 'rows', 'panels']`), `steps[2]….fit` (listing `['contain', 'cover']`),
+  `steps[3]….background` (colour name or #hex), and `steps[4]….images` (3 against 2).
+- Step 5 has no error.
+- Call 2 is `valid: true`, with `lay` in `checked_arguments`.
+It is a **finding** if any of those literals validates and is refused only at run time, an
+error lands on another path, step 5 is refused, or call 2's override or `previous_result:`
+list is refused.
+cleanup: none.
+metrics: none.
+
 ## Performance
