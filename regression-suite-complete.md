@@ -6338,7 +6338,6 @@ shared asset); the workspace is already gone.
 metrics: none.
 
 ### C-F184 — `attribute-lines` is a catalog utility template that chains `transcribe_audio` into `attribute_voices`, and validates clean
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 Stage A adds `workflows/templates/attribute-lines.json`. This case runs nothing. Today
 (develop at spec time) `templates/transcribe-audio` is listed under `shape: "utility"` with
@@ -6413,7 +6412,6 @@ cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ### C-F186 — a clip cut mid-line transcribes with a numeric last `end`, and `attribute-lines` completes on it
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 This is the open-ended-last-line arm, from the bug the plan names. Whisper can return `end:
 null` on a chunk still sounding at the end of the file, and `attribute_voices` used to refuse
@@ -6457,7 +6455,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F187 — `attribute-lines` refuses a missing `voices` or `audio` and a short reference, naming each, at validate time
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 These are the plan's refusals, all through the free pre-flight. Each arm is
 `validate_workflow` on `templates/attribute-lines` with the `arguments` given. Nothing runs.
@@ -6485,7 +6482,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F188 — the tasks guide carries *Checking the lip-sync target*, with the call shape, the 32-moment limit and both timeline rules
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 Docs-only checks. They are free.
 1. `get_guide("tasks", section="Checking the lip-sync target")`. It resolves as a
@@ -6519,7 +6515,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F189 — one round of the loop on a stand-in two-voice cut: line times from `attribute-lines` land the right voice under `get_output_frames`
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 This is the plan's "one real round", built from fixtures so that it is runnable without an
 H3 render. The real `music-video` round is M-F073. The plan says the round passes on the tool
@@ -6562,7 +6557,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F190 — the `script-to-video` skill points a sung multi-shot piece at *Checking the lip-sync target*
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 Stage A's plugin half. Load `dw:script-to-video` with the `Skill` tool. The plugin tree
 follows `develop`.
