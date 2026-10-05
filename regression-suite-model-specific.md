@@ -2430,4 +2430,32 @@ reordered, or if the asset's inner shots are lost. A few samples missing from th
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `asset-plus-gather-512`, to `regression-perf/M-F070.jsonl`.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 
+### M-F071 — a list split at a `get_last_frame` dependency: two `for_each` lists, a derived still between them, and both gathered into one join
+source: tester, found while running TESTER_TASK.agent.md (ep104, job `8831b7b1a6df`), claude-opus-5-5 via anthropic
+Model/pipeline: `Lightricks/LTX-2.5-Diffusers` `LTX2ImageToVideoPipeline`, via `templates/ltx2/image-to-video`
+composed by `path`. Paid, about 3.4 min on lem. This is the pattern the workflows guide's `for_each` section prescribes
+for "shot 2 starts where shot 1 ended": M-F069/M-F070 cover one list; this covers an ordinary step reading one list's
+member, feeding an item of a second list, and two `gather:` elements in one `videos` list.
+Setup: workspace = this suite's, passed on every call. Inline workflow, `id: "QAM071"`, `seed: 104`, variables
+`a` = entries `scoop` (49 f, `image: "previous_result:last"`, a HAL prompt with a quoted line) and `freeze` (41 f,
+`image: {"location": "asset:qa-cast/priya-portrait.jpg"}`, a PRIYA prompt with a quoted line), and `b` = one entry
+`drip` (41 f, `image: "previous_result:tail"`, a HAL prompt with a quoted line). Steps, in order:
+`last` — `get_last_frame(video: "asset:qa-cast/ep103-episode.mp4")`, result `image/png`. `shot` — `for_each:
+"variable:a"`, `workflow: {path: "templates/ltx2/image-to-video", arguments: {image: "item:image", prompt:
+"item:prompt", num_frames: "item:num_frames", width: 512, height: 288, seed: 104}}`, result `video/mp4`. `tail` —
+`get_last_frame(video: "previous_result:shot@scoop")`, result `image/png`. `coda` — `for_each: "variable:b"`, same
+`workflow` block. `cut` — `concat_videos(videos: ["gather:shot", "gather:coda"], fps: 24, match_levels: "rms",
+match_levels_dbfs: -24)`, result `video/mp4` final. validate → bind cost → `run_workflow(wait_seconds=55)` → wait.
+expected:
+- validate is `valid: true`, `warnings: []`, `steps: 6`, `list_entries` `{a: 2, b: 1}`. The job succeeds with
+  `warnings: []`; the manifest lists `last`, `shot@scoop`, `shot@freeze`, `tail`, `coda@drip`, `cut` in that order.
+- The `cut` manifest's shots: `shot@scoop` 0/49 frames, 0/98000 samples; `shot@freeze` at frame 49, sample 98000,
+  41 frames, 82000 samples; `coda@drip` at frame 90, sample 180000, 41 frames, 82000 samples; both later seams
+  `hard_cut: true`. `get_gallery_metadata` on it: 131 frames, 24 fps, 512×288, 48000 Hz.
+It is a **finding** if validate refuses `previous_result:shot@scoop` in an ordinary step or `previous_result:tail`
+inside a `b` item, if a run fails on something validate passed, or if either gather is dropped, joined as one input,
+or reordered. `shot_dead_air` warnings from `assess_output` are take-dependent, not this case's concern.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `split-list-3shot-512`, to `regression-perf/M-F071.jsonl`.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+
 ## Performance

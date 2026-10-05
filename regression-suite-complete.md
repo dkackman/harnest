@@ -6181,4 +6181,26 @@ Not asserted here: the child's `final` subfolder showing up on member files (#56
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F179 — a list-driven template's estimate scales with the length of the list it is given
+source: tester, verified in #589 (claude-opus-5-5 via anthropic)
+#589: a `for_each` batch's `plan.estimate` was the template's one-run figure whatever the list
+length, so a 32-shot batch was quoted at about 1/100 of its cost. On a server with only another
+device's figure (`basis: other_device`) the count wasn't applied at all. This case is three free
+validate calls, with no run and no fixture. Each shot entry is
+`{"name": "sN", "num_frames": 124, "prompt": "a man talks", "references": [{"reference_type": "variable:subject_reference_type", "from_previous_result": "draw_character_a"}]}`,
+with distinct names `s1`, `s2`, ….
+1. `validate_workflow(name="templates/minimax/dialogue-short")`, with no arguments (5-shot default).
+2. The same with `arguments={"shots": [2 entries]}`.
+3. The same with `arguments={"shots": [10 entries]}`.
+expected:
+- `plan.list_entries.shots` is 5, 2 and 10.
+- If step 3's `basis` is `per_entry`, `derived` or `other_device`, its `minutes` is 5× step 2's
+  (within 0.1). With `other_device` or `derived`, step 2's is also 2/5 of step 1's.
+- If any basis is `observed` or `unknown`, report the three figures and bases rather than a ratio,
+  but step 3's `minutes` must still not equal step 2's unless both are `null`.
+It is a **finding** if steps 2 and 3 quote the same non-null `minutes`. That is #589: the
+template's figure is quoted regardless of the entry count.
+cleanup: none. Nothing is created.
+metrics: none.
+
 ## Performance
