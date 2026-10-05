@@ -6302,4 +6302,29 @@ contradicts C-F180's `auth_required: false`.
 cleanup: none.
 metrics: none.
 
+### C-F183 — a `keep_output(shared=true)` copy outlives the workspace it was kept from
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+`keep_output` answers `linked: true`. A consumer relies on the shared copy being independent
+(the standing task deletes a workspace once its outputs are kept shared). If "linked" ever
+meant a symlink or a reference into the workspace, deleting the workspace would break every
+shared asset kept from it. C-F025 covers deleting a *workspace asset*; this covers deleting
+the whole *workspace*. Seconds, no GPU.
+1. `create_workspace("qa-c-f183")`.
+2. In it (`workspace="qa-c-f183"`), run a one-step task workflow that writes a short video,
+   e.g. `pair_audio(video="asset:qa-cast/ep3-shot1-incident.mp4",
+   audio="asset:uploads/qa-cast/room-bed.wav", fit="video")` with `result` `video/mp4`.
+   Read `get_gallery_metadata` on the output: note `frame_count`, `duration_seconds`.
+3. `keep_output(name=<output>, asset_name="qa-c-f183/kept.mp4", shared=true,
+   workspace="qa-c-f183")`.
+4. `delete_workspace("qa-c-f183", acknowledged_cost=true)`.
+5. From another workspace, `get_gallery_metadata("asset:qa-c-f183/kept.mp4")` and
+   `assess_output("asset:qa-c-f183/kept.mp4")`.
+expected:
+- Step 3 returns `shared: true` and the reference `asset:qa-c-f183/kept.mp4`.
+- Step 5 reads the file: same `frame_count` and `duration_seconds` as step 2, a `media`
+  block, no "not found". `assess_output` runs on it.
+cleanup: `delete_asset("qa-c-f183/kept.mp4", shared=true)` (or the tool's equivalent for a
+shared asset); the workspace is already gone.
+metrics: none.
+
 ## Performance
