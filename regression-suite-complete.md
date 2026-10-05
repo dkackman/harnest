@@ -238,6 +238,9 @@ smoke's Fixtures lists the asset too.
   alone. The cases' target arithmetic (how many dB of limiting a target needs) is derived
   from that gap; a substitute needs a gap of at least 14 dB, and the cases' targets are then
   re-derived from its own `get_gallery_metadata` numbers.
+- `asset:qa-cast/priya-portrait.jpg` — a portrait still in the shared `common/assets`. C-F178
+  and C-F181 upscale it with `templates/upscale-spandrel`. C-F181 needs only a job that runs for
+  several seconds, so any still substitutes. Read-only, never deleted.
 
 ## Functional
 
@@ -6201,6 +6204,105 @@ expected:
 It is a **finding** if steps 2 and 3 quote the same non-null `minutes`. That is #589: the
 template's figure is quoted regardless of the entry count.
 cleanup: none. Nothing is created.
+metrics: none.
+
+### C-F180 — on a server with a token, `export_job` reports its zip as fetchable and tells the agent to fetch it
+pending: #595
+source: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
+#592: `/exports/<id>.zip` is ungated by design, like `/outputs`, but `export_job` set
+`auth_required` from whether the *server* has a token. On a token-bearing server it then told
+the agent "do NOT fetch it; hand open_url to the person". This case checks that the field now
+reports the zip URL's own gating and that `next` tells the agent to fetch. Use workspace
+`regression-complete`. The run is a task-only job of about a second.
+1. `get_server_info`. Record `auth_required`. lem has a token (`true` on 2026-10-05). If it reads
+   `false`, the server has no token: run the case anyway, but report that the token arm wasn't
+   exercised, so the run proves nothing about #592.
+2. `run_workflow(inline_workflow=W, wait_seconds=55)` with W =
+   `{"id": "c-f180-export", "steps": [{"name": "qr", "task": {"command": "qr_code", "arguments": {"qr_code_contents": "c-f180", "width": 256, "height": 256}}, "result": {"content_type": "image/png", "file_base_name": "qr"}}]}`.
+   It must succeed. Then `get_job` on it, for the manifest.
+3. `export_job(job_id=<step 2's job>)`.
+expected:
+- Step 3 succeeds with `auth_required: false`, even though step 1 read `true`.
+- `open_url` is either relative and exactly `/exports/<job id>.zip?workspace=regression-complete`,
+  or absolute (when the server sets a public URL) and ending in that same path and query.
+  `zip_url` names the same `/exports/<job id>.zip`.
+- `next` tells the agent to fetch `open_url` itself, with whatever HTTP it has. When `open_url`
+  is relative, `next` says to prefix the server address the agent reaches it at. `next` says to
+  unpack the zip into `exports/` under the working directory, and keeps the warning not to
+  create the job-id folder first. Hand-over wording is allowed only as the fallback for an agent
+  that can't make HTTP requests.
+- `next` does **not** tell the agent to hand `open_url` to the person as the normal path, and
+  does not say "do NOT fetch".
+- `files` lists the PNG from the manifest under `<job id>/outputs/`. Every file the manifest
+  names for this job appears under `<job id>/outputs/`. `total_bytes` is a positive number.
+It is a **finding** if `auth_required` is `true` on a token-bearing server, or if `next` still
+steers the agent away from fetching. That is #592.
+Not checked over MCP: a token-less GET of `open_url` returning that zip. A consumer agent has no
+HTTP client. The plan makes `tests/test_server_exports.py` (token configured → `auth_required`
+false → unauthenticated GET 200) the required check for that pairing. Say in the report that the
+fetch arm was covered by that test, not by this case. A session that does have HTTP may GET
+`open_url` without a token and expect a 200 zip whose entries match `files`.
+cleanup: `delete_output(job_id=…)`. Also delete what `export_job` wrote, if a tool can reach its
+directory. If none can, say so in the report and leave it.
+metrics: none.
+
+### C-F181 — `export_job` refusals are unchanged: running or queued job, unknown id, a repeat without `overwrite`; `overwrite=true` replaces
+pending: #595
+source: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
+#595 changes what `export_job` says about a finished job. Its plan says the refusals stay as
+they are. Use workspace `regression-complete`. This costs about 10 s of GPU (the spandrel
+upscale C-F178 uses).
+1. `export_job(job_id="00000000-0000-0000-0000-000000000000")`. That id is well-formed and unknown.
+2. Queue two jobs back to back, with no `wait_seconds`:
+   - A: `templates/upscale-spandrel` with `arguments={"input_image": "asset:qa-cast/priya-portrait.jpg"}`
+     and `acknowledged_cost` per its `validate_workflow` plan;
+   - B: C-F180's qr workflow with `qr_code_contents: "c-f181"` and `id: "c-f181-export"`.
+   Then at once call `export_job` on A and then on B. Right after each call, `get_job` it and
+   record its status. A refusal counts only when the status was `running` or `queued` at the
+   time. A job that already finished makes that arm **inconclusive**, not passed: say so.
+3. `wait_for_job` on both. Then `export_job(job_id=B)`. This is the first export of a finished job.
+4. `export_job(job_id=B)` again, with no `overwrite`.
+5. `export_job(job_id=B, overwrite=true)`.
+expected:
+- Step 1 is refused as not found (404), naming the id.
+- Step 2: each export of an unfinished job is refused (409) with "only a finished job can be
+  exported" or the same meaning.
+- Step 3 succeeds, with `auth_required: false` and a fetch `next` as in C-F180.
+- Step 4 is refused (409), saying the export already exists and pointing at `overwrite`.
+- Step 5 succeeds. Its `files` names the same files as step 3 (paths equal; sizes equal for the
+  PNG), and its `auth_required`/`open_url`/`next` match step 3's.
+It is a **finding** if an unfinished job exports, if a repeat silently overwrites, or if
+`overwrite=true` is refused.
+Not asserted: how a `failed` or `cancelled` job is treated. The plan doesn't say.
+cleanup: `delete_output(job_id=…)` for A and B. Also delete what `export_job` wrote, as in C-F180.
+metrics: none.
+
+### C-F182 — the served `export_job` description and the multi-job skills point at fetching the export zip
+pending: #595
+source: tester, spec for #595 from #592's plan v2 (claude-opus-5-5 via anthropic)
+#595 shortens the `export_job` description: the "do NOT fetch it" branch goes. It also gives
+the `series-episodes` and `script-to-video` skills a "taking the project home" line. Free, no
+run, nothing created.
+1. Load the `export_job` tool schema (`ToolSearch select:mcp__dw__export_job`) and read its
+   description.
+2. Invoke the `dw:series-episodes` and `dw:script-to-video` skills and read their text.
+3. Invoke `dw:minimax-h3`, `dw:minimax-music3` and `dw:ltx-2-5`. Find any place where they
+   talk about exporting or bringing files home.
+expected:
+- Step 1's description no longer contains "do NOT fetch it". It does not tell the agent to
+  hand `open_url` to the person when the server has a token. It still says the directory is on
+  the server's machine. It still says a running job and an existing export without
+  `overwrite=true` are refused. The 2026-10-05 description had a sentence starting "When it is
+  true, do NOT fetch it: hand open_url to the person". That sentence is gone or reduced to the
+  fallback for an agent with no HTTP. The plan's `SURFACE_BUDGET` test, not this case, pins the
+  description's length.
+- Step 2: each skill names `export_job` as the way to bring a project's files home: one export
+  per job, then fetch each zip. Delivery through `subfolder="final"` may stay as well.
+- Step 3: none of the three skills tells the agent not to fetch an export zip, or to hand it to
+  the person, because of the server's token.
+It is a **finding** if any served text still says a token-gated zip can't be fetched. That
+contradicts C-F180's `auth_required: false`.
+cleanup: none.
 metrics: none.
 
 ## Performance
