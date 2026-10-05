@@ -241,6 +241,16 @@ smoke's Fixtures lists the asset too.
 - `asset:qa-cast/priya-portrait.jpg` — a portrait still in the shared `common/assets`. C-F178
   and C-F181 upscale it with `templates/upscale-spandrel`. C-F181 needs only a job that runs for
   several seconds, so any still substitutes. Read-only, never deleted.
+- `asset:qa-fit/src-640x480-50f.mp4`, `asset:qa-fit/src-640x480-50f-silent.mp4` and
+  `asset:qa-fit/src-512x288-121f.mp4`. These are in **this** workspace's assets, not the
+  shared ones, and C-F238's setup makes them from `ep6-cold-open.mp4` when they're missing.
+  - The first is a 4:3 clip: 640×480, 50 frames, 24 fps, with a soundtrack.
+  - The second is the same picture with no audio stream.
+  - The third is 512×288, 121 frames, 24 fps, with a soundtrack: `refine-clip`'s default
+    working size.
+  Used by C-F238–C-F249 (#602's fit/restore). The geometry is the point, not the content:
+  any replacement needs the same width, height, frame count and fps, re-read with
+  `get_gallery_metadata`. Keep them across runs, never sweep them.
 
 ## Functional
 
@@ -6969,6 +6979,2268 @@ expected:
 - The tasks guide's examples include the template, or an example that names it.
 It is a **finding** if the skill has no line for the template, if the line names a template
 or variable that doesn't exist, or if it promises multi-face repair.
+cleanup: none.
+metrics: none.
+
+### C-F205 — `analyze_beats` is a listed json task with the plan's arguments, documented
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+Free and read-only.
+1. `list_tasks`.
+2. `get_task("analyze_beats")`.
+3. `get_guide("tasks")`. Find the `analyze_beats` section.
+4. Load `dw:minimax-music3` with the `Skill` tool. The plugin tree follows `develop`.
+expected:
+- `analyze_beats` is listed. It is not in the `assessment` list (the plan registers it with
+  no assessment flag), and it returns json.
+- `get_task` lists `audio` (required), `sample_rate`, `tempo_bpm`, `anchors`, `min_bpm` and
+  `max_bpm`. `anchors` is described as taking `{beat_index, seconds}` entries or plain
+  seconds.
+- The tasks guide's section names the result's fields: `bpm`, `beats`, `method` (`onset`,
+  `rms_peaks` or `grid`), `calibration` (`offset_s`, `drift`, `anchors_used`) and
+  `warnings`, plus `downbeat_phase` as optional.
+- The `minimax-music3` skill has a line pointing at `analyze_beats` for a song's beat grid.
+It is a **finding** if the task is missing, if it is flagged as an assessment, if any of the
+six arguments is missing or named otherwise, or if the guide or skill has no entry.
+cleanup: none.
+metrics: none.
+
+### C-F206 — `analyze_beats` on a click track of known tempo returns that tempo and its beats
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, one job per tempo. No fixture holds a click track, so build one per run inside the
+same workflow. Take a 0.5 s slice of the song, fade most of it out so a short burst leads
+each period, then loop it with no crossfade. That gives an onset exactly every 0.5 s (120
+BPM).
+1. `run_workflow(inline_workflow={"id": "qa-c-f206", "steps": [{"name": "cut", "task":
+   {"command": "slice_audio", "arguments": {"audio": "asset:qa-cast/ep15-song.mp3",
+   "start_seconds": 8.0, "duration_seconds": 0.5}}}, {"name": "burst", "task": {"command":
+   "fade_audio", "arguments": {"audio": "previous_result:cut", "fade_in_ms": 0,
+   "fade_out_ms": 450}}}, {"name": "click", "task": {"command": "loop_audio", "arguments":
+   {"audio": "previous_result:burst", "duration_seconds": 20, "crossfade_ms": 0}}, "result":
+   {"content_type": "audio/wav", "subfolder": "final"}}, {"name": "beats", "task":
+   {"command": "analyze_beats", "arguments": {"audio": "previous_result:click"}}, "result":
+   {"content_type": "application/json", "subfolder": "final"}}]}, acknowledged_cost=true,
+   wait_seconds=55)`. Read the json with `get_output_text`. Listen to the click output with
+   `get_output_audio` once if the result is surprising, to confirm the build made clicks.
+2. The same with `duration_seconds: 0.6` on `cut` and `fade_out_ms: 550` (100 BPM).
+expected:
+- Both jobs succeed with `method: "onset"`.
+- `bpm` is within ±1 of 120, then of 100. A half or double tempo (60/240, 50/200) is a
+  finding, not a tolerance.
+- `beats` is strictly ascending, spans the clip (first beat ≤ 0.6 s, last ≥ 19.0 s), and
+  consecutive gaps are 0.5 s (then 0.6 s) ±20 ms. There are about 40 (then 33) of them, ±2.
+- `warnings` is empty or names nothing about the tempo.
+It is a **finding** if either job fails, if the tempo is wrong, or if beats are missing,
+duplicated or out of order.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F207 — `analyze_beats` on a Music 3 song returns a tempo and beats spanning the song
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, one short job. `asset:qa-cast/ep15-song.mp3` is a 30 s Music 3 output (Fixtures).
+1. `run_workflow(inline_workflow={"id": "qa-c-f207", "steps": [{"name": "beats", "task":
+   {"command": "analyze_beats", "arguments": {"audio": "asset:qa-cast/ep15-song.mp3"}},
+   "result": {"content_type": "application/json", "subfolder": "final"}}]},
+   acknowledged_cost=true, wait_seconds=55)`. Read it with `get_output_text`.
+2. The same with `min_bpm: 60, max_bpm: 90`, then with `min_bpm: 140, max_bpm: 200`.
+expected:
+- Step 1 succeeds with `method: "onset"` and a numeric `bpm` within the defaults' range.
+- `beats` is strictly ascending and every value is in `[0, 30.03]`. The first is under 2 s,
+  the last over 28 s, and no gap is more than 2.5 × 60/`bpm`. That rules out a beat list
+  covering only part of the song.
+- `calibration` is present with `anchors_used: 0`.
+- In step 2, each run's `bpm` lies inside its own `[min_bpm, max_bpm]`. Folding the tempo by
+  a factor of two into the range is the expected way to get there.
+It is a **finding** if a job fails, if `bpm` falls outside the range asked for, or if the
+beats are unordered or don't span the song.
+cleanup: `delete_output(job_id=…)` for all three jobs.
+metrics: none.
+
+### C-F208 — `analyze_beats` on silence warns and returns no grid, never a crash
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, two short jobs.
+1. Digital silence: `run_workflow(inline_workflow={"id": "qa-c-f208", "steps": [{"name":
+   "mute", "task": {"command": "gain_audio", "arguments": {"audio":
+   "asset:qa-cast/ep15-song.mp3", "gain_db": -120}}}, {"name": "beats", "task": {"command":
+   "analyze_beats", "arguments": {"audio": "previous_result:mute"}}, "result":
+   {"content_type": "application/json", "subfolder": "final"}}]}, acknowledged_cost=true,
+   wait_seconds=55)`.
+2. Near silence: the `beats` step alone on `asset:uploads/qa-cast/room-bed.wav` (4.96 s,
+   about −50 dBFS room tone, no beat).
+expected:
+- Both jobs **succeed**. The plan promises a result, not a refusal and not a failure.
+- Each result has either an empty `beats` list or `method: "rms_peaks"`, and a non-empty
+  `warnings` that says no reliable beat was found. `bpm` is null or absent when `beats` is
+  empty. It is never NaN or infinite, and the json parses.
+It is a **finding** if either job fails or raises, if a result claims `method: "onset"` with
+a confident grid and no warning, or if the json holds NaN/Infinity.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F209 — one anchor and `tempo_bpm` give an exact even grid from the anchor
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Run on `asset:qa-cast/ep15-song.mp3` as in C-F207, once for each `anchors` form the
+plan names.
+1. `analyze_beats` with `tempo_bpm: 120, anchors: [1.25]`.
+2. The same with `anchors: [{"beat_index": 0, "seconds": 1.25}]`.
+3. `tempo_bpm: 96, anchors: [{"beat_index": 4, "seconds": 3.0}]`. With beat 4 at 3.0 s and
+   a 0.625 s period, beat 0 falls at 0.5 s.
+expected:
+- Every run returns `method: "grid"` and `bpm` equal to the `tempo_bpm` given.
+- Steps 1 and 2 return identical `beats`. The first is 1.25 and each next one adds exactly
+  0.5 (±1 ms, a float tolerance, not a detection one), up to the song's end (last ≤ 30.03,
+  and the next would pass it). Beats before the anchor are either absent or continue the
+  same grid backwards, at 0.75 and 0.25. Either is fine. Anything else is not.
+- Step 3's grid has period 0.625 and passes through 3.0 at index 4 counting from 0.5. That
+  means 0.5, 1.125, 1.75, 2.375, 3.0, … (±1 ms).
+- `calibration.anchors_used` is 1.
+It is a **finding** if the grid drifts, isn't evenly spaced, misses the anchor, or ignores
+`beat_index`.
+cleanup: `delete_output(job_id=…)` for all three jobs.
+metrics: none.
+
+### C-F210 — two anchors move the nearest detected beats onto them
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Reuse the 120 BPM click build from C-F206 step 1, whose onsets sit on multiples of
+0.5 s. Add `anchors: [2.1, 15.1]` to the `beats` step: both are 0.1 s off the detected
+beats. Then run again with `anchors: [{"beat_index": 4, "seconds": 2.1}, {"beat_index": 30,
+"seconds": 15.1}]`.
+expected:
+- Both jobs succeed. `calibration.anchors_used` is 2.
+- 2.1 and 15.1 each appear in `beats` exactly (±1 ms). No beat remains at 2.0 or 15.0 beside
+  them, so an anchor moved the beat rather than adding one.
+- `beats` is still strictly ascending, with no gap under 0.3 s or over 0.7 s anywhere.
+- `calibration.offset_s` is about 0.1 (±0.02) and `drift` about 0. Two anchors at the same
+  offset imply a shift, not a stretch.
+It is a **finding** if an anchor isn't hit exactly, if a duplicate beat is left beside it,
+or if the order breaks.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F211 — `analyze_beats` refuses an empty or inverted tempo range and an anchor past the end before running
+pending: #625
+source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
+Free for the static arms. The anchor arm may reach run start. Each is an inline one-step
+workflow on `asset:qa-cast/ep15-song.mp3` (30.03 s), shaped as in C-F207.
+1. `validate_workflow` with `min_bpm: 120, max_bpm: 120`.
+2. `validate_workflow` with `min_bpm: 150, max_bpm: 90`.
+3. `validate_workflow` with `anchors: [45.0]`, then `anchors: [{"beat_index": 0, "seconds":
+   31.0}]`. If validate passes, it can't see the song's length statically, so
+   `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` it.
+4. Boundary controls: `anchors: [29.9]` and `min_bpm: 119, max_bpm: 120`, validated and
+   run.
+expected:
+- Arms 1 and 2 are refused by `validate_workflow` (`valid: false`). The error names
+  `min_bpm`/`max_bpm` and the step's path.
+- Arm 3 is refused by `validate_workflow` or at run start. A job that fails at run start
+  says the anchor is past the audio's end, naming its value and the duration. A traceback,
+  an unrelated decode error, or a job that succeeds with the anchor silently dropped is not
+  a refusal.
+- Arm 4's controls validate and run, so the gates are not off by one.
+It is a **finding** if any arm 1–3 input runs to a result, if a refusal names no argument,
+or if a control is refused.
+cleanup: `delete_output(job_id=…)` for any job that ran.
+metrics: none.
+
+### C-F212 — `plan_cuts` is a listed task taking the plan's arguments, documented with the cuts workflow
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+Free and read-only.
+1. `list_tasks`, then `get_task("plan_cuts")`.
+2. `get_guide("tasks")`. Find the `plan_cuts` section.
+3. Load `dw:minimax-h3` with the `Skill` tool. Find its `cuts.md` reference.
+4. `list_guides`. Find the templates index, and in it the `music-video-cuts` row.
+expected:
+- `get_task` lists `transcript` (required), `lyrics`, `beats`, `segment_by` (`line`,
+  `stanza`, `beat`), `fps`, `duration_s`, `min_scene_s`, `max_scene_s`, `vocal_tail_s`,
+  `include_instrumental_gaps`, `min_gap_seconds` and `snap_to_beats`.
+- `transcript` is described as `transcribe_audio`'s timestamped `{text, chunks}` result,
+  and names the argument that produces it (`timestamps`).
+- The guide section describes the result as one dict, `{shots: [{name, start_frame,
+  num_frames, cut_frames, lead_frames, lyric, kind}], bpm?, fps, warnings}`.
+- `cuts.md` sets out the plan → read → prompt → render workflow and names `plan_cuts` and
+  `templates/minimax/music-video-cuts`.
+- The templates index has a row for `music-video-cuts`.
+It is a **finding** if the task, an argument, the guide section, `cuts.md` or the template
+row is missing, or if the docs describe the result as one artifact per shot.
+cleanup: none.
+metrics: none.
+
+### C-F213 — `plan_cuts` keeps the lyrics verbatim and in order and covers the song in contiguous frames
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, short jobs with synthetic inputs. Pass `transcript` and `lyrics` as workflow
+variables (`"variables": {...}`, read as `variable:transcript`). Each run is one `plan_cuts`
+step saving `application/json` to `final`, run with `acknowledged_cost=true,
+wait_seconds=55` and read with `get_output_text`.
+- **T1** (`duration_s: 20`, `fps: 24`): `{"text": "...", "chunks": [{"start": 2.0, "end":
+  4.0, "text": "walking down the river"}, {"start": 4.0, "end": 6.0, "text": "under neon
+  skies"}, {"start": 6.0, "end": 9.0, "text": "we were burning bright"}, {"start": 12.0,
+  "end": 17.0, "text": "never let it go"}]}`.
+- **L1**: `"Walking down the river,\nUnder neon skies\nZebra quartz xylophone\nWe were
+  burning bright\nNever let it go!"`. Line 3 is in no transcript chunk.
+- **T2**: T1 with the second chunk's `end` and the last chunk's `end` set to `null`.
+1. T1 + L1, `segment_by: "line"`, `min_scene_s: 0.5`, `max_scene_s: 10`,
+   `include_instrumental_gaps: true`, `min_gap_seconds: 1.0`.
+2. The same without `lyrics`.
+3. T2 without lyrics, same arguments otherwise.
+4. Rounding: `fps: 30`, `duration_s: 10.02`, transcript chunks `{0.0, 3.34, "one"}`,
+   `{3.34, 6.69, "two"}`, `{6.69, 10.02, "three"}`, no lyrics.
+expected:
+- Each job yields **one** json artifact whose body is the dict. It is not N files, and not
+  a bare list.
+- Run 1: the `lyric` values of `kind` lyric shots are exactly L1's five lines, in order,
+  byte for byte (capitals and punctuation kept, not the transcript's text). "Zebra quartz
+  xylophone" gets its own shot between "Under neon skies" and "We were burning bright", and
+  a `warnings` entry names it as unaligned. "Walking down the river," starts at frame 48 and
+  "Never let it go!" at frame 288.
+- Run 2: the `lyric` values are the four transcript texts, in order.
+- Every run: `start_frame` of the first shot is 0. Each later shot's `start_frame` equals the
+  previous one's `start_frame + cut_frames`. The last ends at round(`duration_s` × `fps`):
+  480 for runs 1–3, 301 for run 4. Stage B: every shot has `num_frames == cut_frames` and
+  `lead_frames == 0`, and its `fps` is the one asked for.
+- Run 3: the shot after "under neon skies" starts at frame 144, the next chunk's start, so a
+  null end took it. The last lyric shot runs to frame 480, the song's end, with no outro.
+- Run 4: boundaries at 100 and 201 (round 100.2 and 200.7, each from absolute seconds). The
+  `cut_frames` sum to 301, with no drift from rounding per shot.
+- Names are unique within each plan.
+It is a **finding** if a lyric is rewritten, dropped, merged or reordered, if the
+unaligned line is dropped or not warned about, if any frame of `[0, duration)` is uncovered
+or covered twice, or if the result is flattened.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F214 — `include_instrumental_gaps` adds intro, gap and outro scenes, honouring `min_gap_seconds`
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. T1 from C-F213 (gaps: intro 0–2 s, middle 9–12 s, outro 17–20 s), no lyrics,
+`fps: 24`, `duration_s: 20`, `min_scene_s: 0.5`, `max_scene_s: 10`.
+1. `include_instrumental_gaps: true`, `min_gap_seconds: 1.0`.
+2. `include_instrumental_gaps: true`, `min_gap_seconds: 4.0`.
+3. `include_instrumental_gaps: false`.
+expected:
+- Run 1 has exactly three shots with `kind: "instrumental"`: frames 0–48 (intro), 216–288
+  (gap) and 408–480 (outro), each with an empty or null `lyric`. Every other shot is a lyric
+  shot.
+- Run 2 has no instrumental shot shorter than 4 s (96 frames). Every gap here is under 4 s,
+  so there is none, and the gap time is absorbed into adjacent shots.
+- Run 3 has no `kind: "instrumental"` shot.
+- In every run, coverage is still contiguous over `[0, 480)` as C-F213 defines it.
+It is a **finding** if a gap scene is missing, misplaced or mislabelled in run 1, if a gap
+under `min_gap_seconds` becomes a scene, or if coverage breaks when gaps are excluded.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F215 — `snap_to_beats` and `segment_by` beat/stanza put boundaries on beats and stanzas
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. **T3** is T1 from C-F213 with every time +0.2 s (2.2/4.2, 4.2/6.2, 6.2/9.2,
+12.2/17.2), so no boundary falls on a beat by chance. **B** is beats every 0.5 s from 0.0 to
+19.5 (40 values), at 24 fps one every 12 frames. `duration_s: 20`, `fps: 24`, `min_scene_s:
+0.5`, `max_scene_s: 10`.
+1. T3, `beats: B` (plain list), `snap_to_beats: false`.
+2. T3, `beats: B`, `snap_to_beats: true`.
+3. T3, `beats: {"bpm": 120, "beats": B, "method": "grid", "calibration": {"offset_s": 0,
+   "drift": 0, "anchors_used": 0}, "warnings": []}` (the `analyze_beats` shape),
+   `snap_to_beats: true`.
+4. T3, `beats: B`, `segment_by: "beat"`.
+5. T3 + lyrics `"walking down the river\nunder neon skies\n\nwe were burning bright\nnever
+   let it go"` (two stanzas), `segment_by: "stanza"`.
+expected:
+- Run 1 has at least one boundary off the beat grid (2.2 s → frame 53), so the control shows
+  snapping isn't happening anyway.
+- Runs 2 and 3 are identical. Every `start_frame` is within 1 frame of a multiple of 12, and
+  the plan's `bpm` is 120.
+- Run 4: every boundary is within 1 frame of a beat, and the lyrics stay in order across
+  shots.
+- Run 5: the lyric shots are the two stanzas, each `lyric` holding its stanza's lines
+  verbatim and in order. Stanza 1 is not split, unless it is over `max_scene_s` with a
+  warning naming it.
+- All runs: contiguous coverage over `[0, 480)`.
+It is a **finding** if a snapped boundary is more than a frame off a beat, if the two
+`beats` forms disagree, or if stanza mode splits or merges stanzas unannounced.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F216 — `plan_cuts` holds scenes inside `min_scene_s`/`max_scene_s`, splitting an over-long line on beats or evenly
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. **T4** (`duration_s: 20`, `fps: 24`): chunks `{0.0, 2.0, "intro line"}`, `{2.0,
+16.0, "one very long held note"}`, `{16.0, 16.4, "hey"}` and `{16.4, 20.0, "outro line"}`.
+B is from C-F215.
+1. T4, `max_scene_s: 5`, `min_scene_s: 1.0`, `beats: B`.
+2. T4, `max_scene_s: 5`, `min_scene_s: 1.0`, no beats.
+3. Boundary: T4, `max_scene_s: 14`, `min_scene_s: 0.4`, no beats.
+expected:
+- Runs 1 and 2: the 14 s line becomes at least 3 shots, each ≤ 120 frames, all carrying that
+  line's lyric (or its continuation) in order.
+- In run 1 the split boundaries sit within 1 frame of a multiple of 12.
+- In run 2 the pieces are equal to within 1 frame.
+- The 0.4 s "hey" (under `min_scene_s: 1.0`) is either merged into a neighbour, its lyric
+  kept, or left short with a `warnings` entry naming it. No shot outside `[1.0, 5.0]` s may
+  go without a warning naming it.
+- Run 3: nothing is split or warned about, since a line of exactly `max_scene_s` and one of
+  exactly `min_scene_s` are in range.
+- All runs: contiguous coverage over `[0, 480)`.
+It is a **finding** if an over-long scene survives unsplit and unwarned, if a short scene
+silently loses its lyric, or if the boundary values are treated as out of range.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F217 — `plan_cuts` refuses a transcript without timestamps, naming the argument that adds them
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+Free for the static arm; the chained arm is one short CPU job.
+1. `validate_workflow` on a one-step `plan_cuts` workflow with `transcript: "walking down the
+   river"` (a bare string), `fps: 24`, `duration_s: 20`.
+2. Chained: `transcribe_audio` on `asset:qa-cast/ep15-song.mp3` with **no** `timestamps`
+   argument, saved as `text/plain`. Feed it via `previous_result:` to `plan_cuts` with
+   `duration_s: 30, fps: 24`. `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`.
+3. Control: the same chain with `timestamps: "segment"` and `application/json` on the
+   transcribe step.
+4. Edge: a `{text, chunks: []}` transcript with no lyrics.
+expected:
+- Arm 1 is refused statically, or at run start if validate can't type a literal. The
+  message says a timestamped transcript is needed and names the argument that produces one.
+  Today `transcribe_audio`'s argument is `timestamps` (`"segment"`/`"word"`); the plan says
+  `return_timestamps`. Naming either passes, as long as the hint leads a reader to the real
+  argument.
+- Arm 2 fails at the `plan_cuts` step with that same message, not a KeyError or traceback.
+- Arm 3 succeeds with a contiguous plan over `[0, 720)`.
+- Arm 4 is refused with a message, or yields one instrumental or full-length shot with a
+  warning. It never crashes, and never yields an empty `shots` with no warning.
+It is a **finding** if a bare string is accepted as a transcript, if a refusal names neither
+argument, or if any arm crashes.
+cleanup: `delete_output(job_id=…)` for any job that ran.
+metrics: none.
+
+### C-F218 — `templates/minimax/music-video-cuts` runs on CPU from a song asset to a plan
+pending: #626
+source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
+One CPU job. Expect about a minute for whisper-base on a 30 s song. No GPU model may load.
+1. `list_workflows(shape="utility")`, then the full catalog if it isn't there. Find
+   `templates/minimax/music-video-cuts`.
+2. `get_workflow("templates/minimax/music-video-cuts", variables_only=true)`. Note the song
+   reference variable and its default (an `output:`/`asset:` reference).
+3. `validate_workflow(name="templates/minimax/music-video-cuts", arguments={<song var>:
+   "asset:qa-cast/ep15-song.mp3"})`. Note `plan.estimate`.
+4. Run it with the same arguments, plus the template's lyrics variable if it has one, set
+   to what `transcribe_audio` heard (any lines will do), with `acknowledged_cost=true,
+   wait_seconds=55`, then `wait_for_job` if still running.
+expected:
+- The template is in the catalog, and its steps are `transcribe_audio` (with timestamps) →
+  `analyze_beats` → `plan_cuts`.
+- The estimate shows no GPU pipeline and no VRAM need beyond CPU tasks.
+- The job succeeds. Its output is one plan json as in C-F213: contiguous over
+  `[0, round(30.03 × fps))`, with a numeric `bpm`, non-empty `shots`, and `fps` matching the
+  template's.
+- The song argument accepts an `asset:` reference, not only `output:`.
+It is a **finding** if the template is missing, needs a GPU, fails, or emits anything but
+one plan json.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F219 — `plan_cuts` grid arguments size renders to the 17n+5 grid with lead and tail, splitting past `max_frames`
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, short jobs, inputs as in C-F213. All runs use `fps: 24`, `modulus: 17`,
+`remainder: 5`, `min_frames: 124`, `max_frames: 345`, `include_instrumental_gaps: false`,
+`min_scene_s: 0.5` and `max_scene_s: 30`.
+- **T5**: one chunk `{0.0, 2.0, "two seconds"}`, `duration_s: 2.0`, `lead_s: 0`,
+  `vocal_tail_s: 0`.
+- **T6**: chunks `{0, 2, "a"}`, `{2, 8, "b"}`, `{8, 20, "c"}` and `{20, 22, "d"}`,
+  `duration_s: 22`, `lead_s: 0.5`, `vocal_tail_s: 0.5`.
+- **T7**: chunks `{0, 2, "a"}` and `{2, 18, "long"}`, `duration_s: 18`, `lead_s: 0.5`,
+  `vocal_tail_s: 0.5`.
+expected:
+- T5: one shot, `start_frame 0`, `cut_frames 48`, `lead_frames 0`, `num_frames 124`.
+- T6, as max(124, the next 17n+5 ≥ lead + cut + tail):
+  - a: start 0, cut 48, lead 0 (the first shot's lead is clamped at frame 0), num 124;
+  - b: start 48, cut 144, lead 12, num 175;
+  - c: start 192, cut 288, lead 12, num 328;
+  - d: start 480, cut 48, lead 12, num 124.
+  - The `cut_frames` sum to 528, which is round(22 × 24) once.
+  - The plan reports a total frames to render equal to the `num_frames` sum, 751.
+- T7: "long" needs 12 + 384 + 12 = 408 > 345. A `warnings` entry names the shot, and it is
+  split into pieces, each with `num_frames` ≤ 345 and ≥ lead + cut + tail.
+  The cuts still tile `[0, 432)` contiguously.
+- Every shot in every run: `num_frames % 17 == 5`, `124 ≤ num_frames ≤ 345`,
+  `start_frame - lead_frames ≥ 0`.
+It is a **finding** if any arithmetic above differs, if a render is off the grid or under
+lead + cut + tail, or if an over-long shot passes `max_frames` unwarned and unsplit.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F220 — `trim_video` cuts a frame range with its audio at the audio's own rate, and writes shots metadata
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. `asset:qa-cast/ep6-cold-open.mp4` is 124 frames at 24 fps with 32 kHz stereo audio
+(Fixtures).
+1. `list_tasks` and `get_task("trim_video")`. It takes `video`, `start_frame` and
+   `num_frames`.
+2. `trim_video` with `start_frame: 12, num_frames: 48`, saved as `video/mp4` to `final`.
+   `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`.
+3. `get_gallery_metadata` on the output. Compare `get_output_frames` at output frames 0 and
+   47 with source frames 12 and 59.
+4. Boundaries: `start_frame: 0, num_frames: 124` (the whole clip), and `start_frame: 123,
+   num_frames: 1` (the last frame).
+expected:
+- Step 2's output is exactly 48 frames at 24 fps, 960×544, 2.0 s. Its audio is still 32 kHz
+  stereo and 2.0 s long (±1 ms). Audio was not resampled to a video-derived rate, and not
+  dropped.
+- Frames match their source frames (12 → 0, 59 → 47) by eye. That rules out a one-frame
+  offset.
+- `get_gallery_metadata` shows a shots record for the trimmed clip: one shot of 48 frames
+  from 0.
+- Step 4: 124 frames identical in count to the source, and a 1-frame clip, both succeed.
+It is a **finding** if the frame count, start or audio length is off, if the audio's rate
+changes, or if no shots metadata is written.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F221 — `trim_video` refuses a range outside the clip
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, on `asset:qa-cast/ep6-cold-open.mp4` (124 frames). One step per arm, validated,
+then run if validate passes, since the static pass can't know a clip's length.
+1. `start_frame: 100, num_frames: 48` (ends at 148).
+2. `start_frame: 124, num_frames: 1` (starts past the last frame).
+3. `start_frame: 0, num_frames: 0`.
+4. `start_frame: -1, num_frames: 10`.
+expected:
+- Every arm is refused, by `validate_workflow` or at run start. The message names the
+  argument and the clip's frame count, and nothing is written.
+- Arms 3 and 4 should be refused statically, since a non-positive count and a negative start
+  need no clip.
+- A silently clamped output (arm 1 yielding 24 frames) is a finding: the plan promises a
+  refusal.
+It is a **finding** if any arm yields a file, or fails with a traceback or decode error
+rather than a refusal.
+cleanup: `delete_output(job_id=…)` for any job that ran.
+metrics: none.
+
+### C-F222 — `music-video` takes per-entry `num_frames`/`lead_frames`/`cut_frames` and a `song` variable, and refuses the old top-level `num_frames`
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+Free: validation only. A `breaking-change` stage, so the old call shape is expected to fail.
+1. `get_workflow("templates/minimax/music-video", variables_only=true)`.
+2. `validate_workflow(name="templates/minimax/music-video")` with defaults.
+3. `validate_workflow(..., arguments={"num_frames": 124})`.
+4. `arguments={"shots": [<the default four>, with entry 1's num_frames set to 130]}`.
+5. `arguments={"shots": [{"name": "a", "start_frame": 0, "prompt": "x", "num_frames": 141,
+   "lead_frames": 12, "cut_frames": 48}, {"name": "b", "start_frame": 48, "prompt": "y",
+   "num_frames": 124}]}`.
+6. `arguments={"song": "asset:qa-cast/ep15-song.mp3"}`.
+expected:
+- Step 1: no top-level `num_frames`. Each default `shots` entry has `num_frames: 124`.
+  `lists.shots.fields` includes `num_frames`, `lead_frames` and `cut_frames`. A `song`
+  variable is a reference defaulting to `write_song`'s result. The 17n+5 constraint (124 to
+  345) now applies to the entries' `num_frames`.
+- Step 2 is `valid: true`, and its estimate is still the four-shot render.
+- Step 3 is refused as an unknown variable `num_frames`.
+- Step 4 is refused at the entry's JSON path (`shots[1].num_frames` or equivalent), naming
+  the 17n+5 grid. 130 is off it, and 141 would be on it.
+- Steps 5 and 6 are `valid: true`. Defaults are `lead_frames: 0` and `cut_frames =
+  num_frames`.
+It is a **finding** if the old top-level `num_frames` is still accepted, if an off-grid
+entry passes or is refused without its path, or if the stored default no longer validates.
+cleanup: none.
+metrics: none.
+
+### C-F223 — `music-video-cuts` passes H3's grid to `plan_cuts` and reports the total frames to render
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+One CPU job, as C-F218.
+1. `get_workflow("templates/minimax/music-video-cuts")`. Read the `plan_cuts` step's
+   arguments.
+2. Run it on `asset:qa-cast/ep15-song.mp3` as in C-F218.
+expected:
+- The `plan_cuts` step's `modulus`, `remainder`, `min_frames` and `max_frames` come from
+  `music-video`'s `variable_constraints` (17, 5, 124, 345). Either by reference or by equal
+  values is fine, but they must be equal to what `get_workflow("templates/minimax/
+  music-video", variables_only=true)` reports for the entries' `num_frames` constraint.
+- The output plan: every shot's `num_frames % 17 == 5`, in `[124, 345]`, ≥ `lead_frames +
+  cut_frames`. The `cut_frames` sum to round(30.03 × 24) = 721 (or the template's fps
+  equivalent), rounded once.
+- The plan reports a total frames to render equal to the sum of `num_frames`.
+- The plan's `shots` can be passed unchanged as `music-video`'s `shots` argument, so
+  `validate_workflow(name="templates/minimax/music-video", arguments={"shots": <plan
+  shots>, "song": "asset:qa-cast/ep15-song.mp3"})` is `valid: true`. Extra keys like
+  `lyric` and `kind` are tolerated, or the docs say to drop them.
+It is a **finding** if the grid is hard-coded to different values, if any shot is off the
+grid, or if the plan doesn't validate as `music-video` input.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F224 — a planned 2 s line renders 124 frames and occupies exactly 48 in the deliverable
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+**GPU, expensive. Needs Don's go-ahead.** `music-video` measured 25.75 cold minutes for four
+shots on lem. Quote `plan.estimate` from `validate_workflow` on the issue and get Don's
+explicit go-ahead before running. Without it, report the case not run.
+1. Shots: `[{"name": "a", "start_frame": 0, "prompt": "<a singer in a dim room, wide>",
+   "num_frames": 124, "cut_frames": 48}, {"name": "b", "start_frame": 48, "prompt": "<the
+   singer close up>", "num_frames": 141, "lead_frames": 12, "cut_frames": 72}]`, with
+   `song: "asset:qa-cast/ep15-song.mp3"`, `audio_duration: 5`, seed 42. If the template
+   keeps a step that writes the song, `song` replaces it.
+2. Validate, quote, then on go-ahead `run_workflow(..., acknowledged_cost=true,
+   wait_seconds=55)` and `wait_for_job` until done.
+3. `get_gallery_metadata` on the deliverable, and `assess_output` on it.
+expected:
+- The job succeeds. The deliverable's shot spans are 48 frames (a, from 0) and 72 frames (b,
+  from 48). The total is 120, which is round(5 × 24) once, with `fps` 24.
+- Its audio is the song's `[0, 5.0)` s, in sync. `assess_output` reports no sync drift or
+  seam beyond its normal thresholds.
+- b's kept frames are its render's `[12, 84)`, so the lead was trimmed off. Spot-check with
+  `get_output_frames` at deliverable frame 48 that it is a b frame, not an a frame.
+It is a **finding** if the job fails, if a span differs from its `cut_frames`, if the total
+drifts from 120, or if audio and picture slip.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F225 — `music-video`'s description, the `minimax-h3` skill and the guides state the per-shot length rules
+pending: #627
+source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. `list_workflows` (full form for `templates/minimax/music-video`). Read its description.
+2. Load `dw:minimax-h3` with the `Skill` tool. Read its length rules.
+3. `get_guide("workflows")`. Find the `music-video` passages, and the 24 GB recipes section
+   (`list_guides` locates it).
+expected:
+- The description and every passage say each `shots` entry carries its own `num_frames` on
+  the 17n+5 grid (124–345), with optional `lead_frames`/`cut_frames`. None mentions a
+  top-level `num_frames`, or that all shots share one length.
+- The skill's length rules give render length = max(124, next 17n+5 ≥ lead + cut + tail)
+  and point at `plan_cuts` to compute it.
+- The 24 GB recipe for music-video uses per-entry `num_frames`.
+It is a **finding** if any of these still describes the top-level `num_frames`, or gives a
+grid other than 17n+5 from 124 to 345.
+cleanup: none.
+metrics: none.
+
+### C-F226 — `window_video` cuts one window: the synthetic prefix, real middle windows and a padded last window, with audio placed to match
+pending: #628
+source: tester, spec for #628 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, short jobs. The source is `asset:qa-cast/ep6-cold-open.mp4`: 124 frames at 24 fps,
+960×544, 32 kHz stereo (Fixtures). The plan's example is a 50-frame clip. This case uses the
+124-frame fixture instead, so no clip has to be made. All runs use `num_frames: 17`,
+`overlap: 4` and `fps: 24`, so the stride is 13. Window `i` covers source frames
+`[13i − 4, 13i + 13)`, which makes `ceil(124 / 13) = 10` windows, indexes 0–9.
+1. `list_tasks` and `get_task("window_video")`.
+2. For each `index` in 0, 5 and 9, run a three-step inline workflow:
+   - `win`: `window_video(video: "asset:qa-cast/ep6-cold-open.mp4", index: <i>,
+     num_frames: 17, overlap: 4, fps: 24)`, with `"result": {"content_type": "video/mp4",
+     "fps": 24}`;
+   - `head`: `slice_audio(audio: "previous_result:win", start_frame: 0, num_frames: 4,
+     fps: 24)`, then `analyze_audio` over it;
+   - for index 9 only, the same pair over the window's frames 11–16 (`start_frame: 11,
+     num_frames: 6`) in place of `head`.
+   Run each with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`.
+3. Run `get_gallery_metadata` on each window. Then run `get_output_frames(at=["frame:N", …])` on
+   the window and on the source, at the frames named below.
+4. Control: `slice_audio` + `analyze_audio` on the **source** over frames 0–12 (`start_frame:
+   0, num_frames: 13, fps: 24`), and the same pair on window 0's frames 4–16.
+expected:
+- Step 1: `window_video` is listed under `commands`. `get_task` names `video`, `index`,
+  `num_frames`, `overlap` and `fps`. `index` and `overlap` carry domain `non_negative`, and
+  `num_frames` carries `positive`.
+- Index 0: exactly 17 frames at 24 fps, 960×544. Window frames 0–4 all match source frame 0:
+  the four prefix frames are frame 0 repeated, and frame 4 is frame 0 itself. Window frame 16
+  matches source frame 12. The audio is 32 kHz stereo and 17/24 = 0.7083 s long (±1 ms).
+  `head`'s `analyze_audio` reads digital silence, at or below −90 dBFS peak or reported as
+  silent.
+- Index 5 covers `[61, 78)`: 17 frames, all real. Window frame 0 matches source 61, and
+  window frame 16 matches source 77. The audio is 0.7083 s (±1 ms). There is no silence
+  requirement here.
+- Index 9 covers `[113, 130)`: 17 frames. Window frame 0 matches source 113, and window frame
+  10 matches source 123. Window frames 11–16 all repeat source frame 123, the last frame.
+  The pad's `analyze_audio` reads silence, and the total audio is 0.7083 s (±1 ms).
+- Step 4: window 0's frames 4–16 have the same peak and RMS as the source's frames 0–12
+  (±0.1 dB). The real audio sits after the prefix, unshifted.
+It is a **finding** if a frame count, a prefix or pad frame, or an audio length differs.
+It is also a finding if the prefix or pad carries sound, if the sample rate or channel count
+changes, or if the real audio is offset from its frames.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F227 — `window_video` refuses an impossible window, and accepts the boundaries just inside
+pending: #628
+source: tester, spec for #628 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Every arm is a one-step inline `window_video` on `asset:qa-cast/ep6-cold-open.mp4`
+(124 frames) with `fps: 24`. Run `validate_workflow` first, then run the workflow if
+validation passes.
+Refused arms:
+1. `num_frames: 17, overlap: 4, index: 10`. 10 · 13 = 130 ≥ 124.
+2. `num_frames: 17, overlap: 17, index: 0`, where overlap equals the window.
+3. `num_frames: 17, overlap: 20, index: 0`.
+4. `num_frames: 17, overlap: -1, index: 0`.
+5. `num_frames: 17, overlap: 4, index: -1`.
+6. `num_frames: 0, overlap: 0, index: 0`.
+7. `num_frames: 35, overlap: 4, index: 4`. The stride is 31 and 4 · 31 = 124, so the window
+   starts exactly at the end.
+Accepted arms:
+8. `num_frames: 35, overlap: 4, index: 3`. It covers `[89, 124)` exactly: all real, no pad.
+9. `num_frames: 17, overlap: 16, index: 123`. The stride is 1, and the window covers
+   `[107, 124)`.
+10. `num_frames: 17, overlap: 0, index: 0`. There is no prefix: window frames 0 and 1 are
+    source frames 0 and 1.
+expected:
+- Arms 1–7 are refused, and nothing is written. Each message names the offending argument.
+  - Arm 1 names the source's frame count (124) and the last valid index (9).
+  - Arm 7 names the last valid index (3).
+  - The plan lets a refusal arrive at `validate_workflow` (where the asset's length is
+    visible) or at run start, with a clear error. Accept either, and note which on the run's
+    report.
+  - Arms 4–6 are domain violations, so a static refusal is expected, but run time passes.
+- Arms 8–10 succeed with 17 frames (35 for arm 8). Their first and last frames match the
+  source frames named above. Arm 8's last frame is source 123 with no repeats after it. Arm
+  10's frames 0 and 1 differ from each other where the source's do.
+It is a **finding** if any refused arm writes a file, or fails with a traceback or decode
+error rather than a refusal. It is also a finding if arm 1's message lacks the frame count
+or last index, or if any accepted arm is refused or yields the wrong frames.
+cleanup: `delete_output(job_id=…)` for any job that ran.
+metrics: none.
+
+### C-F228 — `window_video` on a source with no audio yields a window with no audio
+pending: #628
+source: tester, spec for #628 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Setup: `frames` is `video_frames(video: "asset:qa-cast/ep6-cold-open.mp4")`, which
+yields frames only. Then `win` is `window_video(video: "previous_result:frames", index: 0,
+num_frames: 17, overlap: 4, fps: 24)`, saved as `video/mp4` with `fps: 24`. If `window_video`
+refuses a frame array as `video`, save `frames` as `video/mp4` in a first job and pass that
+as `output:<file>` instead. Note which form was used.
+expected:
+- The job succeeds with 17 frames, frames 0–4 matching source frame 0.
+- `get_gallery_metadata` reports no audio stream. A silent track invented for the window is
+  noted on the report, but it is not a failure by itself.
+It is a **finding** if the job fails because the source lacks audio, or if the window
+somehow carries the fixture's sound.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F229 — `window_video` → `join_windows` round-trips a source exactly, for every curve, with the source's audio and dissolve-shaped shots
+pending: #629
+source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, no model step. The source is `asset:qa-cast/ep6-cold-open.mp4` (124 frames, 24 fps,
+32 kHz stereo). The windows are 33 frames with an overlap of 8, so the stride is 25 and
+`ceil(124 / 25) = 5` windows are needed. Window 4 covers `[92, 125)`, with one pad frame.
+Inline workflow **RT**:
+```json
+{"variables": {"source_video": "asset:qa-cast/ep6-cold-open.mp4",
+   "windows": [{"name": "w0", "index": 0}, {"name": "w1", "index": 1},
+               {"name": "w2", "index": 2}, {"name": "w3", "index": 3},
+               {"name": "w4", "index": 4}]},
+ "steps": [
+  {"name": "window", "for_each": "variable:windows",
+   "task": {"command": "window_video", "arguments": {"video": "variable:source_video",
+     "index": "item:index", "num_frames": 33, "overlap": 8, "fps": 24}}},
+  {"name": "join", "task": {"command": "join_windows", "arguments": {"videos": "gather:window",
+     "source": "variable:source_video", "num_frames": 33, "overlap": 8, "curve": "cosine",
+     "fps": 24}}, "result": {"content_type": "video/mp4", "fps": 24}}]}
+```
+1. `get_task("join_windows")`.
+2. `validate_workflow` RT, then run it. Repeat with `curve: "smoothstep"` and
+   `curve: "linear"`.
+3. On each join: `get_gallery_metadata`. Then `get_output_frames(at=["frame:0", "frame:20",
+   "frame:24", "frame:25", "frame:49", "frame:92", "frame:99", "frame:123"])` on the join and
+   on the source. Frames 17–24, 42–49, 67–74 and 92–99 are the blended runs.
+4. On the cosine join: `assess_output(name=<join>, probe="analyze_sync_drift")` and
+   `assess_output(name=<join>, probe="analyze_seams")`.
+expected:
+- Step 1 names `videos`, `source`, `num_frames`, `overlap`, `curve` (default `"cosine"`) and
+  `fps`.
+- Every curve's join has exactly 124 frames at 24 fps, 960×544. Every sampled frame matches
+  the source frame of the same index by eye. Identical overlap content blends to itself, so
+  a ghost, doubled edge or brightness dip at a blended frame is a failure.
+- The audio is 32 kHz stereo and 124/24 = 5.1667 s (±1 ms), the source's own length.
+- `media.shots` has 5 entries, one per window, named from the windows (`w0`… or
+  `window@w0`…). The spans tile `[0, 124)` contiguously, and every seam carries
+  `overlap_frames: 8`. Each shot's `start_sample` equals the previous shot's `start_sample +
+  num_samples`, and the last ends at the source's sample count (165333 ±1).
+- Step 4: no `sync_drift` or `sync_length` finding. The seams are read as dissolves, not as
+  hard cuts: no `seam_*` hard-cut finding at a window boundary.
+It is a **finding** if the frame count or audio length differs from the source's, or a
+sampled frame differs from its source frame. It is also a finding if the shots don't tile or
+lack `overlap_frames`, if the samples aren't cumulative, or if `assess_output` flags drift
+or a hard cut. If drift traces to `assess`'s own `_sample_span`/`fade_samples` rounding, the
+plan's Risks section names that: file it as its own issue, still a finding.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F230 — `join_windows` refuses the wrong window count, naming the count needed
+pending: #629
+source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. RT from C-F229, with the `windows` argument changed:
+1. Short: `w0`–`w3` (4 entries).
+2. Long: `w0`–`w4` plus `{"name": "w5", "index": 4}` (6 entries, the last a repeat, since
+   index 5 would be refused by `window_video` first).
+3. One entry: `w0` only.
+Run each through `validate_workflow` and, if that passes, `run_workflow`. In this stage the
+check is at run time. Stage 3 (C-F233) moves it to validate.
+expected:
+- All three are refused, and no join output is written. The message names the needed count
+  (5) and the given count (4, 6 or 1), and says which list entries to add or drop. For the
+  short list, that is an entry with index 4.
+- In this stage a run-time refusal is correct. A refusal already at validate is also fine,
+  but note it.
+It is a **finding** if any arm yields a joined file, which means a count was derived or
+guessed. It is also a finding if the message omits the needed count.
+cleanup: `delete_output(job_id=…)` for any job that ran, including the window members' outputs.
+metrics: none.
+
+### C-F231 — `join_windows` refuses windows of the wrong or mixed length or size, and an unknown curve
+pending: #629
+source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. RT from C-F229, varied:
+1. **Odd length.** Add a `num_frames` field to each `windows` entry, 33 everywhere but
+   `w2` at 41. The `window` step takes `num_frames: "item:num_frames"`. The join stays at
+   `num_frames: 33`.
+2. **All windows a different length from `num_frames`.** Every entry 41, with the join at 33.
+3. **Mixed frame size.** Make one window a different frame size, for example by running `w1`'s
+   window through an existing resize processor (`resize_rescale` to 480×272). Then join with
+   `videos` as an explicit list naming each member's result in order, if `join_windows`
+   accepts a list as `dissolve_videos` does. If no existing task can resize a video's frames
+   over MCP, or the join takes only `gather:`, report this arm as not runnable and say why.
+4. `curve: "bogus"`.
+expected:
+- Arm 1 is refused, naming window `w2` (or its position, 2) and its count 41, against 33.
+- Arm 2 is refused, naming the windows' count against `num_frames`.
+- Arm 3 is refused, naming the mismatched window and its size.
+- Arm 4 is refused, naming the accepted curves (`cosine`, `smoothstep`, `linear`), at validate
+  or at run start.
+- No arm writes a joined file.
+It is a **finding** if any arm joins, or fails with a traceback, broadcast or shape error
+instead of a named refusal.
+cleanup: `delete_output(job_id=…)` for any job that ran.
+metrics: none.
+
+### C-F232 — `join_windows` over a source with no audio yields no audio, and drops the windows' own
+pending: #629
+source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. RT from C-F229, with a first step `frames: video_frames(video:
+"asset:qa-cast/ep6-cold-open.mp4")`. Both `window`'s `video` and `join`'s `source` become
+`"previous_result:frames"`. If either task refuses a frame array, save `frames` as `video/mp4`
+in a first job and use `output:<file>` for both. Note which form was used.
+expected:
+- The join has 124 frames and matches the source by eye at frames 0, 24, 25 and 123.
+- `get_gallery_metadata` reports no audio stream. The plan: "When the source has none, so
+  does the output."
+- `media.shots` still has 5 entries tiling `[0, 124)` with `overlap_frames: 8`. Sample fields
+  are absent or zero.
+It is a **finding** if the join fails for want of audio, or if it carries any soundtrack.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F233 — `join_windows`' static check refuses a wrong window count at `validate_workflow` in a hand-written workflow, and stays silent when the count isn't knowable
+pending: #630
+source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
+Free: validation only, apart from one short CPU job for the `output:` source. The check
+belongs to the task, not to the template, so this case uses C-F229's RT, never
+`ltx2/restore-long`. The needed count is 5.
+1. `validate_workflow` RT with 5 windows (exact), 4 (short), 6 (long, `w5` repeating index
+   4) and 1.
+2. **`output:` source.** Make a 124-frame file with a short CPU job:
+   `concat_videos(videos: ["asset:qa-cast/ep6-cold-open.mp4"])` saved as `video/mp4`. Then
+   validate RT with `source_video: "output:<that file>"` and 4 windows.
+3. **Unknowable source.** Use C-F232's form, where `source` is `"previous_result:frames"`,
+   with 4 windows.
+4. **Non-literal `num_frames`.** RT with 4 windows. Add a step `nf: get_dict_value(dict:
+   {"n": 33}, key: "n")`, and give `join` `num_frames: "previous_result:nf"`.
+expected:
+- Step 1: 5 windows give `valid: true` with no count error.
+  - 4, 6 and 1 give `valid: false`, with an error at the `join` step's path (e.g.
+    `steps[1]…`, not an expanded member path) naming the needed count, 5.
+  - Nothing is queued.
+- Step 2: refused at validate the same way, naming 5. An `output:` source is knowable.
+- Steps 3 and 4: no window-count error at validate. Other errors may appear, but not one
+  about the count. Running step 3 then refuses at run time as in C-F230. Running it is
+  optional and CPU only.
+It is a **finding** if a wrong count in a hand-written workflow validates clean when the
+source is an `asset:` or `output:`. It is also a finding if the error lacks the needed
+count or sits at an expanded member path. A count error raised on an unknowable source is a
+finding too, since the plan says silence there is correct.
+cleanup: `delete_output(job_id=…)` for step 2's job.
+metrics: none.
+
+### C-F234 — `ltx2/restore-long` is listed, validates clean, prices per window and refuses a short window list before any GPU time
+pending: #630
+source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
+Free: validation only. Fixtures: `asset:qa-cast/ep13-episode.mp4` (282 frames, 24 fps, 960×544)
+and `asset:qa-cast/ep11-coldopen.mp4` (472 frames).
+1. `list_workflows(shape=<the shape list_workflows gives templates/ltx2/restore-deblur>)`.
+   Find `templates/ltx2/restore-long` there.
+2. `get_workflow("templates/ltx2/restore-long", variables_only=true)`. Read `num_frames`,
+   `overlap` and the default `windows` list.
+3. `validate_workflow(name="templates/ltx2/restore-long")` with defaults.
+4. With `num_frames` 121 and `overlap` 16, the stride is 105. Re-derive these if the defaults
+   differ.
+   - `ep13-episode.mp4` needs `ceil(282 / 105) = 3` windows.
+   - `ep11-coldopen.mp4` needs `ceil(472 / 105) = 5`.
+   Validate with `source_video: "asset:qa-cast/ep13-episode.mp4"` and `windows` of 3, then
+   2, then 4 `{name, index}` entries. Then validate `ep11-coldopen.mp4` with 5.
+expected:
+- Step 1 lists the template, its entry showing a `lists.windows` block whose fields include
+  `index`, and a `cost` carrying `per_entry`.
+- Step 2: `num_frames` sits on the 8n+1 constraint. Each default `windows` entry is
+  `{name, index}`. The default list length equals the `per_entry` `entries`.
+- Step 3 is `valid: true` with a `plan.estimate`.
+- Step 4:
+  - 3 windows on ep13 give `valid: true`.
+  - 2 and 4 windows give `valid: false`, naming 3, at the `join` step's path. Nothing is
+    queued.
+  - 5 windows on ep11 give `valid: true`, and its `plan.estimate` is about 5/3 of ep13's
+    (basis `per_entry`, or `derived`/`observed` with the scaling still evident).
+- The estimate is never `unknown` because of `index`.
+It is a **finding** if the template is missing or doesn't validate on its defaults. It is
+also a finding if a wrong count validates clean, or if the estimate doesn't scale with
+window count.
+cleanup: none.
+metrics: none.
+
+### C-F235 — `ltx2/restore-long` restores an ~12 s clip in windows, with no visible seams, the source's length and its audio in sync
+pending: #630
+source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
+**GPU. Needs the LTX-capable CUDA server (24 GB).** `restore-deblur` measured 2.91 cold minutes
+for one 121-frame window on lem, so three windows are roughly 9–12 minutes. Quote
+`plan.estimate` first. On an mps or cpu server, report the case not runnable.
+1. `templates/ltx2/restore-long` with `source_video: "asset:qa-cast/ep13-episode.mp4"` (282
+   frames, 44.1 kHz stereo) and the 3-entry `windows` list from C-F234, seed 42.
+   `validate_workflow`, then `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and
+   `wait_for_job` until done.
+2. `get_gallery_metadata` on the deliverable.
+3. `get_output_frames(seams=true)`. If the deliverable's shots don't drive that, call `at` on
+   frames 89–105 and 194–210 (the blended runs at stride 105, overlap 16), plus 0 and 281.
+4. `assess_output(name=<deliverable>, probe="analyze_sync_drift")` and `probe="analyze_seams"`.
+expected:
+- The job succeeds. The deliverable has 282 frames at 24 fps and 960×544. Its audio is the
+  source's own: 44.1 kHz stereo, 11.75 s (±1 ms).
+- Across each seam the picture changes smoothly: no jump in framing, colour or exposure
+  visible from one sampled frame to the next. Slow "breathing" over the blend is the plan's
+  named risk. Note it if seen, but it is a finding only if it reads as a cut.
+- No `sync_drift`/`sync_length` finding. The seams are read as dissolves.
+It is a **finding** if the run fails, if the frame count or audio length differs from the
+source, if a seam is visibly a cut, or if `assess_output` flags drift.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F236 — the `dw:ltx-2.5` skill tells an agent how to choose `windows` for a long source
+pending: #630
+source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
+Free. Load `dw:ltx-2-5` with the `Skill` tool. Find the note on long sources. Also read
+`get_task("join_windows")`'s description, and the `join_windows` section of the tasks guide
+(`list_guides` locates it).
+expected:
+- The skill names `templates/ltx2/restore-long` for a source longer than one bucket (121
+  frames). It gives the count as `ceil(source_frames / (num_frames − overlap))`, with entries
+  `{name, index}` for indexes 0 to count − 1. It says a wrong count is refused at validate
+  with the right number named.
+- The task's docs state the same rule and that the static check applies to any `join_windows`
+  step.
+- Following the skill's rule for `ep13-episode.mp4` (282 frames) gives the 3 windows C-F234
+  validates.
+It is a **finding** if the skill gives a different rule or none, or still says long sources
+can't be restored, or if the docs and the skill disagree.
+cleanup: none.
+metrics: none.
+
+### C-F237 — `fit_to_model` and `restore_to_source` are discoverable, with their arguments, `mode`'s three values and the round trip documented
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+Free. Steps:
+1. `list_tasks`.
+2. `get_task("fit_to_model")` and `get_task("restore_to_source")`.
+3. `list_guides`, then find the tasks guide's Video Processing rows for the two tasks and its
+   "round trip" paragraph.
+expected:
+- `list_tasks` lists both commands.
+- `fit_to_model`'s parameters are `video` (required), `width`, `height`, `num_frames` and
+  `mode`.
+  - `mode` defaults to `letterbox`.
+  - Its `domain` (or description) names exactly `stretch`, `crop` and `letterbox`.
+  - `width`/`height`/`num_frames` carry a positive-integer domain or say they must be one.
+- `restore_to_source`'s parameters are `video` and `fit`, both required, with no `scale`
+  argument.
+- The descriptions say:
+  - fit returns `video` and `fit`, read as `previous_result:<step>.video` / `.fit`;
+  - a short source is padded by holding its last frame, and a long one is cut to its head;
+  - restore infers the scale from the video's size and refuses a non-uniform one;
+  - crop mode restores only the kept region at the source's density, so the output is
+    smaller on the cropped axis.
+- The guide has a row for each task and a paragraph on the round trip.
+It is a **finding** if either task is missing, if `mode` lists other values or a different
+default, or if the crop caveat is undocumented.
+cleanup: none.
+metrics: none.
+
+### C-F238 — letterbox round trip: a 640×480 50-frame clip fits to 512×288×57 with side bars and restores to exactly 640×480, 50 frames, 24 fps
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only.
+
+**Setup: the fixtures.** Do this only when `list_assets` lacks them. Write workflow FX with
+three steps:
+- `cut`: `loop_frames(video: "asset:qa-cast/ep6-cold-open.mp4", num_frames: 50)`.
+- `size`: `resize_rescale(image: "previous_result:cut", width: 640, height: 480)`. If it
+  won't take a frame array, use the per-frame form `validate_workflow` accepts.
+- `mux`: `pair_audio(video: "previous_result:size", audio:
+  "asset:qa-cast/ep6-cold-open.mp4", fit: "video")`, result `{content_type: "video/mp4", fps:
+  24}`.
+
+Run FX, then `keep_output` the file as `qa-fit/src-640x480-50f.mp4`.
+
+Then make the other two:
+- **Silent.** Run FX again without `mux`, saving `size` as `video/mp4` at fps 24. Keep it as
+  `qa-fit/src-640x480-50f-silent.mp4`.
+- **Working size.** Run FX with `num_frames: 121` and 512×288. Keep it as
+  `qa-fit/src-512x288-121f.mp4`.
+
+Confirm each with `get_gallery_metadata`. Delete the FX jobs.
+
+**Workflow RT** (reused by C-F239–C-F244). Variables are `src`, `w`, `h`, `n` and `mode`.
+Steps:
+- `fit`: `fit_to_model(video: "variable:src", width: "variable:w", height: "variable:h",
+  num_frames: "variable:n", mode: "variable:mode")`, no result.
+- `fitted`: `get_dict_value(dict: "previous_result:fit", key: "video")`, result `video/mp4`.
+- `record`: `get_dict_value(dict: "previous_result:fit", key: "fit")`, saved as JSON or
+  text, whichever `validate_workflow` accepts. Read it with `get_output_text`.
+- `restore`: `restore_to_source(video: "previous_result:fit.video", fit:
+  "previous_result:fit.fit")`, result `video/mp4`.
+
+**Run.** `src: "asset:qa-fit/src-640x480-50f.mp4"`, `w` 512, `h` 288, `n` 57, `mode`
+`letterbox`. Validate, then `run_workflow(..., wait_seconds=55)`. Then:
+- `get_gallery_metadata` on `fitted` and on `restore`.
+- `get_output_frames` at frames 0, 25 and 49 of `restore` and of the source. Also frames 0,
+  49, 50 and 56 of `fitted`.
+expected:
+- The job succeeds.
+- `fitted` is 512×288, 57 frames, 24 fps.
+  - Its frames show the source's picture scaled to 384×288 and centred, with black bars 64 px
+    wide on the left and right and none at the top or bottom.
+  - Frames 50–56 repeat frame 49 (held), not frame 0.
+- The record:
+  - `mode` is `letterbox`;
+  - `source_width` 640, `source_height` 480, `source_frames` 50;
+  - `model_width` 512, `model_height` 288, `model_frames` 57;
+  - `content_box` is `{x: 64, y: 0, w: 384, h: 288}` (±1 px rounding).
+- `restore` is 640×480, exactly 50 frames, 24 fps.
+  - There are no bars.
+  - Frames 0, 25 and 49 match the source's same frames by eye (resampling softness is fine).
+  - Frame 49 is not frame 0.
+It is a **finding** if any size, count or fps differs, if bars survive the restore, if the
+padding laps to frame 0, or if the record lacks a named field.
+cleanup: `delete_output(job_id=…)`. Keep the `qa-fit/` assets.
+metrics: none.
+
+### C-F239 — letterbox boundaries: bars top and bottom, no bars or padding when the source already fits, and an exact-length source
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Uses C-F238's RT and `src-640x480-50f.mp4`, with `mode` `letterbox` throughout.
+Arms:
+1. `w` 512, `h` 512, `n` 57. The source is wider than the target, so the bars go top and
+   bottom.
+2. `w` 640, `h` 480, `n` 50. Same size and same length as the source.
+3. `w` 320, `h` 240, `n` 50. Same aspect, smaller.
+expected:
+- **Arm 1.**
+  - `fitted` is 512×512.
+  - `content_box` is `{x: 0, y: 64, w: 512, h: 384}`, with black bars 64 px tall at the top
+    and bottom.
+  - `restore` is 640×480 and 50 frames.
+- **Arm 2.**
+  - `content_box` covers the whole frame `{0, 0, 640, 480}`, with no bars.
+  - `fitted` has 50 frames: no padding.
+  - `restore` is 640×480 and 50 frames, matching the source by eye.
+- **Arm 3.**
+  - `content_box` is `{0, 0, 320, 240}`, with no bars.
+  - `restore` is 640×480, 50 frames.
+- Every arm's `restore` keeps 24 fps.
+It is a **finding** if any arm adds bars where the aspect matches, or pads a source already
+`n` frames long. A refusal of `n` 50 for not being 8n+1 is also a finding: the task reads any
+positive integer, and the grid is the templates' rule.
+cleanup: `delete_output(job_id=…)` per arm.
+metrics: none.
+
+### C-F240 — restore infers a 2× scale from its input's size and restores to 1280×960
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Start from C-F238's RT with `src-640x480-50f.mp4`, `w` 512, `h` 288, `n` 57.
+1. Add a step `up`: `resize_rescale(image: "previous_result:fit.video", width: 1024, height:
+   576)`, per frame as in C-F238's setup.
+2. Feed `restore` `video: "previous_result:up"`.
+3. Set `restore`'s result to fps 24 in case the resize dropped the rate.
+4. Run with `mode` `letterbox`, then with `mode` `stretch`.
+expected:
+- Both runs give `restore` at 1280×960, 50 frames.
+- Letterbox shows no bars, and its content matches the source by eye at frames 0 and 49.
+- No `scale` argument was needed.
+It is a **finding** if restore comes back at 640×480 (ignoring the 2×) or refuses a uniform 2×.
+cleanup: `delete_output(job_id=…)` for both runs.
+metrics: none.
+
+### C-F241 — stretch restores to the source size, and crop restores only the kept region at source density (640×360)
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Use C-F238's RT, `src-640x480-50f.mp4`, `w` 512, `h` 288, `n` 57. Run with `mode`
+`stretch`, then `crop`. Read `record` and look at frames 0 and 25 of `fitted` and `restore`.
+expected:
+- **Stretch.**
+  - `fitted` is 512×288 with no bars. The picture is squashed horizontally against the source.
+  - `content_box` is `{0, 0, 512, 288}`.
+  - `restore` is 640×480 and 50 frames, matching the source's proportions by eye.
+- **Crop.**
+  - `fitted` is 512×288 with no bars, filled by the source's central band. The top and bottom
+    are cut.
+  - The record carries `source_box` `{x: 0, y: 60, w: 640, h: 360}` (±1 px).
+  - `restore` is **640×360**, 50 frames, 24 fps. It matches the source's rows 60–419 by eye.
+It is a **finding** if crop restores to 640×480 (inventing cut content or stretching), if
+`source_box` is missing in crop mode, or if stretch leaves the output squashed.
+cleanup: `delete_output(job_id=…)` for both runs.
+metrics: none.
+
+### C-F242 — a source longer than `num_frames` is cut to its first `num_frames` frames, and comes back at that length
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Use C-F238's RT with `src: "asset:qa-cast/ep6-cold-open.mp4"`: 124 frames, 960×544,
+24 fps. Set `w` 512, `h` 288, `n` 57, `mode` `letterbox`.
+expected:
+- `fitted` has 57 frames. Its frame 56 matches the source's frame 56, not a later frame.
+- The record has `source_frames` 124 and `model_frames` 57.
+- `content_box` is near-full width, since 960×544 is about 16:9: 508×288 or so, with
+  bars ≤ 3 px.
+- `restore` is 960×544, **57** frames (min(124, 57)), 24 fps.
+It is a **finding** if `fitted` or `restore` has any other frame count, or if the kept frames
+aren't the source's head.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F243 — `fit_to_model` refuses an unknown mode and non-positive or non-integer sizes and counts, naming the argument, before any frames are processed
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Use C-F238's RT with `src-640x480-50f.mp4`. Change one argument per arm from the
+good `w` 512, `h` 288, `n` 57, `mode` `letterbox`:
+- `mode` `"zoom"`, and `mode` `""`;
+- `w` 0, `h` -288, `n` 0, `n` -1;
+- `w` 512.5.
+Validate each arm first. Run any arm that validates.
+expected:
+- Each arm is refused, either at `validate_workflow` (a literal outside the task's domain) or
+  at run time with the job failed at the `fit` step.
+- The message names the argument (`mode`, `width`, `height` or `num_frames`) and the bad
+  value. For `mode`, it lists the three allowed values.
+- No later step (`fitted`, `record`, `restore`) ran, and no output file was written.
+- `get_job_events` shows no pipeline or model load.
+It is a **finding** if any arm succeeds, is coerced (512.5 → 512, `""` → letterbox), or fails
+somewhere other than `fit` with an unrelated error.
+Not covered: the plan's "empty video" refusal. No existing tool makes a zero-frame video
+(`loop_frames` needs `num_frames` ≥ 1).
+cleanup: `delete_output(job_id=…)` for any failed job's directory.
+metrics: none.
+
+### C-F244 — `restore_to_source` refuses a non-uniform scale (naming both sizes) and a malformed `fit` record
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Use C-F238's RT with `src-640x480-50f.mp4`, `w` 512, `h` 288, `n` 57, `letterbox`.
+Arms:
+1. **Non-uniform.** Insert C-F240's `up` step at 1024×288 (2× wide, 1× tall), and feed it to
+   `restore`.
+2. **Missing fields.** Restore's `fit` is the literal `{"mode": "letterbox"}`.
+3. **Wrong types.** Copy the record C-F238 produced as a literal, with `model_width: "abc"`.
+4. **Unknown mode in the record.** The same copy with `mode: "zoom"`.
+5. **Not a record.** `fit: "previous_result:fit.video"`.
+expected:
+- Every arm fails at the `restore` step, or at validate where the literal is checkable there.
+- **Arm 1** names both sizes: the video's 1024×288 and the model's 512×288.
+- **Arms 2–5** name `fit` and the missing or ill-typed field (arm 2 names at least one of
+  the missing fields).
+- No arm writes a `restore` output.
+It is a **finding** if any arm produces a video, or if arm 1 picks one axis's scale and
+distorts.
+Note for the lead: the plan says the two ratios "must be equal". A uniform but non-integer
+scale (1.5×, 768×432) isn't covered by this case, since the plan doesn't say whether it is
+legal.
+cleanup: `delete_output(job_id=…)` for each arm.
+metrics: none.
+
+### C-F245 — `upscale-clip` and `refine-clip` share the fit → pipeline → restore → `pair_audio` shape, the new variables, and the unchanged 32n/8n+1 refusals at validate
+pending: #632
+source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
+Free: validation only. For each of `templates/ltx2/upscale-clip` and
+`templates/ltx2/refine-clip`:
+1. `get_workflow(name, variables_only=true)`, then `get_workflow(name)`.
+2. `validate_workflow` with only `source_video: "asset:qa-fit/src-640x480-50f.mp4"` set.
+3. Validate with one bad argument each:
+   - upscale-clip: `ref_width` 500, `ref_height` 300;
+   - refine-clip: `width` 500, `height` 300;
+   - both: `num_frames` 50, and `fit` `"zoom"`.
+expected:
+- **Variables.**
+  - Both have a `fit` variable defaulting to `letterbox`.
+  - upscale-clip has `ref_width`/`ref_height`, each with a 32n constraint, and **no**
+    `width`/`height`.
+  - refine-clip keeps `width`/`height` (32n).
+  - Both keep `num_frames` on 8n+1.
+- **Steps.**
+  - Each template's steps run in this order: a `fit_to_model` step with `mode:
+    "variable:fit"`, then the pipeline, then `restore_to_source` (`fit` from the fit step's
+    `.fit`), then the existing `pair_audio`.
+  - The pipeline's video input reads the fit step's `.video`, or a hidden intermediate saved
+    from it (the plan's fallback).
+  - refine-clip no longer has a `loop_frames` step.
+- **Step 2** is `valid: true` with a `plan.estimate`.
+- **Step 3.**
+  - Each size and frame arm is `valid: false`, naming the variable and its rule.
+  - The `fit` arm is refused at validate, or validates and is then refused at the fit step
+    before any pipeline loads. Running it to find out costs no GPU.
+- The issue carries `breaking-change`.
+It is a **finding** if upscale-clip still has `width`/`height`, if either template lacks the
+`fit` variable or step, or if any off-grid value validates clean.
+cleanup: `delete_output(job_id=…)` for any run of the `fit` arm.
+metrics: none.
+
+### C-F246 — `upscale-clip` on a 4:3 50-frame clip delivers 1280×960, 50 frames, 24 fps, its full field of view, no bars, and audio the source's length
+pending: #632
+source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
+**GPU. Needs the LTX-capable CUDA server (24 GB).** About 3 minutes per the plan. Quote
+`plan.estimate` first. On an mps or cpu server, report the case not runnable.
+1. Run `templates/ltx2/upscale-clip` with defaults except `source_video:
+   "asset:qa-fit/src-640x480-50f.mp4"`: seed 42, `fit` letterbox.
+   `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`, then `wait_for_job`.
+2. `get_job` to find the `final/` and `intermediate/` outputs.
+3. `get_gallery_metadata` on both.
+4. `get_output_frames` on `final/` at 0, 25 and 49, and on the source at the same frames.
+5. `get_output_frames` on `intermediate/` at frame 0.
+expected:
+- The job succeeds.
+- **`final/`.**
+  - 1280×960, exactly 50 frames, 24 fps.
+  - Audio is present, 50/24 = 2.083 s (± one frame).
+  - No black bars at any edge.
+  - The source's left and right edge content is visible, not cropped away.
+  - Frame 49 shows the source's frame 49 content, not frame 0's.
+- **`intermediate/`** is in the model frame, 2× the ref size. It shows the content
+  letterboxed between bars at the sides.
+- **Edge halo (Q1).** Look along the content box's left and right edges in `final/`. If there
+  is a visible halo or softened band, and the templates still default to `letterbox`, that is
+  a **finding** against the stage. The plan says the default flips to `stretch`.
+It is also a **finding** if any size, count, fps or audio length differs, if bars remain, or
+if edge content is lost.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F247 — `refine-clip` on a 4:3 50-frame clip delivers 1280×960, 50 frames, held (not lapped) at the end, no bars, audio the source's length
+pending: #632
+source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
+**GPU. Needs the LTX-capable CUDA server (24 GB).** About 2–3 minutes. Quote `plan.estimate`
+first. On an mps or cpu server, report the case not runnable.
+Run C-F246's steps 1–5 on `templates/ltx2/refine-clip` instead, with defaults except
+`source_video: "asset:qa-fit/src-640x480-50f.mp4"`. The defaults are 512×288, 121 frames,
+seed 42, letterbox.
+expected:
+- The job succeeds.
+- **`final/`.**
+  - 1280×960, exactly 50 frames, 24 fps.
+  - Audio is the source's, 2.083 s (± one frame).
+  - No bars, and the full field of view against the source.
+  - Frame 49 is the source's last frame refined, not frame 0 lapped round.
+- **`intermediate/`** is 1024×576 (2× 512×288). It shows the content with side bars. Its
+  frames past the source's 50th, if it holds 121, repeat the last frame rather than restarting.
+- The edge-halo check is C-F246's, with the same finding.
+It is a **finding** if any size, count, fps or audio length differs, if bars remain, if the
+end laps to frame 0, or if the field of view is stretched or cropped.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F248 — a source already at the working size still delivers the same output size as before the change
+pending: #632
+source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
+**GPU. Needs the LTX-capable CUDA server (24 GB).** Two runs, about 3 minutes each. Quote
+`plan.estimate` first. On an mps or cpu server, report the case not runnable.
+1. Run `templates/ltx2/refine-clip` with defaults except `source_video:
+   "asset:qa-fit/src-512x288-121f.mp4"`, seed 42.
+2. Run `templates/ltx2/upscale-clip` with `source_video:
+   "asset:qa-fit/src-512x288-121f.mp4"`, `ref_width` 512, `ref_height` 288, `num_frames` 121,
+   seed 42.
+expected:
+- Both `final/` outputs are 1024×576, 121 frames, 24 fps, with audio of 121/24 = 5.042 s
+  (± one frame).
+  - That is what each template produced before the change for a source matching its size
+    variables. For upscale-clip, the old `width`/`height` were 1024×576, so the size is
+    unchanged.
+- The `intermediate/` outputs have no bars, since the content box is the whole frame.
+It is a **finding** if either output size differs, or bars or padding appear for a source
+that already fits.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F249 — `refine-clip` still refuses a source with no soundtrack at `source_audio`, before any pipeline loads
+pending: #632
+source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
+Cheap: it fails before the GPU load. Run `templates/ltx2/refine-clip` with defaults except
+`source_video: "asset:qa-fit/src-640x480-50f-silent.mp4"`. Use `acknowledged_cost=true` and
+`wait_seconds=55`. Then call `get_job` and `get_job_events`.
+expected:
+- The job fails at the `source_audio` step, or at validate if the template now checks
+  earlier. Either is acceptable.
+- The error says the source has no audio.
+- `get_job_events` shows no pipeline or model load event. The fit step may have run (it's CPU
+  work), but no pipeline did.
+It is a **finding** if the job reaches the pipeline, or if it succeeds with a silent or
+missing soundtrack.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F250 — the templates' descriptions and the `dw:ltx-2.5` skill describe fit/restore, not "match the source"
+pending: #632
+source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
+Free. Steps:
+1. Read `get_workflow` on both templates (`description`).
+2. Read the `list_workflows(shape=<theirs>)` summaries.
+3. Load the `dw:ltx-2-5` skill with the `Skill` tool and read its upscale-clip and
+   refine-clip guidance.
+expected:
+- Each description and the skill say three things:
+  - a source of a different aspect ratio is letterboxed and restored, by default (the `fit`
+    variable picks stretch or crop);
+  - a short source is held and trimmed back;
+  - the output is exactly 2× the source's size and the source's length.
+- upscale-clip's text names `ref_width`/`ref_height` as the working size, with the output at
+  2× them. No text tells the caller to set `width`/`height` to match the source's size.
+- Nothing still says upscale-clip centre-crops or refine-clip stretches or laps.
+It is a **finding** if any of the three disagrees with another or with C-F246/C-F247's
+observed behaviour, or if any still carries the old instruction.
+cleanup: none.
+metrics: none.
+
+### C-F251 — `get_task("grade")` lists the seven tonal controls with their ranges, beside the five it had
+pending: #633
+source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free. Call `get_task("grade")`, then `list_tasks` and find `grade`'s entry.
+expected:
+- `grade` has 12 adjustment parameters plus `media` and `device`: the old `exposure`,
+  `contrast`, `saturation`, `temperature` and `tint`, and the new `highlights`, `shadows`,
+  `whites`, `blacks`, `clarity`, `vignette` and `fade`.
+- Every new parameter is optional with default 0. Each of `highlights`, `shadows`, `whites`,
+  `blacks`, `clarity` and `vignette` carries a domain of -1 to 1 (the `closed_unit` kind the
+  old `temperature`/`tint` use). `fade` carries a 0 to 1 domain. A domain shows in the entry
+  itself (`domain`) or its description; the range must be readable from `get_task` alone.
+- The five old parameters keep their names, defaults and domains (`exposure` 0.0,
+  `contrast` 1.0, `saturation` 1.0, `temperature`/`tint` 0.0).
+- Each new parameter's description says which direction a positive value moves the image.
+It is a **finding** if a new parameter is missing, required, defaults to anything but 0, has
+no readable range, or an old parameter changed.
+cleanup: none.
+metrics: none.
+
+### C-F252 — `grade` with no adjustments, or every adjustment at its identity, returns the input pixels
+pending: #633
+source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only: three utility runs of a few seconds, no model. Workspace `regression-complete`. The
+shape is `{"id": "qa-c-f252", "steps": [{"name": "grade", "task": {"command": "grade",
+"arguments": <args>}, "result": {"content_type": "image/png", "file_base_name": <name>}}]}`.
+PNG keeps the compare lossless; if validate refuses that content type, use the task's
+default image output and say so in the report.
+1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg"}`, name `c_f252_none`.
+2. `<args>` = the same media plus all twelve adjustments at their identity values:
+   `exposure` 0, `contrast` 1, `saturation` 1, `temperature` 0, `tint` 0, `highlights` 0,
+   `shadows` 0, `whites` 0, `blacks` 0, `clarity` 0, `vignette` 0, `fade` 0. Name
+   `c_f252_explicit`.
+3. `<args>` = media plus `"vignette": 0.5`, name `c_f252_ctl`: the control that shows the
+   compare can see a change.
+Compare with `list_gallery` sizes and `get_output_image` at full view and a `crop` of each
+corner.
+expected:
+- All three succeed, each 768×768.
+- Runs 1 and 2 are byte-identical (equal `size` in the listing) and look the same as the
+  source jpg: no shift in brightness, colour or the corners.
+- Run 3's corners are visibly darker than run 1's and its size differs.
+It is a **finding** if run 1 or 2 differs from the source visibly, if 1 and 2 differ from
+each other, or if the control shows no change (the compare saw nothing).
+cleanup: `delete_output(job_id=…)` on all three.
+metrics: none.
+
+### C-F253 — each new `grade` control moves the image the way its description says, against a no-adjustment control
+pending: #633
+source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only: eight utility runs of a few seconds. The shape is C-F252's, media
+`asset:qa-cast/priya-portrait.jpg`, PNG output. Run 1 is the control (no adjustments). Each
+other run sets one parameter. For every run, look at a `get_output_image` `crop` of the
+brightest region (skin highlight or background light) and of the darkest (hair, shadowed
+clothing or background), side by side with the control's same crops.
+| run | args | expected against the control |
+|---|---|---|
+| 2 | `highlights: -0.5` | bright regions darker; deep shadows unchanged to the eye |
+| 3 | `shadows: 0.5` | dark regions lifted; bright regions unchanged to the eye |
+| 4 | `whites: -0.5` | the brightest tones pulled down (peak white no longer clipped-looking) |
+| 5 | `blacks: 0.5` | the darkest tones lifted (black point raised) |
+| 6 | `clarity: 0.8` | local contrast up: edges and texture (hair, eyes) crisper, overall exposure about the same |
+| 7 | `vignette: 0.6` | the corners darker, the centre unchanged |
+| 8 | `fade: 0.6` | blacks lifted toward grey and contrast lower, a washed-out "faded" look |
+Also run 9: `vignette: -0.6` and run 10: `clarity: -0.8`, which should go the other way
+(corners lighter; texture softer).
+expected:
+- All runs succeed at 768×768.
+- Each moves in its row's direction and leaves the region the plan says it doesn't touch
+  (run 2's shadows, run 3's highlights, run 7's centre) visibly unchanged.
+- Every adjusted run's file size differs from the control's.
+It is a **finding** if a control moves the wrong way, does nothing, or visibly moves the
+region it should leave alone (the plan's headline example is run 2: darker highlights with
+the deep shadows unchanged).
+cleanup: `delete_output(job_id=…)` on every run.
+metrics: none.
+
+### C-F254 — the tonal controls on a video keep frame count, fps, size and audio
+pending: #633
+source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, about 3 s. C-F093's step 1 shape (id `qa-c-f254`, `content_type` `video/mp4`) with
+arguments `{"media": "asset:qa-cast/ep6-cold-open.mp4", "highlights": -0.4, "shadows": 0.3,
+"whites": -0.2, "blacks": 0.2, "clarity": 0.5, "vignette": 0.5, "fade": 0.3}`. Read the mp4
+with `get_gallery_metadata` and look at two frames with `get_output_frames`.
+expected:
+- `valid: true` and the job succeeds.
+- `frame_count` 124, `fps` 24.0, 960x544, 32000 Hz stereo audio, the same as the source.
+- The frames show darkened corners (vignette) and a lifted, faded black point on every
+  frame looked at, not only the first.
+It is a **finding** if the job fails, the audio is dropped (`sample_rate` null), the frame
+count, fps or size changes, or a later frame looks ungraded.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F255 — `validate_workflow` refuses an out-of-range tonal control, naming it and its range, and accepts the ends
+pending: #633
+source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free: validates only. C-F252's shape, media `asset:qa-cast/priya-portrait.jpg`, one
+argument set per call:
+- Refused: `shadows: 2`; `fade: -0.1`; `fade: 1.0001`; `highlights: -1.0001`; `whites: 1.5`;
+  `blacks: -2`; `clarity: 3`; `vignette: -1.1`.
+- Refused: `fade: "0.5"` (a string) and `highlights: null`, if the schema doesn't treat null as
+  "unset". Either refusal or acceptance-as-unset of `null` is fine; a crash is not.
+- Accepted: `fade: 0`; `fade: 1`; `highlights: -1`; `highlights: 1`; all six ±1 parameters at
+  `-1` in one call; the same six at `1` in one call.
+expected:
+- Each refused call is `valid: false` with an error at
+  `steps[0].task.arguments.<name>` that names the parameter and its range (-1 to 1, or 0 to 1
+  for `fade`). One call with two bad values gives two errors.
+- Each accepted call is `valid: true`.
+- Then `run_workflow(..., acknowledged_cost=true)` with `shadows: 2` queues no job.
+It is a **finding** if an out-of-range value validates, is refused only at run time, or the
+error doesn't name the parameter or its range, or if a boundary value is refused.
+cleanup: none (no job should exist; if one does, `delete_output(job_id=…)` and file it).
+metrics: none.
+
+### C-F256 — the job's "applied" log names every non-default `grade` parameter and none of the defaults
+pending: #633
+source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, a few seconds. C-F252's shape with arguments `{"media":
+"asset:qa-cast/priya-portrait.jpg", "exposure": 0.2, "highlights": -0.3, "shadows": 0.25,
+"fade": 0.1, "vignette": 0.4, "contrast": 1.0, "blacks": 0}`. Then `get_job_events`.
+expected:
+- The job succeeds.
+- The grade step's "applied" log line (or event) names `exposure`, `highlights`, `shadows`,
+  `fade` and `vignette`, each with its value.
+- It does not name `contrast` or `blacks` (passed at their identity) or any parameter not
+  passed.
+- A second run with no adjustments (C-F252 run 1 shape) logs that nothing was applied, or no
+  applied list, rather than listing every parameter.
+It is a **finding** if a non-default parameter is missing from the log, if a new parameter
+is set but the log names only the five old ones, or if identity values are listed as applied.
+cleanup: `delete_output(job_id=…)` on both runs.
+metrics: none.
+
+### C-F257 — `sharpen` and `film_grain` are listed, with their parameters, ranges and a visible `seed`
+pending: #634
+source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_tasks`, then `get_task("sharpen")` and `get_task("film_grain")`.
+expected:
+- Both appear in `list_tasks`.
+- `sharpen`: `media` (required), `amount` default 1.0 with a range of ≥ 0, `radius` default 2.0
+  with a range of > 0, `threshold` default 0 with a range of 0 to 255.
+- `film_grain`: `media` (required), `amount` default 0.1, range 0 to 1; `size` default 1.0,
+  range ≥ 1; `chroma` default 0.0, range 0 to 1; `seed`, optional, default unset (null).
+- Each takes an image or a video (`media`), and the descriptions say so.
+It is a **finding** if either task is missing, `seed` is hidden or required, or a default or
+range differs from the above.
+cleanup: none.
+metrics: none.
+
+### C-F258 — `film_grain` with a fixed seed is reproducible, a different seed changes it, and `rerun_job` reproduces it
+pending: #634
+source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, four or five utility runs. Shape: `{"id": "qa-c-f258", "steps": [{"name": "grain",
+"task": {"command": "film_grain", "arguments": <args>}, "result": {"content_type":
+"image/png", "file_base_name": <name>}}]}`. As S-F004 explains, an identical rerun may come
+back `reused: true` from the step cache, so runs 1 and 2 differ only in `file_base_name`.
+1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "amount": 0.3, "seed": 1234}`,
+   name `c_f258_a`.
+2. The same args, name `c_f258_b`.
+3. `"seed": 1235`, otherwise as 1, name `c_f258_c`.
+4. `rerun_job` on run 1's job id.
+expected:
+- Every run succeeds with visible grain against the source (`get_output_image` crop of a flat
+  area: skin or background).
+- Runs 1 and 2 are distinct run ids, neither `reused`, and byte-identical (equal `size` in the
+  listing, and the same grain in the same crop).
+- Run 3 differs from run 1 in size, and its grain pattern differs in the same crop.
+- Run 4's output is byte-identical to run 1's. (If `rerun_job` comes back `reused`, that is
+  the step cache, which is acceptable; say so in the report.)
+- Each run's manifest or `get_gallery_metadata` records the seed used (1234, 1235).
+It is a **finding** if the same seed gives different outputs, a different seed gives the same
+output, or the rerun differs.
+cleanup: `delete_output(job_id=…)` on every job.
+metrics: none.
+
+### C-F259 — an unseeded `film_grain` run records the random seed it drew, and differs from the next unseeded run
+pending: #634
+source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, three utility runs. C-F258's shape, with `<args>` = `{"media":
+"asset:qa-cast/priya-portrait.jpg", "amount": 0.3}` and no `seed`.
+1. Run it, name `c_f259_a`.
+2. Run it again, name `c_f259_b`.
+3. Read run 1's recorded seed from `get_job`/`get_gallery_metadata`, then run C-F258's shape
+   with that seed passed explicitly, name `c_f259_c`.
+expected:
+- Runs 1 and 2 each record a seed (an integer) in the manifest. The two seeds differ, and the
+  two outputs differ in size.
+- Run 3 is byte-identical to run 1.
+It is a **finding** if no seed is recorded, two unseeded runs come out identical, or passing
+the recorded seed back doesn't reproduce run 1.
+cleanup: `delete_output(job_id=…)` on all three.
+metrics: none.
+
+### C-F260 — `film_grain` on a video changes grain frame to frame and keeps frame count, fps, size and audio
+pending: #634
+source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, a few seconds. C-F258's shape with `content_type` `video/mp4` and `<args>` =
+`{"media": "asset:qa-cast/ep6-cold-open.mp4", "amount": 0.4, "size": 1.5, "chroma": 0.3,
+"seed": 7}`. Then `get_gallery_metadata` and `get_output_frames` of two consecutive frames
+(e.g. frames 10 and 11), cropped to the same flat region if a crop is available.
+expected:
+- The job succeeds. `frame_count` 124, `fps` 24.0, 960x544, 32000 Hz stereo audio.
+- The two consecutive frames' grain patterns differ in the same region (moving grain, not a
+  static overlay). The chroma setting shows as coloured specks.
+- A second run with the same args (different `file_base_name`) is byte-identical (equal
+  `size`): the seed fixes the per-frame grain too.
+It is a **finding** if audio is dropped, the frame count, fps or size changes, the grain is
+identical on consecutive frames, or the seeded video doesn't reproduce.
+cleanup: `delete_output(job_id=…)` on both.
+metrics: none.
+
+### C-F261 — `sharpen` at `amount=0` is identity, and a positive amount visibly sharpens
+pending: #634
+source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, three utility runs. C-F258's shape with `"command": "sharpen"`.
+1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "amount": 0}`, name
+   `c_f261_zero`.
+2. A `grade` run with no adjustments on the same media (C-F252 run 1) as the identity
+   reference, unless one already exists from this session.
+3. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "amount": 1.5, "radius": 2}`,
+   name `c_f261_sharp`.
+4. `<args>` as 3 plus `"threshold": 255`, name `c_f261_thresh`.
+expected:
+- Run 1 looks identical to the source, and is byte-identical to run 2's PNG.
+- Run 3 shows crisper edges (eyelashes, hair, eye outline) in a `get_output_image` crop
+  against run 1, and differs in size.
+- Run 4 is close to identity: a threshold at the top of the range leaves almost every edge
+  alone. Visibly softer than run 3 is what counts.
+It is a **finding** if run 1 changes the image, run 3 shows no sharpening, or run 4 sharpens
+like run 3.
+cleanup: `delete_output(job_id=…)` on every run.
+metrics: none.
+
+### C-F262 — `sharpen` and `film_grain` refuse out-of-range arguments at validate, and accept the ends
+pending: #634
+source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free: validates only. C-F258's shape, media `asset:qa-cast/priya-portrait.jpg`, one argument
+set per call.
+- `sharpen` refused: `amount: -0.1`; `radius: 0`; `radius: -1`; `threshold: 256`;
+  `threshold: -1`.
+- `sharpen` accepted: `amount: 0`; `radius: 0.1`; `threshold: 0`; `threshold: 255`.
+- `film_grain` refused: `amount: 1.1`; `amount: -0.01`; `chroma: 1.5`; `chroma: -0.1`;
+  `size: 0.5`; `size: 0`; `seed: "abc"`.
+- `film_grain` accepted: `amount: 0`; `amount: 1`; `chroma: 0`; `chroma: 1`; `size: 1`;
+  `seed: 0`.
+expected:
+- Each refused call is `valid: false` at `steps[0].task.arguments.<name>`, naming the
+  parameter and its range.
+- Each accepted call is `valid: true`.
+- `run_workflow(..., acknowledged_cost=true)` with `film_grain` `amount: 1.1` queues no job.
+It is a **finding** if a refused value validates or is refused only at run time, an error
+omits the parameter or range, or a boundary value is refused.
+cleanup: none (delete any job that was queued, and file it).
+metrics: none.
+
+### C-F263 — a `.cube` uploads as an asset, an identity LUT returns the input, and an inverting LUT blends by `strength`
+pending: #635
+source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, five utility runs plus two uploads. Workspace `regression-complete`.
+Setup: base64-encode each text below exactly (UTF-8, `\n` line ends, trailing newline) and
+upload with `upload_asset(content=<b64>, asset_name=<name>, workspace="regression-complete")`.
+- `qa-lut/identity2.cube`:
+  ```
+  TITLE "identity"
+  LUT_3D_SIZE 2
+  0 0 0
+  1 0 0
+  0 1 0
+  1 1 0
+  0 0 1
+  1 0 1
+  0 1 1
+  1 1 1
+  ```
+- `qa-lut/invert2.cube`: the same with `TITLE "invert"` and the eight rows
+  `1 1 1`, `0 1 1`, `1 0 1`, `0 0 1`, `1 1 0`, `0 1 0`, `1 0 0`, `0 0 0`.
+Shape: `{"id": "qa-c-f263", "steps": [{"name": "lut", "task": {"command": "apply_lut",
+"arguments": <args>}, "result": {"content_type": "image/png", "file_base_name": <name>}}]}`.
+1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "lut":
+   "asset:qa-lut/identity2.cube"}`.
+2. `"lut": "asset:qa-lut/invert2.cube"` (strength defaults to 1.0).
+3. As 2 with `"strength": 0.5`.
+4. As 2 with `"strength": 0`.
+5. As 1 with `content_type` `video/mp4` and `media` `asset:qa-cast/ep6-cold-open.mp4`.
+6. `validate_workflow` with `strength: 1.01`, then with `strength: -0.01`.
+expected:
+- Both uploads succeed, `list_assets` shows both under `qa-lut/`, and `validate_workflow` on
+  run 1's workflow is `valid: true` (the `asset:` ref resolves).
+- Run 1 looks the same as the source; byte-identical to a C-F252 run 1 PNG of the same media.
+- Run 2 is a photographic negative of the source.
+- Run 3 is nearly flat mid-grey everywhere (each channel x·0.5 + (1−x)·0.5 = 0.5), give or
+  take rounding.
+- Run 4 matches run 1 (no change).
+- Run 5 keeps 124 frames, 24 fps, 960x544 and 32 kHz stereo audio, and looks like the source.
+- Step 6: both `valid: false` at `.strength`, naming 0 to 1.
+It is a **finding** if the upload is refused for its `.cube` extension, the identity LUT
+changes the image, run 3 isn't grey, `strength` 0 changes anything, or the video loses audio
+or frames. If run 1 fails with a parser error, re-check the encoding before filing: the
+identity file is the positive control for C-F264.
+cleanup: `delete_output(job_id=…)` on every run. Delete both `qa-lut/` assets
+(`delete_asset`) at the end of the run, after C-F264 and C-F265 if they run in the same
+session.
+metrics: none.
+
+### C-F264 — a malformed `.cube` is refused, naming the file, the line and the problem
+pending: #635
+source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only and cheap: each arm fails at validate or in the first seconds of the job, before
+any output. Setup: upload `qa-lut/identity2.cube` as in C-F263 if it isn't there (the
+positive control: run 1 of C-F263 must pass first). Then upload each malformed file below
+the same way (base64 `content`), and for each run C-F263's run 1 shape with `lut` pointing
+at it, `acknowledged_cost=true`, `wait_seconds=55`. Each file is C-F263's identity file with
+the change shown; line numbers count from 1 at `TITLE`.
+| asset | change | the error must name |
+|---|---|---|
+| `qa-lut/bad-size200.cube` | `LUT_3D_SIZE 200` | the size, its 2 to 65 range, line 2 |
+| `qa-lut/bad-size1.cube` | `LUT_3D_SIZE 1` | the size, its range, line 2 |
+| `qa-lut/bad-missing-row.cube` | the last row (`1 1 1`) deleted | 7 rows where 8 were expected |
+| `qa-lut/bad-extra-row.cube` | a ninth row `0 0 0` appended | too many rows (9 for 8), the line of the extra row (11) |
+| `qa-lut/bad-nan.cube` | row 4 (`1 1 0`, line 6) becomes `1 nan 0` | a non-finite value, line 6 |
+| `qa-lut/bad-range.cube` | line 6 becomes `1 1.5 0` | a value outside 0 to 1, line 6 |
+| `qa-lut/bad-two-values.cube` | line 6 becomes `1 1` | a row needing 3 values, line 6 |
+| `qa-lut/bad-1d.cube` | `LUT_3D_SIZE 2` replaced by `LUT_1D_SIZE 2` | 1D LUTs not supported, line 2 |
+| `qa-lut/bad-dup-size.cube` | a second `LUT_3D_SIZE 2` after line 2 | the duplicate size, line 3 |
+| `qa-lut/bad-size-late.cube` | `LUT_3D_SIZE 2` moved after the data rows | data before the size, or the size after data, with a line |
+| `qa-lut/bad-keyword.cube` | `LUT_3D_INPUT_RANGE 0 1` inserted at line 3 | the unknown keyword, line 3 |
+| `qa-lut/bad-domain.cube` | `DOMAIN_MAX 2 2 2` inserted at line 3 | a domain other than 0 to 1, line 3 |
+Also: `qa-lut/ok-domain.cube`, with `# comment`, a blank line and `DOMAIN_MIN 0 0 0` /
+`DOMAIN_MAX 1 1 1` inserted after line 2. It must be **accepted** and look like run 1 of
+C-F263.
+expected:
+- Every bad arm is refused before any output exists: `valid: false` at
+  `steps[0].task.arguments.lut`, or a failed job with no output file. Either meets the plan.
+- Each message names the asset (`qa-lut/<file>.cube` or the `asset:` ref), the line number
+  where the table names one, and the problem in words a caller can act on.
+- No message carries an absolute server path (`/home/…`, the server's data root).
+- `ok-domain.cube` succeeds.
+It is a **finding** if a bad file produces an output, a message lacks the line or the
+problem, the server returns a stack trace or a bare parser exception, or the comment/domain
+file is refused.
+cleanup: `delete_output(job_id=…)` on every job; `delete_asset` every `qa-lut/bad-*` and
+`qa-lut/ok-domain.cube` asset.
+metrics: none.
+Not covered: the 16 MiB size cap and a non-UTF-8 file. `upload_asset(content=…)` caps at
+4 MB and a binary body is the encoder's problem, not the parser's; those belong in dw's
+pytest suite.
+
+### C-F265 — `apply_lut` refuses a non-`.cube` file as `lut`, and an `output:` ref to one, naming the extension
+pending: #635
+source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free: validates, plus at most one cheap run. C-F263's run 1 shape with `lut` set in turn to:
+- `asset:qa-cast/priya-portrait.jpg` (a jpg);
+- `asset:qa-cast/ep6-cold-open.mp4` (a video);
+- `output:<any .png in the regression-complete gallery>`. If none exists, make one with
+  C-F252 run 1 first.
+expected:
+- Each is `valid: false` at `steps[0].task.arguments.lut` (or, if extension checks run only at
+  job time, the job fails before output), naming `.cube` as what is expected.
+- If refused at run time rather than validate, `run_workflow` must not leave an output.
+It is a **finding** if any non-`.cube` file is read as a LUT or produces an output.
+cleanup: `delete_output(job_id=…)` on any job, including C-F252's helper run.
+metrics: none.
+
+### C-F266 — `apply_lut` takes a `palette`, which moves shadows toward the first colour and highlights toward the last
+pending: #636
+source: tester, spec for #636 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, three utility runs plus one free call. `get_task("apply_lut")` first. Then C-F263's
+shape with:
+1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "palette": ["#102030",
+   "#e0c090"]}`, name `c_f266_a`.
+2. The same with `"strength": 0.5`, name `c_f266_half`.
+3. The same with `"palette": ["#e0c090", "#102030"]` (reversed), name `c_f266_rev`.
+Compare `get_output_image` crops of the darkest and brightest regions against the source.
+expected:
+- `get_task` shows `palette` as optional, described as 2 to 16 `#rrggbb` colours ordered dark
+  to light, and says exactly one of `lut`/`palette` is given. `lut` is now optional too.
+- Run 1: dark regions take a dark blue-teal cast (`#102030`), bright regions a warm
+  tan/gold one (`#e0c090`). Overall brightness distribution looks like the source's: the
+  palette changes hue, not luminance (the face doesn't go flat or inverted).
+- Run 2 sits between the source and run 1.
+- Run 3: the casts move to the other ends (warm shadows, blue highlights) while the
+  brightness distribution still matches the source's.
+It is a **finding** if the palette is refused, shadows and highlights take the wrong ends'
+colours, run 1 changes luminance enough to flatten or invert the image, or `strength` has no
+effect.
+cleanup: `delete_output(job_id=…)` on all three.
+metrics: none.
+
+### C-F267 — the same palette passed as a `variable:` to two runs gives byte-identical output
+pending: #636
+source: tester, spec for #636 from #603's plan v2 (claude-opus-5-5 via anthropic)
+CPU only, two utility runs. Workflow `{"id": "qa-c-f267", "variables": {"look": ["#1b1f3a",
+"#7a4e6d", "#f2d0a4"]}, "steps": [{"name": "lut", "task": {"command": "apply_lut",
+"arguments": {"media": "asset:qa-cast/priya-portrait.jpg", "palette": "variable:look"}},
+"result": {"content_type": "image/png", "file_base_name": <name>}}]}`. Run with names
+`c_f267_a` and `c_f267_b` (S-F004's cache lever). Then a third run passing
+`arguments: {"look": ["#1b1f3a", "#f2d0a4"]}` to `run_workflow`, name `c_f267_c`.
+expected:
+- `validate_workflow` is `valid: true`.
+- Runs 1 and 2 are distinct run ids, neither `reused`, and byte-identical (equal `size`).
+- Run 3 (the overridden two-colour palette) differs in size and loses the mauve mid-tones.
+It is a **finding** if runs 1 and 2 differ (the 33³ table isn't deterministic), or the
+argument override isn't honoured.
+cleanup: `delete_output(job_id=…)` on all three.
+metrics: none.
+
+### C-F268 — a bad palette entry, too few or too many colours, or both/neither of `lut` and `palette` is refused by name
+pending: #636
+source: tester, spec for #636 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free: validates. C-F263's run 1 shape, one `<args>` per call, media
+`asset:qa-cast/priya-portrait.jpg`:
+- Refused, naming the bad entry: `palette: ["#12345", "#ffffff"]`; `["#000000", "red"]`;
+  `["#GGGGGG", "#ffffff"]`; `["000000", "#ffffff"]` (no `#`); `["#000000", 16777215]`.
+- Refused, naming the count and the 2 to 16 range: `palette: ["#808080"]` (one); `[]`;
+  17 colours (`"#000000"`, `"#101010"`, … , `"#ffffff"`, stepping `0x10` per channel, with
+  `"#ffffff"` as the 17th).
+- Accepted: the first 16 of those 17; `["#000000", "#FFFFFF"]` (upper-case hex).
+- Refused, naming both `lut` and `palette`: `palette: ["#000000", "#ffffff"]` together with
+  `lut: "asset:qa-lut/identity2.cube"` (upload it as in C-F263 if absent); and neither given
+  (`{"media": …}` alone).
+- Then `run_workflow(..., acknowledged_cost=true)` on the 17-colour arm.
+expected:
+- Each refused call is `valid: false` at `steps[0].task.arguments.palette` (or `.lut` for the
+  both/neither arms), naming the offending entry (`"#12345"`, `"red"`, …) or the count.
+- The both and neither arms each name `lut` and `palette` in the message.
+- Accepted calls are `valid: true`.
+- `run_workflow` on the 17-colour arm queues no job.
+It is a **finding** if any refused arm validates, is refused only at run time, or the
+message doesn't identify the bad entry, the count, or both argument names. These are
+argument-shape checks the plan's validate-time refusals in stages A and B set the standard
+for; a run-time-only refusal is a finding here.
+cleanup: none (delete any job that queued, and file it). `delete_asset` the identity LUT if
+this case uploaded it.
+metrics: none.
+
+### C-F269 — `dw:series-episodes` offers an optional per-shot look step, and its workflow fragment validates
+pending: #637
+source: tester, spec for #637 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Free. Load the `dw:series-episodes` skill with the `Skill` tool and read it whole.
+1. Find the look step.
+2. Copy the skill's workflow fragment for it verbatim into a minimal workflow: the
+   fragment's variables plus its steps, with the shot input replaced by
+   `asset:qa-cast/ep6-cold-open.mp4`. Change nothing else.
+3. `validate_workflow` it.
+expected:
+- The skill describes an optional look step per shot, placed after a shot is generated and
+  before the recut.
+- The recipe uses one shared `palette` variable fed to `apply_lut` for every shot (and
+  names a `.cube` asset via `lut` as the alternative), with `film_grain` as an optional
+  step after it.
+- The step is marked optional, and the skill's "five beats" still read as five: the look is
+  part of an existing beat or an aside, not a sixth beat.
+- Step 3 is `valid: true` with no errors. Warnings about unrelated variables are fine.
+It is a **finding** if the skill has no such step, the step isn't marked optional, the five
+beats became six, the fragment fails validation as written, or it calls a task or argument
+`get_task` doesn't list.
+cleanup: none.
+metrics: none.
+
+### C-F270 — the H3 speech-and-voices probe record is posted on #608 with a verdict, job ids and an observation for every probe
+pending: #640
+source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Free. The record lives in dw's `docs/proposals/audits/2026-10-h3-dialogue-probes.md`, which a
+consumer can't read, so read its copy on the ticket instead: `gh issue view 608 --repo
+dkackman/diffusers-workflow --comments`, the stage A1 results comment (the table plus the
+words/s, tail and clipping call-out). Then `list_jobs` in workspace `qa-h3-dialogue-probes`
+(`use_workspace` first).
+expected:
+- The comment has one row for each of A1's eight probes: (1) rate and clipping, (2) one male
+  and one female per scene, (3) "soft / gentle / whisper / lullaby" on a male line, (4) a
+  silent on-screen person's lips-closed sentence, (5) a voice-only source held in shot,
+  (6) `<pause>`, `<softer>`, `<breath>` and a bare "…" inside `<d>`, (7) the prompt-length
+  limit, (8) the continuation rule. Probe 6 may split into one row per tag.
+- Every row's verdict is exactly one of **confirmed**, **refuted** or **inconclusive**, and
+  every row cites job ids (probe 7 may cite none if no limit exists, and says so) and says
+  what was observed.
+- The comment states probe 1's measured words/s and tail as numbers, gives a clipping
+  verdict (does an over-budget last word get cut?), and hands C back to Don for a decision.
+- The `<breath>` row says whether H3 honours it as a silent beat, spoken aloud or ignored
+  (the plan's condition for the budget's `<breath>` term coming back).
+- Every cited job id appears in `qa-h3-dialogue-probes`'s `list_jobs`, and none is in a
+  default, `regression-*` or one of Don's own workspaces.
+It is a **finding** if a probe has no row, a verdict is anything but the three words, a row
+cites no jobs without saying why, or the rate, tail or clipping verdict is missing.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F271 — every job the A1 record cites exists, finished, and its manifest matches the arm the row describes
+pending: #640
+source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). For **every** job id C-F270's comment cites: `get_job`, then
+`get_job_workflow` for its resolved workflow and arguments.
+expected:
+- Each job is `completed` with at least one output; a failed or cancelled job is not cited
+  as evidence for a verdict.
+- Probes 1 to 7 ran `templates/minimax/video-with-audio`; probe 8 ran
+  `chain-video-continuity` as a 2-segment chain, one chain per seed per arm.
+- Turbo, 544p, `num_frames` 124 unless the row says why it needed more. Probe 1 has arms at
+  124 **and** 345 frames.
+- Each job's prompt, seed and `num_frames` are the ones its row says that arm used. The
+  broken arm's prompt breaks the rule (e.g. probe 2's has two men and one woman) and the
+  followed arm's keeps it (one man and one woman), with the rest of the prompt alike.
+- Every arm has exactly 2 jobs on 2 different fixed seeds (Q4), and the broken and
+  followed arms of a probe use the same pair of seeds.
+- Probe 1 covers 1.5, 2.0, 2.6, 3.2 and 4.0 words/s at each frame count: count the words
+  inside each job's `<d>…</d>` (the leading `[Language]` label excluded) against
+  `num_frames / 24` s.
+It is a **finding** if a cited id is missing, unfinished or in another workspace, an arm's
+manifest disagrees with its row (prompt, seed or frames), an arm has fewer than two seeds,
+or a probe 1 rate/frame-count cell is missing.
+cleanup: none.
+metrics: none.
+
+### C-F272 — probe 1's words/s, tail and clipping verdict are reproducible from the cited transcripts' word timestamps
+pending: #640
+source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Reads, plus CPU transcriptions where needed. For each probe 1 job, take its word-timestamp
+transcript: the transcript output the row cites (`get_output_text`), or, if the record
+used #609's adherence probe, that probe's output. If neither is cited, make one: a workflow
+with one `transcribe_audio` step, `{"audio": "output:<the job's video>", "timestamps":
+"word"}`, `result.content_type` `application/json`, run with `acknowledged_cost=true` and
+`wait_seconds=55`.
+For each job, compute the delivered rate as words ÷ (last word's `end` − first word's
+`start`), and the tail as clip length (`num_frames / 24`) − last word's `end`.
+expected:
+- The stated words/s is within 10% of the median delivered rate across the arms the record
+  says it calibrated from, and the stated tail within 0.3 s of the median tail.
+- The clipping verdict matches the transcripts. A job counts as clipped when its script's
+  last word is missing from the transcript, or ends within 0.1 s of the clip's end. If the
+  verdict is "clips", at least the over-budget arms (3.2 and 4.0 words/s at 124 frames)
+  show it on both seeds. If "doesn't clip", no arm shows it on both seeds.
+- If the delivered rate tracks the scripted rate (H3 speeds up to fit), the record says
+  so, rather than reporting one fixed rate.
+- If the delivered rates spread more than ±20% around the median, the record reports
+  that spread instead of averaging it away into one figure.
+It is a **finding** if the stated rate or tail can't be reproduced within those
+tolerances, or the clipping verdict disagrees with what the timestamps show.
+cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
+metrics: none.
+
+### C-F273 — for two A1 rules, the cited outputs show what the row claims
+pending: #640
+source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Reads, plus CPU transcriptions where needed. Pick two rows from C-F270's comment, other than
+probe 1: one marked **confirmed** if any is, and one marked **refuted** if any is (else
+any other row). Check every cited job of both rows (both arms, both seeds):
+- a voice row (2, 3): `get_output_audio`, and transcribe it as in C-F272 if the record
+  cites no transcript;
+- a lip-sync row (4, 5): `get_output_frames` across the spoken lines;
+- the tags row (6): a word transcript, checked for the tag words or invented words;
+- probe 8: `get_output_frames` and the transcript around the segment join.
+expected:
+- What each output shows agrees with the row's "observed" text and verdict. For example,
+  probe 4 confirmed: in both broken-arm seeds the silent person's lips move during the
+  other's line, and in neither followed-arm seed do they.
+It is a **finding** if any output contradicts its row, e.g. a row says "refuted" but both
+broken-arm seeds show the effect.
+cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
+metrics: none.
+
+### C-F274 — no A1 or A2 row is marked confirmed without meeting the two-seed bar
+pending: #640
+source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Reads only. The plan's bar: a rule is **confirmed** only when both seeds of the broken arm
+show the effect and neither seed of the followed arm does; anything else is
+**inconclusive**. For every row marked confirmed in C-F270's comment (and, once #641 has
+run, in C-F276's A2 rows), using C-F271's manifests, confirm that it has two broken-arm
+jobs and two followed-arm jobs on fixed seeds. Then judge every one of the four outputs for
+the effect, as C-F273 does.
+expected:
+- Every confirmed row has all four jobs; the effect is present in both broken-arm seeds and
+  absent in both followed-arm seeds.
+- Any row with one seed per arm, a missing arm, or a split result (one seed shows it, the
+  other doesn't) is marked inconclusive, not confirmed or refuted.
+It is a **finding** if a confirmed row has fewer than four jobs, a split result, or an
+effect in a followed-arm seed; or a split row is called refuted or confirmed.
+cleanup: none.
+metrics: none.
+
+### C-F275 — the prompt-length row agrees with H3's text-encoder signature
+pending: #640
+source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Free. Find the H3 pipeline name in `templates/minimax/video-with-audio`'s definition
+(`get_workflow`), then `get_pipeline_signature` on it. Read probe 7's row in C-F270's comment.
+expected:
+- If the signature has a `max_sequence_length` (or similarly named text-length argument)
+  with a default, the row reports that value, and cites a long-prompt run whose
+  past-the-limit detail is checked in `get_output_frames`. Its verdict follows that run:
+  confirmed only if the detail is missing in both seeds and present in both seeds of a
+  short-prompt control arm.
+- If the signature has none, the row says no limit was found and is not confirmed. The
+  7,000-character budget doesn't ship (plan verdict).
+It is a **finding** if the row's limit disagrees with the signature, or a limit is
+confirmed with no run behind it.
+cleanup: none.
+metrics: none.
+
+### C-F276 — the A2 picture-and-music record covers its five rules, with cited jobs whose manifests match their arms
+pending: #641
+source: tester, spec for #641 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). Read stage A2's results table. It's in the same audit doc, which a consumer
+can't read, so use its copy on the ticket: the A2 results comment on #608, or failing that
+on #641 (`gh issue view <n> --repo dkackman/diffusers-workflow --comments`). Then `get_job` and
+`get_job_workflow` on every cited job, in workspace `qa-h3-dialogue-probes`.
+expected:
+- One row each, verdict exactly one of confirmed / refuted / inconclusive, job ids and
+  observed text, for:
+  - **extras**: 3 against 6 in-focus extras;
+  - **an off-screen thing named**, with a separate negated-naming arm (e.g. "no dog in the
+    room"). Its verdict is stated on its own, since it decides whether the negation lint
+    comes back;
+  - **voice words in a silent scene's sound line** (static, crackle, murmur);
+  - **readable text**: a sign quoted verbatim, against the same sign left blank. The verdict
+    says legible, garbled or partly right;
+  - **minimax-music3 instrumentals**: 4 runs of `templates/minimax/music`.
+- Every picture job ran `templates/minimax/video-with-audio`, completed, with 2 fixed seeds
+  per arm. Its prompt, seed and `num_frames` match its row, and the arms differ only in the
+  rule's variable (3 vs 6 extras, the sign text vs blank, and so on).
+- The four music3 jobs are completed instrumental runs: the manifests ask for no vocals or
+  lyrics, per the template's own instrumental form.
+It is a **finding** if a rule has no row, the negated-naming arm is missing, a verdict is
+not one of the three words, or any cited job is missing, unfinished, outside
+`qa-h3-dialogue-probes`, or disagrees with its row.
+cleanup: none.
+metrics: none.
+
+### C-F277 — the A2 extras, readable-text and silent-scene rows match their outputs
+pending: #641
+source: tester, spec for #641 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Reads, plus CPU transcriptions where needed. For C-F276's rows, all seeds, both arms:
+1. Extras: `get_output_frames`, counting distinct faces and looking for repeated (cloned)
+   faces.
+2. Readable text: `get_output_frames` on the frames where the sign is in view, reading it
+   against the quoted string.
+3. Silent scene: a word transcript (cited, or made as in C-F272) of each job's soundtrack.
+expected:
+- Each row's observed text and verdict agree with the outputs. Extras confirmed means
+  cloned faces in both 6-extra seeds and in neither 3-extra seed. Readable-text "garbled"
+  means the quoted sign is unreadable or wrong in both seeds. Silent-scene confirmed means
+  both voice-word seeds transcribe to invented words and neither control seed does.
+- If readable text is **garbled** or **partly right**, the row links a separate open issue
+  on `dkackman/diffusers-workflow` for the enhancer fix (Q2). Find it with `gh issue list
+  --repo dkackman/diffusers-workflow --state all --search "h3_context_ir"`. The stage
+  itself made no enhancer change: `list_enhancers` shows the Context-IR enhancer as before.
+It is a **finding** if any output contradicts its row, or a garbled/partly-right verdict
+has no separate enhancer issue.
+cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
+metrics: none.
+
+### C-F278 — the music3 row's accidental-vocals verdict matches transcripts of all four instrumentals
+pending: #641
+source: tester, spec for #641 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Reads, plus CPU transcriptions where needed. For each of the four music3 jobs C-F276
+names, take its cited transcript (`get_output_text`), or make one as in C-F272:
+`transcribe_audio` with `"audio": "output:<the job's audio>"`, `timestamps` `"word"`.
+`get_output_audio` the job if the transcript has words, to hear whether they're sung.
+expected:
+- The row reports, per run, whether it contains vocals, and the count (k of 4) matches the
+  transcripts. A run counts as having vocals when the transcript has sung words that
+  `get_output_audio` confirms; a Whisper hallucination on pure music ("Thank you.") that the
+  audio doesn't back up is not vocals.
+- Its verdict on "transcribe every instrumental to catch accidental vocals" follows that
+  count: worth a rule if any run has vocals, refuted if none does. One run in four is
+  allowed to read confirmed here, since this rule is about catching a rare event, not a
+  two-arm comparison. If the row reads it that way, it says so.
+It is a **finding** if the per-run vocals calls or the count disagree with the transcripts
+and audio, or a transcript the row cites doesn't exist.
+cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
+metrics: none.
+
+### C-F279 — `minimax-h3` links `references/dialogue.md` once, and it states only confirmed rules, each citing its row
+pending: #642
+source: tester, spec for #642 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Free. Load `dw:minimax-h3` with the `Skill` tool. Find its link to `references/dialogue.md`
+and read that file at the path the skill's base directory gives, as any skill consumer
+would. Read it against the A1 and A2 tables (C-F270, C-F276).
+expected:
+- SKILL.md links `references/dialogue.md` exactly once, in one line.
+- Every rule `dialogue.md` states (an instruction to do or avoid something) matches a row
+  marked **confirmed**, and cites that row.
+- No refuted or inconclusive row appears as a rule. Mentioning one as untested or refuted,
+  with no instruction attached, is allowed.
+- Probe 1's measured words/s and tail are in it as prose, matching the A1 comment's
+  numbers, whatever C's fate.
+- The readable-text verdict is in it whichever way it went. If garbled, it names the
+  separate enhancer issue.
+- If probe 6 found any of `<pause>`, `<softer>`, `<breath>` spoken aloud and that row is
+  confirmed, the rule says to keep it out of `<d>`. No tag is recommended that the record
+  didn't find honoured.
+- No rule elsewhere in SKILL.md contradicts `dialogue.md`. For example, SKILL.md must not
+  keep advice that a refuted row overturned.
+It is a **finding** if the link is missing or repeated, any rule lacks a confirmed row, a
+refuted or inconclusive rule is given as a rule, the rate or the readable-text verdict is
+missing, the numbers disagree with A1's, or SKILL.md contradicts `dialogue.md`.
+cleanup: none.
+metrics: none.
+
+### C-F280 — `minimax-music3` carries the transcribe-instrumentals rule only if A2 confirmed it
+pending: #642
+source: tester, spec for #642 from #608's plan v2 (claude-opus-5-5 via anthropic)
+Free. Load `dw:minimax-music3` with the `Skill` tool and read it whole. Compare with C-F278's
+music3 row.
+expected:
+- Row confirmed: SKILL.md has one line telling the reader to transcribe every instrumental
+  run (`transcribe_audio`) to catch accidental vocals. Any task or argument the line names
+  exists in `get_task("transcribe_audio")`.
+- Row refuted or inconclusive: SKILL.md gives no such rule.
+- Either way, the skill still loads and its other instrumental guidance is unchanged in
+  meaning.
+It is a **finding** if the rule's presence doesn't follow the row's verdict, or the line
+names a task or argument `get_task` doesn't list.
+cleanup: none.
+metrics: none.
+
+### C-F281 — `check_script` is a registered task with the plan's arguments and defaults
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_task("check_script")`, and `list_tasks()`.
+expected:
+- `check_script` is listed, and `get_task` returns parameters `audio` (required), `lines`,
+  `shots`, `similarity` and `model_name`.
+- `similarity` defaults to 0.85. `model_name` defaults to `openai/whisper-base`, either as the
+  default value or named in its description, the way `transcribe_audio` reports it.
+- The `lines` description says entries are strings or `{text, shot}`, that H3 markup is
+  stripped, and that `[]` means no speech is expected.
+It is a **finding** if the task is missing, an argument is missing or renamed, or either
+default differs.
+cleanup: none.
+metrics: none.
+
+### C-F282 — exact, swapped, skipped and unspoken lines on a known take
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU/short-GPU. The three lines used here and in C-F283–C-F292:
+- L1 `The receipt was in the drawer the whole time.`
+- L2 `Nobody told me the window had been left open.`
+- L3 `We should pause and call the landlord before dark.`
+
+Setup, shared with later cases (reuse `<take>` and `<control>` if an earlier case made them
+in this run):
+1. `run_workflow(workflow_path="templates/generate-speech", arguments={"text": "<L1> <L2>
+   <L3>"}, acknowledged_cost=<bound from validate_workflow's plan>, wait_seconds=55)`. Its
+   `.wav` is `<take>` (gallery name `<workflow>/<run id>/<file>`).
+2. `<control>`: a one-step workflow, task `transcribe_audio` with `{"audio":
+   "output:<take>", "timestamps": "word"}`, `result.content_type` `application/json`. Run it
+   with `acknowledged_cost=true, wait_seconds=55` and read it with `get_output_text`.
+3. Precondition: ignoring case and punctuation, `<control>` has each line with at most one
+   misheard word. If not, regenerate `<take>` once. If it still fails, report a fixture
+   problem, not a `check_script` finding.
+
+Run one workflow whose steps are all `check_script` on `"audio": "output:<take>"`, each
+saving `application/json` (task form per `get_schema("tasks")`):
+- `exact`: `lines` `[L1, L2, L3]`;
+- `objects`: `[{"text": L1}, {"text": L2}, {"text": L3}]`;
+- `swapped`: `[L1, "Bring the purple umbrella to the train station tomorrow.", L3]`;
+- `swapped_zero`: the same as `swapped`, with `similarity` 0.0;
+- `skipped_mid`: `[L1, L3]` (L2 is spoken but not expected);
+- `unspoken_mid`: `[L1, L2, "The orchestra will rehearse on the rooftop tonight.", L3]`;
+- `unspoken_end`: `[L1, L2, L3, "The orchestra will rehearse on the rooftop tonight."]`.
+
+`get_output_text` on each.
+expected:
+- The run succeeds. Every answer has `findings`, `lines`, `discarded`, `transcript`,
+  `rules_applied` and `rules_skipped`. Every finding has exactly `rule`, `severity`, `at`,
+  `value`, `threshold` and `says`, with `severity` `warn`.
+- `exact`:
+  - no `line_mismatch`;
+  - `lines` has 3 entries in order, each with `expected`, `heard`, `similarity`, `start`, `end`
+    and `shot`;
+  - every `similarity` is ≥ 0.85;
+  - `start < end`, and the entries increase in time. Each entry's span is within 0.5 s of
+    `<control>`'s words for that line;
+  - `transcript` matches `<control>`'s text;
+  - `rules_applied` includes `line_mismatch`, `tag_spoken` and `line_clipped_at_end`.
+- `objects`: the same `lines` similarities and findings as `exact`.
+- `swapped`: exactly one `line_mismatch`, for line 2. Its `value` is line 2's similarity,
+  below its `threshold` 0.85, and its `at` lies within 0.5 s of `<control>`'s span for L2's
+  words. Lines 1 and 3 aren't flagged.
+- `swapped_zero`: no `line_mismatch`. Line 2's `similarity` equals `swapped`'s.
+- `skipped_mid`: no `line_mismatch`. L3's `heard` is L3's words, not L2's.
+- `unspoken_mid` and `unspoken_end`: exactly one `line_mismatch`, on the orchestra line, whose
+  `lines` entry has `heard: ""`. L1–L3 aren't flagged.
+It is a **finding** if any arm differs. In particular, if an unspoken line borrows a
+neighbour's words, or skipping L2 shifts L3's alignment.
+cleanup: `delete_output(job_id=…)` on this case's `check_script` job. Leave `<take>` and
+`<control>` for later cases; the final sweep removes them.
+metrics: none.
+
+### C-F283 — H3 markup doesn't count against similarity, and a stripped tag that is heard is `tag_spoken`
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup: `<take>` and `<control>` as in C-F282. One workflow of `check_script` steps on
+`output:<take>`, each saving JSON:
+- `plain`: `[L1, L2, L3]`;
+- `tagged`: `["<d>[en] The receipt was in the drawer the whole time.</d>", "(S1) Nobody told
+  me the window had been left [unclear] open. <cutoff>", "<scenetrans> We should pause and
+  call the landlord before dark."]`, which covers every H3 token in the plan's correction 3;
+- `spoken_tag`: `[L1, L2, "We should <pause> and call the landlord before dark."]`.
+expected:
+- `tagged`: no `line_mismatch` and no `tag_spoken`. Each line's `similarity` is within 0.02 of
+  `plain`'s for the same line.
+- `spoken_tag`: exactly one `tag_spoken`. Its `value` or `says` names `pause`, and its `at` is
+  within 0.5 s of `<control>`'s `pause` word. Line 3 has no `line_mismatch`. `<pause>` isn't an
+  H3 token, so this arm is also the check that stripping doesn't use a fixed list.
+It is a **finding** if any tag lowers similarity, a tag that wasn't heard is reported, or a
+heard one isn't.
+cleanup: `delete_output(job_id=…)` on this case's job.
+metrics: none.
+
+### C-F284 — `lines: []`: speech is `speech_where_silent`, while silence and an instrumental are clean, with hallucinations under `discarded`
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup: `<take>` and `<control>` as in C-F282. One workflow of `check_script` steps,
+each saving JSON:
+- `speech`: `output:<take>`, `lines: []`;
+- `silence`: `asset:uploads/qa-cast/room-bed.wav` (about −50 dBFS room tone), `lines: []`;
+- `silence_expected`: the same asset with `lines: [L1]`;
+- `instrumental`: `asset:qa-cast/ep20-score.wav`, `lines: []`.
+expected:
+- `speech`: exactly one finding, `speech_where_silent`, with `at` within 0.5 s of
+  `<control>`'s first word. No `line_mismatch`.
+- `silence`: `findings` is `[]`. Every word Whisper produced is under `discarded`, each with
+  a measured level, and none is raised as a finding. An empty `discarded` is fine if Whisper
+  heard nothing.
+- `silence_expected`: one `line_mismatch` with `heard: ""`, and no `speech_where_silent`.
+- `instrumental`: `findings` is `[]`. This arm counts only if the score has no vocals. If its
+  `transcript` has words, confirm with `get_output_audio` before calling it a finding.
+It is a **finding** if a silent or instrumental input raises anything, a guarded word appears
+in `findings`, or speech with `[]` isn't flagged.
+cleanup: `delete_output(job_id=…)` on this case's job.
+metrics: none.
+
+### C-F285 — `line_clipped_at_end` fires on a take cut at its last word, not on one padded with silence
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup: `<take>` and `<control>` as in C-F282. Let `e` be the `end` of `<control>`'s
+last word (`dark`), and `D` be `<take>`'s `duration_seconds` from `get_gallery_metadata`.
+Run one workflow:
+- `cut`: `slice_audio` with `{"audio": "output:<take>", "start_seconds": 0,
+  "duration_seconds": e − 0.05}`, then `check_script` with `"audio": "previous_result:cut"`
+  and `lines: [L1, L2, L3]`;
+- `padded`: `slice_audio` with `duration_seconds` D + 1.0 (a `slice_past_end` warning is
+  expected), then `check_script` on it with the same lines.
+expected:
+- `cut`'s answer has a `line_clipped_at_end` on line 3. Its `at` is no earlier than
+  e − 0.05 − 0.25 − 0.3 (the 0.3 s allows for Whisper's timestamp error). A `line_mismatch` on
+  line 3 alongside it is acceptable.
+- `padded`'s answer has no `line_clipped_at_end`.
+It is a **finding** if the cut take isn't flagged or the padded one is.
+cleanup: `delete_output(job_id=…)` on this case's job.
+metrics: none.
+
+### C-F286 — malformed `lines` is refused, naming the argument
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+Mostly free. Setup: `<take>` as in C-F282. Take a one-step `check_script` workflow on
+`output:<take>`. `validate_workflow` it with each of these as `lines`:
+- the string `"The receipt was in the drawer."`;
+- `{"text": "The receipt was in the drawer."}`, a dict and not a list;
+- `[{"shot": "a"}]`, an entry with no text;
+- `[42]`.
+
+For any variant validate accepts, run it (`acknowledged_cost=true, wait_seconds=55`) and
+`get_job`.
+expected:
+- Each variant is refused, either by `validate_workflow` (an error naming `lines`) or by the
+  job failing with an error that names `lines` and the bad entry.
+- None succeeds, and none fails with a bare Python traceback or an unrelated message.
+It is a **finding** if a variant runs to success or the error doesn't name `lines`.
+cleanup: `delete_output(job_id=…)` on any job this case ran.
+metrics: none.
+
+### C-F287 — stage A's two-model measurement is recorded with citable jobs
+pending: #643
+source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). Find the Q3 measurement comment on #643, or on #609
+(`gh issue view 643 --repo dkackman/diffusers-workflow --comments`). `get_job` and
+`get_job_workflow` on every job it cites.
+expected:
+- It reports `openai/whisper-base` and `openai/whisper-large-v3-turbo` on the same takes, for
+  each of: exact lines, one swapped line, one dropped line, and lines with names and numbers.
+- For each model, it gives the similarity spread of the correct lines against the wrong ones,
+  and says which model separates them, at what threshold.
+- Every cited job exists and `succeeded`. Its workflow is `check_script` with the `model_name`
+  its row states, over the take and lines its row describes.
+It is a **finding** if a model or a take type is missing, a spread has no jobs behind it, or a
+job disagrees with its row.
+cleanup: none.
+metrics: none.
+
+### C-F288 — shot-tagged lines on a joined cut: `shot` filled, an untagged dialogue shot is `speech_in_silent_shot`, and a shot ending mid-word is clipped
+pending: #644
+source: tester, spec for #644 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup, shared with C-F289 and C-F290 (reuse it if an earlier case made it in this run):
+1. `<cut>`: a one-step `concat_videos` of `["asset:qa-cast/ep21-shot1-receipt.mp4",
+   "asset:qa-cast/ep21-shot2-verdict.mp4"]`, saving an mp4. `get_gallery_metadata` on it shows
+   `media.shots` with both names. Shot 1 is 0 – about 5.167 s.
+2. `<cut control>`: `transcribe_audio`, `timestamps` `"word"`, on `output:<cut>`, as in
+   C-F282. `S1` is the words whose `start` falls in shot 1, joined, and `S2` the same for
+   shot 2. Precondition: both are non-empty.
+
+Tag each line with its shot by the `name` that `media.shots` reports. If
+`get_task("check_script")` documents a different shot key, use that form. One workflow of
+`check_script` steps on `output:<cut>`:
+- `tagged`: `[{"text": S1, "shot": <shot 1>}, {"text": S2, "shot": <shot 2>}]`;
+- `omit`: `[{"text": S1, "shot": <shot 1>}]`.
+expected:
+- `tagged`:
+  - the `lines` entries' `shot` are shot 1 and shot 2;
+  - no `speech_in_silent_shot` and no `line_mismatch`;
+  - `rules_applied` includes `speech_in_silent_shot` and `line_clipped_at_end`, and neither is
+    in `rules_skipped`;
+  - shot 1 ends on voiced speech (C-F037's fixture). If `<cut control>`'s last shot-1 word
+    ends within 0.25 s of shot 1's end, there is a `line_clipped_at_end` on line 1, with `at`
+    inside shot 1. Otherwise there is none for line 1.
+- `omit`: a `speech_in_silent_shot` with `at` inside shot 2, and none in shot 1.
+It is a **finding** if `shot` is empty or wrong, the omitted shot isn't flagged, a tagged one
+is, or the per-shot clip check disagrees with `<cut control>`.
+cleanup: `delete_output(job_id=…)` on this case's job. Leave `<cut>` and `<cut control>`
+for C-F289 and C-F290; the final sweep removes them.
+metrics: none.
+
+### C-F289 — shots resolve the same from a kept asset's sidecar and from an explicit `shots` argument
+pending: #644
+source: tester, spec for #644 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup: `<cut>`, `S1` and `S2` as in C-F288, and `<take>` and `<control>` as in C-F282.
+1. `keep_output` `<cut>` into this workspace's assets, as its schema asks. Call it
+   `<kept>`. `get_gallery_metadata("asset:<kept>")` shows the same `media.shots`.
+2. Run C-F288's `tagged` and `omit` steps on `"audio": "asset:<kept>"`.
+3. Explicit shots on a file that has none. `<take>` is a bare wav. Split it into three named
+   spans `a`, `b`, `c`, with boundaries at the midpoints of the gaps between L1/L2 and L2/L3
+   in `<control>`. Write them in the form `get_task("check_script")` documents for `shots`.
+   Run `check_script` on `output:<take>` with those `shots` and:
+   - `abc`: `[{"text": L1, "shot": "a"}, {"text": L2, "shot": "b"}, {"text": L3, "shot":
+     "c"}]`;
+   - `ac`: `[{"text": L1, "shot": "a"}, {"text": L3, "shot": "c"}]`.
+expected:
+- Step 2's answers match C-F288's for the same arms: the same shot names in `lines`, and the
+  same `speech_in_silent_shot` placement.
+- `abc`: `shot` is filled `a`/`b`/`c`, with no `speech_in_silent_shot`.
+- `ac`: exactly one `speech_in_silent_shot`, with `at` inside span `b`.
+It is a **finding** if the asset loses its shots, or an explicit `shots` argument is ignored.
+cleanup: `delete_output(job_id=…)` on this case's jobs, and `delete_asset` on `<kept>`.
+metrics: none.
+
+### C-F290 — shot tags on a shotless file are skipped with a reason, and an unknown shot is refused, listing the valid ones
+pending: #644
+source: tester, spec for #644 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup: `<take>` as in C-F282, and `<cut>` as in C-F288.
+1. `check_script` on `output:<take>`, with no `shots` and `lines: [{"text": L1, "shot":
+   "a"}, {"text": L2, "shot": "a"}, {"text": L3, "shot": "b"}]`.
+2. `validate_workflow`, then run if it validates, `check_script` on `output:<cut>` with
+   `lines: [{"text": S1, "shot": "nope"}]`.
+expected:
+- Step 1 succeeds:
+  - `rules_skipped` names `speech_in_silent_shot`, with a reason saying no shots are known;
+  - `findings` has no `speech_in_silent_shot`;
+  - the whole-file rules still ran: `line_mismatch` is in `rules_applied`, and none fires for
+    these correct lines.
+- Step 2 is refused, at validate or as a task error, naming `nope` and listing both of
+  `<cut>`'s shot names.
+It is a **finding** if step 1 crashes, refuses, or comes back clean without saying the rule
+was skipped. It is also one if step 2 succeeds or its error doesn't list the valid shots.
+cleanup: `delete_output(job_id=…)` on this case's jobs.
+metrics: none.
+
+### C-F291 — `templates/check-script` is a utility template whose defaults are stage A's measured choice
+pending: #645
+source: tester, spec for #645 from #609's plan v2 (claude-opus-5-5 via anthropic)
+Free. Setup: `<take>` as in C-F282, for validation only.
+1. `list_workflows(shape="utility")`.
+2. `get_workflow("templates/check-script")`.
+3. `validate_workflow(name="templates/check-script", arguments={"input_audio":
+   "output:<take>", "lines": [L1, L2, L3]})`.
+
+Compare against C-F287's measurement record.
+expected:
+- `templates/check-script` is listed, with traits including `needs-input-media`, and
+  `variable_names` including `input_audio`, `lines` and `shots`.
+- `templates/transcribe-audio` is still listed.
+- The definition runs `check_script` and saves `application/json`.
+- Its `model_name` and `similarity` equal the model and threshold that the record says
+  separated correct takes from wrong ones.
+- Validate is `valid: true`, with no errors and with a `plan.estimate`.
+It is a **finding** if the template is missing or mis-shaped, the defaults disagree with the
+measurement, or validate isn't clean.
+cleanup: none.
+metrics: none.
+
+### C-F292 — running `templates/check-script` returns the stage A/B answer
+pending: #645
+source: tester, spec for #645 from #609's plan v2 (claude-opus-5-5 via anthropic)
+CPU. Setup: `<take>` as in C-F282. Run `templates/check-script` twice, each with
+`acknowledged_cost` bound from validate's plan and `wait_seconds=55`:
+- `input_audio` `output:<take>`, `lines` `[L1, L2, L3]`;
+- the same, with C-F282's `swapped` lines.
+
+`get_output_text` on each JSON.
+expected:
+- Both succeed with the answer shape of C-F282 (`findings`, `lines`, `discarded`,
+  `transcript`, `rules_applied`, `rules_skipped`).
+- The first has no `line_mismatch`. The second has exactly one, on line 2.
+It is a **finding** if either run fails, the output isn't that JSON, or its findings differ.
+cleanup: `delete_output(job_id=…)` on both runs, then on `<take>`'s and `<control>`'s jobs
+if no later case this run needs them.
+metrics: none.
+
+### C-F293 — the guide's loop step 6 and the skills send a line check to `templates/check-script`, and the by-eye procedure is gone
+pending: #645
+source: tester, spec for #645 from #609's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. `get_guide(name="workflows", section="Authoring a workflow from an agent")`, and read
+   `### The loop` step 6.
+2. Load `dw:series-episodes` and `dw:minimax-h3` with the `Skill` tool, and find where each
+   tells the reader to check that a take says its lines.
+expected:
+- Step 6 and both skills name `templates/check-script` for that check.
+- None of them still has the hand procedure for it: transcribe the take, `get_output_text`,
+  compare to the script by eye, delete the scratch run.
+- Any argument they show (`input_audio`, `lines`, `shots`) exists in C-F291's
+  `variable_names`.
+It is a **finding** if any of the three places still carries the by-eye procedure, or doesn't
+name the template, or names a variable the template lacks.
 cleanup: none.
 metrics: none.
 

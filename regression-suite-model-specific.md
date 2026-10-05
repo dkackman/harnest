@@ -2948,4 +2948,289 @@ metrics: `minutes_a`, `minutes_b`, `minutes_c`, `minutes_d`. Record them in
 `regression-perf/M-F086.jsonl` with condition `crowd-faces-124f-seed42`. The first run seeds the
 file. Flag a reading more than 50% over the median.
 
+### M-F087 — `LTX2RefinePipeline` is discoverable, and its signature has `video` beside the parent's `latents`, `noise_scale` and `sigmas`
+pending: #638
+source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `LTX2RefinePipeline` (dw community pipeline, subclass of `LTX2Pipeline`). Free: discovery only.
+Context: on 2026-10-05 neither `list_pipelines` nor `get_pipeline_signature` showed community
+pipelines. `get_pipeline_signature("RFInversionFluxPipeline")` answered "diffusers exports no class
+named …". The stage's acceptance intent says both tools show the new class, so this case holds it to that.
+Steps:
+1. `list_pipelines` (filter on `LTX2` if the tool takes one).
+2. `get_pipeline_signature("LTX2RefinePipeline")`.
+3. `get_pipeline_signature("LTX2Pipeline")`, for comparison.
+4. `get_guide("workflows")` index. Find the community-pipelines line the plan adds (it names
+   `LTX2RefinePipeline`) and read that section.
+expected:
+- `LTX2RefinePipeline` is listed by `list_pipelines`, marked or grouped so it is distinguishable from
+  diffusers' own classes (a "community" source or equivalent). A plain listing is acceptable as long as
+  step 2 works.
+- Step 2 succeeds. It lists a `video` parameter, and still lists `latents`, `noise_scale`, `sigmas`,
+  `width`, `height` and `num_frames`, with the same defaults step 3 shows for them.
+- Apart from `video`, its parameters match `LTX2Pipeline`'s. No ladder or strength parameter appears:
+  the plan keeps the class free of ladder and model constants.
+- The guide's community-pipelines text names `LTX2RefinePipeline`. It says `video` is VAE-encoded at
+  `width`×`height` and stands in for `latents`, and that the two can't be passed together.
+It is a **finding** if `list_pipelines` omits the class, if `get_pipeline_signature` refuses it or
+lacks `video`, if a parent parameter is missing or has a changed default, or if the guide has no line
+for it.
+cleanup: none (no job).
+metrics: none.
+
+### M-F088 — a hand-authored `loop_frames` → `LTX2RefinePipeline` workflow refines a 512×288×121 clip in place: same size, same frames, same scene
+pending: #638
+source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `LTX2RefinePipeline` on `Lightricks/LTX-2.5-Diffusers` (stage-two distilled schedule).
+Paid: one LTX refine job at 512×288, 121 frames (about the cost of `refine-clip`'s refine step).
+Setup: fixture `asset:refine/src-512x288.mp4` (see Fixtures). Make it first if it is missing.
+Steps:
+1. `get_gallery_metadata("asset:refine/src-512x288.mp4", workspace="regression-model-specific")` pins the
+   source's size (512×288), frames (121) and fps (24). Take `get_output_frames` on it at `frame:0`,
+   `frame:60` and `frame:120` for comparison.
+2. `get_workflow("templates/ltx2/refine-clip")`, to copy its `refine` step's pipeline block:
+   `from_pretrained_arguments`, offload and component settings, prompt handling and `frame_rate`.
+3. Author an inline workflow from that block with two steps:
+   - `src`: `loop_frames(video: "asset:refine/src-512x288.mp4", num_frames: 121)`;
+   - `refine`: a pipeline step with `component_type` `LTX2RefinePipeline`, named the way the guide's
+     community-pipelines line (M-F087 step 4) says. Arguments: `video: "previous_result:src"`, `width`
+     512, `height` 288, `num_frames` 121, `noise_scale` 0.909375, `sigmas` the three stage-two distilled
+     values (as `refine-clip` names them, or literally), and `seed` 543. Its result is `video/mp4` at
+     24 fps.
+4. `validate_workflow` on it, then `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` in
+   workspace `regression-model-specific`. Then `wait_for_job` to the end.
+expected:
+- Validate is `valid: true` with no unknown-component or unknown-argument error. The step loads
+  `LTX2RefinePipeline` and no separate upsampler.
+- The job succeeds. Its output reads under `get_gallery_metadata` as exactly **512×288, 121 frames,
+  24 fps**: not 1024×576 (that is `refine-clip`'s 2× route), and not a frame count snapped elsewhere.
+- **Same scene, refined in place.** `get_output_frames` at frames 0, 60 and 120 shows the source's
+  composition at the same frames: same subjects, positions and framing, with motion running the same
+  way. Fine texture may differ.
+- **Not washed out.** Exposure and saturation look like the source's. The plan's own risk is an encode
+  normalization mismatch, which shows as a uniformly greyer or flatter picture than the source.
+- `get_job_events` shows one denoise pass of three sigma steps, not a full schedule.
+It is a **finding** if validate refuses the class or `video`, if the output size or frame count differs
+from the source's, if the scene changes, or if the picture is visibly greyed or flattened against the
+source.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the fixture.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `512x288-121f`, to
+`regression-perf/M-F088.jsonl`. The first run seeds the file.
+
+### M-F089 — `LTX2RefinePipeline` refuses `video` and `latents` together, naming both, before it denoises
+pending: #638
+source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F088. Free if refused at validate. Otherwise one job that fails before denoising.
+Setup: M-F088's workflow, with one argument added to the `refine` step: `latents:
+"previous_result:src"` (any value will do; the refusal is about the pair). If that doesn't validate as a
+type, add a cheap step whose result is a latent tensor (e.g. an `LTX2Pipeline` step with
+`output_type: "latent"`, the same call M-F088 uses) and point `latents` at it.
+Steps:
+1. `validate_workflow` on it.
+2. If validate passes, `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and `wait_for_job`
+   to the end. Then `get_job_events`.
+expected:
+- The refusal comes at validate, or the job fails at the `refine` step before any denoise step (no
+  step-progress events from the denoise loop).
+- The message names **both** `video` and `latents` and says they can't be given together. A generic
+  type error, or a shape mismatch from inside the transformer, does not count.
+- No output file is written.
+It is a **finding** if the pair is accepted (either one silently wins), if the failure comes from deep in
+the denoise loop, or if the message doesn't name both arguments.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` if a job ran.
+metrics: none.
+
+### M-F090 — `LTX2RefinePipeline` encodes a `video` whose size differs from `width`×`height` at `width`×`height`, and without `video` it behaves like `LTX2Pipeline`
+pending: #638
+source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F088. Paid: two short LTX jobs.
+The plan says `video` is VAE-encoded at `width`×`height`. This case covers a source that isn't already
+that size, and the subclass with `video` left out.
+Setup: fixture `asset:refine/src-384x288.mp4` (see Fixtures).
+Steps:
+1. **Size differs.** M-F088's workflow with `video` from `loop_frames(video:
+   "asset:refine/src-384x288.mp4", num_frames: 121)`, and `width` 512, `height` 288. Validate, then run
+   as in M-F088.
+2. **No `video`.** M-F088's `refine` step with `video` removed and a `prompt` set (any short prompt; `refine-clip`'s
+   default is fine). `width` 512, `height` 288, `num_frames` 121, `seed` 543, with the parent's default
+   schedule (drop `sigmas` and `noise_scale`). Validate, then run.
+expected:
+- Step 1 succeeds at **512×288, 121 frames**. The source's content is resized to fit, not cropped or
+  padded off-centre: subjects stay in the source's relative positions. Alternatively it is refused at
+  validate, with a message naming the size mismatch and the expected size. Either is acceptable;
+  record which.
+- Step 2 succeeds and gives a 512×288×121 text-to-video clip, as `LTX2Pipeline` would. It is not an
+  error about a missing `video`.
+It is a **finding** if step 1 crashes in the VAE or transformer with a shape error, or yields a size
+other than 512×288. It is also a finding if step 2 requires `video`.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each job.
+metrics: none.
+
+### M-F091 — `refine-in-place` is in the catalog as a shot with audio, and its first step selects a ladder by `strength` from 3–5 well-formed candidates
+pending: #639
+source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/refine-in-place` (`LTX2RefinePipeline`). Free: discovery only.
+Steps:
+1. `list_workflows(shape="shot")`, then `list_workflows(shape="shot", include_models=true)`.
+2. `get_workflow("templates/ltx2/refine-in-place", variables_only=true)`.
+3. `get_workflow("templates/ltx2/refine-in-place")`.
+4. Load the `dw:ltx-2-5` skill (or whichever LTX skill `refine-clip` is documented in).
+5. `get_workflow` on `templates/ltx2/refine-clip` and `templates/ltx2/two-stage` (the non-goals).
+expected:
+- **Catalog.** `templates/ltx2/refine-in-place` is listed under `shot` with traits `has-audio` and
+  `needs-input-media`. It has a non-null `cost` in the same units as `refine-clip`'s.
+- **Variables.** There is a `strength` variable whose default is the **middle** ladder index
+  (`(N-1)//2`, or `N//2` if the plan text reads that way for even N; record which). Its constraint or
+  description gives the range 0..N-1. `width`/`height` constraints are `32*n+0` and `num_frames`'s is
+  `8*n+1, 9+`, as `refine-clip` has them, on whichever route they still apply to.
+- **The `select` step.** One `select` step, before any pipeline step, with `rule: "index"` and `index:
+  "variable:strength"`. Let N be its candidate count:
+  - **3 ≤ N ≤ 5**;
+  - every candidate is a dict `{"sigmas": [...], "noise_scale": …}`;
+  - every `sigmas` holds exactly **3** values, **strictly decreasing**, with **no trailing 0**;
+  - every `noise_scale` **equals its `sigmas[0]`**;
+  - `sigmas[0]` **increases with index**: 0 preserves most, N-1 reinterprets most.
+  `select` declares `scores` required (pinned 2026-10-05). Whatever the template passes there must
+  validate.
+- **The refine step** reads `previous_result:<select step>.sigmas` and `.noise_scale`, with no literal
+  schedule of its own. Its result is saved under `intermediate/`. A `pair_audio` step writes the
+  deliverable under `final/` from the source's soundtrack.
+- **Route.** Either:
+  - **fit/restore**: `normalize_audio` → `fit_to_model` → select → refine → `restore_to_source` →
+    `pair_audio`; or
+  - **trim**: `normalize_audio` → `loop_frames` → select → refine → `pair_audio`.
+  Record which; M-F092 to M-F095 depend on it.
+- **Description** says the template is unsourced, and that the vendor's route to refined detail is the
+  Refine-Details IC-LoRA.
+- **Skill** carries:
+  - a routing line for a same-size refine pointing at `refine-in-place`;
+  - the "the schedule is not a knob" rule, reworded to except `refine-in-place`'s `strength`;
+  - the rule `noise_scale = sigmas[0]`;
+  - a cost line for `refine-in-place`.
+- **Non-goals unchanged.** `refine-clip` still upsamples 2× with its fixed stage-two schedule and has
+  no `strength` variable. `two-stage` has no `strength` variable either.
+It is a **finding** if the template is missing from `shot`, if it lacks either trait or a cost, if any
+ladder breaks the five rules above, if `strength`'s default isn't the middle index, if `refine-clip` or
+`two-stage` gained a `strength`, or if the skill lacks any of the four lines.
+cleanup: none (no job).
+metrics: none.
+
+### M-F092 — `refine-in-place` validates clean at its defaults, and on the trim route refuses off-grid `width`, `height` and `num_frames` at validate
+pending: #639
+source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F091. Free: validate only.
+Setup: fixture `asset:refine/src-512x288.mp4`. Read N and the route from M-F091 steps 2–3; don't assume
+either.
+Steps:
+1. `validate_workflow(name="templates/ltx2/refine-in-place", arguments={<its source-video variable>:
+   "asset:refine/src-512x288.mp4"})`. The bare call, with the template's placeholder source, may be
+   refused for want of a real asset; that is not a finding.
+2. The same, with each of `strength` = 0, the middle index, and N-1.
+3. **Trim route only:** step 1 with each of:
+   - `width` 500;
+   - `height` 300;
+   - `num_frames` 120.
+4. **Fit/restore route only:** the same three arguments, if the template still exposes `width`, `height`
+   or `num_frames` on that route. Record which it exposes.
+expected:
+- Steps 1 and 2 are `valid: true`, with no error or warning. Each quotes a `plan.estimate`, and the
+  estimates for the three strengths are the same or nearly so (the ladders all have three steps).
+- Step 3: each is refused at validate, the message naming the variable and the `32*n+0` or
+  `8*n+1, 9+` rule. Snapping with a warning, if the constraint declares `snap`, is acceptable instead;
+  record which. No job is made.
+- Step 4: where fit/restore picks the model size itself, those arguments are absent or have no effect.
+  Neither is a finding; record which.
+It is a **finding** if the defaults don't validate clean against a real asset, if the estimate swings
+with `strength`, or if on the trim route an off-grid size or frame count passes validate silently.
+cleanup: none (no job).
+metrics: none.
+
+### M-F093 — `refine-in-place` refuses `strength` N, −1 and 1.5 in the select step, naming the range, before any pipeline loads
+pending: #639
+source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F091. Free when refused at validate. Otherwise each is a job that must fail before
+any model loads, so it costs seconds.
+Setup: as M-F092. N is the candidate count from M-F091.
+Steps: for each `strength` in **N** (one past the end), **−1**, **1.5** and **"1"** (a string), with the source
+set as in M-F092 step 1:
+1. `validate_workflow`.
+2. If valid, `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`, then `wait_for_job` to the end
+   and `get_job_events`.
+expected:
+- N and −1 are refused, either at validate (a `strength` constraint) or as a failure of the `select` step.
+  The message names the valid range (0..N-1, with N-1 as a number) and the value given. −1 must not
+  wrap to the last ladder, the way Python indexing would.
+- 1.5 is refused as not an integer, by the same route. It must not be truncated to 1.
+- `"1"` is either refused as a non-integer or coerced to 1 and run as strength 1. Record which. Either is
+  acceptable unless it is coerced silently while 1.5 is truncated.
+- A refused job's events show no `LTX2RefinePipeline` or model load, and no download. The failure is
+  the `select` step's (or an earlier step's) and finishes within 60 s.
+It is a **finding** if any of N, −1 or 1.5 runs a ladder, if −1 selects the last ladder, if the message
+lacks the range, or if a pipeline loads before the refusal.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for any job made.
+metrics: none.
+
+### M-F094 — `refine-in-place` refuses a silent source in `normalize_audio`, before any pipeline loads
+pending: #639
+source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F091. Free when refused at validate. Otherwise a job that fails in seconds.
+Setup: fixture `asset:refine/src-512x288-silent.mp4`, or `asset:upscale/src-480x272-silent.mp4` (see
+Fixtures; on the trim route use the 512×288 one so size isn't what refuses it).
+Steps:
+1. `validate_workflow(name="templates/ltx2/refine-in-place", arguments={<source variable>: <silent asset>})`.
+2. If valid, `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`, then `wait_for_job` and
+   `get_job_events`.
+expected:
+- Refused at validate, or the job fails at `normalize_audio`, its first step. The message says the source
+  has no audio (or is silent) and names the asset.
+- No refine pipeline load and no download in the events. The job finishes within 60 s.
+- No `final/` or `intermediate/` file is written.
+It is a **finding** if a silent source is refined (with or without a soundtrack), or if the refusal comes
+after the pipeline loads.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` if a job ran.
+metrics: none.
+
+### M-F095 — `refine-in-place` at strength 0, the middle and N-1: right size, the source's soundtrack, change rising with strength, run time flat
+pending: #639
+source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F091. Paid: three LTX refine jobs at 512×288, 121 frames. When N > 3, run the other
+strengths too: the stage's intent is "each strength".
+Setup: fixture `asset:refine/src-512x288.mp4`. Read N and the route from M-F091.
+Steps:
+1. Pin the source as M-F064 step 1 does (`get_gallery_metadata`, `get_output_audio`), and take
+   `get_output_frames` on it at `frame:0`, `frame:60` and `frame:120`.
+2. For each `strength` in 0, the middle index, N-1 (and every other index when N > 3), with `seed` 543:
+   `run_workflow(name="templates/ltx2/refine-in-place", arguments={<source>:
+   "asset:refine/src-512x288.mp4", "strength": s, "seed": 543}, acknowledged_cost=true, wait_seconds=55)`
+   in workspace `regression-model-specific`. Then `wait_for_job` to the end, `get_job`, and
+   `get_gallery_metadata` on each saved file.
+3. `get_output_frames` at frames 0, 60 and 120 on each final file. Also `crop` one detailed region
+   (faces, text or foliage) at frame 60 of the source and of each output.
+4. `get_output_audio` on each final file. Run `assess_output` on each final file.
+expected:
+- Every job succeeds with no `audio_no_headroom` or `audio_clipped` warning.
+- **Size.**
+  - fit/restore route: every final reads as the **source's own size, 512×288**, 121 frames, 24 fps;
+  - trim route: `width`×`height` at the defaults, with the default `num_frames`.
+  It is never 2× the source.
+- **Layout.** Per job, one `final/` file from `pair_audio` and the refine's picture in `intermediate/`.
+- **Soundtrack is the source's**, as in M-F064: same sample rate and channels, duration within one frame,
+  `peak_dbfs` ≤ −3.0, and a per-second envelope following the source's.
+- **Same scene at every strength**: same subjects, positions and framing at frames 0, 60 and 120, motion
+  in the same direction.
+- **Change rises with strength.** Against the source's frames and crop:
+  - strength 0's output is the closest (fine detail sharpened or cleaned, little reinterpreted);
+  - N-1's is the farthest (texture and small detail visibly regenerated);
+  - the middle sits between.
+  Record a one-line description per strength. The order is the pass condition; the amount is not.
+- **Run time is flat.** Every ladder has three steps, so each job's `started_at`→`finished_at` is
+  within 20% of the median of the three (a cold first load excluded: rerun the first strength if it
+  carried the model download or load).
+It is a **finding** if any job fails, if a final's size differs from the route's expected size, if the
+soundtrack is generated or headroom is lost, if the scene changes, if a lower strength changes the
+picture more than a higher one, or if one strength's run time is more than 20% off the others'.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for every job. Keep the
+fixture.
+metrics: `latency` per job, condition `512x288-121f-s<strength>` (e.g. `-s0`, `-s2`), to
+`regression-perf/M-F095.jsonl`. The first run seeds the file.
+
 ## Performance

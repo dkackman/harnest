@@ -713,6 +713,114 @@ class. Each of those is a hole: send it to `scripts/file-advisory.sh`, not a pub
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
+### SE-F041 — `crop_face_track`'s `detector_repo` / `detector_file` are Hub ids and weight names, refused before any download
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Stage 1 adds a task that fetches its face detector from the Hub. That is a new place a caller
+names something the server downloads and loads. The plan says it goes through the same
+validators as SE-F039. Each arm is `validate_workflow` on an inline one-step workflow:
+`crop_face_track` with `clip: "asset:qa-cast/ep3-shot1-incident.mp4"` plus the probe. Then
+`run_workflow(..., acknowledged_cost=true)` on the same workflow.
+- `detector_repo`: `../../etc`, `/etc/passwd`, `http://127.0.0.1:8765/`, `org/name/../../x`,
+  `https://evil.example.com/model`, and an empty string.
+- `detector_file`: `../../../etc/passwd`, `/etc/passwd`, `sub/../../x.onnx`, and
+  `model.pkl` (a pickle, not the detector's format). Also an `http://` URL.
+- Control: the defaults (no `detector_repo` or `detector_file`) validate clean.
+expected:
+- Every probe is `valid: false` at `steps[…].task.arguments.detector_repo` (or
+  `detector_file`), and `run_workflow` queues no job.
+- `list_downloads` shows no entry for any probe.
+- No message echoes a server filesystem path beyond what the caller sent.
+It is a **finding** if a probe validates or is refused only at run time. If a probe reaches
+the network, reads a file outside the Hub cache, or loads a pickle, that is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### SE-F042 — `window_video.video` and `join_windows.source` hold the media path gate, and the window-count check doesn't probe a refused path
+pending: #630
+source: tester, spec for #628/#629/#630 from #601's plan v2 (claude-opus-5-5 via anthropic)
+Stages 1 and 2 add two media arguments. Stage 3 adds a validate-time check that reads the
+`source`'s frame count, which makes it a new place where validation opens a caller-named
+file. Each arm is `validate_workflow` on C-F229's RT workflow (`regression-suite-complete.md`)
+with 4 windows (one short of the needed 5), and one argument replaced:
+- `window`'s `video`, then `join`'s `source`, then both, each set to `/etc/passwd`,
+  `/nonexistent-dw-probe/x.mp4` and `../../../../etc/passwd`.
+- A `file:///etc/passwd` URL in `source`.
+- Control: `source_video: "asset:qa-cast/ep6-cold-open.mp4"` with 4 windows is refused for
+  its count (naming 5), not for its path.
+Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd` `source` arm.
+expected:
+- Every probe is `valid: false` at the argument's own path, with the refusal SE-F014 gives a
+  media argument. The existing and nonexistent paths get identical wording, so the refusal
+  doesn't reveal whether a file exists.
+- No probe returns a window-count error. A count derived from a refused path would mean the
+  file was opened. No message echoes anything beyond the string sent.
+- `run_workflow` queues no job.
+- The control returns the count error, not a path refusal.
+It is a **finding** if a probe validates or is refused only at run time. If a probe's message
+differs between the existing and nonexistent path, carries a frame count, or shows file
+contents, that is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### SE-F043 — `fit_to_model.video` and `restore_to_source.video` hold the media path gate
+pending: #631
+source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
+Stage A adds two tasks that take a video. Each arm is `validate_workflow` on C-F238's RT
+workflow (`regression-suite-complete.md`) with one argument replaced:
+- `fit`'s `video` (via `src`), then `restore`'s `video` as a literal, each set to
+  `/etc/passwd`, `/nonexistent-dw-probe/x.mp4` and `../../../../etc/passwd`.
+- A `file:///etc/passwd` URL in `src`.
+- Control: `src: "asset:qa-fit/src-640x480-50f.mp4"` validates clean.
+Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd` `src` arm.
+expected:
+- Every probe is `valid: false` at the argument's own path, with the refusal SE-F014 gives a
+  media argument. The existing and nonexistent paths get identical wording.
+- No message echoes anything beyond the string sent, such as a frame count, size or contents.
+- `run_workflow` queues no job.
+It is a **finding** if a probe validates or is refused only at run time. A message that
+differs between the existing and nonexistent path, or that shows file metadata or contents,
+is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### SE-F044 — `apply_lut.lut` holds the media path gate before the `.cube` check, and `.cube` upload doesn't widen `upload_asset`
+pending: #635
+source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
+Stage C adds a task that reads a file the caller names. Each arm is `validate_workflow` on
+`{"id": "qa-se-f044", "steps": [{"name": "lut", "task": {"command": "apply_lut",
+"arguments": {"media": "asset:qa-cast/priya-portrait.jpg", "lut": <probe>}}, "result":
+{"content_type": "image/png"}}]}`.
+- `lut` probes: `/etc/passwd`; `/etc/passwd.cube`; `/nonexistent-dw-probe/x.cube`;
+  `../../../../etc/passwd`; `../../../../tmp/x.cube`; `asset:../../../etc/passwd.cube`;
+  `output:../../../../etc/passwd.cube`; `file:///etc/passwd.cube`;
+  `https://example.com/x.cube`.
+- Control: a `.cube` asset (`asset:qa-lut/identity2.cube`, uploaded as in
+  `regression-suite-complete.md` C-F263 if absent) validates clean.
+- Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd.cube` arm.
+- `upload_asset` probes: `content=<base64 of "x">` with `asset_name` `qa-lut/x.txt`,
+  `qa-lut/x.html`, `qa-lut/x.cube.sh` and `../x.cube`; and `file_path="/etc/passwd"` with
+  `asset_name` `qa-lut/p.cube`.
+expected:
+- Every `lut` probe is `valid: false` at `steps[0].task.arguments.lut`, with the refusal
+  SE-F014 gives a media argument (or, for the `https:` arm, the URL policy's refusal). The
+  existing (`/etc/passwd.cube` may not exist; compare `/etc/passwd`) and nonexistent paths get
+  identical wording.
+- No message contains an absolute server path that wasn't in the probe (the data root, a home
+  directory), nor any line or content of the target file. A parser error quoting a line of
+  `/etc/passwd` is the worst case here: it means the file was read.
+- `run_workflow` queues no job.
+- Each `upload_asset` probe is refused: the extension allowlist gained `.cube` only, and the
+  name and `file_path` gates are unchanged. The control upload of a `.cube` succeeds.
+It is a **finding** if a probe validates or is refused only at run time. A message that
+differs between the existing and nonexistent path, that discloses a server path, or that
+quotes the target file's contents is a hole: send it to `scripts/file-advisory.sh`, not a
+public issue. So is any non-`.cube` upload that lands.
+cleanup: `delete_output(job_id=...)` for any job (none should exist); `delete_asset` any
+`qa-lut/` asset this case created, including a probe that wrongly landed (after filing it).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must
