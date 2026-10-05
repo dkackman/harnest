@@ -6398,8 +6398,9 @@ expected:
 - Every line has numeric `start` and `end`. Its `voice` is `"priya"`, `"hal"`, or `null`,
   and a `null` voice comes with a non-empty `reason`.
 - Segment run: every line lying wholly within 0.5–7.0 s that is `uncertain: false` names
-  `priya`, and every one wholly within 8.0–13.6 s names `hal`. At least one line names each
-  voice. A line that straddles the 7.44 s hand-over may be `uncertain`; that is the plan's
+  `priya`, and every one wholly within 8.0–13.6 s names `hal`. If the transcript has more
+  than one chunk, at least one line names each voice. A single chunk spanning both singers
+  is `uncertain: true` with a `reason` naming more than one voice. A line that straddles the 7.44 s hand-over may be `uncertain`; that is the plan's
   stated duet risk, not a finding. No line starting after 14.5 s names a voice.
 - Word run: it has more lines than the segment run, under the same timing rules. Its lines
   may be `uncertain` more often; the plan calls word attribution noisier.
