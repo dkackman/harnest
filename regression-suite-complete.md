@@ -6490,7 +6490,7 @@ source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic
 Docs-only checks. They are free.
 1. `get_guide("tasks", section="Checking the lip-sync target")`. It resolves as a
    subsection under *Voice attribution*, as a `###` heading does today.
-2. `get_guide("tasks", section="Transcription")`.
+2. `get_guide("tasks", section="Speech Transcription")`.
 expected:
 - Step 1's text names:
   - `attribute-lines`, run on **the song** (not the cut) as the default;
