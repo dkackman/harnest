@@ -2188,6 +2188,29 @@ metrics: none.
 source: tester, verified in #556 on 2026-09-28 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 5370ac9`.
 
+### S-F134 — `ingredients_grid` lays out its images on one exact-size canvas, in order, and never drops one
+#607 added `ingredients_grid` (pure PIL, no model load). It builds a reference sheet from
+individual images. Workspace `regression-smoke`, P = `asset:qa-cast/priya-portrait.jpg`,
+H = `asset:qa-cast/hal-portrait.jpg`. Both are fixtures, and any two distinguishable stills
+substitute.
+1. `run_workflow(workspace="regression-smoke", inline_workflow={"id": "s-ingredients-grid",
+   "steps": [{"name": "sheet", "task": {"command": "ingredients_grid", "arguments": {"images":
+   [P, H, P]}}, "result": {"content_type": "image/png"}}]}, acknowledged_cost=true,
+   wait_seconds=55)`, then `get_output_image` on the `sheet` file.
+2. The same run with `images` set to 13 references (repeats are fine).
+expected:
+- Step 1 succeeds in seconds. The image is exactly 768x448 (`original_size`). It holds all
+  three stills in one row in reading order (P, H, P), each whole (default `fit: contain`), on
+  white.
+- Step 2: the job fails with an error naming 13 images and `'max_images' is 12`. No output is
+  written, and no image is silently dropped.
+It is a **finding** if the canvas is any other size, an image is missing, cropped or out of
+order, or step 2 succeeds.
+cleanup: `delete_output(job_id=<id>)` for both jobs.
+metrics: none.
+source: tester, verified in #607 on 2026-10-05 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ 81dfb2fd` (mps on mini-ai.lan).
+
 ## Performance
 
 ### S-P001 — default image generation latency

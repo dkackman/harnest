@@ -124,6 +124,23 @@ fixture) when nothing uses it anymore.
   `get_gallery_metadata` that it is 512×288, has 121 frames and has no audio stream. The M-F061
   fixture `asset:upscale/src-480x272-silent.mp4`, or any mp4 whose `get_gallery_metadata` shows no
   audio stream, will also do. If none exists, M-F066 records "fixture missing" and skips.
+- `asset:h3-hold/vwa-seed42-baseline.mp4`: a seed-42 render of `templates/minimax/video-with-audio`
+  at its defaults, which **must be made before #618 deploys**. It is M-F077's reference for
+  "no `hold_audio` gives the same output as before". To make it:
+  1. In workspace `regression-model-specific`, run
+     `run_workflow("templates/minimax/video-with-audio", arguments={"seed": 42}, acknowledged_cost=true)`.
+  2. `keep_output` its mp4 as that asset, then `delete_output(job_id=<id>)`.
+  A stand-in is a job that `list_jobs` shows completing before #618's deploy, whose
+  `get_job_workflow` resolves to the same template, defaults and seed: `keep_output` its mp4. Once
+  #618 is on lem, the fixture can't be made honestly, so M-F077 records "fixture missing" and skips.
+- `asset:h3-hold/sung-10s.wav`: about 10 s of sung vocals cut from `asset:song/la-vela.mp3`
+  (161 s, 44.1 kHz stereo), for M-F081. To make it:
+  1. Run a one-step `transcribe_audio` over the song to find a span of about 10 s that is sung
+     throughout, with no instrumental gap.
+  2. Run an inline `slice_audio` workflow over that span.
+  3. `keep_output` the result as that asset, then `delete_output(job_id=<id>)`.
+  4. Confirm with `get_gallery_metadata` that it is 9.5–10.5 s long, and with `transcribe_audio`
+     that it has words throughout.
 
 ## Functional
 
@@ -2457,5 +2474,478 @@ inside a `b` item, if a run fails on something validate passed, or if either gat
 or reordered. `shot_dead_air` warnings from `assess_output` are take-dependent, not this case's concern.
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `split-list-3shot-512`, to `regression-perf/M-F071.jsonl`.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+
+### M-F072 — `separate_stems` splits a song into four 44.1 kHz stereo stems, and a later step reads one by name
+source: tester, verified in #604, claude-opus-5-5 via anthropic
+Model/pipeline: htdemucs (the `demucs` package's pretrained separator), via the `separate_stems` task; the
+transcription step uses `transcribe_audio`'s default Whisper model. Took about 20 s on mps, with nothing to download.
+Setup: workspace = this suite's, passed on every call. The input is the shared common asset
+`asset:qa-cast/ep15-song.mp3`, a 30 s sung track. Inline workflow, `id: "QAM072"`, two steps:
+`stems`: `separate_stems(audio: "asset:qa-cast/ep15-song.mp3")`, result `{content_type: "audio/wav",
+file_base_name: "stems"}`. `lyrics`: `transcribe_audio(audio: "previous_result:stems.vocals")`, result
+`application/json`. validate → bind cost → `run_workflow(wait_seconds=55)` → wait.
+expected:
+- validate is `valid: true`, `steps: 2`. The job succeeds.
+- The `stems` manifest lists exactly four files: `stems-0.0-drums.wav`, `stems-0.0-bass.wav`,
+  `stems-0.0-other.wav` and `stems-0.0-vocals.wav`.
+- `get_output_audio` on the vocals file reports `duration_seconds` ≈ 30.0, the input's length. A 5 s excerpt is
+  ≈ 882,000 bytes, i.e. 44.1 kHz 16-bit stereo.
+- The `lyrics` text from `get_output_text` is non-empty English words: the vocal stem fed the transcriber.
+It is a **finding** if a stem is missing or renamed, if `previous_result:stems.vocals` doesn't resolve, or if a
+stem's length differs from the input's. A level warning on a stem (such as clipping on drums) is not this case's
+concern.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+
+### M-F073 — one lip-sync check round on a real two-singer `minimax/music-video` cut, timed by rule 1
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/music-video` (MiniMax H3), then `templates/attribute-lines` (Whisper, htdemucs,
+ECAPA) and `get_output_frames`. This case **rides on** a two-singer `music-video` render that the suite or an episode
+has already made, so it starts no new H3 render. Skip it, and say so, when none exists. C-F189 is the fixture
+stand-in that always runs.
+Setup: workspace = this suite's (or the render's own workspace, passed on every call). You need the cut's `output:`
+reference, the song it was rendered over (the job's `song` input, an `asset:` or `output:` reference), the render's
+`trim_frames` value from `get_job_workflow`, and two reference spans of at least 3 s each, one per singer, where
+only that singer is heard.
+1. `run_workflow("templates/attribute-lines", arguments={"audio": <the song>, "voices": {<singer A>: [...],
+   <singer B>: [...]}}, acknowledged_cost=true, wait_seconds=55)`.
+2. Timeline rule 1 (from C-F188's subsection): with `trim_frames` 0 or unset, song time is cut time. If
+   `trim_frames > 0`, follow what the subsection says for it and record which you applied.
+3. Pick two lines with a non-null `voice` and `uncertain: false`, one per singer if both have one. Then call
+   `get_output_frames(name=<cut>, at=[L1.start+0.3, L2.start+0.3], crop=<a face box from a count:4 sheet>,
+   hear=1.0)`. One call per face crop: when the singers are framed apart, make one call per face.
+expected:
+- Step 1 succeeds, and every line has numeric `start`/`end` within the song's duration.
+- Step 3 returns one tile per moment, cropped, each with ~1 s of audio. Each tile's audio carries **that line's**
+  vocal: the same words as the line's `text`, sung by the attributed voice.
+- Record whose mouth is open in each tile. Per the plan this is the caller's judgment. The case passes on the chain
+  working, not on the mouth being right; a wrong mouth is a fact about the render, not a finding.
+It is a **finding** if the template fails on the song, if a tile's audio is not the line's vocal under rule 1 (the
+times are then not cut time), or if `crop`/`hear` are ignored.
+cleanup: `delete_output(job_id=<id>, workspace=…)` for the `attribute-lines` job only. The render belongs to whoever
+made it.
+
+#### The `hold_audio` carrier (M-F074 to M-F079, M-F081)
+
+#598 adds no template variable for `hold_audio`, so these cases put it into an inline copy of a
+template:
+1. Take the JSON from `get_workflow("templates/minimax/<template>")`.
+2. Add `"hold_audio": <reference>` to the `arguments` of the step that runs the MiniMax H3
+   pipeline (the one carrying `num_frames`/`video_shift`).
+3. Pass that JSON as the inline workflow to `validate_workflow` / `run_workflow`.
+
+`arguments={...}` overrides the template's variables as usual. Work in workspace
+`regression-model-specific`, which also sees the shared `common/assets` library (`asset:qa-cast/…`,
+`asset:song/…`). At 24 fps, 124 frames is 124/24 = 5.167 s, and one frame is 0.042 s.
+
+### M-F074 — `hold_audio` is a documented H3 input and validates clean on t2va, fl2va and ref2va
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3, all three core-denoise sequences: t2va (`video-with-audio`), fl2va
+(`image-to-video`) and ref2va (`reference-to-video`).
+#618 inserts hold/release blocks into all three sequences. The plan's surface is one new pipeline
+input, visible in `get_pipeline_signature`, with no new MCP tool.
+Steps:
+1. `get_pipeline_signature(<the H3 pipeline name from step 2 of the carrier>)`.
+2. With the carrier, `validate_workflow` each of these with
+   `"hold_audio": "asset:qa-cast/hal-voice.wav"` and `arguments={"seed": 42}`:
+   - (a) `video-with-audio`;
+   - (b) `image-to-video` with `"image": "asset:qa-cast/priya-portrait.jpg"`;
+   - (c) `reference-to-video` with `"subject": "asset:qa-cast/priya-portrait.jpg"` and
+     `"voice": "asset:qa-cast/priya-voice.wav"`.
+3. Repeat (a) with `hold_audio` given as an `output:` reference, using any audio output that
+   `list_gallery` shows in this workspace or `common` (skip it if none exists). Then repeat (a)
+   with a `previous_result:` reference: add a step before the H3 step that runs `slice_audio`
+   over `asset:qa-cast/hal-voice.wav`, and point `hold_audio` at its result.
+expected:
+- The signature lists `hold_audio`, described as audio (asset, output or previous_result).
+- (a), (b), (c) and both step-3 forms are `valid: true`, with no warning naming `hold_audio`.
+- `list_tasks` and the tool list gain no new tool or task for holding audio.
+It is a **finding** if the signature doesn't show `hold_audio`, or if any of the three sequences
+refuses it while another accepts it.
+cleanup: none (validation only).
+metrics: none.
+
+### M-F075 — `validate_workflow` refuses `hold_audio` that isn't audio, is missing, or sits on a non-H3 step
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (`video-with-audio`), plus the SD 1.5 and LTX-2.5 templates as non-H3
+steps.
+The plan says validation refuses `hold_audio` that isn't audio, and either new argument on a
+non-H3 step. This case covers those refusals, plus a missing asset and a non-reference string.
+Probes, each through `validate_workflow` via the carrier on `video-with-audio` unless it names
+another template:
+- (a) `hold_audio: "asset:qa-cast/priya-portrait.jpg"` (an image);
+- (b) `hold_audio: "asset:qa-cast/no-such-hold-probe.wav"` (missing);
+- (c) `hold_audio: "hello"` (a plain string, not a reference);
+- (d) `hold_audio: 5` (a number);
+- (e) the SD 1.5 template. Find it in `list_workflows(shape="image")`: its summary or pipeline
+  names Stable Diffusion 1.5. Add `"hold_audio": "asset:qa-cast/hal-voice.wav"` to its pipeline
+  step's arguments;
+- (f) `templates/ltx2/text-to-video` with the same `hold_audio` added to its pipeline step. The
+  plan makes no LTX change, and LTX also makes audio;
+- (g) `hold_audio: "asset:qa-cast/ep3-shot1-incident.mp4"` (a video that has an audio stream).
+For every probe that `validate_workflow` refuses, also call `run_workflow(...,
+acknowledged_cost=true)`.
+expected:
+- (a)–(f) are `valid: false`. Each error names `hold_audio` at the step's argument path and says
+  why: not audio, not found, or not accepted by this pipeline. (b)'s error doesn't echo a
+  resolved server path.
+- `run_workflow` on (a)–(f) is refused with no job queued.
+- (g): the plan doesn't say whether a video's audio stream counts as audio. Either outcome passes
+  if it is decided at validate: `valid: false` naming `hold_audio`, or `valid: true` and a run
+  whose `get_output_audio` is the clip's own soundtrack. Record which. A run that queues and then
+  fails with a raw decode or shape error is refused too late, and is a **finding**.
+It is a **finding** if any of (a)–(f) validates, or queues and fails in the pipeline rather than
+being refused (refused too late), or if the SD 1.5 or LTX step silently ignores the argument and
+runs.
+cleanup: `delete_output(job_id=...)` for any job (only (g) should have one).
+metrics: none.
+
+### M-F076 — a t2va run with `hold_audio` returns the supplied track, cropped to the clip, not generated audio
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`, turbo LoRA, 9 steps).
+The plan's core promise: a held audio row is encoded from the supplied track and kept fixed, and
+the output `audio` is the original waveform fitted to the video length, not a VAE round trip.
+`asset:qa-cast/hal-voice.wav` is a 6.48 s, 24 kHz mono spoken line. At 124 frames it is cropped
+to 5.167 s and resampled.
+Steps:
+1. `run_workflow` the carrier on `video-with-audio` with
+   `"hold_audio": "asset:qa-cast/hal-voice.wav"` and `arguments={"seed": 42, "num_frames": 124,
+   "prompt": "A middle-aged man in a grey sweater sits at a kitchen table and speaks directly to
+   the camera, close-up, warm evening light."}`, with `acknowledged_cost=true, wait_seconds=55`.
+   Then `wait_for_job` until it is done.
+2. `get_gallery_metadata` on the mp4.
+3. Transcribe both the output's audio and `asset:qa-cast/hal-voice.wav`. Use `get_output_audio`'s
+   transcript if it gives one; otherwise run a one-step `transcribe_audio` workflow on each.
+4. `get_output_frames(name=<mp4>, count=4, hear=1.0)`.
+expected:
+- The job succeeds, giving a 960×544 mp4 with `frame_count` 124 and an audio stream.
+- The audio duration is 5.167 s to within one frame (0.042 s).
+- The output transcript is the first ~5.2 s of hal-voice's transcript: the same words, in order,
+  at the same pace, ending mid-line where the crop falls. It is the same voice at about the same
+  level (`mean_dbfs` within ~3 dB of the source's over the same span).
+- The frames show a coherent scene matching the prompt: no noise, no grey frames.
+It is a **finding** if any of these:
+- the job fails;
+- the audio is silent, or has different words or a different voice (generated, not held);
+- the audio is smeared or garbled the way a VAE round trip would make it, when a clean transcript
+  of the source exists;
+- the audio length is off by more than one frame.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: `latency_s` (the whole job, from `get_job`). Record it in `regression-perf/M-F076.jsonl`
+with condition `t2va-124f-960x544-hold`. The first run seeds the file. Flag a reading more than
+50% over the median.
+
+### M-F077 — without `hold_audio`, a seed-42 t2va run matches the pre-#618 render
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
+Plan decision D2: the hold/release blocks are always in the sequence and do nothing without
+`hold_audio`, so the output must be identical to before the stage. The reference is the fixture
+`asset:h3-hold/vwa-seed42-baseline.mp4` (see Fixtures), rendered before #618 deployed. If it is
+missing, record "fixture missing" and skip. That is a note for Don, not an issue.
+Steps:
+1. `run_workflow("templates/minimax/video-with-audio", arguments={"seed": 42},
+   acknowledged_cost=true, wait_seconds=55)`. Use the template's defaults otherwise, the same as
+   the fixture's. Then `wait_for_job` until it is done.
+2. `get_gallery_metadata` on both the output and the fixture.
+3. `get_output_frames` on both, at the same four moments (0.5 s, 1.7 s, 3.4 s, 5.0 s), with
+   `hear=1.0`.
+expected:
+- The same `frame_count`, size, duration and audio sample rate.
+- The frames are indistinguishable at all four moments: same composition, subject pose, colours
+  and background. The audio is the same sound at the same level (`mean_dbfs` within 0.5 dB).
+- Equal file `size` is expected. If the sizes differ but the frames and audio are
+  indistinguishable, record it as a note, not a finding.
+It is a **finding** if any moment's frame visibly differs (other composition, pose or colour), or
+the audio differs. The always-inserted blocks then changed the no-hold path.
+cleanup: `delete_output(job_id=<id>)`. Keep the fixture.
+metrics: none.
+
+### M-F078 — `hold_audio` longer than the clip is cropped, shorter is padded with silence, and stereo 44.1 kHz is taken
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
+The plan: the track is resampled, encoded, then cropped or padded (encoded silence) to the
+clip's audio-latent count. The output audio length equals the video length.
+Runs, each through the carrier on `video-with-audio` with `seed` 42, using
+`run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and then `wait_for_job`:
+- (a) crop: `hold_audio: "asset:qa-cast/ep11-bed.wav"` (19.667 s, 32 kHz mono), `num_frames` 124;
+- (b) pad: `hold_audio: "asset:qa-cast/hal-voice.wav"` (6.48 s), `num_frames` 192, which is 8.0 s
+  (17·11+5);
+- (c) stereo and hot: `hold_audio: "asset:qa-cast/ep15-song.mp3"` (30 s, 44.1 kHz stereo,
+  decodes at +0.76 dBFS), `num_frames` 124.
+For each run, call `get_gallery_metadata(<mp4>, envelope=true)`. For (b), also transcribe the
+audio (`get_output_audio`'s transcript or `transcribe_audio`).
+expected:
+- All three succeed. Each audio duration equals `frame_count`/24 to within one frame: 5.167 s
+  for (a) and (c), 8.0 s for (b).
+- (a) is the bed's opening 5.17 s, with a level close to the source's.
+- (b): the first ~6.5 s carry hal-voice's whole line at normal speed, not stretched to 8 s. The
+  transcript matches the source's in full. The envelope's last full second is near silence (well
+  below the speech; `findings` may flag near silence there, which is expected).
+- (c) is the song's opening 5.17 s, with no added distortion. `findings` may report the source's
+  own full-scale level.
+It is a **finding** if any run fails, if a length is off by more than one frame, if (b) is
+time-stretched or its tail repeats or loops the speech instead of going silent, or if (c) fails
+on stereo or 44.1 kHz input.
+cleanup: `delete_output(job_id=...)` for each job.
+metrics: none.
+
+### M-F079 — `hold_audio` on ref2va keeps the reference image's identity, and on fl2va keeps the first frame
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va (`templates/minimax/reference-to-video`, ref2v turbo LoRA) and
+fl2va (`templates/minimax/image-to-video`).
+In Ref2VA the hold block sits after the reference-row check. The plan promises that a held run
+completes and keeps the image identity.
+Runs, through the carrier, with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and
+then `wait_for_job`:
+- (a) `reference-to-video` with `arguments={"seed": 42, "subject": "asset:qa-cast/priya-portrait.jpg",
+  "voice": "asset:qa-cast/priya-voice.wav", "prompt": "The woman sits in a quiet office and
+  speaks to the camera, medium close-up."}` and `"hold_audio": "asset:qa-cast/priya-voice.wav"`.
+  The template's `seed` defaults to null, so it must be pinned;
+- (b) `image-to-video` with `"image": "asset:qa-cast/priya-portrait.jpg"`, `seed` 42, a prompt
+  of her speaking, and the same `hold_audio`.
+For each run, call `get_output_frames(count=4, hear=1.0)`, view `asset:qa-cast/priya-portrait.jpg`
+with `get_output_image`, and transcribe the audio.
+expected:
+- Both jobs succeed, at 960×544 with 124 frames.
+- (a): the face in all four frames is recognisably the portrait's person: hair, face shape, skin
+  tone and apparent age.
+- (b): frame 0 is the still.
+- In both runs the audio is priya-voice's opening 5.17 s, the same words as the source's
+  transcript, to within one frame of the video's length.
+It is a **finding** if either job fails (for example, the reference-row check rejecting the held
+row), if (a) loses the identity (a different-looking person), or if the audio is generated rather
+than held.
+cleanup: `delete_output(job_id=...)` for each job.
+metrics: none.
+
+### M-F080 — music-video and the chain-matched templates hold each shot's slice, and the docs state the measured lip-sync result
+pending: #619
+source: tester, spec for #619 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 templates `templates/minimax/music-video`,
+`templates/minimax/chain-matched-to-audio` and `templates/minimax/chain-matched-and-aligned`.
+Plan decision D4: each shot passes its slice of the track as `hold_audio`, replacing the
+`AudioReference`, and the final mux stays. The plan's fallback: if the A/B (M-F081 / #619's
+record) found hold worse, the templates keep the reference path and hold is opt-in. Read #619's
+closing record (`gh issue view 619 --repo dkackman/diffusers-workflow --comments`) to learn which
+branch shipped, and check the branch that shipped.
+Steps:
+1. `get_workflow` each of the three templates.
+2. `validate_workflow` each at its defaults. `chain-matched-*` need the supplied-track variable
+   (named in `get_workflow`; today `voice`) set to `asset:qa-cast/hal-voice.wav`. Also pass
+   `subject: "asset:qa-cast/priya-portrait.jpg"` where the template has a `subject` variable.
+3. Read the H3 sections of `get_guide("tasks")` (search for "lip-sync") and the `minimax-h3` skill.
+expected:
+- Hold branch: every H3 shot or segment step carries `hold_audio`, pointing at that shot's slice
+  (a `previous_result:` of the slice step or equivalent). No shot step passes the track as an
+  audio reference (`AudioReference`, or an `audio_reference_type` driving the shot). The final
+  mux or `pair_audio` step against the full track is still there.
+- Reference branch: the templates are unchanged from before #619. The docs say hold is opt-in and
+  name `hold_audio`.
+- All three validate clean, with no new warning.
+- Neither the guide nor the skill keeps the unconditional claim that H3 "lip-syncs poorly when it
+  must follow supplied audio". Both state the measured A/B result (which path won) consistently
+  with the templates.
+It is a **finding** if the templates and the docs disagree about which path is used, if any
+template fails validation, if a shot step is missing its slice or holds the whole track, or if
+the old claim survives unchanged.
+cleanup: none (no job).
+metrics: none.
+
+### M-F081 — lip-sync A/B on `chain-matched-to-audio`: hold vs reference-only, on one sung track and seed
+pending: #619
+source: tester, spec for #619 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `templates/minimax/chain-matched-to-audio` (ref2va chain), plus
+`transcribe_audio`, `analyze_sync_drift` and `get_output_frames`.
+This is the plan's stage-4 measurement. It is expensive: two chain renders of about 10 s each.
+Fixture: `asset:h3-hold/sung-10s.wav` (see Fixtures). If it is missing, record "fixture missing"
+and skip.
+Arms. Both use the same `seed` 42, the same track (the template's supplied-track variable, today
+`voice`, set to `asset:h3-hold/sung-10s.wav`), the same `subject: "asset:qa-cast/priya-portrait.jpg"`
+and the same prompt ("A woman sings on a small stage, medium close-up, facing the camera."):
+- (H) hold: the template as it ships, if M-F080 found the hold branch. Otherwise use an inline
+  copy with each shot's slice added as `hold_audio`;
+- (R) reference-only: the template's reference path. On the hold branch this is an inline copy
+  with each shot step's `hold_audio` removed and the pre-#619 `AudioReference` wiring restored.
+  #598's plan doesn't name a switch for this; use one if the template or guide documents it.
+Run each arm with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and `wait_for_job`.
+Then, for each arm:
+1. `transcribe_audio` on the track to get word or line onsets. Pick at least 3 onsets per shot
+   (the segment boundaries are in `get_job_workflow` / `media.shots`).
+2. `get_output_frames(name=<mp4>, at=[each onset + 0.1], crop=<the face box>, hear=1.0)`.
+3. Run an `analyze_sync_drift` step on the arm's mp4 and record its reading.
+expected:
+- Both arms succeed. Each mp4's audio is the supplied track, to within one frame.
+- Record per arm:
+  - at each onset, whether the mouth is open on a sung syllable;
+  - the `analyze_sync_drift` reading;
+  - minutes, from `get_job`.
+- Hold should match or beat reference-only. If it is worse, the templates must keep the
+  reference path (M-F080's reference branch), and the case still passes.
+It is a **finding** if either arm fails, if either output's audio isn't the track, or if
+M-F080's shipped branch contradicts this case's measurement (hold shipped as default although it
+measured worse).
+cleanup: `delete_output(job_id=...)` for both jobs.
+metrics: `minutes_hold`, `minutes_ref`, `onsets_matched_hold`, `onsets_matched_ref` (counts of
+onsets with the mouth open). Record them in `regression-perf/M-F081.jsonl` with condition
+`chain-sung10s-seed42`. The first run seeds the file. Flag a minutes reading more than 50% over
+the median.
+
+### M-F082 — the guide's 768p section documents the refine pass, the signature shows `refine_strength`, and the guide's workflow validates
+pending: #620
+source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 + `upscale_h3_latents` + H3 refine (`refine_strength`).
+Steps:
+1. `list_guides`. Then `get_guide(<the guide holding it>, section="Promoting an H3 take to 768p in
+   latent space")`.
+2. `get_pipeline_signature(<the H3 pipeline>)`.
+3. `validate_workflow` the section's example workflow as written (inline). Then validate it again
+   with `refine_strength` 0.001 and 0.999.
+expected:
+- The section exists and no longer says "There is no refine pass".
+- Its example is base → `upscale_h3_latents` → an H3 step at 1344×768 with
+  `latents: previous_result:up`, `refine_strength: 0.2` and
+  `hold_audio: previous_result:base.audio` (step names may differ; the shape is what counts).
+- The section, or the template/guide `cost_drivers` it points at, says refine time scales with
+  the number of evaluations (σ ≤ strength), not with `num_inference_steps`.
+- The signature lists `refine_strength`, and describes its range as between 0 and 1 exclusive.
+- The example validates clean. Both 0.001 and 0.999 are inside the open range and validate.
+It is a **finding** if the old "no refine pass" text remains, if the example fails validation, if
+`refine_strength` is missing from the signature, or if 0.001 or 0.999 is refused.
+cleanup: none (validation only).
+metrics: none.
+
+### M-F083 — `validate_workflow` refuses `refine_strength` at 0, 1.0 and outside, and without `latents` or `hold_audio`
+pending: #620
+source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine (`refine_strength`), plus the SD 1.5 template as a non-H3 step.
+The carrier is M-F082's example workflow, inline. Each probe edits only the refine step's
+arguments:
+- (a) `refine_strength: 0`;
+- (b) `refine_strength: 1.0`;
+- (c) `refine_strength: -0.2`;
+- (d) `refine_strength: 1.5`;
+- (e) `refine_strength: "0.2"` (a string);
+- (f) `latents` removed (keeps `hold_audio`, keeps 0.2);
+- (g) `hold_audio` removed (keeps `latents`, keeps 0.2);
+- (h) both removed;
+- (i) the SD 1.5 template (see M-F075 (e)) with `"refine_strength": 0.2` added to its pipeline
+  step;
+- (j) `templates/minimax/video-with-audio` (no latents, no hold) with `"refine_strength": 0.2`
+  added to its H3 step.
+For each refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Every probe is `valid: false`. The error names `refine_strength` and gives the reason: the range
+  (0,1) for (a)–(d), the type for (e), "requires both `latents` and `hold_audio`" for (f)–(h) and
+  (j), and "not an H3 pipeline input" for (i).
+- No probe queues a job.
+- The unedited carrier validates clean as the control.
+It is a **finding** if any probe validates, if (a) or (b) (the boundaries) is accepted, or if a
+probe queues and fails in the pipeline (refused too late).
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### M-F084 — the guide's base → upscale → refine workflow renders 1344×768, keeps the base audio and composition, and refines in ~4–5 evaluations
+pending: #620
+source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va at 960×544 + `upscale_h3_latents` + H3 refine at 1344×768.
+The plan: refine resets the schedule to σ ≤ `refine_strength` down to 0 and re-noises the
+upscaled latent, seeded. At 9 steps, shift 6 and strength 0.2 it runs about 4–5 evaluations.
+Composition is kept against the upscale-only decode at the same seed.
+Steps:
+1. `save_workflow` M-F082's example as `m-f084-h3-refine`, with `num_frames` 124 and `seed` 42.
+   Add these extra outputs:
+   - the base's own mp4 with its audio;
+   - an `ident` branch: `decode_h3_latents` on `previous_result:up`, then `pair_audio` with the
+     base audio. This is the upscale-only decode, as in M-F041.
+2. `run_workflow(name="m-f084-h3-refine", acknowledged_cost=true, wait_seconds=55)`, then
+   `wait_for_job` until it is done.
+3. `get_job_events`. Count the denoise evaluations (step-progress events) of the refine step.
+4. `get_output_frames` on the refined mp4, `ident` and the base, at the same four moments.
+   Compare the audio with `get_output_audio` and `get_gallery_metadata`.
+5. Re-run with `refine_strength` 0.4. The base and `up` should come from the step cache. Count
+   the refine evaluations again.
+expected:
+- The job succeeds. The refined mp4 is 1344×768 with `frame_count` 124.
+- Its audio is the base's track: the same sound and level, with duration within one frame. It is
+  not regenerated.
+- At 0.2, the refine step runs 4–5 denoise evaluations, not 9.
+- The refined frames keep `ident`'s composition (same subject placement, pose and layout), with
+  equal or sharper detail and no colour cast or noise.
+- At 0.4 there are more evaluations than at 0.2, and the composition is still recognisably the
+  same. Its minutes rise with the evaluations.
+It is a **finding** if any of these:
+- the job fails, or the dimensions or frame count differ;
+- the audio differs from the base's (generated, shifted or missing);
+- refine runs the full `num_inference_steps`;
+- composition changes at 0.2 (a different picture);
+- 0.4 shows no more evaluations than 0.2.
+cleanup: `delete_output(job_id=...)` for both jobs; `delete_workflow("m-f084-h3-refine")`.
+metrics: `latency_s`, `refine_s` (the refine step's duration from `get_job_events`) and
+`refine_evals`. Record them in `regression-perf/M-F084.jsonl` with condition
+`124f-960x544-to-1344x768-s0.2`; the 0.4 run uses condition `…-s0.4`. The first run seeds the
+file. Flag a reading more than 50% over the median.
+
+### M-F085 — `templates/minimax/upscale-refine` is listed with measured cost, validates, and the minimax-h3 skill has its row
+pending: #621
+source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `templates/minimax/upscale-refine`: a 544p base with the turbo LoRA,
+then `upscale_h3_latents`, then a refine at 1344×768 with the 768p LoRA at `video_shift` 6,
+holding the base audio.
+The template exists only if Don accepted #621's A/B. If #621 was closed with the template
+reverted, retire this case through a harnest suite request rather than failing it.
+Steps:
+1. `list_workflows(shape="shot", traits="has-audio")`.
+2. `get_workflow("templates/minimax/upscale-refine")`.
+3. `validate_workflow("templates/minimax/upscale-refine")` at defaults.
+4. Read the `minimax-h3` skill's template table.
+expected:
+- It is listed with a non-null `cost` (an RTX 3090 entry), `cost_drivers` and `vram_estimate`.
+- The workflow is a 960×544 base (turbo LoRA), then `upscale_h3_latents` to 1344×768, then an H3
+  step with the 768p LoRA, `video_shift` 6, `latents` from the upscale, a `refine_strength` in
+  (0,1) and `hold_audio` from the base's audio.
+- It validates clean, and `plan.estimate` is about the listed cost.
+- The skill has a row naming the template, consistent with its cost.
+It is a **finding** if the template is present but has `cost: null`, a missing `cost_drivers` or
+`vram_estimate`, fails validation, refines without holding the base audio, or has no skill row.
+cleanup: none (no job).
+metrics: none.
+
+### M-F086 — the 768p A/B: upscale-only vs `upscale-refine` vs native 768p (vs the LMS upscaler), crowd-faces prompt, seed 42
+pending: #621
+source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 at 1344×768 by four routes.
+This is the plan's stage-3 gate. Don decides from it whether the template stays. The template's
+`cost` must come from arm (b). The run is expensive, about 30–40 minutes for all arms.
+The prompt is the T2VA crowd-faces prompt from #500's body
+(`gh issue view 500 --repo dkackman/diffusers-workflow`). Every arm uses `seed` 42 and 124 frames.
+Arms, each run with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and then
+`wait_for_job`:
+- (a) upscale-only: M-F041's base → upscale → decode → `pair_audio` workflow (the #499 guide
+  workflow);
+- (b) `templates/minimax/upscale-refine`;
+- (c) `templates/minimax/video-with-audio-768p`;
+- (d) the #612 LMS-upscaler route, if `list_workflows` or the guide documents one. Otherwise
+  record "not landed" and skip.
+For each arm, call `get_gallery_metadata` and `get_output_frames` at four moments, plus one
+`crop` on the densest group of faces.
+expected:
+- Every run arm succeeds at 1344×768 with 124 frames and an audio stream of the clip's length.
+- Record each arm's minutes (from `get_job`) and how its faces read in the crop (intact, smeared,
+  doubled). That is the evidence Don rules on; it is not a pass or fail here.
+- (b)'s measured minutes are within 50% of the template's listed `cost`.
+- (b)'s audio is the same sound as its base would make: speech or crowd sound, coherent, not
+  noise.
+It is a **finding** if any run arm fails, if (b)'s minutes are more than 50% off its listed cost
+(the cost wasn't taken from arm (b)), or if (b)'s audio is silent or garbled.
+cleanup: `delete_output(job_id=...)` for every job.
+metrics: `minutes_a`, `minutes_b`, `minutes_c`, `minutes_d`. Record them in
+`regression-perf/M-F086.jsonl` with condition `crowd-faces-124f-seed42`. The first run seeds the
+file. Flag a reading more than 50% over the median.
 
 ## Performance

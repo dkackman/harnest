@@ -6327,4 +6327,649 @@ cleanup: `delete_asset("qa-c-f183/kept.mp4", shared=true)` (or the tool's equiva
 shared asset); the workspace is already gone.
 metrics: none.
 
+### C-F184 — `attribute-lines` is a catalog utility template that chains `transcribe_audio` into `attribute_voices`, and validates clean
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+Stage A adds `workflows/templates/attribute-lines.json`. This case runs nothing. Today
+(develop at spec time) `templates/transcribe-audio` is listed under `shape: "utility"` with
+trait `needs-input-media`, and `transcribe_audio`'s `timestamps` returns `{text, chunks}`
+only when the step saves `application/json`.
+1. `list_workflows(shape="utility")`. Expected: `templates/attribute-lines` is listed. Its
+   `variable_names` include `audio`, `voices` and `timestamps`. A `model_name` is optional
+   per the plan. Its `traits` include `needs-input-media`, and its `kinds` say JSON/text, not
+   audio or video. `templates/transcribe-audio` is still listed, unchanged.
+2. `get_workflow("templates/attribute-lines")`. Expected:
+   - `timestamps` defaults to `"segment"`;
+   - there are exactly two steps, in this order: `transcribe` (`transcribe_audio`, `audio`
+     from `variable:audio`, `timestamps` from `variable:timestamps`, saving
+     `application/json`) and `attribute` (`attribute_voices`, `audio` from the same variable,
+     `voices` from `variable:voices`, `lines: "previous_result:transcribe"`, saving
+     `application/json`);
+   - the `description` names the follow-up check: `get_output_frames`, or the *Checking the
+     lip-sync target* subsection.
+3. `validate_workflow` on the template with `arguments` `{"audio":
+   "asset:qa-cast/priya-voice.wav", "voices": {"a": [{"start_seconds": 0.0,
+   "duration_seconds": 3.5}], "b": [{"start_seconds": 3.8, "duration_seconds": 3.5}]}}`.
+   Expected: `valid: true`, no errors, `steps: 2`, and a `plan` block. Two references from one
+   speaker are fine at validate time.
+4. The same call with `"timestamps": "word"` added. Expected: `valid: true`. `word` is the
+   plan's named escape for a duet line, so the variable must take it.
+It is a **finding** if the template is missing or listed under another shape, if
+`timestamps` defaults to anything but `"segment"`, if either step saves anything other than
+`application/json`, if `lines` isn't wired from `previous_result:transcribe`, or if either
+validation is not clean.
+cleanup: none.
+metrics: none.
+
+### C-F185 — known answer: `attribute-lines` on #485's duet names each line's voice, with numeric times that are the transcript's own
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+This is the plan's end-to-end acceptance, and the first live run of `previous_result:` from
+a JSON step into `attribute_voices`' `lines` (#485's last deferred item). The song is
+C-F138's duet, whose singer at each moment is known: Priya from 0 to about 7.44 s, HAL to
+about 13.91 s, then the bed alone. Whisper, htdemucs and ECAPA cost a few GPU-seconds.
+1. **Build the song.** Run a workflow `id: "qa-c-f185-duet"` made of C-F138's duet steps
+   1–4 (`duet` saves `audio/wav` to `final`), with `acknowledged_cost=true,
+   wait_seconds=55`. Take the `output:` reference `get_job` gives for the `duet` file. Let D
+   be its `duration_seconds` from `get_gallery_metadata`.
+2. **Segment run.** `run_workflow("templates/attribute-lines", arguments={"audio": <the
+   duet's output: reference>, "voices": {"priya": [{"start_seconds": 0.0,
+   "duration_seconds": 3.5}], "hal": [{"start_seconds": 7.8, "duration_seconds": 3.2}]}},
+   acknowledged_cost=true, wait_seconds=55)`. Read both JSON results with
+   `get_output_text`.
+3. **Word run.** Repeat step 2 with `"timestamps": "word"` added.
+expected:
+- Both runs succeed. Neither has a failed step.
+- The `transcribe` result is `{text, chunks}`. `chunks` is non-empty, and every chunk's
+  `start` and `end` are **numbers**, never null, with `0 ≤ start ≤ end ≤ D + 0.05`.
+- The `attribute` result has `voices` naming `priya` and `hal` and `separated: true`. Its
+  `lines` are the transcript's chunks: the same count, and each line's `start`/`end`/`text`
+  equals the chunk at the same index (times within 0.01 s). This is what shows the
+  `previous_result:` wiring.
+- Every line has numeric `start` and `end`. Its `voice` is `"priya"`, `"hal"`, or `null`,
+  and a `null` voice comes with a non-empty `reason`.
+- Segment run: every line lying wholly within 0.5–7.0 s that is `uncertain: false` names
+  `priya`, and every one wholly within 8.0–13.6 s names `hal`. At least one line names each
+  voice. A line that straddles the 7.44 s hand-over may be `uncertain`; that is the plan's
+  stated duet risk, not a finding. No line starting after 14.5 s names a voice.
+- Word run: it has more lines than the segment run, under the same timing rules. Its lines
+  may be `uncertain` more often; the plan calls word attribution noisier.
+It is a **finding** if either run fails (and in particular if `attribute` refuses on a
+transcript line), if any `start`/`end` is null or past D, if the lines are not the
+transcript's chunks, if a confident line inside a single voice's span names the other voice,
+or if a null `voice` has no `reason`. If the only failure is a `float(None)`-style refusal
+in `attribute`, name that: it is the bug Stage A fixes.
+cleanup: `delete_output(job_id=…)` for all three jobs.
+metrics: none.
+
+### C-F186 — a clip cut mid-line transcribes with a numeric last `end`, and `attribute-lines` completes on it
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+This is the open-ended-last-line arm, from the bug the plan names. Whisper can return `end:
+null` on a chunk still sounding at the end of the file, and `attribute_voices` used to refuse
+the whole call on it. Stage A has `transcribe_audio` fill the duration in instead. Whisper
+does not emit a null on every clip, so this case asserts the contract on clips cut where a
+null is likely, whether or not this take produced one. A `None` `start` can't be forced over
+MCP; it is covered by the plan's unit test, not here.
+1. **Build.** Run one workflow `id: "qa-c-f186"`: C-F138's duet steps 1–4, then:
+   - `cut_hal`: `slice_audio` `{"audio": "previous_result:duet", "start_seconds": 0.0,
+     "duration_seconds": 11.5}`, saved `audio/wav` to `final`. HAL is speaking until about
+     13.9 s, so this ends inside his line.
+   - `cut_priya`: `slice_audio` `{"audio": "asset:qa-cast/priya-voice.wav", "start_seconds":
+     0.0, "duration_seconds": 5.0}`, saved `audio/wav` to `final`. It ends inside her
+     7.45 s line.
+   - `tx_hal` and `tx_priya`: `transcribe_audio` on `previous_result:cut_hal` and
+     `previous_result:cut_priya`, each with `"timestamps": "segment"` and saving
+     `application/json`.
+   - `tx_whole`: the same on the whole `asset:qa-cast/priya-voice.wav`. This is the control
+     clip, which ends on its own.
+
+   Run it with `acknowledged_cost=true, wait_seconds=55`. Read each cut's
+   `duration_seconds` with `get_gallery_metadata` (call them D_hal ≈ 11.5 and
+   D_priya ≈ 5.0).
+2. **Template on the cut.** `run_workflow("templates/attribute-lines", arguments={"audio":
+   <cut_hal's output: reference>, "voices": {"priya": [{"start_seconds": 0.0,
+   "duration_seconds": 3.5}], "hal": [{"start_seconds": 7.8, "duration_seconds": 3.2}]}},
+   acknowledged_cost=true, wait_seconds=55)`. HAL's span ends at 11.0, inside the 11.5 s
+   cut.
+expected:
+- In each of `tx_hal`, `tx_priya` and `tx_whole`, every chunk's `start` and `end` is a
+  number. The **last** chunk's `end` is a number with `last.start ≤ last.end ≤ D + 0.05`,
+  where D is that clip's duration (7.453 for `tx_whole`). Chunk starts never decrease.
+- The step 2 run **succeeds**. Its `attribute` result covers every transcript chunk,
+  including the last. The last line has numeric `start`/`end` within the cut, and a `voice`
+  that is `"hal"` or `null` with a `reason`.
+- The transcript shape is otherwise unchanged from today: `{text, chunks:[{start, end,
+  text}]}`, with no extra wrapper.
+It is a **finding** if any `end` (or `start`) is null, if a last `end` exceeds its clip's
+duration, or if the step 2 run fails on its last line.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F187 — `attribute-lines` refuses a missing `voices` or `audio` and a short reference, naming each, at validate time
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+These are the plan's refusals, all through the free pre-flight. Each arm is
+`validate_workflow` on `templates/attribute-lines` with the `arguments` given. Nothing runs.
+- (a) **No `voices`:** `{"audio": "asset:qa-cast/priya-voice.wav"}`. Expected `valid:
+  false`, with an error that names `voices`. A run that would start and then fail inside
+  the `attribute` step is the case's failure mode.
+- (b) **No `audio`:** `{"voices": <C-F184 step 3's voices>}`. Expected `valid: false`,
+  naming `audio`. This edge is implied by `needs-input-media` rather than named by the plan.
+- (c) **One voice:** `{"audio": "asset:qa-cast/priya-voice.wav", "voices": {"a":
+  [{"start_seconds": 0.0, "duration_seconds": 3.5}]}}`. Expected `valid: false`, at the
+  `attribute` step's `task.arguments.voices`, saying at least two voices are needed (the
+  existing message, as in C-F141 (a)).
+- (d) **Short reference:** `voices` is `{"short": [{"start_seconds": 0.0,
+  "duration_seconds": 2.9}], "other": [{"start_seconds": 3.5, "duration_seconds": 3.5}]}`.
+  Expected `valid: false`, at the `attribute` step's `voices`, **naming `short`** and the
+  `min_reference_seconds` minimum, in the same message `attribute_voices` gives on its own
+  (C-F141 (c)).
+- (e) **Boundary control:** `short` is exactly `3.0` s. Expected `valid: true`.
+- (f) **Missing asset:** `"audio": "asset:qa-cast/no-such-song.wav"` with C-F184's
+  `voices`. Expected `valid: false`, as any missing `asset:` is.
+It is a **finding** if any of (a)–(d) or (f) validates, if (a) or (b) is refused without
+naming its variable, if (d) loses the voice name or its message differs from the bare task's,
+or if (e) is refused.
+cleanup: none.
+metrics: none.
+
+### C-F188 — the tasks guide carries *Checking the lip-sync target*, with the call shape, the 32-moment limit and both timeline rules
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+Docs-only checks. They are free.
+1. `get_guide("tasks", section="Checking the lip-sync target")`. It resolves as a
+   subsection under *Voice attribution*, as a `###` heading does today.
+2. `get_guide("tasks", section="Transcription")`.
+expected:
+- Step 1's text names:
+  - `attribute-lines`, run on **the song** (not the cut) as the default;
+  - `get_output_frames` with `at`, `crop` and `hear` (`1.0`), one call per face framing
+    because a call takes one `crop`;
+  - the **32**-moment limit per call;
+  - frames at `start + 0.3 s` and at the line's midpoint;
+  - that lines with `uncertain: true` or a null `voice` are skipped **and named**, not
+    guessed;
+  - **Timeline rule 1:** `minimax/music-video` lays the song over the cut from t = 0, so song
+    time is cut time unless `trim_frames > 0`;
+  - **Timeline rule 2:** after `join_into_song`, every line time gets the offset of the
+    first sung shot's `start_frame / fps − cue_seconds`;
+  - the fallback for any other assembly: transcribe the final cut's own track, with weaker
+    attribution under ducked dialogue.
+- Step 1 states no verdict: the caller judges whose mouth is open. Per the plan's non-goals,
+  it does not present this as an automatic check.
+- Step 2's text says that with `timestamps` set, a chunk's `end` is always a number. A last
+  chunk still sounding at the end of the clip gets the clip's duration.
+- Every argument the subsection names exists in `get_task("attribute_voices")`, in
+  `get_task("transcribe_audio")`, or in `get_output_frames`' schema.
+It is a **finding** if the subsection is missing or doesn't resolve by that name, if
+either timeline rule or the 32 limit is missing, if the rule 2 formula differs from the one
+above, or if the Transcription note is missing.
+cleanup: none.
+metrics: none.
+
+### C-F189 — one round of the loop on a stand-in two-voice cut: line times from `attribute-lines` land the right voice under `get_output_frames`
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+This is the plan's "one real round", built from fixtures so that it is runnable without an
+H3 render. The real `music-video` round is M-F073. The plan says the round passes on the tool
+chain working end to end, not on the picture: the stand-in's faces were never rendered to
+this audio, so the mouth answer is recorded, never asserted. The build is CPU only. The
+template run costs what C-F185's does.
+1. **Build the cut.** Run one workflow `id: "qa-c-f189"`: C-F138's duet steps 1–4 (`duet`
+   saved `audio/wav` to `final`), then:
+   - `pic`: `concat_videos` of `asset:qa-cast/ep3-shot1-incident.mp4` and
+     `asset:qa-cast/ep3-shot2-reply.mp4` (248 frames, about 10.35 s), not saved;
+   - `cut`: `pair_audio` `{"video": "previous_result:pic", "audio": "previous_result:duet",
+     "fit": "video"}`, saved `video/mp4` to `final`.
+
+   An `audio_trimmed_to_video` warning is expected. The duet is laid from t = 0, so song
+   time is cut time (rule 1's situation). Let D_cut be the cut's `duration_seconds`.
+2. **Lines.** Run `templates/attribute-lines` on the `duet` file's `output:` reference, with
+   C-F185's `voices`. From the `attribute` JSON, pick L1: a line with `voice: "priya"`,
+   `uncertain: false` and `start` < 6.5. Pick L2: a line with `voice: "hal"`, `uncertain:
+   false` and `start` + 0.3 < D_cut − 0.6. If the segment output has no such L2 (HAL starts at
+   7.44 and the cut ends at ~10.35), rerun with `"timestamps": "word"` and pick from that.
+3. **Pick the crop.** `get_output_frames(name=<cut>, count=4)`. Choose a face box `[x, y,
+   w, h]` in source pixels from the sheet; the whole frame `[0, 0, 960, 544]` is acceptable
+   if no single face holds across both shots.
+4. **The round.** `get_output_frames(name=<cut>, at=[L1.start+0.3, L1 midpoint,
+   L2.start+0.3, L2 midpoint], crop=<box>, hear=1.0)`.
+5. **Limit arms.** `at` with 32 moments (evenly spaced over 0.5 to D_cut − 0.5), then with 33,
+   both with the same `crop` and no `hear`.
+expected:
+- Steps 1 and 2 succeed. L1 and L2 exist, from the segment or the word run.
+- Step 4 returns 4 tiles, each cut to the crop box (their aspect is the box's), with a
+  ~1.0 s audio clip centred on each moment. The L1 tiles' audio is Priya's voice and the L2
+  tiles' audio is HAL's, judged by listening, as C-F138 does. Record in the run's notes whose
+  mouth (if any) is open in each tile. **That is not a pass/fail criterion.**
+- Step 5: 32 moments are accepted. 33 is refused before any decoding, naming the limit of 32,
+  and is never silently truncated.
+It is a **finding** if any step of the chain fails, if a tile's audio carries the wrong
+voice or none (the line times are then not on cut time), if `crop` is ignored, or if 33
+moments are accepted or truncated without saying so.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F190 — the `script-to-video` skill points a sung multi-shot piece at *Checking the lip-sync target*
+pending: #617
+source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
+Stage A's plugin half. Load `dw:script-to-video` with the `Skill` tool. The plugin tree
+follows `develop`.
+expected:
+- The skill has a line naming the *Checking the lip-sync target* subsection of the tasks
+  guide (or `attribute-lines` together with it) as the review step for a sung, multi-shot
+  piece.
+- The name it gives resolves: `get_guide("tasks", section=<that name>)` returns C-F188's
+  subsection, not a miss or a different section.
+- Every task, template or argument the line names exists (`list_workflows(shape="utility")`,
+  `get_task`).
+It is a **finding** if the skill has no pointer, if the pointer does not resolve in the
+guide, or if it names something the server doesn't have.
+cleanup: none.
+metrics: none.
+
+### C-F191 — `crop_face_track` is a listed task taking `clip`, with a domain on every numeric argument and a tasks-guide section
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Free and read-only. Stage 1 adds the `crop_face_track` task.
+1. `list_tasks`.
+2. `get_task("crop_face_track")`.
+3. `get_guide("tasks")` (the index), then the section that documents `crop_face_track`.
+expected:
+- Step 1 lists `crop_face_track` under `commands`. It is not under `assessment`, and it is not
+  an image processor.
+- Step 2's parameters are `clip` (required), `crop_size`, `padding`, `gate_full`, `gate_zero`,
+  `min_confidence`, `detector_repo`, `detector_file` and `device`. `crop_size` defaults to
+  `512`. `detector_repo` has a default (the plan's public mirror), so a caller need not name
+  one. **Every** numeric parameter (`crop_size`, `padding`, `gate_full`, `gate_zero`,
+  `min_confidence`) carries a `domain`. There is no parameter named `video` or `*_video`
+  (plan design point 5: that name would load bare frames and drop audio).
+- Step 3 has a section for `crop_face_track`. It names the `{crops, track}` result, the 8n+1
+  padding, and the distance gate, and every argument it names exists in step 2. The tasks
+  guide's opening no longer describes every task as a non-model operation without
+  qualification (this task loads a detector).
+It is a **finding** if the task is missing, if any listed argument is missing or renamed, if
+a numeric argument has no `domain`, if the input is called `video`, or if the guide has no
+section for it.
+cleanup: none.
+metrics: none.
+
+### C-F192 — `crop_face_track` on one small face: `crop_size`² crops, 8n+1 frames, one track entry per source frame at strength 1
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+The plan's first acceptance arm. No fixture holds a known small face, so this case builds
+one from `asset:qa-cast/priya-portrait.jpg` (Fixtures) on the CPU. **This build is "the
+face-track build" that C-F193–C-F203 reuse.** Each of those runs only the steps it names, in
+its own job.
+
+**The face-track build.** One workflow. Confirm the image processors' call shape with
+`get_task` first. If `add_border_and_mask_with_size` hands back an image *and* a mask, take
+the image, and say in the run notes how you referenced it. Every step saved below is saved to
+`final`, with `video/mp4` and `result.fps: 24`.
+- `far_a`: `add_border_and_mask_with_size` `{"image": "asset:qa-cast/priya-portrait.jpg",
+  "width": 3072, "height": 544}`. The portrait now fills the height of a very wide canvas.
+- `far_b`: the same on `previous_result:far_a`, with `"width": 3072, "height": 1740`. The
+  aspect is now ≈ 960:544.
+- `far_c`: the same on `previous_result:far_b`, with `"width": 960, "height": 544`. The face
+  is now about 5% of the frame width.
+- `far`: `loop_frames` `{"video": "previous_result:far_c", "num_frames": 50}`, saved
+  (**FAR**: 50 frames, 960×544, no audio). 50 is not 8n+1, so padding has to happen.
+- `near_a`: `add_border_and_mask_with_size` on the portrait, `"width": 960, "height": 544`.
+  `near`: `loop_frames` 48 of it, saved (**NEAR**: the face fills much of the frame).
+- `qr_a`: `qr_code` `{"qr_code_contents": "dw-face-track-none", "width": 544, "height":
+  544}`. `qr_b`: `add_border_and_mask_with_size` to 960×544. `none`: `loop_frames` 48,
+  saved (**NONE**: no face anywhere).
+- `two`: `concat_videos` `{"videos": ["previous_result:far", "previous_result:near"], "fps":
+  24}`, saved (**TWO**: 98 frames, with recorded shots starting at 0 and 50).
+- `two_a`: `pair_audio` `{"video": "previous_result:two", "audio":
+  "asset:qa-cast/priya-voice.wav", "fit": "video"}`, saved (**TWO_A**: TWO with a soundtrack
+  and its shots). An `audio_trimmed_to_video` warning is expected.
+- `blur_a`: `resize_resample` `{"image": "asset:qa-cast/priya-portrait.jpg", "resolution":
+  64}`, then the `far_a`–`far_c` chain on it, then `loop_frames` 50, then `pair_audio` with
+  `priya-voice.wav` and `fit: "video"`, saved (**BLUR_A**: FAR's geometry, with a face
+  upsampled from 64 px, so visibly broken, plus audio). Only C-F202 needs it.
+
+Run the build with `acknowledged_cost=true, wait_seconds=55`. Use `get_gallery_metadata` to
+confirm each saved clip's frame count and 960×544 size before going on.
+
+**This case.** Build `far` only, then one workflow (`id: "qa-c-f192"`) with:
+- `crop`: `crop_face_track` `{"clip": <FAR's output: reference>, "gate_full": 0.08,
+  "gate_zero": 0.12}`. Save it so that both `crops` (as `video/mp4`) and `track` (as
+  `application/json`) are written, in whatever form the task's guide section gives. The plan
+  says `track` is saved as a JSON output.
+- `crop_prev`: the same task on `previous_result:<the far step>` from the same workflow, if
+  you put the build steps in this workflow. Otherwise, use the `output:` reference as above
+  and skip this arm.
+- `crop_256`: the same task as `crop`, with `"crop_size": 256`.
+
+Read each `track` with `get_output_text`. Check each `crops` with `get_gallery_metadata`
+and with `get_output_frames(count=8)`.
+expected:
+- All steps succeed.
+- Every `crops` frame is 512×512 (`crop_256`'s is 256×256). Its frame count N satisfies
+  `N % 8 == 1` and `N ≥ 50`. `crops` has no audio.
+- `track` is JSON. It has exactly **50** per-frame entries, each with a `box` and a
+  `strength`, plus warm-up and cool-down pad counts whose sum is `N − 50`, plus the source
+  size (960×544). Every box lies inside the frame.
+- Let f = box width / 960. Every frame has f < 0.08 and `strength` 1. If the portrait's
+  proportions put f at 0.08 or above, re-choose `gate_full`/`gate_zero` above f, re-run,
+  and say so in the notes. That counts as setup, not a finding.
+- The sheet shows the face centred in every crop at a steady size, with no jump between
+  frames. The box coordinates across the 50 entries vary by no more than a few pixels; this
+  is a still that has been looped.
+- `crop_prev`, if it ran, gives the same frame count and track length as `crop`.
+It is a **finding** if any step fails, if a crop is not `crop_size`², if N is not 8n+1 or is
+under 50, if `track` doesn't have 50 entries or isn't written as JSON, if the face is not
+found or its strength isn't 1, or if the crop jumps.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F193 — the distance gate: a near face is strength 0 throughout, and a gate straddling the face gives a strength between 0 and 1
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Build `far` and `near` per C-F192's face-track build. Then run one workflow (`id:
+"qa-c-f193"`) with three `crop_face_track` steps, each saving its `track` as JSON:
+- `near08`: on NEAR, with `gate_full` 0.08 and `gate_zero` 0.12;
+- `near_dflt`: on NEAR, with the default gates;
+- `ramp`: on FAR, with `gate_full` = f − 0.01 and `gate_zero` = f + 0.01, where f is the
+  far face's width fraction from C-F192's track. Run C-F192 first if you have no f, and
+  round both gates to 3 decimal places.
+expected:
+- All steps succeed.
+- In `near08` and `near_dflt`, a face is found (the boxes are non-empty), with f_near >
+  0.12, and **every** strength is 0. `crops` still exists and is 8n+1 frames.
+- In `ramp`, every strength is strictly between 0 and 1, and within 0.3 of 0.5. Strength
+  falls as the face fraction rises: the ramp is not a step.
+- Every strength in every track is in [0, 1].
+It is a **finding** if a near face gets any nonzero strength, if the ramp gives only 0 or 1,
+or if any strength is outside [0, 1].
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F194 — `crop_face_track` on a clip with no face succeeds, with every strength 0, and says no face was found
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Build `none` per C-F192's face-track build. Run `crop_face_track` `{"clip": <NONE's
+reference>}` (`id: "qa-c-f194"`), saving `track` as JSON. Read `get_job` and the track.
+expected:
+- The job **succeeds**. No step has failed.
+- `track` has 48 entries, and every strength is 0.
+- The result says no face was found: a field in `track` or a warning on the job. Either
+  form passes, if a caller can read it without inspecting every strength.
+- `crops`, if written, is still 8n+1 frames of `crop_size`². A documented no-crops form is
+  also fine, if the guide section from C-F191 describes it.
+It is a **finding** if the job fails or raises, if any strength is nonzero, or if nothing
+says no face was found.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F195 — the track resets at a recorded shot boundary, and at a content cut when the clip carries no shots
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+The plan resets tracking at the clip's recorded `shots` first, and at an HSV-histogram cut
+when there are none. Build `far`, `near` and `two` per C-F192's face-track build. One
+workflow (`id: "qa-c-f195"`):
+- `rec`: `crop_face_track` on TWO's `output:` reference. TWO carries its shots, as in
+  C-F095.
+- `frames`: `video_frames` `{"video": <TWO's reference>}` gives the frames only, with no
+  shots.
+- `hist`: `crop_face_track` `{"clip": "previous_result:frames"}`.
+
+Both `crop_face_track` steps use `gate_full` 0.08 and `gate_zero` 0.12, and save `track` as
+JSON. Also `get_gallery_metadata` on TWO, to confirm that its `media.shots` starts a shot at
+frame 50.
+expected:
+- Both steps succeed, with 98 track entries each.
+- `rec`'s track reports a reset at frame **50**, and the reason names the recorded shot
+  boundary.
+- `hist`'s track reports a reset within ±2 frames of 50, and the reason names a content or
+  histogram cut, not a recorded shot.
+- In both, frames before the reset carry the far face's box (strength 1). Frames after it
+  carry the near face's box (strength 0). No box interpolates between the two across the
+  cut.
+- Neither track reports any other reset. This is a still that has been looped.
+It is a **finding** if either reset is missing or misplaced, if a reset gives no reason or
+the wrong reason, if the box drifts across the cut instead of jumping, or if a spurious
+reset appears.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F196 — `crop_face_track` argument refusals come from the free pre-flight, with the boundaries accepted
+pending: #622
+source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with
+`clip: "asset:qa-cast/ep3-shot1-incident.mp4"` plus the arguments given. Nothing runs.
+Read each numeric argument's declared `domain` from `get_task` first.
+- (a) `crop_size`: 500, 0, −32 and 513 are refused. 256, 512 and 544 are accepted. 544 is a
+  multiple of 32 but not a power of two.
+- (b) `gate_zero` ≤ `gate_full`: `{0.08, 0.08}` and `{0.10, 0.08}` (gate_full, gate_zero) are
+  refused. `{0.08, 0.081}` is accepted. The refusal names both arguments.
+- (c) `padding`: a negative value is refused. A value just past each declared bound is
+  refused, and each bound itself is accepted.
+- (d) `gate_full`, `gate_zero` and `min_confidence`: values just outside each declared domain
+  (for example −0.01 and 1.01 on a unit domain) are refused, and the bounds are accepted.
+- (e) the control, `clip` alone, validates clean.
+
+For every refused arm, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Every refusal is `valid: false` at `steps[…].task.arguments.<name>`, with a message that
+  names the rule (a multiple of 32, `gate_zero` greater than `gate_full`, the domain).
+- `run_workflow` queues no job for any refused arm.
+- Every accepted arm is `valid: true`.
+It is a **finding** if any arm in (a)–(d) that should be refused validates, if a refusal comes
+only at run time, if a boundary value is refused, or if a message doesn't name its argument.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F197 — `paste_face_track` is a listed task with the plan's arguments, and a tasks-guide section
+pending: #623
+source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Free and read-only.
+1. `list_tasks`.
+2. `get_task("paste_face_track")`.
+3. The tasks-guide section that documents it.
+expected:
+- `paste_face_track` is under `commands`.
+- Its parameters are `clip`, `repaired`, `track`, `feather` and `color_match`, plus `device`
+  if present. `feather` is numeric and carries a `domain`. `color_match` is a boolean. No
+  parameter is named `video` or `*_video`.
+- The guide section says the result carries the source's audio, fps and shots, says the pad
+  frames are dropped, and shows `track` passed as `previous_result:<crop step>.track` (or the
+  form the guide documents). Every argument it names exists in step 2.
+It is a **finding** if the task or any argument is missing, if `feather` has no domain, or
+if the guide has no section for it.
+cleanup: none.
+metrics: none.
+
+### C-F198 — round trip: `crop_face_track` then `paste_face_track` with unmodified crops returns the source, keeping frames, fps, audio and shots
+pending: #623
+source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Build `far`, `near`, `two` and `two_a` per C-F192's face-track build. TWO_A has a far-face
+shot at strength 1, a near-face shot at strength 0, a soundtrack and recorded shots. One
+workflow (`id: "qa-c-f198"`):
+- `crop`: `crop_face_track` `{"clip": <TWO_A's reference>, "gate_full": 0.08, "gate_zero":
+  0.12}`.
+- `paste`: `paste_face_track` `{"clip": <TWO_A's reference>, "repaired":
+  "previous_result:crop.crops", "track": "previous_result:crop.track"}`, saved `video/mp4`
+  to `final`.
+
+Then:
+- `get_gallery_metadata` on TWO_A and on the output.
+- `get_output_frames` on both at the same `at` moments: 0.5, 1.0, 1.5 s (far), and 2.5,
+  3.5 s (near). Include `crop` = the far box from the track, padded by 20 px, at 1.0 s.
+- `assess_output` on the output.
+expected:
+- Both steps succeed.
+- The output has the **same** frame count (98), fps (24), size (960×544), sample rate,
+  channels and duration as TWO_A, to within one audio frame. Its `media.shots` lists the same
+  two shots at the same frames.
+- Every frame, including the cropped face region, is visually indistinguishable from the
+  source: no seam, no colour shift, no softening beyond a resize round-trip.
+- The audio at each moment is TWO_A's audio (judged by `hear`, as C-F086 does).
+- `assess_output` finds nothing that it doesn't also find on TWO_A.
+It is a **finding** if any of the frame count, fps, size, audio or shots differs, or if a
+seam or shift shows at the face on the far frames.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F199 — an altered repair shows only around the face, feathered, scaled by strength; `color_match` pulls its colour back to the source
+pending: #623
+source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Build per C-F198. One workflow (`id: "qa-c-f199"`):
+- `crop`: as in C-F198, with `crops` saved as `video/mp4`.
+- `alt`: `grade` `{"media": <crop's crops, as previous_result: or its saved reference, in the
+  form `grade` accepts>, "exposure": 1.5, "saturation": 0.0}`. The face crop is now bright
+  greyscale, which is impossible to miss.
+- `paste_plain`: `paste_face_track` `{"clip": <TWO_A>, "repaired": "previous_result:alt",
+  "track": "previous_result:crop.track", "color_match": false}`, saved.
+- `paste_cm`: the same, with `"color_match": true`, saved.
+
+Then `get_output_frames` on TWO_A, `paste_plain` and `paste_cm` at 1.0 s, both whole-frame and
+with `crop` = the far box padded by 30 px. Also at 3.0 s, whole-frame (the near shot, at
+strength 0).
+expected:
+- In `paste_plain` at 1.0 s, the bright grey patch sits on the far face's box only. Its
+  alpha falls off towards the box's edge, with no hard rectangular seam. Outside the padded
+  box, the frame matches TWO_A.
+- At 3.0 s, `paste_plain` and `paste_cm` match TWO_A exactly: strength 0 means no change, even
+  though `repaired` is altered on those frames.
+- `paste_cm`'s face region is visibly closer in mean brightness and colour to TWO_A than
+  `paste_plain`'s. It is still greyscale in its detail, because only the mean is matched.
+- Both outputs keep TWO_A's frame count, fps, audio and shots.
+It is a **finding** if the change spreads beyond the padded box, if it ends at a hard edge,
+if it appears on any strength-0 frame, or if `color_match` makes no visible difference.
+cleanup: `delete_output(job_id=…)` for the jobs.
+metrics: none.
+
+### C-F200 — `paste_face_track` refuses a track from another clip and a `repaired` clip that is too short, naming the mismatch
+pending: #623
+source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Build `far`, `near` and `two` per C-F192. In the same build, also make **FAR_W**: `far_c`'s
+chain with a last step of 1280×720 instead of 960×544, looped 50 frames. Each arm is its own
+`run_workflow` (`acknowledged_cost=true, wait_seconds=55`), because these mismatches are
+known only at run time. A `validate_workflow` refusal is better still.
+- (a) **Frame count:** `crop` on FAR (50 frames), then `paste_face_track` with `clip` = TWO
+  (98 frames), `repaired` = `crop.crops` and `track` = `crop.track`.
+- (b) **Size:** `crop` on FAR_W, then paste with `clip` = FAR (960×544), using FAR_W's crops
+  and track. The frame counts agree, and only the size differs.
+- (c) **Short repaired:** `crop` on FAR. `short`: `loop_frames` `{"video":
+  "previous_result:crop.crops", "num_frames": <N − 8>}`, where N is the crop count C-F192
+  read. Then paste with `clip` = FAR, `repaired` = `previous_result:short` and `track` =
+  `crop.track`.
+- (d) **Control:** (c) with `num_frames` = N succeeds.
+expected:
+- (a)–(c) each fail at the paste step, or are refused at validate. The message says what
+  disagrees: frame count, frame size, or repaired length against the padded crop count. It
+  gives both numbers where it can.
+- No arm writes an output file from the paste step.
+- (d) succeeds.
+It is a **finding** if any of (a)–(c) succeeds, writes a pasted output, or fails with a
+generic error (an index or shape exception) that doesn't name the mismatch.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F201 — `templates/ltx2/face-repair` is a catalog `shot` template of three wired steps, with its constraints refused at validate and an estimate quoted
+pending: #624
+source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Free. Stage 3 adds `workflows/templates/ltx2/face-repair.json`.
+1. `list_workflows(shape="shot")`.
+2. `get_workflow("templates/ltx2/face-repair")`.
+3. `validate_workflow` on the template with its input variable (the clip; the plan's task
+   argument is `clip`) = `asset:qa-cast/ep3-shot1-incident.mp4`.
+4. The same call with the crop-size variable, if the template exposes one, set to 500.
+expected:
+- Step 1 lists `templates/ltx2/face-repair` with trait `needs-input-media`.
+- Step 2 has three steps in this order: `crop_face_track`; an LTX pipeline step on the crops
+  (#606's same-size refine); `paste_face_track`. The paste step's `track` is wired as
+  `previous_result:<crop step>.track`, and its `repaired` from the LTX step. There is a
+  `strength` variable, unless #606 was declined (see below). There are `gate_full`,
+  `gate_zero` and `padding` variables, or fixed values. Their defaults are not the source
+  repo's 0.07/0.09, and the sigma ladder is not either of #599's quoted ladders
+  (`0.909/0.725/0.42/0`, `0.65/0.50/0.30/0`). The plan's non-goals forbid porting their
+  numbers. The input variable is not named `video`.
+- Step 3 is `valid: true`, with `plan.estimate` giving minutes (not `unknown`).
+- Step 4, if it applies, is `valid: false` at that variable, from `variable_constraints`
+  (multiple of 32).
+- **Fallback.** If #606 was declined (the stage issue says so), the LTX step is
+  `refine-clip`'s 2× route, the crop is 256², and there is no `strength` variable. The
+  rest stands.
+It is a **finding** if the template is missing or unlisted, if its steps are not wired as
+above, if validation is not clean or quotes no estimate, if a 500 crop validates, or if the
+source repo's gate or ladders appear verbatim.
+cleanup: none.
+metrics: none.
+
+### C-F202 — `ltx2/face-repair` on a broken far face: the face is cleaner and steady, and the background, frames, fps and audio are unchanged
+pending: #624
+source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
+This spends GPU time: one LTX run on a 512² crop sequence. Build `blur_a` per C-F192's
+face-track build (**BLUR_A**: a face upsampled from 64 px, plus audio). Then run
+`templates/ltx2/face-repair` with the clip = BLUR_A's `output:` reference and `seed` pinned
+(42) if the template exposes one. Pass the gate variables only if the template's defaults
+would gate this face out: BLUR_A's f is about 5%, and the defaults are chosen on lem. Use
+`acknowledged_cost=true, wait_seconds=55`, then `wait_for_job`.
+Then:
+- `get_gallery_metadata` on BLUR_A and on the output;
+- `get_output_frames` on both at `at=[0.2, 0.7, 1.2, 1.7]` with `crop` = the face box (from
+  the crop step's track) padded by 20 px;
+- the same moments, whole-frame;
+- one `hear=1.0` call on the output.
+expected:
+- The job succeeds. The output has BLUR_A's frame count (50), fps, size, sample rate and
+  duration.
+- In the cropped tiles, the output's face is visibly sharper and more coherent than
+  BLUR_A's. It is the same person, in the same pose and position.
+- Across the four moments, the repaired face does not flicker or shift between tiles.
+- Whole-frame, everything outside the padded face box matches BLUR_A, with no seam at the
+  paste.
+- The audio is BLUR_A's (`priya-voice.wav`'s opening).
+It is a **finding** if the job fails, if any of the frame count, fps, size or audio differs,
+if the face is no cleaner, if it is a different person, if it flickers, or if the
+background changes. With `seed` pinned, a bad take is reproducible: file it with the seed.
+The plan's own stop condition ("no ladder both fixes faces and keeps identity") is the
+stage's to report. If the stage issue says the feature stopped at stages 1–2, this case's
+`pending:` stays.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F203 — `ltx2/face-repair` on a clip with no small face returns the source, with its audio
+pending: #624
+source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
+This spends GPU time if the template runs the LTX step regardless of strength. Build `near`,
+`none` and `two_a`'s pairing applied to NEAR (**NEAR_A**: NEAR plus `priya-voice.wav`, `fit:
+"video"`) per C-F192's face-track build. Run `templates/ltx2/face-repair` twice, with the
+template's default gates: on NEAR_A (a near face, gated out), and on NONE (no face). Seed
+pinned as in C-F202.
+expected:
+- Both jobs succeed. A no-face clip is not an error.
+- Each output has its source's frame count, fps and size, and NEAR_A's output has its
+  audio.
+- `get_output_frames` at the same four moments on source and output: whole frames are
+  indistinguishable, including the near face.
+- A warning or log line saying nothing was repaired (no face, or every strength 0) is good
+  practice, but its absence isn't a finding.
+It is a **finding** if either job fails, if either output differs visibly from its source,
+or if NEAR_A's audio is lost.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F204 — the `ltx-2.5` skill and the tasks guide's examples point at `ltx2/face-repair`
+pending: #624
+source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
+Free. Stage 3's plugin half and docs.
+1. Load `dw:ltx-2-5` with the `Skill` tool. The plugin tree follows `develop`.
+2. `get_guide("tasks")`. Find the examples list the plan says `TASKS.md` carries.
+expected:
+- The skill's restore / upscale / refine family has a line for `ltx2/face-repair`. It says
+  what the template is for (small or far faces on an existing clip, one face per pass) and
+  that near faces are left alone.
+- The name it gives resolves in `list_workflows(shape="shot")`. Any variable it names exists
+  in `get_workflow("templates/ltx2/face-repair")`.
+- The tasks guide's examples include the template, or an example that names it.
+It is a **finding** if the skill has no line for the template, if the line names a template
+or variable that doesn't exist, or if it promises multi-face repair.
+cleanup: none.
+metrics: none.
+
 ## Performance

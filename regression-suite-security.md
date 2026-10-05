@@ -670,6 +670,49 @@ weight is fetched or loaded. `get_job_events` shows a fetch or a load phase for 
 cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything that appeared.
 metrics: none.
 
+### SE-F040 — H3 `hold_audio` holds the path boundary, and the hold blocks aren't nameable from a workflow
+pending: #618
+source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
+#598 adds a new media-taking argument, `hold_audio`, to the MiniMax H3 pipeline. It takes an Audio
+reference (`asset:`, `output:` or `previous_result:`). The plan says the trust gate is not
+widened: the hold and release steps are dw blocks that a workflow never names. So `hold_audio`
+must hold the same path boundary as every other media argument (SE-F038), and no workflow may
+reach the new block classes.
+
+Carrier: `templates/minimax/video-with-audio` as an inline workflow (from `get_workflow`), in
+workspace `regression-security`. Only the H3 step's arguments change.
+
+Probes, all through `validate_workflow`:
+- (a) `hold_audio` = each of P1 `/usr/share/sounds/alsa/Front_Center.wav`, P2
+  `/nonexistent-dw-probe/x.wav` and P3 `../../../../../usr/share/sounds/alsa/Front_Center.wav`.
+  Try each as a bare string and as `asset:` + the probe;
+- (b) `hold_audio` = `output:../../../../usr/share/sounds/alsa/Front_Center.wav` and
+  `output:/usr/share/sounds/alsa/Front_Center.wav`;
+- (c) `hold_audio` = `http://127.0.0.1:8765/x.wav` and `file:///usr/share/sounds/alsa/Front_Center.wav`;
+- (d) a workflow that names the new blocks: the H3 step given a `pipeline_type`, or any other
+  `*_type`/class-name argument the schema accepts, set to
+  `dw.pipeline_processors.h3_blocks.DwH3HoldAudioStep`, and the same for `DwH3ReleaseAudioStep`
+  and `DwH3RefineScheduleStep`. Also try the bare class names.
+
+For every refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Every (a)–(c) probe is `valid: false` at the H3 step's `hold_audio` argument path. Each is
+  refused as a path or reference outside the server's roots, or as a scheme or host that isn't
+  allowed.
+- P1 (exists) and P2 (doesn't exist) are refused with the same message, so the error can't be
+  used to test whether a file exists.
+- No error echoes a resolved server path.
+- (d) is refused as an untrusted or unknown type/class, the same way any non-allowlisted class
+  name is refused today.
+- `run_workflow` queues no job for any probe. Refusing at run time is refused too late, and that
+  is a finding.
+- The control, `hold_audio: "asset:qa-cast/hal-voice.wav"` (from `common`), validates clean.
+It is a **finding** if any probe validates, if P1 and P2 are told apart, if a server path is
+echoed, if a `127.0.0.1` fetch or a `file://` read happens, or if a workflow can name a dw block
+class. Each of those is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must
