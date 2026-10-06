@@ -6765,7 +6765,6 @@ cleanup: `delete_output(job_id=…)` for any job (none should exist).
 metrics: none.
 
 ### C-F197 — `paste_face_track` is a listed task with the plan's arguments, and a tasks-guide section
-pending: #623
 source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Free and read-only.
 1. `list_tasks`.
@@ -6785,7 +6784,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F198 — round trip: `crop_face_track` then `paste_face_track` with unmodified crops returns the source, keeping frames, fps, audio and shots
-pending: #623
 source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Build `far`, `near`, `two` and `two_a` per C-F192's face-track build. TWO_A has a far-face
 shot at strength 1, a near-face shot at strength 0, a soundtrack and recorded shots. One
@@ -6816,7 +6814,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F199 — an altered repair shows only around the face, feathered, scaled by strength; `color_match` pulls its colour back to the source
-pending: #623
 source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Build per C-F198. One workflow (`id: "qa-c-f199"`):
 - `crop`: as in C-F198, with `crops` saved as `video/mp4`.
@@ -6845,7 +6842,6 @@ cleanup: `delete_output(job_id=…)` for the jobs.
 metrics: none.
 
 ### C-F200 — `paste_face_track` refuses a track from another clip and a `repaired` clip that is too short, naming the mismatch
-pending: #623
 source: tester, spec for #623 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Build `far`, `near` and `two` per C-F192. In the same build, also make **FAR_W**: `far_c`'s
 chain with a last step of 1280×720 instead of 960×544, looped 50 frames. Each arm is its own
