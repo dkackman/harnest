@@ -8620,7 +8620,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F282 — exact, swapped, skipped and unspoken lines on a known take
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU/short-GPU. The three lines used here and in C-F283–C-F292:
 - L1 `The receipt was in the drawer the whole time.`
@@ -8678,7 +8677,6 @@ cleanup: `delete_output(job_id=…)` on this case's `check_script` job. Leave `<
 metrics: none.
 
 ### C-F283 — H3 markup doesn't count against similarity, and a stripped tag that is heard is `tag_spoken`
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup: `<take>` and `<control>` as in C-F282. One workflow of `check_script` steps on
 `output:<take>`, each saving JSON:
@@ -8699,7 +8697,6 @@ cleanup: `delete_output(job_id=…)` on this case's job.
 metrics: none.
 
 ### C-F284 — `lines: []`: speech is `speech_where_silent`, while silence and an instrumental are clean, with hallucinations under `discarded`
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup: `<take>` and `<control>` as in C-F282. One workflow of `check_script` steps,
 each saving JSON:
@@ -8722,7 +8719,6 @@ cleanup: `delete_output(job_id=…)` on this case's job.
 metrics: none.
 
 ### C-F285 — `line_clipped_at_end` fires on a take cut at its last word, not on one padded with silence
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup: `<take>` and `<control>` as in C-F282. Let `e` be the `end` of `<control>`'s
 last word (`dark`), and `D` be `<take>`'s `duration_seconds` from `get_gallery_metadata`.
@@ -8742,7 +8738,6 @@ cleanup: `delete_output(job_id=…)` on this case's job.
 metrics: none.
 
 ### C-F286 — malformed `lines` is refused, naming the argument
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 Mostly free. Setup: `<take>` as in C-F282. Take a one-step `check_script` workflow on
 `output:<take>`. `validate_workflow` it with each of these as `lines`:
@@ -8762,7 +8757,6 @@ cleanup: `delete_output(job_id=…)` on any job this case ran.
 metrics: none.
 
 ### C-F287 — stage A's two-model measurement is recorded with citable jobs
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). Find the Q3 measurement comment on #643, or on #609
 (`gh issue view 643 --repo dkackman/diffusers-workflow --comments`). `get_job` and
@@ -9501,7 +9495,6 @@ and `job_minutes` (condition `windows=3,device=<device>`), in `regression-perf/C
 first run seeds the file. While the case is pending, the #630 verify comment also states them for #658.
 
 ### C-F316 — `ltx2/restore-long` carries a measured `per_entry` cost over `windows`, and its estimate scales by window count (1–5 windows)
-pending: #658
 source: tester, spec for #658 from #601's plan v3 (claude-opus-5-5 via anthropic)
 Free: validation only, and nothing is queued. Stride 105 (`num_frames` 121, `overlap` 16;
 re-derive the counts below if C-F314 step 2 reads other defaults). Each source is read-only,
@@ -9547,7 +9540,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F317 — `restore-long`'s `per_entry` figure is consistent with the measured run it came from
-pending: #658
 source: tester, spec for #658 from #601's plan v3 (claude-opus-5-5 via anthropic)
 Free, read-only. The plan says the figure is measured, never derived: `minutes` is a real run's
 total, and `per_entry.minutes` is one restore window plus its slice. This case checks that
