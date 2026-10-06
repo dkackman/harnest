@@ -2885,7 +2885,6 @@ metrics: `latency_s`, `refine_s` (the refine step's duration from `get_job_event
 file. Flag a reading more than 50% over the median.
 
 ### M-F085 — `templates/minimax/upscale-refine` is listed with measured cost, validates, and the minimax-h3 skill has its row
-pending: #621
 source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `templates/minimax/upscale-refine`: a 544p base with the turbo LoRA,
 then `upscale_h3_latents`, then a refine at 1344×768 with the 768p LoRA at `video_shift` 6,
@@ -2910,7 +2909,6 @@ cleanup: none (no job).
 metrics: none.
 
 ### M-F086 — the 768p A/B: upscale-only vs `upscale-refine` vs native 768p (vs the LMS upscaler), crowd-faces prompt, seed 42
-pending: #621
 source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 at 1344×768 by four routes.
 This is the plan's stage-3 gate. Don decides from it whether the template stays. The template's
@@ -3334,7 +3332,6 @@ with conditions `124f-960x544-to-1344x768-p5-s0.2` (A), `…-p6-s0.2` (B) and `�
 first run seeds the file. Flag a reading more than 50% over the median.
 
 ### M-F099 — `upscale-refine` defaults to 5 points / 0.2, declares `refine_strength` a cost driver, and a changed strength is not quoted at the default's catalog cost
-pending: #621
 source: tester, spec for #621 from #598's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `templates/minimax/upscale-refine`.
 Adds what v4 (D6, D8) changed to M-F085, which stands. As there, the template exists only if Don
@@ -3365,6 +3362,34 @@ It is a **finding** if `refine_strength` is not a declared cost driver, if a cha
 quoted at the default's catalog cost, if the defaults are not 5 and 0.2, if the shift and alpha
 rules above are broken, or if 0 validates.
 cleanup: none (no job).
+metrics: none.
+
+### M-F100 — `prompts` passed down through a composing step gives each LTX chain segment its own line, spoken once
+source: tester, found while running TESTER_TASK.agent.md (ep113; #652 is the template-level fix)
+Needs LTX-2.5 (`Lightricks/LTX-2.5-Diffusers`) via `templates/ltx2/chained-segments`, about
+1.5 min. A consumer giving each segment its own dialogue line usually composes the template
+from an inline workflow, so `prompts` (a list) travels as a `workflow:` step argument and the
+segment image comes from `previous_result:`. Inline workflow, `id` `m-f100-chain`, `seed` 113:
+step `last` = task `get_last_frame` with `video: "asset:qa-cast/ep112-episode.mp4"`, `result`
+`{"content_type": "image/png", "save": false}`; step `chain` = `workflow: {"path":
+"templates/ltx2/chained-segments", "arguments": {"image": "previous_result:last", "width": 512,
+"height": 288, "num_frames": 49, "segments": 2, "seed": 113, "prompt": "A kitchen at night, two
+people by an open freezer.", "prompts": ["A wiry woman in a mustard sweater vest and glasses
+points at an empty pistachio ice cream tub and says quickly, \"You ate the whole thing,
+Hal.\"", "A heavyset bald man in a gray flannel shirt shrugs, deadpan, and says, \"The freezer
+did it.\""]}}`, `result` `{"content_type": "video/mp4", "subfolder": "final"}`.
+`validate_workflow` it, then `run_workflow` with the bound acknowledgement. Then run
+`templates/transcribe-audio` with `input_audio: "output:<the chain video>"` and read the text
+with `get_output_text`.
+expected:
+- validate is clean, and the run succeeds. The chain video is 512×288, 24 fps, 96 frames
+  (49 + 47 after the 2-frame trim), 48 kHz. Its manifest entry carries 2 `shots`, `segment 1`
+  and `segment 2`.
+- The transcript holds "ate the whole thing" once and "freezer did it" once. Each line is
+  spoken once, not repeated per segment.
+It is a **finding** if a line is missing, if either line appears twice (the composed `prompts`
+was dropped and `prompt` repeated, #652), or if the validate verdict doesn't hold at run.
+cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ## Performance

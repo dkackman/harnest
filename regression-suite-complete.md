@@ -8068,7 +8068,6 @@ cleanup: `delete_output(job_id=…)` for any run of the `fit` arm.
 metrics: none.
 
 ### C-F246 — `upscale-clip` on a 4:3 50-frame clip delivers 1280×960, 50 frames, 24 fps, its full field of view, no bars, and audio the source's length
-pending: #632
 source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
 **GPU. Needs the LTX-capable CUDA server (24 GB).** About 3 minutes per the plan. Quote
 `plan.estimate` first. On an mps or cpu server, report the case not runnable.
@@ -8098,7 +8097,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F247 — `refine-clip` on a 4:3 50-frame clip delivers 1280×960, 50 frames, held (not lapped) at the end, no bars, audio the source's length
-pending: #632
 source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
 **GPU. Needs the LTX-capable CUDA server (24 GB).** About 2–3 minutes. Quote `plan.estimate`
 first. On an mps or cpu server, report the case not runnable.
@@ -8143,7 +8141,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F249 — `refine-clip` still refuses a source with no soundtrack at `source_audio`, before any pipeline loads
-pending: #632
 source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
 Cheap: it fails before the GPU load. Run `templates/ltx2/refine-clip` with defaults except
 `source_video: "asset:qa-fit/src-640x480-50f-silent.mp4"`. Use `acknowledged_cost=true` and
@@ -9854,7 +9851,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F318 — `upscale-clip` and `refine-clip` share the fit → pipeline → restore → `pair_audio` shape; upscale-clip keeps `width`/`height` as the output size and fits with `downscale: 2`; the 32n/8n+1 refusals hold at validate
-pending: #632
 source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic). Supersedes C-F245 (plan v2).
 Free: validation only, plus at most one CPU-only failed run. For each of
 `templates/ltx2/upscale-clip` and `templates/ltx2/refine-clip`:
@@ -9901,7 +9897,6 @@ cleanup: `delete_output(job_id=…)` for any run of the `fit` arm.
 metrics: none.
 
 ### C-F319 — `fit_to_model`'s `downscale` fits into `width/downscale × height/downscale` and records that as the model size, and the round trip still restores exactly
-pending: #632
 source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic)
 CPU only. Start from C-F238's RT, adding a variable `ds` passed to the `fit` step as
 `downscale: "variable:ds"`. Keep `src: "asset:qa-fit/src-640x480-50f.mp4"`, `n` 57 and
@@ -9944,7 +9939,6 @@ cleanup: `delete_output(job_id=…)` per arm.
 metrics: none.
 
 ### C-F320 — `fit_to_model` refuses a `downscale` that `width` or `height` doesn't divide by, naming both, and a non-positive or non-integer `downscale`
-pending: #632
 source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic)
 CPU only. Use C-F319's RT with `src-640x480-50f.mp4`, `n` 57 and `mode` `letterbox`. Change
 one thing per arm from the good `w` 512, `h` 288, `ds` 2:
@@ -9966,7 +9960,6 @@ cleanup: `delete_output(job_id=…)` for any failed job's directory.
 metrics: none.
 
 ### C-F321 — a source already at the working size still delivers the same output size as before the change
-pending: #632
 source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic). Supersedes C-F248 (plan v2).
 **GPU. Needs the LTX-capable CUDA server (24 GB).** Two runs, about 3 minutes each. Quote
 `plan.estimate` first. On an mps or cpu server, report the case not runnable.
@@ -9992,7 +9985,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F322 — the templates' descriptions and the `dw:ltx-2.5` skill describe fit/restore, and each says which size its variables name
-pending: #632
 source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic). Supersedes C-F250 (plan v2).
 Free. Steps:
 1. Read `get_workflow` on both templates (`description`).
