@@ -792,7 +792,7 @@ Stage C adds a task that reads a file the caller names. Each arm is `validate_wo
   `../../../../etc/passwd`; `../../../../tmp/x.cube`; `asset:../../../etc/passwd.cube`;
   `output:../../../../etc/passwd.cube`; `file:///etc/passwd.cube`;
   `https://example.com/x.cube`.
-- Control: a `.cube` asset (`asset:qa-lut/identity2.cube`, uploaded as in
+- Control: a `.cube` asset (`asset:uploads/qa-lut/identity2.cube`, uploaded as in
   `regression-suite-complete.md` C-F263 if absent) validates clean.
 - Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/passwd.cube` arm.
 - `upload_asset` probes: `content=<base64 of "x">` with `asset_name` `qa-lut/x.txt`,
@@ -814,7 +814,7 @@ differs between the existing and nonexistent path, that discloses a server path,
 quotes the target file's contents is a hole: send it to `scripts/file-advisory.sh`, not a
 public issue. So is any non-`.cube` upload that lands.
 cleanup: `delete_output(job_id=...)` for any job (none should exist); `delete_asset` any
-`qa-lut/` asset this case created, including a probe that wrongly landed (after filing it).
+`uploads/qa-lut/` asset this case created, including a probe that wrongly landed (after filing it).
 metrics: none.
 
 ## Network egress

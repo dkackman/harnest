@@ -8448,14 +8448,14 @@ upload with `upload_asset(content=<b64>, asset_name=<name>, workspace="regressio
 Shape: `{"id": "qa-c-f263", "steps": [{"name": "lut", "task": {"command": "apply_lut",
 "arguments": <args>}, "result": {"content_type": "image/png", "file_base_name": <name>}}]}`.
 1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "lut":
-   "asset:qa-lut/identity2.cube"}`.
-2. `"lut": "asset:qa-lut/invert2.cube"` (strength defaults to 1.0).
+   "asset:uploads/qa-lut/identity2.cube"}`.
+2. `"lut": "asset:uploads/qa-lut/invert2.cube"` (strength defaults to 1.0).
 3. As 2 with `"strength": 0.5`.
 4. As 2 with `"strength": 0`.
 5. As 1 with `content_type` `video/mp4` and `media` `asset:qa-cast/ep6-cold-open.mp4`.
 6. `validate_workflow` with `strength: 1.01`, then with `strength: -0.01`.
 expected:
-- Both uploads succeed, `list_assets` shows both under `qa-lut/`, and `validate_workflow` on
+- Both uploads succeed, `list_assets` shows both under `uploads/qa-lut/`, and `validate_workflow` on
   run 1's workflow is `valid: true` (the `asset:` ref resolves).
 - Run 1 looks the same as the source; byte-identical to a C-F252 run 1 PNG of the same media.
 - Run 2 is a photographic negative of the source.
@@ -8468,7 +8468,7 @@ It is a **finding** if the upload is refused for its `.cube` extension, the iden
 changes the image, run 3 isn't grey, `strength` 0 changes anything, or the video loses audio
 or frames. If run 1 fails with a parser error, re-check the encoding before filing: the
 identity file is the positive control for C-F264.
-cleanup: `delete_output(job_id=…)` on every run. Delete both `qa-lut/` assets
+cleanup: `delete_output(job_id=…)` on every run. Delete both `uploads/qa-lut/` assets
 (`delete_asset`) at the end of the run, after C-F264 and C-F265 if they run in the same
 session.
 metrics: none.
@@ -8509,8 +8509,8 @@ expected:
 It is a **finding** if a bad file produces an output, a message lacks the line or the
 problem, the server returns a stack trace or a bare parser exception, or the comment/domain
 file is refused.
-cleanup: `delete_output(job_id=…)` on every job; `delete_asset` every `qa-lut/bad-*` and
-`qa-lut/ok-domain.cube` asset.
+cleanup: `delete_output(job_id=…)` on every job; `delete_asset` every `uploads/qa-lut/bad-*` and
+`uploads/qa-lut/ok-domain.cube` asset.
 metrics: none.
 Not covered: the 16 MiB size cap and a non-UTF-8 file. `upload_asset(content=…)` caps at
 4 MB and a binary body is the encoder's problem, not the parser's; those belong in dw's
