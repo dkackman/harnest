@@ -6574,7 +6574,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F191 — `crop_face_track` is a listed task taking `clip`, with a domain on every numeric argument and a tasks-guide section
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Free and read-only. Stage 1 adds the `crop_face_track` task.
 1. `list_tasks`.
@@ -6600,7 +6599,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F192 — `crop_face_track` on one small face: `crop_size`² crops, 8n+1 frames, one track entry per source frame at strength 1
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 The plan's first acceptance arm. No fixture holds a known small face, so this case builds
 one from `asset:qa-cast/priya-portrait.jpg` (Fixtures) on the CPU. **This build is "the
@@ -6674,7 +6672,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F193 — the distance gate: a near face is strength 0 throughout, and a gate straddling the face gives a strength between 0 and 1
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Build `far` and `near` per C-F192's face-track build. Then run one workflow (`id:
 "qa-c-f193"`) with three `crop_face_track` steps, each saving its `track` as JSON:
@@ -6696,7 +6693,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F194 — `crop_face_track` on a clip with no face succeeds, with every strength 0, and says no face was found
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Build `none` per C-F192's face-track build. Run `crop_face_track` `{"clip": <NONE's
 reference>}` (`id: "qa-c-f194"`), saving `track` as JSON. Read `get_job` and the track.
@@ -6713,7 +6709,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F195 — the track resets at a recorded shot boundary, and at a content cut when the clip carries no shots
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 The plan resets tracking at the clip's recorded `shots` first, and at an HSV-histogram cut
 when there are none. Build `far`, `near` and `two` per C-F192's face-track build. One
@@ -6744,7 +6739,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F196 — `crop_face_track` argument refusals come from the free pre-flight, with the boundaries accepted
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with
 `clip: "asset:qa-cast/ep3-shot1-incident.mp4"` plus the arguments given. Nothing runs.

@@ -714,7 +714,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F041 — `crop_face_track`'s `detector_repo` / `detector_file` are Hub ids and weight names, refused before any download
-pending: #622
 source: tester, spec for #622 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Stage 1 adds a task that fetches its face detector from the Hub. That is a new place a caller
 names something the server downloads and loads. The plan says it goes through the same
