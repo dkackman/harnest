@@ -9572,4 +9572,25 @@ mode, or if it contradicts the template's actual `continuity` default
 cleanup: none.
 metrics: none.
 
+### C-F307 — a bare string for a chain's `prompts` is refused at validate, and a list still validates
+source: tester, verified in #653 (claude-opus-5-5 via anthropic)
+Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`.
+1. `validate_workflow(name="templates/ltx2/chained-segments", arguments={"image":
+   "asset:qa-cast/priya-portrait.jpg", "prompts": "just one literal string", "width": 512, "height":
+   288, "num_frames": 49, "segments": 2, "seed": 110})`.
+2. Repeat step 1 with `"prompts": ["a woman smiles", "she turns away"]`, then with
+   `"prompts": ["a woman smiles"]`.
+3. `validate_workflow(name="templates/minimax/chained-segments", arguments={"image":
+   "asset:qa-cast/priya-portrait.jpg", "prompts": "just one literal string", "segments": 2})`.
+expected:
+- (1) `valid: false`, with an error at `steps[0].pipeline.chain.prompts` saying that `prompts` must be a list
+  with one prompt per segment. The error names the string it got and points at `prompt` or a
+  one-element list.
+- (2) Both validate clean (`valid: true`, no errors).
+- (3) The same refusal, at the same path.
+It is a **finding** if (1) or (3) validates. Before #653, the engine silently indexed the string per
+character, so each segment got a single letter as its prompt.
+cleanup: none.
+metrics: none.
+
 ## Performance
