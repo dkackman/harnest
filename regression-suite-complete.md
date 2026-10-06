@@ -6620,8 +6620,12 @@ the image, and say in the run notes how you referenced it. Every step saved belo
   is now about 5% of the frame width.
 - `far`: `loop_frames` `{"video": "previous_result:far_c", "num_frames": 50}`, saved
   (**FAR**: 50 frames, 960×544, no audio). 50 is not 8n+1, so padding has to happen.
-- `near_a`: `add_border_and_mask_with_size` on the portrait, `"width": 960, "height": 544`.
-  `near`: `loop_frames` 48 of it, saved (**NEAR**: the face fills much of the frame).
+- `near_crop`: crop the portrait tight to the face (confirm the crop task's call shape with
+  `get_task`). `near_a`: `add_border_and_mask_with_size` on `previous_result:near_crop`,
+  `"width": 960, "height": 544`.
+  `near`: `loop_frames` 48 of it, saved (**NEAR**: f = box width / 960 must exceed 0.12, read
+  from a `crop_face_track` track on NEAR. If it doesn't, tighten `near_crop` and rebuild, and
+  say so in the notes. That counts as setup, not a finding).
 - `qr_a`: `qr_code` `{"qr_code_contents": "dw-face-track-none", "width": 544, "height":
   544}`. `qr_b`: `add_border_and_mask_with_size` to 960×544. `none`: `loop_frames` 48,
   saved (**NONE**: no face anywhere).
