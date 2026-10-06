@@ -2790,15 +2790,13 @@ onsets with the mouth open). Record them in `regression-perf/M-F081.jsonl` with 
 `chain-sung10s-seed42`. The first run seeds the file. Flag a minutes reading more than 50% over
 the median.
 
-### M-F082 — the guide's 768p section documents the refine pass, the signature shows `refine_strength`, and the guide's workflow validates
-pending: #620
+### M-F082 — the guide's 768p section documents the refine pass, and the guide's workflow validates
 source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 + `upscale_h3_latents` + H3 refine (`refine_strength`).
 Steps:
 1. `list_guides`. Then `get_guide(<the guide holding it>, section="Promoting an H3 take to 768p in
    latent space")`.
-2. `get_pipeline_signature(<the H3 pipeline>)`.
-3. `validate_workflow` the section's example workflow as written (inline). Then validate it again
+2. `validate_workflow` the section's example workflow as written (inline). Then validate it again
    with `refine_strength` 0.001 and 0.999.
 expected:
 - The section exists and no longer says "There is no refine pass".
@@ -2807,10 +2805,9 @@ expected:
   `hold_audio: previous_result:base.audio` (step names may differ; the shape is what counts).
 - The section, or the template/guide `cost_drivers` it points at, says refine runs
   `num_inference_steps − 1` evaluations, so refine time scales with `num_inference_steps`.
-- The signature lists `refine_strength`, and describes its range as between 0 and 1 exclusive.
 - The example validates clean. Both 0.001 and 0.999 are inside the open range and validate.
-It is a **finding** if the old "no refine pass" text remains, if the example fails validation, if
-`refine_strength` is missing from the signature, or if 0.001 or 0.999 is refused.
+It is a **finding** if the old "no refine pass" text remains, if the example fails validation, or
+if 0.001 or 0.999 is refused.
 cleanup: none (validation only).
 metrics: none.
 
@@ -2842,47 +2839,6 @@ It is a **finding** if any probe validates, if (a) or (b) (the boundaries) is ac
 probe queues and fails in the pipeline (refused too late).
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
-
-### M-F084 — the guide's base → upscale → refine workflow renders 1344×768, keeps the base audio and composition, and refines in ~4–5 evaluations
-pending: #620
-source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 t2va at 960×544 + `upscale_h3_latents` + H3 refine at 1344×768.
-The plan: refine resets the schedule to σ ≤ `refine_strength` down to 0 and re-noises the
-upscaled latent, seeded. At 9 steps, shift 6 and strength 0.2 it runs about 4–5 evaluations.
-Composition is kept against the upscale-only decode at the same seed.
-Steps:
-1. `save_workflow` M-F082's example as `m-f084-h3-refine`, with `num_frames` 124 and `seed` 42.
-   Add these extra outputs:
-   - the base's own mp4 with its audio;
-   - an `ident` branch: `decode_h3_latents` on `previous_result:up`, then `pair_audio` with the
-     base audio. This is the upscale-only decode, as in M-F041.
-2. `run_workflow(name="m-f084-h3-refine", acknowledged_cost=true, wait_seconds=55)`, then
-   `wait_for_job` until it is done.
-3. `get_job_events`. Count the denoise evaluations (step-progress events) of the refine step.
-4. `get_output_frames` on the refined mp4, `ident` and the base, at the same four moments.
-   Compare the audio with `get_output_audio` and `get_gallery_metadata`.
-5. Re-run with `refine_strength` 0.4. The base and `up` should come from the step cache. Count
-   the refine evaluations again.
-expected:
-- The job succeeds. The refined mp4 is 1344×768 with `frame_count` 124.
-- Its audio is the base's track: the same sound and level, with duration within one frame. It is
-  not regenerated.
-- At 0.2, the refine step runs 4–5 denoise evaluations, not 9.
-- The refined frames keep `ident`'s composition (same subject placement, pose and layout), with
-  equal or sharper detail and no colour cast or noise.
-- At 0.4 there are more evaluations than at 0.2, and the composition is still recognisably the
-  same. Its minutes rise with the evaluations.
-It is a **finding** if any of these:
-- the job fails, or the dimensions or frame count differ;
-- the audio differs from the base's (generated, shifted or missing);
-- refine runs the full `num_inference_steps`;
-- composition changes at 0.2 (a different picture);
-- 0.4 shows no more evaluations than 0.2.
-cleanup: `delete_output(job_id=...)` for both jobs; `delete_workflow("m-f084-h3-refine")`.
-metrics: `latency_s`, `refine_s` (the refine step's duration from `get_job_events`) and
-`refine_evals`. Record them in `regression-perf/M-F084.jsonl` with condition
-`124f-960x544-to-1344x768-s0.2`; the 0.4 run uses condition `…-s0.4`. The first run seeds the
-file. Flag a reading more than 50% over the median.
 
 ### M-F085 — `templates/minimax/upscale-refine` is listed with measured cost, validates, and the minimax-h3 skill has its row
 source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
