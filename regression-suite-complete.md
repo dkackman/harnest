@@ -8501,13 +8501,14 @@ expected:
 - Every row's verdict is exactly one of **confirmed**, **refuted** or **inconclusive**, and
   every row cites job ids (probe 7 may cite none if no limit exists, and says so) and says
   what was observed.
+- Probe 8 alone may read "not run: GPU budget" with no job ids, per Don's decision on dkackman/diffusers-workflow#640 (2026-10-06); its design stays in the doc's *Not run* section.
 - The comment states probe 1's measured words/s and tail as numbers, gives a clipping
   verdict (does an over-budget last word get cut?), and hands C back to Don for a decision.
 - The `<breath>` row says whether H3 honours it as a silent beat, spoken aloud or ignored
   (the plan's condition for the budget's `<breath>` term coming back).
 - Every cited job id appears in `qa-h3-dialogue-probes`'s `list_jobs`, and none is in a
   default, `regression-*` or one of Don's own workspaces.
-It is a **finding** if a probe has no row, a verdict is anything but the three words, a row
+It is a **finding** if a probe has no row, a verdict is anything but the three words (probe 8's "not run: GPU budget" excepted), a row
 cites no jobs without saying why, or the rate, tail or clipping verdict is missing.
 cleanup: none (read-only).
 metrics: none.
@@ -8520,8 +8521,7 @@ Free (reads only). For **every** job id C-F270's comment cites: `get_job`, then
 expected:
 - Each job is `completed` with at least one output; a failed or cancelled job is not cited
   as evidence for a verdict.
-- Probes 1 to 7 ran `templates/minimax/video-with-audio`; probe 8 ran
-  `chain-video-continuity` as a 2-segment chain, one chain per seed per arm.
+- Probes 1 to 7 ran `templates/minimax/video-with-audio`, or a workflow whose H3 step matches it (same pipeline, turbo LoRA, 960x544, 9 steps) as read from `get_job_workflow`; extra non-generation steps such as `transcribe_audio` are allowed. Probe 8 was not run (Don's decision on #640), so it cites no jobs.
 - Turbo, 544p, `num_frames` 124 unless the row says why it needed more. Probe 1 has arms at
   124 **and** 345 frames.
 - Each job's prompt, seed and `num_frames` are the ones its row says that arm used. The
