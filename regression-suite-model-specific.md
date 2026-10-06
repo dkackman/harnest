@@ -2943,7 +2943,6 @@ metrics: `minutes_a`, `minutes_b`, `minutes_c`, `minutes_d`. Record them in
 file. Flag a reading more than 50% over the median.
 
 ### M-F087 — `LTX2RefinePipeline` is discoverable, and its signature has `video` beside the parent's `latents`, `noise_scale` and `sigmas`
-pending: #638
 source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `LTX2RefinePipeline` (dw community pipeline, subclass of `LTX2Pipeline`). Free: discovery only.
 Context: on 2026-10-05 neither `list_pipelines` nor `get_pipeline_signature` showed community
@@ -2972,7 +2971,6 @@ cleanup: none (no job).
 metrics: none.
 
 ### M-F088 — a hand-authored `loop_frames` → `LTX2RefinePipeline` workflow refines a 512×288×121 clip in place: same size, same frames, same scene
-pending: #638
 source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `LTX2RefinePipeline` on `Lightricks/LTX-2.5-Diffusers` (stage-two distilled schedule).
 Paid: one LTX refine job at 512×288, 121 frames (about the cost of `refine-clip`'s refine step).
@@ -3011,7 +3009,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `512x288-121
 `regression-perf/M-F088.jsonl`. The first run seeds the file.
 
 ### M-F089 — `LTX2RefinePipeline` refuses `video` and `latents` together, naming both, before it denoises
-pending: #638
 source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F088. Free if refused at validate. Otherwise one job that fails before denoising.
 Setup: M-F088's workflow, with one argument added to the `refine` step: `latents:
@@ -3034,7 +3031,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` if 
 metrics: none.
 
 ### M-F090 — `LTX2RefinePipeline` encodes a `video` whose size differs from `width`×`height` at `width`×`height`, and without `video` it behaves like `LTX2Pipeline`
-pending: #638
 source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F088. Paid: two short LTX jobs.
 The plan says `video` is VAE-encoded at `width`×`height`. This case covers a source that isn't already

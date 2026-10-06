@@ -8186,7 +8186,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F251 — `get_task("grade")` lists the seven tonal controls with their ranges, beside the five it had
-pending: #633
 source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free. Call `get_task("grade")`, then `list_tasks` and find `grade`'s entry.
 expected:
@@ -8206,7 +8205,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F252 — `grade` with no adjustments, or every adjustment at its identity, returns the input pixels
-pending: #633
 source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only: three utility runs of a few seconds, no model. Workspace `regression-complete`. The
 shape is `{"id": "qa-c-f252", "steps": [{"name": "grade", "task": {"command": "grade",
@@ -8233,7 +8231,6 @@ cleanup: `delete_output(job_id=…)` on all three.
 metrics: none.
 
 ### C-F253 — each new `grade` control moves the image the way its description says, against a no-adjustment control
-pending: #633
 source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only: eight utility runs of a few seconds. The shape is C-F252's, media
 `asset:qa-cast/priya-portrait.jpg`, PNG output. Run 1 is the control (no adjustments). Each
@@ -8263,7 +8260,6 @@ cleanup: `delete_output(job_id=…)` on every run.
 metrics: none.
 
 ### C-F254 — the tonal controls on a video keep frame count, fps, size and audio
-pending: #633
 source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, about 3 s. C-F093's step 1 shape (id `qa-c-f254`, `content_type` `video/mp4`) with
 arguments `{"media": "asset:qa-cast/ep6-cold-open.mp4", "highlights": -0.4, "shadows": 0.3,
@@ -8280,7 +8276,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F255 — `validate_workflow` refuses an out-of-range tonal control, naming it and its range, and accepts the ends
-pending: #633
 source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free: validates only. C-F252's shape, media `asset:qa-cast/priya-portrait.jpg`, one
 argument set per call:
@@ -8302,7 +8297,6 @@ cleanup: none (no job should exist; if one does, `delete_output(job_id=…)` and
 metrics: none.
 
 ### C-F256 — the job's "applied" log names every non-default `grade` parameter and none of the defaults
-pending: #633
 source: tester, spec for #633 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, a few seconds. C-F252's shape with arguments `{"media":
 "asset:qa-cast/priya-portrait.jpg", "exposure": 0.2, "highlights": -0.3, "shadows": 0.25,
