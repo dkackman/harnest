@@ -8608,11 +8608,10 @@ pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_task("check_script")`, and `list_tasks()`.
 expected:
-- `check_script` is listed, and `get_task` returns parameters `audio` (required), `lines`,
-  `shots`, `similarity` and `model_name`.
+- `check_script` is listed, and `get_task` returns parameters `audio` (required), `lines`, `similarity` and `model_name`.
 - `similarity` defaults to 0.85. `model_name` defaults to `openai/whisper-base`, either as the
   default value or named in its description, the way `transcribe_audio` reports it.
-- The `lines` description says entries are strings or `{text, shot}`, that H3 markup is
+- The `lines` description says entries are strings or `{text}`, that H3 markup is
   stripped, and that `[]` means no speech is expected.
 It is a **finding** if the task is missing, an argument is missing or renamed, or either
 default differs.
@@ -9973,6 +9972,17 @@ expected:
   `sh: "abc"` it is refused at `arguments.sh` as not convertible to float.
 It is a **finding** if a non-numeric string validates (#657), or the `variable:` reference is
 refused as if it were a literal.
+cleanup: none.
+metrics: none.
+
+### C-F330 — `check_script` lists a `shots` argument and documents `{text, shot}` lines
+pending: #644
+source: curator, split from C-F281 per dkackman/harnest#72 (#609 plan v2 stage B) (claude-opus-5-5 via anthropic)
+Free. `get_task("check_script")`.
+expected:
+- `get_task` lists an optional `shots` parameter.
+- The `lines` description says entries are strings or `{text, shot}`.
+It is a **finding** if `shots` is missing or renamed, or the `lines` description doesn't name `{text, shot}`.
 cleanup: none.
 metrics: none.
 
