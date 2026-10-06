@@ -9269,4 +9269,28 @@ list is refused.
 cleanup: none.
 metrics: none.
 
+### C-F295 — `get_job_workflow` on a job whose workspace was deleted folds the recorded arguments in, coerced as the run did, and says why it isn't realized
+source: tester, verified in #647 (claude-opus-5-5 via anthropic)
+Utility only (about 1 s, no GPU). Use a scratch workspace W = `regression-complete-c295`,
+not the suite's own workspace, since the case deletes it.
+1. `create_workspace(W)`.
+2. `run_workflow(workspace=W, acknowledged_cost=true, wait_seconds=55)` with `inline_workflow`
+   `{"id": "c295-fold", "variables": {"n": 1, "label": "x"}, "steps": [{"name": "last",
+   "task": {"command": "get_last_frame", "arguments": {"video":
+   "asset:qa-cast/ep105-episode.mp4"}}, "result": {"content_type": "image/png"}}]}` (any
+   reachable video substitutes) and `arguments={"n": "30", "label": "coerced"}`. Note the
+   job id J.
+3. `delete_workspace(W, acknowledged_cost=true)`.
+4. `get_job_workflow(J)`.
+expected:
+- Step 2 succeeds.
+- Step 4 is `realized: false`, `workflow.variables` is `{"n": 30, "label": "coerced"}`
+  (`n` an int, not the string `"30"`), and the reply has a `note` saying the run's copy is gone
+  and naming `n` and `label` as folded.
+It is a **finding** if the variables come back as the declared defaults (`1`, `"x"`), `n`
+comes back as the string `"30"`, or `note` is missing.
+cleanup: step 3 already removed W. If the case stopped before step 3, run
+`delete_workspace(W, acknowledged_cost=true)`.
+metrics: none.
+
 ## Performance
