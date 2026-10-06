@@ -763,7 +763,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F043 — `fit_to_model.video` and `restore_to_source.video` hold the media path gate
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 Stage A adds two tasks that take a video. Each arm is `validate_workflow` on C-F238's RT
 workflow (`regression-suite-complete.md`) with one argument replaced:

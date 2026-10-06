@@ -7139,7 +7139,6 @@ cleanup: `delete_output(job_id=…)` for any job that ran.
 metrics: none.
 
 ### C-F212 — `plan_cuts` is a listed task taking the plan's arguments, documented with the cuts workflow
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 Free and read-only.
 1. `list_tasks`, then `get_task("plan_cuts")`.
@@ -7163,7 +7162,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F213 — `plan_cuts` keeps the lyrics verbatim and in order and covers the song in contiguous frames
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, short jobs with synthetic inputs. Pass `transcript` and `lyrics` as workflow
 variables (`"variables": {...}`, read as `variable:transcript`). Each run is one `plan_cuts`
@@ -7207,7 +7205,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F214 — `include_instrumental_gaps` adds intro, gap and outro scenes, honouring `min_gap_seconds`
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. T1 from C-F213 (gaps: intro 0–2 s, middle 9–12 s, outro 17–20 s), no lyrics,
 `fps: 24`, `duration_s: 20`, `min_scene_s: 0.5`, `max_scene_s: 10`.
@@ -7228,7 +7225,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F215 — `snap_to_beats` and `segment_by` beat/stanza put boundaries on beats and stanzas
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. **T3** is T1 from C-F213 with every time +0.2 s (2.2/4.2, 4.2/6.2, 6.2/9.2,
 12.2/17.2), so no boundary falls on a beat by chance. **B** is beats every 0.5 s from 0.0 to
@@ -7259,7 +7255,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F216 — `plan_cuts` holds scenes inside `min_scene_s`/`max_scene_s`, splitting an over-long line on beats or evenly
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. **T4** (`duration_s: 20`, `fps: 24`): chunks `{0.0, 2.0, "intro line"}`, `{2.0,
 16.0, "one very long held note"}`, `{16.0, 16.4, "hey"}` and `{16.4, 20.0, "outro line"}`.
@@ -7284,7 +7279,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F217 — `plan_cuts` refuses a transcript without timestamps, naming the argument that adds them
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 Free for the static arm; the chained arm is one short CPU job.
 1. `validate_workflow` on a one-step `plan_cuts` workflow with `transcript: "walking down the
@@ -7311,7 +7305,6 @@ cleanup: `delete_output(job_id=…)` for any job that ran.
 metrics: none.
 
 ### C-F218 — `templates/minimax/music-video-cuts` runs on CPU from a song asset to a plan
-pending: #626
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
 One CPU job. Expect about a minute for whisper-base on a 30 s song. No GPU model may load.
 1. `list_workflows(shape="utility")`, then the full catalog if it isn't there. Find
@@ -7515,7 +7508,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F226 — `window_video` cuts one window: the synthetic prefix, real middle windows and a padded last window, with audio placed to match
-pending: #628
 source: tester, spec for #628 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, short jobs. The source is `asset:qa-cast/ep6-cold-open.mp4`: 124 frames at 24 fps,
 960×544, 32 kHz stereo (Fixtures). The plan's example is a 50-frame clip. This case uses the
@@ -7560,7 +7552,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F227 — `window_video` refuses an impossible window, and accepts the boundaries just inside
-pending: #628
 source: tester, spec for #628 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Every arm is a one-step inline `window_video` on `asset:qa-cast/ep6-cold-open.mp4`
 (124 frames) with `fps: 24`. Run `validate_workflow` first, then run the workflow if
@@ -7598,7 +7589,6 @@ cleanup: `delete_output(job_id=…)` for any job that ran.
 metrics: none.
 
 ### C-F228 — `window_video` on a source with no audio yields a window with no audio
-pending: #628
 source: tester, spec for #628 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Setup: `frames` is `video_frames(video: "asset:qa-cast/ep6-cold-open.mp4")`, which
 yields frames only. Then `win` is `window_video(video: "previous_result:frames", index: 0,
@@ -7840,7 +7830,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F237 — `fit_to_model` and `restore_to_source` are discoverable, with their arguments, `mode`'s three values and the round trip documented
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 Free. Steps:
 1. `list_tasks`.
@@ -7869,7 +7858,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F238 — letterbox round trip: a 640×480 50-frame clip fits to 512×288×57 with side bars and restores to exactly 640×480, 50 frames, 24 fps
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only.
 
@@ -7928,7 +7916,6 @@ cleanup: `delete_output(job_id=…)`. Keep the `qa-fit/` assets.
 metrics: none.
 
 ### C-F239 — letterbox boundaries: bars top and bottom, no bars or padding when the source already fits, and an exact-length source
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Uses C-F238's RT and `src-640x480-50f.mp4`, with `mode` `letterbox` throughout.
 Arms:
@@ -7957,7 +7944,6 @@ cleanup: `delete_output(job_id=…)` per arm.
 metrics: none.
 
 ### C-F240 — restore infers a 2× scale from its input's size and restores to 1280×960
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Start from C-F238's RT with `src-640x480-50f.mp4`, `w` 512, `h` 288, `n` 57.
 1. Add a step `up`: `resize_rescale(image: "previous_result:fit.video", width: 1024, height:
@@ -7974,7 +7960,6 @@ cleanup: `delete_output(job_id=…)` for both runs.
 metrics: none.
 
 ### C-F241 — stretch restores to the source size, and crop restores only the kept region at source density (640×360)
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Use C-F238's RT, `src-640x480-50f.mp4`, `w` 512, `h` 288, `n` 57. Run with `mode`
 `stretch`, then `crop`. Read `record` and look at frames 0 and 25 of `fitted` and `restore`.
@@ -7994,7 +7979,6 @@ cleanup: `delete_output(job_id=…)` for both runs.
 metrics: none.
 
 ### C-F242 — a source longer than `num_frames` is cut to its first `num_frames` frames, and comes back at that length
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Use C-F238's RT with `src: "asset:qa-cast/ep6-cold-open.mp4"`: 124 frames, 960×544,
 24 fps. Set `w` 512, `h` 288, `n` 57, `mode` `letterbox`.
@@ -8010,7 +7994,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F243 — `fit_to_model` refuses an unknown mode and non-positive or non-integer sizes and counts, naming the argument, before any frames are processed
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Use C-F238's RT with `src-640x480-50f.mp4`. Change one argument per arm from the
 good `w` 512, `h` 288, `n` 57, `mode` `letterbox`:
@@ -8033,7 +8016,6 @@ cleanup: `delete_output(job_id=…)` for any failed job's directory.
 metrics: none.
 
 ### C-F244 — `restore_to_source` refuses a non-uniform scale (naming both sizes) and a malformed `fit` record
-pending: #631
 source: tester, spec for #631 from #602's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Use C-F238's RT with `src-640x480-50f.mp4`, `w` 512, `h` 288, `n` 57, `letterbox`.
 Arms:
