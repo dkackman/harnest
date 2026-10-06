@@ -7970,42 +7970,6 @@ legal.
 cleanup: `delete_output(job_id=…)` for each arm.
 metrics: none.
 
-### C-F245 — `upscale-clip` and `refine-clip` share the fit → pipeline → restore → `pair_audio` shape, the new variables, and the unchanged 32n/8n+1 refusals at validate
-pending: #632
-source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
-Free: validation only. For each of `templates/ltx2/upscale-clip` and
-`templates/ltx2/refine-clip`:
-1. `get_workflow(name, variables_only=true)`, then `get_workflow(name)`.
-2. `validate_workflow` with only `source_video: "asset:qa-fit/src-640x480-50f.mp4"` set.
-3. Validate with one bad argument each:
-   - upscale-clip: `ref_width` 500, `ref_height` 300;
-   - refine-clip: `width` 500, `height` 300;
-   - both: `num_frames` 50, and `fit` `"zoom"`.
-expected:
-- **Variables.**
-  - Both have a `fit` variable defaulting to `letterbox`.
-  - upscale-clip has `ref_width`/`ref_height`, each with a 32n constraint, and **no**
-    `width`/`height`.
-  - refine-clip keeps `width`/`height` (32n).
-  - Both keep `num_frames` on 8n+1.
-- **Steps.**
-  - Each template's steps run in this order: a `fit_to_model` step with `mode:
-    "variable:fit"`, then the pipeline, then `restore_to_source` (`fit` from the fit step's
-    `.fit`), then the existing `pair_audio`.
-  - The pipeline's video input reads the fit step's `.video`, or a hidden intermediate saved
-    from it (the plan's fallback).
-  - refine-clip no longer has a `loop_frames` step.
-- **Step 2** is `valid: true` with a `plan.estimate`.
-- **Step 3.**
-  - Each size and frame arm is `valid: false`, naming the variable and its rule.
-  - The `fit` arm is refused at validate, or validates and is then refused at the fit step
-    before any pipeline loads. Running it to find out costs no GPU.
-- The issue carries `breaking-change`.
-It is a **finding** if upscale-clip still has `width`/`height`, if either template lacks the
-`fit` variable or step, or if any off-grid value validates clean.
-cleanup: `delete_output(job_id=…)` for any run of the `fit` arm.
-metrics: none.
-
 ### C-F246 — `upscale-clip` on a 4:3 50-frame clip delivers 1280×960, 50 frames, 24 fps, its full field of view, no bars, and audio the source's length
 source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
 **GPU. Needs the LTX-capable CUDA server (24 GB).** About 3 minutes per the plan. Quote
@@ -8057,28 +8021,6 @@ end laps to frame 0, or if the field of view is stretched or cropped.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
-### C-F248 — a source already at the working size still delivers the same output size as before the change
-pending: #632
-source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
-**GPU. Needs the LTX-capable CUDA server (24 GB).** Two runs, about 3 minutes each. Quote
-`plan.estimate` first. On an mps or cpu server, report the case not runnable.
-1. Run `templates/ltx2/refine-clip` with defaults except `source_video:
-   "asset:qa-fit/src-512x288-121f.mp4"`, seed 42.
-2. Run `templates/ltx2/upscale-clip` with `source_video:
-   "asset:qa-fit/src-512x288-121f.mp4"`, `ref_width` 512, `ref_height` 288, `num_frames` 121,
-   seed 42.
-expected:
-- Both `final/` outputs are 1024×576, 121 frames, 24 fps, with audio of 121/24 = 5.042 s
-  (± one frame).
-  - That is what each template produced before the change for a source matching its size
-    variables. For upscale-clip, the old `width`/`height` were 1024×576, so the size is
-    unchanged.
-- The `intermediate/` outputs have no bars, since the content box is the whole frame.
-It is a **finding** if either output size differs, or bars or padding appear for a source
-that already fits.
-cleanup: `delete_output(job_id=…)` for both.
-metrics: none.
-
 ### C-F249 — `refine-clip` still refuses a source with no soundtrack at `source_audio`, before any pipeline loads
 source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
 Cheap: it fails before the GPU load. Run `templates/ltx2/refine-clip` with defaults except
@@ -8093,28 +8035,6 @@ expected:
 It is a **finding** if the job reaches the pipeline, or if it succeeds with a silent or
 missing soundtrack.
 cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
-### C-F250 — the templates' descriptions and the `dw:ltx-2.5` skill describe fit/restore, not "match the source"
-pending: #632
-source: tester, spec for #632 from #602's plan v2 (claude-opus-5-5 via anthropic)
-Free. Steps:
-1. Read `get_workflow` on both templates (`description`).
-2. Read the `list_workflows(shape=<theirs>)` summaries.
-3. Load the `dw:ltx-2-5` skill with the `Skill` tool and read its upscale-clip and
-   refine-clip guidance.
-expected:
-- Each description and the skill say three things:
-  - a source of a different aspect ratio is letterboxed and restored, by default (the `fit`
-    variable picks stretch or crop);
-  - a short source is held and trimmed back;
-  - the output is exactly 2× the source's size and the source's length.
-- upscale-clip's text names `ref_width`/`ref_height` as the working size, with the output at
-  2× them. No text tells the caller to set `width`/`height` to match the source's size.
-- Nothing still says upscale-clip centre-crops or refine-clip stretches or laps.
-It is a **finding** if any of the three disagrees with another or with C-F246/C-F247's
-observed behaviour, or if any still carries the old instruction.
-cleanup: none.
 metrics: none.
 
 ### C-F251 — `get_task("grade")` lists the seven tonal controls with their ranges, beside the five it had
