@@ -6371,7 +6371,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F185 — known answer: `attribute-lines` on #485's duet names each line's voice, with numeric times that are the transcript's own
-pending: #617
 source: tester, spec for #617 from #488's plan v2 (claude-opus-5-5 via anthropic)
 This is the plan's end-to-end acceptance, and the first live run of `previous_result:` from
 a JSON step into `attribute_voices`' `lines` (#485's last deferred item). The song is
