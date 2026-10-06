@@ -7605,7 +7605,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F229 — `window_video` → `join_windows` round-trips a source exactly, for every curve, with the source's audio and dissolve-shaped shots
-pending: #629
 source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, no model step. The source is `asset:qa-cast/ep6-cold-open.mp4` (124 frames, 24 fps,
 32 kHz stereo). The windows are 33 frames with an overlap of 8, so the stride is 25 and
@@ -7654,7 +7653,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F230 — `join_windows` refuses the wrong window count, naming the count needed
-pending: #629
 source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. RT from C-F229, with the `windows` argument changed:
 1. Short: `w0`–`w3` (4 entries).
@@ -7675,7 +7673,6 @@ cleanup: `delete_output(job_id=…)` for any job that ran, including the window 
 metrics: none.
 
 ### C-F231 — `join_windows` refuses windows of the wrong or mixed length or size, and an unknown curve
-pending: #629
 source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. RT from C-F229, varied:
 1. **Odd length.** Add a `num_frames` field to each `windows` entry, 33 everywhere but
@@ -7701,7 +7698,6 @@ cleanup: `delete_output(job_id=…)` for any job that ran.
 metrics: none.
 
 ### C-F232 — `join_windows` over a source with no audio yields no audio, and drops the windows' own
-pending: #629
 source: tester, spec for #629 from #601's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. RT from C-F229, with a first step `frames: video_frames(video:
 "asset:qa-cast/ep6-cold-open.mp4")`. Both `window`'s `video` and `join`'s `source` become
