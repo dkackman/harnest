@@ -7327,37 +7327,6 @@ one plan json.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
-### C-F219 — `plan_cuts` grid arguments size renders to the 17n+5 grid with lead and tail, splitting past `max_frames`
-pending: #627
-source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
-CPU only, short jobs, inputs as in C-F213. All runs use `fps: 24`, `modulus: 17`,
-`remainder: 5`, `min_frames: 124`, `max_frames: 345`, `include_instrumental_gaps: false`,
-`min_scene_s: 0.5` and `max_scene_s: 30`.
-- **T5**: one chunk `{0.0, 2.0, "two seconds"}`, `duration_s: 2.0`, `lead_s: 0`,
-  `vocal_tail_s: 0`.
-- **T6**: chunks `{0, 2, "a"}`, `{2, 8, "b"}`, `{8, 20, "c"}` and `{20, 22, "d"}`,
-  `duration_s: 22`, `lead_s: 0.5`, `vocal_tail_s: 0.5`.
-- **T7**: chunks `{0, 2, "a"}` and `{2, 18, "long"}`, `duration_s: 18`, `lead_s: 0.5`,
-  `vocal_tail_s: 0.5`.
-expected:
-- T5: one shot, `start_frame 0`, `cut_frames 48`, `lead_frames 0`, `num_frames 124`.
-- T6, as max(124, the next 17n+5 ≥ lead + cut + tail):
-  - a: start 0, cut 48, lead 0 (the first shot's lead is clamped at frame 0), num 124;
-  - b: start 48, cut 144, lead 12, num 175;
-  - c: start 192, cut 288, lead 12, num 328;
-  - d: start 480, cut 48, lead 12, num 124.
-  - The `cut_frames` sum to 528, which is round(22 × 24) once.
-  - The plan reports a total frames to render equal to the `num_frames` sum, 751.
-- T7: "long" needs 12 + 384 + 12 = 408 > 345. A `warnings` entry names the shot, and it is
-  split into pieces, each with `num_frames` ≤ 345 and ≥ lead + cut + tail.
-  The cuts still tile `[0, 432)` contiguously.
-- Every shot in every run: `num_frames % 17 == 5`, `124 ≤ num_frames ≤ 345`,
-  `start_frame - lead_frames ≥ 0`.
-It is a **finding** if any arithmetic above differs, if a render is off the grid or under
-lead + cut + tail, or if an over-long shot passes `max_frames` unwarned and unsplit.
-cleanup: `delete_output(job_id=…)` for all jobs.
-metrics: none.
-
 ### C-F220 — `trim_video` cuts a frame range with its audio at the audio's own rate, and writes shots metadata
 pending: #627
 source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
@@ -7404,105 +7373,6 @@ expected:
 It is a **finding** if any arm yields a file, or fails with a traceback or decode error
 rather than a refusal.
 cleanup: `delete_output(job_id=…)` for any job that ran.
-metrics: none.
-
-### C-F222 — `music-video` takes per-entry `num_frames`/`lead_frames`/`cut_frames` and a `song` variable, and refuses the old top-level `num_frames`
-pending: #627
-source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
-Free: validation only. A `breaking-change` stage, so the old call shape is expected to fail.
-1. `get_workflow("templates/minimax/music-video", variables_only=true)`.
-2. `validate_workflow(name="templates/minimax/music-video")` with defaults.
-3. `validate_workflow(..., arguments={"num_frames": 124})`.
-4. `arguments={"shots": [<the default four>, with entry 1's num_frames set to 130]}`.
-5. `arguments={"shots": [{"name": "a", "start_frame": 0, "prompt": "x", "num_frames": 141,
-   "lead_frames": 12, "cut_frames": 48}, {"name": "b", "start_frame": 48, "prompt": "y",
-   "num_frames": 124}]}`.
-6. `arguments={"song": "asset:qa-cast/ep15-song.mp3"}`.
-expected:
-- Step 1: no top-level `num_frames`. Each default `shots` entry has `num_frames: 124`.
-  `lists.shots.fields` includes `num_frames`, `lead_frames` and `cut_frames`. A `song`
-  variable is a reference defaulting to `write_song`'s result. The 17n+5 constraint (124 to
-  345) now applies to the entries' `num_frames`.
-- Step 2 is `valid: true`, and its estimate is still the four-shot render.
-- Step 3 is refused as an unknown variable `num_frames`.
-- Step 4 is refused at the entry's JSON path (`shots[1].num_frames` or equivalent), naming
-  the 17n+5 grid. 130 is off it, and 141 would be on it.
-- Steps 5 and 6 are `valid: true`. Defaults are `lead_frames: 0` and `cut_frames =
-  num_frames`.
-It is a **finding** if the old top-level `num_frames` is still accepted, if an off-grid
-entry passes or is refused without its path, or if the stored default no longer validates.
-cleanup: none.
-metrics: none.
-
-### C-F223 — `music-video-cuts` passes H3's grid to `plan_cuts` and reports the total frames to render
-pending: #627
-source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
-One CPU job, as C-F218.
-1. `get_workflow("templates/minimax/music-video-cuts")`. Read the `plan_cuts` step's
-   arguments.
-2. Run it on `asset:qa-cast/ep15-song.mp3` as in C-F218.
-expected:
-- The `plan_cuts` step's `modulus`, `remainder`, `min_frames` and `max_frames` come from
-  `music-video`'s `variable_constraints` (17, 5, 124, 345). Either by reference or by equal
-  values is fine, but they must be equal to what `get_workflow("templates/minimax/
-  music-video", variables_only=true)` reports for the entries' `num_frames` constraint.
-- The output plan: every shot's `num_frames % 17 == 5`, in `[124, 345]`, ≥ `lead_frames +
-  cut_frames`. The `cut_frames` sum to round(30.03 × 24) = 721 (or the template's fps
-  equivalent), rounded once.
-- The plan reports a total frames to render equal to the sum of `num_frames`.
-- The plan's `shots` can be passed unchanged as `music-video`'s `shots` argument, so
-  `validate_workflow(name="templates/minimax/music-video", arguments={"shots": <plan
-  shots>, "song": "asset:qa-cast/ep15-song.mp3"})` is `valid: true`. Extra keys like
-  `lyric` and `kind` are tolerated, or the docs say to drop them.
-It is a **finding** if the grid is hard-coded to different values, if any shot is off the
-grid, or if the plan doesn't validate as `music-video` input.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
-### C-F224 — a planned 2 s line renders 124 frames and occupies exactly 48 in the deliverable
-pending: #627
-source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
-**GPU, expensive. Needs Don's go-ahead.** `music-video` measured 25.75 cold minutes for four
-shots on lem. Quote `plan.estimate` from `validate_workflow` on the issue and get Don's
-explicit go-ahead before running. Without it, report the case not run.
-1. Shots: `[{"name": "a", "start_frame": 0, "prompt": "<a singer in a dim room, wide>",
-   "num_frames": 124, "cut_frames": 48}, {"name": "b", "start_frame": 48, "prompt": "<the
-   singer close up>", "num_frames": 141, "lead_frames": 12, "cut_frames": 72}]`, with
-   `song: "asset:qa-cast/ep15-song.mp3"`, `audio_duration: 5`, seed 42. If the template
-   keeps a step that writes the song, `song` replaces it.
-2. Validate, quote, then on go-ahead `run_workflow(..., acknowledged_cost=true,
-   wait_seconds=55)` and `wait_for_job` until done.
-3. `get_gallery_metadata` on the deliverable, and `assess_output` on it.
-expected:
-- The job succeeds. The deliverable's shot spans are 48 frames (a, from 0) and 72 frames (b,
-  from 48). The total is 120, which is round(5 × 24) once, with `fps` 24.
-- Its audio is the song's `[0, 5.0)` s, in sync. `assess_output` reports no sync drift or
-  seam beyond its normal thresholds.
-- b's kept frames are its render's `[12, 84)`, so the lead was trimmed off. Spot-check with
-  `get_output_frames` at deliverable frame 48 that it is a b frame, not an a frame.
-It is a **finding** if the job fails, if a span differs from its `cut_frames`, if the total
-drifts from 120, or if audio and picture slip.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
-### C-F225 — `music-video`'s description, the `minimax-h3` skill and the guides state the per-shot length rules
-pending: #627
-source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
-Free.
-1. `list_workflows` (full form for `templates/minimax/music-video`). Read its description.
-2. Load `dw:minimax-h3` with the `Skill` tool. Read its length rules.
-3. `get_guide("workflows")`. Find the `music-video` passages, and the 24 GB recipes section
-   (`list_guides` locates it).
-expected:
-- The description and every passage say each `shots` entry carries its own `num_frames` on
-  the 17n+5 grid (124–345), with optional `lead_frames`/`cut_frames`. None mentions a
-  top-level `num_frames`, or that all shots share one length.
-- The skill's length rules give render length = max(124, next 17n+5 ≥ lead + cut + tail)
-  and point at `plan_cuts` to compute it.
-- The 24 GB recipe for music-video uses per-entry `num_frames`.
-It is a **finding** if any of these still describes the top-level `num_frames`, or gives a
-grid other than 17n+5 from 124 to 345.
-cleanup: none.
 metrics: none.
 
 ### C-F226 — `window_video` cuts one window: the synthetic prefix, real middle windows and a padded last window, with audio placed to match
@@ -10011,7 +9881,7 @@ if the stored default no longer validates.
 cleanup: none.
 metrics: none.
 
-### C-F326 — `music-video-cuts` plans on H3's grid with a 0.5 s lead, and its shots plus prompts validate as `music-video` input with only an unread-field warning
+### C-F326 — `music-video-cuts` plans on H3's grid with a 0.5 s lead, and its shots plus prompts validate as `music-video` input with an unread-field warning
 pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 CPU jobs as C-F218, on `asset:qa-cast/ep15-song.mp3`.
@@ -10033,8 +9903,10 @@ expected:
   `min(12, start_frame)`. Every `num_frames` is 17n+5 in `[124, 345]` and ≥ `lead_frames +
   cut_frames`. Shots are contiguous, Σ `cut_frames` = round(30.03 × 24) = 721, and
   `render_frames` = Σ `num_frames`.
-- Step 3 is `valid: true`. Its only notice is the unread-field warning, and that warning
-  names `lyric` and `kind`. It names neither `lead_frames` nor `cut_frames`.
+- Step 3 is `valid: true`. Its unread-field warning names `lyric` and `kind`, and names
+  neither `lead_frames` nor `cut_frames`. The only other warning allowed is a `slice_audio`
+  tail-pad warning on the last member (the last shot's render runs past the song's end by
+  design).
 - Step 4 is `valid: true`, with no unread-field warning.
 - Step 5: every `lead_frames` is 0, and the cuts are the same as step 2's.
 It is a **finding** if the grid differs from `music-video`'s, if `lead_s` doesn't default to
