@@ -9720,4 +9720,21 @@ mode, or contradicts the template's default.
 cleanup: none.
 metrics: none.
 
+### C-F313 — `get_output_frames` `at` returns a video's last two adjacent frames, and refuses one past the end by name
+source: tester, verified in #654 (claude-opus-5-5 via anthropic)
+Free, read-only. `asset:qa-cast/ep6-cold-open.mp4` is 124 frames at 24 fps (frames 0-123).
+1. `get_output_frames(name="asset:qa-cast/ep6-cold-open.mp4", at=["frame:122","frame:123"], max_dimension=64)`.
+2. The same with `at=["frame:121","frame:122","frame:123"]`.
+3. The same with `at=["frame:123","frame:122"]`.
+4. The same with `at=["frame:123","frame:124"]`.
+expected:
+- 1: two tiles, frame 122 @ 5.08s and frame 123 @ 5.12s, with `frame_count: 124`.
+- 2: three tiles, frames 121, 122, 123.
+- 3: two tiles, in the order requested (123, then 122).
+- 4: a structured refusal naming frame 124 as past the end of a 124-frame clip (frames 0-123).
+It is a **finding** if any step returns an HTTP 500. #654 was a 500 on step 1: a decode past
+end-of-stream when the last frame followed its neighbour.
+cleanup: none.
+metrics: none.
+
 ## Performance
