@@ -2869,8 +2869,18 @@ source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic
 Model/pipeline: MiniMax H3 at 1344×768 by four routes.
 This is the plan's stage-3 gate. Don decides from it whether the template stays. The template's
 `cost` must come from arm (b). The run is expensive, about 30–40 minutes for all arms.
-The prompt is the T2VA crowd-faces prompt from #500's body
-(`gh issue view 500 --repo dkackman/diffusers-workflow`). Every arm uses `seed` 42 and 124 frames.
+The prompt is the T2VA crowd-faces prompt, verbatim:
+
+```text
+integrated_multimodal_description: [Shot 1] Live-action, cinematic, a wide shot at night frames an open iron gate set in a high stone wall at the top of a cobbled slope, warm lantern light spilling through it. The camera pulls out with small amplitude at slow speed ahead of about forty townspeople who walk up the slope toward the gate in a loose crowd, the nearest rows only six to ten metres from the lens. They are adults and elders between thirty and seventy, men and women with weathered brown and tan skin, deep-set eyes, creased foreheads and stubble, in wool coats and shawls, each holding a lit candle at chest height with both hands so every face is lit gold from below. Their mouths are open and moving in a steady rhythm as they sing together, eyes fixed on the gate, and the front rows turn their heads toward the camera and back toward the gate as they climb. Candle flames stream sideways in a light breeze and breath shows in the cold air.
+
+overall_soundscape: Hundreds of boot soles scuff and knock on wet cobblestones in a loose, overlapping rhythm. Wool coats rustle, candle flames flutter, and a low murmur of voices swells from the crowd as the gate hinge creaks once.
+
+non_diegetic_music: A slow low drum pulse with sustained string chords, rising gradually in volume toward the end.
+```
+
+(from the arguments of job 074e65929a9d, templates/minimax/video-with-audio-768p)
+Every arm uses `seed` 42 and 124 frames.
 Arms, each run with `run_workflow(..., acknowledged_cost=<the bound {fingerprint, minutes, downloads} from the arm's validate_workflow plan>, wait_seconds=55)` and then
 `wait_for_job`:
 - (a) upscale-only: M-F041's base → upscale → decode → `pair_audio` workflow (the #499 guide
