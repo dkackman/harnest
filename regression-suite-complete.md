@@ -6971,7 +6971,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F205 — `analyze_beats` is a listed json task with the plan's arguments, documented
-pending: #625
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 Free and read-only.
 1. `list_tasks`.
@@ -6994,7 +6993,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F206 — `analyze_beats` on a click track of known tempo returns that tempo and its beats
-pending: #625
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, one job per tempo. No fixture holds a click track, so build one per run inside the
 same workflow. Take a 0.5 s slice of the song, fade most of it out so a short burst leads
@@ -7025,7 +7023,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F207 — `analyze_beats` on a Music 3 song returns a tempo and beats spanning the song
-pending: #625
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, one short job. `asset:qa-cast/ep15-song.mp3` is a 30 s Music 3 output (Fixtures).
 1. `run_workflow(inline_workflow={"id": "qa-c-f207", "steps": [{"name": "beats", "task":
@@ -7046,30 +7043,38 @@ beats are unordered or don't span the song.
 cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
-### C-F208 — `analyze_beats` on silence warns and returns no grid, never a crash
-pending: #625
+### C-F208 — `analyze_beats` on silence and on aperiodic noise warns and returns no confident grid, never a crash
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
-CPU only, two short jobs.
+CPU only, three short jobs.
 1. Digital silence: `run_workflow(inline_workflow={"id": "qa-c-f208", "steps": [{"name":
    "mute", "task": {"command": "gain_audio", "arguments": {"audio":
    "asset:qa-cast/ep15-song.mp3", "gain_db": -120}}}, {"name": "beats", "task": {"command":
    "analyze_beats", "arguments": {"audio": "previous_result:mute"}}, "result":
    {"content_type": "application/json", "subfolder": "final"}}]}, acknowledged_cost=true,
    wait_seconds=55)`.
-2. Near silence: the `beats` step alone on `asset:uploads/qa-cast/room-bed.wav` (4.96 s,
-   about −50 dBFS room tone, no beat).
+2. Loud aperiodic noise: the `beats` step alone on `asset:uploads/qa-cast/noise-bed.wav`
+   (6 s, 16 kHz, white noise with a loud head that fades, RMS −28 dBFS, loudest 50 ms about
+   −24 dBFS, so it passes the −40 dBFS near-silent gate and only the pulse checks can
+   reject it). Its onset periodicity is about 0.1. If the asset is missing, any steady
+   broadband noise louder than −40 dBFS will do; it must not be gated or rhythmic.
+3. A regular gated tone is a pulse: the `beats` step alone on
+   `asset:uploads/qa-cast/room-bed.wav` (4.96 s, a gated ~390 Hz tone, peak −28.9 dBFS,
+   periodicity 0.83). This is the positive control. It is not room tone.
 expected:
-- Both jobs **succeed**. The plan promises a result, not a refusal and not a failure.
-- Each result has either an empty `beats` list or `method: "rms_peaks"`, and a non-empty
-  `warnings` that says no reliable beat was found. `bpm` is null or absent when `beats` is
+- Jobs 1 and 2 **succeed**. The plan promises a result, not a refusal and not a failure.
+- Jobs 1 and 2: each result has either an empty `beats` list or `method: "rms_peaks"`, and a
+  non-empty `warnings` that says no reliable beat was found (or, for job 1, that the track
+  is silent). `bpm` is null or absent when `beats` is
   empty. It is never NaN or infinite, and the json parses.
-It is a **finding** if either job fails or raises, if a result claims `method: "onset"` with
-a confident grid and no warning, or if the json holds NaN/Infinity.
-cleanup: `delete_output(job_id=…)` for both jobs.
+- Job 3 succeeds with `method: "onset"`, bpm near 80 and beats about 0.75 s apart: a real
+  periodic signal is tracked, with no warning.
+It is a **finding** if any job fails or raises, if job 1 or 2 claims `method: "onset"` with a
+confident grid and no warning, if job 3 is rejected as noise, or if the json holds
+NaN/Infinity.
+cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ### C-F209 — one anchor and `tempo_bpm` give an exact even grid from the anchor
-pending: #625
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Run on `asset:qa-cast/ep15-song.mp3` as in C-F207, once for each `anchors` form the
 plan names.
@@ -7092,7 +7097,6 @@ cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ### C-F210 — two anchors move the nearest detected beats onto them
-pending: #625
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Reuse the 120 BPM click build from C-F206 step 1, whose onsets sit on multiples of
 0.5 s. Add `anchors: [2.1, 15.1]` to the `beats` step: both are 0.1 s off the detected
@@ -7111,7 +7115,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F211 — `analyze_beats` refuses an empty or inverted tempo range and an anchor past the end before running
-pending: #625
 source: tester, spec for #625 from #600's plan v2 (claude-opus-5-5 via anthropic)
 Free for the static arms. The anchor arm may reach run start. Each is an inline one-step
 workflow on `asset:qa-cast/ep15-song.mp3` (30.03 s), shaped as in C-F207.
