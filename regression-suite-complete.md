@@ -9510,7 +9510,7 @@ and its count is `ceil(frames / 105)`:
 The 1-window source is a `qa-fit` asset, which C-F238's setup makes if it's missing. Each
 `windows` list is `w0`… with indexes 0 to count − 1. Each validate uses the matching source,
 since a mismatched count is refused (C-F314).
-1. `list_workflows(shape="shot", traits="needs-input-media")`. Read `templates/ltx2/restore-long`'s
+1. `list_workflows(shape="sequence", traits="needs-input-media")`. Read `templates/ltx2/restore-long`'s
    `cost` and `lists`. Then `get_workflow("templates/ltx2/restore-long", variables_only=true)`
    for the default `windows`.
 2. `validate_workflow(name="templates/ltx2/restore-long")` with defaults.
