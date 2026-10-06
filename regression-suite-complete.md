@@ -7741,67 +7741,6 @@ finding too, since the plan says silence there is correct.
 cleanup: `delete_output(job_id=…)` for step 2's job.
 metrics: none.
 
-### C-F234 — `ltx2/restore-long` is listed, validates clean, prices per window and refuses a short window list before any GPU time
-pending: #630
-source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
-Free: validation only. Fixtures: `asset:qa-cast/ep13-episode.mp4` (282 frames, 24 fps, 960×544)
-and `asset:qa-cast/ep11-coldopen.mp4` (472 frames).
-1. `list_workflows(shape=<the shape list_workflows gives templates/ltx2/restore-deblur>)`.
-   Find `templates/ltx2/restore-long` there.
-2. `get_workflow("templates/ltx2/restore-long", variables_only=true)`. Read `num_frames`,
-   `overlap` and the default `windows` list.
-3. `validate_workflow(name="templates/ltx2/restore-long")` with defaults.
-4. With `num_frames` 121 and `overlap` 16, the stride is 105. Re-derive these if the defaults
-   differ.
-   - `ep13-episode.mp4` needs `ceil(282 / 105) = 3` windows.
-   - `ep11-coldopen.mp4` needs `ceil(472 / 105) = 5`.
-   Validate with `source_video: "asset:qa-cast/ep13-episode.mp4"` and `windows` of 3, then
-   2, then 4 `{name, index}` entries. Then validate `ep11-coldopen.mp4` with 5.
-expected:
-- Step 1 lists the template, its entry showing a `lists.windows` block whose fields include
-  `index`, and a `cost` carrying `per_entry`.
-- Step 2: `num_frames` sits on the 8n+1 constraint. Each default `windows` entry is
-  `{name, index}`. The default list length equals the `per_entry` `entries`.
-- Step 3 is `valid: true` with a `plan.estimate`.
-- Step 4:
-  - 3 windows on ep13 give `valid: true`.
-  - 2 and 4 windows give `valid: false`, naming 3, at the `join` step's path. Nothing is
-    queued.
-  - 5 windows on ep11 give `valid: true`, and its `plan.estimate` is about 5/3 of ep13's
-    (basis `per_entry`, or `derived`/`observed` with the scaling still evident).
-- The estimate is never `unknown` because of `index`.
-It is a **finding** if the template is missing or doesn't validate on its defaults. It is
-also a finding if a wrong count validates clean, or if the estimate doesn't scale with
-window count.
-cleanup: none.
-metrics: none.
-
-### C-F235 — `ltx2/restore-long` restores an ~12 s clip in windows, with no visible seams, the source's length and its audio in sync
-pending: #630
-source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
-**GPU. Needs the LTX-capable CUDA server (24 GB).** `restore-deblur` measured 2.91 cold minutes
-for one 121-frame window on lem, so three windows are roughly 9–12 minutes. Quote
-`plan.estimate` first. On an mps or cpu server, report the case not runnable.
-1. `templates/ltx2/restore-long` with `source_video: "asset:qa-cast/ep13-episode.mp4"` (282
-   frames, 44.1 kHz stereo) and the 3-entry `windows` list from C-F234, seed 42.
-   `validate_workflow`, then `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and
-   `wait_for_job` until done.
-2. `get_gallery_metadata` on the deliverable.
-3. `get_output_frames(seams=true)`. If the deliverable's shots don't drive that, call `at` on
-   frames 89–105 and 194–210 (the blended runs at stride 105, overlap 16), plus 0 and 281.
-4. `assess_output(name=<deliverable>, probe="analyze_sync_drift")` and `probe="analyze_seams"`.
-expected:
-- The job succeeds. The deliverable has 282 frames at 24 fps and 960×544. Its audio is the
-  source's own: 44.1 kHz stereo, 11.75 s (±1 ms).
-- Across each seam the picture changes smoothly: no jump in framing, colour or exposure
-  visible from one sampled frame to the next. Slow "breathing" over the blend is the plan's
-  named risk. Note it if seen, but it is a finding only if it reads as a cut.
-- No `sync_drift`/`sync_length` finding. The seams are read as dissolves.
-It is a **finding** if the run fails, if the frame count or audio length differs from the
-source, if a seam is visibly a cut, or if `assess_output` flags drift.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
 ### C-F236 — the `dw:ltx-2.5` skill tells an agent how to choose `windows` for a long source
 source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
 Free. Load `dw:ltx-2-5` with the `Skill` tool. Find the note on long sources. Also read
