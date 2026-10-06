@@ -2815,7 +2815,6 @@ cleanup: none (validation only).
 metrics: none.
 
 ### M-F083 — `validate_workflow` refuses `refine_strength` at 0, 1.0 and outside, and without `latents` or `hold_audio`
-pending: #620
 source: tester, spec for #620 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine (`refine_strength`), plus the SD 1.5 template as a non-H3 step.
 The carrier is M-F082's example workflow, inline. Each probe edits only the refine step's
@@ -3224,7 +3223,6 @@ metrics: `latency` per job, condition `512x288-121f-s<strength>` (e.g. `-s0`, `-
 `regression-perf/M-F095.jsonl`. The first run seeds the file.
 
 ### M-F096 — the 768p guide section documents refine schedule (B): 5 points / 0.2 example, evaluations = `num_inference_steps − 1`, and 2 points validates
-pending: #620
 source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 + `upscale_h3_latents` + H3 refine (`refine_strength`, schedule (B)).
 This case covers what plan v3/v4 changed. M-F082's own claim that refine time doesn't scale with
@@ -3261,7 +3259,6 @@ cleanup: none (validation only).
 metrics: none.
 
 ### M-F097 — `validate_workflow` refuses `refine_strength` with fewer than 2 points, and on an LTX step; with no `refine_strength`, few points are not a refine error
-pending: #620
 source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine, plus `templates/ltx` (any LTX-2/2.5 t2v template in
 `list_workflows(shape="shot")`) as a non-H3 step.
@@ -3287,7 +3284,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### M-F098 — refine schedule (B): 4 evaluations at 5 points and 5 at 6; strength 0.4 runs the same 4 and moves the picture further than 0.2; audio and composition kept
-pending: #620
 source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va at 960×544 + `upscale_h3_latents` + H3 refine at 1344×768.
 This replaces M-F084's evaluation expectations. D6 reversed M-F084's "0.4 runs more evaluations

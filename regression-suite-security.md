@@ -736,7 +736,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F042 — `window_video.video` and `join_windows.source` hold the media path gate, and the window-count check doesn't probe a refused path
-pending: #630
 source: tester, spec for #628/#629/#630 from #601's plan v2 (claude-opus-5-5 via anthropic)
 Stages 1 and 2 add two media arguments. Stage 3 adds a validate-time check that reads the
 `source`'s frame count, which makes it a new place where validation opens a caller-named

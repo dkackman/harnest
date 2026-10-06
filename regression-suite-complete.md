@@ -7712,7 +7712,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F233 — `join_windows`' static check refuses a wrong window count at `validate_workflow` in a hand-written workflow, and stays silent when the count isn't knowable
-pending: #630
 source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
 Free: validation only, apart from one short CPU job for the `output:` source. The check
 belongs to the task, not to the template, so this case uses C-F229's RT, never
@@ -7804,7 +7803,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F236 — the `dw:ltx-2.5` skill tells an agent how to choose `windows` for a long source
-pending: #630
 source: tester, spec for #630 from #601's plan v2 (claude-opus-5-5 via anthropic)
 Free. Load `dw:ltx-2-5` with the `Skill` tool. Find the note on long sources. Also read
 `get_task("join_windows")`'s description, and the `join_windows` section of the tasks guide
@@ -9704,7 +9702,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F314 — `ltx2/restore-long` is listed, validates clean with no price, and refuses a wrong window list at validate and at `run_workflow` before any GPU time
-pending: #630
 source: tester, spec for #630 from #601's plan v3 (claude-opus-5-5 via anthropic)
 Free: validation only, and no job is queued. Plan v3 ships the template **unpriced**, which
 reshapes C-F234 (that case's `per_entry` arms now belong to #658's C-F316). Fixtures:
@@ -9748,7 +9745,6 @@ cleanup: none (cancel step 5's job if one was queued).
 metrics: none.
 
 ### C-F315 — `ltx2/restore-long` restores the 282-frame ep13 in 3 windows: source length, source audio in sync, no visible seams; per-window and whole-run minutes logged
-pending: #630
 source: tester, spec for #630 from #601's plan v3 (claude-opus-5-5 via anthropic)
 **GPU. Needs the LTX-capable CUDA server (24 GB).** Plan v3 reshapes C-F235: the run also yields
 the timings #658 prices the template from. `restore-deblur` showed 2.91 observed minutes for
