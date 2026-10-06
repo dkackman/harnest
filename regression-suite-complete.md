@@ -8392,13 +8392,13 @@ expected:
   broken arm's prompt breaks the rule (e.g. probe 2's has two men and one woman) and the
   followed arm's keeps it (one man and one woman), with the rest of the prompt alike.
 - Every arm has exactly 2 jobs on 2 different fixed seeds (Q4), and the broken and
-  followed arms of a probe use the same pair of seeds.
-- Probe 1 covers 1.5, 2.0, 2.6, 3.2 and 4.0 words/s at each frame count: count the words
+  followed arms of a probe use the same pair of seeds. The one exception is probe 1's 345-frame arm (next bullet).
+- Probe 1 covers 1.5, 2.0, 2.6, 3.2 and 4.0 words/s at 124 frames on both seeds. Its 345-frame arm may be just the two seed-1001 entries the record ran (`p1_l200_345`, `p1_l400_345`), per Don's decision on #640 (2026-10-06). Count the words
   inside each job's `<d>…</d>` (the leading `[Language]` label excluded) against
   `num_frames / 24` s.
 It is a **finding** if a cited id is missing, unfinished or in another workspace, an arm's
-manifest disagrees with its row (prompt, seed or frames), an arm has fewer than two seeds,
-or a probe 1 rate/frame-count cell is missing.
+manifest disagrees with its row (prompt, seed or frames), an arm other than probe 1's 345-frame arm has fewer than two seeds,
+or a probe 1 cell named above is missing.
 cleanup: none.
 metrics: none.
 
