@@ -8425,7 +8425,6 @@ cleanup: none (delete any job that was queued, and file it).
 metrics: none.
 
 ### C-F263 — a `.cube` uploads as an asset, an identity LUT returns the input, and an inverting LUT blends by `strength`
-pending: #635
 source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, five utility runs plus two uploads. Workspace `regression-complete`.
 Setup: base64-encode each text below exactly (UTF-8, `\n` line ends, trailing newline) and
@@ -8474,7 +8473,6 @@ session.
 metrics: none.
 
 ### C-F264 — a malformed `.cube` is refused, naming the file, the line and the problem
-pending: #635
 source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only and cheap: each arm fails at validate or in the first seconds of the job, before
 any output. Setup: upload `qa-lut/identity2.cube` as in C-F263 if it isn't there (the
@@ -8517,7 +8515,6 @@ Not covered: the 16 MiB size cap and a non-UTF-8 file. `upload_asset(content=…
 pytest suite.
 
 ### C-F265 — `apply_lut` refuses a non-`.cube` file as `lut`, and an `output:` ref to one, naming the extension
-pending: #635
 source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free: validates, plus at most one cheap run. C-F263's run 1 shape with `lut` set in turn to:
 - `asset:qa-cast/priya-portrait.jpg` (a jpg);

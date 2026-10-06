@@ -782,7 +782,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F044 — `apply_lut.lut` holds the media path gate before the `.cube` check, and `.cube` upload doesn't widen `upload_asset`
-pending: #635
 source: tester, spec for #635 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Stage C adds a task that reads a file the caller names. Each arm is `validate_workflow` on
 `{"id": "qa-se-f044", "steps": [{"name": "lut", "task": {"command": "apply_lut",

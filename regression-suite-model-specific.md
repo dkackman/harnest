@@ -3053,7 +3053,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 metrics: none.
 
 ### M-F091 — `refine-in-place` is in the catalog as a shot with audio, and its first step selects a ladder by `strength` from 3–5 well-formed candidates
-pending: #639
 source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/refine-in-place` (`LTX2RefinePipeline`). Free: discovery only.
 Steps:
@@ -3102,7 +3101,6 @@ cleanup: none (no job).
 metrics: none.
 
 ### M-F092 — `refine-in-place` validates clean at its defaults, and on the trim route refuses off-grid `width`, `height` and `num_frames` at validate
-pending: #639
 source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F091. Free: validate only.
 Setup: fixture `asset:refine/src-512x288.mp4`. Read N and the route from M-F091 steps 2–3; don't assume
@@ -3132,7 +3130,6 @@ cleanup: none (no job).
 metrics: none.
 
 ### M-F093 — `refine-in-place` refuses `strength` N, −1 and 1.5 in the select step, naming the range, before any pipeline loads
-pending: #639
 source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F091. Free when refused at validate. Otherwise each is a job that must fail before
 any model loads, so it costs seconds.
@@ -3157,7 +3154,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 metrics: none.
 
 ### M-F094 — `refine-in-place` refuses a silent source in `normalize_audio`, before any pipeline loads
-pending: #639
 source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F091. Free when refused at validate. Otherwise a job that fails in seconds.
 Setup: fixture `asset:refine/src-512x288-silent.mp4`, or `asset:upscale/src-480x272-silent.mp4` (see
@@ -3177,7 +3173,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` if 
 metrics: none.
 
 ### M-F095 — `refine-in-place` at strength 0, the middle and N-1: right size, the source's soundtrack, change rising with strength, run time flat
-pending: #639
 source: tester, spec for #639 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F091. Paid: three LTX refine jobs at 512×288, 121 frames. When N > 3, run the other
 strengths too: the stage's intent is "each strength".
