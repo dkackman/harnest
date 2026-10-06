@@ -2721,7 +2721,6 @@ cleanup: `delete_output(job_id=...)` for each job.
 metrics: none.
 
 ### M-F080 — music-video and the chain-matched templates hold each shot's slice, and the docs state the measured lip-sync result
-pending: #619
 source: tester, spec for #619 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 templates `templates/minimax/music-video`,
 `templates/minimax/chain-matched-to-audio` and `templates/minimax/chain-matched-and-aligned`.
@@ -2754,7 +2753,6 @@ cleanup: none (no job).
 metrics: none.
 
 ### M-F081 — lip-sync A/B on `chain-matched-to-audio`: hold vs reference-only, on one sung track and seed
-pending: #619
 source: tester, spec for #619 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `templates/minimax/chain-matched-to-audio` (ref2va chain), plus
 `transcribe_audio`, `analyze_sync_drift` and `get_output_frames`.
