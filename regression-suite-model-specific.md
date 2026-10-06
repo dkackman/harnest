@@ -2805,8 +2805,8 @@ expected:
 - Its example is base → `upscale_h3_latents` → an H3 step at 1344×768 with
   `latents: previous_result:up`, `refine_strength: 0.2` and
   `hold_audio: previous_result:base.audio` (step names may differ; the shape is what counts).
-- The section, or the template/guide `cost_drivers` it points at, says refine time scales with
-  the number of evaluations (σ ≤ strength), not with `num_inference_steps`.
+- The section, or the template/guide `cost_drivers` it points at, says refine runs
+  `num_inference_steps − 1` evaluations, so refine time scales with `num_inference_steps`.
 - The signature lists `refine_strength`, and describes its range as between 0 and 1 exclusive.
 - The example validates clean. Both 0.001 and 0.999 are inside the open range and validate.
 It is a **finding** if the old "no refine pass" text remains, if the example fails validation, if
