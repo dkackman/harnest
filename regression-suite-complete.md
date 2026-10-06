@@ -6868,7 +6868,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F201 — `templates/ltx2/face-repair` is a catalog `shot` template of three wired steps, with its constraints refused at validate and an estimate quoted
-pending: #624
 source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Free. Stage 3 adds `workflows/templates/ltx2/face-repair.json`.
 1. `list_workflows(shape="shot")`.
@@ -6899,7 +6898,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F202 — `ltx2/face-repair` on a broken far face: the face is cleaner and steady, and the background, frames, fps and audio are unchanged
-pending: #624
 source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
 This spends GPU time: one LTX run on a 512² crop sequence. Build `blur_a` per C-F192's
 face-track build (**BLUR_A**: a face upsampled from 64 px, plus audio). Then run
@@ -6932,7 +6930,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F203 — `ltx2/face-repair` on a clip with no small face returns the source, with its audio
-pending: #624
 source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
 This spends GPU time if the template runs the LTX step regardless of strength. Build `near`,
 `none` and `two_a`'s pairing applied to NEAR (**NEAR_A**: NEAR plus `priya-voice.wav`, `fit:
@@ -6953,7 +6950,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F204 — the `ltx-2.5` skill and the tasks guide's examples point at `ltx2/face-repair`
-pending: #624
 source: tester, spec for #624 from #599's plan v1 (claude-opus-5-5 via anthropic)
 Free. Stage 3's plugin half and docs.
 1. Load `dw:ltx-2-5` with the `Skill` tool. The plugin tree follows `develop`.
@@ -7328,7 +7324,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F220 — `trim_video` cuts a frame range with its audio at the audio's own rate, and writes shots metadata
-pending: #627
 source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. `asset:qa-cast/ep6-cold-open.mp4` is 124 frames at 24 fps with 32 kHz stereo audio
 (Fixtures).
@@ -7355,7 +7350,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F221 — `trim_video` refuses a range outside the clip
-pending: #627
 source: tester, spec for #627 from #600's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, on `asset:qa-cast/ep6-cold-open.mp4` (124 frames). One step per arm, validated,
 then run if validate passes, since the static pass can't know a clip's length.
@@ -9741,7 +9735,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F323 — `plan_cuts` grid arguments: lead clamp, `num_frames = max(min, next 17n+5 ≥ lead + cut)`, split past `max_frames`, `render_frames`
-pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 CPU only, short jobs. Inputs and job shape as C-F213: one `plan_cuts` step, `transcript` as a
 variable, saved as `application/json` to `final`, run with `acknowledged_cost=true,
@@ -9796,7 +9789,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F324 — `slice_audio` `lead_frames` starts the slice that many frames early, refuses a negative start and refuses `start_seconds`
-pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 CPU only. Audio is `asset:qa-cast/ep15-song.mp3` (30.03 s, Fixtures). Every slice passes
 `fps: 24` and is saved as `audio/wav` to `final`.
@@ -9835,7 +9827,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F325 — `music-video` entries carry required `num_frames`/`lead_frames`/`cut_frames`, an off-grid entry is refused at its path, and the top-level `num_frames` is gone
-pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 Free: validation only. A `breaking-change` stage, so the old call shape is expected to fail.
 `<default four>` is the template's stored `shots`, from `get_workflow` (not
@@ -9882,7 +9873,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F326 — `music-video-cuts` plans on H3's grid with a 0.5 s lead, and its shots plus prompts validate as `music-video` input with an unread-field warning
-pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 CPU jobs as C-F218, on `asset:qa-cast/ep15-song.mp3`.
 1. `get_workflow("templates/minimax/music-video-cuts")`. Read its variables, the `plan_cuts`
@@ -9916,7 +9906,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F327 — a real `music-video` with 48- and 72-frame spans: each shot renders 124 and occupies exactly its `cut_frames`
-pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 **GPU, expensive. Needs Don's go-ahead.** `music-video` measured 25.75 cold minutes for four
 shots on lem, so expect about half that for two. Quote `plan.estimate` from
@@ -9945,7 +9934,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F328 — the descriptions, `minimax-h3` skill, `cuts.md`, the tasks guide and the workflows guide state the six-field entry contract and the grid
-pending: #627
 source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
 Free.
 1. `list_workflows` in full form for `templates/minimax/music-video` and
