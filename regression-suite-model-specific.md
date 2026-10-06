@@ -2915,7 +2915,7 @@ This is the plan's stage-3 gate. Don decides from it whether the template stays.
 `cost` must come from arm (b). The run is expensive, about 30–40 minutes for all arms.
 The prompt is the T2VA crowd-faces prompt from #500's body
 (`gh issue view 500 --repo dkackman/diffusers-workflow`). Every arm uses `seed` 42 and 124 frames.
-Arms, each run with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and then
+Arms, each run with `run_workflow(..., acknowledged_cost=<the bound {fingerprint, minutes, downloads} from the arm's validate_workflow plan>, wait_seconds=55)` and then
 `wait_for_job`:
 - (a) upscale-only: M-F041's base → upscale → decode → `pair_audio` workflow (the #499 guide
   workflow);
