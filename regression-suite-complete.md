@@ -9593,4 +9593,149 @@ character, so each segment got a single letter as its prompt.
 cleanup: none.
 metrics: none.
 
+### C-F308 — `continuity: "guide"` on H3 `chained-segments` validates at both allowed `guide_frames`, and alongside the fields it honours or ignores
+pending: #650
+source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
+Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`.
+1. `get_workflow("templates/minimax/chained-segments", variables_only=true)`.
+2. `validate_workflow(name="templates/minimax/chained-segments", arguments=...)` once per variant.
+   Every variant passes `"image": "asset:qa-cast/priya-portrait.jpg"` and `"seed": 42`, plus:
+   - a. `{"continuity": "guide"}`: `guide_frames` at its default.
+   - b. `{"continuity": "guide", "guide_frames": 22}`.
+   - c. `{"continuity": "guide", "guide_frames": 39}`.
+   - d. `{"continuity": "guide", "segments": 1}`: no seam, so no guide is ever built.
+   - e. `{"continuity": "guide", "num_frames": 345}`: the template's largest segment length.
+   - f. no `continuity` argument, as the control.
+3. Save the template as `c-f308-guide`, with the `chain` block's `carry_audio` set to `false` and
+   `continuity` set to `"guide"` (edit the document from `get_workflow` and re-save it whole).
+   `validate_workflow(name="c-f308-guide", arguments={"image": "asset:qa-cast/priya-portrait.jpg"})`.
+expected:
+- (1) The variables include `continuity`, defaulting to `"last_frame"`, and `guide_frames`,
+  defaulting to `22`. A default of `"guide"` before Don rules on the A/B (C-F311) is a finding.
+- (2) a-f are all `valid: true` with a `plan.estimate`. No error names `trim_frames`: the template
+  sets `trim_frames: 2` itself, and under `"guide"` it is ignored, not refused. A validate-time
+  note that `trim_frames` is ignored is welcome but not required. `crossfade_ms: 80` is also set
+  by the template and must not be refused.
+- f's `plan` matches today's `last_frame` plan for the template.
+- (3) `valid: true`. `carry_audio: false` is honoured (a video-only guide), not refused.
+It is a **finding** if any variant is refused. A refusal of a or b says the default or 22 isn't
+wired; of c, that 39 isn't allowed; of the template's own `trim_frames`, that the template is
+broken under its own new mode.
+cleanup: `delete_workflow("c-f308-guide")`.
+metrics: none.
+
+### C-F309 — `continuity: "guide"` refuses an out-of-rule `guide_frames`, `carry_frames`, and any step that isn't H3 `t2va`/`fl2va`
+pending: #650
+source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
+Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`. Note the newest job id from
+`list_jobs` before step 1.
+1. `validate_workflow(name="templates/minimax/chained-segments", arguments=...)`, each with
+   `"image": "asset:qa-cast/priya-portrait.jpg"`, `"continuity": "guide"` and:
+   - a. `"guide_frames": 30` (unaligned);
+   - b. `"guide_frames": 5` (aligned but excluded);
+   - c. `"guide_frames": 1` (aligned, the `last_frame` equivalent, excluded);
+   - d. `"guide_frames": 56` (17·3+5, aligned but excluded);
+   - e. `"guide_frames": 0`;
+   - f. `"guide_frames": 23` (one past 22: checks it is refused, not snapped down to 22).
+2. Save `templates/minimax/chained-segments` as `c-f309-carry`, with the `chain` block's
+   `continuity: "guide"` and `carry_frames: 22` added. Validate it with the image argument.
+3. Save `templates/minimax/chain-video-continuity` (a `ref2va` step, `last_segment` today) as
+   `c-f309-ref2va`, with its `chain` block's `continuity` set to `"guide"` and any `carry_frames`
+   removed. Validate it with whatever its required inputs are (`get_workflow(...,
+   variables_only=true)`; reuse `qa-cast` assets).
+4. Save `templates/ltx2/chained-segments` as `c-f309-ltx2`, with its `chain` block's `continuity`
+   set to `"guide"`. Validate it with `"image": "asset:qa-cast/priya-portrait.jpg"`.
+5. `list_jobs`.
+expected:
+- (1) a-f each `valid: false`, with an error at the chain's `guide_frames` that names the allowed
+  values 22 and 39. f must not validate with a snap warning: the plan says refused, not snapped.
+- (2) `valid: false`, an error naming `carry_frames` as not allowed under `"guide"` (pointing at
+  `guide_frames`). Silently ignoring it is a finding.
+- (3) `valid: false`, naming the rule that `"guide"` needs an H3 `t2va` or `fl2va` step (Q2: no
+  guides on `ref2va`). An error that only says the argument is unknown, or a failure inside
+  `last_segment`'s own checks, misses the rule.
+- (4) `valid: false`, the same rule, naming the step as not H3.
+- (5) No job was queued by any of these.
+It is a **finding** if any variant validates, or is refused only once `run_workflow` starts
+("refused too late").
+cleanup: `delete_workflow` on `c-f309-carry`, `c-f309-ref2va` and `c-f309-ltx2`.
+metrics: none.
+
+### C-F310 — a 2-segment guided H3 chain at `guide_frames: 39` is 124 + 85 = 209 frames, ignoring the template's `trim_frames`
+pending: #650
+source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
+GPU: one 2-segment H3 chain, about 12 min. Quote `plan.estimate` from `validate_workflow` on the
+issue before running.
+1. `run_workflow(workflow_path="templates/minimax/chained-segments", arguments={"image":
+   "asset:qa-cast/priya-portrait.jpg", "continuity": "guide", "guide_frames": 39, "segments": 2,
+   "seed": 42}, acknowledged_cost=true, wait_seconds=55)`, then `wait_for_job` until done.
+2. `get_job(job_id)`, `get_job_events(job_id)`, and `get_gallery_metadata` on the output.
+3. `get_output_frames` on output frames 121-127 (the seam is at 124), and on frames 85 and 123 of
+   segment 1's span for reference.
+expected:
+- The job succeeds with no error event.
+- The output is exactly 209 frames at 24 fps (124 + (124 − 39)), with an audio stream of about
+  8.71 s. 207 frames would mean `trim_frames: 2` was applied on top; 248 or 246 would mean the
+  prefix wasn't trimmed.
+- The job log notes once that `trim_frames` is ignored under `"guide"`. Repeating it per segment
+  is a minor finding, missing it altogether is a finding.
+- Frames 121-127 show no visible duplication or stutter: the trimmed prefix re-rendered frames
+  85-123 of segment 1, so no frame repeats across the seam.
+It is a **finding** if the length is anything but 209, or the seam shows a repeated block of
+frames.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F311 — seam A/B on H3 `chained-segments`: `last_frame` (368 frames) against `guide` at P=22 (328 frames)
+pending: #650
+source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
+GPU: two 3-segment H3 chains, about 18 min each. Quote both `plan.estimate`s on #650 before
+running. This case reports evidence for Don's Q4 ruling; only the lengths, completion and the
+audio continuity in arm (b) can fail it.
+1. Arm (a): `run_workflow(workflow_path="templates/minimax/chained-segments", arguments={"image":
+   "asset:qa-cast/priya-portrait.jpg", "continuity": "last_frame", "segments": 3, "seed": 42},
+   acknowledged_cost=true, wait_seconds=55)`, then `wait_for_job`. Keep the template's own prompt.
+2. Arm (b): the same call with `"continuity": "guide", "guide_frames": 22, "carry_audio": true`
+   (if `carry_audio` isn't a template variable, it is the default; don't patch it).
+3. For each arm, `get_gallery_metadata` (frames, audio duration) and `get_job` (minutes).
+4. Seam frames with `get_output_frames`, ±3 around each seam:
+   - arm (a): seams at frames 124 and 246 (121-127, 243-249);
+   - arm (b): seams at frames 124 and 226 (121-127, 223-229).
+5. `get_output_audio` over a window of about 1 s around each seam: arm (a) at ~5.17 s and
+   ~10.25 s, arm (b) at ~5.17 s and ~9.42 s.
+expected:
+- Both jobs succeed.
+- Arm (a) is 124 + 2 × 122 = 368 frames; arm (b) is 124 + 2 × 102 = 328 frames. The template's
+  `trim_frames: 2` does not change (b). The different lengths are expected.
+- Arm (b)'s audio runs on through each seam: no silent gap, no click, no restart of the soundscape.
+  With `carry_audio: true` the crossfade is not applied, so there is no level dip at the seam.
+- Report on #650, per arm, with the seam frames attached: whether the subject, lighting or motion
+  jumps at each seam; whether the audio runs on without a break; and the minutes. Say plainly which
+  arm holds the seam better, or that they are the same.
+It is a **finding** if either length is off, a run fails, or arm (b)'s audio breaks at a seam. A
+visible jump in arm (b) is not a failure of this case but is reported as the plan's named trigger
+(re-encode drift) for bringing persisted latents back. The #487 reference leak is not tested here:
+`chained-segments` carries no references.
+cleanup: `delete_output(job_id=…)` on both jobs, after the frames are attached to #650.
+metrics: none.
+
+### C-F312 — the minimax-h3 skill's chain advice places `continuity: "guide"` on `chained-segments` only, and says why
+pending: #650
+source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
+Free.
+1. Load the `minimax-h3` skill and read its chain advice.
+2. `get_workflow("templates/minimax/chained-segments", variables_only=true)`.
+expected:
+- The chain advice names `continuity: "guide"` and says it exists on `chained-segments` only.
+- It says why not on the reference-carrying chains (`chain-video-continuity`,
+  `chain-matched-and-aligned`, `music-video`): they are `ref2va`, and guides are kept off `ref2va`.
+- It gives `guide_frames` as 22 (default) or 39, says the prefix is trimmed from the deliverable,
+  and that `carry_audio` holds the previous tail's audio.
+- Its stated default for `chained-segments` matches step 2's `continuity` default (`last_frame`
+  until Don rules on the A/B; whatever he rules after).
+It is a **finding** if the advice recommends `"guide"` on a `ref2va` chain template, omits the
+mode, or contradicts the template's default.
+cleanup: none.
+metrics: none.
+
 ## Performance
