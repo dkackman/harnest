@@ -9784,7 +9784,7 @@ expected:
   512×288, `content_box` `{64, 0, 384, 288}`. Omitting `downscale` is the same as 1.
 - **Arm C.** `restore` is **1280×960**, 50 frames, no bars. The scale is inferred as 2× from
   512×288 over a 256×144 model size.
-- **Arm D.** `fitted` is 16×9, the record's model size is 16×9, and `restore` is 640×480,
+- **Arm D.** The record's model size is 16×9. The saved `fitted` file may be rounded up to even (16×10), since an mp4 can't be 9 high. `restore` is 640×480,
   50 frames. It will be blurry, which is fine.
 - **Every arm's** `fitted` saves as a normal video at the source's 24 fps. This is the v3
   ndarray `video`, which must keep stage A's contract.
