@@ -2913,7 +2913,7 @@ pipelines. `get_pipeline_signature("RFInversionFluxPipeline")` answered "diffuse
 named …". The stage's acceptance intent says both tools show the new class, so this case holds it to that.
 Steps:
 1. `list_pipelines` (filter on `LTX2` if the tool takes one).
-2. `get_pipeline_signature("LTX2RefinePipeline")`.
+2. `get_pipeline_signature("dw.community_pipelines.pipeline_ltx2_refine.LTX2RefinePipeline")`.
 3. `get_pipeline_signature("LTX2Pipeline")`, for comparison.
 4. `get_guide("workflows")` index. Find the community-pipelines line the plan adds (it names
    `LTX2RefinePipeline`) and read that section.
