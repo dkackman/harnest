@@ -7144,7 +7144,6 @@ Free and read-only.
 1. `list_tasks`, then `get_task("plan_cuts")`.
 2. `get_guide("tasks")`. Find the `plan_cuts` section.
 3. Load `dw:minimax-h3` with the `Skill` tool. Find its `cuts.md` reference.
-4. `list_guides`. Find the templates index, and in it the `music-video-cuts` row.
 expected:
 - `get_task` lists `transcript` (required), `lyrics`, `beats`, `segment_by` (`line`,
   `stanza`, `beat`), `fps`, `duration_s`, `min_scene_s`, `max_scene_s`, `vocal_tail_s`,
@@ -7155,9 +7154,8 @@ expected:
   num_frames, cut_frames, lead_frames, lyric, kind}], bpm?, fps, warnings}`.
 - `cuts.md` sets out the plan → read → prompt → render workflow and names `plan_cuts` and
   `templates/minimax/music-video-cuts`.
-- The templates index has a row for `music-video-cuts`.
-It is a **finding** if the task, an argument, the guide section, `cuts.md` or the template
-row is missing, or if the docs describe the result as one artifact per shot.
+It is a **finding** if the task, an argument, the guide section or `cuts.md`
+is missing, or if the docs describe the result as one artifact per shot.
 cleanup: none.
 metrics: none.
 
@@ -8281,7 +8279,8 @@ Free: validates only. C-F252's shape, media `asset:qa-cast/priya-portrait.jpg`, 
 argument set per call:
 - Refused: `shadows: 2`; `fade: -0.1`; `fade: 1.0001`; `highlights: -1.0001`; `whites: 1.5`;
   `blacks: -2`; `clarity: 3`; `vignette: -1.1`.
-- Refused: `fade: "0.5"` (a string) and `highlights: null`, if the schema doesn't treat null as
+- Refused: `fade: "5"` (a numeric string out of range), naming the range; `fade: "0.5"` may be
+  accepted (numeric strings are coerced). Refused: `highlights: null`, if the schema doesn't treat null as
   "unset". Either refusal or acceptance-as-unset of `null` is fine; a crash is not.
 - Accepted: `fade: 0`; `fade: 1`; `highlights: -1`; `highlights: 1`; all six ±1 parameters at
   `-1` in one call; the same six at `1` in one call.
@@ -8315,7 +8314,6 @@ cleanup: `delete_output(job_id=…)` on both runs.
 metrics: none.
 
 ### C-F257 — `sharpen` and `film_grain` are listed, with their parameters, ranges and a visible `seed`
-pending: #634
 source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_tasks`, then `get_task("sharpen")` and `get_task("film_grain")`.
 expected:
@@ -8331,7 +8329,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F258 — `film_grain` with a fixed seed is reproducible, a different seed changes it, and `rerun_job` reproduces it
-pending: #634
 source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, four or five utility runs. Shape: `{"id": "qa-c-f258", "steps": [{"name": "grain",
 "task": {"command": "film_grain", "arguments": <args>}, "result": {"content_type":
@@ -8357,7 +8354,6 @@ cleanup: `delete_output(job_id=…)` on every job.
 metrics: none.
 
 ### C-F259 — an unseeded `film_grain` run records the random seed it drew, and differs from the next unseeded run
-pending: #634
 source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, three utility runs. C-F258's shape, with `<args>` = `{"media":
 "asset:qa-cast/priya-portrait.jpg", "amount": 0.3}` and no `seed`.
@@ -8375,7 +8371,6 @@ cleanup: `delete_output(job_id=…)` on all three.
 metrics: none.
 
 ### C-F260 — `film_grain` on a video changes grain frame to frame and keeps frame count, fps, size and audio
-pending: #634
 source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, a few seconds. C-F258's shape with `content_type` `video/mp4` and `<args>` =
 `{"media": "asset:qa-cast/ep6-cold-open.mp4", "amount": 0.4, "size": 1.5, "chroma": 0.3,
@@ -8393,7 +8388,6 @@ cleanup: `delete_output(job_id=…)` on both.
 metrics: none.
 
 ### C-F261 — `sharpen` at `amount=0` is identity, and a positive amount visibly sharpens
-pending: #634
 source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, three utility runs. C-F258's shape with `"command": "sharpen"`.
 1. `<args>` = `{"media": "asset:qa-cast/priya-portrait.jpg", "amount": 0}`, name
@@ -8415,7 +8409,6 @@ cleanup: `delete_output(job_id=…)` on every run.
 metrics: none.
 
 ### C-F262 — `sharpen` and `film_grain` refuse out-of-range arguments at validate, and accept the ends
-pending: #634
 source: tester, spec for #634 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free: validates only. C-F258's shape, media `asset:qa-cast/priya-portrait.jpg`, one argument
 set per call.
@@ -9527,23 +9520,6 @@ It is a **finding** if (1) validates. Accepting it at validate and failing only 
 cleanup: `delete_workflow("c-f305-audio")`.
 metrics: none.
 
-### C-F306 — the minimax-h3 skill's chain advice covers `continuity: "guide"`
-pending: #650
-source: tester, spec for #650 from #611's plan v1 (claude-opus-5-5 via anthropic)
-Free.
-1. Load the `minimax-h3` skill and read its chain advice.
-expected:
-- The chain advice names `continuity: "guide"`: what it holds (the previous segment's last P frames
-  and their audio as a frame-0 guide), P's default of 22 and the 39 option, and that the prefix is
-  trimmed from the deliverable.
-- It states the A/B outcome Don ruled on: whether the guide mode is the default, or stays opt-in
-  because it was no better.
-It is a **finding** if the advice still recommends only `last_segment` with no mention of the guide
-mode, or if it contradicts the template's actual `continuity` default
-(`get_workflow("templates/minimax/chain-video-continuity", variables_only=true)`).
-cleanup: none.
-metrics: none.
-
 ### C-F307 — a bare string for a chain's `prompts` is refused at validate, and a list still validates
 source: tester, verified in #653 (claude-opus-5-5 via anthropic)
 Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`.
@@ -9724,6 +9700,329 @@ expected:
 - 4: a structured refusal naming frame 124 as past the end of a 124-frame clip (frames 0-123).
 It is a **finding** if any step returns an HTTP 500. #654 was a 500 on step 1: a decode past
 end-of-stream when the last frame followed its neighbour.
+cleanup: none.
+metrics: none.
+
+### C-F314 — `ltx2/restore-long` is listed, validates clean with no price, and refuses a wrong window list at validate and at `run_workflow` before any GPU time
+pending: #630
+source: tester, spec for #630 from #601's plan v3 (claude-opus-5-5 via anthropic)
+Free: validation only, and no job is queued. Plan v3 ships the template **unpriced**, which
+reshapes C-F234 (that case's `per_entry` arms now belong to #658's C-F316). Fixtures:
+`asset:qa-cast/ep13-episode.mp4` (282 frames, 24 fps, 960×544) and
+`asset:qa-cast/ep11-coldopen.mp4` (472 frames). A `windows` entry is `{"name": "wN", "index": N}`,
+with N from 0 to count − 1.
+1. `list_workflows(shape="shot", traits="needs-input-media")`. Find `templates/ltx2/restore-long`
+   there. If it isn't there, try the shape `get_workflow` reports for it.
+2. `get_workflow("templates/ltx2/restore-long", variables_only=true)`. Read `num_frames`,
+   `overlap`, `source_video` and the default `windows` list.
+3. `validate_workflow(name="templates/ltx2/restore-long")` with defaults.
+4. The arithmetic below assumes `num_frames` 121 and `overlap` 16, so a stride of 105. Re-derive
+   it if the defaults differ. `ep13-episode.mp4` needs `ceil(282 / 105) = 3` windows, and
+   `ep11-coldopen.mp4` needs `ceil(472 / 105) = 5`. Validate with
+   `source_video: "asset:qa-cast/ep13-episode.mp4"` and a `windows` list of 3, 2, 4 and 1
+   entries. Then validate `ep11-coldopen.mp4` with 5 entries and with 3.
+5. **Before any GPU time.** `run_workflow(name="templates/ltx2/restore-long",
+   arguments={source_video: ep13, windows: <2 entries>}, acknowledged_cost=true)`.
+expected:
+- Step 1 lists the template. Its entry has a `lists.windows` block whose fields include `index`,
+  and `constraints.num_frames` is `8*n+1`.
+- **Cost, while #658 isn't verified:** `cost` is `null`. Once #658 is verified, C-F316 governs
+  `cost`, and this bullet is not checked.
+- Step 2: each default `windows` entry is `{name, index}`, with indexes 0, 1, … in order.
+  `num_frames` is on the 8n+1 grid, and `overlap` is less than `num_frames`.
+- Step 3 is `valid: true`. With no `cost`, its `plan.estimate` has basis `unknown`, with null
+  `minutes`. If this box has finished runs of the template, the basis may instead be
+  `observed`. Either way validate does **not** refuse or warn as an error because the price is
+  unknown.
+- Step 4:
+  - 3 windows on ep13 give `valid: true`, and so do 5 on ep11.
+  - 2, 4 and 1 on ep13, and 3 on ep11, give `valid: false`. The error is at the `join` step's
+    path, not at an expanded member path. It names the needed count (3 for ep13, 5 for ep11)
+    and the count given. Nothing is queued.
+- Step 5 is refused with the same count error. No job id comes back, and `list_jobs` shows no
+  new job. If a job *was* queued, `cancel_job` it at once: that is a finding.
+It is a **finding** if the template is missing, if it doesn't validate on its defaults, or if
+an unknown price makes validate refuse. It is also a finding if a wrong count validates clean
+or reaches the queue, or if the error lacks the needed count.
+cleanup: none (cancel step 5's job if one was queued).
+metrics: none.
+
+### C-F315 — `ltx2/restore-long` restores the 282-frame ep13 in 3 windows: source length, source audio in sync, no visible seams; per-window and whole-run minutes logged
+pending: #630
+source: tester, spec for #630 from #601's plan v3 (claude-opus-5-5 via anthropic)
+**GPU. Needs the LTX-capable CUDA server (24 GB).** Plan v3 reshapes C-F235: the run also yields
+the timings #658 prices the template from. `restore-deblur` showed 2.91 observed minutes for
+one 121-frame window on lem, so three windows take roughly 9–12 minutes. The template is
+unpriced (C-F314), so there's no `plan.estimate` to quote. Quote 3 × `restore-deblur`'s
+`observed_minutes` instead, and say that's where the figure came from. On an mps or cpu
+server, report the case not runnable.
+1. `templates/ltx2/restore-long` with `source_video: "asset:qa-cast/ep13-episode.mp4"` (282
+   frames, 960×544, 44.1 kHz stereo), the 3-entry `windows` list `w0`–`w2` (indexes 0–2), and
+   `seed: 42`. Leave the other variables at their defaults, unless validate requires
+   `width`/`height` matching the source; then pass 960 and 544. Run `validate_workflow`, then
+   `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`, and `wait_for_job` until done.
+2. **Timings.** `get_job` on the job. Read the minutes of each `restore@wN` step and the whole
+   job's minutes. Use `get_job_events` if `get_job` doesn't break them out per step. Note the
+   device (`get_server_info`) and whether the run was cold (model load inside `restore@w0`).
+3. `get_gallery_metadata` on the deliverable (the `join` step's file).
+4. `get_output_frames(name=<deliverable>, seams=true)`. If the deliverable's shots don't drive
+   that, sample `at` frames 0, 88, 89, 96, 104, 105, 193, 194, 201, 209, 210 and 281. Those
+   are the blends over frames 89–104 and 194–209 at stride 105 and overlap 16.
+5. `assess_output(name=<deliverable>, probe="analyze_sync_drift")` and `probe="analyze_seams"`.
+expected:
+- The job succeeds, with 3 `restore@wN` steps, one per window.
+- The deliverable has 282 frames at 24 fps. Its size is the restore pipeline's output size, the
+  same in every frame. Its audio is the source's own: 44.1 kHz stereo, 11.75 s (±1 ms).
+- `media.shots` holds 3 shots named after the windows. The 2 seams carry `overlap_frames` 16.
+- Across each seam the picture changes smoothly, with no jump in framing, colour or exposure
+  from one sampled frame to the next. Slow "breathing" over the blend is the plan's named risk:
+  note it if you see it, but it's a finding only if it reads as a cut.
+- There's no `sync_drift`/`sync_length` finding, and the seams read as dissolves, not cuts.
+- Step 2 yields a per-step figure for each `restore@wN` step and a job total.
+It is a **finding** if the run fails, or if the frame count or audio length differs from the
+source. It is also a finding if a seam is visibly a cut, if `assess_output` flags drift, or if
+no per-step timing can be read from the job at all.
+cleanup: `delete_output(job_id=…)`.
+metrics: `restore_window_minutes` (one reading per `restore@wN`, condition `window=wN,device=<device>,cold|warm`)
+and `job_minutes` (condition `windows=3,device=<device>`), in `regression-perf/C-F315.jsonl`. The
+first run seeds the file. While the case is pending, the #630 verify comment also states them for #658.
+
+### C-F316 — `ltx2/restore-long` carries a measured `per_entry` cost over `windows`, and its estimate scales by window count (1–5 windows)
+pending: #658
+source: tester, spec for #658 from #601's plan v3 (claude-opus-5-5 via anthropic)
+Free: validation only, and nothing is queued. Stride 105 (`num_frames` 121, `overlap` 16;
+re-derive the counts below if C-F314 step 2 reads other defaults). Each source is read-only,
+and its count is `ceil(frames / 105)`:
+
+| windows | source | frames |
+|---|---|---|
+| 1 | `asset:qa-fit/src-640x480-50f.mp4` | 50 |
+| 2 | `asset:qa-cast/ep6-cold-open.mp4` | 124 |
+| 3 | `asset:qa-cast/ep13-episode.mp4` | 282 |
+| 4 | `asset:qa-cast/ep49-episode.mp4` | 372 |
+| 5 | `asset:qa-cast/ep11-coldopen.mp4` | 472 |
+
+The 1-window source is a `qa-fit` asset, which C-F238's setup makes if it's missing. Each
+`windows` list is `w0`… with indexes 0 to count − 1. Each validate uses the matching source,
+since a mismatched count is refused (C-F314).
+1. `list_workflows(shape="shot", traits="needs-input-media")`. Read `templates/ltx2/restore-long`'s
+   `cost` and `lists`. Then `get_workflow("templates/ltx2/restore-long", variables_only=true)`
+   for the default `windows`.
+2. `validate_workflow(name="templates/ltx2/restore-long")` with defaults.
+3. Validate with each row's source and `windows`: 2, 3 and 4 first (the plan's acceptance),
+   then 1 and 5.
+expected:
+- Step 1: `cost` is non-null, with a CUDA 24 GB entry whose `minutes` > 0. Its `per_entry` is
+  `{variable: "windows", minutes: m > 0, entries: E}`. `E` equals the default `windows` list's
+  length, and `lists.windows` shows the same default length. `minutes` is at least `m` (the
+  total includes the windows).
+- Step 2 is `valid: true`, its `plan.list_entries.windows` is `E`, and its estimate isn't
+  `unknown`.
+- Step 3: every call is `valid: true`, and `plan.list_entries.windows` is 1, 2, 3, 4, 5.
+  - **The plan's promise:** the 2-, 3- and 4-window estimates have basis `per_entry`. Their
+    `minutes` are strictly increasing, and each step up (3 − 2, 4 − 3) is `m` (±0.1).
+  - 1 and 5 windows continue the same line: 1 is below 2, and 5 − 4 is `m` (±0.1).
+  - None is `unknown`. `index` being in the entries must not unprice the list (#593's
+    `_list_entry_field_shifted`).
+  - If a basis is `observed` (this box has its own runs), say so. Then report the five
+    figures and bases instead of asserting the step: the figures must still differ by window
+    count.
+It is a **finding** if `cost` or its `per_entry` is missing, or if `per_entry.variable` isn't
+`windows`. It is also a finding if `entries` and the default list's length disagree, if any of
+the 2/3/4 estimates is `unknown`, or if two of them quote the same non-null `minutes`.
+cleanup: none.
+metrics: none.
+
+### C-F317 — `restore-long`'s `per_entry` figure is consistent with the measured run it came from
+pending: #658
+source: tester, spec for #658 from #601's plan v3 (claude-opus-5-5 via anthropic)
+Free, read-only. The plan says the figure is measured, never derived: `minutes` is a real run's
+total, and `per_entry.minutes` is one restore window plus its slice. This case checks that
+figure against this box's own history of C-F315.
+1. Read `templates/ltx2/restore-long`'s `cost` from `list_workflows` (as in C-F316 step 1),
+   and its `observed_minutes`/`observed_runs` if present.
+2. Read `regression-perf/C-F315.jsonl`, its `restore_window_minutes` and `job_minutes`
+   readings on `cuda`.
+3. Read `get_workflow("templates/ltx2/restore-long")`'s description.
+expected:
+- `per_entry.minutes` is within ±50% of the median warm `restore_window_minutes` on cuda.
+  Use cold readings if there are no warm ones, and note it.
+- `cost` `minutes` is within ±50% of the median 3-window `job_minutes`, or of
+  `observed_minutes` when `C-F315.jsonl` has no readings.
+- The description doesn't claim the cost is unknown or unmeasured.
+- If neither history exists (C-F315 never ran on this box), report the case not runnable. That
+  is not a failure.
+It is a **finding** if the figure is off by more than half from what this box measures. That
+means it wasn't taken from the run the plan names, or the template has drifted from it.
+cleanup: none.
+metrics: none.
+
+### C-F318 — `upscale-clip` and `refine-clip` share the fit → pipeline → restore → `pair_audio` shape; upscale-clip keeps `width`/`height` as the output size and fits with `downscale: 2`; the 32n/8n+1 refusals hold at validate
+pending: #632
+source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic). Supersedes C-F245 (plan v2).
+Free: validation only, plus at most one CPU-only failed run. For each of
+`templates/ltx2/upscale-clip` and `templates/ltx2/refine-clip`:
+1. `get_workflow(name, variables_only=true)`, then `get_workflow(name)`.
+2. `validate_workflow` with only `source_video: "asset:qa-fit/src-640x480-50f.mp4"` set.
+3. Validate with one bad argument each: `width` 500; `height` 300; `num_frames` 50;
+   `fit` `"zoom"`.
+4. `gh issue view 632 --repo dkackman/diffusers-workflow --json labels`.
+expected:
+- **Variables.**
+  - Both have a `fit` variable defaulting to `letterbox`. `stretch` is also acceptable if
+    #632's hand-off says the runs showed an edge halo and the default was flipped (Q1).
+  - upscale-clip keeps `width`/`height` at 960×544, each with its 32n constraint. It has
+    **no** `ref_width`/`ref_height` variables.
+  - refine-clip keeps `width`/`height` (32n).
+  - Both keep `num_frames` on 8n+1. No variable that either template had before is removed or
+    renamed.
+- **Steps.**
+  - Each template runs a `fit_to_model` step with `mode: "variable:fit"`, then the pipeline,
+    then `restore_to_source` (`video` from the pipeline, `fit` from the fit step's `.fit`),
+    then the existing `pair_audio`.
+  - upscale-clip's fit step has `width: "variable:width"`, `height: "variable:height"` and
+    `downscale: 2`. Its pipeline still gets `width`/`height` from those variables, and
+    `reference_downscale_factor` 2.
+  - refine-clip's fit step has `width`/`height` from its variables and no `downscale`, or
+    `downscale: 1`.
+  - Each pipeline's video input is `previous_result:<fit step>.video` directly. That means
+    upscale-clip's reference, and refine-clip's upsampler input. It is not `variable:source_video`,
+    and not a saved intermediate file, since v3 dropped that fallback.
+  - refine-clip has no `loop_frames` step.
+- **Step 2** is `valid: true` with a `plan.estimate`. For upscale-clip, the estimate and
+  `get_workflow`'s `observed.drivers`, if present, are still keyed on `width`/`height`/
+  `num_frames`. Per the plan, the cost sees the output size.
+- **Step 3.**
+  - Each size and frame arm is `valid: false`, naming the variable and its rule (32n or 8n+1).
+  - The `fit` arm is refused at validate, or validates and is then refused at the fit step
+    before any pipeline loads. If it validates, run it with `acknowledged_cost=true,
+    wait_seconds=55` and check `get_job_events` for the absence of a pipeline load.
+- **Step 4.** #632 does **not** carry `breaking-change` (Q2′).
+It is a **finding** if upscale-clip lost `width`/`height` or gained `ref_width`/`ref_height`,
+if either template lacks the `fit` variable or step, if upscale-clip's fit lacks `downscale: 2`,
+if a pipeline input bypasses `fit.video`, or if any off-grid value validates clean.
+cleanup: `delete_output(job_id=…)` for any run of the `fit` arm.
+metrics: none.
+
+### C-F319 — `fit_to_model`'s `downscale` fits into `width/downscale × height/downscale` and records that as the model size, and the round trip still restores exactly
+pending: #632
+source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic)
+CPU only. Start from C-F238's RT, adding a variable `ds` passed to the `fit` step as
+`downscale: "variable:ds"`. Keep `src: "asset:qa-fit/src-640x480-50f.mp4"`, `n` 57 and
+`mode` `letterbox` unless an arm says otherwise.
+1. `get_task("fit_to_model")`.
+2. Arm A: `w` 512, `h` 288, `ds` 2.
+3. Arm B: `w` 512, `h` 288, `ds` 1. Then the same again with the `downscale` argument removed
+   from the `fit` step (its default).
+4. Arm C: C-F240's 2× variant (`up` resizes `fit.video` to 2× the **fitted** size, so 512×288
+   here, and `restore` reads `up`), with `w` 512, `h` 288, `ds` 2. This is upscale-clip's
+   path without the GPU.
+5. Arm D: `w` 512, `h` 288, `ds` 32, `mode` `stretch`. That gives a 16×9 model size at the
+   small end.
+For each arm, read `record` with `get_output_text`, run `get_gallery_metadata` on `fitted` and
+`restore`, and run `get_output_frames` at frame 0 of `fitted`.
+expected:
+- **Step 1.** `get_task` lists `downscale` as optional, default 1, a positive integer. Its
+  description says the fit goes into `width/downscale × height/downscale`, and that `width`
+  and `height` must divide by it. `mode`, `width`, `height`, `num_frames` and `video` are
+  unchanged from stage A.
+- **Arm A.**
+  - `fitted` is **256×144**, 57 frames, 24 fps.
+  - The record has `model_width` 256 and `model_height` 144, `model_frames` 57, and
+    `source_*` 640/480/50.
+  - `content_box` is `{x: 32, y: 0, w: 192, h: 144}` (±1 px), with black side bars.
+  - `restore` is 640×480, 50 frames, 24 fps, no bars, and matches the source by eye. The
+    scale is inferred as 1× from 256×144.
+- **Arm B.** Both runs match C-F238's expectations exactly: `fitted` 512×288, model size
+  512×288, `content_box` `{64, 0, 384, 288}`. Omitting `downscale` is the same as 1.
+- **Arm C.** `restore` is **1280×960**, 50 frames, no bars. The scale is inferred as 2× from
+  512×288 over a 256×144 model size.
+- **Arm D.** `fitted` is 16×9, the record's model size is 16×9, and `restore` is 640×480,
+  50 frames. It will be blurry, which is fine.
+- **Every arm's** `fitted` saves as a normal video at the source's 24 fps. This is the v3
+  ndarray `video`, which must keep stage A's contract.
+It is a **finding** if `downscale` is missing from `get_task`, if a fit ignores it (512×288
+with `ds` 2), if the record names the output size rather than the fitted size, if `fitted`
+loses its fps, or if any restore size is wrong.
+cleanup: `delete_output(job_id=…)` per arm.
+metrics: none.
+
+### C-F320 — `fit_to_model` refuses a `downscale` that `width` or `height` doesn't divide by, naming both, and a non-positive or non-integer `downscale`
+pending: #632
+source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic)
+CPU only. Use C-F319's RT with `src-640x480-50f.mp4`, `n` 57 and `mode` `letterbox`. Change
+one thing per arm from the good `w` 512, `h` 288, `ds` 2:
+1. `ds` 3, `w` 512. 512 doesn't divide by 3, though 288 does. This is the plan's named arm.
+2. `ds` 5, `w` 515, `h` 288. 515 divides by 5 and 288 doesn't, so this is the height-only arm.
+3. `ds` 0; `ds` -2; `ds` 1.5; `ds` `"two"`.
+Validate each arm first. Run any arm that validates, with `wait_seconds=55`.
+expected:
+- Each arm is refused, either at `validate_workflow` or at run time with the job failed at the
+  `fit` step.
+- **Arm 1** names `downscale` (3) and `width` (512). **Arm 2** names `downscale` (5) and
+  `height` (288). Neither names the dimension that divides.
+- **Arm 3** names `downscale` and the bad value.
+- No later step ran, no output file was written, and `get_job_events` shows no pipeline or
+  model load.
+It is a **finding** if any arm succeeds, if a non-divisible size is silently floored (170×96
+for arm 1), if 1.5 is coerced to 1 or 2, or if the message omits either named value.
+cleanup: `delete_output(job_id=…)` for any failed job's directory.
+metrics: none.
+
+### C-F321 — a source already at the working size still delivers the same output size as before the change
+pending: #632
+source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic). Supersedes C-F248 (plan v2).
+**GPU. Needs the LTX-capable CUDA server (24 GB).** Two runs, about 3 minutes each. Quote
+`plan.estimate` first. On an mps or cpu server, report the case not runnable.
+1. Run `templates/ltx2/refine-clip` with defaults except `source_video:
+   "asset:qa-fit/src-512x288-121f.mp4"`, seed 42. Its working size defaults to 512×288 with
+   121 frames.
+2. Run `templates/ltx2/upscale-clip` with `source_video:
+   "asset:qa-fit/src-512x288-121f.mp4"`, `width` 1024, `height` 576, `num_frames` 121,
+   seed 42. Under Q2′ the working size is the reference, `width/2 × height/2` = 512×288.
+   `acknowledged_cost=true, wait_seconds=55` for each, then `wait_for_job`. Then
+   `get_gallery_metadata` on each `final/` and `intermediate/`, and `get_output_frames` at
+   frame 0 of each `intermediate/`.
+expected:
+- Both `final/` outputs are 1024×576, 121 frames, 24 fps, with audio of 121/24 = 5.042 s
+  (± one frame).
+  - That is what each template produced before the change for a source matching its size
+    variables. For upscale-clip that was `width`/`height` 1024×576, so the size is unchanged.
+- Neither `intermediate/` has bars, since the content box is the whole frame. There is no
+  held padding either, since the source is already 121 frames.
+It is a **finding** if either output size differs, or bars or padding appear for a source
+that already fits.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F322 — the templates' descriptions and the `dw:ltx-2.5` skill describe fit/restore, and each says which size its variables name
+pending: #632
+source: tester, spec for #632 from #602's plan v4 (claude-opus-5-5 via anthropic). Supersedes C-F250 (plan v2).
+Free. Steps:
+1. Read `get_workflow` on both templates (`description`).
+2. Read the `list_workflows(shape=<theirs>)` summaries.
+3. Load the `dw:ltx-2-5` skill with the `Skill` tool and read its upscale-clip and
+   refine-clip guidance.
+4. Read `get_task("fit_to_model")`'s `downscale` description.
+expected:
+- Each description and the skill say three things:
+  - a source of a different aspect ratio is letterboxed and restored, by default (the `fit`
+    variable picks stretch or crop);
+  - a short source is held and trimmed back;
+  - the output is exactly 2× the source's size and the source's length.
+- **Which size.**
+  - upscale-clip's text says its `width`/`height` are the **output** size, and the source is
+    fitted into half of it.
+  - refine-clip's text says its `width`/`height` are the **working** size, with the output at
+    2× them.
+  - The skill states the same difference between the two templates.
+- No text mentions `ref_width`/`ref_height`, and none tells the caller to set
+  `width`/`height` to match the source's size.
+- Nothing still says upscale-clip centre-crops or refine-clip stretches or laps.
+- No text calls the change breaking or says a variable was renamed or removed.
+It is a **finding** if any of these sources disagrees with another, with C-F318's variables, or
+with C-F246/C-F247's observed behaviour. It is also a finding if either template's text leaves
+its size meaning unstated, or if any text still carries the old instruction.
 cleanup: none.
 metrics: none.
 

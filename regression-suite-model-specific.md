@@ -2700,11 +2700,11 @@ completes and keeps the image identity.
 Runs, through the carrier, with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` and
 then `wait_for_job`:
 - (a) `reference-to-video` with `arguments={"seed": 42, "subject": "asset:qa-cast/priya-portrait.jpg",
-  "voice": "asset:qa-cast/priya-voice.wav", "prompt": "The woman sits in a quiet office and
+  "voice": "asset:qa-cast/priya-voice.wav", "prompt": "The man sits in a quiet office and
   speaks to the camera, medium close-up."}` and `"hold_audio": "asset:qa-cast/priya-voice.wav"`.
   The template's `seed` defaults to null, so it must be pinned;
 - (b) `image-to-video` with `"image": "asset:qa-cast/priya-portrait.jpg"`, `seed` 42, a prompt
-  of her speaking, and the same `hold_audio`.
+  of him speaking, and the same `hold_audio`.
 For each run, call `get_output_frames(count=4, hear=1.0)`, view `asset:qa-cast/priya-portrait.jpg`
 with `get_output_image`, and transcribe the audio.
 expected:
