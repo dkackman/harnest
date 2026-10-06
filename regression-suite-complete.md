@@ -10026,4 +10026,258 @@ its size meaning unstated, or if any text still carries the old instruction.
 cleanup: none.
 metrics: none.
 
+### C-F323 — `plan_cuts` grid arguments: lead clamp, `num_frames = max(min, next 17n+5 ≥ lead + cut)`, split past `max_frames`, `render_frames`
+pending: #627
+source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
+CPU only, short jobs. Inputs and job shape as C-F213: one `plan_cuts` step, `transcript` as a
+variable, saved as `application/json` to `final`, run with `acknowledged_cost=true,
+wait_seconds=55`, read with `get_output_text`. Chunks are written `{start, end, text}`.
+Unless a run says otherwise, every run passes `fps: 24`, `modulus: 17`, `remainder: 5`,
+`min_frames: 124`, `max_frames: 345`, `lead_s: 0.5`, `vocal_tail_s: 0`,
+`include_instrumental_gaps: false`, `min_scene_s: 0.5`, `max_scene_s: 30`, and `duration_s`
+equal to the last chunk's end.
+1. `get_task("plan_cuts")`. It lists `modulus`, `remainder`, `min_frames`, `max_frames` and
+   `lead_s`, all optional.
+2. **G1**: `{0, 2, "a"}`, `{2, 8, "b"}`, `{8, 20, "c"}`, `{20, 22, "d"}`.
+3. **G2**: G1 with `lead_s: 0`.
+4. **G3**: G1 with none of the five grid arguments (B's behaviour).
+5. **G4** (lead clamp past the first shot): `{0, 0.25, "x"}`, `{0.25, 2.25, "y"}`,
+   `min_scene_s: 0`.
+6. **G5** (exactly on the grid): `{0, 2, "a"}`, `{2, 7.375, "b"}`.
+7. **G6** (exactly `max_frames`): `{0, 2, "a"}`, `{2, 15.875, "b"}`.
+8. **G7** (one frame over): `{0, 2, "a"}`, `{2, 15.9167, "b"}`.
+9. **G8** (long line): `{0, 2, "a"}`, `{2, 18, "long"}`.
+10. **G9**: G1 with `lead_s: -0.5`.
+expected:
+- G1, with lead = `min(12, start_frame)` and `num_frames = max(124, smallest 17n+5 ≥ lead +
+  cut)`:
+  - a: `start_frame 0`, `cut_frames 48`, `lead_frames 0` (clamped at frame 0), `num_frames 124`;
+  - b: 48, 144, 12, 158;
+  - c: 192, 288, 12, 311;
+  - d: 480, 48, 12, 124. This is the plan's own example: a 2.0 s line is cut 48, lead 12,
+    render 124.
+  - Σ `cut_frames` = 528 = round(22 × 24). `render_frames` = 124 + 158 + 311 + 124 = 717.
+- G2: every `lead_frames` is 0, and `num_frames` is 124, 158, 294, 124. `render_frames` = 700.
+- G3: B unchanged. Every shot has `num_frames == cut_frames` and `lead_frames == 0`, with the
+  same starts and cuts as G1. If `render_frames` is present, it equals Σ `num_frames` (528).
+- G4: x is start 0, cut 6, lead 0, num 124. y is start 6, cut 48, lead **6** (clamped to its
+  start, not 12), num 124. Σ cut = 54.
+- G5: b is start 48, cut 129, lead 12, num **141**. 12 + 129 = 141 is on the grid, so it is
+  not rounded up to 158.
+- G6: b is cut 333, lead 12, num **345**. It is not split and not warned about.
+- G7: b needs 12 + 334 = 346 > 345. A `warnings` entry names the shot, and b is split. Every
+  piece has `num_frames ≤ 345` and ≥ its own lead + cut. The pieces tile `[48, 382)`.
+- G8: "long" needs 12 + 384 = 396 > 345. It is warned about and split as in G7, and the
+  pieces tile `[48, 432)`. Each piece after the first has `lead_frames` 12.
+- Every shot in G1, G2 and G4–G8: `num_frames % 17 == 5`, `124 ≤ num_frames ≤ 345`,
+  `num_frames ≥ lead_frames + cut_frames`, `0 ≤ lead_frames ≤ start_frame`. Each `start_frame`
+  is the previous `start_frame + cut_frames`, and Σ `cut_frames` = round(`duration_s` × 24),
+  rounded once. `render_frames` = Σ `num_frames`.
+- G9 is refused (by `validate_workflow` or at run start), naming `lead_s`. A negative lead
+  must never reach a shot.
+It is a **finding** if any number above differs, if a render is off the grid or shorter than
+lead + cut, if an on-grid need is rounded up a step, if an over-long shot passes `max_frames`
+unwarned or unsplit, if `render_frames` is missing or wrong, or if G3 differs from stage B.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F324 — `slice_audio` `lead_frames` starts the slice that many frames early, refuses a negative start and refuses `start_seconds`
+pending: #627
+source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
+CPU only. Audio is `asset:qa-cast/ep15-song.mp3` (30.03 s, Fixtures). Every slice passes
+`fps: 24` and is saved as `audio/wav` to `final`.
+1. `get_task("slice_audio")`. It lists `lead_frames`: optional, default 0 (or null meaning 0),
+   non-negative.
+2. One workflow with two final steps. **L**: `start_frame: 48, lead_frames: 12, num_frames:
+   24`. **R** (the control): `start_frame: 36, num_frames: 24`. Validate, then run with
+   `acknowledged_cost=true, wait_seconds=55`. Compare the two with `get_output_audio`.
+3. The same as L with `lead_frames: 0`, and again with `lead_frames` omitted. Compare both to
+   a slice at `start_frame: 48, num_frames: 24`.
+4. Boundary: `start_frame: 12, lead_frames: 12, num_frames: 24` (the slice starts at frame 0).
+5. Refusals, each `validate_workflow` only:
+   a. `start_frame: 0, lead_frames: 12, num_frames: 24` (starts at frame −12);
+   b. `start_frame: 11, lead_frames: 12, num_frames: 24` (frame −1);
+   c. `start_seconds: 2.0, duration_seconds: 1.0, lead_frames: 12`;
+   d. `start_frame: 48, lead_frames: -1, num_frames: 24`.
+6. Run-time arm: a for_each over a `shots` list variable `[{"s": 0, "l": 12}]`, whose
+   `slice_audio` step reads `start_frame: item:s, lead_frames: item:l, num_frames: 24`.
+   Validate, then run if validate passes.
+expected:
+- L is the audio `[1.5 s, 2.5 s)`, the same span as R. Both are 1.0 s (±1 ms) at the source's
+  rate, and they match sample for sample, or at least in every figure `get_output_audio`
+  reports. `num_frames` counts from the lead's start: the slice runs 24 frames from frame 36,
+  not 36 frames, and does not end at 72.
+- Step 3: `lead_frames: 0` and omitted are both identical to the plain `start_frame: 48` slice.
+- Step 4 succeeds, starting at 0.0 s.
+- Arms 5a and 5b are refused by `validate_workflow`, naming `lead_frames` (or the negative
+  start it produces) and not just failing later. 5c is refused, naming both `lead_frames` and
+  `start_seconds`. 5d is refused as below zero.
+- Step 6 is refused by `validate_workflow`, or at run time before the slice is written, naming
+  the negative start. No file is produced.
+It is a **finding** if L starts anywhere but frame 36, if `lead_frames` changes the slice's
+length, if 0 differs from omitted, if a negative start is clamped to 0 instead of refused, or
+if `lead_frames` with `start_seconds` is accepted.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F325 — `music-video` entries carry required `num_frames`/`lead_frames`/`cut_frames`, an off-grid entry is refused at its path, and the top-level `num_frames` is gone
+pending: #627
+source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
+Free: validation only. A `breaking-change` stage, so the old call shape is expected to fail.
+`<default four>` is the template's stored `shots`, from `get_workflow` (not
+`variables_only`, which cuts prompts).
+1. `get_workflow("templates/minimax/music-video", variables_only=true)`.
+2. `get_workflow("templates/minimax/music-video")`. Read the steps.
+3. `validate_workflow(name="templates/minimax/music-video")` with defaults.
+4. `arguments={"num_frames": 124}`.
+5. `arguments={"shots": <default four>}` with entry 1's `num_frames` set to **130**.
+6. As step 5, with entry 1's `num_frames` set in turn to 107, 124, 141, 345 and 362.
+7. As step 5, with entry 1's `lead_frames` removed. Then again with only `cut_frames`
+   removed, and again with only `num_frames` removed.
+8. `arguments={"shots": [{"name": "a", "start_frame": 0, "prompt": "<shots[0].prompt>",
+   "num_frames": 124, "lead_frames": 0, "cut_frames": 48}, {"name": "b", "start_frame": 48,
+   "prompt": "<shots[1].prompt>", "num_frames": 124, "lead_frames": 12, "cut_frames": 72}]}`.
+9. `arguments={"song": "asset:qa-cast/ep15-song.mp3"}`.
+expected:
+- Step 1: no top-level `num_frames` variable. Every default entry has `num_frames: 124,
+  lead_frames: 0, cut_frames: 124`. `lists.shots.fields` holds exactly `name`, `prompt`,
+  `start_frame`, `num_frames`, `lead_frames`, `cut_frames`, and `lists.shots.steps` includes
+  `slice`, `shot` and `trim`. `constraints` keeps the 17n+5 bound (124 to 345) for the
+  entries' `num_frames`, with **no** `snap`. A `song` variable defaults to
+  `{from_previous_result: write_song}`.
+- Step 2: `slice` reads `lead_frames: item:lead_frames` and `num_frames: item:num_frames`.
+  `shot` reads `num_frames: item:num_frames`. A for_each step `trim` runs `trim_video` with
+  `start_frame: item:lead_frames` and `num_frames: item:cut_frames`. `edit` gathers `trim`,
+  and `pair_audio` is the one `final` step. `slice` and the balancing step read
+  `variable:song`.
+- Step 3 is `valid: true`, and the estimate is the four-shot render it was before.
+- Step 4 is refused as an unknown variable `num_frames`.
+- Step 5 is refused at `arguments.shots[1].num_frames`, naming the 17n+5 grid. It is **not**
+  snapped to 141, and no snap notice appears instead of a refusal.
+- Step 6: 124, 141 and 345 are `valid: true`. 107 (under the minimum) and 362 (over the
+  maximum) are refused at `arguments.shots[1].num_frames`.
+- Step 7: each arm is refused, and the refusal names the missing field and the entry.
+- Step 8 is `valid: true`, with no unread-field warning.
+- Step 9 is `valid: true`. The plan no longer includes `write_song`, or prices Music 3, if
+  the template lets a step whose result nobody reads be skipped. Report a still-priced
+  `write_song` as a note, not a finding, unless C-F327's run also executes it.
+It is a **finding** if the top-level `num_frames` is still accepted, if an off-grid entry is
+snapped or refused without its path, if a missing field is defaulted instead of refused, or
+if the stored default no longer validates.
+cleanup: none.
+metrics: none.
+
+### C-F326 — `music-video-cuts` plans on H3's grid with a 0.5 s lead, and its shots plus prompts validate as `music-video` input with only an unread-field warning
+pending: #627
+source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
+CPU jobs as C-F218, on `asset:qa-cast/ep15-song.mp3`.
+1. `get_workflow("templates/minimax/music-video-cuts")`. Read its variables, the `plan_cuts`
+   step's arguments and the description.
+2. Run it as C-F218. Read the plan with `get_output_text`.
+3. Take the plan's `shots`. Add a `prompt` to each (any text), keeping `lyric` and `kind`.
+   `validate_workflow(name="templates/minimax/music-video", arguments={"shots": <those>,
+   "song": "asset:qa-cast/ep15-song.mp3"})`.
+4. The same with `lyric` and `kind` removed from every entry.
+5. Run the template again with `lead_s: 0`.
+expected:
+- Step 1: a `lead_s` variable defaults to 0.5. The `plan_cuts` step passes `modulus` 17,
+  `remainder` 5, `min_frames` 124 and `max_frames` 345, equal to C-F325's `music-video`
+  constraint (by reference or by value), and `lead_s: variable:lead_s`. The description names
+  the six-field entry contract.
+- Step 2: the job succeeds on CPU. Every shot has `start_frame`, `num_frames`, `lead_frames`
+  and `cut_frames`. The first shot's `lead_frames` is 0, and every other one is
+  `min(12, start_frame)`. Every `num_frames` is 17n+5 in `[124, 345]` and ≥ `lead_frames +
+  cut_frames`. Shots are contiguous, Σ `cut_frames` = round(30.03 × 24) = 721, and
+  `render_frames` = Σ `num_frames`.
+- Step 3 is `valid: true`. Its only notice is the unread-field warning, and that warning
+  names `lyric` and `kind`. It names neither `lead_frames` nor `cut_frames`.
+- Step 4 is `valid: true`, with no unread-field warning.
+- Step 5: every `lead_frames` is 0, and the cuts are the same as step 2's.
+It is a **finding** if the grid differs from `music-video`'s, if `lead_s` doesn't default to
+0.5 or doesn't reach `plan_cuts`, if any shot is off the grid, if the plan fails to validate
+as `music-video` input, or if `lyric`/`kind` are refused or go unwarned.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F327 — a real `music-video` with 48- and 72-frame spans: each shot renders 124 and occupies exactly its `cut_frames`
+pending: #627
+source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
+**GPU, expensive. Needs Don's go-ahead.** `music-video` measured 25.75 cold minutes for four
+shots on lem, so expect about half that for two. Quote `plan.estimate` from
+`validate_workflow` on the issue, and get Don's explicit go-ahead before running. Without it,
+report the case as not run.
+1. The shots are C-F325 step 8's: a = `{start 0, num 124, lead 0, cut 48}` and b = `{start 48,
+   num 124, lead 12, cut 72}`, with the first two default prompts. Pass `song:
+   "asset:qa-cast/ep15-song.mp3"` and `seed: 42`.
+2. Validate, quote, and on go-ahead `run_workflow(..., acknowledged_cost=true,
+   wait_seconds=55)`, then `wait_for_job` until done.
+3. `get_job` and `get_job_events`. Then `get_gallery_metadata` and `assess_output` on the
+   deliverable, and `get_output_frames` at deliverable frames 47 and 48.
+expected:
+- The job succeeds. Both `shot` renders are 124 frames, and the `trim` outputs are 48 and 72
+  frames.
+- The deliverable is 120 frames (Σ `cut_frames`) at 24 fps, 5.0 s. Its shots metadata gives
+  spans of 48 (a, from 0) and 72 (b, from 48).
+- Its audio is the song's `[0, 5.0)` s, cut by `pair_audio` to the picture. `assess_output`
+  reports no sync drift and no seam beyond its normal thresholds.
+- Frame 47 is from a's take and frame 48 from b's. b's 12-frame lead was trimmed off, so
+  frame 48 is b's render frame 12, not its opening frame.
+- `write_song` does not run: the job's events show no Music 3 load.
+It is a **finding** if the job fails, if any span differs from its `cut_frames`, if the total
+isn't 120, if audio and picture slip, or if the song is regenerated despite `song`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F328 — the descriptions, `minimax-h3` skill, `cuts.md`, the tasks guide and the workflows guide state the six-field entry contract and the grid
+pending: #627
+source: tester, spec for #627 from #600's plan v4 (claude-opus-5-5 via anthropic)
+Free.
+1. `list_workflows` in full form for `templates/minimax/music-video` and
+   `templates/minimax/music-video-cuts`. Read both descriptions.
+2. Load `dw:minimax-h3` with the `Skill` tool. Read its music-video and length rules, and its
+   `references/cuts.md`.
+3. Load `dw:minimax-music3`, `dw:series-episodes` and `dw:script-to-video`. Find any
+   music-video mentions.
+4. `get_guide("tasks")` (`list_guides` locates sections). Read `trim_video`, `slice_audio`
+   and `plan_cuts`. Then `get_guide("workflows")`, its music-video passages and the 24 GB
+   recipes.
+5. `get_task("trim_video")`.
+expected:
+- Every source that describes a `music-video` entry gives all six fields (`name`, `prompt`,
+  `start_frame`, `num_frames`, `lead_frames`, `cut_frames`), all required. None mentions a
+  top-level `num_frames`, says that all shots share one length, or calls any of the three
+  length fields optional.
+- The grid is 17n+5 from 124 to 345 everywhere. The `music-video` text says an off-grid entry
+  is refused, not snapped.
+- The skill and `cuts.md` give the render rule `num_frames = max(124, next 17n+5 ≥ lead +
+  cut)`, point at `plan_cuts` to compute it, say to drop `lyric` and `kind` once the prompt is
+  written, and give the order plan, read, prompt, render. The `lead_s` default is 0.5 s.
+- The tasks guide documents `trim_video` (its three arguments and refusals), `slice_audio`
+  `lead_frames` (frame form only; not with `start_seconds`) and `plan_cuts`' five grid
+  arguments with `render_frames`.
+- `get_task("trim_video")` lists `video`, `start_frame` and `num_frames`.
+It is a **finding** if any source still describes the old shape, gives a different grid,
+says off-grid entries snap, or disagrees with C-F323–C-F326's observed behaviour.
+cleanup: none.
+metrics: none.
+
+### C-F329 — a non-numeric string for a float `grade` control is refused at validate, and a `variable:` reference to one is not
+source: tester, verified in #657 (claude-opus-5-5 via anthropic)
+Free: validates only. C-F252's shape (one `grade` step, `media`
+`asset:qa-cast/priya-portrait.jpg`), one argument set per call:
+1. `shadows: "abc"`; then `temperature: "abc"`; then `highlights: "xyz"`.
+2. `shadows: "0.5"`.
+3. `variables: {"sh": 0.2}` and `shadows: "variable:sh"`, first with no `arguments`, then with
+   `arguments: {"sh": "abc"}`.
+expected:
+- Each call in 1 is `valid: false` with an error at `steps[0].task.arguments.<name>` naming
+  the parameter and saying a number is required.
+- 2 has no error on `shadows` (a numeric string is coerced).
+- 3 without arguments has no error on `shadows` (a reference is not literal text); with
+  `sh: "abc"` it is refused at `arguments.sh` as not convertible to float.
+It is a **finding** if a non-numeric string validates (#657), or the `variable:` reference is
+refused as if it were a literal.
+cleanup: none.
+metrics: none.
+
 ## Performance

@@ -3223,4 +3223,152 @@ fixture.
 metrics: `latency` per job, condition `512x288-121f-s<strength>` (e.g. `-s0`, `-s2`), to
 `regression-perf/M-F095.jsonl`. The first run seeds the file.
 
+### M-F096 — the 768p guide section documents refine schedule (B): 5 points / 0.2 example, evaluations = `num_inference_steps − 1`, and 2 points validates
+pending: #620
+source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 + `upscale_h3_latents` + H3 refine (`refine_strength`, schedule (B)).
+This case covers what plan v3/v4 changed. M-F082's own claim that refine time doesn't scale with
+`num_inference_steps` is superseded by D6. Where the two disagree, this case is the current one.
+Steps:
+1. `list_guides`. Then `get_guide(<the guide holding it>, section="Promoting an H3 take to 768p in
+   latent space")`.
+2. `validate_workflow` the section's **first** JSON example as written (inline). Then do the same
+   for the **refine** example, at its written values.
+3. Validate the refine example again three times, each with only the refine step changed:
+   `num_inference_steps: 2`, then `num_inference_steps: 6`, then `refine_strength: 0.4`.
+expected:
+- The section no longer says "There is no refine pass" or anything like it.
+- The first JSON example is still the upscale-only workflow (base → `upscale_h3_latents` → decode
+  → `pair_audio`, no `refine_strength`). The refine example comes **after** it.
+- The section still names `upscale_h3_latents`, `pair_audio`, `previous_result:base.videos` and
+  `"fps": 24`.
+- The refine example is base → `upscale_h3_latents` → an H3 step at 1344×768 with
+  `latents: previous_result:up` (or whatever the upscale step is named), `refine_strength: 0.2`,
+  `num_inference_steps: 5` and `hold_audio: previous_result:base.audio`.
+- The cost note says refine runs `num_inference_steps − 1` evaluations, so 4 at the example's 5.
+  It does not say refine cost is independent of `num_inference_steps`.
+- Where the section calls hold opt-in, it says refine uses hold to keep the base pass's own audio,
+  and that this is a different case from lip sync to supplied audio.
+- Both examples validate clean, and so do all three variants. `num_inference_steps: 2` is the
+  smallest legal value (one evaluation).
+It is a **finding** if any of these:
+- the "no refine pass" text remains;
+- the refine example is the first JSON block, or has a different strength or step count from 0.2
+  and 5;
+- the cost note is missing or still says cost doesn't scale with `num_inference_steps`;
+- either example or any variant fails validation (2 points is the boundary and must pass).
+cleanup: none (validation only).
+metrics: none.
+
+### M-F097 — `validate_workflow` refuses `refine_strength` with fewer than 2 points, and on an LTX step; with no `refine_strength`, few points are not a refine error
+pending: #620
+source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine, plus `templates/ltx` (any LTX-2/2.5 t2v template in
+`list_workflows(shape="shot")`) as a non-H3 step.
+Covers the refusals plan v3 added. M-F083's probes (a)–(j) stand and still apply. The carrier is
+M-F096's refine example, inline. Each probe edits only the refine step's arguments:
+- (a) `num_inference_steps: 1` with `refine_strength: 0.2`;
+- (b) `num_inference_steps: 0` with `refine_strength: 0.2`;
+- (c) an LTX template (named above) with `"refine_strength": 0.2` added to its pipeline step;
+- (d) the control: `templates/minimax/video-with-audio` with `num_inference_steps: 1` and no
+  `refine_strength`.
+For each refused probe, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- (a) and (b) are `valid: false`. The error names `num_inference_steps` and/or `refine_strength`,
+  and says refine needs at least 2 points.
+- (c) is `valid: false`, saying `refine_strength` is not an input of that pipeline (or that it is
+  H3-only).
+- No refused probe queues a job.
+- (d) gets no error that mentions `refine_strength` or refine: the new rule applies only when
+  `refine_strength` is set. Whatever H3's pre-existing rule on one step is, it still applies.
+It is a **finding** if (a), (b) or (c) validates, if a refused probe queues and fails in the
+pipeline (refused too late), or if (d) is refused with a refine error.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### M-F098 — refine schedule (B): 4 evaluations at 5 points and 5 at 6; strength 0.4 runs the same 4 and moves the picture further than 0.2; audio and composition kept
+pending: #620
+source: tester, spec for #620 from #598's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va at 960×544 + `upscale_h3_latents` + H3 refine at 1344×768.
+This replaces M-F084's evaluation expectations. D6 reversed M-F084's "0.4 runs more evaluations
+than 0.2" and "refine doesn't run `num_inference_steps`". Its audio and composition checks are
+repeated here. Plan: σ₀ = `refine_strength`, then `num_inference_steps` shift-spaced points down to
+0, which is `num_inference_steps − 1` evaluations. Only the generated rows are re-noised, seeded
+from the step's generator.
+Steps:
+1. `save_workflow` M-F096's refine example as `m-f098-h3-refine`, with `num_frames` 124 and
+   `seed` 42. Add these extra outputs:
+   - the base's own mp4 with its audio;
+   - an `ident` branch: `decode_h3_latents` on the upscale step's result, then `pair_audio` with
+     the base audio. This is the upscale-only decode, as in M-F041.
+   Make `refine_strength` and the refine step's `num_inference_steps` workflow variables
+   (defaults 0.2 and 5), so the re-runs below only change arguments.
+2. Run A: `run_workflow(name="m-f098-h3-refine", acknowledged_cost=true, wait_seconds=55)`, then
+   `wait_for_job` until it is done.
+3. `get_job_events` on run A. Count the refine step's denoise step-progress events and read its
+   reported progress total. Use `get_job` for the step's duration.
+4. Run B: same, with argument `num_inference_steps` 6. Run C: same, with `refine_strength` 0.4 at
+   5 points. In both, the base and upscale steps should come from the step cache. Count
+   evaluations as in step 3.
+5. `get_output_frames` on A's refined mp4, C's refined mp4, `ident` and the base, at the same four
+   moments, plus one `crop` on a detailed region. Compare audio with `get_output_audio` and
+   `get_gallery_metadata`.
+expected:
+- All three jobs succeed. Every refined mp4 is 1344×768 with `frame_count` 124.
+- **Evaluations:** A runs exactly **4** refine evaluations, B runs **5**, and C runs **4**. The
+  refine step's progress total matches its count (N points report N−1 steps).
+- B's refine duration is longer than A's (time scales with points). C's is within about 20% of A's.
+- **Audio:** each refined mp4's audio is the base's track, with the same sound and level and a
+  duration within one frame. It is not regenerated.
+- **Composition at 0.2:** A keeps `ident`'s subject placement, pose, layout and motion direction,
+  with equal or sharper detail and no colour cast or residual noise.
+- **Strength moves further:** C is recognisably the same scene, but differs from `ident` more than
+  A does (detail and texture visibly more regenerated in the crop). Record a one-line description
+  of each.
+It is a **finding** if any of these:
+- a job fails, or a size or frame count differs;
+- A ≠ 4, B ≠ 5 or C ≠ 4 evaluations, or the refine runs 0 evaluations (v2's bug) or the full
+  schedule from σ 1;
+- the audio differs from the base's (generated, shifted or missing);
+- A changes the composition (a different picture);
+- C is no further from `ident` than A, or C runs a different count from A.
+cleanup: `delete_output(job_id=...)` for all three jobs; `delete_workflow("m-f098-h3-refine")`.
+metrics: `latency_s`, `refine_s` and `refine_evals` per job, to `regression-perf/M-F098.jsonl`,
+with conditions `124f-960x544-to-1344x768-p5-s0.2` (A), `…-p6-s0.2` (B) and `…-p5-s0.4` (C). The
+first run seeds the file. Flag a reading more than 50% over the median.
+
+### M-F099 — `upscale-refine` defaults to 5 points / 0.2, declares `refine_strength` a cost driver, and a changed strength is not quoted at the default's catalog cost
+pending: #621
+source: tester, spec for #621 from #598's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `templates/minimax/upscale-refine`.
+Adds what v4 (D6, D8) changed to M-F085, which stands. As there, the template exists only if Don
+accepted #621's A/B. If #621 was closed with the template reverted, retire this case through a
+harnest suite request rather than failing it.
+Steps:
+1. `list_workflows(shape="shot", traits="has-audio")`, and find the entry.
+2. `get_workflow("templates/minimax/upscale-refine")`.
+3. `validate_workflow(name="templates/minimax/upscale-refine")` at defaults. Then validate with
+   `arguments` `{"refine_strength": 0.4}`, then with `{"num_inference_steps": 6}` (or whatever the
+   template's variable for the refine step's points is called), and then with
+   `{"refine_strength": 0}`.
+expected:
+- `cost_drivers` includes `refine_strength`, `num_frames`, `num_inference_steps` (or the refine
+  points' variable), `width` and `height`.
+- In the definition, the refine step runs at `num_inference_steps` 5 and `refine_strength` 0.2 by
+  default, and holds the base audio.
+- `scheduler.shift` is `variable:video_shift` (defaulting to 6 for the 768p refine) and
+  `audio_scheduler.shift` is `variable:audio_shift` (default 3). LoRA alpha is
+  `variable:lora_alpha`, defaulting to null. No step defaults to 20 steps.
+- The default validate quotes the listed `cost` (basis `catalog`, or `observed` once the box has
+  runs).
+- Each driver override (0.4, 6 points) validates. Its `plan.estimate` is not the default's
+  `catalog` minutes passed through unchanged: basis `unknown`, `derived`, or `observed` for runs
+  with that value.
+- `refine_strength: 0` is refused at validate, naming the range.
+It is a **finding** if `refine_strength` is not a declared cost driver, if a changed strength is
+quoted at the default's catalog cost, if the defaults are not 5 and 0.2, if the shift and alpha
+rules above are broken, or if 0 validates.
+cleanup: none (no job).
+metrics: none.
+
 ## Performance
