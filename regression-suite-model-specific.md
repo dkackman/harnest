@@ -2539,7 +2539,6 @@ template:
 `asset:song/…`). At 24 fps, 124 frames is 124/24 = 5.167 s, and one frame is 0.042 s.
 
 ### M-F074 — `hold_audio` is a documented H3 input and validates clean on t2va, fl2va and ref2va
-pending: #618
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3, all three core-denoise sequences: t2va (`video-with-audio`), fl2va
 (`image-to-video`) and ref2va (`reference-to-video`).
@@ -2567,7 +2566,6 @@ cleanup: none (validation only).
 metrics: none.
 
 ### M-F075 — `validate_workflow` refuses `hold_audio` that isn't audio, is missing, or sits on a non-H3 step
-pending: #618
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (`video-with-audio`), plus the SD 1.5 and LTX-2.5 templates as non-H3
 steps.
@@ -2603,7 +2601,6 @@ cleanup: `delete_output(job_id=...)` for any job (only (g) should have one).
 metrics: none.
 
 ### M-F076 — a t2va run with `hold_audio` returns the supplied track, cropped to the clip, not generated audio
-pending: #618
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`, turbo LoRA, 9 steps).
 The plan's core promise: a held audio row is encoded from the supplied track and kept fixed, and
@@ -2665,7 +2662,6 @@ cleanup: `delete_output(job_id=<id>)`. Keep the fixture.
 metrics: none.
 
 ### M-F078 — `hold_audio` longer than the clip is cropped, shorter is padded with silence, and stereo 44.1 kHz is taken
-pending: #618
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
 The plan: the track is resampled, encoded, then cropped or padded (encoded silence) to the

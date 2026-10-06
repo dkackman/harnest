@@ -9286,4 +9286,287 @@ cleanup: step 3 already removed W. If the case stopped before step 3, run
 `delete_workspace(W, acknowledged_cost=true)`.
 metrics: none.
 
+### C-F296 — H3 `guides` is documented in the guide and the minimax-h3 skill, and the short guide clips exist
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+Free, apart from the CPU-only setup. C-F297 to C-F305 use the clips this case's setup makes.
+setup (only when `list_assets` in `regression-complete` lacks any of the three `qa-guides/` assets):
+1. `save_workflow(name="c-f296-guide-clips", workflow=...)`, a task-only workflow with these steps:
+   - `v22`: `loop_frames(video="asset:qa-cast/ep6-cold-open.mp4", num_frames=22)`;
+   - `v30`: `loop_frames(video="asset:qa-cast/ep6-cold-open.mp4", num_frames=30)`;
+   - `v39`: `loop_frames(video="asset:qa-cast/ep21-shot1-receipt.mp4", num_frames=39)`;
+   - `a39`: `slice_audio(audio="asset:qa-cast/ep21-shot1-receipt.mp4", start_frame=0, num_frames=39, fps=24)`;
+   - `p39`: `pair_audio(video="previous_result:v39", audio="previous_result:a39", fit="video", fps=24)`.
+   Write `v22`, `v30` and `p39` as 24 fps video files. Look up the step result block's form with
+   `get_guide("workflows", section="Authoring a workflow from an agent")`.
+2. `run_workflow(workflow_path="c-f296-guide-clips", acknowledged_cost=true, wait_seconds=55)`.
+3. Keep each file with `keep_output(name=<its gallery name>, asset_name=...)`, using these names:
+   - `v22` as `qa-guides/ep6-22f.mp4`;
+   - `v30` as `qa-guides/ep6-30f.mp4`;
+   - `p39` as `qa-guides/ep21-39f-audio.mp4`.
+4. Check each with `get_gallery_metadata`:
+   - the frame counts are 22, 30 and 39, at 24 fps;
+   - the 39-frame clip has an audio stream of about 1.62 s.
+   If `loop_frames` doesn't cut a longer input down to the first N frames, the setup is broken. File
+   that as an ordinary issue and stop the case.
+   Then `delete_output(job_id=<the run>)` and `delete_workflow("c-f296-guide-clips")`. The three
+   assets are durable, so don't sweep them.
+1. `list_guides()`, then `get_guide("workflows", section="H3: holding a clip with `guides`")`.
+2. Load the `minimax-h3` skill (the dw plugin's H3 skill).
+expected:
+- (1) The subsection exists. It holds an inline example that adds `guides` to the
+  `text_to_video_audio` step of `templates/minimax/video-with-audio`, with entries of the form
+  `{"video": <asset:|output:|previous_result: video>, "frame": <int>}`. The text states:
+  - `frame` is a pixel frame and must be a multiple of 17;
+  - aligned lengths are 1, 5 or 17m+5, and any other length is snapped down with a warning;
+  - a guide may not run past `num_frames`;
+  - the limit of 4 guides;
+  - `guides` is refused on `ref2va` and on non-H3 steps;
+  - `guides` is H3 `t2va`/`fl2va` only.
+- (2) The skill mentions `guides` and points to the subsection.
+It is a **finding** if the subsection is missing or its example doesn't validate. Paste the example
+into `validate_workflow` with the `video` set to `asset:qa-cast/ep6-cold-open.mp4`.
+cleanup: none beyond the setup's own.
+metrics: none.
+
+### C-F297 — `validate_workflow` accepts in-bounds H3 guides, including the boundaries
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+Free. Needs C-F296's assets.
+1. `get_workflow("templates/minimax/video-with-audio")`, then `save_workflow(name="c-f297-guides",
+   workflow=<that document>)`.
+2. Run `validate_workflow(name="c-f297-guides", ...)` once per variant, each time with the
+   `text_to_video_audio` step's `arguments.guides` set as listed, using `save_workflow(name=...,
+   patch=...)` or a full re-save. `num_frames` stays 124 unless the variant says otherwise.
+   - a. `[{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}]`: a 124-frame guide that ends
+     exactly at the end.
+   - b. `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 17}]`.
+   - c. `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 102}]`: 102 + 22 = 124, ending exactly
+     at the end.
+   - d. Four guides, 22 frames each, at frames 0, 34, 68 and 102.
+   - e. `[]`: the empty list.
+   - f. The template with no `guides` key at all, as the control.
+   - g. `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 0}]` with `num_frames: 141`, the next
+     aligned length.
+expected:
+- a-d and g: `valid: true`. No warning names `guides`. The `plan.estimate` is present.
+- e: `valid: true`, with the same warnings and `plan` as f. An empty list means "no guides". A
+  refusal of `[]` is a finding, and so is a warning about it.
+It is a **finding** if any variant is refused. A refusal of a or c means the "past `num_frames`"
+rule is off by one.
+cleanup: `delete_workflow("c-f297-guides")`.
+metrics: none.
+
+### C-F298 — `validate_workflow` refuses out-of-rule H3 guides, before any GPU work
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+Free. Needs C-F296's assets. Same setup as C-F297, saved as `c-f298-guides`, with `num_frames` at 124
+unless a variant says otherwise. Run one `validate_workflow` per variant:
+- a. `frame: 10`, with the 22-frame guide.
+- b. `frame: -17`.
+- c. `frame: 1`. This is the smallest non-multiple and checks that the rule isn't merely
+  "non-zero".
+- d. `frame: 17.0`, or `"17"` as a string. A non-int.
+- e. `frame: 119` with the 22-frame guide. It runs past 124.
+- f. `frame: 17` with `asset:qa-cast/ep6-cold-open.mp4`: 17 + 124 > 124.
+- g. `video: "asset:qa-cast/priya-portrait.jpg"`, an image, at `frame: 0`.
+- h. `video: "asset:uploads/qa-cast/room-bed.wav"`, audio only, at `frame: 0`.
+- i. Five 22-frame guides at frames 0, 17, 34, 51 and 68.
+- j. A guide entry with no `frame`, and a guide entry with no `video`.
+- k. A valid guide (22 frames, `frame: 0`) on `templates/minimax/reference-to-video`'s step (`ref2va`),
+  saved as `c-f298-ref2va`.
+- l. A valid guide on `templates/ltx2/text-to-video`'s pipeline step (LTX-2), saved as
+  `c-f298-ltx2`.
+expected:
+- Every variant comes back `valid: false`, with an error naming `guides` and the reason:
+  - the 17-multiple rule for a-c;
+  - the type for d;
+  - the end of the clip for e-f;
+  - "not a video" for g-h;
+  - the 4-guide limit for i;
+  - the missing key for j;
+  - the step type or workflow for k-l.
+- k must say `ref2va` isn't supported, not that the argument is unknown to the pipeline.
+- No job is queued: `list_jobs` shows no new job.
+It is a **finding** if a variant validates, or if one is only refused once `run_workflow` starts.
+"Refused too late" is a failure here.
+cleanup: `delete_workflow` on `c-f298-guides`, `c-f298-ref2va` and `c-f298-ltx2`.
+metrics: none.
+
+### C-F299 — a 124-frame H3 guide at frame 0 steers the opening of a new take
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one H3 run, about 6 min. Quote `plan.estimate` from `validate_workflow` on the issue before
+running.
+1. Save `templates/minimax/video-with-audio` as `c-f299-guide0`, with `guides: [{"video":
+   "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}]`. Set `prompt` to a literal that continues the
+   clip's action: describe ep6-cold-open's subject and setting (from `get_output_frames` on the
+   asset, frames 0 and 60) carrying on. Keep the seed at 42.
+2. Validate, quote, then `run_workflow(workflow_path="c-f299-guide0", acknowledged_cost=true,
+   wait_seconds=55)`, then `wait_for_job` until done.
+3. Use `get_output_frames` to pull frames 0, 10 and 21 of the output and of the guide asset, and
+   compare them side by side.
+expected:
+- The job succeeds with no error event.
+- Frames 0-21 visibly match the guide's opening: the same subject, the same layout and the same
+  colours.
+- The output is 124 frames at 960x544, with audio.
+It is a **finding** if the opening is unrelated to the guide. That would be the plan's "guide rows
+ignored" risk. Attach the frames.
+cleanup: `delete_output(job_id=…)`, `delete_workflow("c-f299-guide0")`.
+metrics: none.
+
+### C-F300 — a 22-frame H3 guide at frame 51 holds frames 51-72, and the frames around it stay coherent
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one H3 run, about 6 min. Quote `plan.estimate` before running. Needs C-F296's assets.
+1. Save `templates/minimax/video-with-audio` as `c-f300-guide51`, with `guides: [{"video":
+   "asset:qa-guides/ep6-22f.mp4", "frame": 51}]`, seed 42, and a prompt for the same subject and
+   setting as ep6-cold-open.
+2. Validate, quote, run with `acknowledged_cost=true` and `wait_seconds=55`, then `wait_for_job`.
+3. Use `get_output_frames` to pull output frames 45, 50, 51, 61, 72, 73 and 80, and guide frames 0,
+   10 and 21.
+expected:
+- The job succeeds.
+- Output frames 51, 61 and 72 match guide frames 0, 10 and 21: the same subject, layout and colours.
+- Frames 45-50 and 73-80 are generated, not frozen copies of the guide's ends.
+- The output has no hard jump into or out of the held span: neither a cut nor a flash.
+It is a **finding** if the held span is shifted, for example if the match lands at frames 0-21 or
+any other offset. It is also a finding if the guide is ignored, or the surrounding frames break.
+cleanup: `delete_output(job_id=…)`, `delete_workflow("c-f300-guide51")`.
+metrics: none.
+
+### C-F301 — a full-length H3 guide with a restyle prompt keeps the source's composition and motion
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one H3 run. Its VRAM and minutes are higher than a plain run, since 124 guide frames double the
+video rows. Quote `plan.estimate` and any VRAM warning before running.
+1. Save `templates/minimax/video-with-audio` as `c-f301-restyle`, with `guides: [{"video":
+   "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}]`, seed 42, and the prompt "the same scene as a
+   hand-painted watercolour animation". The prompt must be literal.
+2. Validate, quote, run, then `wait_for_job`.
+3. Use `get_output_frames` to pull frames 0, 40, 80 and 123 of the output and of the guide.
+expected:
+- The job succeeds, with no out-of-memory error.
+- At each sampled frame, the subject's position and the framing match the guide, and the motion
+  between samples follows the guide's.
+- The look differs from the guide in the direction the prompt asks.
+- Record the job's minutes on the issue.
+It is a **finding** if the composition or motion departs from the guide. An OOM is also a finding:
+the 4-guide limit was meant to be set from a measurement.
+cleanup: `delete_output(job_id=…)`, `delete_workflow("c-f301-restyle")`.
+metrics: none.
+
+### C-F302 — an H3 run without `guides` is bit-identical to the pre-guides engine
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+GPU: two H3 runs, about 12 min. Quote both estimates before running.
+Baseline: `asset:qa-guides/vwa-seed42-pre648.mp4` is the default `templates/minimax/video-with-audio`
+run at seed 42, made on a server from **before** #648 deployed. Make it with the default
+`run_workflow`, then `keep_output(asset_name="qa-guides/vwa-seed42-pre648.mp4")`. If it doesn't
+exist when this case runs, say so on the issue and do steps 2-3 only. Don't make it on the
+post-stage server.
+1. `run_workflow(workflow_path="templates/minimax/video-with-audio", acknowledged_cost=true,
+   wait_seconds=55)` with the defaults (seed 42).
+2. Save the same template as `c-f302-empty` with `guides: []`, and run it.
+3. Compare the outputs with `get_gallery_metadata` on each file (and the baseline), and with
+   `get_output_frames` at frames 0, 61 and 123.
+expected:
+- Run 1's frames are identical to the baseline's: the same content hash where metadata reports one,
+  otherwise frames indistinguishable at all three samples.
+- Run 2 is identical to run 1.
+- The audio also matches: the same duration and the same level figures.
+It is a **finding** if any sampled frame differs. The plan promises bit-identical output, not
+"similar".
+cleanup: `delete_output` on both jobs, `delete_workflow("c-f302-empty")`. Keep the baseline asset.
+metrics: none.
+
+### C-F303 — an unaligned H3 guide length is snapped down, with a warning naming the length used
+pending: #648
+source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one H3 run, about 6 min. Needs C-F296's assets.
+1. Save `templates/minimax/video-with-audio` as `c-f303-snap`, with `guides: [{"video":
+   "asset:qa-guides/ep6-30f.mp4", "frame": 0}]` and seed 42.
+2. `validate_workflow(name="c-f303-snap")`, then quote, run and `wait_for_job`.
+3. `get_job(job_id)` and `get_job_events(job_id)`.
+expected:
+- The validation passes (a snap is not a refusal). A validate-time warning about the snap is
+  welcome but not required.
+- The job succeeds, and its warnings name the guide, the given length (30) and the length used
+  (22).
+- Output frames 0-21 match the guide, and frames 22+ are free.
+It is a **finding** if:
+- the job refuses the 30-frame guide;
+- it runs without a warning;
+- the warning names a length other than 22;
+- the length is snapped up, to 39.
+cleanup: `delete_output(job_id=…)`, `delete_workflow("c-f303-snap")`.
+metrics: none.
+
+### C-F304 — an H3 audio guide carries the guide clip's sound into the opening, and new audio follows without a gap or click
+pending: #649
+source: tester, spec for #649 from #611's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one H3 run, about 6 min. Needs C-F296's `asset:qa-guides/ep21-39f-audio.mp4`.
+1. Reference: `transcribe_audio` the guide clip's audio in a small task-only workflow, and note its
+   words. Also note its level from `get_gallery_metadata`. If it holds no words, the comparison
+   falls back to the waveform (`analyze_audio`).
+2. Save `templates/minimax/video-with-audio` as `c-f304-audio-guide`, with `guides: [{"video":
+   "asset:qa-guides/ep21-39f-audio.mp4", "frame": 0, "audio": true}]`, seed 42, and a prompt
+   continuing the scene and its speech.
+3. Validate, quote, run, then `wait_for_job`.
+4. Run `get_output_audio` on the output (its waveform/level report), then `transcribe_audio` on the
+   output's first 1.6 s (`slice_audio(start_seconds=0, duration_seconds=1.6)`) and on the rest.
+expected:
+- The job succeeds.
+- The first ~1.6 s (39 frames ≈ 1.625 s) reproduces the guide's words, or its waveform shape and
+  level if it has no words.
+- Past 1.6 s the audio is newly generated, not a repeat of the guide.
+- The output's audio around 1.6 s has no silent gap and no click: no step in level and no single-
+  sample spike in the waveform report.
+- Frames 0-38 match the guide visually.
+It is a **finding** if the opening audio is unrelated to the guide's (that is, `audio: true` had no
+effect). A dropout or click at the boundary is also a finding, and so is audio that starts late or
+runs offset by a fraction of a second, which would mean the hop pre-padding didn't hold the origin.
+cleanup: `delete_output` on both jobs, `delete_workflow` on both saved workflows.
+metrics: none.
+
+### C-F305 — `audio: true` on an H3 guide is refused for a silent clip and accepted for one with sound, and the guide documents it
+pending: #649
+source: tester, spec for #649 from #611's plan v1 (claude-opus-5-5 via anthropic)
+Free. Needs C-F296's assets. `asset:qa-fit/src-640x480-50f-silent.mp4` is made by C-F238's setup if
+missing. Save `templates/minimax/video-with-audio` as `c-f305-audio`.
+1. `validate_workflow` with `guides: [{"video": "asset:qa-fit/src-640x480-50f-silent.mp4", "frame":
+   0, "audio": true}]`.
+2. The same guide with `"audio": false`, and then with no `audio` key.
+3. `guides: [{"video": "asset:qa-guides/ep21-39f-audio.mp4", "frame": 0, "audio": true}]`.
+4. `get_guide("workflows", section="H3: holding a clip with `guides`")`.
+expected:
+- (1) `valid: false`, with an error naming the guide and saying its video has no audio. The silent
+  clip is 50 frames, so a snap-to-39 warning may come with it. The refusal is what counts.
+- (2) Both validate. A silent guide is fine without audio. The 50 → 39 snap may be warned about.
+- (3) `valid: true`.
+- (4) The subsection describes `"audio": true`: it holds the guide's own audio over its span, and is
+  refused for a silent clip.
+It is a **finding** if (1) validates. Accepting it at validate and failing only at run time is
+"refused too late".
+cleanup: `delete_workflow("c-f305-audio")`.
+metrics: none.
+
+### C-F306 — the minimax-h3 skill's chain advice covers `continuity: "guide"`
+pending: #650
+source: tester, spec for #650 from #611's plan v1 (claude-opus-5-5 via anthropic)
+Free.
+1. Load the `minimax-h3` skill and read its chain advice.
+expected:
+- The chain advice names `continuity: "guide"`: what it holds (the previous segment's last P frames
+  and their audio as a frame-0 guide), P's default of 22 and the 39 option, and that the prefix is
+  trimmed from the deliverable.
+- It states the A/B outcome Don ruled on: whether the guide mode is the default, or stays opt-in
+  because it was no better.
+It is a **finding** if the advice still recommends only `last_segment` with no mention of the guide
+mode, or if it contradicts the template's actual `continuity` default
+(`get_workflow("templates/minimax/chain-video-continuity", variables_only=true)`).
+cleanup: none.
+metrics: none.
+
 ## Performance

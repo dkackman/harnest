@@ -1,0 +1,1 @@
+{"ts":"2026-10-06T02:47:03Z","level":"model-specific","case":"M-F076","metric":"latency_s","condition":"t2va-124f-960x544-hold","value":312.85,"unit":"s","server":"develop@417616f5","model":"claude-opus-5-5","provider":"anthropic","ref":"job bea066505986"}

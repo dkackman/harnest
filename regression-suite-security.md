@@ -671,7 +671,6 @@ cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything tha
 metrics: none.
 
 ### SE-F040 — H3 `hold_audio` holds the path boundary, and the hold blocks aren't nameable from a workflow
-pending: #618
 source: tester, spec for #618 from #598's plan v2 (claude-opus-5-5 via anthropic)
 #598 adds a new media-taking argument, `hold_audio`, to the MiniMax H3 pipeline. It takes an Audio
 reference (`asset:`, `output:` or `previous_result:`). The plan says the trust gate is not
