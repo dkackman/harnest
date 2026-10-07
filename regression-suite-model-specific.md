@@ -3285,4 +3285,35 @@ drops the shots.
 cleanup: `delete_output(job_id=…)` for both jobs; `delete_asset("regression/m-f101-chain.mp4")`.
 metrics: none.
 
+### M-F102 — a `for_each` whose entries each compose an LTX chain of a different length runs as validated
+source: tester, found while running TESTER_TASK.agent.md (ep119)
+Needs LTX-2.5 via `templates/ltx2/chained-segments`, about 1.7 min. Inline workflow, `id`
+`m-f102-scenes`, `seed` 119, `variables: {"scenes": []}`: step `last` = task `get_last_frame` with
+`video: "asset:qa-cast/ep117-episode.mp4"`, `result` `{"content_type": "image/png", "save": false}`;
+step `scene` = `for_each: "variable:scenes"`, `workflow: {"path": "templates/ltx2/chained-segments",
+"arguments": {"image": "item:image", "segments": "item:segments", "prompts": "item:prompts",
+"num_frames": "item:num_frames", "prompt": "A kitchen at night, two people by an open freezer.",
+"width": 512, "height": 288, "seed": 119}}`, `result` `{"content_type": "video/mp4", "subfolder":
+"intermediate"}`; step `episode` = task `concat_videos` with `videos: "gather:scene"`, `fps: 24`,
+`match_levels: "rms"`, `match_levels_dbfs: -24`, `result` `{"content_type": "video/mp4",
+"subfolder": "final"}`. Arguments: `scenes` = `[{"name": "accuse", "image": "previous_result:last",
+"segments": 2, "num_frames": 33, "prompts": ["A wiry woman in a mustard sweater vest and glasses
+holds up a spoon and says quickly, \"There is green on this spoon.\"", "A heavyset bald man in a
+gray flannel shirt looks at the spoon and says flatly, \"Mint.\""]}, {"name": "deflect", "image":
+"asset:qa-cast/hal-portrait.jpg", "segments": 1, "num_frames": 41, "prompts": ["A heavyset bald man
+in a gray flannel shirt folds his arms and says flatly, \"I stand by mint.\""]}]`.
+`validate_workflow` with those arguments, then `run_workflow` with the bound acknowledgement.
+expected:
+- validate is clean with `list_entries: {"scenes": 2}` and `steps: 4`; the run succeeds.
+- Manifest: `scene@accuse` carries 2 shots (33 f, then 31 f with `trim_frames: 2`,
+  `crossfade_ms: 80.0`), `scene@deflect` 1 shot of 41 f — each member got its own `segments`,
+  `num_frames` and `prompts`, and the item-level `previous_result:last` resolved.
+- `episode` is 512×288, 24 fps, 105 frames, 4.375 s, 48 kHz, with 3 shots and the inner
+  trim/crossfade carried; the shot at frame 64 has `hard_cut: true`.
+It is a **finding** if validate passes and the run fails, if a member takes another member's
+(or the template default's) segment count, length or prompts, or if the join drops the inner
+shots. Shot *names* are not asserted (#670).
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
