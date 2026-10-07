@@ -9226,7 +9226,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F308 — `continuity: "guide"` on H3 `chained-segments` validates at both allowed `guide_frames`, and alongside the fields it honours or ignores
-pending: #650
 source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
 Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`.
 1. `get_workflow("templates/minimax/chained-segments", variables_only=true)`.
@@ -9257,7 +9256,6 @@ cleanup: `delete_workflow("c-f308-guide")`.
 metrics: none.
 
 ### C-F309 — `continuity: "guide"` refuses an out-of-rule `guide_frames`, `carry_frames`, and any step that isn't H3 `t2va`/`fl2va`
-pending: #650
 source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
 Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`. Note the newest job id from
 `list_jobs` before step 1.
@@ -9294,7 +9292,6 @@ cleanup: `delete_workflow` on `c-f309-carry`, `c-f309-ref2va` and `c-f309-ltx2`.
 metrics: none.
 
 ### C-F310 — a 2-segment guided H3 chain at `guide_frames: 39` is 124 + 85 = 209 frames, ignoring the template's `trim_frames`
-pending: #650
 source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
 GPU: one 2-segment H3 chain, about 12 min. Quote `plan.estimate` from `validate_workflow` on the
 issue before running.
@@ -9319,7 +9316,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F311 — seam A/B on H3 `chained-segments`: `last_frame` (368 frames) against `guide` at P=22 (328 frames)
-pending: #650
 source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
 GPU: two 3-segment H3 chains, about 18 min each. Quote both `plan.estimate`s on #650 before
 running. This case reports evidence for Don's Q4 ruling; only the lengths, completion and the
@@ -9352,7 +9348,6 @@ cleanup: `delete_output(job_id=…)` on both jobs, after the frames are attached
 metrics: none.
 
 ### C-F312 — the minimax-h3 skill's chain advice places `continuity: "guide"` on `chained-segments` only, and says why
-pending: #650
 source: tester, spec for #650 from #611's plan v3 (claude-opus-5-5 via anthropic)
 Free.
 1. Load the `minimax-h3` skill and read its chain advice.
@@ -9959,6 +9954,33 @@ expected:
 - The `lines` description says entries are strings or `{text, shot}`.
 It is a **finding** if `shots` is missing or renamed, or the `lines` description doesn't name `{text, shot}`.
 cleanup: none.
+metrics: none.
+
+### C-F331 — a `chained-segments` result named downstream is its finished clip: a frame task reads it and `pair_audio` `fit: video` sizes it at 96 frames
+source: tester, verified in #667 (claude-opus-5-5 via anthropic)
+About 2 min of GPU time (LTX-2.5, 2 segments at 512x288). Needs the shared read-only
+`asset:qa-cast/ep114-episode.mp4` (any video substitutes: only its last frame is used) and
+`asset:uploads/qa-cast/room-bed.wav` (Fixtures). Run inline in `regression-complete`, seed 115:
+1. `last` = `get_last_frame` of `asset:qa-cast/ep114-episode.mp4`, `save: false`.
+2. `chain` = a `workflow:` step for `templates/ltx2/chained-segments` with `image:
+   previous_result:last`, `width` 512, `height` 288, `num_frames` 49, `segments` 2, `seed` 115,
+   a `prompt` and two `prompts` lines. `result` `video/mp4`, `subfolder: final`.
+3. `tail` = `get_last_frame` with `video: previous_result:chain`. `result` `image/png`, `final`.
+4. `bed` = `loop_audio` of the room-bed asset, `target_frames` 96, `fps` 24, `save: false`.
+5. `mix` = `mix_audio` with `audios: [previous_result:chain, previous_result:bed]` and `gains: [1, 4]`.
+   Then `norm` = `normalize_audio(previous_result:mix, peak_dbfs -3, target_lufs -16, limit true)`,
+   both with `save: false`.
+6. `episode` = `pair_audio` with `video: previous_result:chain`, `audio: previous_result:norm`,
+   `fit: video`. `result` `video/mp4`, `final`.
+expected:
+- The job ends `succeeded`. There is no `No such file or directory` on a `segment-000.mp4` and no
+  `Cannot extract frames from a SavedFrames`.
+- `chain`'s manifest shots are 49 + 47 frames (trim 2, crossfade 80 ms).
+- `tail` writes a 512x288 PNG.
+- `episode`'s manifest shots total 96 frames (4.00 s at 24 fps).
+- The job has no `'fit' trimmed` warning. It is a **finding** if one names a video of a frame
+  or two (0.08 s), because that means the chain's length was read as its segment count.
+cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
 ## Performance
