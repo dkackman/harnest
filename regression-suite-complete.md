@@ -9109,7 +9109,7 @@ expected:
 - The job succeeds, with no out-of-memory error.
 - At each sampled frame, the subject's position and the framing match the guide, and the motion
   between samples follows the guide's.
-- The look differs from the guide in the direction the prompt asks.
+- The look stays close to the guide's: a guide holds look as well as motion (#648).
 - Record the job's minutes on the issue.
 It is a **finding** if the composition or motion departs from the guide. An OOM is also a finding:
 the 4-guide limit was meant to be set from a measurement.
