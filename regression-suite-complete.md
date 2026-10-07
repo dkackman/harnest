@@ -10029,4 +10029,25 @@ ep114's chain predates #660, as in C-F332.)
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
+### C-F334 — `video_frames` → `resize_rescale` → `pair_audio(fit="video")` keeps the source's 24 fps with no declared `result.fps`, and `concat_videos` warns when `fps` re-times an input
+source: tester, verified in #673 (claude-opus-5-5 via anthropic)
+About 10 s, no model. Needs the shared read-only `asset:qa-cast/ep120-episode.mp4` (24 fps,
+248 frames, 10.33 s, 32 kHz). In `regression-complete`, run inline (id `qa-c-f334`, no `fps` on any
+step's `result`): `frames` = `video_frames(video: <ep120>)` (`save: false`); `small` =
+`resize_rescale(image: previous_result:frames, width 512, height 288)` (`save: false`); `prev` =
+`pair_audio(video: previous_result:small, audio: <ep120>, fit: "video")` (`subfolder:
+"intermediate"`); `join` = `concat_videos(videos: [previous_result:prev, previous_result:prev],
+fps: 12)` (`subfolder: "final"`). `get_gallery_metadata` both mp4s.
+expected:
+- The job `succeeded`. `prev` is 24.0 fps, 248 frames, 512x288, `duration_seconds` and
+  `audio_stream_seconds` both 10.33. No warning names `prev` (no `video_fps_defaulted`).
+- `job.warnings` carries one `concat_videos` warning per input saying `fps` 12 overrides that
+  video's own 24 fps and it plays 0.50x as fast.
+- `join` is 12.0 fps, 496 frames, `duration_seconds` and `audio_stream_seconds` both 41.33.
+It is a **finding** if `prev` comes out at 8 fps or with picture and audio lengths that disagree, or
+if the `join` re-time is silent. (`prev`'s `media.shots` is null: `video_frames` doesn't carry the
+source's shots, as #673's hand-off left it.)
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
 ## Performance
