@@ -3316,4 +3316,54 @@ shots. Shot *names* are not asserted (#670).
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### M-F103 — a hot H3 shot that `dialogue-short`'s `match_levels` join consumes draws no shot warning
+source: tester, verified in #671 (claude-opus-5-5 via anthropic)
+This is the **video** counterpart of M-F021. It needs MiniMax H3 `ref2va` through
+`templates/minimax/dialogue-short`, about 12 min. Until #671, a shot saved as the template's
+`intermediate` and then re-levelled by the join's `match_levels` still got a
+"`shot@deflect` … decodes at +1.70 dBFS … add a 'normalize_audio' step" warning. A template
+caller has no step to put that `normalize_audio` ahead of. The first fix produced a false
+"could not be re-measured" held prediction in its place.
+`run_workflow(workflow_path="templates/minimax/dialogue-short", workspace=<suite workspace>,
+arguments={...}, wait_seconds=55)`, with the arguments below. Use the bound acknowledgement.
+- Top level: `character_a_voice: "asset:qa-cast/priya-voice.wav"`,
+  `character_b_voice: "asset:qa-cast/hal-voice.wav"`, `seed: 120`, `audio_bleed_ms: 0`,
+  `seam_fade_ms: 150`, `match_levels: "rms"`.
+- `shots`: two entries, each with `num_frames: 124`, both in the order given.
+- Each entry's `references` are `{reference_type: "variable:subject_reference_type",
+  from_file: <portrait>}` and `{reference_type: "variable:voice_reference_type",
+  from_file: <voice>}`.
+
+The two `shots` entries:
+1. `name: "accuse"`, portrait `asset:qa-cast/priya-portrait.jpg`, voice `…/priya-voice.wav`.
+   `prompt`: `"subject_definitions:\n<Subject 1> is the wiry man in <Picture 1>, early 30s, short
+   curly dark hair, glasses, mustard-yellow sweater vest over a white button-down
+   shirt.\n\nsummary:\n[reference generation] In a cluttered 1990s office kitchen, <Subject 1>
+   holds up an empty pistachio ice cream carton and speaks fast and clipped, voice <Audio 1>:
+   \"Someone finished the pistachio, and the spoon is still warm.\" Medium close-up, static
+   camera."`
+2. `name: "deflect"`, portrait `asset:qa-cast/hal-portrait.jpg`, voice `…/hal-voice.wav`.
+   `prompt`: `"subject_definitions:\n<Subject 1> is the heavyset man in <Picture 1>, mid 40s,
+   shaved head, calm and heavy-lidded, open gray flannel shirt over a dark
+   t-shirt.\n\nsummary:\n[reference generation] In the same cluttered 1990s office kitchen,
+   <Subject 1> leans on the counter and says flatly, voice <Audio 1>: \"Spoons retain heat,
+   Priya. It's science.\" Medium close-up, static camera."`
+
+expected:
+- The run succeeds and is rendered fresh, not `reused`. If the step cache served the shots,
+  the post-write checks didn't run: delete that cache's run first, or say the case proved
+  nothing.
+- **Precondition.** `job.warnings` carries the join's own
+  `episode: concat_videos: video 2 would clip at the rms target (… dBFS peak) - held to -0.5 dBFS`.
+  That note is the evidence that `shot@deflect` came out hot. Without it, the case proved
+  nothing; say so.
+- No warning names a `shot@…` file: no "above full scale" / `audio_clipped`, and no
+  "predicted to peak … could not be re-measured" / `audio_no_headroom`. Apart from that, the
+  only entries are the two `draw_character_a`/`_b` "did not run" notes.
+
+It is a **finding** if either `shot@` warning comes back, or if the advice names a step the
+caller can't insert.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
