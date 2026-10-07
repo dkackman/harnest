@@ -10094,4 +10094,280 @@ seam fields inherited onto a hard cut), or if `seam_fade_ms` is missing from a f
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
+**Multi-GPU pool (#462): shared setup for C-F337–C-F350.** Read this note before any of those
+cases, including when a chunk starts partway through them. These cases describe the one-worker-per-GPU pool from #462's plan v1. They are written to hold
+on **any** `--devices` configuration: read the configured cards from `get_health().workers`
+first, and let each case's single-card branch apply when it lists one entry. Lem has two
+identical 24 GB RTX 3090s, so a fit check can never prefer one card over the other there.
+**W** below is the cheapest `shape="image"` catalog template by `cost[].minutes` (read
+`list_workflows(shape="image")` at run time), run in workspace `regression-complete` with
+`num_images`/batch at 1 where it exposes one and `seed` pinned to 42 where it exposes one,
+`acknowledged_cost: true`. Every case deletes its own jobs' output.
+
+### C-F337 — a finished job names the card it ran on
+pending: #675
+source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Run W once (`run_workflow(..., wait_seconds=55)`, then `wait_for_job` until it finishes).
+expected:
+- `get_job(<id>)` carries a `device` string of the form `"cuda:<N> <GPU name>"`, e.g.
+  `"cuda:1 NVIDIA GeForce RTX 3090"`. `<N>` is one of the `device` values in
+  `get_health().workers`, and `<GPU name>` equals that worker's `name`.
+- `<GPU name>` also equals `get_memory()`'s `gpu_device_name` for that card. Before stage C
+  that is the single `info` block. After stage C it is `get_memory(device="cuda:<N>")`.
+- `list_jobs(limit=5, workspace="regression-complete")` carries the same `device` on the
+  same job.
+- While the job is still `running` (if the first `run_workflow` reply catches it running),
+  `get_job` already carries `device`. It is never set only at finish.
+It is a **finding** if `device` is missing, is a bare backend (`"cuda"`), names an index
+the server isn't configured on, or disagrees between `get_job` and `list_jobs`.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F338 — jobs from before the pool read `device: null`, and the single-card fields stay
+pending: #675
+source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job.
+- `list_jobs(limit=50)` across workspaces, then `get_job` on any job with
+  `finished_at < 1791400000`. That is before 2026-10-07 20:00 UTC, which predates stage A.
+  `6e285dd51f21` (workspace `probe-613`) is one if it still exists.
+- `get_health()`.
+expected:
+- Every pre-stage-A job carries `device: null`. The key is present and null, not absent and
+  not a guessed card. Its other fields read as before (`status`, `run_id`, `run_version`).
+- `get_health()` still carries `status`, `worker_alive` (bool), `current_job`, `queued`,
+  `hostname` and `device`, beside the new `workers` once stage B lands. A consumer that
+  never reads `workers` loses nothing.
+It is a **finding** if an old job 500s, drops out of `list_jobs`, or carries a non-null
+`device`, or if any of the legacy `get_health` keys disappeared.
+cleanup: none.
+metrics: none.
+
+### C-F339 — observed run time is pooled by card name, not by device index
+pending: #675
+source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Uses C-F337's run, or one run of W.
+expected:
+- `list_workflows(shape="image")`'s observed figure for W reports the GPU name
+  (`"NVIDIA GeForce RTX 3090"`) as its device or `measured_on`. That's the same string as
+  the job's `device` minus the `cuda:<N> ` prefix, never `cuda:0`/`cuda:1`.
+- On a box with two cards of the same name, W's `observed_runs` counts runs from both
+  cards in one bucket. Check after C-F342, where runs landed on both cards: the count rose by
+  every successful run, whichever card ran it.
+- `validate_workflow` on W reports a `plan.estimate` that still prices from that bucket
+  (`basis: "observed"` when W has observed runs).
+It is a **finding** if observed cost splits by index (`cuda:0` vs `cuda:1`), if a run on
+the second card doesn't count, or if the estimate lost its observed basis.
+cleanup: as C-F337.
+metrics: none.
+
+### C-F340 — back-to-back runs of one workflow get distinct run versions
+pending: #675
+source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Stage A's half of the run race. C-F343 is the concurrent half. Run W twice with identical
+arguments, the second `run_workflow` sent as soon as the first returns a job id (don't wait
+for the first to finish).
+expected:
+- The two jobs have different `run_id`, and different `run_version` where it's numbered.
+- `get_job` on each lists its own output files, and each file opens with `get_output_image`.
+  Neither job's outputs point at the other's directory.
+It is a **finding** if both jobs share a `run_id`/directory, one's files overwrote the
+other's, or either fails with a file-exists or lock error.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F341 — get_health lists one worker per configured card
+pending: #676
+source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. `get_health()` while the queue is idle.
+expected:
+- `workers` is a list, one entry per configured device and no duplicates. Each entry is
+  `{device: "cuda:<N>", name: <GPU name>, vram_gb: <number>, current_job: null, alive: true}`.
+  `vram_gb` is within 1 of `get_memory`'s `gpu_memory_total_mb / 1024` for that card (about
+  23.6–24 on a 3090).
+- The legacy keys agree with it. `worker_alive` is true when any worker is alive.
+  `current_job` is null while all workers are idle. `queued` is 0.
+- On a single-card configuration, `workers` has exactly one entry and the legacy keys read
+  exactly as they did before the pool.
+It is a **finding** if `workers` is missing, has a different shape, lists a device the
+server wasn't started on, or contradicts the legacy keys.
+cleanup: none.
+metrics: none.
+
+### C-F342 — two jobs run at once on different cards, and a third waits its turn
+pending: #676
+source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Needs `get_health().workers` to list at least 2 entries. With 1, run only the single-card
+branch below. Submit three jobs of W back to back with no wait (`run_workflow`,
+`wait_seconds` omitted), seeds 42, 43 and 44 so none is a cached replay. Then call
+`get_health()` and `list_jobs(limit=5, workspace="regression-complete")` straight away,
+and `wait_for_job` each to the end.
+expected (two or more cards):
+- While the first two run, `get_health().workers` shows two entries with a non-null
+  `current_job`, the first two job ids, and `queued` counts the third.
+- The first two jobs finish with different `device` values (C-F337's form). Their
+  `[started_at, finished_at]` intervals overlap.
+- With exactly two cards, the third job's `started_at` is ≥ the earlier `finished_at` of
+  the first two (FIFO, no third card). It runs on the card that freed first.
+- All three `succeeded`.
+expected (one card): the jobs run strictly one after another in submission order, each
+`started_at` ≥ the previous `finished_at`. That is today's behaviour, unchanged.
+It is a **finding** if two jobs never overlap on a two-card server, if two running jobs
+report the same `device`, if the third overtakes a submission-order predecessor, or if any
+job fails for a reason a single run of W doesn't.
+cleanup: `delete_output(job_id=…)` for all three.
+metrics: none.
+
+### C-F343 — concurrent runs of one workflow never share a run directory
+pending: #676
+source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
+The concurrent half of C-F340, needing two workers. Submit W twice with **identical**
+arguments, seed 42 for both, back to back with no wait, so both start within a second on
+different cards.
+expected:
+- The jobs ran concurrently (overlapping intervals, different `device`). They have different
+  `run_id`s, and different `run_version`s where numbered.
+- Each job's outputs are its own and open with `get_output_image`. `delete_output` on one
+  leaves the other's files listed and openable.
+It is a **finding** if the two share a run directory, one fails on a lock or file-exists
+error, or deleting one removes the other's output. With one worker the case reduces to
+C-F340.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F344 — a job that fits no card is refused at submit, naming the largest card
+pending: #676
+source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
+The VRAM need is declared through the workflow-level `cost` block (the form C-F056 uses).
+Copy W's JSON (`get_workflow`) to an inline workflow and set its top-level `cost` to
+`[{"device": "cuda", "name": "RTX 3090", "vram_gb": <V>, "minutes": 0.2}]`. Take `L` as
+the largest `vram_gb` in `get_health().workers`.
+- Arm 1: `V = L * 2` (48 on lem). `run_workflow(<inline>, acknowledged_cost=true)`.
+- Arm 2 (boundary): `V = L`. Same call, then `cancel_job` it as soon as it has an id.
+- Arm 3: `list_jobs(limit=5, workspace="regression-complete")` after arm 1.
+expected:
+- Arm 1 is refused before anything queues, with an HTTP 400 / tool error whose text names
+  the largest card (its GPU name and `vram_gb`, e.g. `NVIDIA GeForce RTX 3090` / `24`) and
+  the job's need.
+- Arm 2 is accepted with a job id: a need equal to the card fits.
+- Arm 3 lists no job from arm 1.
+It is a **finding** if arm 1 queues (and then fails or waits forever), is refused without
+naming the card, or is refused only after it reached a worker, or if arm 2 is refused.
+If the plan's fit check turns out to read the need from somewhere other than `cost`, use
+that declaration instead. The arms and expectations stand.
+cleanup: `delete_output(job_id=<arm 2's job>)` if it left a directory.
+metrics: none.
+
+### C-F345 — cancelling one running job leaves the other card's job alone
+pending: #676
+source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Needs two workers. Submit W twice (seeds 45 and 46) with no wait. When `get_health()` shows
+both workers busy, `cancel_job(<first>)`, then `wait_for_job(<second>)`.
+expected:
+- The first ends `cancelled`, and its worker's `current_job` returns to null with `alive:
+  true`.
+- The second runs on to `succeeded` on its own card, with a `finished_at` later than the
+  cancel.
+- A W run submitted after the cancel is accepted and starts on the freed card, or on any
+  idle card.
+It is a **finding** if the cancel touches the other job, kills its worker (`alive: false`),
+or leaves the freed worker unable to take the next job.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F346 — a same-seed rerun goes back to the card that ran the original, and reuses
+pending: #677
+source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Needs two workers. Run W with seed 42 to completion (job J) and note its `device` D. Then
+`rerun_job(J, acknowledged_cost=true)` with nothing changed, while the queue is otherwise
+idle so the other card is free too.
+expected:
+- The rerun's `device` equals D, even though the other card was idle.
+- Every step of the rerun reports `reused` (or the server's same-seed reuse marker), not
+  a fresh generation.
+- Repeat with the rerun submitted while D's worker is busy with a third W job (seed 47). The
+  rerun either waits for D or runs on the other card and says it didn't reuse. It must not
+  claim `reused` for steps it recomputed.
+It is a **finding** if an idle-queue rerun lands on the other card, or if steps report
+`reused` on a card that never held their result.
+cleanup: `delete_output(job_id=…)` for all jobs.
+metrics: none.
+
+### C-F347 — get_memory reports per card, and takes an optional device
+pending: #677
+source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job.
+- `get_memory()`.
+- `get_memory(device=<each device in get_health().workers>)`.
+- `get_memory(device="cuda:7")` (not configured).
+- `get_memory(device="bogus")`.
+expected:
+- `get_memory()` reports one entry per configured card. Each carries its `device`,
+  `gpu_device_name` and `gpu_memory_total_mb`, which match that worker's `name`/`vram_gb`.
+- `get_memory(device=X)` returns only X's figures.
+- Both bad devices are refused with an error that names the configured devices. They don't
+  silently fall back to card 0, and they don't 500.
+- On a single-card server, `get_memory()` still returns the pre-pool shape (or a one-entry
+  form of the new one), so no field a caller read before is gone.
+It is a **finding** if `get_memory()` hides a card, if `device=X` returns another card's
+figures, or if an unknown device answers with anyone's figures.
+cleanup: none.
+metrics: none.
+
+### C-F348 — clear_memory(device) clears only that card, and refuses only while that card is busy
+pending: #677
+source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Needs two workers. Submit one W job (seed 48) with no wait. While it runs on card A
+(`get_job().device`), with card B idle:
+- `clear_memory(device=B)`;
+- `clear_memory(device=A)`;
+- `clear_memory()` with no device;
+- `clear_memory(device="cuda:7")`.
+Then `wait_for_job` it.
+expected:
+- `clear_memory(device=B)` succeeds. A later `get_memory(device=B)` reads a `step_cache`
+  `entries` of 0 (or the server's cleared marker).
+- `clear_memory(device=A)` is refused with a 409 naming the running job.
+- `clear_memory()` with no device never clears a busy card. It is either refused (409, as
+  today) or clears only the idle cards and says which.
+- The unknown device is refused as in C-F347.
+- The running job still `succeeded`.
+It is a **finding** if a clear reaches A's worker while A runs, if B's clear is refused
+because A is busy, or if the job fails after any of these calls.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
+### C-F349 — plan.estimate names the card it priced for
+pending: #677
+source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job: `validate_workflow` on W by name, and on an inline copy of W with its top-level
+`cost` set as in C-F344 with `V = 20`.
+expected:
+- Each `plan.estimate` carries a field that names one card: a GPU name, or a
+  `cuda:<N>`+name string matching an entry of `get_health().workers`. It is the card the
+  dispatcher would pick for the job, and it sits beside the existing `minutes`/`basis`.
+- On a box whose cards share a name, the named card is any one of them; the case doesn't
+  test which.
+It is a **finding** if the estimate names no card, names a device that isn't configured,
+or the new field displaced `minutes`/`basis`/`measured_on`.
+cleanup: none.
+metrics: none.
+
+### C-F350 — the MCP surface says "one job per GPU" and documents the new fields
+pending: #678
+source: tester, spec for #678 from #462's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Read the server's MCP instructions (the session's system text), the tool
+descriptions of `get_health`, `get_job`, `get_memory` and `clear_memory` (as the
+client lists them), and `list_guides`, searching the guide for `one job at a time`.
+expected:
+- No served text says the server runs "one job at a time". Where it describes concurrency,
+  it says one job per GPU (or per card).
+- `get_health`'s description names `workers`.
+- `get_job`'s or `list_jobs`'s description names the job's `device`.
+- `get_memory`'s and `clear_memory`'s schemas carry an optional `device` parameter, and their
+  descriptions say what omitting it does.
+It is a **finding** if any served text still promises serial execution, or if a field or
+parameter from C-F337/C-F341/C-F347 is undocumented in its tool's description.
+cleanup: none.
+metrics: none.
+
 ## Performance
