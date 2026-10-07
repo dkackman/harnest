@@ -2840,71 +2840,6 @@ probe queues and fails in the pipeline (refused too late).
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
-### M-F085 — `templates/minimax/upscale-refine` is listed with measured cost, validates, and the minimax-h3 skill has its row
-source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `templates/minimax/upscale-refine`: a 544p base with the turbo LoRA,
-then `upscale_h3_latents`, then a refine at 1344×768 with the 768p LoRA at `video_shift` 6,
-holding the base audio.
-The template exists only if Don accepted #621's A/B. If #621 was closed with the template
-reverted, retire this case through a harnest suite request rather than failing it.
-Steps:
-1. `list_workflows(shape="shot", traits="has-audio")`.
-2. `get_workflow("templates/minimax/upscale-refine")`.
-3. `validate_workflow("templates/minimax/upscale-refine")` at defaults.
-4. Read the `minimax-h3` skill's template table.
-expected:
-- It is listed with a non-null `cost` (an RTX 3090 entry), `cost_drivers` and `vram_estimate`.
-- The workflow is a 960×544 base (turbo LoRA), then `upscale_h3_latents` to 1344×768, then an H3
-  step with the 768p LoRA, `video_shift` 6, `latents` from the upscale, a `refine_strength` in
-  (0,1) and `hold_audio` from the base's audio.
-- It validates clean, and `plan.estimate` is about the listed cost.
-- The skill has a row naming the template, consistent with its cost.
-It is a **finding** if the template is present but has `cost: null`, a missing `cost_drivers` or
-`vram_estimate`, fails validation, refines without holding the base audio, or has no skill row.
-cleanup: none (no job).
-metrics: none.
-
-### M-F086 — the 768p A/B: upscale-only vs `upscale-refine` vs native 768p (vs the LMS upscaler), crowd-faces prompt, seed 42
-source: tester, spec for #621 from #598's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 at 1344×768 by four routes.
-This is the plan's stage-3 gate. Don decides from it whether the template stays. The template's
-`cost` must come from arm (b). The run is expensive, about 30–40 minutes for all arms.
-The prompt is the T2VA crowd-faces prompt, verbatim:
-
-```text
-integrated_multimodal_description: [Shot 1] Live-action, cinematic, a wide shot at night frames an open iron gate set in a high stone wall at the top of a cobbled slope, warm lantern light spilling through it. The camera pulls out with small amplitude at slow speed ahead of about forty townspeople who walk up the slope toward the gate in a loose crowd, the nearest rows only six to ten metres from the lens. They are adults and elders between thirty and seventy, men and women with weathered brown and tan skin, deep-set eyes, creased foreheads and stubble, in wool coats and shawls, each holding a lit candle at chest height with both hands so every face is lit gold from below. Their mouths are open and moving in a steady rhythm as they sing together, eyes fixed on the gate, and the front rows turn their heads toward the camera and back toward the gate as they climb. Candle flames stream sideways in a light breeze and breath shows in the cold air.
-
-overall_soundscape: Hundreds of boot soles scuff and knock on wet cobblestones in a loose, overlapping rhythm. Wool coats rustle, candle flames flutter, and a low murmur of voices swells from the crowd as the gate hinge creaks once.
-
-non_diegetic_music: A slow low drum pulse with sustained string chords, rising gradually in volume toward the end.
-```
-
-(from the arguments of job 074e65929a9d, templates/minimax/video-with-audio-768p)
-Every arm uses `seed` 42 and 124 frames.
-Arms, each run with `run_workflow(..., acknowledged_cost=<the bound {fingerprint, minutes, downloads} from the arm's validate_workflow plan>, wait_seconds=55)` and then
-`wait_for_job`:
-- (a) upscale-only: M-F041's base → upscale → decode → `pair_audio` workflow (the #499 guide
-  workflow);
-- (b) `templates/minimax/upscale-refine`;
-- (c) `templates/minimax/video-with-audio-768p`;
-- (d) the #612 LMS-upscaler route, if `list_workflows` or the guide documents one. Otherwise
-  record "not landed" and skip.
-For each arm, call `get_gallery_metadata` and `get_output_frames` at four moments, plus one
-`crop` on the densest group of faces.
-expected:
-- Every run arm succeeds at 1344×768 with 124 frames and an audio stream of the clip's length.
-- Record each arm's minutes (from `get_job`) and how its faces read in the crop (intact, smeared,
-  doubled). That is the evidence Don rules on; it is not a pass or fail here.
-- (b)'s measured minutes are within 50% of the template's listed `cost`.
-- (b)'s audio is the same sound as its base would make: speech or crowd sound, coherent, not
-  noise.
-It is a **finding** if any run arm fails, if (b)'s minutes are more than 50% off its listed cost
-(the cost wasn't taken from arm (b)), or if (b)'s audio is silent or garbled.
-cleanup: `delete_output(job_id=...)` for every job.
-metrics: `minutes_a`, `minutes_b`, `minutes_c`, `minutes_d`. Record them in
-`regression-perf/M-F086.jsonl` with condition `crowd-faces-124f-seed42`. The first run seeds the
-file. Flag a reading more than 50% over the median.
-
 ### M-F087 — `LTX2RefinePipeline` is discoverable, and its signature has `video` beside the parent's `latents`, `noise_scale` and `sigmas`
 source: tester, spec for #638 from #606's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `LTX2RefinePipeline` (dw community pipeline, subclass of `LTX2Pipeline`). Free: discovery only.
@@ -3291,39 +3226,6 @@ cleanup: `delete_output(job_id=...)` for all three jobs; `delete_workflow("m-f09
 metrics: `latency_s`, `refine_s` and `refine_evals` per job, to `regression-perf/M-F098.jsonl`,
 with conditions `124f-960x544-to-1344x768-p5-s0.2` (A), `…-p6-s0.2` (B) and `…-p5-s0.4` (C). The
 first run seeds the file. Flag a reading more than 50% over the median.
-
-### M-F099 — `upscale-refine` defaults to 5 points / 0.2, declares `refine_strength` a cost driver, and a changed strength is not quoted at the default's catalog cost
-source: tester, spec for #621 from #598's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 `templates/minimax/upscale-refine`.
-Adds what v4 (D6, D8) changed to M-F085, which stands. As there, the template exists only if Don
-accepted #621's A/B. If #621 was closed with the template reverted, retire this case through a
-harnest suite request rather than failing it.
-Steps:
-1. `list_workflows(shape="shot", traits="has-audio")`, and find the entry.
-2. `get_workflow("templates/minimax/upscale-refine")`.
-3. `validate_workflow(name="templates/minimax/upscale-refine")` at defaults. Then validate with
-   `arguments` `{"refine_strength": 0.4}`, then with `{"num_inference_steps": 6}` (or whatever the
-   template's variable for the refine step's points is called), and then with
-   `{"refine_strength": 0}`.
-expected:
-- `cost_drivers` includes `refine_strength`, `num_frames`, `num_inference_steps` (or the refine
-  points' variable), `width` and `height`.
-- In the definition, the refine step runs at `num_inference_steps` 5 and `refine_strength` 0.2 by
-  default, and holds the base audio.
-- `scheduler.shift` is `variable:video_shift` (defaulting to 6 for the 768p refine) and
-  `audio_scheduler.shift` is `variable:audio_shift` (default 3). LoRA alpha is
-  `variable:lora_alpha`, defaulting to null. No step defaults to 20 steps.
-- The default validate quotes the listed `cost` (basis `catalog`, or `observed` once the box has
-  runs).
-- Each driver override (0.4, 6 points) validates. Its `plan.estimate` is not the default's
-  `catalog` minutes passed through unchanged: basis `unknown`, `derived`, or `observed` for runs
-  with that value.
-- `refine_strength: 0` is refused at validate, naming the range.
-It is a **finding** if `refine_strength` is not a declared cost driver, if a changed strength is
-quoted at the default's catalog cost, if the defaults are not 5 and 0.2, if the shift and alpha
-rules above are broken, or if 0 validates.
-cleanup: none (no job).
-metrics: none.
 
 ### M-F100 — `prompts` passed down through a composing step gives each LTX chain segment its own line, spoken once
 source: tester, found while running TESTER_TASK.agent.md (ep113; #652 is the template-level fix)
