@@ -10105,7 +10105,6 @@ identical 24 GB RTX 3090s, so a fit check can never prefer one card over the oth
 `acknowledged_cost: true`. Every case deletes its own jobs' output.
 
 ### C-F337 — a finished job names the card it ran on
-pending: #675
 source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Run W once (`run_workflow(..., wait_seconds=55)`, then `wait_for_job` until it finishes).
 expected:
@@ -10124,7 +10123,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F338 — jobs from before the pool read `device: null`, and the single-card fields stay
-pending: #675
 source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job.
 - `list_jobs(limit=50)` across workspaces, then `get_job` on any job with
@@ -10143,7 +10141,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F339 — observed run time is pooled by card name, not by device index
-pending: #675
 source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Uses C-F337's run, or one run of W.
 expected:
@@ -10161,7 +10158,6 @@ cleanup: as C-F337.
 metrics: none.
 
 ### C-F340 — back-to-back runs of one workflow get distinct run versions
-pending: #675
 source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Stage A's half of the run race. C-F343 is the concurrent half. Run W twice with identical
 arguments, the second `run_workflow` sent as soon as the first returns a job id (don't wait
