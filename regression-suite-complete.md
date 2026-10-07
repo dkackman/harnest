@@ -10110,7 +10110,9 @@ Run W once (`run_workflow(..., wait_seconds=55)`, then `wait_for_job` until it f
 expected:
 - `get_job(<id>)` carries a `device` string of the form `"cuda:<N> <GPU name>"`, e.g.
   `"cuda:1 NVIDIA GeForce RTX 3090"`. `<N>` is one of the `device` values in
-  `get_health().workers`, and `<GPU name>` equals that worker's `name`.
+  `get_health().workers`, and `<GPU name>` equals that worker's `name`. Where `get_health()`
+  has no `workers` (before stage B), the configured card is `get_health().device` and `<N>`
+  is the index the server's single worker runs on (`0` on the default card).
 - `<GPU name>` also equals `get_memory()`'s `gpu_device_name` for that card. Before stage C
   that is the single `info` block. After stage C it is `get_memory(device="cuda:<N>")`.
 - `list_jobs(limit=5, workspace="regression-complete")` carries the same `device` on the
@@ -10126,7 +10128,7 @@ metrics: none.
 source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job.
 - `list_jobs(limit=50)` across workspaces, then `get_job` on any job with
-  `finished_at < 1791400000`. That is before 2026-10-07 20:00 UTC, which predates stage A.
+  `finished_at < 1791392500`. That is before 2026-10-07 17:01:40 UTC, which predates stage A.
   `6e285dd51f21` (workspace `probe-613`) is one if it still exists.
 - `get_health()`.
 expected:
