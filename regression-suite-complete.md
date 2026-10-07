@@ -10050,4 +10050,31 @@ source's shots, as #673's hand-off left it.)
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
+### C-F335 — three `for_each` steps over one list re-level a cut shot by shot: `trim_video` per entry, `gain_audio` reading an item-level `previous_result:trim@<name>` with its own `gain_db`, `pair_audio`, `gather:` join
+source: tester, found while running TESTER_TASK.agent.md (episode 123, claude-opus-5-5 via anthropic)
+About 5 s, no model. Needs the shared read-only `asset:qa-cast/ep119-episode.mp4` (105 f, 24 fps, 48 kHz,
+shots 0/33, 33/31, 64/41; `assess_output` `analyze_shots` gives rms −21.5 / −31.9 / −24.0, `shot_level_spread`
+10.5 dB). In `regression-complete`, run inline (id `qa-c-f335`, seed 123). The variable `shots` = `[{name seg1,
+start_frame 0, num_frames 33, src "previous_result:trim@seg1", gain_db -2.5}, {seg2, 33, 31,
+"previous_result:trim@seg2", 7.9}, {deflect, 64, 41, "previous_result:trim@deflect", 0.0}]`. Steps:
+- `trim` (`for_each: variable:shots`) = `trim_video(video: <ep119>, start_frame: item:start_frame,
+  num_frames: item:num_frames, fps: 24)`, `video/mp4`, `save: false`.
+- `gain` (same list) = `gain_audio(audio: item:src, gain_db: item:gain_db)`, `audio/wav`, `save: false`.
+- `pair` (same list) = `pair_audio(video: previous_result:trim, audio: previous_result:gain, fit: "video")`,
+  `video/mp4`, `save: false`.
+- `join` = `concat_videos(videos: "gather:pair", fps: 24, seam_fade_ms: 150)`, `subfolder: "final"`.
+
+Validate first, then `assess_output` the join.
+expected:
+- `validate_workflow` with no errors or warnings, `plan.list_entries.shots` 3, `plan.steps` 10.
+- The job `succeeded` with no warnings. The manifest lists `trim@`/`gain@`/`pair@` for each of
+  seg1/seg2/deflect, then `join`.
+- `join` is 24.0 fps, 105 frames, 4.375 s of picture and audio, 48 kHz. `media.shots` is named
+  `pair@seg1`/`pair@seg2`/`pair@deflect` at frames 0/33/64.
+- `assess_output` has no `shot_level_spread` finding: the per-entry gains brought the three shots inside 6 dB.
+It is a **finding** if an item-level `previous_result:trim@<name>` resolves to the wrong member or fails, if
+a `gain_db` is applied to the wrong shot (the spread stays or moves), or if validate passes and the run fails.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
 ## Performance
