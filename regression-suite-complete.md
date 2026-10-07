@@ -8349,7 +8349,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F270 — the H3 speech-and-voices probe record is posted on #608 with a verdict, job ids and an observation for every probe
-pending: #640
 source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Free. The record lives in dw's `docs/proposals/audits/2026-10-h3-dialogue-probes.md`, which a
 consumer can't read, so read its copy on the ticket instead: `gh issue view 608 --repo
@@ -8378,7 +8377,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F271 — every job the A1 record cites exists, finished, and its manifest matches the arm the row describes
-pending: #640
 source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). For **every** job id C-F270's comment cites: `get_job`, then
 `get_job_workflow` for its resolved workflow and arguments.
@@ -8403,7 +8401,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F272 — probe 1's words/s, tail and clipping verdict are reproducible from the cited transcripts' word timestamps
-pending: #640
 source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Reads, plus CPU transcriptions where needed. For each probe 1 job, take its word-timestamp
 transcript: the transcript output the row cites (`get_output_text`), or, if the record
@@ -8430,7 +8427,6 @@ cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
 metrics: none.
 
 ### C-F273 — for two A1 rules, the cited outputs show what the row claims
-pending: #640
 source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Reads, plus CPU transcriptions where needed. Pick two rows from C-F270's comment, other than
 probe 1: one marked **confirmed** if any is, and one marked **refuted** if any is (else
@@ -8450,7 +8446,6 @@ cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
 metrics: none.
 
 ### C-F274 — no A1 or A2 row is marked confirmed without meeting the two-seed bar
-pending: #640
 source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Reads only. The plan's bar: a rule is **confirmed** only when both seeds of the broken arm
 show the effect and neither seed of the followed arm does; anything else is
@@ -8469,7 +8464,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F275 — the prompt-length row agrees with H3's text-encoder signature
-pending: #640
 source: tester, spec for #640 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Free. Find the H3 pipeline name in `templates/minimax/video-with-audio`'s definition
 (`get_workflow`), then `get_pipeline_signature` on it. Read probe 7's row in C-F270's comment.
