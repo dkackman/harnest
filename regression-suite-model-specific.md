@@ -3353,4 +3353,34 @@ was dropped and `prompt` repeated, #652), or if the validate verdict doesn't hol
 cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
+### M-F101 — a chain's own seam crossfade is recorded, assessed as intentional, and survives a re-pair with a bed
+source: tester, found while running TESTER_TASK.agent.md (ep115; #660 verified the record)
+Needs LTX-2.5 via `templates/ltx2/chained-segments`, about 1.5 min plus an 8 s task job. Run
+M-F100's inline workflow, but with `id` `m-f101-chain`, `seed` 115, `video:
+"asset:qa-cast/ep114-episode.mp4"` in `last`, and **no steps after `chain`**. A later step that
+reads `previous_result:chain` fails today (#667). `keep_output(name=<the chain video>,
+asset_name="regression/m-f101-chain.mp4")` in the case's workspace. Then run a second inline
+workflow, `id` `m-f101-bed`: `bed` = `loop_audio` (`audio: "asset:uploads/qa-cast/room-bed.wav"`,
+`target_frames: 96`, `fps: 24`) → `mix` = `mix_audio` (`audios: ["asset:regression/m-f101-chain.mp4",
+"previous_result:bed"]`, `gains: [1, 4]`) → `norm` = `normalize_audio` (`peak_dbfs: -3`,
+`target_lufs: -16`, `limit: true`) → `episode` = `pair_audio` (`video:
+"asset:regression/m-f101-chain.mp4"`, `audio: "previous_result:norm"`, `fit: "video"`, `result`
+`{"content_type": "video/mp4", "subfolder": "final"}`). The first three steps' `result` is
+`{"content_type": "audio/wav", "save": false}`.
+expected:
+- The chain's manifest `shots` has `segment 1` (49 f) and `segment 2` (47 f, `trim_frames: 2`,
+  `crossfade_ms: 80.0`).
+- `assess_output(probe="analyze_seams")` on the chain video: seam 1 has `hard_cut: false`
+  and `crossfade_ms: 80.0`, `findings: []`, and `rules_skipped` names `seam_hole` with
+  reason "seam carries its own fade/crossfade" and `seams: [1]`. The audio dip at the seam
+  (`floor_dbfs` near −69) is expected and is not a finding.
+- The bed job succeeds. Its `episode` is 96 frames, 4.00 s, 48 kHz, integrated LUFS within
+  0.5 of −16. Its manifest `shots` repeat both segments with `trim_frames`/`crossfade_ms`, and
+  `assess_output` reports no findings.
+It is a **finding** if the trim/crossfade is missing from the chain's shots, if `seam_hole`
+fires on the chain's own seam (or is skipped silently, not listed), or if `pair_audio`
+drops the shots.
+cleanup: `delete_output(job_id=…)` for both jobs; `delete_asset("regression/m-f101-chain.mp4")`.
+metrics: none.
+
 ## Performance

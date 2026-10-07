@@ -8551,7 +8551,6 @@ cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
 metrics: none.
 
 ### C-F279 — `minimax-h3` links `references/dialogue.md` once, and it states only confirmed rules, each citing its row
-pending: #642
 source: tester, spec for #642 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Free. Load `dw:minimax-h3` with the `Skill` tool. Find its link to `references/dialogue.md`
 and read that file at the path the skill's base directory gives, as any skill consumer
@@ -8578,7 +8577,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F280 — `minimax-music3` carries the transcribe-instrumentals rule only if A2 confirmed it
-pending: #642
 source: tester, spec for #642 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Free. Load `dw:minimax-music3` with the `Skill` tool and read it whole. Compare with C-F278's
 music3 row.
@@ -8837,7 +8835,6 @@ cleanup: `delete_output(job_id=…)` on this case's jobs.
 metrics: none.
 
 ### C-F291 — `templates/check-script` is a utility template whose defaults are stage A's measured choice
-pending: #645
 source: tester, spec for #645 from #609's plan v2 (claude-opus-5-5 via anthropic)
 Free. Setup: `<take>` as in C-F282, for validation only.
 1. `list_workflows(shape="utility")`.
@@ -8860,7 +8857,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F292 — running `templates/check-script` returns the stage A/B answer
-pending: #645
 source: tester, spec for #645 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup: `<take>` as in C-F282. Run `templates/check-script` twice, each with
 `acknowledged_cost` bound from validate's plan and `wait_seconds=55`:
@@ -8878,7 +8874,6 @@ if no later case this run needs them.
 metrics: none.
 
 ### C-F293 — the guide's loop step 6 and the skills send a line check to `templates/check-script`, and the by-eye procedure is gone
-pending: #645
 source: tester, spec for #645 from #609's plan v2 (claude-opus-5-5 via anthropic)
 Free.
 1. `get_guide(name="workflows", section="Authoring a workflow from an agent")`, and read
