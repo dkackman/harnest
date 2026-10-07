@@ -9983,4 +9983,29 @@ expected:
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
+### C-F332 — `assemble-and-score` over a chain episode keeps the chain's crossfade in the nested shots, records `seam_fade_ms` on the faded outer seam, and assess skips `seam_hole` for both
+source: tester, found while running TESTER_TASK.agent.md (ep116; covers #659's fix; claude-opus-5-5 via anthropic)
+About 10 s, no model. Needs the shared read-only `asset:qa-cast/ep115-episode.mp4` (96 f, a 2-segment
+LTX chain, 512x288 48 kHz), `asset:qa-cast/ep114-episode.mp4` (235 f, 512x288 48 kHz) and
+`asset:qa-cast/ep68-score.mp3` (Fixtures). In `regression-complete`, validate then run
+`templates/assemble-and-score` with `shots: [ep115-episode, ep114-episode]` (those two `asset:` refs,
+in that order), `score: asset:qa-cast/ep68-score.mp3`, `sample_rate` 48000, `total_frames` 331,
+`match_levels "rms"`, `match_levels_dbfs` -24, `score_gain` 0.25, `seam_fade_ms` 200,
+`world_fade_out_ms` 400, `target_lufs` -16, `limit` true.
+expected:
+- validate is `valid: true` with no warnings; the job `succeeded` with no warnings.
+- `film` is 331 frames, 13.79 s, 24 fps, 48 kHz, integrated LUFS within 0.5 of −16, `findings: []`.
+- Its manifest `shots` are 7: `segment 1` (0, 49 f), `segment 2` (49, 47 f, `trim_frames: 2`,
+  `crossfade_ms: 80.0`, no `hard_cut`), then `segment 1` at frame 96 with `hard_cut: true` **and**
+  `seam_fade_ms: 200.0`, then `segment 2` (145), `shot@drip` (192), `shot@spoon` (225),
+  `shot@stare` (274), the last three `hard_cut: true`.
+- `assess_output(probe="analyze_seams")`: 6 seams, `findings: []`; `rules_skipped` names
+  `seam_hole` with reason "seam carries its own fade/crossfade" and `seams: [1, 2]`. Seam 2's
+  `floor_dbfs` is above −50 (ep116 read −42.5); a floor near −63 is #659 come back.
+It is a **finding** if the inner `trim_frames`/`crossfade_ms` are dropped by the nesting, if the
+faded outer seam lacks `seam_fade_ms` (bare `hard_cut` was #659), or if `seam_hole` fires on seam 1 or 2.
+(ep114's own `segment 2` at 145 carries no crossfade: that chain predates #660, so its absence is not a finding.)
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
 ## Performance
