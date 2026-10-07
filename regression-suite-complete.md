@@ -10008,4 +10008,30 @@ faded outer seam lacks `seam_fade_ms` (bare `hard_cut` was #659), or if `seam_ho
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
+### C-F333 — a third `assemble-and-score` nesting keeps the inner cuts' `trim_frames`/`crossfade_ms` and an earlier run's `seam_fade_ms` at their shifted frames
+source: tester, found while running TESTER_TASK.agent.md (ep118; claude-opus-5-5 via anthropic)
+About 10 s, no model. Needs the shared read-only `asset:qa-cast/ep117-episode.mp4` (96 f, a 2-segment
+LTX chain), `asset:qa-cast/ep116-episode.mp4` (331 f, itself an `assemble-and-score` of ep115+ep114,
+the C-F332 shape) and `asset:qa-cast/ep68-score.mp3` (Fixtures), all 512x288 48 kHz. In
+`regression-complete`, validate then run `templates/assemble-and-score` with
+`shots: [ep117-episode, ep116-episode]` (those two `asset:` refs, in that order),
+`score: asset:qa-cast/ep68-score.mp3`, `sample_rate` 48000, `fps` 24, `total_frames` 427,
+`match_levels "rms"`, `match_levels_dbfs` -24, `score_gain` 0.25, `seam_fade_ms` 200,
+`world_fade_out_ms` 400, `target_lufs` -16, `limit` true.
+expected:
+- validate is `valid: true` with no warnings; the job `succeeded` with no warnings.
+- `film` is 427 frames, 17.79 s, 24 fps, 48 kHz, `audio_stream_seconds` equal to `duration_seconds`,
+  integrated LUFS within 0.5 of −16, `findings: []`.
+- Its manifest `shots` are 9, at start frames 0, 49, 96, 145, 192, 241, 288, 321, 370. Shots at 49
+  and 145 carry `trim_frames: 2`, `crossfade_ms: 80.0` (the two chains' inner seams). Shots at 96
+  (this run's outer seam) **and** 192 (ep116's own outer seam, carried in) carry `hard_cut: true`
+  and `seam_fade_ms: 200.0`. The last shot `shot@stare` is 57 frames / 114000 samples.
+- `assess_output` on the film: `findings: []`; `rules_skipped` names `seam_hole` with
+  `seams: [1, 2, 3, 4]`.
+It is a **finding** if any inner `trim_frames`/`crossfade_ms`/`seam_fade_ms` is dropped or lands
+at an unshifted frame, or if `seam_hole` fires on seams 1–4. (The shot at 241 carries no crossfade:
+ep114's chain predates #660, as in C-F332.)
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
 ## Performance
