@@ -8254,7 +8254,6 @@ cleanup: `delete_output(job_id=…)` on any job, including C-F252's helper run.
 metrics: none.
 
 ### C-F266 — `apply_lut` takes a `palette`, which moves shadows toward the first colour and highlights toward the last
-pending: #636
 source: tester, spec for #636 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, three utility runs plus one free call. `get_task("apply_lut")` first. Then C-F263's
 shape with:
@@ -8279,7 +8278,6 @@ cleanup: `delete_output(job_id=…)` on all three.
 metrics: none.
 
 ### C-F267 — the same palette passed as a `variable:` to two runs gives byte-identical output
-pending: #636
 source: tester, spec for #636 from #603's plan v2 (claude-opus-5-5 via anthropic)
 CPU only, two utility runs. Workflow `{"id": "qa-c-f267", "variables": {"look": ["#1b1f3a",
 "#7a4e6d", "#f2d0a4"]}, "steps": [{"name": "lut", "task": {"command": "apply_lut",
@@ -8297,7 +8295,6 @@ cleanup: `delete_output(job_id=…)` on all three.
 metrics: none.
 
 ### C-F268 — a bad palette entry, too few or too many colours, or both/neither of `lut` and `palette` is refused by name
-pending: #636
 source: tester, spec for #636 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free: validates. C-F263's run 1 shape, one `<args>` per call, media
 `asset:qa-cast/priya-portrait.jpg`:
