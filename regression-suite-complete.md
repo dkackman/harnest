@@ -8581,9 +8581,10 @@ source: tester, spec for #642 from #608's plan v2 (claude-opus-5-5 via anthropic
 Free. Load `dw:minimax-music3` with the `Skill` tool and read it whole. Compare with C-F278's
 music3 row.
 expected:
-- Row confirmed: SKILL.md has one line telling the reader to transcribe every instrumental
-  run (`transcribe_audio`) to catch accidental vocals. Any task or argument the line names
-  exists in `get_task("transcribe_audio")`.
+- Row worth a rule or confirmed: SKILL.md has one line telling the reader that an
+  instrumental can still grow a voice, and how to check for it the way the record found
+  reliable (the `vocals` stem from `separate_stems`, measured with `analyze_audio`, not a
+  transcript of the mix). Every task or argument the line names exists in `get_task`.
 - Row refuted or inconclusive: SKILL.md gives no such rule.
 - Either way, the skill still loads and its other instrumental guidance is unchanged in
   meaning.
