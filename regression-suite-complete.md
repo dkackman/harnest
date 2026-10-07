@@ -8323,7 +8323,6 @@ this case uploaded it.
 metrics: none.
 
 ### C-F269 — `dw:series-episodes` offers an optional per-shot look step, and its workflow fragment validates
-pending: #637
 source: tester, spec for #637 from #603's plan v2 (claude-opus-5-5 via anthropic)
 Free. Load the `dw:series-episodes` skill with the `Skill` tool and read it whole.
 1. Find the look step.
