@@ -8594,7 +8594,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F281 — `check_script` is a registered task with the plan's arguments and defaults
-pending: #643
 source: tester, spec for #643 from #609's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_task("check_script")`, and `list_tasks()`.
 expected:
@@ -9158,7 +9157,6 @@ cleanup: `delete_output(job_id=…)`, `delete_workflow("c-f303-snap")`.
 metrics: none.
 
 ### C-F304 — an H3 audio guide carries the guide clip's sound into the opening, and new audio follows without a gap or click
-pending: #649
 source: tester, spec for #649 from #611's plan v1 (claude-opus-5-5 via anthropic)
 GPU: one H3 run, about 6 min. Needs C-F296's `asset:qa-guides/ep21-39f-audio.mp4`.
 1. Reference: `transcribe_audio` the guide clip's audio in a small task-only workflow, and note its
@@ -9185,7 +9183,6 @@ cleanup: `delete_output` on both jobs, `delete_workflow` on both saved workflows
 metrics: none.
 
 ### C-F305 — `audio: true` on an H3 guide is refused for a silent clip and accepted for one with sound, and the guide documents it
-pending: #649
 source: tester, spec for #649 from #611's plan v1 (claude-opus-5-5 via anthropic)
 Free. Needs C-F296's assets. `asset:qa-fit/src-640x480-50f-silent.mp4` is made by C-F238's setup if
 missing. Save `templates/minimax/video-with-audio` as `c-f305-audio`.
