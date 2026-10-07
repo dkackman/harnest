@@ -7473,7 +7473,8 @@ CPU only, no model step. The source is `asset:qa-cast/ep6-cold-open.mp4` (124 fr
 `ceil(124 / 25) = 5` windows are needed. Window 4 covers `[92, 125)`, with one pad frame.
 Inline workflow **RT**:
 ```json
-{"variables": {"source_video": "asset:qa-cast/ep6-cold-open.mp4",
+{"id": "rt",
+ "variables": {"source_video": "asset:qa-cast/ep6-cold-open.mp4",
    "windows": [{"name": "w0", "index": 0}, {"name": "w1", "index": 1},
                {"name": "w2", "index": 2}, {"name": "w3", "index": 3},
                {"name": "w4", "index": 4}]},
