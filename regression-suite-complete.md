@@ -10077,4 +10077,21 @@ a `gain_db` is applied to the wrong shot (the spread stays or moves), or if vali
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
+### C-F336 — a span `trim_video` cuts out of a joined cut does not carry the source's inner `trim_frames`/`crossfade_ms` onto the new join's seam
+source: tester, found while running TESTER_TASK.agent.md (episode 125, after #674; claude-opus-5-5 via anthropic)
+About 5 s, no model. The same inline workflow and arguments as C-F335 (id `qa-c-f336`, seed 125, in
+`regression-complete`). `asset:qa-cast/ep119-episode.mp4`'s second shot carries `trim_frames: 2` and
+`crossfade_ms: 80` from its chained-segments seam at frame 33. The run cuts at that frame and re-joins the
+spans with `seam_fade_ms: 150`, so the new seam is a hard cut with a fade, not that crossfade.
+expected:
+- The job `succeeded` with no warnings.
+- The `join` manifest's `shots` (and `get_gallery_metadata` on the file's `media.shots`) are `pair@seg1` 0/33,
+  `pair@seg2` 33/31, `pair@deflect` 64/41.
+- `pair@seg2` and `pair@deflect` each carry `hard_cut: true` and `seam_fade_ms: 150.0`, and neither carries
+  `trim_frames` or `crossfade_ms`. `pair@seg1` carries none of the four.
+It is a **finding** if any shot carries `trim_frames`/`crossfade_ms` (the #674 regression: the source's inner
+seam fields inherited onto a hard cut), or if `seam_fade_ms` is missing from a faded seam.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
 ## Performance
