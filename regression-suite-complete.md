@@ -8481,7 +8481,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F276 — the A2 picture-and-music record covers its five rules, with cited jobs whose manifests match their arms
-pending: #641
 source: tester, spec for #641 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). Read stage A2's results table. It's in the same audit doc, which a consumer
 can't read, so use its copy on the ticket: the A2 results comment on #608, or failing that
@@ -8510,7 +8509,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F277 — the A2 extras, readable-text and silent-scene rows match their outputs
-pending: #641
 source: tester, spec for #641 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Reads, plus CPU transcriptions where needed. For C-F276's rows, all seeds, both arms:
 1. Extras: `get_output_frames`, counting distinct faces and looking for repeated (cloned)
@@ -8533,7 +8531,6 @@ cleanup: `delete_output(job_id=…)` on any transcription job this case ran.
 metrics: none.
 
 ### C-F278 — the music3 row's accidental-vocals verdict matches transcripts of all four instrumentals
-pending: #641
 source: tester, spec for #641 from #608's plan v2 (claude-opus-5-5 via anthropic)
 Reads, plus CPU transcriptions where needed. For each of the four music3 jobs C-F276
 names, take its cited transcript (`get_output_text`), or make one as in C-F272:
@@ -8767,7 +8764,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F288 — shot-tagged lines on a joined cut: `shot` filled, an untagged dialogue shot is `speech_in_silent_shot`, and a shot ending mid-word is clipped
-pending: #644
 source: tester, spec for #644 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup, shared with C-F289 and C-F290 (reuse it if an earlier case made it in this run):
 1. `<cut>`: a one-step `concat_videos` of `["asset:qa-cast/ep21-shot1-receipt.mp4",
@@ -8799,7 +8795,6 @@ for C-F289 and C-F290; the final sweep removes them.
 metrics: none.
 
 ### C-F289 — shots resolve the same from a kept asset's sidecar and from an explicit `shots` argument
-pending: #644
 source: tester, spec for #644 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup: `<cut>`, `S1` and `S2` as in C-F288, and `<take>` and `<control>` as in C-F282.
 1. `keep_output` `<cut>` into this workspace's assets, as its schema asks. Call it
@@ -8822,7 +8817,6 @@ cleanup: `delete_output(job_id=…)` on this case's jobs, and `delete_asset` on 
 metrics: none.
 
 ### C-F290 — shot tags on a shotless file are skipped with a reason, and an unknown shot is refused, listing the valid ones
-pending: #644
 source: tester, spec for #644 from #609's plan v2 (claude-opus-5-5 via anthropic)
 CPU. Setup: `<take>` as in C-F282, and `<cut>` as in C-F288.
 1. `check_script` on `output:<take>`, with no `shots` and `lines: [{"text": L1, "shot":
@@ -8957,7 +8951,6 @@ cleanup: step 3 already removed W. If the case stopped before step 3, run
 metrics: none.
 
 ### C-F296 — H3 `guides` is documented in the guide and the minimax-h3 skill, and the short guide clips exist
-pending: #648
 source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
 Free, apart from the CPU-only setup. C-F297 to C-F305 use the clips this case's setup makes.
 setup (only when `list_assets` in `regression-complete` lacks any of the three `qa-guides/` assets):
@@ -9000,7 +8993,6 @@ cleanup: none beyond the setup's own.
 metrics: none.
 
 ### C-F297 — `validate_workflow` accepts in-bounds H3 guides, including the boundaries
-pending: #648
 source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
 Free. Needs C-F296's assets.
 1. `get_workflow("templates/minimax/video-with-audio")`, then `save_workflow(name="c-f297-guides",
@@ -9028,7 +9020,6 @@ cleanup: `delete_workflow("c-f297-guides")`.
 metrics: none.
 
 ### C-F298 — `validate_workflow` refuses out-of-rule H3 guides, before any GPU work
-pending: #648
 source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
 Free. Needs C-F296's assets. Same setup as C-F297, saved as `c-f298-guides`, with `num_frames` at 124
 unless a variant says otherwise. Run one `validate_workflow` per variant:
@@ -9064,7 +9055,6 @@ cleanup: `delete_workflow` on `c-f298-guides`, `c-f298-ref2va` and `c-f298-ltx2`
 metrics: none.
 
 ### C-F299 — a 124-frame H3 guide at frame 0 steers the opening of a new take
-pending: #648
 source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
 GPU: one H3 run, about 6 min. Quote `plan.estimate` from `validate_workflow` on the issue before
 running.
@@ -9087,7 +9077,6 @@ cleanup: `delete_output(job_id=…)`, `delete_workflow("c-f299-guide0")`.
 metrics: none.
 
 ### C-F300 — a 22-frame H3 guide at frame 51 holds frames 51-72, and the frames around it stay coherent
-pending: #648
 source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
 GPU: one H3 run, about 6 min. Quote `plan.estimate` before running. Needs C-F296's assets.
 1. Save `templates/minimax/video-with-audio` as `c-f300-guide51`, with `guides: [{"video":
@@ -9152,7 +9141,6 @@ cleanup: `delete_output` on both jobs, `delete_workflow("c-f302-empty")`. Keep t
 metrics: none.
 
 ### C-F303 — an unaligned H3 guide length is snapped down, with a warning naming the length used
-pending: #648
 source: tester, spec for #648 from #611's plan v1 (claude-opus-5-5 via anthropic)
 GPU: one H3 run, about 6 min. Needs C-F296's assets.
 1. Save `templates/minimax/video-with-audio` as `c-f303-snap`, with `guides: [{"video":
@@ -9970,7 +9958,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F330 — `check_script` lists a `shots` argument and documents `{text, shot}` lines
-pending: #644
 source: curator, split from C-F281 per dkackman/harnest#72 (#609 plan v2 stage B) (claude-opus-5-5 via anthropic)
 Free. `get_task("check_script")`.
 expected:
