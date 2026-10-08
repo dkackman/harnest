@@ -5757,7 +5757,7 @@ before its cleanup. Take its default result as the baseline `D`.
 1. `max_spike_db` = (the smallest `spike_db` among `D`'s candidates) − 0.5.
 2. `max_bin_dbfs` = (the smallest `max_bin_dbfs` among `D`'s candidates) − 0.5.
 3. `max_candidates: 1`.
-4. `min_seconds: 1.0, max_seconds: 1.0`.
+4. `min_seconds: 0.75, max_seconds: 0.75`.
 5. `target_bed_dbfs: -50`.
 expected:
 - Every job succeeds, and each arm's `criteria` shows the value it passed.
@@ -5767,7 +5767,9 @@ expected:
   `max_bin_dbfs` ≤ the new ceiling.
 - Arm 3: exactly one candidate. It has the same `start_seconds`/`duration_seconds` as
   `D`'s rank 1 (±0.001).
-- Arm 4: every candidate has `duration_seconds` 1.0 (±0.001).
+- Arm 4: at least one candidate, and every candidate has `duration_seconds` 0.75 (±0.001).
+  The bed repeats a ~31 dB transient every 0.75 s (#744), so a longer fixed window can only
+  come back empty. If this arm returns none, that is a fixture note, not a task finding.
 - Arm 5: for the candidate at the same start as in `D`, `gain_db` is 10 dB higher than
   in `D` (±0.5).
 It is a **finding** if a threshold moves the counts the wrong way or not at all, a
