@@ -1077,7 +1077,9 @@ instead of reusing. Cheap — three SD 1.5 runs (~5–9 s each warm) plus one th
 served from cache.
 1. `run_workflow(workflow_path="templates/text-to-image",
    arguments={"prompt":"a red lighthouse on a cliff at dusk","num_images_per_prompt":1},
-   acknowledged_cost=true)` and, without waiting, `clear_memory()`.
+   acknowledged_cost=true)` and, without waiting, `clear_memory(device=<the device the
+   job runs on, e.g. "cuda:0">)`. Optionally also a device-less `clear_memory()` on a
+   second job: since #677 it clears every idle worker and skips the busy one.
 2. `wait_for_job` on that job to completion. Then `get_memory` (note
    `gpu_memory_allocated_mb`, `run_count`), then `clear_memory()` with the queue idle,
    then `get_health`.
@@ -1085,8 +1087,10 @@ served from cache.
    pinned `seed`) as `inline_workflow` twice, waiting each time.
 4. `clear_memory()`, then the identical inline run a third time.
 expected:
-- Step 1: `clear_memory` returns an error *immediately* — "A job is running or queued -
-  clearing memory out from under it would corrupt the run…" — and the job still
+- Step 1: `clear_memory(device=…)` returns an error *immediately* — "<device> is running
+  job <id> - clearing memory out from under it would corrupt the run. Wait for it to
+  finish." — (a device-less clear returns `cleared: true` with the busy worker
+  `{cleared: false, reason: "job_running"}`, not an error) and the job still
   finishes `succeeded` with its one `main` file. A clear that blocks for the job's
   duration, or a job that fails/cancels after the refused clear, is the regression.
 - Step 2: `{"cleared": true, "info": {...}}` where `info` has the same shape as

@@ -4184,8 +4184,8 @@ CPU/short-GPU only: one VITS speech clip plus one transcription.
      `<setup job>`.
 4. Follow step 6's procedure as the guide words it, with `<speech>` as the output. On
    2026-09-24 (develop @ 007717a, read while specifying) it was:
-   - `validate_workflow(name="templates/transcribe-audio", arguments={"input_audio":
-     "output:<speech>"})`;
+   - `validate_workflow(name="templates/check-script", arguments={"input_audio":
+     "output:<speech>", "lines": ["The quick brown fox jumps over the lazy dog."]})`;
    - `run_workflow` with the same arguments, `acknowledged_cost={"fingerprint": …, "minutes":
      …, "downloads": [...]}` bound to that plan, and `wait_seconds=55` (follow up with
      `wait_for_job` if `still_running: true`);
@@ -4198,7 +4198,7 @@ expected:
   that still opens with `get_output_image` (look at what was made, judge it against the request),
   and carries a transcription paragraph added to that step, not replacing it. The paragraph
   names all of these:
-  - `templates/transcribe-audio`;
+  - `templates/check-script` (with `lines`);
   - an `output:` reference as `input_audio`;
   - a bound `acknowledged_cost` and `wait_seconds`;
   - `get_output_text`;
@@ -4209,17 +4209,16 @@ expected:
 - Step 4:
   - validate is `valid: true` with no errors;
   - the run `succeeded`;
-  - `get_output_text` returns the spoken words: "the quick brown fox jumps over the lazy dog",
-    ignoring case and punctuation. One misheard word is tolerable on a VITS voice; a
-    transcript that's empty or unrelated is not.
+  - `get_output_text` returns `findings` empty and `lines[0].similarity` >= 0.6 against the
+    spoken sentence. A transcript that's empty or unrelated is not.
   - `delete_output(job_id=)` succeeds.
-- Step 5 shows no `transcribe-audio` run left behind. The only run from this case is the
+- Step 5 shows no `check-script` run left behind. The only run from this case is the
   setup's.
 
 It is a **finding** if step 1 errors or returns a section without the procedure, if any call in
 the procedure as the guide writes it is refused (a wrong argument name, a missing
 `acknowledged_cost` shape), or if the procedure leaves a scratch run.
-cleanup: `delete_output(job_id=<setup job>)`. Also delete the transcribe job if step 4 failed
+cleanup: `delete_output(job_id=<setup job>)`. Also delete the check-script job if step 4 failed
 before its own delete.
 metrics: none.
 
@@ -10146,12 +10145,14 @@ metrics: none.
 source: tester, spec for #675 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Uses C-F337's run, or one run of W.
 expected:
-- `list_workflows(shape="image")`'s observed figure for W reports the GPU name
-  (`"NVIDIA GeForce RTX 3090"`) as its device or `measured_on`. That's the same string as
-  the job's `device` minus the `cuda:<N> ` prefix, never `cuda:0`/`cuda:1`.
-- On a box with two cards of the same name, W's `observed_runs` counts runs from both
+- `validate_workflow(name=W).plan.estimate.measured_on` reports the GPU name
+  (`"NVIDIA GeForce RTX 3090"`). That's the same string as the job's `device` minus the
+  `cuda:<N> ` prefix, never `cuda:0`/`cuda:1`. (`list_workflows` carries only
+  `observed_minutes`/`observed_runs` by design, no device name.)
+- On a box with two cards of the same name, W's `plan.estimate.runs` counts runs from both
   cards in one bucket. Check after C-F342, where runs landed on both cards: the count rose by
-  every successful run, whichever card ran it.
+  every successful run, whichever card ran it. (`list_workflows`' `observed_runs` is the cold
+  count only and is not this check.)
 - `validate_workflow` on W reports a `plan.estimate` that still prices from that bucket
   (`basis: "observed"` when W has observed runs).
 It is a **finding** if observed cost splits by index (`cuda:0` vs `cuda:1`), if a run on
