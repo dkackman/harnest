@@ -172,19 +172,39 @@ ok  "mini-ai: deploy_target runs it" tgt mini-ai deploy_target
 has "mini-ai: and logs it" "[loop:deploy] deploy ~/diffusers-workflow/scripts/deploy.sh develop" "$(cat "$LOGS/loop.mini-ai.log")"
 fails "mini-ai: a failed deploy fails" env FAKE_SSH_FAIL=1 DW_TARGET=mini-ai bash -c '. "$1/providers.sh"; resolve_target; deploy_target' _ "$HARNEST"
 rm -f "$T/bin/ssh"
-# claim_issue: a clean claim holds; a tie with lem is lost and the label removed
+# claim_issue: a clean claim holds; a tie goes to the claim the events show first
 # The stub answers an issue view from $T/views/<n>: one line per call (the
 # pre-check, then the read-back), the last line repeating.
 mkdir -p "$T/views"
-stub_gh 'case "$1 $2" in "issue view") f="'"$T"'/views/$3"; c="$f.n"; k=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 )); echo $k > "$c"; l=$(sed -n "${k}p" "$f"); [ -n "$l" ] || l=$(tail -1 "$f"); printf "%s\n" $l ;; *) exit 0 ;; esac'
+# An events call answers from $T/events/<n>, already in the --jq's
+# "<event> <label>" form; none there means the events couldn't be read.
+mkdir -p "$T/events"
+stub_gh 'case "$1 $2" in "issue view") f="'"$T"'/views/$3"; c="$f.n"; k=$(( $(cat "$c" 2>/dev/null || echo 0) + 1 )); echo $k > "$c"; l=$(sed -n "${k}p" "$f"); [ -n "$l" ] || l=$(tail -1 "$f"); printf "%s\n" $l ;; "api --paginate") n=$(echo "$3" | cut -d/ -f5); cat "'"$T"'/events/$n" 2>/dev/null || exit 1 ;; *) exit 0 ;; esac'
 printf 'none\ntarget:mini-ai\n' > "$T/views/5"
 ok    "claim: an unclaimed issue is held" tgt mini-ai 'TICKET_REPO=o/r claim_issue 5'
 printf 'none\ntarget:mini-ai target:lem\n' > "$T/views/6"
-fails "claim: a tie at read-back is yielded" env DW_TARGET=mini-ai bash -c '. "$1/providers.sh"; resolve_target; TICKET_REPO=o/r claim_issue 6' _ "$HARNEST"
+fails "claim: a tie the events can't settle is yielded" env DW_TARGET=mini-ai bash -c '. "$1/providers.sh"; resolve_target; TICKET_REPO=o/r claim_issue 6' _ "$HARNEST"
 has   "claim: the yielded claim is removed" "gh issue edit 6 --repo o/r --remove-label target:mini-ai" "$(cat "$GH_CALLS")"
 printf 'none\ntarget:lem target:mini-ai\n' > "$T/views/7"
-fails "claim: lem yields a tie too (the other loop may already be working it)" tgt lem 'TICKET_REPO=o/r claim_issue 7'
+fails "claim: lem yields an unsettled tie too" tgt lem 'TICKET_REPO=o/r claim_issue 7'
 has   "claim: lem removes its own" "gh issue edit 7 --repo o/r --remove-label target:lem" "$(cat "$GH_CALLS")"
+# a tie the events settle: both loops reach the same answer, so neither livelocks
+printf 'none\ntarget:lem target:mini-ai\n' > "$T/views/10"
+printf 'labeled target:mini-ai\nlabeled target:lem\n' > "$T/events/10"
+: > "$GH_CALLS"
+ok    "claim: the first claim keeps a tie" tgt mini-ai 'TICKET_REPO=o/r claim_issue 10'
+eq    "claim: and keeps its label" "" "$(grep 'remove-label' "$GH_CALLS" || true)"
+rm -f "$T/views/10.n"
+fails "claim: the later claim yields it" tgt lem 'TICKET_REPO=o/r claim_issue 10'
+has   "claim: and removes its own" "gh issue edit 10 --repo o/r --remove-label target:lem" "$(cat "$GH_CALLS")"
+# an earlier claim, since released, doesn't count: lem's re-add is the later one
+printf 'none\ntarget:lem target:mini-ai\n' > "$T/views/11"
+printf 'labeled target:lem\nunlabeled target:lem\nlabeled target:mini-ai\nlabeled target:lem\n' > "$T/events/11"
+ok    "claim: a released claim's old event doesn't count" tgt mini-ai 'TICKET_REPO=o/r claim_issue 11'
+# a label on the issue its events don't show yet: yield
+printf 'none\ntarget:lem target:mini-ai\n' > "$T/views/12"
+printf 'labeled target:mini-ai\n' > "$T/events/12"
+fails "claim: a label the events don't show yet is yielded" tgt mini-ai 'TICKET_REPO=o/r claim_issue 12'
 printf 'target:mini-ai\n' > "$T/views/8"
 fails "claim: an issue another loop holds is skipped" tgt lem 'TICKET_REPO=o/r claim_issue 8'
 eq    "claim: without adding a label" "" "$(grep 'issue edit 8' "$GH_CALLS" || true)"

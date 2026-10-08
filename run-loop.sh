@@ -504,7 +504,7 @@ implementer_pass() {
   local n
   while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(queue_issues implementer:fix | cut -f1)
   # Claim before triage, so two loops never triage or fix the same issue
-  # (claim_issue in providers.sh; lem keeps a tie).
+  # (claim_issue in providers.sh; the first claim keeps a tie).
   local -a held=()
   for n in ${queue[@]+"${queue[@]}"}; do
     if [ "$IMPLEMENTER_CLAIM_MAX" -gt 0 ] && [ "${#held[@]}" -ge "$IMPLEMENTER_CLAIM_MAX" ]; then

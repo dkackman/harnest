@@ -752,10 +752,13 @@ server_name() {
 # - already this loop's: held, nothing to add;
 # - another loop's claim already on it: skipped, nothing added;
 # - otherwise add ours and read it back. Another claim there too means both
-#   loops read it unclaimed at once, and either may already have started a
-#   session on its read-back. Whoever reads back both yields and removes its
-#   own label: the loop that read back only its own keeps it, and if both
-#   read back both, neither does and the issue is claimed next cycle.
+#   loops read it unclaimed at once. The issue's label events break the tie
+#   (claim_winner): the claim added first keeps it and the other removes
+#   its own, so both loops reach the same answer. Yielding on every tie
+#   instead livelocked two loops started together. They walk the same queue
+#   in the same order, every cycle, and on 2026-10-08 each skipped every
+#   issue the other was claiming at that moment. When the events can't
+#   settle it, yield: no claim this pass beats a fix built twice.
 claim_issue() {
   local n="$1" labels mine="target:$DW_TARGET"
   labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
@@ -765,9 +768,26 @@ claim_issue() {
   labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
   printf '%s\n' "$labels" | grep -qx "$mine" || return 1
   if printf '%s\n' "$labels" | grep '^target:' | grep -vqx "$mine"; then
+    [ "$(claim_winner "$n" "$(printf '%s\n' "$labels" | grep '^target:')")" = "$mine" ] && return 0
     gh issue edit "$n" --repo "$TICKET_REPO" --remove-label "$mine" >/dev/null 2>&1 || true
     return 1
   fi
+}
+
+# claim_winner <n> <target-labels>
+# Of the target:* labels now on <n> (newline-separated), the one whose
+# standing "labeled" event came first in the issue's history. Prints nothing
+# when the events can't be read or don't show every one of those labels
+# (GitHub can serve a label before its event): the caller then yields.
+claim_winner() {
+  local order
+  order="$(gh api --paginate "repos/$TICKET_REPO/issues/$1/events" \
+    --jq '.[] | select((.event == "labeled" or .event == "unlabeled") and (.label.name // "" | startswith("target:")))
+                | .event + " " + .label.name' 2>/dev/null \
+    | awk '$1 == "labeled" && !($2 in at) { at[$2] = ++k } $1 == "unlabeled" { delete at[$2] }
+           END { for (l in at) print at[l], l }' | sort -n | cut -d' ' -f2)" || return 0
+  printf '%s\n' "$2" | while IFS= read -r l; do printf '%s\n' "$order" | grep -qx "$l" || echo missing; done | grep -q missing && return 0
+  printf '%s\n' "$order" | head -1
 }
 
 # lem_loop_running: lem's loop holds its lock now (not a regression run,
