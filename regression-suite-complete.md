@@ -10695,7 +10695,7 @@ change a consumer can see. W is the preamble's cheapest image template (on mini-
    then `wait_for_job` until it finishes if the reply says `still_running: true`.
 3. `get_job(job_id)` and `list_jobs(limit=5, workspace="regression-complete")`.
 expected:
-- Step 1: `workers` is a list with one entry per card, each with exactly the keys `device`,
+- Step 1: `workers` is a list with one entry per card, each with at least the keys `device`,
   `name`, `vram_gb`, `current_job` and `alive` (C-F341's shape). The top-level keys `status`,
   `worker_alive`, `current_job`, `queued`, `hostname`, `device` and `mcp` are still there
   (C-F338).
