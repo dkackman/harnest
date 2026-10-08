@@ -7079,10 +7079,11 @@ plan names.
    a 0.625 s period, beat 0 falls at 0.5 s.
 expected:
 - Every run returns `method: "grid"` and `bpm` equal to the `tempo_bpm` given.
-- Steps 1 and 2 return identical `beats`. The first is 1.25 and each next one adds exactly
-  0.5 (±1 ms, a float tolerance, not a detection one), up to the song's end (last ≤ 30.03,
-  and the next would pass it). Beats before the anchor are either absent or continue the
-  same grid backwards, at 0.75 and 0.25. Either is fine. Anything else is not.
+- Steps 1 and 2 return identical `beats` from the anchor (1.25) on. From 1.25 each next beat
+  adds exactly 0.5 (±1 ms, a float tolerance, not a detection one), up to the song's end
+  (last ≤ 30.03, and the next would pass it). Before the anchor, step 1 (a bare time is a
+  beat the grid passes through) continues the same grid backwards, at 0.75 and 0.25. Step 2
+  (`beat_index: 0` makes the anchor beat 0) has no beats before 1.25. Anything else is not.
 - Step 3's grid has period 0.625 and passes through 3.0 at index 4 counting from 0.5. That
   means 0.5, 1.125, 1.75, 2.375, 3.0, … (±1 ms).
 - `calibration.anchors_used` is 1.
