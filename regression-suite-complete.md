@@ -10703,9 +10703,10 @@ expected:
   GeForce RTX 3090"` on lem. `list_jobs` shows the same string for the same id.
 - The job's key set is the same as before the stage: `id`, `workflow`, `workflow_name`,
   `status`, `created_at`, `started_at`, `finished_at`, `workspace`, `run_id`, `run_version`,
-  `device`, `acknowledged`, `historical`, plus the `get_job` detail keys (`arguments`,
+  `device`, `acknowledged`, plus the `get_job` detail keys (`arguments`,
   `warnings`, `manifest`, `error`, `traceback`, `event_count`, `run_dir`, `acknowledged_cost`,
-  `spec`, `output_kinds`).
+  `output_kinds`). `spec`/`historical` appear on jobs read from history, and `progress` on live
+  ones.
 It is a **finding** if the job fails, `device` is null or in another form, `list_jobs` and
 `get_job` disagree, or a `get_health`/job key is gone or renamed.
 cleanup: `delete_output(job_id=<the job>)`.
