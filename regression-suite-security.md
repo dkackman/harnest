@@ -848,7 +848,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F046 — The shared JSON-record reader confines `restore_to_source.fit` and `paste_face_track.track`
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Stage C moves both record readers onto one helper. Each arm is `validate_workflow` on an inline
 one-step workflow (`restore_to_source` as in `regression-suite-complete.md` C-F362 a,

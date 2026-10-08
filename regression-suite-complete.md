@@ -10550,7 +10550,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F357 — `crop_face_track` exposes `modulus`, `remainder` and `multiple`, with defaults 8, 1 and 32
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Call `get_task("crop_face_track")`.
 expected:
@@ -10566,7 +10565,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F358 — `crop_face_track`'s grid arguments are refused at the free pre-flight, with the boundaries accepted
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with
 `clip: "asset:qa-cast/ep3-shot1-incident.mp4"` (as in C-F196) plus the arguments given.
@@ -10602,7 +10600,6 @@ cleanup: `delete_output(job_id=…)` for any job (none should exist).
 metrics: none.
 
 ### C-F359 — `crop_face_track` keeps its 8n+1 output by default and follows a `modulus`/`remainder` given
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Setup and run as in C-F192, the default arguments. Then run the same workflow again with
 `modulus: 16, remainder: 0`, and a third time with `crop_size: 48, multiple: 16`.
@@ -10617,7 +10614,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F360 — The face-repair template passes the grid explicitly and still validates and runs as before
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 - a. `get_workflow("ltx2/face-repair")`. Find the `crop_face_track` step.
 - b. `validate_workflow` the template with the arguments C-F201's valid control uses. Also rerun
@@ -10636,7 +10632,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F361 — `grade`, `film_grain` and `apply_lut` still return RGBA with the alpha untouched
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Setup (make one RGBA fixture):
 - Run `remove_background` with `image: {"location": "asset:qa-cast/priya-portrait.jpg"}` and
@@ -10663,7 +10658,6 @@ cleanup: `delete_output(job_id=…)` for every job; `delete_asset` `qa-rgba/priy
 metrics: none.
 
 ### C-F362 — `restore_to_source` and `paste_face_track` still read their records from saved JSON
-pending: #775
 source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
 - a. Run C-F238's RT workflow with its good values (`w` 512, `h` 288, `n` 57, `letterbox`). Note
   the saved JSON from its `record` step: `output:<workflow>/<run id>/<file>.json`, as `get_job`
