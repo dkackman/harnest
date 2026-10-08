@@ -3833,7 +3833,6 @@ cleanup: `delete_output(job_id=…)` for any job that queued.
 metrics: none.
 
 ### M-F117 — the H3 guide-memory record cites real runs, and 28.71 B per guide voxel separates every OOM from every completed run
-pending: #778
 source: tester, spec for #778 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA, the stage-A measurement runs on lem's RTX 3090.
 Plan v2's stage A acceptance, replacing M-F104's "fit within 0.5 GB". The record is
