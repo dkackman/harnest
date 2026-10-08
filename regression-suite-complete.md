@@ -9376,14 +9376,14 @@ end-of-stream when the last frame followed its neighbour.
 cleanup: none.
 metrics: none.
 
-### C-F314 — `ltx2/restore-long` is listed, validates clean with no price, and refuses a wrong window list at validate and at `run_workflow` before any GPU time
+### C-F314 — `ltx2/restore-long` is listed, validates clean with a price, and refuses a wrong window list at validate and at `run_workflow` before any GPU time
 source: tester, spec for #630 from #601's plan v3 (claude-opus-5-5 via anthropic)
 Free: validation only, and no job is queued. Plan v3 ships the template **unpriced**, which
 reshapes C-F234 (that case's `per_entry` arms now belong to #658's C-F316). Fixtures:
 `asset:qa-cast/ep13-episode.mp4` (282 frames, 24 fps, 960×544) and
 `asset:qa-cast/ep11-coldopen.mp4` (472 frames). A `windows` entry is `{"name": "wN", "index": N}`,
 with N from 0 to count − 1.
-1. `list_workflows(shape="shot", traits="needs-input-media")`. Find `templates/ltx2/restore-long`
+1. `list_workflows(shape="sequence")` (moved from `shot` by #658). Find `templates/ltx2/restore-long`
    there. If it isn't there, try the shape `get_workflow` reports for it.
 2. `get_workflow("templates/ltx2/restore-long", variables_only=true)`. Read `num_frames`,
    `overlap`, `source_video` and the default `windows` list.
@@ -9398,14 +9398,12 @@ with N from 0 to count − 1.
 expected:
 - Step 1 lists the template. Its entry has a `lists.windows` block whose fields include `index`,
   and `constraints.num_frames` is `8*n+1`.
-- **Cost, while #658 isn't verified:** `cost` is `null`. Once #658 is verified, C-F316 governs
-  `cost`, and this bullet is not checked.
+- **Cost:** priced (#658 is verified): `cost` is about 12 min for the 3 default windows, with
+  basis `observed` or `per_entry`, not unknown. C-F316 governs the figures.
 - Step 2: each default `windows` entry is `{name, index}`, with indexes 0, 1, … in order.
   `num_frames` is on the 8n+1 grid, and `overlap` is less than `num_frames`.
-- Step 3 is `valid: true`. With no `cost`, its `plan.estimate` has basis `unknown`, with null
-  `minutes`. If this box has finished runs of the template, the basis may instead be
-  `observed`. Either way validate does **not** refuse or warn as an error because the price is
-  unknown.
+- Step 3 is `valid: true`. Its `plan.estimate` is priced (basis `observed` or `per_entry`, non-null
+  `minutes`), and validate does **not** refuse or warn as an error.
 - Step 4:
   - 3 windows on ep13 give `valid: true`, and so do 5 on ep11.
   - 2, 4 and 1 on ep13, and 3 on ep11, give `valid: false`. The error is at the `join` step's
@@ -9414,7 +9412,7 @@ expected:
 - Step 5 is refused with the same count error. No job id comes back, and `list_jobs` shows no
   new job. If a job *was* queued, `cancel_job` it at once: that is a finding.
 It is a **finding** if the template is missing, if it doesn't validate on its defaults, or if
-an unknown price makes validate refuse. It is also a finding if a wrong count validates clean
+a missing price makes validate refuse. It is also a finding if a wrong count validates clean
 or reaches the queue, or if the error lacks the needed count.
 cleanup: none (cancel step 5's job if one was queued).
 metrics: none.
