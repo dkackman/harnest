@@ -656,6 +656,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `TESTER_TASK_EVERY` | `4` | run the tester's standing-task session every Nth cycle |
 | `IMPLEMENTER_ESCALATE_AFTER` / `IMPLEMENTER_PARK_AFTER` | `2` / `4` | bounces before escalating to the tester's model / parking with Don; `0` = never |
 | `DEPLOY_ON_MISMATCH` | `1` | redeploy `develop` if `lem` is on anything else before the tester pass; `0` = warn only |
+| `IMPLEMENTER_CLAIM_MAX` | `10` | most issues one implementer pass claims; the rest stay unclaimed for another loop; `0` = no cap |
 | `ONLY_ISSUES` | unset | restrict a cycle to these issue numbers |
 | `CASES_PER_SESSION` | 3 or 8 | `run-regression.sh` only; see above |
 | `FALLBACK_MODEL` | unset | `--fallback-model`; must be servable by the role's provider |

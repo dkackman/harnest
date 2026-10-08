@@ -147,6 +147,9 @@ LEAD_WORKER_MODEL="${LEAD_WORKER_MODEL:-claude-sonnet-5-5}"
 # develop make a bounce hard to attribute); a feature's own stages are serial
 # through their blocked-by links.
 LEAD_STAGES_PER_CYCLE="${LEAD_STAGES_PER_CYCLE:-1}"
+# Most issues one implementer pass claims (target:<this loop>). The rest wait
+# unclaimed, so another loop can take them; 0 = no cap.
+IMPLEMENTER_CLAIM_MAX="${IMPLEMENTER_CLAIM_MAX:-10}"
 # The curator rules on suite-change requests (agents/curator/review.md). The
 # strong model by default, for the triage reason: a wrong approval never
 # bounces back, because a deleted case just stops catching things. The
@@ -504,6 +507,10 @@ implementer_pass() {
   # (claim_issue in providers.sh; lem keeps a tie).
   local -a held=()
   for n in ${queue[@]+"${queue[@]}"}; do
+    if [ "$IMPLEMENTER_CLAIM_MAX" -gt 0 ] && [ "${#held[@]}" -ge "$IMPLEMENTER_CLAIM_MAX" ]; then
+      echo "[implementer] claim cap reached (IMPLEMENTER_CLAIM_MAX=$IMPLEMENTER_CLAIM_MAX); the rest wait unclaimed" | tee -a "$LOOP_LOG"
+      break
+    fi
     if claim_issue "$n"; then held+=("$n")
     else echo "[implementer:#$n] held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"; fi
   done

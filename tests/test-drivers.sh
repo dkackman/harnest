@@ -460,6 +460,16 @@ has "mini-ai loop: no standing task" "standing task: lem only" "$(cat "$T/h/logs
 eq  "mini-ai loop: lem's lock untouched" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
 has "mini-ai loop: behind develop, it deploys develop" "deploy develop" "$(cat "$T/deploys")"
 eq  "mini-ai loop: over ssh to mini-ai, never lem" "" "$(grep 'deploy.sh' "$T/ssh-calls" | grep -v ' mini-ai ' || true)"
+
+# IMPLEMENTER_CLAIM_MAX: a pass claims at most N, oldest first; the rest stay unclaimed
+board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]},
+        {"number": 41, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]},
+        {"number": 42, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'
+mini_loop IMPLEMENTER_CLAIM_MAX=2
+eq  "claim cap: first claimed" "backend:shared,owner:implementer,target:mini-ai" "$(labels_of 40)"
+eq  "claim cap: second claimed" "backend:shared,owner:implementer,target:mini-ai" "$(labels_of 41)"
+eq  "claim cap: third left unclaimed" "backend:shared,owner:implementer" "$(labels_of 42)"
+has "claim cap: logged" "claim cap reached (IMPLEMENTER_CLAIM_MAX=2)" "$(cat "$T/h/logs/loop.mini-ai.log")"
 eq  "mini-ai loop: and the test bed is on develop after" "$(git -C "$T/src" rev-parse --short=9 origin/develop)" "$(cat "$T/mini-head")"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
