@@ -3673,7 +3673,6 @@ cleanup: `delete_output(job_id=…)` on any optional run.
 metrics: none.
 
 ### M-F113 — the H3 modular pipeline's signature still lists the hold, refine and guide inputs
-pending: #770
 source: tester, spec for #770 from #691's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (`MiniMaxH3ModularPipeline`, the class behind every
 `templates/minimax/*` t2va/fl2va/ref2va step).
@@ -3700,7 +3699,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F114 — `chained-segments` with `continuity:"guide"` accepts `guide_frames` 22 and 39 only, with today's message
-pending: #770
 source: tester, spec for #770 from #691's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3, via `templates/minimax/chained-segments`.
 Per #691's plan, the `guide_frames` message is rebuilt from `GUIDE_CHAIN_FRAMES` when the module

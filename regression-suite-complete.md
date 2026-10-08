@@ -10685,4 +10685,435 @@ differently.
 cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
+### C-F363 — after the pool split, a job still names its card the same way, and `get_health` lists every worker
+source: tester, spec for #776 from #693's plan v1 (claude-opus-5-5 via anthropic)
+Stage A moves the slot choice, fit check and result recording out of `jobs.py` with no
+change a consumer can see. W is the preamble's cheapest image template (on mini-ai on
+2026-10-08, `templates/text-to-image`).
+1. `get_health()`. Note `workers`.
+2. `run_workflow(workflow_path=W, arguments={"seed": 42}, acknowledged_cost=true, wait_seconds=55)`,
+   then `wait_for_job` until it finishes if the reply says `still_running: true`.
+3. `get_job(job_id)` and `list_jobs(limit=5, workspace="regression-complete")`.
+expected:
+- Step 1: `workers` is a list with one entry per card, each with exactly the keys `device`,
+  `name`, `vram_gb`, `current_job` and `alive` (C-F341's shape). The top-level keys `status`,
+  `worker_alive`, `current_job`, `queued`, `hostname`, `device` and `mcp` are still there
+  (C-F338).
+- Step 2: the job ends `succeeded`, with a `run_id` and a non-empty `manifest`.
+- Step 3: the job's `device` is `"<worker device> <worker name>"`, a worker's `device`, one
+  space, then its `name`, e.g. `"mps Apple M5 Pro (MPS)"` on mini-ai or `"cuda:0 NVIDIA
+  GeForce RTX 3090"` on lem. `list_jobs` shows the same string for the same id.
+- The job's key set is the same as before the stage: `id`, `workflow`, `workflow_name`,
+  `status`, `created_at`, `started_at`, `finished_at`, `workspace`, `run_id`, `run_version`,
+  `device`, `acknowledged`, `historical`, plus the `get_job` detail keys (`arguments`,
+  `warnings`, `manifest`, `error`, `traceback`, `event_count`, `run_dir`, `acknowledged_cost`,
+  `spec`, `output_kinds`).
+It is a **finding** if the job fails, `device` is null or in another form, `list_jobs` and
+`get_job` disagree, or a `get_health`/job key is gone or renamed.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
+### C-F364 — `get_memory` and `clear_memory` behave the same idle and during a run after the worker-memory move
+source: tester, spec for #776 from #693's plan v1 (claude-opus-5-5 via anthropic)
+Stage A moves `memory_status`, `clear_memory` and the per-slot memory record into
+`worker_memory.py`.
+1. With no job running (`get_health().current_job` null): `get_memory()`, then
+   `get_memory(device=<workers[0].device>)`, then `get_memory(device="cuda:99")`.
+2. `clear_memory(acknowledged_cost=true)` with nothing running.
+3. Submit W (`seed` 43) with no wait. Poll `get_job` until `status: running`, then
+   `get_memory()` and `clear_memory(acknowledged_cost=true)`. Then `wait_for_job` until it
+   ends.
+4. `get_memory()` once more after the job ends.
+expected:
+- Step 1: the reply has `live`, `info`, `stale`, `reason`, `age_seconds` and a `workers` list
+  with one entry per card, each naming its `device`. With no worker started, `live: false`
+  and `reason: "worker_stopped"` (as on mini-ai on 2026-10-08) is the idle form. A worker
+  that is alive and idle may report live figures instead. The `device=` form answers for that
+  one card (C-F347). `cuda:99` is refused, naming the devices that exist.
+- Step 2 succeeds and does not start a job (S-F059).
+- Step 3: `get_memory()` mid-run reports the running card with a live reading (S-F099):
+  `live: true`, or the per-card entry carrying the job's figures. `clear_memory` during the
+  run is refused, naming the running job, and the job is not disturbed: it still ends
+  `succeeded`.
+- Step 4: a reading is present for the card the job ran on (`live` or a recorded,
+  `stale`-flagged last reading), and it is not attributed to another card.
+It is a **finding** if any step's shape or refusal differs from the above, if `clear_memory`
+runs during the job, or if the mid-run reading is missing.
+cleanup: `delete_output(job_id=<step 3's job>)`.
+metrics: none.
+
+### C-F365 — a VRAM need that fits no card is refused, and an inherited ceiling warns, with unchanged wording
+source: tester, spec for #776 from #693's plan v1 (claude-opus-5-5 via anthropic)
+`check_fits`, `largest_ceiling_gb` and `_unfit_message` move to `pool.py`. Let `L` be the
+largest `vram_gb` in `get_health().workers` (54.0 on mini-ai, 24 on lem), `C` that card's
+`"<device> <name>"`, and `U` its usable figure as C-F344 defines it. Let FIT be W's JSON
+(`get_workflow`) as an inline workflow with `seed` 42 and a complete top-level
+`vram_estimate`:
+`{"base_gb": <V>, "bytes_per_voxel": 0, "voxel_variables": ["num_images_per_prompt"]}`
+(an incomplete one adds schema errors ahead of the fit sentence).
+1. `validate_workflow(workflow=FIT with V = 2*L)`.
+2. `run_workflow(workflow=FIT with V = 2*L, acknowledged_cost=true)`, then
+   `list_jobs(limit=5, workspace="regression-complete")`.
+3. Boundary: `run_workflow(workflow=FIT with V = U, acknowledged_cost=true)`, then
+   `cancel_job` it as soon as it has an id. Then the same call with `V = U + 0.1`.
+4. Empty need: `run_workflow(workflow=W's JSON inline, no vram_estimate and no cost,
+   acknowledged_cost=true)`, then `cancel_job` it as soon as it has an id.
+5. Inherited ceiling: `validate_workflow` of an authored LTX-2.5 workflow with no
+   `vram_estimate`: one step, pipeline `LTX2Pipeline` from `Lightricks/LTX-2.5-Diffusers`
+   (`torch.bfloat16`), arguments `prompt`, `width`, `height`, `num_frames` and
+   `output_type: "{np}"` from variables `width` 3840, `height` 2176, `num_frames` 513,
+   result `video/mp4` at `fps` 24. Validation only: nothing loads or downloads.
+expected:
+- Step 1: `valid: false`, with one error at `variables` in this form (as on mini-ai on
+  2026-10-08): `num_images_per_prompt = 1 projects to <2L>.00 GB VRAM, above the <L> GB
+  declared for the largest card here (<C>). Declared ceiling: <2L> GB base plus 0 bytes per
+  unit of num_images_per_prompt`.
+- Step 2 is refused before anything queues. The refusal names the largest card and its usable
+  figure, as C-F344's arm 1 does. `list_jobs` shows no job from it.
+- Step 3: the need at `U` is admitted with a job id. The need at `U + 0.1` is refused before
+  queueing and names the usable figure.
+- Step 4 is admitted: no declared need refuses nothing.
+- Step 5: `valid: true`, with one warning that begins `variables: vram_projection_inherited:
+  width*height*num_frames = 3840*2176*513 projects to 85.33 GB VRAM, above the` and goes on to
+  say the ceiling is inherited from `'templates/ltx2/text-to-video'` and that this warns rather
+  than refuses (#685's wording, pinned on mini-ai on 2026-10-08, where it names `the 64 GB
+  declared for M5 Pro 64GB`). The `<n> GB declared for <card>` part follows the template's
+  `cost` entry for this server's accelerator, so on lem it names RTX 3090's 24 GB.
+It is a **finding** if any refusal or warning changes its wording beyond the per-server
+figures and card names above, if step 2 or the `U + 0.1` arm queues, or if the `U` arm or
+step 4 is refused.
+cleanup: `delete_output(job_id=…)` for the jobs from steps 3 and 4 if they left a directory.
+metrics: none.
+
+### C-F366 — `rerun_job` runs, `cancel_job` stops a queued and a running job, and the running job is reported while it runs
+source: tester, spec for #776 from #693's plan v1 (claude-opus-5-5 via anthropic)
+The web UI header reads the running job from `GET /api/system`, which Stage A moves onto
+`JobManager.running_job_id()`. That route is not an MCP tool, so this case checks the same
+fact through `get_health`, whose `current_job` and `workers[].current_job` report the running
+job. The UI header itself is a manual check (note it on the verify comment if done).
+1. Run W (`seed` 44) to completion (`wait_seconds=55`, then `wait_for_job` if needed). Then
+   `rerun_job(job_id=<it>, acknowledged_cost=true, wait_seconds=55)`.
+2. Submit W twice with no wait (`seed` 45, then `seed` 46). On a single-card server the
+   second is `queued` behind the first. On a server with more cards, submit one more than the
+   number of workers, so the last one queues.
+3. While the first is `running`: `get_health()`.
+4. `cancel_job(<the queued job>)`, then `cancel_job(<the running job>)`, then `wait_for_job`
+   on each until it ends.
+5. `get_health()` after both have ended.
+expected:
+- Step 1: the rerun is a new job id that ends `succeeded`, on the same card label as its
+  source (C-F346).
+- Step 3: `current_job` (top level, and on the running card's `workers` entry) is the running
+  job's id, and not the queued one's. `queued` counts the queued job.
+- Step 4: the queued job ends `cancelled` without ever having a `started_at`. The running job
+  ends `cancelled`, with a `started_at` and a `finished_at`.
+- Step 5: every worker's `current_job` is null and `queued` is 0.
+It is a **finding** if the rerun fails or runs on another card label, a cancel is refused or
+the job runs on to `succeeded`, or `get_health` doesn't name the running job while it runs.
+cleanup: `delete_output(job_id=…)` for every job that left a directory.
+metrics: none.
+
+### C-F367 — jobs from before the device-field migration show the same `device` string afterwards
+pending: #777
+source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
+Stage B stores `device` as an ordinal and a card in two new history columns, backfilled from
+the old label. The backfill splits a label at its **first** space, takes a label with no
+space (`cpu`, `mps`) as the ordinal with no card, and keeps NULL as NULL. A card name that
+holds its own spaces and parentheses is the edge case. These jobs and labels were read on
+mini-ai (mps on mini-ai.lan) on 2026-10-08, before the stage:
+
+| job id | workspace | `device` |
+|---|---|---|
+| `bff48bdacc64` | regression-complete | `mps Apple M5 Pro (MPS)` |
+| `81c95b0c06b4` | regression-smoke | `mps Apple M5 Pro (MPS)` |
+| `fb83fff5928e` | regression-smoke | `mps Apple M5 Pro (MPS)` |
+| `e7bc587a6c8a` | default | `mps Apple M5 Pro (MPS)` |
+| `bf66acafe8d2` | default | `mps Apple M5 Pro (MPS)` |
+
+On another server, pick five jobs from `list_jobs` before the deploy and note their `device`.
+A job above that was since deleted is skipped, not a finding.
+1. `get_job(job_id=…)` for each job in the table.
+2. `list_jobs(limit=200)`, every workspace.
+expected:
+- Step 1: each job's `device` is exactly the string in the table, byte for byte: `mps`, one
+  space, then `Apple M5 Pro (MPS)` with its spaces and parentheses intact.
+- Step 2: every job lists a `device` that is either null or `"<ordinal> <card>"` or a bare
+  ordinal (`cpu`, `mps`, `cuda:<N>`). A job that showed `device: null` before (pre-pool
+  history, C-F338) still shows null, not `"None"`, `""` or `"null"`. A job whose old label
+  was a bare ordinal still shows just that word, with no trailing space and no `" None"`.
+  `historical: true` jobs are listed as before.
+It is a **finding** if any pre-upgrade job's `device` changed, lost its card, gained or lost
+whitespace, or if a null became a string.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F368 — a new job's `device` keeps its format, and no new device fields appear in any response
+pending: #777
+source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
+Q1 of the approved plan keeps `device_ordinal` and `device_card` internal: `device` stays the
+only device field the REST and MCP shapes carry.
+1. `get_health()`.
+2. Run W (`seed` 47) to completion (`wait_seconds=55`, then `wait_for_job` if needed).
+3. `get_job(job_id)`, `list_jobs(limit=3, workspace="regression-complete")` and
+   `get_memory()`.
+expected:
+- Step 3: the new job's `device` equals `workers[i].device + " " + workers[i].name` for the
+  card it ran on (`"mps Apple M5 Pro (MPS)"` on mini-ai), the same string as a pre-upgrade
+  job on that card (C-F367). `list_jobs` agrees.
+- No response from steps 1 and 3 carries a `device_ordinal`, `device_card`, `ordinal` or `card`
+  key, at the top level, in a job, or in a `workers` entry. The job key set is C-F363's.
+It is a **finding** if the label's form changed, the two calls disagree, or an internal
+field leaks into a response.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
+### C-F369 — observed cost still counts the runs from before the migration
+pending: #777
+source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
+Observed cost pools runs by card name (C-F339), which Stage B now reads from the backfilled
+card column. A backfill that misses a row drops a past run from the count. The baseline,
+read on mini-ai on 2026-10-08 before the stage:
+`validate_workflow(name="templates/text-to-image")` gave `plan.estimate.basis: "observed"`,
+`runs: 7`, `measured_on: null` and `priced_for: "mps Apple M5 Pro (MPS)"`. On another
+server, read the same call before the deploy and use its `runs`.
+1. `validate_workflow(name="templates/text-to-image")` and
+   `get_workflow(name="templates/text-to-image")`. Note `plan.estimate` and `observed`.
+2. Run `templates/text-to-image` once (`arguments={"seed": 48}`, `acknowledged_cost=true`,
+   `wait_seconds=55`, then `wait_for_job` if needed).
+3. Step 1's two calls again.
+expected:
+- Step 1: `basis: "observed"` and `runs` is at least the baseline (7 on mini-ai), more only
+  by the runs of this template made on this server since the baseline date. `priced_for` is
+  the card label in its pre-upgrade form, and `measured_on` has the same form as before
+  (null on mini-ai). `get_workflow`'s `observed` block is present, and its `cold_runs` plus
+  `warm_runs` agree with `runs`.
+- Step 3: `runs` is exactly step 1's plus 1, and `basis` is still `observed`.
+It is a **finding** if `runs` is below the baseline, `basis` falls back to `curated` or
+`unknown`, or step 2's run isn't counted.
+cleanup: `delete_output(job_id=<step 2's job>)`.
+metrics: none.
+
+### C-F370 — `rerun_job` of a job from before the migration runs
+pending: #777
+source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
+`bff48bdacc64` (regression-complete, workflow `v744b`) is a CPU-only `gain_audio` +
+`find_loop_bed` job over `asset:qa-cast/ep51-bed.wav`, run on mini-ai before the stage. On a
+server without it, use any pre-upgrade `succeeded` job whose `device` is non-null and whose
+inputs still exist.
+1. `rerun_job(job_id="bff48bdacc64", acknowledged_cost=true, wait_seconds=55)`, then
+   `wait_for_job` if needed.
+2. `get_job(<the new job>)`.
+expected:
+- The rerun is a new job id that ends `succeeded`, with the same four manifest steps (`bed`,
+  `s200`, `w095`, `raw1`) as the source.
+- Its `device` has the same form as the source's (`"mps Apple M5 Pro (MPS)"` on mini-ai).
+It is a **finding** if the rerun is refused or fails over the source's device, or the new
+job's `device` is null or in another form.
+cleanup: `delete_output(job_id=<the new job>)`.
+metrics: none.
+
+### C-F371 — `window_video` on a 4089-frame source: first, middle and last windows match the source
+source: tester, spec for #780 from #695's plan v2 (claude-opus-5-5 via anthropic)
+Range-read windows must give the same output a full decode did, including at the ends where
+the window starts before frame 0 or runs past the last frame. Source
+`asset:qa-cast/long-film-4089.mp4` (4089 frames, 24 fps, 44.1 kHz stereo). num_frames 121,
+overlap 16, so stride 105, 39 windows, last valid index 38.
+1. Run, `acknowledged_cost=true, wait_seconds=55` (then `wait_for_job`), one inline workflow
+   with three `window_video` steps, each `{"video": "asset:qa-cast/long-film-4089.mp4",
+   "num_frames": 121, "overlap": 16, "fps": 24}` and a `video/mp4` result at fps 24: `w0`
+   (index 0), `w19` (index 19), `w38` (index 38).
+2. `get_gallery_metadata` on each output. Then `get_output_frames(at=[...])` on each output and
+   on the source at the matching source frames:
+   - `w0` covers source `[-16, 105)`: window frames 0, 16 = source 0; frame 17 = source 1;
+     frame 120 = source 104.
+   - `w19` covers `[1979, 2100)`: window frame 0 = source 1979, 60 = source 2039, 120 =
+     source 2099.
+   - `w38` covers `[3974, 4095)`: window frame 0 = source 3974, 114 = source 4088, 115 and 120
+     = source 4088 (pad repeats the last frame).
+3. Audio, the way C-F226 checks it (`slice_audio` + `analyze_audio`): `w0`'s first 16 frames
+   (0–0.6667 s) and `w38`'s last 6 frames (4.7917–5.0417 s) are silent; `w19`'s whole track
+   and `w0`'s 0.6667–5.0417 s span each have the level of the matching source span
+   (source 0–4.3333 s for `w0`, 82.4583–87.5 s for `w19`) within 0.1 dB.
+expected:
+- Each output has exactly 121 frames at 24 fps, the source's frame size, and an audio track
+  of 121/24 = 5.0417 s (±1 audio frame) at 44.1 kHz stereo.
+- Every frame pair in step 2 is visually identical (the same picture, not merely similar).
+- Step 3's silent spans are silent and the interior levels match.
+It is a **finding** if any window's frame count, fps or size differs, a frame shows a
+different moment of the source (an off-by-one at the seek: compare the neighbours ±1 to tell
+which way), `w38`'s pad isn't the last source frame, `w38` is refused, or an interior span
+is silent or off by more than 0.1 dB.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: none.
+
+### C-F372 — `join_windows` round-trip on a 282-frame source is exact, every curve
+source: tester, spec for #780 from #695's plan v2 (claude-opus-5-5 via anthropic)
+The join now builds uint8 output and blends each seam in float32, and its `source` is read
+for shape and soundtrack only. The join must still be exactly the source's length, tiled by
+the windows, at C-F229's standard. Source `asset:qa-cast/ep13-episode.mp4` (282 frames,
+24 fps, 960×544, 44.1 kHz stereo). num_frames 49, overlap 8: stride 41, 7 windows (indexes
+0–6; window 6 covers `[238, 287)` with 5 pad frames).
+1. Run C-F229's `rt` workflow with `source_video` = `asset:qa-cast/ep13-episode.mp4`,
+   `windows` = w0…w6 (index 0…6), and `num_frames` 49, `overlap` 8 in both steps; once with
+   `curve: "cosine"` and once with `curve: "linear"`.
+2. For each run: `get_gallery_metadata` on the join, and `get_output_frames` on the join and
+   the source at frames 0, 37, 41, 44, 160, 238, 281 (seam frames are 33–41 + k·41).
+expected:
+- Both joins `succeeded` with exactly 282 frames at 24 fps, 960×544.
+- Their shots tile `[0, 282)` in order, 7 of them, with `overlap_frames: 8` on every seam,
+  and cumulative audio samples ending at 282/24 × 44100 = 518175 (±1), read as C-F229 does.
+- Each sampled join frame shows the same moment as the source frame, with no dark, bright or
+  posterised seam frame (a blend that wasn't rounded/clipped back to uint8 shows as banding or
+  a wrapped colour).
+- The audio is non-silent at the start, a seam (≈1.7 s) and the end (≈11.5 s).
+It is a **finding** if either run is refused or fails, the frame count isn't 282, the shots
+don't tile or carry another `overlap_frames`, the last sample isn't 518175 ±1, or any
+sampled frame is a different moment or visibly corrupted.
+cleanup: `delete_output(job_id=…)` for both runs.
+metrics: none.
+
+### C-F373 — `window_video` memory doesn't grow with the source's length
+source: tester, spec for #780 from #695's plan v2 (claude-opus-5-5 via anthropic)
+The stage's point: a window reads only its range, so the job's host memory is that of one
+window, not of a decoded source. A 4089-frame 960×544 source decoded whole is about 6.4 GB of
+uint8; one 121-frame window is under 200 MB of uint8.
+1. Short: run an inline workflow with one `window_video` step over
+   `asset:qa-cast/ep6-cold-open.mp4` (124 frames, 960×544), index 0, num_frames 121,
+   overlap 16, fps 24, `acknowledged_cost=true, wait_seconds=55`.
+2. Long: the same step over `asset:qa-cast/long-film-4089.mp4`, index 19 (a mid-file seek).
+   Run it after the short one, not alongside it.
+3. `get_job_events` for each job, `memory` events (reading as C-F047 describes). For each job,
+   growth = the largest `host_memory_job_peak_rss_mb` − the first event's
+   `host_memory_rss_mb`.
+expected:
+- Both jobs `succeeded` with 121-frame outputs.
+- The long job's growth is at most 1.5 × the short job's growth + 500 MB, and under 1600 MB
+  (a quarter of the source's decoded size). Before the stage, the long job held the whole
+  source and grew by several GB.
+It is a **finding** if the long job's growth exceeds either bound.
+If neither job's recorded job peak rises above its first reading while
+`host_memory_peak_rss_mb` (the process lifetime) sits above both, the sampler missed the
+transient: report the reading as inconclusive in the run report, not as a pass or a finding.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: `host_memory_job_peak_rss_mb` growth in MB, conditions `long` and `short`.
+
+### C-F374 — `window_video` refusals unchanged on a long source
+source: tester, spec for #780 from #695's plan v2 (claude-opus-5-5 via anthropic)
+The range read must not change which windows are refused, when, or the wording. Source
+`asset:qa-cast/long-film-4089.mp4`, num_frames 121, overlap 16 (39 windows, last index 38)
+unless an arm says otherwise. Each arm is one inline workflow with one `window_video` step.
+1. Index 39: `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`.
+2. Index 2.5: `validate_workflow`, then `run_workflow` if validate passes it.
+3. Overlap 121 with num_frames 121, index 0: `validate_workflow`.
+4. Index 1000: `run_workflow`.
+5. `list_gallery` (or `get_job`'s outputs) for the jobs of arms 1 and 4.
+expected:
+- Arm 1 is refused at run start, before any frame is written, naming last valid index 38
+  and the 39-window count (as C-F227's past-the-end arm does on ep6).
+- Arm 2 is refused as a non-integer index, by validate or at run start, with a message
+  naming `index` (the same refusal the same arm gets on ep6, where no range read happens;
+  run it there too and compare the text).
+- Arm 3 is refused by validate with today's text: `window_video needs 'overlap' below
+  'num_frames' - got overlap 121 with num_frames 121, which leaves a window no frames of its
+  own to advance by.` (pinned 2026-10-08 on mini-ai).
+- Arm 4 is refused like arm 1, naming 38 and 39, not with a decode or EOF error.
+- Arms 1 and 4 leave no output file.
+It is a **finding** if any arm is accepted, a refusal comes late (a job that decodes then
+fails, or a file written), arm 1 or 4 names other numbers or surfaces a decoder error, or the
+text differs from today's.
+cleanup: `delete_output(job_id=…)` for any job that wrote a run directory.
+metrics: none.
+
+### C-F375 — `window_video` from `previous_result:` and URL sources is unchanged
+source: tester, spec for #780 from #695's plan v2 (claude-opus-5-5 via anthropic)
+Only asset/output/path sources take the new range read. An earlier step's frames and a URL
+must behave as before: the former windows the frames it was given, the latter gives a silent
+window.
+1. `previous_result:` arm: an inline workflow whose step `frames` is `video_frames` over
+   `asset:qa-cast/ep6-cold-open.mp4` (as C-F228 builds it), then `window_video` with `video:
+   "previous_result:frames"`, index 1, num_frames 33, overlap 8, fps 24, a `video/mp4` result.
+   Run with `acknowledged_cost=true, wait_seconds=55`.
+2. URL arm: the same `window_video` (index 0, num_frames 33, overlap 8) with `video` set to a
+   public `https://` mp4 the server's URL policy admits (check with `validate_workflow` first;
+   any short public test clip). If validate refuses every URL you try on policy grounds, report
+   the arm not runnable, not as a finding.
+3. `get_gallery_metadata` and `get_output_frames(at=["frame:0","frame:32"])` on each output;
+   for arm 1 also the source at frames 17 and 49.
+expected:
+- Arm 1 `succeeded`: 33 frames, window frame 0 = source 17 and frame 32 = source 49
+  (window 1 covers `[17, 50)`), and no audio stream, as C-F228 expects of a frames-only
+  source. If `window_video` refuses a frame array, use C-F228's `output:` fallback and say so.
+- Arm 2 `succeeded`: 33 frames of the clip, and no audio track (or a silent one).
+It is a **finding** if either arm is refused or fails where it ran before the stage, arm 1's
+frames are a different span, or arm 2 has non-silent audio.
+cleanup: `delete_output(job_id=…)` for each run.
+metrics: none.
+
+### C-F376 — `list_enhancers` returns `h3` then `t2i`, each with the same fields and values
+source: tester, spec for #781 from #696's plan v2 (claude-opus-5-5 via anthropic)
+The ruling that `PRESETS` is the Enhance panel's menu changes nothing on the MCP surface. The
+menu's order matters, because the UI preselects `presets[0]` when nothing else matches.
+1. `list_enhancers()` (free, takes no arguments).
+2. Read the MCP tool schemas of `list_enhancers` and `enhance_prompt` as the client sees them
+   (load them with the client's tool listing; no server call needed).
+expected:
+- `presets` holds exactly two entries, in this order: `key` `h3`, then `key` `t2i`.
+- Each entry has exactly the keys `key`, `label`, `default_model`, `models`,
+  `intended_models`, `placeholder`, with no key missing, added or renamed.
+- `h3`: `label` `MiniMax-H3 Context-IR`; `default_model` `Qwen/Qwen3-4B-Instruct-2507`;
+  `models` `["Qwen/Qwen3-4B-Instruct-2507", "Qwen/Qwen2.5-7B-Instruct",
+  "Qwen/Qwen2.5-1.5B-Instruct"]` in that order; `intended_models` `["minimax-h3"]`;
+  `placeholder` `Task: T2VA. Duration: 5.17 seconds. Idea: a red fox trotting through a snowy
+  pine forest at dawn.`
+- `t2i`: `label` `Text-to-image augmenter`; `default_model` `Qwen/Qwen2.5-1.5B-Instruct`;
+  `models` `["Qwen/Qwen2.5-1.5B-Instruct", "Qwen/Qwen3-4B-Instruct-2507"]` in that order;
+  `intended_models` `["z-image", "flux"]`; `placeholder` `a cat portrait in a sunlit window`.
+  (All values pinned 2026-10-08 on mini-ai, mps, before the stage.)
+- Both tools are still served: `list_enhancers` takes no arguments; `enhance_prompt` takes
+  `idea` (required), `preset` (default `"h3"`), `model_name`, `device` and `acknowledged_cost`.
+It is a **finding** if the order differs, a preset is missing or added, any field differs, or
+either tool is gone or its arguments changed. A later issue that changes the menu on purpose
+(a third preset is the plan's reopen trigger) supersedes this case through a `suite` request,
+not by editing it.
+cleanup: none.
+metrics: none.
+
+### C-F377 — `enhance_prompt` with no `preset` runs the `h3` preset; refusals are unchanged
+source: tester, spec for #781 from #696's plan v2 (claude-opus-5-5 via anthropic)
+The `"h3"` default lives in three places (REST route, MCP prompts, MCP tool); the ruling must
+leave the MCP one taking `h3`. Proof is that a default run and an explicit `preset="h3"` run
+build the same job, and the `t2i` run builds a different one. Workspace `regression-complete`.
+Use the idea `a lighthouse on a cliff at night` for every arm. Don't pass `model_name` or
+`device`. Assert nothing about the generated text beyond its existence, since the model is
+unseeded.
+1. Refusal arms, both free:
+   a. `enhance_prompt(idea=…)` with no `preset` and no `acknowledged_cost`.
+   b. `enhance_prompt(idea=…, preset="no-such-preset", acknowledged_cost=true)`.
+   c. `list_jobs` afterwards: neither a nor b left a job behind (a queued-then-failed job for
+      b counts as a late refusal).
+2. Default arm: `enhance_prompt(idea=…, acknowledged_cost=true)` with no `preset`. Then
+   `wait_for_job(job_id, wait_seconds=55)` until it is done (`still_running: true` is normal on
+   mps: call it again). Then `get_job`, `get_job_workflow` and `get_output_text` on its text
+   output.
+3. Explicit arm: the same with `preset="h3"`.
+4. Other preset arm: the same with `preset="t2i"`.
+expected:
+- 1a is refused before any job is queued, for the missing cost acknowledgement, as every
+  cost-gated tool is.
+- 1b is refused before any job is queued, naming the unknown preset. Today's error text isn't
+  pinned. Pass if the message names `no-such-preset` or lists the valid keys (`h3`, `t2i`).
+  Record the text in the run report.
+- Arms 2, 3 and 4 all `succeeded`. Each has one non-empty text output that `get_output_text`
+  reads back.
+- Arm 2's `get_job_workflow` matches arm 3's: the same steps, the same task or builtin, the
+  same model (`Qwen/Qwen3-4B-Instruct-2507`, `h3`'s `default_model` from C-F376). The only
+  differences allowed are the job id, timestamps and output paths.
+- Arm 4's workflow differs from arm 3's: a different task or builtin, and model
+  `Qwen/Qwen2.5-1.5B-Instruct`.
+It is a **finding** if 1a or 1b queues a job or is accepted, arm 2 runs anything other than
+what arm 3 runs (in particular arm 4's `t2i` build, or any other preset), or any of arms 2–4
+fails where it ran before the stage.
+cleanup: `delete_output(job_id=…)` for arms 2, 3 and 4, and for any job 1b left behind.
+metrics: none.
+
 ## Performance
