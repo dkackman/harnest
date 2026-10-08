@@ -3735,7 +3735,6 @@ cleanup: `delete_output(job_id=…)` for any job that queued.
 metrics: none.
 
 ### M-F115 — `hold_audio` and `refine_strength` refusals keep their exact messages
-pending: #771
 source: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va, plus the SD 1.5 pipeline as the non-H3 step.
 Stage B of #691 moves these rules into `h3_rules` and deletes `h3_blocks.py`. The plan requires
@@ -3794,7 +3793,6 @@ cleanup: `delete_output(job_id=…)` for any job that queued.
 metrics: none.
 
 ### M-F116 — `guides` refusals (more than 4 clips, frame not a multiple of 17) keep their exact messages
-pending: #771
 source: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va.
 The guide rules are the third piece stage B moves, into `h3_guides`. The texts below were captured
