@@ -3897,7 +3897,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F118 — `vram_estimate` takes one guide key, `bytes_per_guide_voxel`: optional, ≥ 0, absent means unchanged, and the dropped keys are refused
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA, via an inline copy of `templates/minimax/video-with-audio-768p`.
 The schema case for plan v2's single key (it replaces M-F105, which named the dropped
@@ -3938,7 +3937,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F119 — a copied H3 t2va with no estimate warns, naming its guides, once 4 × 124 guides push it past the card; 1 × 22 stays clean
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA, via **NT768**: `templates/minimax/video-with-audio-768p` copied
 inline with its top-level `vram_estimate` and `cost` deleted, as in M-F049/M-F051. It inherits the
@@ -3984,7 +3982,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F120 — the guide term charges each clip's snapped, probed length and scales with the canvas; a declared template refuses
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA, via `templates/minimax/video-with-audio` (960×544) and
 `templates/minimax/video-with-audio-768p` (1344×768), both with declared estimates. **NT** and
@@ -4024,7 +4021,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F121 — a guide nothing can probe at validate is charged at `num_frames`, and the message says "worst case"
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA, via an inline two-step workflow.
 Plan v2: "A clip that cannot be probed (a `previous_result:` value, an unreadable header) is charged
@@ -4060,7 +4056,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F122 — `chained-segments` gains a cost and an estimate, and its chain guide is counted: 3 own guides plus the carry are refused before a job exists
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 FL2VA, via `templates/minimax/chained-segments`. On 2026-10-08 its
 variables are `segments` 3, `continuity` `"last_frame"`, `guide_frames` 22, 960×544, `num_frames`
@@ -4111,7 +4106,6 @@ cleanup: `delete_workflow` on CS3 and CS1 if saved by name, and `cancel_job` and
 metrics: none.
 
 ### M-F123 — every H3 template still validates at its defaults; t2va/fl2va estimates carry `bytes_per_guide_voxel` equal to their `bytes_per_voxel`, ref2va ones don't
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: every `templates/minimax/*` template.
 The plan's catalog promise, sharing M-F047's sweep. Replaces M-F110, which named the dropped
@@ -4138,7 +4132,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F124 — the guide and the minimax-h3 skill state the guide term and that the 4-guide limit is checked against the card
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: docs only: the served `WORKFLOW_GUIDE.md` and the dw plugin's `minimax-h3` skill.
 The ARCHITECTURE row and the proposal record aren't served, so they are not checked here.
@@ -4167,7 +4160,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F125 — the largest guided combination the catalog allows on 24 GB is flagged before any GPU time
-pending: #779
 source: tester, spec for #779 from #694's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 T2VA, via `templates/minimax/video-with-audio-768p`.
 #694's own acceptance: validate passes, then the card OOMs. The largest combination is:
