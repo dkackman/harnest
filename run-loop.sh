@@ -969,6 +969,18 @@ status_board() {
   | awk -F'\t' '{printf "  %-5s %-24s %-18s %s\n", $1, $2, $3, $4}' || true
 }
 
+# stranded_board
+# The issues lib/classify.jq marks stranded: no queue selects them, so no
+# session will ever run them. status_board shows only their labels, which
+# can look like a queued ticket (an owner:lead issue with no feature or idea
+# label read as the lead's next job for hours, #613), so the cycle's board
+# names them and why. Silent when the board can't be read.
+stranded_board() {
+  { classify_issues 2>/dev/null || true; } \
+    | awk -F'\t' '$2 == "stranded" { printf "  STRANDED #%s: %s\n", $1, $4 }'
+  return 0
+}
+
 # step <name> <command...>
 # Runs one top-level step of a cycle. A failure is logged and the cycle goes
 # on: this driver runs forever, and one GitHub or network blip must not
@@ -1031,7 +1043,7 @@ while true; do
     || echo "[tester] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   step curator_pass curator_pass
 
-  { echo "--- $(ts) cycle $cycle tickets ---"; status_board
+  { echo "--- $(ts) cycle $cycle tickets ---"; status_board; stranded_board
     freeze="$(release_freeze)"; [ -z "$freeze" ] || echo "  release freeze $freeze: only release-blocker issues move"
     drafts="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" --jq length 2>/dev/null || true)"
     [ "${drafts:-0}" = 0 ] || echo "  $drafts private security finding(s) in draft advisories: ./scripts/file-advisory.sh --list"
