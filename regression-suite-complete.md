@@ -10406,10 +10406,11 @@ compare against that case's expected path and wording:
 - c. `ingredients_grid`, `layout: "grid9"`, and separately `fit: "stretch"` (C-F294).
 - d. `apply_lut`, `strength: 1.5` with `lut: "asset:uploads/qa-lut/identity2.cube"` (C-F263; upload
   the LUT as that case does if it's absent).
-- e. `check_script`, `lines: []` (C-F286).
-- f. `attribute_voices`, voice names that don't match the transcript's speakers, as C-F141's
-  mismatched arm builds them. Under the plan this check (`voices_errors`) now lives in the registry.
-- g. `slice_audio`, with `start_seconds: 4` and an end before the start (C-F324's inverted arm).
+- e. `check_script`, `lines` as the string `"The receipt was in the drawer."`, and separately `[42]`
+  (C-F286).
+- f. `attribute_voices`, C-F141's arms (a) one voice, (c) a reference too short in total and (f)
+  the name `"hal voice"`. Under the plan this check (`voices_errors`) now lives in the registry.
+- g. `slice_audio`, C-F324's arms 5b, 5c and 5d.
 - h. `fit_to_model`, `mode: "zoom"` (C-F243).
 - i. `window_video`, `num_frames: 0`, and separately `overlap: 17` with `num_frames: 17` (C-F227).
   `join_windows` with the wrong number of `videos` for its `source`/`num_frames`/`overlap` (C-F233).
