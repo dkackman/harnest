@@ -10353,7 +10353,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F350 — the MCP surface says "one job per GPU" and documents the new fields
-pending: #678
 source: tester, spec for #678 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Read the server's MCP instructions (the session's system text), the tool
 descriptions of `get_health`, `get_job`, `get_memory` and `clear_memory` (as the
