@@ -1365,7 +1365,7 @@ the #264 default-arguments-row guard remains pinned by
 `tests/test_host_memory_projection.py::test_default_arguments_row_still_counts_toward_the_projection`
 in the dw repo's own pytest suite.
 
-### C-F042 — a pure-composition parent inherits its observed child's basis, carrying `runs`/`measured_on` through; a parent with its own uncosted step does not
+### C-F042 — a pure-composition parent inherits its observed child's basis, carrying `runs`/`measured_on` through; a parent with its own uncosted step does not inherit `observed`
 Five `validate_workflow` calls with an inline `workflow`, no run, no GPU.
 All compose `templates/minimax/video-with-audio` — pick any catalog child
 that `list_workflows` reports with `observed_runs >= 1` on this box if that
@@ -1387,8 +1387,8 @@ subfolder: "final"}}`, `seed: 7`, and **no** `cost` block on the parent:
 expected: (1) `plan.estimate.basis: "observed"`, `partial: false`,
 `unpriced: []`, and `minutes` equal to the child's own `observed_minutes` —
 every declared step is a `workflow` step, so the children's figures are the
-whole story; (2) `basis: "unknown"`, `partial: true`, `unpriced` naming the
-parent — the `frame_grid` step is real declared work nobody priced, and
+whole story; (2) `basis: "derived"`, `partial: true`, `unpriced` naming the
+parent (since #593 a summed total never carries `basis: "unknown"`) — the `frame_grid` step is real declared work nobody priced, and
 inheriting the child's number as a trusted total is exactly #242's hazard.
 (4) `basis: "observed"`, `partial: false`, `minutes` equal to (3)'s, and
 `runs` and `measured_on` equal to (3)'s — populated, not null; (5) `basis:

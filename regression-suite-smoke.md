@@ -446,8 +446,8 @@ does nothing. Free and instant — no run.
 expected: four `validate_workflow` probes on inline one-step workflows.
 (a) Top level carrying `"sedd": 42` and `"varaibles": {}` → `valid: false`, **one**
 error at root (`path: null`) naming both keys and listing the legal set
-(`configures, cost, description, id, seed, shape, steps, summary, traits,
-variables`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
+(`configures, cost, cost_drivers, description, id, seed, shape, steps, summary,
+traits, variable_constraints, variables, vram_estimate`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
 `valid: false` at `steps[0].result` naming `subfoldr` and listing `subfolder`
 among the legal set. (c) `pipeline_type` and `model_name` written at **pipeline
 level** (they belong inside `configuration` / `from_pretrained_arguments`) →
