@@ -10233,19 +10233,22 @@ metrics: none.
 
 ### C-F344 — a job that fits no card is refused at submit, naming the largest card
 source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
-The VRAM need is declared through the workflow-level `cost` block (the form C-F056 uses).
-Copy W's JSON (`get_workflow`) to an inline workflow and set its top-level `cost` to
-`[{"device": "cuda", "name": "RTX 3090", "vram_gb": <V>, "minutes": 0.2}]`. Take `L` as
-the largest `vram_gb` in `get_health().workers`.
+The VRAM need is declared through a workflow-level `vram_estimate` (a hard need; a
+`cost[].vram_gb` alone is a soft need that refuses nothing, per #676). Copy W's JSON
+(`get_workflow`) to an inline workflow and set its top-level `vram_estimate` to
+`{"base_gb": <V>}`. Take `L` as the largest `vram_gb` in `get_health().workers`.
 - Arm 1: `V = L * 2` (48 on lem). `run_workflow(<inline>, acknowledged_cost=true)`.
 - Arm 2 (boundary): `V = U`, the card's usable VRAM: the GiB the server reports, to one
   decimal (23.6 on a 3090, whose nominal `L` is 24). Same call, then `cancel_job` it as soon
   as it has an id. Then the same call with a need above it, `V = U + 0.1` (23.7 on lem).
+- An incomplete estimate (no `bytes_per_voxel`/`voxel_variables`) may put schema errors in
+  the same refusal, ahead of the fit sentence (`check_fits`). Either give a complete
+  estimate or accept the fit sentence after them.
 - Arm 3: `list_jobs(limit=5, workspace="regression-complete")` after arm 1.
 expected:
 - Arm 1 is refused before anything queues, with an HTTP 400 / tool error whose text names
-  the largest card (its GPU name and `vram_gb`, e.g. `NVIDIA GeForce RTX 3090` / `24`) and
-  the job's need.
+  the largest card (its GPU name and usable figure, e.g. `NVIDIA GeForce RTX 3090 (23.6 GB
+  usable)`) and the job's need.
 - Arm 2: a declared need equal to the card's usable VRAM (`U`) is admitted with a job id. A
   need above it (`U + 0.1`) is refused before queueing, and the refusal names the usable
   figure (e.g. `(23.6 GB usable)`).
@@ -10253,8 +10256,6 @@ expected:
 It is a **finding** if arm 1 queues (and then fails or waits forever), is refused without
 naming the card, or is refused only after it reached a worker, or if arm 2's need at `U` is
 refused or its need above `U` queues.
-If the plan's fit check turns out to read the need from somewhere other than `cost`, use
-that declaration instead. The arms and expectations stand.
 cleanup: `delete_output(job_id=<arm 2's job>)` if it left a directory.
 metrics: none.
 
