@@ -10174,7 +10174,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F341 — get_health lists one worker per configured card
-pending: #676
 source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. `get_health()` while the queue is idle.
 expected:
@@ -10192,7 +10191,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F342 — two jobs run at once on different cards, and a third waits its turn
-pending: #676
 source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Needs `get_health().workers` to list at least 2 entries. With 1, run only the single-card
 branch below. Submit three jobs of W back to back with no wait (`run_workflow`,
@@ -10216,7 +10214,6 @@ cleanup: `delete_output(job_id=…)` for all three.
 metrics: none.
 
 ### C-F343 — concurrent runs of one workflow never share a run directory
-pending: #676
 source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
 The concurrent half of C-F340, needing two workers. Submit W twice with **identical**
 arguments, seed 42 for both, back to back with no wait, so both start within a second on
@@ -10233,7 +10230,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F344 — a job that fits no card is refused at submit, naming the largest card
-pending: #676
 source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
 The VRAM need is declared through the workflow-level `cost` block (the form C-F056 uses).
 Copy W's JSON (`get_workflow`) to an inline workflow and set its top-level `cost` to
@@ -10256,7 +10252,6 @@ cleanup: `delete_output(job_id=<arm 2's job>)` if it left a directory.
 metrics: none.
 
 ### C-F345 — cancelling one running job leaves the other card's job alone
-pending: #676
 source: tester, spec for #676 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Needs two workers. Submit W twice (seeds 45 and 46) with no wait. When `get_health()` shows
 both workers busy, `cancel_job(<first>)`, then `wait_for_job(<second>)`.
