@@ -4191,4 +4191,34 @@ cleanup: `delete_output(job_id=…)` on any optional run and on the clip job, pl
 for any clip made in setup.
 metrics: none.
 
+### M-F126 — `music-video` with a supplied `song` pairs the pieces each shot sang, not the song from 0
+source: tester, verified in #788 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 ref2va shots, via `templates/minimax/music-video` with `song` set to an
+asset (no Music 3 generation). Before #788 the cut was paired with the song from frame 0, whatever
+`start_frame` each shot sang at, so shots that sang 5.17–15.5 s carried 0–10.33 s of song. That was
+`succeeded` with `warnings: []`. The soundtrack comes from slicing the asset, so it doesn't depend on
+the shots' seed.
+**Paid**: one run at reduced size, about 4–5 min on a 3090, plus a CPU-only reference job.
+Steps:
+1. `run_workflow("templates/minimax/music-video")` in a `qa-` or the suite's workspace with
+   `song: "asset:qa-cast/ep15-song.mp3"`,
+   `singer_reference: {"reference_type": "variable:image_reference_type", "from_file": "asset:qa-cast/hal-portrait.jpg"}`,
+   `seed: 152`, `width: 512`, `height: 288` (multiples of 32; see #789), `num_inference_steps: 4`.
+   Use two `shots`, each `num_frames: 124`, `lead_frames: 0`, `cut_frames: 124`: the first at
+   `start_frame: 124`, the second at `start_frame: 248`.
+2. Run an inline reference workflow with `slice_audio(audio="asset:qa-cast/ep15-song.mp3",
+   sample_rate=44100, start_frame=124, lead_frames=0, num_frames=248, fps=24)` →
+   `normalize_audio(peak_dbfs=-3, sample_rate=44100)`. Add the same pair with `start_frame: 0`.
+   Save both as `audio/wav`.
+3. `get_gallery_metadata(envelope=true)` on the run's final output and on both references.
+expected:
+- (1) `succeeded`, with no `pair_audio: 'fit' trimmed …` warning. `get_job_workflow` shows the song
+  sliced per shot at `item:start_frame` for `item:cut_frames`, joined, then normalized and paired.
+- (3) The final's per-second RMS tracks the **start_frame 124** reference within about 0.3 dB in
+  every window. In #788's verify the gap was ≤ 0.13 dB, and integrated LUFS was -17.93 vs -17.86.
+  Against the **start_frame 0** reference it differs by several dB in most windows (up to 5.6 dB).
+It is a **finding** if the final tracks the frame-0 reference instead, or if a trim warning returns.
+cleanup: `delete_output(job_id=…)` on both jobs.
+metrics: none.
+
 ## Performance
