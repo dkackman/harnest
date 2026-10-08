@@ -10367,4 +10367,29 @@ It is a **finding** if any served text still promises serial execution, or if `g
 cleanup: none.
 metrics: none.
 
+### C-F351 — a 1-segment guide chain leaves all 4 guide slots to the step, a 2-segment one leaves 3, and an own frame-0 guide is accepted
+source: tester, verified in #687 (claude-opus-5-5 via anthropic)
+Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg` and `asset:qa-cast/ep6-cold-open.mp4`
+(a 124-frame clip). Every variant is one inline `validate_workflow(workflow=...)` with a single step:
+- `pipeline.configuration: {"component_type": "ModularPipeline"}`;
+- `from_pretrained_arguments: {"model_name": "MiniMaxAI/MiniMax-H3", "workflow": "fl2va"}`;
+- `chain: {"segments": S, "continuity": "guide", "guide_frames": 22, "segment_argument": "image", "fps": 24}`;
+- `arguments`: prompt, `"image": "asset:qa-cast/priya-portrait.jpg"`, `num_frames` N, width 960,
+  height 544, `num_inference_steps` 9, `output: ["videos", "audio", "sampling_rate"]`, and
+  `guides`, each `{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": F}` at the frames listed.
+
+The variants:
+- a. S=1, N=175, guides at 0, 17, 34, 51.
+- b. S=2, N=175, guides at 0, 17, 34, 51.
+- c. S=2, N=124, one guide at 0, the same frame the chain puts its own guide on.
+expected:
+- a. `valid: true`. A 1-segment chain has no seam, so it adds no guide.
+- b. Refused, with an error at `steps[0].pipeline.chain.continuity` saying the chain adds a guide
+  of its own and leaves room for 3, got 4.
+- c. `valid: true`. Validation doesn't refuse an own frame-0 guide alongside the chain's guide,
+  which the run appends rather than refusing or overwriting (#687).
+It is a **finding** if a or c is refused, or if b validates.
+cleanup: none.
+metrics: none.
+
 ## Performance
