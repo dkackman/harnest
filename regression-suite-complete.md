@@ -10167,7 +10167,9 @@ for the first to finish).
 expected:
 - The two jobs have different `run_id`, and different `run_version` where it's numbered.
 - `get_job` on each lists its own output files, and each file opens with `get_output_image`.
-  Neither job's outputs point at the other's directory.
+  Each job has its own `run_dir`. A manifest entry marked `reused: true` naming the first
+  run's file is the step cache and not a finding, as long as the two `run_dir`s differ and
+  that file still opens.
 It is a **finding** if both jobs share a `run_id`/directory, one's files overwrote the
 other's, or either fails with a file-exists or lock error.
 cleanup: `delete_output(job_id=…)` for both.
