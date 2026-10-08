@@ -10275,7 +10275,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F346 — a same-seed rerun goes back to the card that ran the original, and reuses
-pending: #677
 source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Needs two workers. Run W with seed 42 to completion (job J) and note its `device` D. Then
 `rerun_job(J, acknowledged_cost=true)` with nothing changed, while the queue is otherwise
@@ -10293,7 +10292,6 @@ cleanup: `delete_output(job_id=…)` for all jobs.
 metrics: none.
 
 ### C-F347 — get_memory reports per card, and takes an optional device
-pending: #677
 source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job.
 - `get_memory()`.
@@ -10314,7 +10312,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F348 — clear_memory(device) clears only that card, and refuses only while that card is busy
-pending: #677
 source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Needs two workers. Submit one W job (seed 48) with no wait. While it runs on card A
 (`get_job().device`), with card B idle:
@@ -10337,7 +10334,6 @@ cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
 ### C-F349 — plan.estimate names the card it priced for
-pending: #677
 source: tester, spec for #677 from #462's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job: `validate_workflow` on W by name, and on an inline copy of W with its top-level
 `cost` set as in C-F344 with `V = 20`.
