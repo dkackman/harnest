@@ -2581,7 +2581,7 @@
   }
  },
  {
-  "name": "target: legacy and lem-only (mini-ai)",
+  "name": "target: legacy and unclaimed-spec (mini-ai)",
   "input": {
    "owner": "dkackman",
    "target": "mini-ai",
@@ -2750,7 +2750,7 @@
    "12": "tester:answer",
    "13": "reviewer:docs",
    "14": "lead:design",
-   "15": "wait"
+   "15": "tester:spec"
   }
  },
  {
@@ -2828,6 +2828,729 @@
   },
   "expect": {
    "20": "stranded"
+  }
+ },
+ {
+  "name": "target: a feature is claimed as a whole (lem)",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 70,
+     "title": "t70",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 71,
+     "title": "t71",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 72,
+     "title": "t72",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 2,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 73,
+     "title": "t73",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 72
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 74,
+     "title": "t74",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 75,
+     "title": "t75",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 74
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 76,
+     "title": "t76",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 77,
+     "title": "t77",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 76
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 78,
+     "title": "t78",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 1
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 79,
+     "title": "t79",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "backend:cuda"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 80,
+     "title": "t80",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 79
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "70": "wait",
+   "71": "tester:spec",
+   "72": "wait",
+   "73": "wait",
+   "74": "wait",
+   "75": "lead:build",
+   "76": "wait",
+   "77": "lead:build",
+   "78": "wait",
+   "79": "wait",
+   "80": "lead:build"
+  }
+ },
+ {
+  "name": "target: a feature is claimed as a whole (mini-ai)",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 70,
+     "title": "t70",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 71,
+     "title": "t71",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 72,
+     "title": "t72",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 2,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 73,
+     "title": "t73",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 72
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 74,
+     "title": "t74",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 75,
+     "title": "t75",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 74
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 76,
+     "title": "t76",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 77,
+     "title": "t77",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 76
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 78,
+     "title": "t78",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 1
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 79,
+     "title": "t79",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "backend:cuda"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 1,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 80,
+     "title": "t80",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 79
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ],
+   "target": "mini-ai"
+  },
+  "expect": {
+   "70": "tester:spec",
+   "71": "tester:spec",
+   "72": "wait",
+   "73": "lead:build",
+   "74": "wait",
+   "75": "wait",
+   "76": "wait",
+   "77": "lead:build",
+   "78": "lead:closeout",
+   "79": "wait",
+   "80": "wait"
   }
  }
 ]

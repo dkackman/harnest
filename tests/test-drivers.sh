@@ -300,7 +300,7 @@ dev_file rm docs/stabilization/FREEZE
 : > "$FAKE_CLAUDE_LOG"
 loop 1
 eq  "freeze lifted: the idea is designed" 1 "$(grep -c 'DESIGN session for issue #22' "$FAKE_CLAUDE_LOG")"
-eq  "unpark: the parked feature has its owner back" "feature,owner:lead,status:plan-approved" "$(labels_of 10)"
+eq  "unpark: the parked feature has its owner back" "feature,owner:lead,status:plan-approved,target:lem" "$(labels_of 10)"
 eq  "unpark: and its build resumes" 1 "$(grep -c 'BUILD session for stage #11' "$FAKE_CLAUDE_LOG")"
 eq  "unpark: a hot-zone park stays with Don" "owner:don,stabilization" "$(labels_of 40)"
 has "  with a one-line comment saying why" "Left with Don after dw's stabilization freeze lifted: it was parked by the hot-zone rule" "$(jq -r '.["o/r"][] | select(.number == 40) | .comments[-1].body' "$T/board.json")"
@@ -470,6 +470,20 @@ eq  "claim cap: first claimed" "backend:shared,owner:implementer,target:mini-ai"
 eq  "claim cap: second claimed" "backend:shared,owner:implementer,target:mini-ai" "$(labels_of 41)"
 eq  "claim cap: third left unclaimed" "backend:shared,owner:implementer" "$(labels_of 42)"
 has "claim cap: logged" "claim cap reached (IMPLEMENTER_CLAIM_MAX=2)" "$(cat "$T/h/logs/loop.mini-ai.log")"
+
+# a feature is claimed whole: the Mac builds the stage of an unclaimed feature
+# (claiming parent and stage), and leaves a feature lem holds alone
+specced='"comments": [{"author": {"login": "dkackman"}, "body": "<!-- harnest:plan v1 -->\nplan"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:decomposed v1 -->"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:specced v1 -->"}]'
+: > "$FAKE_CLAUDE_LOG"
+board "[{\"number\": 50, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:lead\"}, {\"name\": \"status:plan-approved\"}], $specced, \"subIssuesSummary\": {\"total\": 1, \"completed\": 0}},
+        {\"number\": 51, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:lead\"}], \"parent\": {\"number\": 50}},
+        {\"number\": 52, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:lead\"}, {\"name\": \"status:plan-approved\"}, {\"name\": \"target:lem\"}], $specced, \"subIssuesSummary\": {\"total\": 1, \"completed\": 0}},
+        {\"number\": 53, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:lead\"}], \"parent\": {\"number\": 52}}]"
+mini_loop
+eq  "feature claim: the parent is claimed" "feature,owner:lead,status:plan-approved,target:mini-ai" "$(labels_of 50)"
+eq  "feature claim: so is the stage" "feature,owner:lead,stage,target:mini-ai" "$(labels_of 51)"
+eq  "feature claim: lem's feature is left alone" "feature,owner:lead,stage" "$(labels_of 53)"
+eq  "feature claim: one build session, the unclaimed feature's" 1 "$(grep -c 'BUILD session' "$FAKE_CLAUDE_LOG")"
 eq  "mini-ai loop: and the test bed is on develop after" "$(git -C "$T/src" rev-parse --short=9 origin/develop)" "$(cat "$T/mini-head")"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields

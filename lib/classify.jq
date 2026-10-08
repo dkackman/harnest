@@ -64,7 +64,8 @@ def owners: names | map(select(startswith("owner:")));
 # its own, and until then only lem's loop sees it as its own.
 def claims: names | map(select(startswith("target:")) | ltrimstr("target:"));
 def backend: (names | map(select(startswith("backend:")) | ltrimstr("backend:")) | .[0]) // "";
-def holder: claims | if index("lem") != null then "lem" else .[0] end;
+def holder_of($c): $c | if index("lem") != null then "lem" else .[0] end;
+def holder: holder_of(claims);
 def serves($t; $b): ($b == "" or $b == "shared") or ($b == "cuda" and $t == "lem") or ($b == "mps" and $t != "lem");
 
 def marker_versions($kind):
@@ -146,20 +147,24 @@ def parent_phase:
      | .queue = "wait"
   else . end
 # The target post-filter. Server-free queues (a design, a decompose, a docs
-# or architecture review) run in whichever loop runs them. A feature's spec, builds and
-# close-out run on lem only. The rest belong to the loop holding the claim;
-# an unclaimed fix to any loop whose server its backend allows; and an
-# unclaimed issue past the implementer to lem, which is where everything
-# handed off before claims existed was deployed.
+# or architecture review) run in whichever loop runs them. The rest belong to
+# the loop holding the claim; an unclaimed fix, spec, build or close-out to
+# any loop whose server its backend allows; and an unclaimed issue past those
+# to lem, which is where everything handed off before claims existed was
+# deployed. A feature is claimed as a whole: its spec session claims it, and a
+# stage reads its parent's claim as well as its own, so one feature's spec,
+# builds and close-out never split across servers.
+| ($i | claims) as $own
+| (if $i.parent != null then ($open[($i.parent.number | tostring)] // null) else null end) as $pp
+| (($own + (if $pp != null then ($pp | claims) else [] end)) | unique) as $ec
+| (($i | backend) as $b | if $b != "" or $pp == null then $b else ($pp | backend) end) as $eb
 | if .queue == "wait" or (.queue | test("^(implementer|tester|lead|reviewer):") | not) then .
   elif (.queue | IN("lead:design", "lead:decompose", "reviewer:docs", "reviewer:arch")) then .
-  elif ($i | claims | length) > 0 and (serves($i | holder; $i | backend) | not) then
-    .reason = "target:\($i | holder) on a backend:\($i | backend) issue" | .queue = "stranded"
-  elif (.queue | IN("tester:spec", "lead:build", "lead:closeout")) and $target != "lem" then
-    .reason = "target: \(.queue) runs on lem only" | .queue = "wait"
-  elif ($i | claims | length) > 0 then
-    if ($i | holder) == $target then . else .reason = "target:\($i | holder) holds it" | .queue = "wait" end
-  elif .queue == "implementer:fix" then
-    if serves($target; $i | backend) then . else .reason = "target: backend:\($i | backend) is not served here" | .queue = "wait" end
+  elif ($ec | length) > 0 and (serves(holder_of($ec); $eb) | not) then
+    .reason = "target:\(holder_of($ec)) on a backend:\($eb) issue" | .queue = "stranded"
+  elif ($ec | length) > 0 then
+    if holder_of($ec) == $target then . else .reason = "target:\(holder_of($ec)) holds it" | .queue = "wait" end
+  elif (.queue | IN("implementer:fix", "tester:spec", "lead:build", "lead:closeout")) then
+    if serves($target; $eb) then . else .reason = "target: backend:\($eb) is not served here" | .queue = "wait" end
   elif $target == "lem" then .
   else .reason = "target: handed off before claims existed, so deployed to lem" | .queue = "wait" end

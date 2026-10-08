@@ -617,6 +617,12 @@ lead_pass() {
         || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"
       continue
     fi
+    # A feature is claimed whole (lib/classify.jq): the parent first, so a
+    # stage never builds here while another loop holds its feature.
+    if ! { claim_issue "$parent" && claim_issue "$n"; }; then
+      echo "[lead:#$n] feature #$parent held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"
+      continue
+    fi
     set_base_commit
     run_agent lead "#$n" "$LEAD_STAGE_BUDGET_USD" "$SOURCE_DIR" "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" build \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. This is a BUILD session for stage #$n of feature #$parent only: your role instructions for it are in your system prompt. Run code-writing subagents on model \"$LEAD_WORKER_MODEL\" unless the stage says otherwise.$([ "$bounces" -gt 0 ] && printf ' This stage has been handed off and sent back %s time(s): read every bounce comment before touching code.' "$bounces") Then stop.
@@ -650,6 +656,8 @@ $(plan_text "$parent")" \
         || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"
       continue
     fi
+    claim_issue "$n" \
+      || { echo "[lead:#$n] held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"; continue; }
     # A built close-out hands the parent to the tester through the same R3
     # gate as a fix, which compares against develop as of this session.
     set_base_commit
@@ -680,6 +688,9 @@ tester_pass() {
     [ -n "$n" ] || continue
     still_ready "$n" tester:spec \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
+    # The spec session is where a feature gets claimed (lib/classify.jq).
+    claim_issue "$n" \
+      || { echo "[tester:#$n] feature held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"; continue; }
     run_agent tester "#$n" "$TESTER_SPEC_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" spec \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a SPEC session for feature #$n only - write its stages' acceptance cases from the approved plan. Do not verify anything and do not work the standing task. Then stop.
 

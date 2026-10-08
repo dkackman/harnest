@@ -306,8 +306,12 @@ against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongsi
     claims over another's, and one that reads back both labels removes its own.
   - The legacy rule: an unclaimed issue past the implementer is lem's.
   - A session hands an issue to lem by swapping `target:mini-ai` for `target:lem`.
-- **What stays on lem.** Feature specs, lead builds and close-outs, and the tester's
-  standing task. The server-free passes (features, reviewer, curator) run on the Mac
+- **Features are claimed whole.** The spec session's `claim_issue` puts `target:<loop>` on
+  the feature parent; a build claims parent and stage; a stage reads its parent's claim as
+  well as its own (`lib/classify.jq`). Unclaimed spec/build/close-out is claimable by any
+  loop whose server the backend allows. `LEAD_STAGES_PER_CYCLE` is per loop, so each loop
+  can have one feature in build.
+- **What stays on lem.** The tester's standing task. The server-free passes (features, reviewer, curator) run on the Mac
   only while lem's loop isn't running (`lem_loop_running`, `SHARED_PASSES`).
 - **Prompts.** The Mac implementer, tester and regression agent each get
   `agents/<role>/target.md` appended to the system prompt (`target_note`).

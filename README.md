@@ -357,8 +357,13 @@ scripts/sync-fixtures.sh                            # lem's qa-cast media, when 
 - **Suite cases.** The Mac tester adds a case only for a verified `backend:shared` fix,
   since every suite runs on lem too. For a `backend:mps` fix it proposes the case in its
   verify comment, until the MPS level exists (harnest#16).
+- **Features are claimed whole.** A feature's spec session claims the feature
+  (`target:<loop>`), and its stages inherit the claim when they build. The same loop then
+  runs the feature's spec, builds, verification and close-out, on its own server, so two
+  loops can each have a feature in build (`LEAD_STAGES_PER_CYCLE` is per loop). A feature
+  or stage labeled `backend:cuda` is only ever claimed by lem.
 - **Not on the Mac:** the tester's standing task (its `qa-bible.md` and series media are
-  lem's), feature specs, lead builds and close-outs. Those issues wait for lem.
+  lem's).
 - **Server-free passes.** Feature design, docs review and curator review run in one loop
   only: lem's while it's running, the Mac's otherwise. `SHARED_PASSES=1` or `0`
   overrides that.

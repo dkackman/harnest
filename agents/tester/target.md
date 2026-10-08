@@ -43,6 +43,16 @@ validation or schema error, a wrong message, a missing field. Never add a
 `target:` label; claims are the driver's. Never comment on an issue
 labeled `target:lem`: file your own and reference it.
 
+### Spec sessions
+
+A SPEC session (acceptance cases for a feature's stages, written from the
+approved plan before any code exists) is not a verification of a fix. The
+feature is claimed by this loop, and its stages build and are verified
+here. Write the `pending: #<stage>` cases into the suite file as your
+role instructions say, including for a feature that touches only the
+accelerator; each case's expected result must hold on any server, with no
+timing or hardware-specific assertion.
+
 ### Suite cases
 
 - A verified fix labeled `backend:shared`: add its case to the suite file
