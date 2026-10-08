@@ -10807,7 +10807,6 @@ cleanup: `delete_output(job_id=…)` for every job that left a directory.
 metrics: none.
 
 ### C-F367 — jobs from before the device-field migration show the same `device` string afterwards
-pending: #777
 source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
 Stage B stores `device` as an ordinal and a card in two new history columns, backfilled from
 the old label. The backfill splits a label at its **first** space, takes a label with no
@@ -10841,7 +10840,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F368 — a new job's `device` keeps its format, and no new device fields appear in any response
-pending: #777
 source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
 Q1 of the approved plan keeps `device_ordinal` and `device_card` internal: `device` stays the
 only device field the REST and MCP shapes carry.
@@ -10861,7 +10859,6 @@ cleanup: `delete_output(job_id=<the job>)`.
 metrics: none.
 
 ### C-F369 — observed cost still counts the runs from before the migration
-pending: #777
 source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
 Observed cost pools runs by card name (C-F339), which Stage B now reads from the backfilled
 card column. A backfill that misses a row drops a past run from the count. The baseline,
@@ -10887,7 +10884,6 @@ cleanup: `delete_output(job_id=<step 2's job>)`.
 metrics: none.
 
 ### C-F370 — `rerun_job` of a job from before the migration runs
-pending: #777
 source: tester, spec for #777 from #693's plan v1 (claude-opus-5-5 via anthropic)
 `bff48bdacc64` (regression-complete, workflow `v744b`) is a CPU-only `gain_audio` +
 `find_loop_bed` job over `asset:qa-cast/ep51-bed.wav`, run on mini-ai before the stage. On a
