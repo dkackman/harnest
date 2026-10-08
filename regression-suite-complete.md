@@ -10241,6 +10241,7 @@ The VRAM need is declared through a workflow-level `vram_estimate` (a hard need;
 - Arm 2 (boundary): `V = U`, the card's usable VRAM: the GiB the server reports, to one
   decimal (23.6 on a 3090, whose nominal `L` is 24). Same call, then `cancel_job` it as soon
   as it has an id. Then the same call with a need above it, `V = U + 0.1` (23.7 on lem).
+- Arm 4 (soft need): an inline W with no vram_estimate and top-level cost [{"device": "cuda", "name": "RTX 3090", "vram_gb": 48, "minutes": 0.2}]. Same call, then cancel_job it as soon as it has an id.
 - An incomplete estimate (no `bytes_per_voxel`/`voxel_variables`) may put schema errors in
   the same refusal, ahead of the fit sentence (`check_fits`). Either give a complete
   estimate or accept the fit sentence after them.
@@ -10253,10 +10254,12 @@ expected:
   need above it (`U + 0.1`) is refused before queueing, and the refusal names the usable
   figure (e.g. `(23.6 GB usable)`).
 - Arm 3 lists no job from arm 1.
+- Arm 4 is admitted with a job id: a cost figure alone is a soft need and refuses nothing (#676).
 It is a **finding** if arm 1 queues (and then fails or waits forever), is refused without
 naming the card, or is refused only after it reached a worker, or if arm 2's need at `U` is
 refused or its need above `U` queues.
-cleanup: `delete_output(job_id=<arm 2's job>)` if it left a directory.
+cleanup: `delete_output(job_id=<arm 2's job>)` and `delete_output(job_id=<arm 4's job>)` if
+they left a directory.
 metrics: none.
 
 ### C-F345 — cancelling one running job leaves the other card's job alone
