@@ -485,6 +485,17 @@ eq  "feature claim: so is the stage" "feature,owner:lead,stage,target:mini-ai" "
 eq  "feature claim: lem's feature is left alone" "feature,owner:lead,stage" "$(labels_of 53)"
 eq  "feature claim: one build session, the unclaimed feature's" 1 "$(grep -c 'BUILD session' "$FAKE_CLAUDE_LOG")"
 eq  "mini-ai loop: and the test bed is on develop after" "$(git -C "$T/src" rev-parse --short=9 origin/develop)" "$(cat "$T/mini-head")"
+# arch review follows the claim: with lem's loop live, the Mac reviews what it
+# holds (an issue, or a stage of a feature it holds) and leaves the rest
+board '[{"number": 70, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "arch-review"}, {"name": "target:mini-ai"}]},
+        {"number": 71, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "arch-review"}]},
+        {"number": 72, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "arch-review"}, {"name": "target:lem"}]},
+        {"number": 73, "state": "OPEN", "labels": [{"name": "feature"}, {"name": "owner:lead"}, {"name": "status:plan-approved"}, {"name": "target:mini-ai"}], "subIssuesSummary": {"total": 1, "completed": 0}},
+        {"number": 74, "state": "OPEN", "labels": [{"name": "feature"}, {"name": "stage"}, {"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "arch-review"}], "parent": {"number": 73}}]'
+: > "$FAKE_CLAUDE_LOG"
+mini_loop
+eq  "arch review here: the two the Mac holds" "70 74" "$(grep -o 'It is for issue #[0-9]* only' "$FAKE_CLAUDE_LOG" | tr -dc '0-9 \n' | awk '{print $NF}' | sort -n | tr '\n' ' ' | sed 's/ $//')"
+has "arch review here: the unclaimed one is left to lem's loop" "[reviewer:#71] skipping: unclaimed, lem's loop runs it" "$(cat "$T/h/logs/loop.mini-ai.log")"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'

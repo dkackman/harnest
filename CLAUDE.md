@@ -312,7 +312,9 @@ against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongsi
   loop whose server the backend allows. `LEAD_STAGES_PER_CYCLE` is per loop, so each loop
   can have one feature in build.
 - **What stays on lem.** The tester's standing task. The server-free passes (features, reviewer, curator) run on the Mac
-  only while lem's loop isn't running (`lem_loop_running`, `SHARED_PASSES`).
+  only while lem's loop isn't running (`lem_loop_running`, `SHARED_PASSES`), except a docs or
+  architecture review of an issue a loop has claimed: that runs in the claiming loop
+  (`claimed_here`), so the Mac's hand-offs don't sit behind a long lem lead session.
 - **Prompts.** The Mac implementer, tester and regression agent each get
   `agents/<role>/target.md` appended to the system prompt (`target_note`).
 - **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):

@@ -193,9 +193,11 @@ AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-4}"   # standing task on every Nth cycle
 DW_URL="${DW_URL:-}"            # resolve_target fills in the target's
 DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
-# The server-free passes (feature design, docs review, curator review) run
-# in one loop only. 1 or 0 forces it; unset, lem's loop always runs them and
-# another target's runs them only while lem's loop isn't running.
+# The server-free passes (feature design, docs and architecture review,
+# curator review) run in one loop only. 1 or 0 forces it; unset, lem's loop
+# always runs them and another target's runs them only while lem's loop
+# isn't running. A review of an issue this loop has claimed runs here either
+# way (reviewer_pass).
 SHARED_PASSES="${SHARED_PASSES:-}"
 PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
 
@@ -817,11 +819,18 @@ $(issue_context "$n")" \
 # sources are local only, not ISOLATION_FLAGS' project,local: the dw repo's
 # checked-in .claude/settings.json allows pip install, pytest and curl, and
 # under dontAsk a project allow rule would widen this allowlist.
+#
+# A loop that doesn't run the shared passes still reviews the issues it has
+# claimed: lib/classify.jq holds those from every other loop, and leaving
+# them to lem's meant they sat behind whatever lem's lead was measuring.
 reviewer_pass() {
-  local kind="$1" n what range
-  shared_passes_here || { echo "[reviewer] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
-  while IFS= read -r n; do
+  local kind="$1" n parent what range shared=1
+  shared_passes_here || shared=0
+  while IFS=$'\t' read -r n parent; do
     [ -n "$n" ] || continue
+    if [ "$shared" = 0 ] && ! claimed_here "$n" "$parent"; then
+      echo "[reviewer:#$n] skipping: unclaimed, lem's loop runs it" | tee -a "$LOOP_LOG"; continue
+    fi
     still_ready "$n" "reviewer:$kind" \
       || { echo "[reviewer:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
     what="a DOCS REVIEW session"
@@ -846,7 +855,7 @@ The issue as of $(ts) — start from this rather than fetching it; gh is for act
 
 $(issue_context "$n")" \
       "${MCP_FLAGS[@]}" --setting-sources local --tools "$REVIEWER_TOOLS" "${REVIEWER_PERMISSION_FLAGS[@]}"
-  done < <(queue_issues "reviewer:$kind" | cut -f1)
+  done < <(queue_issues "reviewer:$kind" | cut -f1,2)
 }
 
 # curator_pass — one review session per suite-change request on this repo
@@ -971,6 +980,19 @@ nightly_regression_pass() {
 shared_passes_here() {
   case "$SHARED_PASSES" in 1) return 0 ;; 0) return 1 ;; esac
   [ "$DW_TARGET" = lem ] || ! lem_loop_running
+}
+
+# claimed_here <n> [parent]: whether the issue, or its parent (a stage reads
+# its feature's claim), carries this loop's target:<loop> label. False when
+# gh fails: the issue is then left for the loop that runs the shared passes.
+claimed_here() {
+  local i
+  for i in "$1" "${2:-}"; do
+    case "$i" in ''|-) continue ;; esac
+    gh issue view "$i" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null \
+      | grep -qx "target:$DW_TARGET" && return 0
+  done
+  return 1
 }
 
 # One line per open issue: #NN  status-labels  owner-label  title. Prints
