@@ -10461,7 +10461,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F354 — A whole-number argument takes `"3"`, `3.0` and `"3.0"` as 3, at validate and at run
-pending: #774
 source: tester, spec for #774 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Every value is a **literal** in the step's `arguments`. Coercing `variable:` values is the plan's
 non-goal, so no arm uses a variable. Each arm is `validate_workflow` first, then
@@ -10494,7 +10493,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F355 — A whole-number argument refuses a fraction, a bool, a non-number, inf and nan, naming the argument
-pending: #774
 source: tester, spec for #774 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Use inline literal workflows (no `variable:`) with C-F354's media. One value is bad per arm and
 the rest are valid. Run `validate_workflow` on each arm.
@@ -10523,7 +10521,6 @@ cleanup: `delete_output(job_id=…)` for any job (none should exist).
 metrics: none.
 
 ### C-F356 — A float argument takes `"3"`/`3.0`/`"3.0"` and refuses a bool, a non-number, inf and nan
-pending: #774
 source: tester, spec for #774 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Use inline literal workflows and `validate_workflow` on each arm.
 - a. Accept arms. `grade` on `asset:qa-cast/priya-portrait.jpg` (`image/png` result), with
