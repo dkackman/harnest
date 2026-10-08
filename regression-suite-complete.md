@@ -10875,9 +10875,10 @@ expected:
 - Step 1: `basis: "observed"` and `runs` is at least the baseline (7 on mini-ai), more only
   by the runs of this template made on this server since the baseline date. `priced_for` is
   the card label in its pre-upgrade form, and `measured_on` has the same form as before
-  (null on mini-ai). `get_workflow`'s `observed` block is present, and its `cold_runs` plus
-  `warm_runs` agree with `runs`.
-- Step 3: `runs` is exactly step 1's plus 1, and `basis` is still `observed`.
+  (null on mini-ai). `get_workflow`'s `observed` block is present. `plan.estimate.runs` equals
+  `observed.cold_runs`, and `observed.runs` equals `cold_runs + warm_runs`.
+- Step 3: `observed.runs` is exactly step 1's plus 1, and `cold_runs` or `warm_runs` moved by
+  one. `plan.estimate.runs` moves only if the run was cold. `basis` is still `observed`.
 It is a **finding** if `runs` is below the baseline, `basis` falls back to `curated` or
 `unknown`, or step 2's run isn't counted.
 cleanup: `delete_output(job_id=<step 2's job>)`.
