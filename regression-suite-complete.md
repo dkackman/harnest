@@ -10358,11 +10358,10 @@ expected:
 - No served text says the server runs "one job at a time". Where it describes concurrency,
   it says one job per GPU (or per card).
 - `get_health`'s description names `workers`.
-- `get_job`'s or `list_jobs`'s description names the job's `device`.
 - `get_memory`'s and `clear_memory`'s schemas carry an optional `device` parameter, and their
   descriptions say what omitting it does.
-It is a **finding** if any served text still promises serial execution, or if a field or
-parameter from C-F337/C-F341/C-F347 is undocumented in its tool's description.
+It is a **finding** if any served text still promises serial execution, or if `get_health`'s
+`workers` (C-F341) or `get_memory`/`clear_memory`'s `device` (C-F347) is undocumented in its tool's description.
 cleanup: none.
 metrics: none.
 
