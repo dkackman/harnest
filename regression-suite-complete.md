@@ -11106,4 +11106,26 @@ fails where it ran before the stage.
 cleanup: `delete_output(job_id=…)` for arms 2, 3 and 4, and for any job 1b left behind.
 metrics: none.
 
+### C-F378 — `get_workflow`'s full form carries the same `observed` block as `variables_only=true`, and neither has one without history
+source: tester, verified in #786 (claude-opus-5-5 via anthropic)
+The tool description promises `observed` whenever this box has run the workflow, with no
+restriction to the compact form. Before #786 only `variables_only=true` carried it, so a
+caller reading the full definition to price a run saw only the curated `cost`. Free, no runs.
+1. `list_workflows(shape="image")`: pick an entry W with `observed_runs >= 1` (on a fresh box
+   with none, run `templates/text-to-image` once first, `acknowledged_cost=true`, and delete
+   its output afterwards).
+2. `get_workflow(name=W, variables_only=true)` and `get_workflow(name=W)`.
+3. `list_workflows(shape="audio")` (or any shape): pick an entry U with no `observed_minutes`
+   (at time of writing `templates/generate-speech`). `get_workflow(name=U)` and
+   `get_workflow(name=U, variables_only=true)`.
+expected:
+- Step 2: both responses have an `observed` key, and the two blocks are identical
+  (`runs`, `cold_minutes`/`cold_runs`, `warm_minutes`/`warm_runs`, `drivers`, `since`). The
+  full form still carries the whole definition (`steps`, `variables`, `description`).
+- Step 3: neither response has an `observed` key (not even `null` or `{}`).
+It is a **finding** if the full form lacks `observed` in step 2, the two blocks differ, or
+step 3 invents one.
+cleanup: none (unless step 1 ran a job: `delete_output(job_id=<it>)`).
+metrics: none.
+
 ## Performance
