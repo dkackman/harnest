@@ -816,6 +816,67 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist); `delete_as
 `uploads/qa-lut/` asset this case created, including a probe that wrongly landed (after filing it).
 metrics: none.
 
+### SE-F045 — Media arguments without a conventional name keep their path gate after the registry move
+pending: #773
+source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Stage A replaces the hand-kept list of media arguments with registry metadata. The plan names
+path confinement as the check that could be lost. Each arm is `validate_workflow` on an inline
+one-step workflow, with every other argument valid. Put each probe into these arguments:
+- `apply_lut.lut`;
+- `join_windows.source`;
+- `restore_to_source.fit`;
+- `paste_face_track.track`;
+- `attribute_voices`, in a nested voice's reference audio (as SE-F038 does);
+- `loop_frames.video`, as `{"media_type": "image", "location": <probe>}`.
+The probes:
+- `../x.png`;
+- `../../../../etc/hosts`;
+- `/etc/hosts` (it exists on every server);
+- `/nonexistent-dw-probe/x.png`;
+- `file:///etc/hosts`.
+Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/hosts` arm of each argument.
+expected:
+- Every probe is `valid: false` at that argument's path, with the refusal SE-F014 gives a media
+  argument.
+- `/etc/hosts` and `/nonexistent-dw-probe/x.png` get identical wording.
+- No message contains an absolute server path the probe didn't contain (`/Users/…`,
+  `/private/…`, `/home/…`, a data root) or any content of the target file.
+- `run_workflow` queues no job.
+It is a **finding** if a probe is refused only at run time. A probe that validates, a message
+that differs between the existing and nonexistent path, or one that discloses a path or file
+contents is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### SE-F046 — The shared JSON-record reader confines `restore_to_source.fit` and `paste_face_track.track`
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Stage C moves both record readers onto one helper. Each arm is `validate_workflow` on an inline
+one-step workflow (`restore_to_source` as in `regression-suite-complete.md` C-F362 a,
+`paste_face_track` as in C-F362 b), with the record argument set to:
+- `../../x.json`;
+- `../../../../etc/hosts`;
+- `/etc/hosts`;
+- `/nonexistent-dw-probe/x.json`;
+- `file:///etc/hosts`;
+- `output:../../../../etc/hosts`;
+- `asset:../../../etc/hosts`.
+Then `run_workflow(..., acknowledged_cost=true)` on the `/etc/hosts` and `../../x.json` arms.
+Control: the saved record from C-F362 validates.
+expected:
+- Every probe is `valid: false` at `steps[0].task.arguments.fit` or `.track`.
+- The existing and nonexistent paths get identical wording.
+- No message quotes the target file's content: a JSON parse error naming a line of `/etc/hosts`
+  means the file was read.
+- No message discloses a server path that wasn't in the probe.
+- `run_workflow` queues no job.
+It is a **finding** if a probe is refused only at run time. A probe that validates or is read,
+wording that differs between the existing and nonexistent path, or a disclosed path or content
+is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist), and for the control's
+setup runs.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

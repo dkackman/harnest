@@ -10393,4 +10393,296 @@ It is a **finding** if a or c is refused, or if b validates.
 cleanup: none.
 metrics: none.
 
+### C-F352 — Moving task metadata into the registry leaves every validate-time refusal's path and wording as it was
+pending: #773
+source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Each arm is `validate_workflow` on an inline one-step workflow with literal arguments (no
+`variable:`). Media as in the cited case. Every other argument is valid. Record each response's
+`errors[].path` and message. Each arm reproduces a refusal an earlier case already pins, so
+compare against that case's expected path and wording:
+- a. `crop_face_track`, `crop_size: 500` (C-F196 a).
+- b. `plan_cuts`, `modulus: 0` (C-F323).
+- c. `ingredients_grid`, `layout: "grid9"`, and separately `fit: "stretch"` (C-F294).
+- d. `apply_lut`, `strength: 1.5` with `lut: "asset:uploads/qa-lut/identity2.cube"` (C-F263; upload
+  the LUT as that case does if it's absent).
+- e. `check_script`, `lines: []` (C-F286).
+- f. `attribute_voices`, voice names that don't match the transcript's speakers, as C-F141's
+  mismatched arm builds them. Under the plan this check (`voices_errors`) now lives in the registry.
+- g. `slice_audio`, with `start_seconds: 4` and an end before the start (C-F324's inverted arm).
+- h. `fit_to_model`, `mode: "zoom"` (C-F243).
+- i. `window_video`, `num_frames: 0`, and separately `overlap: 17` with `num_frames: 17` (C-F227).
+  `join_windows` with the wrong number of `videos` for its `source`/`num_frames`/`overlap` (C-F233).
+- j. `analyze_beats`, `min_bpm: 200, max_bpm: 60` (C-F211).
+- k. `paste_face_track`, `feather: -1` (C-F200's domain arm, or any out-of-domain literal it uses).
+Then call `run_workflow(..., acknowledged_cost=true)` on each refused arm.
+expected:
+- Every arm is `valid: false`. Its error path is the same argument path as in the cited case, and
+  its message says the same thing: the rule, the bound or choices, and the value. A rewording that
+  keeps the meaning is a note on the stage issue, not a failure. A different path, a message that
+  no longer names the argument or the rule, or a refusal that moved to run time is a failure.
+- `run_workflow` queues no job for any arm.
+It is a **finding** if any arm validates, is refused only at run time, or is refused at a
+different path.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F353 — `get_task` reports the same domains and choices after the registry move
+pending: #773
+source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Call `get_task` for each task below and read each argument's domain, choices and required flag.
+These were the shapes before stage A (2026-10-08):
+- `window_video`: `index` required, non-negative; `num_frames` required, positive; `overlap`
+  required, non-negative.
+- `join_windows`: `source`, `num_frames` (positive) and `overlap` (non-negative) required; `curve`
+  choices `cosine`/`smoothstep`/`linear`, default `cosine`.
+- `trim_video`: `start_frame` required, non-negative; `num_frames` required, positive.
+- `fit_to_model`: `num_frames` required, positive; `mode` choices `letterbox`/`stretch`/`crop`,
+  default `letterbox`; `downscale` default 1, positive.
+- `slice_audio`: `start_seconds` and `start_frame` non-negative; `duration_seconds`, `num_frames`,
+  `fps` and `sample_rate` positive; `lead_frames` default 0, a whole number, 0 or above.
+- `ingredients_grid`: `width` 768 and `height` 448, positive; `layout` choices
+  `auto`/`rows`/`panels`; `fit` choices `contain`/`cover`; `gap` 8, non-negative; `background`
+  `white`; `max_images` 12, positive.
+- `plan_cuts`: `segment_by` choices `line`/`stanza`/`beat`; `fps` 24; `modulus` positive;
+  `remainder` non-negative, below `modulus`, needs `modulus`.
+- `analyze_beats`: `min_bpm` 60, `max_bpm` 200 (above `min_bpm`).
+- `paste_face_track`: `track` required; `feather` 0.3, non-negative; `color_match` true.
+- `crop_face_track`: `clip` required; `crop_size` 512, positive, a multiple of 32; `padding` 0.6;
+  `gate_full` 0.06; `gate_zero` 0.12; `min_confidence` 0.6.
+- `grade`, `film_grain`, `sharpen`, `apply_lut`: each argument's range as the tasks guide's tables
+  give it (`get_guide("tasks", section="Image Processing")`).
+- `check_script` and `attribute_voices`: the arguments and required flags they list today.
+expected:
+- Every argument above is still listed, with the same required flag, default, domain and
+  choices. Wording may change, but the meaning may not.
+- Stage C (#775) adds `modulus`/`remainder`/`multiple` to `crop_face_track`. If C has merged by
+  the time this runs, those additions aren't a failure here (C-F357 covers them).
+It is a **finding** if an argument is missing, or its default, domain, choices or required flag
+changed.
+cleanup: none.
+metrics: none.
+
+### C-F354 — A whole-number argument takes `"3"`, `3.0` and `"3.0"` as 3, at validate and at run
+pending: #774
+source: tester, spec for #774 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Every value is a **literal** in the step's `arguments`. Coercing `variable:` values is the plan's
+non-goal, so no arm uses a variable. Each arm is `validate_workflow` first, then
+`run_workflow(..., acknowledged_cost=true, wait_seconds=55)`, with `wait_for_job` until it is done.
+All of these are CPU tasks.
+- a. `window_video` on `asset:qa-cast/ep6-cold-open.mp4`, `fps: 24` (C-F227's accepted arm), three
+  runs: `num_frames: 17.0, overlap: 0, index: 0`; then `num_frames: "17", overlap: "0", index:
+  "0"`; then `num_frames: "17.0", overlap: 0.0, index: "0.0"`. Result `video/mp4`.
+- b. `trim_video` on the same clip, `start_frame: 8.0, num_frames: "17.0"`.
+- c. `fit_to_model` on `asset:qa-fit/src-640x480-50f.mp4` (C-F238's fixture; make it as C-F238
+  says if absent), with `width: 512.0, height: "288", num_frames: "57.0", mode: "letterbox"`. Read
+  the fitted video through `get_dict_value` as C-F238 does.
+- d. `plan_cuts` with C-F323's working inputs, but with `modulus: "17.0"` and `remainder: 1.0`.
+- e. `loop_frames` with a still image, `video: {"media_type": "image", "location":
+  "asset:qa-cast/priya-portrait.jpg"}` and `num_frames: "9.0"`.
+- f. `ingredients_grid` with two `asset:qa-cast/` portraits, `gap: 8.0`, `max_images: "12"`,
+  `width: "768.0"`. Result `image/png`.
+- g. `analyze_beats` on `asset:qa-cast/ep11-bed.wav`, `sample_rate: "22050"`.
+- h. `join_windows`: run C-F233's working arm with `num_frames`/`overlap` written as `"17.0"`/`8.0`.
+Then the int-form control for a and b: the same workflow with plain ints.
+expected:
+- Every arm validates with no errors and its job completes.
+- a: all three runs give a 17-frame window (`get_output_frames` or `get_gallery_metadata`), the
+  same as the int control. b: 17 frames, the same as the int control. c: 512×288, 57 frames. d:
+  every planned cut's frame count is 17n+1. e: 9 frames. f: a 768-wide PNG. g: a beat result,
+  as C-F211's working arm gets. h: the joined video C-F233 expects.
+It is a **finding** if any arm is refused at validate or at run time, or gives a different result
+from its int form.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F355 — A whole-number argument refuses a fraction, a bool, a non-number, inf and nan, naming the argument
+pending: #774
+source: tester, spec for #774 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Use inline literal workflows (no `variable:`) with C-F354's media. One value is bad per arm and
+the rest are valid. Run `validate_workflow` on each arm.
+- a. `window_video.num_frames`: `"17.5"`, `17.5`, `true`, `false`, `"abc"`, `"inf"`, `"nan"`,
+  `""`. If the transport carries it, also `1e999` (JSON inf).
+- b. `trim_video.start_frame`: `"3.5"`, `true`, `"abc"`.
+- c. `fit_to_model.width`: `512.5` and `"512.5"`; `num_frames`: `true`.
+- d. `plan_cuts.modulus`: `"17.5"`, `true`, `"nan"`.
+- e. `analyze_beats.sample_rate`: `"22050.5"`, `true`.
+- f. `loop_frames.num_frames`: `"9.5"`; `join_windows.overlap`: `true`; `ingredients_grid.gap`:
+  `"8.5"`.
+- g. Boundary: `window_video.num_frames: "0"` and `0.0`, so a valid whole number that is out of
+  domain.
+For one refused arm of each of a–e, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Every arm in a–f is `valid: false` at `steps[0].task.arguments.<name>`. The message contains
+  `needs a whole number for '<name>'` (the plan's wording) and names the value given. A bool is
+  refused as such, never read as 1 or 0.
+- g is refused by the positive-domain rule, as `num_frames: 0` is today. It is not a whole-number
+  refusal.
+- `run_workflow` queues no job for any refused arm. Validate and run agree: an arm can't validate
+  and then fail at run time, or the reverse.
+It is a **finding** if any arm validates, if a bool passes as a number, if a message doesn't name
+the argument, or if run disagrees with validate.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F356 — A float argument takes `"3"`/`3.0`/`"3.0"` and refuses a bool, a non-number, inf and nan
+pending: #774
+source: tester, spec for #774 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Use inline literal workflows and `validate_workflow` on each arm.
+- a. Accept arms. `grade` on `asset:qa-cast/priya-portrait.jpg` (`image/png` result), with
+  `contrast: "1"`, then `contrast: 1.0`, then `contrast: "1.0"`, then `exposure: "0.5"`. Run the
+  `exposure: "0.5"` arm and its `exposure: 0.5` control with `acknowledged_cost=true` and the same
+  seed.
+- b. `film_grain.amount: "0.1"` with `seed: 1` on the same image. Run it and its `amount: 0.1,
+  seed: 1` control.
+- c. Refuse arms, one per value: `true`, `false`, `"abc"`, `"inf"`, `"nan"` (and `1e999` if the
+  transport carries it). Each goes to `grade.exposure`, `grade.contrast`, `film_grain.amount`,
+  `paste_face_track.feather`, `crop_face_track.padding` and `plan_cuts.min_scene_s`.
+- d. `run_workflow(..., acknowledged_cost=true)` on two of c's arms: `grade.exposure: "nan"` and
+  `film_grain.amount: true`.
+expected:
+- a and b validate. Each run completes, and its output's bytes match its control's. Confirm with
+  `get_gallery_metadata` sizes plus a visual check with `get_output_image`, or a hash if one is
+  shown.
+- Every c arm is `valid: false` at that argument's path, and the message names the argument.
+  `"inf"` and `"nan"` never pass `grade.exposure`, whose range is "any".
+- d queues no job.
+It is a **finding** if a c arm validates, if a bool is read as a number, or if a/b's output
+differs from its control.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F357 — `crop_face_track` exposes `modulus`, `remainder` and `multiple`, with defaults 8, 1 and 32
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Call `get_task("crop_face_track")`.
+expected:
+- The argument list includes these three, each optional:
+  - `modulus`, default 8, positive;
+  - `remainder`, default 1, non-negative and below `modulus`;
+  - `multiple`, default 32, positive.
+- `crop_size`'s description no longer hard-codes 32. It refers to `multiple`, or the rule says
+  "a multiple of `multiple`".
+- Every other argument C-F353 lists for `crop_face_track` is unchanged.
+It is a **finding** if any of the three is missing or has another default.
+cleanup: none.
+metrics: none.
+
+### C-F358 — `crop_face_track`'s grid arguments are refused at the free pre-flight, with the boundaries accepted
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with
+`clip: "asset:qa-cast/ep3-shot1-incident.mp4"` (as in C-F196) plus the arguments given.
+- Refused:
+  - `modulus: 0` and `modulus: -8`;
+  - `remainder: -1`;
+  - `remainder: 8` (the default `modulus`) and `remainder: 9`;
+  - `modulus: 16, remainder: 16`;
+  - `crop_size: 48` with the default `multiple` (32);
+  - `crop_size: 40, multiple: 16`;
+  - `multiple: 0`.
+- Accepted:
+  - `crop_size: 48, multiple: 16`, which was refused before this stage;
+  - `crop_size: 512` with the defaults;
+  - `modulus: 16, remainder: 0`;
+  - `modulus: 17, remainder: 5`;
+  - `modulus: 8, remainder: 7`;
+  - `modulus: 1, remainder: 0`;
+  - `remainder: 3` with no `modulus`, checked against the default 8.
+For every refused arm, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Each refused arm is `valid: false` at `steps[0].task.arguments.<name>`, the argument at fault.
+  For `remainder` ≥ `modulus` the error may sit at `remainder` or `modulus`, but the message
+  names both. The message states the rule:
+  - positive;
+  - non-negative and below `modulus`;
+  - a multiple of `<multiple>`, naming the value in effect: 32 for the default, 16 when given.
+- Every accepted arm is `valid: true`.
+- `run_workflow` queues no job for any refused arm.
+It is a **finding** if `crop_size: 48, multiple: 16` is refused, if any refused arm validates, or
+if one is refused only at run time.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F359 — `crop_face_track` keeps its 8n+1 output by default and follows a `modulus`/`remainder` given
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Setup and run as in C-F192, the default arguments. Then run the same workflow again with
+`modulus: 16, remainder: 0`, and a third time with `crop_size: 48, multiple: 16`.
+expected:
+- Run 1 gives what C-F192 expects: a crop whose frame count is 8n+1, with the track record.
+- Run 2's crop has a frame count that is a multiple of 16, and n ≥ 1.
+- Run 3's crop is 48×48 px (`get_gallery_metadata`), with an 8n+1 frame count.
+- Each run completes.
+It is a **finding** if run 1 differs from C-F192's expectation, or if run 2 or 3 ignores the
+argument given.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F360 — The face-repair template passes the grid explicitly and still validates and runs as before
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+- a. `get_workflow("ltx2/face-repair")`. Find the `crop_face_track` step.
+- b. `validate_workflow` the template with the arguments C-F201's valid control uses. Also rerun
+  C-F201's refused arms.
+- c. Run it as C-F202 does. On this server, if the LTX-2 model can't load (memory), hand the run
+  to lem's loop, as the target note says, and don't count it as a failure here. Then run C-F203.
+expected:
+- a. The `crop_face_track` step's arguments include `modulus: 8`, `remainder: 1` and
+  `multiple: 32`, written explicitly. They may be literals or variables whose defaults are those
+  values.
+- b. The valid control is `valid: true`, and C-F201's refusals hold with the same paths.
+- c. C-F202's and C-F203's expected results hold.
+It is a **finding** if a doesn't show the three values, or if b or c departs from C-F201,
+C-F202 or C-F203.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F361 — `grade`, `film_grain` and `apply_lut` still return RGBA with the alpha untouched
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+Setup (make one RGBA fixture):
+- Run `remove_background` with `image: {"location": "asset:qa-cast/priya-portrait.jpg"}` and
+  result `image/png`. It may download its model the first time.
+- `keep_output` the PNG as `qa-rgba/priya-cutout.png`.
+- `get_gallery_metadata` it and `get_output_image` it, confirming it has an alpha channel with
+  transparent background regions.
+- If `remove_background` is unavailable, use `add_border_and_mask_with_size` (the border is
+  alpha) with `width: 640, height: 640`, and keep that output instead.
+Then three one-step runs, each with `media: "asset:qa-rgba/priya-cutout.png"` and result
+`image/png`:
+- a. `grade` with `exposure: 0.5, saturation: 0.5`;
+- b. `film_grain` with `amount: 0.3, seed: 1`;
+- c. `apply_lut` with `lut: "asset:uploads/qa-lut/identity2.cube"` (C-F263), and again with
+  `palette: ["#102030", "#e0c090"]`.
+expected:
+- Every output is RGBA (`get_gallery_metadata`, mode or channels) at the input's size.
+- The background regions that were transparent in the input are still transparent in each output
+  (`get_output_image`), and the colour change applies only to the opaque subject.
+- Each run completes.
+It is a **finding** if an output is RGB, if the alpha changed (a transparent region became opaque
+or tinted, or grain appeared in it), or if a run fails on RGBA input.
+cleanup: `delete_output(job_id=…)` for every job; `delete_asset` `qa-rgba/priya-cutout.png`.
+metrics: none.
+
+### C-F362 — `restore_to_source` and `paste_face_track` still read their records from saved JSON
+pending: #775
+source: tester, spec for #775 from #692's plan v2 (claude-opus-5-5 via anthropic)
+- a. Run C-F238's RT workflow with its good values (`w` 512, `h` 288, `n` 57, `letterbox`). Note
+  the saved JSON from its `record` step: `output:<workflow>/<run id>/<file>.json`, as `get_job`
+  lists it. Then run a one-step `restore_to_source` with `video` set to the `fitted` output's
+  `output:` reference and `fit` set to that saved `.json` reference.
+- b. Run C-F192's crop and note its saved track `.json`. Then run `paste_face_track` with `clip`
+  set to the crop's source clip, `repaired` set to the crop output, and `track` set to the saved
+  track `.json`'s `output:` reference.
+- c. A malformed record: as C-F244 does, a record that is valid JSON but missing its keys.
+expected:
+- a. The restore completes at the source's 640×480 and 50 frames, the same as C-F238's in-workflow
+  `restore` step.
+- b. The paste completes, with the source clip's size and frame count.
+- c. The refusal C-F244 expects holds.
+It is a **finding** if a saved record that was readable before this stage is now refused or read
+differently.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
 ## Performance

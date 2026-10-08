@@ -141,6 +141,20 @@ fixture) when nothing uses it anymore.
   3. `keep_output` the result as that asset, then `delete_output(job_id=<id>)`.
   4. Confirm with `get_gallery_metadata` that it is 9.5–10.5 s long, and with `transcribe_audio`
      that it has words throughout.
+- `asset:qa-guides/ep6-22f.mp4` and `asset:qa-guides/ep6-30f.mp4`: 22- and 30-frame, 24 fps
+  cuts of `asset:qa-cast/ep6-cold-open.mp4` (shared: 124 frames, 960×544, 24 fps, with audio),
+  for the #694 guide-VRAM cases (M-F105 to M-F112). They are the same clips as
+  `regression-complete`'s C-F296 fixtures, made again in this workspace so the levels don't share.
+  If `list_assets` in `regression-model-specific` lacks either one, make them CPU-only:
+  1. `save_workflow(name="m-guide-clips", ...)`, a task-only workflow with two steps:
+     - `v22`: `loop_frames(video="asset:qa-cast/ep6-cold-open.mp4", num_frames=22)`;
+     - `v30`: `loop_frames(video="asset:qa-cast/ep6-cold-open.mp4", num_frames=30)`.
+     Each step writes a 24 fps video file.
+  2. `run_workflow(workflow_path="m-guide-clips", acknowledged_cost=true, wait_seconds=55)`.
+  3. `keep_output` each mp4 under its asset name.
+  4. Confirm with `get_gallery_metadata` that they have 22 and 30 frames at 24 fps.
+  5. `delete_output(job_id=<id>)`, then `delete_workflow("m-guide-clips")`.
+  The 124-frame guide in those cases is `asset:qa-cast/ep6-cold-open.mp4` itself.
 
 ## Functional
 
@@ -3364,6 +3378,462 @@ expected:
 It is a **finding** if either `shot@` warning comes back, or if the advice names a step the
 caller can't insert.
 cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### M-F104 — the H3 guide-memory record cites real runs, and its fit reproduces every row
+pending: #778
+source: tester, spec for #778 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA, the stage-A measurement runs on lem.
+Stage A measures what H3 guides cost in VRAM before stage B charges for them. Don approved
+checking the stage by its record: a table plus a fitted formula, appended to
+`docs/proposals/complete/h3-guides-complete.md` or a new `docs/proposals/h3-guide-vram.md`.
+Free: discovery calls only (`list_jobs`, `get_job`, `get_job_workflow`). Nothing is run.
+Setup: find the record. Try `list_guides()` and `get_guide` first. If the server doesn't serve
+`docs/proposals/`, the stage's hand-off comment on #778 must quote the table and the fit
+verbatim, and that comment is the record. If it is in neither place, the case can't be checked:
+bounce the stage with that reason.
+Steps:
+1. For every table row, find its job id in `list_jobs`. Run `get_job` and `get_job_workflow`
+   on it.
+2. Check that the record's runs cover the plan's set. All are H3 t2va, each at 960×544 and at
+   1344×768:
+   - 0, 1, 2 and 4 guides of 22 frames;
+   - 1 and 4 guides at the longest length, 124 frames, or an OOM row recorded as that point's
+     answer;
+   - 1 guide of 39 frames, with and without `"audio": true`.
+3. Recompute each row's projection from the fitted terms: `base_gb`, `bytes_per_voxel`,
+   `bytes_per_guide_voxel`, `gb_per_guide`, and `gb_per_guide_audio` if the fit has one.
+4. Recompute the exit test: the guide terms alone at 4 × 124-frame guides on 1344×768.
+expected:
+- Every row's job id exists. Its resolved workflow is H3 t2va with the stated canvas,
+  `num_frames`, guide count, guide lengths and `audio` flags. If `get_job` reports a
+  peak-memory figure, it matches the row's within 0.1 GB.
+- Every non-OOM row's measured peak is within **0.5 GB** of the fitted projection. An OOM row is
+  consistent with the fit if the fit projects that point over the card.
+- The 39-frame audio/no-audio pair is in the table. The record states whether audio needs its own
+  term (`gb_per_guide_audio`) or folds into `gb_per_guide`, and the delta it measured.
+- The record states the exit rule and applies it. If step 4 comes out under 0.5 GB, the record
+  says the feature stops there and returns as plan v2. In that case stage B should not have
+  been built.
+It is a **finding** if:
+- a cited job doesn't exist, or its workflow doesn't match its row;
+- a planned point is missing with no stated reason;
+- any row misses the fit by more than 0.5 GB;
+- the exit rule's arithmetic disagrees with the record's verdict.
+cleanup: none.
+metrics: none.
+
+### M-F105 — `vram_estimate` takes `bytes_per_guide_voxel` and `gb_per_guide`: optional, ≥ 0, absent means unchanged
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA, via an inline copy of `templates/minimax/video-with-audio`.
+The schema case for the two new keys, shaped like M-F048. If stage A's record added
+`gb_per_guide_audio`, run every variant for it too.
+Free: `get_schema` and validate calls only.
+Setup: `get_workflow("templates/minimax/video-with-audio")` as **V**. Set its
+`text_to_video_audio` step's `arguments.guides` to
+`[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 0}]`. Then set its top-level
+`vram_estimate` per variant, starting from the template's current one with both guide keys
+removed:
+- a. both keys absent;
+- b. both keys `0`;
+- c. the template's own values for both keys (read them off its `get_workflow`);
+- d. `bytes_per_guide_voxel: -1`;
+- e. `gb_per_guide: -0.5`;
+- f. `gb_per_guide: "1"`, a string;
+- g. an unknown sibling key, `gb_per_guides: 1`.
+Steps: `get_schema` for the `vram_estimate` section, then one
+`validate_workflow(workflow=V, workspace="regression-model-specific")` per variant.
+expected:
+- The schema lists both keys as optional numbers with minimum 0. It still has
+  `additionalProperties: false`.
+- a and b validate with the same verdict as each other. Any VRAM message gives the same GB as V
+  with no `guides` key at all: a guide adds nothing when the keys are absent or 0.
+- c validates. Its guide-aware projection is larger than a's by exactly
+  `bytes_per_guide_voxel` × 22 × 960 × 544 (in the unit the voxel term already uses) plus
+  `gb_per_guide`.
+- d and e are `valid: false`, with an error naming the key and the minimum. f is a type error
+  naming the key. g is refused as an unknown key.
+It is a **finding** if a negative or a string is accepted, or if absent and 0 differ.
+cleanup: none.
+metrics: none.
+
+### M-F106 — a copied H3 t2va with no estimate warns, naming its guides, once guides push it past the card
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA, via **NT768**: `templates/minimax/video-with-audio-768p` copied
+inline with its top-level `vram_estimate` and `cost` deleted, as in M-F049/M-F051.
+This is plan v1's headline: a custom guided t2va at the largest canvas, at a length that is
+clean with no guides, becomes a `vram_projection_inherited` **warning**, never an error.
+Free: validate calls only. All steps use
+`arguments={"width": 1344, "height": 768, "num_frames": 277}`; 277 is under the ceiling
+breakpoint M-F026 pins between 277 and 294. Set the generating step's `arguments.guides` per
+step:
+1. no `guides` key;
+2. `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 0}]`;
+3. four 124-frame guides, `asset:qa-cast/ep6-cold-open.mp4` at frames 0, 51, 102 and 153
+   (153 + 124 = 277, the last one ending exactly at the end);
+4. as 3, but with each guide's `video` as `output:`, the cold-open path in its `output:` form if
+   one exists. Otherwise drop this step.
+expected:
+- Step 1 is `valid: true` with no inherited-ceiling warning. If it does warn, 277 is no longer
+  clean: pick the largest 17n+5 that is, and say so.
+- Step 2 is `valid: true` with no inherited-ceiling warning. If stage A's fitted terms put a
+  single 22-frame guide over the headroom at 277, record that the plan's "stays clean" expectation
+  doesn't hold at 277 and file a `suite` request. That is not a server finding.
+- Step 3 is **`valid: true`** with exactly one `vram_projection_inherited` warning. The warning:
+  - names `templates/minimax/video-with-audio-768p`;
+  - gives a projected GB over 24;
+  - names the guides with their frame counts, e.g. "4 guides (124+124+124+124 frames)".
+  The GB equals the template's own estimate plus its guide terms for 4 × 124 frames at
+  1344×768, to 0.1 GB.
+- Step 4 gives the same warning and GB as step 3.
+It is a **finding** if:
+- step 3 is an error, since an inherited ceiling is never one;
+- step 3 is silent;
+- the warning doesn't count the guides or their frames;
+- step 2 or step 1 warns while the arithmetic says it is under the card.
+cleanup: none.
+metrics: none.
+
+### M-F107 — the guide term follows the clip's snapped length and the canvas, and a declared template's verdict matches the arithmetic
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA, via `templates/minimax/video-with-audio` and `-768p` (declared
+estimates). The plan charges Σ over guides of (**snapped** frames × width × height), and
+`gb_per_guide` per clip.
+Free: validate calls only. Read both templates' `vram_estimate` with `get_workflow` first.
+Save each template as an inline copy with `guides` set per step; the estimate and cost stay.
+Steps:
+1. `video-with-audio` (960×544, `num_frames` 124), with one guide each of:
+   - a. `qa-guides/ep6-22f.mp4` at frame 0;
+   - b. `qa-guides/ep6-30f.mp4` at frame 0. It snaps to 22, with today's snap warning.
+2. `video-with-audio-768p` at 1344×768 with guide a.
+3. `video-with-audio-768p` at 1344×768, `num_frames` 277, with M-F106 step 3's four 124-frame
+   guides.
+4. As 3 with `"audio": true` on every guide.
+expected:
+- 1a and 1b project the same guide cost. The 30-frame clip is charged as 22, not 30. Any GB that
+  a message quotes is the same for both.
+- Step 2's guide cost is (1344 × 768) / (960 × 544) times step 1a's voxel part. `gb_per_guide`
+  is not scaled.
+- Step 3 is **`valid: false`** with an error, not a warning, because the estimate is declared.
+  The error names 4 guides and their frames. Its GB equals the template's formula plus the
+  guide terms to 0.1 GB.
+- Step 4 projects the same as step 3, unless stage A added `gb_per_guide_audio`. In that case it
+  projects exactly 4 × that much more.
+- Wherever a verdict is quoted, it flips at 24 GB exactly as the arithmetic says.
+It is a **finding** if:
+- a raw (unsnapped) length is charged;
+- the guide cost ignores the canvas;
+- a declared template gives only a warning;
+- a quoted GB disagrees with the template's own terms.
+cleanup: none.
+metrics: none.
+
+### M-F108 — a guide nothing can probe at validate is charged at `num_frames`, and the message says "worst case"
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA, via an inline two-step workflow.
+Free: validate calls only.
+Setup: build **PR**, a two-step workflow:
+- `clip`: `loop_frames(video="asset:qa-cast/ep6-cold-open.mp4", num_frames=22)`;
+- `gen`: `templates/minimax/video-with-audio-768p`'s generating step, with `guides:
+  [{"video": "previous_result:clip", "frame": 0}]`.
+Keep the template's `vram_estimate` and `cost`. Also build **PR-NT**, the same with both
+deleted.
+Steps: `validate_workflow` on each at
+`arguments={"width": 1344, "height": 768, "num_frames": 277}`, then on PR at `num_frames` 124.
+expected:
+- At 277, the `previous_result:` guide is charged as a 277-frame guide, not 22, since the clip
+  doesn't exist at validate:
+  - PR projects the same GB as M-F107's arithmetic gives for one 277-frame guide at 1344×768;
+  - PR's message says the guide was charged as the worst case, at `num_frames`.
+  - The verdict follows that GB: an error on PR, a `vram_projection_inherited` warning on PR-NT.
+- At 124, PR's guide is charged at 124 frames, still flagged as worst case.
+It is a **finding** if:
+- the unprobeable guide is charged at 0 or dropped;
+- it is charged at 22 without a probe (the validator can't know that);
+- the message doesn't say worst case.
+cleanup: none.
+metrics: none.
+
+### M-F109 — `chained-segments` gains a cost and an estimate, and its fourth guide (the chain's) is refused before a job exists
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 FL2VA, via `templates/minimax/chained-segments`. On 2026-10-08 it has
+`"cost": null` in `list_workflows` and no `vram_estimate`. Plan v1 gives it both: the H3 t2va
+numbers plus the guide terms. A `continuity: "guide"` chain counts its carried clip as one
+guide, at `guide_frames` frames.
+Free: validate calls and refused `run_workflow` calls only. If a run is accepted, cancel it at
+once with `cancel_job` and record the finding.
+Setup: save **CS3**, the template's document with `guides` on its step: three
+`asset:qa-cast/ep6-cold-open.mp4` guides at frames 51, 153 and 221 (221 + 124 = 345). Save
+**CS1**, the same with only the frame-51 guide. Both use
+`arguments={"continuity": "guide", "guide_frames": 39, "num_frames": 345}`, the template's
+largest allowed frames.
+Steps:
+1. `get_workflow("templates/minimax/chained-segments")` and `list_workflows(shape="shot")`.
+2. `validate_workflow` on CS3, then on CS1.
+3. Without validating first, `run_workflow` on CS3 with the same arguments,
+   `acknowledged_cost=true` and `wait_seconds=0`. Note `list_jobs` before and after.
+4. Steps 2 and 3 again at `"width": 1344, "height": 768`, only if CS3 validated in step 2.
+expected:
+- (1) The template has a top-level `vram_estimate` with `bytes_per_guide_voxel` and
+  `gb_per_guide`. `list_workflows` shows a non-null `cost` for it, with a `vram_gb`.
+- (2) CS3 is **`valid: false`**. The error names **4 guides** (3 + the chain's
+  39-frame carry) with their frames, e.g. "4 guides (124+124+124+39 frames)", and gives a GB
+  over 24. That GB matches the template's own terms to 0.1 GB. CS1 is `valid: true` with no
+  VRAM error.
+- (3) `run_workflow` refuses CS3 with the same message and numbers as validate: `status:
+  failed` (or the server's refusal shape), `run_id: null`, and no new job in `list_jobs`. This
+  is the run-time probe agreeing with validate.
+- (4) Only reached if the plan's refusal didn't happen at 960×544. The 1344×768 run must
+  refuse, with the same checks as (2)-(3).
+It is a **finding** if:
+- the template still has no estimate or cost;
+- the chain guide isn't counted, i.e. the message says 3 guides;
+- validate and run disagree;
+- a job is created;
+- CS3 validates at both canvases (the plan promised a refusal).
+cleanup: `delete_workflow` on CS3 and CS1 if saved by name; `cancel_job`/`delete_output` on any
+accepted run.
+metrics: none.
+
+### M-F110 — every H3 template still validates at its defaults; t2va/fl2va ones carry the guide terms and ref2va ones don't
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: every `templates/minimax/*` template.
+The plan's catalog promise, sharing M-F047's sweep.
+Free: `list_workflows`, `get_workflow` and validate calls only.
+Steps: for each `templates/minimax/*` name in `list_workflows(shape="shot")` (and any other
+shape listing minimax templates), `get_workflow` then
+`validate_workflow(name, workspace="regression-model-specific")` with no arguments. Note each
+H3 step's `from_pretrained_arguments.workflow`.
+expected:
+- Every one is `valid: true` at its defaults, with no VRAM error.
+- Every template with a `vram_estimate` whose H3 step is `t2va` or `fl2va` has both
+  `bytes_per_guide_voxel` and `gb_per_guide`. That includes `chained-segments`, now that it has
+  one.
+- No template whose only H3 step is `ref2va` carries either key; guides are refused there.
+- A template with no H3 guides at its defaults projects exactly what it did before. Each
+  default-argument projection in M-F043–M-F054 is unchanged.
+It is a **finding** if a template no longer validates at its defaults, if a t2va/fl2va estimate
+lacks the keys, or if a ref2va one has them.
+cleanup: none.
+metrics: none.
+
+### M-F111 — the guide and the minimax-h3 skill state the guide formula and that the 4-guide limit is checked against the card
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: docs only (the guide, `WORKFLOW_GUIDE.md`, and the dw plugin's minimax-h3 skill).
+Free.
+Steps:
+1. `list_guides()`, then `get_guide("workflows", section=…)` for the `vram_estimate` formula
+   section, and for "H3: holding a clip with `guides`".
+2. Load the `minimax-h3` skill.
+expected:
+- (1) The formula section gives both new terms: `bytes_per_guide_voxel` × Σ(snapped guide
+  frames) × width × height, and `gb_per_guide` per guide. It also says:
+  - absent keys add nothing;
+  - a `previous_result:` (or unprobeable) guide is charged at `num_frames`;
+  - a `continuity: "guide"` chain counts as one more guide.
+  The guides section's count row no longer presents 4 as the whole VRAM story: it says each
+  guide is now checked against the card's projection.
+- (2) The skill's guides line says the ceiling drops with each guide (and its length), and
+  points to the formula.
+- Every key and example in that text validates when pasted into `validate_workflow`.
+It is a **finding** if either text still describes the guide limit as purely a count, or names
+a key the schema refuses.
+cleanup: none.
+metrics: none.
+
+### M-F112 — the largest guided combination the catalog allows on 24 GB is flagged before any GPU time
+pending: #779
+source: tester, spec for #779 from #694's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 T2VA, via `templates/minimax/video-with-audio-768p`.
+The bug #694 was filed for: validate passes, then the card OOMs. The largest combination is:
+- 1344×768;
+- the template's largest `num_frames` that validates with no guides;
+- four 124-frame guides with `"audio": true`.
+Free for the required part. The optional confirmation is **paid**: one H3 run, about 10 min.
+Steps:
+1. Find the largest 17n+5 `num_frames` at which the template is `valid: true` at 1344×768 with
+   no guides (277 today, per M-F026).
+2. Validate the template copy at that length with M-F107 step 4's guides.
+3. Optional, and only when a curator or Don asks for OOM evidence: copy the workflow, delete its
+   `vram_estimate` and `cost` so validate only warns, then run it with `acknowledged_cost=true`.
+expected:
+- (2) `valid: false` with a VRAM error naming the 4 guides. No job is queued.
+- (3) If run, it fails with a CUDA out-of-memory error, or `get_job` reports a peak over 24 GB.
+  That confirms the projection is on the right side of the card. A clean finish under 24 GB
+  means stage A's fit over-charges guides. File it with the job id.
+It is a **finding** if (2) validates.
+cleanup: `delete_output(job_id=…)` on any optional run.
+metrics: none.
+
+### M-F113 — the H3 modular pipeline's signature still lists the hold, refine and guide inputs
+pending: #770
+source: tester, spec for #770 from #691's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (`MiniMaxH3ModularPipeline`, the class behind every
+`templates/minimax/*` t2va/fl2va/ref2va step).
+#691 moves the dw blocks that add `hold_audio`, `refine_strength` and `guides` to the H3 pipeline
+into new modules. Stage A only adds drift tests, and stage B splits the module. Neither may change
+what a consumer sees. Free: no GPU.
+Steps:
+1. `get_pipeline_signature(name="MiniMaxH3ModularPipeline")`.
+2. `get_pipeline_signature(name="MiniMaxAI/MiniMax-H3")` and
+   `get_pipeline_signature(name="MiniMaxH3Pipeline")`. Both are names that don't resolve. They
+   are here so a later change to that behaviour is noticed.
+expected:
+- (1) `parameters` holds each of these, `required: false`, with a non-empty `description`:
+  - `hold_audio`, annotated as a `MiniMaxH3AudioReference`;
+  - `refine_strength`, annotated `float`, whose description says it is a sigma in (0, 1);
+  - `guides`, annotated `list`, whose description says `frame` is a multiple of 17.
+- (1) also still lists `latents`, `audio_latents`, `num_frames`, `image`, `last_image` and
+  `references`. Before #691, each of those parameters was present.
+- (2) are refused errors, not a signature: today "Not Found" and "diffusers exports no class
+  named 'MiniMaxH3Pipeline'". They must not be a traceback or a server path.
+It is a **finding** if any of the three dw inputs is missing from (1), or loses its description.
+That means the split dropped a block from the pipeline's composition.
+cleanup: none.
+metrics: none.
+
+### M-F114 — `chained-segments` with `continuity:"guide"` accepts `guide_frames` 22 and 39 only, with today's message
+pending: #770
+source: tester, spec for #770 from #691's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3, via `templates/minimax/chained-segments`.
+Per #691's plan, the `guide_frames` message is rebuilt from `GUIDE_CHAIN_FRAMES` when the module
+is split, and its text must not change. This case pins the text as it stood before the split
+(captured on mini-ai, 2026-10-08). Free: no GPU.
+Setup:
+- `use_workspace("regression-model-specific")`. If it doesn't exist, `create_workspace` it
+  first. `asset:qa-cast/priya-portrait.jpg` comes from the shared `common/assets`.
+Steps: `validate_workflow(name="templates/minimax/chained-segments", arguments={"image":
+"asset:qa-cast/priya-portrait.jpg", "seed": 42, "continuity": "guide", "guide_frames": N})`
+for each N:
+- (a) 22;
+- (b) 39;
+- (c) 40;
+- (d) 0;
+- (e) 23;
+- (f) 38;
+- (g) 56;
+- (h) 5.
+Then `run_workflow` the same call with `guide_frames: 40` and `acknowledged_cost=true`.
+expected:
+- (a) and (b) are `valid: true` with no error and no warning about `guide_frames`.
+- (c)–(h) are each `valid: false` with exactly one error at
+  `steps[0].pipeline.chain.guide_frames`. Its message is, verbatim:
+  `guide_frames must be 22 or 39 (the whole-latent guide lengths a chain carries), got <N>`,
+  where `<N>` is the value passed. For (c), the message ends `got 40`.
+- `run_workflow` with 40 is refused with the same error and queues no job.
+It is a **finding** if:
+- 22 or 39 is refused;
+- any other value validates;
+- the message's wording or the order of its allowed lengths differs from the text above;
+- a refused value queues a job (refused too late).
+cleanup: `delete_output(job_id=…)` for any job that queued.
+metrics: none.
+
+### M-F115 — `hold_audio` and `refine_strength` refusals keep their exact messages
+pending: #771
+source: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va, plus the SD 1.5 pipeline as the non-H3 step.
+Stage B of #691 moves these rules into `h3_rules` and deletes `h3_blocks.py`. The plan requires
+every refusal to say exactly what it said before the split. The texts below were captured on
+mini-ai on 2026-10-08, before the split. Free: no GPU.
+Setup: `use_workspace("regression-model-specific")`, created if it is missing.
+Carriers, each an inline `workflow` passed to `validate_workflow`:
+- **H3**: `{"id":"probe","steps":[{"name":"base","pipeline":{"configuration":{"component_type":
+  "ModularPipeline"},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":
+  "t2va"},"arguments":{"prompt":"a fox","num_frames":124,"width":960,"height":544,
+  "num_inference_steps":9,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":
+  "video/mp4","fps":24}}]}`, with the probe's keys added to `arguments`.
+- **SD**: `{"id":"probe","steps":[{"name":"img","pipeline":{"configuration":{"component_type":
+  "StableDiffusionPipeline"},"from_pretrained_arguments":{"model_name":
+  "stable-diffusion-v1-5/stable-diffusion-v1-5"},"arguments":{"prompt":"a fox"}},"result":
+  {"content_type":"image/png"}}]}`, with the probe's keys added to `arguments`.
+- **Refine**: the example in `get_guide("workflows", section="Promoting an H3 take to 768p in
+  latent space")`, which M-F082 also uses, passed with `refine_strength` replaced by the probe's
+  value.
+Probes:
+- (a) SD carrier, plus `"hold_audio": "asset:qa-cast/hal-voice.wav"` and `"refine_strength": 0.2`;
+- (b) H3 carrier, plus `"refine_strength": 0`;
+- (c) H3 carrier, plus `"refine_strength": 1.5` and `"hold_audio": "asset:qa-cast/hal-voice.wav"`;
+- (d) Refine carrier at 0.2;
+- (e) Refine carrier at 1.0;
+- (f) Refine carrier at 0.999;
+- (g) Refine carrier at 0.001;
+- (h) Refine carrier at -0.2.
+Then `run_workflow(..., acknowledged_cost=true)` (a) as an inline workflow.
+expected (messages verbatim; `<v>` is the value as passed):
+- (a) `valid: false`, three errors:
+  - at `steps[0].pipeline.arguments.hold_audio`: `hold_audio is a MiniMax-H3 argument, taken by
+    its fl2va, ref2va, t2va workflows, and this step loads StableDiffusionPipeline`;
+  - at `steps[0].pipeline.arguments.refine_strength`: the same sentence beginning
+    `refine_strength is a MiniMax-H3 argument, …`;
+  - at the same path: `refine_strength re-denoises the 'latents' it is passed - pass the upscaled
+    latents, e.g. 'previous_result:up'`.
+- (b) `valid: false`, three errors at `steps[0].pipeline.arguments.refine_strength`:
+  - `refine_strength is a sigma in (0, 1) - about 0.2 refines an upscaled take - and 0 is outside
+    it`;
+  - the `re-denoises the 'latents'` sentence above;
+  - `refine_strength re-denoises the video only, so it needs 'hold_audio' to keep a soundtrack -
+    e.g. the base pass's 'previous_result:base.audio'`.
+- (c) `valid: false`, two errors at `steps[0].pipeline.arguments.refine_strength`: the range
+  sentence ending `and 1.5 is outside it`, and the `re-denoises the 'latents'` sentence. There is
+  no `hold_audio` error, since one was passed.
+- (d), (f) and (g) are `valid: true`.
+- (e) and (h) are `valid: false` with the range sentence for that value, and no other error.
+- `run_workflow` on (a) is refused with the same errors and queues no job.
+It is a **finding** if:
+- any message's wording, its JSON path, or the number of errors per probe differs from the above
+  (today's set is the contract);
+- a bound moves (0 or 1 accepted, or 0.001 or 0.999 refused);
+- a refused probe queues a job.
+cleanup: `delete_output(job_id=…)` for any job that queued.
+metrics: none.
+
+### M-F116 — `guides` refusals (more than 4 clips, frame not a multiple of 17) keep their exact messages
+pending: #771
+source: tester, spec for #771 from #691's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va.
+The guide rules are the third piece stage B moves, into `h3_guides`. The texts below were captured
+on mini-ai on 2026-10-08, before the split. Free: no GPU.
+Setup: `use_workspace("regression-model-specific")`, created if it is missing. Use M-F115's H3
+carrier. `G` is `"asset:qa-guides/ep6-22f.mp4"`. That clip need not exist here: the count and
+frame rules are checked before the asset. If it is absent, an accepted probe's only errors are
+`Asset 'qa-guides/ep6-22f.mp4' not found …` at `guides[i].video`.
+Probes, each passed as `"guides": [...]` on the carrier:
+- (a) five clips: `{"video": G, "frame": f}` for f = 0, 17, 34, 51, 68;
+- (b) four clips at 0, 17, 34, 51;
+- (c) one clip at frame 10;
+- (d) one clip at frame 1;
+- (e) one clip at frame 16;
+- (f) one clip at frame 18;
+- (g) one clip at frame 17;
+- (h) one clip at frame 0;
+- (i) an empty list, `[]`.
+Then `run_workflow(..., acknowledged_cost=true)` (a).
+expected (messages verbatim):
+- (a) `valid: false`, exactly one error, at `steps[0].pipeline.arguments.guides`:
+  `guides takes at most 4 clips, got 5`.
+- (b), (g) and (h) carry no count or frame error. They are `valid: true`, or invalid only by the
+  asset-not-found errors above when the clip is absent.
+- (c) `valid: false`, one error at `steps[0].pipeline.arguments.guides[0]`: `'frame' must be a
+  multiple of 17 (a VAE chunk boundary, where a guide lines up with the generated frames), got 10
+  - use 0 or 17`.
+- (d), (e) and (f) give the same sentence with their own value after `got`. Each ends with a
+  suggestion naming the multiples of 17 on either side. (f), captured before the split, ends
+  verbatim `got 18 - use 17 or 34`. (d) and (e) both end `- use 0 or 17`.
+- (i) `valid: true`, carrying only the carrier's no-`seed` step-cache warning, which is not a
+  guide error. This was captured before the split.
+- `run_workflow` on (a) is refused with the same error and queues no job.
+At #771's verification, also re-run M-F113 and M-F114. Both must pass unchanged.
+It is a **finding** if a count or frame message changes wording or path, if 4 clips or a
+multiple-of-17 frame is refused, or if a refused probe queues a job.
+cleanup: `delete_output(job_id=…)` for any job that queued.
 metrics: none.
 
 ## Performance
