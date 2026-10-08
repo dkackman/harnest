@@ -1,0 +1,1 @@
+{"ts":"2026-10-08T08:45:00Z","level":"complete","case":"C-F172","metric":"long_wait_seconds","condition":"-","value":938.2,"unit":"s","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job 1c1c03c9bd30","note":"est 12.0 min, T=1080; job ran ~972 s; no transport cut; develop c32c48d0"}
