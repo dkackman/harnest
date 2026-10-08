@@ -817,7 +817,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist); `delete_as
 metrics: none.
 
 ### SE-F045 — Media arguments without a conventional name keep their path gate after the registry move
-pending: #773
 source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Stage A replaces the hand-kept list of media arguments with registry metadata. The plan names
 path confinement as the check that could be lost. Each arm is `validate_workflow` on an inline

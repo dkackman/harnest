@@ -10394,7 +10394,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F352 — Moving task metadata into the registry leaves every validate-time refusal's path and wording as it was
-pending: #773
 source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Each arm is `validate_workflow` on an inline one-step workflow with literal arguments (no
 `variable:`). Media as in the cited case. Every other argument is valid. Record each response's
@@ -10427,7 +10426,6 @@ cleanup: `delete_output(job_id=…)` for any job (none should exist).
 metrics: none.
 
 ### C-F353 — `get_task` reports the same domains and choices after the registry move
-pending: #773
 source: tester, spec for #773 from #692's plan v2 (claude-opus-5-5 via anthropic)
 Call `get_task` for each task below and read each argument's domain, choices and required flag.
 These were the shapes before stage A (2026-10-08):
