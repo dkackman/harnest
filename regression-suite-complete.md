@@ -637,8 +637,8 @@ anything in the pipeline identity key — the new stack must be built, and the o
 first. Before #150 it did not: the release path existed but read a `prior_step_keys` map that
 nothing ever populated, so it could only fire *within* a single run and never between two. The
 second job loaded on top of the first and the worker was SIGKILLed by the host OOM killer. This is
-not a comfortable margin on the box that found it: one H3 load alone peaks at ~61.5 GB of 64 GB
-host RSS, so there is no headroom for two and never was. C-F007 covers a second model *family* in
+not a comfortable margin on the box that found it: one H3 load alone peaked at ~61.5 GB of the 64 GB host it was found on,
+so there was no headroom for two (lem now has 128 GB; since dw#709 its peak RSS is mostly file-backed). C-F007 covers a second model *family* in
 one worker lifetime; this covers the case it cannot — one workflow reloaded against itself, where
 the workflow name never changes and so the workflow-*switch* release can't fire.
 Costs two real runs of whatever template is chosen. Use a template heavy enough that a doubled
@@ -671,8 +671,8 @@ control, or if run 2's peak RSS exceeds run 1's. A slow *first* denoise step on 
 finding — allocator warm-up after a release-and-reload was observed at 207 s against a 36 s norm
 with steps 2+ recovering immediately; only a rate that stays slow is a problem.
 cleanup: delete both runs' outputs (sweeps their run directories). Nothing durable is produced.
-metrics: `host_memory_peak_rss_mb` for each of the two runs, condition `run1` / `run2`, unit `MB`
-— logged to `regression-perf/C-F023.jsonl` pass or fail. The trend that matters is not the absolute
+metrics: `host_memory_peak_rss_mb` and `host_memory_rss_anon_mb` (the highest reading across the run's `memory` events) for each of the two runs, condition `run1` / `run2`, unit `MB`
+— logged to `regression-perf/C-F023.jsonl` pass or fail. From 2026-10-08 (loader stack reinstalled; the doubled peak is file-backed mapped weights, dw#709) log `host_memory_peak_rss_mb` under conditions `run1-mmap` / `run2-mmap` so it never pools with the ~62 GB history; compare run 2 against run 1 within the same pair. The trend that matters is not the absolute
 value but whether run 2's reading ever starts exceeding run 1's, which is this bug returning as
 creep instead of as a crash.
 source: tester, model `opus` via provider `anthropic`, verified in #150 on 2026-09-14 against dw
