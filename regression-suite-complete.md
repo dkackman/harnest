@@ -251,6 +251,10 @@ smoke's Fixtures lists the asset too.
   Used by C-F238–C-F249 (#602's fit/restore). The geometry is the point, not the content:
   any replacement needs the same width, height, frame count and fps, re-read with
   `get_gallery_metadata`. Keep them across runs, never sweep them.
+- `asset:qa-cast/ep150-episode.mp4` (323 frames, 48 kHz, 4 inner shots) and
+  `asset:qa-cast/ep153-episode.mp4` (248 frames, 32 kHz, 2 inner shots) — two joined
+  960×544 24 fps episodes in the shared `common/assets`, used by C-F380. Read-only, never
+  deleted; any substitute needs `media.shots` and a summed frame count the score covers.
 
 ## Functional
 
@@ -11147,6 +11151,29 @@ expected:
 It is a **finding** if 1 validates (the gap then surfaces mid-run, after entry `a` spent GPU
 time), the message doesn't name the entry, or run disagrees with validate.
 cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F380 — a seam that got `audio_bleed_ms` is recorded as a bleed in `media.shots`, inner shots carried
+source: tester, found while running TESTER_TASK.agent.md (ep156, after #783 verified; claude-opus-5-5 via anthropic)
+Locks #783 in context: a bled seam used to be written `hard_cut: true`. No generation, ~7 s.
+1. `validate_workflow(name="templates/assemble-and-score", arguments=A)` then `run_workflow` with
+   the bound plan, where A = `shots: ["asset:qa-cast/ep150-episode.mp4", "asset:qa-cast/ep153-episode.mp4"]`,
+   `score: "asset:qa-cast/ep68-score.mp3"`, `sample_rate: 48000`, `fps: 24`, `audio_bleed_ms: 200`,
+   `match_levels: "rms"`, `match_levels_dbfs: -24`, `total_frames: 571`, `score_gain: 0.25`,
+   `world_fade_out_ms: 400`, `target_lufs: -16`, `limit: true`.
+2. `get_gallery_metadata` on the `film` step's file; `assess_output` on it.
+expected:
+- 1: valid, `plan.estimate.basis: observed`; job succeeds. `job.warnings` may carry a `bleed_join`
+  "tonal or speech-like" warning for seam 1 — advisory, not a failure.
+- 2: `frame_count` 571, `fps` 24, `sample_rate` 48000, `integrated_lufs` within ±0.5 of −16.
+  `media.shots` has 6 entries: ep150's four (`shot@freezer`, `@receipt`, `@spoon`, `@shrug`)
+  at frames 0/124/265/298, then `shot@standoff` at 323 and `shot@carton` at 447. The
+  `shot@standoff` entry carries `audio_bleed_ms: 200.0` and **no** `hard_cut`; inner seams keep
+  their own `hard_cut`/`seam_fade_ms`. Every `num_samples` is at 48 kHz (124 frames → 248000),
+  ep153's 32 kHz shots included. assess: `findings: []`.
+It is a **finding** if the bled seam reads `hard_cut: true` (#783), lacks `audio_bleed_ms`, or the
+inner shots are dropped or left at 32 kHz sample counts.
+cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ## Performance
