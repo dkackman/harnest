@@ -4221,4 +4221,27 @@ It is a **finding** if the final tracks the frame-0 reference instead, or if a t
 cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
+### M-F127 — a MiniMax-H3 width/height that isn't a multiple of 32 is refused at validate, not after the model load
+Before #789, `templates/minimax/music-video` with `height: 272` validated clean. The run then loaded
+MiniMax-H3 for about 100 s and failed with "`height` and `width` must be multiples of 32". The fix
+declared the rule as a variable constraint (modulus 32, no snap) on every `templates/minimax/*`
+template that takes `width`/`height`. M-F056 is the LTX-2.5 counterpart.
+**Free**: validate and get_workflow only.
+expected:
+- `get_workflow("templates/minimax/music-video", variables_only=true)` → `constraints.width` and
+  `constraints.height` each have `modulus: 32`, `remainder: 0`.
+- `validate_workflow(name="templates/minimax/music-video", arguments={"width": 480, "height": 272,
+  "num_inference_steps": 4})` → `valid: false`, with exactly one error, at `arguments.height`, naming
+  the 32 rule.
+- The same call with `height: 288` → `valid: true`, no errors.
+- `width: 500, height: 290` → two errors, at `arguments.width` and `arguments.height`. Neither value
+  is snapped.
+- `validate_workflow(name="templates/minimax/reference-to-video", arguments={"width": 960, "height": 540})`
+  → `valid: false`, with the error at `arguments.height`.
+It is a **finding** if an off-grid size validates clean, or if an on-grid size is refused.
+cleanup: none (nothing is queued or written).
+source: tester, verified in #789, model `claude-opus-5-5` via provider `anthropic`, on 2026-10-08 against
+mini-ai (mps) `develop @ f7b15455`.
+metrics: none.
+
 ## Performance
