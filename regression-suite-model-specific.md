@@ -3825,7 +3825,8 @@ Steps: for each `templates/minimax/*` name `list_workflows` lists under any shap
 then `validate_workflow(name, workspace="regression-model-specific")` with no arguments. Note each
 H3 step's `from_pretrained_arguments.workflow` (`t2va`, `fl2va` or `ref2va`).
 expected:
-- Every template is `valid: true` at its defaults, with no VRAM error. That includes
+- Every H3 template (one with a MiniMax-H3 step) is `valid: true` at its defaults, with no VRAM
+  error. That includes
   `chained-segments`.
 - Every template with a `vram_estimate` whose H3 step is `t2va` or `fl2va` has
   `bytes_per_guide_voxel`, equal to that estimate's `bytes_per_voxel` (28.71 today). That includes
