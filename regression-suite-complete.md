@@ -11128,4 +11128,25 @@ step 3 invents one.
 cleanup: none (unless step 1 ran a job: `delete_output(job_id=<it>)`).
 metrics: none.
 
+### C-F379 — an `item:<field>` that one `for_each` entry lacks is refused at validate, naming the entry and its fields
+source: tester, found while running TESTER_TASK.agent.md (ep155; claude-opus-5-5 via anthropic)
+Hand-written shot lists drift: one entry loses a key the others have. Free, no runs.
+Inline workflow W: variable `shots` = two entries, `{"name":"a","prompt":"x","image":"asset:qa-cast/priya-portrait.jpg","num_frames":33,"seed":1}`
+and `{"name":"b","prompt":"y","image":"asset:qa-cast/hal-portrait.jpg","num_frames":25}` (no `seed`);
+one step `shot`, `for_each: "variable:shots"`, `workflow.path: "templates/ltx2/image-to-video"`,
+arguments `prompt/image/num_frames/seed` = `item:<same>`, `width: 960`, `height: 544`, result `video/mp4`.
+1. `validate_workflow(workflow=W)`.
+2. `run_workflow(inline_workflow=W, acknowledged_cost=true)`.
+3. Positive control: add `"seed": 2` to entry `b` and `validate_workflow` again (do not run).
+expected:
+- 1: `valid: false`, one error at `steps[0].workflow.arguments.seed` whose message says
+  `'item:seed' names no field of entry 'b' of for_each step 'shot'` and lists the entry's fields
+  (`['image', 'name', 'num_frames', 'prompt']`).
+- 2: refused the same way; no job is queued.
+- 3: `valid: true`, `plan.list_entries.shots: 2`.
+It is a **finding** if 1 validates (the gap then surfaces mid-run, after entry `a` spent GPU
+time), the message doesn't name the entry, or run disagrees with validate.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
 ## Performance
