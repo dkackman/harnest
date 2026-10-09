@@ -3652,27 +3652,28 @@ template's estimate, including `bytes_per_guide_voxel`.
 Plan v2's first acceptance line. A custom guided t2va at the largest canvas, at a length that is
 clean with no guides, gets a `vram_projection_inherited` **warning**, never an error.
 Free: validate calls only. Every step uses
-`arguments={"width": 1344, "height": 768, "num_frames": 277}`. M-F026 pins 277 as the last clean
-17n+5 below the 294 breakpoint. Set the generating step's `arguments.guides` per step:
+`arguments={"width": 1344, "height": 768, "num_frames": N}`, where **N** is the largest 17n+5 at
+which the declared template is clean at 1344×768 with no guides (260 on 2026-10-08, under the
+23.6 GB ceiling #676 holds a 3090 to; 277 at M-F026's 2026-09-21 calibration). Step 2 alone
+runs at `"num_frames": 226`. Set the generating step's `arguments.guides` per step:
 1. no `guides` key;
 2. `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 0}]`;
-3. four 124-frame guides, `asset:qa-cast/ep6-cold-open.mp4` at frames 0, 51, 102 and 153;
+3. four 124-frame guides, `asset:qa-cast/ep6-cold-open.mp4` at frames 0, 34, 85 and 136;
 4. as 3, with `"audio": true` on every guide;
 5. `[{"video": null, "frame": 0}]` plus step 3's four guides minus the last. This is the
    null-video edge the plan drops "as references are".
 expected:
-- Step 1 is `valid: true` with no inherited-ceiling warning. If it warns, 277 is no longer clean:
-  use the largest clean 17n+5 throughout, and note it.
+- Step 1 is `valid: true` with no inherited-ceiling warning. If it warns, N has moved: use the
+  largest clean 17n+5 throughout, and note it.
 - Step 2 is `valid: true` with no inherited-ceiling warning. The guide term adds 0.61 GiB
-  (0.65 GB). If the template's plain projection at 277 sits within that of 24, the arithmetic
-  rules: a warning is then correct, and is not a finding. Record it, and file a `suite` request to
-  move the step to a shorter length.
+  (0.65 GB); at 226 the total is about 23.1 GB, about 0.9 GB under 24.
 - Step 3 is **`valid: true`** with exactly one `vram_projection_inherited` warning, which:
-  - names `templates/minimax/video-with-audio-768p`;
+  - names a `templates/minimax/*` template whose pipeline and `vram_estimate` equal
+    `video-with-audio-768p`'s (today `shots-batch`; check with `get_workflow`);
   - gives a projected GB over 24;
   - names the guides with their frame counts in the formula, e.g. "4 guides (124+124+124+124
     frames)".
-  Its GB is the template's plain projection at 1344×768×277 plus 13.69 GiB (14.70 GB), in the
+  Its GB is the template's plain projection at 1344×768×N plus 13.69 GiB (14.70 GB), in the
   message's unit, to 0.1.
 - Step 4 gives the same warning and GB as step 3. Plan v2 has no guide-audio term.
 - Step 5 either:
@@ -3699,14 +3700,14 @@ height). The probe runs at validate, at run and at admission, and all three answ
 Free: validate calls only. Read both templates' `vram_estimate` with `get_workflow` first. Each
 step keeps the stated workflow's estimate (or lack of one) and sets the generating step's
 `guides`:
-1. NT768 at 1344×768×277 with three cold-open 124-frame guides (frames 0, 51 and 102) plus one more
-   at frame 153:
+1. NT768 at 1344×768×N (N as M-F119 defines it) with three cold-open 124-frame guides (frames 0,
+   34 and 85) plus one more at frame 136:
    - a. `asset:qa-guides/ep6-22f.mp4`;
    - b. `asset:qa-guides/ep6-30f.mp4`, which snaps to 22 with today's snap warning.
 2. NT at 960×544 with step 3 of M-F119's four 124-frame guides, at the largest clean 17n+5
    `num_frames` that has no guides (try 345 first, the template's maximum).
-3. `video-with-audio-768p` itself (declared) at 1344×768×277 with M-F119 step 3's four guides.
-4. `video-with-audio-768p` at 1344×768×277 with no guides.
+3. `video-with-audio-768p` itself (declared) at 1344×768×N with M-F119 step 3's four guides.
+4. `video-with-audio-768p` at 1344×768×N with no guides.
 expected:
 - 1a and 1b each give one inherited warning with the **same** GB, the plain projection plus 28.71
   × (3 × 124 + 22) × 1344 × 768 B, which is 10.87 GiB (11.68 GB) more. The 30-frame clip is
@@ -3740,21 +3741,22 @@ Setup: build **PR**, a two-step workflow:
 - `gen`: `templates/minimax/video-with-audio-768p`'s generating step, with `guides:
   [{"video": "previous_result:clip", "frame": 0}]`.
 Keep the template's `vram_estimate` and `cost`. Build **PR-NT**, the same with both deleted.
-Build **PR3**, PR with three more cold-open 124-frame guides at frames 51, 102 and 153.
-Steps: `validate_workflow` at `arguments={"width": 1344, "height": 768, "num_frames": 277}` on PR,
-PR-NT and PR3, then on PR and PR3 at `num_frames` 124.
+Build **PR3**, PR with three more cold-open 124-frame guides at frames 34, 85 and 136. Build
+**PR3-124**, PR with three `asset:qa-guides/ep6-22f.mp4` guides at frames 34, 68 and 102 instead
+(a 124-frame clip fits a 124-frame run only at frame 0).
+Steps: `validate_workflow` at `arguments={"width": 1344, "height": 768, "num_frames": N}` (N as
+M-F119 defines it) on PR, PR-NT and PR3, then on PR and PR3-124 at `num_frames` 124.
 expected:
-- At 277, the `previous_result:` guide is charged as 277 frames, not 22, since the clip doesn't
-  exist at validate. Its term is 28.71 × 277 × 1344 × 768 B, which is 7.64 GiB (8.21 GB):
+- At N, the `previous_result:` guide is charged as N frames, not 22, since the clip doesn't
+  exist at validate. Its term is 28.71 × N × 1344 × 768 B (7.18 GiB, 7.70 GB at 260):
   - if PR's total goes over 24, PR is `valid: false`. The error says the guide was charged at the
     worst case (`num_frames`), and its GB is the plain projection plus that term;
   - PR-NT gives the same GB as a `vram_projection_inherited` warning, never an error;
-  - PR3 is `valid: false`, naming 4 guides as 277+124+124+124 frames, with "worst case" still
+  - PR3 is `valid: false`, naming 4 guides as N+124+124+124 frames, with "worst case" still
     stated.
-  If PR is under the card at 277 (no message), PR3 still must carry the worst-case wording.
-- At 124, the guide is charged at 124 frames. PR3 at 124 is 4 × 124, the same as M-F120 step 3,
-  but at 124 frames: it refuses or passes exactly as the arithmetic says, and any message says
-  worst case.
+  If PR is under the card at N (no message), PR3 still must carry the worst-case wording.
+- At 124, the guide is charged at 124 frames. PR3-124 is charged 124+22+22+22: it refuses or
+  passes exactly as the arithmetic says, and any message says worst case.
 It is a **finding** if:
 - the unprobeable guide is charged at 0, or dropped;
 - it is charged at 22 (the validator can't know that without the clip);
@@ -3796,8 +3798,8 @@ expected:
 - (3) CS3 is **`valid: false`**. The error names **4 guides**, 3 plus the chain's 39-frame carry,
   with their frames, e.g. "4 guides (124+124+124+39 frames)". Its GB is over 24 and equals the
   template's formula plus the guide term above, to 0.1. CS1 is `valid: true` with no VRAM error.
-- (4) `run_workflow` refuses CS3 in M-F046's shape: `status: failed`, `run_id: null`, the same
-  message and GB as validate. `list_jobs` shows no new job. This is the run-time probe agreeing
+- (4) `run_workflow` refuses CS3, either in M-F046's shape (`status: failed`, `run_id: null`) or
+  as a tool error, with the same GB as validate. `list_jobs` shows no new job. This is the run-time probe agreeing
   with validate.
 - (5) The `last_frame` chain charges 3 guides, not 4. Its message, if any, says "3 guides".
 - (6) Reached only if the plan's refusal did not happen at 960×544. At 1344×768, steps 3–4 must
@@ -3882,9 +3884,9 @@ make that clip CPU-only as in the Fixtures section's `m-guide-clips` recipe, wit
 place of the cold open. Delete it after.
 Steps:
 1. Find the largest 17n+5 `num_frames` at which the template is `valid: true` at 1344×768 with
-   no guides (277 per M-F026).
+   no guides (260 on 2026-10-08).
 2. Validate the template copy (estimate kept) at that length with the 4 longest guides, `"audio":
-   true`, at frames 0, 51, 102 and 153 (or the earliest multiples of 17 that fit).
+   true`, at frames 0, 34, 85 and 136 (or the earliest multiples of 17 that fit).
 3. Validate the same with the estimate and cost deleted.
 4. Optional, only when a curator or Don asks for OOM evidence: `run_workflow` step 3's workflow
    with `acknowledged_cost=true`.
