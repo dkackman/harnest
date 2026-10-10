@@ -340,7 +340,7 @@ EOS
 eq  "regression: exits cleanly" 0 $?
 eq  "regression: two chunks and a sweep" 3 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "regression: the level header names lem's commit" "target=lem, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
-has "regression: chunk sessions are labelled" "[regression:smoke.2] usage:" "$(cat "$T/reg.out")"
+has "regression: chunk sessions are labelled" "[regression:smoke.2 of 2] usage:" "$(cat "$T/reg.out")"
 
 # --- 7b. run-regression against the mini-ai test bed (harnest#15), with
 # the loop's lock held: it must not wait on lem's. ssh: lem reports its

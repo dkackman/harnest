@@ -141,7 +141,7 @@ resolve_target || exit 1
 # carries TARGET_SUFFIX, so a lem run and a local run never share a log,
 # a last-session file or a prompt file.
 LOGNAME_REGRESSION="regression$TARGET_SUFFIX"
-# Log prefix: [regression:smoke.2] on lem, [regression-mini-ai:smoke.2] on mini-ai.
+# Log prefix: [regression:smoke.2 of 8] on lem, [regression-mini-ai:smoke.2 of 8] on mini-ai.
 RPFX="regression${TARGET_SUFFIX:+-$DW_TARGET}"
 SERVER="lem" TARGET_HEALTH=""
 if [ "$DW_TARGET" != lem ]; then
@@ -241,7 +241,7 @@ REGRESSION_FLAGS=(
 # One `claude -p` invocation of the regression agent. <kind> (whole, chunk,
 # sweep) picks its system prompt: role_prompt in providers.sh. <instructions> is the
 # run-specific paragraph that follows the standard override preamble; <tag>
-# is appended to the log prefix ("[regression:smoke.2]") so a chunked run's
+# is appended to the log prefix ("[regression:smoke.2 of 8]") so a chunked run's
 # sessions are distinguishable in loop.log.
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" prompt_file
@@ -344,20 +344,21 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
     # Case IDs in file order, from the `### <ID> — title` headings. The
     # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
     # heading that doesn't match isn't a case and is skipped.
-    local ids=() chunk=() seen=0 total=0 session=0
+    local ids=() chunk=() seen=0 total=0 session=0 nchunks=0
     while read -r id; do
       case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
       case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
       ids+=("$id")
     done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
     total=${#ids[@]}
+    nchunks=$(( (total + CASES_PER_SESSION - 1) / CASES_PER_SESSION ))
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOOP_LOG"
     for id in ${ids[@]+"${ids[@]}"}; do
       chunk+=("$id"); seen=$((seen + 1))
       if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then
         session=$((session + 1))
-        echo "--- $(ts) $tag session $session: ${chunk[*]} ---" | tee -a "$LOOP_LOG"
-        run_session "$level" "$suite_file" "$workspace" ".$session" chunk \
+        echo "--- $(ts) $tag session $session of $nchunks: ${chunk[*]} ---" | tee -a "$LOOP_LOG"
+        run_session "$level" "$suite_file" "$workspace" ".$session of $nchunks" chunk \
           "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
         chunk=()
         if session_aborted; then
