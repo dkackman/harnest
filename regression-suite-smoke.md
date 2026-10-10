@@ -1284,7 +1284,9 @@ source: tester, verified in #269 on 2026-09-21 over MCP as model `opus` via prov
 #279: `validate_workflow(workspace=A)` reported `cached_steps: 1` and `workspace=B` reported
 `0` for the same fingerprint, and nothing on the consumer surface said the step cache is
 per workspace, nor which workspace a plan had been evaluated against. The fix is two guide
-paragraphs plus `plan.workspace` / `plan.output_dir`. Free — three read-only calls, no run.
+paragraphs plus `plan.workspace`. (`plan.output_dir` shipped with #279 and was removed in
+v0.10.0 by f9ae46c2, a GHSA path-disclosure fix: it carried an absolute server path, and
+`plan.workspace` names the same place.) Free — three read-only calls, no run.
 1. `get_guide(name="workflows", section="Seeds")`.
 2. `get_guide(name="workspaces", section="Runs")`.
 3. `validate_workflow(name="templates/dissolve-between-shots", workspace="regression-smoke",
@@ -1301,11 +1303,12 @@ expected:
 - Step 2's `content` says the same from the workspace side: the cache is validated against
   the output *root*, is per workspace, and deleting a workspace drops its entries along with
   its `outputs/`.
-- Step 3 answers `valid: true` and its `plan` carries `workspace: "regression-smoke"` and
-  an `output_dir` ending in `/regression-smoke/outputs`, so a `cached_steps` value can
-  always be read against the workspace it was computed for.
+- Step 3 answers `valid: true` and its `plan` carries `workspace: "regression-smoke"`, so
+  a `cached_steps` value can always be read against the workspace it was computed for.
+  `plan` has **no** `output_dir` key, and no plan field holds an absolute server path.
 It is a **finding** if either section no longer mentions the workspace at all, or if `plan`
-has no `workspace` / `output_dir`.
+has no `workspace`, or if an `output_dir` (or any absolute server path) comes back in it -
+that is the path disclosure the GHSA fix closed returning.
 cleanup: none — nothing is written.
 metrics: none.
 source: tester, verified in #279 on 2026-09-21 over MCP as model `opus` via provider
@@ -1314,7 +1317,9 @@ and `qa-ep25` returned `plan.workspace` / `plan.output_dir` for each. (Whether a
 survives a server restart is #281, not this case.) Step 3 was rebound to the
 `regression-smoke` fixtures in #308 (2026-09-21): the original argument-free call is
 `valid: false` there and so carries no `plan`; the regression agent's run with these
-arguments answered `plan.workspace: "regression-smoke"`.
+arguments answered `plan.workspace: "regression-smoke"`. Reworded 2026-10-10 from
+diffusers-workflow#817: the 2026-10-10 smoke run flagged the missing `output_dir`, which
+is the v0.10.0 contract, not a regression.
 
 ### S-F083 — the `get_gallery_metadata` description points at `findings`, and the tasks guide still carries the thresholds
 #282: the tool description told the reader to "see \"Headroom and clipping warnings\" in
