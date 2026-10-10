@@ -11176,4 +11176,24 @@ inner shots are dropped or left at 32 kHz sample counts.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F381 — `measure_sync` reads a known shift with the right sign, and a clip against itself as zero
+source: tester, verified in #802 (claude-opus-5-5 via anthropic)
+A flipped lag sign, or a lag reported in frames rather than seconds, would look plausible. No generation, ~12 s.
+Inline workflow W (`id: qa-measure-sync`): `trim_video` steps on `asset:qa-cast/ep151-episode.mp4` (24 fps),
+each `num_frames: 144`: `ref` at `start_frame: 48`, `late` at 36, `early` at 60. Then three `measure_sync`
+steps, each with result `application/json`: `m_late` (`audio: previous_result:late`, `reference: previous_result:ref`),
+`m_early` (`early` against `ref`) and `m_same` (`ref` against `ref`), all other arguments left at their defaults.
+1. `validate_workflow(workflow=W)`, then `run_workflow` with the bound plan; `get_output_text` on each json.
+2. `validate_workflow` of a one-step workflow: `measure_sync` with `max_lag_seconds: 0` (do not run).
+expected:
+- 1: job succeeds. `m_late`: `lag_seconds` 0.5 (±0.04), `confidence` ≥ 0.8, one finding
+  `{rule: audio_out_of_sync, severity: warn, value: 0.5, threshold: 0.1}` whose `says` contains "late".
+  `m_early`: `lag_seconds` −0.5 (±0.04), `confidence` ≥ 0.8, the same rule, and `says` contains "early".
+  `m_same`: `lag_seconds` 0.0, `confidence` 1.0, `findings: []`. Each has `audio_seconds`/`reference_seconds` 6.0.
+- 2: `valid: false`, error at `steps[0].task.arguments.max_lag_seconds` saying "above zero".
+It is a **finding** if `late` reads negative or `early` reads positive, the magnitude is off by more than one
+frame, the self-comparison raises a finding, or 2 validates.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
