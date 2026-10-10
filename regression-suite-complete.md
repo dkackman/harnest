@@ -11277,4 +11277,72 @@ on the direct ep157 shots), if the repeated names collapse or merge into fewer t
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F385 — an inline copy of a run template is priced `inherited` from it, `differs` names a changed offload, and an unrun pipeline stays `unknown`
+source: tester, verified in #797 (claude-opus-5-5 via anthropic)
+Observed cost history is keyed by catalog name, so before #797 an inline workflow was always priced
+`unknown`, even when it was an exact copy of a template this box had run. Free, validate only.
+1. `get_workflow(name="templates/text-to-image")`: confirm it has an `observed` block with
+   `cold_runs >= 1` and `drivers.num_images_per_prompt: 1` (on a fresh box with none, run it once first,
+   `acknowledged_cost=true`, then `delete_output(job_id=…)`).
+2. `validate_workflow(workflow=<that template's definition with a new id, e.g. "qa-inline-t2i",
+   minus `observed`/`cost`/`description`>)`, with no `arguments`.
+3. The same, with `"offload": "model"` added to `steps[0].pipeline.configuration`.
+4. An inline workflow with `StableDiffusionPipeline` and `model_name: "stabilityai/stable-diffusion-2-1"`
+   (a pipeline identity no template has run on this box).
+expected:
+- Step 2: `valid: true`; `plan.estimate.basis: "inherited"`, `inherited_from: "templates/text-to-image"`,
+  `differs: []`, `minutes` non-null, `runs` equal to step 1's `cold_runs`; a warning names
+  `templates/text-to-image` and says the estimate is inherited.
+- Step 3: `valid: true` (warns, never refuses); `basis: "inherited"`, `differs: ["offload"]`; the
+  inherited-cost warning also mentions the offload difference.
+- Step 4: `basis: "unknown"`, `minutes: null`, no inherited-cost warning.
+It is a **finding** if step 2 reads `unknown` or `observed`, if step 3 refuses or leaves `differs` empty,
+or if step 4 invents an inherited price.
+cleanup: none.
+metrics: none.
+
+### C-F386 — a join's `level_spread` warning is dropped only when a later `pair_audio` takes the join as its `video`
+source: tester, verified in #800 (claude-opus-5-5 via anthropic)
+Before #800, `music-video` warned about a level spread on a track that `pair_audio` replaced two steps later.
+No generation: three jobs of about 1 s each. The input is `asset:qa-cast/ep94-episode.mp4` (shared, read-only,
+3.75 s). Common steps P: `quiet` = `normalize_audio(audio: "asset:qa-cast/ep94-episode.mp4", peak_dbfs: -35)`;
+`quiet_clip` = `pair_audio(video: "asset:qa-cast/ep94-episode.mp4", audio: "previous_result:quiet")`;
+`edit` = `concat_videos(videos: ["asset:qa-cast/ep94-episode.mp4", "previous_result:quiet_clip"], match_levels: null)`.
+Run each with `run_workflow(workspace=<suite workspace>, inline_workflow=…, acknowledged_cost=true, wait_seconds=55)`:
+1. `qa-c-f386-replaced`: P, then `final` = `pair_audio(video: "previous_result:edit", audio:
+   "asset:qa-cast/ep94-episode.mp4", fit: "video")` with result `video/mp4`.
+2. `qa-c-f386-control`: P only, with result `video/mp4` on `edit`.
+3. `qa-c-f386-asaudio`: P, then `final` = `pair_audio(video: "asset:qa-cast/ep94-episode.mp4", audio:
+   "previous_result:edit", fit: "video")` with result `video/mp4`.
+expected:
+- All three succeed.
+- 1: `job.warnings` has no `edit: concat_videos: the tracks being joined span …` warning. `final`'s `fit` pad
+  warning is expected.
+- 2 and 3: each carries the `edit` spread warning (about 28 dB, "pass match_levels to even them out"),
+  because the joined track reaches the deliverable.
+It is a **finding** if 1 warns about the spread, or if 2 or 3 does not, since the `audio` argument doesn't count
+as a replacement.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F387 — `music-video`'s per-entry `singer` overrides `singer_reference` for that entry only, and `draw_singer` is elided only when every entry has one
+source: tester, verified in #801 (claude-opus-5-5 via anthropic)
+Validate only, so it's free. Entry E(n, start) = `{"name": n, "prompt": "<Subject 1> sings", "start_frame": start,
+"num_frames": 124, "lead_frames": 0, "cut_frames": 124}`. S = `{"reference_type": "variable:image_reference_type",
+"from_file": "asset:qa-cast/priya-portrait.jpg"}`.
+1. `get_workflow("templates/minimax/music-video", variables_only=true)`.
+2. `validate_workflow(name="templates/minimax/music-video", arguments={"shots": [E("a",0), E("b",124) + "singer": S]})`.
+3. Same, with `"singer": S` on both entries.
+4. Same as 2, but entry `b`'s `singer.from_file` = `"asset:no-such-file.png"`.
+expected:
+- 1: `lists.shots.fields` includes `singer`.
+- 2: `valid: true`, `warnings: []` (no "carries … which no step reads" for `singer`), `elided_steps: []`, so
+  `draw_singer` stays for entry `a`'s fallback.
+- 3: `valid: true`, `draw_singer` is in `elided_steps`, and `plan.steps` is one fewer than in 2.
+- 4: `valid: false`, error at `arguments.shots[1].singer.from_file` naming the missing asset.
+It is a **finding** if 2 warns about `singer` or elides `draw_singer`, if 3 keeps it, or if 4 validates. The elision's
+`reason` text isn't asserted here (#809).
+cleanup: none (no jobs).
+metrics: none.
+
 ## Performance
