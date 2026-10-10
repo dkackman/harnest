@@ -2215,6 +2215,32 @@ metrics: none.
 source: tester, verified in #607 on 2026-10-05 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 81dfb2fd` (mps on mini-ai.lan).
 
+### S-F135 — `list_assets` is bounded by default, newest first, with `limit`, `prefix` and `total`
+An unbounded `list_assets` returned 66 KB and blew the tool budget (#798). The listing is now
+cut on the server, as `list_jobs` is. No model and nothing created: the case runs against
+whatever the workspace holds. Where an expectation needs more assets than the workspace has,
+it is checked against `total` (e.g. with `total` ≤ 2, `limit=2` simply returns everything).
+expected:
+- `list_assets(detail=true)` → at most 50 entries, ordered by non-increasing `mtime`, plus an
+  integer `total` (all matched) and `shadowed_total`. When `total` > 50, the reply also has
+  `returned: 50`, `truncated: true` and a `next` string naming how many older assets were
+  left out. When `total` ≤ 50, it has none of the three. `folders` is not cut by the limit.
+- `list_assets(limit=2)` → `min(total, 2)` entries. When `total` > 2: `returned: 2`,
+  `truncated: true`, and a `next` naming `total − 2`.
+- `list_assets(prefix=<P>)`: P is a folder from the previous reply's `folders` plus `/`. Every
+  entry's `name` starts with P and `total` counts only those. A starts-with match:
+  `prefix='cast/'` never returns a `qa-cast/…` name.
+- `list_assets(prefix=<P>, limit=null)` → all `total` entries, and no `truncated`.
+- `list_assets(prefix='zzz-nomatch/')` → `assets: []`, `total: 0`, no error.
+- `list_assets(limit=0)` → a clean validation error naming `limit` (≥ 1), not a server error.
+It is a **finding** if the default reply is unbounded, the order isn't newest first, `total`
+is missing or counts the cut list instead of all matches, a truncated reply lacks
+`truncated`/`next`, or `prefix` lets a non-matching name through.
+cleanup: none — nothing is created.
+metrics: none.
+source: tester, verified in #798 on 2026-10-09 over MCP as model `claude-opus-5-5` via
+provider `anthropic` against `develop @ a2db75f2` (mps on mini-ai.lan).
+
 ## Performance
 
 ### S-P001 — default image generation latency

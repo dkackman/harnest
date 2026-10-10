@@ -255,6 +255,10 @@ smoke's Fixtures lists the asset too.
   `asset:qa-cast/ep153-episode.mp4` (248 frames, 32 kHz, 2 inner shots) — two joined
   960×544 24 fps episodes in the shared `common/assets`, used by C-F380. Read-only, never
   deleted; any substitute needs `media.shots` and a summed frame count the score covers.
+- `asset:qa-cast/ep157-episode.mp4` — a 248-frame 24 fps 960×544 **44.1 kHz** stereo H3
+  `music-video` cut with two inner shots (124 f each), used by C-F382 beside
+  `ep63-shot-ltx-priya.mp4`. Read-only, never deleted; a substitute must be 44.1 kHz with
+  `media.shots`.
 
 ## Functional
 
@@ -11193,6 +11197,31 @@ expected:
 - 2: `valid: false`, error at `steps[0].task.arguments.max_lag_seconds` saying "above zero".
 It is a **finding** if `late` reads negative or `early` reads positive, the magnitude is off by more than one
 frame, the self-comparison raises a finding, or 2 validates.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F382 — a 44.1 kHz cut's inner shots land on the 48 kHz grid when joined with an LTX clip
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic)
+C-F127 with a 44.1 kHz input instead of 32 kHz. At 24 fps a 44.1 kHz frame is 1837.5 samples, which is not
+a whole number, so the inner shots (227850 samples each at 44.1k) have to be rescaled exactly, not rounded
+per frame. CPU only, one job of about 8 s. The inputs are `asset:qa-cast/ep157-episode.mp4` (H3
+`music-video`, 248 f, 44.1 kHz, inner shots `trim@hal_wide`/`trim@hal_close`, 124 f each) and
+`asset:qa-cast/ep63-shot-ltx-priya.mp4` (121 f, 48 kHz).
+1. `run_workflow(workspace=<suite workspace>, inline_workflow={"id": "qa-c-f382", "seed": 1, "steps":
+   [{"name": "join", "task": {"command": "concat_videos", "arguments": {"videos":
+   ["asset:qa-cast/ep157-episode.mp4", "asset:qa-cast/ep63-shot-ltx-priya.mp4"], "fps": 24,
+   "match_levels": "rms", "match_levels_dbfs": -24}}, "result": {"content_type": "video/mp4",
+   "subfolder": "final"}}]}, acknowledged_cost=true, wait_seconds=55)`.
+2. `get_gallery_metadata` on the `join` file.
+expected:
+- `succeeded` with exactly one warning: the sample-rate mismatch, naming 44100 and 48000 Hz and resampling
+  to 48000 Hz.
+- 369 frames, 24 fps, 15.375 s, 48 kHz stereo, 960×544, `audio_stream_seconds` equal to `duration_seconds`.
+- The manifest and `media.shots` list three shots: `trim@hal_wide` 0/124, `trim@hal_close` 124/124,
+  `ep63-shot-ltx-priya.mp4` 248/121; start_sample 0/248000/496000, num_samples 248000/248000/242000;
+  shots 2 and 3 carry `hard_cut: true`.
+It is a **finding** if the output is not 48 kHz, if any start_sample is off the 2000-per-frame grid (a
+227850 or 455700 left unscaled), or if the inner shots collapse into one entry named after the asset.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
