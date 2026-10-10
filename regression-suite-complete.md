@@ -11225,4 +11225,26 @@ It is a **finding** if the output is not 48 kHz, if any start_sample is off the 
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F383 — a running job reports its finished steps' files: `finished_steps` on `wait_for_job`, `manifest` on `get_job`
+source: tester, verified in #799 (claude-opus-5-5 via anthropic)
+Before #799, `get_job`'s `manifest` stayed `[]` until the job ended, so a long run's finished shots were
+visible only through `list_gallery`. No generation and no inputs: the 25-step `templates/image-processors`
+(about 6 min on mps, much less on CUDA).
+1. `validate_workflow(name="templates/image-processors")`, then `run_workflow` with the bound plan,
+   `workspace=<suite workspace>`, `wait_seconds=3`.
+2. While the job is still `running` (a reply with `step_index` ≥ 2): `get_job(job_id)`.
+3. `wait_for_job(job_id, timeout_seconds=…)` until it succeeds.
+expected:
+- 1/2: the running slim job carries `finished_steps`, one `{step, files, subfolder}` entry per finished
+  step in step order (e.g. `add_border_and_mask` with 2 files, then `canny`), with `subfolder: "final"`
+  and files relative to the output root (`templates/image-processors/<run id>/final/…`). The slim reply
+  has no `manifest` key while running. `get_job` at the same moment has the same entries in `manifest`,
+  and `output_kinds` lists their files. A later running reply lists at least as many entries.
+- 3: `succeeded`, the full `manifest` (25 entries, including a file-less `input_image`), and no `finished_steps`.
+It is a **finding** if a running job's `get_job` `manifest` is `[]` after a step with files has ended,
+if `finished_steps` is missing or stale while running, or if it survives into the terminal reply. If step 1's
+reply is already terminal, the run was too fast to observe. Rerun with `wait_seconds=1`; that alone is not a finding.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
