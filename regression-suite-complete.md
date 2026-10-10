@@ -11345,4 +11345,31 @@ It is a **finding** if 2 warns about `singer` or elides `draw_singer`, if 3 keep
 cleanup: none (no jobs).
 metrics: none.
 
+### C-F388 — a split sung shot carries only the lyric words heard in its span
+source: tester, verified in #805 (claude-opus-5-5 via anthropic)
+Before #805, every piece of a `plan_cuts` stanza split by `max_scene_s`/`max_frames` carried the whole lyric. No
+generation: one job of about 1 s. T8 = a transcript `{"text": "one two three four five six seven eight", "chunks":
+[...]}` with the word `one`…`eight` at start 0, 2, 4, …, 14 s, each 1.5 s long. Every step is `plan_cuts` with
+`segment_by: "stanza"` and `duration_s: 16`, and a result of `application/json`. Run `qa-c-f388` with
+`run_workflow(workspace=<suite workspace>, inline_workflow=…, acknowledged_cost=true, wait_seconds=55)` and read each
+JSON with `get_output_text`:
+1. `scene`: T8, `lyrics: "one two three four\nfive six seven eight"`, `max_scene_s: 5`.
+2. `frames`: the same, with `max_frames: 60` instead of `max_scene_s`.
+3. `unheard`: the transcript's four chunks all say `la` (0, 4, 8, 12 s, 3.5 s each), `lyrics: "one two three four"`,
+   `max_scene_s: 5`.
+4. `gap`: the words `one`, `two`, `three`, `four` at 0, 1, 14, 15 s (0.8 s each), `lyrics: "one two three four"`,
+   `max_scene_s: 5`, `min_gap_seconds: 30`, `include_instrumental_gaps: false`.
+expected:
+- 1: 4 vocal shots with the lyrics `one two` / `three four` / `five six` / `seven eight`. The warning says the
+  lyric is "divided between them by when its words are heard".
+- 2: 7 shots. Their lyrics, joined in order, give back the whole lyric's words. No shot repeats the whole lyric.
+- 3: every piece carries `one two three four`. One warning says none of the lyrics' words were heard. The split
+  warning says "its words have no heard times to divide it by".
+- 4: shots `one two` / `null` / `null` / `three four`, all `kind: "vocal"`, with a "no word of … is heard in piece
+  N of 4" warning for pieces 2 and 3.
+It is a **finding** if a piece in 1, 2 or 4 carries the whole lyric, if the parts don't join back to it, or if 3
+drops the lyric from any piece.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
