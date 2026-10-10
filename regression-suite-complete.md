@@ -11247,4 +11247,34 @@ reply is already terminal, the run was too fast to observe. Rerun with `wait_sec
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F384 — `assemble-and-score` over a 48 kHz cut that already nests a 44.1 kHz cut, plus that 44.1 kHz cut again: every inner shot on the 48 kHz grid, repeated shot names kept apart
+source: tester, found while running TESTER_TASK.agent.md (episode 159, claude-opus-5-5 via anthropic)
+C-F382 one level deeper, through the template. CPU only, about 13 s. Inputs (shared, read-only):
+`asset:qa-cast/ep158-episode.mp4` (322 f, 48 kHz, 960×544, shots `trim@hal_wide` 0/124, `trim@hal_close`
+124/124, `shot@confess` 248/41, `shot@gasp` 289/33 — its first two came from ep157 and were already rescaled),
+`asset:qa-cast/ep157-episode.mp4` (248 f, 44.1 kHz, shots `trim@hal_wide`/`trim@hal_close` 124 f each,
+227850 samples each) and `asset:qa-cast/ep68-score.mp3` (24.02 s).
+1. `validate_workflow(name="templates/assemble-and-score", workspace=<suite workspace>, arguments={"shots":
+   ["asset:qa-cast/ep158-episode.mp4", "asset:qa-cast/ep157-episode.mp4"], "score": "asset:qa-cast/ep68-score.mp3",
+   "sample_rate": 48000, "fps": 24, "total_frames": 570, "match_levels": "rms", "match_levels_dbfs": -24,
+   "score_gain": 0.25, "seam_fade_ms": 200, "world_fade_out_ms": 400, "target_lufs": -16, "limit": true})`,
+   then `run_workflow` with the same arguments and the bound plan, `wait_seconds=55`.
+2. `get_gallery_metadata` and `assess_output` on the `film` file.
+expected:
+- validate `valid`, no warnings. The job `succeeded`; its one warning is the `soundtrack` slice dropping the
+  score's last ~0.27 s (570 f is 23.75 s).
+- 570 frames, 24 fps, 23.75 s, 48 kHz stereo, 960×544, `audio_stream_seconds` equal to `duration_seconds`,
+  integrated LUFS within 0.5 of −16, true peak below 0 dBFS.
+- `media.shots` (and the manifest's) lists six shots: `trim@hal_wide` 0/124, `trim@hal_close` 124/124,
+  `shot@confess` 248/41, `shot@gasp` 289/33, `trim@hal_wide` 322/124, `trim@hal_close` 446/124;
+  start_sample 0/248000/496000/578000/644000/892000, num_samples 248000/248000/82000/66000/248000/248000.
+  Shots 2–6 carry `hard_cut: true`; only shot 5 (the outer seam) carries `seam_fade_ms: 200.0`.
+- `assess_output`: no findings; `seam_hole` skipped for seam 4 only. `analyze_seams` lists five seams, seam 5
+  `between` the second `trim@hal_wide`/`trim@hal_close` pair at 18.583 s.
+It is a **finding** if any start_sample or num_samples is off the 2000-per-frame grid (227850 left unscaled
+on the direct ep157 shots), if the repeated names collapse or merge into fewer than six shots, or if
+`seam_fade_ms` lands on an inner seam.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
