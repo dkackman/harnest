@@ -4276,4 +4276,116 @@ Whisper or demucs build), say so rather than calling it a regression.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### M-F139 — on a server that hasn't opted in to the quantized cache, an SDNQ workflow runs as before and emits no `quantized_cache` events
+pending: #826
+source: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on the
+server under test. M-F134 already picks it this way, so use the same template.
+Plan v4 makes the cache **opt-in**: `DW_QUANTIZED_CACHE=1` in the server's env turns it on, and anything else
+or unset means off. With it off, no reads, no writes and no events. A consumer can't see the env var, so a
+server's run shows which mode it's in: some `quantized_cache` events means on, none means off. This case is
+the off arm. M-F134 is the on arm on mps, and M-F140 is the on arm on lem.
+Where it runs: the mini-ai (mps) target while it isn't opted in, or any other server not opted in. On lem,
+which opts in, skip this case as not a failure. If mini-ai's first run below shows events, mini-ai has been
+opted in: record that, skip the rest of this case, and run M-F134 instead.
+Steps:
+1. `get_server_info`, and record `device`. Pick the template as in M-F134's step 1 and record which one.
+2. `clear_memory`. Run it at its smallest valid size with `seed: 42`, `acknowledged_cost=true` and
+   `wait_seconds=55`, then `wait_for_job` (run 1). Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
+3. `clear_memory`, then run it again with the same arguments (run 2). Read the same events.
+expected:
+- Both jobs succeed.
+- Both filtered event pages are empty: no `hit`, `miss`, `saved` or `skipped`. This includes no
+  `skipped` with `unsupported`, since an off cache doesn't announce anything on any device.
+It is a **finding** if:
+- either job fails;
+- one run has events and the other has none (the mode flipped between runs with no restart);
+- run 1 has no events but run 2 has a `hit` (something was written while the cache was off).
+cleanup: `delete_output(job_id=…)` on both jobs.
+metrics: none.
+
+### M-F140 — on lem the H3 quantized cache is on, every `quantized_cache` event is well-formed, and a skipped save is never a failed job
+pending: #826
+source: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`), with M-F128's short run:
+`arguments={"width": 480, "height": 288, "num_frames": 124, "num_inference_steps": 4, "seed": 42}`.
+Runs on lem only (`get_server_info` → `device: "cuda"`). Skip it on another target, as not a failure.
+Plan v4 makes the cache opt-in, and lem opts in through its `.env` when stage A deploys. Every on-lem
+cache case (M-F128–M-F133, M-F135–M-F137) assumes the cache is on. This case checks that first, so a
+missing opt-in shows up as one environment report instead of eight engine failures. It also pins the event
+vocabulary v4 defines. The result is `hit`, `miss`, `saved` or `skipped`. The reasons are `low_disk`,
+`unpinned_snapshot`, `local_path`, `save_failed: <errno>`, `unsupported` and
+`already saved by another worker`.
+Steps:
+1. `clear_memory`. Run the short run with `acknowledged_cost=true` and `wait_seconds=55`, then
+   `wait_for_job`. Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
+2. If step 1 shows any `skipped` for a component, `clear_memory` and run it once more. Read the same events.
+expected:
+- **Opt-in:** step 1 has at least one `quantized_cache` event for each of `transformer`, `text_encoder` and
+  `vae`. If it has **none**, lem isn't opted in. Report that as an environment problem on #815 or #826 for
+  Don (lem's `.env` lacks `DW_QUANTIZED_CACHE=1`), not as an engine regression. Skip M-F128–M-F133 and
+  M-F135–M-F137 for this pass. Only a component of the three having no event, while the others do, is
+  a finding.
+- **Shape:** every event has `component`, `result` and `seconds` (≥ 0). `result` is one of the four values.
+  A `saved` or `hit` event has `bytes` > 0. A `skipped` event has a non-empty `reason` from the list above,
+  where `save_failed:` is followed by an errno name or number.
+- **Order:** for each component, the events are exactly one of these:
+  - `hit`;
+  - `miss`, then `saved`;
+  - `miss`, then `skipped`.
+  Never `hit` together with `saved`.
+- **A skip never fails a job.** The job succeeds whatever the events say.
+- **The stock H3 template on lem never skips for `unpinned_snapshot` or `local_path`.** Its components come
+  from hub repos whose snapshots are complete on lem, since earlier H3 runs used them. Plan v4 names this
+  as the risk it would revise the rule for.
+- **`low_disk` is environment, not an engine fault.** lem's `$HF_HOME` volume is shared with model
+  downloads and has been full before. Record a `low_disk` skip on the issue as an environment note. If
+  step 2 ran after it, that component shows `miss` again (or `miss` then `saved` if space was freed),
+  never `hit`. A skipped save leaves no entry behind, and no half-written one either. M-F128's miss→saved
+  expectation can't be met on a pass where `low_disk` fires, so report M-F128 as blocked by it, not failed.
+It is a **finding** if:
+- an event lacks a field, has a result outside the four, or is a `skipped` with an empty or unlisted reason;
+- a component's events are out of the orders above;
+- the job fails or has an error-level event naming the cache;
+- the stock template skips with `unpinned_snapshot` or `local_path`;
+- a component that was skipped in step 1 shows `hit` in step 2.
+cleanup: `delete_output(job_id=…)` on each job.
+metrics: none.
+
+### M-F141 — LTX-2.5's per-component path emits well-formed `quantized_cache` events, and a skipped save never fails the job
+pending: #827
+source: tester, spec for #827 from #815's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), with M-F135's short run:
+`arguments={"width": 512, "height": 288, "num_frames": 41, "seed": 42}`. Runs on lem only, with the cache
+on (M-F140's opt-in check passed this pass).
+Stage B brings v4's snapshot rule and free-space floor to the per-component path. On lem, LTX-2.5's
+`refs/main` once pointed at a re-sharded commit whose files weren't on disk. Under v4, an incomplete
+snapshot means **no lookup**. The load downloads or fails as it would without the cache. After a miss, the
+save takes the commit from the loaded object, and if that can't be pinned it skips with
+`unpinned_snapshot`. The cache must never turn an incomplete snapshot into a failed job, and never a wrong
+hit.
+Steps:
+1. `clear_memory`. Run the short run with `acknowledged_cost=true` and `wait_seconds=55`, then `wait_for_job`.
+   If the job starts a download (`plan.downloads_required` in `validate_workflow` first, or download
+   events), let it finish and record it. Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
+2. `clear_memory`, then run it again and read the same events.
+expected:
+- Both jobs succeed.
+- Events follow M-F140's shape and order rules for each SDNQ component of the template (the list M-F135
+  records). No non-SDNQ component has an event.
+- Run 1 is per component `miss` then `saved`, or `hit`. Run 2 is `hit` for every component run 1 saved or
+  hit.
+- If run 1 has `miss` then `skipped` with `unpinned_snapshot` for a component, run 2 shows `miss` for it
+  again, never `hit`. A second run in a row with `unpinned_snapshot` on a complete local snapshot is a
+  finding against stage B's acceptance B1–B2 (the cache never takes on LTX). Note it with the download
+  state from step 1.
+- `low_disk` is handled as in M-F140: environment, never a failed job, and never followed by a `hit`.
+It is a **finding** if:
+- either job fails because of the cache, or has an error-level event naming it;
+- an event breaks M-F140's shape or order rules;
+- a component skipped in run 1 hits in run 2;
+- `unpinned_snapshot` repeats on run 2 after run 1 completed every download.
+cleanup: `delete_output(job_id=…)` on both jobs.
+metrics: none.
+
 ## Performance
