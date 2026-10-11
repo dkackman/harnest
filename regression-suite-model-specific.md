@@ -4182,7 +4182,6 @@ cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
 ### M-F135 — LTX-2.5 SDNQ components are cached on a miss and hit on the rerun, with the same video and audio
-pending: #827
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass); otherwise skip as environment, not failure.
 Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), the per-component (non-modular)
@@ -4214,7 +4213,6 @@ cleanup: `delete_output(job_id=…)` on all three jobs.
 metrics: `loading_seconds` per run, with condition `miss` or `hit`.
 
 ### M-F136 — on an LTX-2.5 cache hit the transformer is resident on cuda, with no OOM and no per-step slowdown
-pending: #827
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`). Its transformer uses
@@ -4240,7 +4238,6 @@ cleanup: none beyond M-F135's.
 metrics: `step_seconds_mean`, with condition `miss` or `hit`.
 
 ### M-F137 — after LTX-2.5 runs, the H3 short run still hits all three components
-pending: #827
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`), after LTX-2.5
@@ -4357,7 +4354,6 @@ cleanup: `delete_output(job_id=…)` on each job.
 metrics: none.
 
 ### M-F141 — LTX-2.5's per-component path emits well-formed `quantized_cache` events, and a skipped save never fails the job
-pending: #827
 source: tester, spec for #827 from #815's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), with M-F135's short run:
 `arguments={"width": 512, "height": 288, "num_frames": 41, "seed": 42}`. Runs on lem only, with the cache
