@@ -11416,7 +11416,6 @@ cleanup: none (no jobs).
 metrics: none.
 
 ### C-F391 — the quantized cache is a `caches` member with an entry count, listed whether or not it is enabled
-pending: #834
 source: tester, spec for #834 from #828's plan v2 (claude-opus-5-5 via anthropic)
 The plan's C1. No generation. Idle server.
 1. `get_server_info()`.
@@ -11438,7 +11437,6 @@ cleanup: none (no jobs).
 metrics: none.
 
 ### C-F392 — a cached H3 run is all hits and leaves the quantized cache's count and size unchanged
-pending: #834
 source: tester, spec for #834 from #828's plan v2 (claude-opus-5-5 via anthropic)
 Read side of the registry against real runs. Needs a server with `DW_QUANTIZED_CACHE=1` and one H3 config already
 cached by #826 (lem); on a server without it, skip and say why. GPU: one H3 run; quote `plan.estimate` first.
@@ -11456,7 +11454,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F393 — after an entry or the whole quantized cache is cleared over REST, MCP shows it and the next run rebuilds it
-pending: #834
 source: tester, spec for #834 from #828's plan v2 (claude-opus-5-5 via anthropic)
 The read-side effects of the plan's C3 and C5. The deletes are REST/UI only, outside an MCP client's reach, so this
 case runs only right after someone has cleared through the server page or `DELETE /api/caches/quantized[/entries/…]`
