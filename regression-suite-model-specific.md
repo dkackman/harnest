@@ -3956,7 +3956,6 @@ mini-ai (mps) `develop @ f7b15455`.
 metrics: none.
 
 ### M-F128 — H3 SDNQ components are cached on a miss and loaded from cache on the next run, with the same output
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its SDNQ components are
@@ -4006,7 +4005,6 @@ meant to persist.
 metrics: `loading_seconds` per run, with condition `miss` or `hit` (the loading-phase duration from step 2).
 
 ### M-F129 — changing only the H3 text encoder's `weights_dtype` misses that component and hits the other two
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
@@ -4075,7 +4073,6 @@ cleanup: `delete_output(job_id=…)` on both jobs, then `delete_workflow("m-qcac
 metrics: none.
 
 ### M-F131 — an H3 LoRA job after a cache hit applies the LoRA, and the cache never holds LoRA-fused weights
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its default arguments load the
@@ -4103,7 +4100,6 @@ cleanup: `delete_output(job_id=…)` on all three jobs.
 metrics: none.
 
 ### M-F132 — a non-SDNQ workflow emits no `quantized_cache` events
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: `templates/text-to-image`, the catalog's default image template, which doesn't use
@@ -4122,7 +4118,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### M-F133 — two identical cold H3 jobs on two cards both succeed; one saves, the other saves "already saved by another worker" or hits
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Needs a server with two or more
@@ -4163,7 +4158,6 @@ leaves one small vae entry behind, and a consumer can't remove it.
 metrics: none.
 
 ### M-F134 — on mps, an SDNQ workflow either caches and works or reports `skipped` with a reason, and never fails
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on mps.
 Runs only on the mini-ai (mps) target: `get_server_info` → `device: "mps"`. Skip it on cuda, as not a
@@ -4289,7 +4283,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### M-F139 — on a server that hasn't opted in to the quantized cache, an SDNQ workflow runs as before and emits no `quantized_cache` events
-pending: #826
 source: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on the
 server under test. M-F134 already picks it this way, so use the same template.
@@ -4317,7 +4310,6 @@ cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
 ### M-F140 — on lem the H3 quantized cache is on, every `quantized_cache` event is well-formed, and a skipped save is never a failed job
-pending: #826
 source: tester, spec for #826 from #815's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`), with M-F128's short run:
 `arguments={"width": 480, "height": 288, "num_frames": 124, "num_inference_steps": 4, "seed": 42}`.
