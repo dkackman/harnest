@@ -213,7 +213,13 @@ calls the smallest end-to-end workflow — e.g. a single-shot or single-line
 template) with minimal inputs. The shape used to date is a three-step inline
 chain: Bark `generate_speech` → `slice_audio` to `variable:clip_seconds` =
 1.5 → `fade_audio` at `variable:sample_rate` = 24000, saving only the final
-step. (Schema note: `result.sample_rate` will not take a `variable:`
+step. Pin the speech step's inputs exactly - `model_name: "suno/bark-small"`,
+step `seed: 7`, text `"Somebody finished the pistachio and nobody is saying
+anything."` - because S-P004 times this job: Bark's take length is set by
+text and seed, and another sentence at seed 7 ("Hello there, this is a short
+test of the speech chain.") generates 14.7 s with 10.5 s of leading silence,
+taking 16.5 s instead of ~4 s and leaving the 1.5 s slice near-silent (#819).
+With these inputs the slice is audible, about -21 dBFS mean. (Schema note: `result.sample_rate` will not take a `variable:`
 reference — schema validation runs before substitution — and the error names
 both paths; documented behaviour, not a finding.)
 expected: the whole chain completes without a dropped parameter between
@@ -2286,6 +2292,8 @@ cleanup: none (read-only).
 ### S-P004 — multi-step audio chain latency
 Time S-F007 (speech → trim → fade, three steps in one job) using the job's own
 `started_at`/`finished_at`, not wall clock. Bark-small loading is included
-and is most of the figure; the two audio tasks are sub-second.
+and is most of the figure; the two audio tasks are sub-second. A reading
+whose speech inputs differ from S-F007's pinned ones is not comparable to the
+log - note it as such rather than filing it (#819).
 baseline: TBD — the log is the baseline.
 cleanup: as S-F007.
