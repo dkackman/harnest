@@ -3958,9 +3958,10 @@ metrics: none.
 ### M-F128 — H3 SDNQ components are cached on a miss and loaded from cache on the next run, with the same output
 pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its SDNQ components are
 `transformer`, `text_encoder` and `vae`.
-#815 caches each SDNQ-quantized component on disk under `$HF_HOME/dw-quantized/`. Every load emits a
+#815 caches each SDNQ-quantized component on disk under the cache root (`DW_QUANTIZED_CACHE_DIR`, default `$HF_HOME/dw-quantized`). Every load emits a
 `quantized_cache` job event, `{component, result: hit|miss|saved|skipped, reason?, seconds, bytes}`. A
 miss quantizes and then saves the component, and a later identical load is a hit. The cache stores the
 component before pruning, LoRA and offload, so the output must not change.
@@ -3992,6 +3993,7 @@ expected:
   In that case, any visible difference between run 1 and run 2 is a finding. If the control pair itself
   differs, record that, and judge run 1 against run 2 only for "same scene, same composition".
 - No job fails because of the cache. Not even an error-level event names it.
+- If a component's run-1 events are `miss` then `skipped` with `reason: low_disk` (see M-F140), report its miss→saved expectation, and the run-2 hit and loading comparison that depend on it, as blocked by environment, not failed.
 It is a **finding** if:
 - run 2 shows a `miss` for a component that run 1 saved;
 - any `quantized_cache` event lacks `component`, `result` or `seconds`;
@@ -4006,6 +4008,7 @@ metrics: `loading_seconds` per run, with condition `miss` or `hit` (the loading-
 ### M-F129 — changing only the H3 text encoder's `weights_dtype` misses that component and hits the other two
 pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
 `weights_dtype` is part of the cache key, and each component has its own key. The template's single
 `weights_dtype` variable feeds both the transformer and the text encoder, so a template argument can't
@@ -4042,6 +4045,7 @@ metrics: none.
 ### M-F130 — changing only the H3 text encoder's `truncate_layers` still hits all three components
 pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
 `truncate_layers` and `remove_modules` are out of the cache key. The entry holds the untruncated
 component, and pruning runs after every load, hit or miss. `truncate_layers` isn't a template variable,
@@ -4073,6 +4077,7 @@ metrics: none.
 ### M-F131 — an H3 LoRA job after a cache hit applies the LoRA, and the cache never holds LoRA-fused weights
 pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its default arguments load the
 turbo LoRA `lightx2v/Minimax-h3-Turbo`, and `lora_model_name: null` turns it off (see M-F038).
 LoRA applies after the cache load on every load, hit or miss. A hit must still take the LoRA, and a LoRA
@@ -4100,6 +4105,7 @@ metrics: none.
 ### M-F132 — a non-SDNQ workflow emits no `quantized_cache` events
 pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: `templates/text-to-image`, the catalog's default image template, which doesn't use
 SDNQ. The cache covers SDNQ on-the-fly quantization only. Any other load must neither touch it nor
 announce it.
@@ -4118,6 +4124,7 @@ metrics: none.
 ### M-F133 — two identical cold H3 jobs on two cards both succeed; one saves, the other saves "already saved by another worker" or hits
 pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Needs a server with two or more
 workers (`get_health` → `workers`). Skip it, as not a failure, on one worker.
 Two workers that miss the same key race to save it. The loser of the rename treats a populated target as
@@ -4161,6 +4168,7 @@ source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic
 Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on mps.
 Runs only on the mini-ai (mps) target: `get_server_info` → `device: "mps"`. Skip it on cuda, as not a
 failure.
+Runs only if mini-ai is opted in. If its run shows no `quantized_cache` events, run M-F139 instead.
 Steps:
 1. Find the template. Use `list_workflows(include_models=true)`, then `get_workflow` on candidates, and
    pick the cheapest one whose `load_components.quantization_config` names `sdnq.SDNQConfig` and whose
@@ -4182,6 +4190,7 @@ metrics: none.
 ### M-F135 — LTX-2.5 SDNQ components are cached on a miss and hit on the rerun, with the same video and audio
 pending: #827
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass); otherwise skip as environment, not failure.
 Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), the per-component (non-modular)
 load path. Its SDNQ components are the ones whose `quantization_config` names `sdnq.SDNQConfig` in
 `get_workflow`, at least `transformer` (`transformer_weights_dtype`, default `"{uint4}"`) and `text_encoder`
@@ -4202,6 +4211,7 @@ expected:
 - Run 2: `hit` for every SDNQ component, and the job succeeds.
 - Run 2's loading duration is shorter than run 1's when run 1 missed. Report both, with the #825 baseline.
 - On a card where runs 2 and 3 match, run 1 and run 2 match in both video frames and audio.
+- If a component's run-1 events are `miss` then `skipped` with `reason: low_disk` (see M-F140), report its miss→saved expectation, and the run-2 hit and loading comparison that depend on it, as blocked by environment, not failed.
 It is a **finding** if:
 - run 2 misses a component that run 1 saved;
 - a non-SDNQ LTX component emits a `quantized_cache` event;
@@ -4212,6 +4222,7 @@ metrics: `loading_seconds` per run, with condition `miss` or `hit`.
 ### M-F136 — on an LTX-2.5 cache hit the transformer is resident on cuda, with no OOM and no per-step slowdown
 pending: #827
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`). Its transformer uses
 `return_device: "cuda"`, and on a hit the cache must place the component on that device itself. A hit
 that left the transformer on cpu would show as slower denoise steps or as an OOM when it moves.
@@ -4237,6 +4248,7 @@ metrics: `step_seconds_mean`, with condition `miss` or `hit`.
 ### M-F137 — after LTX-2.5 runs, the H3 short run still hits all three components
 pending: #827
 source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`), after LTX-2.5
 (`templates/ltx2/text-to-video`). Stage B adds the per-component path. It must not disturb the modular
 path's keys or entries.
