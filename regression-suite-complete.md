@@ -11372,4 +11372,117 @@ drops the lyric from any piece.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F389 — `get_server_info` reports dw's disk caches, `inductor` and `triton`, sizes only
+pending: #832
+source: tester, spec for #832 from #828's plan v2 (claude-opus-5-5 via anthropic)
+Before #832, `get_server_info` had no `caches` field. No generation, no job. Run it with no job running or queued
+(`list_jobs` shows none active).
+1. `get_server_info()`. Note `device`.
+2. `use_workspace("regression-complete")`, then `get_server_info()` again.
+expected:
+- 1: `caches` is present, one record per cache, with exactly the members `inductor` and `triton` (until #834 lands,
+  after which `quantized` is a third; C-F391). Each record carries `name`, `bytes`, `files`, `enabled`, `clearable`
+  and `disk_free`. `bytes`, `files` and `disk_free` are non-negative integers. If `disk_total` is also present,
+  `disk_free` ≤ `disk_total`.
+- `bytes` is 0 whenever `files` is 0.
+- `inductor`: `enabled: true`, `clearable: true` (its root is dw's default, so it carries the marker), `disk_free` > 0.
+- `triton` on a `device: "mps"` (or `"cpu"`) server: `enabled: false`, `bytes: 0`, `files: 0` — no Triton there, and dw
+  never creates `~/.triton/cache`.
+- `triton` on a `device: "cuda"` server with Triton installed and the default cache location: `enabled: true`,
+  `clearable: true` (the exact default `~/.triton/cache` is grandfathered). On lem it is the bulk of dw's compile disk
+  use (several GB when #828 was planned); its size is not asserted.
+- No record carries `cost_of_clearing` or an entry list: that detail is the REST/UI view's, not MCP's (#828 plan v2).
+- The rest of `get_server_info` (`device`, `directories`, `workspace`, …) is unchanged in shape.
+- 2: the same members with the same `bytes`/`files` (caches are server-wide, not per workspace), while `workspace`
+  and `directories` follow the workspace.
+It is a **finding** if `caches` is missing, a member is missing or extra, `triton` reports bytes or `enabled: true`
+on an mps server, or `inductor` is not `clearable` on a server that runs with dw's default Inductor directory.
+cleanup: `use_workspace` back to the session's previous workspace.
+metrics: none.
+
+### C-F390 — reading the caches never changes their sizes
+pending: #832
+source: tester, spec for #832 from #828's plan v2 (claude-opus-5-5 via anthropic)
+The plan's A6: a read walks the cache roots, and must neither write into them nor clear them. No generation. Run with
+no job running or queued, and no other client running one.
+1. `get_server_info()` three times in a row; note each member's `bytes` and `files`.
+2. Between the second and third call, make the other read-only calls that might touch server state: `get_health()`,
+   `list_models()`, `list_workspaces()`.
+expected:
+- All three readings agree member for member: same names, same `bytes`, same `files`, same `enabled`/`clearable`.
+- On a server whose caches are empty (`bytes: 0`), they stay 0: the read did not create files (the `.dw-cache` marker
+  was written at server start, and no read adds another file to the count).
+It is a **finding** if any `bytes` or `files` value moves between readings with the server idle, or if a member
+changes `clearable` between reads.
+cleanup: none (no jobs).
+metrics: none.
+
+### C-F391 — the quantized cache is a `caches` member with an entry count, listed whether or not it is enabled
+pending: #834
+source: tester, spec for #834 from #828's plan v2 (claude-opus-5-5 via anthropic)
+The plan's C1. No generation. Idle server.
+1. `get_server_info()`.
+expected:
+- `caches` has exactly three members: `inductor`, `triton`, `quantized`. `inductor` and `triton` still meet C-F389.
+- `quantized` carries the same fields as the others plus an entry count (an integer ≥ 0; the field name is whatever
+  #834 ships, documented in `get_server_info`'s answer or MCP.md). No entry list and no per-entry detail: entries are
+  listed by REST/UI only.
+- With an entry count of 0, `bytes` is at most the `.dw-cache` marker's few bytes; with a count ≥ 1, `bytes` > 0 and
+  `files` ≥ the entry count.
+- On a server started with `DW_QUANTIZED_CACHE=1` and at least one H3 config cached by #826 (lem, when #834 is
+  verified): `enabled: true`, entry count ≥ 1, `bytes` in the tens of GB per cached config (≈43 GB each when planned;
+  not asserted exactly).
+- On a server with the cache off (mini-ai's default): `quantized` is still listed, `enabled: false`, and its `bytes`
+  and entry count report whatever is on disk (0 on a box that never cached) — off does not hide it.
+It is a **finding** if `quantized` is missing while the cache is off, if an entry list rides in `get_server_info`, or
+if the count disagrees with `bytes` (0 entries with more than the marker on disk, or entries with `bytes: 0`).
+cleanup: none (no jobs).
+metrics: none.
+
+### C-F392 — a cached H3 run is all hits and leaves the quantized cache's count and size unchanged
+pending: #834
+source: tester, spec for #834 from #828's plan v2 (claude-opus-5-5 via anthropic)
+Read side of the registry against real runs. Needs a server with `DW_QUANTIZED_CACHE=1` and one H3 config already
+cached by #826 (lem); on a server without it, skip and say why. GPU: one H3 run; quote `plan.estimate` first.
+1. `get_server_info()`; note `quantized`'s `bytes` and entry count (both > 0, per C-F391).
+2. Run the H3 template whose config is cached (`templates/minimax/video-with-audio` with its defaults, seed 42, unless
+   the issue names another) with `acknowledged_cost=true, wait_seconds=55`, then `wait_for_job` until it ends.
+3. Read the run's per-component `quantized_cache` outcome where #826 reports it (`get_job`, or `get_job_events`).
+4. `get_server_info()` again.
+expected:
+- 2: the job succeeds.
+- 3: every quantized component reports `hit`; none reports `miss` or `saved`.
+- 4: `quantized`'s entry count and `bytes` equal step 1's: a hit neither adds an entry nor rewrites one.
+It is a **finding** if a cached config misses, or if a pure-hit run changes the count or size.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F393 — after an entry or the whole quantized cache is cleared over REST, MCP shows it and the next run rebuilds it
+pending: #834
+source: tester, spec for #834 from #828's plan v2 (claude-opus-5-5 via anthropic)
+The read-side effects of the plan's C3 and C5. The deletes are REST/UI only, outside an MCP client's reach, so this
+case runs only right after someone has cleared through the server page or `DELETE /api/caches/quantized[/entries/…]`
+(Don's stage C browser check), on lem with `DW_QUANTIZED_CACHE=1`. Whoever cleared states on the issue what was
+deleted (one entry: the vae's; or the whole cache), and the entry count and `bytes` read just before it. Otherwise
+skip and say why. GPU: one or two H3 runs; quote each `plan.estimate` first.
+A. **One entry deleted (the vae's):**
+   1. `get_server_info()`.
+   2. Run the same H3 config as C-F392, `wait_for_job` until it ends, and read its `quantized_cache` outcomes.
+   3. `get_server_info()`.
+B. **Whole cache cleared:** steps 1-3 as in A.
+expected:
+- A1: entry count one lower than before the delete, and `bytes` lower by about the vae entry's size (≈3.2 GB when
+  planned; not asserted exactly). `enabled` and `clearable` still true.
+- A2: the job succeeds; the vae component reports `miss` then `saved`, the other two `hit`.
+- A3: the entry count and `bytes` are back to their pre-delete values (within the vae entry's own size variation).
+- B1: entry count 0 and `bytes` 0 or only the marker's few bytes (the root and its marker are kept; the marker is
+  not an entry); `enabled` and
+  `clearable` unchanged.
+- B2: every quantized component reports `miss`/`saved`; the job succeeds.
+- B3: entry count and `bytes` back to the pre-clear values for that config.
+It is a **finding** if MCP still reports a deleted entry, if the cleared cache reports `clearable: false`, or if the
+next run hits on a deleted entry or fails to save it again.
+cleanup: `delete_output(job_id=…)` for each run. Leave the rebuilt cache in place.
+metrics: none.
+
 ## Performance
