@@ -11373,7 +11373,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F389 — `get_server_info` reports dw's disk caches, `inductor` and `triton`, sizes only
-pending: #832
 source: tester, spec for #832 from #828's plan v2 (claude-opus-5-5 via anthropic)
 Before #832, `get_server_info` had no `caches` field. No generation, no job. Run it with no job running or queued
 (`list_jobs` shows none active).
@@ -11401,7 +11400,6 @@ cleanup: `use_workspace` back to the session's previous workspace.
 metrics: none.
 
 ### C-F390 — reading the caches never changes their sizes
-pending: #832
 source: tester, spec for #832 from #828's plan v2 (claude-opus-5-5 via anthropic)
 The plan's A6: a read walks the cache roots, and must neither write into them nor clear them. No generation. Run with
 no job running or queued, and no other client running one.
