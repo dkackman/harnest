@@ -4041,7 +4041,6 @@ cleanup: `delete_output(job_id=…)` on all three jobs, then `delete_workflow("m
 metrics: none.
 
 ### M-F130 — changing only the H3 text encoder's `truncate_layers` still hits all three components
-pending: #826
 source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
 Runs only with the cache on (M-F140's opt-in check passed this pass) and M-F128's save not blocked by `low_disk` (M-F135's, for the LTX cases); otherwise skip as environment, not failure.
 Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
@@ -4050,11 +4049,13 @@ component, and pruning runs after every load, hit or miss. `truncate_layers` isn
 so this case uses a saved copy.
 Setup:
 1. `get_workflow("templates/minimax/video-with-audio")`. In `components`, change only `text_encoder.model`'s
-   `truncate_layers` from `{"language_model.layers": 51}` to `{"language_model.layers": 40}`.
-2. `save_workflow` it as `m-qcache-trunc40`, then validate it clean with the M-F128 short run.
+   `truncate_layers` from `{"language_model.layers": 51}` to `{"language_model.layers": 55}` (not lower: H3
+   conditions on the Qwen3-VL conditioner's `hidden_states[50]`, which needs at least 51 decoder layers, the
+   stock count. 40 failed in run `29b0b2954e8b` on dkackman/diffusers-workflow#815).
+2. `save_workflow` it as `m-qcache-trunc55`, then validate it clean with the M-F128 short run.
 Steps:
 1. Make sure the stock short run has been cached (M-F128). Then `clear_memory`.
-2. Run `m-qcache-trunc40` with `<short run>` and `acknowledged_cost=true`, then `wait_for_job` (run A).
+2. Run `m-qcache-trunc55` with `<short run>` and `acknowledged_cost=true`, then `wait_for_job` (run A).
    Read its `quantized_cache` events.
 3. `clear_memory`, then run the stock template's short run (run B). Read its events, and compare its frames
    with M-F128's run 2 if that output is still around (otherwise judge it on its own).
@@ -4062,14 +4063,14 @@ expected:
 - Run A:
   - all three components `hit`, with no `miss` or `saved`;
   - the job succeeds with a playable video and audio. The content may differ from the stock run, because
-    fewer text-encoder layers change the conditioning.
+    a different text-encoder depth changes the conditioning.
 - Run B: all three `hit`. On a deterministic card (M-F128's control), its frames match M-F128's run 2. That
   shows the truncated encoder from run A was never written back over the full entry.
 It is a **finding** if:
 - run A misses or saves anything (`truncate_layers` leaked into the key);
 - run A fails with a shape or weight-loading error (the cache held a pruned component);
 - run B's output changed.
-cleanup: `delete_output(job_id=…)` on both jobs, then `delete_workflow("m-qcache-trunc40")`.
+cleanup: `delete_output(job_id=…)` on both jobs, then `delete_workflow("m-qcache-trunc55")`.
 metrics: none.
 
 ### M-F131 — an H3 LoRA job after a cache hit applies the LoRA, and the cache never holds LoRA-fused weights
