@@ -3955,4 +3955,325 @@ source: tester, verified in #789, model `claude-opus-5-5` via provider `anthropi
 mini-ai (mps) `develop @ f7b15455`.
 metrics: none.
 
+### M-F128 — H3 SDNQ components are cached on a miss and loaded from cache on the next run, with the same output
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its SDNQ components are
+`transformer`, `text_encoder` and `vae`.
+#815 caches each SDNQ-quantized component on disk under `$HF_HOME/dw-quantized/`. Every load emits a
+`quantized_cache` job event, `{component, result: hit|miss|saved|skipped, reason?, seconds, bytes}`. A
+miss quantizes and then saves the component, and a later identical load is a hit. The cache stores the
+component before pruning, LoRA and offload, so the output must not change.
+Short run, used here and by M-F129–M-F131 and M-F135: `arguments={"width": 480, "height": 288,
+"num_frames": 124, "num_inference_steps": 4, "seed": 42}`.
+Steps:
+1. `clear_memory`. Then `run_workflow("templates/minimax/video-with-audio", arguments=<short run>,
+   acknowledged_cost=true, wait_seconds=55)`, and `wait_for_job` until it's done (run 1).
+2. `get_job_events(job_id=<run 1>, kinds=["quantized_cache"])`. Note the loading-phase duration: the
+   `at` of the phase event after `loading`, minus the `at` of the `loading` phase event.
+3. `clear_memory`. Then run the same call again (run 2) and read the same events and loading duration.
+4. `clear_memory`. Then run the same call once more (run 3, the determinism control).
+5. Compare outputs with `get_output_frames` (frames 0, 62 and 123) and `get_output_audio`. Compare
+   run 2 with run 3 (control: hit vs hit), then run 1 with run 2.
+expected:
+- Run 1 on a server that has never loaded this key:
+  - each of the three components has a `miss` event, then a `saved` event;
+  - the `saved` event has `bytes` > 0 and `seconds` ≥ 0.
+- Run 1 on a later pass, once entries exist: three `hit` events. That is also the check that entries
+  survive a server restart. Any deploy since the previous pass restarted the server, and the plan's start
+  sweep must keep entries whose four versions (sdnq, diffusers, transformers, torch) still match. A `miss`
+  in that case is a finding unless one of those versions changed (`get_diffusers_state`).
+- Run 2: a `hit` for all three components and no `miss` or `saved`, and the job succeeds.
+- Run 2's loading duration is shorter than run 1's when run 1 missed. Report both numbers in the result,
+  plus the pre-cache baseline that #825 (stage 0) recorded.
+- If run 2 and run 3 are identical, the card is deterministic:
+  - frames at the same index look identical to the eye;
+  - the audio has the same duration and the same content.
+  In that case, any visible difference between run 1 and run 2 is a finding. If the control pair itself
+  differs, record that, and judge run 1 against run 2 only for "same scene, same composition".
+- No job fails because of the cache. Not even an error-level event names it.
+It is a **finding** if:
+- run 2 shows a `miss` for a component that run 1 saved;
+- any `quantized_cache` event lacks `component`, `result` or `seconds`;
+- a `saved` event lacks `bytes`;
+- a hit run's output differs from a miss run's on a deterministic card.
+On a later pass, where run 1 already hits, the miss→saved half is still covered by M-F129's first run
+of its saved copy (which is cold until it has run once).
+cleanup: `delete_output(job_id=…)` on all three jobs. A consumer can't remove cache entries, and they are
+meant to persist.
+metrics: `loading_seconds` per run, with condition `miss` or `hit` (the loading-phase duration from step 2).
+
+### M-F129 — changing only the H3 text encoder's `weights_dtype` misses that component and hits the other two
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
+`weights_dtype` is part of the cache key, and each component has its own key. The template's single
+`weights_dtype` variable feeds both the transformer and the text encoder, so a template argument can't
+change only one of them. This case uses a saved copy instead.
+Setup:
+1. `get_workflow("templates/minimax/video-with-audio")`. In
+   `load_components.quantization_config`, set only the `text_encoder` entry's `weights_dtype` from
+   `variable:weights_dtype` to the literal `"{int8}"`. Leave everything else as it is.
+2. `save_workflow` it as `m-qcache-te-int8` in the `regression-model-specific` workspace.
+3. `validate_workflow(name="m-qcache-te-int8", arguments=<M-F128 short run>)` must come back clean.
+Steps:
+1. Run M-F128 first, or confirm that the stock template's short run already hits. Then `clear_memory`.
+2. `run_workflow("m-qcache-te-int8", arguments=<short run>, acknowledged_cost=true, wait_seconds=55)` and
+   `wait_for_job` (run A). Read `get_job_events(kinds=["quantized_cache"])`.
+3. `clear_memory`, then run it again (run B). Read the same events.
+4. `clear_memory`, then run the stock template's short run (run C). Read the same events.
+expected:
+- Run A on the first pass:
+  - `text_encoder` has `miss`, then `saved` with `bytes` > 0;
+  - `transformer` and `vae` each have `hit`;
+  - the job succeeds.
+- Run A on a later pass: all three hit.
+- Run B: all three hit.
+- Run C: all three hit. The int4 and int8 text-encoder entries coexist, and neither evicts the other.
+- Run A's `text_encoder` `bytes` is larger than the int4 entry's `bytes`, as int8 should be. Compare it
+  with M-F128's first-pass `saved` event if one was recorded.
+It is a **finding** if:
+- the int8 copy hits the int4 text-encoder entry (the dtype isn't in the key);
+- `transformer` or `vae` misses in run A (the key isn't per component);
+- run C misses.
+cleanup: `delete_output(job_id=…)` on all three jobs, then `delete_workflow("m-qcache-te-int8")`.
+metrics: none.
+
+### M-F130 — changing only the H3 text encoder's `truncate_layers` still hits all three components
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`).
+`truncate_layers` and `remove_modules` are out of the cache key. The entry holds the untruncated
+component, and pruning runs after every load, hit or miss. `truncate_layers` isn't a template variable,
+so this case uses a saved copy.
+Setup:
+1. `get_workflow("templates/minimax/video-with-audio")`. In `components`, change only `text_encoder.model`'s
+   `truncate_layers` from `{"language_model.layers": 51}` to `{"language_model.layers": 40}`.
+2. `save_workflow` it as `m-qcache-trunc40`, then validate it clean with the M-F128 short run.
+Steps:
+1. Make sure the stock short run has been cached (M-F128). Then `clear_memory`.
+2. Run `m-qcache-trunc40` with `<short run>` and `acknowledged_cost=true`, then `wait_for_job` (run A).
+   Read its `quantized_cache` events.
+3. `clear_memory`, then run the stock template's short run (run B). Read its events, and compare its frames
+   with M-F128's run 2 if that output is still around (otherwise judge it on its own).
+expected:
+- Run A:
+  - all three components `hit`, with no `miss` or `saved`;
+  - the job succeeds with a playable video and audio. The content may differ from the stock run, because
+    fewer text-encoder layers change the conditioning.
+- Run B: all three `hit`. On a deterministic card (M-F128's control), its frames match M-F128's run 2. That
+  shows the truncated encoder from run A was never written back over the full entry.
+It is a **finding** if:
+- run A misses or saves anything (`truncate_layers` leaked into the key);
+- run A fails with a shape or weight-loading error (the cache held a pruned component);
+- run B's output changed.
+cleanup: `delete_output(job_id=…)` on both jobs, then `delete_workflow("m-qcache-trunc40")`.
+metrics: none.
+
+### M-F131 — an H3 LoRA job after a cache hit applies the LoRA, and the cache never holds LoRA-fused weights
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Its default arguments load the
+turbo LoRA `lightx2v/Minimax-h3-Turbo`, and `lora_model_name: null` turns it off (see M-F038).
+LoRA applies after the cache load on every load, hit or miss. A hit must still take the LoRA, and a LoRA
+run must not change what the next non-LoRA hit loads.
+Steps (each step is preceded by `clear_memory`, and each run uses the M-F128 short run with
+`num_inference_steps: 4`):
+1. Run 1, no LoRA: `arguments` = short run + `{"lora_model_name": null}`.
+2. Run 2, with LoRA: the short run as it is (default turbo LoRA).
+3. Run 3, no LoRA again: the same arguments as run 1.
+For each run, read `get_job_events(kinds=["quantized_cache"])` and `get_output_frames` at frames 0
+and 62.
+expected:
+- All three runs `hit` for all three components (after M-F128 has cached them), and all three succeed.
+- Run 2 shows the LoRA took effect. At 4 steps the turbo LoRA gives a clean, resolved picture, and run 1
+  without it is visibly under-denoised. Frames from runs 1 and 2 differ clearly.
+- Run 3 matches run 1 on a deterministic card (M-F128's control). If it doesn't match on such a card,
+  LoRA-fused weights reached the cache.
+It is a **finding** if:
+- run 2 looks like run 1 (the LoRA wasn't applied on a hit);
+- run 3 looks like run 2;
+- any run misses or saves.
+cleanup: `delete_output(job_id=…)` on all three jobs.
+metrics: none.
+
+### M-F132 — a non-SDNQ workflow emits no `quantized_cache` events
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/text-to-image`, the catalog's default image template, which doesn't use
+SDNQ. The cache covers SDNQ on-the-fly quantization only. Any other load must neither touch it nor
+announce it.
+Steps:
+1. `get_workflow("templates/text-to-image")` and confirm that no `quantization_config` names
+   `sdnq.SDNQConfig`. If it does, the template has changed: pick another catalog image template without
+   SDNQ and record which one.
+2. Run it with `arguments={"seed": 42}`, `acknowledged_cost=true` and `wait_seconds=55`, then
+   `wait_for_job`.
+3. Call `get_job_events(job_id=…, kinds=["quantized_cache"])`.
+expected: the job succeeds, and the filtered event page is empty: no hit, miss, saved or skipped events.
+It is a **finding** if any `quantized_cache` event appears, or if the run fails.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### M-F133 — two identical cold H3 jobs on two cards both succeed; one saves, the other saves "already saved by another worker" or hits
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`). Needs a server with two or more
+workers (`get_health` → `workers`). Skip it, as not a failure, on one worker.
+Two workers that miss the same key race to save it. The loser of the rename treats a populated target as
+success: its event reports `saved` with `reason: "already saved by another worker"`, or `hit` if it
+loaded late. The cache never fails a job.
+A consumer can't evict an entry, so "cold" needs a key no run has used before. The setup changes the
+`vae` key, which is the smallest entry, with a module name that matches nothing. Every
+SDNQConfig argument except device and matmul is in the key.
+Setup:
+1. `get_workflow("templates/minimax/video-with-audio")`.
+2. In `load_components.quantization_config.vae`, add one entry to `modules_to_not_convert` (create the
+   list if it's absent): `"qcache_race_probe_<YYYYMMDDHHMM>"`, with the current time from `date`. No module
+   has that name, so quantization is unchanged and only the key moves.
+3. `save_workflow` the result as `m-qcache-race`, then validate it clean with the M-F128 short run.
+Steps:
+1. Queue two runs of `m-qcache-race` with the identical short-run `arguments` and `acknowledged_cost=true`,
+   back to back with `wait_seconds=0`.
+2. Confirm with `get_job` that they run at the same time on different cards: the `device` values differ,
+   and both are `running` at once.
+3. `wait_for_job` each one, then read each job's `quantized_cache` events.
+expected:
+- Both jobs succeed.
+- The two jobs' `vae` events together are exactly one of these:
+  - one job has `miss` then `saved`, and the other has `miss` then `saved` with
+    `reason: "already saved by another worker"`;
+  - one job has `miss` then `saved`, and the other has `hit`.
+- `transformer` and `text_encoder` `hit` in both jobs.
+- A third run of `m-qcache-race`, after both finish, is all `hit`. The entry the race left is usable, not
+  half-written.
+It is a **finding** if:
+- either job fails, or has an error event that names the cache;
+- both jobs report a plain `saved` with no reason;
+- the third run misses `vae`.
+cleanup: `delete_output(job_id=…)` on all three jobs, then `delete_workflow("m-qcache-race")`. Each pass
+leaves one small vae entry behind, and a consumer can't remove it.
+metrics: none.
+
+### M-F134 — on mps, an SDNQ workflow either caches and works or reports `skipped` with a reason, and never fails
+pending: #826
+source: tester, spec for #826 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: the smallest catalog template that quantizes with `sdnq.SDNQConfig` and validates on mps.
+Runs only on the mini-ai (mps) target: `get_server_info` → `device: "mps"`. Skip it on cuda, as not a
+failure.
+Steps:
+1. Find the template. Use `list_workflows(include_models=true)`, then `get_workflow` on candidates, and
+   pick the cheapest one whose `load_components.quantization_config` names `sdnq.SDNQConfig` and whose
+   `validate_workflow` is clean on this server. Record which template you used.
+2. `clear_memory`, then run it at its smallest valid size with `seed: 42`, `acknowledged_cost=true` and
+   `wait_seconds=55`, and `wait_for_job`. Read the `quantized_cache` events.
+3. `clear_memory`, then run it again and read the events.
+expected: both jobs succeed, and each SDNQ component follows one of two paths:
+- **cached:** first run `miss` then `saved` (`bytes` > 0), or `hit` once cached; second run `hit`. The two
+  outputs look the same.
+- **skipped:** `skipped` with a non-empty `reason` on both runs.
+It is a **finding** if:
+- a job fails because of the cache;
+- a `skipped` event has no reason;
+- the second run of a cached component misses.
+cleanup: `delete_output(job_id=…)` on both jobs.
+metrics: none.
+
+### M-F135 — LTX-2.5 SDNQ components are cached on a miss and hit on the rerun, with the same video and audio
+pending: #827
+source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`), the per-component (non-modular)
+load path. Its SDNQ components are the ones whose `quantization_config` names `sdnq.SDNQConfig` in
+`get_workflow`, at least `transformer` (`transformer_weights_dtype`, default `"{uint4}"`) and `text_encoder`
+(`text_encoder_weights_dtype`, default `"{int8}"`). Record the full list.
+Short run, also used by M-F136: `arguments={"width": 512, "height": 288, "num_frames": 41, "seed": 42}`.
+Steps:
+1. `clear_memory`. Then `run_workflow("templates/ltx2/text-to-video", arguments=<short run>,
+   acknowledged_cost=true, wait_seconds=55)` and `wait_for_job` (run 1). Read the `quantized_cache` events
+   and the loading-phase duration (as in M-F128).
+2. `clear_memory`, then run 2 with the same arguments. Read the same things.
+3. `clear_memory`, then run 3 with the same arguments (determinism control).
+4. Compare run 2 with run 3, then run 1 with run 2, using `get_output_frames` (frames 0, 20 and 40) and
+   `get_output_audio`.
+expected:
+- Run 1 (first pass): each SDNQ component has `miss`, then `saved` with `bytes` > 0. On a later pass it
+  shows `hit`, which also shows that entries survived the restarts since. A miss then is a finding unless
+  one of the four keyed package versions changed.
+- Run 2: `hit` for every SDNQ component, and the job succeeds.
+- Run 2's loading duration is shorter than run 1's when run 1 missed. Report both, with the #825 baseline.
+- On a card where runs 2 and 3 match, run 1 and run 2 match in both video frames and audio.
+It is a **finding** if:
+- run 2 misses a component that run 1 saved;
+- a non-SDNQ LTX component emits a `quantized_cache` event;
+- the hit output differs from the miss output on a deterministic card.
+cleanup: `delete_output(job_id=…)` on all three jobs.
+metrics: `loading_seconds` per run, with condition `miss` or `hit`.
+
+### M-F136 — on an LTX-2.5 cache hit the transformer is resident on cuda, with no OOM and no per-step slowdown
+pending: #827
+source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5 text-to-video (`templates/ltx2/text-to-video`). Its transformer uses
+`return_device: "cuda"`, and on a hit the cache must place the component on that device itself. A hit
+that left the transformer on cpu would show as slower denoise steps or as an OOM when it moves.
+Steps: use M-F135's run 1 (miss, if this is the first pass) and run 2 (hit), or any LTX miss/hit pair at
+the same arguments. For each run, read `get_job_events` without a `kinds` filter:
+- the denoise-step events, to compute the mean interval between consecutive steps;
+- the `memory` events;
+- any `warning` or `log` events that mention device placement or offload.
+expected:
+- Both jobs succeed, with no OOM error or warning.
+- The hit run's mean denoise-step interval is no more than 1.2× the miss run's.
+- The hit run's memory events show the transformer's weights on the GPU during denoising, at peak VRAM
+  comparable to the miss run's.
+If no miss run exists on this pass (because entries are already cached), compare against the step
+interval recorded on the first pass, or the #825 baseline.
+It is a **finding** if:
+- the hit run OOMs;
+- its step interval is more than 1.2× the miss run's;
+- an event shows the transformer being moved from cpu on every step.
+cleanup: none beyond M-F135's.
+metrics: `step_seconds_mean`, with condition `miss` or `hit`.
+
+### M-F137 — after LTX-2.5 runs, the H3 short run still hits all three components
+pending: #827
+source: tester, spec for #827 from #815's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`templates/minimax/video-with-audio`), after LTX-2.5
+(`templates/ltx2/text-to-video`). Stage B adds the per-component path. It must not disturb the modular
+path's keys or entries.
+Steps:
+1. Run M-F135 (or any LTX-2.5 SDNQ run) first.
+2. `clear_memory`, then run the H3 short run from M-F128 and read its `quantized_cache` events.
+expected: `transformer`, `text_encoder` and `vae` each `hit`, and the job succeeds.
+It is a **finding** if any H3 component misses or saves (the LTX path evicted or re-keyed H3's entries),
+or if the job fails.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### M-F138 — `music-video-cuts` on a song whose vocal stem hallucinates keeps the intro and the fade out of the lines, with bounded warnings
+source: tester, verified in #822 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/music-video-cuts` (demucs `separate_stems` → Whisper `transcribe_audio`
+on the vocal stem → `analyze_beats` → `plan_cuts`), on the asset `soviet-anthem/song_s23.mp3`. There is no
+generative step, and on #822's two runs the same asset gave the same transcript. On this take Whisper
+emits hundreds of `"—"` chunks over the roughly 30 s instrumental intro and an "I'm sorry, I'm sorry, …"
+loop over the fade. Before #822 these became `kind: "vocal"` shots from frame 0, and the reply's warnings
+grew quadratically to about 205 KB, past a client's tool-result limit. CPU/GPU-light, about 20 s on a 3090.
+Steps:
+1. `run_workflow(workflow_path="templates/minimax/music-video-cuts", arguments={"song":
+   "asset:soviet-anthem/song_s23.mp3", "timestamps": "word"}, acknowledged_cost=true, wait_seconds=55)`.
+2. `get_output_text` on the `plan` step's `plan.3-0.json` (`max_characters` about 5000).
+expected:
+- (1) `succeeded`. The warnings include one `plan_cuts: N transcript chunk(s) 0.00-… s '— — …' marked
+  suspect (no_words); left out of the lines` and one `… "I'm sorry, I'm sorry, …" marked suspect
+  (repetition); left out of the lines`. There are fewer than 20 warnings in all, and none repeats an
+  accumulated word list. In #822's verify: 7 warnings, 444 `no_words` chunks over 0.00-29.92 s and 222
+  `repetition` chunks.
+- (2) Every shot before about 29 s (frame ~700 at 24 fps) is `kind: "instrumental"` with `lyric: null`.
+  The first `vocal` shot begins at about 29.8 s, and no shot's `lyric` is `"—"` or contains "sorry". The
+  plan was 4,344 chars in #822's verify; before the fix it was 247,597.
+It is a **finding** if any vocal shot starts before about 29 s or carries a `"—"`/"sorry" lyric, or if
+the warnings grow with the number of words. If the asset's transcript itself changes (a different
+Whisper or demucs build), say so rather than calling it a regression.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance
