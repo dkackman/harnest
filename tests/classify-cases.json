@@ -3947,5 +3947,314 @@
    "83": "reviewer:docs",
    "85": "reviewer:arch"
   }
+ },
+ {
+  "name": "target: a design follows the claim (lem)",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 90,
+     "title": "t90",
+     "labels": [
+      {
+       "name": "idea"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 91,
+     "title": "t91",
+     "labels": [
+      {
+       "name": "idea"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 92,
+     "title": "t92",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 93,
+     "title": "t93",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->"
+     ]
+    },
+    {
+     "number": 94,
+     "title": "t94",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->"
+     ]
+    }
+   ]
+  },
+  "expect": {
+   "90": "wait",
+   "91": "lead:design",
+   "92": "lead:design",
+   "93": "wait",
+   "94": "lead:decompose"
+  }
+ },
+ {
+  "name": "target: a design follows the claim (mini-ai)",
+  "input": {
+   "owner": "dkackman",
+   "target": "mini-ai",
+   "issues": [
+    {
+     "number": 90,
+     "title": "t90",
+     "labels": [
+      {
+       "name": "idea"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 91,
+     "title": "t91",
+     "labels": [
+      {
+       "name": "idea"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 92,
+     "title": "t92",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "target:lem"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 93,
+     "title": "t93",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      },
+      {
+       "name": "target:mini-ai"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->"
+     ]
+    },
+    {
+     "number": 94,
+     "title": "t94",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->"
+     ]
+    }
+   ]
+  },
+  "expect": {
+   "90": "lead:design",
+   "91": "lead:design",
+   "92": "wait",
+   "93": "lead:decompose",
+   "94": "lead:decompose"
+  }
  }
 ]

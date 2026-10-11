@@ -146,12 +146,12 @@ def parent_phase:
   then .reason = "release freeze (#\($release)): not a release-blocker (\(.queue) after it)"
      | .queue = "wait"
   else . end
-# The target post-filter. A design or decompose runs in whichever loop runs
-# the server-free passes. A docs or architecture review is server-free too,
-# but one on a claimed issue waits for the claiming loop, whose tester acts
-# next anyway, so lem's loop deep in a GPU-bound lead session doesn't hold up
-# another loop's reviews; an unclaimed one is any loop's here, and
-# reviewer_pass leaves it to the loop running the shared passes. The rest
+# The target post-filter. Design, decompose and the docs and architecture
+# reviews are server-free: an unclaimed one is any loop's here, and
+# features_pass and reviewer_pass leave it to the loop running the shared
+# passes. One on a claimed issue waits for the claiming loop, so lem's loop
+# deep in a GPU-bound lead session doesn't hold up another loop's reviews,
+# and Don can send a feature's design to a loop by labeling it target:<loop>. The rest
 # belong to the loop holding the claim; an unclaimed fix, spec, build or close-out to
 # any loop whose server its backend allows; and an unclaimed issue past those
 # to lem, which is where everything handed off before claims existed was
@@ -163,8 +163,7 @@ def parent_phase:
 | (($own + (if $pp != null then ($pp | claims) else [] end)) | unique) as $ec
 | (($i | backend) as $b | if $b != "" or $pp == null then $b else ($pp | backend) end) as $eb
 | if .queue == "wait" or (.queue | test("^(implementer|tester|lead|reviewer):") | not) then .
-  elif (.queue | IN("lead:design", "lead:decompose")) then .
-  elif (.queue | IN("reviewer:docs", "reviewer:arch")) then
+  elif (.queue | IN("lead:design", "lead:decompose", "reviewer:docs", "reviewer:arch")) then
     if ($ec | length) == 0 or holder_of($ec) == $target then .
     else .reason = "target:\(holder_of($ec)) holds it" | .queue = "wait" end
   elif ($ec | length) > 0 and (serves(holder_of($ec); $eb) | not) then

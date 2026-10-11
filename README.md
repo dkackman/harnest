@@ -366,9 +366,10 @@ scripts/sync-fixtures.sh                            # lem's qa-cast media, when 
   lem's).
 - **Server-free passes.** Feature design, docs and architecture review and curator review
   run in one loop only: lem's while it's running, the Mac's otherwise. `SHARED_PASSES=1`
-  or `0` overrides that. A review of a claimed issue (or a stage of a claimed feature) is
-  the exception: it runs in the claiming loop, whose tester is next, so the Mac's
-  hand-offs don't wait behind a long lem session.
+  or `0` overrides that. A claimed issue is the exception: its design, decompose and
+  reviews (a stage's, when its feature is claimed) run in the claiming loop. The Mac's
+  hand-offs then don't wait behind a long lem session, and labeling an `idea` or
+  `feature` `target:mini-ai` sends its design to the Mac.
 - **Budget.** `TESTER_BUDGET_USD` defaults to 8 here and 5 on lem, because MPS jobs run
   2-3x slower.
 - **Guard** (via `HARNEST_TARGET` and `HARNEST_ROLE`):
@@ -647,7 +648,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `DW_URL` / `DW_TOKEN` | the target's (`http://lem:8765/mcp`) / `xyz` | the MCP endpoint (dev token, LAN only) |
 | `MCP_TOOL_TIMEOUT` / `CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT` | `1900000` / `1900000` | Claude Code's per-call MCP limits in ms (wall clock / no progress), exported for every agent session: a little over dw's 1800 s `wait_for_job` cap, so the server's clamp answers first (#546). Unset, the idle limit is 5 min for an HTTP server |
 | `DW_TARGET` | `lem` | which test bed `run-loop.sh`, `run-features.sh`, `run-regression.sh` and `scripts/testbed.sh` run against: a row of `target_row` in `providers.sh` (`lem`, `mini-ai`); `run-release.sh` is lem only |
-| `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs and architecture review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running. A review of an issue a loop has claimed runs in that loop either way |
+| `SHARED_PASSES` | unset | `1`/`0` forces whether this loop runs the server-free passes (feature design, docs and architecture review, curator review). Unset: lem's loop always does, and another target's loop only while lem's isn't running. The design, decompose or review of an issue a loop has claimed runs in that loop either way |
 | `DW_TARGET_WORKSPACE` / `DW_ORIGIN_URL` | asked of the server / the dw repo on GitHub | the test bed's `--workspace` root, for `scripts/sync-fixtures.sh`; what `scripts/setup-mac-loop.sh` clones |
 | `PROVIDER` | `anthropic` | `anthropic`, `ollama` or `gateway`; see below |
 | `IMPLEMENTER_MODEL` / `TESTER_MODEL` | `claude-sonnet-5-5` / `claude-opus-5-5` | per-role models (tester pinned to the exact id, not the `opus` alias); each has a `*_PROVIDER` defaulting to `$PROVIDER` |

@@ -577,12 +577,22 @@ $(issue_context "$n")" \
 # them here only puts them in the cycle, so a hand-back from Don isn't left
 # waiting for someone to start run-features.sh. Its own queue read decides
 # which issues run; this check only saves starting it for nothing.
+# A loop that doesn't run the shared passes still designs and decomposes the
+# issues it has claimed (lib/classify.jq holds those from every other loop),
+# as reviewer_pass reviews them: it runs run-features.sh on just those.
 features_pass() {
+  local only="$ONLY_ISSUES" n
   [ "$LEAD_DESIGN_IN_LOOP" = 1 ] || return 0
   [ "$DW_FROZEN" = 0 ] || { echo "[features] skipping: dw stabilization freeze (docs/stabilization/FREEZE on develop), no design or decompose" | tee -a "$LOOP_LOG"; return 0; }
-  shared_passes_here || { echo "[features] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
+  if ! shared_passes_here; then
+    only=""
+    while IFS= read -r n; do
+      [ -n "$n" ] && claimed_here "$n" && only="$only${only:+ }$n"
+    done < <({ queue_issues lead:design; queue_issues lead:decompose; } | cut -f1)
+    [ -n "$only" ] || { echo "[features] skipping: nothing claimed here, lem's loop runs the rest" | tee -a "$LOOP_LOG"; return 0; }
+  fi
   [ -n "$(queue_issues lead:design; queue_issues lead:decompose)" ] || return 0
-  env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$ONLY_ISSUES" "$REPO/run-features.sh"
+  env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$only" "$REPO/run-features.sh"
 }
 
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).

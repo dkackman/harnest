@@ -496,6 +496,13 @@ board '[{"number": 70, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"n
 mini_loop
 eq  "arch review here: the two the Mac holds" "70 74" "$(grep -o 'It is for issue #[0-9]* only' "$FAKE_CLAUDE_LOG" | tr -dc '0-9 \n' | awk '{print $NF}' | sort -n | tr '\n' ' ' | sed 's/ $//')"
 has "arch review here: the unclaimed one is left to lem's loop" "[reviewer:#71] skipping: unclaimed, lem's loop runs it" "$(cat "$T/h/logs/loop.mini-ai.log")"
+# design follows the claim too: with lem's loop live, the Mac designs the idea
+# Don labeled target:mini-ai and leaves the unclaimed one to lem's loop
+board '[{"number": 75, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}, {"name": "target:mini-ai"}]},
+        {"number": 76, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
+: > "$FAKE_CLAUDE_LOG"
+mini_loop LEAD_DESIGN_IN_LOOP=1
+eq  "design here: only the claimed idea" "75" "$(grep -o 'DESIGN session for issue #[0-9]*' "$FAKE_CLAUDE_LOG" | tr -dc '0-9\n' | sort -n | tr '\n' ' ' | sed 's/ $//')"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'
