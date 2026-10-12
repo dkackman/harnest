@@ -2252,6 +2252,27 @@ metrics: none.
 source: tester, verified in #798 on 2026-10-09 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ a2db75f2` (mps on mini-ai.lan).
 
+### S-F136 — `get_server_info(cache_entries=true)` lists every quantized-cache entry, and the default stays totals-only
+`get_server_info.caches` used to report only the quantized cache's totals, so an agent couldn't
+tell which model or component a ~288 GB cache held (#847). Read-only and free. The case runs
+against whatever the cache holds. On a server whose quantized cache is disabled or empty (mps),
+`entries` is `[]` and only the shape checks apply.
+1. `get_server_info()`.
+2. `get_server_info(cache_entries=true)`.
+expected:
+- Step 1: the `quantized` cache has its totals (`bytes`, `files`, `enabled`, `clearable`) and an
+  integer `entry_count`, and **no** `entries` key.
+- Step 2: the `quantized` cache also has an `entries` list with exactly `entry_count` items. Every
+  item has a non-null string `model`, `subfolder` and `component`, plus `id`, integer `bytes` and
+  `files`, a boolean `unreadable`, `created`, and `last_hit` (which may be null). The items'
+  `files` add up to the cache's `files` total. `inductor` and `triton` get no `entries` key.
+It is a **finding** if the default call grows `entries`, if the flagged call's list is shorter
+than `entry_count`, or if an entry has a null or missing `model`/`subfolder`/`component`.
+cleanup: none (read-only).
+metrics: none.
+source: tester, verified in #847 on 2026-10-11 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 080f1043` on `lem` (cuda): 18 entries, files summing to 140.
+
 ## Performance
 
 ### S-P001 — default image generation latency
