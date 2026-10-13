@@ -879,7 +879,6 @@ setup runs.
 metrics: none.
 
 ### SE-F047 — copy_to_workspace confines run entries and workspace names to the workspace root
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 The copy tool takes two workspace names and a list of `<workflow>/<run id>` entries, and writes
 on the destination side. Each of them must stay under the workspace root: a `..` or absolute

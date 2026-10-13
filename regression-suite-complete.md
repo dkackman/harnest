@@ -11500,7 +11500,6 @@ cleanup: `delete_output(job_id=…)` for each run.
 metrics: none.
 
 ### C-F395 — copy_to_workspace copies one run: it reads in the destination by gallery name and by `output:` reference, and the source is unchanged
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 Copying a run between workspaces (`copy_to_workspace`) makes the run a first-class run of the destination. It is
 not a job there. Task-only, so each run takes seconds.
@@ -11540,7 +11539,6 @@ acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F396 — copying a run that is already in the destination reports already_present and changes nothing
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 A repeated copy is idempotent. A run folder already in the destination is skipped and reported, not refused and
 not duplicated.
@@ -11558,7 +11556,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F397 — a copied run whose version is taken in the destination is renumbered after the destination's highest
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 A copied run keeps its version unless the destination's identity already uses it. Then it is renumbered after the
 destination's highest, in run-id order, and the reply reports the mapping. `output:<wf>/v<N>` in the destination
@@ -11582,7 +11579,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F398 — a note changed on a copied run in the destination does not reach the source
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 Media is hard-linked, but sidecars (`notes.json`, `manifest.json`) are copies. Editing the copy's note must not
 write through to the source.
@@ -11602,7 +11598,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F399 — copying a run whose `output:` input was not copied succeeds and warns, naming the reference
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 A copy never refuses over a warning. `warnings.unresolved_output_refs` lists, per copied run, each `output:` input
 whose run isn't in the destination.
@@ -11621,7 +11616,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F400 — a bare workflow entry copies every run of that workflow and nothing of another
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 setup: workspaces `qa-c-f400-a`/`-b`. In A, run C-F395's inline workflow with id `qa-c-f400` three times, and once
 with id `qa-c-f400-other`.
@@ -11637,7 +11631,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F401 — copy_to_workspace refuses a bad request whole and writes nothing to the destination
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 Every entry is checked before anything is written. A refusal is a clean tool error naming the problem: no
 traceback and no server path (`/Users/…`, `/private/…`, `/home/…`).
@@ -11667,7 +11660,6 @@ on both.
 metrics: none.
 
 ### C-F402 — a run whose job is still queued or running is refused by name
-pending: #859
 source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
 A run still being written must not be copied half-done. The refusal is a 409 naming the run, and nothing is written.
 setup: workspaces `qa-c-f402-a`/`-b`. In A, queue a job that stays busy for a while and is still cheap: C-F395's
