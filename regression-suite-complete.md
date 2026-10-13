@@ -11480,4 +11480,23 @@ next run hits on a deleted entry or fails to save it again.
 cleanup: `delete_output(job_id=…)` for each run. Leave the rebuilt cache in place.
 metrics: none.
 
+### C-F394 — a run's Made from lists only references that a step used, not the default of a variable no step reads
+source: tester, verified in #857 (claude-opus-5-5 via anthropic)
+A run's `inputs` (Made from) are the references its substituted arguments resolved to. A declared variable whose
+`asset:` or `output:` default no surviving step references must not appear. Task-only, so it takes seconds.
+1. Run the inline workflow `{"id": "qa-c-f394", "variables": {"used": "asset:qa-cast/priya-voice.wav", "unused":
+   "asset:qa-cast/ep3-shot1-incident.mp4"}, "steps": [{"name": "gain", "task": {"command": "gain_audio",
+   "arguments": {"audio": "variable:used", "gain_db": -3}}, "result": {"content_type": "audio/wav"}}]}`.
+   Then call `get_gallery_metadata(name=<its wav>)`.
+2. Do the same with `"sizes": ["a", "b"]` added to `variables` and `"for_each": "variable:sizes"` on the `gain`
+   step. Call `get_gallery_metadata` on a member's file (`gain@1`).
+expected:
+- Both jobs succeed. Step 2's manifest has two members.
+- In each, `inputs` is exactly `[{"reference": "asset:qa-cast/priya-voice.wav", "kind": "asset"}]`. The used
+  reference is listed, and `asset:qa-cast/ep3-shot1-incident.mp4` is not.
+It is a **finding** if the unused default is listed, or if the used reference is missing. That includes a
+`for_each` member losing its step's references.
+cleanup: `delete_output(job_id=…)` for each run.
+metrics: none.
+
 ## Performance
