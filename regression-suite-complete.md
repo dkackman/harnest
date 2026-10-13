@@ -11678,7 +11678,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both, after the jobs
 metrics: none.
 
 ### C-F403 — copying a kept folder carries its assets, notes and shot boundaries to the destination
-pending: #860
 source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
 An asset copy carries the asset's `notes.json` entry and its kept-shots manifest. The destination sees the same
 shots as the source. `provenance.workspace` still names the source.
@@ -11704,7 +11703,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F404 — an uploaded asset copies to the same `uploads/` path, and runs and assets copy together
-pending: #860
 source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
 setup: workspaces `qa-c-f404-a`/`-b`. In A, run C-F395's inline workflow (id `qa-c-f404`), then
 `keep_output(name=<its wav>, asset_name="qa-c-f404.wav", workspace="qa-c-f404-a")`. Also upload an asset:
@@ -11726,7 +11724,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F405 — a different file at the same asset path refuses the whole request, runs included
-pending: #860
 source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
 Conflicts are all or nothing. An asset already in the destination with different bytes is a conflict, and the 409
 lists every conflicting path. Nothing is written, including the request's runs.

@@ -923,7 +923,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on `qa-se-f047-b` and `
 metrics: none.
 
 ### SE-F048 — copy_to_workspace confines asset entries to the source's asset library
-pending: #860
 source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
 Asset entries are library-relative paths. A folder entry ends in `/`. A `..` or absolute entry
 is a 400, and a copied asset lands at the same relative path in the destination, never above
