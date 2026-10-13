@@ -751,13 +751,16 @@ expected:
 - Every probe is `valid: false` at the argument's own path, with the refusal SE-F014 gives a
   media argument. The existing and nonexistent paths get identical wording, so the refusal
   doesn't reveal whether a file exists.
-- No probe returns a window-count error. A count derived from a refused path would mean the
-  file was opened. No message echoes anything beyond the string sent.
+- No probe returns a window-count error derived from the probed path: an arm that replaces
+  `source` returns only the path refusal. An arm that probes only `video` may also return the
+  count error for the legitimate `source` (the control's frame count), which is expected. A
+  count derived from a refused path would mean the file was opened. No message echoes
+  anything beyond the string sent.
 - `run_workflow` queues no job.
 - The control returns the count error, not a path refusal.
 It is a **finding** if a probe validates or is refused only at run time. If a probe's message
-differs between the existing and nonexistent path, carries a frame count, or shows file
-contents, that is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+differs between the existing and nonexistent path, carries a frame count other than the
+control's, or shows file contents, that is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
