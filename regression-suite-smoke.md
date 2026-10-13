@@ -2273,6 +2273,30 @@ metrics: none.
 source: tester, verified in #847 on 2026-10-11 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 080f1043` on `lem` (cuda): 18 entries, files summing to 140.
 
+### S-F137 — a run's Made from (`manifest.json` `inputs`) pins `output:…/latest/…` and `/vN/` to a run id
+A run's `inputs` used to keep `output:<id>/latest/<file>` exactly as written. Made from then
+named whatever was latest at viewing time, and a run reading its own identity's `latest` later
+listed itself as its own input (#858). Cheap: three task-only jobs, about 1 s each, no model.
+In `workspace="regression-smoke"`, run each with `acknowledged_cost=true`, `wait_seconds=55`:
+1. `{"id":"pin858src","steps":[{"name":"qr","task":{"command":"qr_code","arguments":{"qr_code_contents":"https://example.com/858"}},"result":{"content_type":"image/png","file_base_name":"qr","subfolder":"final"}}]}`.
+   Note its run id `<R1>`.
+2. `{"id":"pin858use","variables":{"img":"x"},"steps":[{"name":"g","task":{"command":"gather_inputs","inputs":["variable:img"]},"result":{"content_type":"application/json"}}]}`
+   with `arguments={"img":"output:pin858src/latest/final/qr-0.0.png"}`.
+3. `{"id":"pin858src","variables":{"a":"x","b":"y"},"steps":[{"name":"g","task":{"command":"gather_inputs","inputs":["variable:a","variable:b"]},"result":{"content_type":"application/json"}}]}`
+   with `arguments={"a":"output:pin858src/latest/final/qr-0.0.png","b":"output:pin858src/v1/final/qr-0.0.png"}`.
+Read each consumer run's `<workflow>/<run id>/manifest.json` with `get_output_text`.
+expected:
+- Run 2: `arguments.img` is kept as written. `inputs` is exactly
+  `[{"reference":"output:pin858src/<R1>/final/qr-0.0.png","kind":"output"}]`.
+- Run 3 (version 2 of `pin858src`): `inputs` holds **one** entry, pinned to `<R1>`, not to run
+  3's own id. `latest` and `v1` resolve to the same file and are merged.
+It is a **finding** if any `inputs` reference still says `latest` or `vN`, if run 3 names its own
+run id, or if run 3 lists the same file twice.
+cleanup: `delete_output(job_id=<job>)` for each of the three runs, consumers first.
+metrics: none.
+source: tester, verified in #858 on 2026-10-13 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ e14b244f` on `mini-ai` (mps).
+
 ## Performance
 
 ### S-P001 — default image generation latency
