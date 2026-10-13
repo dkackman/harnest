@@ -878,6 +878,86 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist), and for th
 setup runs.
 metrics: none.
 
+### SE-F047 — copy_to_workspace confines run entries and workspace names to the workspace root
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+The copy tool takes two workspace names and a list of `<workflow>/<run id>` entries, and writes
+on the destination side. Each of them must stay under the workspace root: a `..` or absolute
+entry is a 400, and a workspace name is validated as a single segment. Nothing may be read
+from outside the source or written outside the destination.
+setup: `create_workspace` `qa-se-f047-a` and `qa-se-f047-b`. In A, run a task-only one-step
+workflow (id `qa-se-f047`, `gain_audio` on `asset:qa-cast/priya-voice.wav`, as in
+`regression-suite-complete.md` C-F395), and note run id R. Record B's `list_gallery`,
+`list_workspaces` (default form) and the full workspace list.
+Each arm is `copy_to_workspace(destination="qa-se-f047-b", source="qa-se-f047-a", runs=[…])`
+with one entry:
+- `../qa-se-f047-a/outputs/qa-se-f047/<R>`;
+- `qa-se-f047/../../../../etc`;
+- `qa-se-f047/<R>/../../../../../etc`;
+- `/etc/hosts`;
+- `/private/etc`;
+- `~/qa-se-f047`;
+- `..`;
+- `qa-se-f047/<R>/sub` (a third segment);
+- `qa-se-f047/` and `/qa-se-f047` (an empty segment).
+Then the workspace names, each with `runs=["qa-se-f047/<R>"]` and the other side valid:
+- `destination` = `../qa-se-f047-b`, `/tmp/qa-se-f047`, `qa-se-f047-b/../qa-se-f047-x`, `.`, `..`,
+  `outputs` and `workflows` (reserved folder names), and `""`;
+- `source` = `../qa-se-f047-a`, `/tmp`, `/etc`, `.` and `..`.
+Control: the plain `runs=["qa-se-f047/<R>"]` copy succeeds.
+expected:
+- Every probe is refused with a clean tool error (the plan's 400 for a bad entry, and a
+  validation refusal for a bad name). No traceback.
+- Wording is the same for a target that exists (`/etc/hosts`) as for one that doesn't, so a
+  reply can't tell a consumer what is on disk.
+- No message discloses a server path that wasn't in the probe (`/Users/…`, `/private/…`,
+  `/home/…`, `/var/…`, `/srv/…`, `/mnt/…`).
+- After all probes, B's `list_gallery` is as at setup, the workspace list holds no new entry
+  (no `qa-se-f047-x`, nothing under `/tmp`), and no workspace's usage changed except B's from
+  the control.
+It is a **finding** if any probe is accepted. A probe that copies, creates a workspace,
+reads from outside the source, or discloses a path is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+Not consumer-testable, so pytest covers it: a symlinked run or asset in the source is refused,
+and a server with no workspace root (`ConfiguredWorkspace`) answers 409.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on `qa-se-f047-b` and `qa-se-f047-a`.
+metrics: none.
+
+### SE-F048 — copy_to_workspace confines asset entries to the source's asset library
+pending: #860
+source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
+Asset entries are library-relative paths. A folder entry ends in `/`. A `..` or absolute entry
+is a 400, and a copied asset lands at the same relative path in the destination, never above
+it.
+setup: as SE-F047, with workspaces `qa-se-f048-a`/`-b`. `keep_output` R's wav in A as
+`proj/x.wav`. Record B's `list_assets`, `list_gallery` and usage.
+Each arm is `copy_to_workspace(destination="qa-se-f048-b", source="qa-se-f048-a", assets=[…])`
+with one entry:
+- `../../../../etc/hosts`;
+- `proj/../../../../etc/hosts`;
+- `proj/../../outputs/`;
+- `/etc/hosts`;
+- `/etc/`;
+- `~/x.wav`;
+- `../`, `./../` and `/`;
+- `asset:proj/x.wav` (a reference, not a path);
+- `uploads/../../../../etc/hosts`.
+Then the mixed request `runs=["qa-se-f048/<R>"], assets=["proj/x.wav",
+"../../../../etc/hosts"]`.
+Control: `assets=["proj/"]` succeeds.
+expected:
+- Every probe is refused with a clean tool error, with the same wording for an existing target
+  as for a missing one. No traceback, and no server path disclosed.
+- The mixed request writes nothing: R isn't in B's gallery, and `proj/x.wav` isn't in B's
+  assets until the control runs.
+- B's `list_assets` never shows a `hosts` file or anything outside the copied paths, and no
+  other workspace's assets change.
+It is a **finding** if any probe is accepted. A probe that copies a file from outside the
+source library, writes outside the destination's, or discloses a path or content is a hole:
+send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

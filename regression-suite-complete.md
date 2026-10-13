@@ -11499,4 +11499,260 @@ It is a **finding** if the unused default is listed, or if the used reference is
 cleanup: `delete_output(job_id=…)` for each run.
 metrics: none.
 
+### C-F395 — copy_to_workspace copies one run: it reads in the destination by gallery name and by `output:` reference, and the source is unchanged
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+Copying a run between workspaces (`copy_to_workspace`) makes the run a first-class run of the destination. It is
+not a job there. Task-only, so each run takes seconds.
+setup: `create_workspace(name="qa-c-f395-a")` and `create_workspace(name="qa-c-f395-b")`. In A, run the inline
+workflow `{"id": "qa-c-f395", "steps": [{"name": "gain", "task": {"command": "gain_audio", "arguments": {"audio":
+"asset:qa-cast/priya-voice.wav", "gain_db": -3}}, "result": {"content_type": "audio/wav"}}]}` with
+`run_workflow(..., workspace="qa-c-f395-a", wait_seconds=55)`. Note its run id (`list_gallery(workspace=
+"qa-c-f395-a")`, the second part of the gallery name) and its version (`get_gallery_metadata`). Record
+`list_workspaces` usage for both workspaces, and `list_gallery`/`list_jobs` for A.
+1. `copy_to_workspace(destination="qa-c-f395-b", source="qa-c-f395-a", runs=["qa-c-f395/<run id>"])`.
+2. `list_workspaces` (default form) at once, with no other call in between.
+3. `list_gallery(workspace="qa-c-f395-b")`, then `get_output_audio` and `get_gallery_metadata` on the copied wav
+   with `workspace="qa-c-f395-b"`.
+4. In B, run the inline workflow `{"id": "qa-c-f395-read", "steps": [{"name": "gain", "task": {"command":
+   "gain_audio", "arguments": {"audio": "output:qa-c-f395/<run id>", "gain_db": -1}}, "result": {"content_type":
+   "audio/wav"}}]}`. Then run it again with `"audio": "output:qa-c-f395/latest"`. Both use
+   `workspace="qa-c-f395-b"`.
+5. `list_jobs` in B (the session's workspace pinned to B with `use_workspace`, or however `list_jobs` scopes). Also
+   `list_gallery`, `list_jobs` and `get_gallery_metadata` on the original in A.
+expected:
+- 1: success. `copied.runs` holds exactly `qa-c-f395/<run id>`, `copied.assets` is empty, `already_present` is
+  empty, and `renumbered` is empty (B had no run of this workflow). The reply carries the no-jobs note: copied runs
+  appear in `list_gallery`, not `list_jobs`. Bytes linked and bytes copied are both present and non-negative, and
+  their sum is non-zero. No `warnings.unresolved_output_refs` entry (the run has no `output:` input).
+- 2: B's usage (files and bytes) has grown from its setup value and is non-zero. It is not the stale pre-copy figure.
+  A's usage is unchanged.
+- 3: the gallery entry has the same workflow and run id as in A. The audio plays, and its metadata keeps the source's
+  version (B had none to collide with).
+- 4: both jobs succeed. Each one's `inputs` (Made from) names the reference it used, and neither fails with a
+  missing-output error.
+- 5: B's `list_jobs` doesn't show the copied run as a job. The setup job doesn't appear there either; only step 4's
+  two jobs do. A's gallery, job and metadata (version, note, inputs) are exactly as at setup.
+It is a **finding** if the copy moves rather than copies, if either `output:` form fails to resolve in B, if B's
+usage is stale right after the copy, or if the copied run shows up as a job in B.
+cleanup: `delete_workspace(name="qa-c-f395-b", acknowledged_cost=true)` and `delete_workspace(name="qa-c-f395-a",
+acknowledged_cost=true)`.
+metrics: none.
+
+### C-F396 — copying a run that is already in the destination reports already_present and changes nothing
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+A repeated copy is idempotent. A run folder already in the destination is skipped and reported, not refused and
+not duplicated.
+setup: as C-F395's setup and its step 1 (workspaces `qa-c-f396-a`/`-b`, workflow id `qa-c-f396`). Then record
+`list_gallery` and `list_workspaces` usage for B.
+1. Repeat the same `copy_to_workspace` call exactly.
+2. Call it a third time with `runs=["qa-c-f396"]` (the bare workflow, which here names the same single run).
+expected:
+- 1 and 2: success, not an error. `already_present` lists `qa-c-f396/<run id>`, and `copied.runs` and `renumbered`
+  are empty. Bytes linked and bytes copied are 0, or absent.
+- After each call, B's `list_gallery` has exactly one entry for `qa-c-f396` (no second copy, no renumbered twin) and
+  B's usage is unchanged.
+It is a **finding** if a repeat is refused as a conflict, makes a second run, or renumbers the existing one.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F397 — a copied run whose version is taken in the destination is renumbered after the destination's highest
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+A copied run keeps its version unless the destination's identity already uses it. Then it is renumbered after the
+destination's highest, in run-id order, and the reply reports the mapping. `output:<wf>/v<N>` in the destination
+keeps resolving to the destination's own run.
+setup: workspaces `qa-c-f397-a` and `qa-c-f397-b`. Run C-F395's inline workflow with id `qa-c-f397` once in A and
+once in B, with `gain_db` -3 in A and -6 in B so the two files differ. Then run it a second time in A (gain_db
+-3). Confirm with `get_gallery_metadata` that A has v1 and v2 and B has v1. Note every run id.
+1. `copy_to_workspace(destination="qa-c-f397-b", source="qa-c-f397-a", runs=["qa-c-f397"])`.
+2. `get_gallery_metadata` on each `qa-c-f397` run in B, then in A.
+3. In B, run C-F395's reader workflow (id `qa-c-f397-read`) with `"audio": "output:qa-c-f397/v1"`. Then
+   `get_gallery_metadata` on its output: `inputs` shows the run it resolved to.
+expected:
+- 1: success. `copied.runs` holds both A runs. `renumbered` maps A's v1 run to `{"from": 1, "to": 2}` and A's v2 run
+  to `{"from": 2, "to": 3}`, keyed by `qa-c-f397/<run id>`, in run-id order. No version that was free is renumbered
+  to a different number: had B's highest been v1 and A held only v3, v3 would keep 3.
+- 2: B holds v1 (its own run, gain -6), v2 and v3 (the copies), with no duplicate version. In A, the two runs are
+  still v1 and v2, so the renumbering touched only the copies.
+- 3: `output:qa-c-f397/v1` in B resolves to B's own run (the -6 dB one, by run id), not to a copy.
+It is a **finding** if two runs in B share a version, if a copy takes over B's `v1`, or if A's versions change.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F398 — a note changed on a copied run in the destination does not reach the source
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+Media is hard-linked, but sidecars (`notes.json`, `manifest.json`) are copies. Editing the copy's note must not
+write through to the source.
+setup: workspaces `qa-c-f398-a`/`-b`. In A, run C-F395's inline workflow (id `qa-c-f398`) with
+`run_workflow(..., note="original note")`. Copy it to B as in C-F395 step 1.
+1. `get_gallery_metadata` on the copy in B: its note.
+2. Change the note on the copy in B to `"changed in B"`. Use the server's note tool, `set_note`, with
+   `workspace="qa-c-f398-b"` or the session pinned to B.
+3. `get_gallery_metadata` on the run in A and on the copy in B.
+expected:
+- 1: the copy carries `"original note"`.
+- 3: B shows `"changed in B"`, and A still shows `"original note"`.
+If the MCP surface has no tool that changes an existing run's note, record that on the stage issue as a finding: the
+plan's acceptance names this check, and a consumer can't run it.
+It is a **finding** if A's note changes.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F399 — copying a run whose `output:` input was not copied succeeds and warns, naming the reference
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+A copy never refuses over a warning. `warnings.unresolved_output_refs` lists, per copied run, each `output:` input
+whose run isn't in the destination.
+setup: workspaces `qa-c-f399-a`/`-b`. In A, run C-F395's inline workflow (id `qa-c-f399`), and note its run id R.
+Then in A run `{"id": "qa-c-f399-chain", "steps": [{"name": "gain", "task": {"command": "gain_audio", "arguments":
+{"audio": "output:qa-c-f399/<R>", "gain_db": -1}}, "result": {"content_type": "audio/wav"}}]}` and note its run id.
+1. `copy_to_workspace(destination="qa-c-f399-b", source="qa-c-f399-a", runs=["qa-c-f399-chain/<its run id>"])`.
+2. Copy `runs=["qa-c-f399/<R>"]` too. Then copy the chain run again (now `already_present`).
+expected:
+- 1: success. `copied.runs` holds the chain run. `warnings.unresolved_output_refs` has an entry for that run naming
+  `output:qa-c-f399/<R>` (as the run's `inputs` record it). The chain run reads in B (`get_output_audio`).
+- 2: copying R succeeds. The repeated chain copy reports `already_present`. If it carries
+  `unresolved_output_refs` at all, it doesn't name R, which is now in B.
+It is a **finding** if step 1 is refused, or if it succeeds without naming the unresolved reference.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F400 — a bare workflow entry copies every run of that workflow and nothing of another
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+setup: workspaces `qa-c-f400-a`/`-b`. In A, run C-F395's inline workflow with id `qa-c-f400` three times, and once
+with id `qa-c-f400-other`.
+1. `copy_to_workspace(destination="qa-c-f400-b", source="qa-c-f400-a", runs=["qa-c-f400"])`.
+2. Delete one of the three copies in B (`delete_output(name="qa-c-f400/<run id>", workspace="qa-c-f400-b")`). Then
+   repeat step 1.
+expected:
+- 1: `copied.runs` holds exactly the three `qa-c-f400/<run id>` entries. B's `list_gallery` holds those three, and
+  no `qa-c-f400-other` run. A prefix-similar name must not match.
+- 2: the deleted run is in `copied.runs`, and the other two are in `already_present`.
+It is a **finding** if the bare entry copies fewer than all runs, or any run of `qa-c-f400-other`.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F401 — copy_to_workspace refuses a bad request whole and writes nothing to the destination
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+Every entry is checked before anything is written. A refusal is a clean tool error naming the problem: no
+traceback and no server path (`/Users/…`, `/private/…`, `/home/…`).
+setup: workspaces `qa-c-f401-a`/`-b`. In A, run C-F395's inline workflow (id `qa-c-f401`), and note run id R.
+Record B's `list_gallery` (empty) and `list_workspaces` usage.
+1. `destination="qa-c-f401-nope"` (a workspace that doesn't exist), `runs=["qa-c-f401/<R>"]`.
+2. `destination="qa-c-f401-a", source="qa-c-f401-a"`, with the same run.
+3. With the session pinned to A (`use_workspace("qa-c-f401-a")`), `destination="qa-c-f401-a"` and `source` omitted.
+4. `source="qa-c-f401-nope"`, `destination="qa-c-f401-b"`, with the same run.
+5. `runs=["qa-c-f401/no-such-run"]`.
+6. `runs=["qa-c-f401-missing"]` (a bare workflow with no runs in A).
+7. `runs=["qa-c-f401/<R>", "qa-c-f401/no-such-run"]` (one good entry and one bad).
+8. Neither `runs` nor `assets` given; then `runs=[]` and `assets=[]`.
+expected:
+- 1: refused, naming the unknown destination. The tool doesn't create the workspace: `list_workspaces` has no
+  `qa-c-f401-nope`.
+- 2 and 3: refused, saying source and destination are the same.
+- 4: refused, naming the unknown source.
+- 5 and 7: refused, naming `qa-c-f401/no-such-run`. In 7, R isn't copied either, because the request is all or
+  nothing.
+- 6: refused, as nothing to copy or an unknown workflow. It must not succeed with zero runs copied.
+- 8: refused, saying at least one of `runs` or `assets` is required.
+- After every step, B's `list_gallery` is still empty and its usage is unchanged, and A is unchanged.
+It is a **finding** if any step succeeds, writes anything to B, creates a workspace, or leaks a server path.
+cleanup: `use_workspace` back to the session's previous workspace. `delete_workspace(..., acknowledged_cost=true)`
+on both.
+metrics: none.
+
+### C-F402 — a run whose job is still queued or running is refused by name
+pending: #859
+source: tester, spec for #859 from #853's plan v2 (claude-opus-5-5 via anthropic)
+A run still being written must not be copied half-done. The refusal is a 409 naming the run, and nothing is written.
+setup: workspaces `qa-c-f402-a`/`-b`. In A, queue a job that stays busy for a while and is still cheap: C-F395's
+inline workflow (id `qa-c-f402`) with `"items": [1, 2, …, 40]` in `variables` and `"for_each": "variable:items"`
+on the step. Use `run_workflow(..., wait_seconds=0)`. Note the job id, and its run id once `get_job` reports one.
+Queuing a second copy of the same job straight after makes a job that is still `queued` when the first runs.
+1. While `get_job` reports the job `running`: `copy_to_workspace(destination="qa-c-f402-b", source="qa-c-f402-a",
+   runs=["qa-c-f402/<its run id>"])`. Then the bare `runs=["qa-c-f402"]`.
+2. `wait_for_job` until both jobs finish. Then repeat the bare copy.
+expected:
+- 1: both calls are refused, naming the busy run. B's `list_gallery` is empty.
+- 2: success. Both runs are copied.
+If the job finished before step 1 could run, raise the item count and repeat. That is a setup miss, not a pass.
+It is a **finding** if a running or queued run is copied, or if the refusal doesn't name it.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both, after the jobs finish.
+metrics: none.
+
+### C-F403 — copying a kept folder carries its assets, notes and shot boundaries to the destination
+pending: #860
+source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
+An asset copy carries the asset's `notes.json` entry and its kept-shots manifest. The destination sees the same
+shots as the source. `provenance.workspace` still names the source.
+setup: workspaces `qa-c-f403-a`/`-b`. In A, run `{"id": "qa-c-f403", "steps": [{"name": "cut", "task":
+{"command": "concat_videos", "arguments": {"videos": ["asset:qa-cast/ep3-shot1-incident.mp4",
+"asset:qa-cast/ep3-shot1-incident.mp4"]}}, "result": {"content_type": "video/mp4"}}]}`. Then
+`keep_output(name=<its mp4>, asset_name="proj/clip.mp4", note="kept in A", workspace="qa-c-f403-a")`. Record
+`assess_output(name="asset:proj/clip.mp4", workspace="qa-c-f403-a")` and
+`get_output_frames(name=<the run's mp4>, seams=true, workspace="qa-c-f403-a")`.
+1. `copy_to_workspace(destination="qa-c-f403-b", source="qa-c-f403-a", assets=["proj/"])`.
+2. `list_assets` in B. Then `assess_output(name="asset:proj/clip.mp4", workspace="qa-c-f403-b")`.
+3. Change the note on `proj/clip.mp4` in B to `"changed in B"`, with the server's note tool (as in C-F398). Then read
+   both workspaces' notes for the asset (`list_assets`).
+expected:
+- 1: success. `copied.assets` lists `proj/clip.mp4`, and `copied.runs` is empty. The no-jobs note is absent or
+  irrelevant (no runs were copied).
+- 2: B lists `proj/clip.mp4` with note `"kept in A"`. `assess_output` reports the same shot count and boundary times
+  as in A. Its provenance, if shown, still names workspace `qa-c-f403-a`.
+- 3: B shows `"changed in B"`, and A still shows `"kept in A"`.
+It is a **finding** if the asset lands under another path, if the note or shot boundaries are lost, or if a change
+in B reaches A.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F404 — an uploaded asset copies to the same `uploads/` path, and runs and assets copy together
+pending: #860
+source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
+setup: workspaces `qa-c-f404-a`/`-b`. In A, run C-F395's inline workflow (id `qa-c-f404`), then
+`keep_output(name=<its wav>, asset_name="qa-c-f404.wav", workspace="qa-c-f404-a")`. Also upload an asset:
+`upload_asset(content=<base64 of a small valid WAV>, asset_name="qa-c-f404-up.wav", workspace="qa-c-f404-a")`. A
+44-byte PCM header plus a few hundred samples of silence is enough; build the bytes in the session. Copy each asset
+by the path `list_assets` in A reports for it, which puts the upload under `uploads/`. Note run id R and both asset
+paths.
+1. `copy_to_workspace(destination="qa-c-f404-b", source="qa-c-f404-a", runs=["qa-c-f404/<R>"], assets=[<each asset
+   path>])`.
+2. Repeat it exactly.
+expected:
+- 1: success. `copied.runs` holds R, and `copied.assets` holds each asset at the same library-relative path: an
+  `uploads/x` stays `uploads/x` in B. B's `list_assets` and `list_gallery` show them, and `asset:<path>` resolves
+  in a B run (C-F395's reader workflow with `"audio": "asset:<path>"`).
+- 2: success. Everything is in `already_present` (the assets have identical bytes), and nothing is in `copied`.
+It is a **finding** if an asset's path changes, if one kind is dropped when both are asked for, or if the repeat is
+refused.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
+### C-F405 — a different file at the same asset path refuses the whole request, runs included
+pending: #860
+source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic)
+Conflicts are all or nothing. An asset already in the destination with different bytes is a conflict, and the 409
+lists every conflicting path. Nothing is written, including the request's runs.
+setup: workspaces `qa-c-f405-a`/`-b`. In A, run C-F395's inline workflow (id `qa-c-f405`, gain -3), note run id R,
+and `keep_output` its wav as `proj/x.wav`. In B, run it with gain -9 and `keep_output` that wav as `proj/x.wav`.
+Record B's `list_gallery`, `list_assets` and usage.
+1. `copy_to_workspace(destination="qa-c-f405-b", source="qa-c-f405-a", runs=["qa-c-f405/<R>"],
+   assets=["proj/x.wav"])`.
+2. The same request with `assets=["proj/"]`.
+3. `copy_to_workspace(..., assets=["proj/no-such.wav"])`, then `assets=["no-such-folder/"]`.
+expected:
+- 1 and 2: refused, listing `proj/x.wav` as a conflict. Afterwards B's gallery has no `qa-c-f405/<R>`, its
+  `proj/x.wav` is still its own (by `get_gallery_metadata`/`assess_output`, or the gain -9 level), and its usage is
+  unchanged.
+- 3: refused, naming the missing asset or folder. Nothing is written.
+It is a **finding** if a conflict overwrites B's file, if the run is copied despite the asset conflict, or if a
+missing asset passes silently.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+metrics: none.
+
 ## Performance
