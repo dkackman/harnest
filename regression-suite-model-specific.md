@@ -4684,4 +4684,29 @@ expected:
 cleanup: none.
 metrics: none.
 
+### M-F151 — two LTX-2.5 `for_each` entries whose `image` names two different frame steps each open on their own source
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic; ep178, job `4b8af57a8f09`)
+Model/pipeline: LTX-2.5 `LTX2ImageToVideoPipeline` via `templates/ltx2/image-to-video` composed in an inline
+`for_each`. Paid: one job, ~1.5 min on a 3090.
+M-F057 has one item-level `previous_result:`; this pins that two entries naming *different* top-level steps
+are routed apart, not both to the first (or last) step. The two sources are visibly different rooms.
+Setup: workspace `regression-model-specific`. Inline workflow, `id` `m_f151`, `"seed": 178`, variable `shots`:
+- `which`: `image` `"previous_result:tail177"`, `num_frames` 41, `seed` 1781, a one-line HAL prompt.
+- `guess`: `image` `"previous_result:tail171"`, `num_frames` 33, `seed` 1782, a one-line PRIYA prompt.
+Steps: `tail177` = `get_last_frame(video="asset:qa-cast/ep177-episode.mp4")`, `tail171` = the same on
+`asset:qa-cast/ep171-episode.mp4`, each result `image/png` `save: false`. `shot` — `for_each: "variable:shots"`,
+`workflow: {"path": "templates/ltx2/image-to-video", "arguments": {prompt/image/num_frames/seed from item:,
+"width": 960, "height": 544}}`, result `video/mp4`. `edit` — `concat_videos(videos=["asset:qa-cast/ep177-episode.mp4",
+"gather:shot"], fps=24, match_levels="rms", match_levels_dbfs=-24)`, result `video/mp4`.
+`validate_workflow` → bind cost → `run_workflow(wait_seconds=55)` → `wait_for_job`.
+expected:
+- validate `valid: true`, `list_entries.shots` 2. The job succeeds; its only warning is the 32k→48k resample.
+- `edit`'s `media.shots`: ep177's two shots (124 + 141 f), then `shot@which` at frame 265 (41 f, sample 530000)
+  and `shot@guess` at 306 (33 f, sample 612000); 339 f, 48 kHz.
+- `get_output_frames(edit, at=["frame:264","frame:265"])` show the same frame (ep177's living room), and
+  `at=["frame:306"]` matches `get_output_frames("asset:qa-cast/ep171-episode.mp4", at=["frame:247"])` (the kitchen).
+It is a **finding** if either entry opens on the other's source, or if validate passes and the run fails.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+metrics: none.
+
 ## Performance
