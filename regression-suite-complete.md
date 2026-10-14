@@ -12063,7 +12063,8 @@ under `templates/minimax/`). The four that had it before: `video-with-audio`, `v
 expected:
 - 1: every minimax `shot` entry lists `attention_backend`.
 - 2: each of the 19 declares `attention_backend` with default `null`. In the 15 new ones it is wired the way the four
-  older templates wire it (`components.transformer.attention_backend` on the H3 pipeline). In `dialogue-short`,
+  older templates wire it (`attention_backend` on the H3 pipeline's transformer component: `components.transformer`,
+  or `components.transformer_ref` on ref2va templates). In `dialogue-short`,
   `shots-batch` and `music-video` it sits on the H3 step inside the `for_each`. No Z-Image step (the portrait steps in
   `dialogue-short`, and any other) references it.
 - The four older templates still declare it with default `null`, wired as before.
@@ -12098,7 +12099,8 @@ One GPU run, on any device. Work in the suite workspace.
 2. `get_job_workflow(job_id=<id>)`.
 expected:
 - 1: the job completes. 512 and 288 are multiples of 32, and 124 is the bottom of the `num_frames` range.
-- 2: the realized H3 step's `components.transformer` has no `attention_backend` key at all. A null substitution drops
+- 2: the realized H3 step's transformer component (`components.transformer`, or `components.transformer_ref` on ref2va
+  templates) has no `attention_backend` key at all. A null substitution drops
   the key; it is not left as `null` or as an empty string.
 It is a **finding** if the run fails because of the new variable, or if the realized workflow carries an
 `attention_backend` key.
@@ -12114,7 +12116,8 @@ pass nor a failure. Otherwise one long GPU run in the suite workspace.
 2. `get_job_workflow(job_id=<id>)`.
 expected:
 - 1: the job completes.
-- 2: every realized H3 step inside the `for_each` has `components.transformer.attention_backend: "sage_hub"`. The Z-Image
+- 2: every realized H3 step inside the `for_each` has `attention_backend: "sage_hub"` on its transformer component
+  (`components.transformer`, or `components.transformer_ref` on ref2va templates; `dialogue-short` is ref2va). The Z-Image
   portrait steps carry no `attention_backend` anywhere.
 It is a **finding** if the run fails, if any H3 step lacks the value, or if a Z-Image step carries it.
 cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
