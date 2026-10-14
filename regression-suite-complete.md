@@ -12051,7 +12051,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F420 — every H3 template declares `attention_backend`, default `null`, and the four that had it are unchanged
-pending: #883
 source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
 Free. The stage's list, all under `templates/minimax/`: `first-and-last-frame`, `last-frame-only`, `chained-segments`,
 `composable-references`, `chain-matched-to-audio`, `chain-matched-and-aligned`, `chain-video-continuity`,
@@ -12074,7 +12073,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F421 — `attention_backend` validates clean absent and as `"sage_hub"` on every new H3 template; an undeclared name is still refused
-pending: #883
 source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
 Free. For each of the 15 new templates in C-F420, supply the inputs it requires from the Fixtures: an image or subject
 input gets `asset:qa-cast/priya-portrait.jpg`, a voice or audio input gets `asset:qa-cast/priya-voice.wav`
@@ -12093,7 +12091,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F422 — a default run on a new H3 template puts no `attention_backend` on the transformer
-pending: #883
 source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
 One GPU run, on any device. Work in the suite workspace.
 1. `run_workflow(name="templates/minimax/first-and-last-frame", arguments={<its image inputs> = "asset:qa-cast/priya-portrait.jpg", "width": 512, "height": 288, "num_frames": 124, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F422 default attention_backend")`.
@@ -12109,7 +12106,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F423 — on CUDA, `dialogue-short` with `"sage_hub"` sets the backend on the H3 step only
-pending: #883
 source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
 CUDA only. Call `get_server_info` first. When `device` isn't `"cuda"`, skip the case as not applicable: it is neither a
 pass nor a failure. Otherwise one long GPU run in the suite workspace.
