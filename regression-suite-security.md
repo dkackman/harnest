@@ -927,7 +927,7 @@ source: tester, spec for #860 from #853's plan v2 (claude-opus-5-5 via anthropic
 Asset entries are library-relative paths. A folder entry ends in `/`. A `..` or absolute entry
 is a 400, and a copied asset lands at the same relative path in the destination, never above
 it.
-setup: as SE-F047, with workspaces `qa-se-f048-a`/`-b`. `keep_output` R's wav in A as
+setup: as SE-F047, with workspaces `qa-se-f048-a`/`-b`/`-c`. `keep_output` R's wav in A as
 `proj/x.wav`. Record B's `list_assets`, `list_gallery` and usage.
 Each arm is `copy_to_workspace(destination="qa-se-f048-b", source="qa-se-f048-a", assets=[…])`
 with one entry:
@@ -938,11 +938,16 @@ with one entry:
 - `/etc/`;
 - `~/x.wav`;
 - `../`, `./../` and `/`;
-- `asset:proj/x.wav` (a reference, not a path);
-- `uploads/../../../../etc/hosts`.
+- `uploads/../../../../etc/hosts`;
+- `asset:../../../../etc/hosts` and `asset:/etc/hosts` (the `asset:` prefix is no way
+  around the checks).
 Then the mixed request `runs=["qa-se-f048/<R>"], assets=["proj/x.wav",
 "../../../../etc/hosts"]`.
 Control: `assets=["proj/"]` succeeds.
+Prefix arm, into a fresh destination `qa-se-f048-c` (so it can't pre-populate B before the mixed
+request): `assets=["asset:proj/x.wav"]` is accepted and treated as `proj/x.wav`. The reply's
+`copied.assets` names `proj/x.wav`, and the file lands at that path in C's library. The
+`asset:` prefix is accepted on purpose, as `output:` is on `runs` (harnest#107).
 expected:
 - Every probe is refused with a clean tool error, with the same wording for an existing target
   as for a missing one. No traceback, and no server path disclosed.
@@ -953,7 +958,7 @@ expected:
 It is a **finding** if any probe is accepted. A probe that copies a file from outside the
 source library, writes outside the destination's, or discloses a path or content is a hole:
 send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
+cleanup: `delete_workspace(..., acknowledged_cost=true)` on A, B and C.
 metrics: none.
 
 ## Network egress
