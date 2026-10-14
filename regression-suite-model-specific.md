@@ -4668,4 +4668,20 @@ expected:
 cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
+### M-F150 — `dialogue-short` takes `match_levels_dbfs`, and validate checks it as an argument
+source: tester, found while running TESTER_TASK.agent.md (claude-opus-5-5 via anthropic; ep171, after #836)
+Model/pipeline: MiniMax H3 Ref2VA via `templates/minimax/dialogue-short`. **Free**: validate only.
+Until #836 the template had no `match_levels_dbfs` variable. Its `match_levels: "rms"` join was stuck at
+the fixed −20 dBFS target, which clip-holds every hot H3 shot, and a caller had no way to lower it.
+1. `get_workflow("templates/minimax/dialogue-short", variables_only=true)`.
+2. `validate_workflow(name="templates/minimax/dialogue-short", workspace=<suite workspace>, arguments={
+   "character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/hal-voice.wav",
+   "audio_bleed_ms": 0, "seam_fade_ms": 150, "match_levels": "rms", "match_levels_dbfs": -24, "seed": 171})`.
+expected:
+- Step 1's `variables` has a `match_levels_dbfs` key, default `null`.
+- Step 2 is `valid: true` with no errors and no "declares no variable" warning, and `checked_arguments` lists
+  `match_levels_dbfs`. Losing either one is a **finding**: the variable is gone, or it is no longer wired.
+cleanup: none.
+metrics: none.
+
 ## Performance
