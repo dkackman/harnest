@@ -2297,6 +2297,30 @@ metrics: none.
 source: tester, verified in #858 on 2026-10-13 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ e14b244f` on `mini-ai` (mps).
 
+### S-F138 — an applied `attention_backend` is named in the job's log, per component and per call
+A run that set an attention backend used to leave no consumer-visible trace. A silently ignored
+backend looked the same as an applied one (#893). Cheap: SD 1.5, 4 steps, about 5 s. `native`
+is used because it works on every accelerator. In `workspace="regression-smoke"`, run each with
+`acknowledged_cost=true`, `wait_seconds=55`:
+1. `{"id":"attn893","seed":42,"steps":[{"name":"main","pipeline":{"configuration":{"component_type":"StableDiffusionPipeline","attention_backend":"native","components":{"unet":{"attention_backend":"native"}}},"from_pretrained_arguments":{"model_name":"stable-diffusion-v1-5/stable-diffusion-v1-5","torch_dtype":"torch.float32","safety_checker":null},"arguments":{"prompt":"an apple","num_inference_steps":4}},"result":{"content_type":"image/jpeg","file_base_name":"attn"}}]}`.
+2. The same workflow, but `configuration` holds only `component_type` and
+   `"components":{"unet":{"attention_backend":"variable:ab"}}`, with `"variables":{"ab":null}`
+   and no `arguments`.
+Then `get_job_events(job_id, kinds=["log","warning"])` on each.
+expected:
+- Run 1 succeeds. Its log has `Setting unet attention backend: native` carrying
+  `component: "unet"` and `attention_backend: "native"`. It also has
+  `Using attention backend: native` carrying `attention_backend: "native"`.
+- Run 2 succeeds, with no attention-backend log line and no warning. The null default applies
+  nothing.
+It is a **finding** if run 1 lacks either line, if a line names `variable:…` instead of the
+resolved value, or if run 2 emits one.
+cleanup: `delete_output(job_id=<job>)` for both runs.
+metrics: none.
+source: tester, verified in #893 on 2026-10-13 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ c07730c7` on `mini-ai` (mps). The `variable:` path with
+`"native"` passed as an argument also logged the resolved name.
+
 ## Performance
 
 ### S-P001 — default image generation latency

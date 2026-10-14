@@ -12225,7 +12225,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F430 — a single-pipeline-step run carries a `timing` object on its manifest entry, with the plan's fields and arithmetic
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device. Work in the suite workspace. `<T2I-20>` is `get_workflow(name="templates/text-to-image")`
 with the `main` step's `num_inference_steps` set to `20` and `seed` set to the literal `42`; the C-F431–C-F444 cases
@@ -12253,7 +12252,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F431 — a warm rerun of the same pipeline reports `load_cached: true` and a load no slower than a cold one
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 Two small GPU runs, on any device, back to back with no other job between them.
 1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F431 first")`, then `wait_for_job`
@@ -12270,7 +12268,6 @@ cleanup: `delete_output(job_id=<id1>, acknowledged_cost=true)` and `delete_outpu
 metrics: none.
 
 ### C-F432 — a one-step run has `passes: 1` and a null `pass_s`
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 The boundary of the plan's "`pass_s` is the median of passes 2..n, null when `passes` < 2". One tiny GPU run, on any device.
 1. `run_workflow(workflow=<T2I-20 with num_inference_steps 1>, acknowledged_cost=true, wait_seconds=55, note="C-F432 one step")`,
@@ -12283,7 +12280,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F433 — a modular pipeline step reports a non-null `encode_s` and `passes` equal to its step count
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 The plan's modular-pipeline acceptance. Pick a modular image template from the catalog: one whose step the guide's
 modular-pipelines section (`get_guide("workflows")` index) says runs as a modular pipeline, that `validate_workflow`
@@ -12300,7 +12296,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F434 — a pipeline step then a utility step: one `timing` each, the utility one holding at most `save_s`
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device. `<T2I-SHARP>` is `<T2I-20>` with its `main` result's `subfolder` set to
 `"intermediate"`, plus a second step `{"name": "sharp", "task": {"command": "sharpen", "arguments": {"media":
@@ -12318,7 +12313,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F435 — a utility-only workflow reports no pipeline fields
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 No diffusion, on any device. Uses the fixture `asset:qa-cast/priya-portrait.jpg`; any still substitutes. `<SHARP>` is
 `{"steps": [{"name": "sharp", "task": {"command": "sharpen", "arguments": {"media": "asset:qa-cast/priya-portrait.jpg",
@@ -12333,7 +12327,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F436 — a step the step cache serves is `reused: true` with no `timing` key
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, then a rerun the step cache serves, on any device.
 1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F436 source")`, then `get_job`.
@@ -12349,7 +12342,6 @@ cleanup: `delete_output(job_id=<id1>, acknowledged_cost=true)` and `delete_outpu
 metrics: none.
 
 ### C-F437 — `timing` is history: it comes back unchanged later, and a job from before the feature has none and no error
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 No new GPU run beyond C-F430's (run this case before C-F430's cleanup, or make one more `<T2I-20>` run as in C-F430 and
 call it `<id>`).
@@ -12369,7 +12361,6 @@ cleanup: whatever `<id>` this case made: `delete_output(job_id=<id>, acknowledge
 metrics: none.
 
 ### C-F438 — a job cancelled mid-denoise returns no `timing` and no server error
-pending: #885
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One GPU run cancelled part-way, on any device.
 1. `run_workflow(workflow=<T2I-20 with num_inference_steps 200>, acknowledged_cost=true, note="C-F438 cancel")` with no
@@ -12506,7 +12497,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F446 — validate warns `cache_short_schedule` for `first_block`/`mag` under 20 steps, not at 20
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Validate only, on any server. `<SC>` is the full document from `get_workflow(name="templates/step-caching")`. It
 is FLUX.1-dev with `steps[0].pipeline.configuration.cache: {"type": "first_block", "threshold": 0.05}` and
@@ -12532,7 +12522,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F447 — `cache_short_schedule` reads the resolved step count: the argument, the default, or silence
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Validate only, on any server. `<SC>` as in C-F446, whose steps come from `variable:num_inference_steps`.
 1. `validate_workflow(workflow=<SC with variables.num_inference_steps = 30>)`, with no `arguments`.
@@ -12553,7 +12542,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F448 — `taylorseer`, `faster` and `text_kv` never warn short-schedule; TaylorSeer always warns its state
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Validate only, on any server. `<SC>` as in C-F446. Each call sets `steps[0].arguments.num_inference_steps` to a
 literal and replaces `steps[0].pipeline.configuration.cache`.
@@ -12574,7 +12562,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F449 — `compile.fullgraph: true` with a cache warns `compile_fullgraph_with_cache`; without either, silent
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Validate only, on any server. `<SC>` as in C-F446, at its default 28 steps, so `cache_short_schedule` doesn't fire.
 1. `<SC>` with `steps[0].pipeline.configuration.components.transformer.compile = {"fullgraph": true}`, cache kept.
@@ -12591,7 +12578,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F450 — a CUDA-only `attention_backend` warns `attention_backend_unavailable` off CUDA, at both levels
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Validate only. Call `get_server_info` first and note `device`. `<NC>` is `<SC>` (C-F446) with `cache` removed from
 `steps[0].pipeline.configuration`, so no cache code can fire.
@@ -12615,7 +12601,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F451 — the acceleration warnings never refuse: validate, save and run all accept the workflow
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 In the suite workspace. `<W>` is `<SC>` (C-F446) with `steps[0].arguments.num_inference_steps = 12` and
 `components.transformer.compile = {"fullgraph": true}`. Off CUDA, also set `configuration.attention_backend =
@@ -12637,7 +12622,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)` if the job wrote a
 metrics: none.
 
 ### C-F452 — no catalog template warns a cache or compile acceleration code as shipped
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Validate only, on any server, with each template's stored defaults (no `arguments`).
 1. `validate_workflow(name="templates/step-caching")`: first_block at 28 steps.
@@ -12654,7 +12638,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F453 — `get_guide("acceleration")` documents the four acceleration warnings
-pending: #887
 source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
 Read only, on any server.
 1. `get_guide("acceleration")`. If it returns an index, read the sections it lists that cover caching, TaylorSeer,
@@ -13075,5 +13058,35 @@ doesn't take it; `delete_output(job_id=…, acknowledged_cost=true)` for each of
 C-F469's jobs; `delete_workflow("sweep-base")` in `regression-sweep`; then
 `delete_workspace("regression-sweep", acknowledged…)`. Confirm `list_workspaces` no longer has it.
 metrics: none.
+
+### C-F471 — the OOM ranking follows dispatch order, and the newest worker's 1000 comes back down
+Needs a server whose `get_health` lists two workers (lem's two 3090s). On a
+single-worker server, skip this case and say so; it is not a failure.
+`validate_workflow(name="templates/image-processors")` for the plan, then
+each run is `run_workflow(name="templates/image-processors",
+acknowledged_cost=<that plan>)`, about 40 s on a cold worker and about 10 s on a warm one:
+1. Dispatch A, then dispatch B immediately, so both run at once (one per card).
+   Call `get_health`.
+2. Once A has finished, and while B's worker is still alive, dispatch C, which lands on A's card. Call `get_health`.
+3. While C is still running, dispatch D, which lands on B's card. Call `get_health`.
+expected: each `workers[]` entry that is alive carries `pid` and
+`oom_score_adj`. A worker that isn't alive carries neither. After every
+dispatch, the worker that just took a job reads **1000**, and every other
+live worker reads its spawn-time floor (200 on lem, under the systemd
+unit). Concretely:
+- step 1: A's worker is at the floor and B's at 1000;
+- step 2: A's card is at 1000, with the **same pid** as in step 1, and B's
+  card has gone back to the floor;
+- step 3: it flips again.
+No job's `warnings` reports a refused `oom_score_adj` write.
+Two live workers both at 1000 is the #881 bug: the reset was refused and
+the kernel falls back to ranking by RSS, so it kills the earlier job.
+So is a worker that keeps the score from its first dispatch while its pid
+is unchanged.
+cleanup: `delete_output(job_id=…)` for all four jobs.
+metrics: none.
+source: tester, verified in #881 (run over MCP 2026-10-14 on lem `develop` @ fb829e76 as jobs
+`beaf93a12976`, `0fe8400832ba`, `6f92d48200c1` and `66469d86da07`, model `claude-opus-5-5` via
+provider `anthropic`).
 
 ## Performance
