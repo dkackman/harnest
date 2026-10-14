@@ -15,7 +15,9 @@ and runs the real drivers end to end. See "Tests" below.
 - `run-loop.sh` — the driver. Runs the implementer's sessions, then the tester's, then prints a
   ticket status board; repeats. Sessions are **per issue, not per role**: the implementer gets a
   short triage session when 2+ issues wait (dispositions each with a `triage:` comment, which
-  is also where related issues get batched into one fix), then one fresh `claude -p` per
+  is also where related issues get batched into one fix; it also runs for any stranded issue,
+  relabelling it when its own record settles where it belongs, else parking it `owner:don`,
+  each with an `unstrand:` comment), then one fresh `claude -p` per
   remaining issue; the tester gets one per `status:fixed-pending-verify` issue, plus a "task"
   session (closure responses + one step of the standing task, `agents/tester/standing-task.md`) every `TESTER_TASK_EVERY` cycles
   (default 4 — it is the most expensive session in a cycle and is discovery, not verification;
@@ -206,7 +208,8 @@ and runs the real drivers end to end. See "Tests" below.
   to the queue that runs it next, or to `don`, `wait`, `external` or `stranded`. Every
   driver queue (`queue_issues`/`still_ready` in `providers.sh`), the digest and the
   post-session audit read it. "Stranded" means no queue will ever pick the issue up: the
-  audit warns on it, and the digest lists it. Change who acts on what here, not in a
+  audit warns on it, the digest lists it, and the implementer's triage unstrands it
+  (`stranded_here` in `run-loop.sh`). Change who acts on what here, not in a
   driver.
 - `run-bench.sh` / `bench/` — the replay benchmark (roadmap R1). It re-runs the
   implementer, with its real role prompt plus `bench/replay-note.md`, on curated

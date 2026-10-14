@@ -22,7 +22,9 @@
 #   wait       a legitimate pause: blocked, or its parent isn't building yet
 #   external   filed by another login and not yet parked; park_external_issues
 #              parks it. Once Don hands a parked one back, it is ordinary.
-#   stranded   no queue selects it and nothing will: a protocol hole to fix
+#   stranded   no queue selects it: a label slip or a protocol hole. The
+#              implementer's triage unstrands it (relabels it, or parks it
+#              with Don); a hole is still a fix to make here
 #
 # A release freeze (roadmap R14): while an open issue labeled `release`
 # exists (Don's, owner:don, titled with the version), every agent queue

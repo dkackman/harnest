@@ -61,7 +61,11 @@ never one per role.
    `develop`, or a restated `wontfix`? Should it be batched with a related issue? Would
    the fix add new engine or validation surface that a narrow verify can't cover? In that
    last case it escalates the issue to Don. Every outcome is recorded as a `triage:`
-   comment.
+   comment. Triage also runs, even with no fix waiting, when an issue is stranded (no
+   queue will pick it up as labeled). It relabels the issue when the issue's own record
+   settles where it belongs, and otherwise parks it with Don. Each move gets an
+   `unstrand:` comment. A stranded issue goes to the loop its `target:` names, or, if
+   unclaimed, to the loop running the shared passes.
 3. **One implementer session per remaining issue.** The session reproduces the bug,
    fixes it on a branch, and merges to `develop`. It then deploys `develop` (never the
    branch) with one call: `ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'`.
@@ -164,7 +168,7 @@ idea ──▶ owner:lead ──▶ feature plan | owner:implementer (one fix) |
 [`lib/classify.jq`](lib/classify.jq) is the protocol as code: it maps every open issue to
 the session that runs next, or to where it waits. Every driver queue, the digest and the
 post-session audit read it. An issue no queue will ever pick up is "stranded": the audit
-warns on it, and the digest lists it.
+warns on it, the digest lists it, and the next triage unstrands it (step 2 above).
 
 ## Your moves
 

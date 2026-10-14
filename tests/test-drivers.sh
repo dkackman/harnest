@@ -70,6 +70,22 @@ eq  "hand-off: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
 has "lem loop: makes sure its claim label exists" "gh label create target:lem --repo o/r" "$(cat "$T/gh-calls")"
 has "lem loop: and the backend labels its prompts file with" "gh label create backend:shared --repo o/r" "$(cat "$T/gh-calls")"
 
+# --- 3a. a stranded issue: triage runs for it alone (no fix waits), and its
+# unstrand lets the tester verify it the same cycle; a second it can't place
+# goes to Don with a bare owner add, which the guard allows on an ownerless issue
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 12, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "status:fixed-pending-verify"}]},
+        {"number": 13, "state": "OPEN", "labels": []}]'
+FAKE_CLAUDE_DO='case "$*" in *"TRIAGE session"*) printf "%s" "$*" > "$T/triage-prompt"; gh issue edit 12 --repo o/r --remove-label owner:implementer --add-label owner:tester; gh issue edit 13 --repo o/r --add-label owner:don --add-label status:needs-approval ;; *"VERIFY session"*) gh issue edit 12 --repo o/r --remove-label status:fixed-pending-verify --add-label status:verified; gh issue close 12 --repo o/r --reason completed ;; esac' \
+  T="$T" loop 1
+has "unstrand: triage names the stranded issue and why" "#12: owner:implementer with status:fixed-pending-verify" "$(cat "$T/triage-prompt")"
+has "unstrand: and the ownerless one" "#13: owner labels: none" "$(cat "$T/triage-prompt")"
+has "unstrand: with no fix to triage, says so" "only the stranded ones below" "$(cat "$T/triage-prompt")"
+eq  "unstrand: triage, then the tester's verify" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+eq  "unstrand: verified the same cycle" "CLOSED" "$(jq -r '.["o/r"][] | select(.number == 12) | .state' "$T/board.json")"
+eq  "unstrand: the other parked with Don" "owner:don,status:needs-approval" "$(labels_of 13)"
+eq  "unstrand: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
+
 # --- 3b. a docs-only fix the tester can't observe: it reroutes, and the
 # docs reviewer closes it the same cycle, from the plugin tree
 : > "$FAKE_CLAUDE_LOG"

@@ -27,10 +27,12 @@
 # TICKET_REPO; GitHub holds their full history, including what predates it.
 #
 # Sessions are per issue, not per role. One cycle is:
-#   implementer triage   one session, only when 2+ issues are waiting: reads
-#                        them all, closes duplicates, parks what needs parking,
-#                        and leaves a `triage:` comment on each — including
-#                        which issues to batch into one fix
+#   implementer triage   one session, only when 2+ issues are waiting or one
+#                        is stranded: reads them all, closes duplicates, parks
+#                        what needs parking, and leaves a `triage:` comment on
+#                        each — including which issues to batch into one fix.
+#                        It also relabels each stranded issue (no queue picks
+#                        it up) so one does, or parks it with Don
 #   implementer #N       one fresh session per remaining issue (a batch is
 #                        worked by the first issue's session; the driver skips
 #                        an issue that was handed off meanwhile)
@@ -500,11 +502,19 @@ set_base_commit() {
   ensure_arch_tools "$SOURCE_DIR"  # the architecture ratchet's tools, between sessions
 }
 
-# implementer_pass — triage (when 2+ issues wait), then one session per issue.
+# implementer_pass — triage (when 2+ issues wait, or any issue is stranded),
+# then one session per issue.
 implementer_pass() {
-  local -a queue=()
-  local n
+  local -a queue=() stranded=()
+  local n why stranded_list=""
   while IFS= read -r n; do [ -n "$n" ] && queue+=("$n"); done < <(queue_issues implementer:fix | cut -f1)
+  # Stranded issues (lib/classify.jq) go to triage's unstrand step: no other
+  # session would ever pick them up.
+  while IFS=$'\t' read -r n why; do
+    [ -n "$n" ] || continue
+    stranded+=("$n"); stranded_list="$stranded_list
+- #$n: $why"
+  done < <(stranded_here)
   # Claim before triage, so two loops never triage or fix the same issue
   # (claim_issue in providers.sh; the first claim keeps a tie).
   local -a held=()
@@ -517,19 +527,29 @@ implementer_pass() {
     else echo "[implementer:#$n] held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"; fi
   done
   queue=(${held[@]+"${held[@]}"})
-  [ "${#queue[@]}" -gt 0 ] || { echo "[implementer] nothing owned, skipping" | tee -a "$LOOP_LOG"; return 0; }
+  if [ "${#queue[@]}" -eq 0 ] && [ "${#stranded[@]}" -eq 0 ]; then
+    echo "[implementer] nothing owned, skipping" | tee -a "$LOOP_LOG"; return 0
+  fi
 
-  if [ "${#queue[@]}" -ge 2 ]; then
+  # A queue of one skips triage, unless there is something to unstrand.
+  local -a triaged=()
+  [ "${#queue[@]}" -ge 2 ] && triaged=("${queue[@]}")
+  if [ "${#triaged[@]}" -gt 0 ] || [ "${#stranded[@]}" -gt 0 ]; then
+    local ask="" unstrand=""
+    [ "${#triaged[@]}" -gt 0 ] && ask=" triage exactly these issues: $(printf '#%s ' "${triaged[@]}")."
+    [ "${#stranded[@]}" -gt 0 ] && unstrand="
+
+Unstrand these issues (the Unstrand step in your system prompt): as labeled, no queue will ever pick them up. lib/classify.jq's reason for each:$stranded_list"
     run_agent implementer triage "$TRIAGE_BUDGET_USD" "$SOURCE_DIR" "$TRIAGE_PROVIDER" "$TRIAGE_MODEL" "$TRIAGE_EFFORT" triage \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions for it are in your system prompt; triage exactly these issues: $(printf '#%s ' "${queue[@]}"). Do not fix anything in this session. Then stop.
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER; issues filed by any other login are not yours to work. This is a TRIAGE session: your role instructions for it are in your system prompt;${ask:- there are no issues to triage this time, only the stranded ones below to unstrand.} Do not fix anything in this session. Then stop.$unstrand
 
 $SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
-The issues as of $(ts), bodies only — start from these; gh is for acting on them, for their comments, and for anything newer:
-
-$(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
+The issues as of $(ts) — start from these; gh is for acting on them, for their earlier comments, and for anything newer:
+$( [ "${#triaged[@]}" -gt 0 ] && { echo; echo "To triage (bodies only):"; echo; for q in "${triaged[@]}"; do issue_context "$q" brief; echo; done; } )
+$( [ "${#stranded[@]}" -gt 0 ] && { echo; echo "To unstrand (with their latest comments, the record of how each got here):"; echo; for q in "${stranded[@]}"; do issue_context "$q"; echo; done; } )" \
       "${IMPLEMENTER_FLAGS[@]}"
-    for n in "${queue[@]}"; do audit_issue "$n" implementer; done
+    for n in ${triaged[@]+"${triaged[@]}"} ${stranded[@]+"${stranded[@]}"}; do audit_issue "$n" implementer; done
   fi
 
   local bounces model provider escalation last_on=""
@@ -538,7 +558,7 @@ $(for q in "${queue[@]}"; do issue_context "$q" brief; echo; done)" \
   if [ "$IMPLEMENTER_ESCALATE_AFTER" -gt 0 ] && [ "$IMPLEMENTER_ESCALATE_AFTER" -lt "$IMPLEMENTER_PARK_AFTER" ]; then
     last_on=", the most recent on the tester's own model"
   fi
-  for n in "${queue[@]}"; do
+  for n in ${queue[@]+"${queue[@]}"}; do
     still_ready "$n" implementer:fix \
       || { echo "[implementer:#$n] no longer ready (handed off or batched), skipping" | tee -a "$LOOP_LOG"; continue; }
     bounces="$(handoff_count "$n")"
@@ -1003,6 +1023,27 @@ claimed_here() {
       | grep -qx "target:$DW_TARGET" && return 0
   done
   return 1
+}
+
+# stranded_here: the stranded issues (lib/classify.jq) this loop's triage
+# unstrands, one per line: number, reason, tab-separated. A claimed one is
+# the claiming loop's (lem's when both claim it, as in classify.jq); an
+# unclaimed one is the loop running the shared passes', so two loops never
+# unstrand the same issue. An issue gh can't read is left for next cycle.
+stranded_here() {
+  local n parent reason claims holder
+  while IFS=$'\t' read -r n parent reason; do
+    [ -n "$n" ] || continue
+    claims="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels \
+      --jq '[.labels[].name | select(startswith("target:")) | ltrimstr("target:")] | join(" ")' 2>/dev/null)" || continue
+    if [ -z "$claims" ]; then
+      shared_passes_here || continue
+    else
+      case " $claims " in *" lem "*) holder=lem ;; *) holder="${claims%% *}" ;; esac
+      [ "$holder" = "$DW_TARGET" ] || continue
+    fi
+    printf '%s\t%s\n' "$n" "$reason"
+  done < <(queue_issues stranded)
 }
 
 # One line per open issue: #NN  status-labels  owner-label  title. Prints

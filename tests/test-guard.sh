@@ -9,7 +9,8 @@ mcp_transcript="$T/with-mcp.jsonl"
 printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","name":"mcp__dw__get_job"}]}}' > "$mcp_transcript"
 # The needs-approval rule asks GitHub whether owner:don is on the issue:
 # #7 has it, #8 doesn't.
-stub_gh 'case "$*" in *"view 7"*) echo true ;; *"view 8"*) echo false ;; *) exit 1 ;; esac'
+# The owner rule asks how many owner labels an issue has: #9 has none.
+stub_gh 'case "$*" in *"view 7"*) echo true ;; *"view 8"*) echo false ;; *"view 9"*) echo 0 ;; *) exit 1 ;; esac'
 
 # row <expect> <role> <kind> <transcript> <command>
 row() {
@@ -46,6 +47,9 @@ for r in implementer lead; do
   row 0 $r "" $none 'gh issue edit 8 --remove-label status:needs-approval'
   row 2 $r "" $none 'gh issue edit 9 --remove-label status:needs-approval'
   row 2 $r "" $none 'gh issue edit 5 --add-label owner:tester'
+  row 0 $r "" $none 'gh issue edit 9 --add-label owner:tester'
+  row 2 $r "" $none 'gh issue edit 9 --add-label owner:tester,owner:don'
+  row 2 $r "" $none 'gh issue edit 7 --add-label owner:tester'
   row 2 $r "" $none 'gh issue edit 5 --remove-label owner:x --add-label owner:tester,owner:don'
   row 0 $r "" $none 'gh issue edit 5 --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify'
   row 0 $r "" $none 'gh issue comment 5 --body "closing as completed later: gh issue close 5"'

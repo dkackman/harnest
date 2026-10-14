@@ -17,7 +17,8 @@ implementer:
     is on the issue (a human's park; once Don swaps the owner away, a
     leftover status is stale and may be cleared, which asks GitHub)
   - adding an `owner:*` label must remove one in the same call (exactly
-    one owner at a time)
+    one owner at a time), unless GitHub says the issue has none: triage's
+    unstrand step gives a stranded issue its first owner (asks GitHub)
   - no push to master, no force push, no branch deletion on origin
   - hand-off gate: adding `status:fixed-pending-verify` needs a clean tree,
     ruff clean on the changed files, the UI's check/lint/test passing when
@@ -180,9 +181,30 @@ def owner_rule(words):
     removed = [l for l in flag_values(words, "--remove-label") if l.startswith("owner:")]
     if len(added) > 1:
         deny("an issue carries exactly one owner:* label; this adds %s." % ", ".join(added))
-    if added and not removed:
+    if added and not removed and owner_count(words) != 0:
         deny("an issue carries exactly one owner:* label, so adding %s must remove the current owner "
              "in the same command (--remove-label owner:<current> --add-label %s)." % (added[0], added[0]))
+
+
+def owner_count(words):
+    """How many owner:* labels the issue an edit names carries, as GitHub
+    says, or None when it can't say. An issue with none (stranded) may be
+    given its first owner by a bare add; any doubt fails closed."""
+    nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+    if not nums:
+        return None
+    repo = flag_values(words, "--repo", "-R")
+    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq",
+           "[.labels[].name | select(startswith(\"owner:\"))] | length"]
+    if repo:
+        cmd += ["--repo", repo[-1]]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+    except Exception:
+        return None
+    if out.returncode != 0 or not out.stdout.strip().isdigit():
+        return None
+    return int(out.stdout.strip())
 
 
 def closes_completed(words):
