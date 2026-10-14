@@ -4617,4 +4617,33 @@ It is a **finding** if any template is refused on its default adapter.
 cleanup: delete any asset uploaded for step 2.
 metrics: none.
 
+### M-F148 — a mag cache with `calibrate: true` reports its ratios to the client, one labeled list per CFG context
+source: tester, verified in #891 (claude-opus-5-5 via anthropic)
+Model/pipeline: `QwenImage21Pipeline`, `Qwen/Qwen-Image-2.1` (bf16, `offload: model`) for steps 1–2;
+`ZImagePipeline`, `Tongyi-MAI/Z-Image-Turbo` (bf16) for step 3.
+The calibration ratios used to be printed to the worker's stdout and cleared by diffusers, so no client could see
+them. About 45 s per Qwen run and 25 s for Z-Image.
+Setup: workspace `regression-model-specific`.
+Steps:
+1. Run an inline `run_workflow` with one step, `gen`, using `QwenImage21Pipeline` with
+   `configuration.cache: {"type": "mag", "calibrate": true}`. Its arguments are a `prompt`, a `negative_prompt`,
+   `true_cfg_scale: 4.0`, `use_kv_cache: false`, `num_inference_steps: 10` and 512×512, with `result.content_type`
+   set to `image/png`. Then call `get_job_events(kinds=["log"])`.
+2. Run the same step without `calibrate`, with `num_inference_steps: 10` added to the cache config and step 1's
+   `[cond]` list as `mag_ratios`.
+3. Run `ZImagePipeline` with `cache: {"type": "mag", "calibrate": true}`, `num_inference_steps: 10`,
+   `guidance_scale: 3.0` and 512×512.
+expected:
+- Step 1 succeeds. `get_job.warnings` holds `gen: MagCache calibration (10 steps) [cond]: [ … ] — paste into
+  mag_ratios …` and the same message with `[uncond]`. Each list has exactly 10 numbers. The same two messages also
+  appear as `log` events.
+- Step 1 also warns `… declares num_inference_steps 28 but this step runs 10; calibrating over 10`.
+- Step 2 succeeds, and no `MagCache calibration` message appears in its warnings.
+- Step 3 succeeds with the warning `gen: MagCacheConfig was not applied: ZImageTransformer2DModel does not
+  support diffusers' enable_cache(), so this step runs uncached`. A silent skip is a **finding**.
+- Only the presence, labels and lengths of the lists are asserted, never their values, because the runs are
+  unseeded.
+cleanup: `delete_output(job_id=…)` for each of the three jobs.
+metrics: none.
+
 ## Performance
