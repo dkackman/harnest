@@ -12238,14 +12238,14 @@ expected:
 - 1: the job completes.
 - 2: the `main` step's `manifest[]` entry has a `timing` object with the keys `load_s`, `load_cached`, `encode_s`,
   `denoise_s`, `passes`, `first_pass_s`, `pass_s`, `compiled`, `decode_s`, `save_s` and `segments`. A key the step left
-  unmarked is null; a key missing outright rather than null is noted in the report, not failed. `passes` is `20`. `load_cached` and `compiled` are booleans. `load_s`, `denoise_s`,
+  unmarked is null; a key missing outright rather than null is noted in the report, not failed. `passes` is the step's scheduler timestep count: `21` for this SD 1.5 template's PNDM scheduler at 20 steps. `load_cached` and `compiled` are booleans. `load_s`, `denoise_s`,
   `first_pass_s`, `pass_s`, `decode_s` and `save_s` are non-null numbers ≥ 0, each a multiple of 0.1 (at most one
   decimal place). `encode_s` is a number ≥ 0 or null (a classic pipeline may not mark it). `segments` is null or `1`.
-  `denoise_s` is within 15% of `first_pass_s + 19 × pass_s`, and `load_s + encode_s + denoise_s + decode_s + save_s`
+  `denoise_s` is within 15% of `first_pass_s + (passes − 1) × pass_s`, and `load_s + encode_s + denoise_s + decode_s + save_s`
   (a null counted as 0) is no more than the job's wall time as `get_job` reports it (its finish time minus its start
   time, or its duration field), plus 0.5 s of rounding slack.
 - 3: the `manifest.json` entry for `main` carries the same `timing` object, value for value.
-It is a **finding** if `timing` is missing, if `passes` isn't 20, if a phase time is negative or not rounded to 0.1, if
+It is a **finding** if `timing` is missing, if `passes` isn't 21, if a phase time is negative or not rounded to 0.1, if
 the denoise arithmetic is off by more than 15%, if the phases sum past the wall time, or if `manifest.json` differs
 from `get_job`.
 cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
@@ -12306,7 +12306,7 @@ One small GPU run, on any device. `<T2I-SHARP>` is `<T2I-20>` with its `main` re
 expected:
 - 1: `valid: true`.
 - 2: `manifest[]` has an entry for `main` and one for `sharp`. `main`'s `timing` holds the C-F430
-  shape with `passes: 20`. `sharp`'s `timing` is absent, or holds no non-null pipeline field (`load_s`, `encode_s`, `denoise_s`, `passes`,
+  shape with `passes: 21`. `sharp`'s `timing` is absent, or holds no non-null pipeline field (`load_s`, `encode_s`, `denoise_s`, `passes`,
   `first_pass_s`, `pass_s`, `decode_s` absent or null), and `save_s` is null or a number ≥ 0 rounded to 0.1.
 It is a **finding** if `main` lacks `timing`, if the two are merged into one, or if `sharp` reports a pipeline phase.
 cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
