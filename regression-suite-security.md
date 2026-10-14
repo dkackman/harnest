@@ -961,6 +961,41 @@ send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `delete_workspace(..., acknowledged_cost=true)` on A, B and C.
 metrics: none.
 
+### SE-F049 — compare_outputs reads only gallery outputs and assets, never an arbitrary file
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+`compare_outputs` is a new surface that takes names and decodes them into pixels, so a name that
+escapes the gallery or asset library would return a file's content as an image. Setup: in
+workspace `regression-security`, run one cheap still with no model (`{"id": "se-f049", "steps":
+[{"name": "qr", "task": {"command": "qr_code", "arguments": {"qr_code_contents": "se-f049", "width":
+256, "height": 256}}, "result": {"content_type": "image/png", "file_base_name": "qr"}}]}`) and use
+its gallery name as the control G. `/etc/hosts` exists on both Linux and macOS, so it is the read
+target.
+Probe `compare_outputs(names=[G, P])` and, separately, `compare_outputs(names=[G, P], baseline=P)`
+for each P:
+- `../../../../etc/hosts`
+- `/etc/hosts`
+- `asset:../../../../etc/hosts`
+- `asset:/etc/hosts`
+- `~/.bashrc`
+- `outputs/../../etc/hosts`
+- `regression-security/../../../../etc/hosts`
+- `asset:%2e%2e/%2e%2e/etc/hosts` (percent-encoded)
+- a missing control: `../../../../etc/no-such-file`
+Control: `compare_outputs(names=[G, G])` returns a grid with `identical` metrics.
+expected:
+- Every probe is refused with a clean tool error that echoes at most the name as sent. The wording
+  for an existing target (`/etc/hosts`) matches a missing one (`no-such-file`), so the reply doesn't
+  reveal whether a file exists.
+- No image part on any probe, no metrics, no traceback, and no server path in the message
+  (`/Users/…`, `/private/…`, `/home/…`, `/var/…`, `/srv/…`, `/mnt/…`).
+It is a **finding** if any probe returns an image or metrics, or the error distinguishes an
+existing file from a missing one or discloses a path. A probe that reads a file outside the
+gallery or asset library, or discloses a server path or content, is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=<G's run>, acknowledged_cost=true)`.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

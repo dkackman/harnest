@@ -11798,7 +11798,6 @@ cleanup: none (no jobs run).
 metrics: none.
 
 ### C-F408 — the `minimax-h3` skill states #877's verdict for a locked frame with lip-sync, in one unbroken line
-pending: #878
 source: tester, spec for #878 from #852's plan v0 (claude-opus-5-5 via anthropic)
 Free. The skill is the one a session loads from `develop`.
 1. Load the `dw:minimax-h3` skill (the `Skill` tool). Read #877's verdict from its results comment.
@@ -11926,6 +11925,1156 @@ It is a **finding** if `tonal` or `spike` names `too_loud` or gives level-limit 
 `closest_tonal`, or if `loud` names anything but `too_loud`. If a fixture's counts no longer fit the shape above
 (e.g. `tonal` gains a candidate), the case can't be judged. Report it, and don't count it as a pass.
 cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F414 — the H3 quality-ramp section states both paths, every rung's argument set, and the rules around them
+pending: #882
+source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
+Free, reading only. Load the `dw:minimax-h3` skill (`Skill` tool), follow its pointer to the quality-and-speed
+reference, and read its H3 quality-ramp section. Check every template name it gives with `list_workflows(shape="shot")`
+(plus `get_workflow(name, variables_only=true)` for `templates/minimax/dialogue-short`, which that filter doesn't list).
+expected:
+- **The TV path** goes from L1 to L7. L1 is 1344x768, `weights_dtype` int4, the 4-step LoRA (named by
+  `lora_model_name`/`lora_weight_name`) and `num_inference_steps` 5, on `templates/minimax/reference-to-video`. L7 is
+  the same set at int8. L7 is marked as not confirmed by ear or in playback.
+- **The L0 sketch** is 960x544. The section calls it a throwaway, and says its staging won't carry to 1344x768.
+- **The cinema path** goes from B3 to L5, or to P1. B3 is 1344x768, int8, the base model with no LoRA
+  (`lora_model_name: null`) and 12 steps, on `templates/minimax/dialogue-short`. L5 is the same set at 30 steps.
+  P1 is L5 plus a `first_block` cache at 0.05. The section says P1 runs only from a saved copy of the template,
+  until #865.
+- **Close-ups:** the advice is to ship the 12-step draft.
+- **`sage_hub`:** the section says it is available only as an argument on `video-with-audio`,
+  `video-with-audio-768p`, `image-to-video` and `reference-to-video`. Those are exactly the four templates whose
+  `variable_names` include `attention_backend` in `list_workflows(shape="shot")`. Today `dialogue-short` has no
+  `attention_backend`.
+- **Carryover:** from draft to final, the seed, canvas and prompt stay the same. Blocking carries, props don't.
+  Each carryover claim states how many seeds it was measured on: the count from #861, or "measured on one seed"
+  if #861 was declined.
+- **Approval per tier:** at the draft, approve blocking, lines, timing and head count. At the final, approve faces,
+  skin and hair.
+- **Judging:** the section names `get_output_frames` face crops, a contact sheet, `check-script`, and a `set_note`
+  1-5 score. It says what Claude can't judge: audio by ear, and motion.
+- **Cost:** the section says to quote `validate_workflow`'s `plan.estimate`, or until #866 lands, the ladder. It
+  states no absolute timing as a promise for every server.
+- **Wiring:** the `minimax-h3` SKILL.md's "Smeary faces" line now covers quality tiers and points at the section.
+  The `script-to-video` skill has a one-line pointer to the section for H3 shots.
+- Every template and variable the section names exists in the catalog under that name.
+It is a **finding** if a rung is missing any of its canvas, dtype, LoRA or steps, if a named template or variable
+doesn't exist, if the `sage_hub` list differs from the catalog's `attention_backend` set, if a carryover claim gives
+no seed count, or if L7 lacks its caveat. That SKILL.md stays under 12,288 bytes is pytest's to check
+(`tests/test_plugin_skills.py`), not this case's.
+cleanup: none.
+metrics: none.
+
+### C-F415 — the TV path's L1 draft and L7 final validate clean on `reference-to-video` and differ only in `weights_dtype`
+pending: #882
+source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
+Free. Take L1 and L7 exactly as C-F414's section writes them, with `subject="asset:qa-cast/priya-portrait.jpg"`,
+`voice="asset:qa-cast/priya-voice.wav"`, and one fixed `seed` and `prompt` for both.
+1. `validate_workflow(name="templates/minimax/reference-to-video", arguments=<L1>)`.
+2. The same with `<L7>`.
+3. The same with L1 at 960x544 (the L0 sketch).
+expected:
+- 1, 2, 3: `valid: true`, with no error about the canvas (all multiples of 32), the steps, or the LoRA name.
+- L1 and L7 differ only in `weights_dtype` (int4 and int8). Seed, prompt, canvas, `lora_model_name`/`lora_weight_name`
+  and `num_inference_steps` are the same in both.
+- Neither has an `lora_disabled` warning, since both keep the LoRA.
+It is a **finding** if either set is refused, or if the section's two sets differ in anything but `weights_dtype`.
+cleanup: none.
+metrics: none.
+
+### C-F416 — the cinema path's B3 draft and L5 final validate clean on `dialogue-short` and differ only in steps
+pending: #882
+source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
+Free. Take B3 and L5 exactly as C-F414's section writes them, with
+`character_a_voice="asset:qa-cast/priya-voice.wav"`, `character_b_voice="asset:qa-cast/priya-voice.wav"`, and one
+fixed `seed`.
+1. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<B3>)`.
+2. The same with `<L5>`.
+expected:
+- 1, 2: `valid: true`. Each may carry the `lora_disabled` warning (C-F418), but nothing else blocks it.
+- B3 and L5 differ only in `num_inference_steps` (12 and 30). Seed, canvas (1344x768), `weights_dtype` (int8) and
+  `lora_model_name: null` are the same in both.
+It is a **finding** if either set is refused, or if they differ in anything but steps.
+cleanup: none.
+metrics: none.
+
+### C-F417 — P1's cache needs a saved template copy, and `attention_backend` is refused on `dialogue-short`
+pending: #882
+source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
+Free, plus one saved workflow. Work in the suite workspace.
+1. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<L5 from C-F416> + {"attention_backend": "sage_hub"})`.
+2. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<L5> + {"cache": <the section's first_block 0.05 value>})`.
+3. Copy the template the way the section's P1 says to: `get_workflow("templates/minimax/dialogue-short")`, add the
+   `first_block` cache at 0.05 where the section says it goes, and `save_workflow(name="qa-spec-h3-p1", ...)`.
+4. `validate_workflow(name="qa-spec-h3-p1", arguments=<L5>)`.
+expected:
+- 1: refused, naming `attention_backend` as a variable the template doesn't declare. This is what the section's
+  `sage_hub` scope says.
+- 2: refused the same way for `cache`. This is why P1 needs a copy until #865.
+- 3: the save succeeds.
+- 4: `valid: true`, and the copy's cache setting is the one the section describes (`first_block`, 0.05).
+It is a **finding** if 1 or 2 is accepted while the section says it isn't possible, if the section's recipe can't be
+followed to a saved copy, or if 4 is refused.
+cleanup: `delete_workflow(name="qa-spec-h3-p1", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F418 — dropping the LoRA warns `lora_disabled`, and the section's base rung names the base schedule
+pending: #882
+source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
+Free. On `templates/minimax/dialogue-short`, with the voices from C-F416, run `validate_workflow` three times with
+`lora_model_name: null`, `video_shift` 12, `audio_shift` 3, and `num_inference_steps` 9, 12 and 30 in turn.
+expected:
+- All three: `valid: true`, with a `lora_disabled` warning saying the LoRA was dropped and asking for the base
+  schedule. On 2026-10-13, before the stage was built, the warning was still there at 12 and 30 steps, so the case
+  doesn't require it to go away.
+- The section's B3/L5 rungs name the base values that warning asks for: 12 or more steps, `video_shift` 12,
+  `audio_shift` 3, `lora_model_name: null`. The section does not promise that those values make the warning go away.
+It is a **finding** if any set is refused, if the warning is missing, or if the section says the base values clear a
+warning that validate still reports.
+cleanup: none.
+metrics: none.
+
+### C-F419 — the ramp's canvas boundary: 1344x768 passes, a width that isn't a multiple of 32 is refused, and no 8-step base rung
+pending: #882
+source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. `validate_workflow(name="templates/minimax/reference-to-video", arguments=<L1 from C-F415> + {"width": 1340})`.
+2. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<B3 from C-F416> + {"width": 1340})`.
+3. Read the section's cinema path again.
+expected:
+- 1, 2: refused before any GPU work, naming `width` and the multiple-of-32 rule (`32*n+0`). The section's own 1344
+  and 768 values are multiples of 32, so C-F415 and C-F416 pass.
+- 3: no base-model rung (`lora_model_name: null`) has fewer than 12 steps. 12 is B3's own count.
+It is a **finding** if 1 or 2 is accepted, or if the section offers a base rung under 12 steps.
+cleanup: none.
+metrics: none.
+
+### C-F420 — every H3 template declares `attention_backend`, default `null`, and the four that had it are unchanged
+pending: #883
+source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
+Free. The stage's list, all under `templates/minimax/`: `first-and-last-frame`, `last-frame-only`, `chained-segments`,
+`composable-references`, `chain-matched-to-audio`, `chain-matched-and-aligned`, `chain-video-continuity`,
+`enhance-prompt`, `enhance-prompt-with-image`, `voice-timbre-reference`, `generated-subject-reference`, `storyboard`,
+`dialogue-short`, `shots-batch`, `music-video` (find the last one's exact name with `list_workflows` if it isn't
+under `templates/minimax/`). The four that had it before: `video-with-audio`, `video-with-audio-768p`,
+`image-to-video`, `reference-to-video`.
+1. `list_workflows(shape="shot")`. Read each minimax entry's `variable_names`.
+2. For each of the 19 templates, `get_workflow(name=...)` and read its `variables`.
+expected:
+- 1: every minimax `shot` entry lists `attention_backend`.
+- 2: each of the 19 declares `attention_backend` with default `null`. In the 15 new ones it is wired the way the four
+  older templates wire it (`components.transformer.attention_backend` on the H3 pipeline). In `dialogue-short`,
+  `shots-batch` and `music-video` it sits on the H3 step inside the `for_each`. No Z-Image step (the portrait steps in
+  `dialogue-short`, and any other) references it.
+- The four older templates still declare it with default `null`, wired as before.
+It is a **finding** if any listed template lacks the variable, has a non-null default, wires it to a non-H3 step, or
+if one of the four older templates changed its declaration.
+cleanup: none.
+metrics: none.
+
+### C-F421 — `attention_backend` validates clean absent and as `"sage_hub"` on every new H3 template; an undeclared name is still refused
+pending: #883
+source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
+Free. For each of the 15 new templates in C-F420, supply the inputs it requires from the Fixtures: an image or subject
+input gets `asset:qa-cast/priya-portrait.jpg`, a voice or audio input gets `asset:qa-cast/priya-voice.wav`
+(`dialogue-short` takes it as both `character_a_voice` and `character_b_voice`, as in C-F416). A required input this
+list doesn't name is the one validate's refusal names; fill it the same way. Call that set `<base>`.
+1. `validate_workflow(name=..., arguments=<base>)` for each.
+2. `validate_workflow(name=..., arguments=<base> + {"attention_backend": "sage_hub"})` for each.
+3. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<base> + {"attention_backend_x": "sage_hub"})`.
+expected:
+- 1, 2: `valid: true` on all 15, with no error about `attention_backend`. Validate may warn that `sage_hub` needs CUDA on
+  a non-CUDA server; a warning is fine, a refusal is not.
+- 3: refused at `arguments.attention_backend_x` as a variable the template doesn't declare. Declaring the new name
+  must not loosen the undeclared-argument check.
+It is a **finding** if 1 or 2 is refused for any template, or if 3 is accepted.
+cleanup: none.
+metrics: none.
+
+### C-F422 — a default run on a new H3 template puts no `attention_backend` on the transformer
+pending: #883
+source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
+One GPU run, on any device. Work in the suite workspace.
+1. `run_workflow(name="templates/minimax/first-and-last-frame", arguments={<its image inputs> = "asset:qa-cast/priya-portrait.jpg", "width": 512, "height": 288, "num_frames": 124, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F422 default attention_backend")`.
+   Follow a `still_running: true` reply with `wait_for_job`.
+2. `get_job_workflow(job_id=<id>)`.
+expected:
+- 1: the job completes. 512 and 288 are multiples of 32, and 124 is the bottom of the `num_frames` range.
+- 2: the realized H3 step's `components.transformer` has no `attention_backend` key at all. A null substitution drops
+  the key; it is not left as `null` or as an empty string.
+It is a **finding** if the run fails because of the new variable, or if the realized workflow carries an
+`attention_backend` key.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F423 — on CUDA, `dialogue-short` with `"sage_hub"` sets the backend on the H3 step only
+pending: #883
+source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
+CUDA only. Call `get_server_info` first. When `device` isn't `"cuda"`, skip the case as not applicable: it is neither a
+pass nor a failure. Otherwise one long GPU run in the suite workspace.
+1. `run_workflow(name="templates/minimax/dialogue-short", arguments={"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav", "attention_backend": "sage_hub", "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F423 sage_hub")`,
+   then `wait_for_job` until it finishes.
+2. `get_job_workflow(job_id=<id>)`.
+expected:
+- 1: the job completes.
+- 2: every realized H3 step inside the `for_each` has `components.transformer.attention_backend: "sage_hub"`. The Z-Image
+  portrait steps carry no `attention_backend` anywhere.
+It is a **finding** if the run fails, if any H3 step lacks the value, or if a Z-Image step carries it.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F424 — every H3 template declares `cache` as a whole-object variable, default `null`
+pending: #884
+source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
+Free. The 19 templates of C-F420: the 15 new ones and the four older ones.
+1. `list_workflows(shape="shot")`. Read each minimax entry's `variable_names`.
+2. `get_workflow(name=...)` for each of the 19.
+3. `get_schema(section="variables")`.
+expected:
+- 1: every minimax `shot` entry lists `cache`.
+- 2: each declares `cache` with default `null`, substituted as a whole object on the H3 step (inside the `for_each` for
+  `dialogue-short`, `shots-batch` and `music-video`). No Z-Image step references it.
+- 3: the schema accepts a variable whose value is an object (or `null`) at the place a cache goes. This is the
+  widening the stage names. Note the exact form in the issue comment of the session that runs it; the case doesn't fix
+  the schema's wording.
+It is a **finding** if any template lacks `cache`, has a non-null default, or wires it anywhere but the H3 step.
+cleanup: none.
+metrics: none.
+
+### C-F425 — `dialogue-short` checks the substituted `cache` at validate: a valid object passes, a bad type or a string is refused naming `cache`
+pending: #884
+source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
+Free. `dialogue-short` puts `cache` inside a `for_each`, which is the path the plan's risk note says must be checked.
+`<base>` is `{"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav"}`.
+Each call is `validate_workflow(name="templates/minimax/dialogue-short", arguments=<base> + <x>)`:
+1. `{"cache": {"type": "first_block", "threshold": 0.05}}`
+2. `{"cache": null}`
+3. `{"cache": {"type": "bogus"}}`
+4. `{"cache": "first_block"}`
+5. `{"cache": {}}`
+6. `{"cache": {"threshold": 0.05}}`, with no `type`.
+7. `{"cache": {"type": "first_block", "threshold": "0.05"}}`, a threshold given as a string.
+expected:
+- 1, 2: `valid: true`. 2 is the same as leaving `cache` out.
+- 3 to 7: refused by validate, before any job is queued, with an error whose path or message names `cache`. 3 also
+  names the unknown type `bogus`. The refusal comes from the substituted value; it does not wait for the run.
+It is a **finding** if 1 or 2 is refused, if any of 3 to 7 is accepted or is refused only when run, or if a refusal
+doesn't name `cache`.
+cleanup: none.
+metrics: none.
+
+### C-F426 — the same `cache` check holds on a template with no `for_each`
+pending: #884
+source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
+Free. The same seven values as C-F425, each as `validate_workflow(name="templates/minimax/video-with-audio", arguments=<x>)`,
+and again on `templates/minimax/first-and-last-frame` with its image inputs set to
+`asset:qa-cast/priya-portrait.jpg`.
+expected:
+- The same results as C-F425 on both templates: 1 and 2 clean, 3 to 7 refused at validate naming `cache`.
+It is a **finding** if either template's result differs from C-F425's for any value.
+cleanup: none.
+metrics: none.
+
+### C-F427 — a default run puts no cache on the H3 step
+pending: #884
+source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
+One GPU run, on any device. Same call as C-F422 step 1 with `note="C-F427 default cache"`. When C-F422 runs in the
+same session against a build with both stages, its job may be used instead.
+1. The run, then `get_job_workflow(job_id=<id>)`.
+expected:
+- The job completes, and the realized H3 step carries no cache key at all: not `null`, not `{}`.
+It is a **finding** if the run fails because of the new variable, or if any cache key appears in the realized
+workflow.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F428 — on CUDA, a 30-step base `dialogue-short` run with `first_block` 0.05 completes, with the cache on the H3 step only
+pending: #884
+source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
+CUDA only. Call `get_server_info` first. When `device` isn't `"cuda"`, skip the case as not applicable: it is neither a
+pass nor a failure. Otherwise one long GPU run in the suite workspace.
+1. `run_workflow(name="templates/minimax/dialogue-short", arguments={"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav", "lora_model_name": null, "num_inference_steps": 30, "video_shift": 12, "audio_shift": 3, "width": 1344, "height": 768, "cache": {"type": "first_block", "threshold": 0.05}, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F428 first_block 0.05")`,
+   then `wait_for_job` until it finishes.
+2. `get_job_workflow(job_id=<id>)`.
+expected:
+- 1: the job completes.
+- 2: every realized H3 step inside the `for_each` carries the cache object `{"type": "first_block", "threshold": 0.05}`
+  as given. The Z-Image portrait steps carry no cache.
+It is a **finding** if the run fails, if an H3 step lacks the cache or carries a different value, or if a Z-Image step
+carries one.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F429 — a hand-written workflow with a literal cache object still validates and runs, and a bad literal is still refused
+pending: #884
+source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
+One GPU run, on any device. Build the workflow from `get_workflow(name="templates/minimax/video-with-audio")`. Put
+the literal `{"type": "first_block", "threshold": 0.05}` where that template wires `variable:cache` after #884, in
+place of the reference, and drop the `cache` variable declaration. Call the result `<W>`, and call it `<W-bad>` with
+the literal `{"type": "bogus"}` instead.
+1. `validate_workflow(workflow=<W>)`.
+2. `validate_workflow(workflow=<W-bad>)`.
+3. `run_workflow(workflow=<W>, arguments={"width": 512, "height": 288, "num_frames": 124, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F429 literal cache")`,
+   then `wait_for_job` until it finishes, then `get_job_workflow(job_id=<id>)`.
+expected:
+- 1: `valid: true`. Allowing a variable there does not stop a literal object from validating.
+- 2: refused at validate, naming the cache and the type `bogus`.
+- 3: the job completes, and the realized H3 step carries the literal cache as written.
+It is a **finding** if 1 is refused, if 2 is accepted, or if 3 fails or drops the literal cache.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F430 — a single-pipeline-step run carries a `timing` object on its manifest entry, with the plan's fields and arithmetic
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, on any device. Work in the suite workspace. `<T2I-20>` is `get_workflow(name="templates/text-to-image")`
+with the `main` step's `num_inference_steps` set to `20` and `seed` set to the literal `42`; the C-F431–C-F444 cases
+build on it. No assertion here is an absolute time: the checks are presence, types, rounding and arithmetic between the
+entry's own numbers.
+1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F430 timing shape")`. Follow a
+   `still_running: true` reply with `wait_for_job`.
+2. `get_job(job_id=<id>)`.
+3. `export_job(job_id=<id>)`, and read the `manifest.json` it carries.
+expected:
+- 1: the job completes.
+- 2: the `main` step's `manifest[]` entry has a `timing` object with the keys `load_s`, `load_cached`, `encode_s`,
+  `denoise_s`, `passes`, `first_pass_s`, `pass_s`, `compiled`, `decode_s`, `save_s` and `segments`. A key the step left
+  unmarked is null; a key missing outright rather than null is noted in the report, not failed. `passes` is `20`. `load_cached` and `compiled` are booleans. `load_s`, `denoise_s`,
+  `first_pass_s`, `pass_s`, `decode_s` and `save_s` are non-null numbers ≥ 0, each a multiple of 0.1 (at most one
+  decimal place). `encode_s` is a number ≥ 0 or null (a classic pipeline may not mark it). `segments` is null or `1`.
+  `denoise_s` is within 15% of `first_pass_s + 19 × pass_s`, and `load_s + encode_s + denoise_s + decode_s + save_s`
+  (a null counted as 0) is no more than the job's wall time as `get_job` reports it (its finish time minus its start
+  time, or its duration field), plus 0.5 s of rounding slack.
+- 3: the `manifest.json` entry for `main` carries the same `timing` object, value for value.
+It is a **finding** if `timing` is missing, if `passes` isn't 20, if a phase time is negative or not rounded to 0.1, if
+the denoise arithmetic is off by more than 15%, if the phases sum past the wall time, or if `manifest.json` differs
+from `get_job`.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F431 — a warm rerun of the same pipeline reports `load_cached: true` and a load no slower than a cold one
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+Two small GPU runs, on any device, back to back with no other job between them.
+1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F431 first")`, then `wait_for_job`
+   as needed, then `get_job(job_id=<id1>)`.
+2. `run_workflow(workflow=<T2I-20 with seed 43>, acknowledged_cost=true, wait_seconds=55, note="C-F431 warm")`. The
+   new seed keeps the step cache from serving it. Then `get_job(job_id=<id2>)`.
+expected:
+- 2: the `main` entry's `timing.load_cached` is `true`, and it is not `reused`.
+- If run 1's `timing.load_cached` was `false` (a cold load), run 2's `load_s` is lower than run 1's. If run 1 was
+  already warm (an earlier case left the pipeline resident), only the `load_cached: true` check applies.
+It is a **finding** if run 2 reports `load_cached: false` or no `timing`, or if after a cold run 1 its `load_s` is not
+lower.
+cleanup: `delete_output(job_id=<id1>, acknowledged_cost=true)` and `delete_output(job_id=<id2>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F432 — a one-step run has `passes: 1` and a null `pass_s`
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+The boundary of the plan's "`pass_s` is the median of passes 2..n, null when `passes` < 2". One tiny GPU run, on any device.
+1. `run_workflow(workflow=<T2I-20 with num_inference_steps 1>, acknowledged_cost=true, wait_seconds=55, note="C-F432 one step")`,
+   then `get_job(job_id=<id>)`.
+expected:
+- 1: the job completes. `timing.passes` is `1`, `timing.pass_s` is null, and `timing.first_pass_s` is a number ≥ 0.
+  `denoise_s` is within 15% of `first_pass_s`, or within 0.2 s of it, whichever is wider.
+It is a **finding** if `pass_s` is a number, if `passes` isn't 1, or if the job errors computing a median of nothing.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F433 — a modular pipeline step reports a non-null `encode_s` and `passes` equal to its step count
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+The plan's modular-pipeline acceptance. Pick a modular image template from the catalog: one whose step the guide's
+modular-pipelines section (`get_guide("workflows")` index) says runs as a modular pipeline, that `validate_workflow`
+accepts on this server. If this box runs none, skip the case as not applicable: neither a pass nor a failure. Write the
+template name you used in the run's `note`.
+1. `run_workflow(name=<modular template>, arguments={"seed": 42, <its steps variable>: 8}, acknowledged_cost=true, wait_seconds=55, note="C-F433 modular <name>")`.
+   Where the template has no steps variable, use an inline copy with the step's `num_inference_steps` set to 8. Then
+   `wait_for_job` as needed and `get_job(job_id=<id>)`.
+expected:
+- 1: the job completes. The modular step's `timing.encode_s` is a non-null number ≥ 0, `timing.passes` is `8`, and the
+  rest of the shape holds as in C-F430.
+It is a **finding** if `encode_s` is null, if `passes` differs from 8, or if the modular step has no `timing`.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F434 — a pipeline step then a utility step: one `timing` each, the utility one holding at most `save_s`
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, on any device. `<T2I-SHARP>` is `<T2I-20>` with its `main` result's `subfolder` set to
+`"intermediate"`, plus a second step `{"name": "sharp", "task": {"command": "sharpen", "arguments": {"media":
+"previous_result:main", "amount": 0.5}}, "result": {"content_type": "image/jpeg", "subfolder": "final"}}`.
+1. `validate_workflow(workflow=<T2I-SHARP>)`.
+2. `run_workflow(workflow=<T2I-SHARP>, acknowledged_cost=true, wait_seconds=55, note="C-F434 pipeline + utility")`,
+   then `get_job(job_id=<id>)`.
+expected:
+- 1: `valid: true`.
+- 2: `manifest[]` has an entry for `main` and one for `sharp`, each with its own `timing`. `main`'s holds the C-F430
+  shape with `passes: 20`. `sharp`'s holds no non-null pipeline field (`load_s`, `encode_s`, `denoise_s`, `passes`,
+  `first_pass_s`, `pass_s`, `decode_s` absent or null), and `save_s` is null or a number ≥ 0 rounded to 0.1.
+It is a **finding** if either entry lacks `timing`, if the two are merged into one, or if `sharp` reports a pipeline phase.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F435 — a utility-only workflow reports no pipeline fields
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+No diffusion, on any device. Uses the fixture `asset:qa-cast/priya-portrait.jpg`; any still substitutes. `<SHARP>` is
+`{"steps": [{"name": "sharp", "task": {"command": "sharpen", "arguments": {"media": "asset:qa-cast/priya-portrait.jpg",
+"amount": 0.5}}, "result": {"content_type": "image/jpeg", "subfolder": "final"}}]}`.
+1. `run_workflow(workflow=<SHARP>, acknowledged_cost=true, wait_seconds=55, note="C-F435 utility only")`, then
+   `get_job(job_id=<id>)`.
+expected:
+- 1: the job completes. The `sharp` entry's `timing`, if present, has no non-null pipeline field (as listed in C-F434)
+  and at most a `save_s` ≥ 0 rounded to 0.1. A `timing` that is absent or holds only nulls also passes.
+It is a **finding** if the entry reports `passes`, `load_s` or `denoise_s`, or if `get_job` errors.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F436 — a step the step cache serves is `reused: true` with no `timing` key
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, then a rerun the step cache serves, on any device.
+1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F436 source")`, then `get_job`.
+2. `rerun_job(job_id=<id1>, acknowledged_cost=true)` with no `new_seed` and no changed argument, then `wait_for_job`
+   and `get_job(job_id=<id2>)`.
+expected:
+- 1: `main` carries `timing`, as in C-F430.
+- 2: `main`'s entry has `reused: true` and no `timing` key at all (not `timing: null`, not an object of nulls).
+If the rerun's `main` entry isn't `reused` (the step cache didn't serve it), record that in the report and check only
+that its `timing` is present; the case then shows nothing about reuse and is neither a pass nor a failure for it.
+It is a **finding** if a `reused: true` entry carries a `timing` key.
+cleanup: `delete_output(job_id=<id1>, acknowledged_cost=true)` and `delete_output(job_id=<id2>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F437 — `timing` is history: it comes back unchanged later, and a job from before the feature has none and no error
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+No new GPU run beyond C-F430's (run this case before C-F430's cleanup, or make one more `<T2I-20>` run as in C-F430 and
+call it `<id>`).
+1. `get_job(job_id=<id>)` and `export_job(job_id=<id>)`, keeping both `timing` objects for `main`.
+2. `list_jobs` in the suite workspace (and, if it holds none old enough, the `default` workspace) and pick the oldest
+   completed pipeline job listed, `<old>`, which predates #885's deploy. `get_job(job_id=<old>)`.
+3. If `get_server_info` or `get_health` shows the server started after `<id>` finished (a restart in between), call
+   `get_job(job_id=<id>)` again. A consumer can't restart the server, so when no restart happened, step 3 is skipped.
+expected:
+- 1: both carry the same `timing`.
+- 2: `get_job` succeeds. `<old>`'s entries have no `timing` key (or a null one), and nothing in the reply is an error
+  or warning about the missing timing.
+- 3: the same `timing`, value for value, as in 1.
+It is a **finding** if 1's two copies differ, if 2 errors or invents a `timing` for an old job, or if 3's `timing` is
+gone or changed after a restart.
+cleanup: whatever `<id>` this case made: `delete_output(job_id=<id>, acknowledged_cost=true)`. Never delete `<old>`.
+metrics: none.
+
+### C-F438 — a job cancelled mid-denoise returns no `timing` and no server error
+pending: #885
+source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One GPU run cancelled part-way, on any device.
+1. `run_workflow(workflow=<T2I-20 with num_inference_steps 200>, acknowledged_cost=true, note="C-F438 cancel")` with no
+   `wait_seconds`.
+2. Call `get_job_events(job_id=<id>)` until a denoising progress event shows at least one step done, then
+   `cancel_job(job_id=<id>, acknowledged_cost=true)`, then `wait_for_job(job_id=<id>)`.
+3. `get_job(job_id=<id>)`, and `export_job(job_id=<id>)`.
+expected:
+- 2: the job ends cancelled.
+- 3: both calls succeed. `main`'s entry, if one exists, has no `timing` key (or a null one); no partial `passes` count
+  is reported as a finished step's timing.
+If the job finishes before the cancel lands, record that and repeat once with 500 steps; if it still finishes, the
+case is inconclusive, not a failure.
+It is a **finding** if 3 returns an internal/500-class error, or if a cancelled step carries a `timing` object.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F439 — `first_block` 0.5 at 20 steps: counts add up, `skipped` > 0, and `hit_rate` matches
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, on any device. `<T2I-FB>` is `<T2I-20>` with `"cache": {"type": "first_block", "threshold": 0.5}`
+in the `main` step's `pipeline.configuration`.
+1. `validate_workflow(workflow=<T2I-FB>)`. If it refuses `first_block` on this pipeline (the guide says that type needs
+   a registered transformer block class, which an SD 1.5 UNet may not have), build `<T2I-FB>` instead from the smallest
+   transformer image template this box validates and runs (a Z-Image or SD3-class template; name it in the `note`),
+   with the same cache object, 20 steps and seed 42. Use that same base for C-F440–C-F442.
+2. `run_workflow(workflow=<T2I-FB>, acknowledged_cost=true, wait_seconds=55, note="C-F439 first_block 0.5")`, then
+   `get_job(job_id=<id>)`.
+3. `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+expected:
+- 2: the job completes. `main`'s `timing.cache` is an object with `type: "first_block"`, `threshold: 0.5` and integers
+  `forwards`, `computed`, `skipped`, plus `hit_rate`. `computed + skipped == forwards`; `forwards` is a positive
+  multiple of `timing.passes` (20); `skipped > 0`; `hit_rate` equals `skipped / forwards` to 3 decimal places. No
+  `cache_stats_unavailable` warning on the job.
+- 3: exactly one `cache_stats` event, whose `step` is `"main"` and whose cache fields equal `timing.cache`.
+It is a **finding** if the counts don't add up, if `skipped` is 0, if `hit_rate` is off, if there are zero or two
+events, or if the event disagrees with the manifest.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F440 — a near-zero threshold skips nothing
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, on any device. `<T2I-FB-0>` is C-F439's `<T2I-FB>` with `threshold: 0.001`.
+1. `run_workflow(workflow=<T2I-FB-0>, acknowledged_cost=true, wait_seconds=55, note="C-F440 first_block 0.001")`,
+   then `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+expected:
+- 1: `timing.cache.skipped` is `0`, `computed == forwards`, `forwards` > 0, and `hit_rate` is `0` (or `0.0`). Exactly
+  one `cache_stats` event carries the same numbers.
+It is a **finding** if anything is reported skipped, if `hit_rate` is non-zero, or if the counts are null.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F441 — one `cache_stats` event per pipeline call: two cached steps give two, each naming its step
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, on any device. `<T2I-FB-2>` is C-F439's `<T2I-FB>` with a second step copied from `main`, named
+`second`, seed and prompt the same, `threshold: 0.3`, `main`'s result moved to `"intermediate"`.
+1. `validate_workflow(workflow=<T2I-FB-2>)`, then `run_workflow(workflow=<T2I-FB-2>, acknowledged_cost=true, wait_seconds=55, note="C-F441 two cached steps")`,
+   then `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+expected:
+- 1: exactly two `cache_stats` events, one with `step: "main"` and threshold 0.5, one with `step: "second"` and
+  threshold 0.3, each equal to its own entry's `timing.cache`. Each entry's counts add up as in C-F439.
+It is a **finding** if the event count isn't two, if an event names the wrong step, or if the counts of one step leak
+into the other.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F442 — a step without a cache has no `timing.cache` and emits no `cache_stats` event
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+One small GPU run, on any device: `<T2I-20>` (or C-F439's fallback base, if C-F439 used one) with no `cache` key.
+1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F442 no cache")`, then
+   `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+expected:
+- 1: `main`'s `timing` exists and has no `cache` key (or a null one). The events call returns no `cache_stats` events,
+  and no `cache_stats_unavailable` warning appears.
+It is a **finding** if an uncached step carries a cache object or an event is emitted for it.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F443 — `mag` reports counts that add up
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+The plan's "`mag` where the box supports it". Needs a Flux-class template the box runs (the guide's `mag_ratios` preset
+is `"flux"`). Build it from `templates/text-to-image-flux` or the smallest Flux text-to-image template
+`list_workflows(shape="image")` lists, with `"cache": {"type": "mag", "mag_ratios": "flux", "num_inference_steps": 20}`
+in its pipeline step's `configuration`, its step count at 20, and seed 42. If `validate_workflow` refuses it, or the
+box can't hold the model, skip the case as not applicable: neither a pass nor a failure.
+1. `validate_workflow`, then `run_workflow(..., acknowledged_cost=true, wait_seconds=55, note="C-F443 mag")`, then
+   `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+expected:
+- 1: `timing.cache.type` is `"mag"`, the counts are integers with `computed + skipped == forwards` and `forwards` a
+  multiple of `passes`, `hit_rate == skipped / forwards` to 3 places, and one `cache_stats` event matches. (`skipped`
+  may be 0 here; the plan promises the arithmetic, not a hit rate.)
+It is a **finding** if a validated `mag` run reports null counts, counts that don't add up, or no event.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F444 — `text_kv`, `taylorseer` and `faster` report their type and config with null counts and no warning
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+Up to three small GPU runs, on any device, on C-F439's base (`<T2I-20>` or its fallback) with the `main` step's cache
+set in turn to `{"type": "text_kv"}`, `{"type": "taylorseer", "cache_interval": 5}` and `{"type": "faster"}`. A type
+`validate_workflow` refuses on that pipeline is skipped as not applicable for that type; if all three are refused,
+retry them on a transformer base as in C-F439's fallback, and if still refused the case is not applicable.
+1. For each type: `run_workflow(..., acknowledged_cost=true, wait_seconds=55, note="C-F444 <type>")`, then
+   `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+expected:
+- 1: each run completes. `timing.cache.type` is the type given; `forwards`, `computed`, `skipped` and `hit_rate` are
+  null; the object carries that type's config keys as given (`cache_interval: 5` for taylorseer); and the job has no
+  `cache_stats_unavailable` warning (the plan says these types don't count, which is not "unavailable"). One
+  `cache_stats` event per run, carrying the same object.
+It is a **finding** if a type reports invented counts, if it raises the unavailable warning, if the config keys are
+missing, or if the run fails where validate passed.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)` for each run.
+metrics: none.
+
+### C-F445 — on CUDA, an H3 step with `first_block` 0.05 at 30 steps reports `skipped` > 0
+pending: #886
+source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
+CUDA only, with lem's fixtures. Call `get_server_info` first. When `device` isn't `"cuda"`, or
+`asset:qa-cast/priya-voice.wav` isn't listed by `list_assets`, skip the case as not applicable: neither a pass nor a
+failure. Otherwise one long GPU run in the suite workspace.
+1. `run_workflow(name="templates/minimax/dialogue-short", arguments={"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav", "lora_model_name": null, "num_inference_steps": 30, "width": 1344, "height": 768, "cache": {"type": "first_block", "threshold": 0.05}, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F445 H3 cache stats")`,
+   then `wait_for_job` until it finishes, then `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
+   (Before #884 ships a `cache` variable on this template, use an inline copy with the cache in the H3 step's
+   `configuration`.)
+expected:
+- 1: every H3 step's `timing.cache` has `type: "first_block"`, `threshold: 0.05`, counts that add up as in C-F439, and
+  `skipped > 0`. One `cache_stats` event per H3 pipeline call, each naming its step. The Z-Image steps have no cache.
+It is a **finding** if an H3 step reports `skipped: 0`, null counts, or the unavailable warning.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F446 — validate warns `cache_short_schedule` for `first_block`/`mag` under 20 steps, not at 20
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Validate only, on any server. `<SC>` is the full document from `get_workflow(name="templates/step-caching")`. It
+is FLUX.1-dev with `steps[0].pipeline.configuration.cache: {"type": "first_block", "threshold": 0.05}` and
+`steps[0].arguments.num_inference_steps: "variable:num_inference_steps"`. A warning "carries code X" means it has
+the form `"<path>: X: <message>"`.
+1. `validate_workflow(workflow=<SC with steps[0].arguments.num_inference_steps = 12>)`.
+2. The same with 19.
+3. The same with 20.
+4. `validate_workflow(workflow=<SC with steps[0].arguments.num_inference_steps = 12 and the cache replaced by
+   {"type": "mag", "threshold": 0.06, "num_inference_steps": 12, "mag_ratios": "flux"}>)`.
+5. The same as 4 with both step counts at 20.
+expected:
+- every call: `valid: true`, `errors: []`.
+- 1, 2: exactly one warning carries `cache_short_schedule`. Its path points into step `txt2img` (it contains
+  `txt2img` or `steps[0]`), and its message names the step count (`12`, then `19`) and says the cache will likely
+  skip nothing.
+- 3, 5: no warning carries `cache_short_schedule`.
+- 4: one warning carries `cache_short_schedule` and names `12`.
+- No call carries `taylorseer_state_unestimated`, `compile_fullgraph_with_cache` or
+  `attention_backend_unavailable`.
+It is a **finding** if 20 steps warns, if 19 doesn't, or if a warning lacks the code or the step count.
+cleanup: none.
+metrics: none.
+
+### C-F447 — `cache_short_schedule` reads the resolved step count: the argument, the default, or silence
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Validate only, on any server. `<SC>` as in C-F446, whose steps come from `variable:num_inference_steps`.
+1. `validate_workflow(workflow=<SC with variables.num_inference_steps = 30>)`, with no `arguments`.
+2. The same document with `arguments={"num_inference_steps": 9}`.
+3. `validate_workflow(name="templates/step-caching", arguments={"num_inference_steps": 12})`.
+4. `validate_workflow(name="templates/step-caching")`, with no `arguments` (default 28).
+5. `validate_workflow(workflow=<SC with variables.num_inference_steps = null>)`, with no `arguments`: the variable
+   has no default, so the step count can't be resolved.
+expected:
+- 1, 4: no warning carries `cache_short_schedule`.
+- 2: one warning carries `cache_short_schedule` and names `9`.
+- 3: one warning carries `cache_short_schedule` and names `12`. The response stays `valid: true`.
+- 5: no warning carries `cache_short_schedule`. Whatever else the call says about the null default is outside this
+  case.
+It is a **finding** if the warning follows the stored default when an argument overrides it (2 silent, or 1
+warning), or if 5 warns with a guessed step count.
+cleanup: none.
+metrics: none.
+
+### C-F448 — `taylorseer`, `faster` and `text_kv` never warn short-schedule; TaylorSeer always warns its state
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Validate only, on any server. `<SC>` as in C-F446. Each call sets `steps[0].arguments.num_inference_steps` to a
+literal and replaces `steps[0].pipeline.configuration.cache`.
+1. 9 steps, cache `{"type": "taylorseer", "max_order": 2}`.
+2. 50 steps, the same TaylorSeer cache.
+3. 9 steps, cache `{"type": "faster"}`.
+4. 9 steps, cache `{"type": "text_kv"}`.
+expected:
+- every call: `valid: true`, `errors: []`, and no warning carries `cache_short_schedule`.
+- 1, 2: exactly one warning carries `taylorseer_state_unestimated`, whatever the step count. Its message names
+  `max_order` and the value `2`. It either has no GB figures, or has two (the state estimate and a capacity, "X of
+  Y GB" or similar). It never has one GB figure on its own.
+- 3, 4: no warning carries `taylorseer_state_unestimated`.
+If `faster` or `text_kv` is refused by today's schema with these minimal options, add the options that schema's
+error names. The case is about the warnings, not those caches' defaults.
+It is a **finding** if any of these warns `cache_short_schedule`, or if TaylorSeer at 50 steps goes silent.
+cleanup: none.
+metrics: none.
+
+### C-F449 — `compile.fullgraph: true` with a cache warns `compile_fullgraph_with_cache`; without either, silent
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Validate only, on any server. `<SC>` as in C-F446, at its default 28 steps, so `cache_short_schedule` doesn't fire.
+1. `<SC>` with `steps[0].pipeline.configuration.components.transformer.compile = {"fullgraph": true}`, cache kept.
+2. The same with `"fullgraph": false`.
+3. The same as 1 with `cache` removed from the configuration.
+4. The same as 1 with no `compile` key at all, cache kept (`<SC>` as stored).
+expected:
+- every call: `valid: true`, `errors: []`.
+- 1: exactly one warning carries `compile_fullgraph_with_cache`. Its path points at the step or the `transformer`
+  component.
+- 2, 3, 4: no warning carries `compile_fullgraph_with_cache`.
+It is a **finding** if 1 is silent, if 1 is refused rather than warned, or if 2, 3 or 4 warns.
+cleanup: none.
+metrics: none.
+
+### C-F450 — a CUDA-only `attention_backend` warns `attention_backend_unavailable` off CUDA, at both levels
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Validate only. Call `get_server_info` first and note `device`. `<NC>` is `<SC>` (C-F446) with `cache` removed from
+`steps[0].pipeline.configuration`, so no cache code can fire.
+1. `validate_workflow(workflow=<NC with configuration.attention_backend = "sage_hub">)`.
+2. `<NC>` with `configuration.components.transformer.attention_backend = "sage_hub"` and no pipeline-level one.
+3. `<NC>` with `configuration.attention_backend = "flash"`.
+4. `<NC>` with `configuration.attention_backend = "native"`.
+5. `<NC>` with `configuration.attention_backend = "_native_flash"`: "flash" in the name, but the native family.
+6. `validate_workflow(name="templates/minimax/video-with-audio", arguments={"attention_backend": "sage_hub"})`.
+7. `validate_workflow(name="templates/minimax/video-with-audio")`: its `attention_backend` default is null.
+expected:
+- every call: `valid: true`, `errors: []`.
+- `device` is `"mps"` or `"cpu"`. 1, 2, 3 and 6 each carry exactly one `attention_backend_unavailable` warning.
+  Its message names the backend (`sage_hub`, or `flash` for 3) and the device. In 2 its path points at the
+  `transformer` component. 4, 5 and 7 carry none.
+- `device` is `"cuda"`: no call carries `attention_backend_unavailable`.
+- Any other `device` value: skip the expectations for 1-7 as not applicable, neither a pass nor a failure.
+It is a **finding** if a CUDA-only backend is silent off CUDA, warns on CUDA, or if a native-family backend warns
+anywhere. It is also a finding if a component-level backend is missed, or one resolved from a variable (6).
+cleanup: none.
+metrics: none.
+
+### C-F451 — the acceleration warnings never refuse: validate, save and run all accept the workflow
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+In the suite workspace. `<W>` is `<SC>` (C-F446) with `steps[0].arguments.num_inference_steps = 12` and
+`components.transformer.compile = {"fullgraph": true}`. Off CUDA, also set `configuration.attention_backend =
+"sage_hub"`. On CUDA, leave it unset: sage_hub would run there. Step 3 queues a job only to show it isn't refused,
+and cancels it at once.
+1. `validate_workflow(workflow=<W>)`.
+2. `save_workflow(name="c-f451-warns", workflow=<W>)`, then `list_workflows()` to see it listed.
+3. `run_workflow(name="c-f451-warns", acknowledged_cost=true, note="C-F451 warnings never refuse")` (no
+   `wait_seconds`), then at once `cancel_job(job_id=<id>, acknowledged_cost=true)`.
+expected:
+- 1: `valid: true`, `errors: []`. The warnings carry `cache_short_schedule` and `compile_fullgraph_with_cache`,
+  and `attention_backend_unavailable` off CUDA.
+- 2: saved, with the same acceleration warnings in its response. `c-f451-warns` is listed.
+- 3: `run_workflow` returns a job id, not a refusal. The job ends `cancelled` (or, if it finished first, completed),
+  never failed at validation.
+It is a **finding** if any acceleration code arrives as an error, or blocks the save or the run.
+cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)` if the job wrote anything;
+`delete_workflow(name="c-f451-warns", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F452 — no catalog template warns a cache or compile acceleration code as shipped
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Validate only, on any server, with each template's stored defaults (no `arguments`).
+1. `validate_workflow(name="templates/step-caching")`: first_block at 28 steps.
+2. `list_workflows(shape="shot")`, then `validate_workflow(name=...)` for every `templates/minimax/*` entry whose
+   variables carry a `lora_model_name` (the turbo templates). That includes `templates/minimax/video-with-audio`,
+   `templates/minimax/video-with-audio-768p` and `templates/minimax/image-to-video`.
+expected:
+- every call: no warning carries `cache_short_schedule`, `taylorseer_state_unestimated` or
+  `compile_fullgraph_with_cache`. With their `attention_backend` default null, the H3 templates also carry no
+  `attention_backend_unavailable`.
+It is a **finding** if a shipped template warns one of these codes on its own defaults. Name the template and the
+warning.
+cleanup: none.
+metrics: none.
+
+### C-F453 — `get_guide("acceleration")` documents the four acceleration warnings
+pending: #887
+source: tester, spec for #887 from #868's plan v2 (claude-opus-5-5 via anthropic)
+Read only, on any server.
+1. `get_guide("acceleration")`. If it returns an index, read the sections it lists that cover caching, TaylorSeer,
+   compile and attention backends.
+expected:
+- 1: the guide states each of these:
+  - the short-schedule rule: `first_block`/`mag` under 20 steps likely skips nothing, and validate warns;
+  - the TaylorSeer warning: it can OOM at the P5 configuration, and validate can't size its state;
+  - the compile cost: a recompile when the workflow changes, and the fullgraph-with-cache warning;
+  - the attention-backend warning: a CUDA-only backend named off CUDA warns, and `native` doesn't.
+It is a **finding** if any of the four is missing, or if the guide's threshold or code names differ from what
+C-F446-C-F450 observe.
+cleanup: none.
+metrics: none.
+
+### C-F454 — `compare_outputs`: two reruns side by side give a labelled grid and `identical`/high-PSNR metrics
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+**Fixture for C-F454–C-F465** (CPU utility tasks only, no model, so it holds on any server).
+Workflow W: `{"id": "c-f454-cmp", "variables": {"contents": "compare", "width": 512, "height": 512,
+"frames": 121, "grain": 0.0, "seed": 1, "fps": 24}, "steps": [{"name": "qr", "task": {"command":
+"qr_code", "arguments": {"qr_code_contents": "variable:contents", "width": "variable:width", "height":
+"variable:height"}}}, {"name": "grain", "task": {"command": "film_grain", "arguments": {"media":
+"previous_result:qr", "amount": "variable:grain", "seed": "variable:seed"}}, "result": {"content_type":
+"image/png", "file_base_name": "still"}}, {"name": "vid", "task": {"command": "loop_frames",
+"arguments": {"video": "previous_result:grain", "num_frames": "variable:frames"}}, "result":
+{"content_type": "video/mp4", "fps": "variable:fps", "file_base_name": "clip"}}]}`.
+Run it in workspace `regression-complete` with `validate_workflow` first, then `run_workflow(...,
+wait_seconds=55)` (inline; if `run_workflow` only takes a saved name, `save_workflow` it as
+`c-f454-cmp` and delete it in cleanup). A `still_running: true` reply is followed with
+`wait_for_job`, not a finding. Each run yields a still `still*.png` and a clip `clip*.mp4`; a case
+names them by the **gallery name** `get_job` reports for the file, written below as `<run>.mp4` /
+`<run>.png`. Variants are W with `arguments` overriding variables:
+- **A**: defaults (512×512, 121 frames, 24 fps, no grain). **A2**: A again (a rerun, deterministic).
+- **D**: `contents: "a different payload entirely"` (a different QR pattern, same size/length).
+- **S**: `width: 640, height: 384` (size differs). **T**: `frames: 50` (shorter). **F**: `fps: 12`.
+- **B**: `width: 1344, height: 768` (only C-F464).
+Plan intent: `compare_outputs(names, at=None, crop=None, baseline=None, max_dimension=384,
+workspace=None)` returns one image grid (rows = outputs in the given order, columns = moments, rows
+labelled with a short run id + file, columns with the frame number) plus a text part per
+non-baseline output with `psnr_db`, `ssim` (greyscale) and `mean_abs_diff` (0–255), each as mean and
+min across columns; a PSNR of ∞ is reported as `identical`.
+1. Run A and A2.
+2. `compare_outputs(names=["A.mp4", "A2.mp4"], at=["frame:60", "frame:100"])`.
+3. `compare_outputs(names=["A.mp4", "A2.mp4"], at=[2.5])` (seconds form; 2.5 s × 24 fps).
+expected:
+- Call 2: one image part, a 2-row × 2-column grid; row labels identify A's and A2's runs/files in
+  that order, column labels read frame 60 and frame 100. One metrics text part (for A2 only; A is the
+  baseline by default) with `psnr_db` either `identical` or a finite value ≥ 35 dB, `ssim` ≥ 0.99,
+  `mean_abs_diff` ≤ 1.0, each with a mean and a min.
+- Call 3: one column, labelled frame 60.
+- Neither reply is an error; neither carries a `fps_differs` flag.
+It is a **finding** if the grid's shape or order differs, a label is missing, the metrics are absent
+or lack one of the three keys or the mean/min split, or 2.5 s doesn't resolve to frame 60.
+cleanup: `delete_output(job_id=<A>, acknowledged_cost=true)` and the same for A2 (and
+`delete_workflow` `c-f454-cmp` if it was saved).
+metrics: none.
+
+### C-F455 — `compare_outputs`: the same name twice is `identical` with SSIM 1.0
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A.
+1. `compare_outputs(names=["A.mp4", "A.mp4"], at=["frame:0", "frame:120"])`.
+expected: a 2×2 grid; the metrics part reads `psnr_db` `identical` (not a number, not `inf`, not
+null), `ssim` 1.0 and `mean_abs_diff` 0 for both mean and min. Frame 120 (the last frame of a
+121-frame clip) is a valid moment, not `past end`.
+It is a **finding** if a duplicate name is refused, PSNR comes back as a raw infinity/null/error, or
+frame 120 is reported past the end.
+cleanup: `delete_output(job_id=<A>, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F456 — `compare_outputs`: a different output scores lower than a rerun, and `baseline` picks the reference row
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A, A2 and D. Optional grain arm: also run **G** = A with `grain: 1.0`.
+1. `compare_outputs(names=["A.mp4", "A2.mp4", "D.mp4"], at=["frame:30", "frame:90"])`.
+2. `compare_outputs(names=["A.mp4", "A2.mp4", "D.mp4"], at=["frame:30", "frame:90"], baseline="D.mp4")`.
+3. (grain arm) `compare_outputs(names=["A.mp4", "G.mp4"], at=["frame:30"])`.
+expected:
+- Call 1: a 3-row grid in the given order; metrics parts for A2 and D only. D's `psnr_db` is a finite
+  number strictly lower than A2's (A2 `identical` counts as higher), D's `ssim` strictly lower than
+  A2's, D's `mean_abs_diff` strictly higher than A2's.
+- Call 2: rows stay in the given order (A, A2, D); metrics parts now for A and A2 (D is the
+  baseline), and both show the low-PSNR/higher-diff readings D showed in call 1, since each is
+  measured against D.
+- Call 3: if G's metrics are not `identical`, they are lower than C-F454's A2 readings. If G comes back
+  `identical`, film grain had no midtones to act on in a two-tone QR. That is a fixture limit: note it
+  in the run report, not a finding.
+It is a **finding** if the ordering is inverted on any of the three metrics, `baseline` reorders the
+rows or still reports metrics for the baseline itself, or metrics are missing for a non-baseline row.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, A2, D (and G).
+metrics: none.
+
+### C-F457 — `compare_outputs`: one crop box shows and measures only that region
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A and D (both 512×512).
+1. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:60"])` (no crop).
+2. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:60"], crop=[0, 0, 128, 128])` (the top-left
+   corner: in a QR code a finder pattern that both codes share).
+3. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:60"], crop=[384, 384, 128, 128])` (a box ending
+   exactly on the frame edge, x+w = y+h = 512).
+expected:
+- Call 2: the grid cells show only the cropped region (a square cell, the finder pattern, not the
+  whole code) and the metrics differ from call 1's: higher PSNR/SSIM and lower `mean_abs_diff`, since
+  the shared finder pattern differs less than the whole code. The reply doesn't say the region is the
+  full frame.
+- Call 3: accepted (the edge is in bounds); a grid and metrics, no error.
+It is a **finding** if the crop is ignored for the metrics (call 2's numbers equal call 1's), the
+grid shows the whole frame, or a box touching the frame edge is refused.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and D.
+metrics: none.
+
+### C-F458 — `compare_outputs`: per-output crops are display only; metrics stay full-frame
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+The v2 revision of the plan's case 5.
+Setup: C-F454's fixture; run A and D.
+1. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:60"])` (no crop).
+2. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:60"], crop=[[0, 0, 128, 128], [64, 64, 256,
+   200]])` (one box per name, of different sizes).
+expected:
+- Call 2 is accepted: each row shows its own crop. Its metrics (`psnr_db`, `ssim`, `mean_abs_diff`, mean
+  and min) equal call 1's (same values to the precision printed), and the reply states the region as
+  `metrics region: full frame (per-output crops are display only)` (or wording naming the full frame
+  and display-only crops).
+It is a **finding** if per-output boxes of different sizes are refused, the metrics change from
+call 1's, or the reply doesn't say the metrics cover the full frame.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and D.
+metrics: none.
+
+### C-F459 — `compare_outputs`: a size mismatch gives a grid with null metrics naming both sizes
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A (512×512), A2 and S (640×384).
+1. `compare_outputs(names=["A.mp4", "S.mp4", "A2.mp4"], at=["frame:60"])`.
+2. `compare_outputs(names=["S.mp4", "A.mp4"], at=["frame:60"], crop=[0, 0, 600, 300])`.
+expected:
+- Call 1: a 3-row grid (S's row shown, not refused, not resized to 512×512). S's metrics are null
+  with a reason naming both sizes, `size differs from baseline: 640x384 vs 512x512` (that order:
+  the output's size, then the baseline's). A2's metrics are normal (`identical` or high), so one bad
+  row doesn't blank the others.
+- Call 2: a crop in bounds for S (the baseline) but out of bounds for A (600 > 512) is refused, the
+  message naming the out-of-bounds box/output, or else accepted with A's row reported as null with a
+  reason. Either way, no numbers from a resized frame. Note which of the two in the run report.
+It is a **finding** if a size mismatch is refused outright, the mismatched row gets numbers (any
+resize), the reason omits either size, or one mismatch nulls the other rows' metrics.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, A2 and S.
+metrics: none.
+
+### C-F460 — `compare_outputs`: a moment past an output's end is a blank cell; differing fps is flagged
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A (121 frames), T (50 frames) and F (12 fps).
+1. `compare_outputs(names=["A.mp4", "T.mp4"], at=["frame:10", "frame:60"])`.
+2. `compare_outputs(names=["A.mp4", "T.mp4"], at=["frame:49", "frame:50"])` (T's last frame, then one
+   past it).
+3. `compare_outputs(names=["A.mp4", "F.mp4"], at=["frame:60"])`.
+expected:
+- Call 1: a 2×2 grid; T's frame-60 cell is blank, its frame-60 metrics are null with the reason
+  `past end (50 frames)`, and its frame-10 metrics are numbers. T's mean/min summarise only the
+  columns that have numbers.
+- Call 2: frame 49 has numbers; frame 50 is `past end (50 frames)`.
+- Call 3: both rows show frame 60 (the same frame number, not the same second), and the reply carries
+  `fps_differs` (true, or naming the two rates). C-F454's reruns carry no such flag.
+It is a **finding** if a past-end moment errors the whole call, gets numbers, shows a frame from
+elsewhere in the clip, the off-by-one at 49/50 is wrong, or `fps_differs` is missing for 24 vs 12 fps.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, T and F.
+metrics: none.
+
+### C-F461 — `compare_outputs`: omitting `at` gives four evenly spaced frames of the shortest video
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A (121 frames) and T (50 frames).
+1. `compare_outputs(names=["A.mp4", "A2.mp4"])` with A2 also run (both 121 frames).
+2. `compare_outputs(names=["A.mp4", "T.mp4"])`.
+expected:
+- Call 1: exactly 4 columns, frame numbers within 0–120, strictly increasing and evenly spaced (equal
+  gaps, ±1 frame for rounding).
+- Call 2: exactly 4 columns, all within 0–49 (spaced over the *shortest* clip, T), so no cell is
+  `past end`.
+It is a **finding** if the default isn't 4 columns, the spacing is uneven, or call 2 picks a frame
+past T's end.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, A2 and T.
+metrics: none.
+
+### C-F462 — `compare_outputs`: stills are one frame, mix with videos, and `asset:` names work
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A and D (each yields `still*.png` and `clip*.mp4`).
+`keep_output` A's still to the asset `c-f462-still.png` (use the reply's `asset:` reference below).
+1. `compare_outputs(names=["A.png", "D.png"])` (two stills, no `at`).
+2. `compare_outputs(names=["A.png", "D.png"], at=["frame:10", "frame:60"])`.
+3. `compare_outputs(names=["asset:c-f462-still.png", "A.png"])`.
+4. `compare_outputs(names=["A.png", "A.mp4"], at=["frame:0", "frame:60"])` (a still and a video).
+expected:
+- Call 1: a grid of one column; D's metrics are numbers below `identical`.
+- Call 2: `at` doesn't apply to stills. Either one column (the moments ignored for stills), or the
+  same image repeated in each column. Not a refusal.
+- Call 3: accepted; the asset row is labelled as the asset; metrics `identical` (the kept file is
+  A's still byte for byte).
+- Call 4: accepted. The still's row shows the one image in each column (or a single cell), the
+  video's row frames 0 and 60. The video's metrics against the still are high (every frame of A's
+  clip is A's still looped, allowing for the video codec's loss).
+It is a **finding** if a still is refused, `at` on a still errors, an `asset:` name is refused, or a
+still/video mix is refused.
+cleanup: `delete_asset` `c-f462-still.png`; `delete_output(job_id=…, acknowledged_cost=true)` for A
+and D.
+metrics: none.
+
+### C-F463 — `compare_outputs` refusals, and the 2-name / 8×8 boundaries accepted
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A and A2. Below, `M8` = `["frame:0","frame:10","frame:20","frame:30",
+"frame:40","frame:50","frame:60","frame:70"]` and `M9` = M8 + `"frame:80"`.
+1. `compare_outputs(names=["A.mp4"])` (one name).
+2. `compare_outputs(names=["A.mp4"] * 9)` (nine names: A, A2 alternated nine times).
+3. `compare_outputs(names=["A.mp4", "A2.mp4"], at=M9)` (nine moments).
+4. `compare_outputs(names=["A.mp4", "A2.mp4"], baseline="D.mp4")` (a baseline not in `names`).
+5. `compare_outputs(names=["A.mp4", "A2.mp4"], crop=[400, 400, 200, 200])` (out of bounds on 512×512).
+6. `compare_outputs(names=["A.mp4", "A2.mp4"], crop=[[0, 0, 64, 64]])` (a list of boxes, wrong length).
+7. `compare_outputs(names=["A.mp4", "regression-complete/no-such-run/clip.mp4"])` (an unknown name).
+8. `compare_outputs(names=[])` (empty).
+9. `compare_outputs(names=["A.mp4", "A2.mp4"], at=["frame:-1"])` and, separately, `at=[-1.0]`.
+10. Boundaries, accepted: `compare_outputs(names=["A.mp4", "A2.mp4"], at=["frame:0"])` (two names) and
+    `compare_outputs(names=[A, A2, A, A2, A, A2, A, A2], at=M8)` (eight names × eight moments).
+expected:
+- 1–8: each refused with an error naming what's wrong (name count with the 2–8 range; moment count
+  with the limit of 8; the baseline not being among `names`; the box out of the frame; the crop list
+  length vs the name count; the unknown name, echoed as sent). No image part on any of them.
+- 9: refused, or each negative moment reported per cell with a reason; never a frame taken from the
+  end of the clip (Python negative indexing). Note which in the run report.
+- 10: both return grids (1×2 and 8×8 cells) with metrics. The 8×8 reply stays within the 4 MiB
+  budget (C-F464 covers the downscale).
+It is a **finding** if any of 1–8 returns a grid, an error is generic (doesn't say which limit or
+which name), a negative moment wraps to the end, or either boundary in 10 is refused.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and A2.
+metrics: none.
+
+### C-F464 — `compare_outputs`: a grid over the 4 MiB budget shrinks whole and says `downscaled_to`
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run B (1344×768) twice, as B1 and B2 (D-style contents for B2: `width: 1344,
+height: 768, contents: "a different payload entirely"`, so the cells aren't all alike and compress
+less).
+1. `compare_outputs(names=[B1, B2, B1, B2, B1, B2, B1, B2], at=M8 (C-F463), max_dimension=1344)`.
+2. The same with the default `max_dimension` (384).
+expected:
+- Call 1: an 8×8 grid that arrives (no transport error, no refusal). If the full-size grid would
+  exceed 4 MiB, the reply carries `downscaled_to` (the grid's delivered size) and the whole grid is
+  smaller, every cell shrunk alike. Metrics are unaffected by the downscale: B2's numbers equal call
+  2's. If the reply has no `downscaled_to`, the delivered grid must be at 1344 px per cell. Note the
+  delivered size in the run report.
+- Call 2: cells at most 384 px on their long side; metrics the same as call 1's (they're computed at
+  source resolution).
+It is a **finding** if call 1 fails or exceeds the budget, the grid shrinks without `downscaled_to`,
+only some cells shrink, or the metrics change with `max_dimension` or the downscale.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for B1 and B2.
+metrics: none.
+
+### C-F465 — `compare_outputs` is read-only: no gallery, asset or job entries
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Setup: C-F454's fixture; run A and D.
+1. Record `list_gallery`, `list_assets` and `list_jobs` for workspace `regression-complete` (counts and
+   newest entries).
+2. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:0", "frame:60"], crop=[0, 0, 256, 256])` and
+   one refused call (`names=["A.mp4"]`).
+3. Repeat the three listings.
+expected: the listings are unchanged: no new gallery file (no saved grid), no new asset, no new or
+queued job, and A's and D's run directories hold the same files as before (`get_job` lists the same
+outputs).
+It is a **finding** if anything was added or a job was queued.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and D.
+metrics: none.
+
+### C-F466 — the guide documents `compare_outputs`, its metrics' regions and the dB bands as a reading aid
+pending: #889
+source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
+Free; no run.
+1. `get_guide("workflows", section="Assessing a run's output")`.
+2. `get_guide` index (the default compact form) and `get_server_info`, for the stated tool count.
+expected:
+- Call 1 names `compare_outputs` and says what `psnr_db`, `ssim` and `mean_abs_diff` measure; that a
+  single crop is also the metrics region while per-output crops are display only (metrics on the full
+  frame); and gives the dB bands (about 44 dB rerun noise, 23–27 dB numerics changed, about 19 dB
+  re-staged, measured on full frames) as a reading aid, explicitly not thresholds.
+- Wherever the guide states the MCP tool count, it reads 65.
+It is a **finding** if the section doesn't mention `compare_outputs`, presents the bands as
+pass/fail thresholds, omits the region rule, or a stated tool count is still 64.
+cleanup: none.
+metrics: none.
+
+### C-F467 — the workspaces guide serves "Running a sweep", and every tool it names exists
+pending: #890
+source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
+Free; no run.
+1. `get_guide("workspaces")` (the index).
+2. `get_guide("workspaces", section="Running a sweep")`, and again with `section="running a sweep"`
+   (loose match).
+3. Collect every MCP tool name the section tells an agent to call, and compare them with this
+   session's `dw` tool list (the deferred `mcp__dw__*` names).
+expected:
+- Call 1's `sections` lists `Running a sweep`.
+- Call 2 returns the section both times, with the same content.
+- The section covers, in substance, each of the plan's eight points:
+  1. one workspace per experiment, its workspace note holding the question and the factor list;
+  2. a base workflow with every factor as a variable: a catalog template when it already exposes
+     the factor, otherwise `save_workflow` a copy with `variable:` references, plus the note that
+     `{}` keeps a dtype value a string;
+  3. the seed pinned in `arguments`, one factor changed per variant, and `validate_workflow`'s
+     `plan.estimate` quoted per variant with one go-ahead for the whole list;
+  4. one `run_workflow` per variant, with a `note` whose first line is the overrides (an example
+     like `steps=20 attention=sage`), and `wait_for_job` before submitting the next, giving host
+     RAM (#869) as the reason;
+  5. a same-seed rerun of an unchanged step is a cache hit (`reused`), expected and not a failed
+     variant;
+  6. the results table from `list_jobs(workspace=…)` (job, status, note) and `get_job` (timing,
+     files);
+  7. assessments with `set_note` on the output file, first line `score N/5 · judged_by <who>`;
+  8. `keep_output` the winner and put the conclusion in the workspace note.
+- Every tool named in the section is in the session's tool list. At minimum: `save_workflow`,
+  `validate_workflow`, `run_workflow`, `wait_for_job`, `list_jobs`, `get_job`, `set_note`,
+  `keep_output`.
+- The section names no parameter the tool schemas don't have (no `sweep=` on `run_workflow`, no
+  score or JSON field on `set_note`).
+It is a **finding** if the section is missing or doesn't resolve loosely, names a tool or
+parameter that doesn't exist, omits the wait-before-next-variant rule or its reason, or gives an
+assessment convention other than the `score N/5 · judged_by <who>` first line.
+cleanup: none.
+metrics: none.
+
+### C-F468 — following "Running a sweep" literally: three variants, three noted jobs, one seed
+pending: #890
+source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
+C-F469 and C-F470 run on this case's workspace and runs: do them straight after, before cleanup.
+Setup, following C-F467's section step by step. `templates/text-to-image` (SD 1.5, ungated) exposes
+no steps variable today (its `num_inference_steps` is a literal 25), so the guide's "save a copy"
+path applies:
+- `create_workspace("regression-sweep")` and
+  `set_note(target="workspace:regression-sweep", note="question: does steps change the image?\nfactors: steps = 4 / 8 / 12")`.
+- `get_workflow("templates/text-to-image")`, then `save_workflow` a copy named `sweep-base` in
+  workspace `regression-sweep`: the same definition with a `steps` variable (default 25) and
+  `"num_inference_steps": "variable:steps"`.
+- `validate_workflow` it for each variant, `arguments={"seed": 42, "steps": N}` with N = 4, 8, 12,
+  and note each `plan.estimate`.
+Run:
+1. For N in 4, 8, 12, in that order: `run_workflow` on `sweep-base` in `regression-sweep` with
+   `arguments={"seed": 42, "steps": N}`, `note="steps=N\nsweep of steps at seed 42"`,
+   `acknowledged_cost` as the server requires, and `wait_seconds=55`. Follow a
+   `still_running: true` reply with `wait_for_job`. Don't submit the next variant until this one
+   is finished.
+2. `list_jobs(workspace="regression-sweep")`.
+3. `get_job` on each of the three.
+4. `get_output_image` on each of the three files.
+expected:
+- Each validate is clean and carries a `plan.estimate`.
+- All three jobs succeed.
+- Call 2 lists exactly three jobs, each note's first line `steps=4`, `steps=8` and `steps=12` in
+  turn (newest first).
+- Every `get_job` shows `seed` 42 in its arguments (or its pinned seed), each with its own `steps`
+  value, timing and one image file.
+- The three images differ: different file names or run directories, and visibly different
+  pictures (4 steps of SD 1.5 is far from converged). None is reported `reused`.
+It is a **finding** if a step of the method the guide gives doesn't work as written (save, validate,
+run with `arguments` + `note`, wait), a job is missing from `list_jobs(workspace=)`, a note's
+first line isn't its override, the seed differs between variants, or two variants give the same
+image.
+cleanup: at the end of C-F470.
+metrics: none.
+
+### C-F469 — a sweep variant repeating an earlier override is a cache hit, marked `reused`
+pending: #890
+source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
+Runs on C-F468's workspace and jobs.
+1. A fourth variant repeating one: `run_workflow` on `sweep-base` in `regression-sweep` with
+   `arguments={"seed": 42, "steps": 8}`, `note="steps=8\nrepeat of variant 2"`, `wait_seconds=55`.
+2. `get_job` on it.
+3. Control: the same with `arguments={"seed": 43, "steps": 8}`, `note="steps=8 seed=43"`.
+4. `list_jobs(workspace="regression-sweep")`.
+expected:
+- Call 1 completes (succeeded, not failed or refused).
+- Call 2 marks its step `reused` (`"reused": true`, as the guide's Runs section says), and reports the
+  earlier `steps=8` run's file rather than a new one.
+- Call 3, a different seed, is **not** reused: it renders a new image.
+- Call 4 lists five jobs, and the repeat's note first line is `steps=8`.
+It is a **finding** if the repeat fails, re-renders without `reused`, or reports a file other than
+variant 2's; or if the different-seed control is marked `reused`.
+cleanup: at the end of C-F470.
+metrics: none.
+
+### C-F470 — a sweep assessment in the guide's note form reads back in full, its first line in listings
+pending: #890
+source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
+Runs on C-F468's workspace and outputs. Below, `F12` is the steps=12 variant's gallery name.
+1. `set_note(target=F12, workspace="regression-sweep", note=A)`, where A is
+   `"score 4/5 · judged_by claude-opus-5-5\nsubject: apple, centred\ndefects: none\nstaging: plain backdrop"`.
+2. `get_gallery_metadata` on F12, and `list_gallery(workspace="regression-sweep")`.
+3. A long one: `set_note` on F12 with a first line of 250 characters
+   (`"score 3/5 · judged_by claude-opus-5-5 · "` padded with `x`), then more lines up to exactly 4000
+   characters. Repeat call 2.
+4. Over the limit: `set_note` on F12 with 4001 characters.
+5. Close the sweep as the guide says: `keep_output(F12, …)` as asset `sweep-winner.jpg` (in
+   `regression-sweep`), then `set_note(target="workspace:regression-sweep", note="question: does steps change the image?\nfactors: steps = 4 / 8 / 12\nconclusion: steps=12 wins")`
+   and `list_workspaces`.
+expected:
+- Call 2: `get_gallery_metadata` returns A in full, all four lines and the `·` intact. F12's
+  `list_gallery` entry shows A's first line `score 4/5 · judged_by claude-opus-5-5`.
+- Call 3: `get_gallery_metadata` returns all 4000 characters. The listing shows the first line clipped
+  at about 200 characters, and still begins `score 3/5 · judged_by`.
+- Call 4: refused with an error naming the 4000-character limit. The note from call 3 is unchanged.
+- Call 5: the asset is kept, and the workspace note reads back with its conclusion.
+It is a **finding** if the note is truncated or altered in `get_gallery_metadata`, the listing
+drops the first line or shows a later one, a 4000-character note is refused, or a 4001-character
+note is accepted or silently cut.
+cleanup: `delete_asset("sweep-winner.jpg", workspace="regression-sweep")` if the workspace delete
+doesn't take it; `delete_output(job_id=…, acknowledged_cost=true)` for each of C-F468's and
+C-F469's jobs; `delete_workflow("sweep-base")` in `regression-sweep`; then
+`delete_workspace("regression-sweep", acknowledged…)`. Confirm `list_workspaces` no longer has it.
 metrics: none.
 
 ## Performance

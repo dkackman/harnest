@@ -4389,4 +4389,232 @@ It is a **finding** if:
 cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
+### M-F142 — H3: a catalogued `transformer` adapter on a `ref2va` step is refused at validate and at `run_workflow`, naming the catalog entry
+pending: #888
+source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 (`MiniMaxAI/MiniMax-H3`) partition check on `loras`, Realism-People LoRA
+(`fal/MiniMax-H3-Realism-People-LoRA` / `h3-realism-people-t2v-i2v-r2v.safetensors`).
+Before #888, H3's adapter partition check read only the file name. A name carrying neither `ref2v` nor `fl2v`
+got a "names neither" warning, so Realism, a `transformer` adapter, validated on `ref2va` and degraded the run
+without any error. #888 consults the LoRA catalog first, matching on `model_name` + `weight_name`. An
+entry whose `workflow` is all in {`t2va`, `fl2va`} means `transformer`, and an entry of exactly `ref2va` means
+`transformer_ref`. After #888's catalog edit, Realism's entry is `["t2va","fl2va"]`, so on `ref2va` it is now
+an error. Validation only: this case spends no GPU time.
+Setup: `use_workspace("regression-model-specific")` (`create_workspace` it first if missing).
+**The H3 carrier** (M-F143 to M-F146 reuse it, with `<WF>` and `<LORAS>` filled in):
+`{"id":"probe","steps":[{"name":"base","pipeline":{"configuration":{"component_type":"ModularPipeline"},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":"<WF>"},"loras":<LORAS>,"arguments":{"prompt":"a fox","num_frames":124,"width":960,"height":544,"num_inference_steps":9,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":"video/mp4","fps":24}}]}`
+Probes:
+(a) Inline: `validate_workflow(workflow=<carrier, WF=ref2va, LORAS=[{"model_name":"fal/MiniMax-H3-Realism-People-LoRA","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"}]>)`.
+(b) Through variables: `validate_workflow(name="templates/minimax/reference-to-video", arguments={"lora_model_name":"fal/MiniMax-H3-Realism-People-LoRA","lora_weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"})`.
+(c) Admission: note `list_jobs` (newest first), then call `run_workflow` with (b)'s name and arguments plus
+`acknowledged_cost=true`, then `list_jobs` again.
+expected:
+- (a) `valid: false`. An error is at `steps[0].pipeline.loras[0].weight_name`, and its message:
+  - names the `transformer` partition (the one the adapter is trained against) and `transformer_ref` or
+    `ref2va` (what the step runs);
+  - names the catalog entry `minimax-h3/realism-people` and the workflow it is listed for (`t2va` and/or
+    `fl2va`), e.g. "catalog entry `minimax-h3/realism-people` lists it for `t2va`, which denoises against
+    `transformer`". The plan's own wording is the example; any message naming both the entry and the
+    partition meets it.
+  - No "names neither" warning is reported for that `weight_name`, since the catalog decided it.
+- (b) `valid: false`, with the same error at `arguments.lora_weight_name` (the variable, not the template's
+  internal step path).
+- (c) `run_workflow` returns an error or refusal carrying (b)'s error. No `job_id` comes back, and `list_jobs`
+  shows no new job.
+It is a **finding** if:
+- any probe validates, or reports only a warning;
+- the message doesn't name the catalog entry, so a reader can't tell the refusal came from the catalog rather
+  than the file name;
+- (b)'s path is the template's step path rather than `arguments.lora_weight_name`;
+- (c) queues a job.
+cleanup: none, unless (c) queued a job: then `cancel_job` it and `delete_output(job_id=…)`, and file the finding.
+metrics: none.
+
+### M-F143 — H3: the same catalogued adapter on `t2va` and `fl2va` is clean, with no "names neither" warning
+pending: #888
+source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check, Realism-People LoRA. This is the positive side of M-F142.
+Before #888, Realism warned "names neither 'ref2v' nor 'fl2v'" on every workflow. Now that the catalog
+decides it, the workflows its entry lists must validate with no adapter warning at all. Validation only.
+Setup: `use_workspace("regression-model-specific")`. `LORAS` below is M-F142's Realism entry.
+Probes:
+(a) M-F142's carrier, `WF=t2va`.
+(b) M-F142's carrier, `WF=fl2va`. The inline carrier needs no image to validate. If this server's validate
+    asks for one, add the input the error names, using `asset:qa-cast/priya-portrait.jpg` or any image asset
+    in the workspace.
+(c) `validate_workflow(name="templates/minimax/video-with-audio", arguments={"lora_model_name":"fal/MiniMax-H3-Realism-People-LoRA","lora_weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"})` (t2va).
+(d) `validate_workflow(name="templates/minimax/image-to-video", arguments={…the same two…})` (fl2va). Add the
+    image argument the template declares as required. If no image asset exists on this server, `upload_asset`
+    any small JPEG first and delete it in cleanup.
+expected:
+- (a) to (d) are each `valid: true`, with no error.
+- No warning mentions `weight_name`, `lora_weight_name`, "names neither", `transformer` or `transformer_ref`.
+  Unrelated warnings, such as the carrier's no-seed warning, are fine.
+It is a **finding** if any probe errors on the adapter, or still carries the "names neither" warning for
+Realism.
+cleanup: delete any asset uploaded for (d).
+metrics: none.
+
+### M-F144 — H3: the filename rule still decides any adapter the catalog doesn't (uncatalogued, null `workflow`, other repo), and a revision mismatch still matches
+pending: #888
+source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check, fallback paths.
+#888 adds the catalog lookup ahead of the filename rule and leaves the rule unchanged. Each probe below is one
+way a lookup can find nothing, or find something that decides nothing. Each must behave exactly as before
+#888, except (f), where the plan matches on repo + file and ignores the revision (Q2). Validation only. `C(WF, LORAS)`
+is M-F142's carrier.
+Setup: `use_workspace("regression-model-specific")`. First confirm with `list_loras(model="MiniMaxAI/MiniMax-H3")`
+that no entry has `weight_name` `qa-uncatalogued-adapter.safetensors` or `model_name` `qa-nonexistent/none`.
+Then confirm `minimax-h3/taomate` still has `"workflow": null` (if it doesn't, pick any H3 entry whose
+`workflow` is null and whose `weight_name` carries neither token, and say so in the report).
+Probes:
+(a) The fl2v turbo on ref2va: `C(ref2va, [{"model_name":"lightx2v/Minimax-h3-Turbo","weight_name":"minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors"}])`.
+(b) The ref2v turbo on fl2va: `C(fl2va, [{"model_name":"lightx2v/Minimax-h3-Turbo","weight_name":"minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors"}])`.
+(c) An uncatalogued token-less file, with each of `WF` = `t2va`, `fl2va` and `ref2va`:
+    `C(WF, [{"model_name":"qa-nonexistent/none","weight_name":"qa-uncatalogued-adapter.safetensors"}])`.
+(d) A catalogued entry with `workflow: null` on ref2va and on t2va: `C(WF, [{"model_name":"TaoLiveAIGC/TaoMate-H3","weight_name":"adapter_model.safetensors"}])`.
+(e) Realism's file under another repo on ref2va: `C(ref2va, [{"model_name":"qa-nonexistent/none","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"}])`.
+(f) Realism with a revision that isn't the catalog's, on ref2va: `LORAS=[{"model_name":"fal/MiniMax-H3-Realism-People-LoRA","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors","revision":"main"}]`.
+    If the `loras` entry schema has no `revision` key (`get_schema` on the loras section), record that and skip (f).
+expected:
+- (a) `valid: false`, with an error at `steps[0].pipeline.loras[0].weight_name` that names `transformer`
+  (what the fl2v file is trained against) and the step's `ref2va`/`transformer_ref`.
+- (b) `valid: false`, with an error at the same path. Its message is the pre-#888 one: "…is trained against
+  the 'transformer_ref' partition and this step runs the 'fl2va' workflow, which denoises against
+  'transformer'… (its name carries 'fl2v')". Rewording is allowed, but the meaning must be the same.
+- (c) `valid: true` on all three workflows, each with the "names neither 'ref2v' nor 'fl2v'" warning at
+  `steps[0].pipeline.loras[0].weight_name`, and no adapter error.
+- (d) `valid: true` on both, with the same "names neither" warning. A null `workflow` decides nothing.
+- (e) `valid: true`, with the "names neither" warning. A match needs both `model_name` and `weight_name`.
+- (f) `valid: false`, with M-F142's catalog-entry error. A revision difference doesn't stop the match.
+It is a **finding** if:
+- (a) or (b) validate;
+- (c), (d) or (e) error, or lose the warning;
+- (e) names the Realism catalog entry;
+- (f) validates (the lookup is keyed on the revision, against the plan's Q2 ruling).
+cleanup: none.
+metrics: none.
+
+### M-F145 — `list_loras` lists Realism-People for `t2va` and `fl2va`, with the h3-quality evidence and a "not reference-to-video" `use_when`
+pending: #888
+source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: LoRA catalog entry `minimax-h3/realism-people`.
+Before #888, the entry's `workflow` was the string `"t2va"`, its only evidence was #585, and its `use_when`
+said it was tried on T2VA only. #888 widens it to `["t2va","fl2va"]` on the h3-quality matrix's evidence
+(R3: 4/5 faces on FL2VA/I2VA, the ref2va run inert). Read-only.
+Setup: none (the catalog is server-wide; any workspace).
+Steps:
+(a) `list_loras(model="MiniMaxAI/MiniMax-H3")`. Find `minimax-h3/realism-people`.
+(b) `list_loras(model="MiniMaxAI/MiniMax-H3", workflow="fl2va")`.
+(c) `list_loras(model="MiniMaxAI/MiniMax-H3", workflow="ref2va")`.
+(d) `list_loras(model="MiniMaxAI/MiniMax-H3", workflow="t2va")`.
+expected:
+- (a) The entry's `workflow` is the list `["t2va","fl2va"]` (order free), not a string and not containing
+  `ref2va`. `evidence` keeps the #585 item and adds at least one new item for the h3-quality matrix (an issue
+  number other than 585, or text naming the FL2VA/I2VA result). `use_when` says not to use it for
+  reference-to-video (the words "not" and "reference-to-video", or "ref2va", in the one sentence). `status`
+  is still `proven`.
+- (b) and (d) include `minimax-h3/realism-people`.
+- (c) doesn't include it.
+It is a **finding** if any of these fails. If the `workflow` filter in (b)/(c) matches differently on list
+entries than on string entries (e.g. the turbo-keyframe entries, already `["t2va","fl2va"]`, show the same
+inclusion pattern as realism-people), treat that as a separate issue, not this case's.
+cleanup: none.
+metrics: none.
+
+### M-F146 — H3: the catalog lookup follows the request's workspace, and a mixed or disagreeing entry only warns
+pending: #888
+source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check against a workspace-scoped trial catalog entry (`save_lora`).
+The plan has every server caller pass a catalog index scoped to the caller's workspace. Don's review requires
+this case to confirm the lookup follows the workspace the request selected, not the server default or the
+last-used one. Three trial entries are made for invented, token-less files, so only the catalog can decide
+them. Validation only.
+Setup:
+1. `create_workspace("qa-c870-layer")` and `create_workspace("qa-c870-other")` (reuse them if they already
+   exist).
+2. `use_workspace("qa-c870-layer")`, then `save_lora` three trial entries (status `trial` needs no
+   evidence), each with `base_models: ["MiniMaxAI/MiniMax-H3"]`, a `description` and a `use_when`:
+   - `minimax-h3/qa-c870-refonly`: `model_name` `qa-c870/refonly`, `weight_name`
+     `qa-c870-plain.safetensors`, `workflow: ["ref2va"]`;
+   - `minimax-h3/qa-c870-mixed`: `model_name` `qa-c870/mixed`, `weight_name`
+     `qa-c870-plain.safetensors`, `workflow: ["t2va","ref2va"]`;
+   - `minimax-h3/qa-c870-disagree`: `model_name` `qa-c870/disagree`, `weight_name`
+     `qa-c870-fl2v-style.safetensors` (its name carries `fl2v`, i.e. `transformer`), `workflow: ["ref2va"]`.
+   Record where `save_lora` says it wrote each entry. If it refuses any of them, record the exact error and
+   stop: that's a finding against this case's setup, not the partition check.
+3. `list_loras(model="MiniMaxAI/MiniMax-H3")` from `qa-c870-layer` shows all three, and so does a later call
+   from `qa-c870-other`. If the second call also shows them, the catalog is server-wide and (c)/(d) below
+   can't separate workspaces. Record that, still run them, and see the expected outcomes for that case.
+`R` is `[{"model_name":"qa-c870/refonly","weight_name":"qa-c870-plain.safetensors"}]`, used in M-F142's carrier.
+Probes:
+(a) Selected workspace: still on `qa-c870-layer`, validate `C(t2va, R)`.
+(b) Same session, `C(ref2va, R)`.
+(c) Other workspace selected: `use_workspace("qa-c870-other")`, then validate `C(t2va, R)`.
+(d) Workspace pinned per call: still on `qa-c870-other`, `validate_workflow(workflow=C(t2va, R), workspace="qa-c870-layer")`.
+    Then `use_workspace("qa-c870-layer")` and `validate_workflow(workflow=C(t2va, R), workspace="qa-c870-other")`.
+(e) Mixed list: on `qa-c870-layer`, `C(t2va, [{"model_name":"qa-c870/mixed","weight_name":"qa-c870-plain.safetensors"}])` and the same with `ref2va`.
+(f) Disagreement: on `qa-c870-layer`, `C(t2va, [{"model_name":"qa-c870/disagree","weight_name":"qa-c870-fl2v-style.safetensors"}])`.
+(g) Admission follows the selection too: on `qa-c870-layer`, `run_workflow(workflow=C(t2va, R), acknowledged_cost=true)`
+    must be refused. Compare `list_jobs` before and after.
+expected:
+- (a) `valid: false`, with an error at `steps[0].pipeline.loras[0].weight_name` naming the entry
+  `minimax-h3/qa-c870-refonly` and the `transformer_ref` partition its `ref2va` listing implies.
+- (b) `valid: true`, with no adapter error or "names neither" warning.
+- When step 3 showed the entries only in `qa-c870-layer` (a workspace-scoped catalog):
+  - (c) is `valid: true` with only the "names neither" warning;
+  - in (d), the call pinned to `qa-c870-layer` errors as in (a), and the call pinned to `qa-c870-other` only
+    warns.
+  Each answer follows the workspace the request names or selects, never the server's default workspace
+  and never the one used last.
+- When step 3 showed them in both workspaces (a server-wide catalog): (c) and both calls in (d) error as in
+  (a). Report it as a note, not a failure. Workspace separation can't be observed then, and the plan's
+  "scoped to the caller's workspace" is a question for #870.
+- (e) `valid: true` on both, with the "names neither" warning. A list naming both partitions decides nothing,
+  so the filename rule runs.
+- (f) `valid: true`. A warning at the same path names both the catalog entry's partition (`transformer_ref`)
+  and the filename's `fl2v`/`transformer`, and no error. The filename alone would accept it on t2va, and the
+  catalog alone would refuse, so a warning is the plan's Q1 ruling.
+- (g) No job is queued, and the refusal carries (a)'s error.
+It is a **finding** if:
+- (a) or (g) don't refuse;
+- with a scoped catalog, (c) or (d) answer from the wrong workspace (in particular, if (c) errors only
+  because `qa-c870-layer` was selected earlier in the session);
+- (e) errors;
+- (f) errors, or its warning names only one source.
+cleanup:
+- `use_workspace("regression-model-specific")`.
+- `delete_workspace` on `qa-c870-layer` and `qa-c870-other`, with `acknowledged_cost=true`. Then
+  `list_loras(model="MiniMaxAI/MiniMax-H3")` must show none of the three `qa-c870-*` entries.
+- If they survive (a server-wide writable catalog), there's no MCP tool that deletes a catalog entry. Leave
+  them, report them by name, and file one issue asking for a removal route. Don't overwrite them with
+  `save_lora` as a workaround. If (g) queued a job, `cancel_job` and `delete_output(job_id=…)` it.
+metrics: none.
+
+### M-F147 — every MiniMax-H3 template still validates without an adapter error at its defaults
+pending: #888
+source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: every catalog workflow on `MiniMaxAI/MiniMax-H3`.
+#888 makes the partition check stricter wherever the catalog decides an adapter. A template that ships a
+catalogued LoRA by default on the wrong partition would now fail to validate. The plan's item 8 requires every
+catalog template to stay clean. Validation only.
+Setup: `use_workspace("regression-model-specific")`.
+Steps:
+1. `list_workflows(shape="shot")` and `list_workflows(shape="sequence")`, plus any other shape whose entries
+   use `MiniMaxAI/MiniMax-H3` (`list_workflows(include_models=true)` names each entry's model). Collect
+   every `templates/…` entry on H3.
+2. `validate_workflow(name=…)` each one with no arguments, or only with the required input-media arguments it
+   names. Use `asset:qa-cast/priya-portrait.jpg` for an image if this server has it; otherwise use any image asset
+   uploaded for the case.
+expected:
+- Every template returns no error whose path ends in `weight_name` or `lora_weight_name`, and no message
+  naming `transformer`/`transformer_ref` or a catalog entry as a refusal.
+- A template whose default `loras` entry is catalogued for its own workflow (e.g. a turbo on t2va/fl2va)
+  carries no "names neither" warning for it.
+- Errors unrelated to adapters (a missing input, a hardware gate on this server) are recorded but are not this
+  case's.
+It is a **finding** if any template is refused on its default adapter.
+cleanup: delete any asset uploaded for step 2.
+metrics: none.
+
 ## Performance
