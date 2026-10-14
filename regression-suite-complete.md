@@ -12064,7 +12064,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F424 — every H3 template declares `cache` as a whole-object variable, default `null`
-pending: #884
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 Free. The 19 templates of C-F420: the 15 new ones and the four older ones.
 1. `list_workflows(shape="shot")`. Read each minimax entry's `variable_names`.
@@ -12082,7 +12081,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F425 — `dialogue-short` checks the substituted `cache` at validate: a valid object passes, a bad type or a string is refused naming `cache`
-pending: #884
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 Free. `dialogue-short` puts `cache` inside a `for_each`, which is the path the plan's risk note says must be checked.
 `<base>` is `{"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav"}`.
@@ -12104,7 +12102,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F426 — the same `cache` check holds on a template with no `for_each`
-pending: #884
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 Free. The same seven values as C-F425, each as `validate_workflow(name="templates/minimax/video-with-audio", arguments=<x>)`,
 and again on `templates/minimax/first-and-last-frame` with its image inputs set to
@@ -12116,7 +12113,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F427 — a default run puts no cache on the H3 step
-pending: #884
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 One GPU run, on any device. Same call as C-F422 step 1 with `note="C-F427 default cache"`. When C-F422 runs in the
 same session against a build with both stages, its job may be used instead.
@@ -12129,7 +12125,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F428 — on CUDA, a 30-step base `dialogue-short` run with `first_block` 0.05 completes, with the cache on the H3 step only
-pending: #884
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 CUDA only. Call `get_server_info` first. When `device` isn't `"cuda"`, skip the case as not applicable: it is neither a
 pass nor a failure. Otherwise one long GPU run in the suite workspace.
@@ -12146,7 +12141,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F429 — a hand-written workflow with a literal cache object still validates and runs, and a bad literal is still refused
-pending: #884
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 One GPU run, on any device. Build the workflow from `get_workflow(name="templates/minimax/video-with-audio")`. Put
 the literal `{"type": "first_block", "threshold": 0.05}` where that template wires `variable:cache` after #884, in
