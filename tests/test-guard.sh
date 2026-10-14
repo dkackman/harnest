@@ -50,6 +50,11 @@ for r in implementer lead; do
   row 0 $r "" $none 'gh issue edit 9 --add-label owner:tester'
   row 2 $r "" $none 'gh issue edit 9 --add-label owner:tester,owner:don'
   row 2 $r "" $none 'gh issue edit 7 --add-label owner:tester'
+  # the first issue vetted, the edit landing on a second: refused
+  row 2 $r "" $none 'gh issue edit 9 5 --add-label owner:tester'
+  row 2 $r "" $none 'gh issue edit 9 https://github.com/o/r/issues/5 --add-label owner:tester'
+  row 2 $r "" $none 'gh issue edit --title 9 5 --add-label owner:tester'
+  row 2 $r "" $none 'gh issue edit 8 7 --remove-label status:needs-approval'
   row 2 $r "" $none 'gh issue edit 5 --remove-label owner:x --add-label owner:tester,owner:don'
   row 0 $r "" $none 'gh issue edit 5 --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify'
   row 0 $r "" $none 'gh issue comment 5 --body "closing as completed later: gh issue close 5"'

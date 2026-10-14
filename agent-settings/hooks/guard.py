@@ -186,11 +186,24 @@ def owner_rule(words):
              "in the same command (--remove-label owner:<current> --add-label %s)." % (added[0], added[0]))
 
 
+def one_issue(words):
+    """[the issue number] a gh issue command names, or [] when it names
+    anything else. gh issue edit takes several issues, as numbers or URLs,
+    so a check that read only the first number would vet one issue and let
+    the edit land on another. Any second number-like or issue-URL word (a
+    second issue, a flag value such as --title 9) makes it ambiguous, and
+    every caller fails closed on []."""
+    refs = [w for w in words[3:] if re.fullmatch(r"#?\d+", w) or re.search(r"/issues/\d+", w)]
+    if len(refs) != 1 or not re.fullmatch(r"#?\d+", refs[0]):
+        return []
+    return refs
+
+
 def owner_count(words):
     """How many owner:* labels the issue an edit names carries, as GitHub
     says, or None when it can't say. An issue with none (stranded) may be
     given its first owner by a bare add; any doubt fails closed."""
-    nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+    nums = one_issue(words)
     if not nums:
         return None
     repo = flag_values(words, "--repo", "-R")
@@ -227,7 +240,7 @@ def still_parked(words):
     able to clear it. Only this case asks GitHub; any doubt (no number, gh
     failing) counts as parked, so the rule fails closed.
     """
-    nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+    nums = one_issue(words)
     if not nums:
         return True
     repo = flag_values(words, "--repo", "-R")
@@ -244,7 +257,7 @@ def still_parked(words):
 def label_lookup(words, label):
     """Whether the issue this command names carries <label>, as GitHub says:
     True or False, or None when it can't say (no number, gh failing)."""
-    nums = [w for w in words[3:] if re.fullmatch(r"#?\d+", w)]
+    nums = one_issue(words)
     if not nums:
         return None
     repo = flag_values(words, "--repo", "-R")
