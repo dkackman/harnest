@@ -11746,4 +11746,166 @@ missing asset passes silently.
 cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
+### C-F406 — #852's four H3 renders are on record as ruled: same two-shot, same song slice, one variable per run
+pending: #877
+source: tester, spec for #877 from #852's plan v0 (claude-opus-5-5 via anthropic)
+No GPU. The four jobs are the ones named in #877's results comment, in Don's order: (1) Ref2VA
+`[keyframe completion + audio reuse]` with a first frame, (2) the same with first and last frames, (3) an FL2VA
+`templates/minimax/first-and-last-frame` baseline, (4) a plain `templates/minimax/music-video` baseline.
+1. Read #877's results comment (`gh issue view 877 --comments`). Note each run's job id, its quoted `plan.estimate`,
+   and the verdict.
+2. For each id: `get_job`, then `get_job_workflow`.
+3. `get_gallery_metadata` on each job's final video.
+expected:
+- 1: the comment names exactly four H3 job ids, one per arm, and at most four (Don's cap). Each arm's
+  `plan.estimate` (minutes and `basis`) appears in a comment posted before that job's created time. The comment
+  states one verdict, *holds* or *doesn't hold*, for camera hold and for lip-sync.
+- 2: each job is `succeeded`, and its `note` says what the run tests. In the workflows:
+  - Runs 1 and 2 are Ref2VA (the `ref2v` LoRA, not `fl2v`). Their prompt contains the literal
+    `[keyframe completion + audio reuse]`, `<Picture 1>` and `<Audio 1>`. Run 1 has one image reference, run 2 two
+    (`<Picture 2>` aligned to the last frame), and each has one audio reference.
+  - Run 3 is `first-and-last-frame`: its `image`/`last_image` are the same files as run 2's pictures, and it has no
+    audio reference.
+  - Run 4 is `music-video`, singing the same song slice.
+  - All four use the same still (an `asset:` or `output:` reference that resolves to the same file) and the same
+    ~8 s slice: the same source and the same start and length.
+- 3: each final file has video and audio. Runs 1, 2 and 4 are within one 17n+5 render of the slice's length.
+It is a **finding** if an arm is missing, a fifth H3 render ran, two arms differ in still or slice, or an estimate was
+quoted only after its run. The rendered content isn't judged here; C-F407 does that.
+cleanup: none. Never delete these jobs: C-F407 and C-F408 read them.
+metrics: none.
+
+### C-F407 — #877's verdict matches what the four renders show, and the Ref2VA recipe re-validates
+pending: #877
+source: tester, spec for #877 from #852's plan v0 (claude-opus-5-5 via anthropic)
+No GPU. The same four job ids as C-F406.
+1. `get_output_frames` on each final video at frames 0, the midpoint and the last frame. For runs 1-3, also on the
+   still(s) they were conditioned on.
+2. `get_output_audio` on runs 1, 2 and 4, then `get_output_frames(count=12)` on the same runs, to judge lip-sync
+   against the song.
+3. `validate_workflow(workflow=<get_job_workflow of run 1>)`, then the same for run 2.
+expected:
+- 1, camera hold: the comparison in #877's comment agrees with the frames. FL2VA (run 3) is the reference for a
+  locked frame.
+  - A *holds* verdict needs runs 1 and 2 to keep both singers in a wide two-shot through the last sample, framed
+    as close to frame 0 as run 3 is: no visible push-in, pan or reframing to one singer.
+  - A *doesn't hold* verdict needs visible drift in at least one Ref2VA run.
+- 2, lip-sync: the comment's lip-sync call agrees with what you see and hear. The plain `music-video` (run 4) is the
+  baseline: mouths move on the sung words. A *holds* verdict needs runs 1 and 2 to lip-sync on a par with run 4.
+- 3: both are `valid: true` with a `plan`, and `plan.estimate.basis` is not `unknown`, since the recipe has been
+  run. Any warning is reported, not failed.
+It is a **finding** if the verdict says *holds* where the frames show drift, or the reverse; if the comparison
+leaves out a job id; or if the recipe no longer validates.
+cleanup: none (no jobs run).
+metrics: none.
+
+### C-F408 — the `minimax-h3` skill states #877's verdict for a locked frame with lip-sync, in one unbroken line
+pending: #878
+source: tester, spec for #878 from #852's plan v0 (claude-opus-5-5 via anthropic)
+Free. The skill is the one a session loads from `develop`.
+1. Load the `dw:minimax-h3` skill (the `Skill` tool). Read #877's verdict from its results comment.
+2. Find the line(s) about a locked frame combined with supplied audio or lip-sync.
+3. Check each template the line names with `list_workflows(shape=...)` (the shape the skill files it under), and each
+   argument it names with `get_workflow(<template>, variables_only=true)`.
+expected:
+- 1: the skill loads in full: it ends with its `## Sources` section and is not cut off.
+- 2: exactly one recipe or warning, and it matches the verdict.
+  - On *holds*: it gives the recipe. That is Ref2VA with the task `[keyframe completion + audio reuse]`,
+    `<Picture 1>` as the first frame (and `<Picture 2>` as the last, if run 2 held), and `<Audio 1>` as the song,
+    on the template(s) it names.
+  - On *doesn't hold*: it says FL2VA (`first-and-last-frame`) takes no audio, so a locked frame and lip-sync don't
+    combine, and recommends solos or cutaways for a locked frame.
+  - Each pinned phrase it uses sits on one source line, not broken across a wrap: the task string, each
+    `<Picture N>`/`<Audio N>` tag, and each template name.
+  - No other line contradicts it. For example, no line still recommends Ref2VA for a locked two-shot after a
+    *doesn't hold* verdict.
+- 3: every template named is listed, and every argument named is one of that template's variables.
+It is a **finding** if the line is missing, disagrees with #877's verdict, breaks a pinned phrase across lines, or
+names a template or argument the server doesn't have. The 12 KiB cap can't be measured as a consumer: only a visibly
+truncated skill fails it here.
+cleanup: none.
+metrics: none.
+
+### C-F409 — the keyframe+audio template variant is listed, and validates with its defaults and with a first and last frame
+pending: #879
+source: tester, spec for #879 from #852's plan v0 (claude-opus-5-5 via anthropic)
+Free. Built only if #877's verdict is *holds*. Call the variant V: the template #879's hand-off names, which the
+`minimax-h3` skill line from C-F408 also names. The case is retired if #879 closes as not planned.
+1. `list_workflows(shape=<V's shape>, traits="has-audio")`, then `get_workflow(V, variables_only=true)`.
+2. `validate_workflow(name=V)` with no arguments.
+3. `validate_workflow(name=V, arguments=...)` with the keyframe variable(s) set to `asset:qa-cast/priya-portrait.jpg`:
+   a first frame alone, then first and last.
+expected:
+- 1: V is listed with a `summary`, its `traits` include `has-audio` and `image-conditioned`, and the summary says it
+  holds a frame while lip-syncing to a song. Its variables include a song or audio input and a keyframe input for the
+  first frame, with the last frame optional.
+- 2: `valid: true`, `checked_arguments` covering the defaults, and a `plan` whose estimate has a stated `basis`.
+- 3: both `valid: true`. The first+last arm either shows a second image reference in `plan` or its `steps` count, or
+  says how the last frame is used.
+It is a **finding** if V isn't listed, its defaults don't validate, or it has no way to pass a keyframe.
+cleanup: none (no jobs).
+metrics: none.
+
+### C-F410 — the keyframe+audio variant refuses bad keyframe and frame arguments at validate, for free
+pending: #879
+source: tester, spec for #879 from #852's plan v0 (claude-opus-5-5 via anthropic)
+Free. V as in C-F409.
+1. `validate_workflow(name=V, arguments={<first-frame variable>: "asset:no-such-keyframe.png"})`.
+2. The same for the last-frame variable, if V has one.
+3. `num_frames: 130` (not 17n+5), then `num_frames: 362` (above 345), then `num_frames: 345`. If V is list-driven
+   like `music-video`, pass these values in one entry's `num_frames`.
+4. `width: 970`.
+5. Omit the keyframe (pass null, or leave it unset if its default is null).
+expected:
+- 1 and 2: `valid: false`, with an error at `arguments.<that variable>` naming the missing asset.
+- 3: 130 and 362 are refused, or snapped with a warning naming the value used, the same way V's parent template
+  treats them (`music-video` refuses; `reference-to-video` snaps up). 345 is accepted.
+- 4: refused, naming the multiple of 32.
+- 5: either valid, with the variant falling back to an unpinned shot (the `plan` or a warning says so), or refused
+  with an error naming the keyframe variable as required. Silently running unpinned isn't acceptable.
+It is a **finding** if a missing keyframe asset validates, or if any bad value reaches a run.
+cleanup: none (no jobs).
+metrics: none.
+
+### C-F411 — one seeded run of the keyframe+audio variant opens on its keyframe and carries the song
+pending: #879
+source: tester, spec for #879 from #852's plan v0 (claude-opus-5-5 via anthropic)
+GPU: one H3 run at V's defaults (one entry, if list-driven), seed 42. Quote `plan.estimate` before running.
+Keyframe: `asset:qa-cast/priya-portrait.jpg`. Song: V's default, or a 124-frame slice of `asset:qa-cast/ep15-song.mp3`
+if V needs one supplied.
+1. Validate, quote, then `run_workflow(name=V, arguments={..., "seed": 42}, acknowledged_cost=<plan>, wait_seconds=55,
+   note="C-F411 keyframe+audio")`. `wait_for_job` until done, then `get_job`.
+2. `get_gallery_metadata` on the final video. Run `get_output_frames` at frame 0 and at the last frame, then
+   `get_output_frames` on the keyframe.
+expected:
+- The job succeeds. The final file has video and audio, at 24 fps, and its length is the requested cut, within one
+  frame.
+- Frame 0 shows the keyframe's subject and framing, as the recipe promises.
+It is a **finding** if the run fails, the output has no audio, or frame 0 isn't the keyframe's composition. How
+well it lip-syncs is C-F407's question, judged once, not on every run.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F412 — `match_levels` warns when an input that is itself a join keeps an inner level step
+source: tester, verified in #876 (claude-opus-5-5 via anthropic)
+Task-only, a few seconds. S = `asset:qa-cast/ep62-shot2-deflect.mp4`. One inline workflow per run, each with these
+steps: `quiet` = `gain_audio(audio=S, gain_db=G)`; `quiet_av` = `pair_audio(video=S, audio="previous_result:quiet")`;
+`inner` = `concat_videos(videos=[S, "previous_result:quiet_av"], fps=24)`; `edit` =
+`concat_videos(videos=["previous_result:inner", S], fps=24, match_levels="rms", match_levels_dbfs=-24)`.
+1. `get_task("concat_videos")`, `match_levels` description.
+2. Run with G = -10, `wait_seconds=55`.
+3. Run with G = -2.
+4. Run with G = -10, plus a last step `scored` = `pair_audio(video="previous_result:edit",
+   audio="asset:qa-cast/ep68-score.mp3")`.
+expected:
+- 1: the description says each input is levelled as one unit, that an input carrying `media.shots` keeps the
+  level steps between its own shots, and that a step wider than 3 dB is reported as a warning.
+- 2: `job.warnings` holds an `edit:` entry saying video 1 is a join of 2 shots whose rms levels span about 10 dB
+  and that the step survives the join, pointing at `trim_video` per `media.shots` entry.
+- 3: no such `edit:` inner-step warning (2 dB is under the 3 dB threshold).
+- 4: no such `edit:` inner-step warning: a later `pair_audio` replaced the join's track (#800's gate).
+It is a **finding** if 2 has no warning, or if 3 or 4 has one.
+cleanup: `delete_output(job_id=…)` for each run.
+metrics: none.
+
 ## Performance
