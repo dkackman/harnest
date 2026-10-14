@@ -4391,7 +4391,6 @@ cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
 ### M-F142 — H3: a catalogued `transformer` adapter on a `ref2va` step is refused at validate and at `run_workflow`, naming the catalog entry
-pending: #888
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 (`MiniMaxAI/MiniMax-H3`) partition check on `loras`, Realism-People LoRA
 (`fal/MiniMax-H3-Realism-People-LoRA` / `h3-realism-people-t2v-i2v-r2v.safetensors`).
@@ -4432,7 +4431,6 @@ cleanup: none, unless (c) queued a job: then `cancel_job` it and `delete_output(
 metrics: none.
 
 ### M-F143 — H3: the same catalogued adapter on `t2va` and `fl2va` is clean, with no "names neither" warning
-pending: #888
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check, Realism-People LoRA. This is the positive side of M-F142.
 Before #888, Realism warned "names neither 'ref2v' nor 'fl2v'" on every workflow. Now that the catalog
@@ -4457,7 +4455,6 @@ cleanup: delete any asset uploaded for (d).
 metrics: none.
 
 ### M-F144 — H3: the filename rule still decides any adapter the catalog doesn't (uncatalogued, null `workflow`, other repo), and a revision mismatch still matches
-pending: #888
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check, fallback paths.
 #888 adds the catalog lookup ahead of the filename rule and leaves the rule unchanged. Each probe below is one
@@ -4497,7 +4494,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F145 — `list_loras` lists Realism-People for `t2va` and `fl2va`, with the h3-quality evidence and a "not reference-to-video" `use_when`
-pending: #888
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: LoRA catalog entry `minimax-h3/realism-people`.
 Before #888, the entry's `workflow` was the string `"t2va"`, its only evidence was #585, and its `use_when`
@@ -4593,7 +4589,6 @@ cleanup:
 metrics: none.
 
 ### M-F147 — every MiniMax-H3 template still validates without an adapter error at its defaults
-pending: #888
 source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: every catalog workflow on `MiniMaxAI/MiniMax-H3`.
 #888 makes the partition check stricter wherever the catalog decides an adapter. A template that ships a
@@ -4713,7 +4708,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: none.
 
 ### M-F152 — H3: a shipped `trial` catalog entry that decides against the step only warns, naming the entry and its status, the same in every workspace
-pending: #888
 source: tester, spec for #888 from #870's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check against the shared LoRA catalog's `trial` entries.
 Plan v2 (Don's ruling (a)) lets only a `proven` entry refuse. A `trial` or `rejected` entry whose `workflow`
@@ -4762,7 +4756,6 @@ cleanup: `use_workspace("regression-model-specific")`, then `delete_workspace("q
 metrics: none.
 
 ### M-F153 — H3: the status gate's edges: a `proven` refusal names its status, and a `trial` entry never downgrades a filename-token error
-pending: #888
 source: tester, spec for #888 from #870's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check, catalog `status` against the filename rule.
 Plan v2: a `proven` entry's refusal names the entry *with its status* ("catalog entry
