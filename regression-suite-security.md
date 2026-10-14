@@ -962,7 +962,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on A, B and C.
 metrics: none.
 
 ### SE-F049 — compare_outputs reads only gallery outputs and assets, never an arbitrary file
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 `compare_outputs` is a new surface that takes names and decodes them into pixels, so a name that
 escapes the gallery or asset library would return a file's content as an image. Setup: in

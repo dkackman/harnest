@@ -12581,7 +12581,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F454 — `compare_outputs`: two reruns side by side give a labelled grid and `identical`/high-PSNR metrics
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 **Fixture for C-F454–C-F465** (CPU utility tasks only, no model, so it holds on any server).
 Workflow W: `{"id": "c-f454-cmp", "variables": {"contents": "compare", "width": 512, "height": 512,
@@ -12624,7 +12623,6 @@ cleanup: `delete_output(job_id=<A>, acknowledged_cost=true)` and the same for A2
 metrics: none.
 
 ### C-F455 — `compare_outputs`: the same name twice is `identical` with SSIM 1.0
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A.
 1. `compare_outputs(names=["A.mp4", "A.mp4"], at=["frame:0", "frame:120"])`.
@@ -12637,7 +12635,6 @@ cleanup: `delete_output(job_id=<A>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F456 — `compare_outputs`: a different output scores lower than a rerun, and `baseline` picks the reference row
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A, A2 and D. Optional grain arm: also run **G** = A with `grain: 1.0`.
 1. `compare_outputs(names=["A.mp4", "A2.mp4", "D.mp4"], at=["frame:30", "frame:90"])`.
@@ -12659,7 +12656,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, A2, D (and G
 metrics: none.
 
 ### C-F457 — `compare_outputs`: one crop box shows and measures only that region
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A and D (both 512×512).
 1. `compare_outputs(names=["A.mp4", "D.mp4"], at=["frame:60"])` (no crop).
@@ -12679,7 +12675,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and D.
 metrics: none.
 
 ### C-F458 — `compare_outputs`: per-output crops are display only; metrics stay full-frame
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 The v2 revision of the plan's case 5.
 Setup: C-F454's fixture; run A and D.
@@ -12697,7 +12692,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and D.
 metrics: none.
 
 ### C-F459 — `compare_outputs`: a size mismatch gives a grid with null metrics naming both sizes
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A (512×512), A2 and S (640×384).
 1. `compare_outputs(names=["A.mp4", "S.mp4", "A2.mp4"], at=["frame:60"])`.
@@ -12716,7 +12710,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, A2 and S.
 metrics: none.
 
 ### C-F460 — `compare_outputs`: a moment past an output's end is a blank cell; differing fps is flagged
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A (121 frames), T (50 frames) and F (12 fps).
 1. `compare_outputs(names=["A.mp4", "T.mp4"], at=["frame:10", "frame:60"])`.
@@ -12736,7 +12729,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, T and F.
 metrics: none.
 
 ### C-F461 — `compare_outputs`: omitting `at` gives four evenly spaced frames of the shortest video
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A (121 frames) and T (50 frames).
 1. `compare_outputs(names=["A.mp4", "A2.mp4"])` with A2 also run (both 121 frames).
@@ -12752,7 +12744,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A, A2 and T.
 metrics: none.
 
 ### C-F462 — `compare_outputs`: stills are one frame, mix with videos, and `asset:` names work
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A and D (each yields `still*.png` and `clip*.mp4`).
 `keep_output` A's still to the asset `c-f462-still.png` (use the reply's `asset:` reference below).
@@ -12776,7 +12767,6 @@ and D.
 metrics: none.
 
 ### C-F463 — `compare_outputs` refusals, and the 2-name / 8×8 boundaries accepted
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A and A2. Below, `M8` = `["frame:0","frame:10","frame:20","frame:30",
 "frame:40","frame:50","frame:60","frame:70"]` and `M9` = M8 + `"frame:80"`.
@@ -12805,7 +12795,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and A2.
 metrics: none.
 
 ### C-F464 — `compare_outputs`: a grid over the 4 MiB budget shrinks whole and says `downscaled_to`
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run B (1344×768) twice, as B1 and B2 (D-style contents for B2: `width: 1344,
 height: 768, contents: "a different payload entirely"`, so the cells aren't all alike and compress
@@ -12826,7 +12815,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for B1 and B2.
 metrics: none.
 
 ### C-F465 — `compare_outputs` is read-only: no gallery, asset or job entries
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Setup: C-F454's fixture; run A and D.
 1. Record `list_gallery`, `list_assets` and `list_jobs` for workspace `regression-complete` (counts and
@@ -12842,7 +12830,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for A and D.
 metrics: none.
 
 ### C-F466 — the guide documents `compare_outputs`, its metrics' regions and the dB bands as a reading aid
-pending: #889
 source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic)
 Free; no run.
 1. `get_guide("workflows", section="Assessing a run's output")`.
