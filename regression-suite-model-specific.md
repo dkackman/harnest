@@ -1649,19 +1649,20 @@ expected:
   - `shot@cold_open`;
   - 209 frames and 1344x768 (or the product `1344*768*209`);
   - 3 references;
-  - ~24.8 GB and the 24 GB RTX 3090 ceiling;
+  - ~24.8 GB and the RTX 3090 ceiling (23.6 GB card capacity, or the 24 GB entry);
   - `#479`.
 - Step 2 is `valid: true`, so nulling one reference in the heavy shot clears it.
 - Step 3 is `valid: false` with exactly one VRAM error, at `arguments.shots[4]`, naming
   `shot@tag` and 226 frames. That is the largest member, even though `cold_open` is also over.
-- Step 4 is `valid: true`, since `tag` at 141 × 4 is ~23.9.
+- Step 4 is `valid: false` with exactly one VRAM error, at `variables.shots[4]`, naming
+  `shot@tag`, 141 frames, 4 references and ~23.9 GB (above the 23.6 GB card capacity, #900).
 - Step 5 is `valid: false` with the one error at **`variables.shots[0]`**, naming `shot@cold_open`.
 It is a **finding** if:
 - any over-ceiling member validates clean;
 - more than one VRAM error is reported for one workflow;
 - the error names a member other than the largest;
 - the path is not the `arguments.`/`variables.` form the caller's input dictates;
-- a null voice is counted, which step 2 or 4 refuses;
+- a null voice is counted, which step 2 refuses;
 - the message lacks the member name or reference count.
 cleanup: none (nothing is queued or written).
 metrics: none.
