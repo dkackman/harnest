@@ -4647,8 +4647,8 @@ expected:
 cleanup: `delete_output(job_id=…)` for each of the three jobs.
 metrics: none.
 
-### M-F149 — a faster cache on FLUX.1-dev runs with `is_guidance_distilled: true`, and without it the error names the key
-source: tester, verified in #895 (claude-opus-5-5 via anthropic)
+### M-F149 — a faster cache on FLUX.1-dev runs with `is_guidance_distilled` true or unset, and an explicit `false` fails naming the key
+source: tester, verified in #895, verified in #897 (claude-opus-5-5 via anthropic)
 Model/pipeline: `FluxPipeline`, `black-forest-labs/FLUX.1-dev` (bf16). FLUX.1-dev is guidance-distilled, so
 diffusers' FasterCache hook must not assume a cond/uncond batch of 2. About 75 s per run on mps.
 Setup: workspace `regression-model-specific`.
@@ -4658,14 +4658,17 @@ Steps:
    `prompt: "an apple on a table"`, `num_inference_steps: 20`, 512×512, `guidance_scale: 3.5`, with
    `result.content_type` set to `image/jpeg`.
 2. Run the same workflow with `cache: {"type": "faster"}` (no `is_guidance_distilled`).
+2b. Run the same workflow with `cache: {"type": "faster", "is_guidance_distilled": false}`.
 3. `validate_workflow` the step 1 workflow with `"is_guidance_distilled": "yes"`.
 expected:
 - Step 1 succeeds with one image, and the step's `timing.cache.type` is `faster`.
-- Step 2 fails, and its `error` names `cache.is_guidance_distilled: true`. A bare `tuple index out of range` is a
+- Step 2 succeeds with one image, and the step's `timing.cache.type` is `faster` (#897: the key is inferred from
+  the transformer's `config.guidance_embeds`).
+- Step 2b fails, and its `error` names `cache.is_guidance_distilled: true`. A bare `tuple index out of range` is a
   **finding**.
 - Step 3 is `valid: false`, with an error at `steps[0].pipeline.configuration.cache.is_guidance_distilled` saying it
   is not of type `boolean`.
-cleanup: `delete_output(job_id=…)` for both jobs.
+cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ### M-F150 — `dialogue-short` takes `match_levels_dbfs`, and validate checks it as an argument
