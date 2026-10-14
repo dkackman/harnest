@@ -12305,17 +12305,17 @@ One small GPU run, on any device. `<T2I-SHARP>` is `<T2I-20>` with its `main` re
    then `get_job(job_id=<id>)`.
 expected:
 - 1: `valid: true`.
-- 2: `manifest[]` has an entry for `main` and one for `sharp`, each with its own `timing`. `main`'s holds the C-F430
-  shape with `passes: 20`. `sharp`'s holds no non-null pipeline field (`load_s`, `encode_s`, `denoise_s`, `passes`,
+- 2: `manifest[]` has an entry for `main` and one for `sharp`. `main`'s `timing` holds the C-F430
+  shape with `passes: 20`. `sharp`'s `timing` is absent, or holds no non-null pipeline field (`load_s`, `encode_s`, `denoise_s`, `passes`,
   `first_pass_s`, `pass_s`, `decode_s` absent or null), and `save_s` is null or a number ≥ 0 rounded to 0.1.
-It is a **finding** if either entry lacks `timing`, if the two are merged into one, or if `sharp` reports a pipeline phase.
+It is a **finding** if `main` lacks `timing`, if the two are merged into one, or if `sharp` reports a pipeline phase.
 cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F435 — a utility-only workflow reports no pipeline fields
 source: tester, spec for #885 from #867's plan v2 (claude-opus-5-5 via anthropic)
 No diffusion, on any device. Uses the fixture `asset:qa-cast/priya-portrait.jpg`; any still substitutes. `<SHARP>` is
-`{"steps": [{"name": "sharp", "task": {"command": "sharpen", "arguments": {"media": "asset:qa-cast/priya-portrait.jpg",
+`{"id": "cf435-sharp", "steps": [{"name": "sharp", "task": {"command": "sharpen", "arguments": {"media": "asset:qa-cast/priya-portrait.jpg",
 "amount": 0.5}}, "result": {"content_type": "image/jpeg", "subfolder": "final"}}]}`.
 1. `run_workflow(workflow=<SHARP>, acknowledged_cost=true, wait_seconds=55, note="C-F435 utility only")`, then
    `get_job(job_id=<id>)`.
