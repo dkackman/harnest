@@ -4709,4 +4709,91 @@ It is a **finding** if either entry opens on the other's source, or if validate 
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: none.
 
+### M-F152 — H3: a shipped `trial` catalog entry that decides against the step only warns, naming the entry and its status, the same in every workspace
+pending: #888
+source: tester, spec for #888 from #870's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check against the shared LoRA catalog's `trial` entries.
+Plan v2 (Don's ruling (a)) lets only a `proven` entry refuse. A `trial` or `rejected` entry whose `workflow`
+puts the adapter on the other partition gives a **warning** naming the entry and its status, never an error.
+A `trial` entry that agrees with the step clears the "names neither" warning. The catalog is one library
+shared by every workspace, so the answer must not depend on the workspace. The probes use entries already
+shipped in the catalog, so nothing is written to it. Validation only: this case spends no GPU time.
+`C(WF, LORAS)` is M-F142's carrier. The entries, as pinned on lem on 2026-10-14 (all `status: trial`, file
+names carrying neither `ref2v` nor `fl2v`):
+- `W` = `[{"model_name":"Jojocodex/wushu-action-v7-minimax-h3-fl2va-ref2va-lora","weight_name":"wushu_h3_r2v_v7_2000.safetensors"}]`
+  (`minimax-h3/wushu-action-reference`, `workflow: "ref2va"`, so `transformer_ref`);
+- `B` = `[{"model_name":"vpakarinen/better-human-motion-h3-lora","weight_name":"better_motion_h3_lora_v1_500.safetensors"}]`
+  (`minimax-h3/better-human-motion`, `workflow: ["t2va","fl2va"]`, so `transformer`).
+Setup:
+1. `list_loras(model="MiniMaxAI/MiniMax-H3")`. Confirm both entries still have the status, `workflow`,
+   `model_name` and `weight_name` above. If one has been promoted to `proven` or its `workflow` changed, this
+   case no longer probes what it says: record it and skip the probes that use it, rather than failing.
+2. `use_workspace("regression-model-specific")`, and `create_workspace("qa-c870-other")` (reuse it if it exists).
+Probes (all `validate_workflow`):
+(a) Conflict, ref-only trial on keyframe steps: `C(t2va, W)` and `C(fl2va, W)`.
+(b) Conflict, keyframe trial on a reference step: `C(ref2va, B)`.
+(c) Agreement: `C(ref2va, W)`, `C(t2va, B)` and `C(fl2va, B)`.
+(d) Through a template's variables: `validate_workflow(name="templates/minimax/reference-to-video",
+    arguments={"lora_model_name":"vpakarinen/better-human-motion-h3-lora","lora_weight_name":"better_motion_h3_lora_v1_500.safetensors"})`.
+(e) Workspace independence: repeat (a)'s `C(t2va, W)` and (b) three ways: with `workspace="qa-c870-other"`
+    on the call; with `workspace="regression-model-specific"` on the call; and after
+    `use_workspace("qa-c870-other")` with no `workspace` argument.
+expected:
+- (a) and (b): each `valid: true`, with no error. A warning at `steps[0].pipeline.loras[0].weight_name` names the
+  entry (`minimax-h3/wushu-action-reference` in (a), `minimax-h3/better-human-motion` in (b)) and its `trial`
+  status, and says the step's partition differs from the entry's. A "names neither" warning alongside it is
+  allowed but doesn't replace it.
+- (c): each `valid: true`, with no warning mentioning `weight_name`, "names neither", `transformer` or
+  `transformer_ref`. Unrelated warnings, such as the carrier's no-seed warning, are fine.
+- (d): `valid: true`, with no adapter error, and a warning naming `minimax-h3/better-human-motion` and `trial`.
+  Record the warning's path. `arguments.lora_weight_name` is expected, but the plan promises that path only for
+  errors (intent 5), so a different path is a note, not a finding.
+- (e): every call gives the same `valid`, the same warnings and the same paths as the
+  `regression-model-specific` result from (a)/(b).
+It is a **finding** if:
+- any probe in (a), (b) or (d) is `valid: false` or carries an adapter error: a trial entry refused;
+- the (a)/(b)/(d) warning doesn't name the entry, or doesn't name its `trial` status;
+- (c) still carries the "names neither" warning;
+- (e) differs between workspaces.
+cleanup: `use_workspace("regression-model-specific")`, then `delete_workspace("qa-c870-other", acknowledged_cost=true)`.
+metrics: none.
+
+### M-F153 — H3: the status gate's edges: a `proven` refusal names its status, and a `trial` entry never downgrades a filename-token error
+pending: #888
+source: tester, spec for #888 from #870's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check, catalog `status` against the filename rule.
+Plan v2: a `proven` entry's refusal names the entry *with its status* ("catalog entry
+`minimax-h3/realism-people` (proven) lists it for `t2va`…"). A `trial` entry can't refuse, but neither can it
+lift a filename-token error: "a filename-token error is kept only when no `proven` entry decides the other
+way". An implementation that lets any matched catalog entry replace the filename rule's verdict would turn
+(b) below into a warning. This case pins both sides. Validation only. `C(WF, LORAS)` is M-F142's carrier.
+Setup: `use_workspace("regression-model-specific")`. Then run `list_loras(model="MiniMaxAI/MiniMax-H3")` and
+confirm these entries are unchanged since 2026-10-14. If one has changed, skip the probe that uses it and
+record that:
+- `minimax-h3/turbo-4step-reference`: `trial`, `ref2va`, file `minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors`,
+  which carries `ref2v`;
+- `minimax-h3/wushu-action`: `trial`, `["t2va","fl2va"]`, a file carrying `fl2v`;
+- `minimax-h3/360-orbit-loop`: `trial`, `fl2va` as a string, file `minimax_h3_flf2v_lora_v1.safetensors`, which
+  carries neither token.
+Probes:
+(a) Proven refusal: `C(ref2va, [Realism, as in M-F142])`.
+(b) Trial plus token, on the wrong partition:
+    - `C(t2va, [{"model_name":"lightx2v/Minimax-h3-Turbo","weight_name":"minimax_h3_ref2v_turbo_4step_v0.1_bf16.safetensors"}])`;
+    - `C(ref2va, [{"model_name":"Jojocodex/wushu-action-v7-minimax-h3-fl2va-ref2va-lora","weight_name":"wushu_action_v7_fl2va_aitoolkit_adaln_full-int8convrot_bf16te_2000step.safetensors"}])`.
+(c) A trial entry whose `workflow` is a string, not a list, deciding against the step:
+    `C(ref2va, [{"model_name":"pablodawson/MiniMax-H3-360-Orbit-LoRA","weight_name":"minimax_h3_flf2v_lora_v1.safetensors"}])`.
+expected:
+- (a) `valid: false`. The error at `steps[0].pipeline.loras[0].weight_name` names `minimax-h3/realism-people`,
+  its `proven` status and the `transformer` partition.
+- (b) Both are `valid: false`, each with an error at the same path. These are the filename rule's errors (the
+  token decides the partition), and they aren't downgraded to warnings because a `trial` entry matched.
+- (c) `valid: true`, with a warning naming `minimax-h3/360-orbit-loop` and `trial`, and no error.
+  (`flf2v` isn't the `fl2v` token, so only the catalog decides this file.)
+It is a **finding** if:
+- (a)'s message lacks the status;
+- either (b) probe validates;
+- (c) errors, or validates without naming the entry.
+cleanup: none.
+metrics: none.
+
 ## Performance

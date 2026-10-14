@@ -13041,4 +13041,636 @@ metrics: none.
 source: tester, verified in #899 (run over MCP 2026-10-14 on mini-ai (mps) `develop` @ 9e8f15d8 as
 downloads `88520ca93536` and `c441b6c74fa3`, model `claude-opus-5-5` via provider `anthropic`).
 
+### C-F473 — Metadata-only edits leave `plan.fingerprint` unchanged; output-affecting edits still move it
+pending: #905
+source: tester, spec for #905 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. Setup: `get_workflow("templates/text-to-image")`, and set `variables.seed` to `42` in the
+returned JSON. Call that W. Every call is `validate_workflow(workflow=<inline JSON>)` in workspace
+`regression-complete`, and each one reads `plan.fingerprint`.
+1. W as is gives F0. Validate it a second time; the fingerprint should be the same.
+2. Metadata-only variants of W, one change each:
+   - (a) the top-level `cost_drivers` key removed;
+   - (b) `cost_drivers` set to `["num_images_per_prompt", "prompt"]`;
+   - (c) `cost[0].minutes` set to `9.9`;
+   - (d) `description` set to `"c-f473 changed"`;
+   - (e) the step's `result.subfolder` set to `"elsewhere"`;
+   - (f) `result.file_base_name` set to `"renamed"`;
+   - (g) a `vram_estimate` key added. Copy its value from
+     `get_workflow("templates/minimax/reference-to-video")` if that template has one, else skip
+     this variant and say so.
+3. Output-affecting controls, one change each:
+   - (h) `variables.seed` set to `43`;
+   - (i) `variables.prompt` set to `"a pear"`;
+   - (j) the step's literal `num_inference_steps` set to `26`;
+   - (k) `torch_dtype` set to `"torch.float16"`.
+expected:
+- Call 1's two validates agree.
+- Every variant in 2 returns exactly F0.
+- Every control in 3 returns a fingerprint different from F0 and from each other.
+- Every variant still reports `valid: true`.
+
+Before #905, (a) moved the fingerprint. Pinned 2026-10-14 on lem: `sha256:1c9a83b4…` with
+`cost_drivers`, `sha256:bb35d625…` without.
+It is a **finding** if:
+- any metadata-only variant differs from F0;
+- any control matches F0, since the cache would then serve a stale image.
+cleanup: none.
+metrics: none.
+
+### C-F474 — On the H3 templates, attention backend, cache, dtype and LoRA still change the fingerprint
+pending: #905
+source: tester, spec for #905 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed:
+42, ...})`. Take the values from each variable's `description` in `get_workflow`. Where a value is
+refused, try another value the description lists, and record which one you used.
+1. Defaults (`{seed: 42}` only) give F0. A repeat should match.
+2. `attention_backend` set to a non-null value, e.g. `"sage_hub"`, or the name for PyTorch's
+   native SDPA.
+3. `cache` set to a non-null value the description lists.
+4. `weights_dtype` set to `"{int8}"`.
+5. `lora_model_name` set to `null`, with `lora_weight_name` also `null` if validate needs it.
+6. Inline: the `get_workflow` JSON with `variables.seed` set to 42 and `cost_drivers` and
+   `vram_estimate` removed, if present. Call it with no other change.
+expected:
+- Calls 2 to 5 each give a fingerprint different from F0 and from each other.
+- Call 6 gives F0, because the dropped keys are metadata.
+It is a **finding** if any of calls 2 to 5 returns F0, or if call 6 returns anything but F0.
+cleanup: none.
+metrics: none.
+
+### C-F475 — A re-run of a metadata-only copy is served from the step cache; an output change is not
+pending: #905
+source: tester, spec for #905 from #866's plan v2 (claude-opus-5-5 via anthropic)
+GPU, under a minute in total (SD1.5). Workspace `regression-complete`.
+Setup: take `get_workflow("templates/text-to-image")` and set `variables.seed` to `42`. Save it with
+`save_workflow` as `c-f475-t2i`. Call that W.
+1. Call `run_workflow(workflow="c-f475-t2i", acknowledged_cost=true, wait_seconds=55,
+   note="C-F475 seed run")` → job J1, which should complete.
+2. Call `validate_workflow` inline on W with these metadata-only changes together:
+   - `description` set to `"meta copy"`;
+   - `cost_drivers` removed;
+   - `cost[0].minutes` set to `5`;
+   - `result.subfolder` set to `"other"`;
+   - `result.file_base_name` set to `"renamed"`.
+
+   Read `plan.cached_steps`.
+3. Call `validate_workflow` inline on W with `variables.seed` set to `43`, and read
+   `plan.cached_steps`.
+4. Save the call-2 variant as `c-f475-t2i-meta`. Then call `run_workflow(workflow="c-f475-t2i-meta",
+   acknowledged_cost=true, wait_seconds=55)` → J2, followed by `get_job(J2)` and
+   `get_job_events(J2)`.
+expected:
+- Call 2 reports `cached_steps: 1`, the whole workflow.
+- Call 3 reports `cached_steps: 0`.
+- J2 completes, the job or its events report `main` as served from the step cache, and its output
+  image matches J1's.
+- J2's wall time is well under J1's.
+It is a **finding** if:
+- call 2 reports 0;
+- call 3 reports 1;
+- J2 recomputes `main`.
+cleanup: `delete_output(job_id=J1)` and `delete_output(job_id=J2)` (both
+`acknowledged_cost=true`), then `delete_workflow` on `c-f475-t2i` and `c-f475-t2i-meta`.
+metrics: none.
+
+### C-F476 — `plan.estimate` scales the curated figure by steps, canvas and frames (`basis: "derived"`)
+pending: #906
+source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. First read K, the cuda `cost` minutes of `templates/minimax/reference-to-video` from
+`get_workflow`. It was 7.88 on 2026-10-14. Its defaults are:
+- steps 9;
+- canvas 960x544, so w·h = 522240;
+- `num_frames` 124.
+
+Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed: 42,
+...})`, reading `plan.estimate`.
+
+| Call | Arguments | Expected `minutes` (±0.15 for rounding) |
+|---|---|---|
+| 1 | `num_inference_steps: 30` | K×30/9, ≈26.3 |
+| 2 | `width: 1344, height: 768` | K×1032192/522240, ≈15.6 |
+| 3 | steps 30 and 1344x768 together | ≈51.9 |
+| 4 | `num_frames: 192` | K×192/124, ≈12.2 |
+| 5 | `num_inference_steps: 5` (scaling down) | K×5/9, ≈4.4 |
+| 6 | `width: 1344` alone, height left at 544 | K×1.4, ≈11.0 |
+| 7 | `num_frames: 130`, which the template snaps up to 141 | K×141/124, ≈9.0, not K×130/124 ≈ 8.3 |
+| 8 | `num_frames: 345`, the top of the range | K×345/124, ≈21.9 |
+| 9 | the defaults passed explicitly: `num_inference_steps: 9, width: 960, height: 544, num_frames: 124` | — |
+
+Box-wide history may hold real runs at some of these rungs. Where a call returns
+`basis: "observed"`, skip its row's number, but record it.
+expected:
+- Calls 1 to 8 return `basis: "derived"` with a number, not `unknown`. `scaled` names exactly the
+  axes that moved: steps for calls 1 and 5; width and height (or the canvas) for calls 2 and 6;
+  steps and canvas for call 3; frames for calls 4, 7 and 8.
+- `curated_minutes` equals the scaled figure where it is present.
+- Call 9 is priced the same as `{seed: 42}` alone, the observed default bucket, and has no `scaled`.
+It is a **finding** if:
+- any of calls 1 to 8 returns `minutes: null`, `basis: "unknown"` or the unscaled default figure;
+- call 7 scales by 130;
+- `scaled` names an axis that didn't move.
+cleanup: none.
+metrics: none.
+
+### C-F477 — Scaling refusals and edges: a bad value is refused or left `unknown`, never priced
+pending: #906
+source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. The calls are the same as C-F476: `validate_workflow` on
+`templates/minimax/reference-to-video` with `seed: 42`.
+1. `width: 1000`, which is not a multiple of 32.
+2. `num_inference_steps: "thirty"`, a non-numeric value.
+3. `num_frames: 400`, past the range's top of 345.
+4. `width: 0`.
+expected:
+- Call 1 is refused at `arguments.width`, as before #906.
+- Each of calls 2 to 4 is either refused with an error naming that argument, or valid with
+  `plan.estimate.basis: "unknown"` and `minutes: null`.
+- No call returns `plan: null` alongside `valid: true`.
+It is a **finding** if:
+- any of these calls returns a numeric `minutes`;
+- call 1 is now accepted;
+- a call crashes the validate. That means a server error rather than a structured refusal.
+cleanup: none.
+metrics: none.
+
+### C-F478 — `dialogue-short`'s curated figure is ≈21 min at its own canvas and scales with the shots' total frames
+pending: #906
+source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. Read the cuda `cost` minutes of `templates/minimax/dialogue-short`; call it D. It comes from
+   `list_workflows(shape="shot")` or `get_workflow`.
+2. Call `get_workflow("templates/minimax/dialogue-short")`. Copy `variables.shots`, five entries
+   with `num_frames` 124/124/124/124/141, a total of 637, and change entry 0's `num_frames` to
+   192, a total of 705. Then call `validate_workflow(workflow="templates/minimax/dialogue-short",
+   arguments={shots: <edited list>})`.
+3. The same call with the last entry dropped (four shots, a total of 496).
+expected:
+- Call 1: D is between 19 and 23.5. The plan re-prices the 42-minute figure measured at 1344x768
+  to the template's 960x544 canvas: 42×522240/1032192 ≈ 21.3.
+- Call 2 returns `basis: "derived"`, minutes ≈ D×705/637 (±5%), and `scaled` naming the frames
+  or shots.
+- Call 3 returns ≈ D×496/637 (±5%).
+
+Before #906, observed history was bucketed by shot count. Pinned 2026-10-14: 38.57 cold over five
+runs.
+It is a **finding** if:
+- D is still ≈42;
+- call 2 or 3 returns the five-shot observed figure (≈38.6) unchanged as `observed`;
+- either returns `unknown`.
+cleanup: none.
+metrics: none.
+
+### C-F479 — The scaled estimate is within 30% of measured ladder rungs (#866's table)
+pending: #906
+source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free (`save_workflow` writes, nothing runs). Workspace `regression-complete`.
+Setup: take `get_workflow("templates/minimax/reference-to-video")` and make these changes:
+- `variables.num_inference_steps` set to `12`;
+- `variables.lora_model_name` and `variables.lora_weight_name` set to `null`;
+- the cuda `cost` entry's `minutes` set to `6.6`, the measured figure for rung B4: 960x544, 12
+  steps, int4, no LoRA.
+
+Save it as `c-f479-b4`, a fresh name with no run history. All calls pass `seed: 42`.
+1. `validate_workflow(workflow="c-f479-b4", arguments={seed: 42})`. This prices the copy's own
+   defaults.
+2. Add `num_inference_steps: 30`. This is rung B1, measured at 15.1.
+3. Pass `width: 1344, height: 768` at 12 steps. This is rung B5, measured at 11.8.
+expected:
+- Call 1 returns 6.6 with `basis: "catalog"`.
+- Call 2 is within 30% of 15.1 (10.6–19.6). The plan's own arithmetic gives 16.5.
+- Call 3 is within 30% of 11.8 (8.3–15.3). The plan gives 13.0.
+- Calls 2 and 3 return `basis: "derived"`.
+
+Call 1 may instead return `basis: "inherited"`, priced from the template's runs. In that case the
+copy isn't priced from its own `cost`, the bar can't be measured this way, and the case says so.
+It is not a pass.
+It is a **finding** if call 2 or 3 is outside the 30% bar, or returns `unknown`.
+cleanup: `delete_workflow("c-f479-b4", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F480 — With a real run at a non-default rung, the estimate tempers between observed and the scaled figure
+pending: #906
+source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
+GPU, about a minute (SD1.5, 100 steps). Workspace `regression-complete`.
+Setup: take `get_workflow("templates/text-to-image")` and make these changes:
+- add `variables.num_inference_steps: 25`;
+- replace the step's literal `num_inference_steps: 25` with `"variable:num_inference_steps"`;
+- set `cost_drivers` to `["num_images_per_prompt", "num_inference_steps"]`;
+- set `variables.seed` to `42`.
+
+Save it as `c-f480-t2i`. Its catalog `cost` is 0.2 at 25 steps.
+1. Call `validate_workflow(workflow="c-f480-t2i", arguments={num_inference_steps: 100})` and record
+   `plan.estimate`, before any run of the copy.
+2. Call `run_workflow(workflow="c-f480-t2i", arguments={num_inference_steps: 100},
+   acknowledged_cost=true, wait_seconds=55, note="C-F480 tempering run")` → J1, which should
+   complete. Note its wall time T in minutes.
+3. Repeat call 1.
+expected:
+- Call 1 returns `basis: "derived"` (or `inherited` where stage C has landed) with minutes ≈ 0.8,
+  which is 0.2×100/25, and `scaled` naming steps.
+- Call 3 reports `runs` ≥ 1 for this rung, with `curated_minutes` ≈ 0.8, the scaled figure, not
+  the unscaled 0.2. Its `minutes` lies between T and `curated_minutes`, inclusive, allowing for
+  rounding to 0.1.
+It is a **finding** if:
+- `curated_minutes` in call 3 is 0.2;
+- call 3's `minutes` falls outside [T, curated_minutes];
+- call 1 is `unknown`.
+cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`, then `delete_workflow("c-f480-t2i",
+acknowledged_cost=true)`.
+metrics: none.
+
+### C-F481 — Unscalable drivers off their default keep the figure but flag `low_confidence` and `differs`
+pending: #907
+source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed:
+42, ...})`. Take values from the variables' descriptions, as in C-F474.
+1. Defaults only. This gives M0.
+2. `weights_dtype: "{int8}"`.
+3. `attention_backend`: a non-null value.
+4. `cache`: a non-null value.
+5. `lora_model_name: null`, with `num_inference_steps: 30`.
+6. `weights_dtype: "{int8}"`, with `num_inference_steps: 30`.
+expected:
+- Call 1 returns M0 with `low_confidence` absent or false, and an empty `differs`.
+- Calls 2 to 4 each return a number close to M0, not `unknown`, with `low_confidence: true`. Each
+  call's `differs` names the one driver it moved: `weights_dtype`, `attention_backend` or `cache`.
+- Calls 5 and 6 return the steps-scaled figure, ≈ K×30/9 as in C-F476, with `low_confidence: true`.
+  Their `differs` names `lora_model_name` and `weights_dtype` respectively.
+It is a **finding** if:
+- any of calls 2 to 6 returns `unknown`;
+- any returns the figure with no `low_confidence`;
+- `differs` misses the moved driver;
+- call 1 carries `low_confidence`.
+cleanup: none.
+metrics: none.
+
+### C-F482 — A native-attention run gets its own bucket and isn't pooled into the default one
+pending: #907
+source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
+GPU, about 8 minutes (one H3 reference-to-video at defaults). Workspace `regression-complete`.
+1. `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed: 42})`.
+   Record `runs` R and `minutes`.
+2. The same call with `attention_backend` set to the native SDPA value its description names.
+   Record the result.
+3. `run_workflow(...)` with call 2's arguments, plus `acknowledged_cost=true`, `wait_seconds=55`
+   and `note="C-F482 native attention run"`. Follow it with `wait_for_job` to completion, giving
+   J1.
+4. Repeat calls 1 and 2.
+expected:
+- Call 1's repeat still reports `runs: R`, and its minutes are unchanged within rounding.
+- Call 2's repeat now reports `basis: "observed"` with `runs` ≥ 1, priced from J1's own time and
+  without `low_confidence`.
+It is a **finding** if the default bucket's `runs` grows to R+1, or its minutes shift toward J1's
+time.
+cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`.
+metrics: none.
+
+### C-F483 — A non-H3 duration driver off its default is never priced as the default bucket without a flag
+pending: #907
+source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. Call `list_workflows(shape="audio")` and pick the music template whose variables include
+   `audio_duration`. Read its default.
+2. `validate_workflow` on it at its defaults (with a seed if it declares one). This gives M0.
+3. The same call with `audio_duration` set to twice its default.
+expected:
+- Call 3 does one of two things: it scales, with `scaled` naming `audio_duration` and minutes ≈ 2×M0
+  (±10%), or it keeps M0 with `low_confidence: true` and `differs` containing `audio_duration`.
+- Call 2 carries neither flag.
+It is a **finding** if call 3 returns M0 with neither `scaled` nor `low_confidence`, or returns
+`unknown`. Skip the case, and say so, if no audio template declares `audio_duration`.
+cleanup: none.
+metrics: none.
+
+### C-F484 — An inline workflow's inherited estimate scales by steps and canvas (`basis: "inherited"`)
+pending: #908
+source: tester, spec for #908 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. Setup: take `get_workflow("templates/minimax/reference-to-video")` and set `variables.seed` to
+42. Call that W.
+1. Call `validate_workflow(workflow=W)` inline. This gives M0.
+2. Call `validate_workflow(workflow=W, arguments={num_inference_steps: 30, width: 1344, height:
+   768})`.
+3. The same arguments as call 2, but by name:
+   `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed: 42,
+   num_inference_steps: 30, width: 1344, height: 768})`. This gives T.
+4. W with `num_frames: 192`.
+expected:
+- Call 1 returns `basis: "inherited"`, `inherited_from: "templates/minimax/reference-to-video"`,
+  and no `scaled`.
+- Call 2 returns `basis: "inherited"` with minutes ≈ M0×(30/9)×1.9765 (±5%), and `scaled` naming
+  steps and the canvas.
+- Call 2 is within 10% of T.
+- Call 4 returns ≈ M0×192/124 (±5%), with `scaled` naming frames.
+It is a **finding** if:
+- calls 2 or 4 return the unscaled M0;
+- either returns `unknown`;
+- they lose `inherited_from`;
+- inline and template paths differ by more than 10%.
+cleanup: none.
+metrics: none.
+
+### C-F485 — An inline workflow off an unscalable driver lists it in `differs` and sets `low_confidence`
+pending: #908
+source: tester, spec for #908 from #866's plan v2 (claude-opus-5-5 via anthropic)
+Free. W is as in C-F484: the reference-to-video JSON with seed 42. Each call is an inline
+`validate_workflow`, and each variant changes only the one variable named.
+1. W as is.
+2. `attention_backend` set to the native SDPA value.
+3. `cache` set to a non-null value.
+4. `lora_model_name` (and `lora_weight_name`) set to `null`.
+expected:
+- Call 1 returns `differs: []` with no `low_confidence`.
+- Calls 2 to 4 each keep `basis: "inherited"` with a number, set `low_confidence: true`, and name the
+  moved variable in `differs`: `attention_backend`, `cache` or `lora_model_name`.
+It is a **finding** if any of calls 2 to 4 returns an empty `differs`, no `low_confidence`, or
+`unknown`.
+cleanup: none.
+metrics: none.
+
+### C-F486 — a run feeds `plan.host_memory` (`basis: "observed"`), shared by an inline and a renamed copy, split by offload
+pending: #909
+source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
+GPU, about a minute (one SD1.5 run). Workspace `regression-complete`.
+Setup: take `get_workflow("templates/text-to-image")`, set `variables.seed` to 42, and call it W.
+Save W as `c-f486-t2i`. Make W2: W with the pipeline step's `offload` set to a value its schema
+accepts that W doesn't use (`get_schema` names the values; e.g. `"model"` if W has none).
+1. `validate_workflow(name="c-f486-t2i")`. Record `plan.host_memory` (absent, or `runs` R0).
+2. `run_workflow(workflow="c-f486-t2i", acknowledged_cost=<plan>, wait_seconds=55, note="C-F486
+   host-memory history run")` → J1, which should succeed. From `get_job_events(J1)`, take P, the
+   largest `host_memory_job_peak_rss_mb` over its `memory` events. `get_job(J1)` carries no
+   `waiting_for`, and its events have no `queue_wait` (stage A gates nothing).
+3. Repeat call 1.
+4. `validate_workflow(workflow=W)` inline.
+5. `validate_workflow(workflow=W2)` inline.
+expected:
+- Call 3: `plan.host_memory` is `{projected_mb, basis: "observed", runs}` with `runs` ≥ 1 (R0+1 when
+  call 1 had a figure). `projected_mb` ≥ P (allow 1% for rounding), because the figure is the max of
+  same-key peaks.
+- Call 4 returns the same `host_memory` as call 3: equal `projected_mb`, `basis` and `runs`. The key
+  is the pipeline and its quantization and offload, not the workflow's name.
+- Call 5 has no `host_memory` key and is still `valid: true`, unless this box has run W2's offload
+  variant before (then its `projected_mb` must come from those runs, not equal call 3's by default).
+- `plan.estimate` keeps its usual shape on every call.
+It is a **finding** if:
+- call 3 lacks `host_memory`, or has `basis` other than `observed`;
+- `projected_mb` < P;
+- call 4 differs from call 3 or lacks `host_memory`;
+- call 5 reports call 3's figure;
+- J1 shows `waiting_for` or a `queue_wait` event.
+A call 3 `projected_mb` more than 2× P is also a finding: it means a same-key peak was taken while
+another job shared the host (#901). Name the job in the report if `list_jobs` can find it.
+cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`, then `delete_workflow("c-f486-t2i",
+acknowledged_cost=true)`.
+metrics: `projected_mb` from call 3, and P.
+
+### C-F487 — H3 `weights_dtype` int4 and int8 are different memory keys
+pending: #909
+source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
+Free. Each call is `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed:
+42, weights_dtype: <v>})`, spelling `<v>` as the variable's description does (see C-F474).
+1. `<v>` = the int4 value.
+2. `<v>` = the int8 value.
+3. `<v>` = any third value the description lists that this box has never run (bf16, say), if one
+   exists.
+expected:
+- All three are `valid: true`, and none returns an error about host memory.
+- If calls 1 and 2 both carry `plan.host_memory`, their `projected_mb` differ, and int8's is the
+  larger. On lem, int8 is about 63 GB and int4 about 35 GB.
+- Call 3 has no `host_memory` key. If it has one, check `list_jobs` for a successful run with that
+  dtype since stage A deployed. If there is none, the figure leaked from another key.
+It is a **finding** if calls 1 and 2 report the same `projected_mb` and `runs` (a key that ignores the
+dtype argument), or if call 3 reports a figure no same-dtype run explains. If neither call 1 nor
+call 2 has a figure yet, report the case as partly skipped. C-F491 and C-F493 seed both keys.
+cleanup: none.
+metrics: none.
+
+### C-F488 — a list workflow with no same-key run reports `basis: "fit"`, agreeing with the projection warning
+pending: #909
+source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
+Free. Uses M-F029's history: `acorn-wars/shots-batch` in workspace `acorn-wars`, a `for_each` over
+one H3 step whose runs span list lengths 1 and 5. Those runs all predate the memory-key column, so
+they are not same-key runs. `use_workspace("acorn-wars")`, then:
+1. `validate_workflow(name="acorn-wars/shots-batch", arguments={shots: [5 entries of {name, prompt,
+   num_frames: 158}]})`.
+2. The same call with 12 entries.
+expected:
+- Both carry `plan.host_memory` with `basis: "fit"`.
+- Each `projected_mb` agrees with the number in that call's `Projected host memory …` warning (~N
+  MB), within rounding. The warning's text is unchanged from M-F029's.
+- Call 2's figure is no smaller than call 1's.
+It is a **finding** if:
+- either call lacks `host_memory` while the warning gives a figure;
+- either says `basis: "observed"` with `runs` counting pre-column rows;
+- the two numbers disagree by more than rounding;
+- either call turns `valid: false`.
+If `acorn-wars` history is gone, no longer spans two list lengths, or has a successful run since
+stage A deployed (`list_jobs` will show one; then `observed` is legitimate), report the case as
+skipped, not failed.
+cleanup: `use_workspace("regression-complete")`.
+metrics: none.
+
+### C-F489 — no figure means no `host_memory` key and no error: a new workflow, a task-only one, and history from before the column
+pending: #909
+source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
+Free. Workspace `regression-complete`.
+1. A brand-new inline workflow: `get_workflow("templates/text-to-image")` with the pipeline step's
+   `offload` set to a value no one runs (`"sequential"`, or whatever `get_schema` lists that is
+   rarest), plus `id: "c-f489-new"`. Validate it inline.
+2. A task-only inline workflow: one `qr_code` step, as in C-F040, with no list.
+3. A named, non-list workflow whose `list_workflows` entry shows `observed_runs` ≥ 1, but which
+   `list_jobs` shows has no successful run since stage A deployed. Pick one in any workspace with
+   `validate_workflow(..., workspace=<ws>)`, or `use_workspace` first if the name doesn't resolve.
+   Skip this call, and say so, if there is none.
+expected:
+- Every call is `valid: true` with a non-null `plan` and no `host_memory` key: absent, not `null`,
+  not `{}`.
+- No call has an error or warning that mentions host memory.
+- Call 3 still has its usual `plan.estimate` (`observed` from the old rows). Pre-column rows count
+  for minutes but not for RAM.
+It is a **finding** if any call errors, gains a `host_memory` figure from nothing, or returns
+`plan: null`.
+cleanup: none.
+metrics: none.
+
+### C-F490 — a cancelled run never feeds the figure
+pending: #909
+source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
+GPU, under a minute. Workspace `regression-complete`.
+Setup: W is `get_workflow("templates/text-to-image")` with `variables.seed` 42 and
+`num_inference_steps` 200, so a run lasts long enough to cancel. Set the pipeline step's `offload`
+to a value that, by C-F489's call 1, no run on this box has used. Save it as `c-f490-t2i`.
+1. `validate_workflow(name="c-f490-t2i")`. Expect no `host_memory`; if there is one, pick another
+   offload value.
+2. `run_workflow(workflow="c-f490-t2i", acknowledged_cost=<plan>)` → J1. Poll `get_job(J1)` until its
+   events show the denoise phase, then `cancel_job(J1)`. Its final status should be `cancelled`.
+3. Repeat call 1.
+4. Failed arm (optional): if this run knows a way to make the same definition fail at run time
+   after the model loads, run it, then repeat call 1. Say whether this arm ran.
+expected: calls 3 and 4 still have no `host_memory` key. A cancelled or failed job's peak is not
+history.
+It is a **finding** if call 3 or 4 reports `basis: "observed"` with `runs` ≥ 1.
+cleanup: `delete_output(job_id=J1, acknowledged_cost=true)` (and the failed arm's job), then
+`delete_workflow("c-f490-t2i", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F491 — a second int8 H3 job is held for host RAM while a card is free, says why once, and starts when the first finishes
+pending: #910
+source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
+lem only: two workers (two 3090s, 125 GB host). On a single-worker server skip this case and say
+so; C-F495 covers that. GPU, roughly 1-2 hours: three int8 H3 runs, two of them in series. Workspace
+`regression-complete`. Before starting, `list_jobs` must show nothing queued or running; if the box
+is busy, skip and say so.
+Each run is `run_workflow(workflow="templates/minimax/reference-to-video", arguments={seed: 42,
+weights_dtype: <int8 value as spelled in the variable's description>}, acknowledged_cost=<plan>)`.
+1. Run J1 and wait for it to succeed. It seeds the key's history. Then
+   `validate_workflow` with the same arguments, which gives `plan.host_memory.projected_mb` = M
+   (`basis: "observed"`).
+2. Submit J2, then immediately J3, with no wait.
+3. Within about a minute, while J2 is loading or running:
+   - `get_health`: one worker busy with J2, the other card idle;
+   - `get_job(J3)`;
+   - `list_jobs` (J3's summary);
+   - `get_job_events(J3)`.
+   Record the time.
+4. About a minute later, repeat `get_job(J3)` and `get_job_events(J3)`.
+5. `wait_for_job(J2)` to the end, then `get_job(J3)` until it is `running`, then
+   `wait_for_job(J3)` to the end, then `get_job_events(J3)` once more.
+expected:
+- Step 3:
+  - J3 is `status: "queued"` while a card is idle. That proves host RAM held it, not VRAM.
+  - `get_job(J3)` and J3's `list_jobs` summary both carry `waiting_for`: one string beginning
+    `waiting for host RAM`, naming a needed GB figure ≈ M/1024 (±10%) and a free GB figure.
+  - J3's events hold one `{"event": "queue_wait", "reason": "host_ram", "message": ...}` whose
+    message equals `waiting_for`.
+  - J2 carries no `waiting_for`.
+- Step 4: still exactly one `queue_wait` event, despite the 10 s re-checks in between.
+- Step 5:
+  - J3 started only after J2 finished.
+  - Once running or finished, it carries no `waiting_for`.
+  - Its events still hold exactly one `queue_wait`.
+  - J1, J2 and J3 all `succeeded`. None was killed.
+  - None of the three has a host-RAM or `queue_wait` entry in `warnings` (D1: the reason is an
+    event and a live field, not a warning).
+It is a **finding** if:
+- J3 starts on the idle card while J2 runs. That is #869 itself. Stop and cancel J3 at once, before
+  the host squeezes.
+- `waiting_for` is missing, or on only one of `get_job`/`list_jobs`.
+- `queue_wait` repeats per pass, or is absent.
+- the message lands in `warnings`.
+- J3 is still queued well after J2 has finished and its worker exited (a hold that never releases).
+- any job dies.
+- the status is anything but `queued` while held.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for J1, J2 and J3.
+metrics: M, and the needed and free GB figures from `waiting_for`.
+
+### C-F492 — a small job backfills past the held one, and cancelling the held job clears it
+pending: #910
+source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
+lem only. Runs inside C-F491's hold window: after its step 4, while J2 runs and J3 is held. Skip it
+if C-F491 skipped. Extra GPU is one SD1.5 image and one held int8 job that never starts.
+1. Submit J4: `run_workflow(workflow="templates/text-to-image", arguments={seed: 42},
+   acknowledged_cost=<plan>, wait_seconds=55)`.
+2. Submit J5: a fourth int8 job, with C-F491's arguments. Then `get_job(J5)` and
+   `get_job_events(J5)`.
+3. `cancel_job(J5)`. Then `get_job(J5)` and `list_jobs`.
+expected:
+- J4 starts on the idle card while J3 is still `queued`, and it `succeeded` (backfill past a held
+  job). J4 has no `waiting_for` and no `queue_wait` event.
+- J5 is `queued` with its own `waiting_for` and one `queue_wait` event.
+- After the cancel:
+  - J5 is `cancelled` and carries no `waiting_for`;
+  - J5 never ran on a worker (no load phase in its events);
+  - `list_jobs` no longer shows it as queued;
+  - J3 is still `queued` with its `waiting_for` intact;
+  - C-F491's step 5 proceeds as written.
+It is a **finding** if:
+- J4 waits behind J3;
+- J5 starts;
+- J5 keeps `waiting_for` after the cancel;
+- cancelling J5 disturbs J3.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for J4 and J5 (J5 may have nothing to
+delete).
+metrics: none.
+
+### C-F493 — two int4 H3 jobs, which fit together, both start at once
+pending: #910
+source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
+lem only, two workers. GPU, roughly 30-60 min: three int4 H3 runs. Workspace
+`regression-complete`. The box must be idle first, as in C-F491.
+Each run uses C-F491's arguments with the int4 `weights_dtype` value.
+1. Run K1 to success, which seeds the key. Then `validate_workflow` with the same arguments: it gives
+   `projected_mb` N with `basis: "observed"`. On lem, N is about 35 GB.
+2. Submit K2, then immediately K3. Within about a minute, `get_health`, `get_job(K3)` and
+   `get_job_events(K3)`.
+3. `wait_for_job` both.
+expected:
+- Step 2: K2 and K3 are running at once, one per card, and neither has `waiting_for` or a
+  `queue_wait` event.
+- Both `succeeded`.
+- The int4 N is below C-F491's int8 M (C-F487's split, now with both keys seeded).
+It is a **finding** if K3 is held. The gate is then over-holding, alternative (b)'s bluntness. Report
+the `waiting_for` numbers, and check whether N came from a peak taken while another job shared the
+host (#901).
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for K1, K2 and K3.
+metrics: N.
+
+### C-F494 — a job with no figure is never held, and a lone job is never held
+pending: #910
+source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
+lem only. Run it during C-F491's step 3 or C-F493's step 2, while one heavy job runs and a card is
+free. Skip it with them.
+1. Make a never-run variant: C-F489's call-1 inline workflow, with an `offload` value no run has
+   used. First `validate_workflow` it: there should be no `host_memory`. Then `run_workflow` it
+   inline (`acknowledged_cost=<plan>`, `wait_seconds=55`) → L1.
+2. After every heavy job in C-F491/C-F493 has finished and the box is idle, run C-F491's int8
+   arguments once more, alone → L2, and `get_job(L2)` within a minute. This is optional if the
+   session's budget is short; say whether it ran.
+expected:
+- L1 starts on the free card with no `waiting_for` or `queue_wait`, and it succeeds (no figure, no
+  gate).
+- L2 starts at once, with no `waiting_for` (the escape: with no other job running, nothing is
+  held).
+It is a **finding** if L1 is held, or if L2 is held with nothing else running (a job that could wait
+forever).
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for L1 and L2.
+metrics: none.
+
+### C-F495 — on a single-worker server nothing about dispatch changes
+pending: #910
+source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
+Single-worker servers only: mini-ai (MPS), or any server whose `get_health` lists one worker. On lem,
+skip it and say so. GPU, about a minute.
+1. Submit two `templates/text-to-image` runs back to back (`arguments={seed: 42}`,
+   `acknowledged_cost=<plan>`), J1 then J2, with no wait. Call `get_job(J2)` and
+   `get_job_events(J2)` while J1 runs.
+2. `wait_for_job` both.
+expected:
+- J2 is `queued` behind J1, as it always was (one card), with **no** `waiting_for` and no
+  `queue_wait` event. The gate never runs on one card, and on MPS without psutil host memory reads
+  None.
+- Both succeed. J1 starts the moment it is submitted.
+- `validate_workflow` on the same workflow may carry `plan.host_memory` (stage A is shared); that is
+  fine.
+It is a **finding** if J2 shows `waiting_for` or `queue_wait`, or if J1 is held.
+cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for J1 and J2.
+metrics: none.
+
+### C-F496 — the served docs drop the "one int8 job at a time" workaround
+pending: #910
+source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. `list_guides`, then `get_guide` on the workspaces guide. Read the section that discusses running
+   variants, or search the full text.
+2. Load the `minimax-h3` skill (Skill tool) and read its `references/quality-and-speed.md`.
+expected:
+- Neither text tells the reader to run one int8 H3 job at a time or to wait between variants for
+  host RAM. The server now holds such a job itself.
+- Where the text mentions the subject, it describes the hold: the job stays `queued` with a
+  `waiting_for` reason.
+It is a **finding** if either phrase ("One int8 job at a time", "wait between variants") or its
+equivalent advice remains. SERVER.md is not served, so its wording is `docs-review`'s to check, not
+this case's.
+cleanup: none.
+metrics: none.
+
 ## Performance

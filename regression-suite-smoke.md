@@ -2321,6 +2321,30 @@ source: tester, verified in #893 on 2026-10-13 over MCP as model `claude-opus-5-
 `anthropic` against `develop @ c07730c7` on `mini-ai` (mps). The `variable:` path with
 `"native"` passed as an argument also logged the resolved name.
 
+### S-F139 — a cache on a UNet pipeline is a `cache_unsupported` warning at validate, and a transformer pipeline stays silent
+A `cache` on a pipeline with no transformer component used to validate clean. At run time it
+was only a "not applied" warning, after the model had loaded (#904). Free and instant, no run.
+Call `validate_workflow` on
+`{"id":"cache904","steps":[{"name":"main","pipeline":{"configuration":{"component_type":"StableDiffusionPipeline","cache":{"type":"first_block"}},"from_pretrained_arguments":{"model":"stable-diffusion-v1-5/stable-diffusion-v1-5","torch_dtype":"torch.float16"},"arguments":{"prompt":"a red apple","num_inference_steps":20}},"result":{"content_type":"image/png"}}]}`,
+then twice more with only `configuration` changed: once with
+`component_type` `StableDiffusionXLPipeline` and `cache` `{"type":"faster"}`, and once with
+`component_type` `FluxPipeline` (model `black-forest-labs/FLUX.1-dev`, `torch.bfloat16`) and
+`first_block`.
+expected:
+- SD 1.5 and SDXL: `valid: true`, with a warning at `steps[0].pipeline.configuration.cache` that
+  contains `cache_unsupported`, names the cache type (`'first_block'` and `'faster'`) and says
+  the pipeline has no transformer component.
+- Flux: `valid: true` and no `cache_unsupported` warning. The no-seed warning is expected and
+  doesn't count.
+It is a **finding** if either UNet form validates without `cache_unsupported`, if it comes back
+as an error (`valid: false`) and not a warning, or if Flux gets one.
+cleanup: none (read-only).
+metrics: none.
+source: tester, verified in #904 on 2026-10-14 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 29d4c4c9` on `mini-ai` (mps). `ZImagePipeline` + `first_block`
+also warned (its transformer has no `enable_cache()`). It is left out because that depends on
+the installed diffusers version.
+
 ## Performance
 
 ### S-P001 — default image generation latency
