@@ -12313,7 +12313,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F439 — `first_block` 0.5 at 20 steps: counts add up, `skipped` > 0, and `hit_rate` matches
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device. `<T2I-FB>` is `<T2I-20>` with `"cache": {"type": "first_block", "threshold": 0.5}`
 in the `main` step's `pipeline.configuration`.
@@ -12336,7 +12335,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F440 — a near-zero threshold skips nothing
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device. `<T2I-FB-0>` is C-F439's `<T2I-FB>` with `threshold: 0.001`.
 1. `run_workflow(workflow=<T2I-FB-0>, acknowledged_cost=true, wait_seconds=55, note="C-F440 first_block 0.001")`,
@@ -12349,7 +12347,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F441 — one `cache_stats` event per pipeline call: two cached steps give two, each naming its step
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device. `<T2I-FB-2>` is C-F439's `<T2I-FB>` with a second step copied from `main`, named
 `second`, seed and prompt the same, `threshold: 0.3`, `main`'s result moved to `"intermediate"`.
@@ -12364,7 +12361,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F442 — a step without a cache has no `timing.cache` and emits no `cache_stats` event
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device: `<T2I-20>` (or C-F439's fallback base, if C-F439 used one) with no `cache` key.
 1. `run_workflow(workflow=<T2I-20>, acknowledged_cost=true, wait_seconds=55, note="C-F442 no cache")`, then
@@ -12377,7 +12373,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F443 — `mag` reports counts that add up
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 The plan's "`mag` where the box supports it". Needs a Flux-class template the box runs (the guide's `mag_ratios` preset
 is `"flux"`). Build it from `templates/text-to-image-flux` or the smallest Flux text-to-image template
@@ -12395,7 +12390,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F444 — `text_kv`, `taylorseer` and `faster` report their type and config with null counts and no warning
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 Up to three small GPU runs, on any device, on C-F439's base (`<T2I-20>` or its fallback) with the `main` step's cache
 set in turn to `{"type": "text_kv"}`, `{"type": "taylorseer", "cache_interval": 5}` and `{"type": "faster"}`. A type
@@ -12414,7 +12408,6 @@ cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)` for each run.
 metrics: none.
 
 ### C-F445 — on CUDA, an H3 step with `first_block` 0.05 at 30 steps reports `skipped` > 0
-pending: #886
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 CUDA only, with lem's fixtures. Call `get_server_info` first. When `device` isn't `"cuda"`, or
 `asset:qa-cast/priya-voice.wav` isn't listed by `list_assets`, skip the case as not applicable: neither a pass nor a
