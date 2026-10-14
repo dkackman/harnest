@@ -11880,13 +11880,12 @@ expected:
 - **The L0 sketch** is 960x544. The section calls it a throwaway, and says its staging won't carry to 1344x768.
 - **The cinema path** goes from B3 to L5, or to P1. B3 is 1344x768, int8, the base model with no LoRA
   (`lora_model_name: null`) and 12 steps, on `templates/minimax/dialogue-short`. L5 is the same set at 30 steps.
-  P1 is L5 plus a `first_block` cache at 0.05. The section says P1 runs only from a saved copy of the template,
-  until #865.
+  P1 is L5 plus a `first_block` cache at 0.05, passed as the template's `cache` argument (#884). The section doesn't
+  send it through a saved copy.
 - **Close-ups:** the advice is to ship the 12-step draft.
-- **`sage_hub`:** the section says it is available only as an argument on `video-with-audio`,
-  `video-with-audio-768p`, `image-to-video` and `reference-to-video`. Those are exactly the four templates whose
-  `variable_names` include `attention_backend` in `list_workflows(shape="shot")`. Today `dialogue-short` has no
-  `attention_backend`.
+- **`sage_hub`:** the section says it is an `attention_backend` argument on every H3 template (#883),
+  `dialogue-short` included, and doesn't limit it to four. The templates it names are exactly those whose
+  `variable_names` include `attention_backend` in `list_workflows(shape="shot")`.
 - **Carryover:** from draft to final, the seed, canvas and prompt stay the same. Blocking carries, props don't.
   Each carryover claim states how many seeds it was measured on: the count from #861, or "measured on one seed"
   if #861 was declined.
@@ -11939,24 +11938,19 @@ It is a **finding** if either set is refused, or if they differ in anything but 
 cleanup: none.
 metrics: none.
 
-### C-F417 — P1's cache needs a saved template copy, and `attention_backend` is refused on `dialogue-short`
+### C-F417 — P1's cache and `sage_hub` are plain arguments on `dialogue-short`, no saved copy needed
 pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
-Free, plus one saved workflow. Work in the suite workspace.
+Free. Work in the suite workspace.
 1. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<L5 from C-F416> + {"attention_backend": "sage_hub"})`.
 2. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<L5> + {"cache": <the section's first_block 0.05 value>})`.
-3. Copy the template the way the section's P1 says to: `get_workflow("templates/minimax/dialogue-short")`, add the
-   `first_block` cache at 0.05 where the section says it goes, and `save_workflow(name="qa-spec-h3-p1", ...)`.
-4. `validate_workflow(name="qa-spec-h3-p1", arguments=<L5>)`.
 expected:
-- 1: refused, naming `attention_backend` as a variable the template doesn't declare. This is what the section's
-  `sage_hub` scope says.
-- 2: refused the same way for `cache`. This is why P1 needs a copy until #865.
-- 3: the save succeeds.
-- 4: `valid: true`, and the copy's cache setting is the one the section describes (`first_block`, 0.05).
-It is a **finding** if 1 or 2 is accepted while the section says it isn't possible, if the section's recipe can't be
-followed to a saved copy, or if 4 is refused.
-cleanup: `delete_workflow(name="qa-spec-h3-p1", acknowledged_cost=true)`.
+- 1, 2: `valid: true`, with no error about `attention_backend` or `cache` (#883, #884). Validate may warn
+  `cache_short_schedule`, or that `sage_hub` needs CUDA off CUDA.
+- The section's P1 is L5 plus that `cache` argument, and it doesn't send P1 through a saved copy of the template.
+It is a **finding** if 1 or 2 is refused, or if the section still says P1 or `sage_hub` on `dialogue-short` needs a
+saved or edited copy.
+cleanup: none.
 metrics: none.
 
 ### C-F418 — dropping the LoRA warns `lora_disabled`, and the section's base rung names the base schedule
@@ -12031,7 +12025,7 @@ It is a **finding** if 1 or 2 is refused for any template, or if 3 is accepted.
 cleanup: none.
 metrics: none.
 
-### C-F422 — a default run on a new H3 template puts no `attention_backend` on the transformer
+### C-F422 — a default run on a new H3 template pins `attention_backend` to `null` and succeeds
 source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
 One GPU run, on any device. Work in the suite workspace.
 1. `run_workflow(name="templates/minimax/first-and-last-frame", arguments={<its image inputs> = "asset:qa-cast/priya-portrait.jpg", "width": 512, "height": 288, "num_frames": 124, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F422 default attention_backend")`.
@@ -12039,11 +12033,11 @@ One GPU run, on any device. Work in the suite workspace.
 2. `get_job_workflow(job_id=<id>)`.
 expected:
 - 1: the job completes. 512 and 288 are multiples of 32, and 124 is the bottom of the `num_frames` range.
-- 2: the realized H3 step's transformer component (`components.transformer`, or `components.transformer_ref` on ref2va
-  templates) has no `attention_backend` key at all. A null substitution drops
-  the key; it is not left as `null` or as an empty string.
-It is a **finding** if the run fails because of the new variable, or if the realized workflow carries an
-`attention_backend` key.
+- 2: `variables.attention_backend` is `null`, and the realized H3 step's transformer component (`components.transformer`,
+  or `components.transformer_ref` on ref2va templates) references `"variable:attention_backend"`. `get_job_workflow` pins
+  arguments into `variables` and leaves step references unsubstituted, so a dropped key can't be seen here; dw's pytest
+  covers that.
+It is a **finding** if the run fails because of the new variable, or if `variables.attention_backend` isn't `null`.
 cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
@@ -12056,10 +12050,11 @@ pass nor a failure. Otherwise one long GPU run in the suite workspace.
 2. `get_job_workflow(job_id=<id>)`.
 expected:
 - 1: the job completes.
-- 2: every realized H3 step inside the `for_each` has `attention_backend: "sage_hub"` on its transformer component
-  (`components.transformer`, or `components.transformer_ref` on ref2va templates; `dialogue-short` is ref2va). The Z-Image
-  portrait steps carry no `attention_backend` anywhere.
-It is a **finding** if the run fails, if any H3 step lacks the value, or if a Z-Image step carries it.
+- 2: `variables.attention_backend` is `"sage_hub"`. Every realized H3 step inside the `for_each` references
+  `"variable:attention_backend"` on its transformer component (`components.transformer`, or `components.transformer_ref`
+  on ref2va templates; `dialogue-short` is ref2va). The Z-Image portrait steps carry no `attention_backend` anywhere.
+It is a **finding** if the run fails, if `variables.attention_backend` isn't `"sage_hub"`, if any H3 step lacks the
+reference, or if a Z-Image step carries it.
 cleanup: `delete_output(job_id=<id>, acknowledged_cost=true)`.
 metrics: none.
 
@@ -12128,7 +12123,7 @@ metrics: none.
 source: tester, spec for #884 from #865's plan v1 (claude-opus-5-5 via anthropic)
 CUDA only. Call `get_server_info` first. When `device` isn't `"cuda"`, skip the case as not applicable: it is neither a
 pass nor a failure. Otherwise one long GPU run in the suite workspace.
-1. `run_workflow(name="templates/minimax/dialogue-short", arguments={"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav", "lora_model_name": null, "num_inference_steps": 30, "video_shift": 12, "audio_shift": 3, "width": 1344, "height": 768, "cache": {"type": "first_block", "threshold": 0.05}, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F428 first_block 0.05")`,
+1. `run_workflow(name="templates/minimax/dialogue-short", arguments={"character_a_voice": "asset:qa-cast/priya-voice.wav", "character_b_voice": "asset:qa-cast/priya-voice.wav", "lora_model_name": null, "num_inference_steps": 30, "video_shift": 12, "audio_shift": 3, "width": 960, "height": 544, "cache": {"type": "first_block", "threshold": 0.05}, "seed": 42}, acknowledged_cost=true, wait_seconds=55, note="C-F428 first_block 0.05")`,
    then `wait_for_job` until it finishes.
 2. `get_job_workflow(job_id=<id>)`.
 expected:
@@ -12316,10 +12311,11 @@ metrics: none.
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 One small GPU run, on any device. `<T2I-FB>` is `<T2I-20>` with `"cache": {"type": "first_block", "threshold": 0.5}`
 in the `main` step's `pipeline.configuration`.
-1. `validate_workflow(workflow=<T2I-FB>)`. If it refuses `first_block` on this pipeline (the guide says that type needs
-   a registered transformer block class, which an SD 1.5 UNet may not have), build `<T2I-FB>` instead from the smallest
-   transformer image template this box validates and runs (a Z-Image or SD3-class template; name it in the `note`),
-   with the same cache object, 20 steps and seed 42. Use that same base for C-F440–C-F442.
+1. `validate_workflow(workflow=<T2I-FB>)`. If it refuses `first_block` on this pipeline, or a run on it warns that the
+   cache `was not applied` (an SD 1.5 UNet has no transformer, so `first_block` can't attach), build `<T2I-FB>` instead
+   from the smallest transformer image template this box validates and runs whose transformer supports diffusers'
+   `enable_cache()` (a Flux-class template did on #886's verify; Z-Image-Turbo did not). Name it in the `note`, and use
+   the same cache object, 20 steps and seed 42. Use that same base for C-F440–C-F442 and C-F444.
 2. `run_workflow(workflow=<T2I-FB>, acknowledged_cost=true, wait_seconds=55, note="C-F439 first_block 0.5")`, then
    `get_job(job_id=<id>)`.
 3. `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
@@ -12393,7 +12389,7 @@ metrics: none.
 source: tester, spec for #886 from #867's plan v2 (claude-opus-5-5 via anthropic)
 Up to three small GPU runs, on any device, on C-F439's base (`<T2I-20>` or its fallback) with the `main` step's cache
 set in turn to `{"type": "text_kv"}`, `{"type": "taylorseer", "cache_interval": 5}` and `{"type": "faster"}`. A type
-`validate_workflow` refuses on that pipeline is skipped as not applicable for that type; if all three are refused,
+`validate_workflow` refuses on that pipeline is skipped as not applicable for that type; if all three are refused or warn that the cache was not applied,
 retry them on a transformer base as in C-F439's fallback, and if still refused the case is not applicable.
 1. For each type: `run_workflow(..., acknowledged_cost=true, wait_seconds=55, note="C-F444 <type>")`, then
    `get_job(job_id=<id>)` and `get_job_events(job_id=<id>, kinds=["cache_stats"])`.
@@ -12586,8 +12582,9 @@ source: tester, spec for #889 from #871's plan v2 (claude-opus-5-5 via anthropic
 Workflow W: `{"id": "c-f454-cmp", "variables": {"contents": "compare", "width": 512, "height": 512,
 "frames": 121, "grain": 0.0, "seed": 1, "fps": 24}, "steps": [{"name": "qr", "task": {"command":
 "qr_code", "arguments": {"qr_code_contents": "variable:contents", "width": "variable:width", "height":
-"variable:height"}}}, {"name": "grain", "task": {"command": "film_grain", "arguments": {"media":
-"previous_result:qr", "amount": "variable:grain", "seed": "variable:seed"}}, "result": {"content_type":
+"variable:height"}}}, {"name": "fit", "task": {"command": "resize_rescale", "arguments": {"image":
+"previous_result:qr", "width": "variable:width", "height": "variable:height"}}}, {"name": "grain", "task":
+{"command": "film_grain", "arguments": {"media": "previous_result:fit", "amount": "variable:grain", "seed": "variable:seed"}}, "result": {"content_type":
 "image/png", "file_base_name": "still"}}, {"name": "vid", "task": {"command": "loop_frames",
 "arguments": {"video": "previous_result:grain", "num_frames": "variable:frames"}}, "result":
 {"content_type": "video/mp4", "fps": "variable:fps", "file_base_name": "clip"}}]}`.
