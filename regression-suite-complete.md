@@ -13003,4 +13003,33 @@ source: tester, verified in #881 (run over MCP 2026-10-14 on lem `develop` @ fb8
 `beaf93a12976`, `0fe8400832ba`, `6f92d48200c1` and `66469d86da07`, model `claude-opus-5-5` via
 provider `anthropic`).
 
+### C-F472 — `cancel_download` stops a running download: pending first, then `cancelled`, and nothing more is written
+First, `list_models`: note `disk_free` and whether `stabilityai/sdxl-turbo` is fully cached. If it is
+fully cached, the download finishes before it can be cancelled, so skip this case and say so; it is
+not a failure. Then `list_downloads` should show nothing for that repo running.
+1. Call `download_model(repo_id="stabilityai/sdxl-turbo", acknowledged_cost=true)`, then
+   `list_downloads`.
+2. Call `cancel_download(download_id=<id from call 1>)` immediately.
+3. Call `list_downloads` again, repeating it a few times if needed until the record is no longer
+   `downloading`.
+4. Call `list_models` and then, after one more `list_downloads`, call `list_models` again.
+expected:
+- Call 1 returns an id with `status: "downloading"`, and `list_downloads` lists it with a `total`.
+- Call 2 returns that record with `cancel_requested: true`. Its `status` may still read
+  `downloading`, since that is the pending state.
+- Call 3 reaches `status: "cancelled"` with `finished_at` set, within a short poll window
+  (seconds, not the length of a full file transfer).
+- Call 4: `disk_free` doesn't keep falling between the two readings after the cancel.
+It is a **finding** if:
+- the record stays `downloading` across the polls;
+- it ends `completed` or `failed`;
+- `cancel_requested` is absent before the cancel lands;
+- `disk_free` keeps dropping after `cancelled`.
+
+The #899 bug was a cancel that only took effect when the whole snapshot finished.
+cleanup: none. Partial files stay in the cache and are resumable, as before the case ran.
+metrics: none.
+source: tester, verified in #899 (run over MCP 2026-10-14 on mini-ai (mps) `develop` @ 9e8f15d8 as
+downloads `88520ca93536` and `c441b6c74fa3`, model `claude-opus-5-5` via provider `anthropic`).
+
 ## Performance
