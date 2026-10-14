@@ -11747,7 +11747,6 @@ cleanup: `delete_workspace(..., acknowledged_cost=true)` on both.
 metrics: none.
 
 ### C-F406 — #852's four H3 renders are on record as ruled: same two-shot, same song slice, one variable per run
-pending: #877
 source: tester, spec for #877 from #852's plan v0 (claude-opus-5-5 via anthropic)
 No GPU. The four jobs are the ones named in #877's results comment, in Don's order: (1) Ref2VA
 `[keyframe completion + audio reuse]` with a first frame, (2) the same with first and last frames, (3) an FL2VA
@@ -11776,7 +11775,6 @@ cleanup: none. Never delete these jobs: C-F407 and C-F408 read them.
 metrics: none.
 
 ### C-F407 — #877's verdict matches what the four renders show, and the Ref2VA recipe re-validates
-pending: #877
 source: tester, spec for #877 from #852's plan v0 (claude-opus-5-5 via anthropic)
 No GPU. The same four job ids as C-F406.
 1. `get_output_frames` on each final video at frames 0, the midpoint and the last frame. For runs 1-3, also on the
@@ -11906,6 +11904,28 @@ expected:
 - 4: no such `edit:` inner-step warning: a later `pair_audio` replaced the join's track (#800's gate).
 It is a **finding** if 2 has no warning, or if 3 or 4 has one.
 cleanup: `delete_output(job_id=…)` for each run.
+metrics: none.
+
+### C-F413 — an empty `find_loop_bed` blames the rule that removed the quiet windows, not `too_loud`'s larger count
+source: tester, verified in #874 (claude-opus-5-5 via anthropic)
+Task-only, about a second. One inline workflow, each step `find_loop_bed(...)` saved as `application/json`,
+`target_bed_dbfs=-55`, other arguments default unless named:
+- `tonal`: `audio="asset:qa-cast/ep76-episode.mp4", start_seconds=4.1, end_seconds=9.0`.
+- `spike`: `audio="asset:qa-cast/ep83-episode.mp4", max_spike_db=0`.
+- `loud`: `audio="asset:qa-cast/ep76-episode.mp4", start_seconds=1.5, end_seconds=4.0`.
+expected:
+- Every step: `candidates` is `[]`, and `findings` holds one `no_loop_bed` entry.
+- `tonal`: `rejected.too_loud` > `rejected.tonal` > 0 (on mini-ai it was 1364 / 752). The finding has
+  `rejected_by: "tonal"`, and its message tells the agent to widen the range, not to raise `max_bin_dbfs`/`max_mean_dbfs`.
+  It carries `closest_tonal: {flatness, harmonicity}`, both numbers, and the message quotes both against the
+  0.3 floor and 0.45 ceiling.
+- `spike`: `rejected.too_loud` > `rejected.spike` > 0, and `rejected_by: "spike"`, whose message names `max_spike_db`.
+  There is no `closest_tonal`.
+- `loud`: only `too_loud` is non-zero, and `rejected_by: "too_loud"` names `max_bin_dbfs`/`max_mean_dbfs`.
+It is a **finding** if `tonal` or `spike` names `too_loud` or gives level-limit advice, if `tonal` has no
+`closest_tonal`, or if `loud` names anything but `too_loud`. If a fixture's counts no longer fit the shape above
+(e.g. `tonal` gains a candidate), the case can't be judged. Report it, and don't count it as a pass.
+cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ## Performance
