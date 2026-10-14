@@ -12847,7 +12847,7 @@ metrics: none.
 
 ### C-F467 — the workspaces guide serves "Running a sweep", and every tool it names exists
 pending: #890
-source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
+source: tester, spec for #890 from #872's plan v1, point 5 and the `cost` check updated for plan v2 (claude-opus-5-5 via anthropic)
 Free; no run.
 1. `get_guide("workspaces")` (the index).
 2. `get_guide("workspaces", section="Running a sweep")`, and again with `section="running a sweep"`
@@ -12867,8 +12867,10 @@ expected:
   4. one `run_workflow` per variant, with a `note` whose first line is the overrides (an example
      like `steps=20 attention=sage`), and `wait_for_job` before submitting the next, giving host
      RAM (#869) as the reason;
-  5. a same-seed rerun of an unchanged step is a cache hit (`reused`), expected and not a failed
-     variant;
+  5. only the latest run of a step is cached: a variant identical to the latest run (the same
+     variant submitted twice in a row) is `reused`; going back to an earlier variant after another
+     has run renders it again; each card's worker has its own cache and a restart empties it; a
+     re-render is expected, not a failed variant;
   6. the results table from `list_jobs(workspace=…)` (job, status, note) and `get_job` (timing,
      files);
   7. assessments with `set_note` on the output file, first line `score N/5 · judged_by <who>`;
@@ -12878,9 +12880,12 @@ expected:
   `keep_output`.
 - The section names no parameter the tool schemas don't have (no `sweep=` on `run_workflow`, no
   score or JSON field on `set_note`).
+- Point 2's "save a copy" path says to keep the template's `cost` block, so `plan.estimate` still
+  has a basis.
 It is a **finding** if the section is missing or doesn't resolve loosely, names a tool or
-parameter that doesn't exist, omits the wait-before-next-variant rule or its reason, or gives an
-assessment convention other than the `score N/5 · judged_by <who>` first line.
+parameter that doesn't exist, omits the wait-before-next-variant rule or its reason, gives an
+assessment convention other than the `score N/5 · judged_by <who>` first line, or says or implies
+that any earlier same-seed variant is a cache hit (plan v1's wording, which C-F469 disproved).
 cleanup: none.
 metrics: none.
 
@@ -12923,23 +12928,34 @@ image.
 cleanup: at the end of C-F470.
 metrics: none.
 
-### C-F469 — a sweep variant repeating an earlier override is a cache hit, marked `reused`
+### C-F469 — a sweep variant repeating the latest one is `reused`; going back to an earlier one re-renders
 pending: #890
-source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
-Runs on C-F468's workspace and jobs.
-1. A fourth variant repeating one: `run_workflow` on `sweep-base` in `regression-sweep` with
-   `arguments={"seed": 42, "steps": 8}`, `note="steps=8\nrepeat of variant 2"`, `wait_seconds=55`.
-2. `get_job` on it.
-3. Control: the same with `arguments={"seed": 43, "steps": 8}`, `note="steps=8 seed=43"`.
+source: tester, spec for #890 from #872's plan v1, amended for plan v2 (Don approved the amendment on #872, 2026-10-14) (claude-opus-5-5 via anthropic)
+Runs on C-F468's workspace and jobs, straight after C-F468, with no other job on the server in
+between (the step cache keeps only the latest run of each step, per worker; a restart empties it).
+Every call below is a `run_workflow` on `sweep-base` in `regression-sweep` with `wait_seconds=55`,
+`acknowledged_cost` as the server requires, followed by `wait_for_job` on `still_running: true`,
+each finished before the next is submitted.
+1. Repeat the **latest** variant: `arguments={"seed": 42, "steps": 12}`,
+   `note="steps=12\nrepeat of variant 3"`. Then `get_job` on it.
+2. Go back to an earlier variant: `arguments={"seed": 42, "steps": 8}`,
+   `note="steps=8\nback to variant 2"`. Then `get_job` on it.
+3. Control: `arguments={"seed": 43, "steps": 8}`, `note="steps=8 seed=43"`. Then `get_job` on it.
 4. `list_jobs(workspace="regression-sweep")`.
 expected:
-- Call 1 completes (succeeded, not failed or refused).
-- Call 2 marks its step `reused` (`"reused": true`, as the guide's Runs section says), and reports the
-  earlier `steps=8` run's file rather than a new one.
+- All three complete (succeeded, not failed or refused).
+- Call 1: when its `device` is the same as C-F468's steps=12 job's (always so on a one-card server),
+  its pipeline step is marked `reused` (`"reused": true`) and reports the steps=12 variant's file,
+  not a new one. On a different card it may re-render, which the guide says is expected: then
+  note the two devices, and the case is not a finding for that.
+- Call 2 is **not** reused: steps=12 ran after variant 2, so it renders a new image, in a new file
+  distinct from variant 2's.
 - Call 3, a different seed, is **not** reused: it renders a new image.
-- Call 4 lists five jobs, and the repeat's note first line is `steps=8`.
-It is a **finding** if the repeat fails, re-renders without `reused`, or reports a file other than
-variant 2's; or if the different-seed control is marked `reused`.
+- Call 4 lists six jobs, newest first; the first lines of the three new notes are `steps=8`,
+  `steps=8` and `steps=12`.
+It is a **finding** if any of the three fails; if call 1 shares variant 3's device but re-renders,
+isn't marked `reused`, or reports a file other than variant 3's; or if call 2 or call 3 is marked
+`reused` or returns an earlier run's file.
 cleanup: at the end of C-F470.
 metrics: none.
 
