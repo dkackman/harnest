@@ -12843,7 +12843,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F467 — the workspaces guide serves "Running a sweep", and every tool it names exists
-pending: #890
 source: tester, spec for #890 from #872's plan v1, point 5 and the `cost` check updated for plan v2 (claude-opus-5-5 via anthropic)
 Free; no run.
 1. `get_guide("workspaces")` (the index).
@@ -12887,7 +12886,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F468 — following "Running a sweep" literally: three variants, three noted jobs, one seed
-pending: #890
 source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
 C-F469 and C-F470 run on this case's workspace and runs: do them straight after, before cleanup.
 Setup, following C-F467's section step by step. `templates/text-to-image` (SD 1.5, ungated) exposes
@@ -12926,7 +12924,6 @@ cleanup: at the end of C-F470.
 metrics: none.
 
 ### C-F469 — a sweep variant repeating the latest one is `reused`; going back to an earlier one re-renders
-pending: #890
 source: tester, spec for #890 from #872's plan v1, amended for plan v2 (Don approved the amendment on #872, 2026-10-14) (claude-opus-5-5 via anthropic)
 Runs on C-F468's workspace and jobs, straight after C-F468, with no other job on the server in
 between (the step cache keeps only the latest run of each step, per worker; a restart empties it).
@@ -12957,7 +12954,6 @@ cleanup: at the end of C-F470.
 metrics: none.
 
 ### C-F470 — a sweep assessment in the guide's note form reads back in full, its first line in listings
-pending: #890
 source: tester, spec for #890 from #872's plan v1 (claude-opus-5-5 via anthropic)
 Runs on C-F468's workspace and outputs. Below, `F12` is the steps=12 variant's gallery name.
 1. `set_note(target=F12, workspace="regression-sweep", note=A)`, where A is
