@@ -11823,66 +11823,6 @@ truncated skill fails it here.
 cleanup: none.
 metrics: none.
 
-### C-F409 — the keyframe+audio template variant is listed, and validates with its defaults and with a first and last frame
-pending: #879
-source: tester, spec for #879 from #852's plan v0 (claude-opus-5-5 via anthropic)
-Free. Built only if #877's verdict is *holds*. Call the variant V: the template #879's hand-off names, which the
-`minimax-h3` skill line from C-F408 also names. The case is retired if #879 closes as not planned.
-1. `list_workflows(shape=<V's shape>, traits="has-audio")`, then `get_workflow(V, variables_only=true)`.
-2. `validate_workflow(name=V)` with no arguments.
-3. `validate_workflow(name=V, arguments=...)` with the keyframe variable(s) set to `asset:qa-cast/priya-portrait.jpg`:
-   a first frame alone, then first and last.
-expected:
-- 1: V is listed with a `summary`, its `traits` include `has-audio` and `image-conditioned`, and the summary says it
-  holds a frame while lip-syncing to a song. Its variables include a song or audio input and a keyframe input for the
-  first frame, with the last frame optional.
-- 2: `valid: true`, `checked_arguments` covering the defaults, and a `plan` whose estimate has a stated `basis`.
-- 3: both `valid: true`. The first+last arm either shows a second image reference in `plan` or its `steps` count, or
-  says how the last frame is used.
-It is a **finding** if V isn't listed, its defaults don't validate, or it has no way to pass a keyframe.
-cleanup: none (no jobs).
-metrics: none.
-
-### C-F410 — the keyframe+audio variant refuses bad keyframe and frame arguments at validate, for free
-pending: #879
-source: tester, spec for #879 from #852's plan v0 (claude-opus-5-5 via anthropic)
-Free. V as in C-F409.
-1. `validate_workflow(name=V, arguments={<first-frame variable>: "asset:no-such-keyframe.png"})`.
-2. The same for the last-frame variable, if V has one.
-3. `num_frames: 130` (not 17n+5), then `num_frames: 362` (above 345), then `num_frames: 345`. If V is list-driven
-   like `music-video`, pass these values in one entry's `num_frames`.
-4. `width: 970`.
-5. Omit the keyframe (pass null, or leave it unset if its default is null).
-expected:
-- 1 and 2: `valid: false`, with an error at `arguments.<that variable>` naming the missing asset.
-- 3: 130 and 362 are refused, or snapped with a warning naming the value used, the same way V's parent template
-  treats them (`music-video` refuses; `reference-to-video` snaps up). 345 is accepted.
-- 4: refused, naming the multiple of 32.
-- 5: either valid, with the variant falling back to an unpinned shot (the `plan` or a warning says so), or refused
-  with an error naming the keyframe variable as required. Silently running unpinned isn't acceptable.
-It is a **finding** if a missing keyframe asset validates, or if any bad value reaches a run.
-cleanup: none (no jobs).
-metrics: none.
-
-### C-F411 — one seeded run of the keyframe+audio variant opens on its keyframe and carries the song
-pending: #879
-source: tester, spec for #879 from #852's plan v0 (claude-opus-5-5 via anthropic)
-GPU: one H3 run at V's defaults (one entry, if list-driven), seed 42. Quote `plan.estimate` before running.
-Keyframe: `asset:qa-cast/priya-portrait.jpg`. Song: V's default, or a 124-frame slice of `asset:qa-cast/ep15-song.mp3`
-if V needs one supplied.
-1. Validate, quote, then `run_workflow(name=V, arguments={..., "seed": 42}, acknowledged_cost=<plan>, wait_seconds=55,
-   note="C-F411 keyframe+audio")`. `wait_for_job` until done, then `get_job`.
-2. `get_gallery_metadata` on the final video. Run `get_output_frames` at frame 0 and at the last frame, then
-   `get_output_frames` on the keyframe.
-expected:
-- The job succeeds. The final file has video and audio, at 24 fps, and its length is the requested cut, within one
-  frame.
-- Frame 0 shows the keyframe's subject and framing, as the recipe promises.
-It is a **finding** if the run fails, the output has no audio, or frame 0 isn't the keyframe's composition. How
-well it lip-syncs is C-F407's question, judged once, not on every run.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
 ### C-F412 — `match_levels` warns when an input that is itself a join keeps an inner level step
 source: tester, verified in #876 (claude-opus-5-5 via anthropic)
 Task-only, a few seconds. S = `asset:qa-cast/ep62-shot2-deflect.mp4`. One inline workflow per run, each with these
