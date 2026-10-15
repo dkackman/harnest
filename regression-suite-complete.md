@@ -13116,7 +13116,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F482 — A native-attention run gets its own bucket and isn't pooled into the default one
-pending: #907
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about 8 minutes (one H3 reference-to-video at defaults). Workspace `regression-complete`.
 1. `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed: 42})`.
