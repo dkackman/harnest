@@ -13729,4 +13729,27 @@ cleanup: `delete_workflow("c-f502-b4", acknowledged_cost=true)` and
 `delete_workflow("c-f502-b3", acknowledged_cost=true)`.
 metrics: none.
 
+### C-F503 — `check-script` flags a line spoken twice in its shot as `unscripted_speech`, and stays quiet when both takes are scripted
+source: tester, verified in #920 (claude-opus-5-5 via anthropic)
+Cheap (Whisper, about 10 s per run). Workspace `regression-complete`. The input is the shared asset
+`asset:qa-cast/ep198-episode.mp4`: two 124-frame H3 shots, `shot@freezer` (0–5.167 s) and
+`shot@air`. In the first shot, "Who left the freezer open?" is spoken twice. If the asset is gone,
+record the case as not run. That is not a pass.
+1. `run_workflow(workflow_path="templates/check-script", acknowledged_cost=true, wait_seconds=55,
+   arguments={"input_audio":"asset:qa-cast/ep198-episode.mp4", "lines":[{"text":"Who left the
+   freezer open?","shot":"shot@freezer"},{"text":"The freezer wanted air.","shot":"shot@air"}]})`,
+   then `get_output_text` on its JSON.
+2. The same call, with the freezer line listed twice (lines `[freezer, freezer, air]`).
+expected:
+- Run 1: `findings` holds exactly one `unscripted_speech` finding, severity `warn`, `value` 5, and
+  `at` with `line: null`, `shot: "shot@freezer"`, `repeats_line: true`, `seconds` ≈0.44 and
+  `end` ≈1.58. `unmatched` lists those same 5 words, and `rules_applied` includes
+  `unscripted_speech`.
+- Run 2: both freezer lines match with similarity ≥0.6. `unmatched` is `[]`, `findings` is `[]`,
+  and `unscripted_speech` is still in `rules_applied`.
+It is a **finding** if run 1 has no `unscripted_speech` finding (the #920 regression), names
+another shot, or has `repeats_line` false, or if run 2 reports any finding.
+cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset.
+metrics: none.
+
 ## Performance
