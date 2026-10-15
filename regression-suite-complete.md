@@ -13202,7 +13202,7 @@ Setup: take `get_workflow("templates/text-to-image")`, set `variables.seed` to 4
 Save W as `c-f486-t2i`. Make W2: W with the pipeline step's `offload` set to a value its schema
 accepts that W doesn't use (`get_schema` names the values; e.g. `"model"` if W has none).
 1. `validate_workflow(name="c-f486-t2i")`. Record `plan.host_memory` (absent, or `runs` R0).
-2. `run_workflow(workflow="c-f486-t2i", acknowledged_cost=<plan>, wait_seconds=55, note="C-F486
+2. `run_workflow(name="c-f486-t2i", acknowledged_cost=<plan>, wait_seconds=55, note="C-F486
    host-memory history run")` → J1, which should succeed. From `get_job_events(J1)`, take P, the
    largest `host_memory_job_peak_rss_mb` over its `memory` events. `get_job(J1)` carries no
    `waiting_for`, and its events have no `queue_wait` (stage A gates nothing).
@@ -13310,7 +13310,7 @@ Setup: W is `get_workflow("templates/text-to-image")` with `variables.seed` 42 a
 to a value that, by C-F489's call 1, no run on this box has used. Save it as `c-f490-t2i`.
 1. `validate_workflow(name="c-f490-t2i")`. Expect no `host_memory`; if there is one, pick another
    offload value.
-2. `run_workflow(workflow="c-f490-t2i", acknowledged_cost=<plan>)` → J1. Poll `get_job(J1)` until its
+2. `run_workflow(name="c-f490-t2i", acknowledged_cost=<plan>)` → J1. Poll `get_job(J1)` until its
    events show the denoise phase, then `cancel_job(J1)`. Its final status should be `cancelled`.
 3. Repeat call 1.
 4. Failed arm (optional): if this run knows a way to make the same definition fail at run time
