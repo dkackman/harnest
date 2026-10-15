@@ -13042,7 +13042,6 @@ source: tester, verified in #899 (run over MCP 2026-10-14 on mini-ai (mps) `deve
 downloads `88520ca93536` and `c441b6c74fa3`, model `claude-opus-5-5` via provider `anthropic`).
 
 ### C-F477 — Scaling refusals and edges: a bad value is refused or left `unknown`, never priced
-pending: #906
 source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free. Each call is `validate_workflow` on
 `templates/minimax/reference-to-video` with `seed: 42`.
@@ -13063,7 +13062,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F480 — With a real run at a non-default rung, the estimate tempers between observed and the scaled figure
-pending: #906
 source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about a minute (SD1.5, 100 steps). Workspace `regression-complete`.
 Setup: take `get_workflow("templates/text-to-image")` and make these changes:
@@ -13617,7 +13615,6 @@ then `delete_workflow("c-f499-t2i", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F500 — On a freshly saved copy, `plan.estimate` scales the catalog figure by steps, canvas and frames (`basis: "derived"`)
-pending: #906
 source: tester, spec for #906 from #866's plan v4 (claude-opus-5-5 via anthropic)
 Free (`save_workflow` writes, nothing runs). Workspace `regression-complete`. Run history is shared
 across the whole server, so the template itself is priced from its 33 observed runs. This case
@@ -13667,7 +13664,6 @@ cleanup: `delete_workflow("c-f500-ref2v", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F501 — A saved copy of `dialogue-short` is ≈21 min at its own canvas and scales with the shots' total frames
-pending: #906
 source: tester, spec for #906 from #866's plan v4 (claude-opus-5-5 via anthropic)
 Free (`save_workflow` writes, nothing runs). Workspace `regression-complete`.
 1. Take `get_workflow("templates/minimax/dialogue-short")`, drop `observed`, and save it unchanged
@@ -13698,7 +13694,6 @@ cleanup: `delete_workflow("c-f501-dialogue", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F502 — The server's scaling ratios reproduce #866's 30% accuracy pairs
-pending: #906
 source: tester, spec for #906 from #866's plan v4 (claude-opus-5-5 via anthropic)
 Free (`save_workflow` writes, nothing runs). Workspace `regression-complete`. The plan makes the
 30% bar a unit test on the scaling function. That test is the implementer's, and the #906 hand-off
