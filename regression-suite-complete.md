@@ -13745,4 +13745,20 @@ another shot, or has `repeats_line` false, or if run 2 reports any finding.
 cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset.
 metrics: none.
 
+### C-F504 — `validate_workflow` warns on an unbraced `weights_dtype` name, with the braced spelling, and is quiet once braced
+source: tester, verified in #926 (claude-opus-5-5 via anthropic)
+Free (validate only, nothing runs). Workspace `regression-complete`.
+1. `validate_workflow(workflow_path="templates/minimax/reference-to-video",
+   arguments={"seed": 42, "weights_dtype": "int8"})`.
+2. The same call with `"weights_dtype": "{int8}"`.
+expected:
+- Call 1: `valid: true`, a non-null `plan`, and a warning for each `weights_dtype` use site under
+  `steps[0].pipeline.configuration.load_components.quantization_config` (`transformer_ref` and
+  `text_encoder`). Each names `'int8'` as not a diffusers type and gives the braced spelling `"{int8}"`.
+- Call 2: `valid: true`, and no warning mentions `weights_dtype` or braces.
+It is a **finding** if call 1 has no such warning (the #926 regression: the run fails later with
+`module diffusers has no attribute int8`), if either call is refused, or if call 2 warns.
+cleanup: none.
+metrics: none.
+
 ## Performance
