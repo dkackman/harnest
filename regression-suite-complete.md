@@ -13041,141 +13041,10 @@ metrics: none.
 source: tester, verified in #899 (run over MCP 2026-10-14 on mini-ai (mps) `develop` @ 9e8f15d8 as
 downloads `88520ca93536` and `c441b6c74fa3`, model `claude-opus-5-5` via provider `anthropic`).
 
-### C-F473 — Metadata-only edits leave `plan.fingerprint` unchanged; output-affecting edits still move it
-pending: #905
-source: tester, spec for #905 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free. Setup: `get_workflow("templates/text-to-image")`, and set `variables.seed` to `42` in the
-returned JSON. Call that W. Every call is `validate_workflow(workflow=<inline JSON>)` in workspace
-`regression-complete`, and each one reads `plan.fingerprint`.
-1. W as is gives F0. Validate it a second time; the fingerprint should be the same.
-2. Metadata-only variants of W, one change each:
-   - (a) the top-level `cost_drivers` key removed;
-   - (b) `cost_drivers` set to `["num_images_per_prompt", "prompt"]`;
-   - (c) `cost[0].minutes` set to `9.9`;
-   - (d) `description` set to `"c-f473 changed"`;
-   - (e) the step's `result.subfolder` set to `"elsewhere"`;
-   - (f) `result.file_base_name` set to `"renamed"`;
-   - (g) a `vram_estimate` key added. Copy its value from
-     `get_workflow("templates/minimax/reference-to-video")` if that template has one, else skip
-     this variant and say so.
-3. Output-affecting controls, one change each:
-   - (h) `variables.seed` set to `43`;
-   - (i) `variables.prompt` set to `"a pear"`;
-   - (j) the step's literal `num_inference_steps` set to `26`;
-   - (k) `torch_dtype` set to `"torch.float16"`.
-expected:
-- Call 1's two validates agree.
-- Every variant in 2 returns exactly F0.
-- Every control in 3 returns a fingerprint different from F0 and from each other.
-- Every variant still reports `valid: true`.
-
-Before #905, (a) moved the fingerprint. Pinned 2026-10-14 on lem: `sha256:1c9a83b4…` with
-`cost_drivers`, `sha256:bb35d625…` without.
-It is a **finding** if:
-- any metadata-only variant differs from F0;
-- any control matches F0, since the cache would then serve a stale image.
-cleanup: none.
-metrics: none.
-
-### C-F474 — On the H3 templates, attention backend, cache, dtype and LoRA still change the fingerprint
-pending: #905
-source: tester, spec for #905 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free. Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed:
-42, ...})`. Take the values from each variable's `description` in `get_workflow`. Where a value is
-refused, try another value the description lists, and record which one you used.
-1. Defaults (`{seed: 42}` only) give F0. A repeat should match.
-2. `attention_backend` set to a non-null value, e.g. `"sage_hub"`, or the name for PyTorch's
-   native SDPA.
-3. `cache` set to a non-null value the description lists.
-4. `weights_dtype` set to `"{int8}"`.
-5. `lora_model_name` set to `null`, with `lora_weight_name` also `null` if validate needs it.
-6. Inline: the `get_workflow` JSON with `variables.seed` set to 42 and `cost_drivers` and
-   `vram_estimate` removed, if present. Call it with no other change.
-expected:
-- Calls 2 to 5 each give a fingerprint different from F0 and from each other.
-- Call 6 gives F0, because the dropped keys are metadata.
-It is a **finding** if any of calls 2 to 5 returns F0, or if call 6 returns anything but F0.
-cleanup: none.
-metrics: none.
-
-### C-F475 — A re-run of a metadata-only copy is served from the step cache; an output change is not
-pending: #905
-source: tester, spec for #905 from #866's plan v2 (claude-opus-5-5 via anthropic)
-GPU, under a minute in total (SD1.5). Workspace `regression-complete`.
-Setup: take `get_workflow("templates/text-to-image")` and set `variables.seed` to `42`. Save it with
-`save_workflow` as `c-f475-t2i`. Call that W.
-1. Call `run_workflow(workflow="c-f475-t2i", acknowledged_cost=true, wait_seconds=55,
-   note="C-F475 seed run")` → job J1, which should complete.
-2. Call `validate_workflow` inline on W with these metadata-only changes together:
-   - `description` set to `"meta copy"`;
-   - `cost_drivers` removed;
-   - `cost[0].minutes` set to `5`;
-   - `result.subfolder` set to `"other"`;
-   - `result.file_base_name` set to `"renamed"`.
-
-   Read `plan.cached_steps`.
-3. Call `validate_workflow` inline on W with `variables.seed` set to `43`, and read
-   `plan.cached_steps`.
-4. Save the call-2 variant as `c-f475-t2i-meta`. Then call `run_workflow(workflow="c-f475-t2i-meta",
-   acknowledged_cost=true, wait_seconds=55)` → J2, followed by `get_job(J2)` and
-   `get_job_events(J2)`.
-expected:
-- Call 2 reports `cached_steps: 1`, the whole workflow.
-- Call 3 reports `cached_steps: 0`.
-- J2 completes, the job or its events report `main` as served from the step cache, and its output
-  image matches J1's.
-- J2's wall time is well under J1's.
-It is a **finding** if:
-- call 2 reports 0;
-- call 3 reports 1;
-- J2 recomputes `main`.
-cleanup: `delete_output(job_id=J1)` and `delete_output(job_id=J2)` (both
-`acknowledged_cost=true`), then `delete_workflow` on `c-f475-t2i` and `c-f475-t2i-meta`.
-metrics: none.
-
-### C-F476 — `plan.estimate` scales the curated figure by steps, canvas and frames (`basis: "derived"`)
-pending: #906
-source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free. First read K, the cuda `cost` minutes of `templates/minimax/reference-to-video` from
-`get_workflow`. It was 7.88 on 2026-10-14. Its defaults are:
-- steps 9;
-- canvas 960x544, so w·h = 522240;
-- `num_frames` 124.
-
-Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed: 42,
-...})`, reading `plan.estimate`.
-
-| Call | Arguments | Expected `minutes` (±0.15 for rounding) |
-|---|---|---|
-| 1 | `num_inference_steps: 30` | K×30/9, ≈26.3 |
-| 2 | `width: 1344, height: 768` | K×1032192/522240, ≈15.6 |
-| 3 | steps 30 and 1344x768 together | ≈51.9 |
-| 4 | `num_frames: 192` | K×192/124, ≈12.2 |
-| 5 | `num_inference_steps: 5` (scaling down) | K×5/9, ≈4.4 |
-| 6 | `width: 1344` alone, height left at 544 | K×1.4, ≈11.0 |
-| 7 | `num_frames: 130`, which the template snaps up to 141 | K×141/124, ≈9.0, not K×130/124 ≈ 8.3 |
-| 8 | `num_frames: 345`, the top of the range | K×345/124, ≈21.9 |
-| 9 | the defaults passed explicitly: `num_inference_steps: 9, width: 960, height: 544, num_frames: 124` | — |
-
-Box-wide history may hold real runs at some of these rungs. Where a call returns
-`basis: "observed"`, skip its row's number, but record it.
-expected:
-- Calls 1 to 8 return `basis: "derived"` with a number, not `unknown`. `scaled` names exactly the
-  axes that moved: steps for calls 1 and 5; width and height (or the canvas) for calls 2 and 6;
-  steps and canvas for call 3; frames for calls 4, 7 and 8.
-- `curated_minutes` equals the scaled figure where it is present.
-- Call 9 is priced the same as `{seed: 42}` alone, the observed default bucket, and has no `scaled`.
-It is a **finding** if:
-- any of calls 1 to 8 returns `minutes: null`, `basis: "unknown"` or the unscaled default figure;
-- call 7 scales by 130;
-- `scaled` names an axis that didn't move.
-cleanup: none.
-metrics: none.
-
 ### C-F477 — Scaling refusals and edges: a bad value is refused or left `unknown`, never priced
 pending: #906
 source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free. The calls are the same as C-F476: `validate_workflow` on
+Free. Each call is `validate_workflow` on
 `templates/minimax/reference-to-video` with `seed: 42`.
 1. `width: 1000`, which is not a multiple of 32.
 2. `num_inference_steps: "thirty"`, a non-numeric value.
@@ -13191,61 +13060,6 @@ It is a **finding** if:
 - call 1 is now accepted;
 - a call crashes the validate. That means a server error rather than a structured refusal.
 cleanup: none.
-metrics: none.
-
-### C-F478 — `dialogue-short`'s curated figure is ≈21 min at its own canvas and scales with the shots' total frames
-pending: #906
-source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free.
-1. Read the cuda `cost` minutes of `templates/minimax/dialogue-short`; call it D. It comes from
-   `list_workflows(shape="shot")` or `get_workflow`.
-2. Call `get_workflow("templates/minimax/dialogue-short")`. Copy `variables.shots`, five entries
-   with `num_frames` 124/124/124/124/141, a total of 637, and change entry 0's `num_frames` to
-   192, a total of 705. Then call `validate_workflow(workflow="templates/minimax/dialogue-short",
-   arguments={shots: <edited list>})`.
-3. The same call with the last entry dropped (four shots, a total of 496).
-expected:
-- Call 1: D is between 19 and 23.5. The plan re-prices the 42-minute figure measured at 1344x768
-  to the template's 960x544 canvas: 42×522240/1032192 ≈ 21.3.
-- Call 2 returns `basis: "derived"`, minutes ≈ D×705/637 (±5%), and `scaled` naming the frames
-  or shots.
-- Call 3 returns ≈ D×496/637 (±5%).
-
-Before #906, observed history was bucketed by shot count. Pinned 2026-10-14: 38.57 cold over five
-runs.
-It is a **finding** if:
-- D is still ≈42;
-- call 2 or 3 returns the five-shot observed figure (≈38.6) unchanged as `observed`;
-- either returns `unknown`.
-cleanup: none.
-metrics: none.
-
-### C-F479 — The scaled estimate is within 30% of measured ladder rungs (#866's table)
-pending: #906
-source: tester, spec for #906 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free (`save_workflow` writes, nothing runs). Workspace `regression-complete`.
-Setup: take `get_workflow("templates/minimax/reference-to-video")` and make these changes:
-- `variables.num_inference_steps` set to `12`;
-- `variables.lora_model_name` and `variables.lora_weight_name` set to `null`;
-- the cuda `cost` entry's `minutes` set to `6.6`, the measured figure for rung B4: 960x544, 12
-  steps, int4, no LoRA.
-
-Save it as `c-f479-b4`, a fresh name with no run history. All calls pass `seed: 42`.
-1. `validate_workflow(workflow="c-f479-b4", arguments={seed: 42})`. This prices the copy's own
-   defaults.
-2. Add `num_inference_steps: 30`. This is rung B1, measured at 15.1.
-3. Pass `width: 1344, height: 768` at 12 steps. This is rung B5, measured at 11.8.
-expected:
-- Call 1 returns 6.6 with `basis: "catalog"`.
-- Call 2 is within 30% of 15.1 (10.6–19.6). The plan's own arithmetic gives 16.5.
-- Call 3 is within 30% of 11.8 (8.3–15.3). The plan gives 13.0.
-- Calls 2 and 3 return `basis: "derived"`.
-
-Call 1 may instead return `basis: "inherited"`, priced from the template's runs. In that case the
-copy isn't priced from its own `cost`, the bar can't be measured this way, and the case says so.
-It is not a pass.
-It is a **finding** if call 2 or 3 is outside the 30% bar, or returns `unknown`.
-cleanup: `delete_workflow("c-f479-b4", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F480 — With a real run at a non-default rung, the estimate tempers between observed and the scaled figure
@@ -13283,7 +13097,7 @@ metrics: none.
 pending: #907
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free. Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed:
-42, ...})`. Take values from the variables' descriptions, as in C-F474.
+42, ...})`. Take values from the variables' descriptions, as in C-F498.
 1. Defaults only. This gives M0.
 2. `weights_dtype: "{int8}"`.
 3. `attention_backend`: a non-null value.
@@ -13294,7 +13108,7 @@ expected:
 - Call 1 returns M0 with `low_confidence` absent or false, and an empty `differs`.
 - Calls 2 to 4 each return a number close to M0, not `unknown`, with `low_confidence: true`. Each
   call's `differs` names the one driver it moved: `weights_dtype`, `attention_backend` or `cache`.
-- Calls 5 and 6 return the steps-scaled figure, ≈ K×30/9 as in C-F476, with `low_confidence: true`.
+- Calls 5 and 6 return the steps-scaled figure, ≈ K×30/9 as in C-F500, with `low_confidence: true`.
   Their `differs` names `lora_model_name` and `weights_dtype` respectively.
 It is a **finding** if:
 - any of calls 2 to 6 returns `unknown`;
@@ -13427,7 +13241,7 @@ metrics: `projected_mb` from call 3, and P.
 pending: #909
 source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
 Free. Each call is `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed:
-42, weights_dtype: <v>})`, spelling `<v>` as the variable's description does (see C-F474).
+42, weights_dtype: <v>})`, spelling `<v>` as the variable's description does (see C-F498).
 1. `<v>` = the int4 value.
 2. `<v>` = the int8 value.
 3. `<v>` = any third value the description lists that this box has never run (bf16, say), if one

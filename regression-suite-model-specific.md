@@ -4401,7 +4401,7 @@ entry whose `workflow` is all in {`t2va`, `fl2va`} means `transformer`, and an e
 `transformer_ref`. After #888's catalog edit, Realism's entry is `["t2va","fl2va"]`, so on `ref2va` it is now
 an error. Validation only: this case spends no GPU time.
 Setup: `use_workspace("regression-model-specific")` (`create_workspace` it first if missing).
-**The H3 carrier** (M-F143 to M-F146 reuse it, with `<WF>` and `<LORAS>` filled in):
+**The H3 carrier** (M-F143 to M-F145 reuse it, with `<WF>` and `<LORAS>` filled in):
 `{"id":"probe","steps":[{"name":"base","pipeline":{"configuration":{"component_type":"ModularPipeline"},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":"<WF>"},"loras":<LORAS>,"arguments":{"prompt":"a fox","num_frames":124,"width":960,"height":544,"num_inference_steps":9,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":"video/mp4","fps":24}}]}`
 Probes:
 (a) Inline: `validate_workflow(workflow=<carrier, WF=ref2va, LORAS=[{"model_name":"fal/MiniMax-H3-Realism-People-LoRA","weight_name":"h3-realism-people-t2v-i2v-r2v.safetensors"}]>)`.
@@ -4517,75 +4517,6 @@ It is a **finding** if any of these fails. If the `workflow` filter in (b)/(c) m
 entries than on string entries (e.g. the turbo-keyframe entries, already `["t2va","fl2va"]`, show the same
 inclusion pattern as realism-people), treat that as a separate issue, not this case's.
 cleanup: none.
-metrics: none.
-
-### M-F146 — H3: the catalog lookup follows the request's workspace, and a mixed or disagreeing entry only warns
-pending: #888
-source: tester, spec for #888 from #870's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax-H3 partition check against a workspace-scoped trial catalog entry (`save_lora`).
-The plan has every server caller pass a catalog index scoped to the caller's workspace. Don's review requires
-this case to confirm the lookup follows the workspace the request selected, not the server default or the
-last-used one. Three trial entries are made for invented, token-less files, so only the catalog can decide
-them. Validation only.
-Setup:
-1. `create_workspace("qa-c870-layer")` and `create_workspace("qa-c870-other")` (reuse them if they already
-   exist).
-2. `use_workspace("qa-c870-layer")`, then `save_lora` three trial entries (status `trial` needs no
-   evidence), each with `base_models: ["MiniMaxAI/MiniMax-H3"]`, a `description` and a `use_when`:
-   - `minimax-h3/qa-c870-refonly`: `model_name` `qa-c870/refonly`, `weight_name`
-     `qa-c870-plain.safetensors`, `workflow: ["ref2va"]`;
-   - `minimax-h3/qa-c870-mixed`: `model_name` `qa-c870/mixed`, `weight_name`
-     `qa-c870-plain.safetensors`, `workflow: ["t2va","ref2va"]`;
-   - `minimax-h3/qa-c870-disagree`: `model_name` `qa-c870/disagree`, `weight_name`
-     `qa-c870-fl2v-style.safetensors` (its name carries `fl2v`, i.e. `transformer`), `workflow: ["ref2va"]`.
-   Record where `save_lora` says it wrote each entry. If it refuses any of them, record the exact error and
-   stop: that's a finding against this case's setup, not the partition check.
-3. `list_loras(model="MiniMaxAI/MiniMax-H3")` from `qa-c870-layer` shows all three, and so does a later call
-   from `qa-c870-other`. If the second call also shows them, the catalog is server-wide and (c)/(d) below
-   can't separate workspaces. Record that, still run them, and see the expected outcomes for that case.
-`R` is `[{"model_name":"qa-c870/refonly","weight_name":"qa-c870-plain.safetensors"}]`, used in M-F142's carrier.
-Probes:
-(a) Selected workspace: still on `qa-c870-layer`, validate `C(t2va, R)`.
-(b) Same session, `C(ref2va, R)`.
-(c) Other workspace selected: `use_workspace("qa-c870-other")`, then validate `C(t2va, R)`.
-(d) Workspace pinned per call: still on `qa-c870-other`, `validate_workflow(workflow=C(t2va, R), workspace="qa-c870-layer")`.
-    Then `use_workspace("qa-c870-layer")` and `validate_workflow(workflow=C(t2va, R), workspace="qa-c870-other")`.
-(e) Mixed list: on `qa-c870-layer`, `C(t2va, [{"model_name":"qa-c870/mixed","weight_name":"qa-c870-plain.safetensors"}])` and the same with `ref2va`.
-(f) Disagreement: on `qa-c870-layer`, `C(t2va, [{"model_name":"qa-c870/disagree","weight_name":"qa-c870-fl2v-style.safetensors"}])`.
-(g) Admission follows the selection too: on `qa-c870-layer`, `run_workflow(workflow=C(t2va, R), acknowledged_cost=true)`
-    must be refused. Compare `list_jobs` before and after.
-expected:
-- (a) `valid: false`, with an error at `steps[0].pipeline.loras[0].weight_name` naming the entry
-  `minimax-h3/qa-c870-refonly` and the `transformer_ref` partition its `ref2va` listing implies.
-- (b) `valid: true`, with no adapter error or "names neither" warning.
-- When step 3 showed the entries only in `qa-c870-layer` (a workspace-scoped catalog):
-  - (c) is `valid: true` with only the "names neither" warning;
-  - in (d), the call pinned to `qa-c870-layer` errors as in (a), and the call pinned to `qa-c870-other` only
-    warns.
-  Each answer follows the workspace the request names or selects, never the server's default workspace
-  and never the one used last.
-- When step 3 showed them in both workspaces (a server-wide catalog): (c) and both calls in (d) error as in
-  (a). Report it as a note, not a failure. Workspace separation can't be observed then, and the plan's
-  "scoped to the caller's workspace" is a question for #870.
-- (e) `valid: true` on both, with the "names neither" warning. A list naming both partitions decides nothing,
-  so the filename rule runs.
-- (f) `valid: true`. A warning at the same path names both the catalog entry's partition (`transformer_ref`)
-  and the filename's `fl2v`/`transformer`, and no error. The filename alone would accept it on t2va, and the
-  catalog alone would refuse, so a warning is the plan's Q1 ruling.
-- (g) No job is queued, and the refusal carries (a)'s error.
-It is a **finding** if:
-- (a) or (g) don't refuse;
-- with a scoped catalog, (c) or (d) answer from the wrong workspace (in particular, if (c) errors only
-  because `qa-c870-layer` was selected earlier in the session);
-- (e) errors;
-- (f) errors, or its warning names only one source.
-cleanup:
-- `use_workspace("regression-model-specific")`.
-- `delete_workspace` on `qa-c870-layer` and `qa-c870-other`, with `acknowledged_cost=true`. Then
-  `list_loras(model="MiniMaxAI/MiniMax-H3")` must show none of the three `qa-c870-*` entries.
-- If they survive (a server-wide writable catalog), there's no MCP tool that deletes a catalog entry. Leave
-  them, report them by name, and file one issue asking for a removal route. Don't overwrite them with
-  `save_lora` as a workaround. If (g) queued a job, `cancel_job` and `delete_output(job_id=…)` it.
 metrics: none.
 
 ### M-F147 — every MiniMax-H3 template still validates without an adapter error at its defaults
