@@ -11868,7 +11868,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F414 — the H3 quality-ramp section states both paths, every rung's argument set, and the rules around them
-pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
 Free, reading only. Load the `dw:minimax-h3` skill (`Skill` tool), follow its pointer to the quality-and-speed
 reference, and read its H3 quality-ramp section. Check every template name it gives with `list_workflows(shape="shot")`
@@ -11908,7 +11907,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F415 — the TV path's L1 draft and L7 final validate clean on `reference-to-video` and differ only in `weights_dtype`
-pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
 Free. Take L1 and L7 exactly as C-F414's section writes them, with `subject="asset:qa-cast/priya-portrait.jpg"`,
 `voice="asset:qa-cast/priya-voice.wav"`, and one fixed `seed` and `prompt` for both.
@@ -11925,7 +11923,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F416 — the cinema path's B3 draft and L5 final validate clean on `dialogue-short` and differ only in steps
-pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
 Free. Take B3 and L5 exactly as C-F414's section writes them, with
 `character_a_voice="asset:qa-cast/priya-voice.wav"`, `character_b_voice="asset:qa-cast/priya-voice.wav"`, and one
@@ -11941,7 +11938,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F417 — P1's cache and `sage_hub` are plain arguments on `dialogue-short`, no saved copy needed
-pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
 Free. Work in the suite workspace.
 1. `validate_workflow(name="templates/minimax/dialogue-short", arguments=<L5 from C-F416> + {"attention_backend": "sage_hub"})`.
@@ -11956,7 +11952,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F418 — dropping the LoRA warns `lora_disabled`, and the section's base rung names the base schedule
-pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
 Free. On `templates/minimax/dialogue-short`, with the voices from C-F416, run `validate_workflow` three times with
 `lora_model_name: null`, `video_shift` 12, `audio_shift` 3, and `num_inference_steps` 9, 12 and 30 in turn.
@@ -11972,7 +11967,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F419 — the ramp's canvas boundary: 1344x768 passes, a width that isn't a multiple of 32 is refused, and no 8-step base rung
-pending: #882
 source: tester, spec for #882 from #862's plan v2 (claude-opus-5-5 via anthropic)
 Free.
 1. `validate_workflow(name="templates/minimax/reference-to-video", arguments=<L1 from C-F415> + {"width": 1340})`.
