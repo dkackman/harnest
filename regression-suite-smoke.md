@@ -2396,6 +2396,23 @@ metrics: none.
 source: tester, verified in #917 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 3fbe4ba6` on `lem` (cuda).
 
+### S-F142 — an image's `media` is its measured size, and `include_workflow=false` drops the embedded workflow
+Asking "how big is this image" must not take reading the pipeline's arguments out of ~20 KB of
+embedded workflow (#922). Read-only, no GPU.
+1. `get_gallery_metadata(name="asset:qa-cast/hal-portrait.jpg", include_workflow=false)`.
+2. The same call without `include_workflow`.
+expected:
+- Call 1: `media` is `{kind: "image", width: 768, height: 768, mode: "RGB"}`. `metadata` has
+  `workflow_omitted: true` and no `workflow` key, and still carries `step_name`, `seed` and
+  `arguments`.
+- Call 2: the same `media`, and `metadata.workflow` is present (the default is unchanged).
+It is a **finding** if `media` is null or has no `width`/`height` for an image, or if call 1
+still inlines `metadata.workflow`.
+cleanup: none.
+metrics: none.
+source: tester, verified in #922 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 4a79cb35` on `lem` (cuda).
+
 ## Performance
 
 ### S-P001 — default image generation latency
