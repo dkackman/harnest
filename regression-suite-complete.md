@@ -13574,9 +13574,9 @@ hit (#912).
 
 Setup: take `get_workflow("templates/text-to-image")`, drop `observed`, and set `variables.seed` to
 `42`. Save it with `save_workflow` as `c-f499-t2i`. Call that W0.
-1. Call `run_workflow(workflow="c-f499-t2i", acknowledged_cost=true, wait_seconds=55,
+1. Call `run_workflow(name="c-f499-t2i", acknowledged_cost=true, wait_seconds=55,
    note="C-F499 seed run")` → J1, which should complete. Then call
-   `validate_workflow(workflow="c-f499-t2i")` and read `plan.cached_steps`.
+   `validate_workflow(name="c-f499-t2i")` and read `plan.cached_steps`.
 2. Edit in place: save over `c-f499-t2i`, with these metadata-only changes to W0 together. Call
    the result W1.
    - `description` set to `"c-f499 meta"`;
@@ -13584,11 +13584,11 @@ Setup: take `get_workflow("templates/text-to-image")`, drop `observed`, and set 
    - `cost[0].minutes` set to `5`;
    - a `vram_estimate` key added, as in C-F497 (g).
 
-   Then call `validate_workflow(workflow="c-f499-t2i")` and read `plan.cached_steps`.
-3. Call `run_workflow(workflow="c-f499-t2i", acknowledged_cost=true, wait_seconds=55,
+   Then call `validate_workflow(name="c-f499-t2i")` and read `plan.cached_steps`.
+3. Call `run_workflow(name="c-f499-t2i", acknowledged_cost=true, wait_seconds=55,
    note="C-F499 meta re-run")` → J2. Then call `get_job(J2)` and `get_job_events(J2)`.
 4. Output edits. For each one, save W1 with that single change over `c-f499-t2i`, call
-   `validate_workflow(workflow="c-f499-t2i")`, and read `plan.cached_steps`. Then save W1 back
+   `validate_workflow(name="c-f499-t2i")`, and read `plan.cached_steps`. Then save W1 back
    and validate again before the next edit.
    - (a) `variables.seed` set to `43`;
    - (b) `torch_dtype` set to `"torch.float16"`;
