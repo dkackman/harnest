@@ -13093,12 +13093,12 @@ metrics: none.
 
 ### C-F481 — Unscalable drivers off their default keep the figure but flag `low_confidence` and `differs`
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
-Free. Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed:
+Free. Each call is `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed:
 42, ...})`. Take values from the variables' descriptions, as in C-F498.
 1. Defaults only. This gives M0.
 2. `weights_dtype: "{int8}"`.
 3. `attention_backend`: a non-null value.
-4. `cache`: a non-null value.
+4. `cache`: a non-null cache object, e.g. `{"type": "first_block", "threshold": 0.05}` (a string is refused).
 5. `lora_model_name: null`, with `num_inference_steps: 30`.
 6. `weights_dtype: "{int8}"`, with `num_inference_steps: 30`.
 expected:
@@ -13119,7 +13119,7 @@ metrics: none.
 pending: #907
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about 8 minutes (one H3 reference-to-video at defaults). Workspace `regression-complete`.
-1. `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed: 42})`.
+1. `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed: 42})`.
    Record `runs` R and `minutes`.
 2. The same call with `attention_backend` set to the native SDPA value its description names.
    Record the result.
@@ -13130,7 +13130,8 @@ GPU, about 8 minutes (one H3 reference-to-video at defaults). Workspace `regress
 expected:
 - Call 1's repeat still reports `runs: R`, and its minutes are unchanged within rounding.
 - Call 2's repeat now reports `basis: "observed"` with `runs` ≥ 1, priced from J1's own time and
-  without `low_confidence`.
+  tempered toward the catalog figure while the bucket is thin (`low_confidence` may stay set until
+  the bucket fills).
 It is a **finding** if the default bucket's `runs` grows to R+1, or its minutes shift toward J1's
 time.
 cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`.
