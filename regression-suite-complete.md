@@ -13488,7 +13488,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F497 — Metadata, seed and an integral float's spelling leave `plan.fingerprint` unchanged; output edits move it
-pending: #905
 source: tester, spec for #905 from #866's plan v4 (claude-opus-5-5 via anthropic)
 Free. Setup: `get_workflow("templates/text-to-image")`. Drop the `observed` key from the returned
 JSON, and set `variables.seed` to `42`. Call that W. Every call is
@@ -13530,7 +13529,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F498 — H3: inline and by-name agree and metadata copies keep the fingerprint; attention, cache, dtype and LoRA move it
-pending: #905
 source: tester, spec for #905 from #866's plan v4 (claude-opus-5-5 via anthropic)
 Free (`save_workflow` writes, nothing runs). Workspace `regression-complete`. Take each
 variable's values from its `description` in `get_workflow("templates/minimax/reference-to-video")`.
@@ -13567,7 +13565,6 @@ cleanup: `delete_workflow("c-f498-ref2v", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F499 — An in-place metadata edit of a saved workflow is served from the step cache; an output edit misses
-pending: #905
 source: tester, spec for #905 from #866's plan v4 (claude-opus-5-5 via anthropic)
 GPU, under a minute in total (SD1.5, two short runs). Workspace `regression-complete`.
 

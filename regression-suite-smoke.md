@@ -2345,6 +2345,29 @@ source: tester, verified in #904 on 2026-10-14 over MCP as model `claude-opus-5-
 also warned (its transformer has no `enable_cache()`). It is left out because that depends on
 the installed diffusers version.
 
+### S-F140 — a recreated workspace does not inherit the deleted one's job history
+`delete_workspace` used to leave the workspace's jobs in job history. A later workspace with
+the same name then listed them under `list_jobs(workspace=X)` as `historical: true` (#913).
+Each run below is `templates/image-processors`, about 12–40 s, with no inputs. Get the plan
+from `validate_workflow(name="templates/image-processors", workspace="regression-smoke-913")`
+and pass it as `acknowledged_cost`, with `wait_seconds=55`.
+1. `create_workspace("regression-smoke-913")`, run one job in it (`workspace=` pinned), and
+   note its id as J1.
+2. `delete_workspace("regression-smoke-913", acknowledged_cost=true)`.
+3. `create_workspace("regression-smoke-913")` again, then `list_jobs(workspace="regression-smoke-913")`.
+4. Run one job in it (J2), then `list_jobs(workspace="regression-smoke-913")` and `get_job(J1)`.
+expected:
+- Both jobs succeed.
+- Call 3 returns `total: 0`.
+- Call 4's listing has `total: 1`, and that job is J2. `get_job(J1)` errors `Unknown job`.
+It is a **finding** if J1 shows up in either listing, with or without `historical: true`, or if
+`get_job(J1)` still answers.
+cleanup: `delete_workspace("regression-smoke-913", acknowledged_cost=true)`. Confirm
+`list_workspaces` no longer has it.
+metrics: none.
+source: tester, verified in #913 on 2026-10-14 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 9dfb9e6c` on `lem` (cuda).
+
 ## Performance
 
 ### S-P001 — default image generation latency
