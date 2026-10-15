@@ -2368,6 +2368,34 @@ metrics: none.
 source: tester, verified in #913 on 2026-10-14 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 9dfb9e6c` on `lem` (cuda).
 
+### S-F141 — a job kept as a shared asset survives its workspace's deletion
+S-F140's forgetting must not reach a job whose output was kept with `keep_output(shared=true)`.
+The asset's metadata names that job, and `get_job_workflow` is how its workflow is recovered
+(#917). CPU only, about 5 s per run: `templates/relevel-clip` with `arguments={"clip":
+"asset:qa-cast/ep177-episode.mp4"}`, `acknowledged_cost=true`, `wait_seconds=55`, and
+`workspace="regression-smoke-917"` pinned.
+1. `create_workspace("regression-smoke-917")`. Run job K, then job U with `target_lufs: -18`
+   (the control).
+2. `keep_output(name=<K's final mux file>, asset_name="regression-smoke-917/kept.mp4",
+   shared=true, workspace="regression-smoke-917")`.
+3. `delete_workspace("regression-smoke-917", acknowledged_cost=true)`.
+4. `get_gallery_metadata(name="asset:regression-smoke-917/kept.mp4")`, `get_job_workflow(K)`,
+   `get_job(K)` and `get_job(U)`.
+5. `create_workspace("regression-smoke-917")`, then `list_jobs(workspace="regression-smoke-917")`.
+expected:
+- Call 4: the metadata's `job.id` is K. `get_job_workflow(K)` returns `realized: false` with the
+  ReLevelClip definition and `clip` folded into `variables`. `get_job(K)` answers with
+  `historical: true` and `workspace: "regression-smoke-917 (deleted)"`. `get_job(U)` errors
+  `Unknown job`.
+- Call 5 returns `total: 0`.
+It is a **finding** if `get_job_workflow(K)` or `get_job(K)` errors `Unknown job`, if U still
+answers, or if K shows up in the recreated workspace's listing.
+cleanup: `delete_asset("regression-smoke-917/kept.mp4")`, then
+`delete_workspace("regression-smoke-917", acknowledged_cost=true)`.
+metrics: none.
+source: tester, verified in #917 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 3fbe4ba6` on `lem` (cuda).
+
 ## Performance
 
 ### S-P001 — default image generation latency
