@@ -4723,4 +4723,34 @@ It is a **finding** if:
 cleanup: none.
 metrics: none.
 
+### M-F154 — H3: a catalog entry that decides no partition leaves the filename rule's verdict, on both partitions
+source: Don, harnest#122 ruling keeping M-F146's probe (e); written and checked on lem 2026-10-14 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check, a catalog entry that names no partition against the filename rule.
+M-F146 (retired) probed a mixed `workflow: ["t2va","ref2va"]` entry: a list naming both partitions decides
+nothing, so the filename rule runs. No shipped entry carries a mixed list, and the catalog is read-only to
+MCP, so this case probes the same path with a shipped entry whose `workflow` is `null`. Like a mixed list, it
+decides nothing. Validation only: this case spends no GPU time. `C(WF, LORAS)` is M-F142's carrier.
+`H` = `[{"model_name":"videorebirth/hyperflow","weight_name":"minimax_h3_hyperflow_8step_v1.0.safetensors"}]`
+(`minimax-h3/hyperflow`, `status: rejected`, `workflow: null`, a file name carrying neither `ref2v` nor `fl2v`).
+Setup: `use_workspace("regression-model-specific")`. Then run `list_loras(model="MiniMaxAI/MiniMax-H3")` and
+confirm `minimax-h3/hyperflow` still has the `workflow`, `model_name` and `weight_name` above. If its
+`workflow` now names a partition, this case no longer probes what it says: record that and skip it rather
+than failing. If a shipped entry has gained a `workflow` list naming both `t2va`/`fl2va` and `ref2va`, also
+run the probes with that entry's file, and expect the same.
+Probes: `C(t2va, H)` and `C(ref2va, H)`.
+expected:
+- Both `valid: true`, with no error.
+- Each carries the filename rule's warning at `steps[0].pipeline.loras[0].weight_name`: the file "names neither
+  'ref2v' nor 'fl2v'", naming the step's workflow and its partition (`transformer` for `t2va`,
+  `transformer_ref` for `ref2va`).
+- Neither warning names a catalog entry or claims a partition for it. An entry that decides nothing is not a
+  disagreement.
+- Other warnings, such as the carrier's no-seed warning and an inherited-cost warning, are fine.
+It is a **finding** if:
+- either probe is `valid: false` or carries an adapter error;
+- either probe lacks the "names neither" warning, i.e. the entry's match silenced the filename rule;
+- either warning treats the entry as deciding a partition.
+cleanup: none.
+metrics: none.
+
 ## Performance
