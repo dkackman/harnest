@@ -13092,7 +13092,6 @@ acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F481 — Unscalable drivers off their default keep the figure but flag `low_confidence` and `differs`
-pending: #907
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free. Each call is `validate_workflow(workflow="templates/minimax/reference-to-video", arguments={seed:
 42, ...})`. Take values from the variables' descriptions, as in C-F498.
@@ -13138,7 +13137,6 @@ cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F483 — A non-H3 duration driver off its default is never priced as the default bucket without a flag
-pending: #907
 source: tester, spec for #907 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free.
 1. Call `list_workflows(shape="audio")` and pick the music template whose variables include
