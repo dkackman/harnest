@@ -13199,7 +13199,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F486 — a run feeds `plan.host_memory` (`basis: "observed"`), shared by an inline and a renamed copy, split by offload
-pending: #909
 source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about a minute (one SD1.5 run). Workspace `regression-complete`.
 Setup: take `get_workflow("templates/text-to-image")`, set `variables.seed` to 42, and call it W.
@@ -13235,7 +13234,6 @@ acknowledged_cost=true)`.
 metrics: `projected_mb` from call 3, and P.
 
 ### C-F487 — H3 `weights_dtype` int4 and int8 are different memory keys
-pending: #909
 source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
 Free. Each call is `validate_workflow(name="templates/minimax/reference-to-video", arguments={seed:
 42, weights_dtype: <v>})`, spelling `<v>` as the variable's description does (see C-F498).
@@ -13255,9 +13253,9 @@ call 2 has a figure yet, report the case as partly skipped. C-F491 and C-F493 se
 cleanup: none.
 metrics: none.
 
-### C-F488 — a list workflow with no same-key run reports `basis: "fit"`, agreeing with the projection warning
-pending: #909
-source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
+### C-F488 — a list workflow with no same-key run reports `basis: "fit"`, agreeing with the projection warning when one fires
+source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic); expectation
+amended per Don's ruling on #909 (warning only above 0.9 × `host_memory_total_mb`)
 Free. Uses M-F029's history: `acorn-wars/shots-batch` in workspace `acorn-wars`, a `for_each` over
 one H3 step whose runs span list lengths 1 and 5. Those runs all predate the memory-key column, so
 they are not same-key runs. `use_workspace("acorn-wars")`, then:
@@ -13266,11 +13264,16 @@ they are not same-key runs. `use_workspace("acorn-wars")`, then:
 2. The same call with 12 entries.
 expected:
 - Both carry `plan.host_memory` with `basis: "fit"`.
-- Each `projected_mb` agrees with the number in that call's `Projected host memory …` warning (~N
-  MB), within rounding. The warning's text is unchanged from M-F029's.
+- When a call carries a `Projected host memory …` warning (~N MB), its `projected_mb` agrees with
+  N within rounding, and the warning's text is M-F029's. The warning fires only when the projection
+  exceeds 0.9 × `host_memory_total_mb` (`get_memory`, or a job's `memory` event); below that
+  ceiling, no host-memory warning is expected (on lem, ~61.6 GB against a ~115.8 GB ceiling gives
+  `warnings: []`).
 - Call 2's figure is no smaller than call 1's.
 It is a **finding** if:
 - either call lacks `host_memory` while the warning gives a figure;
+- a host-memory warning appears while `projected_mb` is below the 0.9 × total ceiling, or is absent
+  while it is above;
 - either says `basis: "observed"` with `runs` counting pre-column rows;
 - the two numbers disagree by more than rounding;
 - either call turns `valid: false`.
@@ -13281,7 +13284,6 @@ cleanup: `use_workspace("regression-complete")`.
 metrics: none.
 
 ### C-F489 — no figure means no `host_memory` key and no error: a new workflow, a task-only one, and history from before the column
-pending: #909
 source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
 Free. Workspace `regression-complete`.
 1. A brand-new inline workflow: `get_workflow("templates/text-to-image")` with the pipeline step's
@@ -13304,7 +13306,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F490 — a cancelled run never feeds the figure
-pending: #909
 source: tester, spec for #909 from #869's plan v2 (claude-opus-5-5 via anthropic)
 GPU, under a minute. Workspace `regression-complete`.
 Setup: W is `get_workflow("templates/text-to-image")` with `variables.seed` 42 and

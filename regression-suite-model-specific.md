@@ -1141,8 +1141,12 @@ workspace-stored workflow name), then:
 1. `validate_workflow(name="acorn-wars/shots-batch", arguments={shots: [5 entries of {name, prompt,
    num_frames: 158}]})`;
 2. the same call with 12 entries.
-expected: both return `valid: true` and exactly one warning each, beginning `Projected host memory
-for this run (~N MB at <5|12> entries, extrapolated from runs of 1 and 5 entries)`. N at 5 entries
+expected: both return `valid: true`. The projection warning fires only when the projection exceeds
+0.9 × `host_memory_total_mb` (amended per Don's ruling on #909): above that ceiling, exactly one
+warning each, beginning `Projected host memory for this run (~N MB at <5|12> entries, extrapolated
+from runs of 1 and 5 entries)`; below it, no host-memory warning, and N is read from
+`plan.host_memory.projected_mb` instead (on lem the ~61.6 GB figure sits under a ~115.8 GB ceiling,
+so no warning is expected there). A warning below the ceiling, or none above it, is a finding. N at 5 entries
 should be within ~10% of the largest single 5-entry run's peak (~61.6 GB on lem, 2026-09-22). It must
 not be near 5 × the per-entry figure (~300 GB), and the text must not say `held resident together`.
 N at 12 entries must stay bounded by the base + slope fit. On 2026-09-22 it was flat at ~61.6 GB,
