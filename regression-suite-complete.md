@@ -13323,7 +13323,6 @@ cleanup: `delete_output(job_id=J1, acknowledged_cost=true)` (and the failed arm'
 metrics: none.
 
 ### C-F491 — a second int8 H3 job is held for host RAM while a card is free, says why once, and starts when the first finishes
-pending: #910
 source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
 lem only: two workers (two 3090s, 125 GB host). On a single-worker server skip this case and say
 so; C-F495 covers that. GPU, roughly 1-2 hours: three int8 H3 runs, two of them in series. Workspace
@@ -13373,7 +13372,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for J1, J2 and J3.
 metrics: M, and the needed and free GB figures from `waiting_for`.
 
 ### C-F492 — a small job backfills past the held one, and cancelling the held job clears it
-pending: #910
 source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
 lem only. Runs inside C-F491's hold window: after its step 4, while J2 runs and J3 is held. Skip it
 if C-F491 skipped. Extra GPU is one SD1.5 image and one held int8 job that never starts.
@@ -13402,7 +13400,6 @@ delete).
 metrics: none.
 
 ### C-F493 — two int4 H3 jobs, which fit together, both start at once
-pending: #910
 source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
 lem only, two workers. GPU, roughly 30-60 min: three int4 H3 runs. Workspace
 `regression-complete`. The box must be idle first, as in C-F491.
@@ -13424,7 +13421,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for K1, K2 and K3.
 metrics: N.
 
 ### C-F494 — a job with no figure is never held, and a lone job is never held
-pending: #910
 source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
 lem only. Run it during C-F491's step 3 or C-F493's step 2, while one heavy job runs and a card is
 free. Skip it with them.
@@ -13465,7 +13461,6 @@ cleanup: `delete_output(job_id=…, acknowledged_cost=true)` for J1 and J2.
 metrics: none.
 
 ### C-F496 — the served docs drop the "one int8 job at a time" workaround
-pending: #910
 source: tester, spec for #910 from #869's plan v2 (claude-opus-5-5 via anthropic)
 Free.
 1. `list_guides`, then `get_guide` on the workspaces guide. Read the section that discusses running
