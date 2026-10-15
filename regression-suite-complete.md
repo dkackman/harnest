@@ -11877,7 +11877,9 @@ expected:
 - **The TV path** goes from L1 to L7. L1 is 1344x768, `weights_dtype` int4, the 4-step LoRA (named by
   `lora_model_name`/`lora_weight_name`) and `num_inference_steps` 5, on `templates/minimax/reference-to-video`. L7 is
   the same set at int8. L7 is marked as not confirmed by ear or in playback.
-- **The L0 sketch** is 960x544. The section calls it a throwaway, and says its staging won't carry to 1344x768.
+- **The L0 sketch** is 960x544. The section calls it a throwaway sketch: faces can't be approved on it
+  (L0 smears faces, #861). It doesn't say L0's staging fails to carry to 1344x768; any L0→L7 carryover
+  claim it makes follows the **Carryover** rule below.
 - **The cinema path** goes from B3 to L5, or to P1. B3 is 1344x768, int8, the base model with no LoRA
   (`lora_model_name: null`) and 12 steps, on `templates/minimax/dialogue-short`. L5 is the same set at 30 steps.
   P1 is L5 plus a `first_block` cache at 0.05, passed as the template's `cache` argument (#884). The section doesn't
