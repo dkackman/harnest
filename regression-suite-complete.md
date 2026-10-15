@@ -13154,7 +13154,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F484 — An inline workflow's inherited estimate scales by steps and canvas (`basis: "inherited"`)
-pending: #908
 source: tester, spec for #908 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free. Setup: take `get_workflow("templates/minimax/reference-to-video")` and set `variables.seed` to
 42. Call that W.
@@ -13181,7 +13180,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F485 — An inline workflow off an unscalable driver lists it in `differs` and sets `low_confidence`
-pending: #908
 source: tester, spec for #908 from #866's plan v2 (claude-opus-5-5 via anthropic)
 Free. W is as in C-F484: the reference-to-video JSON with seed 42. Each call is an inline
 `validate_workflow`, and each variant changes only the one variable named.
