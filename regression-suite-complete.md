@@ -7317,9 +7317,10 @@ argument, or if any arm crashes.
 cleanup: `delete_output(job_id=…)` for any job that ran.
 metrics: none.
 
-### C-F218 — `templates/minimax/music-video-cuts` runs on CPU from a song asset to a plan
+### C-F218 — `templates/minimax/music-video-cuts` runs utility tasks only, from a song asset to a plan
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
-One CPU job. Expect about a minute for whisper-base on a 30 s song. No GPU model may load.
+One utility-only job: no diffusers pipeline, though `separate_stems` (htdemucs) may use the
+GPU (#822). Expect about 10 s warm on a 30 s song; the first run downloads htdemucs.
 1. `list_workflows(shape="utility")`, then the full catalog if it isn't there. Find
    `templates/minimax/music-video-cuts`.
 2. `get_workflow("templates/minimax/music-video-cuts", variables_only=true)`. Note the song
@@ -7333,13 +7334,13 @@ expected:
 - The template is in the catalog, and its steps are `separate_stems` (the vocal stem,
   #822) → `transcribe_audio` (with timestamps, on the vocal stem) → `analyze_beats` →
   `plan_cuts`.
-- The estimate shows no GPU pipeline and no VRAM need beyond CPU tasks.
+- The estimate prices only utility tasks (no diffusers pipeline, no downloads).
 - The job succeeds. Its output is one plan json as in C-F213: contiguous over
   `[0, round(30.03 × fps))`, with a numeric `bpm`, non-empty `shots`, and `fps` matching the
   template's.
 - The song argument accepts an `asset:` reference, not only `output:`.
-It is a **finding** if the template is missing, needs a GPU, fails, or emits anything but
-one plan json.
+It is a **finding** if the template is missing, loads a diffusers pipeline, fails, or emits
+anything but one plan json.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
