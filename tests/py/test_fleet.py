@@ -60,6 +60,23 @@ class Groups(unittest.TestCase):
     def tearDown(self):
         self.d.cleanup()
 
+    def test_a_case_line_starting_with_hash_is_not_a_heading(self):
+        Path(self.d.name, "s.md").write_text(
+            "### S-F001 — one\n#338: an issue reference opens the text\n```json\n# a comment in an example\n```\n"
+            "cleanup: S-F002 reads it.\n#### a sub-heading ends it\n### S-F002 — two\nsteps\n"
+        )
+        b = r.case_blocks(Path(self.d.name, "s.md"))
+        self.assertEqual(["S-F001", "S-F002"], list(b))
+        self.assertIn("#338: an issue reference", b["S-F001"])
+        self.assertIn("cleanup: S-F002 reads it.", b["S-F001"])
+        self.assertNotIn("sub-heading", b["S-F001"])
+        self.assertEqual([["S-F001", "S-F002"]], [g.cases for g in r.groups(Path(self.d.name, "s.md"), {})])
+
+    def test_every_real_case_has_a_body(self):
+        for f in sorted(Path(__file__).resolve().parents[2].glob("regression-suite-*.md")):
+            for c, text in r.case_blocks(f).items():
+                self.assertGreater(len(text.splitlines()), 2, f"{f.name} {c}")
+
     def test_linked_by_cleanup_and_setup_only(self):
         g = r.groups(self.suite, {})
         self.assertEqual([["S-F001"], ["S-F002", "S-F003"], ["S-F004"], ["S-F005"]], [x.cases for x in g])

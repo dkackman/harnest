@@ -85,6 +85,20 @@ sed -i '' 's/^### S-F001 — validate only/### S-F001 — validate only, now wit
 (cd "$T/h" && python3 -m harness.drivers.requirements --dry-run smoke) > "$T/dry.out"
 has "an edited case is asked about again" "S-F001 S-F003 S-F004" "$(cat "$T/dry.out")"
 
+# a stopped generator takes its session down with it
+cat > "$T/bin/claude" <<EOS
+#!/usr/bin/env bash
+echo \$\$ > "$T/claude.pid"
+sleep 60
+EOS
+chmod +x "$T/bin/claude"; rm -f "$T/claude.pid"
+(cd "$T/h" && exec env SESSION_RETRY_PAUSE_SECS=0 python3 -m harness.drivers.requirements --force smoke) > "$T/stop.out" 2>&1 &
+genpid=$!
+for _ in 1 2 3 4 5 6 7 8 9 10; do [ -s "$T/claude.pid" ] && break; sleep 1; done
+kill "$genpid"; wait "$genpid" 2>/dev/null
+sleep 1
+fails "stopped: its session doesn't outlive it" kill -0 "$(cat "$T/claude.pid")"
+
 # no primary answering: refused before any session
 printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"; : > "$FAKE_PROMPTS"
 gen

@@ -28,11 +28,20 @@ LOADS = ("none", "light", "heavy", "exclusive")
 _ID = re.compile(r"\b([A-Z]+-[A-Z][0-9]+)\b")
 
 
+_HEADING = re.compile(r"#{1,6}\s")
+
+
 def case_blocks(suite_file):
-    """{case id: its block}, from its heading to the next heading, in file order."""
-    blocks, cur, lines = {}, None, []
+    """{case id: its block}, from its heading to the next heading, in file
+    order. A heading is `#`s and a space, outside a code fence: a case line
+    that starts with an issue reference (`#338: ...`) or a comment in a
+    fenced example is not one, and splitting on it cut S-F108 down to its
+    title."""
+    blocks, cur, lines, fence = {}, None, [], False
     for line in Path(suite_file).read_text(encoding="utf-8").splitlines(keepends=True):
-        if line.startswith("#"):
+        if line.lstrip().startswith(("```", "~~~")):
+            fence = not fence
+        if not fence and _HEADING.match(line):
             if cur:
                 blocks[cur] = "".join(lines)
             m = CASE_HEADING.match(line)

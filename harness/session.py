@@ -169,6 +169,24 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log):
             _kill_group(proc)
 
 
+def stop_on_sigterm():
+    """SIGTERM becomes a normal exit (status 143), so the finally that
+    takes a running session's process group down with the driver runs.
+    Python's default SIGTERM ends the process without it, and the session,
+    in its own group, would outlive the driver: a stopped requirements run
+    left one going on 2026-10-18. Called by run(); a handler a driver set
+    itself is left alone."""
+    try:
+        if signal.getsignal(signal.SIGTERM) is signal.SIG_DFL:
+            signal.signal(signal.SIGTERM, _sigterm)
+    except ValueError:  # not the main thread: the caller owns signals
+        pass
+
+
+def _sigterm(*_):
+    sys.exit(143)
+
+
 def run(
     label,
     logname,
@@ -190,6 +208,7 @@ def run(
     died before its result, asleep through a rejected rate limit. Never
     raises on the session's own failure; the outcome is read from <last>
     (outcome.ok / ran / died), as the bash callers do."""
+    stop_on_sigterm()
     if retry_pause is None:
         retry_pause = int(os.environ.get("SESSION_RETRY_PAUSE_SECS") or 30)
     argv = ["claude", "-p", prompt, "--append-system-prompt-file", str(prompt_file), *STREAM_FLAGS, *flags]
