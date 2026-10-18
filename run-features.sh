@@ -58,7 +58,6 @@ LEAD_DESIGN_BUDGET_USD="${LEAD_DESIGN_BUDGET_USD:-6}"
 LEAD_DECOMPOSE_BUDGET_USD="${LEAD_DECOMPOSE_BUDGET_USD:-4}"
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 DW_URL="${DW_URL:-}"            # resolve_target fills in the target's
-DW_TOKEN="${DW_TOKEN:-xyz}"
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
@@ -69,6 +68,7 @@ mkdir -p "$LOGS"
 
 . "$REPO/providers.sh"
 resolve_target || exit 1
+resolve_token || exit 1
 
 LEAD_EFFORT="${LEAD_EFFORT:-$EFFORT}"
 resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1

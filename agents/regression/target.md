@@ -77,7 +77,7 @@ such line), when one of these holds:
   the caching allocator, or a model the case says needs a 24 GB card.
 - `memory`: running it would load MiniMax H3, LTX-2.5 at full size, a
   very large image (thousands of pixels a side), or anything the case puts
-  in the tens of GB. This machine has 64 GB of unified memory shared with
+  in the tens of GB. This machine's memory is unified and shared with
   the OS, and running out takes the server down mid-run. The driver
   already holds back the cases it knows of; your prompt names them.
 

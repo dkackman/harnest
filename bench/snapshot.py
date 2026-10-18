@@ -5,7 +5,12 @@ Run once per entry added to entries.tsv (existing cases are left alone unless
 --force). Everything a replay or its judge needs is written here so a bench
 run never calls gh and never reads the source repo past the pre-fix commit.
 """
-import json, os, re, subprocess, sys
+
+import json
+import os
+import re
+import subprocess
+import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 SRC = os.environ.get("SOURCE_DIR", os.path.expanduser("~/src/dkackman/dw-agent"))
@@ -21,16 +26,23 @@ def git(*a):
 
 
 def handoffs(n):
-    ev = run("gh", "api", "--paginate", f"repos/{REPO}/issues/{n}/events", "--jq",
-             '.[] | select(.event=="labeled" and .label.name=="status:fixed-pending-verify") | .event')
+    ev = run(
+        "gh",
+        "api",
+        "--paginate",
+        f"repos/{REPO}/issues/{n}/events",
+        "--jq",
+        '.[] | select(.event=="labeled" and .label.name=="status:fixed-pending-verify") | .event',
+    )
     return len(ev.split())
 
 
 def main():
     force = "--force" in sys.argv
     git("fetch", "-q", "origin")
-    log = [l.split("\t", 2) for l in git("log", "origin/develop", "--no-merges",
-                                          "--format=%H%x09%at%x09%s").splitlines()]
+    log = [
+        l.split("\t", 2) for l in git("log", "origin/develop", "--no-merges", "--format=%H%x09%at%x09%s").splitlines()
+    ]
     for line in open(os.path.join(HERE, "entries.tsv")):
         if not line.strip() or line.startswith("#"):
             continue
@@ -55,18 +67,41 @@ def main():
             for h in shas:
                 if tests:
                     fh.write(git("show", "--format=", h, "--", *tests))
-        iss = json.loads(run("gh", "issue", "view", n, "--repo", REPO, "--json",
-                             "number,title,body,author,labels,createdAt,closedAt,comments"))
+        iss = json.loads(
+            run(
+                "gh",
+                "issue",
+                "view",
+                n,
+                "--repo",
+                REPO,
+                "--json",
+                "number,title,body,author,labels,createdAt,closedAt,comments",
+            )
+        )
         owner_, name_ = REPO.split("/")
-        edited = run("gh", "api", "graphql", "-f", "query={repository(owner:\"%s\",name:\"%s\"){issue(number:%s){lastEditedAt}}}" % (owner_, name_, n),
-                     "--jq", ".data.repository.issue.lastEditedAt").strip()
+        edited = run(
+            "gh",
+            "api",
+            "graphql",
+            "-f",
+            'query={repository(owner:"%s",name:"%s"){issue(number:%s){lastEditedAt}}}' % (owner_, name_, n),
+            "--jq",
+            ".data.repository.issue.lastEditedAt",
+        ).strip()
         # What the real fixing session's prompt carried (run-loop.sh's
         # issue_context): the body plus the comments before the first
         # hand-off - triage notes, and Don's approval on an issue that was
         # parked first. Body-only replays of parked issues re-escalated
         # instead of fixing. Other logins are withheld, as in issue_context.
-        first_handoff = run("gh", "api", "--paginate", f"repos/{REPO}/issues/{n}/events", "--jq",
-                            '[.[] | select(.event=="labeled" and .label.name=="status:fixed-pending-verify") | .created_at] | first // ""').strip()
+        first_handoff = run(
+            "gh",
+            "api",
+            "--paginate",
+            f"repos/{REPO}/issues/{n}/events",
+            "--jq",
+            '[.[] | select(.event=="labeled" and .label.name=="status:fixed-pending-verify") | .created_at] | first // ""',
+        ).strip()
         before = [c for c in iss["comments"] if first_handoff and c["createdAt"] < first_handoff]
         with open(os.path.join(out, "issue.md"), "w") as fh:
             fh.write(f"## #{n}: {iss['title']}\nfiled by: @{iss['author']['login']}\n\n{iss['body']}\n")
@@ -79,10 +114,20 @@ def main():
         owner = [c for c in iss["comments"] if c["author"]["login"] == iss["author"]["login"]]
         with open(os.path.join(out, "verify.md"), "w") as fh:
             fh.write(owner[-1]["body"] if owner else "")
-        meta = dict(issue=int(n), kind=kind, note=note, title=iss["title"], prefix=prefix,
-                    fix_commits=shas, fix_files=files, test_files=tests, handoffs=handoffs(n),
-                    context="body + owner comments before the first hand-off", comments_before_handoff=len(before),
-                    body_edited_after_filing=edited not in ("", "null"))
+        meta = dict(
+            issue=int(n),
+            kind=kind,
+            note=note,
+            title=iss["title"],
+            prefix=prefix,
+            fix_commits=shas,
+            fix_files=files,
+            test_files=tests,
+            handoffs=handoffs(n),
+            context="body + owner comments before the first hand-off",
+            comments_before_handoff=len(before),
+            body_edited_after_filing=edited not in ("", "null"),
+        )
         json.dump(meta, open(os.path.join(out, "meta.json"), "w"), indent=1)
         print(f"#{n}: prefix {prefix[:10]}, {len(shas)} fix commit(s), {len(files)} files")
 

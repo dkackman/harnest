@@ -18,7 +18,13 @@ fixes nothing: consolidation is designed, by Don, not done drive-by.
 Off (silently) while the tree has no scripts/arch_report.py. A report that
 fails is logged and retried a day later.
 """
-import argparse, json, os, subprocess, sys, time
+
+import argparse
+import json
+import os
+import subprocess
+import sys
+import time
 
 REPORT = "scripts/arch_report.py"
 RISE = 5
@@ -31,7 +37,13 @@ def tables(text):
     out, key, rows = {"coupling": [], "hotspots": []}, None, None
     for line in text.splitlines():
         if line.startswith("#### "):
-            key = "coupling" if line.startswith("#### Change coupling") else "hotspots" if line.startswith("#### Hotspots") else None
+            key = (
+                "coupling"
+                if line.startswith("#### Change coupling")
+                else "hotspots"
+                if line.startswith("#### Hotspots")
+                else None
+            )
             rows = out[key] if key else None
             continue
         if rows is None or not line.startswith("|") or set(line) <= set("|- "):
@@ -63,28 +75,53 @@ def body(pair, why, old, new, last, this):
     def hot(week, f):
         row = next((r for r in week["hotspots"] if r[3] == f), None)
         return "score %d (%d commits x complexity %d)" % tuple(row[:3]) if row else "not in the top ten"
+
     def cell(row, i):
         return str(row[i]) if row else "not in the top ten"
+
     lines = [
         "Filed by the curator's weekly consolidation cadence: dw's `scripts/arch_report.py HEAD=HEAD`, "
         "compared with last week's run. Why: %s." % why,
         "",
         "`%s` and `%s` change together:" % pair,
         "",
-        "| | last week (%s, `%s`) | this week (%s, `%s`) |" % (last["date"], last["head"][:8], this["date"], this["head"][:8]),
+        "| | last week (%s, `%s`) | this week (%s, `%s`) |"
+        % (last["date"], last["head"][:8], this["date"], this["head"][:8]),
         "| --- | --- | --- |",
         "| Shared commits | %s | %s |" % (cell(old, 0), cell(new, 0)),
         "| Degree %% | %s | %s |" % (cell(old, 1), cell(new, 1)),
     ]
     lines += ["| Hotspot `%s` | %s | %s |" % (f, hot(last, f), hot(this, f)) for f in pair]
-    lines += ["", "Consolidation is designed, not drive-by: decide whether these two hold one concept between "
-              "them (`docs/ARCHITECTURE.md` names each one's owner), and plan it if so. No agent works this issue."]
+    lines += [
+        "",
+        "Consolidation is designed, not drive-by: decide whether these two hold one concept between "
+        "them (`docs/ARCHITECTURE.md` names each one's owner), and plan it if so. No agent works this issue.",
+    ]
     return "\n".join(lines)
 
 
 def open_titles(repo):
-    r = subprocess.run(["gh", "issue", "list", "--repo", repo, "--state", "open", "--label", "consolidation",
-                        "--limit", "200", "--json", "title", "--jq", ".[].title"], capture_output=True, text=True)
+    r = subprocess.run(
+        [
+            "gh",
+            "issue",
+            "list",
+            "--repo",
+            repo,
+            "--state",
+            "open",
+            "--label",
+            "consolidation",
+            "--limit",
+            "200",
+            "--json",
+            "title",
+            "--jq",
+            ".[].title",
+        ],
+        capture_output=True,
+        text=True,
+    )
     return None if r.returncode else r.stdout.splitlines()
 
 
@@ -103,7 +140,10 @@ def run(a):
     r = subprocess.run([a.python, REPORT, "HEAD=HEAD"], cwd=a.tree, capture_output=True, text=True, env=env)
     this = tables(r.stdout)
     if r.returncode or not this["coupling"]:
-        print("arch_report.py failed (exit %d), retrying in a day: %s" % (r.returncode, (r.stderr or r.stdout)[-300:].strip()))
+        print(
+            "arch_report.py failed (exit %d), retrying in a day: %s"
+            % (r.returncode, (r.stderr or r.stdout)[-300:].strip())
+        )
         state["failed_at"] = now
         json.dump(state, open(a.state, "w"), indent=1)
         return 0
@@ -127,13 +167,37 @@ def run(a):
                 continue
             if len(filed) >= a.max:
                 break
-            c = subprocess.run(["gh", "issue", "create", "--repo", a.repo, "--title", title, "--label", "consolidation",
-                                "--label", "owner:don", "--body", body(pair, why, old, new, state, this)],
-                               capture_output=True, text=True)
+            c = subprocess.run(
+                [
+                    "gh",
+                    "issue",
+                    "create",
+                    "--repo",
+                    a.repo,
+                    "--title",
+                    title,
+                    "--label",
+                    "consolidation",
+                    "--label",
+                    "owner:don",
+                    "--body",
+                    body(pair, why, old, new, state, this),
+                ],
+                capture_output=True,
+                text=True,
+            )
             filed.append(c.stdout.strip().rsplit("/", 1)[-1] if c.returncode == 0 else "failed: " + title)
-        print("week of %s @ %s against %s: %d pair(s) moved, filed %s%s" % (
-            this["date"], head[:8], state.get("date", "?"), len(found), ", ".join("#" + f if f.isdigit() else f for f in filed) or "nothing",
-            "; %d already open" % len(skipped) if skipped else ""))
+        print(
+            "week of %s @ %s against %s: %d pair(s) moved, filed %s%s"
+            % (
+                this["date"],
+                head[:8],
+                state.get("date", "?"),
+                len(found),
+                ", ".join("#" + f if f.isdigit() else f for f in filed) or "nothing",
+                "; %d already open" % len(skipped) if skipped else "",
+            )
+        )
     json.dump(this, open(a.state, "w"), indent=1)
     return 0
 

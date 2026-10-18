@@ -28,7 +28,16 @@ docs/stabilization/baseline.json by exactly the metrics that rose, in a
 commit whose message names each and says why. That check is the only
 reader of baseline.json; the detector never compares against it.
 """
-import hashlib, importlib.util, json, os, re, shutil, subprocess, sys, tempfile
+
+import hashlib
+import importlib.util
+import json
+import os
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
 
 REF = "origin/develop"
 SCRIPT = "scripts/arch_metrics.py"
@@ -62,11 +71,15 @@ def active(checkout, fetch=True, script=SCRIPT):
     if fetch:
         r = _git(checkout, "fetch", "-q", "origin", "develop")
         if r.returncode != 0:
-            raise ToolError("the baseline could not be read: fetching origin/develop failed (%s). The "
-                            "architecture ratchet fails closed: %s." % (r.stderr.strip()[-200:] or "no detail", fix))
+            raise ToolError(
+                "the baseline could not be read: fetching origin/develop failed (%s). The "
+                "architecture ratchet fails closed: %s." % (r.stderr.strip()[-200:] or "no detail", fix)
+            )
     if _git(checkout, "rev-parse", "-q", "--verify", REF + "^{commit}").returncode != 0:
-        raise ToolError("the baseline could not be read: %s does not resolve. The architecture ratchet "
-                        "fails closed: %s." % (REF, fix))
+        raise ToolError(
+            "the baseline could not be read: %s does not resolve. The architecture ratchet "
+            "fails closed: %s." % (REF, fix)
+        )
     return _git(checkout, "cat-file", "-e", "%s:%s" % (REF, script)).returncode == 0
 
 
@@ -93,8 +106,10 @@ DISTRIBUTIONS = ("ruff", "grimp", "networkx", "pylint", "pygount")
 
 def _versions(python):
     """Installed version of each tool the script leans on, under `python`."""
-    code = ("import importlib.metadata as m, json\nout = {}\nfor d in %r:\n try: out[d] = m.version(d)\n"
-            " except m.PackageNotFoundError: out[d] = None\nprint(json.dumps(out))" % (DISTRIBUTIONS,))
+    code = (
+        "import importlib.metadata as m, json\nout = {}\nfor d in %r:\n try: out[d] = m.version(d)\n"
+        " except m.PackageNotFoundError: out[d] = None\nprint(json.dumps(out))" % (DISTRIBUTIONS,)
+    )
     r = subprocess.run([python, "-c", code], capture_output=True, text=True)
     return json.loads(r.stdout) if r.returncode == 0 else {}
 
@@ -113,15 +128,23 @@ def _load_regressions(script):
         spec.loader.exec_module(mod)  # stdlib imports only at the top of the script
         return mod.regressions
     except Exception as e:  # a script that can't even load is a tool failure, not a pass
-        raise ToolError("scripts/arch_metrics.py did not load (%s: %s). The architecture ratchet fails closed." % (type(e).__name__, e))
+        raise ToolError(
+            "scripts/arch_metrics.py did not load (%s: %s). The architecture ratchet fails closed."
+            % (type(e).__name__, e)
+        ) from e
 
 
 def _archive(checkout, treeish, dest, paths=()):
-    git = subprocess.Popen(["git", "-C", checkout, "archive", treeish, *paths], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    git = subprocess.Popen(
+        ["git", "-C", checkout, "archive", treeish, *paths], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+    )
     tar = subprocess.run(["tar", "-x", "-C", dest], stdin=git.stdout, capture_output=True)
     git.stdout.close()
     if git.wait() or tar.returncode:
-        raise ToolError("could not extract %s from %s: %s" % (treeish, checkout, (git.stderr.read() + tar.stderr)[-300:].decode(errors="replace")))
+        raise ToolError(
+            "could not extract %s from %s: %s"
+            % (treeish, checkout, (git.stderr.read() + tar.stderr)[-300:].decode(errors="replace"))
+        )
 
 
 def _measure(script, tree, python):
@@ -129,12 +152,18 @@ def _measure(script, tree, python):
     r = subprocess.run([python, script, "--root", tree], capture_output=True, text=True, cwd=tree, env=env)
     if r.returncode != 0:
         gone = re.search(r"No module named '([\w.]+)'", r.stderr)
-        what = "needs %s, which is not installed" % gone.group(1).split(".")[0] if gone else "failed (exit %d): %s" % (r.returncode, r.stderr[-400:].strip())
-        raise ToolError("scripts/arch_metrics.py %s. The architecture ratchet fails closed: %s." % (what, _install_hint(python)))
+        what = (
+            "needs %s, which is not installed" % gone.group(1).split(".")[0]
+            if gone
+            else "failed (exit %d): %s" % (r.returncode, r.stderr[-400:].strip())
+        )
+        raise ToolError(
+            "scripts/arch_metrics.py %s. The architecture ratchet fails closed: %s." % (what, _install_hint(python))
+        )
     try:  # the JSON comes first; `warning:` lines for a module near the size ceiling follow it
         return json.JSONDecoder().raw_decode(r.stdout.lstrip())[0]
     except ValueError:
-        raise ToolError("scripts/arch_metrics.py printed no JSON: %s" % r.stdout[-300:])
+        raise ToolError("scripts/arch_metrics.py printed no JSON: %s" % r.stdout[-300:]) from None
 
 
 def check(checkout, src="HEAD", python=None):
@@ -146,11 +175,15 @@ def check(checkout, src="HEAD", python=None):
     python = python or python_for(checkout)
     missing = _missing(python)
     if missing:
-        raise ToolError("the architecture ratchet needs %s, which %s cannot import. It fails closed: %s."
-                        % (", ".join(missing), python, _install_hint(python)))
+        raise ToolError(
+            "the architecture ratchet needs %s, which %s cannot import. It fails closed: %s."
+            % (", ".join(missing), python, _install_hint(python))
+        )
     base = _git(checkout, "merge-base", REF, src).stdout.strip()
     if not base:
-        raise ToolError("no merge base between %s and %s, so the ratchet can't tell what this work changed." % (REF, src))
+        raise ToolError(
+            "no merge base between %s and %s, so the ratchet can't tell what this work changed." % (REF, src)
+        )
     trees = [_git(checkout, "rev-parse", "-q", "--verify", r + "^{tree}").stdout.strip() for r in (base, src)]
     if not all(trees):
         raise ToolError("could not read the trees of %s and %s." % (base[:10], src))
@@ -195,11 +228,15 @@ def _ui_tools(checkout):
     fix = "run `npm ci --prefix ui` in %s" % top
     node = shutil.which("node")
     if node is None:
-        raise ToolError("the UI architecture ratchet needs node, which is not on PATH. It fails closed: install "
-                        "Node, then %s." % fix)
+        raise ToolError(
+            "the UI architecture ratchet needs node, which is not on PATH. It fails closed: install "
+            "Node, then %s." % fix
+        )
     if not os.path.exists(os.path.join(modules, "eslint", "package.json")):
-        raise ToolError("the UI architecture ratchet needs ui/node_modules (ESLint), which %s does not have. "
-                        "It fails closed: %s." % (top, fix))
+        raise ToolError(
+            "the UI architecture ratchet needs ui/node_modules (ESLint), which %s does not have. "
+            "It fails closed: %s." % (top, fix)
+        )
     return node, modules
 
 
@@ -250,7 +287,7 @@ def _ui_tree(checkout, treeish, work, script_text, modules):
     ui = os.path.join(dest, "ui")
     os.makedirs(os.path.join(ui, "scripts"), exist_ok=True)
     os.symlink(modules, os.path.join(ui, "node_modules"))
-    with open(os.path.join(ui, UI_SCRIPT[len("ui/"):]), "w") as fh:
+    with open(os.path.join(ui, UI_SCRIPT[len("ui/") :]), "w") as fh:
         fh.write(script_text)
     return ui
 
@@ -265,10 +302,15 @@ def check_ui(checkout, src="HEAD"):
         return []
     base = _git(checkout, "merge-base", REF, src).stdout.strip()
     if not base:
-        raise ToolError("no merge base between %s and %s, so the UI ratchet can't tell what this work changed." % (REF, src))
+        raise ToolError(
+            "no merge base between %s and %s, so the UI ratchet can't tell what this work changed." % (REF, src)
+        )
 
     def inputs(rev):
-        return [_git(checkout, "rev-parse", "-q", "--verify", "%s:%s" % (rev, path)).stdout.strip() for path in UI_INPUTS]
+        return [
+            _git(checkout, "rev-parse", "-q", "--verify", "%s:%s" % (rev, path)).stdout.strip() for path in UI_INPUTS
+        ]
+
     if inputs(base) == inputs(src):
         return []
     node, modules = _ui_tools(checkout)
@@ -287,31 +329,43 @@ def check_ui(checkout, src="HEAD"):
                 measured.append(stamp)
                 continue
             ui = _ui_tree(checkout, rev, work, script_text, modules)
-            r = subprocess.run([node, UI_SCRIPT[len("ui/"):]], capture_output=True, text=True, cwd=ui)
+            r = subprocess.run([node, UI_SCRIPT[len("ui/") :]], capture_output=True, text=True, cwd=ui)
             if r.returncode != 0:
-                raise ToolError("ui/scripts/arch-metrics.mjs failed (exit %d): %s. The UI architecture ratchet "
-                                "fails closed: run `npm ci --prefix ui` in the dw checkout." % (r.returncode, r.stderr[-400:].strip()))
+                raise ToolError(
+                    "ui/scripts/arch-metrics.mjs failed (exit %d): %s. The UI architecture ratchet "
+                    "fails closed: run `npm ci --prefix ui` in the dw checkout."
+                    % (r.returncode, r.stderr[-400:].strip())
+                )
             try:
                 metrics = json.JSONDecoder().raw_decode(r.stdout.lstrip())[0]
             except ValueError:
-                raise ToolError("ui/scripts/arch-metrics.mjs printed no JSON: %s" % r.stdout[-300:])
+                raise ToolError("ui/scripts/arch-metrics.mjs printed no JSON: %s" % r.stdout[-300:]) from None
             metrics.pop("detail", None)
             _write_stamp(stamp, metrics)
             measured.append(stamp)
         ui = _ui_tree(checkout, src, work, script_text, modules)
-        r = subprocess.run([node, UI_SCRIPT[len("ui/"):], "--compare", measured[1], measured[0]],
-                           capture_output=True, text=True, cwd=ui)
+        r = subprocess.run(
+            [node, UI_SCRIPT[len("ui/") :], "--compare", measured[1], measured[0]],
+            capture_output=True,
+            text=True,
+            cwd=ui,
+        )
         # The contract: exit 0 and nothing printed, or exit 1 and only rise
         # lines. Anything else - a crash (node exits 1 too), a script that
         # predates --compare and prints JSON - is a failure, never a pass
         lines = [line for line in r.stdout.splitlines() if line.strip()]
-        if not ((r.returncode == 0 and not lines)
-                or (r.returncode == 1 and lines and all(RISE.match(line) for line in lines))):
-            raise ToolError("develop's ui/scripts/arch-metrics.mjs could not compare two measurements (exit %d: %s). "
-                            "The UI architecture ratchet fails closed until it can: develop's script needs a working "
-                            "--compare, which no branch can fix. `gh issue edit N --remove-label owner:<yours> "
-                            "--add-label owner:don --add-label stabilization`, comment that develop's "
-                            "ui/scripts/arch-metrics.mjs cannot compare, and stop." % (r.returncode, (r.stderr.strip() or r.stdout.strip())[-200:] or "no output"))
+        if not (
+            (r.returncode == 0 and not lines)
+            or (r.returncode == 1 and lines and all(RISE.match(line) for line in lines))
+        ):
+            raise ToolError(
+                "develop's ui/scripts/arch-metrics.mjs could not compare two measurements (exit %d: %s). "
+                "The UI architecture ratchet fails closed until it can: develop's script needs a working "
+                "--compare, which no branch can fix. `gh issue edit N --remove-label owner:<yours> "
+                "--add-label owner:don --add-label stabilization`, comment that develop's "
+                "ui/scripts/arch-metrics.mjs cannot compare, and stop."
+                % (r.returncode, (r.stderr.strip() or r.stdout.strip())[-200:] or "no output")
+            )
         return lines
     finally:
         shutil.rmtree(work, ignore_errors=True)
@@ -346,51 +400,71 @@ def waiver_problems(checkout, worse, src="HEAD", baseline=BASELINE):
             return json.loads(r.stdout) if r.returncode == 0 else None
         except ValueError:
             return None
+
     before, after = baseline_at(base) if base else None, baseline_at(src)
     if after is None:
         return ["%s is missing or unreadable at %s" % (baseline, src)]
     before = before or {}
-    raised = {k: v for k, v in after.items()
-              if isinstance(v, (int, float)) and (not isinstance(before.get(k), (int, float)) or v > before[k])}
+    raised = {
+        k: v
+        for k, v in after.items()
+        if isinstance(v, (int, float)) and (not isinstance(before.get(k), (int, float)) or v > before[k])
+    }
     for k, (old, new) in sorted(rose.items()):
         if k not in raised:
             problems.append("%s rose %s -> %s, and %s does not raise it" % (k, old, new, baseline))
             continue
         want = new if not isinstance(before.get(k), (int, float)) else before[k] + (new - old)
         if raised[k] != want:
-            problems.append("%s rose by %s, so %s should raise it to %s, not %s"
-                            % (k, new - old, baseline, want, raised[k]))
+            problems.append(
+                "%s rose by %s, so %s should raise it to %s, not %s" % (k, new - old, baseline, want, raised[k])
+            )
     for k in sorted(set(raised) - set(rose)):
         problems.append("%s raises %s, which did not rise" % (baseline, k))
     log = _git(checkout, "log", "--format=%B%x1e", "%s..%s" % (base, src), "--", baseline).stdout if base else ""
     messages = [m.strip() for m in log.split("\x1e") if m.strip()]
     for k in sorted(set(raised) & set(rose)):
-        if not any(re.search(r"\b%s\b" % re.escape(k), m) and re.search(r"\b%s\b" % re.escape(str(raised[k])), m)
-                   and len(m.splitlines()) > 1 for m in messages):
-            problems.append("no commit changing %s names the %s rise to %s and says why in its body"
-                            % (baseline, k, raised[k]))
+        if not any(
+            re.search(r"\b%s\b" % re.escape(k), m)
+            and re.search(r"\b%s\b" % re.escape(str(raised[k])), m)
+            and len(m.splitlines()) > 1
+            for m in messages
+        ):
+            problems.append(
+                "no commit changing %s names the %s rise to %s and says why in its body" % (baseline, k, raised[k])
+            )
     return problems
 
 
-ENGINE_HINTS = ("split the function, remove the duplicate, reuse an existing module instead of adding one, patch "
-                "with `patch.object` or an injected fake instead of a `patch(\"dw...\")` string")
-UI_HINTS = ("split the component or function, move code into its own module rather than growing a file past the "
-            "size ceiling, break the import cycle, use the reference-prefix constants instead of a string literal, "
-            "fix the accessibility warning instead of suppressing it")
+ENGINE_HINTS = (
+    "split the function, remove the duplicate, reuse an existing module instead of adding one, patch "
+    'with `patch.object` or an injected fake instead of a `patch("dw...")` string'
+)
+UI_HINTS = (
+    "split the component or function, move code into its own module rather than growing a file past the "
+    "size ceiling, break the import cycle, use the reference-prefix constants instead of a string literal, "
+    "fix the accessibility warning instead of suppressing it"
+)
 
 
 def refusal(worse, problems=None, baseline=BASELINE, what="dw's architecture metrics", hints=ENGINE_HINTS):
     """The message a regression earns: each metric, then the way out.
     problems: the waiver's missing paperwork, when the issue carries the label."""
-    out = ("this work's own commits make %s worse than their merge base with %s: %s. "
-           "Bring the number back down in this session: %s. " % (what, REF, "; ".join(worse), hints))
+    out = (
+        "this work's own commits make %s worse than their merge base with %s: %s. "
+        "Bring the number back down in this session: %s. " % (what, REF, "; ".join(worse), hints)
+    )
     if problems:
-        return out + ("The issue carries `arch-approved`, but the waiver's paperwork is incomplete: %s. Raise "
-                      "%s by exactly the metrics that rose, in a commit whose message names each rise (key and "
-                      "new value) and, in its body, why." % ("; ".join(problems), baseline))
-    return out + ("If the rise is needed (a planned new module): `gh issue edit N --remove-label owner:<yours> "
-                  "--add-label owner:don --add-label status:needs-approval`, comment the metric and why, and stop. "
-                  "Only Don's `arch-approved` waives it, and only with a matching %s raise." % baseline)
+        return out + (
+            "The issue carries `arch-approved`, but the waiver's paperwork is incomplete: %s. Raise "
+            "%s by exactly the metrics that rose, in a commit whose message names each rise (key and "
+            "new value) and, in its body, why." % ("; ".join(problems), baseline)
+        )
+    return out + (
+        "If the rise is needed (a planned new module): `gh issue edit N --remove-label owner:<yours> "
+        "--add-label owner:don --add-label status:needs-approval`, comment the metric and why, and stop. "
+        "Only Don's `arch-approved` waives it, and only with a matching %s raise." % baseline
+    )
 
 
 if __name__ == "__main__":

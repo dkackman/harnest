@@ -19,6 +19,11 @@ T="$(mktemp -d)"
 trap 'rm -rf "$T"' EXIT
 export LOGS="$T/logs"; mkdir -p "$LOGS"
 export GH_CALLS="$T/gh-calls"; : > "$GH_CALLS"
+# The drivers refuse to start without an MCP token (resolve_token); none is
+# real here, and a per-server one left in the caller's shell must not leak in.
+export DW_TOKEN=test-token; unset DW_TOKEN_LEM DW_TOKEN_MINI_AI
+# and the real secrets file is never read (a test that wants one names it)
+export HARNEST_ENV_FILE=/dev/null
 mkdir -p "$T/bin"; export PATH="$T/bin:$PATH"
 _pass=0; _fail=0
 

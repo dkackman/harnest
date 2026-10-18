@@ -35,7 +35,13 @@ over a list; ["key"] for a key containing dots or slashes):
 A step may also say "is_error": true|false (default false) for the tool-level
 error flag.
 """
-import argparse, json, os, re, sys, time
+
+import argparse
+import json
+import os
+import re
+import sys
+import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from mcp_client import MCPClient, MCPError  # noqa: E402
@@ -142,17 +148,23 @@ def run_case(client, case):
             why = check(result, a)
             if why:
                 failures.append(f"{label}: {why}")
-    return {"id": case["id"], "status": "fail" if failures else "pass", "failures": failures,
-            "seconds": round(time.time() - started, 2)}
+    return {
+        "id": case["id"],
+        "status": "fail" if failures else "pass",
+        "failures": failures,
+        "seconds": round(time.time() - started, 2),
+    }
 
 
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=os.environ.get("DW_URL", "http://lem:8765/mcp"))
-    ap.add_argument("--token", default=os.environ.get("DW_TOKEN", "xyz"))
+    ap.add_argument("--token", default=os.environ.get("DW_TOKEN", ""))
     ap.add_argument("--level")
     ap.add_argument("ids", nargs="*")
     args = ap.parse_args()
+    if not args.token:
+        ap.error("no MCP token: pass --token or set DW_TOKEN; no token is kept in the repo")
 
     cases = []
     for f in sorted(os.listdir(os.path.join(HERE, "cases"))):
@@ -176,7 +188,9 @@ def main():
         except (MCPError, OSError) as e:
             report["cases"].append({"id": c["id"], "status": "error", "failures": [str(e)], "seconds": None})
     for k in ("pass", "fail", "error"):
-        report[{"pass": "passed", "fail": "failed", "error": "errors"}[k]] = sum(r["status"] == k for r in report["cases"])
+        report[{"pass": "passed", "fail": "failed", "error": "errors"}[k]] = sum(
+            r["status"] == k for r in report["cases"]
+        )
     print(json.dumps(report, indent=1))
     sys.exit(2 if report["errors"] else 1 if report["failed"] else 0)
 

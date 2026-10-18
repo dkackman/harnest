@@ -1651,12 +1651,15 @@ expected:
   `tempered` nor `curated_minutes` does, and swap the name in if it no longer holds.
 - **Off the recorded bucket, it falls back rather than lying.**
   `validate_workflow(name="templates/minimax/storyboard", arguments={"num_frames":
-  345})` → `basis: "unknown"`, `minutes: null`, `measured_on: null` and **`runs:
-  null`** (since #267 an overridden cost driver quotes neither the observed nor the
-  curated figure — see C-F054). Resizing away from the driver values the history
+  175})` → **`runs: null`** and `basis` either `"unknown"` (`minutes: null`) or
+  `"derived"` with a `scaled` that names the frames (since #866 the curated figure is
+  scaled along the moved driver: 9.2 min, "scaled from the curated 10.1 min: frames 175
+  vs 192" on 2026-10-18; see C-F054). Resizing away from the driver values the history
   was bucketed on must not keep quoting 11.8 under an `observed` label. `basis:
   "observed"` on an overridden shape is the regression, and it is the dangerous one,
-  because the answer still looks well-sourced.
+  because the answer still looks well-sourced. (`num_frames: 345`, this bullet's value
+  before 2026-10-18, is now refused at validate by the H3 VRAM ceiling on a 24 GB card,
+  #265.)
 It is a finding if any of the three fail, and specifically if `basis` and `runs`
 disagree in either direction — `observed` without a count, or a count on a figure
 nobody measured here.
@@ -1775,7 +1778,8 @@ for a clip almost three times as long. The fix extends the list-length reprice c
 scalar driver moved off the value the figure was measured at. Free — four validate calls,
 no run, works against the stored template so no fixture is needed.
 1. `validate_workflow(name="templates/ltx2/text-to-video")` — no arguments.
-2. Same, `arguments={"num_frames": 345}`.
+2. Same, `arguments={"num_frames": 241}`. (345 until 2026-10-18; it is now refused at
+   validate by the VRAM ceiling on a 24 GB card, #265.)
 3. Same, `arguments={"width": 1280, "height": 704}`.
 4. Same, `arguments={"num_frames": 121, "prompt": "a quiet lake at dawn"}` — the driver
    set explicitly to its measured value, plus a non-driver override.
@@ -1784,7 +1788,10 @@ expected:
   run it) with `minutes` > 0 — the template prices at its defaults.
 - Steps 2 and 3: **either** `basis: "unknown"`, `minutes: null`, `runs: null`,
   `measured_on: null` — neither the catalog nor the observed figure is quoted for a
-  driver value it was not measured at — **or**, once this box has accumulated enough
+  driver value it was not measured at — **or** `basis: "derived"`, `runs: null`, with
+  `scaled` naming the moved driver (#866 scales the curated figure: on 2026-10-18 step 2
+  gave 3.6 min "frames 241 vs 121" and step 3 gave 3.1 min "canvas 1280x704 vs
+  960x544") — **or**, once this box has accumulated enough
   real runs at that exact overridden value, `basis: "observed"` with
   `low_confidence: true` and `minutes` specific to *that* value's own bucket (#301/#319's
   small-n tempering, landed 2026-09-21, after this case was written). Either way
@@ -3340,7 +3347,9 @@ Cheap: two utility jobs of a few seconds each, no model.
    "separator": ""}}, "result": {"content_type": "text/plain"}}]}`. Read both outputs with
    `get_output_text`.
 expected:
-- Step 1: `valid: true`, and the job succeeds with no warnings. The mp4 has
+- Step 1: `valid: true`, and the job succeeds. Its only warnings are `out`'s `pair_audio`
+  notes that the frames carry no frame rate, so the file is written at 8 fps (#673), and
+  the `fit` silence padding that follows from it. The mp4 has
   `media.frame_count` 48, a width and height (960x544 from this source), and an audio
   stream (`sample_rate` is not null).
 - Step 2: the job succeeds. `size` is `{"width": 768, "height": 768}`, so a `*_image`
@@ -4157,9 +4166,9 @@ One inline workflow (`id` + `seed`, no `result` blocks):
 Validate it, then run it.
 expected: `validate_workflow` is `valid: true`. The run **succeeds**, and the manifest carries
 the child's whole chain through `film`, with one `final/…film…mp4` file and two
-`shots` of 124 frames each. There is exactly one warning: the `edit: concat_videos` level
-spread of 11.1 dB. That spread is the fixtures' own (see Fixtures) and is expected here,
-since `match_levels` is unset. There is **no** `slice_audio … past the end of a 4.96 s
+`shots` of 124 frames each. There are **no** warnings. The fixtures' own 11.1 dB spread
+(see Fixtures) draws no `edit: concat_videos` `level_spread` warning, because a later
+`pair_audio` takes the join as its `video` and replaces the track (#800). There is **no** `slice_audio … past the end of a 4.96 s
 source` warning. That warning would mean the child sliced the raw room-bed file instead of
 the 10.33 s looped track, as C-F016's source would do.
 It is a **finding** if the run fails, above all with "resolves outside every directory
@@ -7308,9 +7317,10 @@ argument, or if any arm crashes.
 cleanup: `delete_output(job_id=…)` for any job that ran.
 metrics: none.
 
-### C-F218 — `templates/minimax/music-video-cuts` runs on CPU from a song asset to a plan
+### C-F218 — `templates/minimax/music-video-cuts` runs utility tasks only, from a song asset to a plan
 source: tester, spec for #626 from #600's plan v2 (claude-opus-5-5 via anthropic)
-One CPU job. Expect about a minute for whisper-base on a 30 s song. No GPU model may load.
+One utility-only job: no diffusers pipeline, though `separate_stems` (htdemucs) may use the
+GPU (#822). Expect about 10 s warm on a 30 s song; the first run downloads htdemucs.
 1. `list_workflows(shape="utility")`, then the full catalog if it isn't there. Find
    `templates/minimax/music-video-cuts`.
 2. `get_workflow("templates/minimax/music-video-cuts", variables_only=true)`. Note the song
@@ -7321,15 +7331,16 @@ One CPU job. Expect about a minute for whisper-base on a 30 s song. No GPU model
    to what `transcribe_audio` heard (any lines will do), with `acknowledged_cost=true,
    wait_seconds=55`, then `wait_for_job` if still running.
 expected:
-- The template is in the catalog, and its steps are `transcribe_audio` (with timestamps) →
-  `analyze_beats` → `plan_cuts`.
-- The estimate shows no GPU pipeline and no VRAM need beyond CPU tasks.
+- The template is in the catalog, and its steps are `separate_stems` (the vocal stem,
+  #822) → `transcribe_audio` (with timestamps, on the vocal stem) → `analyze_beats` →
+  `plan_cuts`.
+- The estimate prices only utility tasks (no diffusers pipeline, no downloads).
 - The job succeeds. Its output is one plan json as in C-F213: contiguous over
   `[0, round(30.03 × fps))`, with a numeric `bpm`, non-empty `shots`, and `fps` matching the
   template's.
 - The song argument accepts an `asset:` reference, not only `output:`.
-It is a **finding** if the template is missing, needs a GPU, fails, or emits anything but
-one plan json.
+It is a **finding** if the template is missing, loads a diffusers pipeline, fails, or emits
+anything but one plan json.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 

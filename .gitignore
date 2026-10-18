@@ -2,3 +2,5 @@ logs/
 .DS_Store
 qa-bible.md
 __pycache__/
+# secrets (DW_TOKEN_*); .env.example is the template
+.env

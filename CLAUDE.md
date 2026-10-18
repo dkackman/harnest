@@ -233,6 +233,14 @@ and runs the real drivers end to end. See "Tests" below.
     repo (`dkackman/harnest`), from an evidence digest the driver computes. The window
     since the last retro is byte offsets in `logs/retro-seen.json`.
   - **Digest:** a tool-less summary of the `owner:don` queue.
+- `harness/` (R8) is the Python port, stdlib only. `harness.drivers.regression` is
+  `run-regression.sh` at parity (`tests/test-regression-py.sh` diffs the two). The
+  **regression fleet** runs a level across every server's lanes at once:
+  `python3 -m harness.drivers.fleet [--plan] <level|all>`. It's dispatched by each case's
+  needs in `regression-requirements.json`, from `python3 -m harness.drivers.requirements`.
+  Servers' policy is in `targets/dw/profile.toml`, and their facts come from the server at
+  startup. Live progress is on the dashboard's `/regression` page. Spec:
+  `docs/superpowers/specs/2026-10-18-regression-fleet.md`.
 - `contract/` (R6) holds script-run regression cases: a standard-library MCP client
   (`mcp_client.py`), a runner (`run.py`) and JSON cases keyed by suite case IDs.
   `run-regression.sh` runs a case by script only when its suite block carries
@@ -381,8 +389,10 @@ real budget (see issue #101).
   `run-curate.sh` and `run-retro.sh` against `tests/fake-gh.py` (a JSON board that edits
   change) and a throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
   fix-then-verify in one cycle, an outside filing, and the spec race.
-- `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses, and
-  every `${KNOB:-}` a driver reads is named in the README.
+- `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses,
+  `ruff check` and `ruff format --check` clean under `ruff.toml` (a missing ruff fails; fix with
+  `ruff check --fix . && ruff format .`), and every `${KNOB:-}` a driver reads is named in the
+  README.
 
 Two bash 3.2 traps the suite has already caught: an apostrophe in a comment inside `<( )`
 ("bad substitution"), and `source <(…)`, which 3.2 doesn't support.

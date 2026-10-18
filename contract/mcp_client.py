@@ -5,6 +5,7 @@ harness has no Python dependencies and this keeps it that way; it is a
 consumer of the dw server exactly as the tester is, with no source or
 `lem` access beyond the MCP endpoint.
 """
+
 import json
 import urllib.error
 import urllib.request
@@ -63,11 +64,14 @@ class MCPClient:
         return msg.get("result")
 
     def initialize(self):
-        result = self.request("initialize", {
-            "protocolVersion": "2025-06-18",
-            "capabilities": {},
-            "clientInfo": {"name": "harnest-contract", "version": "1"},
-        })
+        result = self.request(
+            "initialize",
+            {
+                "protocolVersion": "2025-06-18",
+                "capabilities": {},
+                "clientInfo": {"name": "harnest-contract", "version": "1"},
+            },
+        )
         self._post({"jsonrpc": "2.0", "method": "notifications/initialized"}, want_reply=False)
         return result
 

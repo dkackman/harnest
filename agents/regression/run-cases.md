@@ -44,6 +44,14 @@
      after deletion, is a finding in its own right.
 5. Report each failure or regression as you find it ("Reporting a
    failure").
+6. Say where you are, for the progress the harness shows. As you start a
+   case, write `REGRESSION-CASE: <case>` on a line of its own. In your final
+   message, write one line per case you were given, in order:
+   `REGRESSION-RESULT: <case> <outcome>`, where the outcome is `pass`, `fail`
+   (a failure or a regression you reported; add the issue, `fail #123`),
+   `skip` (a precondition missing; say which on its REGRESSION-SKIP line if
+   your prompt asks for those) or `pending` (step 3). No bullet, no
+   backticks: the driver counts these lines.
 
 ### Growing the suite
 

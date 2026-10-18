@@ -6,8 +6,9 @@
 
 Standard library only. It reads what the drivers already write - the
 processes, the driver locks, the `=== ... ===` session headers and `[tag]`
-lines in logs/loop.log and logs/loop.mini-ai.log, the `usage:` line that
-closes each session, and a release's gates.out - and never writes, calls
+lines in logs/loop.log, logs/loop.mini-ai.log and logs/loop.minid.log, the
+`usage:` line that closes each session, a release's gates.out, and the
+regression fleet's logs/fleet/state.json (the /regression page) - and never writes, calls
 ssh, or touches a lock. Its one outside call is read-only `gh` for what
 waits on Don (Attention), made once the loops settle after a session
 starts or ends, no more than once a minute, and at least every
@@ -30,6 +31,8 @@ from urllib.parse import parse_qs, urlparse
 ROOT = Path(__file__).resolve().parent.parent
 LOGS = ROOT / "logs"
 PAGE = Path(__file__).resolve().parent / "index.html"
+REGRESSION_PAGE = Path(__file__).resolve().parent / "regression.html"
+FLEET = LOGS / "fleet"
 
 # The script must be what runs (`bash ./run-loop.sh …` or `./run-loop.sh …`),
 # not an argument: test-lint's shellcheck names every driver on one line
@@ -37,16 +40,21 @@ DRIVER_RE = re.compile(
     r"^(?:(?:\S*/)?(?:ba|z)?sh\s+)?"
     r"(\S*run-(loop|regression|features|release|curate|retro|digest|bench)\.sh)(\s.*)?$"
 )
+# The Python drivers (R8): `python3 -m harness.drivers.<name> ...`, run from this checkout
+PY_DRIVER_RE = re.compile(r"(?:^|/)python3?(?:\.\d+)?\s+(?:-\S+\s+)*-m\s+harness\.drivers\.(\w+)(\s.*)?$", re.I)
 HEADER_RE = re.compile(r"^=== (\d\d:\d\d:\d\d) (.*?) ===$")
+CHUNK_RE = re.compile(r"^--- (\d\d:\d\d:\d\d) (\S+) session (\d+)(?: of (\d+))?: (.*) ---$")
+RESULT_RE = re.compile(r"REGRESSION-RESULT:\s*([A-Z]+-[A-Z][0-9]+)\s+(pass|fail|skip|pending)\b")
+RUN_FIELDS_RE = re.compile(r"level=([^,]+),.*?target=([^,]+), head=([^,)]+)(?:, (\d+) cases in sessions of (\d+))?")
+REQ_RUN_RE = re.compile(r"requirements run \(([^,]+), ([^,]+), (\d+) cases in (\d+) sessions")
+RECORDED_RE = re.compile(r"^(\d+) of (\d+) case\(s\) recorded")
 TAG_RE = re.compile(r"^\[([^\]]+)\] (.*)$")
-USAGE_RE = re.compile(
-    r"turns=(\d+) duration=(\d+)s cost=\$([\d.]+) ctx_peak=([\d.]+k?)"
-)
+USAGE_RE = re.compile(r"turns=(\d+) duration=(\d+)s cost=\$([\d.]+) ctx_peak=([\d.]+k?)")
 CTX_RE = re.compile(r"· ctx=([\d.]+k?)")
 
 # The two combined streams, one per server target
-STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log"}   # mac: the mini-ai test bed (DW_TARGET=mini-ai)
-LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.mini-ai"}
+STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log", "minid": "loop.minid.log"}  # mac: the mini-ai test bed
+LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.mini-ai", "minid": ".driver.lock.minid"}
 # a driver run against any target but lem ("local" is the field the page reads)
 OTHER_TARGET = re.compile(r"DW_TARGET=(?!lem\b)\S")
 LOG_TAIL_BYTES = 64 * 1024
@@ -76,6 +84,9 @@ class StreamIndex:
         self.sessions = []  # dicts, oldest first; the last is the latest
         self.by_tag = {}  # tag -> its latest session dict
         self.run_header = None
+        self.regression_runs = []  # one-server regression runs, oldest first (the fleet has its own state)
+        self.requirements_runs = []
+        self._chunk = None
 
     def _session(self, when, label, tag):
         s = {
@@ -94,7 +105,117 @@ class StreamIndex:
         self.by_tag[tag] = s
         return s
 
+    def _regression_line(self, line):
+        """Progress of a one-server regression run (run-regression.sh or
+        harness.drivers.regression) and of a requirements run, from the lines
+        they already write."""
+        m = HEADER_RE.match(line)
+        if m and " regression run (" in " " + m.group(2) and "fleet run" not in m.group(2):
+            for old in self.regression_runs:
+                if old["status"] == "running":  # a newer run on this stream: that one ended without its end
+                    old["status"], old["current"] = "interrupted", None
+            f = RUN_FIELDS_RE.search(m.group(2))
+            total, per = (int(f.group(4)), int(f.group(5))) if f and f.group(4) else (None, None)
+            self.regression_runs.append(
+                {
+                    "time": m.group(1),
+                    "label": m.group(2),
+                    "level": f.group(1) if f else "?",
+                    "target": f.group(2) if f else "?",
+                    "head": f.group(3) if f else "?",
+                    "total": total,
+                    "per": per,
+                    "sessions_total": -(-total // per) + 1 if total is not None and per else None,
+                    "sessions_done": 0,
+                    "cases_done": 0,
+                    "cost": 0.0,
+                    "results": {},
+                    "skips": 0,
+                    "current": None,
+                    "status": "running",
+                }
+            )
+            del self.regression_runs[:-20]
+            self._chunk = None
+            return
+        if m and " requirements run (" in " " + m.group(2):
+            for old in self.requirements_runs:
+                if old["status"] == "running":
+                    old["status"] = "interrupted"
+            f = REQ_RUN_RE.search(m.group(2))
+            self.requirements_runs.append(
+                {
+                    "time": m.group(1),
+                    "label": m.group(2),
+                    "level": f.group(2) if f else "?",
+                    "total": int(f.group(3)) if f else None,
+                    "sessions_total": int(f.group(4)) if f else None,
+                    "sessions_done": 0,
+                    "recorded": 0,
+                    "asked": 0,
+                    "cost": 0.0,
+                    "status": "running",
+                }
+            )
+            del self.requirements_runs[:-20]
+            return
+        run = self.regression_runs[-1] if self.regression_runs else None
+        c = CHUNK_RE.match(line)
+        if c and run and run["status"] == "running":
+            ids = [] if c.group(5) == "final sweep" else c.group(5).split()
+            self._chunk = ids
+            run["current"] = {
+                "session": int(c.group(3)),
+                "of": int(c.group(4)) if c.group(4) else None,
+                "cases": ids,
+                "since": c.group(1),
+            }
+            return
+        t = TAG_RE.match(line)
+        if not t:
+            return
+        tag, rest = t.groups()
+        if tag.startswith("requirements:") and self.requirements_runs:
+            r = self.requirements_runs[-1]
+            if rest.startswith("usage: "):
+                u = USAGE_RE.search(rest)
+                r["sessions_done"] += 1
+                r["cost"] += float(u.group(3)) if u else 0
+            rc = RECORDED_RE.match(rest)
+            if rc:
+                r["recorded"] += int(rc.group(1))
+                r["asked"] += int(rc.group(2))
+            return
+        if tag == "requirements" and self.requirements_runs and "written" in rest:
+            self.requirements_runs[-1]["status"] = "done"
+            return
+        if not run or not tag.startswith("regression") or run["status"] != "running":
+            return
+        # a fleet lane's tag (regression:smoke.lem-1.3) is the fleet's, not this run's
+        if re.search(r"\.[a-z][a-z0-9-]*-\d+\.(\d+|sweep)$", tag):
+            return
+        if rest.startswith("usage: "):
+            u = USAGE_RE.search(rest)
+            run["cost"] += float(u.group(3)) if u else 0
+            run["sessions_done"] += 1
+            if self._chunk:
+                run["cases_done"] += len(self._chunk)
+            elif tag.endswith(".sweep") or self._chunk is not None or run["per"] is None:
+                run["status"] = "done"
+                run["current"] = None
+            self._chunk = None
+            return
+        r = RESULT_RE.search(rest)
+        if r:
+            run["results"][r.group(1)] = r.group(2)
+        elif "REGRESSION-SKIP:" in rest:
+            run["skips"] += 1
+        elif "aborted (MCP unreachable)" in rest or "stopping: MCP unreachable" in rest:
+            run["status"] = "aborted"
+            run["current"] = None
+
     def _line(self, line):
+        self._regression_line(line)
         m = HEADER_RE.match(line)
         if m:
             when, label = m.groups()
@@ -224,17 +345,22 @@ class Attention:
                             continue
                         seen.add(i["number"])
                         names = [lb["name"] for lb in i["labels"]]
-                        items.append({
-                            "repo": name, "number": i["number"], "title": i["title"], "url": i["url"],
-                            "updated": i["updatedAt"],
-                            "tags": [n for n in names if not n.startswith("owner:")],
-                            # open blockers: nothing to decide until they close
-                            "waiting": [
-                                {"number": b["number"], "url": b["url"]}
-                                for b in (i.get("blockedBy") or {}).get("nodes") or []
-                                if b.get("state") == "OPEN"
-                            ],
-                        })
+                        items.append(
+                            {
+                                "repo": name,
+                                "number": i["number"],
+                                "title": i["title"],
+                                "url": i["url"],
+                                "updated": i["updatedAt"],
+                                "tags": [n for n in names if not n.startswith("owner:")],
+                                # open blockers: nothing to decide until they close
+                                "waiting": [
+                                    {"number": b["number"], "url": b["url"]}
+                                    for b in (i.get("blockedBy") or {}).get("nodes") or []
+                                    if b.get("state") == "OPEN"
+                                ],
+                            }
+                        )
                 except Exception as e:  # noqa: BLE001 - shown on the card
                     errors.append(f"{name}: {e}")
 
@@ -242,12 +368,17 @@ class Attention:
         issues(HARNESS_REPO, "harnest", ["owner:don"], ["harness", "status:needs-approval"])
         try:
             for a in _gh(["api", f"repos/{TICKET_REPO}/security-advisories?state=draft&per_page=100"]):
-                items.append({
-                    "repo": "advisory", "number": a["ghsa_id"], "title": a.get("summary") or "",
-                    "url": a["html_url"], "updated": a.get("updated_at") or "",
-                    "tags": [a.get("severity") or "no severity"],
-                    "waiting": [],
-                })
+                items.append(
+                    {
+                        "repo": "advisory",
+                        "number": a["ghsa_id"],
+                        "title": a.get("summary") or "",
+                        "url": a["html_url"],
+                        "updated": a.get("updated_at") or "",
+                        "tags": [a.get("severity") or "no severity"],
+                        "waiting": [],
+                    }
+                )
         except Exception as e:  # noqa: BLE001
             errors.append(f"advisories: {e}")
         with self.mu:
@@ -262,12 +393,124 @@ class Attention:
     def snapshot(self):
         with self.mu:
             return {
-                "items": self.items, "errors": self.errors, "fetched": self.fetched or None, "busy": self.busy,
+                "items": self.items,
+                "errors": self.errors,
+                "fetched": self.fetched or None,
+                "busy": self.busy,
                 "held_until": self.hold_until if self.hold_until > time.time() else None,
             }
 
 
 ATTENTION = Attention()
+
+REG_ISSUE_SECS = 120  # how often the failures panel re-asks GitHub
+REG_ISSUE_LOOKUPS = 25  # issues a failure names that aren't open regression issues, per fetch
+CASE_ID_RE = re.compile(r"\b[A-Z]{1,2}-[A-Z]\d+\b")
+
+
+class RegressionIssues:
+    """The GitHub side of the failures panel: open `regression` issues on
+    the ticket repo, by number and by the case IDs their titles name, plus
+    any other issue a failure recorded (closed, or filed without the label),
+    and the open `suite` issues on this repo (proposed case changes) by the
+    case IDs their titles name. Fetched in a background thread, like Attention, so a poll never waits."""
+
+    def __init__(self):
+        self.mu = threading.Lock()
+        self.by_number, self.by_case, self.suite, self.errors = {}, {}, {}, []
+        self.fetched, self.hold_until, self.busy = 0.0, 0.0, False
+        self.wanted = set()
+
+    def poke(self, numbers):
+        with self.mu:
+            now = time.time()
+            new = set(numbers) - set(self.by_number)
+            self.wanted |= set(numbers)
+            if self.busy or now < self.hold_until or (now - self.fetched < REG_ISSUE_SECS and not new):
+                return
+            self.busy = True
+        threading.Thread(target=self._fetch, daemon=True).start()
+
+    def _fetch(self):
+        by_number, suite, errors = {}, {}, []
+        try:
+            fields = "number,title,url,state,labels,updatedAt"
+            args = ["issue", "list", "--repo", TICKET_REPO, "--state", "open", "--label", "regression"]
+            for i in _gh([*args, "--limit", "300", "--json", fields]):
+                by_number[i["number"]] = i
+            with self.mu:
+                missing = sorted(n for n in self.wanted if n not in by_number)[:REG_ISSUE_LOOKUPS]
+            for n in missing:
+                by_number[n] = _gh(["issue", "view", str(n), "--repo", TICKET_REPO, "--json", fields])
+        except Exception as e:  # noqa: BLE001 - shown on the panel
+            errors.append(str(e))
+        try:
+            args = ["issue", "list", "--repo", HARNESS_REPO, "--state", "open", "--label", "suite"]
+            for i in _gh([*args, "--limit", "200", "--json", fields]):
+                for c in set(CASE_ID_RE.findall(i.get("title", ""))):
+                    suite.setdefault(c, []).append(self._row(i, "harnest"))
+        except Exception as e:  # noqa: BLE001 - shown on the panel
+            errors.append(f"harnest: {e}")
+        by_case = {}
+        for i in by_number.values():
+            if i.get("state") == "OPEN":
+                for c in set(CASE_ID_RE.findall(i.get("title", ""))):
+                    by_case.setdefault(c, []).append(i["number"])
+        with self.mu:
+            now = time.time()
+            if errors and any("rate limit" in e.lower() for e in errors):
+                self.hold_until = now + ATTN_LIMITED_SECS
+            if by_number or not errors:
+                self.by_number, self.by_case = {**self.by_number, **by_number}, by_case
+            if suite or not any(e.startswith("harnest:") for e in errors):
+                self.suite = suite
+            self.errors, self.fetched, self.busy = errors, now, False
+
+    @staticmethod
+    def _row(i, repo):
+        return {
+            "repo": repo,
+            "number": i["number"],
+            "url": i["url"],
+            "title": i["title"],
+            "state": i["state"].lower(),
+            "labels": [lb["name"] for lb in i.get("labels", []) if not lb["name"].startswith("owner:")],
+        }
+
+    def issue(self, n):
+        i = self.by_number.get(n)
+        if not i:
+            return {"repo": "dw", "number": n, "url": f"https://github.com/{TICKET_REPO}/issues/{n}"}
+        return self._row(i, "dw")
+
+    def failures(self, cases):
+        """[{case, level, lane, server, load, outcome, note, issues: [...]}]
+        for every failed case: the issue it recorded first, then any other
+        open regression issue whose title names it, then open suite-change
+        proposals on this repo that name it."""
+        rows, wanted = [], set()
+        for cid, c in cases.items():
+            if c.get("outcome") != "fail":
+                continue
+            recorded = [int(x) for x in re.findall(r"\d+", str(c.get("issue") or ""))]
+            wanted |= set(recorded)
+            rows.append((cid, c, recorded))
+        self.poke(wanted)
+        with self.mu:
+            out = []
+            for cid, c, recorded in sorted(rows):
+                nums = recorded + [n for n in self.by_case.get(cid, []) if n not in recorded]
+                out.append(
+                    {
+                        "case": cid,
+                        **{k: c.get(k) for k in ("level", "lane", "server", "load", "note")},
+                        "issues": [self.issue(n) for n in nums] + self.suite.get(cid, []),
+                    }
+                )
+            return {"rows": out, "errors": list(self.errors), "fetched": self.fetched or None}
+
+
+REG_ISSUES = RegressionIssues()
 
 
 def _loop_key():
@@ -275,10 +518,12 @@ def _loop_key():
     key = []
     for idx in INDEXES.values():
         last = idx.sessions[-1] if idx.sessions else None
-        key.append((
-            idx.run_header and idx.run_header["time"],
-            last and (last["time"], last["label"], last["usage"] is not None),
-        ))
+        key.append(
+            (
+                idx.run_header and idx.run_header["time"],
+                last and (last["time"], last["label"], last["usage"] is not None),
+            )
+        )
     return tuple(key)
 
 
@@ -289,7 +534,9 @@ def processes():
     try:
         out = subprocess.run(
             ["ps", "-axo", "pid=,ppid=,etime=,command="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout
     except Exception:
         return [], 0
@@ -304,9 +551,27 @@ def processes():
         m = DRIVER_RE.search(cmd)
         if m and _is_ours(pid, m.group(1)):
             rows[pid] = {
-                "pid": int(pid), "ppid": ppid, "elapsed": etime.strip(),
-                "driver": m.group(2), "args": (m.group(3) or "").strip(),
-                "local": bool(OTHER_TARGET.search(cmd)), "cmd": cmd,
+                "pid": int(pid),
+                "ppid": ppid,
+                "elapsed": etime.strip(),
+                "driver": m.group(2),
+                "name": f"run-{m.group(2)}.sh",
+                "args": (m.group(3) or "").strip(),
+                "local": bool(OTHER_TARGET.search(cmd)),
+                "cmd": cmd,
+            }
+            continue
+        m = PY_DRIVER_RE.search(cmd)
+        if m and _cwd(pid) and Path(_cwd(pid)).resolve() == ROOT:
+            rows[pid] = {
+                "pid": int(pid),
+                "ppid": ppid,
+                "elapsed": etime.strip(),
+                "driver": m.group(1),
+                "name": f"harness.drivers.{m.group(1)}",
+                "args": (m.group(2) or "").strip(),
+                "local": bool(OTHER_TARGET.search(cmd)),
+                "cmd": cmd,
             }
 
     def outer(r):
@@ -353,8 +618,9 @@ def _is_ours(pid, script):
 
 def _cwd(pid):
     try:
-        out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
-                             capture_output=True, text=True, timeout=3).stdout
+        out = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, timeout=3
+        ).stdout
     except Exception:
         return None
     return next((l[1:] for l in out.splitlines() if l.startswith("n")), None)
@@ -368,8 +634,9 @@ def _driver_ancestor(ppid, drivers):
         if int(ppid) in drivers:
             return int(ppid)
         try:
-            ppid = subprocess.run(["ps", "-o", "ppid=", "-p", str(ppid)],
-                                  capture_output=True, text=True, timeout=3).stdout.strip()
+            ppid = subprocess.run(
+                ["ps", "-o", "ppid=", "-p", str(ppid)], capture_output=True, text=True, timeout=3
+            ).stdout.strip()
         except Exception:
             return None
     return None
@@ -379,7 +646,9 @@ def _env_says_local(pid):
     try:
         out = subprocess.run(
             ["ps", "eww", "-o", "command=", "-p", str(pid)],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         ).stdout
         return bool(OTHER_TARGET.search(out))
     except Exception:
@@ -445,9 +714,116 @@ def state():
     }
 
 
+def _read_json(path):
+    try:
+        return json.loads(path.read_text())
+    except (OSError, ValueError):
+        return None
+
+
+_COVERAGE = {"key": None, "value": None}
+
+
+def coverage():
+    """Per level: cases, and how many have a current requirements entry
+    (the rest run on the primary only). Recomputed when a suite or the
+    requirements file changes."""
+    files = sorted(ROOT.glob("regression-suite-*.md")) + [ROOT / "regression-requirements.json"]
+    key = tuple((f.name, f.stat().st_mtime) for f in files if f.exists())
+    if key == _COVERAGE["key"]:
+        return _COVERAGE["value"]
+    out = []
+    try:
+        import sys
+
+        if str(ROOT) not in sys.path:
+            sys.path.insert(0, str(ROOT))
+        from harness import requirements as req
+        from harness.profile import load
+
+        side = req.load_sidecar(ROOT / "regression-requirements.json")
+        for lv in load().levels:
+            blocks = req.case_blocks(ROOT / lv.file)
+            needs = [req.need_for(c, b, side) for c, b in blocks.items()]
+            loads = {}
+            for n in needs:
+                k = n.load if n.known else "unknown"
+                loads[k] = loads.get(k, 0) + 1
+            out.append({"level": lv.name, "cases": len(blocks), "current": sum(n.known for n in needs), "loads": loads})
+    except Exception as e:  # noqa: BLE001 - shown on the page
+        out = [{"error": f"{type(e).__name__}: {e}"}]
+    _COVERAGE.update(key=key, value=out)
+    return out
+
+
+def regression_state():
+    """What the /regression page shows: the fleet's live state file, its
+    recent runs, one-server regression runs from each stream, requirements
+    runs, and requirements coverage."""
+    for idx in INDEXES.values():
+        idx.refresh()
+    procs = processes()[0]
+    fleet_runs = []
+    for f in sorted(FLEET.glob("runs/*.json"), reverse=True)[:12]:
+        d = _read_json(f)
+        if d:
+            outcomes = {}
+            for c in d.get("cases", {}).values():
+                outcomes[c.get("outcome")] = outcomes.get(c.get("outcome"), 0) + 1
+            fleet_runs.append(
+                {
+                    "id": d.get("id"),
+                    "status": d.get("status"),
+                    "levels": d.get("levels"),
+                    "started": d.get("started"),
+                    "finished": d.get("finished"),
+                    "model": d.get("model"),
+                    "outcomes": outcomes,
+                    "cost": round(sum(l.get("cost", 0) for l in d.get("lanes", [])), 2),
+                }
+            )
+    fleet = _read_json(FLEET / "state.json")
+    if fleet:
+        fleet["locks"] = {n: lock(LOCKS[n]) for n in LOCKS}
+        live = fleet["status"] in ("starting", "running", "sweeping")
+        if live and not any(d["driver"] == "fleet" for d in procs):
+            fleet["status"] = "interrupted"  # its driver is gone without writing its end
+    failures = REG_ISSUES.failures(fleet.get("cases", {}) if fleet else {})
+    single = {}
+    for name, idx in INDEXES.items():
+        runs = [dict(r) for r in idx.regression_runs[-6:]]
+        held = (lock(LOCKS[name]) or {}).get("alive")
+        if runs and runs[-1]["status"] == "running" and not held:
+            runs[-1]["status"], runs[-1]["current"] = "interrupted", None
+        single[name] = runs
+    req_driver = any(d["driver"] == "requirements" for d in procs)
+    reqs = {}
+    for name, idx in INDEXES.items():
+        rs = [dict(r) for r in idx.requirements_runs[-3:]]
+        if rs and rs[-1]["status"] == "running" and not req_driver:
+            rs[-1]["status"] = "interrupted"
+        reqs[name] = rs
+    return {
+        "now": time.time(),
+        "fleet": fleet,
+        "fleet_runs": fleet_runs,
+        "failures": failures,
+        "single": single,
+        "requirements": reqs,
+        "coverage": coverage(),
+        "drivers": procs,
+    }
+
+
 def log_files():
     files = []
-    for p in list(LOGS.glob("*.log")) + list(LOGS.glob("*.out")) + list(LOGS.glob("release-*/*.out")) + list(LOGS.glob("release-*/*.log")):
+    for p in (
+        list(LOGS.glob("*.log"))
+        + list(LOGS.glob("*.out"))
+        + list(LOGS.glob("fleet/*.json"))
+        + list(LOGS.glob("release-*/*.out"))
+        + list(LOGS.glob("release-*/*.log"))
+    ):
         st = p.stat()
         files.append({"name": str(p.relative_to(LOGS)), "size": st.st_size, "mtime": st.st_mtime})
     return sorted(files, key=lambda f: -f["mtime"])
@@ -518,6 +894,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, PAGE.read_bytes(), "text/html; charset=utf-8")
             elif u.path == "/api/state":
                 self._json(state())
+            elif u.path == "/regression":
+                self._send(200, REGRESSION_PAGE.read_bytes(), "text/html; charset=utf-8")
+            elif u.path == "/api/regression":
+                self._json(regression_state())
             elif u.path == "/api/attention":
                 ATTENTION.poke(_loop_key(), force=True)
                 self._json(ATTENTION.snapshot())

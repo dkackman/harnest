@@ -650,6 +650,56 @@ resolve_target() {
     || { echo "DW_TARGET=$DW_TARGET needs a DW_URL on $TARGET_HOST, got $DW_URL (unset DW_URL for the default)" >&2; return 1; }
 }
 
+# token_var / resolve_token
+# The dw server's Bearer token comes from the environment only, never from
+# the repo, and each server has its own: DW_TOKEN_<TARGET> (DW_TOKEN_LEM,
+# DW_TOKEN_MINI_AI: the target name upper-cased, "-" as "_"; the Python
+# drivers read the same name from each server's token_env in
+# targets/dw/profile.toml). DW_TOKEN is the fallback, which is also how a
+# driver hands the token it resolved to a child (run-loop.sh's features and
+# nightly passes). resolve_token sets DW_TOKEN to the one that applies, and
+# returns 1 (stderr) when neither is set: a driver refuses to start rather
+# than send a guessed token.
+token_var() { printf 'DW_TOKEN_%s\n' "$(printf '%s' "${DW_TARGET:-lem}" | tr 'a-z-' 'A-Z_')"; }
+
+# load_env_file
+# The secrets file: HARNEST_ENV_FILE, default .env at the harness root
+# (gitignored; .env.example is the template). Read as data, never sourced:
+# `KEY=value` lines, an optional `export `, blank lines and `#` comments,
+# one pair of matching quotes around a value stripped, no inline comments.
+# Only DW_TOKEN and DW_TOKEN_* are taken from it; any other key is ignored
+# with a warning, so the file stays secrets only. A variable already set in
+# the environment wins, so `DW_TOKEN_LEM=x ./run-loop.sh` still overrides
+# it. harness/profile.py's load_env_file reads it the same way.
+load_env_file() {
+  local f="${HARNEST_ENV_FILE:-$HARNEST_ROOT/.env}" line key val
+  [ -f "$f" ] || return 0
+  while IFS= read -r line || [ -n "$line" ]; do
+    line="${line%$'\r'}"
+    line="${line#"${line%%[![:space:]]*}"}"
+    case "$line" in ''|'#'*) continue ;; esac
+    line="${line#export }"
+    case "$line" in *=*) ;; *) continue ;; esac
+    key="${line%%=*}"; key="${key%"${key##*[![:space:]]}"}"
+    val="${line#*=}"; val="${val#"${val%%[![:space:]]*}"}"; val="${val%"${val##*[![:space:]]}"}"
+    case "$key" in
+      DW_TOKEN|DW_TOKEN_*) case "$key" in *[!A-Z0-9_]*) echo "$f: '$key' ignored: not a variable name" >&2; continue ;; esac ;;
+      *) echo "$f: '$key' ignored: only DW_TOKEN and DW_TOKEN_* are read from it" >&2; continue ;;
+    esac
+    case "$val" in \"*\") val="${val#\"}"; val="${val%\"}" ;; \'*\') val="${val#\'}"; val="${val%\'}" ;; esac
+    [ -n "${!key:-}" ] || export "$key=$val"
+  done < "$f"
+}
+
+resolve_token() {
+  local var; var="$(token_var)"
+  load_env_file
+  DW_TOKEN="${!var:-${DW_TOKEN:-}}"
+  [ -n "$DW_TOKEN" ] && return 0
+  echo "no MCP token for DW_TARGET=${DW_TARGET:-lem}: set $var (or DW_TOKEN) in the environment; no token is kept in the repo" >&2
+  return 1
+}
+
 # url_host <url> / short_host <name>
 # The host part of a URL ([::1] unbracketed), and a hostname lowercased and
 # cut at its first dot: /api/health says "Mac-mini.lan", hostname(1) may

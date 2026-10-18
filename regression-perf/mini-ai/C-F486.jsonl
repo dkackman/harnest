@@ -1,0 +1,2 @@
+{"ts":"2026-10-18T19:25:00Z","level":"complete","case":"C-F486","metric":"projected_mb","condition":"call3","value":5821,"unit":"MB","server":"develop@c2a2bb94","model":"claude-sonnet-5-5","provider":"anthropic","ref":"job b4bac71bb48d","note":"mps, mini-ai; runs 23"}
+{"ts":"2026-10-18T19:25:00Z","level":"complete","case":"C-F486","metric":"job_peak_rss_mb","condition":"P","value":4154.0,"unit":"MB","server":"develop@c2a2bb94","model":"claude-sonnet-5-5","provider":"anthropic","ref":"job b4bac71bb48d","note":"mps, mini-ai"}

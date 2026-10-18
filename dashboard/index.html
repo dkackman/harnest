@@ -107,6 +107,7 @@ header button.on { border-color: var(--ok); color: var(--ok); }
   <span class="dot" id="hdot"></span>
   <h1>harnest</h1>
   <span class="muted" id="hsummary">loading…</span>
+  <a href="/regression" style="color:var(--accent);text-decoration:none;font-size:13px;margin-left:8px">regression →</a>
   <span class="spacer"></span>
   <button id="notify" title="Browser notifications when a driver exits or a gate result lands">🔔 notify</button>
   <span class="stamp" id="stamp"></span>
@@ -192,7 +193,7 @@ const BASE_TITLE = document.title;
 
 function events(st) {
   const cur = {
-    drivers: new Map(st.drivers.map((d) => [d.pid, `run-${d.driver}.sh ${d.args}`.trim()])),
+    drivers: new Map(st.drivers.map((d) => [d.pid, `${d.name || `run-${d.driver}.sh`} ${d.args}`.trim()])),
     gates: st.release ? st.release.lines : [],
     attn: st.attention && st.attention.fetched ? new Set(st.attention.items.map(attnKey)) : null,
   };
@@ -290,7 +291,7 @@ function render(st) {
   // drivers
   const d = st.drivers;
   $("drivers").innerHTML = d.length ? d.map((x) =>
-    `<span class="chip"><span class="dot ok"></span><b>run-${esc(x.driver)}.sh</b> ${esc(x.args)}
+    `<span class="chip"><span class="dot ok"></span><b>${esc(x.name || `run-${x.driver}.sh`)}</b> ${esc(x.args)}
      ${x.local ? '<span class="muted">· mac</span>' : ""}
      ${x.parent ? `<span class="muted">· under ${x.parent}</span>` : ""}
      <span class="muted mono">pid ${x.pid} · ${esc(x.elapsed)}</span></span>`).join("")
