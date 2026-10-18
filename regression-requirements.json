@@ -1,0 +1,952 @@
+{
+ "version": 1,
+ "cases": {
+  "S-F001": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "91c27a3760bac828",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F002": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "20cdc32bf3312f0e",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F003": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "hash": "8d3c417531fa86c8",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F004": {
+   "workflows": [],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "Inline workflow; the case doesn't name its checkpoint, so I assumed SD 1.5 from the stock template it is derived from.",
+   "hash": "7e970eaa96e02379",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F005": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "Probes (a) and (b) are refused before anything loads. Probe (c) is an inline 383x383 workflow that fails at run time, probably with SD 1.5 loaded.",
+   "hash": "71f98b784ed36d40",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F006": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "It only lists and probes outputs that S-F003 and S-F004 made, so it needs those two to have run first on the same server and workspace.",
+   "hash": "8a6fd73ae3d7157c",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F007": {
+   "workflows": [],
+   "models": [
+    "suno/bark-small"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "Inline three-step chain: Bark speech, then slice_audio, then fade_audio. Only the Bark step loads a model.",
+   "hash": "59da020fdbcf425f",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F008": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "hash": "1fec3fbb391b7bb5",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F009": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "The case says only 'a workflow'; I assumed the stock text-to-image template.",
+   "hash": "0d06a56fb03ae3d5",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F010": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Both the validate call and the run call are refused before anything loads. I assumed the stock text-to-image template.",
+   "hash": "eb2321f81ff700f8",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F011": {
+   "workflows": [],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "Inline workflow with a size not divisible by 8. Validation passes, and the run then fails after the pipeline loads. I assumed SD 1.5.",
+   "hash": "237af1cfd4f160e8",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F012": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "exclusive",
+   "note": "It reads host-memory high-water marks, which are only meaningful on a worker nobody else is using. The case is most informative on a freshly restarted worker.",
+   "hash": "26a87dc257a96437",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F013": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "The case says only 'a cheap generation'. I assumed templates/text-to-image (SD 1.5). It also needs the regression-smoke workspace to exist.",
+   "hash": "03eba70dcf49b3aa",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F014": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "The asset comes from keep_output on a cheap generation (S-F013). I assumed text-to-image.",
+   "hash": "e48c928462097e1a",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F015": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "0e0cef369215c456",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F016": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate only, on an inline workflow.",
+   "hash": "54c3169e48350d46",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F018": {
+   "workflows": [
+    "templates/ltx2/two-stage"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate only. Nothing is loaded.",
+   "hash": "3fa6733a492b4288",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F019": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Needs any audio or video asset to be present, but the case names none.",
+   "hash": "a6868e7bcd385f8c",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F020": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "hash": "c320d1d5009d293b",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F021": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Reads workspace usage before and after the other cases' cleanup. It loads no model itself. It is only meaningful if run with the cases that generate outputs.",
+   "hash": "8893732cef1ea12b",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F022": {
+   "workflows": [
+    "templates/dissolve-between-shots"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "A utility job that concatenates clips and runs no model. It needs three short video assets, but the case names none.",
+   "hash": "e3030c9d7faaac95",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F025": {
+   "workflows": [
+    "templates/minimax/dialogue-short"
+   ],
+   "models": [],
+   "assets": [
+    "qa-cast/priya-portrait.jpg",
+    "qa-cast/hal-portrait.jpg",
+    "qa-cast/priya-voice.wav",
+    "qa-cast/hal-voice.wav"
+   ],
+   "load": "none",
+   "note": "Validate only. The asset names are inferred from the case's cast examples.",
+   "hash": "1c1261739b8f82c9",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F026": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate only. The case says 'any asset' for its arguments, so none is listed.",
+   "hash": "6b48953ed46d5cad",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F027": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Runs slice_audio, which needs an input audio asset. The case names none. No model is loaded.",
+   "hash": "1061b7c775c6cc8e",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F028": {
+   "workflows": [
+    "templates/minimax/video-with-audio"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate, get and list calls only.",
+   "hash": "73477aa272a091e7",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F032": {
+   "workflows": [
+    "templates/minimax/dialogue-short"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate, get and list calls only.",
+   "hash": "94c5da50e9e6cd91",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F033": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "The pair_audio mux is an inline workflow and runs no model. It needs a prior list-driven run's files already on the box. If none exist, producing one would need a model.",
+   "hash": "6a7300fecde4cc71",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F034": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "The pipeline half uses S-F005(c)'s 383x383 SD 1.5 job. I took that to be templates/text-to-image, but this case doesn't name the workflow. The task half is an inline resample_audio workflow that loads no model, on an asset the case uploads itself.",
+   "hash": "02db6f0888b73d43",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F035": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "The case uses an inline workflow W and only validates. The last bullet needs 'any real image in this workspace', which the case doesn't name, so I listed no asset.",
+   "hash": "b26170319a601897",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F036": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep6-cold-open.mp4",
+    "qa-cast/ep20-score.wav"
+   ],
+   "load": "none",
+   "note": "Inline pair_audio documents that are only validated. The two assets are needed for the video/mp4 positive bullet.",
+   "hash": "a4632a816dd7d539",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F038": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Needs a workspace that already holds at least one media-less run directory. It only lists and deletes, and loads nothing.",
+   "hash": "09be15c2c8181c59",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F059": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "exclusive",
+   "note": "Measures VRAM before and after clear_memory, and the refusal depends on the device being busy, so no other job can share the GPU.",
+   "hash": "65aca2fb6e0ff003",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F060": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "The case needs a CUDA server: it expects cuda_version, driver_version and bitsandbytes.",
+   "hash": "892cc45c5939d97d",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F069": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Two inline validate calls. The pipeline control only validates, so no model loads.",
+   "hash": "42615b9b42b1b125",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F070": {
+   "workflows": [
+    "templates/transcribe-audio"
+   ],
+   "models": [
+    "openai/whisper-base"
+   ],
+   "assets": [
+    "qa-cast/hal-voice.wav"
+   ],
+   "load": "light",
+   "note": "The case expects list_gallery and list_gallery(only_orphans=true) to be empty after its delete. It therefore needs a workspace with no other runs.",
+   "hash": "00dc3127417f65eb",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F073": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Needs one already-finished job in the workspace (list_jobs status=succeeded). It runs nothing itself.",
+   "hash": "1375f0c247dc14f8",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F074": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "14749864c02bf983",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F079": {
+   "workflows": [],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "heavy",
+   "note": "The definition is the stored text-to-image one, run inline. SD 1.5 is light, but the case needs an 8192x8192 generation that OOMs a 24 GB card, so I took the larger class.",
+   "hash": "935793cced15a423",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F082": {
+   "workflows": [
+    "templates/dissolve-between-shots"
+   ],
+   "models": [],
+   "assets": [
+    "qa-cast/ep6-cold-open.mp4",
+    "qa-cast/ep3-shot2-reply.mp4",
+    "qa-cast/ep13-episode.mp4",
+    "qa-cast/ep20-score.wav"
+   ],
+   "load": "none",
+   "hash": "ed95b8ae6184243d",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F083": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "f6c5718dd5407102",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F084": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Inline CPU-only run (gather_images, canny, crop_square). It fetches the robot.png URL from Hugging Face, so it needs network access.",
+   "hash": "97079533d8609ad2",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F085": {
+   "workflows": [
+    "templates/image-processors"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "7a602cb2004d82ff",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F088": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Needs at least one historical job in the server's history. Step 4 runs a small slice_audio or gain_audio job over some audio fixture of the runner's choosing, so I listed no specific asset.",
+   "hash": "89e90de58d3ab331",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F099": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "exclusive",
+   "note": "SD 1.5 is light, but the case checks memory readings and their age during a run, so another job on the box would skew them.",
+   "hash": "6a4d4cfa37a2b49b",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F101": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "hash": "481c1e2ad5aeb0b8",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F106": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Needs the workspace regression-smoke to exist and be the session's pin.",
+   "hash": "b5702d87c97b3928",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F108": {
+   "workflows": [
+    "templates/upscale-diffusion"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "The run_workflow call in step 2 is refused before queueing, so nothing loads.",
+   "hash": "31608985cd057eb9",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F110": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Four validate calls on an inline workflow; nothing loads.",
+   "hash": "2212906b22c08793",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F112": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "593371c2bc3d8dfb",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F113": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Every call is refused before anything runs.",
+   "hash": "01cb2b77560436d9",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F114": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep11-bed.wav"
+   ],
+   "load": "none",
+   "hash": "74242af508282196",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F116": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "9050b5362fb343a2",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F117": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "I took the SD 1.5 repo id from the case text and did not check it with list_models.",
+   "hash": "8633b0ae11af2033",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F118": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep11-bed.wav"
+   ],
+   "load": "none",
+   "note": "Needs a mounted server (mcp.mounted true) for the download_output refusal.",
+   "hash": "630a19053a3cb689",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F119": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "light",
+   "note": "The case needs an existing audio or video output, for example S-F007's final wav. Any short audio chain will do. The supplying run decides the real load, so I assumed a short audio chain.",
+   "hash": "2bf0c657e4d7ad28",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F120": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/hal-voice.wav",
+    "qa-cast/ep20-score.wav"
+   ],
+   "load": "none",
+   "hash": "47801d38a6c05667",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F121": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "3d66c6afae706c6a",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F122": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validates and saves only. The 'regression-null-var' workflow is one the case saves itself.",
+   "hash": "76b374a68d738537",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F123": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep31-shot2-shrug.mp4"
+   ],
+   "load": "none",
+   "hash": "3946950a7dc4f3f1",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F124": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Needs the catalog entry templates/minimax/dialogue-short and a nearby templates/minimax/music-video. Both calls are lookups that are expected to fail, and nothing loads.",
+   "hash": "66713c95f5169f38",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F125": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep42-shot1-accuse.mp4",
+    "qa-cast/ep42-shot2-deflect.mp4"
+   ],
+   "load": "none",
+   "hash": "3f4097843613b7dd",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F126": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep45-episode.mp4"
+   ],
+   "load": "none",
+   "note": "Runs a utility job (gain_audio) that loads no model.",
+   "hash": "375d52e0799e139e",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F127": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/hal-voice.wav"
+   ],
+   "load": "none",
+   "hash": "7aa4b4750b2b2f23",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F128": {
+   "workflows": [
+    "templates/ltx2/keyframes"
+   ],
+   "models": [],
+   "assets": [
+    "qa-cast/priya-portrait.jpg",
+    "qa-cast/hal-portrait.jpg"
+   ],
+   "load": "none",
+   "note": "The run_workflow call in step 2 is refused before queueing, so no LTX model loads.",
+   "hash": "fa47ee0397b85671",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F129": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Creates its own workspaces, workflow and upload. compose_text is only validated and saved, never run.",
+   "hash": "31eadc8c00362bde",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F130": {
+   "workflows": [
+    "templates/minimax/dialogue-short"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate only, so no model loads.",
+   "hash": "8f371b10190fee73",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F131": {
+   "workflows": [],
+   "models": [
+    "openai/whisper-base"
+   ],
+   "assets": [
+    "qa-cast/priya-voice.wav"
+   ],
+   "load": "light",
+   "note": "The case sets no model_name, so it uses the task default, whisper-base. It needs a cuda device (device: cuda).",
+   "hash": "f8a13ca7e5e30bc0",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F132": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/ep62-shot1-accuse.mp4",
+    "qa-cast/ep62-shot2-deflect.mp4",
+    "qa-cast/ep75-shot-ltx2stage-hal.mp4"
+   ],
+   "load": "none",
+   "hash": "e57a11fa32e9f658",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F133": {
+   "workflows": [
+    "templates/assemble-and-score"
+   ],
+   "models": [],
+   "assets": [
+    "qa-cast/ep86-episode.mp4",
+    "qa-cast/ep84-episode.mp4",
+    "qa-cast/ep68-score.mp3"
+   ],
+   "load": "none",
+   "note": "The template is all utility tasks (concat, mix, normalize, pair), so no model loads.",
+   "hash": "0932030307d2939d",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F134": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/priya-portrait.jpg",
+    "qa-cast/hal-portrait.jpg"
+   ],
+   "load": "none",
+   "note": "ingredients_grid is pure PIL and loads no model.",
+   "hash": "02b5150fc8f0926d",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F135": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Runs against whatever the workspace holds. The truncation checks need more than 2 assets, and the 50-entry checks need more than 50, but the case says to check against `total` when there are fewer.",
+   "hash": "0cc6db5f79906ef9",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F136": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "hash": "e0435e8b85579dcf",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F137": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Inline task-only workflows (qr_code, gather_inputs); no model.",
+   "hash": "6cdf08c3eb4c745a",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F138": {
+   "workflows": [],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "light",
+   "note": "Inline workflow.",
+   "hash": "38274bc356892d3a",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F139": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Validate only; nothing loads.",
+   "hash": "43a45b23a6ecb0f1",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F140": {
+   "workflows": [
+    "templates/image-processors"
+   ],
+   "models": [],
+   "assets": [],
+   "load": "light",
+   "note": "Runs small annotator and processor tasks (depth, pose, segmentation, sam). The workflow names no model repo, so models is empty. It fetches its input image from a URL.",
+   "hash": "ad081f3ae170e023",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F141": {
+   "workflows": [
+    "templates/relevel-clip"
+   ],
+   "models": [],
+   "assets": [
+    "qa-cast/ep177-episode.mp4"
+   ],
+   "load": "none",
+   "note": "CPU-only audio utility tasks; no model.",
+   "hash": "3d22b6b0c9fd5da3",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-F142": {
+   "workflows": [],
+   "models": [],
+   "assets": [
+    "qa-cast/hal-portrait.jpg"
+   ],
+   "load": "none",
+   "hash": "4b13feee9e6394af",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-P001": {
+   "workflows": [
+    "templates/text-to-image"
+   ],
+   "models": [
+    "stable-diffusion-v1-5/stable-diffusion-v1-5"
+   ],
+   "assets": [],
+   "load": "exclusive",
+   "note": "Timing is compared against history. The workflow is inferred from the S-F003 reference, which was not in the prompt.",
+   "hash": "40bad78ae04294f6",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-P002": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Listing and probing latency only. S-F006's text was not in the prompt, so its fixtures are unknown.",
+   "hash": "2e2d8d0c715debb1",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-P003": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "none",
+   "note": "Read-only list call.",
+   "hash": "3a39a744eb149857",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  },
+  "S-P004": {
+   "workflows": [],
+   "models": [
+    "suno/bark-small"
+   ],
+   "assets": [],
+   "load": "exclusive",
+   "note": "Timing is compared against history. S-F007's text was not in the prompt: the bark-small repo id and the workflow (probably inline) are inferred, and any fixtures are unknown.",
+   "hash": "d74496692ebe72fd",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-18"
+  }
+ }
+}
