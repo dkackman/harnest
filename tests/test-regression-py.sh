@@ -162,7 +162,9 @@ $T/plugin-mini/plugins/dw" "$(cat "$T/$impl/mini-prompt.args")"
   has "  naming the levels" "unknown level 'nosuch' (expected: smoke, complete, model-specific, security, all)" "$(cat "$T/$impl/level.out")"
   reg "$impl" target.out DW_TARGET=local -- smoke
   eq  "$impl: an unknown target is refused" 1 $?
-  has "  naming the targets" "DW_TARGET must be one of: lem mini-ai (got 'local')" "$(cat "$T/$impl/target.out")"
+  # the Python driver also knows minid (regression only; not in target_row)
+  has "  naming the targets" "DW_TARGET must be one of: lem mini-ai" "$(cat "$T/$impl/target.out")"
+  has "  and what was asked" "(got 'local')" "$(cat "$T/$impl/target.out")"
   reg "$impl" model.out PLUGIN_TREE="$T/plugin" REGRESSION_MODEL=qwen3:32b -- smoke regression-suite-tiny.md
   eq  "$impl: a non-Claude model under anthropic is refused" 1 $?
   has "  saying why" "is not an Anthropic model name" "$(cat "$T/$impl/model.out")"
@@ -204,7 +206,7 @@ done
 
 # --- the same output, line for line
 for f in lem.out lem.loop.log lem.calls lem.prompt.chunk.md mini.out mini.loop.log mini.args mini.prompt.whole.md \
-         mem.out down.out wrong.out level.out target.out model.out chunk.out token.out ptok.args ftok.args etok.args; do
+         mem.out down.out wrong.out level.out model.out chunk.out token.out ptok.args ftok.args etok.args; do
   d="$(diff <(norm "$T/bash/$f") <(norm "$T/py/$f") | head -10)"
   eq "parity: $f" "" "$d"
 done

@@ -4,6 +4,7 @@ A port of providers.sh's deployed_head, target_health, target_preflight
 and deploy_cmd.
 """
 import json
+import os
 import subprocess
 
 from .profile import short_host
@@ -15,9 +16,11 @@ def deployed_head(server):
     """"<branch> @ <sha>" the server's checkout is on, or "unknown". The
     checkout is what the server runs: only deploy.sh moves it."""
     cmd = f'cd {server.dir} && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"'
+    # A local server's checkout is read here; ~ is the remote shell's on ssh.
+    argv = ["bash", "-c", cmd.replace("~", os.path.expanduser("~"), 1)] if server.local \
+        else ["ssh", *SSH_OPTS, server.host, cmd]
     try:
-        p = subprocess.run(["ssh", *SSH_OPTS, server.host, cmd], stdin=subprocess.DEVNULL,
-                           capture_output=True, text=True, timeout=60)
+        p = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
         return "unknown"
     out = p.stdout.rstrip("\n")

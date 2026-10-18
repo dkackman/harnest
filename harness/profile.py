@@ -34,6 +34,16 @@ class Server:
     token_env: str = ""
     regression_all: tuple = ()
     regression_skip_cases: tuple = ()
+    transport: str = "ssh"      # ssh, or local: this machine, no ssh
+    url: str = ""               # the MCP endpoint, when not http://<host>:<port>/mcp
+    loop: bool = True           # false: regression only; the bash drivers don't know it
+    lanes: int = 1
+    speed: float = 1.0
+    downloads: bool = False
+    max_model_gb: float = 0     # 0: no limit
+    heavy: bool = True
+    deny_models: tuple = ()
+    clone_suffix_: object = None
 
     @property
     def suffix(self):
@@ -44,7 +54,13 @@ class Server:
     @property
     def clone_suffix(self):
         """Appended to the agents' clones (dw-agent-mini-ai, ...)."""
+        if self.clone_suffix_ is not None:
+            return self.clone_suffix_
         return "" if self.primary else f"-{self.name}"
+
+    @property
+    def local(self):
+        return self.transport == "local"
 
 
 @dataclass(frozen=True)
@@ -101,9 +117,17 @@ def load(target=None, path=None):
                 token_env=s.get("token_env") or "DW_TOKEN_" + re.sub(r"[^A-Z0-9]", "_", s["name"].upper()),
                 regression_all=tuple(s.get("regression_all", ())),
                 regression_skip_cases=tuple(s.get("regression_skip_cases", ())),
+                transport=s.get("transport", "ssh"), url=s.get("url", ""), loop=bool(s.get("loop", True)),
+                lanes=int(s.get("lanes", 1)), speed=float(s.get("speed", 1.0)), downloads=bool(s.get("downloads", False)),
+                max_model_gb=float(s.get("max_model_gb", 0)), heavy=bool(s.get("heavy", True)),
+                deny_models=tuple(s.get("deny_models", ())), clone_suffix_=s.get("clone_suffix"),
             ))
-        except KeyError as e:
-            raise ProfileError(f"profile {path}: server {i} has no {e}") from e
+        except (KeyError, TypeError, ValueError) as e:
+            raise ProfileError(f"profile {path}: server {i}: {e}") from e
+        if servers[-1].transport not in ("ssh", "local"):
+            raise ProfileError(f"profile {path}: server {servers[-1].name}: transport must be ssh or local")
+        if servers[-1].lanes < 1:
+            raise ProfileError(f"profile {path}: server {servers[-1].name}: lanes must be at least 1")
     if not servers:
         raise ProfileError(f"profile {path}: no [[servers]]")
     levels = [Level(name=lv["name"], file=lv["file"], implies=lv.get("implies", ""))
@@ -185,8 +209,11 @@ def resolve_url(server, dw_url=""):
     naming another host is refused on a secondary server: one left over
     from a lem run would send this server's run at lem, under this
     server's lock, while lem's loop deploys to it."""
-    url = dw_url or f"http://{server.host}:{server.port}/mcp"
-    if not server.primary and short_host(url_host(url)) != short_host(server.host):
+    url = dw_url or server.url or f"http://{server.host}:{server.port}/mcp"
+    host = short_host(url_host(url))
+    if server.local and host in ("localhost", "127", "::1"):
+        return url
+    if not server.primary and host != short_host(server.host):
         raise ProfileError(f"DW_TARGET={server.name} needs a DW_URL on {server.host}, "
                            f"got {url} (unset DW_URL for the default)")
     return url

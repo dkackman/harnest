@@ -32,6 +32,30 @@ plugin_subdir = "plugins/dw"
 # One dw deployment per table (harnest#15's "target" is a server here).
 # The first one is the primary: its state files carry no suffix, so the
 # names a running lem loop already holds never change.
+#
+# Each table is policy. What the server *is* (its workers, their memory,
+# the models in its cache) is read from it at startup (/api/health,
+# list_models), never declared here; a run refuses a policy the facts
+# can't meet (more lanes than workers). docs/superpowers/specs/
+# 2026-10-18-regression-fleet.md has the dispatch rules these feed.
+#
+#   transport     ssh (the host runs dw from `dir`, reached over ssh) or
+#                 local (this machine: no ssh, `dir` read directly)
+#   url           the MCP endpoint, when not http://<host>:<port>/mcp
+#   loop          false: no loop runs against it, and the bash drivers
+#                 don't know it (target_row); regression only
+#   lanes         regression sessions it runs at once (at most one per worker)
+#   downloads     may a case download a model it lacks? Only the primary,
+#                 which is where a case with unknown needs runs
+#   max_model_gb  the largest model a case may load here, by its full size
+#                 (the largest any server's cache reports); 0 = no limit
+#   heavy         may it run `heavy` and `exclusive` cases?
+#   speed         rough throughput against the primary (1.0), for sharing
+#                 work across lanes: a Mac lane gets fewer cases
+#   deny_models   repo ids (fnmatch patterns) no case may load here, cached or
+#                 not: presence alone would let a partial H3 cache through
+#   clone_suffix  appended to the agents' clones (default "-<name>" off the
+#                 primary); "" shares the primary's
 [[servers]]
 name = "lem"
 host = "lem"
@@ -39,6 +63,11 @@ dir = "~/diffusers-workflow"   # the checkout on the host, for the remote shell
 backend = "cuda"
 port = 8765
 token_env = "DW_TOKEN_LEM"
+lanes = 2
+speed = 1.0
+downloads = true
+max_model_gb = 0
+heavy = true
 # Regression levels `all` runs on this server.
 regression_all = ["smoke", "complete", "model-specific", "security"]
 # Cases the driver never hands an agent on this server.
@@ -51,6 +80,13 @@ dir = "~/diffusers-workflow"
 backend = "mps"
 port = 8765
 token_env = "DW_TOKEN_MINI_AI"
+lanes = 1
+speed = 0.35
+downloads = false
+max_model_gb = 0
+heavy = true
+# Its cache holds part of H3 (about 50 of its 196 GB): enough to look present.
+deny_models = ["MiniMaxAI/MiniMax-H3*"]
 # model-specific loads H3 (~50 GB) and full-size LTX: on a 64 GB unified
 # memory machine that is an outage, not a result. It runs only when named.
 regression_all = ["smoke", "complete", "security"]
@@ -59,6 +95,27 @@ regression_all = ["smoke", "complete", "security"]
 # C-F023 near 61 GB of host RSS; C-F047 tens of GB). TARGET_SKIP_CASES
 # overrides it.
 regression_skip_cases = ["S-F079", "C-F005", "C-F007", "C-F023", "C-F047"]
+
+# This Mac (M4 Pro, 24 GB): Don's own server, from his working checkout,
+# on loopback. Cases with no model or a light one (SD 1.5 class) only.
+[[servers]]
+name = "minid"
+host = "minid"
+transport = "local"
+url = "http://localhost:8765/mcp"
+dir = "~/src/dkackman/diffusers-workflow"
+backend = "mps"
+port = 8765
+token_env = "DW_TOKEN_MINID"
+loop = false
+lanes = 1
+speed = 0.25
+downloads = false
+max_model_gb = 8
+heavy = false
+clone_suffix = "-minid"
+regression_all = ["smoke", "complete", "security"]
+regression_skip_cases = []
 
 [suite]
 case_id_regex = "[A-Z]+-[A-Z][0-9]+"

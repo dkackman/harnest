@@ -178,10 +178,13 @@ class Prompts(unittest.TestCase):
 class Profile(unittest.TestCase):
     def test_servers_match_target_row(self):
         p = load()
-        for s in p.servers:
+        loop = [s for s in p.servers if s.loop]   # the bash drivers know only these
+        for s in loop:
             row = bash(f'target_row {s.name}').split()
             self.assertEqual(row, [s.host, s.dir, s.backend])
-        self.assertEqual(bash('echo "$TARGETS"').strip(), " ".join(s.name for s in p.servers))
+        self.assertEqual(bash('echo "$TARGETS"').strip(), " ".join(s.name for s in loop))
+        self.assertIsNone(bash("target_row minid"))
+        self.assertTrue(p.server("minid").local and p.server("minid").suffix == ".minid")
         self.assertTrue(p.servers[0].primary and p.servers[0].suffix == "")
         self.assertEqual(".mini-ai", p.server("mini-ai").suffix)
 
