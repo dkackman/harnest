@@ -403,6 +403,115 @@ class Attention:
 
 ATTENTION = Attention()
 
+REG_ISSUE_SECS = 120  # how often the failures panel re-asks GitHub
+REG_ISSUE_LOOKUPS = 25  # issues a failure names that aren't open regression issues, per fetch
+CASE_ID_RE = re.compile(r"\b[A-Z]{1,2}-[A-Z]\d+\b")
+
+
+class RegressionIssues:
+    """The GitHub side of the failures panel: open `regression` issues on
+    the ticket repo, by number and by the case IDs their titles name, plus
+    any other issue a failure recorded (closed, or filed without the label),
+    and the open `suite` issues on this repo (proposed case changes) by the
+    case IDs their titles name. Fetched in a background thread, like Attention, so a poll never waits."""
+
+    def __init__(self):
+        self.mu = threading.Lock()
+        self.by_number, self.by_case, self.suite, self.errors = {}, {}, {}, []
+        self.fetched, self.hold_until, self.busy = 0.0, 0.0, False
+        self.wanted = set()
+
+    def poke(self, numbers):
+        with self.mu:
+            now = time.time()
+            new = set(numbers) - set(self.by_number)
+            self.wanted |= set(numbers)
+            if self.busy or now < self.hold_until or (now - self.fetched < REG_ISSUE_SECS and not new):
+                return
+            self.busy = True
+        threading.Thread(target=self._fetch, daemon=True).start()
+
+    def _fetch(self):
+        by_number, suite, errors = {}, {}, []
+        try:
+            fields = "number,title,url,state,labels,updatedAt"
+            args = ["issue", "list", "--repo", TICKET_REPO, "--state", "open", "--label", "regression"]
+            for i in _gh([*args, "--limit", "300", "--json", fields]):
+                by_number[i["number"]] = i
+            with self.mu:
+                missing = sorted(n for n in self.wanted if n not in by_number)[:REG_ISSUE_LOOKUPS]
+            for n in missing:
+                by_number[n] = _gh(["issue", "view", str(n), "--repo", TICKET_REPO, "--json", fields])
+        except Exception as e:  # noqa: BLE001 - shown on the panel
+            errors.append(str(e))
+        try:
+            args = ["issue", "list", "--repo", HARNESS_REPO, "--state", "open", "--label", "suite"]
+            for i in _gh([*args, "--limit", "200", "--json", fields]):
+                for c in set(CASE_ID_RE.findall(i.get("title", ""))):
+                    suite.setdefault(c, []).append(self._row(i, "harnest"))
+        except Exception as e:  # noqa: BLE001 - shown on the panel
+            errors.append(f"harnest: {e}")
+        by_case = {}
+        for i in by_number.values():
+            if i.get("state") == "OPEN":
+                for c in set(CASE_ID_RE.findall(i.get("title", ""))):
+                    by_case.setdefault(c, []).append(i["number"])
+        with self.mu:
+            now = time.time()
+            if errors and any("rate limit" in e.lower() for e in errors):
+                self.hold_until = now + ATTN_LIMITED_SECS
+            if by_number or not errors:
+                self.by_number, self.by_case = {**self.by_number, **by_number}, by_case
+            if suite or not any(e.startswith("harnest:") for e in errors):
+                self.suite = suite
+            self.errors, self.fetched, self.busy = errors, now, False
+
+    @staticmethod
+    def _row(i, repo):
+        return {
+            "repo": repo,
+            "number": i["number"],
+            "url": i["url"],
+            "title": i["title"],
+            "state": i["state"].lower(),
+            "labels": [lb["name"] for lb in i.get("labels", []) if not lb["name"].startswith("owner:")],
+        }
+
+    def issue(self, n):
+        i = self.by_number.get(n)
+        if not i:
+            return {"repo": "dw", "number": n, "url": f"https://github.com/{TICKET_REPO}/issues/{n}"}
+        return self._row(i, "dw")
+
+    def failures(self, cases):
+        """[{case, level, lane, server, load, outcome, note, issues: [...]}]
+        for every failed case: the issue it recorded first, then any other
+        open regression issue whose title names it, then open suite-change
+        proposals on this repo that name it."""
+        rows, wanted = [], set()
+        for cid, c in cases.items():
+            if c.get("outcome") != "fail":
+                continue
+            recorded = [int(x) for x in re.findall(r"\d+", str(c.get("issue") or ""))]
+            wanted |= set(recorded)
+            rows.append((cid, c, recorded))
+        self.poke(wanted)
+        with self.mu:
+            out = []
+            for cid, c, recorded in sorted(rows):
+                nums = recorded + [n for n in self.by_case.get(cid, []) if n not in recorded]
+                out.append(
+                    {
+                        "case": cid,
+                        **{k: c.get(k) for k in ("level", "lane", "server", "load", "note")},
+                        "issues": [self.issue(n) for n in nums] + self.suite.get(cid, []),
+                    }
+                )
+            return {"rows": out, "errors": list(self.errors), "fetched": self.fetched or None}
+
+
+REG_ISSUES = RegressionIssues()
+
 
 def _loop_key():
     """Changes when a session starts or ends, or a cycle begins, in either loop."""
@@ -654,14 +763,14 @@ def regression_state():
     for idx in INDEXES.values():
         idx.refresh()
     procs = processes()[0]
-    runs = []
+    fleet_runs = []
     for f in sorted(FLEET.glob("runs/*.json"), reverse=True)[:12]:
         d = _read_json(f)
         if d:
             outcomes = {}
             for c in d.get("cases", {}).values():
                 outcomes[c.get("outcome")] = outcomes.get(c.get("outcome"), 0) + 1
-            runs.append(
+            fleet_runs.append(
                 {
                     "id": d.get("id"),
                     "status": d.get("status"),
@@ -679,6 +788,7 @@ def regression_state():
         live = fleet["status"] in ("starting", "running", "sweeping")
         if live and not any(d["driver"] == "fleet" for d in procs):
             fleet["status"] = "interrupted"  # its driver is gone without writing its end
+    failures = REG_ISSUES.failures(fleet.get("cases", {}) if fleet else {})
     single = {}
     for name, idx in INDEXES.items():
         runs = [dict(r) for r in idx.regression_runs[-6:]]
@@ -696,7 +806,8 @@ def regression_state():
     return {
         "now": time.time(),
         "fleet": fleet,
-        "fleet_runs": runs,
+        "fleet_runs": fleet_runs,
+        "failures": failures,
         "single": single,
         "requirements": reqs,
         "coverage": coverage(),

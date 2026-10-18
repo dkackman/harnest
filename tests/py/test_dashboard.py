@@ -76,5 +76,66 @@ class Progress(unittest.TestCase):
         self.assertIsNone(serve.PY_DRIVER_RE.search("python3 -m unittest discover"))
 
 
+class Failures(unittest.TestCase):
+    def test_failures_link_recorded_and_open_issues(self):
+        calls = []
+
+        def gh(args):
+            calls.append(args)
+            if args[:2] == ["issue", "list"] and "dkackman/harnest" in args:
+                return [{"number": 130, "title": "suite: C-F091 - stale", "url": "h130", "state": "OPEN", "labels": []}]
+            if args[:2] == ["issue", "list"]:
+                return [
+                    {
+                        "number": 935,
+                        "title": "C-F408 [minid]: catalog empty",
+                        "url": "u935",
+                        "state": "OPEN",
+                        "labels": [],
+                    },
+                    {
+                        "number": 940,
+                        "title": "C-F408 and C-F091: same root",
+                        "url": "u940",
+                        "state": "OPEN",
+                        "labels": [],
+                    },
+                ]
+            return {
+                "number": 12,
+                "title": "C-F001 old",
+                "url": "u12",
+                "state": "CLOSED",
+                "labels": [{"name": "owner:x"}],
+            }
+
+        cases = {
+            "C-F408": {"level": "complete", "lane": "minid-1", "outcome": "fail", "issue": "#935"},
+            "C-F091": {"level": "complete", "lane": "lem-1", "outcome": "fail"},
+            "C-F001": {"level": "complete", "lane": "lem-2", "outcome": "fail", "issue": "#12"},
+            "C-F002": {"level": "complete", "lane": "lem-2", "outcome": "pass", "issue": "#99"},
+        }
+        old, serve._gh = serve._gh, gh
+        try:
+            ri = serve.RegressionIssues()
+            ri.failures(cases)  # starts the fetch
+            for _ in range(100):
+                if ri.fetched:
+                    break
+                serve.time.sleep(0.02)
+            got = {r["case"]: [(i["number"], i.get("state")) for i in r["issues"]] for r in ri.failures(cases)["rows"]}
+        finally:
+            serve._gh = old
+        self.assertEqual(
+            {
+                "C-F001": [(12, "closed")],
+                "C-F091": [(940, "open"), (130, "open")],
+                "C-F408": [(935, "open"), (940, "open")],
+            },
+            got,
+        )
+        self.assertEqual([["issue", "view", "12"]], [c[:3] for c in calls if c[0] == "issue" and c[1] == "view"])
+
+
 if __name__ == "__main__":
     unittest.main()

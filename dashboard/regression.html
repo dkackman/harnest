@@ -82,6 +82,15 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
 .cases { max-height: 360px; overflow: auto; margin-top: 8px; }
 .o-pass { color: var(--ok); } .o-fail { color: var(--bad); } .o-skip { color: var(--skip); } .o-running { color: var(--run); }
 .o-pending { color: var(--pend); }
+.fails td { white-space: normal; vertical-align: top; }
+.fails td.note { color: var(--muted); max-width: 520px; }
+.issue { display: inline-flex; gap: 6px; align-items: baseline; margin: 0 10px 2px 0; text-decoration: none; color: var(--ink); }
+.issue b { color: var(--accent); font-family: var(--mono); font-size: 12.5px; }
+.issue .st { font-size: 11px; border-radius: 999px; padding: 0 6px; border: 1px solid var(--line); color: var(--muted); }
+.issue .st.open { border-color: var(--ok); color: var(--ok); }
+.issue .repo { font-size: 11px; border-radius: 4px; padding: 0 5px; background: var(--code); border: 1px solid var(--pend); color: var(--pend); }
+.issue .st.closed { border-color: var(--pend); color: var(--pend); }
+.issue:hover span.t { text-decoration: underline; }
 .filter { background: var(--code); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font: inherit; font-size: 12.5px; }
 @media (max-width: 600px) { main { padding: 12px 16px; } header { padding: 10px 16px; } .big { font-size: 22px; } }
 </style>
@@ -100,6 +109,11 @@ details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
     <h2><span class="dot" id="fdot"></span>Fleet run <span class="muted mono" id="fid"></span>
       <span class="r muted" id="fmeta"></span></h2>
     <div id="fleet"><p class="empty">no fleet run yet: python3 -m harness.drivers.fleet smoke</p></div>
+  </section>
+
+  <section class="card" id="fails-card" hidden>
+    <h2><span class="dot bad"></span>Failures <span class="r muted" id="fails-meta"></span></h2>
+    <div id="fails"></div>
   </section>
 
   <div class="row" id="breakdowns" hidden>
@@ -261,6 +275,24 @@ function renderFleet(st) {
   return { live, t, f };
 }
 
+function renderFailures(st) {
+  const fl = st.failures || { rows: [], errors: [] };
+  $("fails-card").hidden = !fl.rows.length;
+  if (!fl.rows.length) return;
+  const open = new Set(fl.rows.flatMap((r) => r.issues.filter((i) => i.state === "open" && i.repo !== "harnest").map((i) => i.number)));
+  const suite = new Set(fl.rows.flatMap((r) => r.issues.filter((i) => i.repo === "harnest").map((i) => i.number)));
+  $("fails-meta").textContent = `${fl.rows.length} failed · ${open.size} open issue${open.size === 1 ? "" : "s"}`
+    + (suite.size ? ` · ${suite.size} case change${suite.size === 1 ? "" : "s"} proposed` : "")
+    + (fl.errors.length ? ` · GitHub: ${fl.errors[0]}` : fl.fetched ? ` · issues as of ${ago(st.now - fl.fetched)} ago` : " · fetching issues…");
+  const link = (i) => `<a class="issue" href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc((i.labels || []).join(", "))}">
+    ${i.repo === "harnest" ? '<span class="repo">case change</span>' : ""}<b>${i.repo === "harnest" ? "harnest" : ""}#${i.number}</b>${i.state ? `<span class="st ${esc(i.state)}">${esc(i.state)}</span>` : ""}<span class="t">${esc(i.title || "")}</span></a>`;
+  $("fails").innerHTML = `<table class="fails"><tr><th>case</th><th>level</th><th>lane</th><th>load</th><th>issues</th></tr>
+    ${fl.rows.map((r) => `<tr><td class="mono o-fail">${esc(r.case)}</td><td>${esc(r.level)}</td><td>${esc(r.lane || "–")}</td>
+      <td class="muted">${esc(r.load || "")}</td>
+      <td>${r.issues.length ? r.issues.map(link).join("") : '<span class="muted">no issue recorded or open</span>'}
+        ${r.note ? `<div class="note muted">${esc(r.note)}</div>` : ""}</td></tr>`).join("")}</table>`;
+}
+
 function renderSingle(st) {
   const rows = [];
   for (const [stream, runs] of Object.entries(st.single))
@@ -318,6 +350,7 @@ async function poll() {
   try {
     const st = await (await fetch("/api/regression")).json();
     const fl = renderFleet(st);
+    renderFailures(st);
     const single = renderSingle(st);
     const gen = renderCoverage(st);
     renderRuns(st);
