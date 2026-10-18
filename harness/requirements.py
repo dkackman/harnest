@@ -190,10 +190,11 @@ def eligible(need, server, facts, ref_sizes):
         return False, f"{need.load} load"
     missing = {}
     for w in need.workflows:
-        check = facts.workflows.get(w)
-        if check is None or check.get("error"):
-            return False, f"{w} doesn't validate here: {check.get('error') if check else 'not checked'}"
-        for m in check["missing"]:
+        # A workflow that can't be validated bare (one that takes input
+        # media returns no plan without its arguments) says nothing either
+        # way: the case's listed models still go through the checks below.
+        check = facts.workflows.get(w) or {}
+        for m in [] if check.get("error") else check.get("missing", ()):
             missing[m["repo"]] = m
     for repo, m in missing.items():
         if m["blocked"]:

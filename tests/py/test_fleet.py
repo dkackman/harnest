@@ -174,7 +174,12 @@ class Eligible(unittest.TestCase):
             "licence-gated",
             r.eligible(need, srv("lem", primary=True, downloads=True), fx("lem", workflows=blocked), {})[1],
         )
-        self.assertIn("doesn't validate here", r.eligible(need, srv("mac"), fx("mac", workflows=broken), {})[1])
+        # one that can't be validated bare says nothing; the listed models decide
+        self.assertEqual((True, ""), r.eligible(need, srv("mac"), fx("mac", workflows=broken), {}))
+        with_model = r.Need(workflows=need.workflows, models=("ltx",), known=True)
+        self.assertEqual(
+            (False, "ltx is not cached"), r.eligible(with_model, srv("mac"), fx("mac", workflows=broken), {})
+        )
         self.assertEqual((True, ""), r.eligible(need, srv("mac"), fx("mac", workflows=ok), {}))
         # validate's full size wins over a partial cache's
         self.assertEqual(162.5, r.reference_sizes([fx("a", [("ltx", 50)], workflows=missing)])["ltx"])
