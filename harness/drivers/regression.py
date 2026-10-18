@@ -1,0 +1,346 @@
+"""The regression driver in Python (R8): run-regression.sh, ported.
+
+    python3 -m harness.drivers.regression [level] [suite-file]
+
+Same levels, knobs, log lines, state files and prompts as run-regression.sh,
+whose header documents them; this module keeps its behaviour and says only
+where the port differs. Until the live side-by-side run (R8 plan, phase 4)
+the bash driver stays the one cron, the nightly pass and run-release.sh
+call; this one is run by hand.
+
+Where it differs:
+- the session runs in its own process group, and stopping the driver
+  stops the session (harness/session.py);
+- tool-result sizes are counted on the decoded text: jq 1.7.1's raw-input
+  reader splits a multibyte character at a buffer boundary now and then,
+  and the bash renderer counted it twice.
+"""
+import json
+import os
+import shutil
+import signal
+import subprocess
+import sys
+from pathlib import Path
+
+from .. import REPO
+from .. import deploy, lock, outcome, prompts, providers, session, suite
+from ..gitops import refresh_plugin_tree
+from ..log import Log, err, ts
+from ..profile import ProfileError, load, resolve_token, resolve_url
+from ..stream import resolved_model
+
+
+class Abort(Exception):
+    """Stop the run with this exit status; the message has been printed."""
+
+    def __init__(self, code):
+        super().__init__(code)
+        self.code = code
+
+
+def env(name, default=""):
+    """${NAME:-default}: an empty value takes the default too."""
+    return os.environ.get(name) or default
+
+
+class Regression:
+    def __init__(self, argv):
+        self.profile = load()
+        self.level = argv[0] if argv else "smoke"
+        self.override = argv[1] if len(argv) > 1 else ""
+        self.target = env("DW_TARGET", self.profile.servers[0].name)
+        self.ticket_repo = env("TICKET_REPO", self.profile.get("ticket_repo"))
+        self.logs = REPO / "logs"
+        self.provider = env("PROVIDER", "anthropic")
+        self.model = env("REGRESSION_MODEL", "claude-sonnet-5-5")
+        self.model_provider = env("REGRESSION_PROVIDER", self.provider)
+        self.fallback = env("FALLBACK_MODEL")
+        self.cases_per_session = env("CASES_PER_SESSION")
+        self.budget = env("REGRESSION_BUDGET_USD", "6")
+        self.autocompact = env("AUTOCOMPACT_TOKENS", "120000")
+        self.mcp_name = self.profile.get("mcp.name", "dw")
+        self.run_specs = self._run_specs()
+
+    # --- startup, in run-regression.sh's order
+
+    def _run_specs(self):
+        """[(level, override)]: a level's prerequisite runs first, and the
+        override applies only to the level named on the command line."""
+        names = [lv.name for lv in self.profile.levels]
+        if self.level == "all":
+            if self.override:
+                err("a suite-file override is ambiguous with level 'all' — run one level at a time to override its file")
+                raise Abort(1)
+            return [(n, "") for n in names]
+        lv = self.profile.level(self.level)
+        if lv is None:
+            err(f"unknown level '{self.level}' (expected: {', '.join(names)}, all)")
+            raise Abort(1)
+        return ([(lv.implies, "")] if lv.implies else []) + [(lv.name, self.override)]
+
+    def start(self):
+        try:
+            self.server = self.profile.server(self.target)
+        except ProfileError:
+            self.server = None
+        clone_sfx = self.server.clone_suffix if self.server else f"-{self.target}"
+        self.source_dir = Path(os.path.expanduser(env("SOURCE_DIR", self.profile.get("clones.source") + clone_sfx)))
+        self.plugin_tree = Path(os.path.expanduser(env("PLUGIN_TREE", self.profile.get("clones.plugin") + clone_sfx)))
+        if not self.source_dir.is_dir():
+            err(f"SOURCE_DIR not found: {self.source_dir}")
+            raise Abort(1)
+        for tool in ("claude", "gh"):
+            if not shutil.which(tool):
+                err(f"{tool} CLI not on PATH")
+                raise Abort(1)
+        if subprocess.run(["gh", "auth", "status"], capture_output=True).returncode != 0:
+            err("gh CLI not authenticated")
+            raise Abort(1)
+        self.logs.mkdir(exist_ok=True)
+        if self.server is None:
+            err(f"DW_TARGET must be one of: {' '.join(s.name for s in self.profile.servers)} (got '{self.target}')")
+            raise Abort(1)
+        sfx = self.server.suffix
+        self.log = Log(self.logs / f"loop{sfx}.log")
+        try:
+            self.url = resolve_url(self.server, env("DW_URL"))
+            self.token = resolve_token(self.server)
+        except ProfileError as e:
+            err(str(e))
+            raise Abort(1)
+        self.logname = f"regression{sfx}"
+        self.rpfx = "regression" + (f"-{self.target}" if sfx else "")
+        self.server_text, self.health = "lem", ""
+        if not self.server.primary:
+            try:
+                self.health = deploy.preflight(self.server, self.url, self.token)
+            except deploy.PreflightError as e:
+                err(str(e))
+                raise Abort(1)
+            self.server_text = f"the {self.target} server ({self.health})"
+            if self.level == "all":
+                self.run_specs = [(n, "") for n in self.server.regression_all]
+            # What the agent files must carry this label, and gh refuses one
+            # that doesn't exist.
+            subprocess.run(["gh", "label", "create", f"target:{self.target}", "--repo", self.ticket_repo, "--force",
+                            "--color", "5319e7", "--description",
+                            f"Found against a non-lem server (DW_TARGET={self.target}); Don triages"],
+                           capture_output=True)
+            (REPO / self.profile.get("suite.perf_dir", "regression-perf") / self.target).mkdir(parents=True, exist_ok=True)
+        # guard.py reads these.
+        self.session_env = {"HARNEST_TARGET": self.target, "HARNEST_ROLE": "regression",
+                            "HARNEST_TICKET_REPO": self.ticket_repo}
+        lock.acquire(str(self.logs / f".driver.lock{sfx}"), "run-regression", self.log.say)
+        self.last = self.logs / f".last-session.{self.logname}"
+        plugin_dir = self.plugin_tree / self.profile.get("clones.plugin_subdir", "plugins/dw")
+        if refresh_plugin_tree(self.source_dir, self.plugin_tree, self.profile.get("integration_branch", "develop")) is None:
+            err(f"could not create/refresh the plugin worktree {self.plugin_tree} from {self.source_dir}")
+            raise Abort(1)
+        if not plugin_dir.is_dir():
+            err(f"dw plugin source not found: {plugin_dir}")
+            raise Abort(1)
+        effort = env("REGRESSION_EFFORT", env("EFFORT", "medium"))
+        try:
+            self.model_env = providers.resolve_model_env(self.model_provider, self.model)
+            self.session_flags = providers.session_flags(self.model_provider, self.model, effort, self.budget,
+                                                         self.fallback, self.autocompact)
+        except providers.ProviderError as e:
+            err(str(e))
+            raise Abort(1)
+        if not self.cases_per_session:
+            ctx = self.model_env.context_tokens
+            self.cases_per_session = "3" if ctx and int(ctx) < 120000 else "8"
+        if not self.cases_per_session.isdigit():
+            err(f"CASES_PER_SESSION must be a whole number, got '{self.cases_per_session}'")
+            raise Abort(1)
+        self.cases_per_session = int(self.cases_per_session)
+        skip = os.environ.get("TARGET_SKIP_CASES")
+        self.skip_cases = skip.split() if skip is not None else list(self.server.regression_skip_cases)
+        self.flags = [
+            "--mcp-config", session.mcp_config(self.mcp_name, self.url, self.token),
+            "--strict-mcp-config",
+            "--plugin-dir", str(plugin_dir),
+            *session.ISOLATION_FLAGS,
+            "--tools", session.CONSUMER_TOOLS,
+            *session.consumer_permission_flags(self.mcp_name, self.profile.get("mcp.deny_tools", ())),
+        ]
+
+    # --- sessions
+
+    def run_session(self, level, suite_file, workspace, tag, kind, instructions, head):
+        prompt_file = self.logs / f".prompt.{self.logname}.{kind}.md"
+        try:
+            prompts.role_prompt("regression", kind, prompt_file)
+        except prompts.PromptError:
+            self.log.say(f"[{self.rpfx}:{level}{tag}] no role prompt for '{kind}'")
+            return
+        secondary = not self.server.primary
+        if secondary:
+            # The server's own rules join the system prompt last, so they
+            # read as the last word.
+            note = prompts.target_note("regression", {
+                "TARGET": self.target, "SERVER": self.health, "URL": self.url,
+                "DEPLOY": deploy.deploy_cmd(self.server), "HOST": self.server.host, "SERVER_DIR": self.server.dir})
+            with open(prompt_file, "a", encoding="utf-8") as f:
+                f.write("\n" + note)
+        target_clause = " The Target section at the end of your system prompt applies to this whole run." if secondary else ""
+        prompt = (f"Tickets are GitHub Issues on {self.ticket_repo}; use the gh CLI to file/comment on them. "
+                  "Your role instructions for this kind of session are in your system prompt; follow them exactly, "
+                  f"with these specifics: suite file is {suite_file}; level is '{level}'; workspace is {workspace}; "
+                  f"{self.server_text} is running {head or 'unknown'} - name that commit in anything you file or comment."
+                  f"{target_clause} {instructions} Then stop.\n\n"
+                  + prompts.runtime_note("regression", self.model_provider, self.model, secondary))
+        session.run(f"{self.rpfx}:{level}{tag}", self.logname, str(REPO), prompt_file, prompt,
+                    [*self.session_flags, *self.flags], model_env=self.model_env, session_env=self.session_env,
+                    logs=str(self.logs), last=str(self.last), log=self.log)
+        skips, differs = outcome.regression_counts(self.last)
+        self.level_skips += skips
+        self.level_differs += differs
+
+    def script_report(self, ids):
+        runner = REPO / self.profile.get("suite.contract_runner", "contract/run.py")
+        p = subprocess.run(["python3", str(runner), "--url", self.url, "--token", self.token, *ids],
+                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        report = p.stdout.rstrip("\n")
+        try:
+            r = json.loads(report)
+            summary = (f"{_jq_num(r.get('passed'))} passed, {_jq_num(r.get('failed'))} failed, "
+                       f"{_jq_num(r.get('errors'))} errored" + (f" - {r['error']}" if r.get("error") else ""))
+        except (ValueError, AttributeError):
+            summary = "report unreadable"
+        return report, summary
+
+    def run_level(self, level, override):
+        lv = self.profile.level(level)
+        if override:
+            suite_file = Path(override) if override.startswith("/") else REPO / override
+        else:
+            suite_file = REPO / lv.file
+        if not suite_file.is_file():
+            err(f"suite file not found: {suite_file}")
+            raise Abort(1)
+        workspace = suite.workspace_for_suite_file(suite_file)
+        sfx = self.server.suffix
+        if not suite.has_cases(suite_file):
+            self.log.say(f"{ts()} {level}{sfx}: {suite_file.name} has no cases yet, skipping")
+            return
+
+        script_ids = suite.script_cases(suite_file, REPO / self.profile.get("suite.contract_cases", "contract/cases"))
+        script_note = ""
+        if script_ids:
+            report, summary = self.script_report(script_ids)
+            self.log.say(f"[{self.rpfx}:{level}] script cases: {summary}")
+            script_note = (
+                "\n\nThese cases ran as scripts before this session (contract/run.py, a plain MCP client; see "
+                f"'runner: script' on each): {' '.join(script_ids)}. Do not execute them. Their report:\n{report}\n"
+                "For each case whose status is fail or error, report it ('Reporting a failure' in the role "
+                "instructions) exactly as for a case you ran yourself, quoting its failures; a pass needs nothing. "
+                "An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure.")
+
+        head = deploy.deployed_head(self.server)
+        # Another server's header and session lines carry its tag
+        # (smoke.mini-ai), so the curator's per-chunk cost table, which reads
+        # lem's runs out of loop.log, neither counts nor mixes them.
+        tag = f"{level}{sfx}"
+        self.level_skips = self.level_differs = 0
+        ids_in_file = suite.case_ids(suite_file)
+        held = []
+        if sfx:
+            for cid in self.skip_cases:
+                if cid not in ids_in_file:
+                    continue
+                held.append(cid)
+                self.level_skips += 1
+                self.log.say(f"[{self.rpfx}:{level}] REGRESSION-SKIP: {cid} memory (TARGET_SKIP_CASES: not run on this server)")
+        held_clause = (" Never run these cases on this server, whatever the suite says; the driver already counted "
+                       "them as skipped:" + "".join(f" {c}" for c in held) + ".") if held else ""
+        header = (f"=== {ts()} regression run ({self.model_env.label}, level={tag}, suite={suite_file}, "
+                  f"workspace={workspace}, target={self.target}, head={head}")
+        if self.cases_per_session == 0:
+            self.log.say(header + ") ===")
+            self.run_session(level, suite_file, workspace, "", "whole",
+                             f"Exercise every case in the suite file against the {workspace} workspace, file or "
+                             "comment on issues for failures and performance regressions, add any cases worth "
+                             f"adding, then do the final sweep.{held_clause}{script_note}", head)
+        else:
+            ids = [i for i in ids_in_file if i not in script_ids and i not in held]
+            total, n = len(ids), self.cases_per_session
+            nchunks = (total + n - 1) // n
+            self.log.say(header + f", {total} cases in sessions of {n}) ===")
+            session_no = 0
+            for start in range(0, total, n):
+                chunk = ids[start:start + n]
+                session_no += 1
+                self.log.say(f"--- {ts()} {tag} session {session_no} of {nchunks}: {' '.join(chunk)} ---")
+                self.run_session(level, suite_file, workspace, f".{session_no} of {nchunks}", "chunk",
+                                 f"This is one chunk of a chunked run: this session exercises ONLY these cases, in "
+                                 f"this order: {' '.join(chunk)}. Do not read the suite file in full — read its header "
+                                 "(everything above the first '### ' heading, which includes the Fixtures section), "
+                                 "then only those cases' sections. Skip the final sweep; a separate session does it "
+                                 "after every case has run.", head)
+                if outcome.aborted(self.last):
+                    self.log.say(f"[{self.rpfx}:{level}] session {session_no} aborted (MCP unreachable); "
+                                 "skipping the rest of this level and the sweep")
+                    break
+            if not outcome.aborted(self.last):
+                self.log.say(f"--- {ts()} {tag} session {session_no + 1}: final sweep ---")
+                self.run_session(level, suite_file, workspace, ".sweep", "sweep",
+                                 "This is the final sweep of a chunked run: every case was already exercised in "
+                                 f"earlier sessions. Do only the final sweep against the {workspace} workspace — read "
+                                 "the suite file's header (everything above the first '### ' heading, which includes "
+                                 f"the Fixtures section), not the cases.{script_note}", head)
+
+        if sfx:
+            self.log.say(f"[{self.rpfx}:{level}] {self.level_skips} case(s) skipped, {self.level_differs} expectation(s) "
+                         "differ on this server (REGRESSION-SKIP / REGRESSION-DIFFERS lines above)")
+        name, email = providers.co_author_for(self.model_provider,
+                                              resolved_model(self.logs / f"{self.logname}.jsonl", self.model))
+        target_clause = f", target {self.target}" if sfx else ""
+        self.commit(f"regression: update {level} suite from {ts()} run ({self.model_env.label}{target_clause})", name, email)
+        if outcome.aborted(self.last):
+            self.log.say(f"[{self.rpfx}] stopping: MCP unreachable")
+            raise Abort(1)
+
+    def commit(self, msg, name, email):
+        suite.commit_changes(REPO, str(self.logs), suite.commit_paths(self.server, self.profile.get("suite.perf_dir", "regression-perf")),
+                             msg, name, email, self.log.say)
+
+    def main(self):
+        # Fallback only: anything still dirty is of unknown origin (a hand
+        # edit between runs, or a cycle that died before committing), so it
+        # is committed under a neutral name, never the regression model's.
+        # On another server this would take lem's files, which a run there
+        # never writes, and the loop's tester may be mid-edit in them.
+        if self.server.primary:
+            self.commit("regression: capture suite edits of unknown origin made outside a regression run",
+                        "unknown (edited outside a regression run)", "noreply@localhost")
+        for level, override in self.run_specs:
+            self.run_level(level, override)
+
+
+def _jq_num(v):
+    """`.x // 0` interpolated."""
+    if v is None or v is False:
+        return "0"
+    return str(v) if not isinstance(v, float) or not v.is_integer() else str(int(v))
+
+
+def main(argv=None):
+    # A stopped driver runs its exit handlers (the lock) and takes its
+    # session down with it (harness/session.py).
+    signal.signal(signal.SIGTERM, lambda *_: sys.exit(143))
+    try:
+        r = Regression(sys.argv[1:] if argv is None else argv)
+        r.start()
+        r.main()
+    except Abort as a:
+        return a.code
+    except ProfileError as e:
+        err(str(e))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
