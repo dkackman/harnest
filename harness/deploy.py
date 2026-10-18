@@ -41,8 +41,8 @@ def health(url, token):
     if base.endswith("/mcp"):
         base = base[:-4]
     try:
-        p = subprocess.run(["curl", "-s", "-m", "5", "-H", f"Authorization: Bearer {token}", f"{base}/api/health"],
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        p = subprocess.run(["curl", "-s", "-m", "5", "-H", "@-", f"{base}/api/health"],
+                           input=f"Authorization: Bearer {token}\n", capture_output=True, text=True, timeout=30)
     except (OSError, subprocess.TimeoutExpired):
         return None
     if p.returncode != 0:

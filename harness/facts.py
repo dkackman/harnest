@@ -48,13 +48,14 @@ class ServerFacts:
 
 
 def health_json(url, token):
-    """/api/health, through curl (the test seam), or None."""
+    """/api/health, through curl (the test seam), or None. The token goes in on
+    stdin (-H @-), never on the command line, where ps would show it."""
     base = url.rstrip("/")
     if base.endswith("/mcp"):
         base = base[:-4]
     try:
-        p = subprocess.run(["curl", "-s", "-m", "5", "-H", f"Authorization: Bearer {token}", f"{base}/api/health"],
-                           stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=30)
+        p = subprocess.run(["curl", "-s", "-m", "5", "-H", "@-", f"{base}/api/health"],
+                           input=f"Authorization: Bearer {token}\n", capture_output=True, text=True, timeout=30)
         h = json.loads(p.stdout) if p.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
