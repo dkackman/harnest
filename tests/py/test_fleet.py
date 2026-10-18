@@ -304,7 +304,7 @@ class Running(unittest.TestCase):
         import threading
 
         f.mu, f.per, f.started_gids = threading.RLock(), 3, set()
-        f.cv, f.busy = threading.Condition(f.mu), 0
+        f.cv, f.busy, f.idle = threading.Condition(f.mu), 0, 0
         lane = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
         f.lanes = [lane]
         f.servers = {"lem": type("S", (), {"down": False})()}
@@ -326,6 +326,15 @@ class Running(unittest.TestCase):
             batches.append([i.case for i in b])
             f.done()  # as a lane does after each batch
         self.assertEqual([["A", "B"], ["P"], ["C", "D", "E"], ["F"], ["G"]], batches)
+
+    def test_batch_size_follows_speed_and_shrinks_while_lanes_idle(self):
+        f = fleet.Fleet.__new__(fleet.Fleet)
+        f.per, f.idle = 8, 0
+        fast = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
+        slow = fleet.Lane(server=srv("minid", speed=0.25), slot=1, facts=fx("minid"))
+        self.assertEqual((8, 2), (f.batch_cap(fast, 20), f.batch_cap(slow, 20)))
+        f.idle = 3  # three lanes waiting: a lane takes its share of what's left
+        self.assertEqual((2, 2, 1), (f.batch_cap(fast, 7), f.batch_cap(fast, 5), f.batch_cap(fast, 1)))
 
     def test_results_and_skips_are_read_from_the_session(self):
         text = (

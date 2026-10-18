@@ -109,6 +109,12 @@ else
 fi
 ws="${prompt#*workspace is }"; ws="${ws%%;*}"
 echo "start $(now) $HARNEST_TARGET $$ $ws [$cases]" >> "$FAKE_TIMELINE"
+# the first two sessions holding S-F001 die without a result: the session's
+# own retry gets the second, and the fleet must queue the case again
+case " $cases " in *" S-F001 "*)
+  n=$(cat "$FAKE_TIMELINE.died" 2>/dev/null || echo 0)
+  if [ "$n" -lt 2 ]; then echo $((n + 1)) > "$FAKE_TIMELINE.died"; echo "end $(now) $HARNEST_TARGET $$ $ws [$cases]" >> "$FAKE_TIMELINE"; exit 1; fi ;;
+esac
 text=""
 for c in $cases; do
   text="${text}REGRESSION-CASE: $c\n"
@@ -157,6 +163,8 @@ skipper="$(cat "$T/timeline.skipped/by")"
 has "  a skipped case is re-queued on another server" "S-F007 skipped on $skipper; queued on" "$(jq -r '.events[].text' "$st")"
 eq  "  and passes there" "pass" "$(case_of S-F007 outcome)"
 eq  "  on a server that hadn't tried it" "" "$(case_of S-F007 server | grep -x "$skipper" || true)"
+has "  a case whose session died is queued again" "S-F001 had no answer (the session ended)" "$(jq -r '.events[].text' "$st")"
+eq  "  and passes" "pass" "$(case_of S-F001 outcome)"
 # the exclusive case ran with no other alpha session open
 eq  "  the exclusive case ran alone on its server" "ok" "$(python3 - "$T/timeline" <<'EOF'
 import sys

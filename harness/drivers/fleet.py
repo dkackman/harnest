@@ -238,6 +238,7 @@ class Item:
     gid: str
     exclusive: bool
     tried: set = field(default_factory=set)  # servers that skipped it
+    retried: bool = False  # sent again once after a session ended without its answer
 
 
 class State:
@@ -329,6 +330,7 @@ class Fleet:
         # still hand it work (a skipped case re-queued onto its server).
         self.cv = threading.Condition(self.mu)
         self.busy = 0
+        self.idle = 0  # lanes waiting with nothing to take: batches shrink so they can help
         self.queues = {l.name: [] for l in self.lanes}
         self.started_gids = set()
         self.group_need = {}
@@ -522,7 +524,23 @@ class Fleet:
                 if self.busy == 0 or self.servers[lane.server.name].down:
                     self.cv.notify_all()
                     return None
-                self.cv.wait(1.0)
+                self.idle += 1
+                try:
+                    self.cv.wait(1.0)
+                finally:
+                    self.idle -= 1
+
+    def batch_cap(self, lane, queued):
+        """How many cases <lane> takes into one session. A slow lane takes
+        fewer (CASES_PER_SESSION x its speed), so it never sits on a long
+        run of cases the others can't reach. While any lane is idle, a
+        lane takes only its share of what's left, so the rest stays
+        stealable: on 2026-10-18 minid took all 7 of its cases into one
+        session and the three faster lanes went idle while it ran them."""
+        cap = max(1, round(self.per * lane.server.speed))
+        if self.idle:
+            cap = min(cap, max(1, -(-queued // (self.idle + 1))))
+        return cap
 
     def done(self):
         with self.cv:
@@ -548,17 +566,20 @@ class Fleet:
             if first.exclusive:
                 batch = [q.pop(0)]
             else:
+                cap = self.batch_cap(lane, len(q))
                 batch = []
-                while q and len(batch) < self.per and q[0].level == first.level and not q[0].exclusive:
+                while q and len(batch) < cap and q[0].level == first.level and not q[0].exclusive:
                     batch.append(q.pop(0))
             for it in batch:
                 self.started_gids.add(it.gid)
             return batch
 
-    def requeue(self, item, from_lane):
+    def requeue(self, item, from_lane, why="skipped", same_server=False):
         """A case <from_lane>'s server skipped goes to an eligible lane of a
-        server that hasn't tried it; False when there is none."""
-        item.tried.add(from_lane.server.name)
+        server that hasn't tried it; False when there is none. <same_server>
+        (a retry after a session that died) lets its own server take it again."""
+        if not same_server:
+            item.tried.add(from_lane.server.name)
         need = self.case_need[item.case]
         group = requirements.Group(cases=[item.case], need=need)
         with self.mu:
@@ -576,7 +597,7 @@ class Fleet:
             self.queues[target.name].append(item)
             self.cv.notify_all()
         self.case_state(item.case, lane=target.name, server=target.server.name, outcome="queued")
-        self.event(f"{item.case} skipped on {from_lane.server.name}; queued on {target.name}")
+        self.event(f"{item.case} {why} on {from_lane.server.name}; queued on {target.name}")
         return True
 
     def server_down(self, server_name):
@@ -695,6 +716,11 @@ class Fleet:
                 if not self.requeue(it, lane):
                     self.case_state(it.case, outcome="skip")
                 continue
+            if o is None and died and not it.retried:
+                # the session went away before answering: once more, anywhere it may run
+                it.retried = True
+                if self.requeue(it, lane, why="had no answer (the session ended)", same_server=True):
+                    continue
             if o is None:
                 o = "not run" if died else "unreported"
             self.case_state(it.case, outcome=o, **({"issue": issue} if issue else {}))
