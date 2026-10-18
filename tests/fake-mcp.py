@@ -6,11 +6,14 @@ on several ports at once, each answering as a different server.
     tests/fake-mcp.py <spec.json>
 
 spec.json: {"<port>": {"hostname": "alpha", "device": "cuda", "workers": 2,
-            "models": {"repo/id": 5.0}, "assets": ["qa-cast/a.wav"]}, ...}
+            "models": {"repo/id": 5.0}, "assets": ["qa-cast/a.wav"],
+            "workspace_assets": {"regression-smoke": ["fixture.wav"]}}, ...}
+create_workspace and copy_to_workspace calls are appended to $FAKE_MCP_LOG.
 Prints "ready" once every port listens; runs until killed.
 """
 
 import json
+import os
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -50,7 +53,18 @@ def handler_for(spec):
                         "repos": [{"repo_id": r, "size_on_disk": int(gb * GB)} for r, gb in spec["models"].items()]
                     }
                 elif name == "list_assets":
-                    value = {"assets": [{"name": a, "reference": f"asset:{a}"} for a in spec.get("assets", [])]}
+                    ws = msg["params"].get("arguments", {}).get("workspace")
+                    own = spec.get("workspace_assets", {}).get(ws, []) if ws else []
+                    value = {
+                        "assets": [
+                            {"name": a, "reference": f"asset:{a}", "origin": "common"} for a in spec.get("assets", [])
+                        ]
+                        + [{"name": a, "reference": f"asset:{a}", "origin": "workspace"} for a in own]
+                    }
+                elif name in ("create_workspace", "copy_to_workspace"):
+                    with open(os.environ.get("FAKE_MCP_LOG", os.devnull), "a") as f:
+                        f.write(f"{spec['hostname']} {name} {json.dumps(msg['params'].get('arguments', {}))}\n")
+                    value = {"ok": True}
                 elif name == "validate_workflow":
                     value = {"valid": True, "plan": {"downloads_required": []}}
                 else:

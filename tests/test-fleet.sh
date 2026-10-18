@@ -55,11 +55,12 @@ git -C "$T/h" add -A && git -C "$T/h" -c user.name=t -c user.email=t@t commit -q
 
 p1=$((20000 + RANDOM % 20000)); p2=$((p1 + 1)); p3=$((p1 + 2))
 cat > "$T/mcp.json" <<EOS
-{"$p1": {"hostname": "alpha", "device": "cuda", "workers": 2, "models": {"sd15": 5, "ltx": 160, "h3": 196}},
+{"$p1": {"hostname": "alpha", "device": "cuda", "workers": 2, "models": {"sd15": 5, "ltx": 160, "h3": 196},
+          "workspace_assets": {"regression-smoke": ["fixture.wav"]}},
  "$p2": {"hostname": "beta", "device": "mps", "workers": 1, "models": {"sd15": 5}},
  "$p3": {"hostname": "gamma", "device": "mps", "workers": 1, "models": {"sd15": 5, "ltx": 160, "h3": 50}}}
 EOS
-python3 "$HARNEST/tests/fake-mcp.py" "$T/mcp.json" > "$T/mcp.out" 2>&1 &
+FAKE_MCP_LOG="$T/mcp-calls" python3 "$HARNEST/tests/fake-mcp.py" "$T/mcp.json" > "$T/mcp.out" 2>&1 &
 mcppid=$!
 trap 'kill $mcppid 2>/dev/null; rm -rf "$T"' EXIT
 for _ in 1 2 3 4 5 6 7 8 9 10; do grep -q ready "$T/mcp.out" 2>/dev/null && break; sleep 0.3; done
@@ -182,8 +183,11 @@ eq  "  the cost is summed" "true" "$(jq '[.lanes[].cost] | add > 0' "$st")"
 ok  "  the finished run is kept" test -s "$T/h/logs/fleet/runs/$(jq -r .id "$st").json"
 has "  the suite edit is committed once" "regression: update smoke from" "$(git -C "$T/h" log -1 --format=%s)"
 eq  "  locks released" "" "$(ls -d "$T/h"/logs/.driver.lock* 2>/dev/null || true)"
-eq  "  lanes have their own workspaces" "regression-smoke-alpha-1 regression-smoke-alpha-2 regression-smoke-beta-1 regression-smoke-gamma-1 " \
+# each server's first lane in the level's workspace; alpha's second in its own, seeded from it
+eq  "  workspaces: the level's, and alpha-2's own" "regression-smoke regression-smoke-alpha-2 " \
     "$(awk '/^start/ {print $5}' "$T/timeline" | sort -u | tr '\n' ' ')"
+has "  alpha-2's workspace is created" 'alpha create_workspace {"name": "regression-smoke-alpha-2"}' "$(cat "$T/mcp-calls")"
+has "  and seeded with the level's own assets" '"source": "regression-smoke", "destination": "regression-smoke-alpha-2", "assets": ["fixture.wav"]' "$(cat "$T/mcp-calls")"
 
 # --- a server that's down stops the run before it starts
 kill $mcppid; wait $mcppid 2>/dev/null

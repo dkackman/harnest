@@ -295,7 +295,8 @@ class Regression:
     def script_report(self, ids):
         runner = REPO / self.profile.get("suite.contract_runner", "contract/run.py")
         p = subprocess.run(
-            ["python3", str(runner), "--url", self.url, "--token", self.token, *ids],
+            ["python3", str(runner), "--url", self.url, *ids],
+            env={**os.environ, "DW_TOKEN": self.token},  # not argv, where ps shows it
             stdin=subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,

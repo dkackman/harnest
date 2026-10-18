@@ -1,7 +1,8 @@
 # Regression fleet: parallel lanes across servers, dispatched by capability
 
-Status: planning built (2026-10-18): `python3 -m harness.drivers.fleet --plan <level>`. Running the
-plan, and the requirements file's first generation, are next.
+Status: built (2026-10-18), not yet run live. `python3 -m harness.drivers.fleet [--plan] <level|all>`;
+progress on the dashboard's `/regression` page. Requirements generated for all four levels
+(713 of 723 cases; $12.50 in all).
 
 ## Goal
 
@@ -83,9 +84,18 @@ fleet re-queues that case to another eligible lane rather than counting it skipp
 
 ## Lanes
 
-A lane is (server, slot). Each has its own workspace (`regression-smoke.lem-1`), state
-suffix, prompt files and `.last-session`. Fixtures are shared assets (`asset:qa-cast/…`),
-reachable from every workspace. Suite and perf commits happen once, at the end.
+A lane is (server, slot), a thread. Each has its own state files, prompt files and
+`.last-session`. A server's first lane works in the level's own workspace (`regression-smoke`),
+as a one-server run does, so its workspace fixtures are there; a second lane gets its own
+(`regression-smoke-lem-2`), created and seeded at the start with `copy_to_workspace` from the
+level's workspace's own assets. Saved workflows and gallery runs aren't copied: a case that
+needs one recreates it, as the Fixtures sections already ask. Suite and perf commits happen
+once, at the end.
+
+Progress: `logs/fleet/state.json`, rewritten on every change (each case's lane and outcome,
+each lane's live case, cost, events), kept in `logs/fleet/runs/<id>.json` when done. The
+agent writes `REGRESSION-CASE: <id>` as it starts a case and `REGRESSION-RESULT: <id>
+<outcome>` for each at the end (`agents/regression/run-cases.md` step 6).
 
 ## Asked of dw, later
 
@@ -97,8 +107,7 @@ MCP surface, so it waits for dw's stabilization freeze to lift.
 
 ## Not yet
 
-- The requirements file's first generation: an agent pass over the case text, read-only
-  against lem (it holds every model), per level in chunks. About 720 cases on sonnet.
-- Running the plan: lanes in parallel, one commit at the end, the `REGRESSION-SKIP`
-  re-queue, `exclusive` groups with their server's other lanes idle.
-- The perf-reading condition for two lem lanes (`lanes_active`).
+- The first live run (smoke first).
+- The perf-reading condition for two lem lanes (`lanes_active`): an `exclusive` case runs
+  with its server's other lanes idle, but ordinary `metrics:` readings may still overlap.
+- Copying saved workflows into a second lane's workspace, if a case turns out to need one.

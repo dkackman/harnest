@@ -244,7 +244,9 @@ class Plan(unittest.TestCase):
             self.assertTrue(where["S-F005"].startswith("lem-"), "no entry: primary only")
             self.assertEqual(where["S-F002"], where["S-F003"], "a group shares a lane")
             self.assertEqual(5, len(where))
-            self.assertEqual("regression-x-minid-1", p.lanes[3].workspace("regression-x"))
+            # a server's first lane works in the level's own workspace; a second gets its own
+            self.assertEqual("regression-x", p.lanes[3].workspace("regression-x"))
+            self.assertEqual("regression-x-lem-2", p.lanes[1].workspace("regression-x"))
 
     def test_gather_all_reports_every_server_that_cant_join(self):
         profile = load()

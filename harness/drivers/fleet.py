@@ -85,7 +85,10 @@ class Lane:
         return f"{self.server.name}-{self.slot}"
 
     def workspace(self, base):
-        return f"{base}-{self.name}"
+        """A server's first lane works in the level's own workspace, as a
+        one-server run does, fixtures and all; another lane on the same
+        server gets its own, seeded from it (Fleet.seed)."""
+        return base if self.slot == 1 else f"{base}-{self.name}"
 
 
 @dataclass
@@ -98,7 +101,13 @@ class Plan:
 
 
 def gather_all(
-    profile, names, workflows=(), environ=os.environ, gather=facts.gather, validate=facts.validate_workflows
+    profile,
+    names,
+    workflows=(),
+    environ=os.environ,
+    gather=facts.gather,
+    validate=facts.validate_workflows,
+    workspaces=(),
 ):
     """{server: facts} for <names>, each having validated <workflows>;
     ProfileError listing every server that can't take part (no token, not
@@ -109,7 +118,7 @@ def gather_all(
         try:
             url = resolve_url(s, environ.get("DW_URL", "") if len(names) == 1 else "")
             token = resolve_token(s, None if environ is os.environ else environ)
-            f = gather(s, url, token)
+            f = gather(s, url, token, workspaces=workspaces) if workspaces else gather(s, url, token)
             f.workflows = validate(url, token, list(workflows))
         except (ProfileError, facts.FactsError) as e:
             problems.append(f"{name}: {e}")
@@ -449,6 +458,7 @@ class Fleet:
                     capture_output=True,
                 )
         self.state = State(FLEET_DIR / "state.json", self.initial_state())
+        self.seed()
         self.state.update(lambda d: [d["servers"][n].update(head=s.head) for n, s in self.servers.items()])
         total = sum(len(q) for q in self.queues.values())
         for s in self.servers.values():
@@ -461,6 +471,19 @@ class Fleet:
             + ", ".join(f"{l.name} {len(self.queues[l.name])}" for l in self.lanes)
             + (f"; unplaced: {sum(len(g.cases) for _, g, _ in self.unplaced)}" if self.unplaced else "")
         )
+
+    def seed(self):
+        """A second lane on a server works in its own workspace: create it
+        and copy the level workspace's own assets into it, once per run (it
+        persists, so later runs find it ready)."""
+        for lane in self.lanes:
+            if lane.slot == 1:
+                continue
+            s = self.servers[lane.server.name]
+            for lv in sorted({it.level for it in self.queues[lane.name]}):
+                base = suite.workspace_for_suite_file(self.suite_files[lv])
+                said = facts.seed_workspace(s.url, s.token, base, lane.workspace(base))
+                s.log.say(f"[fleet] {lane.workspace(base)}: {said}")
 
     # -- the shared queue
 
@@ -721,7 +744,8 @@ class Fleet:
             if not ids:
                 continue
             p = subprocess.run(
-                ["python3", str(runner), "--url", s.url, "--token", s.token, *ids],
+                ["python3", str(runner), "--url", s.url, *ids],
+                env={**os.environ, "DW_TOKEN": s.token},  # not argv, where ps shows it
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
@@ -829,7 +853,8 @@ def main(argv=None):
             if profile.level(lv) is None:
                 raise ProfileError(f"unknown level '{lv}' (expected: {', '.join(l.name for l in profile.levels)}, all)")
         sidecar = requirements.load_sidecar()
-        sf = gather_all(profile, names, requirements.workflow_names(sidecar))
+        workspaces = [suite.workspace_for_suite_file(REPO / profile.level(lv).file) for lv in levels]
+        sf = gather_all(profile, names, requirements.workflow_names(sidecar), workspaces=workspaces)
     except (ProfileError, ValueError) as e:
         err(str(e))
         return 1

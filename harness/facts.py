@@ -70,8 +70,10 @@ def health_json(url, token):
     return h if isinstance(h, dict) and h.get("status") == "ok" else None
 
 
-def mcp_inventory(url, token, asset_limit=5000):
-    """(models {repo: GB}, asset names) from list_models and list_assets."""
+def mcp_inventory(url, token, asset_limit=5000, workspaces=()):
+    """(models {repo: GB}, asset names) from list_models and list_assets:
+    the shared library, plus each of <workspaces>' own (a level's fixtures
+    live in its workspace, which list_assets shows only when asked)."""
     MCPClient, MCPError = _client_class()
     try:
         c = MCPClient(url, token, timeout=60)
@@ -79,19 +81,47 @@ def mcp_inventory(url, token, asset_limit=5000):
         err, models = c.call("list_models", {})
         if err or not isinstance(models, dict):
             raise FactsError(f"list_models failed: {str(models)[:200]}")
-        err, assets = c.call("list_assets", {"limit": asset_limit})
-        if err or not isinstance(assets, dict):
-            raise FactsError(f"list_assets failed: {str(assets)[:200]}")
+        listings = []
+        for ws in (None, *workspaces):
+            args = {"limit": asset_limit, **({"workspace": ws} if ws else {})}
+            err, assets = c.call("list_assets", args)
+            if ws and (err or not isinstance(assets, dict)):
+                continue  # a level workspace this server doesn't have yet
+            if err or not isinstance(assets, dict):
+                raise FactsError(f"list_assets failed: {str(assets)[:200]}")
+            listings.append(assets)
     except (MCPError, OSError) as e:
         raise FactsError(str(e)) from e
     sizes = {r["repo_id"]: r.get("size_on_disk", 0) / GB for r in models.get("repos", []) if r.get("repo_id")}
     names = set()
-    for a in assets.get("assets", []):
-        for key in ("name", "reference"):
-            v = a.get(key)
-            if isinstance(v, str) and v:
-                names.add(v[len("asset:") :] if v.startswith("asset:") else v)
+    for assets in listings:
+        for a in assets.get("assets", []):
+            for key in ("name", "reference"):
+                v = a.get(key)
+                if isinstance(v, str) and v:
+                    names.add(v[len("asset:") :] if v.startswith("asset:") else v)
     return sizes, names
+
+
+def seed_workspace(url, token, source, destination):
+    """Creates <destination> and copies <source>'s own assets into it (hard
+    links on the server): a second lane on a server gets its level's
+    fixtures. Returns what happened, for the log; never raises."""
+    MCPClient, MCPError = _client_class()
+    try:
+        c = MCPClient(url, token, timeout=300)
+        c.initialize()
+        c.call("create_workspace", {"name": destination})  # already there is fine
+        err, listing = c.call("list_assets", {"workspace": source, "limit": 5000})
+        if err or not isinstance(listing, dict):
+            return f"{source} has no assets to copy ({str(listing)[:120]})"
+        own = [a["name"] for a in listing.get("assets", []) if a.get("origin") == "workspace" and a.get("name")]
+        if not own:
+            return f"{source} has no assets of its own; {destination} is ready"
+        err, r = c.call("copy_to_workspace", {"source": source, "destination": destination, "assets": own})
+        return f"copied {len(own)} asset(s) from {source}" + (f", but: {str(r)[:200]}" if err else "")
+    except (MCPError, OSError) as e:
+        return f"could not seed {destination} from {source}: {e}"
 
 
 def validate_workflows(url, token, names):
@@ -128,7 +158,7 @@ def validate_workflows(url, token, names):
     return out
 
 
-def gather(server, url, token, health=health_json, inventory=mcp_inventory):
+def gather(server, url, token, health=health_json, inventory=mcp_inventory, workspaces=()):
     """Every fact the dispatcher needs from one server. FactsError when it
     doesn't answer, or answers as another host."""
     h = health(url, token)
@@ -137,7 +167,7 @@ def gather(server, url, token, health=health_json, inventory=mcp_inventory):
     host = h.get("hostname") or ""
     if short_host(host) != short_host(server.host):
         raise FactsError(f"the server at {url} is {host}, not {server.host}")
-    models, assets = inventory(url, token)
+    models, assets = inventory(url, token, workspaces=workspaces) if workspaces else inventory(url, token)
     return ServerFacts(
         server=server.name,
         hostname=host,

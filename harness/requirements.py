@@ -208,7 +208,9 @@ def eligible(need, server, facts, ref_sizes):
             return False, f"{m} is not cached"
         if server.max_model_gb and ref_sizes.get(m, 0) > server.max_model_gb:
             return False, f"{m} is {ref_sizes[m]:.0f} GB, over {server.max_model_gb:g}"
-    for a in need.assets:
+    # The primary takes any case: a fixture it lacks shows up as the agent's
+    # own skip or failure there, as in a one-server run.
+    for a in () if server.primary else need.assets:
         if a not in facts.assets:
             return False, f"asset {a} is not here"
     return True, ""
