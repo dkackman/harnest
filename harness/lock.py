@@ -11,6 +11,7 @@ driver and a Python one exclude each other:
   run the regression driver) names it in HARNEST_HELD_LOCK and runs under
   it, leaving the release to the parent.
 """
+
 import atexit
 import os
 import shutil

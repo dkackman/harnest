@@ -13,6 +13,15 @@ fi
 for f in agent-settings/hooks/guard.py tests/fake-gh.py contract/*.py bench/*.py; do
   ok "python parses $f" python3 -c "import ast, sys; ast.parse(open(sys.argv[1]).read())" "$f"
 done
+# The Python stays ruff-clean (ruff.toml): `ruff check --fix . && ruff format .`
+# fixes most of what these find. A missing ruff fails, rather than skips,
+# so the check can't quietly stop happening.
+if command -v ruff >/dev/null; then
+  ok "ruff check (lint)" ruff check --quiet .
+  ok "ruff format --check" ruff format --check --quiet .
+else
+  _report 1 "ruff is not on PATH: brew install ruff (or uv tool install ruff)"
+fi
 ok "classify.jq compiles" jq -f lib/classify.jq tests/fixtures/empty-board.json
 # Knobs: ${NAME:-...} reads in the drivers, less the few that aren't settings.
 internal="SESSION_HEADER TMPDIR"

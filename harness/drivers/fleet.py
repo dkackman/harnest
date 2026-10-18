@@ -11,6 +11,7 @@ assignment. It runs no session and takes no lock. Running the plan is the
 next step; until then run-regression.sh / harness.drivers.regression run
 one server at a time.
 """
+
 import argparse
 import json
 import os
@@ -28,7 +29,7 @@ class Lane:
     slot: int
     facts: object
     groups: list = field(default_factory=list)
-    load: float = 0.0          # assigned work, in primary-lane case units
+    load: float = 0.0  # assigned work, in primary-lane case units
 
     @property
     def name(self):
@@ -43,12 +44,13 @@ class Plan:
     level: str
     suite_file: object
     lanes: list
-    unplaced: list = field(default_factory=list)   # (group, {server: why})
+    unplaced: list = field(default_factory=list)  # (group, {server: why})
     script_cases: list = field(default_factory=list)
 
 
-def gather_all(profile, names, workflows=(), environ=os.environ, gather=facts.gather,
-               validate=facts.validate_workflows):
+def gather_all(
+    profile, names, workflows=(), environ=os.environ, gather=facts.gather, validate=facts.validate_workflows
+):
     """{server: facts} for <names>, each having validated <workflows>;
     ProfileError listing every server that can't take part (no token, not
     answering, policy the facts can't meet)."""
@@ -76,9 +78,12 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None):
     lv = profile.level(level)
     suite_file = REPO / lv.file
     script = suite.script_cases(suite_file, REPO / profile.get("suite.contract_cases", "contract/cases"))
-    lanes = [Lane(server=profile.server(n), slot=i + 1, facts=f)
-             for n, f in server_facts.items() if level_servers is None or n in level_servers
-             for i in range(profile.server(n).lanes)]
+    lanes = [
+        Lane(server=profile.server(n), slot=i + 1, facts=f)
+        for n, f in server_facts.items()
+        if level_servers is None or n in level_servers
+        for i in range(profile.server(n).lanes)
+    ]
     ref = requirements.reference_sizes(server_facts.values())
     p = Plan(level=level, suite_file=suite_file, lanes=lanes, script_cases=script)
     for g in sorted(requirements.groups(suite_file, sidecar, skip=script), key=lambda g: -g.weight):
@@ -86,8 +91,9 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None):
         for lane in lanes:
             s = lane.server
             held = [c for c in g.cases if c in s.regression_skip_cases]
-            ok, reason = (False, f"{held[0]} is held back here") if held else \
-                requirements.eligible(g.need, s, lane.facts, ref)
+            ok, reason = (
+                (False, f"{held[0]} is held back here") if held else requirements.eligible(g.need, s, lane.facts, ref)
+            )
             if not ok:
                 why[s.name] = reason
                 continue
@@ -109,7 +115,9 @@ def render(p, workspace):
     for lane in p.lanes:
         cases = [c for g in lane.groups for c in g.cases]
         excl = [c for g in lane.groups if g.need.load == "exclusive" for c in g.cases]
-        out.append(f"   {lane.name:10} {len(cases):4} cases  ~{lane.load:6.1f} units  workspace {lane.workspace(workspace)}")
+        out.append(
+            f"   {lane.name:10} {len(cases):4} cases  ~{lane.load:6.1f} units  workspace {lane.workspace(workspace)}"
+        )
         if excl:
             out.append(f"   {'':10} exclusive (its server's other lanes idle): {' '.join(excl)}")
     for g, why in p.unplaced:
@@ -155,8 +163,19 @@ def main(argv=None):
         if not a.json:
             print(render(p, suite.workspace_for_suite_file(p.suite_file)))
     if a.json:
-        print(json.dumps([{"level": p.level, "lanes": {l.name: [c for g in l.groups for c in g.cases] for l in p.lanes},
-                           "unplaced": [{"cases": g.cases, "why": w} for g, w in p.unplaced]} for p in plans], indent=1))
+        print(
+            json.dumps(
+                [
+                    {
+                        "level": p.level,
+                        "lanes": {l.name: [c for g in l.groups for c in g.cases] for l in p.lanes},
+                        "unplaced": [{"cases": g.cases, "why": w} for g, w in p.unplaced],
+                    }
+                    for p in plans
+                ],
+                indent=1,
+            )
+        )
     return 0
 
 

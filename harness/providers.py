@@ -7,6 +7,7 @@ Every validator raises ProviderError with the message the bash prints on
 stderr, so a driver that calls them at startup fails there, not three
 minutes in.
 """
+
 import os
 import re
 from dataclasses import dataclass, field
@@ -27,16 +28,15 @@ class ProviderError(Exception):
 def is_anthropic_model(model):
     """Structural, not an allowlist: an alias (opus, opus[1m]), a full id, or
     a Bedrock/Vertex id. The bash `case` pattern, exactly."""
-    return ("claude" in model or model.startswith(("opus", "sonnet", "haiku", "fable"))
-            or model in ("default", "best"))
+    return "claude" in model or model.startswith(("opus", "sonnet", "haiku", "fable")) or model in ("default", "best")
 
 
 @dataclass
 class ModelEnv:
-    label: str                        # "<provider>/<model>"
+    label: str  # "<provider>/<model>"
     set: dict = field(default_factory=dict)
     unset: list = field(default_factory=list)
-    context_tokens: str = ""          # the declared window, or "" for the model's own
+    context_tokens: str = ""  # the declared window, or "" for the model's own
 
     def apply(self, env):
         """env with this pair's unsets and assignments applied (env -u ... V=...)."""
@@ -55,20 +55,28 @@ def resolve_model_env(provider, model, environ=None):
             raise ProviderError(
                 f"run: model '{model}' is not an Anthropic model name, but its provider is 'anthropic'.\n"
                 "     Either set <ROLE>_MODEL to a Claude alias/id, or set PROVIDER\n"
-                "     (or <ROLE>_PROVIDER) to ollama|gateway for that model.")
-        me.unset = ["ANTHROPIC_BASE_URL", "ANTHROPIC_AUTH_TOKEN", "ANTHROPIC_DEFAULT_OPUS_MODEL",
-                    "ANTHROPIC_DEFAULT_SONNET_MODEL", "ANTHROPIC_DEFAULT_HAIKU_MODEL"]
+                "     (or <ROLE>_PROVIDER) to ollama|gateway for that model."
+            )
+        me.unset = [
+            "ANTHROPIC_BASE_URL",
+            "ANTHROPIC_AUTH_TOKEN",
+            "ANTHROPIC_DEFAULT_OPUS_MODEL",
+            "ANTHROPIC_DEFAULT_SONNET_MODEL",
+            "ANTHROPIC_DEFAULT_HAIKU_MODEL",
+        ]
     elif provider == "ollama":
         if is_anthropic_model(model):
             raise ProviderError(
                 f"run: model '{model}' is an Anthropic model name, which Ollama does not serve.\n"
-                "     Set <ROLE>_MODEL to the Ollama tag, e.g. gemma4:31b-it-q4_K_M.")
+                "     Set <ROLE>_MODEL to the Ollama tag, e.g. gemma4:31b-it-q4_K_M."
+            )
         ctx = e.get("OLLAMA_CONTEXT_TOKENS", "")
         if not ctx:
             raise ProviderError(
                 "run: provider 'ollama' needs OLLAMA_CONTEXT_TOKENS — the model's context window in tokens.\n"
                 "     It must not exceed the Ollama server's own window (OLLAMA_CONTEXT_LENGTH / num_ctx);\n"
-                "     Ollama's Claude Code guidance uses 64k, e.g. OLLAMA_CONTEXT_TOKENS=65536.")
+                "     Ollama's Claude Code guidance uses 64k, e.g. OLLAMA_CONTEXT_TOKENS=65536."
+            )
         if not re.fullmatch(r"[0-9]+", ctx):
             raise ProviderError(f"run: OLLAMA_CONTEXT_TOKENS must be a whole number of tokens, got '{ctx}'.")
         me.context_tokens = ctx
@@ -88,8 +96,13 @@ def resolve_model_env(provider, model, environ=None):
             "ENABLE_TOOL_SEARCH": "true",
         }
         if e.get("OLLAMA_STRICT_SUPPRESS"):
-            me.set.update({"CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
-                           "MAX_THINKING_TOKENS": "0", "DISABLE_PROMPT_CACHING": "1"})
+            me.set.update(
+                {
+                    "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS": "1",
+                    "MAX_THINKING_TOKENS": "0",
+                    "DISABLE_PROMPT_CACHING": "1",
+                }
+            )
     elif provider == "gateway":
         base = e.get("GW_BASE_URL", "")
         if not base:
@@ -110,9 +123,13 @@ def validate_fallback_model(provider, fallback):
     if not fallback:
         return
     if provider == "anthropic" and not is_anthropic_model(fallback):
-        raise ProviderError(f"run: FALLBACK_MODEL '{fallback}' is not an Anthropic model name, but the provider is 'anthropic'.")
+        raise ProviderError(
+            f"run: FALLBACK_MODEL '{fallback}' is not an Anthropic model name, but the provider is 'anthropic'."
+        )
     if provider == "ollama" and is_anthropic_model(fallback):
-        raise ProviderError(f"run: FALLBACK_MODEL '{fallback}' is an Anthropic model name, which Ollama does not serve.")
+        raise ProviderError(
+            f"run: FALLBACK_MODEL '{fallback}' is an Anthropic model name, which Ollama does not serve."
+        )
     if provider not in KNOWN_PROVIDERS:
         raise ProviderError(f"run: unknown provider '{provider}' (known: {' '.join(KNOWN_PROVIDERS)})")
 

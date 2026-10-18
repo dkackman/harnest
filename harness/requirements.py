@@ -11,6 +11,7 @@ Cases that name each other (a `cleanup:` holding an output for a later
 case, a `setup:` reusing an earlier one's) are one dependency group: one
 lane, in file order. docs/superpowers/specs/2026-10-18-regression-fleet.md.
 """
+
 import fnmatch
 import hashlib
 import json
@@ -22,7 +23,7 @@ from pathlib import Path
 from . import REPO
 from .suite import CASE_HEADING
 
-SIDECAR = REPO / "regression-requirements.json"   # HARNEST_REQUIREMENTS overrides it
+SIDECAR = REPO / "regression-requirements.json"  # HARNEST_REQUIREMENTS overrides it
 LOADS = ("none", "light", "heavy", "exclusive")
 _ID = re.compile(r"\b([A-Z]+-[A-Z][0-9]+)\b")
 
@@ -50,20 +51,22 @@ def block_hash(text):
 
 @dataclass
 class Need:
-    workflows: tuple = ()   # what the case runs by name; each server validates them
-    models: tuple = ()      # every model it loads (inline workflows, and for deny/size rules)
+    workflows: tuple = ()  # what the case runs by name; each server validates them
+    models: tuple = ()  # every model it loads (inline workflows, and for deny/size rules)
     assets: tuple = ()
     load: str = "light"
-    known: bool = False     # an entry exists and matches the case's text
+    known: bool = False  # an entry exists and matches the case's text
     why_unknown: str = ""
 
     def union(self, other):
-        return Need(workflows=tuple(sorted(set(self.workflows) | set(other.workflows))),
-                    models=tuple(sorted(set(self.models) | set(other.models))),
-                    assets=tuple(sorted(set(self.assets) | set(other.assets))),
-                    load=max(self.load, other.load, key=LOADS.index),
-                    known=self.known and other.known,
-                    why_unknown=self.why_unknown or other.why_unknown)
+        return Need(
+            workflows=tuple(sorted(set(self.workflows) | set(other.workflows))),
+            models=tuple(sorted(set(self.models) | set(other.models))),
+            assets=tuple(sorted(set(self.assets) | set(other.assets))),
+            load=max(self.load, other.load, key=LOADS.index),
+            known=self.known and other.known,
+            why_unknown=self.why_unknown or other.why_unknown,
+        )
 
 
 def load_sidecar(path=None):
@@ -86,13 +89,18 @@ def need_for(case_id, block, sidecar):
     load = e.get("load", "light")
     if load not in LOADS:
         return Need(why_unknown=f"unknown load '{load}'")
-    return Need(workflows=tuple(e.get("workflows", ())), models=tuple(e.get("models", ())),
-                assets=tuple(e.get("assets", ())), load=load, known=True)
+    return Need(
+        workflows=tuple(e.get("workflows", ())),
+        models=tuple(e.get("models", ())),
+        assets=tuple(e.get("assets", ())),
+        load=load,
+        known=True,
+    )
 
 
 @dataclass
 class Group:
-    cases: list                       # case ids, in file order
+    cases: list  # case ids, in file order
     need: Need = field(default_factory=Need)
 
     @property

@@ -3,6 +3,7 @@ and how it is deployed. ssh and curl stay subprocesses (the test seams).
 A port of providers.sh's deployed_head, target_health, target_preflight
 and deploy_cmd.
 """
+
 import json
 import os
 import subprocess
@@ -13,12 +14,15 @@ SSH_OPTS = ["-o", "ConnectTimeout=8", "-o", "BatchMode=yes"]
 
 
 def deployed_head(server):
-    """"<branch> @ <sha>" the server's checkout is on, or "unknown". The
+    """ "<branch> @ <sha>" the server's checkout is on, or "unknown". The
     checkout is what the server runs: only deploy.sh moves it."""
     cmd = f'cd {server.dir} && echo "$(git branch --show-current) @ $(git rev-parse --short HEAD)"'
     # A local server's checkout is read here; ~ is the remote shell's on ssh.
-    argv = ["bash", "-c", cmd.replace("~", os.path.expanduser("~"), 1)] if server.local \
+    argv = (
+        ["bash", "-c", cmd.replace("~", os.path.expanduser("~"), 1)]
+        if server.local
         else ["ssh", *SSH_OPTS, server.host, cmd]
+    )
     try:
         p = subprocess.run(argv, stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=60)
     except (OSError, subprocess.TimeoutExpired):
@@ -35,14 +39,19 @@ def deploy_cmd(server, branch="develop"):
 
 
 def health(url, token):
-    """"<device> on <hostname>" from the server's /api/health, or None when
+    """ "<device> on <hostname>" from the server's /api/health, or None when
     nothing answers ok."""
     base = url.rstrip("/")
     if base.endswith("/mcp"):
         base = base[:-4]
     try:
-        p = subprocess.run(["curl", "-s", "-m", "5", "-H", "@-", f"{base}/api/health"],
-                           input=f"Authorization: Bearer {token}\n", capture_output=True, text=True, timeout=30)
+        p = subprocess.run(
+            ["curl", "-s", "-m", "5", "-H", "@-", f"{base}/api/health"],
+            input=f"Authorization: Bearer {token}\n",
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
     except (OSError, subprocess.TimeoutExpired):
         return None
     if p.returncode != 0:
@@ -53,8 +62,10 @@ def health(url, token):
         return None
     if not isinstance(h, dict) or h.get("status") != "ok":
         return None
+
     def s(v):
         return "null" if v is None else (v if isinstance(v, str) else json.dumps(v))
+
     return f"{s(h.get('device'))} on {s(h.get('hostname'))}"
 
 
@@ -68,10 +79,12 @@ def preflight(server, url, token):
     reaches another box would otherwise run every level there."""
     got = health(url, token)
     if got is None:
-        raise PreflightError(f"no dw server answering at {url} (DW_TARGET={server.name}): "
-                             f"scripts/testbed.sh {server.name} start")
+        raise PreflightError(
+            f"no dw server answering at {url} (DW_TARGET={server.name}): scripts/testbed.sh {server.name} start"
+        )
     host = got.rsplit(" on ", 1)[-1]
     if short_host(host) != short_host(server.host):
-        raise PreflightError(f"the server at {url} is {host}, not {server.host}: "
-                             f"DW_TARGET={server.name} runs only against that host")
+        raise PreflightError(
+            f"the server at {url} is {host}, not {server.host}: DW_TARGET={server.name} runs only against that host"
+        )
     return got

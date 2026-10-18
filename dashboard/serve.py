@@ -39,13 +39,11 @@ DRIVER_RE = re.compile(
 )
 HEADER_RE = re.compile(r"^=== (\d\d:\d\d:\d\d) (.*?) ===$")
 TAG_RE = re.compile(r"^\[([^\]]+)\] (.*)$")
-USAGE_RE = re.compile(
-    r"turns=(\d+) duration=(\d+)s cost=\$([\d.]+) ctx_peak=([\d.]+k?)"
-)
+USAGE_RE = re.compile(r"turns=(\d+) duration=(\d+)s cost=\$([\d.]+) ctx_peak=([\d.]+k?)")
 CTX_RE = re.compile(r"· ctx=([\d.]+k?)")
 
 # The two combined streams, one per server target
-STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log"}   # mac: the mini-ai test bed (DW_TARGET=mini-ai)
+STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log"}  # mac: the mini-ai test bed (DW_TARGET=mini-ai)
 LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.mini-ai"}
 # a driver run against any target but lem ("local" is the field the page reads)
 OTHER_TARGET = re.compile(r"DW_TARGET=(?!lem\b)\S")
@@ -224,17 +222,22 @@ class Attention:
                             continue
                         seen.add(i["number"])
                         names = [lb["name"] for lb in i["labels"]]
-                        items.append({
-                            "repo": name, "number": i["number"], "title": i["title"], "url": i["url"],
-                            "updated": i["updatedAt"],
-                            "tags": [n for n in names if not n.startswith("owner:")],
-                            # open blockers: nothing to decide until they close
-                            "waiting": [
-                                {"number": b["number"], "url": b["url"]}
-                                for b in (i.get("blockedBy") or {}).get("nodes") or []
-                                if b.get("state") == "OPEN"
-                            ],
-                        })
+                        items.append(
+                            {
+                                "repo": name,
+                                "number": i["number"],
+                                "title": i["title"],
+                                "url": i["url"],
+                                "updated": i["updatedAt"],
+                                "tags": [n for n in names if not n.startswith("owner:")],
+                                # open blockers: nothing to decide until they close
+                                "waiting": [
+                                    {"number": b["number"], "url": b["url"]}
+                                    for b in (i.get("blockedBy") or {}).get("nodes") or []
+                                    if b.get("state") == "OPEN"
+                                ],
+                            }
+                        )
                 except Exception as e:  # noqa: BLE001 - shown on the card
                     errors.append(f"{name}: {e}")
 
@@ -242,12 +245,17 @@ class Attention:
         issues(HARNESS_REPO, "harnest", ["owner:don"], ["harness", "status:needs-approval"])
         try:
             for a in _gh(["api", f"repos/{TICKET_REPO}/security-advisories?state=draft&per_page=100"]):
-                items.append({
-                    "repo": "advisory", "number": a["ghsa_id"], "title": a.get("summary") or "",
-                    "url": a["html_url"], "updated": a.get("updated_at") or "",
-                    "tags": [a.get("severity") or "no severity"],
-                    "waiting": [],
-                })
+                items.append(
+                    {
+                        "repo": "advisory",
+                        "number": a["ghsa_id"],
+                        "title": a.get("summary") or "",
+                        "url": a["html_url"],
+                        "updated": a.get("updated_at") or "",
+                        "tags": [a.get("severity") or "no severity"],
+                        "waiting": [],
+                    }
+                )
         except Exception as e:  # noqa: BLE001
             errors.append(f"advisories: {e}")
         with self.mu:
@@ -262,7 +270,10 @@ class Attention:
     def snapshot(self):
         with self.mu:
             return {
-                "items": self.items, "errors": self.errors, "fetched": self.fetched or None, "busy": self.busy,
+                "items": self.items,
+                "errors": self.errors,
+                "fetched": self.fetched or None,
+                "busy": self.busy,
                 "held_until": self.hold_until if self.hold_until > time.time() else None,
             }
 
@@ -275,10 +286,12 @@ def _loop_key():
     key = []
     for idx in INDEXES.values():
         last = idx.sessions[-1] if idx.sessions else None
-        key.append((
-            idx.run_header and idx.run_header["time"],
-            last and (last["time"], last["label"], last["usage"] is not None),
-        ))
+        key.append(
+            (
+                idx.run_header and idx.run_header["time"],
+                last and (last["time"], last["label"], last["usage"] is not None),
+            )
+        )
     return tuple(key)
 
 
@@ -289,7 +302,9 @@ def processes():
     try:
         out = subprocess.run(
             ["ps", "-axo", "pid=,ppid=,etime=,command="],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
         ).stdout
     except Exception:
         return [], 0
@@ -304,9 +319,13 @@ def processes():
         m = DRIVER_RE.search(cmd)
         if m and _is_ours(pid, m.group(1)):
             rows[pid] = {
-                "pid": int(pid), "ppid": ppid, "elapsed": etime.strip(),
-                "driver": m.group(2), "args": (m.group(3) or "").strip(),
-                "local": bool(OTHER_TARGET.search(cmd)), "cmd": cmd,
+                "pid": int(pid),
+                "ppid": ppid,
+                "elapsed": etime.strip(),
+                "driver": m.group(2),
+                "args": (m.group(3) or "").strip(),
+                "local": bool(OTHER_TARGET.search(cmd)),
+                "cmd": cmd,
             }
 
     def outer(r):
@@ -353,8 +372,9 @@ def _is_ours(pid, script):
 
 def _cwd(pid):
     try:
-        out = subprocess.run(["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"],
-                             capture_output=True, text=True, timeout=3).stdout
+        out = subprocess.run(
+            ["lsof", "-a", "-p", str(pid), "-d", "cwd", "-Fn"], capture_output=True, text=True, timeout=3
+        ).stdout
     except Exception:
         return None
     return next((l[1:] for l in out.splitlines() if l.startswith("n")), None)
@@ -368,8 +388,9 @@ def _driver_ancestor(ppid, drivers):
         if int(ppid) in drivers:
             return int(ppid)
         try:
-            ppid = subprocess.run(["ps", "-o", "ppid=", "-p", str(ppid)],
-                                  capture_output=True, text=True, timeout=3).stdout.strip()
+            ppid = subprocess.run(
+                ["ps", "-o", "ppid=", "-p", str(ppid)], capture_output=True, text=True, timeout=3
+            ).stdout.strip()
         except Exception:
             return None
     return None
@@ -379,7 +400,9 @@ def _env_says_local(pid):
     try:
         out = subprocess.run(
             ["ps", "eww", "-o", "command=", "-p", str(pid)],
-            capture_output=True, text=True, timeout=3,
+            capture_output=True,
+            text=True,
+            timeout=3,
         ).stdout
         return bool(OTHER_TARGET.search(out))
     except Exception:
@@ -447,7 +470,12 @@ def state():
 
 def log_files():
     files = []
-    for p in list(LOGS.glob("*.log")) + list(LOGS.glob("*.out")) + list(LOGS.glob("release-*/*.out")) + list(LOGS.glob("release-*/*.log")):
+    for p in (
+        list(LOGS.glob("*.log"))
+        + list(LOGS.glob("*.out"))
+        + list(LOGS.glob("release-*/*.out"))
+        + list(LOGS.glob("release-*/*.log"))
+    ):
         st = p.stat()
         files.append({"name": str(p.relative_to(LOGS)), "size": st.st_size, "mtime": st.st_mtime})
     return sorted(files, key=lambda f: -f["mtime"])

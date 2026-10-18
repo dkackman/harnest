@@ -6,6 +6,7 @@ where the two must agree.
 The MCP client is contract/mcp_client.py, the stdlib client the contract
 runner uses: a pure consumer, like the tester.
 """
+
 import importlib.util
 import json
 import subprocess
@@ -14,7 +15,7 @@ from dataclasses import dataclass, field
 from . import REPO
 from .profile import short_host
 
-GB = 1024 ** 3
+GB = 1024**3
 
 
 def _client_class():
@@ -33,9 +34,9 @@ class ServerFacts:
     server: str
     hostname: str
     device: str
-    workers: list                                 # [{"device", "name", "vram_gb", ...}]
-    models: dict = field(default_factory=dict)    # repo id -> size in GB
-    assets: set = field(default_factory=set)      # names, as `asset:<name>` takes them
+    workers: list  # [{"device", "name", "vram_gb", ...}]
+    models: dict = field(default_factory=dict)  # repo id -> size in GB
+    assets: set = field(default_factory=set)  # names, as `asset:<name>` takes them
     # workflow -> what validate_workflow says this server lacks for it:
     # {"missing": [{"repo", "gb", "blocked"}], "error": "" or why it can't validate}
     workflows: dict = field(default_factory=dict)
@@ -43,8 +44,10 @@ class ServerFacts:
     @property
     def summary(self):
         w = ", ".join(f"{x.get('name', '?')} {x.get('vram_gb', '?')} GB" for x in self.workers) or "no workers"
-        return (f"{self.server}: {self.device} on {self.hostname}, {len(self.workers)} worker(s) ({w}), "
-                f"{len(self.models)} model(s) cached, {len(self.assets)} asset(s)")
+        return (
+            f"{self.server}: {self.device} on {self.hostname}, {len(self.workers)} worker(s) ({w}), "
+            f"{len(self.models)} model(s) cached, {len(self.assets)} asset(s)"
+        )
 
 
 def health_json(url, token):
@@ -54,8 +57,13 @@ def health_json(url, token):
     if base.endswith("/mcp"):
         base = base[:-4]
     try:
-        p = subprocess.run(["curl", "-s", "-m", "5", "-H", "@-", f"{base}/api/health"],
-                           input=f"Authorization: Bearer {token}\n", capture_output=True, text=True, timeout=30)
+        p = subprocess.run(
+            ["curl", "-s", "-m", "5", "-H", "@-", f"{base}/api/health"],
+            input=f"Authorization: Bearer {token}\n",
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
         h = json.loads(p.stdout) if p.returncode == 0 else None
     except (OSError, subprocess.TimeoutExpired, ValueError):
         return None
@@ -82,7 +90,7 @@ def mcp_inventory(url, token, asset_limit=5000):
         for key in ("name", "reference"):
             v = a.get(key)
             if isinstance(v, str) and v:
-                names.add(v[len("asset:"):] if v.startswith("asset:") else v)
+                names.add(v[len("asset:") :] if v.startswith("asset:") else v)
     return sizes, names
 
 
@@ -107,10 +115,14 @@ def validate_workflows(url, token, names):
             if err or not isinstance(v, dict) or not isinstance(v.get("plan"), dict):
                 out[name] = {"missing": [], "error": (str(v) if err else "no plan")[:200]}
                 continue
-            out[name] = {"missing": [{"repo": d.get("repo"), "gb": d.get("gb") or 0,
-                                      "blocked": bool(d.get("access_blocked"))}
-                                     for d in v["plan"].get("downloads_required") or [] if d.get("repo")],
-                         "error": ""}
+            out[name] = {
+                "missing": [
+                    {"repo": d.get("repo"), "gb": d.get("gb") or 0, "blocked": bool(d.get("access_blocked"))}
+                    for d in v["plan"].get("downloads_required") or []
+                    if d.get("repo")
+                ],
+                "error": "",
+            }
     except (MCPError, OSError) as e:
         raise FactsError(str(e)) from e
     return out
@@ -126,9 +138,14 @@ def gather(server, url, token, health=health_json, inventory=mcp_inventory):
     if short_host(host) != short_host(server.host):
         raise FactsError(f"the server at {url} is {host}, not {server.host}")
     models, assets = inventory(url, token)
-    return ServerFacts(server=server.name, hostname=host, device=h.get("device") or "",
-                       workers=[w for w in h.get("workers") or [] if isinstance(w, dict)],
-                       models=models, assets=assets)
+    return ServerFacts(
+        server=server.name,
+        hostname=host,
+        device=h.get("device") or "",
+        workers=[w for w in h.get("workers") or [] if isinstance(w, dict)],
+        models=models,
+        assets=assets,
+    )
 
 
 def check(server, facts):
@@ -137,6 +154,8 @@ def check(server, facts):
     if facts.device and server.backend and facts.device != server.backend:
         problems.append(f"{server.name}: the profile says {server.backend}, the server says {facts.device}")
     if server.lanes > max(1, len(facts.workers)):
-        problems.append(f"{server.name}: {server.lanes} lanes but {len(facts.workers)} worker(s); "
-                        "a lane is one job at a time on its own worker")
+        problems.append(
+            f"{server.name}: {server.lanes} lanes but {len(facts.workers)} worker(s); "
+            "a lane is one job at a time on its own worker"
+        )
     return problems

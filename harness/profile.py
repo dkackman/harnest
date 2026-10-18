@@ -7,6 +7,7 @@ that name survives where it is a contract: the DW_TARGET knob, the
 HARNEST_TARGET env the guard reads, the `target:` labels, and every state
 file name.
 """
+
 import os
 import re
 import tomllib
@@ -27,20 +28,20 @@ class ProfileError(Exception):
 class Server:
     name: str
     host: str
-    dir: str            # the checkout on the host, ~-relative for the remote shell
+    dir: str  # the checkout on the host, ~-relative for the remote shell
     backend: str
     port: int
     primary: bool
     token_env: str = ""
     regression_all: tuple = ()
     regression_skip_cases: tuple = ()
-    transport: str = "ssh"      # ssh, or local: this machine, no ssh
-    url: str = ""               # the MCP endpoint, when not http://<host>:<port>/mcp
-    loop: bool = True           # false: regression only; the bash drivers don't know it
+    transport: str = "ssh"  # ssh, or local: this machine, no ssh
+    url: str = ""  # the MCP endpoint, when not http://<host>:<port>/mcp
+    loop: bool = True  # false: regression only; the bash drivers don't know it
     lanes: int = 1
     speed: float = 1.0
     downloads: bool = False
-    max_model_gb: float = 0     # 0: no limit
+    max_model_gb: float = 0  # 0: no limit
     heavy: bool = True
     deny_models: tuple = ()
     clone_suffix_: object = None
@@ -111,17 +112,29 @@ def load(target=None, path=None):
     servers = []
     for i, s in enumerate(raw.get("servers", [])):
         try:
-            servers.append(Server(
-                name=s["name"], host=s["host"], dir=s["dir"], backend=s["backend"],
-                port=int(s.get("port", 8765)), primary=(i == 0),
-                token_env=s.get("token_env") or "DW_TOKEN_" + re.sub(r"[^A-Z0-9]", "_", s["name"].upper()),
-                regression_all=tuple(s.get("regression_all", ())),
-                regression_skip_cases=tuple(s.get("regression_skip_cases", ())),
-                transport=s.get("transport", "ssh"), url=s.get("url", ""), loop=bool(s.get("loop", True)),
-                lanes=int(s.get("lanes", 1)), speed=float(s.get("speed", 1.0)), downloads=bool(s.get("downloads", False)),
-                max_model_gb=float(s.get("max_model_gb", 0)), heavy=bool(s.get("heavy", True)),
-                deny_models=tuple(s.get("deny_models", ())), clone_suffix_=s.get("clone_suffix"),
-            ))
+            servers.append(
+                Server(
+                    name=s["name"],
+                    host=s["host"],
+                    dir=s["dir"],
+                    backend=s["backend"],
+                    port=int(s.get("port", 8765)),
+                    primary=(i == 0),
+                    token_env=s.get("token_env") or "DW_TOKEN_" + re.sub(r"[^A-Z0-9]", "_", s["name"].upper()),
+                    regression_all=tuple(s.get("regression_all", ())),
+                    regression_skip_cases=tuple(s.get("regression_skip_cases", ())),
+                    transport=s.get("transport", "ssh"),
+                    url=s.get("url", ""),
+                    loop=bool(s.get("loop", True)),
+                    lanes=int(s.get("lanes", 1)),
+                    speed=float(s.get("speed", 1.0)),
+                    downloads=bool(s.get("downloads", False)),
+                    max_model_gb=float(s.get("max_model_gb", 0)),
+                    heavy=bool(s.get("heavy", True)),
+                    deny_models=tuple(s.get("deny_models", ())),
+                    clone_suffix_=s.get("clone_suffix"),
+                )
+            )
         except (KeyError, TypeError, ValueError) as e:
             raise ProfileError(f"profile {path}: server {i}: {e}") from e
         if servers[-1].transport not in ("ssh", "local"):
@@ -130,8 +143,10 @@ def load(target=None, path=None):
             raise ProfileError(f"profile {path}: server {servers[-1].name}: lanes must be at least 1")
     if not servers:
         raise ProfileError(f"profile {path}: no [[servers]]")
-    levels = [Level(name=lv["name"], file=lv["file"], implies=lv.get("implies", ""))
-              for lv in raw.get("suite", {}).get("levels", [])]
+    levels = [
+        Level(name=lv["name"], file=lv["file"], implies=lv.get("implies", ""))
+        for lv in raw.get("suite", {}).get("levels", [])
+    ]
     return Profile(raw=raw, servers=servers, levels=levels)
 
 
@@ -158,7 +173,7 @@ def load_env_file(path=None, environ=None, warn=None):
         if not line or line.startswith("#"):
             continue
         if line.startswith("export "):
-            line = line[len("export "):]
+            line = line[len("export ") :]
         if "=" not in line:
             continue
         key, val = line.split("=", 1)
@@ -184,8 +199,10 @@ def resolve_token(server, environ=None):
         load_env_file()
     token = e.get(server.token_env) or e.get("DW_TOKEN")
     if not token:
-        raise ProfileError(f"no MCP token for DW_TARGET={server.name}: set {server.token_env} "
-                           "(or DW_TOKEN) in the environment; no token is kept in the repo")
+        raise ProfileError(
+            f"no MCP token for DW_TARGET={server.name}: set {server.token_env} "
+            "(or DW_TOKEN) in the environment; no token is kept in the repo"
+        )
     return token
 
 
@@ -214,6 +231,7 @@ def resolve_url(server, dw_url=""):
     if server.local and host in ("localhost", "127", "::1"):
         return url
     if not server.primary and host != short_host(server.host):
-        raise ProfileError(f"DW_TARGET={server.name} needs a DW_URL on {server.host}, "
-                           f"got {url} (unset DW_URL for the default)")
+        raise ProfileError(
+            f"DW_TARGET={server.name} needs a DW_URL on {server.host}, got {url} (unset DW_URL for the default)"
+        )
     return url

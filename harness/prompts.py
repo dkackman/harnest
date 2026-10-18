@@ -1,4 +1,5 @@
 """Prompt assembly: providers.sh's role_prompt, runtime_note and target_note."""
+
 from . import REPO
 from .providers import is_anthropic_model
 
@@ -67,20 +68,27 @@ def runtime_note(role, provider, model, secondary=False):
     regression run on a secondary server may not edit a suite, so it is not
     told it does. No trailing newline (it is interpolated with $(...))."""
     if role not in _EXAMPLES:
-        raise PromptError(f"run: runtime_note: unknown role '{role}' "
-                          "(implementer|tester|regression|lead|curator|reviewer|release|retro)")
+        raise PromptError(
+            f"run: runtime_note: unknown role '{role}' "
+            "(implementer|tester|regression|lead|curator|reviewer|release|retro)"
+        )
     examples = _EXAMPLES[role]
     if role == "regression" and not secondary:
         examples += ", a suite-file edit"
-    id_hint = (" Use the exact model id your system prompt states (e.g. claude-opus-5), not the alias."
-               if is_anthropic_model(model) else "")
-    return "\n".join([
-        f"Runtime: you are the {role} agent, running as model '{model}' via the '{provider}'",
-        "provider. Whenever you record something durable that rests on your own",
-        f"judgment — {examples} —",
-        "name that model and provider in it, so a later reader can tell which model",
-        f"produced it.{id_hint}",
-    ])
+    id_hint = (
+        " Use the exact model id your system prompt states (e.g. claude-opus-5), not the alias."
+        if is_anthropic_model(model)
+        else ""
+    )
+    return "\n".join(
+        [
+            f"Runtime: you are the {role} agent, running as model '{model}' via the '{provider}'",
+            "provider. Whenever you record something durable that rests on your own",
+            f"judgment — {examples} —",
+            "name that model and provider in it, so a later reader can tell which model",
+            f"produced it.{id_hint}",
+        ]
+    )
 
 
 def target_note(role, values, agents=AGENTS):

@@ -12,6 +12,7 @@ An event the renderer can't handle prints a `render-error:` line instead of
 stopping, as the jq does: a renderer that died would take claude's output
 with it mid-session.
 """
+
 import json
 import math
 import time
@@ -27,7 +28,7 @@ def _idx(obj, key):
         return None
     if isinstance(obj, dict):
         return obj.get(key)
-    raise _JqError(f"Cannot index {_jtype(obj)} with \"{key}\"")
+    raise _JqError(f'Cannot index {_jtype(obj)} with "{key}"')
 
 
 def _iter(obj):
@@ -92,7 +93,12 @@ def _add(a, b):
         return b
     if b is None:
         return a
-    if isinstance(a, (int, float)) and isinstance(b, (int, float)) and not isinstance(a, bool) and not isinstance(b, bool):
+    if (
+        isinstance(a, (int, float))
+        and isinstance(b, (int, float))
+        and not isinstance(a, bool)
+        and not isinstance(b, bool)
+    ):
         return a + b
     raise _JqError(f"{_jtype(a)} and {_jtype(b)} cannot be added")
 
@@ -239,8 +245,10 @@ class Renderer:
             status, overage = _idx(info, "status"), _idx(info, "isUsingOverage")
             if status != "allowed" or _truthy(overage):
                 resets = _alt(_idx(info, "resetsAt"), 0)
-                out.append(f"rate-limit: status={_tostring(status)} type={_tostring(_idx(info, 'rateLimitType'))} "
-                           f"overage={_tostring(overage)} resets={_todate(resets)} resets_epoch={_tostring(resets)}")
+                out.append(
+                    f"rate-limit: status={_tostring(status)} type={_tostring(_idx(info, 'rateLimitType'))} "
+                    f"overage={_tostring(overage)} resets={_todate(resets)} resets_epoch={_tostring(resets)}"
+                )
         elif t == "result":
             u = _idx(j, "usage")
             ms = _alt(_idx(j, "duration_ms"), 0)
@@ -248,15 +256,20 @@ class Renderer:
                 f"usage: turns={_tostring(_idx(j, 'num_turns'))} duration={_num(_round(ms / 1000))}s "
                 f"cost=${_num(_usd(_idx(j, 'total_cost_usd')))} ctx_peak={_k(self.max)} "
                 f"in={_k(_idx(u, 'input_tokens'))} cache_read={_k(_idx(u, 'cache_read_input_tokens'))} "
-                f"cache_write={_k(_idx(u, 'cache_creation_input_tokens'))} out={_k(_idx(u, 'output_tokens'))}")
+                f"cache_write={_k(_idx(u, 'cache_creation_input_tokens'))} out={_k(_idx(u, 'output_tokens'))}"
+            )
             if _idx(j, "subtype") != "success":
-                out.append(f"result: {_tostring(_idx(j, 'subtype'))} {_trunc(_tostring(_alt(_idx(j, 'result'), '')), 300)}")
+                out.append(
+                    f"result: {_tostring(_idx(j, 'subtype'))} {_trunc(_tostring(_alt(_idx(j, 'result'), '')), 300)}"
+                )
             mu = _alt(_idx(j, "modelUsage"), {})
             if isinstance(mu, dict) and len(mu) > 1:
                 for name, v in mu.items():
-                    out.append(f"  {name}: in={_k(_idx(v, 'inputTokens'))} cache_read={_k(_idx(v, 'cacheReadInputTokens'))} "
-                               f"cache_write={_k(_idx(v, 'cacheCreationInputTokens'))} out={_k(_idx(v, 'outputTokens'))} "
-                               f"cost=${_num(_usd(_idx(v, 'costUSD')))}")
+                    out.append(
+                        f"  {name}: in={_k(_idx(v, 'inputTokens'))} cache_read={_k(_idx(v, 'cacheReadInputTokens'))} "
+                        f"cache_write={_k(_idx(v, 'cacheCreationInputTokens'))} out={_k(_idx(v, 'outputTokens'))} "
+                        f"cost=${_num(_usd(_idx(v, 'costUSD')))}"
+                    )
 
 
 def render_lines(lines):
@@ -290,6 +303,7 @@ def main():
     """`python3 -m harness.stream < events`: render stdin, for checking a log
     by hand and for the golden test."""
     import sys
+
     r = Renderer()
     for raw in sys.stdin.buffer:
         line = raw.decode("utf-8", errors="replace").rstrip("\n")

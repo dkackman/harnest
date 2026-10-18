@@ -4,6 +4,7 @@ run-regression.sh's REGRESSION-* lines. They read the rendered text, not the
 events, because that file ($LAST_SESSION) is the contract both the bash and
 the Python drivers write, and a died session has no events to read.
 """
+
 import re
 import time
 
@@ -39,8 +40,12 @@ def ran(path):
 def ok(path):
     """Ran to its own end: a usage line, no non-success result, no rejection."""
     t = _read(path)
-    return (t is not None and _has_line(t, "usage: ") and not _has_line(t, "result: ")
-            and "rate-limit: status=rejected" not in t)
+    return (
+        t is not None
+        and _has_line(t, "usage: ")
+        and not _has_line(t, "result: ")
+        and "rate-limit: status=rejected" not in t
+    )
 
 
 def aborted(path):
@@ -79,5 +84,7 @@ def sleep_if_rate_limited(path, say, now=time.time, sleep=time.sleep):
         return
     wait = epoch + 60 - int(now())
     if wait > 0:
-        say(f"[loop] rate limit rejected; sleeping {wait}s until {time.strftime('%H:%M:%S', time.localtime(epoch))} + 60s")
+        say(
+            f"[loop] rate limit rejected; sleeping {wait}s until {time.strftime('%H:%M:%S', time.localtime(epoch))} + 60s"
+        )
         sleep(wait)

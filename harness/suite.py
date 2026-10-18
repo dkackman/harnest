@@ -2,6 +2,7 @@
 and committing what a run changed. A port of run-regression.sh's helpers
 and providers.sh's commit_suite_changes.
 """
+
 import os
 import re
 import time
@@ -54,7 +55,7 @@ def workspace_for_suite_file(path):
     if base.endswith(".md"):
         base = base[:-3]
     if base.startswith("regression-suite-"):
-        return "regression-" + base[len("regression-suite-"):]
+        return "regression-" + base[len("regression-suite-") :]
     return "regression-" + base
 
 
@@ -75,7 +76,7 @@ def _dirty(repo, paths):
 
 
 def _shrunk(repo, paths):
-    """"file(-N) ..." for staged removed lines, not counting the `pending:
+    """ "file(-N) ..." for staged removed lines, not counting the `pending:
     #NN` lines the tester drops when a feature stage verifies."""
     diff = git("-C", str(repo), "diff", "--cached", "-U0", "--", *paths).stdout
     counts, f = {}, ""
@@ -95,7 +96,9 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
     writer). Removed lines are committed but warned about: suites only grow
     and perf history is append-only unless a human approved the change."""
     if not name or not email:
-        raise ValueError("run: commit_suite_changes: no co-author name/email — call co_author_for <provider> <model> first")
+        raise ValueError(
+            "run: commit_suite_changes: no co-author name/email — call co_author_for <provider> <model> first"
+        )
     repo = str(repo)
     if not _dirty(repo, paths):
         return
@@ -126,8 +129,10 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
         say(msg)
         if shrunk:
             head = git("-C", repo, "rev-parse", "--short", "HEAD").stdout.strip()
-            say(f"[audit] WARNING: {head} removed lines from {shrunk}- cases and readings are add-only "
-                "unless a human approved the change; review it")
+            say(
+                f"[audit] WARNING: {head} removed lines from {shrunk}- cases and readings are add-only "
+                "unless a human approved the change; review it"
+            )
     finally:
         try:
             os.rmdir(lock)

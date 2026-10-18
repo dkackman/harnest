@@ -1,0 +1,20 @@
+# Lint and format for the harness's Python (harness/, the guard, contract/,
+# bench/, lib/, tests/). tests/test-lint.sh runs both and fails on any
+# finding, so `ruff check --fix . && ruff format .` before committing.
+# Ruff is a dev tool only: the harness itself stays stdlib, no venv.
+required-version = ">=0.17.0"
+target-version = "py311"   # tomllib; the harness runs on this Mac's python3
+line-length = 120          # what the code was written to; the formatter wraps to it
+
+[lint]
+# pyflakes, pycodestyle, warnings, import order, bugbear, pyupgrade.
+select = ["E", "F", "W", "I", "B", "UP"]
+ignore = [
+  "E501",   # the formatter wraps code; what's left is strings and comments it can't split (dw ignores it too)
+  "E741",   # `l` for a line or a label: renaming 27 of them in the guard is churn, not clarity
+  "E731",   # a named lambda is the idiom in the tests' small fakes
+  "UP031",  # %-formatting: 83 of them, mostly the guard's messages; converting changes nothing
+]
+
+[lint.isort]
+known-first-party = ["harness"]

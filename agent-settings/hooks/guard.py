@@ -124,11 +124,18 @@ Command matching is textual, on the Bash command line. It is a guard
 against the model's mistakes, not against an adversary: a determined agent
 could spell a call so this misses it, which audit_issue still catches.
 """
-import json, os, re, shlex, shutil, subprocess, sys
+
+import json
+import os
+import re
+import shlex
+import shutil
+import subprocess
+import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "lib"))
-import freeze  # noqa: E402  (lib/freeze.py, shared with the driver)
 import arch_ratchet  # noqa: E402  (lib/arch_ratchet.py, likewise)
+import freeze  # noqa: E402  (lib/freeze.py, shared with the driver)
 
 
 def deny(msg):
@@ -168,7 +175,7 @@ def flag_values(words, *names):
             if w == n and i + 1 < len(words):
                 vals += words[i + 1].split(",")
             elif w.startswith(n + "="):
-                vals += w[len(n) + 1:].split(",")
+                vals += w[len(n) + 1 :].split(",")
     return [v.strip() for v in vals]
 
 
@@ -182,8 +189,10 @@ def owner_rule(words):
     if len(added) > 1:
         deny("an issue carries exactly one owner:* label; this adds %s." % ", ".join(added))
     if added and not removed and owner_count(words) != 0:
-        deny("an issue carries exactly one owner:* label, so adding %s must remove the current owner "
-             "in the same command (--remove-label owner:<current> --add-label %s)." % (added[0], added[0]))
+        deny(
+            "an issue carries exactly one owner:* label, so adding %s must remove the current owner "
+            "in the same command (--remove-label owner:<current> --add-label %s)." % (added[0], added[0])
+        )
 
 
 def one_issue(words):
@@ -207,8 +216,16 @@ def owner_count(words):
     if not nums:
         return None
     repo = flag_values(words, "--repo", "-R")
-    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq",
-           "[.labels[].name | select(startswith(\"owner:\"))] | length"]
+    cmd = [
+        "gh",
+        "issue",
+        "view",
+        nums[0].lstrip("#"),
+        "--json",
+        "labels",
+        "--jq",
+        '[.labels[].name | select(startswith("owner:"))] | length',
+    ]
     if repo:
         cmd += ["--repo", repo[-1]]
     try:
@@ -244,7 +261,16 @@ def still_parked(words):
     if not nums:
         return True
     repo = flag_values(words, "--repo", "-R")
-    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "labels", "--jq", "[.labels[].name] | index(\"owner:don\") != null"]
+    cmd = [
+        "gh",
+        "issue",
+        "view",
+        nums[0].lstrip("#"),
+        "--json",
+        "labels",
+        "--jq",
+        '[.labels[].name] | index("owner:don") != null',
+    ]
     if repo:
         cmd += ["--repo", repo[-1]]
     try:
@@ -266,8 +292,7 @@ def label_lookup(words, label):
 
 def label_on(num, repo, label):
     """label_lookup for an issue number (and repo, "" for gh's default)."""
-    cmd = ["gh", "issue", "view", num, "--json", "labels", "--jq",
-           "[.labels[].name] | index(\"%s\") != null" % label]
+    cmd = ["gh", "issue", "view", num, "--json", "labels", "--jq", '[.labels[].name] | index("%s") != null' % label]
     if repo:
         cmd += ["--repo", repo]
     try:
@@ -296,7 +321,7 @@ def git_push_args(words):
         i += 2
     if i >= len(words) or words[i] != "push":
         return None
-    return at, words[i + 1:]
+    return at, words[i + 1 :]
 
 
 def pushed_develop(words, cwd):
@@ -314,8 +339,9 @@ def pushed_develop(words, cwd):
         if dst in ("develop", "refs/heads/develop"):
             return top, src or dst
     if not specs or any(a.lstrip("+") in ("HEAD", "@") for a in specs):
-        head = subprocess.run(["git", "-C", top, "rev-parse", "--abbrev-ref", "HEAD"],
-                              capture_output=True, text=True).stdout.strip()
+        head = subprocess.run(
+            ["git", "-C", top, "rev-parse", "--abbrev-ref", "HEAD"], capture_output=True, text=True
+        ).stdout.strip()
         if head == "develop":
             return top, "HEAD"
     return None
@@ -326,8 +352,10 @@ def git_push_problem(words):
     if not pa:
         return None
     args = pa[1]
-    if any(a in ("-f", "--force", "--force-with-lease", "--mirror", "--delete", "-d") or a.startswith("--force")
-           for a in args):
+    if any(
+        a in ("-f", "--force", "--force-with-lease", "--mirror", "--delete", "-d") or a.startswith("--force")
+        for a in args
+    ):
         return "no force pushes, mirror pushes or remote branch deletion."
     for a in args:
         if a.startswith("+"):
@@ -351,15 +379,19 @@ def handoff_gate(cwd):
     (HEAD's) and per base commit in the checkout's .git, so a repeated
     hand-off or a batch costs one run.
     """
+
     def git(*a, at=cwd):
         return subprocess.run(["git", "-C", at, *a], capture_output=True, text=True).stdout.strip()
+
     top = git("rev-parse", "--show-toplevel")
     base = os.environ.get("HARNEST_BASE_COMMIT", "")
     if not top or not base or not git("rev-parse", "--verify", "-q", base + "^{commit}"):
         return  # no baseline to compare against: don't block on a guess
     if git("status", "--porcelain", "--untracked-files=no"):
-        deny("hand-off with uncommitted changes to tracked files. Commit (and merge/push develop) "
-             "first, so what the tester verifies is what was tested.")
+        deny(
+            "hand-off with uncommitted changes to tracked files. Commit (and merge/push develop) "
+            "first, so what the tester verifies is what was tested."
+        )
     tree = git("rev-parse", "HEAD^{tree}")
     gitdir = git("rev-parse", "--absolute-git-dir")
     stamp = os.path.join(gitdir, "harnest-handoff-ok")
@@ -368,14 +400,19 @@ def handoff_gate(cwd):
     py = os.path.join(top, "venv", "bin", "python")
 
     # ruff, on the .py files this work changed only.
-    changed = [f for f in git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", "*.py").splitlines()
-               if f.startswith(("dw/", "dw_mcp/", "tests/"))]
+    changed = [
+        f
+        for f in git("diff", "--name-only", "--diff-filter=d", base, "HEAD", "--", "*.py").splitlines()
+        if f.startswith(("dw/", "dw_mcp/", "tests/"))
+    ]
     if changed:
         for args in (["check"], ["format", "--check"]):
             r = subprocess.run([py, "-m", "ruff", *args, *changed], cwd=top, capture_output=True, text=True)
             if r.returncode != 0 and "No module named ruff" not in r.stderr:
-                deny("`ruff %s` fails on files this work changed, as CI would:\n%s"
-                     % (" ".join(args), (r.stdout + r.stderr)[-2000:]))
+                deny(
+                    "`ruff %s` fails on files this work changed, as CI would:\n%s"
+                    % (" ".join(args), (r.stdout + r.stderr)[-2000:])
+                )
 
     # The UI's own checks, when this work touched ui/: CI runs them, and
     # before R14 nothing did between a hand-off and the release PR. Type
@@ -389,12 +426,19 @@ def handoff_gate(cwd):
         for script in ("check", "lint", "test"):
             r = subprocess.run(["npm", "run", "--silent", script], cwd=ui_dir, capture_output=True, text=True)
             if r.returncode != 0:
-                deny("`npm run %s` fails in ui/ on files this work changed, as CI would:\n%s"
-                     % (script, (r.stdout + r.stderr)[-2000:]))
+                deny(
+                    "`npm run %s` fails in ui/ on files this work changed, as CI would:\n%s"
+                    % (script, (r.stdout + r.stderr)[-2000:])
+                )
 
     def failures(root):
-        r = subprocess.run([py, "-m", "pytest", "-q", "-rfE", "-p", "no:cacheprovider"], cwd=root,
-                           capture_output=True, text=True, env=dict(os.environ, PYTHONPATH=root))
+        r = subprocess.run(
+            [py, "-m", "pytest", "-q", "-rfE", "-p", "no:cacheprovider"],
+            cwd=root,
+            capture_output=True,
+            text=True,
+            env=dict(os.environ, PYTHONPATH=root),
+        )
         return set(re.findall(r"^(?:FAILED|ERROR) (\S+)", r.stdout, re.M)), r
 
     base_file = os.path.join(gitdir, "harnest-base-failures-" + base)
@@ -415,9 +459,11 @@ def handoff_gate(cwd):
         deny("pytest did not complete on HEAD (exit %d):\n%s" % (r.returncode, r.stdout[-2000:]))
     new = sorted(head_failed - base_failed)
     if new:
-        deny("tests that pass on %s fail on HEAD, so this hand-off would cost the tester a cycle. "
-             "Fix them first (a flaky one can be retried: rerun the hand-off command):\n%s"
-             % (base[:10], "\n".join(new[:30])))
+        deny(
+            "tests that pass on %s fail on HEAD, so this hand-off would cost the tester a cycle. "
+            "Fix them first (a flaky one can be retried: rerun the hand-off command):\n%s"
+            % (base[:10], "\n".join(new[:30]))
+        )
     with open(stamp, "w") as fh:
         fh.write(tree + " " + base + "\n")
 
@@ -441,39 +487,60 @@ def arch_gate(checkout, src, arch_approved=None):
     except arch_ratchet.ToolError as e:
         deny(str(e))
     except Exception as e:  # a traceback would be a non-blocking hook error: fail closed here instead
-        deny("dw's architecture ratchet could not run (%s: %s). It fails closed: fix the checkout (permissions, "
-             "disk, node) and hand off again." % (type(e).__name__, e))
+        deny(
+            "dw's architecture ratchet could not run (%s: %s). It fails closed: fix the checkout (permissions, "
+            "disk, node) and hand off again." % (type(e).__name__, e)
+        )
     approved = []
+
     def is_approved():
         if not approved:
             approved.append(arch_approved is not None and arch_approved())
         return approved[0]
+
     problems = arch_ratchet.waiver_problems(checkout, worse, src) if worse and is_approved() else None
     waived = bool(worse) and problems == []
-    problems_ui = (arch_ratchet.waiver_problems(checkout, worse_ui, src, arch_ratchet.UI_BASELINE)
-                   if worse_ui and is_approved() else None)
+    problems_ui = (
+        arch_ratchet.waiver_problems(checkout, worse_ui, src, arch_ratchet.UI_BASELINE)
+        if worse_ui and is_approved()
+        else None
+    )
     waived_ui = bool(worse_ui) and problems_ui == []
-    park = ("Don't work around it: `gh issue edit N --remove-label owner:<yours> --add-label owner:don "
-            "--add-label stabilization`, then comment which rule fired (%s) and on which path, and stop.")
+    park = (
+        "Don't work around it: `gh issue edit N --remove-label owner:<yours> --add-label owner:don "
+        "--add-label stabilization`, then comment which rule fired (%s) and on which path, and stop."
+    )
     # baseline.json in an approved rise is the waiver's to judge: refused below unless its paperwork holds
-    hot = [p for r, p in found if r == "hot-zone"
-           and not (problems is not None and p == arch_ratchet.BASELINE)
-           and not (problems_ui is not None and p == arch_ratchet.UI_BASELINE)]
+    hot = [
+        p
+        for r, p in found
+        if r == "hot-zone"
+        and not (problems is not None and p == arch_ratchet.BASELINE)
+        and not (problems_ui is not None and p == arch_ratchet.UI_BASELINE)
+    ]
     if hot:
-        deny("this work's own commits change %s, which dw is restructuring (docs/stabilization/hot-zone.txt "
-             "on origin/develop; no label lifts this). %s" % (hot[0], park % "hot-zone"))
+        deny(
+            "this work's own commits change %s, which dw is restructuring (docs/stabilization/hot-zone.txt "
+            "on origin/develop; no label lifts this). %s" % (hot[0], park % "hot-zone")
+        )
     new = [p for r, p in found if r == "new-surface"]
     if new and arch_approved is not None and not is_approved():
-        deny("dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and this work's "
-             "own commits add %s: new surface, which needs Don's `arch-approved` label on the issue. %s"
-             % (new[0], park % "new-surface"))
+        deny(
+            "dw is in its stabilization freeze (docs/stabilization/FREEZE on origin/develop), and this work's "
+            "own commits add %s: new surface, which needs Don's `arch-approved` label on the issue. %s"
+            % (new[0], park % "new-surface")
+        )
     # Both ratchets in one refusal, so a fix to one is not handed off only to meet the other
     refused = []
     if worse and not waived:
         refused.append("dw's architecture ratchet: " + arch_ratchet.refusal(worse, problems))
     if worse_ui and not waived_ui:
-        refused.append("dw's UI architecture ratchet: " + arch_ratchet.refusal(
-            worse_ui, problems_ui, arch_ratchet.UI_BASELINE, "the UI's architecture metrics", arch_ratchet.UI_HINTS))
+        refused.append(
+            "dw's UI architecture ratchet: "
+            + arch_ratchet.refusal(
+                worse_ui, problems_ui, arch_ratchet.UI_BASELINE, "the UI's architecture metrics", arch_ratchet.UI_HINTS
+            )
+        )
     if refused:
         deny(" | ".join(refused))
 
@@ -483,9 +550,12 @@ def merge_gated(cwd):
     arch_gate's switches is on, since a merge on GitHub is never a push
     the gate sees. A switch that can't be read counts as on."""
     try:
-        return (freeze.frozen(cwd) or bool(freeze.hot_zone(cwd, fetch=False))
-                or arch_ratchet.active(cwd, fetch=False)
-                or arch_ratchet.active(cwd, fetch=False, script=arch_ratchet.UI_SCRIPT))
+        return (
+            freeze.frozen(cwd)
+            or bool(freeze.hot_zone(cwd, fetch=False))
+            or arch_ratchet.active(cwd, fetch=False)
+            or arch_ratchet.active(cwd, fetch=False, script=arch_ratchet.UI_SCRIPT)
+        )
     except arch_ratchet.ToolError:
         return True
 
@@ -502,8 +572,14 @@ def pr_merge_base(words):
         cmd = ["gh", "pr", "view", *nums[:1], "--json", "baseRefName", "--jq", ".baseRefName"]
         cmd += ["--repo", repo[-1]] if repo else []
     elif words[1] == "api":
-        m = next((re.fullmatch(r"/?repos/([^/]+/[^/]+)/pulls/(\d+)/merge/?", w) for w in words[2:]
-                  if re.fullmatch(r"/?repos/[^/]+/[^/]+/pulls/\d+/merge/?", w)), None)
+        m = next(
+            (
+                re.fullmatch(r"/?repos/([^/]+/[^/]+)/pulls/(\d+)/merge/?", w)
+                for w in words[2:]
+                if re.fullmatch(r"/?repos/[^/]+/[^/]+/pulls/\d+/merge/?", w)
+            ),
+            None,
+        )
         if not m:
             return None
         cmd = ["gh", "pr", "view", m.group(2), "--repo", m.group(1), "--json", "baseRefName", "--jq", ".baseRefName"]
@@ -550,9 +626,12 @@ def suite_request(words):
     The one filing a consumer on another server may make there."""
     repo = flag_values(words, "--repo", "-R")
     labels = sorted(l for v in flag_values(words, "--label", "-l") for l in v.split(","))
-    return is_gh_issue(words, "create") and bool(repo) \
-        and repo[-1] == os.environ.get("HARNEST_HARNESS_REPO", "dkackman/harnest") \
+    return (
+        is_gh_issue(words, "create")
+        and bool(repo)
+        and repo[-1] == os.environ.get("HARNEST_HARNESS_REPO", "dkackman/harnest")
         and labels == ["status:needs-approval", "suite"]
+    )
 
 
 def other_target():
@@ -588,8 +667,10 @@ def claim_rule(words, target):
         return
     if target and claims == ["target:lem"] and "target:" + target in flag_values(words, "--remove-label"):
         return
-    deny("target: labels are the loop driver's claims. The one change a session makes is "
-         "the hand-over to lem: --remove-label target:<this server> --add-label target:lem.")
+    deny(
+        "target: labels are the loop driver's claims. The one change a session makes is "
+        "the hand-over to lem: --remove-label target:<this server> --add-label target:lem."
+    )
 
 
 def target_file_rule(path, cwd, target, role):
@@ -599,13 +680,16 @@ def target_file_rule(path, cwd, target, role):
     if not root or os.path.commonpath([root, full]) != root:
         return
     parts = os.path.relpath(full, root).split(os.sep)
-    if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md") \
-            and role != "tester":
-        deny("on the %s server the suite files are read-only: every case in them runs on lem, "
-             "so propose a case in the issue or comment instead." % target)
+    if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md") and role != "tester":
+        deny(
+            "on the %s server the suite files are read-only: every case in them runs on lem, "
+            "so propose a case in the issue or comment instead." % target
+        )
     if parts[0] == "regression-perf" and len(parts) > 1 and not (len(parts) > 2 and parts[1] == target):
-        deny("on the %s server, readings go to regression-perf/%s/<case>.jsonl; the rest of "
-             "regression-perf/ is another server's history." % (target, target))
+        deny(
+            "on the %s server, readings go to regression-perf/%s/<case>.jsonl; the rest of "
+            "regression-perf/ is another server's history." % (target, target)
+        )
 
 
 def main():
@@ -616,8 +700,12 @@ def main():
     target = server if role == "consumer" else ""
     if data.get("tool_name") in ("Edit", "Write"):
         if target:
-            target_file_rule(data.get("tool_input", {}).get("file_path", ""), cwd, target,
-                             os.environ.get("HARNEST_ROLE", "regression"))
+            target_file_rule(
+                data.get("tool_input", {}).get("file_path", ""),
+                cwd,
+                target,
+                os.environ.get("HARNEST_ROLE", "regression"),
+            )
         return
     if data.get("tool_name") != "Bash":
         return
@@ -628,73 +716,111 @@ def main():
             while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
                 lead += 1
             cmdw = words[lead:]
-            if cmdw and os.path.basename(cmdw[0]) in ("ssh", "scp", "rsync") \
-                    and not (os.path.basename(cmdw[0]) == "ssh" and ssh_host(cmdw) == own_host()):
-                deny("this loop runs against the %s server: ssh only to its host (%s), to read; no "
-                     "scp or rsync; lem is off limits." % (server, own_host() or "unknown"))
+            if (
+                cmdw
+                and os.path.basename(cmdw[0]) in ("ssh", "scp", "rsync")
+                and not (os.path.basename(cmdw[0]) == "ssh" and ssh_host(cmdw) == own_host())
+            ):
+                deny(
+                    "this loop runs against the %s server: ssh only to its host (%s), to read; no "
+                    "scp or rsync; lem is off limits." % (server, own_host() or "unknown")
+                )
             if any(os.path.basename(w) == "deploy.sh" or w.endswith("/deploy.sh") or "deploy.sh " in w for w in cmdw):
-                deny("on the %s server the driver deploys develop after your session: your own "
-                     "MCP connection would hold the old server open. Merge, push and hand off."
-                     % server)
+                deny(
+                    "on the %s server the driver deploys develop after your session: your own "
+                    "MCP connection would hold the old server open. Merge, push and hand off." % server
+                )
         if is_gh_issue(words, "edit"):
             claim_rule(words, server if role in ("consumer", "implementer") else "")
             if any(l.startswith("verified-on:") for l in flag_values(words, "--add-label")) and not target:
                 deny("verified-on: marks a verification made on another server, by that server's tester.")
-        if target and is_gh_issue(words, "edit") and adds_verified(words) \
-                and "verified-on:mps" not in flag_values(words, "--add-label"):
-            deny("on the %s server a verification adds verified-on:mps with status:verified, so lem "
-                 "can tell CUDA hasn't re-verified it." % target)
+        if (
+            target
+            and is_gh_issue(words, "edit")
+            and adds_verified(words)
+            and "verified-on:mps" not in flag_values(words, "--add-label")
+        ):
+            deny(
+                "on the %s server a verification adds verified-on:mps with status:verified, so lem "
+                "can tell CUDA hasn't re-verified it." % target
+            )
         if target and (is_gh_issue(words, "create") or is_gh_issue(words, "comment")):
             ticket_repo = os.environ.get("HARNEST_TICKET_REPO", "")
             harness_repo = os.environ.get("HARNEST_HARNESS_REPO", "dkackman/harnest")
             repo = flag_values(words, "--repo", "-R")
             if ticket_repo and (not repo or repo[-1] != ticket_repo) and not suite_request(words):
-                deny("from the %s server, issues are filed and commented on %s only (--repo %s). "
-                     "The one exception is a suite-change request: --repo %s with exactly "
-                     "--label suite --label status:needs-approval."
-                     % (target, ticket_repo, ticket_repo, harness_repo))
+                deny(
+                    "from the %s server, issues are filed and commented on %s only (--repo %s). "
+                    "The one exception is a suite-change request: --repo %s with exactly "
+                    "--label suite --label status:needs-approval." % (target, ticket_repo, ticket_repo, harness_repo)
+                )
         if target and is_gh_issue(words, "comment") and label_lookup(words, "target:lem") is not False:
-            deny("from the %s server, no comment on an issue lem's loop holds (target:lem), or one "
-                 "that couldn't be checked: file your own with a backend: label and reference it."
-                 % target)
+            deny(
+                "from the %s server, no comment on an issue lem's loop holds (target:lem), or one "
+                "that couldn't be checked: file your own with a backend: label and reference it." % target
+            )
         if target and is_gh_issue(words, "create") and not suite_request(words):
             labels = flag_values(words, "--label", "-l")
             backends = [l for l in labels if l.startswith("backend:")]
-            if backends not in (["backend:mps"], ["backend:shared"]) \
-                    or any(l.startswith("target:") for l in labels) \
-                    or len([l for l in labels if l.startswith("owner:")]) > 1:
-                deny("an issue from the %s server carries exactly one backend:mps or backend:shared "
-                     "(a cuda bug can't be seen here), one owner, and no target: label (claims are "
-                     "the driver's)." % target)
-        if (is_gh_issue(words, "create") and "security" in flag_values(words, "--label", "-l")) \
-                or (is_gh_issue(words, "edit") and "security" in flag_values(words, "--add-label")):
-            deny("a security finding is filed privately, never as a public issue: "
-                 "scripts/file-advisory.sh --summary ... --description-file ... --severity ... "
-                 "(the implementer: $HARNEST_ROOT/scripts/file-advisory.sh).")
+            if (
+                backends not in (["backend:mps"], ["backend:shared"])
+                or any(l.startswith("target:") for l in labels)
+                or len([l for l in labels if l.startswith("owner:")]) > 1
+            ):
+                deny(
+                    "an issue from the %s server carries exactly one backend:mps or backend:shared "
+                    "(a cuda bug can't be seen here), one owner, and no target: label (claims are "
+                    "the driver's)." % target
+                )
+        if (is_gh_issue(words, "create") and "security" in flag_values(words, "--label", "-l")) or (
+            is_gh_issue(words, "edit") and "security" in flag_values(words, "--add-label")
+        ):
+            deny(
+                "a security finding is filed privately, never as a public issue: "
+                "scripts/file-advisory.sh --summary ... --description-file ... --severity ... "
+                "(the implementer: $HARNEST_ROOT/scripts/file-advisory.sh)."
+            )
         if carries_release_marker(words):
-            deny("a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one.")
+            deny(
+                "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."
+            )
         if is_gh_issue(words, "edit"):
             if role != "curator":
                 owner_rule(words)
             elif "owner:don" in flag_values(words, "--remove-label"):
                 deny("removing owner:don is Don's hand-back, not the curator's.")
             if "status:plan-approved" in flag_values(words, "--add-label"):
-                deny("status:plan-approved is Don's to add: approving a feature plan is a human decision, "
-                     "and no agent may approve a plan, its own or another's.")
+                deny(
+                    "status:plan-approved is Don's to add: approving a feature plan is a human decision, "
+                    "and no agent may approve a plan, its own or another's."
+                )
             if {"release", "release-blocker"} & set(flag_values(words, "--add-label")):
-                deny("release and release-blocker are Don's to add: a freeze, and what may move during "
-                     "one, are his calls (R14).")
-        added = flag_values(words, "--add-label") if is_gh_issue(words, "edit") else \
-            flag_values(words, "--label", "-l") if is_gh_issue(words, "create") else []
+                deny(
+                    "release and release-blocker are Don's to add: a freeze, and what may move during "
+                    "one, are his calls (R14)."
+                )
+        added = (
+            flag_values(words, "--add-label")
+            if is_gh_issue(words, "edit")
+            else flag_values(words, "--label", "-l")
+            if is_gh_issue(words, "create")
+            else []
+        )
         if "arch-approved" in added:
-            deny("arch-approved is Don's to add: it waives new surface during a freeze, a ratchet rise and an "
-                 "architecture review's blocking finding, each his call.")
+            deny(
+                "arch-approved is Don's to add: it waives new surface during a freeze, a ratchet rise and an "
+                "architecture review's blocking finding, each his call."
+            )
         if "arch-review" in added:
-            deny("arch-review is the loop driver's: it queues the architecture review of a hand-off that "
-                 "changed dw/ or dw_mcp/.")
+            deny(
+                "arch-review is the loop driver's: it queues the architecture review of a hand-off that "
+                "changed dw/ or dw_mcp/."
+            )
         if is_gh_issue(words, "edit") and "arch-review" in flag_values(words, "--remove-label") and role != "reviewer":
-            deny("only the reviewer removes arch-review, with its verdict: the architecture review comes "
-                 "before the tester's.")
+            deny(
+                "only the reviewer removes arch-review, with its verdict: the architecture review comes "
+                "before the tester's."
+            )
         if role == "reviewer":
             if os.environ.get("HARNEST_SESSION_KIND") == "arch" and is_gh_issue(words, "close"):
                 deny("an architecture review closes nothing: pass the fix on (remove arch-review) or bounce it.")
@@ -702,8 +828,10 @@ def main():
                 deny("status:verified claims an MCP check; a docs review adds status:reviewed instead.")
         if role in ("implementer", "lead", "reviewer"):
             if role != "reviewer" and closes_completed(words):
-                deny('only the tester closes an issue as completed. gh closes as completed by default: '
-                     'pass --reason "not planned" for wontfix/duplicate.')
+                deny(
+                    "only the tester closes an issue as completed. gh closes as completed by default: "
+                    'pass --reason "not planned" for wontfix/duplicate.'
+                )
             if role != "reviewer" and adds_verified(words):
                 deny("status:verified is the tester's to add, from a real MCP call.")
             if is_gh_issue(words, "edit"):
@@ -717,18 +845,29 @@ def main():
             if problem:
                 deny(problem)
             if is_gh_issue(words, "edit") and "status:fixed-pending-verify" in flag_values(words, "--add-label"):
-                arch_gate(cwd, "HEAD", lambda: issue_has_label(words, "arch-approved"))
+                arch_gate(cwd, "HEAD", lambda words=words: issue_has_label(words, "arch-approved"))
                 handoff_gate(cwd)
             base = pr_merge_base(words)
             if base in ("", "develop") and merge_gated(cwd):
-                deny("this merges a PR into develop%s on GitHub, where the hot zone, the architecture ratchet "
-                     "and the freeze can't see what it adds. Merge it locally and push develop, which they "
-                     "check." % ("" if base else " (or its base couldn't be read)"))
+                deny(
+                    "this merges a PR into develop%s on GitHub, where the hot zone, the architecture ratchet "
+                    "and the freeze can't see what it adds. Merge it locally and push develop, which they "
+                    "check." % ("" if base else " (or its base couldn't be read)")
+                )
             issue = os.environ.get("HARNEST_ISSUE", "")
             push = pushed_develop(words, cwd)
             if push:  # the hot zone and ratchet need no issue; the waiver and new surface do
-                arch_gate(push[0], push[1], (lambda: label_on(
-                    issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True) if issue else None)
+                arch_gate(
+                    push[0],
+                    push[1],
+                    (
+                        lambda issue=issue: (
+                            label_on(issue, os.environ.get("HARNEST_TICKET_REPO", ""), "arch-approved") is True
+                        )
+                    )
+                    if issue
+                    else None,
+                )
         elif role == "consumer":
             # A tester HANDOFF session applies a harness-side edit the
             # implementer asked for and closes the issue as done: nothing
@@ -737,8 +876,10 @@ def main():
             handoff = os.environ.get("HARNEST_SESSION_KIND") == "handoff"
             if adds_verified(words) or (closes_completed(words) and not handoff):
                 if not session_called_mcp(data.get("transcript_path", "")):
-                    deny("verifying (closing as completed / status:verified) needs a real MCP call in this "
-                         "session, and this session has made none. Re-run the repro over the dw tools first.")
+                    deny(
+                        "verifying (closing as completed / status:verified) needs a real MCP call in this "
+                        "session, and this session has made none. Re-run the repro over the dw tools first."
+                    )
 
 
 main()

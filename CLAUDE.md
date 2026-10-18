@@ -381,8 +381,10 @@ real budget (see issue #101).
   `run-curate.sh` and `run-retro.sh` against `tests/fake-gh.py` (a JSON board that edits
   change) and a throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
   fix-then-verify in one cycle, an outside filing, and the spec race.
-- `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses, and
-  every `${KNOB:-}` a driver reads is named in the README.
+- `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses,
+  `ruff check` and `ruff format --check` clean under `ruff.toml` (a missing ruff fails; fix with
+  `ruff check --fix . && ruff format .`), and every `${KNOB:-}` a driver reads is named in the
+  README.
 
 Two bash 3.2 traps the suite has already caught: an apostrophe in a comment inside `<( )`
 ("bad substitution"), and `source <(…)`, which 3.2 doesn't support.

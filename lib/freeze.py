@@ -16,7 +16,9 @@ the session's commit: a branch cannot unfreeze itself, and a branch cut
 before a hot zone went live still sees it. The driver (dw_frozen in
 providers.sh) and guard.py both call these, so there is one check per switch.
 """
-import subprocess, sys
+
+import subprocess
+import sys
 
 REF = "origin/develop"
 FREEZE = "docs/stabilization/FREEZE"
@@ -61,7 +63,11 @@ def own_changes(checkout, src="HEAD", added=False):
 def violations(checkout, src="HEAD", hot=(), is_frozen=False):
     """(rule, path) pairs for src's own commits: 'hot-zone' always,
     'new-surface' only while frozen."""
-    out = [("new-surface", p) for p in own_changes(checkout, src, added=True) if p.startswith(SURFACE)] if is_frozen else []
+    out = (
+        [("new-surface", p) for p in own_changes(checkout, src, added=True) if p.startswith(SURFACE)]
+        if is_frozen
+        else []
+    )
     for p in own_changes(checkout, src):
         if any(p == h or (h.endswith("/") and p.startswith(h)) for h in hot):
             out.append(("hot-zone", p))

@@ -1,11 +1,13 @@
 """git, as a subprocess (the test seam is a real git on throwaway repos)."""
+
 import os
 import subprocess
 
 
 def git(*args, cwd=None, check=False):
-    return subprocess.run(["git", *args], cwd=cwd, stdin=subprocess.DEVNULL,
-                          capture_output=True, text=True, check=check)
+    return subprocess.run(
+        ["git", *args], cwd=cwd, stdin=subprocess.DEVNULL, capture_output=True, text=True, check=check
+    )
 
 
 def refresh_plugin_tree(src, tree, branch="develop"):

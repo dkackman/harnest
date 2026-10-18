@@ -14,6 +14,7 @@ that is stopped takes the whole group down with it: a SIGTERM to a bash
 driver waits on its foreground pipeline, and a `claude -p` it started could
 outlive it, reparented.
 """
+
 import json
 import os
 import signal
@@ -21,8 +22,7 @@ import subprocess
 import sys
 import time
 
-from . import REPO
-from . import outcome
+from . import REPO, outcome
 from .log import ts
 from .stream import Renderer
 
@@ -39,8 +39,11 @@ def base_env(environ=None):
     e["HARNEST_ROOT"] = str(REPO)
     e["CLAUDE_CODE_DISABLE_AUTO_MEMORY"] = "1"
     # ${X:-default}: an empty value takes the default too.
-    for k, default in (("MCP_TOOL_TIMEOUT", "1900000"), ("CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT", "1900000"),
-                       ("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "1800000")):
+    for k, default in (
+        ("MCP_TOOL_TIMEOUT", "1900000"),
+        ("CLAUDE_CODE_MCP_TOOL_IDLE_TIMEOUT", "1900000"),
+        ("CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS", "1800000"),
+    ):
         e[k] = e.get(k) or default
     # providers.sh resets SUITE_EDITS on every source; only run-loop.sh sets it.
     e["SUITE_EDITS"] = "0"
@@ -51,32 +54,62 @@ def guard_settings(role):
     """The --settings JSON installing guard.py for <role>, as jq -nc prints
     it. `$HARNEST_HOOKS` stays literal: the hook's shell expands it."""
     matcher = "Bash|Edit|Write" if role == "consumer" else "Bash"
-    return json.dumps({"hooks": {"PreToolUse": [{"matcher": matcher, "hooks": [
-        {"type": "command", "command": f'python3 "$HARNEST_HOOKS/guard.py" {role}', "timeout": 30}]}]}},
-        separators=(",", ":"))
+    return json.dumps(
+        {
+            "hooks": {
+                "PreToolUse": [
+                    {
+                        "matcher": matcher,
+                        "hooks": [
+                            {"type": "command", "command": f'python3 "$HARNEST_HOOKS/guard.py" {role}', "timeout": 30}
+                        ],
+                    }
+                ]
+            }
+        },
+        separators=(",", ":"),
+    )
 
 
 def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffusers")):
     """CONSUMER_PERMISSION_FLAGS: the tester's and the regression agent's
     fence (providers.sh says why each entry is there)."""
     return [
-        "--settings", guard_settings("consumer"),
-        "--permission-mode", "dontAsk",
+        "--settings",
+        guard_settings("consumer"),
+        "--permission-mode",
+        "dontAsk",
         "--allowedTools",
-        f"mcp__{mcp_name}__*", "ToolSearch", "Skill", "TodoWrite",
-        "Read", "Glob", "Grep", "Edit", "Write",
-        "Bash(gh issue *)", "Bash(date *)", "Bash(file *)",
-        "Bash(git log *)", "Bash(git status*)", "Bash(git diff *)", "Bash(git show *)",
+        f"mcp__{mcp_name}__*",
+        "ToolSearch",
+        "Skill",
+        "TodoWrite",
+        "Read",
+        "Glob",
+        "Grep",
+        "Edit",
+        "Write",
+        "Bash(gh issue *)",
+        "Bash(date *)",
+        "Bash(file *)",
+        "Bash(git log *)",
+        "Bash(git status*)",
+        "Bash(git diff *)",
+        "Bash(git show *)",
         "Bash(./scripts/file-advisory.sh *)",
-        "--disallowedTools", *[f"mcp__{mcp_name}__{t}" for t in deny],
+        "--disallowedTools",
+        *[f"mcp__{mcp_name}__{t}" for t in deny],
     ]
 
 
 def mcp_config(name, url, token):
     """--mcp-config for one HTTP MCP server with a Bearer token, as the bash
     interpolates it."""
-    return ('{"mcpServers":{"%s":{"type":"http","url":"%s","headers":{"Authorization":"Bearer %s"}}}}'
-            % (name, url, token))
+    return '{"mcpServers":{"%s":{"type":"http","url":"%s","headers":{"Authorization":"Bearer %s"}}}}' % (
+        name,
+        url,
+        token,
+    )
 
 
 def _kill_group(proc):
@@ -100,11 +133,21 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log):
     Returns claude's exit status."""
     r = Renderer()
     prefix = f"[{label}] "
-    proc = subprocess.Popen(argv, cwd=cwd, env=env, stdin=subprocess.DEVNULL,
-                            stdout=subprocess.PIPE, stderr=subprocess.STDOUT, start_new_session=True)
+    proc = subprocess.Popen(
+        argv,
+        cwd=cwd,
+        env=env,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        start_new_session=True,
+    )
     try:
-        with open(jsonl, "ab") as jf, open(logfile, "a", encoding="utf-8") as lf, \
-                open(last, "a", encoding="utf-8") as sf:
+        with (
+            open(jsonl, "ab") as jf,
+            open(logfile, "a", encoding="utf-8") as lf,
+            open(last, "a", encoding="utf-8") as sf,
+        ):
             for raw in proc.stdout:
                 jf.write(raw)
                 jf.flush()
@@ -126,8 +169,23 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log):
             _kill_group(proc)
 
 
-def run(label, logname, cwd, prompt_file, prompt, flags, *, model_env, session_env, logs, last, log,
-        header=None, retry_pause=None, sleep=time.sleep):
+def run(
+    label,
+    logname,
+    cwd,
+    prompt_file,
+    prompt,
+    flags,
+    *,
+    model_env,
+    session_env,
+    logs,
+    last,
+    log,
+    header=None,
+    retry_pause=None,
+    sleep=time.sleep,
+):
     """run_claude_session: one fresh `claude -p` session, retried once if it
     died before its result, asleep through a rejected rate limit. Never
     raises on the session's own failure; the outcome is read from <last>
@@ -141,8 +199,16 @@ def run(label, logname, cwd, prompt_file, prompt, flags, *, model_env, session_e
         open(last, "w").close()
         log.say(f"=== {ts()} {header or label} ({model_env.label}){' retry' if attempt > 1 else ''} ===")
         try:
-            rc = _attempt(argv, cwd, env, label, os.path.join(logs, f"{logname}.jsonl"),
-                          os.path.join(logs, f"{logname}.log"), last, log)
+            rc = _attempt(
+                argv,
+                cwd,
+                env,
+                label,
+                os.path.join(logs, f"{logname}.jsonl"),
+                os.path.join(logs, f"{logname}.log"),
+                last,
+                log,
+            )
         except OSError as e:
             log.say(f"[{label}] {e}")
             rc = 1

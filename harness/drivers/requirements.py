@@ -18,6 +18,7 @@ Knobs: REQUIREMENTS_MODEL (claude-sonnet-5-5), REQUIREMENTS_PROVIDER
 session, 0 = none), REQUIREMENTS_CASES_PER_SESSION (12), AUTOCOMPACT_TOKENS.
 It takes no driver lock: every call it makes is read-only.
 """
+
 import argparse
 import json
 import os
@@ -25,13 +26,25 @@ import re
 import sys
 import time
 
-from .. import REPO, deploy, facts, outcome, prompts, providers, requirements as req, session, suite
+from .. import REPO, deploy, facts, providers, session, suite
+from .. import requirements as req
 from ..log import Log, err, ts
 from ..profile import ProfileError, load, resolve_token, resolve_url
 from ..stream import resolved_model
 
-READ_ONLY_TOOLS = ("list_workflows", "get_workflow", "list_models", "list_assets", "list_tasks", "get_task",
-                   "list_pipelines", "get_pipeline_signature", "get_guide", "list_guides", "get_server_info")
+READ_ONLY_TOOLS = (
+    "list_workflows",
+    "get_workflow",
+    "list_models",
+    "list_assets",
+    "list_tasks",
+    "get_task",
+    "list_pipelines",
+    "get_pipeline_signature",
+    "get_guide",
+    "list_guides",
+    "get_server_info",
+)
 _LINE = re.compile(r"^[-*` ]*REQUIREMENT:\s*(\{.*\})\s*`?\s*$")
 KEYS = ("case", "workflows", "models", "assets", "load", "note")
 
@@ -67,9 +80,14 @@ def parse_answers(text, asked):
         if load_ not in req.LOADS:
             problems.append(f"{a['case']}: load '{load_}' is not one of {', '.join(req.LOADS)}")
             continue
-        assets = [x[len("asset:"):] if x.startswith("asset:") else x for x in lists["assets"]]
-        got[a["case"]] = {"workflows": lists["workflows"], "models": lists["models"], "assets": assets,
-                          "load": load_, **({"note": a["note"]} if isinstance(a.get("note"), str) and a["note"] else {})}
+        assets = [x[len("asset:") :] if x.startswith("asset:") else x for x in lists["assets"]]
+        got[a["case"]] = {
+            "workflows": lists["workflows"],
+            "models": lists["models"],
+            "assets": assets,
+            "load": load_,
+            **({"note": a["note"]} if isinstance(a.get("note"), str) and a["note"] else {}),
+        }
     for c in asked:
         if c not in got and not any(p.startswith(f"{c}:") for p in problems):
             problems.append(f"{c}: no answer; primary only")
@@ -91,21 +109,27 @@ def todo(level_files, sidecar, force=False, only=()):
     out = []
     for level, path in level_files:
         blocks = req.case_blocks(path)
-        cases = [(c, b) for c, b in blocks.items()
-                 if (not only or c in only)
-                 and (force or not req.need_for(c, b, sidecar).known)]
+        cases = [
+            (c, b)
+            for c, b in blocks.items()
+            if (not only or c in only) and (force or not req.need_for(c, b, sidecar).known)
+        ]
         if cases:
             out.append((level, cases))
     return out
 
 
 def prompt_for(level, cases, server_text):
-    body = "\n".join(f"<case id=\"{c}\">\n{b.rstrip()}\n</case>" for c, b in cases)
-    return (f"These {len(cases)} cases are from the '{level}' regression suite. For each, say what a dw server "
-            f"must have to run it, as your system prompt describes. The server you can query is {server_text}, "
-            "which holds every model the suites use. Run nothing.\n\n" + body +
-            f"\n\nAnswer with exactly {len(cases)} REQUIREMENT lines, one per case, in this order: "
-            + " ".join(c for c, _ in cases) + ". Then stop.")
+    body = "\n".join(f'<case id="{c}">\n{b.rstrip()}\n</case>' for c, b in cases)
+    return (
+        f"These {len(cases)} cases are from the '{level}' regression suite. For each, say what a dw server "
+        f"must have to run it, as your system prompt describes. The server you can query is {server_text}, "
+        "which holds every model the suites use. Run nothing.\n\n"
+        + body
+        + f"\n\nAnswer with exactly {len(cases)} REQUIREMENT lines, one per case, in this order: "
+        + " ".join(c for c, _ in cases)
+        + ". Then stop."
+    )
 
 
 def main(argv=None):
@@ -120,7 +144,9 @@ def main(argv=None):
         profile = load()
         levels = profile.levels if a.level == "all" else [profile.level(a.level)]
         if None in levels:
-            raise ProfileError(f"unknown level '{a.level}' (expected: {', '.join(l.name for l in profile.levels)}, all)")
+            raise ProfileError(
+                f"unknown level '{a.level}' (expected: {', '.join(l.name for l in profile.levels)}, all)"
+            )
         sidecar_path = os.environ.get("HARNEST_REQUIREMENTS") or str(req.SIDECAR)
         entries = req.load_sidecar(sidecar_path)
         per = int(env("REQUIREMENTS_CASES_PER_SESSION", "12"))
@@ -130,7 +156,7 @@ def main(argv=None):
         err(str(e))
         return 1
     work = todo([(lv.name, REPO / lv.file) for lv in levels], entries, a.force, set(a.cases))
-    chunks = [(lv, cases[i:i + per]) for lv, cases in work for i in range(0, len(cases), per)]
+    chunks = [(lv, cases[i : i + per]) for lv, cases in work for i in range(0, len(cases), per)]
     total = sum(len(c) for _, c in chunks)
     if a.dry_run or not chunks:
         print(f"{total} case(s) to ask about, in {len(chunks)} session(s) of up to {per}")
@@ -153,33 +179,56 @@ def main(argv=None):
         if facts.short_host(h.get("hostname") or "") != facts.short_host(server.host):
             raise facts.FactsError(f"the server at {url} is {h.get('hostname')}, not {server.host}")
         model_env = providers.resolve_model_env(provider, model)
-        flags = providers.session_flags(provider, model, env("REQUIREMENTS_EFFORT", env("EFFORT", "medium")),
-                                        env("REQUIREMENTS_BUDGET_USD", "2"), env("FALLBACK_MODEL"),
-                                        env("AUTOCOMPACT_TOKENS", "120000"))
+        flags = providers.session_flags(
+            provider,
+            model,
+            env("REQUIREMENTS_EFFORT", env("EFFORT", "medium")),
+            env("REQUIREMENTS_BUDGET_USD", "2"),
+            env("FALLBACK_MODEL"),
+            env("AUTOCOMPACT_TOKENS", "120000"),
+        )
     except (ProfileError, facts.FactsError, providers.ProviderError) as e:
         err(str(e))
         return 1
     mcp = profile.get("mcp.name", "dw")
     flags += [
-        "--mcp-config", session.mcp_config(mcp, url, token), "--strict-mcp-config",
+        "--mcp-config",
+        session.mcp_config(mcp, url, token),
+        "--strict-mcp-config",
         *session.ISOLATION_FLAGS,
-        "--tools", "ToolSearch",
-        "--permission-mode", "dontAsk",
-        "--allowedTools", "ToolSearch", *[f"mcp__{mcp}__{t}" for t in READ_ONLY_TOOLS],
+        "--tools",
+        "ToolSearch",
+        "--permission-mode",
+        "dontAsk",
+        "--allowedTools",
+        "ToolSearch",
+        *[f"mcp__{mcp}__{t}" for t in READ_ONLY_TOOLS],
     ]
     prompt_file = logs / ".prompt.requirements.md"
     prompt_file.write_text((REPO / "agents" / "regression" / "requirements.md").read_text(encoding="utf-8"))
     last = logs / ".last-session.requirements"
     head = deploy.deployed_head(server)
     server_text = f"{server.name} ({h.get('device')}, running {head})"
-    log.say(f"=== {ts()} requirements run ({model_env.label}, {a.level}, {total} cases in {len(chunks)} sessions "
-            f"of up to {per}, server={server.name}, head={head}) ===")
+    log.say(
+        f"=== {ts()} requirements run ({model_env.label}, {a.level}, {total} cases in {len(chunks)} sessions "
+        f"of up to {per}, server={server.name}, head={head}) ==="
+    )
     added = unknown = 0
     for n, (lv, cases) in enumerate(chunks, 1):
         label = f"requirements:{lv}.{n} of {len(chunks)}"
-        session.run(label, "requirements", str(REPO), prompt_file, prompt_for(lv, cases, server_text), flags,
-                    model_env=model_env, session_env={"HARNEST_ROLE": "requirements"}, logs=str(logs),
-                    last=str(last), log=log)
+        session.run(
+            label,
+            "requirements",
+            str(REPO),
+            prompt_file,
+            prompt_for(lv, cases, server_text),
+            flags,
+            model_env=model_env,
+            session_env={"HARNEST_ROLE": "requirements"},
+            logs=str(logs),
+            last=str(last),
+            log=log,
+        )
         text = last.read_text(encoding="utf-8", errors="replace") if last.exists() else ""
         got, problems = parse_answers(text, {c for c, _ in cases})
         by = resolved_model(logs / "requirements.jsonl", model)
@@ -196,8 +245,15 @@ def main(argv=None):
     log.say(f"[requirements] {added} entr{'y' if added == 1 else 'ies'} written, {unknown} case(s) left primary only")
     if os.path.realpath(sidecar_path) == os.path.realpath(req.SIDECAR):
         name, email = providers.co_author_for(provider, resolved_model(logs / "requirements.jsonl", model))
-        suite.commit_changes(REPO, str(logs), ["regression-requirements.json"],
-                             f"requirements: {a.level} from {ts()} run ({model_env.label})", name, email, log.say)
+        suite.commit_changes(
+            REPO,
+            str(logs),
+            ["regression-requirements.json"],
+            f"requirements: {a.level} from {ts()} run ({model_env.label})",
+            name,
+            email,
+            log.say,
+        )
     return 0
 
 

@@ -15,6 +15,7 @@ Where it differs:
   reader splits a multibyte character at a buffer boundary now and then,
   and the bash renderer counted it twice.
 """
+
 import json
 import os
 import shutil
@@ -23,8 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .. import REPO
-from .. import deploy, lock, outcome, prompts, providers, session, suite
+from .. import REPO, deploy, lock, outcome, prompts, providers, session, suite
 from ..gitops import refresh_plugin_tree
 from ..log import Log, err, ts
 from ..profile import ProfileError, load, resolve_token, resolve_url
@@ -70,7 +70,9 @@ class Regression:
         names = [lv.name for lv in self.profile.levels]
         if self.level == "all":
             if self.override:
-                err("a suite-file override is ambiguous with level 'all' — run one level at a time to override its file")
+                err(
+                    "a suite-file override is ambiguous with level 'all' — run one level at a time to override its file"
+                )
                 raise Abort(1)
             return [(n, "") for n in names]
         lv = self.profile.level(self.level)
@@ -108,7 +110,7 @@ class Regression:
             self.token = resolve_token(self.server)
         except ProfileError as e:
             err(str(e))
-            raise Abort(1)
+            raise Abort(1) from None
         self.logname = f"regression{sfx}"
         self.rpfx = "regression" + (f"-{self.target}" if sfx else "")
         self.server_text, self.health = "lem", ""
@@ -117,24 +119,44 @@ class Regression:
                 self.health = deploy.preflight(self.server, self.url, self.token)
             except deploy.PreflightError as e:
                 err(str(e))
-                raise Abort(1)
+                raise Abort(1) from None
             self.server_text = f"the {self.target} server ({self.health})"
             if self.level == "all":
                 self.run_specs = [(n, "") for n in self.server.regression_all]
             # What the agent files must carry this label, and gh refuses one
             # that doesn't exist.
-            subprocess.run(["gh", "label", "create", f"target:{self.target}", "--repo", self.ticket_repo, "--force",
-                            "--color", "5319e7", "--description",
-                            f"Found against a non-lem server (DW_TARGET={self.target}); Don triages"],
-                           capture_output=True)
-            (REPO / self.profile.get("suite.perf_dir", "regression-perf") / self.target).mkdir(parents=True, exist_ok=True)
+            subprocess.run(
+                [
+                    "gh",
+                    "label",
+                    "create",
+                    f"target:{self.target}",
+                    "--repo",
+                    self.ticket_repo,
+                    "--force",
+                    "--color",
+                    "5319e7",
+                    "--description",
+                    f"Found against a non-lem server (DW_TARGET={self.target}); Don triages",
+                ],
+                capture_output=True,
+            )
+            (REPO / self.profile.get("suite.perf_dir", "regression-perf") / self.target).mkdir(
+                parents=True, exist_ok=True
+            )
         # guard.py reads these.
-        self.session_env = {"HARNEST_TARGET": self.target, "HARNEST_ROLE": "regression",
-                            "HARNEST_TICKET_REPO": self.ticket_repo}
+        self.session_env = {
+            "HARNEST_TARGET": self.target,
+            "HARNEST_ROLE": "regression",
+            "HARNEST_TICKET_REPO": self.ticket_repo,
+        }
         lock.acquire(str(self.logs / f".driver.lock{sfx}"), "run-regression", self.log.say)
         self.last = self.logs / f".last-session.{self.logname}"
         plugin_dir = self.plugin_tree / self.profile.get("clones.plugin_subdir", "plugins/dw")
-        if refresh_plugin_tree(self.source_dir, self.plugin_tree, self.profile.get("integration_branch", "develop")) is None:
+        if (
+            refresh_plugin_tree(self.source_dir, self.plugin_tree, self.profile.get("integration_branch", "develop"))
+            is None
+        ):
             err(f"could not create/refresh the plugin worktree {self.plugin_tree} from {self.source_dir}")
             raise Abort(1)
         if not plugin_dir.is_dir():
@@ -143,11 +165,12 @@ class Regression:
         effort = env("REGRESSION_EFFORT", env("EFFORT", "medium"))
         try:
             self.model_env = providers.resolve_model_env(self.model_provider, self.model)
-            self.session_flags = providers.session_flags(self.model_provider, self.model, effort, self.budget,
-                                                         self.fallback, self.autocompact)
+            self.session_flags = providers.session_flags(
+                self.model_provider, self.model, effort, self.budget, self.fallback, self.autocompact
+            )
         except providers.ProviderError as e:
             err(str(e))
-            raise Abort(1)
+            raise Abort(1) from None
         if not self.cases_per_session:
             ctx = self.model_env.context_tokens
             self.cases_per_session = "3" if ctx and int(ctx) < 120000 else "8"
@@ -158,11 +181,14 @@ class Regression:
         skip = os.environ.get("TARGET_SKIP_CASES")
         self.skip_cases = skip.split() if skip is not None else list(self.server.regression_skip_cases)
         self.flags = [
-            "--mcp-config", session.mcp_config(self.mcp_name, self.url, self.token),
+            "--mcp-config",
+            session.mcp_config(self.mcp_name, self.url, self.token),
             "--strict-mcp-config",
-            "--plugin-dir", str(plugin_dir),
+            "--plugin-dir",
+            str(plugin_dir),
             *session.ISOLATION_FLAGS,
-            "--tools", session.CONSUMER_TOOLS,
+            "--tools",
+            session.CONSUMER_TOOLS,
             *session.consumer_permission_flags(self.mcp_name, self.profile.get("mcp.deny_tools", ())),
         ]
 
@@ -179,34 +205,63 @@ class Regression:
         if secondary:
             # The server's own rules join the system prompt last, so they
             # read as the last word.
-            note = prompts.target_note("regression", {
-                "TARGET": self.target, "SERVER": self.health, "URL": self.url,
-                "DEPLOY": deploy.deploy_cmd(self.server), "HOST": self.server.host, "SERVER_DIR": self.server.dir})
+            note = prompts.target_note(
+                "regression",
+                {
+                    "TARGET": self.target,
+                    "SERVER": self.health,
+                    "URL": self.url,
+                    "DEPLOY": deploy.deploy_cmd(self.server),
+                    "HOST": self.server.host,
+                    "SERVER_DIR": self.server.dir,
+                },
+            )
             with open(prompt_file, "a", encoding="utf-8") as f:
                 f.write("\n" + note)
-        target_clause = " The Target section at the end of your system prompt applies to this whole run." if secondary else ""
-        prompt = (f"Tickets are GitHub Issues on {self.ticket_repo}; use the gh CLI to file/comment on them. "
-                  "Your role instructions for this kind of session are in your system prompt; follow them exactly, "
-                  f"with these specifics: suite file is {suite_file}; level is '{level}'; workspace is {workspace}; "
-                  f"{self.server_text} is running {head or 'unknown'} - name that commit in anything you file or comment."
-                  f"{target_clause} {instructions} Then stop.\n\n"
-                  + prompts.runtime_note("regression", self.model_provider, self.model, secondary))
-        session.run(f"{self.rpfx}:{level}{tag}", self.logname, str(REPO), prompt_file, prompt,
-                    [*self.session_flags, *self.flags], model_env=self.model_env, session_env=self.session_env,
-                    logs=str(self.logs), last=str(self.last), log=self.log)
+        target_clause = (
+            " The Target section at the end of your system prompt applies to this whole run." if secondary else ""
+        )
+        prompt = (
+            f"Tickets are GitHub Issues on {self.ticket_repo}; use the gh CLI to file/comment on them. "
+            "Your role instructions for this kind of session are in your system prompt; follow them exactly, "
+            f"with these specifics: suite file is {suite_file}; level is '{level}'; workspace is {workspace}; "
+            f"{self.server_text} is running {head or 'unknown'} - name that commit in anything you file or comment."
+            f"{target_clause} {instructions} Then stop.\n\n"
+            + prompts.runtime_note("regression", self.model_provider, self.model, secondary)
+        )
+        session.run(
+            f"{self.rpfx}:{level}{tag}",
+            self.logname,
+            str(REPO),
+            prompt_file,
+            prompt,
+            [*self.session_flags, *self.flags],
+            model_env=self.model_env,
+            session_env=self.session_env,
+            logs=str(self.logs),
+            last=str(self.last),
+            log=self.log,
+        )
         skips, differs = outcome.regression_counts(self.last)
         self.level_skips += skips
         self.level_differs += differs
 
     def script_report(self, ids):
         runner = REPO / self.profile.get("suite.contract_runner", "contract/run.py")
-        p = subprocess.run(["python3", str(runner), "--url", self.url, "--token", self.token, *ids],
-                           stdin=subprocess.DEVNULL, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+        p = subprocess.run(
+            ["python3", str(runner), "--url", self.url, "--token", self.token, *ids],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
         report = p.stdout.rstrip("\n")
         try:
             r = json.loads(report)
-            summary = (f"{_jq_num(r.get('passed'))} passed, {_jq_num(r.get('failed'))} failed, "
-                       f"{_jq_num(r.get('errors'))} errored" + (f" - {r['error']}" if r.get("error") else ""))
+            summary = (
+                f"{_jq_num(r.get('passed'))} passed, {_jq_num(r.get('failed'))} failed, "
+                f"{_jq_num(r.get('errors'))} errored" + (f" - {r['error']}" if r.get("error") else "")
+            )
         except (ValueError, AttributeError):
             summary = "report unreadable"
         return report, summary
@@ -236,7 +291,8 @@ class Regression:
                 f"'runner: script' on each): {' '.join(script_ids)}. Do not execute them. Their report:\n{report}\n"
                 "For each case whose status is fail or error, report it ('Reporting a failure' in the role "
                 "instructions) exactly as for a case you ran yourself, quoting its failures; a pass needs nothing. "
-                "An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure.")
+                "An error with 'server unreachable' is the MCP-unreachable case, not a per-case failure."
+            )
 
         head = deploy.deployed_head(self.server)
         # Another server's header and session lines carry its tag
@@ -252,17 +308,34 @@ class Regression:
                     continue
                 held.append(cid)
                 self.level_skips += 1
-                self.log.say(f"[{self.rpfx}:{level}] REGRESSION-SKIP: {cid} memory (TARGET_SKIP_CASES: not run on this server)")
-        held_clause = (" Never run these cases on this server, whatever the suite says; the driver already counted "
-                       "them as skipped:" + "".join(f" {c}" for c in held) + ".") if held else ""
-        header = (f"=== {ts()} regression run ({self.model_env.label}, level={tag}, suite={suite_file}, "
-                  f"workspace={workspace}, target={self.target}, head={head}")
+                self.log.say(
+                    f"[{self.rpfx}:{level}] REGRESSION-SKIP: {cid} memory (TARGET_SKIP_CASES: not run on this server)"
+                )
+        held_clause = (
+            (
+                " Never run these cases on this server, whatever the suite says; the driver already counted "
+                "them as skipped:" + "".join(f" {c}" for c in held) + "."
+            )
+            if held
+            else ""
+        )
+        header = (
+            f"=== {ts()} regression run ({self.model_env.label}, level={tag}, suite={suite_file}, "
+            f"workspace={workspace}, target={self.target}, head={head}"
+        )
         if self.cases_per_session == 0:
             self.log.say(header + ") ===")
-            self.run_session(level, suite_file, workspace, "", "whole",
-                             f"Exercise every case in the suite file against the {workspace} workspace, file or "
-                             "comment on issues for failures and performance regressions, add any cases worth "
-                             f"adding, then do the final sweep.{held_clause}{script_note}", head)
+            self.run_session(
+                level,
+                suite_file,
+                workspace,
+                "",
+                "whole",
+                f"Exercise every case in the suite file against the {workspace} workspace, file or "
+                "comment on issues for failures and performance regressions, add any cases worth "
+                f"adding, then do the final sweep.{held_clause}{script_note}",
+                head,
+            )
         else:
             ids = [i for i in ids_in_file if i not in script_ids and i not in held]
             total, n = len(ids), self.cases_per_session
@@ -270,41 +343,69 @@ class Regression:
             self.log.say(header + f", {total} cases in sessions of {n}) ===")
             session_no = 0
             for start in range(0, total, n):
-                chunk = ids[start:start + n]
+                chunk = ids[start : start + n]
                 session_no += 1
                 self.log.say(f"--- {ts()} {tag} session {session_no} of {nchunks}: {' '.join(chunk)} ---")
-                self.run_session(level, suite_file, workspace, f".{session_no} of {nchunks}", "chunk",
-                                 f"This is one chunk of a chunked run: this session exercises ONLY these cases, in "
-                                 f"this order: {' '.join(chunk)}. Do not read the suite file in full — read its header "
-                                 "(everything above the first '### ' heading, which includes the Fixtures section), "
-                                 "then only those cases' sections. Skip the final sweep; a separate session does it "
-                                 "after every case has run.", head)
+                self.run_session(
+                    level,
+                    suite_file,
+                    workspace,
+                    f".{session_no} of {nchunks}",
+                    "chunk",
+                    f"This is one chunk of a chunked run: this session exercises ONLY these cases, in "
+                    f"this order: {' '.join(chunk)}. Do not read the suite file in full — read its header "
+                    "(everything above the first '### ' heading, which includes the Fixtures section), "
+                    "then only those cases' sections. Skip the final sweep; a separate session does it "
+                    "after every case has run.",
+                    head,
+                )
                 if outcome.aborted(self.last):
-                    self.log.say(f"[{self.rpfx}:{level}] session {session_no} aborted (MCP unreachable); "
-                                 "skipping the rest of this level and the sweep")
+                    self.log.say(
+                        f"[{self.rpfx}:{level}] session {session_no} aborted (MCP unreachable); "
+                        "skipping the rest of this level and the sweep"
+                    )
                     break
             if not outcome.aborted(self.last):
                 self.log.say(f"--- {ts()} {tag} session {session_no + 1}: final sweep ---")
-                self.run_session(level, suite_file, workspace, ".sweep", "sweep",
-                                 "This is the final sweep of a chunked run: every case was already exercised in "
-                                 f"earlier sessions. Do only the final sweep against the {workspace} workspace — read "
-                                 "the suite file's header (everything above the first '### ' heading, which includes "
-                                 f"the Fixtures section), not the cases.{script_note}", head)
+                self.run_session(
+                    level,
+                    suite_file,
+                    workspace,
+                    ".sweep",
+                    "sweep",
+                    "This is the final sweep of a chunked run: every case was already exercised in "
+                    f"earlier sessions. Do only the final sweep against the {workspace} workspace — read "
+                    "the suite file's header (everything above the first '### ' heading, which includes "
+                    f"the Fixtures section), not the cases.{script_note}",
+                    head,
+                )
 
         if sfx:
-            self.log.say(f"[{self.rpfx}:{level}] {self.level_skips} case(s) skipped, {self.level_differs} expectation(s) "
-                         "differ on this server (REGRESSION-SKIP / REGRESSION-DIFFERS lines above)")
-        name, email = providers.co_author_for(self.model_provider,
-                                              resolved_model(self.logs / f"{self.logname}.jsonl", self.model))
+            self.log.say(
+                f"[{self.rpfx}:{level}] {self.level_skips} case(s) skipped, {self.level_differs} expectation(s) "
+                "differ on this server (REGRESSION-SKIP / REGRESSION-DIFFERS lines above)"
+            )
+        name, email = providers.co_author_for(
+            self.model_provider, resolved_model(self.logs / f"{self.logname}.jsonl", self.model)
+        )
         target_clause = f", target {self.target}" if sfx else ""
-        self.commit(f"regression: update {level} suite from {ts()} run ({self.model_env.label}{target_clause})", name, email)
+        self.commit(
+            f"regression: update {level} suite from {ts()} run ({self.model_env.label}{target_clause})", name, email
+        )
         if outcome.aborted(self.last):
             self.log.say(f"[{self.rpfx}] stopping: MCP unreachable")
             raise Abort(1)
 
     def commit(self, msg, name, email):
-        suite.commit_changes(REPO, str(self.logs), suite.commit_paths(self.server, self.profile.get("suite.perf_dir", "regression-perf")),
-                             msg, name, email, self.log.say)
+        suite.commit_changes(
+            REPO,
+            str(self.logs),
+            suite.commit_paths(self.server, self.profile.get("suite.perf_dir", "regression-perf")),
+            msg,
+            name,
+            email,
+            self.log.say,
+        )
 
     def main(self):
         # Fallback only: anything still dirty is of unknown origin (a hand
@@ -313,8 +414,11 @@ class Regression:
         # On another server this would take lem's files, which a run there
         # never writes, and the loop's tester may be mid-edit in them.
         if self.server.primary:
-            self.commit("regression: capture suite edits of unknown origin made outside a regression run",
-                        "unknown (edited outside a regression run)", "noreply@localhost")
+            self.commit(
+                "regression: capture suite edits of unknown origin made outside a regression run",
+                "unknown (edited outside a regression run)",
+                "noreply@localhost",
+            )
         for level, override in self.run_specs:
             self.run_level(level, override)
 

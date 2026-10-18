@@ -12,7 +12,11 @@ Covers what the drivers call: issue list/view/edit/comment/close/create,
 api (events, from an issue's "events" list, and the comment PATCH), and auth status. --json projects the
 fields asked for, and --jq is applied with the real jq.
 """
-import json, os, subprocess, sys
+
+import json
+import os
+import subprocess
+import sys
 
 args = sys.argv[1:]
 if os.environ.get("FAKE_GH_LOG"):
@@ -87,10 +91,13 @@ if cmd == ["issue", "list"]:
     state = (opt("--state") or "open").upper()
     want = opt("--label", many=True)
     search = opt("--search") or ""
-    rows = [i for i in issues
-            if (state == "ALL" or i.get("state", "OPEN") == state)
-            and all(l in labels(i) for l in want)
-            and not (search.startswith("-author:") and i.get("author", {}).get("login") == search[8:])]
+    rows = [
+        i
+        for i in issues
+        if (state == "ALL" or i.get("state", "OPEN") == state)
+        and all(l in labels(i) for l in want)
+        and not (search.startswith("-author:") and i.get("author", {}).get("login") == search[8:])
+    ]
     out([project(i) for i in rows])
 elif cmd == ["issue", "view"]:
     out(project(find(args[2])))
@@ -111,13 +118,23 @@ elif cmd == ["issue", "edit"]:
 elif cmd == ["issue", "comment"]:
     i = find(args[2])
     body = opt("--body") or (open(opt("--body-file")).read() if opt("--body-file") else "")
-    i.setdefault("comments", []).append({"author": {"login": "dkackman"}, "body": body, "createdAt": "2026-01-01T00:00:00Z"})
+    i.setdefault("comments", []).append(
+        {"author": {"login": "dkackman"}, "body": body, "createdAt": "2026-01-01T00:00:00Z"}
+    )
     save()
 elif cmd == ["issue", "create"]:
     n = max([i["number"] for i in issues] + [0]) + 1
     names = sum((v.split(",") for v in opt("--label", many=True)), [])
-    issues.append({"number": n, "state": "OPEN", "title": opt("--title") or "", "body": opt("--body") or "",
-                   "labels": [{"name": l} for l in names], "comments": []})
+    issues.append(
+        {
+            "number": n,
+            "state": "OPEN",
+            "title": opt("--title") or "",
+            "body": opt("--body") or "",
+            "labels": [{"name": l} for l in names],
+            "comments": [],
+        }
+    )
     save()
     print("https://github.com/%s/issues/%d" % (repo, n))
 elif cmd == ["issue", "close"]:
@@ -135,11 +152,14 @@ elif cmd[0] == "api" and "security-advisories" in " ".join(args):
         body = json.load(sys.stdin) if opt("--input") == "-" else {}
         adv = dict(body, ghsa_id="GHSA-fake-%04d" % (len(advs) + 1), state="draft")
         adv["html_url"] = "https://github.com/%s/security/advisories/%s" % (repo_of_api(args), adv["ghsa_id"])
-        advs.append(adv); save(); out(adv)
+        advs.append(adv)
+        save()
+        out(adv)
     elif ghsa:
         adv = next(a for a in advs if a["ghsa_id"] == ghsa)
         if method == "PATCH":
-            adv.update(json.load(sys.stdin) if opt("--input") == "-" else {}); save()
+            adv.update(json.load(sys.stdin) if opt("--input") == "-" else {})
+            save()
         out(adv)
     else:
         out([a for a in advs if a.get("state") == "draft"])

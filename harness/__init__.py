@@ -4,6 +4,7 @@ Stdlib only, no venv: every external tool (claude, gh, git, ssh, curl)
 stays a subprocess, so the offline suite's stubs on PATH keep working.
 REPO is the harness checkout this package sits in.
 """
+
 import os
 from pathlib import Path
 
