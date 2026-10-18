@@ -148,6 +148,74 @@ def kill_all():
 atexit.register(kill_all)
 
 
+class Watchdog:
+    """Kills a session that has gone quiet, so the driver's own recovery
+    (sleep through a rejected rate limit, retry a died session) runs. A
+    session can stall without exiting: on 2026-10-18 a fleet lane's session
+    got a rejected five-hour limit mid-run (overage=true) and sat silent,
+    holding the run, until it was killed by hand. How long is too quiet
+    depends on what the session is doing:
+    - after a rejected rate limit: SESSION_REJECTED_STALL_SECS (120);
+    - with a tool call in flight: SESSION_TOOL_STALL_SECS (2400), since
+      dw's wait_for_job blocks up to 1800 s with nothing to say;
+    - otherwise (the model's own turn): SESSION_STALL_SECS (900).
+    0 turns a limit off."""
+
+    def __init__(self, proc, say, clock=time.monotonic, limits=None, kill=None, watch=True):
+        self.proc, self.say, self.clock = proc, say, clock
+        self.kill = kill or _kill_group
+        self.last = clock()
+        self.open_tools = 0
+        self.rejected = False
+        self.killed = None
+        self.limits = limits or {
+            k: int(os.environ.get(k) or d)
+            for k, d in (
+                ("SESSION_STALL_SECS", 900),
+                ("SESSION_TOOL_STALL_SECS", 2400),
+                ("SESSION_REJECTED_STALL_SECS", 120),
+            )
+        }
+        self.stop = threading.Event()
+        if watch:
+            threading.Thread(target=self._watch, daemon=True).start()
+
+    def saw(self, line):
+        self.last = self.clock()
+        if line.startswith("> "):
+            self.open_tools += 1
+        elif line.startswith("< ") and self.open_tools:
+            self.open_tools -= 1
+        elif line.startswith("rate-limit: status=rejected"):
+            self.rejected = True
+        elif line.startswith("· ctx="):
+            self.rejected = False  # the model answered after all
+
+    def limit(self):
+        if self.rejected:
+            return "SESSION_REJECTED_STALL_SECS", "after a rejected rate limit"
+        if self.open_tools:
+            return "SESSION_TOOL_STALL_SECS", "with a tool call in flight"
+        return "SESSION_STALL_SECS", "on the model's turn"
+
+    def check(self):
+        """Kills the session when it has been quiet too long; True if it did."""
+        knob, what = self.limit()
+        secs = self.limits[knob]
+        quiet = self.clock() - self.last
+        if not secs or quiet < secs or self.proc.poll() is not None:
+            return False
+        self.killed = f"no output for {int(quiet)}s {what} ({knob}={secs}); stopping it"
+        self.say(self.killed)
+        self.kill(self.proc)
+        return True
+
+    def _watch(self):
+        while not self.stop.wait(5):
+            if self.check():
+                return
+
+
 def _attempt(argv, cwd, env, label, jsonl, logfile, last, log, on_line=None):
     """One claude process: raw events to <jsonl>, the rendering to
     <logfile> and <last>, and prefixed [label] to the loop log and stdout.
@@ -166,6 +234,7 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log, on_line=None):
     )
     with _LIVE_LOCK:
         _LIVE.add(proc)
+    dog = Watchdog(proc, lambda m: log.say(f"[{label}] {m}"))
     try:
         with (
             open(jsonl, "ab") as jf,
@@ -179,6 +248,7 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log, on_line=None):
                 if line.endswith("\n"):
                     line = line[:-1]
                 for out in r.feed(line):
+                    dog.saw(out)
                     lf.write(out + "\n")
                     sf.write(out + "\n")
                     lf.flush()
@@ -191,6 +261,7 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log, on_line=None):
                         on_line(out)
         return proc.wait()
     finally:
+        dog.stop.set()
         if proc.poll() is None:
             _kill_group(proc)
         with _LIVE_LOCK:

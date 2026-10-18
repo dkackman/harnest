@@ -348,5 +348,60 @@ class Running(unittest.TestCase):
         self.assertEqual("S-F004", fleet.CASE_RE.match("REGRESSION-CASE: S-F004").group(1))
 
 
+class Watchdog(unittest.TestCase):
+    LIMITS = {"SESSION_STALL_SECS": 900, "SESSION_TOOL_STALL_SECS": 2400, "SESSION_REJECTED_STALL_SECS": 120}
+
+    def dog(self, **limits):
+        from harness import session
+
+        class Proc:
+            killed = False
+
+            def poll(self):
+                return 0 if self.killed else None
+
+        now = [0.0]
+        d = session.Watchdog(
+            Proc(),
+            lambda m: None,
+            clock=lambda: now[0],
+            limits={**self.LIMITS, **limits},
+            kill=lambda p: setattr(p, "killed", True),
+            watch=False,
+        )
+        return d, now
+
+    def test_quiet_limits_depend_on_what_the_session_is_doing(self):
+        d, now = self.dog()
+        d.saw("> mcp__dw__wait_for_job {}")
+        now[0] = 1900
+        self.assertFalse(d.check(), "a tool call may block for 30 minutes")
+        d.saw("< 120 chars")
+        now[0] = 1900 + 800
+        self.assertFalse(d.check())
+        now[0] = 1900 + 901
+        self.assertTrue(d.check(), "the model's turn, quiet for 15 minutes: stalled")
+        self.assertIn("on the model's turn", d.killed)
+        self.assertTrue(d.proc.killed)
+
+    def test_a_rejected_limit_then_silence_is_stopped_soon(self):
+        d, now = self.dog()
+        d.saw("rate-limit: status=rejected type=five_hour overage=true resets=x resets_epoch=1")
+        now[0] = 119
+        self.assertFalse(d.check())
+        now[0] = 121
+        self.assertTrue(d.check(), "stopped, so the driver sleeps until the reset and retries")
+        d, now = self.dog()
+        d.saw("rate-limit: status=rejected type=five_hour overage=true resets=x resets_epoch=1")
+        d.saw("· ctx=1k out=1")  # the model answered after all
+        now[0] = 500
+        self.assertFalse(d.check())
+
+    def test_zero_turns_a_limit_off(self):
+        d, now = self.dog(SESSION_STALL_SECS=0)
+        now[0] = 10**6
+        self.assertFalse(d.check())
+
+
 if __name__ == "__main__":
     unittest.main()

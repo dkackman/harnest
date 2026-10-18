@@ -516,6 +516,7 @@ class Fleet:
         nothing it can run and no lane is busy. A batch taken makes the lane
         busy until done()."""
         with self.cv:
+            marked = False
             while True:
                 batch = self._take(lane)
                 if batch:
@@ -525,6 +526,9 @@ class Fleet:
                     self.cv.notify_all()
                     return None
                 self.idle += 1
+                if not marked:
+                    self.lane_state(lane, status="idle — waiting for work", batch=[], live_case=None)
+                    marked = True
                 try:
                     self.cv.wait(1.0)
                 finally:

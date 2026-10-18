@@ -109,6 +109,12 @@ else
 fi
 ws="${prompt#*workspace is }"; ws="${ws%%;*}"
 echo "start $(now) $HARNEST_TARGET $$ $ws [$cases]" >> "$FAKE_TIMELINE"
+# the first session holding S-F005 goes silent: the watchdog stops it, and
+# the session runner's retry runs it again
+case " $cases " in *" S-F005 "*)
+  if mkdir "$FAKE_TIMELINE.hung" 2>/dev/null; then
+    printf '{"type":"system","subtype":"init","model":"claude-fake"}\n'; sleep 60; fi ;;
+esac
 # the first two sessions holding S-F001 die without a result: the session's
 # own retry gets the second, and the fleet must queue the case again
 case " $cases " in *" S-F001 "*)
@@ -139,7 +145,7 @@ EOS
 chmod +x "$T/bin/claude"
 export FAKE_TIMELINE="$T/timeline"; : > "$FAKE_TIMELINE"
 fleet() { (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" FAKE_GH_BOARD="$T/board.json" SESSION_RETRY_PAUSE_SECS=0 \
-           CASES_PER_SESSION=2 "$@" python3 -m harness.drivers.fleet smoke) > "$T/fleet.out" 2>&1; }
+           CASES_PER_SESSION=2 SESSION_STALL_SECS=3 "$@" python3 -m harness.drivers.fleet smoke) > "$T/fleet.out" 2>&1; }
 
 # --- the plan
 (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" python3 -m harness.drivers.fleet --plan smoke) > "$T/plan.out" 2>&1
@@ -163,6 +169,8 @@ skipper="$(cat "$T/timeline.skipped/by")"
 has "  a skipped case is re-queued on another server" "S-F007 skipped on $skipper; queued on" "$(jq -r '.events[].text' "$st")"
 eq  "  and passes there" "pass" "$(case_of S-F007 outcome)"
 eq  "  on a server that hadn't tried it" "" "$(case_of S-F007 server | grep -x "$skipper" || true)"
+has "  a silent session is stopped by the watchdog" "no output for" "$(cat "$T/fleet.out")"
+eq  "  and its case still passes" "pass" "$(case_of S-F005 outcome)"
 has "  a case whose session died is queued again" "S-F001 had no answer (the session ended)" "$(jq -r '.events[].text' "$st")"
 eq  "  and passes" "pass" "$(case_of S-F001 outcome)"
 # the exclusive case ran with no other alpha session open
