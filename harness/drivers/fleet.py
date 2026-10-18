@@ -30,7 +30,8 @@ logs/fleet/runs/. Agents report each case as they start it
 (REGRESSION-CASE) and its outcome at the end (REGRESSION-RESULT); see
 agents/regression/run-cases.md, step 6.
 
-Knobs: FLEET_SERVERS (every server), CASES_PER_SESSION (8),
+Knobs: FLEET_SERVERS (every server), CASES_PER_SESSION (8), FLEET_MIN_BATCH
+(3: the fewest cases a session or a steal is worth, given a session's setup cost),
 REGRESSION_MODEL / REGRESSION_PROVIDER / REGRESSION_EFFORT /
 REGRESSION_BUDGET_USD, AUTOCOMPACT_TOKENS, FALLBACK_MODEL, TICKET_REPO,
 and each server's token (DW_TOKEN_<SERVER>, or .env).
@@ -310,6 +311,7 @@ class Fleet:
         self.model = env("REGRESSION_MODEL", "claude-sonnet-5-5")
         self.provider = env("REGRESSION_PROVIDER", env("PROVIDER", "anthropic"))
         self.per = int(env("CASES_PER_SESSION", "8"))
+        self.min_batch = max(1, int(env("FLEET_MIN_BATCH", "3")))
         if self.per < 1:
             raise ProfileError("CASES_PER_SESSION must be at least 1 in a fleet run")
         self.model_env = providers.resolve_model_env(self.provider, self.model)
@@ -489,31 +491,56 @@ class Fleet:
 
     # -- the shared queue
 
-    def _stealable(self, lane):
-        """(victim, gid) of the busiest lane's last unstarted group this lane may run."""
+    def _steal_plan(self, lane):
+        """(victim, [gids]) worth stealing for <lane>, or None. A session has
+        a fixed setup cost (system prompt, suite header, tool schemas: 30-40k
+        tokens of context before its first case), so a steal must move at
+        least FLEET_MIN_BATCH cases, taken from the end of the victim's
+        unstarted groups. From a lane as fast as this one, only when the
+        victim has two batches' worth unstarted, so it keeps a full one; from
+        a slower lane, one batch's worth is enough, since moving it saves real
+        time. On the first live fleet run, one-case steals put mini-ai at 18
+        sessions for its share and the run at 65% over a one-server run."""
         best = None
         for other in self.lanes:
             if other is lane:
                 continue
             q = self.queues[other.name]
+            tail = []  # this lane's takeable groups, last first, with their sizes
+            unstarted = 0
+            seen = set()
             for it in reversed(q):
                 if it.gid in self.started_gids:
                     break
-                if it.gid not in self.group_need:
+                unstarted += 1
+                if it.gid in seen or it.gid not in self.group_need:
                     continue
-                lv, g = self.group_need[it.gid]
+                seen.add(it.gid)
+                _lv, g = self.group_need[it.gid]
                 if any(lane.server.name in i.tried for i in q if i.gid == it.gid):
                     continue
                 if why_not(g, lane.server, lane.facts, self.ref):
                     continue
-                if best is None or len(q) > len(self.queues[best[0].name]):
-                    best = (other, it.gid)
-                break
-        return best
+                tail.append((it.gid, sum(1 for i in q if i.gid == it.gid)))
+            slower = other.server.speed < lane.server.speed
+            if unstarted < self.min_batch * (1 if slower else 2) or not tail:
+                continue
+            take, n = [], 0
+            for gid, size in tail:
+                if n >= self.min_batch:
+                    break
+                take.append(gid)
+                n += size
+            if n < self.min_batch and not slower:
+                continue
+            weight = unstarted / other.server.speed  # time the victim would need for it
+            if best is None or weight > best[0]:
+                best = (weight, other, take)
+        return None if best is None else (best[1], best[2])
 
     def take(self, lane):
         """The next batch for <lane>: consecutive cases of one level, up to
-        CASES_PER_SESSION, an exclusive case always alone. Waits while
+        CASES_PER_SESSION, exclusive cases only with each other. Waits while
         another lane is busy and this one has nothing; None once there is
         nothing it can run and no lane is busy. A batch taken makes the lane
         busy until done()."""
@@ -543,9 +570,10 @@ class Fleet:
         lane takes only its share of what's left, so the rest stays
         stealable: on 2026-10-18 minid took all 7 of its cases into one
         session and the three faster lanes went idle while it ran them."""
-        cap = max(1, round(self.per * lane.server.speed))
+        floor = min(self.min_batch, self.per)  # never under a session's worth of cases
+        cap = max(floor, round(self.per * lane.server.speed))
         if self.idle:
-            cap = min(cap, max(1, -(-queued // (self.idle + 1))))
+            cap = min(cap, max(floor, -(-queued // (self.idle + 1))))
         return cap
 
     def done(self):
@@ -557,25 +585,25 @@ class Fleet:
         with self.mu:
             q = self.queues[lane.name]
             if not q:
-                stolen = self._stealable(lane)
-                if stolen is None:
+                plan = self._steal_plan(lane)
+                if plan is None:
                     return None
-                victim, gid = stolen
+                victim, gids = plan
                 vq = self.queues[victim.name]
-                moved = [it for it in vq if it.gid == gid]
-                self.queues[victim.name] = [it for it in vq if it.gid != gid]
+                moved = [it for it in vq if it.gid in gids]
+                self.queues[victim.name] = [it for it in vq if it.gid not in gids]
                 q.extend(moved)
                 for it in moved:
                     self.case_state(it.case, lane=lane.name, server=lane.server.name)
                 self.event(f"{lane.name} took {' '.join(i.case for i in moved)} from {victim.name}")
+            # A batch is consecutive cases of one level that are all exclusive or
+            # all not: exclusivity is having the box to itself, so exclusive
+            # cases can share one exclusive session rather than one each.
             first = q[0]
-            if first.exclusive:
-                batch = [q.pop(0)]
-            else:
-                cap = self.batch_cap(lane, len(q))
-                batch = []
-                while q and len(batch) < cap and q[0].level == first.level and not q[0].exclusive:
-                    batch.append(q.pop(0))
+            cap = self.batch_cap(lane, len(q))
+            batch = []
+            while q and len(batch) < cap and q[0].level == first.level and q[0].exclusive == first.exclusive:
+                batch.append(q.pop(0))
             for it in batch:
                 self.started_gids.add(it.gid)
             return batch

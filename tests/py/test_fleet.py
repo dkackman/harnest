@@ -304,7 +304,7 @@ class Running(unittest.TestCase):
         import threading
 
         f.mu, f.per, f.started_gids = threading.RLock(), 3, set()
-        f.cv, f.busy, f.idle = threading.Condition(f.mu), 0, 0
+        f.cv, f.busy, f.idle, f.min_batch = threading.Condition(f.mu), 0, 0, 1
         lane = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
         f.lanes = [lane]
         f.servers = {"lem": type("S", (), {"down": False})()}
@@ -314,6 +314,7 @@ class Running(unittest.TestCase):
                 it("s", "A"),
                 it("s", "B"),
                 it("s", "P", True),
+                it("s", "Q", True),  # exclusive cases share one exclusive session
                 it("s", "C"),
                 it("s", "D"),
                 it("s", "E"),
@@ -325,40 +326,70 @@ class Running(unittest.TestCase):
         while (b := f.take(lane)) is not None:
             batches.append([i.case for i in b])
             f.done()  # as a lane does after each batch
-        self.assertEqual([["A", "B"], ["P"], ["C", "D", "E"], ["F"], ["G"]], batches)
+        self.assertEqual([["A", "B"], ["P", "Q"], ["C", "D", "E"], ["F"], ["G"]], batches)
+
+    def fleet3(self, min_batch=3, queues=None, speeds=(1.0, 1.0, 0.25)):
+        """lem-1, lem-2 and a slow mac lane, with single-case groups queued as given."""
+        import threading
+
+        f = fleet.Fleet.__new__(fleet.Fleet)
+        f.mu = threading.RLock()
+        f.cv, f.busy, f.idle, f.per, f.min_batch, f.started_gids = threading.Condition(f.mu), 0, 0, 8, min_batch, set()
+        lem1 = fleet.Lane(server=srv("lem", primary=True, speed=speeds[0]), slot=1, facts=fx("lem"))
+        lem2 = fleet.Lane(server=srv("lem", primary=True, speed=speeds[1]), slot=2, facts=fx("lem"))
+        mac = fleet.Lane(server=srv("mac", speed=speeds[2]), slot=1, facts=fx("mac"))
+        f.lanes = [lem1, lem2, mac]
+        f.servers = {n: type("S", (), {"down": False})() for n in ("lem", "mac")}
+        f.queues = {l.name: [] for l in f.lanes}
+        f.case_need, f.group_need, f.ref = {}, {}, {}
+        f.case_state = f.event = lambda *a, **k: None
+        for name, cases in (queues or {}).items():
+            for c in cases:
+                gid = f"smoke:{c}"
+                f.case_need[c] = r.Need(load="none", known=True)
+                f.group_need[gid] = ("smoke", r.Group(cases=[c], need=f.case_need[c]))
+                f.queues[name].append(fleet.Item(level="smoke", case=c, gid=gid, exclusive=False))
+        return f, lem1, lem2, mac
 
     def test_a_requeued_case_can_be_stolen(self):
         """On the first live fleet run a re-queued case's new group id was
         never registered, and every idle lane that looked for work to steal
         died on a KeyError."""
-        import threading
-
-        f = fleet.Fleet.__new__(fleet.Fleet)
-        f.mu = threading.RLock()
-        f.cv, f.busy, f.idle, f.per, f.started_gids = threading.Condition(f.mu), 0, 0, 8, set()
-        lem1 = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
-        lem2 = fleet.Lane(server=srv("lem", primary=True), slot=2, facts=fx("lem"))
-        mac = fleet.Lane(server=srv("mac"), slot=1, facts=fx("mac"))
-        f.lanes = [lem1, lem2, mac]
-        f.servers = {n: type("S", (), {"down": False})() for n in ("lem", "mac")}
-        f.queues = {l.name: [] for l in f.lanes}
-        f.case_need = {"S-F027": r.Need(load="none", known=True)}
-        f.group_need, f.ref = {}, {}
-        f.case_state = f.event = lambda *a, **k: None
-        item = fleet.Item(level="smoke", case="S-F027", gid="smoke:S-F027", exclusive=False)
-        self.assertTrue(f.requeue(item, mac))
-        owner = next(l for l in f.lanes if item in f.queues[l.name])
+        f, lem1, lem2, mac = self.fleet3(min_batch=1)
+        for c in ("S-F027", "S-F124"):
+            f.case_need[c] = r.Need(load="none", known=True)
+            self.assertTrue(f.requeue(fleet.Item(level="smoke", case=c, gid=f"smoke:{c}", exclusive=False), mac))
+        owner = lem1 if f.queues[lem1.name] else lem2
         thief = lem2 if owner is lem1 else lem1
-        self.assertEqual([item], f._take(thief), "the other lem lane steals it")
+        self.assertEqual(1, len(f._take(thief) or []), "the other lem lane steals one")
+
+    def test_steals_are_worth_a_session(self):
+        ids = [f"S-F{n:03d}" for n in range(1, 8)]
+        # an equally fast victim keeps a full batch: 5 unstarted is under two batches of 3
+        f, lem1, lem2, mac = self.fleet3(queues={"lem-1": ids[:5]})
+        self.assertIsNone(f._take(lem2))
+        # with 6 it gives up a full batch, from the end of its queue
+        f, lem1, lem2, mac = self.fleet3(queues={"lem-1": ids[:6]})
+        self.assertEqual(["S-F004", "S-F005", "S-F006"], [i.case for i in f._take(lem2)])
+        self.assertEqual(ids[:3], [i.case for i in f.queues["lem-1"]])
+        # a slower victim gives up one batch's worth
+        f, lem1, lem2, mac = self.fleet3(queues={"mac-1": ids[:3]})
+        self.assertEqual(3, len(f._take(lem1)))
+        f, lem1, lem2, mac = self.fleet3(queues={"mac-1": ids[:2]})
+        self.assertIsNone(f._take(lem1), "two cases aren't worth a session's setup")
+        # started groups stay put
+        f, lem1, lem2, mac = self.fleet3(queues={"lem-1": ids[:7]})
+        f.started_gids = {f"smoke:{c}" for c in ids}
+        self.assertIsNone(f._take(lem2))
 
     def test_batch_size_follows_speed_and_shrinks_while_lanes_idle(self):
         f = fleet.Fleet.__new__(fleet.Fleet)
-        f.per, f.idle = 8, 0
+        f.per, f.idle, f.min_batch = 8, 0, 3
         fast = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
         slow = fleet.Lane(server=srv("minid", speed=0.25), slot=1, facts=fx("minid"))
-        self.assertEqual((8, 2), (f.batch_cap(fast, 20), f.batch_cap(slow, 20)))
-        f.idle = 3  # three lanes waiting: a lane takes its share of what's left
-        self.assertEqual((2, 2, 1), (f.batch_cap(fast, 7), f.batch_cap(fast, 5), f.batch_cap(fast, 1)))
+        self.assertEqual((8, 3), (f.batch_cap(fast, 20), f.batch_cap(slow, 20)), "a slow lane: never under 3")
+        f.idle = 3  # three lanes waiting: a lane takes its share of what's left, not under 3
+        self.assertEqual((4, 3, 3), (f.batch_cap(fast, 16), f.batch_cap(fast, 7), f.batch_cap(fast, 1)))
 
     def test_results_and_skips_are_read_from_the_session(self):
         text = (
