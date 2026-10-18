@@ -499,6 +499,8 @@ class Fleet:
             for it in reversed(q):
                 if it.gid in self.started_gids:
                     break
+                if it.gid not in self.group_need:
+                    continue
                 lv, g = self.group_need[it.gid]
                 if any(lane.server.name in i.tried for i in q if i.gid == it.gid):
                     continue
@@ -597,7 +599,9 @@ class Fleet:
             if not options:
                 return False
             target = min(options, key=lambda l: len(self.queues[l.name]) / l.server.speed)
+            # its own one-case group now, which another lane may steal
             item.gid = f"{item.gid}+{target.name}"
+            self.group_need[item.gid] = (item.level, group)
             self.queues[target.name].append(item)
             self.cv.notify_all()
         self.case_state(item.case, lane=target.name, server=target.server.name, outcome="queued")

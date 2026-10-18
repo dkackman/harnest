@@ -327,6 +327,30 @@ class Running(unittest.TestCase):
             f.done()  # as a lane does after each batch
         self.assertEqual([["A", "B"], ["P"], ["C", "D", "E"], ["F"], ["G"]], batches)
 
+    def test_a_requeued_case_can_be_stolen(self):
+        """On the first live fleet run a re-queued case's new group id was
+        never registered, and every idle lane that looked for work to steal
+        died on a KeyError."""
+        import threading
+
+        f = fleet.Fleet.__new__(fleet.Fleet)
+        f.mu = threading.RLock()
+        f.cv, f.busy, f.idle, f.per, f.started_gids = threading.Condition(f.mu), 0, 0, 8, set()
+        lem1 = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
+        lem2 = fleet.Lane(server=srv("lem", primary=True), slot=2, facts=fx("lem"))
+        mac = fleet.Lane(server=srv("mac"), slot=1, facts=fx("mac"))
+        f.lanes = [lem1, lem2, mac]
+        f.servers = {n: type("S", (), {"down": False})() for n in ("lem", "mac")}
+        f.queues = {l.name: [] for l in f.lanes}
+        f.case_need = {"S-F027": r.Need(load="none", known=True)}
+        f.group_need, f.ref = {}, {}
+        f.case_state = f.event = lambda *a, **k: None
+        item = fleet.Item(level="smoke", case="S-F027", gid="smoke:S-F027", exclusive=False)
+        self.assertTrue(f.requeue(item, mac))
+        owner = next(l for l in f.lanes if item in f.queues[l.name])
+        thief = lem2 if owner is lem1 else lem1
+        self.assertEqual([item], f._take(thief), "the other lem lane steals it")
+
     def test_batch_size_follows_speed_and_shrinks_while_lanes_idle(self):
         f = fleet.Fleet.__new__(fleet.Fleet)
         f.per, f.idle = 8, 0
