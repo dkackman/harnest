@@ -238,13 +238,13 @@ class Plan(unittest.TestCase):
                 "minid": fx("minid", [("sd15", 5)]),
             }
             p = fleet.plan_level(profile, "x", sf, side)
-            where = {c: l.name for l in p.lanes for g in l.groups for c in g.cases}
+            where = {c: l.name for l in p.lanes for _, g in l.groups for c in g.cases}
             self.assertEqual(["lem-1", "lem-2", "mini-ai-1", "minid-1"], [l.name for l in p.lanes])
             self.assertTrue(where["S-F004"].startswith("lem-"), "H3 stays on lem")
             self.assertTrue(where["S-F005"].startswith("lem-"), "no entry: primary only")
             self.assertEqual(where["S-F002"], where["S-F003"], "a group shares a lane")
             self.assertEqual(5, len(where))
-            self.assertEqual("regression-x.minid-1", p.lanes[3].workspace("regression-x"))
+            self.assertEqual("regression-x-minid-1", p.lanes[3].workspace("regression-x"))
 
     def test_gather_all_reports_every_server_that_cant_join(self):
         profile = load()
@@ -262,6 +262,79 @@ class Plan(unittest.TestCase):
         self.assertIn("mini-ai: no dw server answering", msg)
         self.assertIn("lem: 2 lanes but 1 worker(s)", msg)
         self.assertNotIn("minid", msg)
+
+
+class Running(unittest.TestCase):
+    def test_the_gate_runs_an_exclusive_session_alone(self):
+        import threading
+        import time as t
+
+        g, log = fleet.Gate(), []
+
+        def ordinary(name):
+            g.enter(False)
+            log.append(f"{name}+")
+            t.sleep(0.05)
+            log.append(f"{name}-")
+            g.leave(False)
+
+        def exclusive():
+            g.enter(True)
+            log.append("X+")
+            t.sleep(0.05)
+            log.append("X-")
+            g.leave(True)
+
+        a = threading.Thread(target=ordinary, args=("a",))
+        a.start()
+        t.sleep(0.01)
+        x = threading.Thread(target=exclusive)
+        x.start()
+        t.sleep(0.01)
+        b = threading.Thread(target=ordinary, args=("b",))  # arrives while X waits: X goes first
+        b.start()
+        for th in (a, x, b):
+            th.join()
+        self.assertEqual(["a+", "a-", "X+", "X-", "b+", "b-"], log)
+
+    def test_batches_split_at_exclusive_cases_and_levels(self):
+        f = fleet.Fleet.__new__(fleet.Fleet)
+        import threading
+
+        f.mu, f.per, f.started_gids = threading.RLock(), 3, set()
+        f.cv, f.busy = threading.Condition(f.mu), 0
+        lane = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
+        f.lanes = [lane]
+        f.servers = {"lem": type("S", (), {"down": False})()}
+        it = lambda lv, c, x=False: fleet.Item(level=lv, case=c, gid=f"{lv}:{c}", exclusive=x)
+        f.queues = {
+            lane.name: [
+                it("s", "A"),
+                it("s", "B"),
+                it("s", "P", True),
+                it("s", "C"),
+                it("s", "D"),
+                it("s", "E"),
+                it("s", "F"),
+                it("c", "G"),
+            ]
+        }
+        batches = []
+        while (b := f.take(lane)) is not None:
+            batches.append([i.case for i in b])
+            f.done()  # as a lane does after each batch
+        self.assertEqual([["A", "B"], ["P"], ["C", "D", "E"], ["F"], ["G"]], batches)
+
+    def test_results_and_skips_are_read_from_the_session(self):
+        text = (
+            "REGRESSION-RESULT: S-F001 pass\n- REGRESSION-RESULT: S-F002 fail #812\n"
+            "REGRESSION-SKIP: S-F003 fixture qa-cast/x.wav\nREGRESSION-RESULT: S-F003 skip\n"
+        )
+        self.assertEqual(
+            [("S-F001", "pass", ""), ("S-F002", "fail", "#812"), ("S-F003", "skip", "")], fleet.RESULT_RE.findall(text)
+        )
+        self.assertEqual(["S-F003"], fleet.SKIP_RE.findall(text))
+        self.assertEqual("S-F004", fleet.CASE_RE.match("REGRESSION-CASE: S-F004").group(1))
 
 
 if __name__ == "__main__":

@@ -15,11 +15,13 @@ driver waits on its foreground pipeline, and a `claude -p` it started could
 outlive it, reparented.
 """
 
+import atexit
 import json
 import os
 import signal
 import subprocess
 import sys
+import threading
 import time
 
 from . import REPO, outcome
@@ -127,10 +129,30 @@ def _kill_group(proc):
         proc.wait()
 
 
-def _attempt(argv, cwd, env, label, jsonl, logfile, last, log):
+# Every claude process a session in this driver has running. Threads run
+# sessions in parallel (the fleet's lanes), and only the main thread gets
+# SIGTERM: kill_all() at exit takes every one of them down, not just the
+# main thread's.
+_LIVE = set()
+_LIVE_LOCK = threading.Lock()
+
+
+def kill_all():
+    with _LIVE_LOCK:
+        procs = list(_LIVE)
+    for p in procs:
+        if p.poll() is None:
+            _kill_group(p)
+
+
+atexit.register(kill_all)
+
+
+def _attempt(argv, cwd, env, label, jsonl, logfile, last, log, on_line=None):
     """One claude process: raw events to <jsonl>, the rendering to
     <logfile> and <last>, and prefixed [label] to the loop log and stdout.
-    Returns claude's exit status."""
+    <on_line>, if given, sees each rendered line as it arrives (the fleet's
+    live progress). Returns claude's exit status."""
     r = Renderer()
     prefix = f"[{label}] "
     proc = subprocess.Popen(
@@ -142,6 +164,8 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log):
         stderr=subprocess.STDOUT,
         start_new_session=True,
     )
+    with _LIVE_LOCK:
+        _LIVE.add(proc)
     try:
         with (
             open(jsonl, "ab") as jf,
@@ -163,10 +187,14 @@ def _attempt(argv, cwd, env, label, jsonl, logfile, last, log):
                     log.append(tagged)
                     sys.stdout.write(tagged)
                     sys.stdout.flush()
+                    if on_line:
+                        on_line(out)
         return proc.wait()
     finally:
         if proc.poll() is None:
             _kill_group(proc)
+        with _LIVE_LOCK:
+            _LIVE.discard(proc)
 
 
 def stop_on_sigterm():
@@ -203,6 +231,7 @@ def run(
     header=None,
     retry_pause=None,
     sleep=time.sleep,
+    on_line=None,
 ):
     """run_claude_session: one fresh `claude -p` session, retried once if it
     died before its result, asleep through a rejected rate limit. Never
@@ -227,6 +256,7 @@ def run(
                 os.path.join(logs, f"{logname}.log"),
                 last,
                 log,
+                on_line,
             )
         except OSError as e:
             log.say(f"[{label}] {e}")

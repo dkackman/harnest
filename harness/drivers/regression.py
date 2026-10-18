@@ -44,6 +44,65 @@ def env(name, default=""):
     return os.environ.get(name) or default
 
 
+def system_prompt(kind, out, server, health, url):
+    """The role prompt for a <kind> session, with a secondary server's own
+    rules (agents/regression/target.md) appended last, so they read as the
+    last word. Raises prompts.PromptError."""
+    prompts.role_prompt("regression", kind, out)
+    if not server.primary:
+        note = prompts.target_note(
+            "regression",
+            {
+                "TARGET": server.name,
+                "SERVER": health,
+                "URL": url,
+                "DEPLOY": deploy.deploy_cmd(server),
+                "HOST": server.host,
+                "SERVER_DIR": server.dir,
+            },
+        )
+        with open(out, "a", encoding="utf-8") as f:
+            f.write("\n" + note)
+    return out
+
+
+def session_prompt(
+    ticket_repo, suite_file, level, workspace, server_text, head, instructions, provider, model, secondary
+):
+    """The prompt every regression session gets: the run's specifics, then
+    the kind's instructions, then the runtime note."""
+    target_clause = (
+        " The Target section at the end of your system prompt applies to this whole run." if secondary else ""
+    )
+    return (
+        f"Tickets are GitHub Issues on {ticket_repo}; use the gh CLI to file/comment on them. "
+        "Your role instructions for this kind of session are in your system prompt; follow them exactly, "
+        f"with these specifics: suite file is {suite_file}; level is '{level}'; workspace is {workspace}; "
+        f"{server_text} is running {head or 'unknown'} - name that commit in anything you file or comment."
+        f"{target_clause} {instructions} Then stop.\n\n"
+        + prompts.runtime_note("regression", provider, model, secondary)
+    )
+
+
+def chunk_instructions(chunk):
+    return (
+        "This is one chunk of a chunked run: this session exercises ONLY these cases, in "
+        f"this order: {' '.join(chunk)}. Do not read the suite file in full — read its header "
+        "(everything above the first '### ' heading, which includes the Fixtures section), "
+        "then only those cases' sections. Skip the final sweep; a separate session does it "
+        "after every case has run."
+    )
+
+
+def sweep_instructions(workspace, script_note=""):
+    return (
+        "This is the final sweep of a chunked run: every case was already exercised in "
+        f"earlier sessions. Do only the final sweep against the {workspace} workspace — read "
+        "the suite file's header (everything above the first '### ' heading, which includes "
+        f"the Fixtures section), not the cases.{script_note}"
+    )
+
+
 class Regression:
     def __init__(self, argv):
         self.profile = load()
@@ -87,7 +146,10 @@ class Regression:
         except ProfileError:
             self.server = None
         clone_sfx = self.server.clone_suffix if self.server else f"-{self.target}"
-        self.source_dir = Path(os.path.expanduser(env("SOURCE_DIR", self.profile.get("clones.source") + clone_sfx)))
+        # A regression-only server (no loop) has no agents' clone of its own:
+        # its plugin worktree comes from the primary's.
+        source_sfx = clone_sfx if not self.server or self.server.loop else ""
+        self.source_dir = Path(os.path.expanduser(env("SOURCE_DIR", self.profile.get("clones.source") + source_sfx)))
         self.plugin_tree = Path(os.path.expanduser(env("PLUGIN_TREE", self.profile.get("clones.plugin") + clone_sfx)))
         if not self.source_dir.is_dir():
             err(f"SOURCE_DIR not found: {self.source_dir}")
@@ -197,37 +259,21 @@ class Regression:
     def run_session(self, level, suite_file, workspace, tag, kind, instructions, head):
         prompt_file = self.logs / f".prompt.{self.logname}.{kind}.md"
         try:
-            prompts.role_prompt("regression", kind, prompt_file)
+            system_prompt(kind, prompt_file, self.server, self.health, self.url)
         except prompts.PromptError:
             self.log.say(f"[{self.rpfx}:{level}{tag}] no role prompt for '{kind}'")
             return
-        secondary = not self.server.primary
-        if secondary:
-            # The server's own rules join the system prompt last, so they
-            # read as the last word.
-            note = prompts.target_note(
-                "regression",
-                {
-                    "TARGET": self.target,
-                    "SERVER": self.health,
-                    "URL": self.url,
-                    "DEPLOY": deploy.deploy_cmd(self.server),
-                    "HOST": self.server.host,
-                    "SERVER_DIR": self.server.dir,
-                },
-            )
-            with open(prompt_file, "a", encoding="utf-8") as f:
-                f.write("\n" + note)
-        target_clause = (
-            " The Target section at the end of your system prompt applies to this whole run." if secondary else ""
-        )
-        prompt = (
-            f"Tickets are GitHub Issues on {self.ticket_repo}; use the gh CLI to file/comment on them. "
-            "Your role instructions for this kind of session are in your system prompt; follow them exactly, "
-            f"with these specifics: suite file is {suite_file}; level is '{level}'; workspace is {workspace}; "
-            f"{self.server_text} is running {head or 'unknown'} - name that commit in anything you file or comment."
-            f"{target_clause} {instructions} Then stop.\n\n"
-            + prompts.runtime_note("regression", self.model_provider, self.model, secondary)
+        prompt = session_prompt(
+            self.ticket_repo,
+            suite_file,
+            level,
+            workspace,
+            self.server_text,
+            head,
+            instructions,
+            self.model_provider,
+            self.model,
+            not self.server.primary,
         )
         session.run(
             f"{self.rpfx}:{level}{tag}",
@@ -352,11 +398,7 @@ class Regression:
                     workspace,
                     f".{session_no} of {nchunks}",
                     "chunk",
-                    f"This is one chunk of a chunked run: this session exercises ONLY these cases, in "
-                    f"this order: {' '.join(chunk)}. Do not read the suite file in full — read its header "
-                    "(everything above the first '### ' heading, which includes the Fixtures section), "
-                    "then only those cases' sections. Skip the final sweep; a separate session does it "
-                    "after every case has run.",
+                    chunk_instructions(chunk),
                     head,
                 )
                 if outcome.aborted(self.last):
@@ -373,10 +415,7 @@ class Regression:
                     workspace,
                     ".sweep",
                     "sweep",
-                    "This is the final sweep of a chunked run: every case was already exercised in "
-                    f"earlier sessions. Do only the final sweep against the {workspace} workspace — read "
-                    "the suite file's header (everything above the first '### ' heading, which includes "
-                    f"the Fixtures section), not the cases.{script_note}",
+                    sweep_instructions(workspace, script_note),
                     head,
                 )
 

@@ -1,0 +1,340 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>harnest regression</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='7' fill='%231f9d55'/><path d='M8 17l5 5 11-12' fill='none' stroke='%23fff' stroke-width='3.5' stroke-linecap='round' stroke-linejoin='round'/></svg>">
+<style>
+:root {
+  --bg: #f6f7f9; --panel: #ffffff; --ink: #1d2330; --muted: #6b7382; --line: #e2e5ea;
+  --ok: #1f9d55; --warn: #c27c0e; --bad: #c9362b; --idle: #9aa1ad; --accent: #3b6fd8;
+  --code: #f1f3f6; --run: #3b6fd8; --skip: #c27c0e; --pend: #8a6fd1; --track: #e8ebef;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #12151b; --panel: #1a1e26; --ink: #e3e7ee; --muted: #8d95a3; --line: #2a303b;
+    --ok: #3ccf7a; --warn: #e5a53a; --bad: #ef5d50; --idle: #5d6573; --accent: #6f9bff;
+    --code: #141820; --run: #6f9bff; --skip: #e5a53a; --pend: #b48cf2; --track: #252a34;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--ink);
+  font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+header { display: flex; align-items: center; gap: 12px; padding: 12px 20px; flex-wrap: wrap;
+  border-bottom: 1px solid var(--line); background: var(--panel); position: sticky; top: 0; z-index: 2; }
+header h1 { font-size: 16px; margin: 0; font-weight: 650; }
+header nav a { color: var(--accent); text-decoration: none; font-size: 13px; }
+header .spacer { flex: 1; }
+header .stamp { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+main { padding: 16px 20px; display: grid; gap: 16px; max-width: 1500px; margin: 0 auto; }
+.row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(340px, 1fr)); }
+.row > * { min-width: 0; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
+.card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card h2 .r { margin-left: auto; text-transform: none; letter-spacing: 0; font-weight: 400; }
+.dot { width: 10px; height: 10px; border-radius: 50%; background: var(--idle); display: inline-block; flex: none; }
+.dot.ok { background: var(--ok); animation: pulse 1.6s infinite; }
+.dot.warn { background: var(--warn); } .dot.bad { background: var(--bad); } .dot.done { background: var(--ok); }
+@keyframes pulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 60%, transparent); } 100% { box-shadow: 0 0 0 7px transparent; } }
+.muted { color: var(--muted); } .mono { font-family: var(--mono); font-size: 12.5px; }
+.empty { color: var(--muted); font-style: italic; }
+.big { font-size: 28px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.kpis { display: flex; gap: 28px; flex-wrap: wrap; margin-bottom: 12px; }
+.kpi .lbl { color: var(--muted); font-size: 12px; }
+.kpi .val { font-size: 20px; font-weight: 650; font-variant-numeric: tabular-nums; }
+/* progress: a stacked bar of outcomes over the cases in scope */
+.bar { display: flex; height: 12px; border-radius: 6px; overflow: hidden; background: var(--track); }
+.bar.thin { height: 7px; border-radius: 4px; }
+.bar.big { height: 18px; border-radius: 9px; }
+.bar span { display: block; height: 100%; }
+.s-pass { background: var(--ok); } .s-fail { background: var(--bad); } .s-skip { background: var(--skip); }
+.s-pending { background: var(--pend); } .s-other { background: var(--idle); }
+.s-running { background: var(--run); background-image: repeating-linear-gradient(45deg, transparent 0 6px, rgba(255,255,255,.25) 6px 12px);
+  animation: stripe 1s linear infinite; background-size: 17px 17px; }
+@keyframes stripe { to { background-position: 17px 0; } }
+.legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 12.5px; margin-top: 8px; color: var(--muted); }
+.legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; margin-right: 5px; vertical-align: -1px; }
+table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+th, td { text-align: left; padding: 5px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+td.barcell { width: 40%; min-width: 120px; }
+.lanes { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); }
+.lane { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--code); min-width: 0; }
+.lane .top { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.lane .top b { font-size: 14px; }
+.lane .top .st { margin-left: auto; font-size: 12px; color: var(--muted); }
+.lane .live { font-family: var(--mono); font-size: 12.5px; margin: 6px 0 2px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.lane .meta { font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; margin-top: 6px; }
+.pill { font-size: 11.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; color: var(--muted); }
+.pill.excl { border-color: var(--pend); color: var(--pend); }
+.pill.down { border-color: var(--bad); color: var(--bad); }
+.events { max-height: 220px; overflow: auto; font-size: 12.5px; display: flex; flex-direction: column; gap: 4px; }
+.events div { border-left: 3px solid var(--accent); padding: 1px 8px; }
+.events time { color: var(--muted); font-family: var(--mono); margin-right: 6px; }
+.chips { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip { border: 1px solid var(--line); border-radius: 999px; padding: 3px 10px; font-size: 12.5px; background: var(--code);
+  display: inline-flex; gap: 6px; align-items: center; }
+details summary { cursor: pointer; color: var(--muted); font-size: 13px; }
+.cases { max-height: 360px; overflow: auto; margin-top: 8px; }
+.o-pass { color: var(--ok); } .o-fail { color: var(--bad); } .o-skip { color: var(--skip); } .o-running { color: var(--run); }
+.o-pending { color: var(--pend); }
+.filter { background: var(--code); color: var(--ink); border: 1px solid var(--line); border-radius: 6px; padding: 3px 8px; font: inherit; font-size: 12.5px; }
+@media (max-width: 600px) { main { padding: 12px 16px; } header { padding: 10px 16px; } .big { font-size: 22px; } }
+</style>
+</head>
+<body>
+<header>
+  <span class="dot" id="hdot"></span>
+  <h1>Regression</h1>
+  <span class="muted" id="hsummary">loading…</span>
+  <span class="spacer"></span>
+  <nav><a href="/">← loop dashboard</a></nav>
+  <span class="stamp" id="stamp"></span>
+</header>
+<main>
+  <section class="card" id="fleet-card">
+    <h2><span class="dot" id="fdot"></span>Fleet run <span class="muted mono" id="fid"></span>
+      <span class="r muted" id="fmeta"></span></h2>
+    <div id="fleet"><p class="empty">no fleet run yet: python3 -m harness.drivers.fleet smoke</p></div>
+  </section>
+
+  <div class="row" id="breakdowns" hidden>
+    <section class="card"><h2>By level</h2><div id="by-level"></div></section>
+    <section class="card"><h2>By server</h2><div id="by-server"></div></section>
+    <section class="card"><h2>By load</h2><div id="by-load"></div></section>
+  </div>
+
+  <section class="card" id="lanes-card" hidden>
+    <h2>Lanes <span class="r muted" id="lanes-meta"></span></h2>
+    <div class="lanes" id="lanes"></div>
+  </section>
+
+  <div class="row">
+    <section class="card" id="events-card" hidden>
+      <h2>Events</h2>
+      <div class="events" id="events"></div>
+    </section>
+    <section class="card" id="cases-card" hidden>
+      <h2>Cases <span class="r"><select class="filter" id="case-filter">
+        <option value="">all</option><option value="fail">failed</option><option value="skip">skipped</option>
+        <option value="running">running</option><option value="queued">queued</option><option value="other">other</option>
+      </select></span></h2>
+      <div class="cases" id="cases"></div>
+    </section>
+  </div>
+
+  <section class="card">
+    <h2>One-server runs <span class="r muted">run-regression.sh and harness.drivers.regression, from each loop log</span></h2>
+    <div id="single"><p class="empty">loading…</p></div>
+  </section>
+
+  <div class="row">
+    <section class="card">
+      <h2>Requirements coverage <span class="r muted">cases with a current entry; the rest run on lem only</span></h2>
+      <div id="coverage"></div>
+    </section>
+    <section class="card">
+      <h2>Recent fleet runs</h2>
+      <div id="runs"></div>
+    </section>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const POLL_MS = 3000;
+const DONE = new Set(["pass", "fail", "skip", "pending", "unreported", "not run", "unplaced"]);
+const SEG = ["pass", "fail", "skip", "pending", "other", "running"]; // order on the bar
+const seg = (o) => (o === "pass" || o === "fail" || o === "skip" || o === "pending") ? o
+  : o === "running" || o === "next" ? "running" : DONE.has(o) ? "other" : null; // null: queued
+const LS = { get(k, d) { try { return localStorage.getItem(k) ?? d; } catch { return d; } },
+             set(k, v) { try { localStorage.setItem(k, v); } catch {} } };
+
+function ago(sec) {
+  if (sec == null || isNaN(sec)) return "–";
+  sec = Math.max(0, Math.round(sec));
+  if (sec < 60) return sec + "s";
+  if (sec < 3600) return Math.floor(sec / 60) + "m " + (sec % 60) + "s";
+  return Math.floor(sec / 3600) + "h " + Math.floor(sec % 3600 / 60) + "m";
+}
+const pct = (n, d) => d ? Math.round(100 * n / d) : 0;
+
+// counts: {pass, fail, skip, pending, other, running, queued, total}
+function tally(cases) {
+  const t = { pass: 0, fail: 0, skip: 0, pending: 0, other: 0, running: 0, queued: 0, total: 0 };
+  for (const c of cases) { const s = seg(c.outcome); t[s ?? "queued"]++; t.total++; }
+  t.done = t.pass + t.fail + t.skip + t.pending + t.other;
+  return t;
+}
+function bar(t, cls = "") {
+  if (!t.total) return `<div class="bar ${cls}"></div>`;
+  return `<div class="bar ${cls}" title="${t.done} of ${t.total} done">${SEG.map((k) => t[k]
+    ? `<span class="s-${k}" style="width:${100 * t[k] / t.total}%" title="${t[k]} ${k}"></span>` : "").join("")}</div>`;
+}
+const legend = () => `<div class="legend">${[["pass", "passed"], ["fail", "failed"], ["skip", "skipped"],
+  ["pending", "pending"], ["other", "unreported / not run"], ["running", "running"]].map(([k, l]) =>
+  `<span><i class="s-${k}"></i>${l}</span>`).join("")}<span><i style="background:var(--track)"></i>queued</span></div>`;
+
+function breakdown(cases, key, order) {
+  const groups = {};
+  for (const c of cases) (groups[c[key] ?? "–"] ??= []).push(c);
+  const names = Object.keys(groups).sort((a, b) => (order ? order.indexOf(a) - order.indexOf(b) : 0) || a.localeCompare(b));
+  return `<table>${names.map((n) => { const t = tally(groups[n]); return `<tr>
+    <td><b>${esc(n)}</b></td><td class="barcell">${bar(t, "thin")}</td>
+    <td class="num">${t.done}/${t.total}</td><td class="num muted">${pct(t.done, t.total)}%</td>
+    <td class="num">${t.fail ? `<span class="o-fail">${t.fail} failed</span>` : ""}</td></tr>`; }).join("")}</table>`;
+}
+
+function renderFleet(st) {
+  const f = st.fleet;
+  const live = f && (f.status === "running" || f.status === "sweeping" || f.status === "starting");
+  $("breakdowns").hidden = $("lanes-card").hidden = $("events-card").hidden = $("cases-card").hidden = !f;
+  if (!f) { $("fdot").className = "dot"; return null; }
+  const cases = Object.entries(f.cases).map(([id, c]) => ({ id, ...c }));
+  const t = tally(cases);
+  const cost = f.lanes.reduce((a, l) => a + (l.cost || 0), 0);
+  const elapsed = (f.finished || st.now) - f.started;
+  const rate = t.done && live ? elapsed / t.done : null;
+  const eta = rate && t.total > t.done ? rate * (t.total - t.done) : null;
+  $("fdot").className = "dot " + (live ? "ok" : f.status === "done" ? "done" : f.status === "stopped" ? "warn" : "bad");
+  $("fid").textContent = f.id;
+  $("fmeta").textContent = `${f.levels.join(", ")} · ${f.model} · ${f.cases_per_session} cases/session`;
+  $("fleet").innerHTML = `
+    <div class="kpis">
+      <div class="kpi"><div class="lbl">progress</div><div class="big">${pct(t.done, t.total)}%</div></div>
+      <div class="kpi"><div class="lbl">cases</div><div class="val">${t.done} / ${t.total}</div></div>
+      <div class="kpi"><div class="lbl">passed</div><div class="val o-pass">${t.pass}</div></div>
+      <div class="kpi"><div class="lbl">failed</div><div class="val o-fail">${t.fail}</div></div>
+      <div class="kpi"><div class="lbl">skipped</div><div class="val o-skip">${t.skip}</div></div>
+      <div class="kpi"><div class="lbl">running</div><div class="val o-running">${t.running}</div></div>
+      <div class="kpi"><div class="lbl">status</div><div class="val">${esc(f.status)}</div></div>
+      <div class="kpi"><div class="lbl">${f.finished ? "took" : "elapsed"}</div><div class="val">${ago(elapsed)}</div></div>
+      ${eta ? `<div class="kpi"><div class="lbl">left, at this pace</div><div class="val">~${ago(eta)}</div></div>` : ""}
+      <div class="kpi"><div class="lbl">cost</div><div class="val">$${cost.toFixed(2)}</div></div>
+    </div>
+    ${bar(t, "big")}${legend()}
+    ${f.unplaced && f.unplaced.length ? `<p class="o-fail" style="margin:10px 0 0">unplaced: ${f.unplaced.map((u) =>
+      esc(u.cases.join(" "))).join("; ")}</p>` : ""}`;
+
+  $("by-level").innerHTML = breakdown(cases, "level", f.levels);
+  $("by-server").innerHTML = breakdown(cases.map((c) => ({ ...c, server: c.lane === "script" ? `${c.server} (script)` : c.server })), "server");
+  $("by-load").innerHTML = breakdown(cases, "load", ["none", "light", "heavy", "exclusive", "unknown", "?"]);
+
+  // lanes
+  const byLane = {};
+  for (const c of cases) (byLane[c.lane] ??= []).push(c);
+  $("lanes-meta").textContent = `${f.lanes.length} lanes on ${Object.keys(f.servers).length} servers`;
+  $("lanes").innerHTML = f.lanes.map((l) => {
+    const lt = tally(byLane[l.name] || []);
+    const srv = f.servers[l.server] || {};
+    const busy = /running|exclusive|sweep|waiting/.test(l.status);
+    const excl = l.status === "exclusive" || l.status === "waiting for the server";
+    return `<div class="lane">
+      <div class="top"><span class="dot ${busy ? "ok" : /done/.test(l.status) ? "done" : /failed/.test(l.status) ? "bad" : ""}"></span>
+        <b>${esc(l.name)}</b>${srv.down ? '<span class="pill down">server down</span>' : ""}
+        ${excl ? '<span class="pill excl">exclusive</span>' : ""}<span class="st">${esc(l.status)}</span></div>
+      ${bar(lt, "thin")}
+      <div class="live">${l.live_case ? `▶ <b>${esc(l.live_case)}</b>` : busy ? "▶ starting…" : ""}
+        ${l.batch && l.batch.length ? `<span class="muted">${esc(l.level || "")}: ${esc(l.batch.join(" "))}</span>` : ""}</div>
+      <div class="meta"><span>${lt.done}/${lt.total} cases</span><span>${l.sessions} sessions</span>
+        <span>$${(l.cost || 0).toFixed(2)}</span>${busy && l.since ? `<span>this session ${ago(st.now - l.since)}</span>` : ""}
+        <span class="mono" title="${esc(srv.summary)}">${esc(srv.head || "")}</span></div>
+    </div>`;
+  }).join("");
+
+  $("events").innerHTML = [...(f.events || [])].reverse().map((e) =>
+    `<div><time>${new Date(e.time * 1000).toLocaleTimeString([], { hour12: false })}</time>${esc(e.text)}</div>`).join("")
+    || '<p class="empty">none yet</p>';
+
+  const want = $("case-filter").value;
+  const shown = cases.filter((c) => !want || (want === "other" ? seg(c.outcome) === "other"
+    : want === "queued" ? seg(c.outcome) == null : seg(c.outcome) === want || c.outcome === want));
+  $("cases").innerHTML = shown.length ? `<table><tr><th>case</th><th>level</th><th>lane</th><th>load</th><th>outcome</th></tr>
+    ${shown.sort((a, b) => a.id.localeCompare(b.id)).map((c) => `<tr><td class="mono">${esc(c.id)}</td><td>${esc(c.level)}</td>
+      <td>${esc(c.lane || "–")}</td><td class="muted">${esc(c.load)}</td>
+      <td class="o-${esc(seg(c.outcome) || "")}">${esc(c.outcome)}${c.issue ? " " + esc(c.issue) : ""}${c.note ? ` <span class="muted">${esc(c.note)}</span>` : ""}</td></tr>`).join("")}
+    </table>` : '<p class="empty">no cases match</p>';
+  return { live, t, f };
+}
+
+function renderSingle(st) {
+  const rows = [];
+  for (const [stream, runs] of Object.entries(st.single))
+    for (const r of runs) rows.push({ stream, ...r });
+  rows.sort((a, b) => (b.status === "running") - (a.status === "running"));
+  $("single").innerHTML = rows.length ? `<table>
+    <tr><th>stream</th><th>started</th><th>level</th><th>head</th><th class="barcell">progress</th><th class="num">cases</th>
+      <th class="num">sessions</th><th class="num">pass / fail / skip</th><th class="num">cost</th><th>status</th></tr>
+    ${rows.slice(0, 12).map((r) => {
+      const res = Object.values(r.results);
+      const t = { pass: res.filter((x) => x === "pass").length, fail: res.filter((x) => x === "fail").length,
+                  skip: res.filter((x) => x === "skip").length + r.skips, pending: res.filter((x) => x === "pending").length,
+                  other: 0, running: 0, queued: 0, total: r.total || 0 };
+      t.other = Math.max(0, (r.cases_done || 0) - (t.pass + t.fail + t.skip + t.pending));
+      if (r.status === "running" && r.current && r.current.cases) t.running = r.current.cases.length;
+      t.done = r.cases_done;
+      return `<tr><td>${esc(r.stream)}</td><td class="mono">${esc(r.time)}</td><td><b>${esc(r.level)}</b></td>
+        <td class="mono muted">${esc(r.head)}</td><td class="barcell">${r.total ? bar(t, "thin") : '<span class="muted">one session</span>'}</td>
+        <td class="num">${r.total ? `${r.cases_done}/${r.total}` : "–"}</td>
+        <td class="num">${r.sessions_done}${r.sessions_total ? "/" + r.sessions_total : ""}</td>
+        <td class="num"><span class="o-pass">${t.pass}</span> / <span class="o-fail">${t.fail}</span> / <span class="o-skip">${t.skip}</span></td>
+        <td class="num">$${r.cost.toFixed(2)}</td>
+        <td>${r.status === "running" ? `<span class="o-running">running</span>${r.current ? ` <span class="muted">· session ${r.current.session}${r.current.of ? " of " + r.current.of : ""}</span>` : ""}` : esc(r.status)}</td></tr>`;
+    }).join("")}</table>` : '<p class="empty">no one-server runs in the loop logs</p>';
+  return rows.some((r) => r.status === "running");
+}
+
+function renderCoverage(st) {
+  const cov = st.coverage || [];
+  const req = Object.entries(st.requirements).flatMap(([s, rs]) => rs.map((r) => ({ s, ...r })));
+  const live = req.find((r) => r.status === "running");
+  $("coverage").innerHTML = (cov[0] && cov[0].error ? `<p class="o-fail">${esc(cov[0].error)}</p>` : `<table>
+    ${cov.map((c) => `<tr><td><b>${esc(c.level)}</b></td>
+      <td class="barcell"><div class="bar thin"><span class="s-pass" style="width:${pct(c.current, c.cases)}%"></span></div></td>
+      <td class="num">${c.current}/${c.cases}</td><td class="num muted">${pct(c.current, c.cases)}%</td>
+      <td class="muted" style="white-space:normal">${Object.entries(c.loads).map(([k, n]) => `${n} ${esc(k)}`).join(" · ")}</td></tr>`).join("")}
+    </table>`) + (live ? `<p style="margin:10px 0 0"><span class="dot ok"></span> generating ${esc(live.level)}:
+      session ${live.sessions_done}${live.sessions_total ? " of " + live.sessions_total : ""},
+      ${live.recorded} recorded · $${live.cost.toFixed(2)}</p>
+      ${bar({ pass: live.sessions_done, fail: 0, skip: 0, pending: 0, other: 0, running: 0, total: live.sessions_total || 1, done: live.sessions_done }, "thin")}` : "");
+  return !!live;
+}
+
+function renderRuns(st) {
+  $("runs").innerHTML = st.fleet_runs.length ? `<table><tr><th>run</th><th>levels</th><th>status</th><th class="num">pass</th>
+    <th class="num">fail</th><th class="num">skip</th><th class="num">took</th><th class="num">cost</th></tr>
+    ${st.fleet_runs.map((r) => `<tr><td class="mono">${esc(r.id)}</td><td>${esc((r.levels || []).join(", "))}</td><td>${esc(r.status)}</td>
+      <td class="num o-pass">${r.outcomes.pass || 0}</td><td class="num o-fail">${r.outcomes.fail || 0}</td>
+      <td class="num o-skip">${r.outcomes.skip || 0}</td>
+      <td class="num">${r.finished ? ago(r.finished - r.started) : "–"}</td><td class="num">$${r.cost.toFixed(2)}</td></tr>`).join("")}
+    </table>` : '<p class="empty">none yet</p>';
+}
+
+async function poll() {
+  try {
+    const st = await (await fetch("/api/regression")).json();
+    const fl = renderFleet(st);
+    const single = renderSingle(st);
+    const gen = renderCoverage(st);
+    renderRuns(st);
+    const busy = (fl && fl.live) || single || gen;
+    $("hdot").className = "dot " + (busy ? "ok" : "");
+    $("hsummary").textContent = fl && fl.live ? `fleet ${fl.f.id}: ${fl.t.done}/${fl.t.total} cases, ${fl.t.fail} failed`
+      : single ? "a one-server run is going" : gen ? "generating requirements" : "idle";
+    $("stamp").textContent = new Date(st.now * 1000).toLocaleTimeString([], { hour12: false });
+  } catch (e) {
+    $("hsummary").textContent = "dashboard server unreachable";
+    $("hdot").className = "dot bad";
+  }
+}
+$("case-filter").value = LS.get("rcase", "");
+$("case-filter").addEventListener("change", () => { LS.set("rcase", $("case-filter").value); poll(); });
+poll();
+setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>
