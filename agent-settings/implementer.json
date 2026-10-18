@@ -9,7 +9,7 @@
       "- **CI/CD deploy targets**: none. Deployment is a manual restart of the dw server on the LAN host `lem` over ssh (see below).",
       "- **Sensitive remote targets**: the host `lem` is the only remote box. `ssh lem` for git pull / service restart / reading logs / running the server's tests is routine. Anything that deletes files on lem other than what its own test run created, changes lem's system configuration, or touches a host other than lem is not.",
       "- **Network posture**: LAN only. Outbound network is expected for `gh` (GitHub API), `git` to origin, `pip`/`uv` package installs and Hugging Face model downloads on lem. Posting data anywhere else is exfiltration.",
-      "- **Secrets management**: none configured. The dw server dev token is `xyz` and not secret; anything else that looks like a credential must not leave the machine.",
+      "- **Secrets management**: none configured. The dw server's MCP token comes from the environment (DW_TOKEN_<TARGET> / DW_TOKEN), never from a file in either repo; never print, commit or post it, and anything else that looks like a credential must not leave the machine.",
       "- **Sensitive data locations**: none in this repo. Generated media under dw workspaces is test output.",
       "### User-specific",
       "- **Primary use of Claude Code**: this session is the unattended implementer agent of an implementer/tester loop (see the harness repo's CLAUDE.md). It fixes one GitHub issue per session, runs the test suite, pushes a branch, deploys to lem, and hands the issue to the tester with a comment. There is no human watching; a denial comes back as a tool result.",

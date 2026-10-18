@@ -36,8 +36,9 @@ resolve_target || exit 1
 FIXTURE_SOURCE="${FIXTURE_SOURCE:-lem:diffusers-workspace/common/assets}"
 FIXTURE_BWLIMIT_KBPS="${FIXTURE_BWLIMIT_KBPS:-20000}"
 FIXTURE_STAGE="${FIXTURE_STAGE:-$LOGS/.fixtures-stage}"
-DW_TOKEN="${DW_TOKEN:-xyz}"
 root="${DW_TARGET_WORKSPACE:-}"
+# The token is needed only to ask the server for its workspace root.
+[ -n "$root" ] || resolve_token || exit 1
 
 dry=()
 case "${1:-}" in

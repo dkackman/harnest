@@ -10,7 +10,7 @@
 #   TESTER_EFFORT=high ./run-loop.sh    # per-role --effort; defaults medium (EFFORT)
 #   PROVIDER=ollama IMPLEMENTER_MODEL=gemma4:31b-it-q4_K_M TESTER_MODEL=gemma4:31b-it-q4_K_M ./run-loop.sh
 #                                       # a non-Anthropic model, served by Ollama
-#   DW_URL=... DW_TOKEN=... ./run-loop.sh   # dw MCP endpoint handed to the tester
+#   DW_URL=... DW_TOKEN_LEM=... ./run-loop.sh   # dw MCP endpoint and its token (resolve_token)
 #   IMPLEMENTER_BUDGET_USD=8 TESTER_BUDGET_USD=5 TRIAGE_BUDGET_USD=3 ./run-loop.sh
 #                                       # per-session --max-budget-usd caps (0 = none)
 #   TESTER_TASK_EVERY=2 ./run-loop.sh   # standing task every Nth cycle (default 4)
@@ -194,7 +194,6 @@ AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 # cycle where one is pending (see tester_pass).
 TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-4}"   # standing task on every Nth cycle
 DW_URL="${DW_URL:-}"            # resolve_target fills in the target's
-DW_TOKEN="${DW_TOKEN:-xyz}"     # dev token; the server is LAN-only
 # The server-free passes (feature design, docs and architecture review,
 # curator review) run in one loop only. 1 or 0 forces it; unset, lem's loop
 # always runs them and another target's runs them only while lem's loop
@@ -216,6 +215,7 @@ mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 
 resolve_target || exit 1
+resolve_token || exit 1
 # The claim and backend labels (harnest#15) must exist before anything adds
 # them: gh refuses a label the repo doesn't have, which would fail every
 # claim and every filing. Idempotent.

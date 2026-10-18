@@ -16,7 +16,7 @@ git clone -q -b develop "$T/origin.git" "$T/src"
 sha="$(git -C "$T/src" rev-parse HEAD)"
 
 mkdir "$T/h"
-(cd "$HARNEST" && tar cf - --exclude ./logs --exclude ./.git .) | (cd "$T/h" && tar xf -)
+(cd "$HARNEST" && tar cf - --exclude ./logs --exclude ./.git --exclude ./.env .) | (cd "$T/h" && tar xf -)
 git -C "$T/h" init -q && git -C "$T/h" add -A && git -C "$T/h" -c user.name=t -c user.email=t@t commit -qm h
 
 ln -s "$HARNEST/tests/fake-gh.py" "$T/bin/gh"

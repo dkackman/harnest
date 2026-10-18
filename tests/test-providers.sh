@@ -108,6 +108,12 @@ case "\$*" in *deploy.sh*) [ -z "\${FAKE_SSH_FAIL:-}" ] || { echo dirty; exit 1;
 EOS
 chmod +x "$T/bin/ssh"
 eq  "lem keeps its names and URL" "|lem|~/diffusers-workflow|http://lem:8765/mcp" "$(tgt lem 'echo "$TARGET_SUFFIX|$TARGET_HOST|$TARGET_DIR|$DW_URL"')"
+# the token: the server's own variable, else DW_TOKEN, else refused; never a default
+eq  "token: each server has its own variable" "DW_TOKEN_LEM DW_TOKEN_MINI_AI" "$(tgt lem token_var) $(tgt mini-ai token_var)"
+eq  "token: the server's own wins" "m" "$(DW_TOKEN_MINI_AI=m DW_TOKEN=d tgt mini-ai 'resolve_token; echo "$DW_TOKEN"')"
+eq  "token: DW_TOKEN is the fallback" "d" "$(DW_TOKEN_MINI_AI=m DW_TOKEN=d tgt lem 'resolve_token; echo "$DW_TOKEN"')"
+has "token: none is refused, naming the variable" "set DW_TOKEN_LEM (or DW_TOKEN)" "$(DW_TOKEN='' tgt lem 'resolve_token || echo refused')"
+has "  and fails" "refused" "$(DW_TOKEN='' tgt lem 'resolve_token || echo refused')"
 eq  "mini-ai gets its own suffix, host and URL" ".mini-ai|mini-ai|http://mini-ai:8765/mcp" "$(tgt mini-ai 'echo "$TARGET_SUFFIX|$TARGET_HOST|$DW_URL"')"
 eq  "an explicit DW_URL on the host wins" "http://mini-ai.lan:9000/mcp" "$(TGT_URL=http://mini-ai.lan:9000/mcp tgt mini-ai 'echo "$DW_URL"')"
 has "a leftover lem DW_URL is refused" "needs a DW_URL on mini-ai" "$(TGT_URL=http://lem:8765/mcp tgt mini-ai 'echo ran')"

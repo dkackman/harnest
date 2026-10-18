@@ -149,10 +149,12 @@ def run_case(client, case):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", default=os.environ.get("DW_URL", "http://lem:8765/mcp"))
-    ap.add_argument("--token", default=os.environ.get("DW_TOKEN", "xyz"))
+    ap.add_argument("--token", default=os.environ.get("DW_TOKEN", ""))
     ap.add_argument("--level")
     ap.add_argument("ids", nargs="*")
     args = ap.parse_args()
+    if not args.token:
+        ap.error("no MCP token: pass --token or set DW_TOKEN; no token is kept in the repo")
 
     cases = []
     for f in sorted(os.listdir(os.path.join(HERE, "cases"))):

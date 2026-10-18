@@ -26,7 +26,7 @@ for a in "$@"; do if [ "$a" = --force ]; then force=--force; else args+=("$a"); 
 # shellcheck disable=SC1091
 . "$REPO/providers.sh"
 resolve_target || exit 2
-DW_TOKEN="${DW_TOKEN:-xyz}"
+resolve_token || exit 2
 rsh() { ssh -o BatchMode=yes -o ConnectTimeout=8 "$TARGET_HOST" "$@"; }
 
 held() {  # a driver holds this target's lock, and --force wasn't given

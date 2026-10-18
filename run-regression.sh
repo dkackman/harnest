@@ -22,7 +22,7 @@
 #
 # Waits for run-loop.sh if it is running (logs/.driver.lock), and stops the
 # run when a session reports the MCP server unreachable (REGRESSION-ABORT).
-#   DW_URL=... DW_TOKEN=... ./run-regression.sh
+#   DW_URL=... DW_TOKEN_LEM=... ./run-regression.sh   # endpoint and token (resolve_token)
 #   tail -f logs/regression.log              # watch from another terminal
 #
 # Another server (harnest#15). DW_TARGET=mini-ai runs against the MPS test
@@ -103,7 +103,6 @@ DW_URL="${DW_URL:-}"           # empty: the target's own (resolve_target)
 # C-F007 and C-F023 near 61 GB of host RSS; C-F047 tens of GB). Not left to
 # the agent's reading of target.md: one misjudged case is an outage.
 TARGET_SKIP_CASES="${TARGET_SKIP_CASES:-S-F079 C-F005 C-F007 C-F023 C-F047}"
-DW_TOKEN="${DW_TOKEN:-xyz}"
 
 LEVEL="${1:-smoke}"
 SUITE_OVERRIDE="${2:-}"
@@ -137,6 +136,7 @@ mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 
 resolve_target || exit 1
+resolve_token || exit 1
 # lem's name for everything is the one it always had; another target's
 # carries TARGET_SUFFIX, so a lem run and a local run never share a log,
 # a last-session file or a prompt file.
