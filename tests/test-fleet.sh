@@ -197,6 +197,10 @@ eq  "  each lane swept its own workspace" "$(grep '^start' "$T/timeline" | grep 
     "$(grep '^start' "$T/timeline" | grep ' \[\]$' | awk '{print $5}' | sort -u | tr '\n' ' ')"
 eq  "  the cost is summed" "true" "$(jq '[.lanes[].cost] | add > 0' "$st")"
 ok  "  the finished run is kept" test -s "$T/h/logs/fleet/runs/$(jq -r .id "$st").json"
+eq  "  every pass and fail is timed" "" \
+    "$(jq -r '.cases | to_entries[] | select((.value.outcome | IN("pass","fail")) and .value.lane != "script" and (.value.secs | type) != "number") | .key' "$st")"
+(cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" python3 -m harness.drivers.fleet --plan smoke) > "$T/plan2.out" 2>&1
+has "  the next plan reads those times" "case(s) measured in" "$(cat "$T/plan2.out")"
 has "  the suite edit is committed once" "regression: update smoke from" "$(git -C "$T/h" log -1 --format=%s)"
 eq  "  locks released" "" "$(ls -d "$T/h"/logs/.driver.lock* 2>/dev/null || true)"
 # each server's first lane in the level's workspace; alpha's second in its own, seeded from it
