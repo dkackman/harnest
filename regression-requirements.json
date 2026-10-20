@@ -141,7 +141,7 @@
    "assets": [],
    "load": "exclusive",
    "note": "Compares peak host RSS across two runs of the same worker.",
-   "hash": "9fcb9fff6751ae8f",
+   "hash": "28cf0d2adf37ecc9",
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
@@ -429,11 +429,11 @@
     "stable-diffusion-v1-5/stable-diffusion-v1-5"
    ],
    "assets": [],
-   "load": "light",
-   "note": "Two SD1.5 jobs from a workflow the case saves itself.",
-   "hash": "b125a13ee06e9389",
-   "by": "anthropic/claude-sonnet-5-5",
-   "on": "2026-10-18"
+   "load": "exclusive",
+   "note": "Two SD1.5 jobs from a workflow the case saves itself. Exclusive: another workflow on the card clears its step cache (harnest#137, dw#943).",
+   "hash": "a8e8d8d590408cd0",
+   "by": "anthropic/claude-opus-5-5 (harnest#137 ruling)",
+   "on": "2026-10-19"
   },
   "C-F054": {
    "workflows": [
