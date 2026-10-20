@@ -13795,4 +13795,106 @@ name), if its error doesn't name `output:<name>`, or if call 3 is refused.
 cleanup: `delete_output(job_id=…)` on the step 1 run. Never delete the shared asset.
 metrics: none.
 
+### C-F506 — known answer: `separate_stems` on the *Always On* take warns `stacked_vocals` over the chorus near 1:19 and not over the solo first verse, and still saves four stems
+pending: #955
+source: tester, spec for #955 from #947's plan v1 (claude-opus-5-5 via anthropic)
+One utility job: htdemucs plus Whisper, under a minute warm. Workspace `regression-complete`.
+Needs the shared asset `asset:qa-cast/always-on-seed7.mp3` (Fixtures). Its setup is below.
+- Setup, only if `get_gallery_metadata(name="asset:qa-cast/always-on-seed7.mp3")` says it is
+  missing: `keep_output(name="templates/minimax/music/20261018-210957-1bc249c3/final/MiniMaxMusic-balanced.1-0.0.mp3",
+  workspace="two-minds", asset_name="qa-cast/always-on-seed7.mp3", shared=true)`. If the
+  `two-minds` source is gone too, record the case as not run. That is not a pass.
+1. Run this inline workflow with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`,
+   then `wait_for_job` if it is still running:
+   - step `stems`: `separate_stems` with `audio: "asset:qa-cast/always-on-seed7.mp3"`, saved as
+     `audio/wav`;
+   - step `words`: `transcribe_audio` with `audio: "previous_result:stems.vocals"` and
+     `timestamps: "segment"`, saved as `application/json`.
+2. `get_job` on it, then `get_output_text` on the `words` JSON.
+3. Find the first verse from the transcript. It starts at the segment holding "Forty thousand
+   nights" and ends at the end of the segment holding "one night of none" (lyrics:
+   `get_job_workflow("30ec4a4cb303")` in `two-minds`). Verse 1 is the baritone alone. The first
+   chorus starts at "I keep the cold, you keep the spark".
+expected:
+- The job succeeds. The `stems` step saves exactly four audio files, one per stem: `vocals`,
+  `drums`, `bass` and `other`. No fifth file, JSON or warnings key is among them (Q1:
+  warning only).
+- `get_job` `warnings` holds exactly one entry about stacked vocals. It is prefixed by the step
+  and command (`stems: separate_stems: …`), names stacked (layered stereo) voices in the vocals
+  stem, lists its spans and says to treat them as more than one voice.
+- Every span is written `m:ss–m:ss` (e.g. `1:12–1:31`), not raw seconds or `0:01:12`. Spans are
+  in ascending order and don't overlap. There are at most 8, and if there are more the text
+  ends with "and N more".
+- One listed span contains 1:19 (79 s).
+- No listed span overlaps the first verse as step 3 found it. A span that starts within 1 s of
+  the verse's end is allowed, for window granularity.
+- Every listed span is at least 2 s long (`STACK_MIN_SPAN_SECONDS`).
+- The `words` step succeeds on `previous_result:stems.vocals` with numeric segment times and
+  recognisable verse-1 and chorus lyrics, as it did before the change.
+It is a **finding** if there is no `stacked_vocals` warning or no span covers 1:19 (the
+#947 field case is missed), if a span overlaps verse 1, if the warning is on more than one
+entry,
+if the stem count or names change, if the job fails, or if the chained transcribe breaks.
+cleanup: `delete_output(job_id=…)`. Never delete the shared asset.
+metrics: none.
+
+### C-F507 — no `stacked_vocals` on a mono voice, on an instrumental, or on a run shorter than the minimum span
+pending: #955
+source: tester, spec for #955 from #947's plan v1 (claude-opus-5-5 via anthropic)
+Utility jobs only (htdemucs), about a minute in total warm. Workspace `regression-complete`.
+Uses `asset:qa-cast/priya-voice.wav` (mono) and `asset:qa-cast/always-on-seed7.mp3` (see
+C-F506's setup).
+1. **Mono:** `separate_stems` on `asset:qa-cast/priya-voice.wav`, saved as `audio/wav`.
+   htdemucs duplicates a mono source to two identical channels, so its vocals stem has L = R.
+2. **Instrumental, from the take itself:** an inline workflow:
+   - step `stems`: `separate_stems` on `asset:qa-cast/always-on-seed7.mp3`, with `save: false`
+     (or saved to `intermediate`);
+   - step `band`: `mix_audio` with `audios: ["previous_result:stems.drums",
+     "previous_result:stems.bass", "previous_result:stems.other"]`, saved as `audio/wav`;
+   - step `again`: `separate_stems` on `previous_result:band`, saved as `audio/wav`.
+
+   The `band` mix is the song's own stereo-wide strings, piano and timpani with the voices
+   taken out.
+3. **Too short:** an inline workflow of `slice_audio` on `asset:qa-cast/always-on-seed7.mp3`
+   with `start_seconds: 78.25, duration_seconds: 1.5` (inside the chorus C-F506 flags), then
+   `separate_stems` on `previous_result:<slice step>`.
+4. **Control in the same shape:** step 3 with `start_seconds: 70, duration_seconds: 20`.
+
+Each one runs with `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`, then `get_job`.
+expected:
+- Runs 1, 2 and 3 succeed, each `separate_stems` step saves its four stems, and `get_job`
+  `warnings` has **no** stacked-vocals entry. Any other warning (a near-silent stem, a
+  resample) is fine.
+- In run 2, the `stems` step itself carries the C-F506 warning, which is fine. The `again`
+  step must not.
+- Run 3 can't hold a 2 s span, so it never warns: a run shorter than the minimum span is
+  dropped, not reported.
+- Run 4 warns once, with a span that covers 0:09 of the slice (the take's 1:19). Its spans are
+  in the slice's own time, starting from 0:00 and no later than 0:20. That shows the times
+  are relative to the input and the check isn't tied to one file.
+It is a **finding** if any of runs 1–3 warns `stacked_vocals`, since a mono source, an
+instrumental or a sub-minimum run is the false positive the plan rules out. It is also a
+finding if run 4 doesn't warn, or if its spans fall outside `0:00–0:20`.
+cleanup: `delete_output(job_id=…)` for every run. Never delete the shared assets.
+metrics: none.
+
+### C-F508 — the tasks guide's *Stem separation* section names `stacked_vocals` and says what to do with it
+pending: #955
+source: tester, spec for #955 from #947's plan v1 (claude-opus-5-5 via anthropic)
+Free.
+1. `list_guides`, then `get_guide("tasks", section=…)` on the section about stem separation
+   (`separate_stems`). If there's no section index, use the full text.
+2. `get_task("separate_stems")`.
+expected:
+- The guide section names the `stacked_vocals` warning. It says the warning means the vocals
+  stem holds layered stereo voices over the listed spans, and that a caller should treat
+  those spans as more than one voice before pitch work, attribution or lip-sync.
+- It says the stems are unchanged: still four, with nothing added to the result.
+- `get_task("separate_stems")` lists the same three arguments as before: `audio`,
+  `sample_rate` and `device`. The plan adds no argument.
+It is a **finding** if the guide doesn't mention the warning, or if `separate_stems` gained
+or lost an argument.
+cleanup: none.
+metrics: none.
+
 ## Performance

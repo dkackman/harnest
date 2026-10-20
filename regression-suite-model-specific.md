@@ -4757,4 +4757,50 @@ It is a **finding** if:
 cleanup: none.
 metrics: none.
 
+### M-F155 — `models/z-image` declares a batch-aware VRAM ceiling: 16 × 1344×768 is refused on a 24 GB card, 4 × 1344×768 and the defaults are clean
+source: tester, verified in #945 (claude-opus-5-5 via anthropic)
+Model/pipeline: Z-Image Turbo (`ZImagePipeline`), `models/z-image`. Validate only: no GPU time.
+The estimate is calibrated with the template's `offload: model`. Its voxel variables are
+`num_images_per_prompt`, `width` and `height` (11.8 GB base plus 1031 bytes per unit), so batch size counts.
+Steps:
+1. `validate_workflow(name="models/z-image", arguments={"num_images_per_prompt": 16, "width": 1344, "height": 768})`.
+2. The same with `num_images_per_prompt: 4`.
+3. `validate_workflow(name="models/z-image")`, with no arguments.
+expected:
+- Step 1 is `valid: false`, with an error at `arguments` naming `num_images_per_prompt*width*height`, a
+  projection of about 27.7 GB, and the card's ceiling it exceeds.
+- Steps 2 and 3 are `valid: true`, with no VRAM error or warning.
+It is a **finding** if step 1 is `valid: true` with no VRAM error or warning: batch size dropped out of the
+projection. It is also a finding if step 2 or 3 is flagged: the field-report size fits the offloaded
+template (15.8 GiB measured).
+cleanup: none.
+metrics: none.
+
+### M-F156 — an inline Z-Image copy whose offload differs from `models/z-image`'s gets a `vram_config_differs` warning under the ceiling, merged into the inherited warning above it
+source: tester, verified in #954 (claude-opus-5-5 via anthropic)
+Model/pipeline: Z-Image Turbo (`ZImagePipeline`, `Tongyi-MAI/Z-Image-Turbo`), with its ceiling inherited from
+`models/z-image` (calibrated with `offload: model`). Validate only: no GPU time.
+Build an inline workflow W: one step `txt2img`, `pipeline.configuration: {"component_type": "ZImagePipeline"}`
+(no `offload`), `from_pretrained_arguments: {"model_name": "Tongyi-MAI/Z-Image-Turbo", "torch_dtype":
+"torch.bfloat16"}`, arguments `prompt`, `num_inference_steps: 9`, `guidance_scale: 0.0`, and
+`num_images_per_prompt`/`width`/`height` each bound to a `variable:` of that name (defaults 4, 960, 544), a top-level
+`seed: "variable:seed"`, `result.content_type: "image/jpeg"`, and **no** `vram_estimate`.
+Steps:
+1. `validate_workflow(workflow=W, arguments={"num_images_per_prompt": 4, "width": 1344, "height": 768})`.
+2. The same with `"offload": "model"` added to W's `configuration`.
+3. Step 1's W with `num_images_per_prompt: 16`.
+4. Step 1's W with `"offload": "sequential"`, at its defaults.
+expected:
+- Step 1 is `valid: true`, with exactly one VRAM warning. It contains `vram_config_differs` and names
+  `models/z-image`, `offload: model` and `no offload`.
+- Step 2 is `valid: true` with no VRAM warning of either kind.
+- Step 3 is `valid: true` with exactly one VRAM warning. It is `vram_projection_inherited` (about 27.7 GB), names the
+  offload difference (`offload: model`, `no offload`), and is not accompanied by a `vram_config_differs`.
+- Step 4 is `valid: true` with one `vram_config_differs` naming `offload: sequential`.
+It is a **finding** if step 1 or 4 has no `vram_config_differs`, since that is the #945 OOM going unflagged again. It
+is also a finding if step 2 is flagged, if step 3 carries two VRAM warnings, or if any step is `valid: false`, because
+the note never refuses.
+cleanup: none.
+metrics: none.
+
 ## Performance
