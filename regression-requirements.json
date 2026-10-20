@@ -99,6 +99,16 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
+  "C-F014": {
+   "workflows": [],
+   "models": [],
+   "assets": [],
+   "load": "light",
+   "note": "The case writes its own inline workflow and the text doesn't say which models it loads. The retry really queues a run, so I chose light over none.",
+   "hash": "abee19f9aca954d9",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-19"
+  },
   "C-F016": {
    "workflows": [
     "templates/assemble-and-score"
@@ -403,15 +413,17 @@
   },
   "C-F051": {
    "workflows": [
-    "templates/minimax/storyboard"
+    "templates/minimax/reference-to-video",
+    "templates/minimax/storyboard",
+    "templates/describe-and-regenerate"
    ],
    "models": [],
    "assets": [],
    "load": "none",
-   "note": "Validate-only. It also validates other entries picked from list_workflows at run time.",
-   "hash": "87b00bc26f947da9",
+   "note": "Only list_workflows and validate_workflow calls. This needs the server's run history for those templates (observed_minutes / observed_runs), not just the templates themselves.",
+   "hash": "dfad0ce893a5ac04",
    "by": "anthropic/claude-sonnet-5-5",
-   "on": "2026-10-18"
+   "on": "2026-10-19"
   },
   "C-F052": {
    "workflows": [],
@@ -442,10 +454,10 @@
    "models": [],
    "assets": [],
    "load": "none",
-   "note": "Validate-only.",
-   "hash": "b9ad61409c47d451",
+   "note": "Validate calls only; the case says nothing is created. It also depends on this box's run history for the template.",
+   "hash": "e54d308b16b9c827",
    "by": "anthropic/claude-sonnet-5-5",
-   "on": "2026-10-18"
+   "on": "2026-10-19"
   },
   "C-F055": {
    "workflows": [],
@@ -891,9 +903,10 @@
     "cast/pat.jpg"
    ],
    "load": "none",
-   "hash": "2e2f5656c293b44c",
+   "note": "Utility tasks only (normalize_audio, loop_frames, pair_audio, get_image_size, compose_text), no model. Both workflows are inline.",
+   "hash": "00326bfe9c648b28",
    "by": "anthropic/claude-sonnet-5-5",
-   "on": "2026-10-18"
+   "on": "2026-10-19"
   },
   "C-F091": {
    "workflows": [
@@ -1208,10 +1221,10 @@
     "qa-cast/ep3-shot2-reply.mp4"
    ],
    "load": "none",
-   "note": "the template and the inline steps are utility tasks only (loop, concat, mix, pair); no model",
-   "hash": "47967f3f9038474a",
+   "note": "The parent workflow is inline and the child is the stored template. Both run utility tasks only (loop_audio, slice_audio, concat_videos, pair_audio), so no model loads. The room-bed asset is named as the text writes it.",
+   "hash": "efe32a3a95adfaf0",
    "by": "anthropic/claude-sonnet-5-5",
-   "on": "2026-10-18"
+   "on": "2026-10-19"
   },
   "C-F117": {
    "workflows": [
@@ -2031,6 +2044,42 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
+  "C-F185": {
+   "workflows": [
+    "templates/attribute-lines"
+   ],
+   "models": [
+    "openai/whisper-base",
+    "speechbrain/spkrec-ecapa-voxceleb",
+    "adefossez/HTDemucs"
+   ],
+   "assets": [
+    "qa-cast/priya-voice.wav"
+   ],
+   "load": "light",
+   "note": "The duet comes from C-F138's steps 1-4, which aren't in my prompt. I assumed they are utility mixing of the qa-cast voice and bed assets. Their other assets and any models are not listed. The template uses whisper-base, ECAPA and, for stem separation, htdemucs.",
+   "hash": "2a8b31e2d1bdfef6",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-19"
+  },
+  "C-F186": {
+   "workflows": [
+    "templates/attribute-lines"
+   ],
+   "models": [
+    "openai/whisper-base",
+    "speechbrain/spkrec-ecapa-voxceleb",
+    "adefossez/HTDemucs"
+   ],
+   "assets": [
+    "qa-cast/priya-voice.wav"
+   ],
+   "load": "light",
+   "note": "The duet comes from C-F138's steps 1-4, which aren't in my prompt, so their other assets and any models are not listed. The inline transcribe_audio steps use the default whisper-base.",
+   "hash": "fd7dd90435384153",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-19"
+  },
   "C-F187": {
    "workflows": [
     "templates/attribute-lines"
@@ -2053,6 +2102,26 @@
    "hash": "4d5691042f83674d",
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
+  },
+  "C-F189": {
+   "workflows": [
+    "templates/attribute-lines"
+   ],
+   "models": [
+    "openai/whisper-base",
+    "speechbrain/spkrec-ecapa-voxceleb",
+    "adefossez/HTDemucs"
+   ],
+   "assets": [
+    "qa-cast/priya-voice.wav",
+    "qa-cast/ep3-shot1-incident.mp4",
+    "qa-cast/ep3-shot2-reply.mp4"
+   ],
+   "load": "light",
+   "note": "The duet comes from C-F138's steps 1-4, which aren't in my prompt, so their other assets and any models are not listed. The cut is built from utility tasks only.",
+   "hash": "ff81f2c22ab4dd4a",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-19"
   },
   "C-F190": {
    "workflows": [],
@@ -2395,17 +2464,17 @@
     "templates/minimax/music-video-cuts"
    ],
    "models": [
-    "adefossez/HTDemucs",
-    "openai/whisper-base"
+    "openai/whisper-base",
+    "adefossez/HTDemucs"
    ],
    "assets": [
     "qa-cast/ep15-song.mp3"
    ],
    "load": "light",
-   "note": "The template separates stems with htdemucs, then transcribes with whisper-base, so the case runs two small models.",
-   "hash": "90e3cf8330653872",
+   "note": "Utility tasks only: separate_stems, transcribe_audio with whisper-base, analyze_beats and plan_cuts.",
+   "hash": "5f22b28ec052dff5",
    "by": "anthropic/claude-sonnet-5-5",
-   "on": "2026-10-18"
+   "on": "2026-10-19"
   },
   "C-F220": {
    "workflows": [],
@@ -4858,6 +4927,18 @@
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
   },
+  "C-F427": {
+   "workflows": [],
+   "models": [
+    "MiniMaxAI/MiniMax-H3"
+   ],
+   "assets": [],
+   "load": "heavy",
+   "note": "The case reuses C-F422 step 1, which isn't in my prompt, so I don't know the workflow name or its fixtures. The H3 step makes it heavy. The lightx2v Turbo checkpoints may also load.",
+   "hash": "785d6202ae553f5f",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-19"
+  },
   "C-F428": {
    "workflows": [
     "templates/minimax/dialogue-short"
@@ -5703,6 +5784,22 @@
    "hash": "5ae465e0d99b17ca",
    "by": "anthropic/claude-sonnet-5-5",
    "on": "2026-10-18"
+  },
+  "C-F505": {
+   "workflows": [
+    "templates/check-script"
+   ],
+   "models": [
+    "openai/whisper-large-v3-turbo"
+   ],
+   "assets": [
+    "qa-cast/ep198-episode.mp4"
+   ],
+   "load": "light",
+   "note": "Step 1 runs Whisper large-v3-turbo (about 1.6 GB) through check_script; steps 2 and 3 only validate. The case does not measure memory or timing.",
+   "hash": "3842aeaa022c0ac1",
+   "by": "anthropic/claude-sonnet-5-5",
+   "on": "2026-10-19"
   },
   "M-F001": {
    "workflows": [
