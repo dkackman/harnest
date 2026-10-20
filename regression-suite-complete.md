@@ -640,8 +640,8 @@ unequal-shot arithmetic is from job `c35749b7ef07` the same evening, workspace
 
 ### C-F023 — reloading one workflow against itself releases the resident pipeline first
 The worker keeps loaded pipelines between jobs so a repeat run is warm. When the *same* workflow is
-re-run with an argument that changes what a step loads — a LoRA scale, a canvas, a step count,
-anything in the pipeline identity key — the new stack must be built, and the old one has to go
+re-run with an argument that changes what a step loads — a LoRA alpha set where there was none, a LoRA
+weight file, a weights dtype, anything in the pipeline identity key — the new stack must be built, and the old one has to go
 first. Before #150 it did not: the release path existed but read a `prior_step_keys` map that
 nothing ever populated, so it could only fire *within* a single run and never between two. The
 second job loaded on top of the first and the worker was SIGKILLed by the host OOM killer. This is
@@ -657,8 +657,10 @@ expected:
   at all**. This control is half the case: an unconditional release on every run would satisfy the
   next bullet while meaning nothing.
 - **Run 2, same workflow**, with an argument changed that is in the pipeline identity key (not
-  merely a call argument — a prompt or an output name will *not* do it; `lora_scale` and a canvas
-  or frame count will). `get_job_events` →
+  merely a call argument — a prompt, an output name, `lora_scale` or `num_frames` will *not* do it:
+  since dw b4f122b8 a LoRA's scale and alpha values re-apply on a warm pipeline and only an alpha's
+  presence is in the key (dw#940). Use `lora_alpha: 8` against the template's `null` default; it
+  loads the same weights, so the memory the case depends on is unchanged). `get_job_events` →
   `{"event": "pipeline_released", "reason": "superseded", ...}` carrying
   `gpu_memory_allocated_before_mb` and `gpu_memory_allocated_mb`.
 - **Ordering, which is the actual assertion.** That event's `seq` is **lower** than the first
@@ -1727,6 +1729,10 @@ Before #255 `plan.estimate.minutes` was the whole-workflow observed time regardl
 consumer had no field to correct it from. The fix adds `cached_minutes`: the cost of the
 plan *after* the cached steps are subtracted, present on every estimate shape (`null` when
 `minutes` is). Cheap — two SD 1.5 jobs, one of them half-served from the step cache.
+Precondition: no other workflow may run on the server between steps 3 and 5. Since #914 a different
+workflow on a card clears that card's step cache, so a concurrent job turns step 4/5 cold (dw#943).
+If step 5's `first` shows `load_cached: false` and `list_jobs` shows another workflow's job in that
+window, re-run the case once with the server idle before filing; still cold on an idle server is a failure.
 0. If `qa-s076-two-step` is already saved in the workspace (an earlier run that stopped
    before its cleanup), `delete_workflow` it first. Since #312 the cost history is kept
    per `(workspace, workflow_name)` and `delete_workflow` purges it, so a leftover — or
