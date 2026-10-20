@@ -13768,4 +13768,25 @@ It is a **finding** if call 1 has no such warning (the #926 regression: the run 
 cleanup: none.
 metrics: none.
 
+### C-F505 — `validate_workflow` refuses a bare manifest name of this workspace's own output and names `output:<name>` as the fix
+source: tester, verified in #951 (claude-opus-5-5 via anthropic)
+Cheap (one Whisper run of about 5 s, then validate only). Workspace `regression-complete`. Needs the
+shared asset `asset:qa-cast/ep198-episode.mp4`. If it is gone, record the case as not run. That is
+not a pass.
+1. `run_workflow(workflow_path="templates/check-script", acknowledged_cost=true, wait_seconds=55,
+   arguments={"input_audio":"asset:qa-cast/ep198-episode.mp4", "lines":["x"]})`. Take the manifest
+   file name `<name>` (`templates/check-script/<run id>/final/CheckScript-check.0-0.json`).
+2. `validate_workflow(name="templates/check-script", arguments={"input_audio":"<name>", "lines":["x"]})`,
+   which passes the manifest name verbatim, with no prefix.
+3. The same call with `"input_audio":"output:<name>"`.
+expected:
+- Call 2: `valid: false`, with one error at `steps[0].task.arguments.audio`. Its message says a bare
+  name is not looked up in the output root, and it contains `'output:<name>'` ("you most likely
+  want 'output:…' - no copy into the asset library is needed").
+- Call 3: `valid: true`, `errors: []`, and a non-null `plan`.
+It is a **finding** if call 2 is `valid: true` (the #951 regression: the run then refuses the bare
+name), if its error doesn't name `output:<name>`, or if call 3 is refused.
+cleanup: `delete_output(job_id=…)` on the step 1 run. Never delete the shared asset.
+metrics: none.
+
 ## Performance
