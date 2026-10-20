@@ -13894,4 +13894,31 @@ or lost an argument.
 cleanup: none.
 metrics: none.
 
+### C-F509 — `check-script` on a longer cut still flags a doubled line as `unscripted_speech`, instead of folding the repeat into the line's span
+source: tester, verified in #965 (claude-opus-5-5 via anthropic)
+Cheap (Whisper, about 10 s per run). Workspace `regression-complete`. The input is the shared asset
+`asset:qa-cast/ep244-episode.mp4`: four shots, `shot@kettle` (0–5.167 s), `shot@socks`
+(5.167–10.333), `shot@steam` and `shot@whistle`. In `shot@socks`, "Then wear socks." is followed by
+a second "Wear socks." at about 9.16 s. If the asset is gone, record the case as not run. That is
+not a pass. C-F503 covers the same rule on a two-shot cut. This case covers the whole-cut path,
+where the repeat used to be absorbed into the line's matched span.
+1. `run_workflow(workflow_path="templates/check-script", acknowledged_cost=true, wait_seconds=55,
+   arguments={"input_audio":"asset:qa-cast/ep244-episode.mp4", "lines":[{"text":"Hal, the kettle
+   froze.","shot":"kettle"},{"text":"Then wear socks.","shot":"socks"},{"text":"The kettle is
+   whistling, Hal.","shot":"steam"},{"text":"I taught it a song.","shot":"whistle"}]})`, then
+   `get_output_text` on its JSON.
+2. The same call, with line 2 scripted as `"Then wear socks. Wear socks."`.
+expected:
+- Run 1: line 2 (`Then wear socks.`) has similarity 1.0 and ends ≈7.3, not ≈9.98. `unmatched`
+  is the two words `Wear` and `socks.` from ≈9.16. `findings` holds an `unscripted_speech`
+  finding with `at.shot: "shot@socks"`, `repeats_line: true`, `seconds` ≈9.16 and `value` 2.
+- Run 2: line 2 matches with similarity ≥0.6 and spans ≈6.3–9.98. `unmatched` is `[]`, and
+  there is no `unscripted_speech` finding.
+It is a **finding** if run 1 has no `unscripted_speech` finding in `shot@socks` (the #965
+regression), or if its line 2 swallows the repeat (span to ≈9.98, similarity below 1.0). It is
+also a finding if run 2 releases scripted words as unscripted. Other findings, such as
+`speech_not_transcribed` in `shot@kettle`, are not part of this case.
+cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset.
+metrics: none.
+
 ## Performance
