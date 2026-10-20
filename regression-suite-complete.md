@@ -13796,7 +13796,6 @@ cleanup: `delete_output(job_id=…)` on the step 1 run. Never delete the shared 
 metrics: none.
 
 ### C-F506 — known answer: `separate_stems` on the *Always On* take warns `stacked_vocals` over the chorus near 1:19 and not over the solo first verse, and still saves four stems
-pending: #955
 source: tester, spec for #955 from #947's plan v1 (claude-opus-5-5 via anthropic)
 One utility job: htdemucs plus Whisper, under a minute warm. Workspace `regression-complete`.
 Needs the shared asset `asset:qa-cast/always-on-seed7.mp3` (Fixtures). Its setup is below.
@@ -13839,7 +13838,6 @@ cleanup: `delete_output(job_id=…)`. Never delete the shared asset.
 metrics: none.
 
 ### C-F507 — no `stacked_vocals` on a mono voice, on an instrumental, or on a run shorter than the minimum span
-pending: #955
 source: tester, spec for #955 from #947's plan v1 (claude-opus-5-5 via anthropic)
 Utility jobs only (htdemucs), about a minute in total warm. Workspace `regression-complete`.
 Uses `asset:qa-cast/priya-voice.wav` (mono) and `asset:qa-cast/always-on-seed7.mp3` (see
@@ -13879,7 +13877,6 @@ cleanup: `delete_output(job_id=…)` for every run. Never delete the shared asse
 metrics: none.
 
 ### C-F508 — the tasks guide's *Stem separation* section names `stacked_vocals` and says what to do with it
-pending: #955
 source: tester, spec for #955 from #947's plan v1 (claude-opus-5-5 via anthropic)
 Free.
 1. `list_guides`, then `get_guide("tasks", section=…)` on the section about stem separation
