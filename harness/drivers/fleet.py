@@ -14,6 +14,8 @@ runs one thread per lane:
 - a lane runs its dependency groups in order, as chunk sessions of
   CASES_PER_SESSION cases (8) on its server, in its own workspace
   (`regression-smoke-lem-1`), with its own state files;
+- groups are placed, stolen and re-queued by estimated time, from the case
+  times past runs recorded (harness/durations.py);
 - an idle lane steals an unstarted group it may run from the busiest lane;
 - an `exclusive` case runs alone in its session, under a gate that waits
   for its server's other lanes to finish theirs, so only that case idles
@@ -49,7 +51,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import REPO, deploy, facts, lock, outcome, prompts, providers, requirements, session, suite
+from .. import REPO, deploy, durations, facts, lock, outcome, prompts, providers, requirements, session, suite
 from ..gitops import refresh_plugin_tree
 from ..log import Log, err, ts
 from ..profile import ProfileError, load, resolve_token, resolve_url
@@ -79,7 +81,7 @@ class Lane:
     slot: int
     facts: object
     groups: list = field(default_factory=list)  # [(level, Group)]
-    load: float = 0.0  # assigned work, in primary-lane case units
+    load: float = 0.0  # assigned work, in primary-lane seconds (durations.Estimates)
 
     @property
     def name(self):
@@ -147,10 +149,12 @@ def why_not(group, server, server_facts, ref):
     return "" if ok else reason
 
 
-def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=None):
+def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=None, est=None):
     """Assigns <level>'s dependency groups to lanes, longest first, each to
-    the eligible lane that would finish it soonest. <lanes> carries load
-    across levels, so `all` balances as one pool."""
+    the eligible lane that would finish it soonest. A group's length is its
+    cases' estimated time (<est>, from past runs; every case the same without
+    one). <lanes> carries load across levels, so `all` balances as one pool."""
+    est = est or durations.Estimates()
     lv = profile.level(level)
     suite_file = REPO / lv.file
     script = suite.script_cases(suite_file, REPO / profile.get("suite.contract_cases", "contract/cases"))
@@ -158,14 +162,14 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=
     usable = [l for l in lanes if level_servers is None or l.server.name in level_servers]
     ref = requirements.reference_sizes(server_facts.values())
     p = Plan(level=level, suite_file=suite_file, lanes=usable, script_cases=script)
-    for g in sorted(requirements.groups(suite_file, sidecar, skip=script), key=lambda g: -g.weight):
+    for g in sorted(requirements.groups(suite_file, sidecar, skip=script), key=lambda g: -est.of(g.cases)):
         why, best = {}, None
         for lane in usable:
             reason = why_not(g, lane.server, lane.facts, ref)
             if reason:
                 why[lane.server.name] = reason
                 continue
-            finish = lane.load + g.weight / lane.server.speed
+            finish = lane.load + est.of(g.cases) / lane.server.speed
             if best is None or finish < best[0]:
                 best = (finish, lane)
         if best is None:
@@ -176,7 +180,7 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=
     return p
 
 
-def render(p, workspace):
+def render(p, workspace, timed=False):
     lane_cases = lambda l: [c for lv, g in l.groups if lv == p.level for c in g.cases]
     out = [f"== {p.level}: {sum(len(lane_cases(l)) for l in p.lanes)} cases on {len(p.lanes)} lane(s)"]
     if p.script_cases:
@@ -184,7 +188,8 @@ def render(p, workspace):
     for lane in p.lanes:
         cases = lane_cases(lane)
         excl = [c for lv, g in lane.groups if lv == p.level and g.need.load == "exclusive" for c in g.cases]
-        out.append(f"   {lane.name:10} {len(cases):4} cases  workspace {lane.workspace(workspace)}")
+        took = f"  ~{lane.load / 60:4.0f} min" if timed else ""  # with `all`, the levels so far
+        out.append(f"   {lane.name:10} {len(cases):4} cases{took}  workspace {lane.workspace(workspace)}")
         if excl:
             out.append(f"   {'':10} in exclusive groups: {' '.join(excl)}")
     for g, why in p.unplaced:
@@ -325,6 +330,7 @@ class Fleet:
         )
         self.servers = {n: ServerRun(self, profile.server(n), f) for n, f in server_facts.items()}
         self.lanes = make_lanes(profile, server_facts)
+        self.est = durations.Estimates.load(FLEET_DIR / "runs", profile)
         self.ref = requirements.reference_sizes(server_facts.values())
         self.mu = threading.RLock()
         # A lane is busy from taking a batch until its skips are re-queued:
@@ -347,7 +353,7 @@ class Fleet:
     def plan(self):
         for lv in self.levels:
             servers = [n for n in self.servers if len(self.levels) == 1 or lv in self.profile.server(n).regression_all]
-            p = plan_level(self.profile, lv, self.server_facts, self.sidecar, servers, self.lanes)
+            p = plan_level(self.profile, lv, self.server_facts, self.sidecar, servers, self.lanes, self.est)
             self.suite_files[lv] = p.suite_file
             self.script[lv] = p.script_cases
             blocks = requirements.case_blocks(p.suite_file)
@@ -507,12 +513,13 @@ class Fleet:
                 continue
             q = self.queues[other.name]
             tail = []  # this lane's takeable groups, last first, with their sizes
-            unstarted = 0
+            unstarted, left = 0, 0.0
             seen = set()
             for it in reversed(q):
                 if it.gid in self.started_gids:
                     break
                 unstarted += 1
+                left += self.est(it.case)
                 if it.gid in seen or it.gid not in self.group_need:
                     continue
                 seen.add(it.gid)
@@ -533,7 +540,7 @@ class Fleet:
                 n += size
             if n < self.min_batch and not slower:
                 continue
-            weight = unstarted / other.server.speed  # time the victim would need for it
+            weight = left / other.server.speed  # time the victim would need for it
             if best is None or weight > best[0]:
                 best = (weight, other, take)
         return None if best is None else (best[1], best[2])
@@ -626,7 +633,7 @@ class Fleet:
             ]
             if not options:
                 return False
-            target = min(options, key=lambda l: len(self.queues[l.name]) / l.server.speed)
+            target = min(options, key=lambda l: self.est.of(i.case for i in self.queues[l.name]) / l.server.speed)
             # its own one-case group now, which another lane may steal
             item.gid = f"{item.gid}+{target.name}"
             self.group_need[item.gid] = (item.level, group)
@@ -727,22 +734,37 @@ class Fleet:
         try:
             self.lane_state(lane, status="exclusive" if excl else "running")
 
-            def on_line(line, cases=cases):
-                m = CASE_RE.match(line)
-                if m and m.group(1) in cases:
+            # a case's time runs from its REGRESSION-CASE line to the next one, or to the session's end
+            secs, live = {}, [None, 0.0]
+
+            def on_line(out, cases=cases):
+                for line in out.split("\n"):  # one rendered event may be a whole message
+                    m = CASE_RE.match(line)
+                    if not m or m.group(1) not in cases or m.group(1) == live[0]:
+                        continue
+                    now = time.time()
+                    if live[0]:
+                        secs[live[0]] = secs.get(live[0], 0.0) + now - live[1]
+                    live[:] = [m.group(1), now]
                     self.lane_state(lane, live_case=m.group(1))
                     self.case_state(m.group(1), outcome="running")
 
             text, cost, last = self.run_session(lane, "chunk", level, reg.chunk_instructions(cases), label, on_line)
+            if live[0]:
+                secs[live[0]] = secs.get(live[0], 0.0) + time.time() - live[1]
         finally:
             s.gate.leave(excl)
-        self.settle(lane, batch, text, cost, last)
+        self.settle(lane, batch, text, cost, last, secs)
         if outcome.aborted(last):
             self.server_down(lane.server.name)
             return True
         return False
 
-    def settle(self, lane, batch, text, cost, last):
+    def settle(self, lane, batch, text, cost, last, secs=None):
+        """Each case's outcome from the session's REGRESSION-RESULT lines, and
+        for a pass or fail its time (<secs>), which later plans weigh it by
+        (harness/durations.py)."""
+        secs = secs or {}
         results = {c: (o, issue) for c, o, issue in RESULT_RE.findall(text)}
         skipped = set(SKIP_RE.findall(text))
         died = outcome.died(last)
@@ -759,7 +781,10 @@ class Fleet:
                     continue
             if o is None:
                 o = "not run" if died else "unreported"
-            self.case_state(it.case, outcome=o, **({"issue": issue} if issue else {}))
+            extra = {"issue": issue} if issue else {}
+            if o in durations.OUTCOMES and it.case in secs:
+                extra["secs"] = round(secs[it.case], 1)
+            self.case_state(it.case, outcome=o, **extra)
         self.state.update(
             lambda d: [
                 l.update(sessions=l["sessions"] + 1, cost=round(l["cost"] + cost, 4))
@@ -924,12 +949,15 @@ def main(argv=None):
         print(f.summary)
     if a.plan:
         lanes, plans = make_lanes(profile, sf), []
+        est = durations.Estimates.load(FLEET_DIR / "runs", profile)
+        if not a.json:
+            print(f"case times: {est.known} case(s) measured in {FLEET_DIR / 'runs'}; others {est.default:.0f}s")
         for lv in levels:
             servers = [n for n in names if len(levels) == 1 or lv in profile.server(n).regression_all]
-            p = plan_level(profile, lv, sf, sidecar, servers, lanes)
+            p = plan_level(profile, lv, sf, sidecar, servers, lanes, est)
             plans.append(p)
             if not a.json:
-                print(render(p, suite.workspace_for_suite_file(p.suite_file)))
+                print(render(p, suite.workspace_for_suite_file(p.suite_file), timed=est.known > 0))
         if a.json:
             print(
                 json.dumps(
