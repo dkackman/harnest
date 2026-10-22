@@ -996,7 +996,6 @@ cleanup: `delete_output(job_id=<G's run>, acknowledged_cost=true)`.
 metrics: none.
 
 ### SE-F050 — `remove_object`'s `model_name`/`weight_name` hold the repo-id and weight-file boundary
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 #956 adds a task, `remove_object`, that loads LaMa weights (default `michaelgold/big-lama`,
 `big-lama.safetensors`, pinned to a revision) and takes an optional `model_name` and

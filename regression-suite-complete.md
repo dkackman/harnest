@@ -13922,7 +13922,6 @@ cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset
 metrics: none.
 
 ### C-F510 — `get_task("remove_object")` describes the eraser: its five arguments and their defaults
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Free (no GPU). #956 adds a task, `remove_object`, that fills a masked region from its surroundings
 with LaMa. It is not a generative repaint. Call `get_task("remove_object")`, and `list_tasks`.
@@ -13940,7 +13939,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F511 — `segment` → `remove_object` erases the picture on the wall, keeps the size, and leaves the rest of the photo identical
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Input: the shared fixture `asset:qa-cast/priya-portrait.jpg`
 (768×768). A small framed picture hangs on the brick wall, upper left of the head (about x 260–370,
@@ -13975,7 +13973,6 @@ cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset
 metrics: none.
 
 ### C-F512 — `remove_object` with an all-black mask returns the input unchanged, warns, and loads no model
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`, fixture `asset:qa-cast/priya-portrait.jpg`. The empty mask comes
 from `segment` with a prompt for something absent and a high threshold. Workflow W is C-F511's,
@@ -13996,7 +13993,6 @@ cleanup: `delete_output(job_id=…)`. Never delete the shared asset.
 metrics: none.
 
 ### C-F513 — `remove_object` takes a mask of a different size than the image, and `dilate: 0` is a valid boundary
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`, fixture `asset:qa-cast/priya-portrait.jpg`. The plan resizes the
 mask to the image (nearest) before use. Make the mask 512×512 by putting a `resize_rescale` step
@@ -14019,7 +14015,6 @@ cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset
 metrics: none.
 
 ### C-F514 — `remove_object` refuses a bad `dilate`, a pickle weight and a local model path at validate
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Carrier: C-F511's W. Change only the `erase` step's arguments, one probe per
 `validate_workflow` call:
@@ -14042,7 +14037,6 @@ cleanup: none (nothing runs). If a probe did queue a job, `cancel_job` and `dele
 metrics: none.
 
 ### C-F515 — `remove_object` over `video_frames` keeps the frame count, fps and size
-pending: #973
 source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Inputs: `asset:qa-cast/ep6-cold-open.mp4` (124 frames, 24 fps,
 960×544) and a still mask, C-F511's `segment` mask of `asset:qa-cast/priya-portrait.jpg`
