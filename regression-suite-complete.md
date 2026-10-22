@@ -13921,4 +13921,213 @@ also a finding if run 2 releases scripted words as unscripted. Other findings, s
 cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset.
 metrics: none.
 
+### C-F510 — `get_task("remove_object")` describes the eraser: its five arguments and their defaults
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Free (no GPU). #956 adds a task, `remove_object`, that fills a masked region from its surroundings
+with LaMa. It is not a generative repaint. Call `get_task("remove_object")`, and `list_tasks`.
+expected:
+- `list_tasks` lists `remove_object`.
+- `get_task` lists `image` (required), `mask_image` (required), `dilate` (default `8`),
+  `model_name` (default `michaelgold/big-lama`) and `weight_name` (default
+  `big-lama.safetensors`). There is no `device` argument a caller must pass: the task takes the
+  job's device.
+- Its summary or the `mask_image` description says white marks the region to fill, the same
+  polarity as `segment`'s output, and says the task removes rather than repaints.
+It is a **finding** if the task is missing, an argument or default differs, or nothing says which
+mask colour is filled.
+cleanup: none.
+metrics: none.
+
+### C-F511 — `segment` → `remove_object` erases the picture on the wall, keeps the size, and leaves the rest of the photo identical
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Input: the shared fixture `asset:qa-cast/priya-portrait.jpg`
+(768×768). A small framed picture hangs on the brick wall, upper left of the head (about x 260–370,
+y 100–260). A green couch sits at the bottom left, far from it. If the asset is gone, record the
+case as not run. That is not a pass. `segment`'s mask is used as it comes, with no `invert`: the
+plan says the two share polarity. Workflow W:
+`{"id": "c-f511", "steps": [
+ {"name": "mask", "task": {"command": "segment", "arguments": {"image": "asset:qa-cast/priya-portrait.jpg", "prompt": "picture frame"}}, "result": {"content_type": "image/png", "file_base_name": "mask"}},
+ {"name": "erase", "task": {"command": "remove_object", "arguments": {"image": "asset:qa-cast/priya-portrait.jpg", "mask_image": "previous_result:mask"}}, "result": {"content_type": "image/png", "file_base_name": "erased"}}]}`
+1. `validate_workflow` on W: clean.
+2. `run_workflow(workflow=W, acknowledged_cost=true, wait_seconds=55)`, then `get_job`.
+3. Setup check: `get_output_image` on `mask`. It is white over the picture frame and black
+   elsewhere. If it isn't (segment missed the frame), that is a setup failure: record the case as
+   not run, not a finding against `remove_object`.
+4. `get_output_image` on `erased`, and `get_gallery_metadata` on it.
+5. `compare_outputs(names=["asset:qa-cast/priya-portrait.jpg", "<erased>"], crop=[0, 540, 240,
+   228])` (the couch, outside the mask), and the same call with `crop=[240, 80, 160, 200]` (the
+   frame).
+6. Run W again (warm), with `get_job_events` on it.
+expected:
+- Both runs succeed. `erased` is 768×768, the input's size.
+- The picture frame is gone: the brick wall continues across where it hung, with no frame edge,
+  no smear of the frame's colour and no new object painted in. The man, his head and hair are
+  untouched.
+- The couch crop reports `identical` (pixels outside the dilated mask are copied from the input,
+  not re-encoded through the model). The frame crop does not report `identical`.
+- The warm run's `erase` step completes in seconds (under 15 s), not the tens of seconds a
+  diffusion inpaint takes.
+It is a **finding** if the output size differs, the frame survives or is replaced by a new object,
+the couch crop isn't `identical`, or the mask had to be inverted to remove the frame.
+cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset.
+metrics: none.
+
+### C-F512 — `remove_object` with an all-black mask returns the input unchanged, warns, and loads no model
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`, fixture `asset:qa-cast/priya-portrait.jpg`. The empty mask comes
+from `segment` with a prompt for something absent and a high threshold. Workflow W is C-F511's,
+with the `mask` step's arguments changed to `"prompt": "giraffe", "threshold": 0.95`.
+1. `run_workflow(workflow=W, acknowledged_cost=true, wait_seconds=55)`.
+2. Setup check: `get_output_image` on `mask` is all black. If segment found something, record the
+   case as not run. That is a setup failure, not a finding.
+3. `get_job_events` on the job. `compare_outputs(names=["asset:qa-cast/priya-portrait.jpg",
+   "<erased>"])` with no crop.
+expected:
+- The job succeeds. It does not fail on an empty mask.
+- `compare_outputs` reports `identical` over the whole image, and the size is 768×768.
+- The job events carry a warning that the mask was empty and the input was returned unchanged.
+- The events show no LaMa model load or download for the `erase` step.
+It is a **finding** if the job fails, the output differs from the input anywhere, there is no
+warning, or the model loads anyway.
+cleanup: `delete_output(job_id=…)`. Never delete the shared asset.
+metrics: none.
+
+### C-F513 — `remove_object` takes a mask of a different size than the image, and `dilate: 0` is a valid boundary
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`, fixture `asset:qa-cast/priya-portrait.jpg`. The plan resizes the
+mask to the image (nearest) before use. Make the mask 512×512 by putting a `resize_rescale` step
+(check its argument names with `get_task("resize_rescale")`) between C-F511's `mask` and `erase`
+steps, with `erase`'s `mask_image` pointing at the resized result. Keep a `result` on the resize
+step so its size can be read.
+1. Run it (`acknowledged_cost=true, wait_seconds=55`). `get_gallery_metadata` on the resized mask
+   and on `erased`.
+2. Run C-F511's W unchanged except `"dilate": 0` on `erase`.
+3. `compare_outputs(names=["asset:qa-cast/priya-portrait.jpg", "<run 2 erased>"], crop=[0, 540,
+   240, 228])`.
+expected:
+- Run 1: the resized mask is 512×512. The job succeeds, `erased` is 768×768, and the picture
+  frame is gone as in C-F511 (`get_output_image`).
+- Run 2: `dilate: 0` validates and runs. The output is 768×768, and the couch crop is
+  `identical`.
+It is a **finding** if a mask of another size is refused or crashes the step, the output takes the
+mask's size, or `dilate: 0` is refused.
+cleanup: `delete_output(job_id=…)` on both runs. Never delete the shared asset.
+metrics: none.
+
+### C-F514 — `remove_object` refuses a bad `dilate`, a pickle weight and a local model path at validate
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Carrier: C-F511's W. Change only the `erase` step's arguments, one probe per
+`validate_workflow` call:
+- (a) `"dilate": -1`; `"dilate": 2.5`;
+- (b) `"weight_name"` = `big-lama.pt`, `big-lama.ckpt`, `big-lama.bin`;
+- (c) `"model_name"` = `/tmp/lama`, `./weights`.
+Controls: W as written, and W with `"dilate": 8, "model_name": "michaelgold/big-lama",
+"weight_name": "big-lama.safetensors"` spelled out.
+Then pass one (a), one (b) and one (c) probe to `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Both controls validate clean and quote a cost.
+- Every probe is refused at validate. (a) is refused at `steps[…].task.arguments.dilate` as not a
+  whole non-negative number. (b) is refused at `weight_name` as not `.safetensors`. (c) is refused
+  at `model_name` as a local path, not a Hub repo id.
+- `run_workflow` on each refuses the same way and queues no job (`list_jobs` gains nothing).
+- No error echoes a resolved server path.
+It is a **finding** if any probe validates, a refusal names the wrong field, or a probe queues a
+job. A pickle weight that loads is a hole: see SE-F050.
+cleanup: none (nothing runs). If a probe did queue a job, `cancel_job` and `delete_output` it.
+metrics: none.
+
+### C-F515 — `remove_object` over `video_frames` keeps the frame count, fps and size
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Inputs: `asset:qa-cast/ep6-cold-open.mp4` (124 frames, 24 fps,
+960×544) and a still mask, C-F511's `segment` mask of `asset:qa-cast/priya-portrait.jpg`
+(768×768, so the task also resizes it). The task is `per_frame`, so one still mask applies to
+every frame. Workflow:
+`{"id": "c-f515", "steps": [
+ {"name": "mask", "task": {"command": "segment", "arguments": {"image": "asset:qa-cast/priya-portrait.jpg", "prompt": "picture frame"}}, "result": {"content_type": "image/png", "file_base_name": "mask"}},
+ {"name": "frames", "task": {"command": "video_frames", "arguments": {"video": "asset:qa-cast/ep6-cold-open.mp4"}}},
+ {"name": "erase", "task": {"command": "remove_object", "arguments": {"image": "previous_result:frames", "mask_image": "previous_result:mask"}}, "result": {"content_type": "video/mp4", "file_base_name": "erased"}}]}`
+If `validate_workflow` asks for an fps on the video result, give `24`, the source's rate.
+1. `validate_workflow`, then `run_workflow(..., acknowledged_cost=true, wait_seconds=55)`
+   (`wait_for_job` if still running).
+2. `get_gallery_metadata` on `erased`, and `get_output_frames` on it (a few frames).
+expected:
+- The job succeeds. `erased` has 124 frames at 24 fps, 960×544.
+- The frames are the source's shot with the masked region filled. Nothing outside it is changed,
+  re-coloured or shifted.
+It is a **finding** if the frame count, fps or size differs from the source, the job refuses a
+frames array, or only the first frame is processed.
+cleanup: `delete_output(job_id=…)`. Never delete the shared assets.
+metrics: none.
+
+### C-F516 — the catalog lists `templates/remove-object` and `templates/segment-and-remove` as removal, and both validate with a cost
+pending: #974
+source: tester, spec for #974 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Free (no GPU).
+1. `list_workflows(shape="image-edit")`.
+2. `get_workflow("templates/remove-object")` and `get_workflow("templates/segment-and-remove")`.
+3. `validate_workflow` on each by path, with `arguments` it needs: `remove-object` with
+   `image="asset:qa-cast/priya-portrait.jpg"` and a `mask_image` (any workspace image, e.g. the
+   kept mask from C-F511, or the same asset); `segment-and-remove` with
+   `image="asset:qa-cast/priya-portrait.jpg", object="picture frame"`.
+expected:
+- Both templates are listed under `image-edit`. Each description says it removes or erases an
+  object and fills from the surroundings. Neither says replace or repaint.
+- `remove-object`'s variables are `image`, `mask_image` and `dilate`. `segment-and-remove`'s are
+  `image`, `object` and `dilate`. `dilate`'s default is 8 in both.
+- Both validate clean, and `plan.estimate` quotes a cost for each (the template carries a cost
+  block).
+It is a **finding** if either template is missing from the shape, its variables differ, its
+description reads as a replace, or validate reports no cost.
+cleanup: none.
+metrics: none.
+
+### C-F517 — `templates/segment-and-remove` takes the cup off the docs beach photo cleanly
+pending: #974
+source: tester, spec for #974 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. The input is the plan's "docs beach photo" with a cup in it. The
+case uses the template's shipped default `image`; if the template ships none, use the URL its
+description or the plan names, and if neither names one, record the case as not run.
+1. `run_workflow(workflow_path="templates/segment-and-remove", arguments={"object": "cup"},
+   acknowledged_cost=true, wait_seconds=55)`.
+2. `get_output_image` on the final output, and on its mask if the template keeps one.
+   `get_gallery_metadata` on the output and the input's size from the input.
+expected:
+- The job succeeds. The output is the input's size.
+- The cup is gone. Sand, towel or whatever surrounds it continues through the region, with no new
+  object, no cup outline and no blur beyond the cup's footprint. The rest of the photo is
+  unchanged.
+- The run report attaches the output image.
+It is a **finding** if the cup survives, something new is painted in, or the output's size
+changes.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F518 — the docs route removal to `remove_object`, not to Fill or the inpaint templates
+pending: #974
+source: tester, spec for #974 from #956's plan v2 (claude-opus-5-5 via anthropic)
+Free (no GPU).
+1. `get_workflow("models/z-image-inpaint")`: read its description.
+2. `get_guide("workflows")` (index), then the section *Erasing versus repainting a masked region*.
+3. `get_workflow("templates/segment-and-inpaint")` and `get_workflow("templates/inpaint")`: read
+   their descriptions.
+expected:
+- `models/z-image-inpaint`'s description names `remove-object` (or `remove_object`) for removing
+  an object, and no longer names FLUX Fill for removal.
+- The guide index lists *Erasing versus repainting a masked region*. The section says
+  `remove_object` erases (fills from surroundings, no prompt) and the inpaint pipelines repaint,
+  and says when to use each.
+- `templates/segment-and-inpaint`'s description names `remove_object` (or
+  `templates/segment-and-remove`) for removal.
+- `templates/inpaint`'s description says it is not the removal route.
+It is a **finding** if any of the four still points removal at Fill or an inpaint template, or the
+guide section is missing.
+cleanup: none.
+metrics: none.
+
 ## Performance

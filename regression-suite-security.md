@@ -995,6 +995,45 @@ gallery or asset library, or discloses a server path or content, is a hole: send
 cleanup: `delete_output(job_id=<G's run>, acknowledged_cost=true)`.
 metrics: none.
 
+### SE-F050 — `remove_object`'s `model_name`/`weight_name` hold the repo-id and weight-file boundary
+pending: #973
+source: tester, spec for #973 from #956's plan v2 (claude-opus-5-5 via anthropic)
+#956 adds a task, `remove_object`, that loads LaMa weights (default `michaelgold/big-lama`,
+`big-lama.safetensors`, pinned to a revision) and takes an optional `model_name` and
+`weight_name`. The plan puts it in `SAFETENSORS_ONLY_COMMANDS` and checks both at validate and
+again in the loader. These arguments must hold what SE-F039 holds, and must not become a way to
+unpickle a file or fetch from an arbitrary host.
+
+Carrier, inline in workspace `regression-security`:
+`{"id": "se-f050", "steps": [{"name": "erase", "task": {"command": "remove_object", "arguments":
+{"image": "asset:qa-cast/priya-portrait.jpg", "mask_image": "asset:qa-cast/priya-portrait.jpg"}},
+"result": {"content_type": "image/png"}}]}`. Only `erase`'s `model_name`/`weight_name` change.
+
+Probes, all through `validate_workflow`:
+- (a) `model_name` = each of these: `../../etc`, `/etc/passwd`, `/tmp/lama`, `./weights`,
+  `~/lama`, `http://127.0.0.1:8765/`, `org/name/../../x`, `https://evil.example.com/model`;
+- (b) `weight_name` = each of these: `../../../../etc/passwd`, `/etc/passwd`,
+  `sub/../../x.safetensors`;
+- (c) `weight_name` = a non-safetensors file: `big-lama.pt`, `big-lama.ckpt`, `model.bin`,
+  `big-lama.pth`.
+
+Pass one probe from each group to `run_workflow(..., acknowledged_cost=true, wait_seconds=55)` as
+well. For any probe that validates clean, run it and read `get_job` and `get_job_events`.
+expected:
+- (a) is refused at validate, at `steps[…].task.arguments.model_name`, as not a Hugging Face repo
+  id. No download entry appears in `list_downloads`.
+- (b) is refused as a path, never resolved against the server's filesystem.
+- (c) is refused by name: only `.safetensors` is accepted.
+- `run_workflow` refuses each the same way and queues no job.
+- No error echoes a resolved server path.
+- The control (both omitted) validates clean.
+It is a **finding** if any probe validates or queues a job, or a non-safetensors weight is fetched
+or loaded (`get_job_events` shows a fetch or load for it, or `list_downloads` gains an entry). A
+load of a pickle-format weight, a fetch from a non-Hub host, or a read of a local path is a hole:
+send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything that appeared.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must
