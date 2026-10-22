@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from harness import facts
+from harness import durations, facts
 from harness import requirements as r
 from harness.drivers import fleet
 from harness.profile import Server, load
@@ -266,6 +266,60 @@ class Plan(unittest.TestCase):
         self.assertNotIn("minid", msg)
 
 
+class Durations(unittest.TestCase):
+    def runs(self, *runs):
+        import json
+
+        d = tempfile.TemporaryDirectory()
+        self.addCleanup(d.cleanup)
+        for i, cases in enumerate(runs):
+            Path(d.name, f"2026101{i}-000000.json").write_text(json.dumps({"cases": cases}))
+        return d.name
+
+    def test_readings_are_primary_lane_seconds_from_cases_that_ran(self):
+        runs = self.runs(
+            {
+                "A": {"server": "lem", "outcome": "pass", "secs": 60},
+                "B": {"server": "mac", "outcome": "fail", "secs": 400},  # a 0.25 server: 100 on lem
+                "C": {"server": "lem", "outcome": "skip", "secs": 5},  # took no case time
+                "D": {"server": "gone", "outcome": "pass", "secs": 9},  # can't be normalised
+                "E": {"server": "lem", "outcome": "pass"},  # an older run: no time kept
+            },
+            {"A": {"server": "lem", "outcome": "pass", "secs": 90}},
+        )
+        got = durations.readings(runs, {"lem": 1.0, "mac": 0.25})
+        self.assertEqual({"A": [60, 90], "B": [100.0]}, got)
+
+    def test_an_estimate_is_the_median_of_recent_readings(self):
+        e = durations.Estimates({"A": [1000, 10, 20, 30, 40, 50], "B": [100]})
+        self.assertEqual((30, 100), (e("A"), e("B")), "the oldest of six readings drops out")
+        self.assertEqual(65, e("unmeasured"), "a case never measured: the median of those that were")
+        self.assertEqual(1.0, durations.Estimates()("A"), "no history: every case the same")
+
+
+class Weights(unittest.TestCase):
+    def lanes2(self):
+        lem = srv("lem", primary=True, lanes=2)
+        return [fleet.Lane(server=lem, slot=i, facts=fx("lem")) for i in (1, 2)]
+
+    def test_groups_are_weighed_by_time(self):
+        """One long render and five quick probes: by count the render's lane
+        also gets two probes; by time it gets none."""
+        with tempfile.TemporaryDirectory() as d:
+            suite_file = Path(d, "regression-suite-x.md")
+            suite_file.write_text("# suite\n" + "".join(f"### S-F00{n} — case\nsteps\n\n" for n in range(1, 7)))
+            b = r.case_blocks(suite_file)
+            side = {c: {"load": "none", "hash": r.block_hash(b[c])} for c in b}
+            profile = load()
+            profile.levels = [type(profile.levels[0])(name="x", file=str(suite_file))]
+            sf = {"lem": fx("lem", workers=2)}
+            est = durations.Estimates({"S-F001": [600], **{f"S-F00{n}": [30] for n in range(2, 7)}})
+            p = fleet.plan_level(profile, "x", sf, side, ["lem"], self.lanes2(), est)
+            by_lane = [[c for _, g in l.groups for c in g.cases] for l in p.lanes]
+            self.assertIn(["S-F001"], by_lane, "the render has a lane to itself")
+            self.assertEqual((600, 150), tuple(sorted((l.load for l in p.lanes), reverse=True)))
+
+
 class Running(unittest.TestCase):
     def test_the_gate_runs_an_exclusive_session_alone(self):
         import threading
@@ -304,6 +358,7 @@ class Running(unittest.TestCase):
         import threading
 
         f.mu, f.per, f.started_gids = threading.RLock(), 3, set()
+        f.est = durations.Estimates()
         f.cv, f.busy, f.idle, f.min_batch = threading.Condition(f.mu), 0, 0, 1
         lane = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
         f.lanes = [lane]
@@ -342,6 +397,7 @@ class Running(unittest.TestCase):
         f.servers = {n: type("S", (), {"down": False})() for n in ("lem", "mac")}
         f.queues = {l.name: [] for l in f.lanes}
         f.case_need, f.group_need, f.ref = {}, {}, {}
+        f.est = durations.Estimates()  # no history: every case the same
         f.case_state = f.event = lambda *a, **k: None
         for name, cases in (queues or {}).items():
             for c in cases:
@@ -362,6 +418,13 @@ class Running(unittest.TestCase):
         owner = lem1 if f.queues[lem1.name] else lem2
         thief = lem2 if owner is lem1 else lem1
         self.assertEqual(1, len(f._take(thief) or []), "the other lem lane steals one")
+
+    def test_requeue_goes_to_the_lane_with_the_least_time_left(self):
+        f, lem1, lem2, mac = self.fleet3(min_batch=1, queues={"lem-1": ["S-F001"], "lem-2": ["S-F002", "S-F003"]})
+        f.est = durations.Estimates({"S-F001": [900], "S-F002": [10], "S-F003": [10]})
+        f.case_need["S-F009"] = r.Need(load="none", known=True)
+        self.assertTrue(f.requeue(fleet.Item(level="smoke", case="S-F009", gid="smoke:S-F009", exclusive=False), mac))
+        self.assertEqual("S-F009", f.queues["lem-2"][-1].case, "two short cases weigh less than one long one")
 
     def test_steals_are_worth_a_session(self):
         ids = [f"S-F{n:03d}" for n in range(1, 8)]

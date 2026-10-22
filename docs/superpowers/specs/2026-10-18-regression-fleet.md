@@ -68,7 +68,14 @@ A case may run on a server when:
 5. every asset is in that server's library, and no case of the group is held back there.
 
 Groups are placed longest first, each on the eligible lane that would finish it soonest
-(assigned work / `speed`).
+(assigned work / `speed`). Work is time, not cases: each finished run kept in
+`logs/fleet/runs/` records every pass's and fail's `secs` (its `REGRESSION-CASE` line to
+the next, or to the session's end) and server, and `harness/durations.py` makes a case's
+estimate the median of its last five readings, normalised to the primary by `speed`. An
+unmeasured case weighs the median of the measured ones, so with no history the plan is the
+count-based one. Steals (which victim has the most time left) and re-queues (the lane with
+the least) use the same estimates; batch sizes stay in cases, since a session's setup cost
+is per session. `--plan` prints each lane's estimated minutes once any case is measured.
 
 Cases linked by a `cleanup:` or `setup:` line naming another case ID in the same suite (one
 holding an output for a later case) form a dependency group, which runs on one lane, in
