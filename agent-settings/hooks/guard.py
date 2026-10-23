@@ -166,7 +166,7 @@ def segments(cmd):
     except ValueError:  # unbalanced quote: fall back to a plain split, quote characters dropped
         global UNBALANCED
         UNBALANCED = True
-        parts = re.split(r"(?:&&|\|\||[;|\n])", cmd)
+        parts = re.split(r"[;&|()<>\n]", cmd)
         return [w for w in ([x.replace("'", "").replace('"', "") for x in part.split()] for part in parts) if w]
     if cur:
         out.append(cur)
@@ -722,7 +722,7 @@ def main():
         return
     cmd = data.get("tool_input", {}).get("command", "")
     segs = segments(cmd)
-    if UNBALANCED and any(w and w[0] == "gh" for w in segs):
+    if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", cmd):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:
         if role == "implementer" and server:

@@ -44,6 +44,10 @@ row 2 lead "" $none 'gh issue comment 5 --body "$(cat <<EOF
 EOF
 )"'
 row 0 consumer "" $none 'echo it'"'"'s fine'
+row 2 consumer "" $none 'gh issue comment 5 --body it'"'"'s'
+row 2 lead "" $none '(gh issue edit 5 --add-label status:plan-approved) # it'"'"'s'
+row 2 lead "" $none 'echo a & gh issue edit 5 --add-label status:plan-approved # it'"'"'s'
+row 2 lead "" $none '/usr/bin/gh issue edit 5 --add-label "bug, status:plan-approved" # it'"'"'s'
 row 0 consumer "" $none 'gh issue create --title "S-F001 fails" --label owner:implementer,regression'
 row 0 consumer "" $none './scripts/file-advisory.sh --summary x --description-file y --severity high'
 printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
