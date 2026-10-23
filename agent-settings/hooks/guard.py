@@ -701,6 +701,78 @@ def target_file_rule(path, cwd, target, role):
         )
 
 
+SHELL_PREFIXES = ("do", "then", "else", "{", "!", "time", "command", "env", "exec", "nohup")
+
+
+def command_words(words):
+    """The words from the real command on: leading NAME=value assignments and
+    shell keywords (do, then, ...) are not the command."""
+    i = 0
+    while i < len(words) and (words[i] in SHELL_PREFIXES or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[i])):
+        i += 1
+    return words[i:]
+
+
+def wrapper_rule(words):
+    """A shell wrapper (bash -c, eval, xargs) hands gh or a push to a shell
+    the label and push rules never see."""
+    name = os.path.basename(words[0])
+    wraps = (name in ("bash", "sh", "zsh") and "-c" in words[1:]) or name in ("eval", "xargs")
+    rest = " ".join(words[1:])
+    if wraps and (re.search(r"(?<![\w.-])gh(?![\w.-])", rest) or re.search(r"\bgit\s+push\b", rest)):
+        deny(
+            "%s runs gh or git push where the guard cannot read it: run the gh or git command directly, "
+            "one issue per call." % name
+        )
+
+
+# pulls/N/merge is pr_merge_base's to judge
+API_ALLOWED = re.compile(r"repos/[^/]+/[^/]+/(issues/(\d+/comments|comments/\d+)|pulls/\d+/merge)")
+API_FIELD_FLAGS = ("-f", "-F", "--field", "--raw-field", "--input")
+
+
+def implementer_api_rule(words):
+    """gh api is a read for these roles; a write (any method but GET, or any
+    field) bypasses every gh issue rule. The lead's plan-comment PATCH is the
+    one form its prompt allows."""
+    if len(words) < 3 or os.path.basename(words[0]) != "gh" or words[1] != "api":
+        return
+    args = words[2:]
+    method = "GET"
+    for i, w in enumerate(args):
+        if w in ("-X", "--method") and i + 1 < len(args):
+            method = args[i + 1]
+        elif w.startswith("--method="):
+            method = w[9:]
+        elif w.startswith("-X") and len(w) > 2:
+            method = w[2:]
+    fields = any(
+        w in API_FIELD_FLAGS or (w.startswith(("--field=", "--raw-field=", "--input=", "-f", "-F"))) for w in args
+    )
+    if method.upper() == "GET" and not fields:
+        return
+    paths = [w.strip("/") for w in args if not w.startswith("-")]
+    if any(API_ALLOWED.fullmatch(p) for p in paths):
+        return
+    deny(
+        "gh api writes (a method other than GET, or -f/-F/--field/--input) go round the gh issue rules: "
+        "use gh issue edit/comment/close. The one gh api write is the lead's plan-comment PATCH "
+        "(repos/<o>/<r>/issues/comments/<id>)."
+    )
+
+
+def consumer_git_rule(words):
+    """The consumer is source-blind: no repository command pointed at another tree."""
+    if os.path.basename(words[0]) != "git":
+        return
+    for w in words[1:]:
+        if w in ("--git-dir", "--work-tree", "-C", "--no-index") or w.startswith(("--git-dir=", "--work-tree=")):
+            deny(
+                "the consumer reads no source: --git-dir/--work-tree/-C/--no-index reach another tree. "
+                "Work through the dw tools and the issue text."
+            )
+
+
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
 
 
@@ -731,6 +803,15 @@ def main():
     if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", cmd)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:
+        words = command_words(words)
+        if not words:
+            continue
+        if role == "consumer":
+            consumer_git_rule(words)
+        if role in ("implementer", "lead"):
+            implementer_api_rule(words)
+        if role == "implementer":
+            wrapper_rule(words)
         if role == "implementer" and server:
             lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
             while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
