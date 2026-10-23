@@ -347,3 +347,18 @@ row 2 implementer "" $none 'echo 5 | xargs gh issue close'
 row 2 implementer "" $none 'FOO=1 gh issue edit 5 --add-label status:verified'
 row 2 consumer "" $none 'FOO=1 gh issue delete 5 --yes'
 row 2 lead "" $none 'env gh issue edit 5 --add-label status:plan-approved'
+# fix round 1: the api endpoint is the one positional; markers on api comment writes; full prefix normalisation
+for r in implementer lead; do
+  row 2 $r "" $none 'gh api -X PATCH repos/o/r/issues/5 -f state=closed --jq repos/o/r/issues/comments/1'
+  row 2 $r "" $none 'gh api repos/o/r/issues/5/comments -f body="<!-- harnest:release-gate review abc pass -->"'
+  row 2 $r "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 -f body="<!-- harnest:release-gate ci abc pass -->"'
+done
+row 2 implementer "" $none 'gh api repos/o/r/issues/5/labels -f labels[]=status:verified -t repos/o/r/issues/5/comments'
+row 0 lead "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 -f body="plan v2"'
+row 2 implementer "" $none 'env -i gh issue edit 5 --add-label status:verified'
+row 2 implementer "" $none 'time -p gh issue close 5 --reason completed'
+row 2 implementer "" $none 'if gh issue close 5 --reason completed; then :; fi'
+row 2 implementer "" $none 'while gh issue edit 5 --add-label status:verified; do :; done'
+row 2 implementer "" $none 'bash -lc "gh issue close 5"'
+row 2 implementer "" $none 'sh -ec "gh issue close 5"'
+row 2 lead "" $none 'bash -c "gh issue edit 5 --add-label status:plan-approved"'

@@ -701,15 +701,36 @@ def target_file_rule(path, cwd, target, role):
         )
 
 
-SHELL_PREFIXES = ("do", "then", "else", "{", "!", "time", "command", "env", "exec", "nohup")
+SHELL_KEYWORDS = ("do", "then", "else", "elif", "if", "while", "until", "{", "!", "nohup")
+# commands that run another command, and the options of theirs that take a value
+PREFIX_COMMANDS = {
+    "env": ("-u", "-C", "-S", "--unset", "--chdir", "--split-string"),
+    "time": (),
+    "command": (),
+    "exec": ("-a",),
+    "nice": ("-n", "--adjustment"),
+    "timeout": ("-s", "-k", "--signal", "--kill-after"),
+}
 
 
 def command_words(words):
-    """The words from the real command on: leading NAME=value assignments and
-    shell keywords (do, then, ...) are not the command."""
+    """The words from the real command on: leading NAME=value assignments,
+    shell keywords (do, if, while, ...) and prefix commands with their options
+    (env -i, time -p, exec -a NAME, ...) are not the command."""
     i = 0
-    while i < len(words) and (words[i] in SHELL_PREFIXES or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[i])):
-        i += 1
+    while i < len(words):
+        w = words[i]
+        name = os.path.basename(w)
+        if w in SHELL_KEYWORDS or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", w):
+            i += 1
+        elif name in PREFIX_COMMANDS:
+            i += 1
+            while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
+                i += 2 if words[i] in PREFIX_COMMANDS[name] else 1
+            if name == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
+                i += 1
+        else:
+            break
     return words[i:]
 
 
@@ -717,7 +738,8 @@ def wrapper_rule(words):
     """A shell wrapper (bash -c, eval, xargs) hands gh or a push to a shell
     the label and push rules never see."""
     name = os.path.basename(words[0])
-    wraps = (name in ("bash", "sh", "zsh") and "-c" in words[1:]) or name in ("eval", "xargs")
+    has_c = any(re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", w) for w in words[1:])
+    wraps = (name in ("bash", "sh", "zsh") and has_c) or name in ("eval", "xargs")
     rest = " ".join(words[1:])
     if wraps and (re.search(r"(?<![\w.-])gh(?![\w.-])", rest) or re.search(r"\bgit\s+push\b", rest)):
         deny(
@@ -726,33 +748,78 @@ def wrapper_rule(words):
         )
 
 
-# pulls/N/merge is pr_merge_base's to judge
-API_ALLOWED = re.compile(r"repos/[^/]+/[^/]+/(issues/(\d+/comments|comments/\d+)|pulls/\d+/merge)")
-API_FIELD_FLAGS = ("-f", "-F", "--field", "--raw-field", "--input")
+# pulls/N/merge is pr_merge_base's to judge; a comment edit is the lead's plan PATCH
+API_MERGE = re.compile(r"repos/[^/]+/[^/]+/pulls/\d+/merge")
+API_COMMENT_EDIT = re.compile(r"repos/[^/]+/[^/]+/issues/comments/\d+")
+API_VALUE_FLAGS = ("--method", "--header", "--field", "--raw-field", "--template", "--jq", "--hostname", "--cache")
+API_VALUE_FLAGS += ("--input", "--preview", "-X", "-H", "-f", "-F", "-t", "-q", "-p")
+API_FIELD_FLAGS = ("--field", "--raw-field", "-f", "-F")
+
+
+def api_parse(args):
+    """(method, field values, input files, positional words) of gh api's arguments."""
+    method, fields, inputs, pos = "GET", [], [], []
+    i = 0
+    while i < len(args):
+        w = args[i]
+        flag, val = None, None
+        if w.startswith("--") and "=" in w:
+            flag, val = w.split("=", 1)
+        elif w.startswith("--") or (w.startswith("-") and len(w) == 2):
+            flag = w
+            if flag in API_VALUE_FLAGS:
+                i += 1
+                val = args[i] if i < len(args) else ""
+        elif w.startswith("-") and len(w) > 2 and w[:2] in API_VALUE_FLAGS:
+            flag, val = w[:2], w[2:]
+        else:
+            pos.append(w)
+        if flag in ("-X", "--method"):
+            method = val
+        elif flag in API_FIELD_FLAGS:
+            fields.append(val)
+        elif flag == "--input":
+            inputs.append(val)
+        i += 1
+    return method, fields, inputs, pos
+
+
+def api_text_has_marker(fields, inputs):
+    for v in fields:
+        if RELEASE_MARKER in v:
+            return True
+        if "=@" in v:
+            inputs = inputs + [v.split("=@", 1)[1]]
+    for path in inputs:
+        try:
+            if RELEASE_MARKER in open(path).read():
+                return True
+        except OSError:
+            pass
+    return False
 
 
 def implementer_api_rule(words):
     """gh api is a read for these roles; a write (any method but GET, or any
-    field) bypasses every gh issue rule. The lead's plan-comment PATCH is the
-    one form its prompt allows."""
+    field) bypasses every gh issue rule. Two writes are allowed: the PR merge
+    that pr_merge_base judges, and the lead's plan-comment PATCH (never with a
+    release marker in it)."""
     if len(words) < 3 or os.path.basename(words[0]) != "gh" or words[1] != "api":
         return
-    args = words[2:]
-    method = "GET"
-    for i, w in enumerate(args):
-        if w in ("-X", "--method") and i + 1 < len(args):
-            method = args[i + 1]
-        elif w.startswith("--method="):
-            method = w[9:]
-        elif w.startswith("-X") and len(w) > 2:
-            method = w[2:]
-    fields = any(
-        w in API_FIELD_FLAGS or (w.startswith(("--field=", "--raw-field=", "--input=", "-f", "-F"))) for w in args
-    )
-    if method.upper() == "GET" and not fields:
+    method, fields, inputs, pos = api_parse(words[2:])
+    if len(pos) != 1:
+        deny("gh api takes one endpoint; write the call with exactly one, and pass the rest as flags.")
+    if method.upper() == "GET" and not fields and not inputs:
         return
-    paths = [w.strip("/") for w in args if not w.startswith("-")]
-    if any(API_ALLOWED.fullmatch(p) for p in paths):
+    endpoint = pos[0].strip("/")
+    if API_MERGE.fullmatch(endpoint):
+        return
+    if API_COMMENT_EDIT.fullmatch(endpoint) and method.upper() == "PATCH":
+        if api_text_has_marker(fields, inputs):
+            deny(
+                "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; "
+                "no agent writes one."
+            )
         return
     deny(
         "gh api writes (a method other than GET, or -f/-F/--field/--input) go round the gh issue rules: "
@@ -810,7 +877,7 @@ def main():
             consumer_git_rule(words)
         if role in ("implementer", "lead"):
             implementer_api_rule(words)
-        if role == "implementer":
+        if role in ("implementer", "lead"):
             wrapper_rule(words)
         if role == "implementer" and server:
             lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
