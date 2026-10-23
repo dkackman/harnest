@@ -14060,7 +14060,6 @@ cleanup: `delete_output(job_id=…)`. Never delete the shared assets.
 metrics: none.
 
 ### C-F516 — the catalog lists `templates/remove-object` and `templates/segment-and-remove` as removal, and both validate with a cost
-pending: #974
 source: tester, spec for #974 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Free (no GPU).
 1. `list_workflows(shape="image-edit")`.
@@ -14082,7 +14081,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F517 — `templates/segment-and-remove` takes the cup off the docs beach photo cleanly
-pending: #974
 source: tester, spec for #974 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. The input is the plan's "docs beach photo" with a cup in it. The
 case uses the template's shipped default `image`; if the template ships none, use the URL its
@@ -14103,7 +14101,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F518 — the docs route removal to `remove_object`, not to Fill or the inpaint templates
-pending: #974
 source: tester, spec for #974 from #956's plan v2 (claude-opus-5-5 via anthropic)
 Free (no GPU).
 1. `get_workflow("models/z-image-inpaint")`: read its description.
