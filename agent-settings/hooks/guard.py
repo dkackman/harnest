@@ -143,6 +143,9 @@ def deny(msg):
     sys.exit(2)
 
 
+UNBALANCED = False  # set by segments() when a line had an unmatched quote
+
+
 def segments(cmd):
     """Split a shell line into simple commands on ; & | ( ) and unquoted
     newlines, respecting quotes, so text inside a comment body is never
@@ -160,8 +163,11 @@ def segments(cmd):
                 cur = []
             else:
                 cur.append(tok)
-    except ValueError:  # unbalanced quote: fall back to a plain split
-        return [part.split() for part in re.split(r"(?:&&|\|\||[;|\n])", cmd) if part.split()]
+    except ValueError:  # unbalanced quote: fall back to a plain split, quote characters dropped
+        global UNBALANCED
+        UNBALANCED = True
+        parts = re.split(r"(?:&&|\|\||[;|\n])", cmd)
+        return [w for w in ([x.replace("'", "").replace('"', "") for x in part.split()] for part in parts) if w]
     if cur:
         out.append(cur)
     return out
@@ -710,7 +716,10 @@ def main():
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    for words in segments(cmd):
+    segs = segments(cmd)
+    if UNBALANCED and any(w and w[0] == "gh" for w in segs):
+        deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
+    for words in segs:
         if role == "implementer" and server:
             lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
             while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):

@@ -31,6 +31,14 @@ for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue create --title "SE-F001 fails" --label owner:implementer,regression,security'
   row 2 $r "" $none 'gh issue edit 5 --add-label security'
 done
+# unbalanced quotes: the fallback keeps the rules (spec B.1)
+row 2 consumer "" $none 'gh issue edit 5 --add-label "status:verified" # it'"'"'s done'
+row 2 implementer "" $none 'gh issue edit 5 --remove-label owner:don # don'"'"'t'
+row 2 lead "" $none 'gh issue comment 5 --body "$(cat <<EOF
+<!-- harnest:release-gate ci abc pass --> it'"'"'s
+EOF
+)"'
+row 0 consumer "" $none 'echo it'"'"'s fine'
 row 0 consumer "" $none 'gh issue create --title "S-F001 fails" --label owner:implementer,regression'
 row 0 consumer "" $none './scripts/file-advisory.sh --summary x --description-file y --severity high'
 printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
