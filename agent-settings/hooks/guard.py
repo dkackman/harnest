@@ -793,21 +793,6 @@ def main():
             deny(
                 "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."
             )
-        if is_gh_issue(words, "edit"):
-            if role != "curator":
-                owner_rule(words)
-            elif "owner:don" in flag_values(words, "--remove-label"):
-                deny("removing owner:don is Don's hand-back, not the curator's.")
-            if "status:plan-approved" in flag_values(words, "--add-label"):
-                deny(
-                    "status:plan-approved is Don's to add: approving a feature plan is a human decision, "
-                    "and no agent may approve a plan, its own or another's."
-                )
-            if {"release", "release-blocker"} & set(flag_values(words, "--add-label")):
-                deny(
-                    "release and release-blocker are Don's to add: a freeze, and what may move during "
-                    "one, are his calls (R14)."
-                )
         added = (
             flag_values(words, "--add-label")
             if is_gh_issue(words, "edit")
@@ -815,6 +800,26 @@ def main():
             if is_gh_issue(words, "create")
             else []
         )
+        if "status:plan-approved" in added:
+            deny(
+                "status:plan-approved is Don's to add: approving a feature plan is a human decision, "
+                "and no agent may approve a plan, its own or another's."
+            )
+        if {"release", "release-blocker"} & set(added):
+            deny(
+                "release and release-blocker are Don's to add: a freeze, and what may move during "
+                "one, are his calls (R14)."
+            )
+        if is_gh_issue(words, "create") and {"status:verified", "status:fixed-pending-verify"} & set(added):
+            deny(
+                "an issue is never filed already verified or already handed off: create it without a "
+                "status label and let the hand-off and the tester add them."
+            )
+        if is_gh_issue(words, "edit"):
+            if role != "curator":
+                owner_rule(words)
+            elif "owner:don" in flag_values(words, "--remove-label"):
+                deny("removing owner:don is Don's hand-back, not the curator's.")
         if "arch-approved" in added:
             deny(
                 "arch-approved is Don's to add: it waives new surface during a freeze, a ratchet rise and an "

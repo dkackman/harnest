@@ -30,6 +30,11 @@ for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:release-waive 474 -->"'
   row 2 $r "" $none 'gh issue create --title "SE-F001 fails" --label owner:implementer,regression,security'
   row 2 $r "" $none 'gh issue edit 5 --add-label security'
+  row 2 $r "" $none 'gh issue create --title x --label feature,owner:lead,status:plan-approved'
+  row 2 $r "" $none 'gh issue create --title x --label release'
+  row 2 $r "" $none 'gh issue create --title x -l bug,release-blocker'
+  row 2 $r "" $none 'gh issue create --title x --label status:verified'
+  row 2 $r "" $none 'gh issue create --title x --label status:fixed-pending-verify'
 done
 # unbalanced quotes: the fallback keeps the rules (spec B.1)
 row 2 consumer "" $none 'gh issue edit 5 --add-label "status:verified" # it'"'"'s done'
