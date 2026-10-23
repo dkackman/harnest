@@ -1033,6 +1033,48 @@ send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything that appeared.
 metrics: none.
 
+### SE-F051 — the download walk is no existence oracle for a local-path task `model_name`
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). #975 makes `validate_workflow` look at task model arguments. The plan says a
+local-path-shaped name gives no entry and never touches the disk; if it did, the plan would tell a
+caller which server paths exist. Carrier: complete's C-F520 workflow (`segment` on
+`asset:qa-cast/priya-portrait.jpg`). Validate it with `detector_model` set, in turn, to:
+- pair 1: `"/etc"` and `"/qa-975-absent"`;
+- pair 2: `"../../../../../../etc"` and `"../../../../../../qa-975-absent"`;
+- pair 3: `"~"` and `"~/qa-975-absent"`.
+expected:
+- Within each pair, the two responses are identical apart from the probe string itself: the same
+  `valid`, the same error/warning codes and text, and the same `downloads_required` (neither lists
+  the probe, nor gives it a `gb`).
+- No response echoes a resolved server path (a home directory, the server's roots).
+It is a **finding** if any pair differs, or if a probe string appears as an entry. A difference, or a
+`gb` for a path that exists, discloses the server's filesystem: send it to `scripts/file-advisory.sh`,
+not a public issue.
+cleanup: none.
+metrics: none.
+
+### SE-F052 — a traversal `filename` gives no existence oracle and fetches nothing
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). #978 checks per-file cache state and HEAD-sizes files, from the `filename` a
+workflow supplies. Carrier: an inline `upscale` step from `templates/upscale-spandrel`'s definition, with
+`model_name` at its default. Validate it with `filename` set, in turn, to:
+- pair 1: `"../../../../../../etc/hostname"` and `"../../../../../../etc/qa-975-absent"`;
+- pair 2: `"/etc/hostname"` and `"/qa-975-absent"`.
+Then repeat pair 1 against the `remove_object` step of complete's C-F511 workflow, as `weight_name`.
+`list_downloads` before and after.
+expected:
+- Within each pair, both responses are identical apart from the probe string: both refused the same
+  way (the task's own filename rule, which names the argument), or both listed the same way with the
+  same `gb` (null). A file that exists must never read as cached where its twin reads as missing.
+- No response echoes a resolved server path, and `list_downloads` gains nothing.
+It is a **finding** if any pair differs, a probe is HEAD-sized to a number, or a download appears. A
+difference discloses the server's filesystem, and an off-repo fetch is egress: either is a hole, so
+send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `cancel_download` anything that appeared.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

@@ -4803,4 +4803,21 @@ the note never refuses.
 cleanup: none.
 metrics: none.
 
+### M-F157 — an H3 template with `upscale_h3_latents` lists no VAE-subfolder entry
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). The plan declares no entry for the latent upscale step's VAE subfolder: it lives in
+the pipeline's own repo, which the pipeline walk already covers. Pick an H3 template that uses
+`upscale_h3_latents` (the one M-F039/M-F040 run; `list_workflows` and `get_workflow` to confirm), and
+`validate_workflow` it at its defaults.
+expected:
+- `valid: true`. No entry in `plan.downloads_required` carries a `subfolder` key, and the H3 pipeline
+  repo appears at most once (whole-repo, iff uncached).
+- If the step declares a latent-upscaler weight file, that file is listed iff uncached, as a file entry
+  (`repo` + `filename`); on lem, where M-F039 has run, it is absent.
+It is a **finding** if a VAE subfolder entry appears, the pipeline repo is listed twice, or a cached
+upscaler file is listed.
+cleanup: none.
+metrics: none.
+
 ## Performance

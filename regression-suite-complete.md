@@ -14121,4 +14121,368 @@ guide section is missing.
 cleanup: none.
 metrics: none.
 
+### C-F519 — a `remove_background` step lists `briaai/RMBG-2.0` as a whole-repo download when uncached, and omits it when cached
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only, no GPU). Before #975, `plan.downloads_required` walked only pipeline weights, so a
+task's first run pulled its weights unquoted. Workflow W, inline in workspace `regression-complete`:
+`{"id": "c-f519", "steps": [{"name": "cut", "task": {"command": "remove_background", "arguments":
+{"image": "asset:qa-cast/priya-portrait.jpg"}}, "result": {"content_type": "image/png"}}]}`.
+1. `list_models()`: note whether `briaai/RMBG-2.0` is listed (cached).
+2. `validate_workflow(workflow=W)`.
+3. `get_task("remove_background")`. If it takes a model argument (e.g. `model_name`), validate W again
+   with that argument set to `qa-spec/c-f519-absent-975` (a repo id that exists nowhere, so never
+   cached).
+expected:
+- Step 2 is `valid: true`. If step 1 did **not** list the repo, `plan.downloads_required` has exactly
+  one entry with `repo: "briaai/RMBG-2.0"`, a numeric `gb` of about 1 (0.5–2.5), `gated` and
+  `access_blocked` booleans, and no `filename` (absent or null): a whole-repo entry, today's shape.
+  If step 1 **did** list it, `downloads_required` is `[]`.
+- Step 3 (if the argument exists): exactly one entry, `repo: "qa-spec/c-f519-absent-975"`, `gb` null or
+  numeric, and no entry for `briaai/RMBG-2.0` (the override replaces the default). A not-found note in
+  `warnings` is acceptable; an error or `valid: false` caused by the download walk is not.
+It is a **finding** if an uncached RMBG repo is missing, a cached one is listed, the override is
+ignored, or the entry carries a `filename`. If the box has RMBG cached and the task takes no model
+argument, the positive arm can't be exercised here: say so (not a pass of that arm). C-F527's
+bogus-override sweep covers the walk itself.
+cleanup: none.
+metrics: none.
+
+### C-F520 — a `segment` step lists both of its repos, and its `detector_model`/`segmenter_model` overrides replace them
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Carrier W, inline in `regression-complete`:
+`{"id": "c-f520", "steps": [{"name": "mask", "task": {"command": "segment", "arguments": {"image":
+"asset:qa-cast/priya-portrait.jpg", "prompt": "picture frame"}}, "result": {"content_type": "image/png"}}]}`.
+Confirm the override argument names with `get_task("segment")` (the plan names `detector_model` and
+`segmenter_model`).
+1. `list_models()`: note which of `IDEA-Research/grounding-dino-base`, `facebook/sam2-hiera-large`,
+   `IDEA-Research/grounding-dino-tiny` and `facebook/sam2-hiera-tiny` are cached.
+2. `validate_workflow(workflow=W)` (defaults).
+3. W with `detector_model: "qa-spec/c-f520-det-975"` and `segmenter_model: "qa-spec/c-f520-seg-975"`.
+4. W with only `detector_model: "qa-spec/c-f520-det-975"`.
+5. W with `detector_model: "IDEA-Research/grounding-dino-tiny"`, `segmenter_model:
+   "facebook/sam2-hiera-tiny"` (real repos; validate only, do **not** run).
+expected:
+- Step 2: each default repo is listed iff step 1 didn't list it, once each, whole-repo shape.
+- Step 3: exactly the two `qa-spec/…` repos, and neither default.
+- Step 4: `qa-spec/c-f520-det-975` plus the default segmenter repo iff uncached; no default detector.
+- Step 5: each real tiny repo that step 1 didn't list appears with a numeric `gb` well under the base
+  models' (grounding-dino-tiny about 0.7, sam2-hiera-tiny about 0.16; each within 0.05–1.5).
+- Every call is `valid: true`, and none errors from the download walk.
+It is a **finding** if an override doesn't replace its default, one override drops the other default,
+a repo appears twice, or a cached repo is listed.
+cleanup: none.
+metrics: none.
+
+### C-F521 — `judge` and `text_generation` steps list the Qwen repo, once, or their override
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). `get_task("judge")` and `get_task("text_generation")` first, for their required
+arguments and their model argument's name. Build W with one `judge` step judging
+`asset:qa-cast/priya-portrait.jpg` (fill its required arguments from `get_task`), and W2 with one
+`text_generation` step and one `judge` step, both at their default model.
+1. `list_models()`: is `Qwen/Qwen2.5-1.5B-Instruct` cached?
+2. `validate_workflow` on W, then on W2.
+3. W with the judge's model argument set to `qa-spec/c-f521-absent-975`, if the task has one.
+expected:
+- Step 2: if Qwen is uncached, W lists `repo: "Qwen/Qwen2.5-1.5B-Instruct"` with `gb` about 3 (1.5–5),
+  whole-repo shape; W2 lists it **once**, not once per step. If it is cached, both list `[]`.
+- Step 3: `qa-spec/c-f521-absent-975` is listed and Qwen is not.
+It is a **finding** if an uncached Qwen is missing, W2 lists it twice, or the override is ignored. If
+Qwen is cached and there's no override argument, the positive arm can't be exercised: say so.
+cleanup: none.
+metrics: none.
+
+### C-F522 — a task repo that is also a pipeline step's repo, or two task steps' repo, is listed once
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). X = `qa-spec/c-f522-shared-975` (exists nowhere, so never cached). Take
+`get_workflow("templates/text-to-image")`'s definition and set its pipeline step's
+`from_pretrained_arguments.model_name` to X (S-F079 shows a nonexistent pipeline repo validates and is
+listed). Append a `diffusion_upscale` step whose `image` is `previous_result:<the pipeline step>` and
+whose `model_name` is X (check argument names with `get_task("diffusion_upscale")`), with a `result`.
+That is W1. W2: C-F520's segment carrier with a second `segment` step, both with `detector_model: X`.
+1. `validate_workflow(workflow=W1)`; `validate_workflow(workflow=W2)`.
+2. W1 with the upscale step's `model_name` changed to `qa-spec/c-f522-other-975`.
+expected:
+- Step 1: W1's `downloads_required` has exactly one entry whose `repo` is X. W2's has exactly one entry
+  for X (plus the default segmenter repo once, if uncached).
+- Step 2: two entries, X and `qa-spec/c-f522-other-975`, one each.
+It is a **finding** if X appears twice in either workflow, or step 2 loses either repo.
+cleanup: none.
+metrics: none.
+
+### C-F523 — a model argument given as `previous_result:` or a local path validates clean with no entry for it and no error
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). The plan: a non-literal value, or a local-path-shaped name, gives no entry and
+never an error, and the walk never touches the disk. Carrier: C-F520's W (`segment`), with a first step
+added before `mask` so a `previous_result:` has something to name, e.g.
+`{"name": "src", "task": {"command": "resize_rescale", "arguments": {...}}}` (arguments from
+`get_task("resize_rescale")`). Probes, one `validate_workflow` each, on `mask`'s `detector_model`:
+- (a) `"previous_result:src"`;
+- (b) `"/tmp/qa-975-local"`, `"./weights"`, `"~/models/dino"`.
+Control: C-F520's step 3 (`qa-spec/c-f520-det-975`), which is listed.
+expected:
+- (a): the response has no entry whose `repo` is `previous_result:src` (or any string starting
+  `previous_result:`), and no error or warning that comes from the download walk. If `segment` refuses a
+  `previous_result:` model argument on its own type rule, that refusal is acceptable only if it names
+  the argument and not the plan or a download; record which.
+- (b): no entry whose `repo` is any of the local strings, and no error from the walk. A refusal by the
+  task's own local-path rule (as `remove_object` has, C-F514) is acceptable; it names `detector_model`.
+- The default segmenter repo is listed or not by the cache as in C-F520, unaffected by the probe.
+- The control lists `qa-spec/c-f520-det-975`.
+It is a **finding** if any probe string appears as a `repo`, the walk raises an error or a server
+error, or an error echoes a resolved server path. SE-F051 is the oracle probe on the same input.
+cleanup: none.
+metrics: none.
+
+### C-F524 — pipeline-only and task-free workflows' `downloads_required` is unchanged
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). The stage adds task entries and must not move what a pipeline workflow lists.
+1. `list_models()`: is `stable-diffusion-v1-5/stable-diffusion-v1-5` cached?
+2. `validate_workflow(name="templates/text-to-image")`.
+3. Its definition inline with `model_name: "stable-diffusion-v1-5/does-not-exist-qa269"` (S-F079's).
+4. A task-only workflow with no model-backed task: one `resize_rescale` step on
+   `asset:qa-cast/priya-portrait.jpg`.
+expected:
+- Step 2: `[]` if SD 1.5 is cached, else exactly that one repo.
+- Step 3: exactly one entry, `repo: "stable-diffusion-v1-5/does-not-exist-qa269"`, with the keys
+  `repo`, `gb`, `gated`, `access_blocked`, and no `filename`/`revision` (absent or null).
+- Step 4: `downloads_required` is `[]` (or absent, as it was before for such a workflow).
+It is a **finding** if a pipeline-only workflow gains or loses an entry, an entry's shape changes, or a
+task with no weights produces one.
+cleanup: none.
+metrics: none.
+
+### C-F525 — a bound acknowledgement that omits a task repo is refused with 409 `downloads`; resending `detail.acknowledge` queues it
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Cheap: the job fails in its load, since the repo doesn't exist. W:
+C-F520's carrier with `detector_model: "qa-spec/c-f525-absent-975"`.
+1. `validate_workflow(workflow=W)` → plan P. Confirm P's `downloads_required` lists
+   `qa-spec/c-f525-absent-975`.
+2. P' = P with that entry removed from `downloads_required` (everything else verbatim).
+   `run_workflow(workflow=W, acknowledged_cost=P', workspace="regression-complete")`. `list_jobs`.
+3. `run_workflow` again with `acknowledged_cost` = the `detail.acknowledge` the refusal returned,
+   verbatim, `wait_seconds=55`.
+4. `run_workflow(workflow=W, acknowledged_cost=true, wait_seconds=55)`.
+5. `run_workflow(workflow=W, acknowledged_cost=P, wait_seconds=55)` (the unedited plan).
+expected:
+- Step 2 is refused (409 where a status shows), with reason `downloads`, and its
+  `detail.acknowledge` includes `qa-spec/c-f525-absent-975`. `list_jobs` gains nothing.
+- Steps 3, 4 and 5 each queue a job. Each job may then fail in its load on the nonexistent repo: that is
+  expected and not a finding.
+It is a **finding** if step 2 queues a job, the reason isn't `downloads`, `detail.acknowledge` omits
+the task repo, or any of steps 3–5 is refused.
+cleanup: `cancel_job` any still running; `delete_output(job_id=…)` on each job from steps 3–5.
+metrics: none.
+
+### C-F526 — offline or unsized, task entries still appear, with `gb: null`
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). The plan: with no size lookup, the entries still appear, `gb: null`, never
+dropped. A consumer can't take the server offline, so this case uses what the interface offers.
+1. `validate_workflow` on C-F520's step 3 W (two `qa-spec/…` repos, which no HEAD can size).
+2. If the `validate_workflow` schema (`get_schema` or the tool's own parameters) exposes a switch that
+   turns size lookup off (e.g. `lookup_sizes`), validate C-F520's step 5 W with it off. If the server
+   reports itself offline (`get_health`, or a note in the plan), validate step 5 W as is.
+expected:
+- Step 1: both entries present, each with `gb: null` (not 0, not missing), and `valid: true`.
+- Step 2: each uncached tiny repo is listed with `gb: null`.
+It is a **finding** if an unsized entry is dropped, or its `gb` is 0 or missing. If neither a switch
+nor an offline server exists, step 2 can't be run over MCP: record it as not run, not as a pass.
+cleanup: none.
+metrics: none.
+
+### C-F527 — every other whole-repo task in the A′ table lists its repo, and an override replaces it
+pending: #977
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). The plan's A′ rows beyond C-F519–C-F521: `diffusion_upscale`, `transcribe_audio`,
+`speech_generation` (and its speechbrain repo), `voice_attribution` (speechbrain only), `image_to_text`,
+depth (`Intel/dpt-hybrid-midas`), and the controlnet_aux detectors. For each task:
+1. `get_task(<task>)`: required arguments, and its model argument if any. Use
+   `asset:qa-cast/priya-portrait.jpg` for an image, `asset:qa-cast/priya-voice.wav` for audio, a short
+   literal for text. Depth and the detectors: use whichever task or step the catalog uses for them
+   (`list_tasks`; a template from `list_workflows` that uses one).
+2. `validate_workflow` on a one-step workflow at its defaults. Then, if it has a model argument, with
+   that set to `qa-spec/c-f527-<task>-975`.
+3. `list_models()` once, to tell cached from uncached.
+expected:
+- At defaults: each task's repo(s) appear iff not cached, whole-repo shape. `speech_generation` lists
+  its speechbrain repo as well as its main one when uncached; `voice_attribution` lists speechbrain only.
+- With an override: the `qa-spec/…` repo appears and the default does not.
+- Every call is `valid: true`, with no error from the walk.
+It is a **finding** if an override is ignored, a cached repo is listed, or an uncached default is
+missing. Record per task which arms were exercisable (cached defaults with no override argument
+can't show the positive arm).
+cleanup: none.
+metrics: none.
+
+### C-F528 — `upscale-spandrel` with an uncached file lists `{repo, filename, gb≈that file}`; after a run it is gone
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. GPU, under a minute plus a small download. Read
+`get_workflow("templates/upscale-spandrel")` for how `model_name`/`filename` are set (variables, or
+the step's arguments; if only the latter, run the definition inline with them changed). Pick a
+(repo, filename) the box hasn't cached: an alternative named by the template, `get_task("upscale")`
+or the tasks guide's upscale section, whose repo `list_models()` doesn't list. If none can be found,
+record steps 2–3 as not run.
+1. `validate_workflow` at the template's defaults, `input_image="asset:qa-cast/priya-portrait.jpg"`.
+2. The same with the chosen `model_name`/`filename`.
+3. `run_workflow(…, acknowledged_cost=<step 2's plan>, wait_seconds=55)`, then validate step 2 again.
+expected:
+- Step 2 lists one entry: `repo` = the model_name, `filename` = the filename, `revision` null (or
+  absent, meaning `main`), and a numeric `gb` that is the **file's** size, not the repo's (spandrel
+  weights are tens of MB: under 0.5).
+- Step 3: the run succeeds, and validating again lists no entry for it.
+- Step 1 lists nothing for the default model if `list_models` shows it cached.
+It is a **finding** if the entry lacks `filename`, `gb` is the whole repo's size, or the cached file is
+still listed after the run.
+cleanup: `delete_output(job_id=…)`. The downloaded weight stays (it's the box's cache).
+metrics: none.
+
+### C-F529 — a cached file of a repo doesn't hide another file of it; a whole-repo entry subsumes a file entry
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). R = `upscale-spandrel`'s default `model_name` (cached on any box that ran the
+template; confirm with `list_models`). Build inline workflows from its definition:
+1. W1: one `upscale` step with `model_name: R`, `filename: "qa-975-absent.safetensors"`.
+2. W2: two `upscale` steps, both `model_name: "qa-spec/c-f529-975"`, the first with no `filename`,
+   the second with `filename: "x.safetensors"`.
+3. W3: two `upscale` steps on `qa-spec/c-f529-975`, filenames `a.safetensors` and `b.safetensors`.
+4. W4: two identical `upscale` steps, `qa-spec/c-f529-975` + `a.safetensors`.
+expected:
+- W1: one entry, `repo: R`, `filename: "qa-975-absent.safetensors"`, `gb` null or numeric. The repo's
+  other cached file does not make it read as present. A not-found note is acceptable.
+- W2: exactly one entry for `qa-spec/c-f529-975`, the whole-repo one (no `filename`).
+- W3: two entries, one per filename.
+- W4: one entry.
+It is a **finding** if W1 lists nothing (the old repo-level check), W2 lists the repo twice or only the
+file, W3 merges the two files, or W4 lists the file twice.
+cleanup: none.
+metrics: none.
+
+### C-F530 — `upscale` with no `filename` gets a whole-repo entry sized as the repo
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Q3 of the plan: with no `filename`, the task requires a repo holding exactly one
+weight file, so a whole-repo entry's size is that file's. Use C-F528's uncached repo with `filename`
+omitted (or removed), and `qa-spec/c-f530-975` with no `filename`.
+expected:
+- Each validate lists one entry for its repo with no `filename` (absent or null). The real repo's `gb`
+  is numeric and close to C-F528's file `gb` (within 0.05 GB); the `qa-spec` one's is null.
+It is a **finding** if a `filename` is invented, the repo is missing, or the real repo's size differs
+sharply from its single file's. If C-F528 found no uncached repo, the real-repo arm is not run.
+cleanup: none.
+metrics: none.
+
+### C-F531 — `remove_object` at defaults is absent on a box that has big-lama, and the pinned entry shape when it isn't
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). The pinned `hf_hub_download` writes no `refs/main`, so a repo-level check reads it
+as never cached; the per-file check at the pin must find it. Carrier: C-F511's W (`segment` →
+`remove_object`). lem has big-lama cached from #973's verification (C-F511 ran it).
+1. `validate_workflow(workflow=W)`.
+2. W with `erase`'s `weight_name: "qa-975-absent.safetensors"` (default `model_name`).
+3. W with `erase`'s `model_name: "qa-spec/c-f531-975"` (default `weight_name`).
+expected:
+- Step 1 on a box that has run `remove_object` at defaults: **no** entry for `michaelgold/big-lama`.
+  On a box that hasn't (no `remove_object` job in its history): one entry, `repo:
+  "michaelgold/big-lama"`, `filename: "big-lama.safetensors"`, `revision` a 40-character hex commit,
+  `gb` about 0.2 (0.1–0.3).
+- Step 2: one entry, `michaelgold/big-lama` + `qa-975-absent.safetensors`, with `revision` null: the
+  pin is only for the default pair.
+- Step 3: one entry, `qa-spec/c-f531-975` + `big-lama.safetensors`, `revision` null.
+It is a **finding** if step 1 lists big-lama on lem (the pinned check failed and fell back to the repo
+check), a default entry lacks the 40-char pin, or a non-default pair carries it.
+cleanup: none.
+metrics: none.
+
+### C-F532 — `restore-faces` lists the spandrel face file when uncached, and facexlib's weights as `url` entries only when its weights dir lacks them
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free unless step 3 runs (GPU, about a minute). `get_workflow("templates/restore-faces")` for how its
+face model's `model_name`/`filename` are set.
+1. `validate_workflow(name="templates/restore-faces", arguments={})`.
+2. Its definition with the face model's `model_name: "qa-spec/c-f532-975"`, `filename:
+   "face.safetensors"`.
+3. Only if step 1 listed any `repo: null` entry: run the template (`acknowledged_cost=<step 1's plan>`,
+   `wait_seconds=55`), then validate step 1 again.
+expected:
+- Step 2: one entry `qa-spec/c-f532-975` + `face.safetensors`; no entry for the default face model.
+- Step 1: the default face file is listed iff uncached. Any facexlib entry has `repo: null`, an `https`
+  `url` naming a weight file, and `gb` null or numeric; on a box that has run `restore-faces` before
+  (lem, M-F028), there are none.
+- Step 3: after one run, no `repo: null` entry remains.
+- No entry or error echoes a server filesystem path (facexlib's weights dir is a constant, never shown).
+It is a **finding** if the override's file is missing, facexlib entries appear on a box that has its
+weights, persist after a run, or a server path is shown.
+cleanup: `delete_output(job_id=…)` if step 3 ran.
+metrics: none.
+
+### C-F533 — `crop_face_track` lists the YuNet file at its pinned revision and `interpolate_frames` the RIFE file, only when uncached
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). `get_task("crop_face_track")` and `get_task("interpolate_frames")` for arguments;
+use `asset:qa-cast/ep6-cold-open.mp4` as the clip/video. One-step workflows at defaults; then
+`crop_face_track` with `detector_repo: "qa-spec/c-f533-975"` (SE-F041 names the argument).
+expected:
+- At defaults, each task's file is listed iff uncached on this box: YuNet with `filename` and a
+  40-character `revision`; RIFE with `filename`. On a box that has run either task, its entry is absent.
+- The `detector_repo` override is listed with its `detector_file` (default or given) and no pin.
+It is a **finding** if the override is ignored or carries the default pin, or a default entry lacks its
+`filename`. A default that is absent on lem can't show the positive arm; the override arm is what
+shows the declaration exists.
+cleanup: none.
+metrics: none.
+
+### C-F534 — an `upscale` `model_name` given as `previous_result:` validates clean with no entry and no error
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Inline from `upscale-spandrel`'s definition, with an earlier step to name (as in
+C-F523), and the `upscale` step's `model_name: "previous_result:src"`, `filename: "x.safetensors"`.
+Then the same with `filename: "previous_result:src"` and the default `model_name`.
+expected:
+- No entry whose `repo` or `filename` starts `previous_result:`, and no error or warning from the
+  download walk. As in C-F523, a refusal by the task's own type rule is acceptable only if it names the
+  argument, not a download.
+It is a **finding** if a `previous_result:` string appears in an entry or the walk errors.
+cleanup: none.
+metrics: none.
+
+### C-F535 — a bound acknowledgement omitting a single-file task's repo is refused with 409 `downloads`; resending queues it
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Cheap: the file doesn't exist, so the job fails in its load. W: C-F529's
+W1 (`upscale`, cached repo R, `filename: "qa-975-absent.safetensors"`). Same steps as C-F525: validate
+→ P; P' with that entry removed; `run_workflow(acknowledged_cost=P')`; resend `detail.acknowledge`
+verbatim; then `acknowledged_cost=true`.
+expected:
+- P lists the file entry (`repo: R`, `filename`). P' is refused (409 where shown), reason `downloads`,
+  `detail.acknowledge` includes R. `list_jobs` gains nothing.
+- The resend and the `true` run each queue a job (which may then fail on the absent file: expected).
+It is a **finding** if P' queues, the reason differs, `detail.acknowledge` omits R, or a resend is
+refused.
+cleanup: `cancel_job` any running; `delete_output(job_id=…)` on each job.
+metrics: none.
+
+### C-F536 — file entries offline or unsized still appear with `gb: null`, and render as `repo/filename`
+pending: #978
+source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). C-F529's W1 and W3 (unsizable files), then C-F528's step 2 with size lookup off
+if the interface offers a switch or the server is offline (as in C-F526).
+expected:
+- Every file entry is present with `gb: null`, its `filename` and `revision` (null for `main`) intact.
+- Where `validate_workflow`'s response renders a human-readable downloads line, a file entry reads as
+  `<repo>/<filename>` (with its size when known); a whole-repo entry still reads as `<repo>`.
+- URL entries (C-F532) keep `repo: null` + `url`, and no gate warning or line builds a URL from a null
+  repo (no `huggingface.co/None`, no `null/…`).
+It is a **finding** if an unsized file entry is dropped, a rendered line omits the filename, or a null
+repo shows up as text. The offline arm, if not reachable over MCP, is recorded as not run.
+cleanup: none.
+metrics: none.
+
 ## Performance
