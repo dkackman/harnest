@@ -14176,7 +14176,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F521 — `judge` and `text_generation` steps list the Qwen repo, once, or their override
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). `get_task("judge")` and `get_task("text_generation")` first, for their required
 arguments and their model argument's name. Build W with one `judge` step judging
@@ -14239,7 +14238,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F524 — pipeline-only and task-free workflows' `downloads_required` is unchanged
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). The stage adds task entries and must not move what a pipeline workflow lists.
 1. `list_models()`: is `stable-diffusion-v1-5/stable-diffusion-v1-5` cached?
@@ -14298,7 +14296,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F527 — every other whole-repo task in the A′ table lists its repo, and an override replaces it
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). The plan's A′ rows beyond C-F519–C-F521: `diffusion_upscale`, `transcribe_audio`,
 `speech_generation` (and its speechbrain repo), `voice_attribution` (speechbrain only), `image_to_text`,
