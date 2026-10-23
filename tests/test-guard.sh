@@ -49,6 +49,12 @@ row 0 consumer "" $none './scripts/file-advisory.sh --summary x --description-fi
 printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
 row 2 consumer "" $none "gh issue comment 5 --body-file $T/marker.md"
 row 0 consumer "" $none 'gh issue comment 5 --body "the release gates ran fine"'
+# no role lifts a park; an unknown role is refused
+row 2 consumer "" $none 'gh issue edit 7 --remove-label owner:don --add-label owner:tester'
+row 2 consumer "" $none 'gh issue edit 7 --remove-label status:needs-approval'
+row 2 curator "" $none 'gh issue edit 7 --remove-label status:needs-approval'
+row 2 bogus "" $none 'gh issue list'
+row 2 "" "" $none 'gh issue list'
 # implementer and lead: closes, verified, parks, owners
 for r in implementer lead; do
   row 2 $r "" $none 'gh issue close 5'

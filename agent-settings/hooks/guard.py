@@ -698,8 +698,13 @@ def target_file_rule(path, cwd, target, role):
         )
 
 
+ROLES = ("implementer", "lead", "consumer", "curator", "reviewer")
+
+
 def main():
     role = sys.argv[1] if len(sys.argv) > 1 else ""
+    if role not in ROLES:
+        deny("unknown guard role %r: the hook is configured with a role name it does not know." % role)
     data = json.load(sys.stdin)
     cwd = data.get("cwd") or os.getcwd()
     server = other_target()
@@ -818,8 +823,11 @@ def main():
         if is_gh_issue(words, "edit"):
             if role != "curator":
                 owner_rule(words)
-            elif "owner:don" in flag_values(words, "--remove-label"):
-                deny("removing owner:don is Don's hand-back, not the curator's.")
+            removed = flag_values(words, "--remove-label")
+            if "owner:don" in removed:
+                deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
+            if "status:needs-approval" in removed and still_parked(words):
+                deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
         if "arch-approved" in added:
             deny(
                 "arch-approved is Don's to add: it waives new surface during a freeze, a ratchet rise and an "
@@ -848,12 +856,6 @@ def main():
                 )
             if role != "reviewer" and adds_verified(words):
                 deny("status:verified is the tester's to add, from a real MCP call.")
-            if is_gh_issue(words, "edit"):
-                removed = flag_values(words, "--remove-label")
-                if "owner:don" in removed:
-                    deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
-                if "status:needs-approval" in removed and still_parked(words):
-                    deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
         if role == "implementer":
             problem = git_push_problem(words)
             if problem:
