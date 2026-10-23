@@ -14319,7 +14319,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F528 — `upscale-spandrel` with an uncached file lists `{repo, filename, gb≈that file}`; after a run it is gone
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. GPU, under a minute plus a small download. Read
 `get_workflow("templates/upscale-spandrel")` for how `model_name`/`filename` are set (variables, or
@@ -14342,7 +14341,6 @@ cleanup: `delete_output(job_id=…)`. The downloaded weight stays (it's the box'
 metrics: none.
 
 ### C-F529 — a cached file of a repo doesn't hide another file of it; a whole-repo entry subsumes a file entry
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). R = `upscale-spandrel`'s default `model_name` (cached on any box that ran the
 template; confirm with `list_models`). Build inline workflows from its definition:
@@ -14363,7 +14361,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F530 — `upscale` with no `filename` gets a whole-repo entry sized as the repo
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Q3 of the plan: with no `filename`, the task requires a repo holding exactly one
 weight file, so a whole-repo entry's size is that file's. Use C-F528's uncached repo with `filename`
@@ -14377,7 +14374,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F531 — `remove_object` at defaults is absent on a box that has big-lama, and the pinned entry shape when it isn't
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). The pinned `hf_hub_download` writes no `refs/main`, so a repo-level check reads it
 as never cached; the per-file check at the pin must find it. Carrier: C-F511's W (`segment` →
@@ -14399,7 +14395,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F532 — `restore-faces` lists the spandrel face file when uncached, and facexlib's weights as `url` entries only when its weights dir lacks them
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free unless step 3 runs (GPU, about a minute). `get_workflow("templates/restore-faces")` for how its
 face model's `model_name`/`filename` are set.
@@ -14421,7 +14416,6 @@ cleanup: `delete_output(job_id=…)` if step 3 ran.
 metrics: none.
 
 ### C-F533 — `crop_face_track` lists the YuNet file at its pinned revision and `interpolate_frames` the RIFE file, only when uncached
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). `get_task("crop_face_track")` and `get_task("interpolate_frames")` for arguments;
 use `asset:qa-cast/ep6-cold-open.mp4` as the clip/video. One-step workflows at defaults; then
@@ -14437,7 +14431,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F534 — an `upscale` `model_name` given as `previous_result:` validates clean with no entry and no error
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Inline from `upscale-spandrel`'s definition, with an earlier step to name (as in
 C-F523), and the `upscale` step's `model_name: "previous_result:src"`, `filename: "x.safetensors"`.
@@ -14451,7 +14444,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F535 — a bound acknowledgement omitting a single-file task's repo is refused with 409 `downloads`; resending queues it
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Cheap: the file doesn't exist, so the job fails in its load. W: C-F529's
 W1 (`upscale`, cached repo R, `filename: "qa-975-absent.safetensors"`). Same steps as C-F525: validate
@@ -14467,7 +14459,6 @@ cleanup: `cancel_job` any running; `delete_output(job_id=…)` on each job.
 metrics: none.
 
 ### C-F536 — file entries offline or unsized still appear with `gb: null`, and render as `repo/filename`
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). C-F529's W1 and W3 (unsizable files), then C-F528's step 2 with size lookup off
 if the interface offers a switch or the server is offline (as in C-F526).

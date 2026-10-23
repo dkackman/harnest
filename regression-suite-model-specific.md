@@ -4804,7 +4804,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F157 — an H3 template with `upscale_h3_latents` lists no VAE-subfolder entry
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). The plan declares no entry for the latent upscale step's VAE subfolder: it lives in
 the pipeline's own repo, which the pipeline walk already covers. Pick an H3 template that uses

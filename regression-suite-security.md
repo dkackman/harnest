@@ -1055,7 +1055,6 @@ cleanup: none.
 metrics: none.
 
 ### SE-F052 — a traversal `filename` gives no existence oracle and fetches nothing
-pending: #978
 source: tester, spec for #978 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). #978 checks per-file cache state and HEAD-sizes files, from the `filename` a
 workflow supplies. Carrier: an inline `upscale` step from `templates/upscale-spandrel`'s definition, with
