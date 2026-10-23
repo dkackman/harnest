@@ -151,3 +151,10 @@ moves during one, are Don's.
 
 The hook also refuses the `security` label on any issue: a hole is filed privately
 (`scripts/file-advisory.sh`), never on the public tracker.
+
+It also refuses, with labels read in any case: lifting an `owner:don` or
+`status:needs-approval` park; creating an issue already carrying
+`status:verified`, `status:fixed-pending-verify`, `status:plan-approved` or a
+release label; `git` pointed at another tree (`--git-dir`, `--work-tree`,
+`-C`, `--no-index`); a `gh issue` verb outside view, list, create, comment,
+edit, close, reopen and status; and a `gh` command with an unbalanced quote.

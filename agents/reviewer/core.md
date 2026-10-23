@@ -42,3 +42,7 @@ moves during one, are Don's.
 
 The hook also refuses the `security` label on any issue: a hole is filed privately
 (`scripts/file-advisory.sh`), never on the public tracker.
+
+It reads labels in any case, refuses `status:verified`, release and approval
+labels on create as well as edit, and refuses a `gh` command with an
+unbalanced quote.

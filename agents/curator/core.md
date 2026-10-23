@@ -40,7 +40,9 @@ to him.
 
 ## Enforced by the harness
 
-A hook refuses adding `status:plan-approved` and stacking `owner:*` labels.
+A hook refuses adding `status:plan-approved`, removing `owner:don` or
+`status:needs-approval` (no role lifts a park), and a `gh` command with an
+unbalanced quote; labels are read in any case.
 Suite commits are the driver's: you never commit. Any commit that removes
 lines from a suite (other than a stage's `pending:` line) logs an
 `[audit] WARNING` for Don, so a deletion you approve is visible twice.

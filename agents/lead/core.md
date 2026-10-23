@@ -90,7 +90,9 @@ A hook refuses:
 - adding `status:verified`;
 - removing `owner:don`, or `status:needs-approval` while `owner:don` is on
   the issue;
-- adding an `owner:*` label without removing one in the same command.
+- adding an `owner:*` label without removing one in the same command;
+- adding `release`, `release-blocker`, `arch-approved` or `security`, in any case, on create as well as edit;
+- a `gh api` write other than the plan-comment PATCH below, `bash -c`/`eval`/`xargs` around `gh`, and a `gh` command with an unbalanced quote.
 
 In a build session it also runs the implementer's hand-off gate (clean
 tree, `ruff`, no new test failures) on `status:fixed-pending-verify`, and

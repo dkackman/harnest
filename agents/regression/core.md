@@ -112,7 +112,12 @@ summary with the case id, always spelled the same.
 A security-level case that fails while the boundary *held* is an ordinary
 issue: stale suite text, refusal wording, a probe that errors before it
 reaches the gate. So is a case that refuses something legitimate. The hook
-refuses the `security` label on any issue.
+refuses the `security` label on any issue. It also refuses, with labels read
+in any case, `status:verified`, release and approval labels on create as well
+as edit, lifting an `owner:don` park, `git` pointed at another tree
+(`--git-dir`, `--work-tree`, `-C`, `--no-index`), a `gh issue` verb outside
+view, list, create, comment, edit, close, reopen and status, and a `gh`
+command with an unbalanced quote.
 
 ## The suite files
 

@@ -156,6 +156,12 @@ is the rule working: fix what it names, don't look for a way around it.
 `guard.py` also holds dw's hot zone and metrics ratchet (`venv/bin/python scripts/arch_metrics.py --root .`) on a push of `develop` and a hand-off; a new `dw/` or `dw_mcp/` module is a rise only Don approves.
 A hand-off that changes `dw/` or `dw_mcp/` gets an architecture review against `docs/ARCHITECTURE.md`, the map: call the owner a row names, never re-derive its rule.
 
+The hook also refuses, in any spelling of the label's case:
+- adding `status:plan-approved`, `release`, `release-blocker`, `arch-approved`, `arch-review` or `security`, on `gh issue create` as well as `edit`;
+- a `gh api` write (a method other than GET, or `-f`/`-F`/`--field`/`--input`): use `gh issue`;
+- `bash -c`, `eval` or `xargs` wrapped around `gh` or a push, and a `gh` command with an unbalanced quote: run the command directly, on one line;
+- any command it cannot parse or that crashes it: a crash refuses the call.
+
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.
 
