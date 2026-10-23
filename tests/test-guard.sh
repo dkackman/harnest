@@ -323,3 +323,13 @@ g "$T/seed" rm -q docs/stabilization/hot-zone.txt; g "$T/seed" commit -m "no hot
 g "$w" checkout -q fix-hot; hrow 0 8 "a former hot-zone file, hot-zone.txt gone"
 prow 0 "" 'gh pr merge 12 --merge'
 finish
+# labels compare case-insensitively; consumers get only the issue verbs they use
+row 2 consumer "" $none 'gh issue edit 5 --add-label Status:Verified'
+row 2 implementer "" $none 'gh issue edit 5 --remove-label Owner:Don'
+row 2 consumer "" $none 'gh issue delete 5 --yes'
+row 2 consumer "" $none 'gh issue transfer 5 o/other'
+row 2 consumer "" $none 'gh issue develop 5'
+row 0 consumer "" $none 'gh issue view 5 --json labels'
+# the unbalanced-quote fallback also drops backslashes and mid-word quotes
+row 2 consumer "" $none 'g\h issue edit 5 --add-label status:verified # it'"'"'s'
+row 2 lead "" $none 'g"h issue comment 5 --body it'"'"'s'

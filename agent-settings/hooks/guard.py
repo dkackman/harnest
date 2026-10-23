@@ -143,6 +143,7 @@ def deny(msg):
     sys.exit(2)
 
 
+UNQUOTE = re.compile(r"[\"'\\]")  # what bash drops from a word: quotes and backslashes
 UNBALANCED = False  # set by segments() when a line had an unmatched quote
 
 
@@ -167,7 +168,7 @@ def segments(cmd):
         global UNBALANCED
         UNBALANCED = True
         parts = re.split(r"[;&|()<>\n]", cmd)
-        return [w for w in ([x.replace("'", "").replace('"', "") for x in part.split()] for part in parts) if w]
+        return [w for w in ([UNQUOTE.sub("", x) for x in part.split()] for part in parts) if w]
     if cur:
         out.append(cur)
     return out
@@ -182,6 +183,8 @@ def flag_values(words, *names):
                 vals += words[i + 1].split(",")
             elif w.startswith(n + "="):
                 vals += w[len(n) + 1 :].split(",")
+    if any(n.endswith("label") or n == "-l" for n in names):  # GitHub labels are case-insensitive
+        vals = [v.lower() for v in vals]
     return [v.strip() for v in vals]
 
 
@@ -698,6 +701,9 @@ def target_file_rule(path, cwd, target, role):
         )
 
 
+CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
+
+
 ROLES = ("implementer", "lead", "consumer", "curator", "reviewer")
 
 
@@ -722,7 +728,7 @@ def main():
         return
     cmd = data.get("tool_input", {}).get("command", "")
     segs = segments(cmd)
-    if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", cmd):
+    if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", cmd)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:
         if role == "implementer" and server:
@@ -744,6 +750,14 @@ def main():
                     "on the %s server the driver deploys develop after your session: your own "
                     "MCP connection would hold the old server open. Merge, push and hand off." % server
                 )
+        if (
+            role == "consumer"
+            and len(words) >= 3
+            and os.path.basename(words[0]) == "gh"
+            and words[1] == "issue"
+            and words[2] not in CONSUMER_ISSUE_SUBCOMMANDS
+        ):
+            deny("gh issue %s is not a consumer action (delete, transfer, lock, pin, develop are Don's)." % words[2])
         if is_gh_issue(words, "edit"):
             claim_rule(words, server if role in ("consumer", "implementer") else "")
             if any(l.startswith("verified-on:") for l in flag_values(words, "--add-label")) and not target:
