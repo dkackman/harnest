@@ -898,4 +898,10 @@ def main():
                     )
 
 
-main()
+try:
+    main()
+except SystemExit:
+    raise
+except Exception as exc:  # a crash must refuse the call, never let it through
+    print(f"Blocked by the harness guard (R3): guard error: {type(exc).__name__}: {exc}", file=sys.stderr)
+    sys.exit(2)

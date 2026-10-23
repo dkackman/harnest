@@ -55,6 +55,8 @@ row 2 consumer "" $none 'gh issue edit 7 --remove-label status:needs-approval'
 row 2 curator "" $none 'gh issue edit 7 --remove-label status:needs-approval'
 row 2 bogus "" $none 'gh issue list'
 row 2 "" "" $none 'gh issue list'
+rc=0; printf 'not json' | HARNEST_SESSION_KIND= python3 "$guard" implementer >/dev/null 2>&1 || rc=$?
+eq "guard: a crash refuses, never passes" 2 "$rc"
 # implementer and lead: closes, verified, parks, owners
 for r in implementer lead; do
   row 2 $r "" $none 'gh issue close 5'
