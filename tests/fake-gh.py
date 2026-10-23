@@ -6,6 +6,8 @@
                            Edits, comments and closes are written back, so a
                            driver run changes the board the way GitHub would.
     FAKE_GH_FAIL=1         every call but `auth status` fails, as in an outage
+    FAKE_GH_AUTHOR=<login> author of comments added by `issue comment` (default dkackman)
+    FAKE_GH_FAIL_AFTER=<n> every call after the nth fails (counted across calls in <board>.count)
     FAKE_GH_LOG=<file>     every call is appended, one line each
 
 Covers what the drivers call: issue list/view/edit/comment/close/create,
@@ -29,6 +31,13 @@ if os.environ.get("FAKE_GH_FAIL") == "1":
     sys.exit(1)
 
 path = os.environ["FAKE_GH_BOARD"]
+if os.environ.get("FAKE_GH_FAIL_AFTER"):
+    cf = path + ".count"
+    n = (int(open(cf).read()) if os.path.exists(cf) else 0) + 1
+    open(cf, "w").write(str(n))
+    if n > int(os.environ["FAKE_GH_FAIL_AFTER"]):
+        print("gh: simulated outage after %s calls" % os.environ["FAKE_GH_FAIL_AFTER"], file=sys.stderr)
+        sys.exit(1)
 board = json.load(open(path))
 
 
@@ -119,7 +128,7 @@ elif cmd == ["issue", "comment"]:
     i = find(args[2])
     body = opt("--body") or (open(opt("--body-file")).read() if opt("--body-file") else "")
     i.setdefault("comments", []).append(
-        {"author": {"login": "dkackman"}, "body": body, "createdAt": "2026-01-01T00:00:00Z"}
+        {"author": {"login": os.environ.get("FAKE_GH_AUTHOR", "dkackman")}, "body": body, "createdAt": "2026-01-01T00:00:00Z"}
     )
     save()
 elif cmd == ["issue", "create"]:

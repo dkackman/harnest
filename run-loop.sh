@@ -866,7 +866,8 @@ reviewer_pass() {
     what="a DOCS REVIEW session"
     if [ "$kind" = arch ]; then
       range="$(gh issue view "$n" --repo "$TICKET_REPO" --json comments \
-        --jq '[.comments[].body | select(startswith("<!-- harnest:arch-review ")) | split("\n")[0] | ltrimstr("<!-- harnest:arch-review ") | rtrimstr(" -->")] | last // ""' 2>/dev/null)"
+        --jq '[.comments[] | select(.author.login == "'"$TICKET_OWNER"'") | .body | select(startswith("<!-- harnest:arch-review ")) | split("\n")[0] | ltrimstr("<!-- harnest:arch-review ") | rtrimstr(" -->")] | last // ""' 2>/dev/null)"
+      [[ "$range" =~ ^[0-9a-f]{7,40}\ [0-9a-f]{7,40}$ ]] || range=""
       if [ -z "$range" ]; then  # no driver marker: the label was added by hand
         what="an ARCHITECTURE REVIEW session. There is no arch-review marker from the driver: the hand-off comment names the commits."
       else

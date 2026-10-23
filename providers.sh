@@ -1312,14 +1312,16 @@ issue_context() {
 }
 
 # plan_text <issue>
-# The feature plan on <issue>: the one comment headed <!-- harnest:plan vN -->
-# (agents/lead/core.md, "The plan comment"), in full. issue_context caps
+# The feature plan on <issue>: the one comment by TICKET_OWNER headed
+# <!-- harnest:plan vN --> (agents/lead/core.md, "The plan comment"), in full.
+# A marker from any other login is ignored: the repo is public. (gh --jq takes
+# no --arg, so the login is spliced into the filter; it is a login name.) issue_context caps
 # each comment at 3 KB and a plan runs 8-12 KB, so a session that works from
 # the plan gets it whole from here. Empty when there's no plan comment, or on
 # any gh failure: it always returns 0, since callers assign it bare under set -e.
 plan_text() {
   gh issue view "$1" --repo "$TICKET_REPO" --json comments \
-    --jq '[.comments[] | select(.body | startswith("<!-- harnest:plan"))] | last | .body // empty' 2>/dev/null || true
+    --jq '[.comments[] | select(.author.login == "'"$TICKET_OWNER"'" and (.body | startswith("<!-- harnest:plan")))] | last | .body // empty' 2>/dev/null || true
 }
 
 # issue_snapshot
