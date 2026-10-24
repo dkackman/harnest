@@ -337,8 +337,16 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
   # Another target's header and session lines carry its tag (smoke.mini-ai),
   # so run-curate.sh's per-chunk cost table, which reads lem's runs out of
   # loop.log, neither counts them nor mixes their sessions into lem's.
-  local tag="$level$TARGET_SUFFIX" held="" id
+  local tag="$level$TARGET_SUFFIX" held="" id file_ids
   LEVEL_SKIPS=0 LEVEL_DIFFERS=0
+  # Case IDs in file order, from the `### <ID> — title` headings outside
+  # code fences (harness.suite case_ids, which the Python driver calls too):
+  # a heading in a case's fenced example is not a case. One that doesn't
+  # match the ID shape (S-F001, SE-P001, ...) isn't one either. Read first,
+  # and checked: an empty list from a file with headings would run nothing
+  # and say nothing.
+  file_ids="$(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$suite_file")" && [ -n "$file_ids" ] \
+    || { echo "[$RPFX:$level] could not read case ids from $suite_file" | tee -a "$LOOP_LOG"; exit 1; }
   if [ -n "$TARGET_SUFFIX" ]; then
     for id in $TARGET_SKIP_CASES; do
       grep -q "^### $id " "$suite_file" || continue
@@ -347,16 +355,12 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOOP_LOG"
     done
   fi
-  # Case IDs in file order, from the `### <ID> — title` headings outside
-  # code fences (harness.suite case_ids, which the Python driver calls too):
-  # a heading in a case's fenced example is not a case. One that doesn't
-  # match the ID shape (S-F001, SE-P001, ...) isn't one either.
   local ids=()
   while read -r id; do
     case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
     case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
     ids+=("$id")
-  done < <(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$suite_file")
+  done <<<"$file_ids"
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOOP_LOG"
     run_session "$level" "$suite_file" "$workspace" "" whole \
@@ -374,7 +378,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
         echo "--- $(ts) $tag session $session of $nchunks: ${chunk[*]} ---" | tee -a "$LOOP_LOG"
         # The Fixtures section and these cases' blocks, handed over in the
         # prompt: reading them out of the suite cost each session turns.
-        text="$("$REPO/scripts/case-text.sh" "$suite_file" "${chunk[@]}")"
+        text="$("$REPO/scripts/case-text.sh" "$suite_file" "$level" "${chunk[@]}")"
         run_session "$level" "$suite_file" "$workspace" ".$session of $nchunks" chunk \
           "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. The Fixtures section and these cases' full text follow; do not read the suite file for them (read it only if a case points elsewhere in it). Skip the final sweep; a separate session does it after every case has run.
 
@@ -390,7 +394,7 @@ $text
     done
     if ! session_aborted; then
       echo "--- $(ts) $tag session $((session + 1)): final sweep ---" | tee -a "$LOOP_LOG"
-      text="$("$REPO/scripts/case-text.sh" "$suite_file")"   # no ids: the Fixtures section alone
+      text="$("$REPO/scripts/case-text.sh" "$suite_file" "$level")"   # no ids: the Fixtures section (and a level's opening)
       run_session "$level" "$suite_file" "$workspace" ".sweep" sweep \
         "This is the final sweep of a chunked run: every case was already exercised in earlier sessions. Do only the final sweep against the $workspace workspace. The suite file's Fixtures section follows; do not read the suite file for it, nor the cases.$script_note
 

@@ -96,7 +96,7 @@ def chunk_instructions(chunk, text):
 
 
 def sweep_instructions(workspace, script_note="", fixtures=""):
-    """<fixtures>: suite.fixtures_section, what the sweep keeps."""
+    """<fixtures>: suite.case_text with no cases: the Fixtures section, what the sweep keeps."""
     return (
         "This is the final sweep of a chunked run: every case was already exercised in "
         f"earlier sessions. Do only the final sweep against the {workspace} workspace. The "
@@ -369,7 +369,14 @@ class Regression:
         # lem's runs out of loop.log, neither counts nor mixes them.
         tag = f"{level}{sfx}"
         self.level_skips = self.level_differs = 0
-        ids_in_file = suite.case_ids(suite_file)
+        # read first, and checked: an empty list from a file with headings would run nothing and say nothing
+        try:
+            ids_in_file = suite.case_ids(suite_file)
+        except (OSError, ValueError):
+            ids_in_file = []
+        if not ids_in_file:
+            self.log.say(f"[{self.rpfx}:{level}] could not read case ids from {suite_file}")
+            raise Abort(1)
         held = []
         if sfx:
             for cid in self.skip_cases:
@@ -422,7 +429,7 @@ class Regression:
                     workspace,
                     f".{session_no} of {nchunks}",
                     "chunk",
-                    chunk_instructions(chunk, suite.case_text(suite_file, chunk)),
+                    chunk_instructions(chunk, suite.case_text(suite_file, chunk, level)),
                     head,
                     chunk,
                 )
@@ -440,7 +447,7 @@ class Regression:
                     workspace,
                     ".sweep",
                     "sweep",
-                    sweep_instructions(workspace, script_note, suite.fixtures_section(suite_file)),
+                    sweep_instructions(workspace, script_note, suite.case_text(suite_file, [], level)),
                     head,
                 )
 

@@ -85,30 +85,35 @@ class CaseText(unittest.TestCase):
         self.assertEqual(suite.fixtures_section(self.suite), suite.case_text(self.suite, ["S-F999"]))
 
     def test_case_text_carries_the_security_opening(self):
-        sec = Path(self.suite.parent, "regression-suite-security.md")
+        sec = Path(self.suite.parent, "my-hostile-probes.md")  # an override suite file for the level
         sec.write_text(SUITE_TEXT.replace("Opening paragraphs", "Refused too late is a failure. Opening"))
-        text = suite.case_text(sec, ["S-F001"])
+        text = suite.case_text(sec, ["S-F001"], "security")
         self.assertTrue(text.startswith("# A suite\n\nRefused too late is a failure."))
         self.assertLess(text.index("too late"), text.index("## Fixtures"))
         self.assertNotIn("## Adding a case", text)
-        self.assertNotIn("Opening paragraphs", suite.case_text(self.suite, ["S-F001"]))  # smoke-shaped: no opening
+        self.assertNotIn("Opening paragraphs", suite.case_text(self.suite, ["S-F001"], "smoke"))
+        # the level decides, not the filename
+        named = Path(self.suite.parent, "regression-suite-security.md")
+        named.write_text(SUITE_TEXT)
+        self.assertNotIn("Opening paragraphs", suite.case_text(named, ["S-F001"], "smoke"))
 
     def test_case_text_hands_every_security_slice_its_gate(self):
         sec = Path(self.suite.parent, "regression-suite-security.md")
         sec.write_text(SUITE_TEXT.replace("S-F00", "SE-F00"))
-        text = suite.case_text(sec, ["SE-F003"])
+        text = suite.case_text(sec, ["SE-F003"], "security")
         self.assertLess(text.index("### SE-F001"), text.index("### SE-F003"))
-        self.assertEqual(1, suite.case_text(sec, ["SE-F002", "SE-F001"]).count("### SE-F001 "))
-        self.assertNotIn("### SE-F001", suite.case_text(sec, []))  # the sweep: no case
+        self.assertEqual(1, suite.case_text(sec, ["SE-F002", "SE-F001"], "security").count("### SE-F001 "))
+        self.assertNotIn("### SE-F001", suite.case_text(sec, [], "security"))  # the sweep: no case
+        self.assertNotIn("### SE-F001", suite.case_text(self.suite, ["S-F001"], "security"))  # not this file's
 
     def test_case_text_script_is_the_same_bytes(self):
         out = subprocess.run(
-            [str(REPO / "scripts" / "case-text.sh"), str(self.suite), "S-F002", "S-F001"],
+            [str(REPO / "scripts" / "case-text.sh"), str(self.suite), "security", "S-F002", "S-F001"],
             capture_output=True,
             text=True,
             check=True,
         ).stdout
-        self.assertEqual(suite.case_text(self.suite, ["S-F002", "S-F001"]) + "\n", out)
+        self.assertEqual(suite.case_text(self.suite, ["S-F002", "S-F001"], "security") + "\n", out)
 
 
 class Commit(unittest.TestCase):

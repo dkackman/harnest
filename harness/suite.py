@@ -24,7 +24,7 @@ def case_ids(suite_file):
 
 
 def has_cases(suite_file):
-    with open(suite_file, encoding="utf-8") as f:
+    with open(suite_file, encoding="utf-8", errors="replace") as f:  # as grep reads it
         return any(line.startswith("### ") for line in f)
 
 
@@ -34,7 +34,7 @@ def script_cases(suite_file, cases_dir):
     agent. The suite line is what makes a case script-run, so which cases
     graduate is a suite edit, under the same approval as any other."""
     out, cur = [], ""
-    with open(suite_file, encoding="utf-8") as f:
+    with open(suite_file, encoding="utf-8", errors="replace") as f:  # as awk reads it
         for line in f:
             line = line.rstrip("\n")
             if line.startswith("### "):
@@ -78,17 +78,18 @@ def opening(suite_file):
     return "".join(out).rstrip()
 
 
-# Suites whose opening is a rule for running every case, not background,
-# and the case every session runs first: the security suite's says a refusal
-# that came too late is a failure and that SE-F001 (the server's trust
-# posture) gates the rest, in every slice of a chunked run.
-OPENING_SUITES = {"regression-suite-security.md": "SE-F001"}
+# Levels whose suite opening is a rule for running every case, not
+# background, and the case every session runs first: the security suite's
+# says a refusal that came too late is a failure and that SE-F001 (the
+# server's trust posture) gates the rest, in every slice of a chunked run.
+# Keyed on the level, so an override suite file for it gets the same.
+OPENING_LEVELS = {"security": "SE-F001"}
 
 
-def case_text(suite_file, ids):
+def case_text(suite_file, ids, level=""):
     """What a chunk session is handed instead of reading the suite: the
-    security suite's opening (OPENING_SUITES), the Fixtures section, its
-    gating case when <ids> lacks it, then each case's block in the order
+    suite's opening on a level that has one (OPENING_LEVELS), the Fixtures
+    section, that level's gating case when <ids> lacks it and the file has it, then each case's block in the order
     given (fence-aware,
     requirements.case_blocks). An id with no block is left out; the prompt
     still names it. No trailing newline, so `$(scripts/case-text.sh ...)`
@@ -96,7 +97,7 @@ def case_text(suite_file, ids):
     from .requirements import case_blocks  # requirements imports this module
 
     blocks = case_blocks(suite_file)
-    gate = OPENING_SUITES.get(Path(suite_file).name)
+    gate = OPENING_LEVELS.get(level)
     head = [opening(suite_file)] if gate else []
     first = [gate] if gate and ids and gate not in ids else []
     parts = head + [fixtures_section(suite_file)] + [blocks[i].rstrip() for i in [*first, *ids] if i in blocks]
@@ -202,17 +203,20 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
 
 
 def main(argv=None):
-    """python3 -m harness.suite case-text <suite-file> <id>...   (scripts/case-text.sh)
+    """python3 -m harness.suite case-text <suite-file> <level> <id>...   (scripts/case-text.sh)
     python3 -m harness.suite case-ids <suite-file>             (run-regression.sh)"""
     args = sys.argv[1:] if argv is None else argv
-    if len(args) >= 2 and args[0] == "case-text":
-        print(case_text(args[1], args[2:]))
+    if len(args) >= 3 and args[0] == "case-text":
+        print(case_text(args[1], args[3:], args[2]))
         return 0
     if len(args) == 2 and args[0] == "case-ids":
         for i in case_ids(args[1]):
             print(i)
         return 0
-    print("usage: python3 -m harness.suite case-text <suite-file> <id>... | case-ids <suite-file>", file=sys.stderr)
+    print(
+        "usage: python3 -m harness.suite case-text <suite-file> <level> <id>... | case-ids <suite-file>",
+        file=sys.stderr,
+    )
     return 2
 
 

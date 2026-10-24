@@ -440,6 +440,16 @@ eq  "results: named for the session that ran it" "regression:smoke.2 of 2 lem cl
     "$(tail -1 "$T/h/regression-results/S-F002.jsonl" | jq -r '[.session, .server, .model] | join(" ")')"
 has "results: committed with the run" "regression-results/S-F001.jsonl" "$(git -C "$T/h" diff --name-only "$reg_before" HEAD)"
 
+# a suite whose case ids can't be read (not UTF-8) stops the run, saying so, before any session
+printf '# unreadable\n## Fixtures\nnone\n### S-F001 \xe2\x80 first\nsteps\n' > "$T/h/unreadable-suite.md"
+: > "$FAKE_CLAUDE_LOG"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
+   PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 ./run-regression.sh smoke unreadable-suite.md) > "$T/reg-bad.out" 2>&1
+eq  "case ids unreadable: the run stops" 1 $?
+has "  saying so" "[regression:smoke] could not read case ids from $T/h/unreadable-suite.md" "$(cat "$T/h/logs/loop.log")"
+eq  "  before any session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+rm -f "$T/h/unreadable-suite.md"
+
 # --- 7b. run-regression against the mini-ai test bed (harnest#15), with
 # the loop's lock held: it must not wait on lem's. ssh: lem reports its
 # commit; mini-ai reports $T/mini-head, and a deploy there is logged to

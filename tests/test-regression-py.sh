@@ -179,6 +179,16 @@ $T/plugin-mini/plugins/dw" "$(cat "$T/$impl/mini-prompt.args")"
   eq  "$impl mini-ai: another host answering stops it" 1 $?
   has "  and says which" "is lem, not mini-ai" "$(cat "$T/$impl/wrong.out")"
 
+  # --- a suite whose case ids can't be read (not UTF-8) stops the run, saying so
+  printf '# unreadable\n## Fixtures\nnone\n### S-F001 \xe2\x80 first\nsteps\n' > "$T/h/unreadable-suite.md"
+  : > "$FAKE_CLAUDE_LOG"; : > "$T/h/logs/loop.log"
+  reg "$impl" bad.out PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 -- smoke unreadable-suite.md
+  eq  "$impl: unreadable case ids stop the run" 1 $?
+  has "  saying so" "[regression:smoke] could not read case ids from $T/h/unreadable-suite.md" "$(cat "$T/h/logs/loop.log")"
+  eq  "  before any session" 0 "$(calls)"
+  cp "$T/h/logs/loop.log" "$T/$impl/bad.loop.log"
+  rm -f "$T/h/unreadable-suite.md"
+
   # --- bad knobs fail before anything runs
   reg "$impl" level.out -- nosuch
   eq  "$impl: an unknown level is refused" 1 $?
@@ -229,7 +239,7 @@ done
 
 # --- the same output, line for line
 for f in lem.out lem.loop.log lem.calls lem.prompt.chunk.md lem.results mini.out mini.loop.log mini.args mini.prompt.whole.md \
-         mem.out down.out wrong.out level.out model.out chunk.out token.out ptok.args ftok.args etok.args; do
+         mem.out bad.loop.log down.out wrong.out level.out model.out chunk.out token.out ptok.args ftok.args etok.args; do
   d="$(diff <(norm "$T/bash/$f") <(norm "$T/py/$f") | head -10)"
   eq "parity: $f" "" "$d"
 done

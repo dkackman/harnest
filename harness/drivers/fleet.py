@@ -771,7 +771,7 @@ class Fleet:
                 lane,
                 "chunk",
                 level,
-                reg.chunk_instructions(cases, suite.case_text(self.suite_files[level], cases)),
+                reg.chunk_instructions(cases, suite.case_text(self.suite_files[level], cases, level)),
                 label,
                 on_line,
             )
@@ -864,7 +864,7 @@ class Fleet:
                 reg.sweep_instructions(
                     lane.workspace(base),
                     notes.get((lane.name, level), ""),
-                    suite.fixtures_section(self.suite_files[level]),
+                    suite.case_text(self.suite_files[level], [], level),
                 ),
                 label,
             )
