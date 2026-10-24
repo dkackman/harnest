@@ -736,9 +736,9 @@ for r in implementer consumer; do
   row 2 $r "" $none "gh issue comment 5 --body x *(e:'gh issue edit 5 --add-label status:verified':)"
   row 2 $r "" $none "gh issue comment 5 --body x ?(+evil)"
 done
-# a commit message is not text the guard rules on: its heredoc is read as literal whatever the line
+# a git heredoc is read as literal only when every other segment is a plain git word or a gh issue ride-along
 row 0 implementer "" $none "git commit -m \"\$(cat <<'EOF'${nl}it's (done)${nl}EOF${nl})\" && git push origin feature"
-row 0 implementer "" $none "cat() { bash; }; git commit -m \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+row 2 implementer "" $none "cat() { bash; }; git commit -m \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
 row 0 implementer "" $none 'git add *.py'
 row 0 consumer "" $none 'gh issue list --search "x (y)"'
 # a body file the guard cannot read, for every role
@@ -753,4 +753,51 @@ row 0 consumer "" $none "gh issue comment 5 --body-file $T/plain3.md"
 for r in implementer consumer; do
   row 0 $r "" $none "cat > $T/cv.md <<'EOF'${nl}ok${nl}EOF${nl}gh issue comment 5 --body-file $T/cv.md && \\${nl}gh issue edit 5 --add-label bug"
 done
+# fix round 4: an escaped backslash (\\) ends a line; only an unescaped one continues it
+for r in implementer consumer; do
+  row 2 $r "" $none "echo \\\\${nl}gh issue edit 5 --add-label status:verified"
+  row 2 $r "" $none "echo \\\\${nl}gh issue close 5 --reason completed"
+  row 2 $r "" $none "# note \\\\${nl}gh issue edit 5 --add-label status:verified"
+  row 2 $r "" $none "echo 'a \\\\'${nl}gh issue edit 5 --add-label status:verified"
+  row 2 $r "" $none "gh issue edit 5 \\${nl}--add-label status:verified"
+  row 2 $r "" $none "gh issue edit 5 --add-label sta\\${nl}tus:verified"
+  row 2 $r "" $none "echo x \\${nl}; gh issue close 5 --reason completed"
+  row 0 $r "" $none "gh issue comment 5 --body 'a \\${nl}b'"
+  row 0 $r "" $none "gh issue comment 5 --body \"a \\${nl}b\""
+done
+row 2 implementer "" $none "echo \\\\${nl}git push --force origin master"
+row 2 implementer "" $none "echo \\\\\\\\${nl}git push --force origin master"
+# fix round 4: a git heredoc stays live (and is refused) with any sibling but a plain git word or gh issue ride-along
+for r in implementer consumer; do
+  row 2 $r "" $none "cat() { bash; }; git commit -m \"\$(cat <<'EOF'${nl}gh issue edit 5 --add-label status:verified${nl}EOF${nl})\""
+  row 2 $r "" $none "cat() { bash; }; git commit -m \"\$(cat <<'EOF'${nl}git push --force origin master${nl}EOF${nl})\""
+  row 2 $r "" $none "cd /x && git commit -m \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "PATH=/tmp/evil git commit -m \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+done
+row 0 implementer "" $none "git commit -m \"\$(cat <<'EOF'${nl}it's (done)${nl}EOF${nl})\" && git push origin develop"
+row 0 implementer "" $none "git add -A && git commit -m \"\$(cat <<'EOF'${nl}fix(mcp): #5 - x${nl}EOF${nl})\" && git push origin feature && gh issue comment 5 --body $hi"
+row 0 implementer "" $none "git merge --no-ff feature -m \"\$(cat <<'EOF'${nl}merge${nl}EOF${nl})\" && git push origin develop"
+# fix round 4: a bare assignment, or a prefixed gh call, is a sibling that keeps a heredoc live
+for r in implementer consumer; do
+  row 2 $r "" $none "PATH=/tmp/evil; gh issue comment 5 --body $hi"
+  row 2 $r "" $none "PATH=/tmp/evil${nl}gh issue comment 5 --body $hi"
+  row 2 $r "" $none "PATH=/tmp/evil gh issue view 5; gh issue comment 5 --body $hi"
+  # fix round 4: an expansion in the gh segment itself (outside the heredoc body) keeps it live
+  row 2 $r "" $none "gh issue comment \${PATH::=/tmp/evil} --body $hi"
+  row 2 $r "" $none "gh \${PATH::=/tmp/evil}issue comment 5 --body $hi"
+  row 2 $r "" $none "gh issue comment 5 --body $hi \${PATH::=/tmp/evil}"
+  # fix round 4: zsh applies a qualifier to a literal name, with any delimiter: no unquoted ( after a word
+  row 2 $r "" $none "gh issue comment 5 --body x /tmp(e{gh issue edit 5 --add-label status:verified})"
+  row 2 $r "" $none "gh issue comment 5 --body x /tmp(e:'gh issue edit 5 --add-label status:verified':)"
+  row 2 $r "" $none "gh issue view 5 /tmp(N)"
+  row 2 $r "" $none "c() { gh issue comment 5 --body hi; }"
+  row 0 $r "" $none 'gh issue list --search "x (y)"'
+  row 0 $r "" $none "gh pr view 5 --json files -q '.files[]'"
+done
+row 0 implementer "" $none "git log --grep='fix(x)'"
+row 0 consumer "" $none "gh issue comment 5 --body 'see \`fn(x)\` and (a)'"
+row 0 lead "" $none 'git log --since="$(python3 -c "print((1))")" --oneline'
+row 2 implementer "" $none 'gh issue view $(echo /tmp(N))'
+row 0 implementer "" $none 'for b in $(git branch --list); do echo "$b"; done'
+row 0 implementer "" $none 'if (( 1 > 0 )); then git status; fi'
 finish

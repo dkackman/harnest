@@ -170,18 +170,36 @@ HEREDOC_HEADER = re.compile(
 
 
 CAT_SUB = re.compile(r"\$\([ \t]*cat[ \t]+<<[ \t]*(['\"])(\w+)\1[ \t]*\n")
+# the git verbs a gh/git heredoc line may hold beside the call that carries it
+GIT_RIDE_ALONG = ("add", "checkout", "commit", "merge", "push", "status", "log", "fetch", "pull", "branch", "diff")
+GIT_RIDE_ALONG += ("rev-parse",)
+LIVE_HEREDOC_MSG = (
+    "a \"$(cat <<'EOF' ...)\" heredoc is read as literal text only on a gh or git call alone on its line "
+    "(plain gh issue and git commands may share it; no assignment, function, cd, pipe or expansion): "
+    "here it stays live, so write the line that way or use --body-file / -F."
+)
 
 
 def sub_command(seg_text):
-    """The command word (basename) of a segment's text before a "$(cat <<'D' ...)"
-    starts: the text up to the double quote that opens it."""
+    """(command word, plain) of a segment's text before a "$(cat <<'D' ...)"
+    starts (the text up to the double quote that opens it): the word is the
+    command's basename, and plain says it is the segment's first word (no
+    PATH=..., env or nice prefix before it)."""
     head = seg_text[: seg_text.rfind('"')] if '"' in seg_text else seg_text
     segs = segments(head)
     words = command_words(segs[-1]) if segs else []
     word = os.path.basename(words[0]) if words else ""
-    if word == "gh" and segs[-1][0] != "gh":
-        return ""  # a prefix (PATH=..., env, nice) before gh: not a plain call, so not rewritten
-    return word
+    return word, bool(segs) and segs[-1][0] == word
+
+
+def sibling_ok(words):
+    """A segment that may share a line with a rewritten heredoc: a plain gh
+    issue ride-along (ride_along_ok) or a plain `git <verb>`, read from the raw
+    words, so an assignment or prefix command before it, or a bare
+    assignment, is not plain."""
+    if ride_along_ok(words):
+        return True
+    return len(words) >= 2 and words[0] == "git" and words[1] in GIT_RIDE_ALONG
 
 
 def inline_cat_subs(cmd):
@@ -191,23 +209,25 @@ def inline_cat_subs(cmd):
     newlines), and every rule then reads it as the value it is.
 
     That holds only when nothing else on the line can change what `cat` is
-    (a function, an alias, PATH, zsh's ${(P)...}: too many spellings to list).
-    So a gh call's heredoc is rewritten only when every other command on the
-    line is a plain `gh issue` call (ride_along_ok, the body-file rule); with
-    any other sibling it stays live, and the literal-only body rule refuses it.
-    A git call's heredoc (git commit -m, git merge -m) is rewritten whatever
-    the line: a commit message is not text the guard rules on, and the rewrite
-    only spares it the unread-substitution refusal, so even a redefined cat
-    there changes nothing the guard decides. Any other command's heredoc is
-    left as it is. The walk stops at the first substitution or backtick of any
-    other shape; a gh heredoc then stays live too."""
-    out_all, out_raw, i, n, dq = [], [], 0, len(cmd), False
-    segs, seg_start, gh_here, gh_any, done = [], 0, False, False, True
+    (a function, an alias, PATH, zsh's ${(P)...}, a `cat() { bash; }` that
+    runs the body: too many spellings to list). So a gh or git call's heredoc
+    is rewritten only when the call is the segment's first word, the segment
+    holds no `$` outside the body (an argument like ${PATH::=...} assigns
+    before cat runs), the walk read the whole line, and every other non-empty
+    segment is a plain `gh issue` ride-along or a plain `git <verb>`
+    (sibling_ok: no assignment, prefix, cd, pipe, function or comment). Any
+    other command's heredoc is left as it is. With the condition unmet the
+    gh/git heredoc stays live and is refused (LIVE_HEREDOC_MSG): the guard
+    cannot read what it would run. The walk stops at the first substitution
+    or backtick of any other shape; that too leaves a gh/git heredoc live."""
+    out_all, i, n, dq = [], 0, len(cmd), False
+    segs, seg_start, here, any_here, done = [], 0, False, False, True
+    outside = []  # the current segment's text less its heredoc bodies
 
     def close_seg():
-        nonlocal seg_start, gh_here
-        segs.append(("".join(out_all[seg_start:]), gh_here))
-        seg_start, gh_here = len(out_all), False
+        nonlocal seg_start, here, outside
+        segs.append(("".join(out_all[seg_start:]), here, "".join(outside)))
+        seg_start, here, outside = len(out_all), False, []
 
     while i < n:
         c = cmd[i]
@@ -222,14 +242,14 @@ def inline_cat_subs(cmd):
                     end = e + t.end() if t else None
                     break
                 k = e + 1
-            word = sub_command("".join(out_all[seg_start:])) if end is not None else ""
+            word, plain = sub_command("".join(out_all[seg_start:])) if end is not None else ("", False)
+            if word in ("gh", "git") and not plain:
+                deny(LIVE_HEREDOC_MSG)
             if word in ("gh", "git"):
                 body = cmd[m.end() : max(m.end(), k - 1)].rstrip("\n")
                 lit = re.sub(r'([\\"$`])', r"\\\1", body)
                 out_all.append(lit)
-                out_raw.append(lit if word == "git" else cmd[i:end])
-                if word == "gh":
-                    gh_here = gh_any = True
+                here = any_here = True
                 i = end
                 continue
         if c == "`" or cmd[i : i + 2] == "$(":
@@ -237,7 +257,7 @@ def inline_cat_subs(cmd):
             break
         if c == "\\":
             out_all.append(cmd[i : i + 2])
-            out_raw.append(cmd[i : i + 2])
+            outside.append(cmd[i : i + 2])
             i += 2
             continue
         if c == "'" and not dq:
@@ -246,7 +266,7 @@ def inline_cat_subs(cmd):
                 done = False
                 break
             out_all.append(cmd[i : e + 1])
-            out_raw.append(cmd[i : e + 1])
+            outside.append(cmd[i : e + 1])
             i = e + 1
             continue
         if c == '"':
@@ -260,20 +280,22 @@ def inline_cat_subs(cmd):
         if sep:
             close_seg()
         out_all.append(c)
-        out_raw.append(c)
+        outside.append(c)
         if sep:
             seg_start = len(out_all)
         i += 1
     close_seg()
     rest = cmd[i:]
-    if not gh_any:
+    if not any_here:
         return "".join(out_all) + rest
     alone = done and all(
-        here or all(ride_along_ok(command_words(w)) for w in segments(text) if command_words(w))
-        for text, here in segs
+        ("$" not in live_text(out)) if h else all(sibling_ok(w) for w in segments(text) if w)
+        for text, h, out in segs
         if text.strip(" \t;&|()\n")
     )
-    return "".join(out_all if alone else out_raw) + rest
+    if not alone:
+        deny(LIVE_HEREDOC_MSG)
+    return "".join(out_all) + rest
 
 
 SHELLS = r"(?<![\w.-])(?:bash|sh|zsh|dash|ksh|eval|source)(?![\w.-])|(?<![\w./-])\.(?=[ \t])"
@@ -418,11 +440,66 @@ UNQUOTE = re.compile(r"[\"'\\]")  # what bash drops from a word: quotes and back
 UNBALANCED = False  # set by segments() when a line had an unmatched quote
 
 
+def join_continuations(cmd):
+    """cmd with each line continuation removed, as bash and zsh join lines: an
+    unescaped backslash right before a newline, outside single quotes, $'...'
+    and the body of a quoted-delimiter heredoc not fed to a shell. An escaped
+    backslash at the end of a line (\\\\, an even run) ends the line, so the
+    next line is its own command and is read as one."""
+    out, i, n, dq, pending, line_start = [], 0, len(cmd), False, [], 0
+    while i < n:
+        c, two = cmd[i], cmd[i : i + 2]
+        if c == "\\":
+            if two != "\\\n":
+                out.append(two)
+            i += 2
+        elif c == "'" and not dq:
+            e = cmd.find("'", i + 1)
+            e = n - 1 if e < 0 else e
+            out.append(cmd[i : e + 1])
+            i = e + 1
+        elif two == "$'" and not dq:
+            k = i + 2
+            while k < n and cmd[k] != "'":
+                k += 2 if cmd[k] == "\\" else 1
+            out.append(cmd[i : k + 1])
+            i = k + 1
+        elif c == '"':
+            dq = not dq
+            out.append(c)
+            i += 1
+        elif not dq and (m := re.match(r"<<-?[ \t]*(['\"])(\w+)\1", cmd[i:])):
+            if not re.search(SHELLS, cmd[line_start:i]):
+                pending.append((m.group(2), cmd[i + 2 : i + 3] == "-"))
+            out.append(m.group(0))
+            i += m.end()
+        elif not dq and c == "\n" and pending:
+            k = i + 1
+            for delim, dash in pending:  # copy each body through its delimiter line, untouched
+                while k < n:
+                    e = cmd.find("\n", k)
+                    e = n if e < 0 else e
+                    line = cmd[k:e]
+                    k = e + 1
+                    if (line.lstrip("\t") if dash else line) == delim:
+                        break
+            pending = []
+            out.append(cmd[i:k])
+            i = line_start = k
+        else:
+            if not dq and c in ";|&\n":
+                line_start = i + 1
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def segments(cmd):
     """Split a shell line into simple commands on ; & | ( ) and unquoted
     newlines, respecting quotes, so text inside a comment body is never
-    read as a command. A backslash-newline is a line continuation: a space."""
-    cmd = cmd.replace("\\\n", " ")
+    read as a command. A backslash-newline is a line continuation
+    (join_continuations); an escaped backslash ends the line."""
+    cmd = join_continuations(cmd)
     lex = shlex.shlex(cmd, posix=True, punctuation_chars="();<>|&\n")
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
@@ -508,7 +585,9 @@ def shell_words(text):
 
     while i < n:
         c, two = text[i], text[i : i + 2]
-        if c == "\\":
+        if two == "\\\n":  # a line continuation: the word goes on
+            i += 2
+        elif c == "\\":
             w["raw"] += text[i : i + 2]
             w["unq"] += "_"
             w["deq"] += text[i + 1 : i + 2]
@@ -1107,23 +1186,60 @@ def carries_release_marker(words):
     return False
 
 
+OPEN_PAREN_OK = " \t\r\n;&|($<>="  # what may stand right before an unquoted ( on a gh/git line
+
+
+def skip_substitution(text, i):
+    """Index just past the `)` that closes the `$(` at i (or the end of text)."""
+    depth, k, n = 0, i + 1, len(text)
+    while k < n:
+        if text[k] == "(":
+            depth += 1
+        elif text[k] == ")":
+            depth -= 1
+            if depth == 0:
+                break
+        k += 1
+    return k + 1
+
+
 def glob_qualifier(text):
-    """True when unquoted text holds a zsh glob qualifier: a glob character (*, ?, ])
-    right before `(`, or a `(e:` / `(+` / `(#q` group. zsh runs the code in e:...:
-    and +func while it expands the word, before gh or git sees it."""
+    """True when unquoted text holds what zsh could read as a glob qualifier: an
+    unquoted `(` directly after a word or glob character (anything but
+    whitespace, a separator, another `(`, or the `$`, `<`, `>`, `=` of a
+    substitution), or a `(e:` / `(+` / `(#q` group. zsh applies a qualifier to a
+    literal name too (`/tmp(e{cmd})`, any delimiter), and runs the code in
+    e:...:, e{...} and +func while it expands the word, before gh or git sees it.
+    Fail closed: a `(` that is a subshell, `$(`, `<(`, `=(`, `(( `, a case
+    pattern or an array keeps its own rules. A `$(...)`, quoted or not, is read
+    on its own by the same rule: its quotes are its own, not the line's."""
     i, n = 0, len(text)
     while i < n:
         c = text[i]
         if c == "\\":
             i += 2
             continue
+        if text[i : i + 2] == "$(":
+            e = skip_substitution(text, i)
+            if glob_qualifier(text[i + 2 : e - 1]):
+                return True
+            i = e
+            continue
         if c == '"':
             k = i + 1
             while k < n and text[k] != '"':
-                k += 2 if text[k] == "\\" else 1
+                if text[k : k + 2] == "$(":
+                    e = skip_substitution(text, k)
+                    if glob_qualifier(text[k + 2 : e - 1]):
+                        return True
+                    k = e
+                else:
+                    k += 2 if text[k] == "\\" else 1
             i = k + 1
             continue
-        if (c in "*?]" and text[i + 1 : i + 2] == "(") or re.match(r"\((?:e:|\+|#q)", text[i:]):
+        if c == "(" and i > 0 and text[i - 1] not in OPEN_PAREN_OK:
+            return True
+        if re.match(r"\((?:e:|\+|#q)", text[i:]):
             return True
         i += 1
     return False
