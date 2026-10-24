@@ -92,7 +92,7 @@ A hook refuses:
   the issue;
 - adding an `owner:*` label without removing one in the same command;
 - adding `release`, `release-blocker`, `arch-approved` or `security`, in any case, on create as well as edit;
-- `env -S` (also `--split-string` and abbreviations); `gh` as a bare word of another command (`watch gh ...`) or inside one of its quoted arguments (`bash -c`, `ssh host "gh ..."`); and a comment or issue body from stdin, a missing or unreadable file, or a file unless that `gh` call is the only command on the line (a `cat > PATH <<'EOF'` heredoc writing exactly that file is allowed; no backticks, `$(`, `~` or `env -C`);
+- `env -S` (also `--split-string` and abbreviations); `gh` as a bare word of another command (`watch gh ...`) or inside one of its quoted arguments (`bash -c`, `ssh host "gh ..."`); and a comment or issue body from stdin, a missing or unreadable file, or a file unless that `gh` call is the only command on the line (a `cat > PATH <<'EOF'` heredoc (quoted delimiter) writing exactly that file, and other `gh issue` calls, may share the line; no backticks, `$(`, `~` or `env -C`);
 - a `gh api` write whose endpoint has a `?`, `#` or other non-path character;
 - a `gh api` write other than the plan-comment PATCH below, `bash -c`/`eval`/`xargs` around `gh`, and a `gh` command with an unbalanced quote.
 

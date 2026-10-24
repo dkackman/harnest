@@ -155,8 +155,9 @@ HOOK_CWD = ""  # the tool call's cwd, set by main(): relative body-file paths ar
 SOLE_COMMAND = False  # main(): the gh call is the only command on the line, bar heredoc writes of its body file
 HEREDOC_PATHS = []  # the files `cat > PATH <<EOF` writes on that line
 ENV_CHDIR = False  # command_words(): an env -C/--chdir prefix was stripped from the current segment
-HEREDOC_WRITE = re.compile(
-    r"^[ \t]*(?:cat[ \t]*>|tee[ \t]+)[ \t]*(\S+?)[ \t]*<<-?[ \t]*(['\"]?)(\w+)\2[^\n]*\n.*?\n[ \t]*\3[ \t]*(?:\n|$)",
+HEREDOC_WRITE = re.compile(  # quoted delimiter only: the body is then literal, never expanded
+    r"^[ \t]*(?:cat[ \t]*>|tee[ \t]+)[ \t]*(\S+?)[ \t]*<<-?[ \t]*(['\"])(\w+)\2"
+    r"(?:[ \t]*(?:>[ \t]*/dev/null|2>&1))*[ \t]*\n(.*?)\n[ \t]*\3[ \t]*(?:\n|$)",
     re.M | re.S,
 )
 
@@ -801,7 +802,7 @@ def wrapper_rule(words):
             deny(ARG_GH_MSG)
         if os.path.basename(w) == "git" and git_push_args(words[j:]):
             deny(ARG_GH_MSG)
-        w = re.sub(r"\\[nt]", " ", w)  # $'a\ngh ...' reaches the shell as a newline
+        w = UNQUOTE.sub("", re.sub(r"\\[nt]", " ", w))  # $'a\ngh ...' reaches the shell as a newline
         if re.search(r"\s", w) and (re.search(GH_IN_WORD, w, re.S) or re.search(GIT_PUSH_IN_WORD, w, re.S)):
             deny(ARG_GH_MSG)
 
@@ -843,6 +844,12 @@ def api_parse(args):
 
 
 UNREADABLE_BODY_MSG = "body must be inline or a readable file: the guard cannot check a marker it cannot read."
+
+
+def only_issue_calls(words):
+    """A segment that is a `gh issue ...` call: it cannot rewrite a body file."""
+    w = command_words(words)
+    return len(w) >= 2 and os.path.basename(w[0]) == "gh" and w[1] == "issue"
 
 
 def redirects_ok(words):
@@ -961,16 +968,23 @@ def main():
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    segs = segments(cmd)
+    stripped = HEREDOC_WRITE.sub("", cmd)  # a quoted-delimiter heredoc body is data, not commands
+    segs = segments(stripped)
     global HOOK_CWD, SOLE_COMMAND
     HOOK_CWD = data.get("cwd") or ""
     HEREDOC_PATHS[:] = [m.group(1).strip("'\"") for m in HEREDOC_WRITE.finditer(cmd)]
-    rest = re.sub(r"\d*>&\d+", " ", HEREDOC_WRITE.sub("", cmd))
+    rest = re.sub(r"\d*>&\d+", " ", stripped)
     rsegs = segments(rest)
     SOLE_COMMAND = (
-        len(rsegs) == 1 and "`" not in cmd and "$(" not in cmd and "harnest:" not in cmd and redirects_ok(rsegs[0])
+        bool(rsegs)
+        and (len(rsegs) == 1 or all(only_issue_calls(g) for g in rsegs))
+        and "`" not in rest
+        and "$(" not in rest
+        and "harnest:" not in rest
+        and RELEASE_MARKER not in cmd
+        and all(redirects_ok(g) for g in rsegs)
     )
-    if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", cmd)):
+    if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", stripped)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:
         words = command_words(words)
