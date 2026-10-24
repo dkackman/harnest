@@ -1333,7 +1333,18 @@ def heredoc_header(text, i):
     return (k, delim, dash, quoted) if delim else None
 
 
-HEREDOC_SHELLS = ("bash", "sh", "zsh", "dash", "ksh")  # what runs a heredoc body it reads from stdin
+HEREDOC_SHELLS = (
+    "bash",
+    "sh",
+    "zsh",
+    "dash",
+    "ksh",
+    "csh",
+    "tcsh",
+    "fish",
+    "ash",
+    "busybox",
+)  # what runs a heredoc body it reads from stdin
 RUNNERS = (
     "xargs",
     "sudo",
@@ -1345,6 +1356,12 @@ RUNNERS = (
     "timeout",
     "nice",
     "time",
+    "caffeinate",
+    "watch",
+    "parallel",
+    "doas",
+    "script",
+    "chroot",
 )  # run their argument
 # read-only filters a heredoc's output may be piped to without the body reaching a shell
 PIPE_FILTERS = frozenset(
@@ -1418,6 +1435,8 @@ def heredoc_fed(text, i, k, ls, tainted):
     le = len(text) if le < 0 else le
     if i > 0 and text[i - 1].isdigit():
         return True  # exec 3<<'EOF': the body waits on a descriptor for whatever reads it next
+    if i > 0 and text[i - 1] == "}":
+        return True  # exec {fd}<<'EOF': the same, on a descriptor bash picks
     if open_process_substitution(text[ls:i]):
         return (
             True  # bash <(cat <<'EOF'), bash < <(...), source <(...), zsh =(...): the body reaches the shell as a file
@@ -1436,6 +1455,8 @@ def heredoc_fed(text, i, k, ls, tainted):
         elif "$" in w or "`" in w:
             return True
         deq = [os.path.basename(UNQUOTE.sub("", x)) for x in words]
+        if not w and "exec" in deq:
+            return True  # exec <<'EOF': the body becomes this shell's stdin, read by the next shell to start
         if os.path.basename(UNQUOTE.sub("", w)) in HEREDOC_SHELLS:
             return True
         if any(d in RUNNERS for d in deq) and any(d in HEREDOC_SHELLS for d in deq):
@@ -1495,6 +1516,8 @@ def command_text(text):
                         break
                     body.append(line)
                 if fed:  # a child shell's script: its commands are read, its assignments reach nothing here
+                    # (a source/eval body runs in the current shell, which the wrapper does not model;
+                    # no route through that was found, so it is kept for the child-shell case)
                     out.append("\n(\n" + "\n".join(body) + "\n)")
                 elif not quoted:
                     out.extend("\n" + m.group(0) for m in SUBSTITUTION.finditer("\n".join(body)))
@@ -1929,7 +1952,7 @@ def built_command_rule(text, depth=0, env=None, base=0):
             if name in tainted or name in sublit or not (set_here or (name in INTERPRETER_VARS and wild < 0)):
                 deny(VAR_COMMAND_MSG)
             continue
-        if w[0] == "`" or w.startswith("$(") or re.search(r"[$'\"`]", w):
+        if w[0] == "`" or w.startswith("$(") or re.search(r"[$'\"`\\]", re.sub(r"^(?:\\\n)+", "", w)):
             deny(BUILT_COMMAND_MSG)
     if depth < 8:
         for inner, at in live_substitutions(ct) + groups:  # live ones: a single-quoted `x` is text

@@ -984,4 +984,16 @@ for r in implementer consumer; do
   row 2 $r "" $none "G=g${nl}V=/usr/bin${nl}\$V/bash <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
   row 2 $r "" $none "bash <<'A'${nl}S=venv/bin/python${nl}A${nl}\$S -c \"import x\""
 done
+# a backslash in a command word is dropped by the shell after the guard's case fold ran on raw
+# text (G\H runs GH, which APFS runs as gh); more heredoc consumers; exec feeds a heredoc to the shell
+for r in implementer consumer; do
+  row 2 $r "" $none 'G\H issue close 5 --reason completed'
+  row 2 $r "" $none 'g\H issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'G\IT push --force origin master'
+  row 2 $r "" $none "B\\ASH <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}caffeinate bash <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}tcsh <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}exec <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl}bash"
+  row 2 $r "" $none "G=g${nl}exec {fd}<<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl}bash <&\$fd"
+done
 finish
