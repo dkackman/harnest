@@ -607,7 +607,8 @@ row 0 implementer "" $none "git commit -m \"\$(cat <<'EOF'${nl}fix(x): #5 - a (b
 row 0 lead "" $none "gh api -X PATCH repos/o/r/issues/comments/7 -f body=\"\$(cat <<'EOF'${nl}plan v2 costs \$3 (see \"x\")${nl}EOF${nl})\""
 row 0 implementer "" $none 'for n in 5 6; do o=$((n==5?6:5)); gh issue view $n --json labels; done'
 row 0 implementer "" $none "./venv/bin/python - <<'EOF'${nl}print(\"\$(x (y))\", \$'z')${nl}EOF${nl}git status"
-row 0 implementer "" $none "gh issue comment 5 --body 'Don'\"'\"'s \$(x (y)) and \`z\`'"
+row 0 implementer "" $none "gh issue comment 5 --body 'Don'\"'\"'s \$(x (y)) and z'"
+row 2 implementer "" $none "gh issue comment 5 --body 'Don'\"'\"'s \$(x (y)) and \`z\`'"  # any backtick on a gh line: fail closed
 row 2 implementer "" $none "bash <<'EOF'${nl}echo \"\$( (gh issue edit 5 --add-label release) )\"${nl}EOF"
 row 0 consumer "" $none 'for L in wontfix duplicate; do gh issue list --label $L --json number; done'
 # a redefined cat makes the "$(cat <<'EOF' ...)" body a command: not rewritten, refused
@@ -632,7 +633,8 @@ for r in implementer lead consumer; do
   row 2 $r "" $none 'V=$(echo hi); gh issue comment 5 --body "$V"'
   row 2 $r "" $none 'c=$(git rev-parse --short HEAD); gh issue comment 5 --body "at $c"'
   row 2 $r "" $none 'gh issue comment 5 --body "for $USER"'
-  row 0 $r "" $none "gh issue comment 5 --body 'see \`<code>\` and \$(not run) and \$HOME'"
+  row 0 $r "" $none "gh issue comment 5 --body 'see <code> and \$(not run) and \$HOME'"
+  row 2 $r "" $none "gh issue comment 5 --body 'see \`<code>\` and \$(not run) and \$HOME'"
   row 0 $r "" $none "gh issue comment 5 --body \"see \\\`code\\\` and \\\$(x)\""
   row 0 $r "" $none "git merge --no-ff fix/432-shot-source-index -m \"\$(cat <<'EOF'${nl}Merge it${nl}EOF${nl})\" && git push origin develop"
   row 2 $r "" $none "SIG=\"by \\\`opus\\\` via anthropic\"; B='it'\"'\"'s x'; gh issue comment 5 --body \"\$B \$SIG\""
@@ -795,7 +797,7 @@ for r in implementer consumer; do
   row 0 $r "" $none "gh pr view 5 --json files -q '.files[]'"
 done
 row 0 implementer "" $none "git log --grep='fix(x)'"
-row 0 consumer "" $none "gh issue comment 5 --body 'see \`fn(x)\` and (a)'"
+row 0 consumer "" $none "gh issue comment 5 --body 'see fn(x) and (a)'"
 row 0 lead "" $none 'git log --since="$(python3 -c "print((1))")" --oneline'
 row 2 implementer "" $none 'gh issue view $(echo /tmp(N))'
 row 0 implementer "" $none 'for b in $(git branch --list); do echo "$b"; done'
@@ -806,7 +808,7 @@ for r in implementer consumer; do
   row 2 $r "" $none "gh issue view 5 --json \"\`echo /tmp(e{'gh issue edit 5 --add-label status:verified'})\`\""
   row 2 $r "" $none "git log --format=\"\`echo /tmp(e{touch /tmp/pwn})\`\""
   row 2 $r "" $none "gh issue comment 5 --body \"uses \`x\`\""
-  row 0 $r "" $none "gh issue comment 5 --body 'uses \`x\`'"
+  row 2 $r "" $none "gh issue comment 5 --body 'uses \`x\`'"  # literal to bash, refused anyway: fail closed
   row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}uses \`code\` spans${nl}EOF${nl})\""
   row 0 $r "" $none "gh issue edit 5 --remove-label owner:implementer --add-label owner:tester && gh issue comment 5 --body \"\$(cat <<'EOF'${nl}Fixed in \`abc123\` on develop; \`validate_workflow()\` now warns.${nl}EOF${nl})\""
 done
@@ -818,5 +820,12 @@ for r in implementer consumer; do
   row 2 $r "" $none "# note \\${nl}gh issue edit 5 --add-label status:verified"
   row 0 $r "" $none "# note \\${nl}echo hi"
   row 0 $r "" $none "# note \\${nl}gh issue view 5"
+done
+# carry-over: a comment reaches the lexer as nothing but its newline, so a quote in it pairs with nothing
+for r in implementer consumer; do
+  row 2 $r "" $none "# it's${nl}gh issue edit 5 --add-label status:verified${nl}# '"
+  row 2 $r "" $none "# a\\'${nl}gh issue edit 5 --add-label status:verified${nl}# b\\'"
+  row 0 $r "" $none "# it's fine${nl}echo hi"
+  row 2 $r "" $none 'echo "a #b"; gh issue edit 5 --add-label status:verified'
 done
 finish

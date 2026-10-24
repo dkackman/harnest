@@ -292,7 +292,8 @@ def inline_cat_subs(cmd):
     alone = done and all(
         ("$" not in live_text(out))
         if h
-        else ("$" not in live_text(text) and all(sibling_ok(w) for w in segments(text) if w))
+        # a sibling with text but no words is a comment, which this walk does not follow
+        else ("$" not in live_text(text) and bool(sw := [w for w in segments(text) if w]) and all(map(sibling_ok, sw)))
         for text, h, out in segs
         if text.strip(" \t;&|()\n")
     )
@@ -450,15 +451,15 @@ def join_continuations(cmd):
     backslash at the end of a line (\\\\, an even run) ends the line, so the
     next line is its own command and is read as one. A comment (an unquoted
     `#` at the start of a word) runs to its newline, backslash or not: bash
-    does not continue a comment."""
+    does not continue a comment, and the lexer gets nothing of it but the
+    newline that ends it."""
     out, i, n, dq, pending, line_start = [], 0, len(cmd), False, [], 0
     while i < n:
         c, two = cmd[i], cmd[i : i + 2]
         if c == "#" and not dq and (i == 0 or cmd[i - 1] in " \t\n;&|()"):
             e = cmd.find("\n", i)
             e = n if e < 0 else e
-            out.append(cmd[i:e].replace("\\", ""))  # bash ignores the comment; no escape in it reaches shlex
-            i = e
+            i = e  # bash ignores the comment: none of it (no quote, no escape) reaches shlex, only its newline
         elif c == "\\":
             if two != "\\\n":
                 out.append(two)
@@ -1258,20 +1259,21 @@ def glob_qualifier(text):
 BACKTICK_MSG = "backticks inside double quotes are not allowed on a gh/git line: use $(...)"
 
 
-def backtick_in_quotes(text):
-    """True when live text holds a backtick inside double quotes: the guard reads
-    a quoted string as one word, but zsh runs the backtick's command first (a
-    glob qualifier in it included). A rewritten heredoc body has its backticks
-    escaped, and an escaped backtick is text."""
-    i, n, dq = 0, len(text), False
+def unescaped_backtick(text):
+    """True when text holds a backtick no backslash escapes, in any quote state.
+    Fail closed: the guard reads a quoted string as one word, but a backtick in
+    double quotes runs its command first (zsh glob qualifiers included), and
+    telling a single-quoted backtick from a live one means tracking quotes the
+    way the shell does, which a backslash, a $'...' or an odd comment has
+    fooled before. So any backtick is refused on a gh/git line; a rewritten
+    heredoc body has its backticks escaped (text), and a heredoc written to a
+    body file is cut before this runs."""
+    i, n = 0, len(text)
     while i < n:
-        c = text[i]
-        if c == "\\":
+        if text[i] == "\\":
             i += 2
             continue
-        if c == '"':
-            dq = not dq
-        elif c == "`" and dq:
+        if text[i] == "`":
             return True
         i += 1
     return False
@@ -1688,7 +1690,7 @@ def main():
     )
     if re.search(GH_WORD, stripped) and glob_qualifier(live_text(stripped)):
         deny("zsh glob qualifiers are not allowed on a gh/git line")
-    if re.search(GH_WORD, stripped) and backtick_in_quotes(live_text(stripped)):
+    if re.search(GH_WORD, stripped) and unescaped_backtick(stripped):
         deny(BACKTICK_MSG)
     if marker_through_punctuation(cmd):
         deny(
