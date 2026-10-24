@@ -158,7 +158,7 @@ has "plan: four lanes" "on 4 lane(s)" "$(cat "$T/plan.out")"
 
 # --- the run
 fleet DW_TOKEN_ALPHA=tok-alpha DW_TOKEN_BETA=tok-beta DW_TOKEN_GAMMA=tok-gamma
-eq  "run: exits cleanly" 0 $?
+eq  "run: a failing case exits 1" 1 $?
 # every lane's --mcp-config file names its own server: one shared file would
 # hold the last server built
 for s in "alpha $p1" "beta $p2" "gamma $p3"; do
@@ -219,6 +219,54 @@ eq  "  workspaces: the level's, and alpha-2's own" "regression-smoke regression-
     "$(awk '/^start/ {print $5}' "$T/timeline" | sort -u | tr '\n' ' ')"
 has "  alpha-2's workspace is created" 'alpha create_workspace {"name": "regression-smoke-alpha-2"}' "$(cat "$T/mcp-calls")"
 has "  and seeded with the level's own assets" '"source": "regression-smoke", "destination": "regression-smoke-alpha-2", "assets": ["fixture.wav"]' "$(cat "$T/mcp-calls")"
+
+# --- a session that ends with cases unanswered (budget or turns ran out)
+# One server, one lane, three cases in one session: the fake answers only
+# the first of a three-case batch, then ends with its result (the usage: line).
+cat > "$T/h/regression-suite-smoke.md" <<'EOS'
+# tiny smoke
+## Fixtures
+none
+### S-F001 — one
+steps
+### S-F002 — two
+steps
+### S-F003 — three
+steps
+EOS
+(cd "$T/h" && python3 - <<'EOF'
+import json
+from harness import requirements as r
+b = r.case_blocks("regression-suite-smoke.md")
+json.dump({"version": 1, "cases": {c: {"workflows": [], "models": [], "assets": [], "load": "none",
+           "hash": r.block_hash(b[c])} for c in b}}, open("regression-requirements.json", "w"))
+EOF
+)
+git -C "$T/h" add -A && git -C "$T/h" -c user.name=t -c user.email=t@t commit -qm short
+mkdir "$T/bin2"
+cat > "$T/bin2/claude" <<'EOS'
+#!/usr/bin/env bash
+prompt="$2"
+if [[ "$prompt" == *"this order: "* ]]; then
+  cases="${prompt#*this order: }"; cases="${cases%%. *}"
+else
+  cases=""
+fi
+echo "start [$cases]" >> "$FAKE_TIMELINE.short"
+set -- $cases
+[ $# -eq 3 ] && set -- "$1"   # out of budget after the first case
+text=""
+for c in "$@"; do text="${text}REGRESSION-CASE: $c\nREGRESSION-RESULT: $c pass\n"; done
+printf '{"type":"system","subtype":"init","model":"claude-fake"}\n'
+jq -nc --arg t "$(printf '%b' "$text")" '{type:"assistant",message:{id:"m1",usage:{input_tokens:1},content:[{type:"text",text:$t}]}}'
+printf '{"type":"result","subtype":"success","num_turns":2,"duration_ms":1000,"total_cost_usd":0.25,"usage":{"input_tokens":1,"cache_read_input_tokens":1,"cache_creation_input_tokens":1,"output_tokens":1}}\n'
+EOS
+chmod +x "$T/bin2/claude"
+fleet PATH="$T/bin2:$PATH" FLEET_SERVERS=beta CASES_PER_SESSION=3 DW_TOKEN_BETA=tok-beta
+rc=$?
+eq  "fleet: exit 1 when a case is left unreported" 1 "$rc"
+has "fleet: state says failed" '"status": "failed"' "$(cat "$T/h/logs/fleet/state.json")"
+eq  "  S-F002 and S-F003 unreported" "unreported unreported" "$(case_of S-F002 outcome) $(case_of S-F003 outcome)"
 
 # --- a server that's down stops the run before it starts
 kill $mcppid; wait $mcppid 2>/dev/null

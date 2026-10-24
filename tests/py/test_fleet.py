@@ -51,6 +51,51 @@ def fx(name, models=(), workflows=None, assets=(), workers=1):
     )
 
 
+def _bare_fleet(outcomes, per=8):
+    """A Fleet with one lem lane, its queue holding <outcomes>' cases (one
+    single-case group each), and a real state file in a temporary directory:
+    enough to take, settle, guard and finish without a server."""
+    import threading
+
+    d = tempfile.mkdtemp()
+    f = fleet.Fleet.__new__(fleet.Fleet)
+    f.mu = threading.RLock()
+    f.cv, f.busy, f.idle, f.per, f.min_batch, f.started_gids = threading.Condition(f.mu), 0, 0, per, 1, set()
+    lane = fleet.Lane(server=srv("lem", primary=True), slot=1, facts=fx("lem"))
+    f.lanes, f.est, f.ref, f.stamp = [lane], durations.Estimates(), {}, "test"
+    said = []
+    f.said = said
+    f.servers = {"lem": type("S", (), {"down": False, "log": type("L", (), {"say": staticmethod(said.append)})()})()}
+    f.queues, f.case_need, f.group_need = {lane.name: []}, {}, {}
+    cases = {}
+    for c, o in outcomes.items():
+        gid = f"smoke:{c}"
+        f.case_need[c] = r.Need(load="none", known=True)
+        f.group_need[gid] = ("smoke", r.Group(cases=[c], need=f.case_need[c]))
+        if o == "queued":
+            f.queues[lane.name].append(fleet.Item(level="smoke", case=c, gid=gid, exclusive=False))
+        cases[c] = {"level": "smoke", "lane": lane.name, "server": "lem", "load": "none", "outcome": o}
+    data = {"status": "running", "finished": None, "lanes": [{"name": lane.name, "cost": 0.0, "sessions": 0}]}
+    f.state = fleet.State(Path(d, "state.json"), {**data, "cases": cases, "events": []})
+    return f
+
+
+def fleet_with_cases(outcomes):
+    return _bare_fleet(outcomes)
+
+
+def fleet_with_lane_that_raises(exc):
+    """Three queued cases, two per session: the lane takes a batch of two
+    and its session crashes, leaving one case still in its queue."""
+    f = _bare_fleet({c: "queued" for c in ("S-F001", "S-F002", "S-F003")}, per=2)
+
+    def run_batch(lane, batch, n):
+        raise exc
+
+    f.run_batch = run_batch
+    return f
+
+
 class Groups(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.TemporaryDirectory()
@@ -464,6 +509,46 @@ class Running(unittest.TestCase):
         )
         self.assertEqual(["S-F003"], fleet.SKIP_RE.findall(text))
         self.assertEqual("S-F004", fleet.CASE_RE.match("REGRESSION-CASE: S-F004").group(1))
+
+
+class Outcomes(unittest.TestCase):
+    def test_finish_downgrades_done_when_cases_are_unresolved(self):
+        f = fleet_with_cases({"S-F001": "pass", "S-F002": "unreported"})
+        self.assertEqual(f.finish("done"), "failed")
+        self.assertEqual("failed", f.state.data["status"])
+        self.assertEqual("failed", f.finish("done"), "a second finish reports what the first recorded")
+
+    def test_finish_keeps_done_when_every_case_has_an_answer(self):
+        f = fleet_with_cases({"S-F001": "pass", "S-F002": "fail", "S-F003": "skip", "S-F004": "unplaced"})
+        self.assertEqual(f.finish("done"), "done")
+
+    def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
+        # lane_main raises RuntimeError: every case in its batch and queue ends "not run"
+        f = fleet_with_lane_that_raises(RuntimeError("boom"))
+        f._guard(f.lane_main, f.lanes[0])
+        self.assertEqual({c["outcome"] for c in f.state.data["cases"].values()}, {"not run"})
+        self.assertEqual([], f.queues[f.lanes[0].name])
+        self.assertEqual("failed", f.finish("done"))
+
+    def test_main_exits_1_on_a_failed_run_or_a_failing_case(self):
+        from unittest import mock
+
+        for status, outcomes, args, rc in (
+            ("done", {"S-F001": "pass"}, [], 0),
+            ("done", {"S-F001": "fail"}, [], 1),
+            ("done", {"S-F001": "fail"}, ["--allow-failures"], 0),
+            ("failed", {"S-F001": "pass"}, ["--allow-failures"], 1),
+        ):
+            f = fleet_with_cases(outcomes)
+            f.plan = f.setup = lambda: None
+            f.run = lambda f=f, status=status: f.finish(status)
+            with (
+                mock.patch.object(fleet, "Fleet", lambda *a, f=f: f),
+                mock.patch.object(fleet, "gather_all", lambda *a, **k: {}),
+                mock.patch.object(fleet.requirements, "load_sidecar", lambda: {}),
+                mock.patch.object(fleet.session, "stop_on_sigterm", lambda: None),
+            ):
+                self.assertEqual(rc, fleet.main([*args, "smoke"]), (status, outcomes, args))
 
 
 class Watchdog(unittest.TestCase):

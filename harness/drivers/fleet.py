@@ -5,6 +5,11 @@ once, on a lane that can run it (docs/superpowers/specs/
     python3 -m harness.drivers.fleet [level|all]          # run it
     python3 -m harness.drivers.fleet --plan [level|all]   # where each case would run; runs nothing
     FLEET_SERVERS="lem minid" python3 -m harness.drivers.fleet smoke
+    python3 -m harness.drivers.fleet --allow-failures smoke  # exit 0 when cases fail
+
+It exits 1 when a case fails (unless --allow-failures) and when the run
+lost a case: a lane crashed, or a case ended with no answer (finish
+records the run "failed" then).
 
 Every server is preflighted and asked for its facts (workers, cached
 models, assets, what each named workflow lacks), and the plan is checked
@@ -66,6 +71,8 @@ CASE_RE = re.compile(r"^[-*` ]*REGRESSION-CASE:[ \t]*" + _ID)
 SKIP_RE = re.compile(r"^[-*` ]*REGRESSION-SKIP:[ \t]*" + _ID, re.M)
 COST_RE = re.compile(r"^usage: .*?cost=\$([0-9.]+)", re.M)
 FLEET_DIR = REPO / "logs" / "fleet"
+# outcomes a case still has when nothing ever answered for it: a run that ends with one failed
+UNRESOLVED = ("queued", "running", "next", "unreported", "not run")
 
 
 def env(name, default=""):
@@ -82,6 +89,7 @@ class Lane:
     facts: object
     groups: list = field(default_factory=list)  # [(level, Group)]
     load: float = 0.0  # assigned work, in primary-lane seconds (durations.Estimates)
+    batch: list = field(default_factory=list)  # the Items its session is running now
 
     @property
     def name(self):
@@ -706,10 +714,12 @@ class Fleet:
             batch = self.take(lane)
             if not batch:
                 break
+            lane.batch = batch  # until it settles: a crash in between leaves it to _guard
             try:
                 aborted = self.run_batch(lane, batch, n := n + 1)
             finally:
                 self.done()
+            lane.batch = []
             if aborted:
                 break
         self.lane_state(lane, status="cases done", batch=[], live_case=None)
@@ -891,7 +901,7 @@ class Fleet:
             email,
             primary.log.say,
         )
-        self.finish("done")
+        return self.finish("done")
 
     def _guard(self, fn, *args):
         try:
@@ -900,6 +910,15 @@ class Fleet:
             lane = args[0]
             self.servers[lane.server.name].log.say(f"[fleet] {lane.name} stopped: {type(e).__name__}: {e}")
             self.lane_state(lane, status=f"failed: {e}"[:200])
+            # what it held goes unrun: its batch (cases still on this lane with no answer) and its queue
+            with self.mu:
+                held = [*lane.batch, *self.queues[lane.name]]
+                lane.batch, self.queues[lane.name] = [], []
+            note = f"{lane.name} stopped: {type(e).__name__}"
+            for it in held:
+                c = self.state.data["cases"].get(it.case, {})
+                if c.get("lane") == lane.name and c.get("outcome") in ("queued", "running", "next"):
+                    self.case_state(it.case, outcome="not run", note=note)
 
     @staticmethod
     def _join(threads):
@@ -910,10 +929,17 @@ class Fleet:
                 t.join(0.5)
 
     def finish(self, status):
+        """Record the run's end and return the status recorded: a run that
+        would be "done" is "failed" while any case has no answer (UNRESOLVED),
+        since a lost case is not a passing one."""
         if self.state.data.get("finished"):
-            return
+            return self.state.data["status"]
+        if status == "done" and any(c.get("outcome") in UNRESOLVED for c in self.state.data["cases"].values()):
+            status = "failed"
         self.state.update(lambda d: d.update(status=status, finished=time.time()))
-        shutil.copyfile(self.state.path, FLEET_DIR / "runs" / f"{self.stamp}.json")
+        runs = self.state.path.parent / "runs"  # FLEET_DIR/runs, beside state.json
+        runs.mkdir(exist_ok=True)
+        shutil.copyfile(self.state.path, runs / f"{self.stamp}.json")
         counts = {}
         for c in self.state.data["cases"].values():
             counts[c.get("outcome")] = counts.get(c.get("outcome"), 0) + 1
@@ -923,12 +949,16 @@ class Fleet:
             + ", ".join(f"{n} {o}" for o, n in sorted(counts.items(), key=lambda x: -x[1]))
             + f"; ${cost:.2f}"
         )
+        return status
 
 
 def main(argv=None):
     ap = argparse.ArgumentParser(prog="python3 -m harness.drivers.fleet")
     ap.add_argument("--plan", action="store_true", help="print the assignment; run nothing")
     ap.add_argument("--json", action="store_true", help="the plan as JSON (with --plan)")
+    ap.add_argument(
+        "--allow-failures", action="store_true", help="exit 0 when cases fail (a run that lost cases still exits 1)"
+    )
     ap.add_argument("level", nargs="?", default="smoke")
     a = ap.parse_args(sys.argv[1:] if argv is None else argv)
     session.stop_on_sigterm()
@@ -983,7 +1013,7 @@ def main(argv=None):
         err(str(e))
         return 1
     try:
-        fleet.run()
+        status = fleet.run()
     except SystemExit:
         fleet.finish("stopped")
         raise
@@ -991,7 +1021,10 @@ def main(argv=None):
         fleet.finish("failed")
         err(f"fleet: {type(e).__name__}: {e}")
         return 1
-    return 0
+    if status == "failed":
+        return 1
+    failing = any(c.get("outcome") == "fail" for c in fleet.state.data["cases"].values())
+    return 1 if failing and not a.allow_failures else 0
 
 
 if __name__ == "__main__":
