@@ -21,6 +21,7 @@ import os
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 
@@ -106,17 +107,24 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
 
 def mcp_config(name, url, token):
     """--mcp-config for one HTTP MCP server with a Bearer token: the path of a
-    0600 file, logs/.mcp.<pid>.json, as providers.sh's mcp_config_file writes
-    it. The token is in the file, never in argv, where ps shows it."""
+    0600 file, logs/.mcp.<pid>.<random>.json (one per call: a fleet builds one
+    per server in a single process). The token is in the file, never in argv,
+    where ps shows it; mkstemp creates it O_EXCL, and it is removed at exit."""
     logs = REPO / "logs"
     logs.mkdir(exist_ok=True)
-    path = logs / (".mcp.%d.json" % os.getpid())
+    fd, path = tempfile.mkstemp(dir=logs, prefix=".mcp.%d." % os.getpid(), suffix=".json")
     doc = {"mcpServers": {name: {"type": "http", "url": url, "headers": {"Authorization": "Bearer " + token}}}}
-    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
     with os.fdopen(fd, "w") as f:
         f.write(json.dumps(doc, separators=(",", ":")) + "\n")
-    os.chmod(path, 0o600)
-    return str(path)
+    atexit.register(_rm_quiet, path)
+    return path
+
+
+def _rm_quiet(path):
+    try:
+        os.unlink(path)
+    except OSError:
+        pass
 
 
 def _kill_group(proc):

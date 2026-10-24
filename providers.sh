@@ -896,6 +896,7 @@ acquire_driver_lock() {
   local lock="$LOGS/.driver.lock$TARGET_SUFFIX" holder waited=0 aside stale
   if [ -n "${HARNEST_HELD_LOCK:-}" ] && [ "$(cat "$lock/owner" 2>/dev/null || true)" = "$HARNEST_HELD_LOCK" ]; then
     echo "[lock] $1 runs under '$HARNEST_HELD_LOCK'" | tee -a "$LOOP_LOG"
+    trap driver_exit EXIT
     return 0
   fi
   while ! mkdir "$lock" 2>/dev/null; do
@@ -925,8 +926,16 @@ acquire_driver_lock() {
     sleep 30
   done
   echo "$$ $1" > "$lock/owner"
-  # shellcheck disable=SC2064  # expand $lock now
-  trap "rm -rf '$lock'" EXIT
+  DRIVER_LOCK_DIR="$lock"
+  trap driver_exit EXIT
+}
+
+# driver_exit
+# The EXIT trap of every driver: releases the lock it took (if any) and
+# removes its own --mcp-config file, so the token isn't left on disk.
+driver_exit() {
+  [ -z "${DRIVER_LOCK_DIR:-}" ] || rm -rf "$DRIVER_LOCK_DIR"
+  rm -f "$LOGS/.mcp.$$.json"
 }
 
 # audit_issue <n> <role>
@@ -1317,11 +1326,19 @@ issue_context() {
 # for the dw server (harness/session.py mcp_config writes the same file). The
 # JSON is built by jq from the two values, so a quote in either can't break
 # out of it, and the token is in a private file, never in a claude argv where
-# ps shows it. Files of drivers long gone (over a day old) are swept.
+# ps shows it. Files whose pid is dead are swept (a live driver's file, which
+# it writes once at startup, is never touched, however old); each driver
+# removes its own on exit (trap in the driver, not here: this runs in $( )).
 mcp_config_file() {
-  local f="$LOGS/.mcp.$$.json"
+  local f="$LOGS/.mcp.$$.json" old pid
   mkdir -p "$LOGS"
-  find "$LOGS" -maxdepth 1 -name '.mcp.*.json' -mtime +1 -exec rm -f {} + 2>/dev/null || true
+  for old in "$LOGS"/.mcp.*.json; do
+    [ -e "$old" ] || continue
+    pid="${old##*/.mcp.}"; pid="${pid%%.*}"
+    case "$pid" in ''|*[!0-9]*) continue ;; esac
+    kill -0 "$pid" 2>/dev/null || rm -f "$old"
+  done
+  rm -f "$f"
   ( umask 077
     jq -nc --arg url "$1" --arg tok "$2" \
       '{mcpServers: {dw: {type: "http", url: $url, headers: {Authorization: ("Bearer " + $tok)}}}}' > "$f" ) || return 1

@@ -93,6 +93,15 @@ eq  "mcp config: the url survives a quote" 'http://x/"q' "$(jq -r '.mcpServers.d
 eq  "mcp config: private" "600" "$(stat -f %Lp "$f")"
 eq  "mcp config: under the logs dir, named by pid" "$LOGS/.mcp.$$.json" "$f"
 
+# a live driver's file survives another call (however old); a dead one's is swept
+sleep 30 & livepid=$!
+echo '{}' > "$LOGS/.mcp.$livepid.json"; touch -t 202001010000 "$LOGS/.mcp.$livepid.json"
+echo '{}' > "$LOGS/.mcp.999999.json"
+mcp_config_file u t >/dev/null
+ok  "mcp config: a live pid's file survives the sweep" test -e "$LOGS/.mcp.$livepid.json"
+fails "mcp config: a dead pid's file is swept" test -e "$LOGS/.mcp.999999.json"
+kill "$livepid" 2>/dev/null; rm -f "$LOGS/.mcp.$livepid.json"
+
 # --- the driver lock
 lock_test() {
   bash -c '. "$1/providers.sh"; acquire_driver_lock t; cat "$LOGS/.driver.lock/owner"' _ "$HARNEST"

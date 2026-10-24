@@ -109,6 +109,10 @@ else
 fi
 ws="${prompt#*workspace is }"; ws="${ws%%;*}"
 echo "start $(now) $HARNEST_TARGET $$ $ws [$cases]" >> "$FAKE_TIMELINE"
+shift_args=("$@")
+for i in "${!shift_args[@]}"; do
+  [ "${shift_args[$i]}" = --mcp-config ] && echo "$HARNEST_TARGET $(jq -r '.mcpServers.dw.url + " " + .mcpServers.dw.headers.Authorization' "${shift_args[$((i+1))]}")" >> "$FAKE_TIMELINE.mcp"
+done
 # the first session holding S-F005 goes silent: the watchdog stops it, and
 # the session runner's retry runs it again
 case " $cases " in *" S-F005 "*)
@@ -153,8 +157,15 @@ eq  "plan: exits cleanly" 0 $?
 has "plan: four lanes" "on 4 lane(s)" "$(cat "$T/plan.out")"
 
 # --- the run
-fleet
+fleet DW_TOKEN_ALPHA=tok-alpha DW_TOKEN_BETA=tok-beta DW_TOKEN_GAMMA=tok-gamma
 eq  "run: exits cleanly" 0 $?
+# every lane's --mcp-config file names its own server: one shared file would
+# hold the last server built
+for s in "alpha $p1" "beta $p2" "gamma $p3"; do
+  set -- $s
+  eq  "run: $1's sessions connect to $1 with its token" "http://127.0.0.1:$2/mcp Bearer tok-$1" \
+      "$(grep "^$1 " "$T/timeline.mcp" | cut -d' ' -f2- | sort -u)"
+done
 st="$T/h/logs/fleet/state.json"
 case_of() { jq -r --arg c "$1" ".cases[\$c].$2" "$st"; }
 eq  "run: done" "done" "$(jq -r .status "$st")"

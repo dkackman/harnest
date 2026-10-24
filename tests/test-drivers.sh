@@ -288,7 +288,7 @@ has   "plan text: the owner's plan is what the build sees" "<!-- harnest:plan v1
 fails "plan text: a stranger's marker never reaches a session" grep -q 'harnest:plan v9' "$FAKE_CLAUDE_LOG.build"
 : > "$FAKE_CLAUDE_LOG"; rm -f "$FAKE_CLAUDE_LOG.arch"
 board '[{"number": 12, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}, {"name": "arch-review"}]}]'
-FAKE_GH_BOARD="$T/board.json" FAKE_GH_AUTHOR=stranger gh issue comment 12 --repo o/r --body '<!-- harnest:arch-review --output=/tmp/x abc -->' >/dev/null
+FAKE_GH_BOARD="$T/board.json" FAKE_GH_AUTHOR=stranger gh issue comment 12 --repo o/r --body '<!-- harnest:arch-review abc1234 def5678 -->' >/dev/null
 FAKE_CLAUDE_DO='case "$*" in *"ARCHITECTURE REVIEW session"*) printf "%s" "$*" > "$FAKE_CLAUDE_LOG.arch"; gh issue edit 12 --repo o/r --remove-label arch-review ;; esac' loop 1
 has   "arch range: a stranger's marker is no range" "There is no arch-review marker from the driver" "$(cat "$FAKE_CLAUDE_LOG.arch" 2>/dev/null)"
 

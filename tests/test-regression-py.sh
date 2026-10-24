@@ -71,9 +71,17 @@ reg() {
      SESSION_RETRY_PAUSE_SECS=0 DW_TOKEN=tok ${vars[@]+"${vars[@]}"} "${cmd[@]}" "$@") > "$T/$impl/$out" 2>&1
 }
 # norm <file>: what the two drivers may differ in, made equal
-norm() { sed -E -e 's/[0-9]{2}:[0-9]{2}:[0-9]{2}/HH:MM:SS/g' -e "s#$T#T#g" -e 's/[0-9]+ run-(loop|regression)/PID run-\1/g' -e 's/\.mcp\.[0-9]+\.json/.mcp.PID.json/g' "$1"; }
+norm() { sed -E -e 's/[0-9]{2}:[0-9]{2}:[0-9]{2}/HH:MM:SS/g' -e "s#$T#T#g" -e 's/[0-9]+ run-(loop|regression)/PID run-\1/g' -e 's/\.mcp\.[0-9]+(\.[A-Za-z0-9_]+)?\.json/.mcp.PID.json/g' "$1"; }
 # sent_mcp <args file>: the --mcp-config file a session was handed, read back
-sent_mcp() { cat "$(awk 'p {print; exit} $0 == "--mcp-config" {p = 1}' "$1")"; }
+# (a driver removes its file at exit, so the fake claude copies it: cap_mcp)
+cat > "$T/cap-mcp.sh" <<'EOS'
+#!/usr/bin/env bash
+# cap-mcp.sh <dest> <claude args...>: save the file --mcp-config names
+dest="$1"; shift
+while [ "$#" -gt 0 ]; do [ "$1" = --mcp-config ] && cp "$2" "$dest"; shift; done
+EOS
+chmod +x "$T/cap-mcp.sh"
+sent_mcp() { cat "${1%.args}.mcp"; }
 calls() { grep -c 'claude -p' "$FAKE_CLAUDE_LOG"; }
 
 for impl in bash py; do
@@ -179,16 +187,16 @@ $T/plugin-mini/plugins/dw" "$(cat "$T/$impl/mini-prompt.args")"
   eq  "  before any session" 0 "$(calls)"
   mini_health
   reg "$impl" ptok.out PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=0 DW_TOKEN_MINI_AI=minitok DW_TOKEN=lemtok \
-      FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"' FAKE_PROMPT="$T/$impl/ptok" -- smoke regression-suite-tiny.md
+      FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"; "'"$T"'/cap-mcp.sh" "$FAKE_PROMPT.mcp" "$@"' FAKE_PROMPT="$T/$impl/ptok" -- smoke regression-suite-tiny.md
   has "$impl: a server's own token wins over DW_TOKEN" "Bearer minitok" "$(sent_mcp "$T/$impl/ptok.args")"
   printf '# secrets\nDW_TOKEN_MINI_AI="filetok"\nPROVIDER=ollama\n' > "$T/secrets.env"
   reg "$impl" ftok.out PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=0 DW_TOKEN='' HARNEST_ENV_FILE="$T/secrets.env" \
-      FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"' FAKE_PROMPT="$T/$impl/ftok" -- smoke regression-suite-tiny.md
+      FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"; "'"$T"'/cap-mcp.sh" "$FAKE_PROMPT.mcp" "$@"' FAKE_PROMPT="$T/$impl/ftok" -- smoke regression-suite-tiny.md
   eq  "$impl: the token can come from the secrets file alone" 0 $?
   has "  and is the one sent" "Bearer filetok" "$(sent_mcp "$T/$impl/ftok.args")"
   has "  a knob in it is ignored, saying so" "'PROVIDER' ignored: only DW_TOKEN and DW_TOKEN_* are read from it" "$(cat "$T/$impl/ftok.out")"
   reg "$impl" etok.out PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=0 DW_TOKEN_MINI_AI=envtok HARNEST_ENV_FILE="$T/secrets.env" \
-      FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"' FAKE_PROMPT="$T/$impl/etok" -- smoke regression-suite-tiny.md
+      FAKE_CLAUDE_DO='printf "%s\n" "$@" > "$FAKE_PROMPT.args"; "'"$T"'/cap-mcp.sh" "$FAKE_PROMPT.mcp" "$@"' FAKE_PROMPT="$T/$impl/etok" -- smoke regression-suite-tiny.md
   has "$impl: the environment wins over the file" "Bearer envtok" "$(sent_mcp "$T/$impl/etok.args")"
 
   # --- the lock: a run waits on the mini-ai loop's lock, not lem's
