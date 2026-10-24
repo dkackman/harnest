@@ -1363,14 +1363,14 @@ RUNNERS = (
     "chroot",
 )  # run their argument
 # every binary the rules name, in any case (fold_case): built from the registries so a shell or
-# runner added to one is folded too; the builtins (command, builtin, exec, time) stay as written.
+# runner added to one is folded too; builtin and exec, which are no binaries here, stay as written
+# (time and command are: /usr/bin/time, /usr/bin/command). The runner and prefix readers compare names
+# case-blind anyway, so the fold is not what they rest on.
 # fold_case runs before heredocs are read, so every delimiter comparison is case-blind: a body then ends
 # at or before the line bash ends it on (<<'G'H, whose GH line the fold made gh)
 FOLDED_NAMES = frozenset(("gh", "git", "env", "xargs", "nohup", "timeout", "nice", *HEREDOC_SHELLS, *RUNNERS)) - {
-    "command",
     "builtin",
     "exec",
-    "time",
 }
 FOLDED = re.compile(r"(?<![\w.-])(?:" + "|".join(sorted(FOLDED_NAMES, key=len, reverse=True)) + r")(?![\w.-])", re.I)
 # read-only filters a heredoc's output may be piped to without the body reaching a shell
@@ -1464,10 +1464,10 @@ def heredoc_fed(text, i, k, ls, tainted):
                 # interpreter name cannot hold one (RESERVED_VAR_MSG), and $V/python is judged by its basename
         elif "$" in w or "`" in w:
             return True
-        deq = [os.path.basename(UNQUOTE.sub("", x)) for x in words]
+        deq = [os.path.basename(UNQUOTE.sub("", x)).lower() for x in words]
         if not w and "exec" in deq:
             return True  # exec <<'EOF': the body becomes this shell's stdin, read by the next shell to start
-        if os.path.basename(UNQUOTE.sub("", w)) in HEREDOC_SHELLS:
+        if os.path.basename(UNQUOTE.sub("", w)).lower() in HEREDOC_SHELLS:
             return True
         if any(d in RUNNERS for d in deq) and any(d in HEREDOC_SHELLS for d in deq):
             return True  # xargs -0 bash -c, sudo bash: the shell is an argument
@@ -1689,7 +1689,8 @@ def raw_command_word(words):
             i += 2  # a redirection operator, then its target
         elif re.match(r"\d*(?:[<>]|&>)", w):
             i += 1
-        elif w in PREFIX_COMMANDS:
+        elif w.lower() in PREFIX_COMMANDS:
+            w = w.lower()
             i += 1
             while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
                 i += 2 if words[i] in PREFIX_COMMANDS[w] else 1
@@ -2137,7 +2138,7 @@ def command_words(words):
     i = 0
     while i < len(words):
         w = words[i]
-        name = os.path.basename(w)
+        name = os.path.basename(w).lower()
         if w in SHELL_KEYWORDS or re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", w):
             i += 1
         elif name in PREFIX_COMMANDS:

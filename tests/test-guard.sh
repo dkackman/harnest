@@ -1027,4 +1027,13 @@ for r in implementer consumer; do
   row 0 $r "" $none 'sudo -u x ls /tmp'
   row 0 $r "" $none "cat <<'EOF' > /tmp/x${nl}hi${nl}EOF"
 done
+# time and command are binaries on macOS too (/usr/bin/time, /usr/bin/command): any case of a
+# runner or prefix name is read as that name; a case-blind delimiter only ever ends a body early
+for r in implementer consumer; do
+  row 2 $r "" $none "TIME bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "COMMAND bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "Sudo bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none 'TIME G\H issue close 5'
+  row 2 $r "" $none "cat <<'EOF'${nl}eof${nl}gh issue edit 5 --add-label status:verified${nl}EOF"
+done
 finish
