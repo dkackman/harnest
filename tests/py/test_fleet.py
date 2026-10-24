@@ -530,6 +530,40 @@ class Outcomes(unittest.TestCase):
         self.assertEqual([], f.queues[f.lanes[0].name])
         self.assertEqual("failed", f.finish("done"))
 
+    def _settle(self, f, batch, text, log):
+        last = Path(f.state.path.parent, "last")
+        last.write_text(log)
+        f.settle(f.lanes[0], batch, text, 0.25, last)
+
+    def test_settle_requeues_an_unanswered_case_once(self):
+        f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})
+        batch = [fleet.Item(level="smoke", case=c, gid=f"smoke:{c}", exclusive=False) for c in ("S-F001", "S-F002")]
+        usage = "usage: turns=40 cost=$6.00\n"  # a budget cut-off still ends with its result
+        self._settle(f, batch, "REGRESSION-RESULT: S-F001 pass\n", usage)
+        cases = f.state.data["cases"]
+        self.assertEqual(("pass", "queued"), (cases["S-F001"]["outcome"], cases["S-F002"]["outcome"]))
+        self.assertEqual(["S-F002"], [i.case for i in f.queues["lem-1"]], "back on its own server")
+        self.assertIn(
+            "S-F002 had no answer (budget or turns ran out) on lem; queued on lem-1",
+            [e["text"] for e in f.state.data["events"]],
+        )
+        again = f.queues["lem-1"].pop()
+        self._settle(f, [again], "", usage)
+        self.assertEqual("unreported", cases["S-F002"]["outcome"], "only once")
+        self.assertEqual([], f.queues["lem-1"])
+
+    def test_an_aborted_session_hands_its_unanswered_cases_to_another_server(self):
+        f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})
+        mac = fleet.Lane(server=srv("mac"), slot=1, facts=fx("mac"))
+        f.lanes.append(mac)
+        f.queues[mac.name] = []
+        f.servers["mac"] = type("S", (), {"down": False})()
+        batch = [fleet.Item(level="smoke", case=c, gid=f"smoke:{c}", exclusive=False) for c in ("S-F001", "S-F002")]
+        self._settle(f, batch, "REGRESSION-RESULT: S-F001 pass\n", "REGRESSION-ABORT: no server\nusage: turns=3\n")
+        self.assertEqual(["S-F002"], [i.case for i in f.queues["mac-1"]])
+        self.assertEqual([], f.queues["lem-1"], "not back on the server that went away")
+        self.assertEqual("mac", f.state.data["cases"]["S-F002"]["server"])
+
     def test_main_exits_1_on_a_failed_run_or_a_failing_case(self):
         from unittest import mock
 

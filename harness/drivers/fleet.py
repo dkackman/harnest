@@ -26,8 +26,10 @@ runs one thread per lane:
   for its server's other lanes to finish theirs, so only that case idles
   the box;
 - a case a lane skips (REGRESSION-SKIP) is queued on an eligible lane of
-  another server; a server that reports REGRESSION-ABORT hands its queue
-  to the others;
+  another server; a server that reports REGRESSION-ABORT hands its queue,
+  and the cases its session left unanswered, to the others;
+- a case a session ended without answering (it died, or ran out of budget
+  or turns) is queued once more, its own server included;
 - each lane sweeps its workspaces at the end, and the suites and perf
   history are committed once.
 
@@ -777,20 +779,26 @@ class Fleet:
         secs = secs or {}
         results = {c: (o, issue) for c, o, issue in RESULT_RE.findall(text)}
         skipped = set(SKIP_RE.findall(text))
-        died = outcome.died(last)
+        died, aborted = outcome.died(last), outcome.aborted(last)
         for it in batch:
             o, issue = results.get(it.case, (None, ""))
             if it.case in skipped or o == "skip":
                 if not self.requeue(it, lane):
                     self.case_state(it.case, outcome="skip")
                 continue
-            if o is None and died and not it.retried:
-                # the session went away before answering: once more, anywhere it may run
+            if o is None and aborted:
+                # its server is unreachable (server_down follows): another server, if one may run it
+                if self.requeue(it, lane, why="had no answer (its server is unreachable)"):
+                    continue
+            elif o is None and not it.retried:
+                # the session went away, or finished (budget or turns ran out), before answering:
+                # once more, anywhere it may run, its own server included
                 it.retried = True
-                if self.requeue(it, lane, why="had no answer (the session ended)", same_server=True):
+                why = "had no answer (the session ended)" if died else "had no answer (budget or turns ran out)"
+                if self.requeue(it, lane, why=why, same_server=True):
                     continue
             if o is None:
-                o = "not run" if died else "unreported"
+                o = "not run" if died or aborted else "unreported"
             extra = {"issue": issue} if issue else {}
             if o in durations.OUTCOMES and it.case in secs:
                 extra["secs"] = round(secs[it.case], 1)

@@ -264,9 +264,13 @@ EOS
 chmod +x "$T/bin2/claude"
 fleet PATH="$T/bin2:$PATH" FLEET_SERVERS=beta CASES_PER_SESSION=3 DW_TOKEN_BETA=tok-beta
 rc=$?
-eq  "fleet: exit 1 when a case is left unreported" 1 "$rc"
-has "fleet: state says failed" '"status": "failed"' "$(cat "$T/h/logs/fleet/state.json")"
-eq  "  S-F002 and S-F003 unreported" "unreported unreported" "$(case_of S-F002 outcome) $(case_of S-F003 outcome)"
+# the two it never answered get a session of their own, on the same server
+eq  "fleet: the unanswered cases run again" "[S-F001 S-F002 S-F003] [S-F002 S-F003] []" \
+    "$(sed 's/^start //' "$FAKE_TIMELINE.short" | tr '\n' ' ' | sed 's/ $//')"
+has "  queued again, saying why" "S-F002 had no answer (budget or turns ran out) on beta" "$(jq -r '.events[].text' "$st")"
+eq  "  and the run exits 0" 0 "$rc"
+eq  "  with every case passing" "pass pass pass" "$(case_of S-F001 outcome) $(case_of S-F002 outcome) $(case_of S-F003 outcome)"
+eq  "  state says done" "done" "$(jq -r .status "$st")"
 
 # --- a server that's down stops the run before it starts
 kill $mcppid; wait $mcppid 2>/dev/null
