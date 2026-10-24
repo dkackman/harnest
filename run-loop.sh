@@ -807,7 +807,7 @@ $(issue_context "$n")" \
   # and nothing but release-blockers moves until the release ships (R14)
   freeze="$(release_freeze)"
   if [ -n "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
-    echo "[tester:task] held: release freeze $freeze" | tee -a "$LOOP_LOG"
+    freeze_hold_line "$freeze" tester:task | tee -a "$LOOP_LOG"
   fi
   # The standing task's memory (qa-bible.md) and its series' media are
   # lem's, so another server's loop never runs it; closures still do.
@@ -900,7 +900,7 @@ curator_pass() {
   # A suite edit mid-freeze changes what the release's regression gate
   # tests (R14; settled after the 0.5.0 cut). Requests wait for the cut.
   freeze="$(release_freeze)"
-  if [ -n "$freeze" ]; then echo "[curator] held: release freeze $freeze" | tee -a "$LOOP_LOG"; return 0; fi
+  if [ -n "$freeze" ]; then freeze_hold_line "$freeze" curator | tee -a "$LOOP_LOG"; return 0; fi
   consolidation_pass
   local -a reqs=()
   # Not filtered on status:needs-approval: Don hands an escalation back by
@@ -995,7 +995,7 @@ nightly_regression_pass() {
   [ "$((10#$(date +%H)))" -ge "$REGRESSION_NIGHTLY_AT" ] || return 0
   [ "$(cat "$stamp" 2>/dev/null || true)" != "$today" ] || return 0
   freeze="$(release_freeze)"
-  if [ -n "$freeze" ]; then echo "[nightly] held: release freeze $freeze" | tee -a "$LOOP_LOG"; return 0; fi
+  if [ -n "$freeze" ]; then freeze_hold_line "$freeze" nightly | tee -a "$LOOP_LOG"; return 0; fi
   echo "$today" > "$stamp"
   echo "[nightly] run-regression.sh $REGRESSION_NIGHTLY_LEVEL (log logs/nightly-regression$TARGET_SUFFIX.log)" | tee -a "$LOOP_LOG"
   # shellcheck disable=SC2086  # a level and an optional suite file
@@ -1136,7 +1136,7 @@ while true; do
   step curator_pass curator_pass
 
   { echo "--- $(ts) cycle $cycle tickets ---"; status_board; stranded_board
-    freeze="$(release_freeze)"; [ -z "$freeze" ] || echo "  release freeze $freeze: only release-blocker issues move"
+    freeze="$(release_freeze)"; [ -z "$freeze" ] || { [ "$freeze" = UNKNOWN ] && echo "  board unreadable: a release freeze is possible" || echo "  release freeze $freeze: only release-blocker issues move"; }
     drafts="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" --jq length 2>/dev/null || true)"
     [ "${drafts:-0}" = 0 ] || echo "  $drafts private security finding(s) in draft advisories: ./scripts/file-advisory.sh --list"
   } | tee -a "$LOOP_LOG"

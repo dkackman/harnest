@@ -1386,12 +1386,24 @@ classify_issues() {
 # release_freeze
 # "#<n> <title>" of the open `release` issue while a release freeze is on
 # (roadmap R14; lib/classify.jq holds every non-blocker at `wait`), nothing
-# otherwise. For what no issue queues: the tester's standing task. A board
-# that can't be read counts as no freeze, as it does for every queue.
+# otherwise. For what no issue queues: the tester's standing task, the
+# curator's suite edits and the nightly regression. A board that can't be read
+# prints UNKNOWN: the callers hold on any output, because a freeze is the
+# state in which running by mistake costs the most.
 release_freeze() {
-  { classify_issues 2>/dev/null || true; } \
+  local rows
+  rows="$(classify_issues 2>/dev/null)" || { echo UNKNOWN; return 0; }
+  printf '%s\n' "$rows" \
     | awk -F'\t' '$2 == "don" && index($4, "release freeze: ") == 1 { sub(/^release freeze: /, "", $4); print "#" $1 " " $4; exit }'
   return 0
+}
+
+# freeze_hold_line <freeze output> <tag>
+# The log line for a pass held by release_freeze (non-empty output).
+freeze_hold_line() {
+  if [ "$1" = UNKNOWN ]; then echo "[$2] board unreadable; holding under a possible release freeze"
+  else echo "[$2] held: release freeze $1"
+  fi
 }
 
 # dw_frozen [checkout]

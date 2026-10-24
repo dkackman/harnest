@@ -160,6 +160,17 @@ has "freeze: it was #32's" "implementer:#32" "$(grep '^=== ' "$T/loop.out")"
 has "freeze: the standing task is held" "[tester:task] held: release freeze #30 Release 0.5.0" "$(cat "$T/loop.out")"
 has "freeze: the board says so" "release freeze #30 Release 0.5.0: only release-blocker issues move" "$(cat "$T/loop.out")"
 
+# an unreadable board is not "no freeze". gh call 57 of this run is the last of
+# the tester pass closures lookups (the 58th is its release_freeze snapshot), so
+# the outage starts there and
+# the tester task must hold, not run
+: > "$FAKE_CLAUDE_LOG"; : > "$T/gh-calls"; rm -f "$T/board.json.count"
+board '[{"number": 30, "state": "OPEN", "title": "Release 0.5.0", "labels": [{"name": "release"}, {"name": "owner:don"}]}]'
+FAKE_GH_FAIL_AFTER=57 FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
+eq  "freeze unknown: the standing task did not run" 0 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG" || true)"
+has "freeze unknown: it says why" "[tester:task] board unreadable; holding under a possible release freeze" "$(cat "$T/loop.out")"
+rm -f "$T/board.json.count"
+
 # --- 3e. run-release.sh: freeze, check, the gates' lock refusal, accept,
 # status, and cut refusing without its gates. (pr/run/release/workflow have
 # no fake: the CI and preflight gates, review, notes and cut's GitHub steps
