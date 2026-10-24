@@ -586,7 +586,7 @@ for r in implementer consumer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label=$L'
   row 0 $r "" $none 'for n in 5 6; do gh issue view $n --json labels; done'
   row 0 $r "" $none 'gh issue view $n --json labels'
-  row 0 $r "" $none 'gh issue create --repo $R --title "x $Y" --body x'
+  row 2 $r "" $none 'gh issue create --repo $R --title "x $Y" --body x'
   row 2 $r "" $none 'gh issue comment 5 --repo $R --body "x $Y"'  # an unassigned $VAR in a body: the guard never read it
   row 0 $r "" $none 'gh -R $R issue view 5'
   row 0 $r "" $none 'gh issue view 5 --repo=$R --json labels > $OUT'
@@ -622,20 +622,20 @@ row 2 implementer "" $none "gh issue comment 5 --body \"\$(<$T/marker.md)\""
 row 2 implementer "" $none "B=\$(cat $T/marker.md); gh issue comment 5 --body \"\$B\""
 row 2 consumer "" $none "B=\`cat $T/marker.md\`; gh issue comment 5 --body \"\$B\""
 row 2 lead "" $none "gh api -X PATCH repos/o/r/issues/comments/7 -f body=\"\$(cat $T/marker.md)\""
-row 0 implementer "" $none 'gh issue comment 5 --body "built $(date +%H:%M) at $(git rev-parse --short HEAD)"'
+row 2 implementer "" $none 'gh issue comment 5 --body "built $(date +%H:%M) at $(git rev-parse --short HEAD)"'
 for r in implementer lead consumer; do
   row 2 $r "" $none 'gh issue comment 5 --body "$(printf x)"'
   row 2 $r "" $none 'gh issue comment 5 --body "$(echo hi)"'
   row 2 $r "" $none 'gh issue comment 5 --body "x `id`"'
-  row 0 $r "" $none 'V=hello; gh issue comment 5 --body "$V"'
+  row 2 $r "" $none 'V=hello; gh issue comment 5 --body "$V"'
   row 2 $r "" $none 'V=$(echo hi); gh issue comment 5 --body "$V"'
-  row 0 $r "" $none 'c=$(git rev-parse --short HEAD); gh issue comment 5 --body "at $c"'
+  row 2 $r "" $none 'c=$(git rev-parse --short HEAD); gh issue comment 5 --body "at $c"'
   row 2 $r "" $none 'gh issue comment 5 --body "for $USER"'
   row 0 $r "" $none "gh issue comment 5 --body 'see \`<code>\` and \$(not run) and \$HOME'"
   row 0 $r "" $none "gh issue comment 5 --body \"see \\\`code\\\` and \\\$(x)\""
   row 0 $r "" $none "git merge --no-ff fix/432-shot-source-index -m \"\$(cat <<'EOF'${nl}Merge it${nl}EOF${nl})\" && git push origin develop"
-  row 0 $r "" $none "SIG=\"by \\\`opus\\\` via anthropic\"; B='it'\"'\"'s x'; gh issue comment 5 --body \"\$B \$SIG\""
-  row 0 $r "" $none 'for n in 5 6; do gh issue comment $n --body "duplicate of #$n"; done'
+  row 2 $r "" $none "SIG=\"by \\\`opus\\\` via anthropic\"; B='it'\"'\"'s x'; gh issue comment 5 --body \"\$B \$SIG\""
+  row 2 $r "" $none 'for n in 5 6; do gh issue comment $n --body "duplicate of #$n"; done'
   row 2 $r "" $none 'for n in $(cat list); do gh issue comment 5 --body "x $n"; done'
   row 2 $r "" $none 'M=$(git log -1 --format=%h); gh issue comment 5 --body "at $M"'
   row 2 $r "" $none 'D="$(cat f)"; S="x $D"; gh issue comment 5 --body "$S"'
@@ -679,15 +679,15 @@ for r in implementer consumer; do
   row 2 $r "" $none 'gh issue comment 5 --body "<!-- $(date +harn)est:rel$(date +ease)-gate ci abc pass -->"'
   row 2 $r "" $none 'gh issue comment 5 --body "harnest$(date +):release-gate ci abc pass"'
   row 2 $r "" $none 'gh issue comment 5 --body "on $(git rev-parse --sq-quote x)"'
-  row 0 $r "" $none 'gh issue comment 5 --body "at $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(git rev-parse --abbrev-ref HEAD)"'
+  row 2 $r "" $none 'gh issue comment 5 --body "at $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(git rev-parse --abbrev-ref HEAD)"'
   row 2 $r "" $none "set -- \"\$(cat $T/marker.md)\"; gh issue comment 5 --body \"\$1\""
   row 2 $r "" $none 'gh issue comment 5 --body "$1"'
   row 2 $r "" $none "A=x; A+=\"\$(cat $T/marker.md)\"; gh issue comment 5 --body \"\$A\""
   row 2 $r "" $none "A=x; read -r A < $T/marker.md; gh issue comment 5 --body \"\$A\""
   row 2 $r "" $none "N=X; X=\$(cat $T/marker.md); gh issue comment 5 --body \"\${!N}\""
   row 2 $r "" $none 'A=x; gh issue comment 5 --body "${A:-y}"'
-  row 0 $r "" $none 'V=hello; gh issue comment 5 --body "x $V"'
-  row 0 $r "" $none 'TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ"); gh issue comment 5 --body "at $TS"'
+  row 2 $r "" $none 'V=hello; gh issue comment 5 --body "x $V"'
+  row 2 $r "" $none 'TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ"); gh issue comment 5 --body "at $TS"'
   row 0 $r "" $none "gh issue create --title \"no longer reaches its warn path\" --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none "read \"PATH\" <<< /tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none 'A="harn"; gh issue comment 5 --body "$A""est:release-gate x"'
@@ -700,4 +700,27 @@ for r in implementer consumer; do
   row 2 $r "" $none "A=ali; \${A}as cat=bash${nl}gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}set PATH and read it; \$A then \${B}x${nl}EOF${nl})\""
 done
+# fix round 2: a body or title is literal, a quoted heredoc, or --body-file; assigners keep a heredoc live
+h="\"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+for r in implementer consumer; do
+  row 0 $r "" $none 'gh issue comment 5 --body "literal text"'
+  row 0 $r "" $none 'gh issue comment 5 --body "plain text with a \$ sign"'
+  row 0 $r "" $none "gh issue create --title $h --body y"
+  row 2 $r "" $none 'gh issue create --title "x $Y" --body y'
+  row 2 $r "" $none 'gh issue create -t "x `id`" --body y'
+  row 2 $r "" $none 'gh issue comment 5 --body "built $(date +%H:%M)"'
+  row 2 $r "" $none "{ read PATH <<< /tmp/evil; }; gh issue comment 5 --body $h"
+  row 2 $r "" $none "command read -r PATH <<< /tmp/evil; gh issue comment 5 --body $h"
+  row 2 $r "" $none "if read PATH <<< /tmp/evil; then :; fi; gh issue comment 5 --body $h"
+  row 2 $r "" $none "while read -r PATH; do :; done < /tmp/p; gh issue comment 5 --body $h"
+  row 2 $r "" $none "N=PA; read \"\${N}TH\" <<< /tmp/evil; gh issue comment 5 --body $h"
+  row 2 $r "" $none "N=PA; printf -v \"\${N}TH\" /tmp/evil; gh issue comment 5 --body $h"
+  row 2 $r "" $none ": \"\${PATH::=/tmp/evil} x\"; gh issue comment 5 --body $h"
+  row 0 $r "" $none "gh issue create --title \"read the docs, then export it\" --body $h"
+done
+# a long command without a heredoc is read in well under the hook timeout
+long="echo $(printf 'word%.0s ' $(seq 1 5000)) $(printf 'x%.0s' $(seq 1 25000))"
+start=$(python3 -c 'import time; print(time.time())')
+row 0 consumer "" $none "$long"
+eq "a 50 KB command is read in under a second" 1 "$(python3 -c "import time; print(int(time.time() - $start < 1.0))")"
 finish

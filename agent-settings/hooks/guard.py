@@ -173,18 +173,32 @@ CAT_SUB = re.compile(r"\$\([ \t]*cat[ \t]+<<[ \t]*(['\"])(\w+)\1[ \t]*\n")
 # a line that may redefine cat (a function, an alias, a hashed path, a PATH, a sourced
 # file, zsh's path/aliases/functions arrays): its "$(cat <<'D' ...)" is not literal
 CAT_REDEF = re.compile(
-    r"\w+\s*\(\s*\)|\bfunction\s+\w+|(?<![\w./-])(?:alias|enable|builtin|hash|eval|source|autoload|fpath)(?![\w.-])"
+    r"(?<!\w)\w+\s*\(\s*\)|\bfunction\s+\w+|(?<![\w./-])(?:alias|enable|builtin|hash|eval|source|autoload|fpath)(?![\w.-])"
     r"|(?:^|[;&|(\n])[ \t]*\.[ \t]|\bPATH=|\bpath\+?=|\bpath\[|\baliases\[|\bfunctions\[|\bcommands\["
     r"|(?<![\w./-])functions\s+-c\b"
-    # an expansion in command position (${A}as), or one that builds an assignment's
-    # name (export ${P}ATH=)
+    # an expansion in command position (${A}as), or one that builds an assignment's name (${P}ATH=)
     r"|(?:^|[;&|(\n]|\b(?:do|then|else)\b)[ \t]*\$"
-    r"|\$\{?\w+\}?\w*\+?=|(?<![\w-])(?:export|declare|typeset|local|readonly)\b[^;&|\n]*\$"
+    r"|(?<![\w$])\$(?:\{\w+\}\w*|\w+)\+?="
 )
-# PATH or path named at all (read PATH, for PATH in, printf -v PATH), read where a quoted
-# string holding a space is prose, unless it starts PATH= (declare "PATH=/x y")
-PATH_WORD = re.compile(r"(?<![\w$-])(?:PATH|path)(?![\w-])")
-PROSE = re.compile(r"'(?!(?:PATH|path)\+?=)[^']*\s[^']*'" + r'|"(?!(?:PATH|path)\+?=)(?:[^"\\]|\\.)*\s(?:[^"\\]|\\.)*"')
+# PATH or path named at all (read PATH, for PATH in, ${PATH::=x}), or any builtin that assigns
+# a variable, anywhere on the line ({ read A; }, command read, if read, export ${N}TH=...):
+# read with quoted prose (a string holding a space, and no $) set aside
+REDEF_WORD = re.compile(
+    r"(?<![\w$./-])(?:PATH|path|read|printf|mapfile|readarray|getopts|declare|typeset|local|export|readonly)(?![\w.-])"
+)
+QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
+
+
+def without_prose(text):
+    def one(m):
+        q = m.group(0)
+        if "$" in q or not re.search(r"\s", q) or re.match(r"""['"](?:PATH|path)\+?=""", q):
+            return q
+        return " "
+
+    return QUOTED.sub(one, text)
+
+
 CAT_REDEFINED = False  # set by inline_cat_subs: the line may redefine cat, so nothing was rewritten
 
 
@@ -236,8 +250,11 @@ def inline_cat_subs(cmd):
         out.append(c)
         i += 1
     outside = "".join(x for k, x in enumerate(out) if k not in bodies) + cmd[i:]
-    redef = CAT_REDEF.search(outside) or CAT_REDEF.search(UNQUOTE.sub("", outside))
-    if bodies and (redef or PATH_WORD.search(UNQUOTE.sub("", PROSE.sub(" ", outside)))):
+    if bodies and (  # only a line with a rewritten body pays for the search
+        CAT_REDEF.search(outside)
+        or CAT_REDEF.search(UNQUOTE.sub("", outside))
+        or REDEF_WORD.search(UNQUOTE.sub("", without_prose(outside)))
+    ):
         CAT_REDEFINED = True
         return cmd
     return "".join(out) + cmd[i:]
@@ -1082,196 +1099,31 @@ def marker_through_punctuation(cmd):
     return RELEASE_MARKER in cmd or RELEASE_MARKER in bare or bool(re.search(r"harnest:release[$`\"'\\]", cmd))
 
 
-BODY_SUB_MSG = "a body may not be read from a file through a substitution: use --body-file"
-
-
-BODY_FLAGS = ("--body", "-b")
-BODY_PREFIXES = ("--body=", "body=", "-fbody=", "-Fbody=", "--field=body=", "--raw-field=body=")
-# the substitutions a body may hold: a timestamp or a commit id, nothing that reads a file or runs more
-# date: only flags and a +FORMAT of digit-producing specifiers (no %a/%b/%Z names, no text);
-# git rev-parse: only --short[=N]/--verify/--abbrev-ref and ref names. Their output is never
-# read (a WILD key stands in for it), so neither may spell anything.
-DATE_BODY = r"(?:%[-_0^#]?[YmdHMSyjsFTRDeuVGzIklUWwgCN]|[0-9:/ ,.TZ-])*"
-DATE_FMT = r"(?:\+{nosp}|'\+{b}'|\"\+{b}\"|\+'{b}'|\+\"{b}\")".format(b=DATE_BODY, nosp=DATE_BODY.replace(" ", ""))
-DATE_ARG = r"(?:-u|-R|-I\w*|-r[ \t]+\d+|%s)" % DATE_FMT
-REV_ARG = r"(?:--short(?:=\d+)?|--verify|--abbrev-ref|[A-Za-z0-9_./@^~][A-Za-z0-9_./@^~-]*)"
-BODY_SUB_OK = re.compile(r"[ \t]*(?:date(?:[ \t]+%s)*|git[ \t]+rev-parse(?:[ \t]+%s)*)[ \t]*" % (DATE_ARG, REV_ARG))
-# what a substitution prints, never read: a run of characters from its class
-WILD = {
-    "\x01": set("0123456789:-/ ,.TZ+"),  # date
-    "\x02": set("0123456789abcdef"),  # git rev-parse --short/--verify: a hash
-    "\x03": set("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_./-@^~"),  # --abbrev-ref
-}
-
-
-def wild_for(sub):
-    """The WILD key standing for an allowed substitution's output."""
-    if re.match(r"\s*date\b", sub):
-        return "\x01"
-    return "\x03" if "--abbrev-ref" in sub else "\x02"
-
-
-FULL_CMD = ""  # the whole command line, set by main(): where a body's $VAR is assigned
+BODY_MSG = "a body must be literal, a quoted heredoc, or --body-file: no variables or substitutions"
+BODY_FLAGS = ("--body", "-b", "--title", "-t")
+BODY_PREFIXES = ("--body=", "--title=", "body=", "title=", "--field=body=", "--raw-field=body=")
+BODY_PREFIXES += ("-fbody=", "-Fbody=", "-ftitle=", "-Ftitle=", "--field=title=", "--raw-field=title=")
 
 
 def body_words(body):
-    """The words of a gh segment (shell_words dicts) that are inline body values."""
+    """The words of a gh segment (shell_words dicts) that are an inline body or title."""
     out = []
     for k, x in enumerate(body):
         d = x["deq"]
         if (k and body[k - 1]["deq"] in BODY_FLAGS) or d.startswith(BODY_PREFIXES):
             out.append(x)
-        elif d.startswith("-b") and len(d) > 2 and not d.startswith("--"):  # pflag's attached -bVALUE
+        elif re.match(r"-[bt][^-]", d):  # pflag's attached -bVALUE / -tVALUE
             out.append(x)
     return out
 
 
-def substitution_texts(live):
-    """The command text of each $(...) and `...` in live text (quotes already resolved)."""
-    out, i, n = [], 0, len(live)
-    while i < n:
-        if live[i] == "`":
-            e = live.find("`", i + 1)
-            e = n if e < 0 else e
-            out.append(live[i + 1 : e])
-            i = e + 1
-        elif live[i : i + 2] == "$(":
-            depth, k = 1, i + 2
-            while k < n and depth:
-                depth += {"(": 1, ")": -1}.get(live[k], 0)
-                k += 1
-            out.append(live[i + 2 : k - 1])
-            i = k
-        else:
-            i += 1
-    return out
-
-
-# an assigned value bash fills in from nothing but text: quoted or bare pieces, and
-# inside double quotes only escapes and $NAME/${NAME} (each checked in turn)
-ASSIGNED_VALUE = re.compile(
-    r"""(?:'[^']*'|"(?:[^"\\$`]|\\.|\$\{?[A-Za-z_]\w*\}?)*"|\\.|[^\s$`'"\;&|()<>])*(?=[\s;&|)]|$)"""
-)
-
-
-ASSIGNERS = r"(?:read|printf|declare|typeset|local|export|readonly|mapfile|readarray|getopts|set|unset)"
-
-
-def literal_values(name, line, depth=0):
-    """The values the line gives name, each as the text bash would store, when every
-    assignment of it is text (quoted or bare pieces, a $VAR inside double quotes
-    that is itself literal, or a date/git rev-parse substitution, as its WILD key), or
-    a `for name in WORDS` over literal words; None when any is not, when another
-    spelling may assign it (NAME+=, NAME[...], read/printf -v/declare/export/set --/...),
-    or when there is none."""
-    n = re.escape(name)
-    if re.search(r"(?<![\w$-])%s(?:\+=|\[)" % n, line):
-        return None
-    if re.search(
-        r"(?:^|[;&|(\n]|\b(?:do|then|else)\b)[ \t]*%s\b[^;&|\n]*?(?<![\w$-])%s(?![\w])" % (ASSIGNERS, n), line
-    ):
-        return None
-    vals = []
-    for m in re.finditer(r"(?<![\w$-])for\s+%s\s+in\s+([^;\n]*)" % n, line):
-        if re.search(r"[$`'\"\\{}*?\[]", m.group(1)):
-            return None
-        vals += m.group(1).split()
-    if re.search(r"(?<![\w$-])for\s+%s(?![\w])(?!\s+in\b)" % n, line):
-        return None  # `for NAME; do` iterates over the positional parameters
-    for m in re.finditer(r"(?<![\w$-])%s=" % n, line):
-        rest = line[m.end() :]
-        sub = re.match(r"""["']?\$\(([^()]*)\)["']?(?=[\s;&|)]|$)""", rest)
-        if sub and BODY_SUB_OK.fullmatch(sub.group(1)):
-            vals.append(wild_for(sub.group(1)))
-            continue
-        v = ASSIGNED_VALUE.match(rest)
-        if not v:
-            return None
-        text = v.group(0)
-        inner = re.findall(r"(?<!\\)\$\{?([A-Za-z_]\w*)", re.sub(r"'[^']*'", " ", text))
-        if any(x == name or depth > 3 or literal_values(x, line, depth + 1) is None for x in inner):
-            return None
-        segs = shell_words(text)[0]
-        word = segs[0][0]["deq"] if segs and segs[0] else ""
-        vals += expand(word, line, depth + 1) if inner else [word]
-    return vals or None
-
-
-def literal_assignment(name, line):
-    return literal_values(name, line) is not None
-
-
-def expand(text, line, depth=0):
-    """Every text gh may get from text: each $NAME/${NAME} replaced by each value the
-    line gives it, and each allowed substitution by its WILD key. Never more than 64."""
-    text = re.sub(r"\$\(([^()]*)\)|`([^`]*)`", lambda m: wild_for(m.group(1) or m.group(2) or ""), text)
-    out = [text]
-    for name in dict.fromkeys(re.findall(r"\$\{?([A-Za-z_]\w*)", text)):
-        vals = literal_values(name, line, depth) or [""]
-        pat = re.compile(r"\$\{%s\}|\$%s(?!\w)" % (re.escape(name), re.escape(name)))
-        out = [pat.sub(lambda _m, v=v: v, t) for t in out for v in vals]
-        if len(out) > 64:
-            deny(BODY_SUB_MSG)
-    return out
-
-
-def may_spell(text, needle):
-    """True when needle can appear in text with each WILD key standing for any run
-    of characters from its class."""
-    toks = [WILD.get(c, c) for c in text]
-    n = len(toks)
-
-    def close(st):  # a wildcard may also be empty
-        out, todo = set(), list(st)
-        while todo:
-            x = todo.pop()
-            if x in out:
-                continue
-            out.add(x)
-            i = x[1] if isinstance(x, tuple) else x
-            if isinstance(x, tuple) or (i < n and isinstance(toks[i], set)):
-                todo.append(i + 1)
-        return out
-
-    states = close({i for i in range(n + 1)} | {("in", i) for i in range(n) if isinstance(toks[i], set)})
-    for c in needle:
-        nxt = set()
-        for x in states:
-            if isinstance(x, tuple):
-                if c in toks[x[1]]:
-                    nxt.add(x)
-            elif x < n and (toks[x] == c if isinstance(toks[x], str) else c in toks[x]):
-                nxt.add(("in", x) if isinstance(toks[x], set) else x + 1)
-        states = close(nxt)
-        if not states:
-            return False
-    return True
-
-
 def body_rule(body):
-    """An inline gh body is checked as the text gh will get. A substitution in it
-    may only be date or git rev-parse (BODY_SUB_OK); every other $ must be $NAME or
-    ${NAME} for a name the same line gives a literal value (literal_values), never
-    $1, $@, ${!N}, ${A:-x} or ${A[0]}. Then the text, with those values put in and
-    each substitution's output as a wildcard, may not spell the release marker
-    (or harnest: at all, when it holds an expansion)."""
+    """An inline gh body or title is literal text (or the quoted "$(cat <<'EOF' ...)"
+    heredoc, already rewritten to its literal text): no $ or backtick bash would
+    expand. A computed body goes in a file, through --body-file."""
     for x in body_words(body):
-        live = live_text(x["raw"])
-        for sub in substitution_texts(live):
-            if not BODY_SUB_OK.fullmatch(sub):
-                deny(BODY_SUB_MSG)
-        rest = re.sub(r"\$\([^()]*\)|`[^`]*`", " ", live)
-        if re.search(r"\$(?!\{[A-Za-z_]\w*\}|[A-Za-z_])", rest.replace("$''", " ")):
-            deny(BODY_SUB_MSG)
-        for name in re.findall(r"\$\{?([A-Za-z_]\w*)", rest):
-            if not literal_assignment(name, FULL_CMD):
-                deny(BODY_SUB_MSG)
-        texts = [UNQUOTE.sub("", t) for t in expand(live, FULL_CMD)]  # quotes after: "$A""est" is two words of one
-        if any(may_spell(t, RELEASE_MARKER) or (x["exp"] and may_spell(t, "harnest:")) for t in texts):
-            deny(
-                "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; "
-                "no agent writes one."
-            )
+        if re.search(r"[$`]", live_text(x["raw"])):
+            deny(BODY_MSG)
 
 
 def suite_request(words):
@@ -1612,8 +1464,6 @@ def main():
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    global FULL_CMD
-    FULL_CMD = cmd
     stripped, written = heredoc_cut(inline_cat_subs(cmd))  # a quoted-delimiter heredoc body is data, not commands
     subsegs, inner, residual = substitutions(stripped)
     segs = segments(stripped) + subsegs

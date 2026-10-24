@@ -161,3 +161,5 @@ edit, close, reopen and status; a `gh` command with an unbalanced quote, and `en
 and expands its string); `$IFS` anywhere in a command, and an expansion inside a
 `gh`/`git` word (`g${X}h`); `$'...'` quoting and unquoted brace
 expansion (`{a,b}`) in a `gh`/`git` command.
+
+An inline issue body or title (`--body`, `-b`, `--title`, `-t`, `-f body=`) must be literal text or a quoted `"$(cat <<'EOF' ... EOF)"` heredoc: no variable, `$(...)` or backtick in it, not even `$(date)` or `$(git rev-parse ...)`. Put computed text in a file and pass `--body-file`.
