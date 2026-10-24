@@ -157,5 +157,5 @@ It also refuses, with labels read in any case: lifting an `owner:don` or
 `status:verified`, `status:fixed-pending-verify`, `status:plan-approved` or a
 release label; `git` pointed at another tree (`--git-dir`, `--work-tree`,
 `-C`, `--no-index`); a `gh issue` verb outside view, list, create, comment,
-edit, close, reopen and status; a `gh` command with an unbalanced quote, and `env -S` (the hook reads the command it splits
-out, and holds it to every rule above).
+edit, close, reopen and status; a `gh` command with an unbalanced quote, and `env -S` (also `--split-string` and abbreviations: it re-splits
+and expands its string).

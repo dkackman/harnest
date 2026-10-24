@@ -151,6 +151,14 @@ def deny(msg):
     sys.exit(2)
 
 
+HOOK_CWD = ""  # the tool call's cwd, set by main(): relative body-file paths are the agent's, not the hook's
+SOLE_COMMAND = False  # main(): the gh command is the only thing on the line
+
+
+def resolve(path):
+    return os.path.join(HOOK_CWD or os.getcwd(), os.path.expanduser(path))
+
+
 UNQUOTE = re.compile(r"[\"'\\]")  # what bash drops from a word: quotes and backslashes
 UNBALANCED = False  # set by segments() when a line had an unmatched quote
 
@@ -191,6 +199,8 @@ def flag_values(words, *names):
                 vals += words[i + 1].split(",")
             elif w.startswith(n + "="):
                 vals += w[len(n) + 1 :].split(",")
+            elif len(n) == 2 and w.startswith(n) and len(w) > 2:  # pflag's attached form: -Fvalue, -F=value
+                vals += w[2:].removeprefix("=").split(",")
     if any(n.endswith("label") or n == "-l" for n in names):  # GitHub labels are case-insensitive
         vals = [v.lower() for v in vals]
     return [v.strip() for v in vals]
@@ -630,7 +640,7 @@ def carries_release_marker(words):
         return True
     for path in flag_values(words, "--body-file", "-F"):
         try:
-            if RELEASE_MARKER in open(path).read():
+            if RELEASE_MARKER in open(resolve(path)).read():
                 return True
         except OSError:
             pass
@@ -712,7 +722,7 @@ def target_file_rule(path, cwd, target, role):
 SHELL_KEYWORDS = ("do", "then", "else", "elif", "if", "while", "until", "{", "!", "nohup")
 # commands that run another command, and the options of theirs that take a value
 PREFIX_COMMANDS = {
-    "env": ("-u", "-C", "-S", "--unset", "--chdir", "--split-string"),
+    "env": ("-u", "-C", "-P", "--unset", "--chdir"),
     "time": (),
     "command": (),
     "exec": ("-a",),
@@ -734,22 +744,9 @@ def command_words(words):
         elif name in PREFIX_COMMANDS:
             i += 1
             while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
-                if name == "env":  # -S / --split-string re-splits its argument into a command
-                    w = words[i]
-                    m = re.fullmatch(r"-[i0v]*S(.*)", w)
-                    text, i = None, i + 1
-                    if w.startswith("--split-string="):
-                        text = w.split("=", 1)[1]
-                    elif w == "--split-string" or (m and not m.group(1)):
-                        text, i = (words[i] if i < len(words) else ""), i + 1
-                    elif m:
-                        text = m.group(1)
-                    if text is not None:
-                        try:
-                            return command_words(shlex.split(text) + words[i:])
-                        except ValueError:
-                            deny("env -S with a string the guard cannot parse: run the command directly.")
-                    i -= 1
+                if name == "env" and re.match(r"--s|-[A-Za-z]*S", words[i]):
+                    # -S/--split-string (or any abbreviation of it) re-splits and expands its string
+                    deny("env -S is not allowed: run the command directly.")
                 i += 2 if words[i] in PREFIX_COMMANDS[name] else 1
             if name == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
                 i += 1
@@ -761,26 +758,33 @@ def command_words(words):
 ARG_GH_MSG = "gh/git may not be an argument of another command: run it directly."
 
 
+GH_AT_CMD = r"(?:^|[;&|]\s*)\s*(?:\S*/)?gh\s+(?:issue|api|pr)\b"
+GIT_PUSH_AT_CMD = r"(?:^|[;&|]\s*)\s*(?:\S*/)?git\s+(?:-\S+\s+\S+\s+)*push\b"
+
+
 def wrapper_rule(words):
-    """A shell wrapper (bash -c, eval, xargs) hands gh or a push to a shell
-    the label and push rules never see."""
+    """A shell wrapper (bash -c, eval, xargs, su -c), or a command that takes
+    one as an argument (find -exec sh -c, sudo bash -c, ssh host "gh ..."),
+    hands gh or a push to a shell the label and push rules never see."""
     name = os.path.basename(words[0])
-    if name not in ("gh", "git"):
-        for j, w in enumerate(words[1:], 1):
-            if w == "--":
-                break
-            if os.path.basename(w) == "gh" and words[j + 1 : j + 2] and words[j + 1] in ("issue", "api", "pr"):
-                deny(ARG_GH_MSG)
-            if os.path.basename(w) == "git" and git_push_args(words[j:]):
-                deny(ARG_GH_MSG)
-    has_c = any(re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", w) for w in words[1:])
-    wraps = (name in ("bash", "sh", "zsh") and has_c) or name in ("eval", "xargs")
-    rest = " ".join(words[1:])
-    if wraps and (re.search(r"(?<![\w.-])gh(?![\w.-])", rest) or re.search(r"\bgit\s+push\b", rest)):
+    if name in ("gh", "git"):
+        return
+    names = [os.path.basename(w) for w in words]
+    has_c = lambda j: any(re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", w) for w in words[j + 1 :])  # noqa: E731
+    wraps = any(n in ("eval", "xargs", "su") or (n in ("bash", "sh", "zsh") and has_c(j)) for j, n in enumerate(names))
+    text = " ".join(words[1:])
+    if wraps and (re.search(r"(?<![\w.-])gh(?![\w.-])", text) or re.search(r"\bgit\s+push\b", text)):
         deny(
             "%s runs gh or git push where the guard cannot read it: run the gh or git command directly, "
             "one issue per call." % name
         )
+    for j, w in enumerate(words[1:], 1):
+        if os.path.basename(w) == "gh" and words[j + 1 : j + 2] and words[j + 1] in ("issue", "api", "pr"):
+            deny(ARG_GH_MSG)
+        if os.path.basename(w) == "git" and git_push_args(words[j:]):
+            deny(ARG_GH_MSG)
+        if re.search(r"\s", w) and (re.search(GH_AT_CMD, w) or re.search(GIT_PUSH_AT_CMD, w)):
+            deny(ARG_GH_MSG)
 
 
 # pulls/N/merge is pr_merge_base's to judge; a comment edit is the lead's plan PATCH
@@ -827,11 +831,13 @@ def unreadable_body_rule(paths):
     missing or unreadable now, so a release marker could reach it unseen."""
     for path in paths:
         try:
-            if path == "-" or not os.path.isfile(path):
+            if path == "-" or not os.path.isfile(resolve(path)):
                 raise OSError
-            open(path).close()
+            open(resolve(path)).close()
         except OSError:
             deny(UNREADABLE_BODY_MSG)
+    if paths and not SOLE_COMMAND:
+        deny("a body file must be the only command on the line: the guard reads it before gh does.")
 
 
 def api_text_has_marker(fields, inputs):
@@ -842,7 +848,7 @@ def api_text_has_marker(fields, inputs):
             inputs = inputs + [v.split("=@", 1)[1]]
     for path in inputs:
         try:
-            if RELEASE_MARKER in open(path).read():
+            if RELEASE_MARKER in open(resolve(path)).read():
                 return True
         except OSError:
             pass
@@ -922,6 +928,9 @@ def main():
         return
     cmd = data.get("tool_input", {}).get("command", "")
     segs = segments(cmd)
+    global HOOK_CWD, SOLE_COMMAND
+    HOOK_CWD = data.get("cwd") or ""
+    SOLE_COMMAND = len(segs) == 1 and not any(">" in w for w in segs[0])
     if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", cmd)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:

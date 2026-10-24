@@ -160,7 +160,7 @@ The hook also refuses, in any spelling of the label's case:
 - adding `status:plan-approved`, `release`, `release-blocker`, `arch-approved`, `arch-review` or `security`, on `gh issue create` as well as `edit`;
 - a `gh api` write (a method other than GET, or `-f`/`-F`/`--field`/`--input`): use `gh issue`;
 - `bash -c`, `eval` or `xargs` wrapped around `gh` or a push, and a `gh` command with an unbalanced quote: run the command directly, on one line;
-- `env -S` (it re-splits its string into a command; the hook reads that command), a comment or issue body (`--body-file`, `-F body=@…`, `--input`) from stdin or a file that is missing or unreadable (the hook cannot check it for a release marker), and `gh` or `git push` as an argument of another command (`watch gh issue …`): run the command directly, with the body inline or in a file that exists;
+- `env -S` (and `--split-string` or any abbreviation: it re-splits and expands its string), a comment or issue body (`--body-file`, `-F body=@…`, `--input`) from stdin, a file that is missing or unreadable, or a file when the call is not the only command on the line (the hook cannot check what it cannot read first), and `gh` or `git push` anywhere inside another command (`watch gh issue …`, `sudo bash -c "gh …"`, `ssh host "gh …"`): run the command directly, with the body inline or in a file that exists, alone on its line;
 - a `gh api` write whose endpoint has anything but letters, digits and `_ . / -` (no `?` or `#`), and a PR merge endpoint called with any method but PUT;
 - any command it cannot parse or that crashes it: a crash refuses the call.
 

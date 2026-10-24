@@ -365,7 +365,7 @@ row 2 lead "" $none 'bash -c "gh issue edit 5 --add-label status:plan-approved"'
 row 2 implementer "" $none 'env -S "gh issue edit 5 --add-label status:verified"'
 row 2 consumer "" $none 'env -S "gh issue edit 5 --add-label status:verified"'
 row 2 implementer "" $none 'env -i --split-string="gh issue close 5"'
-row 0 implementer "" $none 'env -S "echo hi"'
+row 2 implementer "" $none 'env -S "echo hi"'
 printf '%s\n' 'a plain comment' > "$T/plain.md"
 row 2 implementer "" $none 'gh api repos/o/r/issues/5/comments -f body=@-'
 row 2 implementer "" $none 'gh api repos/o/r/issues/5/comments --input -'
@@ -387,5 +387,53 @@ row 0 implementer "" $none 'python3 -c "import subprocess"'
 row 0 implementer "" $none 'echo "gh is fine"'
 row 0 implementer "" $none 'git log --grep gh'
 row 0 implementer "" $none 'grep gh file.txt'
-row 0 implementer "" $none 'echo foo -- gh issue close 5'
+row 2 implementer "" $none 'echo foo -- gh issue close 5'
+# task 7b fix round 1
+for r in implementer lead consumer; do
+  row 2 $r "" $none 'env -P /opt/homebrew/bin -S "gh issue edit 5 --add-label status:verified"'
+  row 2 $r "" $none 'env -S '"'"'gh\_issue\_edit\_5\_--add-label\_status:verified'"'"
+  row 2 $r "" $none 'L=status:verified env -S '"'"'gh issue edit 5 --add-label ${L}'"'"
+  row 2 $r "" $none 'env --split "gh issue close 5"'
+  row 2 $r "" $none 'env --split-s="gh issue close 5"'
+  row 2 $r "" $none 'env -iS "gh issue close 5"'
+  row 2 $r "" $none 'env -i gh issue edit 5 --add-label status:verified'
+  row 0 $r "" $none 'env FOO=1 echo hi'
+done
+# attached short flags
+row 2 implementer "" $none 'gh issue comment 5 -F- <<'"'EOF'"'
+<!-- harnest:release-gate ci abc pass -->
+EOF'
+row 2 lead "" $none 'gh issue comment 5 -F/dev/stdin'
+row 2 lead "" $none 'gh issue create --title x -lstatus:verified'
+row 2 consumer "" $none 'gh issue comment 5 -b"<!-- harnest:release-gate ci abc pass -->"'
+# argument-position gh past --, and wrappers behind a non-prefix command
+row 2 implementer "" $none 'sudo -- gh issue edit 5 --add-label status:verified'
+row 2 implementer "" $none 'stdbuf -oL -- gh issue close 5 --reason completed'
+row 2 implementer "" $none 'caffeinate gh issue close 5'
+row 2 implementer "" $none 'find . -maxdepth 0 -exec sh -c "gh issue close 5" \;'
+row 2 implementer "" $none 'sudo bash -c "gh issue edit 5 --add-label status:verified"'
+row 2 implementer "" $none 'su -c "gh issue close 5"'
+row 2 implementer "" $none 'watch "gh issue close 5 --reason completed"'
+row 2 implementer "" $none 'ssh lem "gh issue edit 5 --add-label status:verified"'
+row 0 implementer "" $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+# a body file is read before gh runs: it must be the only command, relative paths resolve against the hook's cwd
+cp "$T/plain.md" "$T/p3.md"
+row 2 implementer "" $none "cp $T/marker.md $T/p3.md; gh issue comment 5 --body-file $T/p3.md"
+rowc() {
+  local want="$1" dir="$2" cmd="$3" rc
+  jq -n --arg c "$cmd" --arg d "$dir" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: $d}' \
+    | python3 "$guard" implementer >/dev/null 2>&1
+  rc=$?
+  eq "implementer@cwd: $cmd" "$want" "$rc"
+}
+rowc 2 "$T" 'cd /tmp && gh issue comment 5 --body-file plain.md'
+rowc 2 "$T" 'true && gh issue comment 5 --body-file plain.md'
+rowc 2 "$T" 'gh issue comment 5 --body-file plain.md | cat'
+rowc 0 "$T" 'gh issue comment 5 --body-file plain.md'
+rowc 2 /tmp 'gh issue comment 5 --body-file plain.md'
+rowc 2 "$T" 'gh issue comment 5 --body-file marker.md'
+# endpoint charset, merge method
+row 2 lead "" $none 'gh api -X PATCH "repos/o?x=/r/issues/comments/7" -f body=plan'
+row 0 implementer "" $none 'gh api -X PUT /repos/o/r/pulls/13/merge'
+row 2 implementer "" $none 'gh api -X POST /repos/o/r/pulls/13/merge'
 finish
