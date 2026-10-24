@@ -343,6 +343,7 @@ CONSUMER_PERMISSION_FLAGS=(
     "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
     "Bash(./scripts/file-advisory.sh *)"
+    "Bash(python3 scripts/perf-check.py *)"
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
 )

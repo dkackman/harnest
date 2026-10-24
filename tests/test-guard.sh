@@ -50,6 +50,7 @@ row 2 lead "" $none 'echo a & gh issue edit 5 --add-label status:plan-approved #
 row 2 lead "" $none '/usr/bin/gh issue edit 5 --add-label "bug, status:plan-approved" # it'"'"'s'
 row 0 consumer "" $none 'gh issue create --title "S-F001 fails" --label owner:implementer,regression'
 row 0 consumer "" $none './scripts/file-advisory.sh --summary x --description-file y --severity high'
+row 0 consumer "" $none 'python3 scripts/perf-check.py S-P001 latency cold 9.1 --baseline 12'
 printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
 row 2 consumer "" $none "gh issue comment 5 --body-file $T/marker.md"
 row 0 consumer "" $none 'gh issue comment 5 --body "the release gates ran fine"'

@@ -42,4 +42,5 @@ Reading: an agent reads only the file for the case it is about to compare
 (`Read regression-perf/<case>.jsonl`) — never the whole directory. Append by
 reading that file and writing it back with the new line last; never rewrite or
 drop an existing line. The comparison rule (what counts as a regression against
-this history) is in `agents/regression/run-cases.md`, step 3.
+this history) is in `agents/regression/run-cases.md`, step 3, and
+`scripts/perf-check.py` is what applies it.

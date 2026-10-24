@@ -29,16 +29,20 @@
      only when it doesn't, and say which (`condition`). Same for a
      functional case with a `metrics:` line: run its checks as usual, and
      measure each named metric too. History is `regression-perf/<case>.jsonl`
-     (format in `regression-perf/README.md`); read that one file, not the
-     directory. A reading is a regression when it crosses an explicit
-     ceiling in the case, or — with `baseline:` still `TBD` or absent — when
-     it is more than ~50% over the median of the last 5 entries with the
-     same `metric` + `condition` **or** more than ~50% over the median of
-     every entry with that key; the second clause catches slow creep a short
-     window hides. A human-set `baseline:` is a hard ceiling on top of that.
-     Fewer than 3 prior entries: record and move on. Small run-to-run noise
-     is not a finding. Append the reading as the last line of that case's
-     file, one line per `metric`+`condition`, pass or regression.
+     (format in `regression-perf/README.md`). Run
+     `python3 scripts/perf-check.py <case> <metric> <condition> <value>`
+     (it is on your allowlist; add `--baseline X` when the case sets a
+     human `baseline:`, and `--perf-dir regression-perf/<server>` when your
+     prompt keeps this server's history in a subdirectory) and treat its
+     verdict as the comparison: exit 3 and a `regression: …` line is a
+     regression, `ok` and `insufficient history` are not. It applies the
+     rule — more than 50% over the median of the last 5 entries with the
+     same `metric` + `condition`, or of every entry with that key (slow
+     creep a short window hides); a human-set `baseline:` a hard ceiling on
+     top; fewer than 3 prior entries, record only — so don't re-derive it.
+     An explicit ceiling in the case's own text is still yours to check.
+     Append the reading as the last line of that case's file, as before:
+     one line per `metric`+`condition`, pass or regression.
    - **Then its `cleanup:` line**: delete what the case made, unless it's
      kept for a repro. A delete that fails, or an output that still lists
      after deletion, is a finding in its own right.
