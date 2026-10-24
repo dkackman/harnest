@@ -78,7 +78,7 @@ session_flags "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" 0 || exit 1
 LAST_SESSION="$LOGS/.last-session.features"
 ts() { date '+%H:%M:%S'; }
 
-trap driver_exit EXIT   # no lock here; this removes the --mcp-config file
+driver_traps   # no lock here; the EXIT trap removes the --mcp-config file, TERM stops a session
 LEAD_DESIGN_FLAGS=(
   --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
   --strict-mcp-config

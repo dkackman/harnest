@@ -112,6 +112,37 @@ mkdir "$LOGS/.driver.lock"; touch -t 202601010000 "$LOGS/.driver.lock"
 has "an ownerless old lock is taken over" " t" "$(lock_test)"
 eq  "the lock is released at exit" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
 
+# --- TERM stops the driver and its claude child; no takeover over a live child
+mkdir -p "$T/term-bin"
+printf '#!/usr/bin/env bash\necho "claude $*" >> "%s"\nsleep 30.1\n' "$T/term-calls" > "$T/term-bin/claude"
+chmod +x "$T/term-bin/claude"
+session_driver() { # a driver holding the lock, in a session with the fake claude
+  PATH="$T/term-bin:$PATH" exec bash -c '. "$1/providers.sh"; LAST_SESSION="$LOGS/.last-term"; MODEL_LABEL=x
+    acquire_driver_lock term; run_claude_session term term /tmp /dev/null prompt; echo "after session"' _ "$HARNEST"
+}
+session_driver > "$T/term.out" 2>&1 &
+drv=$!
+for _ in $(seq 50); do pgrep -f 'sleep 30.1' >/dev/null && break; sleep 0.1; done
+ok  "TERM: the fake claude is running" pgrep -f 'sleep 30.1'
+kill -TERM "$drv"
+for _ in $(seq 50); do pgrep -f 'sleep 30.1' >/dev/null || [ -d "$LOGS/.driver.lock" ] || break; sleep 0.1; done
+eq  "TERM: no claude child is left" "" "$(pgrep -f 'sleep 30.1')"
+eq  "TERM: the lock is released" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
+wait "$drv"; eq "TERM: the driver exits 143" 143 "$?"
+fails "TERM: the driver stopped, not carried on" grep -q "after session" "$T/term.out"
+pkill -f 'sleep 30.1' 2>/dev/null
+# a holder killed outright (KILL) leaves its claude session running: wait for it
+mkdir "$LOGS/.driver.lock"; echo "999999 dead" > "$LOGS/.driver.lock/owner"
+set -m; sleep 30.2 & orphan=$!; set +m
+echo "$orphan" > "$LOGS/.driver.lock/session.999999"
+bash -c '. "$1/providers.sh"; acquire_driver_lock t; echo took' _ "$HARNEST" > "$T/takeover.out" 2>&1 &
+waiter=$!
+sleep 1.5
+eq  "takeover: refused while the old holder's claude runs" "999999 dead" "$(cat "$LOGS/.driver.lock/owner" 2>/dev/null)"
+has "  and says why" "still running" "$(cat "$T/takeover.out")"
+pkill -P "$waiter" 2>/dev/null; kill "$waiter" "$orphan" 2>/dev/null; wait "$waiter" "$orphan" 2>/dev/null
+rm -rf "$LOGS/.driver.lock"
+
 # --- server targets (harnest#15): every target is an ssh host in target_row
 tgt() { # tgt <target> <snippet>: providers.sh sourced under DW_TARGET=<target>
   env DW_TARGET="$1" DW_URL="${TGT_URL:-}" bash -c '. "$1/providers.sh"; resolve_target || exit 1; eval "$2"' _ "$HARNEST" "$2" 2>&1

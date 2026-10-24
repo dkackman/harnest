@@ -896,7 +896,8 @@ acquire_driver_lock() {
   local lock="$LOGS/.driver.lock$TARGET_SUFFIX" holder waited=0 aside stale
   if [ -n "${HARNEST_HELD_LOCK:-}" ] && [ "$(cat "$lock/owner" 2>/dev/null || true)" = "$HARNEST_HELD_LOCK" ]; then
     echo "[lock] $1 runs under '$HARNEST_HELD_LOCK'" | tee -a "$LOOP_LOG"
-    trap driver_exit EXIT
+    driver_session_dir="$lock"
+    driver_traps
     return 0
   fi
   while ! mkdir "$lock" 2>/dev/null; do
@@ -904,6 +905,10 @@ acquire_driver_lock() {
     stale=0
     if [ -n "$holder" ]; then
       kill -0 "${holder%% *}" 2>/dev/null || stale=1
+      if [ "$stale" = 1 ] && live_session_group "$lock"; then
+        stale=0  # killed outright (KILL), its claude session is reparented and still on the server
+        [ "$waited" -eq 0 ] && echo "[lock] $1: '$holder' is gone but its claude session is still running" | tee -a "$LOOP_LOG"
+      fi
     elif [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]; then
       stale=1
     fi
@@ -927,13 +932,54 @@ acquire_driver_lock() {
   done
   echo "$$ $1" > "$lock/owner"
   driver_lock_dir="$lock"
+  driver_session_dir="$lock"
+  driver_traps
+}
+
+# live_session_group <lock-dir>
+# True when a session.<pid> file in the lock names a process group that still
+# has a process in it: run_claude_session records its session's group there,
+# and a claude child outlives a driver killed with KILL (reparented to init,
+# so a child-of-the-old-pid check finds nothing; the group keeps it).
+live_session_group() {
+  local f g
+  for f in "$1"/session.*; do
+    [ -r "$f" ] || continue
+    g="$(cat "$f" 2>/dev/null || true)"
+    [ -n "$g" ] && pgrep -g "$g" >/dev/null 2>&1 && return 0
+  done
+  return 1
+}
+
+# driver_traps
+# Every driver's one exit path: TERM, INT and HUP stop the running claude
+# session (kill_session_tree) and exit 143, which runs the EXIT trap,
+# driver_exit. Without it a TERM left `claude -p` running against the server
+# with the lock gone (bash defers a trap until a foreground child returns,
+# so run_claude_session runs the session in the background and waits).
+driver_traps() {
   trap driver_exit EXIT
+  trap 'kill_session_tree; exit 143' TERM INT HUP
+}
+
+# kill_session_tree
+# TERM the running session's process group (run_claude_session starts it
+# under set -m, so the group is the pipeline's pid), or failing that its
+# children. A no-op when no session runs.
+SESSION_PGID=""  # the running session's process group, set by run_claude_session
+kill_session_tree() {
+  [ -n "$SESSION_PGID" ] || return 0
+  kill -TERM -- "-$SESSION_PGID" 2>/dev/null || pkill -TERM -P "$SESSION_PGID" 2>/dev/null || true
+  [ -z "${driver_session_dir:-}" ] || rm -f "$driver_session_dir/session.$$"
+  SESSION_PGID=""
 }
 
 # driver_exit
-# The EXIT trap of every driver: releases the lock it took (if any) and
-# removes its own --mcp-config file, so the token isn't left on disk.
+# The EXIT trap of every driver: stops a session still running, releases the
+# lock it took (if any) and removes its own --mcp-config file, so the token
+# isn't left on disk.
 driver_exit() {
+  kill_session_tree
   [ -z "${driver_lock_dir:-}" ] || rm -rf "$driver_lock_dir"
   rm -f "$LOGS/.mcp.$$.json"
 }
@@ -1230,13 +1276,22 @@ run_claude_session() {
   for attempt in 1 2; do
     : > "$LAST_SESSION"
     echo "=== $(date '+%H:%M:%S') ${SESSION_HEADER:-$label} ($MODEL_LABEL)$([ "$attempt" -gt 1 ] && echo " retry") ===" | tee -a "$LOOP_LOG"
-    (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} ${SESSION_ENV[@]+"${SESSION_ENV[@]}"} \
+    # In the background, in its own process group (set -m), and waited on: a
+    # TERM to the driver runs its trap at once and kill_session_tree stops
+    # the whole pipeline, claude included (driver_traps).
+    set -m
+    ( (cd "$dir" && env ${MODEL_ENV[@]+"${MODEL_ENV[@]}"} ${SESSION_ENV[@]+"${SESSION_ENV[@]}"} \
         claude -p "$prompt" --append-system-prompt-file "$prompt_file" "${STREAM_FLAGS[@]}" "$@" \
         2>&1 < /dev/null | render_stream "$logname") \
       | tee -a "$LOGS/$logname.log" "$LAST_SESSION" \
       | sed -u "s/^/[$label] /" \
-      | tee -a "$LOOP_LOG" \
-      || echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
+      | tee -a "$LOOP_LOG" ) &
+    SESSION_PGID=$!
+    set +m
+    [ -z "${driver_session_dir:-}" ] || echo "$SESSION_PGID" > "$driver_session_dir/session.$$" 2>/dev/null || true
+    wait "$SESSION_PGID" || echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
+    [ -z "${driver_session_dir:-}" ] || rm -f "$driver_session_dir/session.$$"
+    SESSION_PGID=""
     sleep_if_rate_limited "$LAST_SESSION"
     session_died "$LAST_SESSION" || break
     [ "$attempt" -eq 1 ] || break

@@ -37,6 +37,7 @@ RETRO_EFFORT="${RETRO_EFFORT:-$EFFORT}"
 resolve_model_env "$RETRO_PROVIDER" "$RETRO_MODEL" || exit 1
 session_flags "$RETRO_PROVIDER" "$RETRO_MODEL" "$RETRO_EFFORT" "$RETRO_BUDGET_USD" || exit 1
 LAST_SESSION="$LOGS/.last-session.retro"
+driver_traps   # no lock here: TERM still stops the claude session (providers.sh)
 
 NEXT_SEEN="$LOGS/.retro-seen.next.json"
 EVIDENCE="$(python3 - "$LOGS" "$SEEN" "$NEXT_SEEN" "$TICKET_REPO" <<'PY'

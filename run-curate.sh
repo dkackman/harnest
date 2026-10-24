@@ -59,6 +59,7 @@ CURATE_EFFORT="${CURATE_EFFORT:-$EFFORT}"
 resolve_model_env "$CURATE_PROVIDER" "$CURATE_MODEL" || exit 1
 session_flags "$CURATE_PROVIDER" "$CURATE_MODEL" "$CURATE_EFFORT" "$CURATE_BUDGET_USD" || exit 1
 LAST_SESSION="$LOGS/.last-session.curate"
+driver_traps   # no lock here: TERM still stops the claude session (providers.sh)
 
 CURATE_FLAGS=(
   --strict-mcp-config
