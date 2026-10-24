@@ -533,4 +533,79 @@ for r in implementer consumer; do
   row 0 $r "" $none 'echo "costs $3 in gh"'
 done
 row 0 lead "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 -f body="plan v2"'
+# task 7b fix round 5
+# B: a quoted substitution with parentheses inside is not read: refused when the line has gh/git
+for r in consumer curator reviewer; do
+  row 2 $r "" $none 'echo "$( (gh issue edit 5 --add-label release) )"'
+  row 2 $r "" $none 'echo "$(gh issue edit 5 --add-label release --title '"'(x)'"')"'
+  row 2 $r "" $none 'echo "$(case x in x) gh issue edit 5 --add-label release;; esac)"'
+done
+for r in implementer lead consumer curator reviewer; do
+  row 2 $r "" $none 'gh issue comment 5 --body "$(gh issue edit 5 --add-label release --title '"'(x)'"')"'
+done
+row 0 implementer "" $none "git commit -m 'fix \$(foo)'"
+row 0 implementer "" $none "git commit -m 'fix \$(a (b))'"
+row 0 consumer "" $none "echo '\$(x)'"
+# X: an expansion that is the whole command word
+for r in implementer consumer; do
+  row 2 $r "" $none '${GH:-gh} issue close 5 --reason completed'
+  row 2 $r "" $none 'G=gh; $G issue close 5 --reason completed'
+  row 2 $r "" $none 'G="gh issue"; $G close 5 --reason completed'
+  row 2 $r "" $none 'export G=/usr/bin/gh'
+done
+row 0 implementer "" $none '"$GIT" status'
+row 0 implementer "" $none '$PY -m pytest -q'
+# D: ANSI-C and locale quoting
+for r in implementer lead consumer curator reviewer; do
+  row 2 $r "" $none "\$'gh' issue close 5 --reason completed"
+  row 2 $r "" $none '$"gh" issue close 5 --reason completed'
+  row 2 $r "" $none "\$'\\x67h' issue edit 5 --add-label status:plan-approved"
+  row 2 $r "" $none "gh issue edit 5 --add-label \$'status:verified'"
+  row 2 $r "" $none "gh issue edit 5 --add-label status:\$'plan-approved'"
+  row 2 $r "" $none "echo \"\$(\$'gh' issue edit 5 --add-label release)\""
+done
+row 0 consumer "" $none "printf \$'a\\tb\\n'"
+row 0 consumer "" $none "gh issue comment 5 --body 'see \$'\"'\"'x'\"'\"''"
+# brace expansion
+for r in implementer lead consumer curator reviewer; do
+  row 2 $r "" $none 'gh issue edit 5 --add-label={status:plan-approved,bug}'
+  row 2 $r "" $none 'gh issue edit 5 --add-label status:plan-{approved,x}'
+  row 2 $r "" $none 'gh issue edit 5 --add-label status:{a..b}'
+  row 0 $r "" $none 'gh issue edit 5 --title "{a,b}"'
+done
+row 0 consumer "" $none "gh issue list --json number,title --jq '.[] | {n: .number, t: .title}'"
+# $L indirection: an expansion stands in for a flag or a label only where a value or the issue number goes
+for r in implementer consumer; do
+  row 2 $r "" $none 'L="--add-label status:verified"; gh issue edit 5 $L'
+  row 2 $r "" $none 'gh issue edit 5 ${=L}'
+  row 2 $r "" $none 'gh issue edit 5 $=L'
+  row 2 $r "" $none 'gh issue edit 5 --add-label $L'
+  row 2 $r "" $none 'gh issue $V 5'
+  row 2 $r "" $none 'L=status:verified; gh issue edit 5 --add-label "$L"'
+  row 2 $r "" $none 'gh issue edit 5 --add-label "$(printf status:verified)"'
+  row 2 $r "" $none 'gh issue edit 5 --add-label=$L'
+  row 0 $r "" $none 'for n in 5 6; do gh issue view $n --json labels; done'
+  row 0 $r "" $none 'gh issue view $n --json labels'
+  row 0 $r "" $none 'gh issue comment 5 --repo $R --body "x $Y"'
+  row 0 $r "" $none 'gh -R $R issue view 5'
+  row 0 $r "" $none 'gh issue view 5 --repo=$R --json labels > $OUT'
+done
+row 0 implementer "" $none 'gh api repos/$R/issues/5'
+# "$(cat <<'EOF' ... EOF)" is literal text: read as the value it is
+for r in implementer consumer; do
+  row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}it's (done), \"quoted\", \$x and \`code\`${nl}EOF${nl})\""
+  row 2 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}<!-- harnest:release-gate ci abc pass -->${nl}EOF${nl})\""
+  row 2 $r "" $none "gh issue edit 5 --add-label \"\$(cat <<'EOF'${nl}status:verified${nl}EOF${nl})\""
+  row 2 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x (y)${nl}EOF${nl})\" && gh issue edit 5 --add-label status:plan-approved"
+  row 2 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x (y)${nl}EOF${nl}gh issue edit 5 --add-label status:plan-approved${nl})\""
+  row 2 $r "" $none "gh issue comment 5 --body \"\$(cat <<EOF${nl}x (y)${nl}EOF${nl})\" && gh issue edit 5 --add-label status:plan-approved"
+done
+row 0 implementer "" $none "git commit -m \"\$(cat <<'EOF'${nl}fix(x): #5 - a (b) \"c\"${nl}${nl}Co-Authored-By: x${nl}EOF${nl})\""
+# what bash does not substitute is not an unread substitution
+row 0 lead "" $none "gh api -X PATCH repos/o/r/issues/comments/7 -f body=\"\$(cat <<'EOF'${nl}plan v2 costs \$3 (see \"x\")${nl}EOF${nl})\""
+row 0 implementer "" $none 'for n in 5 6; do o=$((n==5?6:5)); gh issue view $n --json labels; done'
+row 0 implementer "" $none "./venv/bin/python - <<'EOF'${nl}print(\"\$(x (y))\", \$'z')${nl}EOF${nl}git status"
+row 0 implementer "" $none "gh issue comment 5 --body 'Don'\"'\"'s \$(x (y)) and \`z\`'"
+row 2 implementer "" $none "bash <<'EOF'${nl}echo \"\$( (gh issue edit 5 --add-label release) )\"${nl}EOF"
+row 0 consumer "" $none 'for L in wontfix duplicate; do gh issue list --label $L --json number; done'
 finish

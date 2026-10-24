@@ -133,6 +133,7 @@ against the model's mistakes, not against an adversary: a determined agent
 could spell a call so this misses it, which audit_issue still catches.
 """
 
+import codecs
 import json
 import os
 import re
@@ -162,6 +163,112 @@ HEREDOC_HEADER = re.compile(
     r"(?:cat[ \t]*>|tee[ \t]+)[ \t]*((?!-)(?:\$(?!\{?IFS\b)(?:\{\w+\}|\w+))?[A-Za-z0-9_./-]+)"
     r"[ \t]*<<(-?)[ \t]*(['\"])(\w+)\3(?:[ \t]*(?:>[ \t]*/dev/null|2>&1))*[ \t]*\n"
 )
+
+
+CAT_SUB = re.compile(r"\$\([ \t]*cat[ \t]+<<[ \t]*(['\"])(\w+)\1[ \t]*\n")
+
+
+def inline_cat_subs(cmd):
+    """cmd with each "$(cat <<'D' ... D)" inside double quotes replaced by its
+    output, escaped for the double quotes: a quoted-delimiter heredoc is
+    literal, so the substitution is exactly that text (less trailing
+    newlines), and every rule then reads it as the value it is. The walk
+    stops at the first substitution or backtick of any other shape."""
+    out, i, n, dq = [], 0, len(cmd), False
+    while i < n:
+        c = cmd[i]
+        m = CAT_SUB.match(cmd, i) if dq else None
+        if m:
+            delim, k, end = m.group(2), m.end(), None
+            while k <= n:  # the body ends at the first line that is exactly the delimiter
+                e = cmd.find("\n", k)
+                e = n if e < 0 else e
+                if cmd[k:e] == delim:
+                    t = re.match(r"[ \t\n]*\)", cmd[e:])
+                    end = e + t.end() if t else None
+                    break
+                k = e + 1
+            if end is not None:
+                body = cmd[m.end() : max(m.end(), k - 1)].rstrip("\n")
+                out.append(re.sub(r'([\\"$`])', r"\\\1", body))
+                i = end
+                continue
+        if c == "`" or cmd[i : i + 2] == "$(":
+            break
+        if c == "\\":
+            out.append(cmd[i : i + 2])
+            i += 2
+            continue
+        if c == "'" and not dq:
+            e = cmd.find("'", i + 1)
+            if e < 0:
+                break
+            out.append(cmd[i : e + 1])
+            i = e + 1
+            continue
+        if c == '"':
+            dq = not dq
+        out.append(c)
+        i += 1
+    return "".join(out) + cmd[i:]
+
+
+SHELLS = r"(?<![\w.-])(?:bash|sh|zsh|dash|ksh|eval|source)(?![\w.-])|(?<![\w./-])\.(?=[ \t])"
+
+
+def live_text(text):
+    """The parts of text bash substitutes in: unquoted and double-quoted text,
+    without single-quoted strings, $'...' strings, or the bodies of
+    quoted-delimiter heredocs fed to a command that is not a shell."""
+    out, i, n, dq, pending, line_start = [], 0, len(text), False, [], 0
+    while i < n:
+        c, two = text[i], text[i : i + 2]
+        if c == "\\":
+            out.append(" ")
+            i += 2
+        elif not dq and c == "'":
+            e = text.find("'", i + 1)
+            i = n if e < 0 else e + 1
+            out.append(" ")
+        elif not dq and (two == "$'" or two == '$"'):
+            if two == '$"':
+                out.append(" $'' ")
+                dq = True
+                i += 2
+                continue
+            k = i + 2
+            while k < n and text[k] != "'":
+                k += 2 if text[k] == "\\" else 1
+            i = k + 1
+            out.append(" $'' ")  # kept as a mark: $'...' decodes escapes bash-side
+        elif c == '"':
+            dq = not dq
+            out.append(c)
+            i += 1
+        elif not dq and (m := re.match(r"<<-?[ \t]*(['\"])(\w+)\1", text[i:])):
+            if not re.search(SHELLS, text[line_start:i]):
+                pending.append((m.group(2), two == "<<" and text[i + 2 : i + 3] == "-"))
+            out.append(" ")
+            i += m.end()
+        elif not dq and c == "\n" and pending:
+            k = i + 1
+            for delim, dash in pending:  # skip each body to its delimiter line
+                while k < n:
+                    e = text.find("\n", k)
+                    e = n if e < 0 else e
+                    line = text[k:e]
+                    k = e + 1
+                    if (line.lstrip("\t") if dash else line) == delim:
+                        break
+            pending = []
+            out.append("\n")
+            i = line_start = k
+        else:
+            if not dq and (c in ";|&\n"):
+                line_start = i + 1
+            out.append(c)
+            i += 1
+    return "".join(out)
 
 
 def heredoc_cut(cmd):
@@ -278,21 +385,191 @@ def segments(cmd):
 SUBSTITUTION = re.compile(r"(?<!\\)\$\(([^()]*)\)|(?<!\\)`((?:\\.|[^`\\])*)`")
 
 
-def substitution_segments(cmd):
-    """The commands inside $(...) and `...`, innermost first, which segments()
-    leaves inside one word when they are quoted or backticked: a command
-    substitution runs even inside double quotes. Escaped ones (\\`, \\$() are
-    text. Read only for the rules: an apostrophe inside one is not an
-    unbalanced quote on the line."""
+def substitutions(cmd):
+    """(segments, inner texts, residual) of the commands inside $(...) and
+    `...`, innermost first, which segments() leaves inside one word when they
+    are quoted or backticked: a command substitution runs even inside double
+    quotes. Escaped ones (\\`, \\$() are text. The residual is the line with
+    every one read cut out. Read only for the rules: an apostrophe inside one
+    is not an unbalanced quote on the line."""
     global UNBALANCED
-    out, prev, flag = [], None, UNBALANCED
+    out, inner, prev, flag = [], [], None, UNBALANCED
     while prev != cmd:
-        prev = cmd
+        prev = cmd = re.sub(r"\$\(\([^()]*\)\)", " ", cmd)  # $((...)) arithmetic runs nothing
         for m in SUBSTITUTION.finditer(cmd):
-            out += segments(m.group(1) if m.group(1) is not None else m.group(2))
+            text = m.group(1) if m.group(1) is not None else m.group(2)
+            inner.append(text)
+            out += segments(text)
         cmd = SUBSTITUTION.sub(" ", cmd)
     UNBALANCED = flag
-    return out
+    return out, inner, cmd
+
+
+GH_WORD = r"(?<![\w.-])(?:gh|git)(?![\w.-])"
+EXPANDS = re.compile(r"\$[\w{(@*#?!$=-]|`")  # a $ that bash fills in, or a backtick
+GH_VALUE_FLAGS = ("--repo", "-R", "--body", "-b", "--body-file", "-F", "--title", "-t", "--search", "-S")
+GH_VALUE_FLAGS += ("--jq", "-q", "--json", "--milestone", "--assignee", "--hostname")
+REDIRECT = re.compile(r"\d*[<>]+&?")
+
+
+def ansi_decode(body):
+    try:
+        return codecs.decode(re.sub(r"\\c.", "", body).encode("latin-1", "backslashreplace"), "unicode_escape")
+    except (UnicodeDecodeError, ValueError):
+        return body
+
+
+def shell_words(text):
+    """(segments, decoded line, saw $'/$" quoting) of a shell line, read the way
+    bash quotes it. A word is {"deq": its text with quotes removed and $'...'
+    decoded, "unq": its unquoted characters (each quoted or escaped run as _),
+    "exp": it holds an expansion outside single quotes, "zsh": ${=/$= in it}."""
+    segs, cur = [], []
+    w = {"deq": "", "unq": "", "exp": False, "zsh": False, "raw": ""}
+    ansi, i, n = False, 0, len(text)
+
+    def flush(end_seg=False):
+        nonlocal w, cur
+        if w["raw"]:
+            cur.append(w)
+        w = {"deq": "", "unq": "", "exp": False, "zsh": False, "raw": ""}
+        if end_seg and cur:
+            segs.append(cur)
+            cur = []
+
+    def dq_end(k):  # index of the closing " from k (inside the quotes), honouring backslashes
+        while k < n and text[k] != '"':
+            k += 2 if text[k] == "\\" else 1
+        return min(k, n)
+
+    while i < n:
+        c, two = text[i], text[i : i + 2]
+        if c == "\\":
+            w["raw"] += text[i : i + 2]
+            w["unq"] += "_"
+            w["deq"] += text[i + 1 : i + 2]
+            i += 2
+        elif c == "'":
+            e = text.find("'", i + 1)
+            e = n if e < 0 else e
+            w["raw"] += text[i : e + 1]
+            w["deq"] += text[i + 1 : e]
+            w["unq"] += "_"
+            i = e + 1
+        elif two == "$'":
+            k = i + 2
+            while k < n and text[k] != "'":
+                k += 2 if text[k] == "\\" else 1
+            ansi = True
+            w["raw"] += text[i : k + 1]
+            w["deq"] += ansi_decode(text[i + 2 : k])
+            w["unq"] += "_"
+            i = k + 1
+        elif c == '"' or two == '$"':
+            ansi = ansi or c == "$"
+            start = i + (2 if c == "$" else 1)
+            e = dq_end(start)
+            body = text[start:e]
+            w["raw"] += text[i : e + 1]
+            w["deq"] += body
+            w["unq"] += "_"
+            live = re.sub(r"\\.", "", body)  # \$ and \` are text inside double quotes
+            w["exp"] = w["exp"] or bool(EXPANDS.search(live))
+            w["zsh"] = w["zsh"] or bool(re.search(r"\$\{?=", live))
+            i = e + 1
+        elif c == "`" or two in ("$(", "${"):
+            close, depth, k = {"`": "`", "$(": ")", "${": "}"}[c if c == "`" else two], 0, i + 1
+            opener = "(" if two == "$(" else "{"
+            while k < n:
+                if text[k] == "\\":
+                    k += 2
+                    continue
+                if c != "`" and text[k] == opener:
+                    depth += 1
+                elif text[k] == close and (c == "`" or depth <= 1):
+                    break
+                elif c != "`" and text[k] == close:
+                    depth -= 1
+                k += 1
+            w["raw"] += text[i : k + 1]
+            w["deq"] += text[i : k + 1]
+            w["unq"] += "_"
+            w["exp"] = True
+            w["zsh"] = w["zsh"] or two == "${" and text[i + 2 : i + 3] == "="
+            i = k + 1
+        elif c == "$" and i + 1 < n and re.match(r"[\w@*#?!$=-]", text[i + 1]):
+            m = re.match(r"\$(\w+|.)", text[i:])
+            w["raw"] += m.group(0)
+            w["deq"] += m.group(0)
+            w["unq"] += "_"
+            w["exp"] = True
+            w["zsh"] = w["zsh"] or text[i + 1] == "="
+            i += len(m.group(0))
+        elif c in " \t\r":
+            flush()
+            i += 1
+        elif c in "\n;&|()":
+            flush(end_seg=True)
+            i += 1
+        elif c in "<>":
+            flush()
+            m = REDIRECT.match(text, i)
+            cur.append(
+                {"deq": m.group(0), "unq": m.group(0), "exp": False, "zsh": False, "raw": m.group(0), "redir": 1}
+            )
+            i = m.end()
+        elif c == "#" and not w["raw"]:
+            e = text.find("\n", i)
+            i = n if e < 0 else e
+        else:
+            w["raw"] += c
+            w["unq"] += c
+            w["deq"] += c
+            i += 1
+    flush(end_seg=True)
+    return segs, " ".join(" ".join(x["deq"] for x in g) for g in segs), ansi
+
+
+def expansion_rules(text):
+    """Rules on how bash builds a word, for every role: $'...'/$"..." quoting,
+    brace expansion, ${...} holding gh/git, a variable assigned gh/git, zsh's
+    ${=L} splitting, and a variable standing in for a gh flag or label."""
+    segs, decoded, ansi = shell_words(text)
+    if ansi and "$''" in live_text(text) and re.search(GH_WORD, decoded):
+        deny("$'...' quoting is not allowed in a gh/git command: write the word plainly.")
+    if re.search(r"\$\{[^}]*?(?<![\w.])(?:gh|git)(?![\w.-])", text):
+        deny("${...} may not hold gh or git: run the command directly.")
+    for words in segs:
+        for x in words:
+            if x["zsh"]:
+                deny("${=VAR} / $=VAR splits a variable into words the guard never sees: write the literal.")
+            if re.match(r"[A-Za-z_]\w*=(?:\S*/)?(?:gh|git)(?![\w.-])", x["deq"]):
+                deny("a variable may not hold gh or git: run the command directly.")
+        plain = [x for k, x in enumerate(words) if not x.get("redir") and not (k and words[k - 1].get("redir"))]
+        deq = [x["deq"] for x in plain]  # redirections and their targets are not arguments
+        body = plain[len(deq) - len(command_words(deq)) :]
+        if not body or os.path.basename(body[0]["deq"]) not in ("gh", "git"):
+            continue
+        for x in body:
+            if re.search(r"\{[^{}]*(?:,|\.\.)[^{}]*\}", x["unq"]):
+                deny(
+                    "brace expansion ({a,b}, {a..b}) in a gh/git command makes words the guard never sees: write each out."
+                )
+        if os.path.basename(body[0]["deq"]) != "gh":
+            continue
+        allowed, j = set(), 1  # gh's leading flags, then the subcommand and the positional after it
+        while j < len(body) and body[j]["deq"].startswith("-") and len(body[j]["deq"]) > 1:
+            j += 2 if body[j]["deq"] in ("-R", "--repo", "--hostname") else 1
+        if j < len(body):
+            allowed.add(j + 1 if body[j]["deq"] == "api" else j + 2)
+        if j + 1 < len(body) and body[j + 1]["deq"] in ("list", "status"):
+            continue  # a read filter: a variable there labels nothing
+        for k, x in enumerate(body):
+            if k and x["exp"] and k not in allowed:
+                prev = body[k - 1]["deq"]
+                flag = x["deq"].split("=", 1)[0] if x["deq"].startswith("-") else None
+                if prev not in GH_VALUE_FLAGS and flag not in GH_VALUE_FLAGS:
+                    deny("an unquoted variable may not stand in for a gh flag or label: write the literal.")
 
 
 def flag_values(words, *names):
@@ -1090,9 +1367,22 @@ def main():
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    stripped, written = heredoc_cut(cmd)  # a quoted-delimiter heredoc body is data, not commands
-    segs = segments(stripped) + substitution_segments(stripped)
+    stripped, written = heredoc_cut(inline_cat_subs(cmd))  # a quoted-delimiter heredoc body is data, not commands
+    subsegs, inner, residual = substitutions(stripped)
+    segs = segments(stripped) + subsegs
     ifs_rule(stripped, segs)
+    for text in [stripped] + inner:
+        expansion_rules(text)
+    unread = live_text(residual)
+    left = bool(re.search(r"(?<!\\)(?:\$\(|`)", unread))
+    while re.search(r"\([^()]*\)", unread):
+        unread = re.sub(r"\([^()]*\)", " ", unread)
+    # a $( or backtick left over, or (once a substitution was read) a stray ) that a case
+    # pattern or a comment inside it would explain: the substitution was not read whole
+    if re.search(GH_WORD, stripped) and (left or (inner and ")" in unread)):
+        deny(
+            "a command substitution the guard cannot read (parentheses inside $(...)) on a gh/git line: run gh directly."
+        )
     global HOOK_CWD, SOLE_COMMAND
     HOOK_CWD = data.get("cwd") or ""
     HEREDOC_PATHS[:] = written
