@@ -316,20 +316,25 @@ def run(
     retry_pause=None,
     sleep=time.sleep,
     on_line=None,
+    clock=time.time,
 ):
     """run_claude_session: one fresh `claude -p` session, retried once if it
     died before its result, asleep through a rejected rate limit. Never
     raises on the session's own failure; the outcome is read from <last>
-    (outcome.ok / ran / died), as the bash callers do."""
+    (outcome.ok / ran / died), as the bash callers do. Returns each
+    attempt's (start, end) by <clock>: the retry pause and a rate-limit
+    sleep fall between them, in neither."""
     stop_on_sigterm()
     if retry_pause is None:
         retry_pause = int(os.environ.get("SESSION_RETRY_PAUSE_SECS") or 30)
     argv = ["claude", "-p", prompt, "--append-system-prompt-file", str(prompt_file), *STREAM_FLAGS, *flags]
     env = model_env.apply(base_env())
     env.update(session_env)
+    attempts = []
     for attempt in (1, 2):
         open(last, "w").close()
         log.say(f"=== {ts()} {header or label} ({model_env.label}){' retry' if attempt > 1 else ''} ===")
+        start = clock()
         try:
             rc = _attempt(
                 argv,
@@ -345,6 +350,7 @@ def run(
         except OSError as e:
             log.say(f"[{label}] {e}")
             rc = 1
+        attempts.append((start, clock()))
         if rc != 0:
             log.say(f"[{label}] session failed, continuing")
         if outcome.sleep_if_rate_limited(last, log.say):
@@ -356,3 +362,4 @@ def run(
             break
         log.say(f"[{label}] session ended without a result; retrying once in {retry_pause}s")
         sleep(retry_pause)
+    return attempts

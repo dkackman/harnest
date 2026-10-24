@@ -582,7 +582,12 @@ class Outcomes(unittest.TestCase):
 
         def run_session(lane, kind, level, instructions, label, on_line=None):
             sessions.append((lane.name, len(seeded)))
-            return "".join(f"REGRESSION-RESULT: {c} pass\n" for c in ("S-F001", "S-F002", "S-F003")), 0.0, last
+            return (
+                "".join(f"REGRESSION-RESULT: {c} pass\n" for c in ("S-F001", "S-F002", "S-F003")),
+                0.0,
+                last,
+                [(0, 1)],
+            )
 
         f.run_session = run_session
         seeded = []
@@ -596,6 +601,52 @@ class Outcomes(unittest.TestCase):
             f.run_batch(lem2, [fleet.Item(level="smoke", case="S-F001", gid="g", exclusive=False)], 2)
             f.run_batch(f.lanes[0], [fleet.Item(level="smoke", case="S-F002", gid="h", exclusive=False)], 1)
         self.assertEqual(1, len(seeded), "once per lane and level; a first lane works in the level's own")
+
+    def test_case_seconds_exclude_retry_pause_and_rate_limit_sleep(self):
+        """A case's time is its session's: it stops at the attempt's end, not
+        when session.run returns, and a batch that took a second attempt (a
+        died session retried after its pause, or a rate limit slept through)
+        keeps no times at all, since they would weigh the next plan wrong."""
+        now = [1000.0]
+        f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})
+        f.clock = lambda: now[0]
+        s = f.servers["lem"]
+        s.url, s.token, s.rpfx, s.gate = "u", "t", "regression", fleet.Gate()
+        f.suite_files = {"smoke": Path("regression-suite-smoke.md")}
+        last = Path(f.state.path.parent, "last")
+        answers = "REGRESSION-RESULT: S-F001 pass\nREGRESSION-RESULT: S-F002 pass\n"
+
+        def session(*attempts):
+            """run_session doing <attempts>, each [(seconds later, rendered line)];
+            the clock then moves on 600s, as a rate-limit sleep or retry pause would."""
+
+            def run_session(lane, kind, level, instructions, label, on_line=None):
+                spans = []
+                for steps in attempts:
+                    start = now[0]
+                    for dt, line in steps:
+                        now[0] += dt
+                        on_line(line)
+                    spans.append((start, now[0]))
+                    now[0] += 600
+                last.write_text("usage: turns=2\n")
+                return answers, 0.0, last, spans
+
+            return run_session
+
+        batch = lambda: [
+            fleet.Item(level="smoke", case=c, gid=f"smoke:{c}", exclusive=False) for c in ("S-F001", "S-F002")
+        ]
+        one = [(1, "REGRESSION-CASE: S-F001"), (10, "REGRESSION-CASE: S-F002"), (25, "usage: turns=2")]
+        f.run_session = session(one)
+        f.run_batch(f.lanes[0], batch(), 1)
+        cases = f.state.data["cases"]
+        self.assertEqual((10.0, 25.0), (cases["S-F001"]["secs"], cases["S-F002"]["secs"]))
+        for c in cases.values():
+            del c["secs"]
+        f.run_session = session([(1, "REGRESSION-CASE: S-F001"), (5, "rate-limit: status=rejected")], one)
+        f.run_batch(f.lanes[0], batch(), 2)
+        self.assertEqual([], [c for c, d in cases.items() if "secs" in d], "a retried batch keeps no times")
 
     def test_main_exits_1_on_a_failed_run_or_a_failing_case(self):
         from unittest import mock
@@ -616,6 +667,45 @@ class Outcomes(unittest.TestCase):
                 mock.patch.object(fleet.session, "stop_on_sigterm", lambda: None),
             ):
                 self.assertEqual(rc, fleet.main([*args, "smoke"]), (status, outcomes, args))
+
+
+class SessionRun(unittest.TestCase):
+    def test_run_returns_each_attempt_span(self):
+        """A died session is retried after its pause; run reports both
+        attempts' spans, the pause between them in neither."""
+        from unittest import mock
+
+        from harness import session
+
+        now, said = [0.0], []
+        log = type("L", (), {"say": staticmethod(said.append), "append": staticmethod(lambda t: None)})()
+
+        def attempt(*a, **k):
+            now[0] += 7
+            return 1  # no result: died
+
+        def sleep(secs):
+            now[0] += secs
+
+        env = type("E", (), {"label": "m", "apply": staticmethod(lambda e: e)})()
+        with tempfile.TemporaryDirectory() as d, mock.patch.object(session, "_attempt", attempt):
+            got = session.run(
+                "l",
+                "n",
+                d,
+                Path(d, "p"),
+                "x",
+                [],
+                model_env=env,
+                session_env={},
+                logs=d,
+                last=str(Path(d, "last")),
+                log=log,
+                retry_pause=30,
+                sleep=sleep,
+                clock=lambda: now[0],
+            )
+        self.assertEqual([(0.0, 7.0), (37.0, 44.0)], got)
 
 
 class Watchdog(unittest.TestCase):

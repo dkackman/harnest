@@ -317,6 +317,8 @@ class ServerRun:
 
 
 class Fleet:
+    clock = staticmethod(time.time)  # what case times are measured by
+
     def __init__(self, profile, levels, names, sidecar, server_facts):
         self.profile = profile
         self.levels = levels
@@ -694,7 +696,7 @@ class Fleet:
             self.model,
             not s.server.primary,
         )
-        session.run(
+        attempts = session.run(
             label,
             logname,
             str(REPO),
@@ -707,10 +709,11 @@ class Fleet:
             last=str(last),
             log=s.log,
             on_line=on_line,
+            clock=self.clock,
         )
         text = last.read_text(encoding="utf-8", errors="replace") if last.exists() else ""
         cost = sum(float(c) for c in COST_RE.findall(text))
-        return text, cost, last
+        return text, cost, last, attempts
 
     def lane_main(self, lane):
         s = self.servers[lane.server.name]
@@ -750,7 +753,8 @@ class Fleet:
         try:
             self.lane_state(lane, status="exclusive" if excl else "running")
 
-            # a case's time runs from its REGRESSION-CASE line to the next one, or to the session's end
+            # a case's time runs from its REGRESSION-CASE line to the next one, or to the end of the
+            # session's attempt: not to when session.run returns, past a rate-limit sleep or retry
             secs, live = {}, [None, 0.0]
 
             def on_line(out, cases=cases):
@@ -758,16 +762,21 @@ class Fleet:
                     m = CASE_RE.match(line)
                     if not m or m.group(1) not in cases or m.group(1) == live[0]:
                         continue
-                    now = time.time()
+                    now = self.clock()
                     if live[0]:
                         secs[live[0]] = secs.get(live[0], 0.0) + now - live[1]
                     live[:] = [m.group(1), now]
                     self.lane_state(lane, live_case=m.group(1))
                     self.case_state(m.group(1), outcome="running")
 
-            text, cost, last = self.run_session(lane, "chunk", level, reg.chunk_instructions(cases), label, on_line)
+            text, cost, last, attempts = self.run_session(
+                lane, "chunk", level, reg.chunk_instructions(cases), label, on_line
+            )
             if live[0]:
-                secs[live[0]] = secs.get(live[0], 0.0) + time.time() - live[1]
+                end = attempts[-1][1] if attempts else self.clock()
+                secs[live[0]] = secs.get(live[0], 0.0) + end - live[1]
+            if len(attempts) != 1 or outcome.died(last):
+                secs = {}  # a died or retried session's times are not one attempt's: keep none
         finally:
             s.gate.leave(excl)
         self.settle(lane, batch, text, cost, last, secs)
@@ -824,7 +833,7 @@ class Fleet:
             self.lane_state(lane, status="sweep", level=level, batch=[], since=time.time())
             base = suite.workspace_for_suite_file(self.suite_files[level])
             label = f"{s.rpfx}:{level}.{lane.name}.sweep"
-            _, cost, _ = self.run_session(
+            _, cost, _, _ = self.run_session(
                 lane,
                 "sweep",
                 level,
