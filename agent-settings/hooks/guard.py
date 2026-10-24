@@ -152,11 +152,17 @@ def deny(msg):
 
 
 HOOK_CWD = ""  # the tool call's cwd, set by main(): relative body-file paths are the agent's, not the hook's
-SOLE_COMMAND = False  # main(): the gh command is the only thing on the line
+SOLE_COMMAND = False  # main(): the gh call is the only command on the line, bar heredoc writes of its body file
+HEREDOC_PATHS = []  # the files `cat > PATH <<EOF` writes on that line
+ENV_CHDIR = False  # command_words(): an env -C/--chdir prefix was stripped from the current segment
+HEREDOC_WRITE = re.compile(
+    r"^[ \t]*(?:cat[ \t]*>|tee[ \t]+)[ \t]*(\S+?)[ \t]*<<-?[ \t]*(['\"]?)(\w+)\2[^\n]*\n.*?\n[ \t]*\3[ \t]*(?:\n|$)",
+    re.M | re.S,
+)
 
 
 def resolve(path):
-    return os.path.join(HOOK_CWD or os.getcwd(), os.path.expanduser(path))
+    return os.path.join(HOOK_CWD or os.getcwd(), path)
 
 
 UNQUOTE = re.compile(r"[\"'\\]")  # what bash drops from a word: quotes and backslashes
@@ -735,6 +741,8 @@ def command_words(words):
     """The words from the real command on: leading NAME=value assignments,
     shell keywords (do, if, while, ...) and prefix commands with their options
     (env -i, time -p, exec -a NAME, ...) are not the command."""
+    global ENV_CHDIR
+    ENV_CHDIR = False
     i = 0
     while i < len(words):
         w = words[i]
@@ -747,19 +755,29 @@ def command_words(words):
                 if name == "env" and re.match(r"--s|-[A-Za-z]*S", words[i]):
                     # -S/--split-string (or any abbreviation of it) re-splits and expands its string
                     deny("env -S is not allowed: run the command directly.")
+                if name == "env" and re.match(r"--c|-[A-Za-z]*C", words[i]):
+                    ENV_CHDIR = True
                 i += 2 if words[i] in PREFIX_COMMANDS[name] else 1
             if name == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
                 i += 1
         else:
             break
-    return words[i:]
+    words = words[i:]
+    if words and os.path.basename(words[0]) == "gh":  # gh's leading flags: move them behind the subcommand
+        j, moved = 1, []
+        while j < len(words) and words[j].startswith("-") and len(words[j]) > 1:
+            n = 2 if words[j] in ("-R", "--repo", "--hostname") and j + 1 < len(words) else 1
+            moved += words[j : j + n]
+            j += n
+        words = [words[0]] + words[j:] + moved
+    return words
 
 
 ARG_GH_MSG = "gh/git may not be an argument of another command: run it directly."
 
 
-GH_AT_CMD = r"(?:^|[;&|]\s*)\s*(?:\S*/)?gh\s+(?:issue|api|pr)\b"
-GIT_PUSH_AT_CMD = r"(?:^|[;&|]\s*)\s*(?:\S*/)?git\s+(?:-\S+\s+\S+\s+)*push\b"
+GH_IN_WORD = r"(?<![\w.-])gh(?![\w.-]).*?(?<![\w.-])(?:issue|api|pr)(?![\w.-])"
+GIT_PUSH_IN_WORD = r"(?<![\w.-])git(?![\w.-]).*?(?<![\w.-])push(?![\w.-])"
 
 
 def wrapper_rule(words):
@@ -783,7 +801,8 @@ def wrapper_rule(words):
             deny(ARG_GH_MSG)
         if os.path.basename(w) == "git" and git_push_args(words[j:]):
             deny(ARG_GH_MSG)
-        if re.search(r"\s", w) and (re.search(GH_AT_CMD, w) or re.search(GIT_PUSH_AT_CMD, w)):
+        w = re.sub(r"\\[nt]", " ", w)  # $'a\ngh ...' reaches the shell as a newline
+        if re.search(r"\s", w) and (re.search(GH_IN_WORD, w, re.S) or re.search(GIT_PUSH_IN_WORD, w, re.S)):
             deny(ARG_GH_MSG)
 
 
@@ -826,17 +845,32 @@ def api_parse(args):
 UNREADABLE_BODY_MSG = "body must be inline or a readable file: the guard cannot check a marker it cannot read."
 
 
+def redirects_ok(words):
+    """No `>`/`>>` redirect to a file but /dev/null (the heredoc writes are cut out already)."""
+    for k, w in enumerate(words):
+        if w and set(w) <= set("<>") and ">" in w:
+            if k + 1 >= len(words) or words[k + 1] != "/dev/null":
+                return False
+    return True
+
+
 def unreadable_body_rule(paths):
-    """Refuse a comment body the guard cannot read: stdin, or a file that is
-    missing or unreadable now, so a release marker could reach it unseen."""
+    """Refuse a comment body the guard cannot vouch for: stdin, a missing or
+    unreadable file, a path bash would expand (~) or env -C would move, or a
+    file that is not read the way the guard read it (see main: SOLE_COMMAND).
+    A file the same line writes with `cat > PATH <<EOF` is checked as raw text."""
     for path in paths:
+        if "~" in path:
+            deny("a body file path may not contain ~: write the full path.")
+        if path in HEREDOC_PATHS:
+            continue
         try:
             if path == "-" or not os.path.isfile(resolve(path)):
                 raise OSError
             open(resolve(path)).close()
         except OSError:
             deny(UNREADABLE_BODY_MSG)
-    if paths and not SOLE_COMMAND:
+    if paths and (ENV_CHDIR or not SOLE_COMMAND or any(h not in paths for h in HEREDOC_PATHS)):
         deny("a body file must be the only command on the line: the guard reads it before gh does.")
 
 
@@ -930,7 +964,12 @@ def main():
     segs = segments(cmd)
     global HOOK_CWD, SOLE_COMMAND
     HOOK_CWD = data.get("cwd") or ""
-    SOLE_COMMAND = len(segs) == 1 and not any(">" in w for w in segs[0])
+    HEREDOC_PATHS[:] = [m.group(1).strip("'\"") for m in HEREDOC_WRITE.finditer(cmd)]
+    rest = re.sub(r"\d*>&\d+", " ", HEREDOC_WRITE.sub("", cmd))
+    rsegs = segments(rest)
+    SOLE_COMMAND = (
+        len(rsegs) == 1 and "`" not in cmd and "$(" not in cmd and "harnest:" not in cmd and redirects_ok(rsegs[0])
+    )
     if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", cmd)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:

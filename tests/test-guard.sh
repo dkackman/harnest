@@ -436,4 +436,36 @@ rowc 2 "$T" 'gh issue comment 5 --body-file marker.md'
 row 2 lead "" $none 'gh api -X PATCH "repos/o?x=/r/issues/comments/7" -f body=plan'
 row 0 implementer "" $none 'gh api -X PUT /repos/o/r/pulls/13/merge'
 row 2 implementer "" $none 'gh api -X POST /repos/o/r/pulls/13/merge'
+# task 7b fix round 2
+nl=$'\n'
+for c in 'watch "{ gh issue close 5; }"' 'ssh host "( gh issue close 5 )"' 'watch "if true; then gh issue close 5; fi"' \
+  'watch "! gh issue close 5"' 'ssh lem "echo \$(gh issue close 5 --reason completed)"' \
+  'watch "true && GH_REPO=o/r gh issue close 5"' 'watch "command gh issue close 5"' 'watch "gh --repo o/r issue close 5"' \
+  "watch \$'echo\\ngh issue close 5'" "ssh lem \"cd x${nl}gh issue close 5\"" 'ssh lem "cd x; git push origin develop"'; do
+  row 2 implementer "" $none "$c"
+done
+row 0 implementer "" $none 'echo "gh is fine"'
+row 2 implementer "" $none 'gh -R o/r issue edit 5 --add-label status:verified'
+row 2 implementer "" $none 'gh --repo o/r issue close 5 --reason completed'
+row 2 implementer "" $none 'gh --repo=o/r issue comment 5 --body "<!-- harnest:release-gate x -->"'
+row 2 lead "" $none 'gh --hostname github.com api -X PATCH repos/o/r/issues/5 -f state=closed'
+row 0 consumer "" $none 'gh -R o/r issue view 5'
+cp "$T/marker.md" "$T/other.md"; cp "$T/plain.md" "$T/plain2.md"
+rowc 2 "$T" 'gh issue comment 5 --body-file plain.md `cp marker.md plain.md`'
+rowc 2 "$T" 'gh issue comment 5 --body-file plain.md --title "$(cp marker.md plain.md)x"'
+rowc 2 "$T" "env --chdir=/tmp gh issue comment 5 --body-file plain.md"
+rowc 2 "$T" "env -C /tmp gh issue comment 5 --body-file plain.md"
+rowc 2 "$T" "gh issue comment 5 --body-file '~/x.md'"
+rowc 2 "$T" "gh issue comment 5 --body-file=~/x.md"
+rowc 0 "$T" "gh issue comment 5 --body-file plain.md 2>/dev/null"
+rowc 0 "$T" "gh issue comment 5 --body-file plain.md 2>&1"
+rowc 0 "$T" "gh issue comment 5 --body-file plain.md --title 'a -> b'"
+rowc 2 "$T" "gh issue comment 5 --body-file plain.md > out.txt"
+rowc 0 "$T" "cat > $T/c1.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 0 "$T" "cat >$T/c1.md <<EOF${nl}hello${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 0 "$T" "tee $T/c1.md <<'EOF' >/dev/null${nl}hello${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 2 "$T" "cat > $T/c1.md <<'EOF'${nl}<!-- harnest:release-gate ci abc pass -->${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 2 "$T" "cat > $T/other2.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 2 "$T" "cat >> $T/plain.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue comment 5 --body-file $T/plain.md"
+rowc 2 "$T" "cat > $T/c1.md <<'EOF'${nl}hello${nl}EOF${nl}cp other.md c1.md${nl}gh issue comment 5 --body-file $T/c1.md"
 finish
