@@ -800,4 +800,23 @@ row 0 lead "" $none 'git log --since="$(python3 -c "print((1))")" --oneline'
 row 2 implementer "" $none 'gh issue view $(echo /tmp(N))'
 row 0 implementer "" $none 'for b in $(git branch --list); do echo "$b"; done'
 row 0 implementer "" $none 'if (( 1 > 0 )); then git status; fi'
+# fix round 5: a backtick inside double quotes on a gh/git line runs before gh or git sees the word
+for r in implementer consumer; do
+  row 2 $r "" $none "gh issue view 5 --json \"\`echo /tmp(e:'gh issue edit 5 --add-label status:verified':)\`\""
+  row 2 $r "" $none "gh issue view 5 --json \"\`echo /tmp(e{'gh issue edit 5 --add-label status:verified'})\`\""
+  row 2 $r "" $none "git log --format=\"\`echo /tmp(e{touch /tmp/pwn})\`\""
+  row 2 $r "" $none "gh issue comment 5 --body \"uses \`x\`\""
+  row 0 $r "" $none "gh issue comment 5 --body 'uses \`x\`'"
+  row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}uses \`code\` spans${nl}EOF${nl})\""
+  row 0 $r "" $none "gh issue edit 5 --remove-label owner:implementer --add-label owner:tester && gh issue comment 5 --body \"\$(cat <<'EOF'${nl}Fixed in \`abc123\` on develop; \`validate_workflow()\` now warns.${nl}EOF${nl})\""
+done
+row 0 implementer "" $none "git commit -m \"\$(cat <<'EOF'${nl}fix: \`x\` -> \`y\`${nl}EOF${nl})\" && git push origin develop"
+# fix round 5: a ride-along sibling is fully literal too; a comment ends at its newline, backslash or not
+for r in implementer consumer; do
+  row 2 $r "" $none "gh issue comment 5 --body $hi && gh issue view \${PATH::=/tmp/evil}"
+  row 2 $r "" $none "gh issue view \${PATH::=/tmp/evil} && gh issue comment 5 --body $hi"
+  row 2 $r "" $none "# note \\${nl}gh issue edit 5 --add-label status:verified"
+  row 0 $r "" $none "# note \\${nl}echo hi"
+  row 0 $r "" $none "# note \\${nl}gh issue view 5"
+done
 finish

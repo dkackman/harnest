@@ -214,8 +214,9 @@ def inline_cat_subs(cmd):
     is rewritten only when the call is the segment's first word, the segment
     holds no `$` outside the body (an argument like ${PATH::=...} assigns
     before cat runs), the walk read the whole line, and every other non-empty
-    segment is a plain `gh issue` ride-along or a plain `git <verb>`
-    (sibling_ok: no assignment, prefix, cd, pipe, function or comment). Any
+    segment is a plain `gh issue` ride-along or a plain `git <verb>` with no
+    `$` in its live text (sibling_ok: no assignment, prefix, cd, pipe,
+    function, comment or expansion: a ride-along is fully literal). Any
     other command's heredoc is left as it is. With the condition unmet the
     gh/git heredoc stays live and is refused (LIVE_HEREDOC_MSG): the guard
     cannot read what it would run. The walk stops at the first substitution
@@ -289,7 +290,9 @@ def inline_cat_subs(cmd):
     if not any_here:
         return "".join(out_all) + rest
     alone = done and all(
-        ("$" not in live_text(out)) if h else all(sibling_ok(w) for w in segments(text) if w)
+        ("$" not in live_text(out))
+        if h
+        else ("$" not in live_text(text) and all(sibling_ok(w) for w in segments(text) if w))
         for text, h, out in segs
         if text.strip(" \t;&|()\n")
     )
@@ -445,11 +448,18 @@ def join_continuations(cmd):
     unescaped backslash right before a newline, outside single quotes, $'...'
     and the body of a quoted-delimiter heredoc not fed to a shell. An escaped
     backslash at the end of a line (\\\\, an even run) ends the line, so the
-    next line is its own command and is read as one."""
+    next line is its own command and is read as one. A comment (an unquoted
+    `#` at the start of a word) runs to its newline, backslash or not: bash
+    does not continue a comment."""
     out, i, n, dq, pending, line_start = [], 0, len(cmd), False, [], 0
     while i < n:
         c, two = cmd[i], cmd[i : i + 2]
-        if c == "\\":
+        if c == "#" and not dq and (i == 0 or cmd[i - 1] in " \t\n;&|()"):
+            e = cmd.find("\n", i)
+            e = n if e < 0 else e
+            out.append(cmd[i:e].replace("\\", ""))  # bash ignores the comment; no escape in it reaches shlex
+            i = e
+        elif c == "\\":
             if two != "\\\n":
                 out.append(two)
             i += 2
@@ -1245,6 +1255,28 @@ def glob_qualifier(text):
     return False
 
 
+BACKTICK_MSG = "backticks inside double quotes are not allowed on a gh/git line: use $(...)"
+
+
+def backtick_in_quotes(text):
+    """True when live text holds a backtick inside double quotes: the guard reads
+    a quoted string as one word, but zsh runs the backtick's command first (a
+    glob qualifier in it included). A rewritten heredoc body has its backticks
+    escaped, and an escaped backtick is text."""
+    i, n, dq = 0, len(text), False
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == '"':
+            dq = not dq
+        elif c == "`" and dq:
+            return True
+        i += 1
+    return False
+
+
 def marker_through_punctuation(cmd):
     """The release marker on a gh line, read through quotes, $(, ), backticks and
     backslashes, or `harnest:release` with an expansion or quote straight after it."""
@@ -1656,6 +1688,8 @@ def main():
     )
     if re.search(GH_WORD, stripped) and glob_qualifier(live_text(stripped)):
         deny("zsh glob qualifiers are not allowed on a gh/git line")
+    if re.search(GH_WORD, stripped) and backtick_in_quotes(live_text(stripped)):
+        deny(BACKTICK_MSG)
     if marker_through_punctuation(cmd):
         deny(
             "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."
