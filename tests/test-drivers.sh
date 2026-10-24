@@ -401,7 +401,7 @@ loop 1
 eq  "without a hand-back, four bounces still park" "stage bounced 4 times; parking with owner:don" "$(grep -o 'stage bounced 4 times; parking with owner:don' "$T/loop.out")"
 
 # --- 7. run-regression: a two-case override suite, one case per session
-: > "$FAKE_CLAUDE_LOG"
+: > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"
 cat > "$T/h/regression-suite-tiny.md" <<'EOS'
 # tiny suite
 ## Fixtures
@@ -417,6 +417,10 @@ eq  "regression: exits cleanly" 0 $?
 eq  "regression: two chunks and a sweep" 3 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "regression: the level header names lem's commit" "target=lem, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
 has "regression: chunk sessions are labelled" "[regression:smoke.2 of 2] usage:" "$(cat "$T/reg.out")"
+has "chunk: the prompt carries the case text" "### S-F002 — second" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+eq  "chunk: each case's text in its own chunk only" "1 1" "$(grep -c '^### S-F001 ' "$FAKE_CLAUDE_LOG.argv") $(grep -c '^### S-F002 ' "$FAKE_CLAUDE_LOG.argv")"
+eq  "chunk: the Fixtures section in both chunks and the sweep" 3 "$(grep -c '^## Fixtures' "$FAKE_CLAUDE_LOG.argv")"
+fails "chunk: the rest of the header is not handed over" grep -q '^# tiny suite' "$FAKE_CLAUDE_LOG.argv"
 
 # --- 7b. run-regression against the mini-ai test bed (harnest#15), with
 # the loop's lock held: it must not wait on lem's. ssh: lem reports its

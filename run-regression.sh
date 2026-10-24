@@ -62,8 +62,9 @@
 # ("autocompact is thrashing"). CASES_PER_SESSION=N sidesteps that in the
 # driver rather than trusting the model to read sparingly: the level is run
 # as a series of separate sessions, each given N consecutive case IDs to
-# exercise and told to read only those sections, followed by one last
-# session that does the final sweep alone. When the provider declares a
+# exercise with their text in its prompt (the Fixtures section and those
+# cases' blocks: scripts/case-text.sh), followed by one last session that
+# does the final sweep alone. When the provider declares a
 # window under 120k tokens the default is 3; otherwise (including Anthropic,
 # which declares no window here) it's 8 — a full suite's tool-call output
 # alone can clear Claude Code's 120k autocompact threshold before the last
@@ -344,7 +345,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
     # Case IDs in file order, from the `### <ID> — title` headings. The
     # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
     # heading that doesn't match isn't a case and is skipped.
-    local ids=() chunk=() seen=0 total=0 session=0 nchunks=0
+    local ids=() chunk=() seen=0 total=0 session=0 nchunks=0 text
     while read -r id; do
       case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
       case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
@@ -358,8 +359,15 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       if [ "${#chunk[@]}" -eq "$CASES_PER_SESSION" ] || [ "$seen" -eq "$total" ]; then
         session=$((session + 1))
         echo "--- $(ts) $tag session $session of $nchunks: ${chunk[*]} ---" | tee -a "$LOOP_LOG"
+        # The Fixtures section and these cases' blocks, handed over in the
+        # prompt: reading them out of the suite cost each session turns.
+        text="$("$REPO/scripts/case-text.sh" "$suite_file" "${chunk[@]}")"
         run_session "$level" "$suite_file" "$workspace" ".$session of $nchunks" chunk \
-          "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. Do not read the suite file in full — read its header (everything above the first '### ' heading, which includes the Fixtures section), then only those cases' sections. Skip the final sweep; a separate session does it after every case has run."
+          "This is one chunk of a chunked run: this session exercises ONLY these cases, in this order: ${chunk[*]}. The Fixtures section and these cases' full text follow; do not read the suite file for them (read it only if a case points elsewhere in it). Skip the final sweep; a separate session does it after every case has run.
+
+$text
+
+(End of the suite text.)"
         chunk=()
         if session_aborted; then
           echo "[$RPFX:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOOP_LOG"
@@ -369,8 +377,13 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
     done
     if ! session_aborted; then
       echo "--- $(ts) $tag session $((session + 1)): final sweep ---" | tee -a "$LOOP_LOG"
+      text="$("$REPO/scripts/case-text.sh" "$suite_file")"   # no ids: the Fixtures section alone
       run_session "$level" "$suite_file" "$workspace" ".sweep" sweep \
-        "This is the final sweep of a chunked run: every case was already exercised in earlier sessions. Do only the final sweep against the $workspace workspace — read the suite file's header (everything above the first '### ' heading, which includes the Fixtures section), not the cases.$script_note"
+        "This is the final sweep of a chunked run: every case was already exercised in earlier sessions. Do only the final sweep against the $workspace workspace. The suite file's Fixtures section follows; do not read the suite file for it, nor the cases.$script_note
+
+$text
+
+(End of the suite text.)"
     fi
   fi
 

@@ -84,8 +84,12 @@ chmod +x "$T/cap-mcp.sh"
 sent_mcp() { cat "${1%.args}.mcp"; }
 calls() { grep -c 'claude -p' "$FAKE_CLAUDE_LOG"; }
 
+cp "$T/h/regression-suite-tiny.md" "$T/tiny.md"
 for impl in bash py; do
   rm -rf "$T/h/logs"; mkdir -p "$T/h/logs"
+  # each driver starts from the same suite: the chunk prompt carries its text
+  cp "$T/tiny.md" "$T/h/regression-suite-tiny.md"
+  git -C "$T/h" -c user.name=t -c user.email=t@t commit -qm "tiny suite, as written" -- regression-suite-tiny.md >/dev/null 2>&1 || true
   : > "$FAKE_CLAUDE_LOG"
 
   # --- lem: two cases, one per session

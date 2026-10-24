@@ -84,22 +84,24 @@ def session_prompt(
     )
 
 
-def chunk_instructions(chunk):
+def chunk_instructions(chunk, text):
+    """<text>: suite.case_text for <chunk>, which the session reads in place of the suite file."""
     return (
         "This is one chunk of a chunked run: this session exercises ONLY these cases, in "
-        f"this order: {' '.join(chunk)}. Do not read the suite file in full — read its header "
-        "(everything above the first '### ' heading, which includes the Fixtures section), "
-        "then only those cases' sections. Skip the final sweep; a separate session does it "
-        "after every case has run."
+        f"this order: {' '.join(chunk)}. The Fixtures section and these cases' full text follow; "
+        "do not read the suite file for them (read it only if a case points elsewhere in it). "
+        "Skip the final sweep; a separate session does it after every case has run."
+        f"\n\n{text}\n\n(End of the suite text.)"
     )
 
 
-def sweep_instructions(workspace, script_note=""):
+def sweep_instructions(workspace, script_note="", fixtures=""):
+    """<fixtures>: suite.fixtures_section, what the sweep keeps."""
     return (
         "This is the final sweep of a chunked run: every case was already exercised in "
-        f"earlier sessions. Do only the final sweep against the {workspace} workspace — read "
-        "the suite file's header (everything above the first '### ' heading, which includes "
-        f"the Fixtures section), not the cases.{script_note}"
+        f"earlier sessions. Do only the final sweep against the {workspace} workspace. The "
+        "suite file's Fixtures section follows; do not read the suite file for it, nor the "
+        f"cases.{script_note}\n\n{fixtures}\n\n(End of the suite text.)"
     )
 
 
@@ -399,7 +401,7 @@ class Regression:
                     workspace,
                     f".{session_no} of {nchunks}",
                     "chunk",
-                    chunk_instructions(chunk),
+                    chunk_instructions(chunk, suite.case_text(suite_file, chunk)),
                     head,
                 )
                 if outcome.aborted(self.last):
@@ -416,7 +418,7 @@ class Regression:
                     workspace,
                     ".sweep",
                     "sweep",
-                    sweep_instructions(workspace, script_note),
+                    sweep_instructions(workspace, script_note, suite.fixtures_section(suite_file)),
                     head,
                 )
 

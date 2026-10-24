@@ -5,6 +5,7 @@ and providers.sh's commit_suite_changes.
 
 import os
 import re
+import sys
 import time
 from pathlib import Path
 
@@ -46,6 +47,39 @@ def script_cases(suite_file, cases_dir):
                 out.append(cur)
                 cur = ""
     return [i for i in out if (Path(cases_dir) / f"{i}.json").is_file()]
+
+
+_FENCE = ("```", "~~~")
+_SECTION_END = re.compile(r"#{1,3}\s")  # a heading at the Fixtures section's level or above
+
+
+def fixtures_section(suite_file):
+    """The header's Fixtures section, from `## Fixtures` to the next heading
+    at its level or above, outside a code fence; "" when there is none."""
+    out, fence, inside = [], False, False
+    for line in Path(suite_file).read_text(encoding="utf-8").splitlines(keepends=True):
+        if line.lstrip().startswith(_FENCE):
+            fence = not fence
+        if not fence and _SECTION_END.match(line):
+            if inside or CASE_HEADING.match(line):
+                break
+            inside = re.match(r"## Fixtures\b", line) is not None
+        if inside:
+            out.append(line)
+    return "".join(out).rstrip()
+
+
+def case_text(suite_file, ids):
+    """What a chunk session is handed instead of reading the suite: the
+    Fixtures section, then each case's block in the order given (fence-aware,
+    requirements.case_blocks). An id with no block is left out; the prompt
+    still names it. No trailing newline, so `$(scripts/case-text.sh ...)`
+    and this are the same bytes."""
+    from .requirements import case_blocks  # requirements imports this module
+
+    blocks = case_blocks(suite_file)
+    parts = [fixtures_section(suite_file)] + [blocks[i].rstrip() for i in ids if i in blocks]
+    return "\n\n".join(p for p in parts if p)
 
 
 def workspace_for_suite_file(path):
@@ -138,3 +172,17 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
             os.rmdir(lock)
         except OSError:
             pass
+
+
+def main(argv=None):
+    """python3 -m harness.suite case-text <suite-file> <id>... (scripts/case-text.sh)"""
+    args = sys.argv[1:] if argv is None else argv
+    if len(args) < 2 or args[0] != "case-text":
+        print("usage: python3 -m harness.suite case-text <suite-file> <id>...", file=sys.stderr)
+        return 2
+    print(case_text(args[1], args[2:]))
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())

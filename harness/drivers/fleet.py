@@ -771,7 +771,12 @@ class Fleet:
                     self.case_state(m.group(1), outcome="running")
 
             text, cost, last, attempts = self.run_session(
-                lane, "chunk", level, reg.chunk_instructions(cases), label, on_line
+                lane,
+                "chunk",
+                level,
+                reg.chunk_instructions(cases, suite.case_text(self.suite_files[level], cases)),
+                label,
+                on_line,
             )
             if live[0]:
                 end = attempts[-1][1] if attempts else self.clock()
@@ -841,7 +846,11 @@ class Fleet:
                 lane,
                 "sweep",
                 level,
-                reg.sweep_instructions(lane.workspace(base), notes.get((lane.name, level), "")),
+                reg.sweep_instructions(
+                    lane.workspace(base),
+                    notes.get((lane.name, level), ""),
+                    suite.fixtures_section(self.suite_files[level]),
+                ),
                 label,
             )
             self.state.update(
