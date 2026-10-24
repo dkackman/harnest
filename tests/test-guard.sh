@@ -152,7 +152,8 @@ trow() {
 }
 # a new issue names its backend (one this server can observe), an owner,
 # and no claim: claims are the driver's
-trow 0 'gh issue create --title "S-F070 fails" --label owner:implementer,backend:mps,regression --body-file /tmp/x'
+printf 'body\n' > "$T/trow-body.md"  # a body file the guard can read (every role's body files are read)
+trow 0 "gh issue create --title \"S-F070 fails\" --label owner:implementer,backend:mps,regression --body-file $T/trow-body.md"
 trow 0 'gh issue create --title "S-F070 fails" -l owner:implementer -l backend:shared'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,regression'
 trow 2 'gh issue create --title "S-F070 fails" --label owner:implementer,backend:cuda'
@@ -645,7 +646,6 @@ done
 for r in implementer consumer; do
   row 2 $r "" $none "hash -p /bin/bash cat; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none "f() { :; }${nl}gh issue comment 5 --title \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\" --body y"
-  row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}call foo() and . ./x; eval it${nl}EOF${nl})\""
   row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:$X -->"'
   row 0 $r "" $none 'gh issue comment 5 --body "see harnest:plan v2"'
 done
@@ -688,7 +688,6 @@ for r in implementer consumer; do
   row 2 $r "" $none 'A=x; gh issue comment 5 --body "${A:-y}"'
   row 2 $r "" $none 'V=hello; gh issue comment 5 --body "x $V"'
   row 2 $r "" $none 'TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ"); gh issue comment 5 --body "at $TS"'
-  row 0 $r "" $none "gh issue create --title \"no longer reaches its warn path\" --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none "read \"PATH\" <<< /tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none 'A="harn"; gh issue comment 5 --body "$A""est:release-gate x"'
   row 2 $r "" $none 'A=harn; A=x; gh issue comment 5 --body "${A}est:release-gate x"'
@@ -698,7 +697,6 @@ for r in implementer consumer; do
   row 2 $r "" $none "printf -v PATH /tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none "P=P; export \${P}ATH=/tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
   row 2 $r "" $none "A=ali; \${A}as cat=bash${nl}gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
-  row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}set PATH and read it; \$A then \${B}x${nl}EOF${nl})\""
 done
 # fix round 2: a body or title is literal, a quoted heredoc, or --body-file; assigners keep a heredoc live
 h="\"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
@@ -716,11 +714,43 @@ for r in implementer consumer; do
   row 2 $r "" $none "N=PA; read \"\${N}TH\" <<< /tmp/evil; gh issue comment 5 --body $h"
   row 2 $r "" $none "N=PA; printf -v \"\${N}TH\" /tmp/evil; gh issue comment 5 --body $h"
   row 2 $r "" $none ": \"\${PATH::=/tmp/evil} x\"; gh issue comment 5 --body $h"
-  row 0 $r "" $none "gh issue create --title \"read the docs, then export it\" --body $h"
 done
 # a long command without a heredoc is read in well under the hook timeout
 long="echo $(printf 'word%.0s ' $(seq 1 5000)) $(printf 'x%.0s' $(seq 1 25000))"
 start=$(python3 -c 'import time; print(time.time())')
 row 0 consumer "" $none "$long"
 eq "a 50 KB command is read in under a second" 1 "$(python3 -c "import time; print(int(time.time() - $start < 1.0))")"
+# fix round 3: the heredoc rewrite only for a gh call alone on its line (other gh issue calls aside)
+hi="\"\$(cat <<'EOF'${nl}hi${nl}EOF${nl})\""
+for r in implementer consumer; do
+  row 2 $r "" $none "N=PA; M=\${N}TH; : \${(P)M::=/tmp/evil}; gh issue comment 5 --body $h"
+  row 2 $r "" $none "echo \\\"a b\\\" ; read PATH <<< /tmp/evil; gh issue comment 5 --body $h"
+  row 2 $r "" $none "cd /x && gh issue comment 5 --body $hi"
+  row 2 $r "" $none "gh issue comment 5 --body $hi | tee /tmp/x"
+  row 2 $r "" $none "# note${nl}gh issue comment 5 --body $hi"
+  row 0 $r "" $none "gh issue comment 5 --body $hi && gh issue edit 5 --remove-label owner:implementer --add-label owner:tester"
+  row 0 $r "" $none "gh issue comment 5 --body $hi"
+  row 0 $r "" $none "gh issue comment 5 --body $hi 2>&1"
+  row 2 $r "" $none "gh issue comment 5 --body $hi 2>&1 | tail -1"
+  row 0 $r "" $none "gh issue edit 5 --remove-label owner:implementer --add-label owner:tester && \\${nl}gh issue comment 5 --body $hi"
+  row 2 $r "" $none "gh issue comment 5 --body x *(e:'gh issue edit 5 --add-label status:verified':)"
+  row 2 $r "" $none "gh issue comment 5 --body x ?(+evil)"
+done
+# a commit message is not text the guard rules on: its heredoc is read as literal whatever the line
+row 0 implementer "" $none "git commit -m \"\$(cat <<'EOF'${nl}it's (done)${nl}EOF${nl})\" && git push origin feature"
+row 0 implementer "" $none "cat() { bash; }; git commit -m \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+row 0 implementer "" $none 'git add *.py'
+row 0 consumer "" $none 'gh issue list --search "x (y)"'
+# a body file the guard cannot read, for every role
+printf 'hello\n' > "$T/plain3.md"
+for r in consumer reviewer; do
+  row 2 $r "" $none "gh issue comment 5 --body-file <(cat $T/marker.md)"
+  row 2 $r "" $none "gh issue comment 5 --body-file =(cat $T/marker.md)"
+  row 2 $r "" $none "gh issue comment 5 --body-file /dev/stdin"
+done
+row 0 consumer "" $none "gh issue comment 5 --body-file $T/plain3.md"
+# a line continuation (backslash-newline) joins a line; it is not a word
+for r in implementer consumer; do
+  row 0 $r "" $none "cat > $T/cv.md <<'EOF'${nl}ok${nl}EOF${nl}gh issue comment 5 --body-file $T/cv.md && \\${nl}gh issue edit 5 --add-label bug"
+done
 finish

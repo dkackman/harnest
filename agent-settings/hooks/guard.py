@@ -170,49 +170,45 @@ HEREDOC_HEADER = re.compile(
 
 
 CAT_SUB = re.compile(r"\$\([ \t]*cat[ \t]+<<[ \t]*(['\"])(\w+)\1[ \t]*\n")
-# a line that may redefine cat (a function, an alias, a hashed path, a PATH, a sourced
-# file, zsh's path/aliases/functions arrays): its "$(cat <<'D' ...)" is not literal
-CAT_REDEF = re.compile(
-    r"(?<!\w)\w+\s*\(\s*\)|\bfunction\s+\w+|(?<![\w./-])(?:alias|enable|builtin|hash|eval|source|autoload|fpath)(?![\w.-])"
-    r"|(?:^|[;&|(\n])[ \t]*\.[ \t]|\bPATH=|\bpath\+?=|\bpath\[|\baliases\[|\bfunctions\[|\bcommands\["
-    r"|(?<![\w./-])functions\s+-c\b"
-    # an expansion in command position (${A}as), or one that builds an assignment's name (${P}ATH=)
-    r"|(?:^|[;&|(\n]|\b(?:do|then|else)\b)[ \t]*\$"
-    r"|(?<![\w$])\$(?:\{\w+\}\w*|\w+)\+?="
-)
-# PATH or path named at all (read PATH, for PATH in, ${PATH::=x}), or any builtin that assigns
-# a variable, anywhere on the line ({ read A; }, command read, if read, export ${N}TH=...):
-# read with quoted prose (a string holding a space, and no $) set aside
-REDEF_WORD = re.compile(
-    r"(?<![\w$./-])(?:PATH|path|read|printf|mapfile|readarray|getopts|declare|typeset|local|export|readonly)(?![\w.-])"
-)
-QUOTED = re.compile(r"'[^']*'|\"(?:[^\"\\]|\\.)*\"")
 
 
-def without_prose(text):
-    def one(m):
-        q = m.group(0)
-        if "$" in q or not re.search(r"\s", q) or re.match(r"""['"](?:PATH|path)\+?=""", q):
-            return q
-        return " "
-
-    return QUOTED.sub(one, text)
-
-
-CAT_REDEFINED = False  # set by inline_cat_subs: the line may redefine cat, so nothing was rewritten
+def sub_command(seg_text):
+    """The command word (basename) of a segment's text before a "$(cat <<'D' ...)"
+    starts: the text up to the double quote that opens it."""
+    head = seg_text[: seg_text.rfind('"')] if '"' in seg_text else seg_text
+    segs = segments(head)
+    words = command_words(segs[-1]) if segs else []
+    word = os.path.basename(words[0]) if words else ""
+    if word == "gh" and segs[-1][0] != "gh":
+        return ""  # a prefix (PATH=..., env, nice) before gh: not a plain call, so not rewritten
+    return word
 
 
 def inline_cat_subs(cmd):
     """cmd with each "$(cat <<'D' ... D)" inside double quotes replaced by its
     output, escaped for the double quotes: a quoted-delimiter heredoc is
     literal, so the substitution is exactly that text (less trailing
-    newlines), and every rule then reads it as the value it is. The walk
-    stops at the first substitution or backtick of any other shape, and never
-    starts on a line that may redefine cat (CAT_REDEF): there the substitution
-    stays live, for the rules to read and refuse. The redefinition is looked
-    for outside the heredoc bodies, so prose like foo() in a body is text."""
-    global CAT_REDEFINED
-    out, bodies, i, n, dq = [], [], 0, len(cmd), False
+    newlines), and every rule then reads it as the value it is.
+
+    That holds only when nothing else on the line can change what `cat` is
+    (a function, an alias, PATH, zsh's ${(P)...}: too many spellings to list).
+    So a gh call's heredoc is rewritten only when every other command on the
+    line is a plain `gh issue` call (ride_along_ok, the body-file rule); with
+    any other sibling it stays live, and the literal-only body rule refuses it.
+    A git call's heredoc (git commit -m, git merge -m) is rewritten whatever
+    the line: a commit message is not text the guard rules on, and the rewrite
+    only spares it the unread-substitution refusal, so even a redefined cat
+    there changes nothing the guard decides. Any other command's heredoc is
+    left as it is. The walk stops at the first substitution or backtick of any
+    other shape; a gh heredoc then stays live too."""
+    out_all, out_raw, i, n, dq = [], [], 0, len(cmd), False
+    segs, seg_start, gh_here, gh_any, done = [], 0, False, False, True
+
+    def close_seg():
+        nonlocal seg_start, gh_here
+        segs.append(("".join(out_all[seg_start:]), gh_here))
+        seg_start, gh_here = len(out_all), False
+
     while i < n:
         c = cmd[i]
         m = CAT_SUB.match(cmd, i) if dq else None
@@ -226,38 +222,58 @@ def inline_cat_subs(cmd):
                     end = e + t.end() if t else None
                     break
                 k = e + 1
-            if end is not None:
+            word = sub_command("".join(out_all[seg_start:])) if end is not None else ""
+            if word in ("gh", "git"):
                 body = cmd[m.end() : max(m.end(), k - 1)].rstrip("\n")
-                out.append(re.sub(r'([\\"$`])', r"\\\1", body))
-                bodies.append(len(out) - 1)
+                lit = re.sub(r'([\\"$`])', r"\\\1", body)
+                out_all.append(lit)
+                out_raw.append(lit if word == "git" else cmd[i:end])
+                if word == "gh":
+                    gh_here = gh_any = True
                 i = end
                 continue
         if c == "`" or cmd[i : i + 2] == "$(":
+            done = False
             break
         if c == "\\":
-            out.append(cmd[i : i + 2])
+            out_all.append(cmd[i : i + 2])
+            out_raw.append(cmd[i : i + 2])
             i += 2
             continue
         if c == "'" and not dq:
             e = cmd.find("'", i + 1)
             if e < 0:
+                done = False
                 break
-            out.append(cmd[i : e + 1])
+            out_all.append(cmd[i : e + 1])
+            out_raw.append(cmd[i : e + 1])
             i = e + 1
             continue
         if c == '"':
             dq = not dq
-        out.append(c)
+        # a separator, but not the & of a redirection (2>&1, >&2, &>/dev/null)
+        sep = (
+            not dq
+            and c in ";&|()\n"
+            and not (c == "&" and ((i > 0 and cmd[i - 1] in "<>") or cmd[i + 1 : i + 2] == ">"))
+        )
+        if sep:
+            close_seg()
+        out_all.append(c)
+        out_raw.append(c)
+        if sep:
+            seg_start = len(out_all)
         i += 1
-    outside = "".join(x for k, x in enumerate(out) if k not in bodies) + cmd[i:]
-    if bodies and (  # only a line with a rewritten body pays for the search
-        CAT_REDEF.search(outside)
-        or CAT_REDEF.search(UNQUOTE.sub("", outside))
-        or REDEF_WORD.search(UNQUOTE.sub("", without_prose(outside)))
-    ):
-        CAT_REDEFINED = True
-        return cmd
-    return "".join(out) + cmd[i:]
+    close_seg()
+    rest = cmd[i:]
+    if not gh_any:
+        return "".join(out_all) + rest
+    alone = done and all(
+        here or all(ride_along_ok(command_words(w)) for w in segments(text) if command_words(w))
+        for text, here in segs
+        if text.strip(" \t;&|()\n")
+    )
+    return "".join(out_all if alone else out_raw) + rest
 
 
 SHELLS = r"(?<![\w.-])(?:bash|sh|zsh|dash|ksh|eval|source)(?![\w.-])|(?<![\w./-])\.(?=[ \t])"
@@ -405,7 +421,8 @@ UNBALANCED = False  # set by segments() when a line had an unmatched quote
 def segments(cmd):
     """Split a shell line into simple commands on ; & | ( ) and unquoted
     newlines, respecting quotes, so text inside a comment body is never
-    read as a command."""
+    read as a command. A backslash-newline is a line continuation: a space."""
+    cmd = cmd.replace("\\\n", " ")
     lex = shlex.shlex(cmd, posix=True, punctuation_chars="();<>|&\n")
     lex.whitespace = " \t\r"
     lex.whitespace_split = True
@@ -1090,6 +1107,28 @@ def carries_release_marker(words):
     return False
 
 
+def glob_qualifier(text):
+    """True when unquoted text holds a zsh glob qualifier: a glob character (*, ?, ])
+    right before `(`, or a `(e:` / `(+` / `(#q` group. zsh runs the code in e:...:
+    and +func while it expands the word, before gh or git sees it."""
+    i, n = 0, len(text)
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2
+            continue
+        if c == '"':
+            k = i + 1
+            while k < n and text[k] != '"':
+                k += 2 if text[k] == "\\" else 1
+            i = k + 1
+            continue
+        if (c in "*?]" and text[i + 1 : i + 2] == "(") or re.match(r"\((?:e:|\+|#q)", text[i:]):
+            return True
+        i += 1
+    return False
+
+
 def marker_through_punctuation(cmd):
     """The release marker on a gh line, read through quotes, $(, ), backticks and
     backslashes, or `harnest:release` with an expansion or quote straight after it."""
@@ -1499,8 +1538,8 @@ def main():
         and RELEASE_MARKER not in cmd
         and all(redirects_ok(g) for g in rsegs)
     )
-    if CAT_REDEFINED and re.search(GH_WORD, UNQUOTE.sub("", cmd)):
-        deny("this line may redefine cat (a function, alias, hash, PATH, ...), so its $(cat <<EOF) runs: split it.")
+    if re.search(GH_WORD, stripped) and glob_qualifier(live_text(stripped)):
+        deny("zsh glob qualifiers are not allowed on a gh/git line")
     if marker_through_punctuation(cmd):
         deny(
             "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."
@@ -1594,10 +1633,8 @@ def main():
                 "scripts/file-advisory.sh --summary ... --description-file ... --severity ... "
                 "(the implementer: $HARNEST_ROOT/scripts/file-advisory.sh)."
             )
-        if role in ("implementer", "lead") and (
-            is_gh_issue(words, "comment") or is_gh_issue(words, "create") or is_gh_issue(words, "edit")
-        ):
-            unreadable_body_rule(flag_values(words, "--body-file", "-F"))
+        if is_gh_issue(words, "comment") or is_gh_issue(words, "create") or is_gh_issue(words, "edit"):
+            unreadable_body_rule(flag_values(words, "--body-file", "-F"))  # every role: <(...), =(...), stdin
         if carries_release_marker(words):
             deny(
                 "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."

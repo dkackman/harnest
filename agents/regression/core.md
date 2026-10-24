@@ -176,7 +176,7 @@ its last line. Stage an issue body with `Write` to `/tmp/<case>-issue.md`
 and pass it with `--body-file <path>`. Read any file, including a saved tool
 result, with `Read`.
 
-The hook refuses `env -S` (and `--split-string`): it re-splits and expands its string. It also refuses `$IFS` anywhere in a command, and an expansion inside a `gh`/`git` word (`g${X}h`); `$'...'` quoting and unquoted brace expansion (`{a,b}`) in a `gh`/`git` command. An inline issue body or title (`--body`, `-b`, `--title`, `-t`, `-f body=`) must be literal text or a quoted `"$(cat <<'EOF' ... EOF)"` heredoc: no variable, `$(...)` or backtick in it, not even `$(date)` or `$(git rev-parse ...)`. Put computed text in a file and pass `--body-file`.
+The hook refuses `env -S` (and `--split-string`): it re-splits and expands its string. It also refuses `$IFS` anywhere in a command, and an expansion inside a `gh`/`git` word (`g${X}h`); `$'...'` quoting and unquoted brace expansion (`{a,b}`) in a `gh`/`git` command. An inline issue body or title (`--body`, `-b`, `--title`, `-t`, `-f body=`) must be literal text or a quoted `"$(cat <<'EOF' ... EOF)"` heredoc on a `gh` call alone on its line (other plain `gh issue` calls may share it; a `cd`, pipe, loop, `echo` or comment there leaves the heredoc unread and refused): no variable, `$(...)` or backtick in it, not even `$(date)` or `$(git rev-parse ...)`. Put computed text in a file and pass `--body-file`.
 
 ## Guardrails
 
