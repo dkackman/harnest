@@ -29,6 +29,10 @@ echo "claude $*" | cut -c1-200 >> "$FAKE_CLAUDE_LOG"
 echo "claude $*" >> "$FAKE_CLAUDE_LOG.argv"
 [ -z "${FAKE_CLAUDE_DO:-}" ] || eval "$FAKE_CLAUDE_DO" >/dev/null
 echo '{"type":"system","subtype":"init","model":"claude-fake"}'
+# FAKE_CLAUDE_REJECT: "always", or a marker file: rejected by the rate limit until it exists
+if [ "${FAKE_CLAUDE_REJECT:-}" = always ] || { [ -n "${FAKE_CLAUDE_REJECT:-}" ] && [ ! -e "$FAKE_CLAUDE_REJECT" ] && touch "$FAKE_CLAUDE_REJECT"; }; then
+  echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","isUsingOverage":false}}'
+fi
 echo '{"type":"result","subtype":"success","num_turns":2,"duration_ms":1000,"total_cost_usd":0.01,"usage":{"input_tokens":1,"cache_read_input_tokens":1,"cache_creation_input_tokens":1,"output_tokens":1}}'
 EOS
 chmod +x "$T/bin/ssh" "$T/bin/claude"
@@ -613,6 +617,17 @@ eq  "curate: one audit session" 1 "$(grep -c 'AUDIT session' "$FAKE_CLAUDE_LOG")
    SESSION_RETRY_PAUSE_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
 eq  "retro: exits cleanly" 0 $?
 eq  "retro: one session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+# a rejected rate limit with no reset named: sleep the fallback, then run the attempt again
+: > "$FAKE_CLAUDE_LOG"; rm -f "$T/reject-once"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r FAKE_CLAUDE_REJECT="$T/reject-once" \
+   SESSION_RETRY_PAUSE_SECS=0 RATE_LIMIT_FALLBACK_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
+eq  "rate limit: the rejected attempt is run again" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "rate limit: a missing reset sleeps the fallback" "no reset time; sleeping 0s" "$(cat "$T/retro.out")"
+: > "$FAKE_CLAUDE_LOG"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r FAKE_CLAUDE_REJECT=always \
+   SESSION_RETRY_PAUSE_SECS=0 RATE_LIMIT_FALLBACK_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
+eq  "rate limit: run again once, not forever" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "retro: a rejected session does not advance the window" "window not advanced" "$(cat "$T/retro.out")"
 # --- 9b. the nightly regression run: once a day, inside the loop, under its lock
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/.nightly-regression"
 board '[]'

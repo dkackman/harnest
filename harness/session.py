@@ -347,7 +347,11 @@ def run(
             rc = 1
         if rc != 0:
             log.say(f"[{label}] session failed, continuing")
-        outcome.sleep_if_rate_limited(last, log.say)
+        if outcome.sleep_if_rate_limited(last, log.say):
+            if attempt == 2:
+                break
+            log.say(f"[{label}] the rate limit turned the session away; running it again")
+            continue
         if not outcome.died(last) or attempt == 2:
             break
         log.say(f"[{label}] session ended without a result; retrying once in {retry_pause}s")

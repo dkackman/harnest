@@ -194,7 +194,11 @@ $(runtime_note implementer "$IMPLEMENTER_PROVIDER" "$IMPLEMENTER_MODEL")" \
     --settings "$SETTINGS_FILE" --permission-mode auto \
     "${STREAM_FLAGS[@]}" 2>&1 < /dev/null | tee "$out/session.jsonl" | render_stream bench) \
     > "$out/session.log" || true
-  sleep_if_rate_limited "$out/session.log"
+  sleep_if_rate_limited "$out/session.log" || true
+  fi
+  if ! session_ran "$out/session.log"; then
+    echo "$tag $(ts) the session never ran (died or rate-limited): not scored"
+    return 0
   fi
   local usage; usage="$(grep '^usage: ' "$out/session.log" | tail -n 1 || true)"
   local cost turns ctx

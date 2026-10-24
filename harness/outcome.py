@@ -5,6 +5,7 @@ events, because that file ($LAST_SESSION) is the contract both the bash and
 the Python drivers write, and a died session has no events to read.
 """
 
+import os
 import re
 import time
 
@@ -75,16 +76,30 @@ def rejected_until(path):
     return int(m.group(1)) if m else None
 
 
+def rejected(path):
+    """True when the log holds a rejected rate limit (session_ran's check)."""
+    return "rate-limit: status=rejected" in (_read(path) or "")
+
+
 def sleep_if_rate_limited(path, say, now=time.time, sleep=time.sleep):
     """A session started while the account's limit is rejected returns in
     under a second at $0; sleep until the reset it named, plus a minute,
-    instead of relaunching (37 such sessions spun on 2026-09-21)."""
+    instead of relaunching (37 such sessions spun on 2026-09-21). A
+    rejection naming no reset (0 or missing) sleeps RATE_LIMIT_FALLBACK_SECS
+    (300), never nothing. True when the session was rejected: the wait is
+    over and the attempt should run again."""
+    if not rejected(path):
+        return False
     epoch = rejected_until(path)
-    if epoch is None:
-        return
+    if not epoch:
+        wait = int(os.environ.get("RATE_LIMIT_FALLBACK_SECS") or 300)
+        say(f"[loop] rate limit rejected with no reset time; sleeping {wait}s")
+        sleep(wait)
+        return True
     wait = epoch + 60 - int(now())
     if wait > 0:
         say(
             f"[loop] rate limit rejected; sleeping {wait}s until {time.strftime('%H:%M:%S', time.localtime(epoch))} + 60s"
         )
         sleep(wait)
+    return True

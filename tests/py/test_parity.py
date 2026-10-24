@@ -128,6 +128,19 @@ class Outcome(unittest.TestCase):
         self.assertIn("sleeping 110s until ", said[0])
         os.unlink(f.name)
 
+    def test_rate_limit_without_reset_sleeps_the_fallback(self):
+        with tempfile.NamedTemporaryFile("w", delete=False) as f:
+            f.write("rate-limit: status=rejected type=x overage=false resets=1970 resets_epoch=0\nusage: turns=1\n")
+        said, slept = [], []
+        os.environ["RATE_LIMIT_FALLBACK_SECS"] = "7"
+        try:
+            self.assertTrue(outcome.sleep_if_rate_limited(f.name, said.append, sleep=slept.append))
+        finally:
+            del os.environ["RATE_LIMIT_FALLBACK_SECS"]
+        self.assertEqual([7], slept)
+        self.assertFalse(outcome.sleep_if_rate_limited(os.devnull, said.append, sleep=slept.append))
+        os.unlink(f.name)
+
 
 class Providers(unittest.TestCase):
     PAIRS = [

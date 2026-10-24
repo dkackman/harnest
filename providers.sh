@@ -1189,8 +1189,10 @@ render_stream() {
 # changed. So after every session the driver hands its rendered output here;
 # if the session was rejected, sleep until the reset the event named (plus
 # a minute of slack) and log it. A rejection on resume just names the next
-# reset, so this can't spin either. Nothing to do when the session wasn't
-# rejected.
+# reset, so this can't spin either. A rejection that names no reset
+# (resets_epoch 0 or missing) sleeps RATE_LIMIT_FALLBACK_SECS (300) rather
+# than not at all, which would spin. Returns 1 when the session was rejected
+# (the wait is over: run the attempt again), 0 when it wasn't.
 # session_died <rendered-session-log>
 # True when a session ended without a final `usage:` line - the claude
 # process went away before its result event (2026-09-21 17:26 three
@@ -1230,13 +1232,19 @@ sleep_if_rate_limited() {
   line="$(grep 'rate-limit: status=rejected' "$f" | tail -n 1)" || return 0
   [ -n "$line" ] || return 0
   epoch="$(printf '%s\n' "$line" | sed -n 's/.*resets_epoch=\([0-9][0-9]*\).*/\1/p')"
-  [ -n "$epoch" ] || return 0
+  if [ -z "$epoch" ] || [ "$epoch" = 0 ]; then
+    wait="${RATE_LIMIT_FALLBACK_SECS:-300}"
+    echo "[loop] rate limit rejected with no reset time; sleeping ${wait}s" | tee -a "$LOOP_LOG"
+    sleep "$wait"
+    return 1
+  fi
   now="$(date +%s)"
   wait=$((epoch + 60 - now))
   if [ "$wait" -gt 0 ]; then
     echo "[loop] rate limit rejected; sleeping ${wait}s until $(date -r "$epoch" '+%H:%M:%S') + 60s" | tee -a "$LOOP_LOG"
     sleep "$wait"
   fi
+  return 1
 }
 
 # session_flags <provider> <model> <effort> <budget_usd>
@@ -1265,7 +1273,8 @@ session_flags() {
 # - output is rendered (render_stream) to $LOGS/<log-name>.log, to
 #   $LAST_SESSION (this session alone), and to loop.log prefixed [<label>];
 # - a header "=== HH:MM:SS <SESSION_HEADER or label> (<MODEL_LABEL>) ===";
-# - a rejected rate limit sleeps until its reset (sleep_if_rate_limited);
+# - a rejected rate limit sleeps until its reset (sleep_if_rate_limited),
+#   then the attempt runs once more;
 # - a session that died before its result is retried once (session_died).
 # Always returns 0: callers run it bare under set -e, and read the outcome
 # from $LAST_SESSION (session_ok, session_ran, session_died).
@@ -1292,7 +1301,11 @@ run_claude_session() {
     wait "$SESSION_PGID" || echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
     [ -z "${driver_session_dir:-}" ] || rm -f "$driver_session_dir/session.$$"
     SESSION_PGID=""
-    sleep_if_rate_limited "$LAST_SESSION"
+    if ! sleep_if_rate_limited "$LAST_SESSION"; then
+      [ "$attempt" -eq 1 ] || break
+      echo "[$label] the rate limit turned the session away; running it again" | tee -a "$LOOP_LOG"
+      continue
+    fi
     session_died "$LAST_SESSION" || break
     [ "$attempt" -eq 1 ] || break
     echo "[$label] session ended without a result; retrying once in ${SESSION_RETRY_PAUSE_SECS}s" | tee -a "$LOOP_LOG"

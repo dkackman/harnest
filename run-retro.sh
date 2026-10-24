@@ -152,8 +152,8 @@ $EVIDENCE
 $(runtime_note retro "$RETRO_PROVIDER" "$RETRO_MODEL")" \
   "${SESSION_FLAGS[@]}" \
   --strict-mcp-config "${ISOLATION_FLAGS[@]}" --tools "$RETRO_TOOLS" "${RETRO_PERMISSION_FLAGS[@]}"
-if session_died "$LAST_SESSION"; then
-  rm -f "$NEXT_SEEN"; echo "[retro] session ended without a result; window not advanced" | tee -a "$LOGS/loop.log"
+if ! session_ok "$LAST_SESSION"; then
+  rm -f "$NEXT_SEEN"; echo "[retro] session did not run to its end (died, cut off or rate-limited); window not advanced" | tee -a "$LOGS/loop.log"
 else
   mv "$NEXT_SEEN" "$SEEN"
 fi

@@ -140,7 +140,7 @@ $(chunk_table "$level" "$CURATE_RUNS")
 
 $(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL")" \
     "${SESSION_FLAGS[@]}" "${CURATE_FLAGS[@]}"
-  session_died "$LAST_SESSION" || touch "$stamp"
+  if session_ok "$LAST_SESSION"; then touch "$stamp"; fi   # a died, cut-off or rejected audit is run again
 }
 
 # The labels the proposals carry; idempotent.

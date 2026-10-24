@@ -20,6 +20,12 @@ for pair in "done:1 0 0" "cut:1 1 0" "rejected:1 1 1" "died:0 1 1"; do
 done
 printf 'rate-limit: status=rejected type=five_hour overage=false resets=x resets_epoch=%s\n' "$(( $(date +%s) - 3600 ))" > "$T/past"
 start=$(date +%s); sleep_if_rate_limited "$T/past"; eq "a reset in the past doesn't sleep" 0 $(( $(date +%s) - start ))
+printf 'rate-limit: status=rejected type=x overage=false resets=1970 resets_epoch=0\nusage: turns=1\n' > "$T/rl"
+eq "rate limit: a missing reset sleeps the fallback" "sleeping 1s" "$(RATE_LIMIT_FALLBACK_SECS=1 sleep_if_rate_limited "$T/rl" | grep -o 'sleeping 1s')"
+printf 'rate-limit: status=rejected type=x overage=false\nusage: turns=1\n' > "$T/rl-none"
+eq "rate limit: no resets_epoch at all sleeps the fallback too" "sleeping 0s" "$(RATE_LIMIT_FALLBACK_SECS=0 sleep_if_rate_limited "$T/rl-none" | grep -o 'sleeping 0s')"
+RATE_LIMIT_FALLBACK_SECS=0 sleep_if_rate_limited "$T/rl" >/dev/null; eq "rate limit: returns 1 when it slept" 1 $?
+sleep_if_rate_limited "$T/done"; eq "rate limit: returns 0 when not rejected" 0 $?
 
 # --- renderer
 eq "stream renders to the golden text" "$(cat "$HARNEST/tests/fixtures/stream.expected")" \
