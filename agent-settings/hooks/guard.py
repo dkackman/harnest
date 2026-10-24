@@ -78,6 +78,9 @@ implementer and lead, further (spec B.1/B.5/B.6):
     issue ...`); a gh api write's endpoint outside [A-Za-z0-9_./-]; the PR
     merge endpoint with any method but PUT
 every role: `env -S`/`--split-string` is expanded, and its command held to every rule
+every role: a command word built at run time ($G""h, "g"h, ${G}h, `...`, $(...)) is
+  refused (a plain $VAR or $VAR/literal/path passes), and a zsh glob qualifier (a `(`
+  glued to a word) on any line, backtick text included
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -1267,12 +1270,66 @@ BACKTICK_MSG = (
 )
 
 
+HEREDOC_ANY = re.compile(r"<<(-?)[ \t]*(['\"]?)(\w+)\2")
+
+
+def command_text(text):
+    """text as written, less what is not a command: the body of a heredoc fed
+    to anything but a shell. A quoted-delimiter body is dropped; an unquoted
+    one keeps only its substitutions ($(...) and backticks), which run. The
+    header goes too, so no later reader looks for a body that is gone."""
+    out, i, n, dq, pending, line_start = [], 0, len(text), False, [], 0
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            out.append(text[i : i + 2])
+            i += 2
+        elif not dq and c == "'":
+            e = text.find("'", i + 1)
+            e = n - 1 if e < 0 else e
+            out.append(text[i : e + 1])
+            i = e + 1
+        elif c == '"':
+            dq = not dq
+            out.append(c)
+            i += 1
+        elif not dq and (m := HEREDOC_ANY.match(text, i)) and not re.search(SHELLS, text[line_start:i]):
+            pending.append((m.group(3), m.group(1) == "-", bool(m.group(2))))
+            out.append(" ")
+            i = m.end()
+        elif not dq and c == "\n" and pending:
+            k = i + 1
+            for delim, dash, quoted in pending:
+                body = []
+                while k < n:
+                    e = text.find("\n", k)
+                    e = n if e < 0 else e
+                    line = text[k:e]
+                    k = e + 1
+                    if (line.lstrip("\t") if dash else line) == delim:
+                        break
+                    body.append(line)
+                if not quoted:
+                    out.extend("\n" + m.group(0) for m in SUBSTITUTION.finditer("\n".join(body)))
+            pending = []
+            out.append("\n")
+            i = line_start = k
+        else:
+            if not dq and c in ";|&\n":
+                line_start = i + 1
+            out.append(c)
+            i += 1
+    return "".join(out)
+
+
 def raw_segments(text):
-    """text split into its simple commands at unquoted ; & | ( ) and newlines,
-    as raw text. Quotes, $(...), ${...} and backticks nest, and nothing inside
-    one splits; an unterminated one keeps the rest as one segment (fail
-    closed: a merged segment is read whole)."""
-    out, cur, stack, i, n = [], [], [], 0, len(text)
+    """(segments, sure): text split into its simple commands at unquoted ; &
+    | ( ) and newlines, as raw text. Quotes, $(...), ${...} and backticks
+    nest, and nothing inside one splits; the & of a redirection (2>&1, >&2,
+    &>) is not a separator. sure is False when the split cannot be trusted:
+    a `case` inside $(...) (its pattern's ) would close the $( early) or a
+    nesting left open at the end. A caller then reads the text whole."""
+    out, cur, stack, i, n, sure = [], [], [], 0, len(text), True
     while i < n:
         c, two, top = text[i], text[i : i + 2], (stack[-1] if stack else "")
         if c == "\\":
@@ -1281,8 +1338,91 @@ def raw_segments(text):
             continue
         if top != '"' and c == "'":
             e = text.find("'", i + 1)
-            e = n - 1 if e < 0 else e
+            if e < 0:
+                sure, e = False, n - 1
             cur.append(text[i : e + 1])
+            i = e + 1
+            continue
+        if two in ("$(", "${"):
+            stack.append(two)
+            cur.append(two)
+            i += 2
+            continue
+        if (
+            "$(" in stack
+            and re.match(r"(?<![\w.-])case(?![\w.-])", text[i:])
+            and (i == 0 or not re.match(r"[\w.-]", text[i - 1]))
+        ):
+            sure = False
+        if c == '"':
+            stack.pop() if top == '"' else stack.append('"')
+        elif c == "`":
+            stack.pop() if top == "`" else stack.append("`")
+        elif c == ")" and top == "$(":
+            stack.pop()
+        elif c == "}" and top == "${":
+            stack.pop()
+        elif (
+            not stack
+            and c in ";&|()\n"
+            and not (c == "&" and ((i > 0 and text[i - 1] in "<>") or text[i + 1 : i + 2] == ">"))
+        ):
+            out.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(c)
+        i += 1
+    out.append("".join(cur))
+    return [x for x in out if x.strip()], sure and not stack
+
+
+def unescaped_backtick(text):
+    """True when text holds a backtick no backslash escapes."""
+    i, n = 0, len(text)
+    while i < n:
+        if text[i] == "\\":
+            i += 2
+            continue
+        if text[i] == "`":
+            return True
+        i += 1
+    return False
+
+
+def gh_git_backtick(text):
+    """True when a gh or git command holds a backtick no backslash escapes, in
+    any quote state: the guard reads a quoted string as one word, but a
+    backtick in double quotes runs its command first (zsh glob qualifiers
+    included), and telling a single-quoted backtick from a live one means
+    tracking quotes the way the shell does, which has fooled it before. So
+    any backtick in a gh/git segment is refused. Other commands on the line
+    (a sed script, a python heredoc) may hold them: heredoc bodies not fed to
+    a shell are cut first (command_text), a rewritten heredoc body has its
+    backticks escaped (text), and a heredoc written to a body file is cut
+    before this runs. A split raw_segments is not sure of reads the line
+    whole."""
+    ct = command_text(text)
+    segs, sure = raw_segments(ct)
+    if not sure:
+        return bool(re.search(GH_WORD, ct)) and unescaped_backtick(ct)
+    return any(re.search(GH_WORD, seg) and unescaped_backtick(seg) for seg in segs)
+
+
+def raw_words(seg):
+    """seg split at unquoted blanks into words as written (quotes kept);
+    quotes, $(...), ${...} and backticks nest."""
+    out, cur, stack, i, n = [], [], [], 0, len(seg)
+    while i < n:
+        c, two, top = seg[i], seg[i : i + 2], (stack[-1] if stack else "")
+        if c == "\\":
+            cur.append(seg[i : i + 2])
+            i += 2
+            continue
+        if top != '"' and c == "'":
+            e = seg.find("'", i + 1)
+            e = n - 1 if e < 0 else e
+            cur.append(seg[i : e + 1])
             i = e + 1
             continue
         if two in ("$(", "${"):
@@ -1298,29 +1438,76 @@ def raw_segments(text):
             stack.pop()
         elif c == "}" and top == "${":
             stack.pop()
-        elif not stack and c in ";&|()\n":
-            out.append("".join(cur))
+        elif not stack and c in " \t\r":
+            if cur:
+                out.append("".join(cur))
             cur = []
             i += 1
             continue
         cur.append(c)
         i += 1
-    out.append("".join(cur))
-    return [x for x in out if x.strip()]
+    if cur:
+        out.append("".join(cur))
+    return out
 
 
-def gh_git_backtick(text):
-    """True when a gh or git command holds a backtick no backslash escapes, in
-    any quote state: the guard reads a quoted string as one word, but a
-    backtick in double quotes runs its command first (zsh glob qualifiers
-    included), and telling a single-quoted backtick from a live one means
-    tracking quotes the way the shell does, which has fooled it before. So
-    any backtick in a gh/git segment is refused. Other commands on the line
-    (a sed script, a python heredoc) may hold them: the body of a
-    quoted-delimiter heredoc not fed to a shell is cut first, a rewritten
-    heredoc body has its backticks escaped (text), and a heredoc written to
-    a body file is cut before this runs."""
-    return any(re.search(GH_WORD, seg) and "`" in seg for seg in raw_segments(live_text(text, keep_quoted=True)))
+# $VAR or "$VAR" alone, or a path under one whose last part is literal ($V/bin/python,
+# "$VENV/bin/pytest"): the expansion cannot reach the command's basename
+PLAIN_EXPANSION = re.compile(r'(\$(?:\w+|\{\w+\})(?:/[\w.+-]+)*)|"(\$(?:\w+|\{\w+\})(?:/[\w.+-]+)*)"')
+BUILT_COMMAND_MSG = "a command name may not be built from an expansion or quotes: write the command name literally."
+
+
+def raw_command_word(words):
+    """The command word of a segment's raw words: past assignments, shell
+    keywords, redirections and prefix commands with their options."""
+    i = 0
+    while i < len(words):
+        w = words[i]
+        if w in SHELL_KEYWORDS or re.match(r"[A-Za-z_][A-Za-z0-9_]*=", w):
+            i += 1
+        elif re.fullmatch(r"\d*(?:[<>]+|&>|>&|<&)", w):
+            i += 2  # a redirection operator, then its target
+        elif re.match(r"\d*(?:[<>]|&>)", w):
+            i += 1
+        elif w in PREFIX_COMMANDS:
+            i += 1
+            while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
+                i += 2 if words[i] in PREFIX_COMMANDS[w] else 1
+            if w == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
+                i += 1
+        else:
+            return w
+    return ""
+
+
+def built_command_rule(text, depth=0):
+    """Refuse a command word built at run time: one that starts with a
+    backtick or $(, or that mixes an expansion or a quote with literal
+    characters ($G""h, "g"h, g'h', ${G}h). The guard reads the word it
+    sees, and bash runs the one it builds. A plain $VAR or "$VAR" alone
+    passes (an interpreter path in a variable). Read in every substitution
+    too, since each holds commands of its own."""
+    ct = command_text(text)
+    for seg in raw_segments(ct)[0]:
+        w = raw_command_word(raw_words(seg))
+        if not w or PLAIN_EXPANSION.fullmatch(w):
+            continue
+        if w[0] == "`" or w.startswith("$(") or re.search(r"[$'\"`]", w):
+            deny(BUILT_COMMAND_MSG)
+    if depth < 8:
+        for m in SUBSTITUTION.finditer(live_text(ct)):  # live ones: a single-quoted `x` is text
+            built_command_rule(m.group(1) if m.group(1) is not None else m.group(2), depth + 1)
+
+
+def glob_rule(text):
+    """glob_qualifier over every line, every role (a qualifier runs its code
+    whatever command the word belongs to), and over each backtick's text,
+    quoted or not: a backtick in double quotes runs its own command words."""
+    lt = live_text(command_text(text))
+    if glob_qualifier(lt) or any(
+        glob_qualifier(live_text(m.group(2))) for m in SUBSTITUTION.finditer(lt) if m.group(2) is not None
+    ):
+        deny("zsh glob qualifiers are not allowed (a ( glued to a word): quote the word or add a space.")
 
 
 def marker_through_punctuation(cmd):
@@ -1732,8 +1919,8 @@ def main():
         and RELEASE_MARKER not in cmd
         and all(redirects_ok(g) for g in rsegs)
     )
-    if re.search(GH_WORD, stripped) and glob_qualifier(live_text(stripped)):
-        deny("zsh glob qualifiers are not allowed on a gh/git line")
+    glob_rule(stripped)
+    built_command_rule(stripped)
     if re.search(GH_WORD, stripped) and gh_git_backtick(stripped):
         deny(BACKTICK_MSG)
     if marker_through_punctuation(cmd):

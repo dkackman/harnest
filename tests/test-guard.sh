@@ -839,4 +839,30 @@ row 0 implementer "" $none "python3 - <<'PYEOF'${nl}print(\"\`x\`\")${nl}PYEOF${
 row 2 implementer "" $none "git commit -m 'uses \`x\`'"  # literal to bash, refused anyway: fail closed
 row 2 implementer "" $none "sed -i 's/a/b/' f && git commit -qam \"\`id\`\""
 row 2 implementer "" $none "echo \"\$(echo \")\"; gh issue comment 5 --body \"\`id\`\""
+# fix round 2: a redirection's & is not a separator; a case pattern in $( reads the line whole;
+# a command word built from an expansion or quotes; glob qualifiers on every line
+for r in implementer consumer; do
+  row 2 $r "" $none 'gh issue view 5 &>/dev/null "`id`"'
+  row 2 $r "" $none 'git log 2>&1 "`id`"'
+  row 2 $r "" $none 'gh issue view 5 2>&1 --json "`echo /tmp(e{g""h issue edit 5 --add-label status:verified})`"'
+  row 2 $r "" $none 'git status x$(case a in a) ;; esac)"`id`"'
+  row 2 $r "" $none 'git commit -m x$(case a in a) ;; esac)"`echo /tmp(e{touch /tmp/pwn})`"'
+  row 2 $r "" $none 'git status x$(case a in a) ;; esac)"`G=g; $G""h issue close 5`"'
+  row 2 $r "" $none 'G=g; $G""h issue close 5'
+  row 2 $r "" $none 'echo "`G=g; $G""h issue close 5`"'
+  row 2 $r "" $none '"g"h issue close 5'
+  row 2 $r "" $none "g'h' issue close 5"
+  row 0 $r "" $none '"$PY" -m pytest'
+  row 0 $r "" $none '$PY -m pytest'
+  row 0 $r "" $none '$V/pytest -q && "$VENV/bin/python" -m x'
+  row 2 $r "" $none '$V/g""h issue close 5'
+  row 2 $r "" $none '${G}h issue close 5'
+  row 2 $r "" $none '$(echo gh) issue close 5'
+  row 0 $r "" $none "echo '\$(\"x\" y)'; gh issue view 5"
+  row 2 $r "" $none 'echo /tmp(e{g""h issue edit 5 --add-label status:verified})'
+  row 2 $r "" $none 'echo "`echo /tmp(e{touch /tmp/pwn})`"'
+  row 2 $r "" $none 'ls /tmp/*(.)'  # a harmless qualifier, refused anyway: fail closed
+  row 0 $r "" $none 'git add *.py'
+  row 0 $r "" $none 'git status 2>&1 | tail -3'
+done
 finish
