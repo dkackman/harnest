@@ -865,4 +865,23 @@ for r in implementer consumer; do
   row 0 $r "" $none 'git add *.py'
   row 0 $r "" $none 'git status 2>&1 | tail -3'
 done
+# fix round 3: heredoc headers read as bash reads them; a command word from a variable set at run time
+for r in implementer consumer; do
+  row 2 $r "" $none "G=g${nl}cat <<< x${nl}\$G\"\"h issue close 5"
+  row 2 $r "" $none "G=g${nl}cat <<\"E\"OF${nl}x${nl}EOF${nl}\$G\"\"h issue close 5"
+  row 2 $r "" $none "G=g${nl}cat <<E\\OF${nl}x${nl}EOF${nl}\$G\"\"h issue close 5"
+  row 0 $r "" $none "cat <<\"E\"OF${nl}\$G\"\"h is data here${nl}EOF"
+  row 2 $r "" $none "G=g${nl}cat <<'EOF' | bash${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}cat <<'EOF' | zsh${nl}echo /tmp(e{g\"\"h issue close 6})${nl}EOF"
+  row 2 $r "" $none "bash <<'EOF'${nl}gh issue close 5${nl}EOF"
+  row 0 $r "" $none "python3 - <<'EOF'${nl}print(fn(x))${nl}EOF${nl}git status"
+  row 0 $r "" $none "source ./activate >/dev/null 2>&1; python - <<'EOF'${nl}s = \"\$a\"b; print(fn(x))${nl}EOF${nl}git status"
+  row 2 $r "" $none 'G=$(echo gh); $G issue close 5'
+  row 2 $r "" $none 'read G <<< gh; $G issue close 5'
+  row 2 $r "" $none 'printf -v G gh; $G issue close 5'
+  row 2 $r "" $none "G=\$(echo gh)${nl}\"\$G\" issue edit 5 --add-label status:verified"
+  row 2 $r "" $none 'for G in $(echo gh); do $G issue close 5; done'
+  row 0 $r "" $none 'PY=venv/bin/python; $PY -m pytest'
+  row 0 $r "" $none 'PY=venv/bin/python; "$PY" -m pytest -q'
+done
 finish
