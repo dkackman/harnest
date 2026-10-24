@@ -84,13 +84,13 @@ for r in implementer lead; do
   row 0 $r "" $none 'gh issue edit 5 --remove-label owner:implementer --add-label owner:tester --add-label status:fixed-pending-verify'
   row 0 $r "" $none 'gh issue comment 5 --body "closing as completed later: gh issue close 5"'
 done
-# implementer only: pushes
+# pushes: the master/force rule is every role's since fix round 5; the develop gate is the implementer's
 row 2 implementer "" $none 'git push origin master'
 row 2 implementer "" $none 'git push -f origin develop'
 row 2 implementer "" $none 'git push origin +develop'
 row 2 implementer "" $none 'git push origin :old-branch'
 row 0 implementer "" $none 'git push origin develop'
-row 0 lead "" $none 'git push origin master'
+row 2 lead "" $none 'git push origin master'  # fix round 5: no role pushes to master or forces a push
 # consumer: verifying needs an MCP call; a handoff may close but not verify
 row 2 consumer verify $none 'gh issue close 5 --reason completed'
 row 0 consumer verify "$mcp_transcript" 'gh issue close 5 --reason completed'
@@ -950,5 +950,38 @@ for r in implementer consumer; do
   row 0 $r "" $none "sed -n '1p${nl}2p' f; venv/bin/python - <<'EOF' 2>&1 | grep -v Warn | tail -30${nl}print(fn(x))${nl}EOF"
   row 0 $r "" $none "python -c \"${nl}print(1)\"; python - <<'EOF'${nl}print(fn(x))${nl}EOF"
   row 0 $r "" $none "gh issue comment 5 --body \"it doesn't; see \\\`(a, b)\\\`\" && gh issue list --json number --jq '.[] | \"\\(.number)\"'"
+done
+# fix round 5: case-folded command names (APFS); heredocs through process substitutions, held
+# shells and xargs; quoted export assignments
+for r in implementer consumer; do
+  row 2 $r "" $none 'GH issue edit 5 --add-label status:verified'
+  row 2 $r "" $none '/opt/homebrew/bin/GH issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'Gh issue close 5 --reason completed'
+  row 2 $r "" $none 'GIT push --force origin master'
+  row 2 $r "" $none "G=g${nl}BASH <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}cat <<'EOF' | Zsh${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 0 $r "" $none 'gh issue view 5'
+  row 2 $r "" $none "G=g${nl}bash <(cat <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl})"
+  row 2 $r "" $none "G=g${nl}bash < <(cat <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl})"
+  row 2 $r "" $none "G=g${nl}source <(cat <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl})"
+  row 2 $r "" $none "G=g${nl}zsh =(cat <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl})"
+  row 2 $r "" $none "G=g${nl}PY=/bin/bash; \$PY <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}SH=bash; \$SH <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}B=/bin/zsh; \"\$B\" <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "PY=/bin/sh; \$PY -c 'G=g; \$G\"\"h issue close 5'"
+  row 2 $r "" $none "G=g${nl}xargs -0 bash -c <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "exec 3<<'EOF'${nl}gh issue close 5${nl}EOF${nl}bash <&3"
+  row 2 $r "" $none 'export "PY=$(echo gh)"; $PY issue close 5'
+  row 2 $r "" $none 'export "V=$(echo gh)"; $V issue close 5'
+  row 2 $r "" $none 'P="a b"; $P issue close 5'
+  row 0 $r "" $none 'PY=venv/bin/python; $PY -m pytest'
+  row 0 $r "" $none 'export PY=venv/bin/python; "$PY" -m pytest'
+  # an interpreter name can never hold a shell (reserved), so $PY may take a heredoc; any other
+  # $VAR may be one, and a kept body is a child shell's script: nothing it sets reaches the line
+  row 0 $r "" $none "PY=venv/bin/python; \$PY - <<'EOF'${nl}print(fn(x))${nl}EOF"
+  row 0 $r "" $none "V=venv/bin${nl}\$V/python - <<'EOF'${nl}print(fn(x))${nl}EOF"
+  row 2 $r "" $none "P=venv/bin/python; \$P - <<'EOF'${nl}print(fn(x))${nl}EOF"
+  row 2 $r "" $none "G=g${nl}V=/usr/bin${nl}\$V/bash <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "bash <<'A'${nl}S=venv/bin/python${nl}A${nl}\$S -c \"import x\""
 done
 finish

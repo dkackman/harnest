@@ -23,7 +23,8 @@ implementer:
   - adding an `owner:*` label must remove one in the same call (exactly
     one owner at a time), unless GitHub says the issue has none: triage's
     unstrand step gives a stranded issue its first owner (asks GitHub)
-  - no push to master, no force push, no branch deletion on origin
+  - no push to master, no force push, no branch deletion on origin (every role, since
+    round 5; listed here because the implementer is who pushes)
   - hand-off gate: adding `status:fixed-pending-verify` needs a clean tree,
     ruff clean on the changed files, the UI's check/lint/test passing when
     ui/ changed, and no pytest failure that isn't also failing on
@@ -83,9 +84,14 @@ every role: a command word built at run time ($G""h, "g"h, ${G}h, `...`, $(...))
   literal earlier on the line in the same shell and nowhere set another way, or names
   an interpreter (PY, PYTHON, VENV, V), which may be set no other way; a zsh glob
   qualifier (a `(` glued to a word) on any line, backtick text included. Both read
-  a heredoc body as commands unless it is provably data: no shell command word on
-  the header's line, no pipe after the header except to a plain filter, and a
-  header read the way bash reads it (command_text)
+  a heredoc body as commands unless it is provably data: no shell, $VAR or
+  runner-plus-shell command word on the header's line, no open <( >( =( before
+  the header, no exec N<<, no pipe after the header except to a plain filter,
+  and a header read the way bash reads it (command_text). A literal a command
+  word may come from is a path of word, dot, slash, plus and dash characters whose
+  basename is no shell or runner.
+  Every reader sees gh, git, the shells, env and xargs lower-cased (fold_case):
+  APFS runs GH and Git as the same binaries
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -1277,6 +1283,18 @@ BACKTICK_MSG = (
 )
 
 
+# binaries the guard names: on a case-insensitive filesystem (macOS APFS) GH, Git and BASH run
+# them too, so every reader sees them lower-cased. Builtins (eval, source, command) stay as
+# written: bash resolves those case-sensitively.
+FOLDED = re.compile(r"(?<![\w.-])(?:gh|git|bash|sh|zsh|dash|ksh|env|xargs|nohup|timeout|nice)(?![\w.-])", re.I)
+
+
+def fold_case(cmd):
+    """cmd with every case variant of a binary the rules name lower-cased, in
+    any quote state: what APFS runs for `GH issue close` is gh."""
+    return FOLDED.sub(lambda m: m.group(0).lower(), cmd)
+
+
 def heredoc_header(text, i):
     r"""(end, delimiter, dash, quoted) of a heredoc operator at i, as bash reads
     it, or None: `<<` that is not part of `<<<` (a here-string), an optional
@@ -1316,6 +1334,18 @@ def heredoc_header(text, i):
 
 
 HEREDOC_SHELLS = ("bash", "sh", "zsh", "dash", "ksh")  # what runs a heredoc body it reads from stdin
+RUNNERS = (
+    "xargs",
+    "sudo",
+    "command",
+    "builtin",
+    "exec",
+    "env",
+    "nohup",
+    "timeout",
+    "nice",
+    "time",
+)  # run their argument
 # read-only filters a heredoc's output may be piped to without the body reaching a shell
 PIPE_FILTERS = frozenset(
     "grep egrep fgrep tail head cut sort uniq wc tr cat jq column fold fmt nl tac rev paste less more "
@@ -1349,7 +1379,33 @@ def pipe_stages(text):
     return [text[p:] for p in out]
 
 
-def heredoc_fed(text, i, k, ls):
+def open_process_substitution(text):
+    """True when text opens a <(, >( or =( (zsh) it does not close: a heredoc
+    after it is inside the substitution, and its output is handed to the
+    command before it as a file."""
+    depth, i, n, q = 0, 0, len(text), ""
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2
+            continue
+        if q:
+            q = "" if c == q else q
+        elif c in "'\"":
+            q = c
+        elif text[i : i + 2] in ("<(", ">(", "=(") and (i == 0 or text[i - 1] not in "<>=\\"):
+            depth += 1
+            i += 2
+            continue
+        elif c == "(" and depth:
+            depth += 1
+        elif c == ")" and depth:
+            depth -= 1
+        i += 1
+    return depth > 0
+
+
+def heredoc_fed(text, i, k, ls, tainted):
     """True when the body of the heredoc whose header spans text[i:k] may reach
     a shell, read as the header's whole line, from ls (the last newline outside
     quotes, so a quoted argument spanning lines is read whole): a shell (HEREDOC_SHELLS) as the
@@ -1360,13 +1416,30 @@ def heredoc_fed(text, i, k, ls):
     the body as commands."""
     le = text.find("\n", i)
     le = len(text) if le < 0 else le
+    if i > 0 and text[i - 1].isdigit():
+        return True  # exec 3<<'EOF': the body waits on a descriptor for whatever reads it next
+    if open_process_substitution(text[ls:i]):
+        return (
+            True  # bash <(cat <<'EOF'), bash < <(...), source <(...), zsh =(...): the body reaches the shell as a file
+        )
     segs, sure = raw_segments(text[ls:le])
     if not sure:
         return True
     for seg in segs:
-        w = raw_command_word(raw_words(seg))
+        words = raw_words(seg)
+        w = raw_command_word(words)
+        if PLAIN_EXPANSION.fullmatch(w):
+            name = re.match(r'"?\$\{?(\w+)', w).group(1)
+            if "/" not in w and (name not in INTERPRETER_VARS or name in tainted):
+                return True  # a command word from a variable may be a shell (SH=bash; $SH <<'EOF'); an
+                # interpreter name cannot hold one (RESERVED_VAR_MSG), and $V/python is judged by its basename
+        elif "$" in w or "`" in w:
+            return True
+        deq = [os.path.basename(UNQUOTE.sub("", x)) for x in words]
         if os.path.basename(UNQUOTE.sub("", w)) in HEREDOC_SHELLS:
             return True
+        if any(d in RUNNERS for d in deq) and any(d in HEREDOC_SHELLS for d in deq):
+            return True  # xargs -0 bash -c, sudo bash: the shell is an argument
     for stage in pipe_stages(text[k:le]):
         segs, sure = raw_segments(stage)
         w = raw_command_word(raw_words(segs[0])) if segs else ""
@@ -1380,9 +1453,12 @@ def command_text(text):
     to anything but a shell. A quoted-delimiter body is dropped; an unquoted
     one keeps only its substitutions ($(...) and backticks), which run. The
     header goes too, so no later reader looks for a body that is gone. The
-    body stays as commands when heredoc_fed says a shell may read it, and
-    when heredoc_header cannot read the header the way bash does."""
+    body stays when heredoc_fed says a shell may read it, wrapped as a ( )
+    group: a child shell's script, whose commands are read and whose
+    assignments set nothing on this line. It also stays, as written, when
+    heredoc_header cannot read the header the way bash does."""
     out, i, n, dq, pending, ls = [], 0, len(text), False, [], 0
+    tainted = var_sets(text)[1]  # names this line sets by anything but a literal, read before any body is dropped
     while i < n:
         c = text[i]
         if c == "\\":
@@ -1402,15 +1478,13 @@ def command_text(text):
             i += 1
         elif not dq and (h := heredoc_header(text, i)):
             k, delim, dash, quoted = h
-            if heredoc_fed(text, i, k, ls):
-                out.append(text[i:k])  # fed to a shell: header and body stay as written
-            else:
-                pending.append((delim, dash, quoted))
-                out.append(" ")
+            fed = heredoc_fed(text, i, k, ls, tainted)
+            pending.append((delim, dash, quoted, fed))
+            out.append(text[i:k] if fed else " ")  # a fed header stays; a dropped one goes with its body
             i = k
         elif not dq and c == "\n" and pending:
             k = i + 1
-            for delim, dash, quoted in pending:
+            for delim, dash, quoted, fed in pending:
                 body = []
                 while k < n:
                     e = text.find("\n", k)
@@ -1420,7 +1494,9 @@ def command_text(text):
                     if (line.lstrip("\t") if dash else line) == delim:
                         break
                     body.append(line)
-                if not quoted:
+                if fed:  # a child shell's script: its commands are read, its assignments reach nothing here
+                    out.append("\n(\n" + "\n".join(body) + "\n)")
+                elif not quoted:
                     out.extend("\n" + m.group(0) for m in SUBSTITUTION.finditer("\n".join(body)))
             pending = []
             out.append("\n")
@@ -1724,11 +1800,22 @@ def top_statements(text):
     return [tuple(x) for x in pieces], groups
 
 
+NOT_A_LITERAL_COMMAND = ("gh", "git", *HEREDOC_SHELLS, *RUNNERS, "eval", "source", ".")
+
+
 def literal_value(word):
-    """True when the assignment word NAME=value sets a plain literal: no $ or
-    backtick, and a dequoted value whose basename is not gh or git."""
+    r"""True when the assignment word NAME=value sets a plain literal a command
+    word may come from: no $ or backtick; dequoted, a path of [\w./+-] only
+    (no blank, glob or IFS character to split or expand); and a basename that
+    is not gh, git, a shell or a command runner, which would read a heredoc
+    or a -c script the rules cannot see."""
     value = word.split("=", 1)[1]
-    return not re.search(r"[$`]", value) and os.path.basename(UNQUOTE.sub("", value)) not in ("gh", "git")
+    deq = UNQUOTE.sub("", value)
+    return (
+        not re.search(r"[$`]", value)
+        and bool(re.fullmatch(r"[\w./+-]*", deq))
+        and os.path.basename(deq) not in NOT_A_LITERAL_COMMAND
+    )
 
 
 ASSIGN = re.compile(r"(" + NAME + r")(\[[^]]*\])?(\+?)=")
@@ -1762,16 +1849,22 @@ def var_sets(text):
         deq = [UNQUOTE.sub("", w) for w in words]
         if deq[0] in WILD:
             wild = start + len(piece)
-        if words[0] in EXPORTERS and not any(w.startswith("-") for w in words[1:]):
+        exporter = words[0] in EXPORTERS and not any(w.startswith("-") for w in words[1:])
+        if exporter:
             words, deq = words[1:], deq[1:]
-        if words and all(ASSIGN.match(w) for w in words):  # an assignment statement
-            for w in words:
-                m = ASSIGN.match(w)
-                if same and not m.group(2) and not m.group(3) and literal_value(w):
+        assigns = bool(words) and all(ASSIGN.match(d) for d in deq)
+        if assigns or exporter:  # an assignment statement, or export's words (which assign even quoted)
+            for w, d in zip(words, deq, strict=True):
+                m = ASSIGN.match(d)
+                if not m:
+                    continue
+                raw = ASSIGN.match(w)  # a literal counts only unquoted: "PY=x" alone is a command, not a set
+                if assigns and same and raw and not m.group(2) and not m.group(3) and literal_value(w):
                     literal.setdefault(m.group(1), start)
                 else:
                     tainted.add(m.group(1))
-            continue
+            if assigns:
+                continue
         k = 0  # past prefix assignments (IFS= read) and command/builtin, to the command itself
         while k < len(deq) and (ASSIGN.match(deq[k]) or deq[k] in ("command", "builtin")):
             k += 1
@@ -1809,7 +1902,7 @@ def built_command_rule(text, depth=0, env=None, base=0):
     outright: it may run as a command on a later line. Read in every live
     substitution and ( ) subshell too, each with its own assignments, since
     each holds commands of its own."""
-    ct = command_text(text)
+    ct = command_text(text) if depth == 0 else text  # inner texts come from processed text: bodies are decided
     literal, tainted, sublit, wild = var_sets(ct)
     if depth == 0:
         if tainted & INTERPRETER_VARS:
@@ -2229,7 +2322,7 @@ def main():
         return
     if data.get("tool_name") != "Bash":
         return
-    cmd = data.get("tool_input", {}).get("command", "")
+    cmd = fold_case(data.get("tool_input", {}).get("command", ""))
     stripped, written = heredoc_cut(inline_cat_subs(cmd))  # a quoted-delimiter heredoc body is data, not commands
     subsegs, inner, residual = substitutions(stripped)
     segs = segments(stripped) + subsegs
@@ -2426,10 +2519,10 @@ def main():
                 )
             if role != "reviewer" and adds_verified(words):
                 deny("status:verified is the tester's to add, from a real MCP call.")
+        problem = git_push_problem(words)  # a push to master, or a force push, is no role's to make
+        if problem:
+            deny(problem)
         if role == "implementer":
-            problem = git_push_problem(words)
-            if problem:
-                deny(problem)
             if is_gh_issue(words, "edit") and "status:fixed-pending-verify" in flag_values(words, "--add-label"):
                 arch_gate(cwd, "HEAD", lambda words=words: issue_has_label(words, "arch-approved"))
                 handoff_gate(cwd)
