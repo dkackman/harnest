@@ -1028,12 +1028,27 @@ for r in implementer consumer; do
   row 0 $r "" $none "cat <<'EOF' > /tmp/x${nl}hi${nl}EOF"
 done
 # time and command are binaries on macOS too (/usr/bin/time, /usr/bin/command): any case of a
-# runner or prefix name is read as that name; a case-blind delimiter only ever ends a body early
+# runner or prefix name is read as that name; a heredoc ends exactly where bash ends it (eof is no EOF)
 for r in implementer consumer; do
   row 2 $r "" $none "TIME bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
   row 2 $r "" $none "COMMAND bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
   row 2 $r "" $none "Sudo bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
   row 2 $r "" $none 'TIME G\H issue close 5'
-  row 2 $r "" $none "cat <<'EOF'${nl}eof${nl}gh issue edit 5 --add-label status:verified${nl}EOF"
+  row 0 $r "" $none "cat <<'EOF'${nl}eof${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+done
+# heredoc boundaries come from the command as written, matched exactly: ending a body early lets a
+# later line read as a header that swallows the real end; after timeout/nice/nohup/sudo/env/caffeinate
+# only the command word is held to the built-word rule, and a $ in single quotes is text
+for r in implementer consumer; do
+  row 2 $r "" $none "cat <<'EOF'${nl}eof${nl}cat <<'X'${nl}EOF${nl}G=g; \$G\"\"h issue close 5${nl}X"
+  row 2 $r "" $none "cat <<'gh'${nl}GH${nl}cat <<'X'${nl}gh${nl}G=g; \$G\"\"h issue close 5${nl}X"
+  row 2 $r "" $none "cat <<GH${nl}x${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "BASH <<'EOF'${nl}GH issue close 5${nl}EOF"
+  row 0 $r "" $none 'timeout 60 pytest -k "$K"'
+  row 0 $r "" $none "timeout 60 ssh lem 'echo \$HOME'"
+  row 0 $r "" $none 'sudo -u x env A="$x" ls'
+  row 2 $r "" $none 'sudo -u x "G"H issue close 5'
+  row 2 $r "" $none 'timeout -s KILL 5 nohup ${G}h issue close 5'
+  row 2 $r "" $none 'xargs -n1 echo "$(echo gh)"'
 done
 finish

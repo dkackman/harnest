@@ -252,7 +252,7 @@ def inline_cat_subs(cmd):
             while k <= n:  # the body ends at the first line that is exactly the delimiter
                 e = cmd.find("\n", k)
                 e = n if e < 0 else e
-                if cmd[k:e].lower() == delim.lower():  # case-blind: the fold may have changed either side
+                if cmd[k:e] == delim:
                     t = re.match(r"[ \t\n]*\)", cmd[e:])
                     end = e + t.end() if t else None
                     break
@@ -364,7 +364,7 @@ def live_text(text, keep_quoted=False, heredocs=True):
                     e = n if e < 0 else e
                     line = text[k:e]
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
+                    if (line.lstrip("\t") if dash else line) == delim:
                         break
             pending = []
             out.append("\n")
@@ -399,7 +399,7 @@ def heredoc_cut(cmd):
                     e = cmd.find("\n", k)
                     e = n if e < 0 else e
                     line = cmd[k:e]
-                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
+                    if (line.lstrip("\t") if dash else line) == delim:
                         end = min(e + 1, n)
                         break
                     k = e + 1
@@ -513,7 +513,7 @@ def join_continuations(cmd):
                     e = n if e < 0 else e
                     line = cmd[k:e]
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
+                    if (line.lstrip("\t") if dash else line) == delim:
                         break
             pending = []
             out.append(cmd[i:k])
@@ -1290,8 +1290,62 @@ BACKTICK_MSG = (
 
 def fold_case(cmd):
     """cmd with every case variant of a binary the rules name lower-cased, in
-    any quote state: what APFS runs for `GH issue close` is gh."""
-    return FOLDED.sub(lambda m: m.group(0).lower(), cmd)
+    any quote state: what APFS runs for `GH issue close` is gh. Heredoc
+    boundaries stay where bash puts them, read from cmd as written with an
+    exact match (heredoc_keep): a header's delimiter word and the line that
+    ends its body are kept as written, and so is a body line the fold would
+    turn into its delimiter (GH under <<'gh'), so that no reader ends a body
+    early, where a later line could open a header that swallows the real end."""
+    out, at = [], 0
+    for a, b in heredoc_keep(cmd):
+        out.append(FOLDED.sub(lambda m: m.group(0).lower(), cmd[at:a]))
+        out.append(cmd[a:b])
+        at = b
+    out.append(FOLDED.sub(lambda m: m.group(0).lower(), cmd[at:]))
+    return "".join(out)
+
+
+def heredoc_keep(text):
+    """The (start, end) spans of text fold_case leaves as written: each
+    heredoc header's operator and delimiter word, each body's ending line,
+    and each body line that folding would make equal to its delimiter.
+    Headers are found as command_text finds them (outside quotes, by
+    heredoc_header); an unreadable header is not one, and is folded."""
+    keep, i, n, dq, pending = [], 0, len(text), False, []
+    while i < n:
+        c = text[i]
+        if c == "\\":
+            i += 2
+        elif not dq and c == "'":
+            e = text.find("'", i + 1)
+            i = n if e < 0 else e + 1
+        elif c == '"':
+            dq = not dq
+            i += 1
+        elif not dq and (h := heredoc_header(text, i)):
+            k, delim, dash, _quoted = h
+            keep.append((i, k))
+            pending.append((delim, dash))
+            i = k
+        elif not dq and c == "\n" and pending:
+            k = i + 1
+            for delim, dash in pending:
+                while k < n:
+                    e = text.find("\n", k)
+                    e = n if e < 0 else e
+                    line = text[k:e]
+                    body = line.lstrip("\t") if dash else line
+                    folded = FOLDED.sub(lambda m: m.group(0).lower(), body)
+                    if body == delim or folded == delim:
+                        keep.append((k, e))
+                    k = e + 1
+                    if body == delim:
+                        break
+            pending = []
+            i = k
+        else:
+            i += 1
+    return keep
 
 
 def heredoc_header(text, i):
@@ -1366,8 +1420,6 @@ RUNNERS = (
 # runner added to one is folded too; builtin and exec, which are no binaries here, stay as written
 # (time and command are: /usr/bin/time, /usr/bin/command). The runner and prefix readers compare names
 # case-blind anyway, so the fold is not what they rest on.
-# fold_case runs before heredocs are read, so every delimiter comparison is case-blind: a body then ends
-# at or before the line bash ends it on (<<'G'H, whose GH line the fold made gh)
 FOLDED_NAMES = frozenset(("gh", "git", "env", "xargs", "nohup", "timeout", "nice", *HEREDOC_SHELLS, *RUNNERS)) - {
     "builtin",
     "exec",
@@ -1522,7 +1574,7 @@ def command_text(text):
                     e = n if e < 0 else e
                     line = text[k:e]
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
+                    if (line.lstrip("\t") if dash else line) == delim:
                         break
                     body.append(line)
                 if fed:  # a child shell's script: its commands are read, its assignments reach nothing here
@@ -1926,24 +1978,57 @@ def var_sets(text):
 RUNNER_FLAGS = ("-exec", "-execdir", "-ok", "-okdir")  # find's: the words after one are a command
 
 
+# runners whose options can be skipped to the command they run: only that word is held to the built-word
+# rule after one (its arguments are the command's own); after any other runner every word is
+RUNNER_OPTS = {
+    "timeout": ("-s", "-k", "--signal", "--kill-after"),
+    "nice": ("-n", "--adjustment"),
+    "nohup": (),
+    "sudo": ("-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "--user", "--group"),
+    "env": ("-u", "-C", "-P", "-S", "--unset", "--chdir"),
+    "caffeinate": ("-t", "-w"),
+}
+
+
 def runner_word_rule(seg):
     """The words of <seg>: any of them with a backslash that names a folded
-    binary (G\\H, the shell drops it after the fold ran) is refused; and
-    after a runner (sudo, xargs, timeout, find -exec, ...), where any word
-    may be the command it runs, a word built from quotes or an expansion
-    ("G"H, ${G}h, $(echo gh)) is refused when it names a folded binary or
-    holds a $ or a backtick. An assignment (env A=$x) is not a command."""
-    after = False
-    for x in raw_words(seg):
-        x = x.replace("\\\n", "")
-        name = os.path.basename(UNQUOTE.sub("", x)).lower()
+    binary (G\\H, the shell drops it after the fold ran) is refused. After a
+    runner, a word built from quotes or an expansion ("G"H, ${G}h, $(echo
+    gh)) is refused when it names a folded binary or holds a $ or backtick
+    outside single quotes: for timeout, nice, nohup, sudo, env and caffeinate
+    only the command word they run (past their options, assignments and a
+    timeout's duration), for xargs, find -exec, parallel, watch and the rest
+    every word, since where their command starts is not known."""
+    words = [x.replace("\\\n", "") for x in raw_words(seg)]
+    names = [os.path.basename(UNQUOTE.sub("", x)).lower() for x in words]
+
+    def built(x, name):
+        if not re.search(r"[$'\"`\\]", x):
+            return False
+        return name in FOLDED_NAMES or bool(re.search(r"[$`]", re.sub(r"'[^']*'", "", x)))
+
+    for x, name in zip(words, names, strict=True):
         if "\\" in x and name in FOLDED_NAMES:
             deny(BUILT_COMMAND_MSG)
-        if after and not ASSIGN.match(x) and re.search(r"[$'\"`\\]", x):
-            if name in FOLDED_NAMES or re.search(r"[$`]", x):
+    i, every = 0, False
+    while i < len(words):
+        x, name = words[i], names[i]
+        if every and not ASSIGN.match(x) and built(x, name):
+            deny(BUILT_COMMAND_MSG)
+        i += 1
+        if every:
+            continue
+        if name in RUNNER_OPTS:
+            opts = RUNNER_OPTS[name]
+            while i < len(words) and (ASSIGN.match(words[i]) or (words[i].startswith("-") and len(words[i]) > 1)):
+                i += 2 if words[i] in opts else 1
+            if name == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
+                i += 1
+            if i < len(words) and built(words[i], names[i]):
                 deny(BUILT_COMMAND_MSG)
+            continue  # the command word itself may be a runner: read on from it
         if name in RUNNERS or x in RUNNER_FLAGS:
-            after = True
+            every = True
 
 
 def built_command_rule(text, depth=0, env=None, base=0):
