@@ -755,7 +755,7 @@ class Fleet:
 
             # a case's time runs from its REGRESSION-CASE line to the next one, or to the end of the
             # session's attempt: not to when session.run returns, past a rate-limit sleep or retry
-            secs, live = {}, [None, 0.0]
+            secs, live, first = {}, [None, 0.0], []  # first: when the earliest CASE line came
 
             def on_line(out, cases=cases):
                 for line in out.split("\n"):  # one rendered event may be a whole message
@@ -763,6 +763,7 @@ class Fleet:
                     if not m or m.group(1) not in cases or m.group(1) == live[0]:
                         continue
                     now = self.clock()
+                    first[:] = first or [now]
                     if live[0]:
                         secs[live[0]] = secs.get(live[0], 0.0) + now - live[1]
                     live[:] = [m.group(1), now]
@@ -775,8 +776,11 @@ class Fleet:
             if live[0]:
                 end = attempts[-1][1] if attempts else self.clock()
                 secs[live[0]] = secs.get(live[0], 0.0) + end - live[1]
-            if len(attempts) != 1 or outcome.died(last):
-                secs = {}  # a died or retried session's times are not one attempt's: keep none
+            if outcome.died(last) or (first and attempts and first[0] < attempts[-1][0]):
+                # a died session, or CASE lines from an earlier attempt as well as the last: these are
+                # not one attempt's times, so keep none. A retry whose last attempt alone reported the
+                # cases (a rate-limit turn-away or a stopped session before it) keeps that attempt's.
+                secs = {}
         finally:
             s.gate.leave(excl)
         self.settle(lane, batch, text, cost, last, secs)

@@ -212,11 +212,10 @@ eq  "  each lane swept its own workspace" "$(grep '^start' "$T/timeline" | grep 
     "$(grep '^start' "$T/timeline" | grep ' \[\]$' | awk '{print $5}' | sort -u | tr '\n' ' ')"
 eq  "  the cost is summed" "true" "$(jq '[.lanes[].cost] | add > 0' "$st")"
 ok  "  the finished run is kept" test -s "$T/h/logs/fleet/runs/$(jq -r .id "$st").json"
-# but a session the watchdog stopped and the runner retried keeps no times: they span both attempts
-retried="$(grep '^start' "$T/timeline" | grep -m1 ' S-F005\| \[S-F005' | sed 's/.*\[//; s/\]//' | tr ' ' '\n' | sort | tr '\n' ' ')"
-eq  "  every pass and fail is timed, but the retried session's" "$retried" \
-    "$(jq -r '.cases | to_entries[] | select((.value.outcome | IN("pass","fail")) and .value.lane != "script" and (.value.secs | type) != "number") | .key' "$st" | sort | tr '\n' ' ')"
-has "  the retried session held S-F005" "S-F005" "$retried"
+# the watchdog-stopped S-F005 session too: its retry alone reported the cases, so its times stand
+eq  "  every pass and fail is timed" "" \
+    "$(jq -r '.cases | to_entries[] | select((.value.outcome | IN("pass","fail")) and .value.lane != "script" and (.value.secs | type) != "number") | .key' "$st")"
+eq  "  the retried S-F005 is timed" "number" "$(jq -r '.cases["S-F005"].secs | type' "$st")"
 (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" python3 -m harness.drivers.fleet --plan smoke) > "$T/plan2.out" 2>&1
 has "  the next plan reads those times" "case(s) measured in" "$(cat "$T/plan2.out")"
 has "  the suite edit is committed once" "regression: update smoke from" "$(git -C "$T/h" log -1 --format=%s)"

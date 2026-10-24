@@ -604,9 +604,11 @@ class Outcomes(unittest.TestCase):
 
     def test_case_seconds_exclude_retry_pause_and_rate_limit_sleep(self):
         """A case's time is its session's: it stops at the attempt's end, not
-        when session.run returns, and a batch that took a second attempt (a
-        died session retried after its pause, or a rate limit slept through)
-        keeps no times at all, since they would weigh the next plan wrong."""
+        when session.run returns. A retried batch (a rate limit slept through,
+        a died or stopped session run again after its pause) keeps the times
+        of the attempt that answered, when it alone reported the cases; one
+        whose CASE lines span two attempts, or whose session died, keeps none,
+        since those times would weigh the next plan wrong."""
         now = [1000.0]
         f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})
         f.clock = lambda: now[0]
@@ -616,7 +618,7 @@ class Outcomes(unittest.TestCase):
         last = Path(f.state.path.parent, "last")
         answers = "REGRESSION-RESULT: S-F001 pass\nREGRESSION-RESULT: S-F002 pass\n"
 
-        def session(*attempts):
+        def session(*attempts, log="usage: turns=2\n"):
             """run_session doing <attempts>, each [(seconds later, rendered line)];
             the clock then moves on 600s, as a rate-limit sleep or retry pause would."""
 
@@ -629,7 +631,7 @@ class Outcomes(unittest.TestCase):
                         on_line(line)
                     spans.append((start, now[0]))
                     now[0] += 600
-                last.write_text("usage: turns=2\n")
+                last.write_text(log)
                 return answers, 0.0, last, spans
 
             return run_session
@@ -642,11 +644,24 @@ class Outcomes(unittest.TestCase):
         f.run_batch(f.lanes[0], batch(), 1)
         cases = f.state.data["cases"]
         self.assertEqual((10.0, 25.0), (cases["S-F001"]["secs"], cases["S-F002"]["secs"]))
-        for c in cases.values():
-            del c["secs"]
-        f.run_session = session([(1, "REGRESSION-CASE: S-F001"), (5, "rate-limit: status=rejected")], one)
+        timed = lambda: {c: d.pop("secs") for c, d in cases.items() if "secs" in d}
+        timed()
+        # a $0 rate-limit turn-away, then the attempt that ran the cases: its times stand
+        f.run_session = session([(1, "rate-limit: status=rejected"), (2, "usage: turns=1")], one)
         f.run_batch(f.lanes[0], batch(), 2)
-        self.assertEqual([], [c for c, d in cases.items() if "secs" in d], "a retried batch keeps no times")
+        self.assertEqual({"S-F001": 10.0, "S-F002": 25.0}, timed(), "the answering attempt's times are kept")
+        # a watchdog-stopped first attempt that never reached a case: the same
+        f.run_session = session([(5, "> mcp__dw__get_health {}")], one)
+        f.run_batch(f.lanes[0], batch(), 3)
+        self.assertEqual({"S-F001": 10.0, "S-F002": 25.0}, timed())
+        # CASE lines in both attempts: no times
+        f.run_session = session([(1, "REGRESSION-CASE: S-F001"), (5, "rate-limit: status=rejected")], one)
+        f.run_batch(f.lanes[0], batch(), 4)
+        self.assertEqual({}, timed(), "cases reported across two attempts keep no times")
+        # a session that died (no result line): no times
+        f.run_session = session(one, log="")
+        f.run_batch(f.lanes[0], batch(), 5)
+        self.assertEqual({}, timed(), "a died session keeps no times")
 
     def test_main_exits_1_on_a_failed_run_or_a_failing_case(self):
         from unittest import mock
