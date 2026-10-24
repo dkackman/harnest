@@ -84,7 +84,17 @@ def text(x):
     return x if isinstance(x, str) else json.dumps(x)
 
 
+ASSERTIONS = frozenset(
+    ("eq", "ne", "exists", "len", "contains", "contains_any", "not_contains", "any_contains", "none_contains")
+)
+
+
 def check(result, a):
+    unknown = sorted(set(a) - ASSERTIONS - {"path"})
+    if unknown:
+        raise MCPError("unknown assertion %r" % unknown[0])
+    if not set(a) & ASSERTIONS:
+        raise MCPError("assertion %r asserts nothing" % (a,))
     path = a.get("path", "")
     vals = resolve(result, path)
     fan = "*" in tokens(path) if not isinstance(path, list) else "*" in path
@@ -161,38 +171,59 @@ def main():
     ap.add_argument("--url", default=os.environ.get("DW_URL", "http://lem:8765/mcp"))
     ap.add_argument("--token", default=os.environ.get("DW_TOKEN", ""))
     ap.add_argument("--level")
+    ap.add_argument("--timeout", type=float, default=600, help="seconds one MCP request may take (default 600)")
     ap.add_argument("ids", nargs="*")
     args = ap.parse_args()
     if not args.token:
         ap.error("no MCP token: pass --token or set DW_TOKEN; no token is kept in the repo")
 
     cases = []
+    broken = []  # cases that can't run: reported as errors, never dropped
     for f in sorted(os.listdir(os.path.join(HERE, "cases"))):
         if f.endswith(".json"):
-            c = json.load(open(os.path.join(HERE, "cases", f)))
-            if (not args.ids or c["id"] in args.ids) and (not args.level or c.get("level") == args.level):
+            stem = f[: -len(".json")]
+            try:
+                c = json.load(open(os.path.join(HERE, "cases", f)))
+                cid = c["id"]
+            except (OSError, ValueError, KeyError, TypeError) as e:
+                broken.append(
+                    {"id": stem, "status": "error", "failures": [f"{f}: unreadable case: {e}"], "seconds": None}
+                )
+                continue
+            if cid != stem:
+                broken.append(
+                    {
+                        "id": stem,
+                        "status": "error",
+                        "failures": [f"{f}: case id {cid!r} is not the filename"],
+                        "seconds": None,
+                    }
+                )
+            elif (not args.ids or cid in args.ids) and (not args.level or c.get("level") == args.level):
                 cases.append(c)
 
     report = {"server": args.url, "cases": []}
     try:
-        client = MCPClient(args.url, args.token)
+        client = MCPClient(args.url, args.token, timeout=args.timeout)
         info = client.initialize()
         report["server_info"] = info.get("serverInfo")
     except (MCPError, OSError) as e:
         report["error"] = f"server unreachable: {e}"
         print(json.dumps(report, indent=1))
-        sys.exit(2)
+        return 2
     for c in cases:
         try:
             report["cases"].append(run_case(client, c))
         except (MCPError, OSError) as e:
             report["cases"].append({"id": c["id"], "status": "error", "failures": [str(e)], "seconds": None})
+    report["cases"].extend(b for b in broken if not args.ids or b["id"] in args.ids)
     for k in ("pass", "fail", "error"):
         report[{"pass": "passed", "fail": "failed", "error": "errors"}[k]] = sum(
             r["status"] == k for r in report["cases"]
         )
     print(json.dumps(report, indent=1))
-    sys.exit(2 if report["errors"] else 1 if report["failed"] else 0)
+    return 2 if report["errors"] else 1 if report["failed"] else 0
 
 
-main()
+if __name__ == "__main__":
+    sys.exit(main())

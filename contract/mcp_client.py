@@ -6,6 +6,7 @@ consumer of the dw server exactly as the tester is, with no source or
 `lem` access beyond the MCP endpoint.
 """
 
+import http.client
 import json
 import urllib.error
 import urllib.request
@@ -24,6 +25,12 @@ class MCPClient:
         self._id = 0
 
     def _post(self, payload, want_reply=True):
+        try:
+            return self._exchange(payload, want_reply)
+        except (ValueError, http.client.HTTPException) as e:  # a bad body, a cut-short read: the server's fault
+            raise MCPError(f"{type(e).__name__}: {e}") from None
+
+    def _exchange(self, payload, want_reply):
         headers = {"Content-Type": "application/json", "Accept": "application/json, text/event-stream"}
         if self.token:
             headers["Authorization"] = "Bearer " + self.token
