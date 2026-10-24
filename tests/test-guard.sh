@@ -821,11 +821,22 @@ for r in implementer consumer; do
   row 0 $r "" $none "# note \\${nl}echo hi"
   row 0 $r "" $none "# note \\${nl}gh issue view 5"
 done
-# carry-over: a comment reaches the lexer as nothing but its newline, so a quote in it pairs with nothing
+# carry-over: a comment reaches the lexer as its words less quotes and backslashes, so a quote in
+# it pairs with nothing, and a # the scanner misjudges as a comment still shows the command after it
 for r in implementer consumer; do
   row 2 $r "" $none "# it's${nl}gh issue edit 5 --add-label status:verified${nl}# '"
   row 2 $r "" $none "# a\\'${nl}gh issue edit 5 --add-label status:verified${nl}# b\\'"
   row 0 $r "" $none "# it's fine${nl}echo hi"
   row 2 $r "" $none 'echo "a #b"; gh issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'echo ${x:- #}; gh issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'echo "$(echo " #")"; gh issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'echo ${x:- #} && gh issue close 5 --reason completed'
+  row 2 $r "" $none 'echo "$(printf "%s #" a)" && gh issue edit 5 --remove-label owner:implementer --add-label owner:tester --add-label owner:don'
 done
+# fix round 1: the backtick rule reads gh/git commands only, less quoted heredoc bodies
+row 0 implementer "" $none "sed -i 's/\`a\`/b/' f && git commit -qam x"
+row 0 implementer "" $none "python3 - <<'PYEOF'${nl}print(\"\`x\`\")${nl}PYEOF${nl}git status"
+row 2 implementer "" $none "git commit -m 'uses \`x\`'"  # literal to bash, refused anyway: fail closed
+row 2 implementer "" $none "sed -i 's/a/b/' f && git commit -qam \"\`id\`\""
+row 2 implementer "" $none "echo \"\$(echo \")\"; gh issue comment 5 --body \"\`id\`\""
 finish

@@ -292,8 +292,7 @@ def inline_cat_subs(cmd):
     alone = done and all(
         ("$" not in live_text(out))
         if h
-        # a sibling with text but no words is a comment, which this walk does not follow
-        else ("$" not in live_text(text) and bool(sw := [w for w in segments(text) if w]) and all(map(sibling_ok, sw)))
+        else ("$" not in live_text(text) and all(sibling_ok(w) for w in segments(text) if w))
         for text, h, out in segs
         if text.strip(" \t;&|()\n")
     )
@@ -305,10 +304,12 @@ def inline_cat_subs(cmd):
 SHELLS = r"(?<![\w.-])(?:bash|sh|zsh|dash|ksh|eval|source)(?![\w.-])|(?<![\w./-])\.(?=[ \t])"
 
 
-def live_text(text):
+def live_text(text, keep_quoted=False):
     """The parts of text bash substitutes in: unquoted and double-quoted text,
     without single-quoted strings, $'...' strings, or the bodies of
-    quoted-delimiter heredocs fed to a command that is not a shell."""
+    quoted-delimiter heredocs fed to a command that is not a shell. With
+    keep_quoted, single-quoted and $'...' strings stay as written (only the
+    heredoc bodies and escaped characters go)."""
     out, i, n, dq, pending, line_start = [], 0, len(text), False, [], 0
     while i < n:
         c, two = text[i], text[i : i + 2]
@@ -317,8 +318,8 @@ def live_text(text):
             i += 2
         elif not dq and c == "'":
             e = text.find("'", i + 1)
+            out.append(text[i : (n if e < 0 else e + 1)] if keep_quoted else " ")
             i = n if e < 0 else e + 1
-            out.append(" ")
         elif not dq and (two == "$'" or two == '$"'):
             if two == '$"':
                 out.append(" $'' ")
@@ -328,8 +329,8 @@ def live_text(text):
             k = i + 2
             while k < n and text[k] != "'":
                 k += 2 if text[k] == "\\" else 1
+            out.append(text[i : k + 1] if keep_quoted else " $'' ")  # kept as a mark: $'...' decodes escapes bash-side
             i = k + 1
-            out.append(" $'' ")  # kept as a mark: $'...' decodes escapes bash-side
         elif c == '"':
             dq = not dq
             out.append(c)
@@ -451,15 +452,19 @@ def join_continuations(cmd):
     backslash at the end of a line (\\\\, an even run) ends the line, so the
     next line is its own command and is read as one. A comment (an unquoted
     `#` at the start of a word) runs to its newline, backslash or not: bash
-    does not continue a comment, and the lexer gets nothing of it but the
-    newline that ends it."""
+    does not continue a comment, and the lexer gets its words without quotes
+    or backslashes."""
     out, i, n, dq, pending, line_start = [], 0, len(cmd), False, [], 0
     while i < n:
         c, two = cmd[i], cmd[i : i + 2]
         if c == "#" and not dq and (i == 0 or cmd[i - 1] in " \t\n;&|()"):
             e = cmd.find("\n", i)
             e = n if e < 0 else e
-            i = e  # bash ignores the comment: none of it (no quote, no escape) reaches shlex, only its newline
+            # bash ignores the comment, but the scanner can misjudge a # as one (inside ${...}, or a
+            # "..." nested in "$(...)"): its words stay visible, less the quotes and backslashes that
+            # would pair with another comment's across lines
+            out.append(UNQUOTE.sub("", cmd[i:e]))
+            i = e
         elif c == "\\":
             if two != "\\\n":
                 out.append(two)
@@ -1256,27 +1261,66 @@ def glob_qualifier(text):
     return False
 
 
-BACKTICK_MSG = "backticks inside double quotes are not allowed on a gh/git line: use $(...)"
+BACKTICK_MSG = (
+    "backticks are not allowed in a gh or git command: put text with backticks in a "
+    "\"$(cat <<'EOF' ... EOF)\" heredoc on a gh/git call alone on its line, or in a --body-file / -F file"
+)
 
 
-def unescaped_backtick(text):
-    """True when text holds a backtick no backslash escapes, in any quote state.
-    Fail closed: the guard reads a quoted string as one word, but a backtick in
-    double quotes runs its command first (zsh glob qualifiers included), and
-    telling a single-quoted backtick from a live one means tracking quotes the
-    way the shell does, which a backslash, a $'...' or an odd comment has
-    fooled before. So any backtick is refused on a gh/git line; a rewritten
-    heredoc body has its backticks escaped (text), and a heredoc written to a
-    body file is cut before this runs."""
-    i, n = 0, len(text)
+def raw_segments(text):
+    """text split into its simple commands at unquoted ; & | ( ) and newlines,
+    as raw text. Quotes, $(...), ${...} and backticks nest, and nothing inside
+    one splits; an unterminated one keeps the rest as one segment (fail
+    closed: a merged segment is read whole)."""
+    out, cur, stack, i, n = [], [], [], 0, len(text)
     while i < n:
-        if text[i] == "\\":
+        c, two, top = text[i], text[i : i + 2], (stack[-1] if stack else "")
+        if c == "\\":
+            cur.append(text[i : i + 2])
             i += 2
             continue
-        if text[i] == "`":
-            return True
+        if top != '"' and c == "'":
+            e = text.find("'", i + 1)
+            e = n - 1 if e < 0 else e
+            cur.append(text[i : e + 1])
+            i = e + 1
+            continue
+        if two in ("$(", "${"):
+            stack.append(two)
+            cur.append(two)
+            i += 2
+            continue
+        if c == '"':
+            stack.pop() if top == '"' else stack.append('"')
+        elif c == "`":
+            stack.pop() if top == "`" else stack.append("`")
+        elif c == ")" and top == "$(":
+            stack.pop()
+        elif c == "}" and top == "${":
+            stack.pop()
+        elif not stack and c in ";&|()\n":
+            out.append("".join(cur))
+            cur = []
+            i += 1
+            continue
+        cur.append(c)
         i += 1
-    return False
+    out.append("".join(cur))
+    return [x for x in out if x.strip()]
+
+
+def gh_git_backtick(text):
+    """True when a gh or git command holds a backtick no backslash escapes, in
+    any quote state: the guard reads a quoted string as one word, but a
+    backtick in double quotes runs its command first (zsh glob qualifiers
+    included), and telling a single-quoted backtick from a live one means
+    tracking quotes the way the shell does, which has fooled it before. So
+    any backtick in a gh/git segment is refused. Other commands on the line
+    (a sed script, a python heredoc) may hold them: the body of a
+    quoted-delimiter heredoc not fed to a shell is cut first, a rewritten
+    heredoc body has its backticks escaped (text), and a heredoc written to
+    a body file is cut before this runs."""
+    return any(re.search(GH_WORD, seg) and "`" in seg for seg in raw_segments(live_text(text, keep_quoted=True)))
 
 
 def marker_through_punctuation(cmd):
@@ -1690,7 +1734,7 @@ def main():
     )
     if re.search(GH_WORD, stripped) and glob_qualifier(live_text(stripped)):
         deny("zsh glob qualifiers are not allowed on a gh/git line")
-    if re.search(GH_WORD, stripped) and unescaped_backtick(stripped):
+    if re.search(GH_WORD, stripped) and gh_git_backtick(stripped):
         deny(BACKTICK_MSG)
     if marker_through_punctuation(cmd):
         deny(
