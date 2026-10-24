@@ -926,7 +926,7 @@ acquire_driver_lock() {
     sleep 30
   done
   echo "$$ $1" > "$lock/owner"
-  DRIVER_LOCK_DIR="$lock"
+  driver_lock_dir="$lock"
   trap driver_exit EXIT
 }
 
@@ -934,7 +934,7 @@ acquire_driver_lock() {
 # The EXIT trap of every driver: releases the lock it took (if any) and
 # removes its own --mcp-config file, so the token isn't left on disk.
 driver_exit() {
-  [ -z "${DRIVER_LOCK_DIR:-}" ] || rm -rf "$DRIVER_LOCK_DIR"
+  [ -z "${driver_lock_dir:-}" ] || rm -rf "$driver_lock_dir"
   rm -f "$LOGS/.mcp.$$.json"
 }
 
