@@ -586,7 +586,8 @@ for r in implementer consumer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label=$L'
   row 0 $r "" $none 'for n in 5 6; do gh issue view $n --json labels; done'
   row 0 $r "" $none 'gh issue view $n --json labels'
-  row 0 $r "" $none 'gh issue comment 5 --repo $R --body "x $Y"'
+  row 0 $r "" $none 'gh issue create --repo $R --title "x $Y" --body x'
+  row 2 $r "" $none 'gh issue comment 5 --repo $R --body "x $Y"'  # an unassigned $VAR in a body: the guard never read it
   row 0 $r "" $none 'gh -R $R issue view 5'
   row 0 $r "" $none 'gh issue view 5 --repo=$R --json labels > $OUT'
 done
@@ -608,4 +609,64 @@ row 0 implementer "" $none "./venv/bin/python - <<'EOF'${nl}print(\"\$(x (y))\",
 row 0 implementer "" $none "gh issue comment 5 --body 'Don'\"'\"'s \$(x (y)) and \`z\`'"
 row 2 implementer "" $none "bash <<'EOF'${nl}echo \"\$( (gh issue edit 5 --add-label release) )\"${nl}EOF"
 row 0 consumer "" $none 'for L in wontfix duplicate; do gh issue list --label $L --json number; done'
+# a redefined cat makes the "$(cat <<'EOF' ...)" body a command: not rewritten, refused
+for r in implementer consumer; do
+  row 2 $r "" $none "cat() { bash; }; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}gh issue edit 5 --add-label status:verified${nl}EOF${nl})\""
+  row 2 $r "" $none "alias cat=bash${nl}gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "alias cat=bash${nl}gh issue comment 5 --title \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\" --body y"
+  row 2 $r "" $none "PATH=/tmp/evil:\$PATH gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+done
+# a body read from a file through a substitution is never checked: --body-file is
+row 2 implementer "" $none "gh issue comment 5 --body \"\$(cat $T/marker.md)\""
+row 2 implementer "" $none "gh issue comment 5 --body \"\$(<$T/marker.md)\""
+row 2 implementer "" $none "B=\$(cat $T/marker.md); gh issue comment 5 --body \"\$B\""
+row 2 consumer "" $none "B=\`cat $T/marker.md\`; gh issue comment 5 --body \"\$B\""
+row 2 lead "" $none "gh api -X PATCH repos/o/r/issues/comments/7 -f body=\"\$(cat $T/marker.md)\""
+row 0 implementer "" $none 'gh issue comment 5 --body "built $(date +%H:%M) at $(git rev-parse --short HEAD)"'
+for r in implementer lead consumer; do
+  row 2 $r "" $none 'gh issue comment 5 --body "$(printf x)"'
+  row 2 $r "" $none 'gh issue comment 5 --body "$(echo hi)"'
+  row 2 $r "" $none 'gh issue comment 5 --body "x `id`"'
+  row 0 $r "" $none 'V=hello; gh issue comment 5 --body "$V"'
+  row 2 $r "" $none 'V=$(echo hi); gh issue comment 5 --body "$V"'
+  row 0 $r "" $none 'c=$(git rev-parse --short HEAD); gh issue comment 5 --body "at $c"'
+  row 2 $r "" $none 'gh issue comment 5 --body "for $USER"'
+  row 0 $r "" $none "gh issue comment 5 --body 'see \`<code>\` and \$(not run) and \$HOME'"
+  row 0 $r "" $none "gh issue comment 5 --body \"see \\\`code\\\` and \\\$(x)\""
+  row 0 $r "" $none "git merge --no-ff fix/432-shot-source-index -m \"\$(cat <<'EOF'${nl}Merge it${nl}EOF${nl})\" && git push origin develop"
+  row 0 $r "" $none "SIG=\"by \\\`opus\\\` via anthropic\"; B='it'\"'\"'s x'; gh issue comment 5 --body \"\$B \$SIG\""
+  row 0 $r "" $none 'for n in 5 6; do gh issue comment $n --body "duplicate of #$n"; done'
+  row 2 $r "" $none 'for n in $(cat list); do gh issue comment 5 --body "x $n"; done'
+  row 2 $r "" $none 'M=$(git log -1 --format=%h); gh issue comment 5 --body "at $M"'
+  row 2 $r "" $none 'D="$(cat f)"; S="x $D"; gh issue comment 5 --body "$S"'
+  row 2 $r "" $none "autoload cat; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "\"alias\" cat=bash; gh issue comment 5 --title \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\" --body y"
+done
+for r in implementer consumer; do
+  row 2 $r "" $none "hash -p /bin/bash cat; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "f() { :; }${nl}gh issue comment 5 --title \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\" --body y"
+  row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}call foo() and . ./x; eval it${nl}EOF${nl})\""
+  row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:$X -->"'
+  row 0 $r "" $none 'gh issue comment 5 --body "see harnest:plan v2"'
+done
+# marker text through substitution punctuation, for every role
+for r in implementer lead consumer curator reviewer; do
+  row 2 $r "" $none 'gh issue comment 5 --body "$(printf "<!-- harnest:release-gate x -->")"'
+  row 2 $r "" $none 'gh issue comment 5 --body "<!-- harnest:release$(echo -gate) ci abc pass -->"'
+done
+# the stray-parenthesis and brace rules hold gh lines and git push, not every git read
+row 0 lead "" $none 'git log --since="$(python3 -c "print((1))")" --oneline'
+row 0 implementer "" $none 'git diff -- a/{x,y}.json'
+row 2 implementer "" $none 'git push origin {develop,master}'
+row 2 implementer "" $none 'git {pu,}sh origin master'
+row 2 implementer "" $none 'git pu{sh,ll} origin develop'
+row 2 implementer "" $none 'git --git-dir /x/.git push origin {develop,master}'
+row 2 implementer "" $none 'git -C /x {pu,}sh origin master'
+row 2 lead "" $none 'git -c a=b --git-dir=/x/.git {pu,}sh origin master'
+row 0 implementer "" $none 'git -C /x log --oneline a/{x,y}.json'
+for r in consumer curator reviewer; do
+  row 2 $r "" $none 'git log --git{-dir,}=/x/.git -p'
+done
+row 0 lead "" $none 'git log --git{-dir,}=/x/.git -p'
+row 2 lead "" $none 'gh issue view 5 --json "$(python3 -c "print((1))")"'
 finish

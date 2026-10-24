@@ -1,6 +1,10 @@
 #!/usr/bin/env python3
 """PreToolUse guard for the unattended roles (HARNESS-ROADMAP.md R3).
 
+Shell assumption: the agents' Bash tool runs $SHELL (zsh on this machine); bash-3.2's
+`$(cat <<'EOF' ... )` ending at the first `)`, and word splitting of an unquoted $VAR,
+are not modelled.
+
     python3 guard.py implementer|lead|consumer|curator|reviewer   (hook input JSON on stdin)
 
 Turns ticket-protocol invariants that used to live only in prompt text, and
@@ -166,6 +170,14 @@ HEREDOC_HEADER = re.compile(
 
 
 CAT_SUB = re.compile(r"\$\([ \t]*cat[ \t]+<<[ \t]*(['\"])(\w+)\1[ \t]*\n")
+# a line that may redefine cat (a function, an alias, a hashed path, a PATH, a sourced
+# file, zsh's path/aliases/functions arrays): its "$(cat <<'D' ...)" is not literal
+CAT_REDEF = re.compile(
+    r"\w+\s*\(\s*\)|\bfunction\s+\w+|(?<![\w./-])(?:alias|enable|builtin|hash|eval|source|autoload|fpath)(?![\w.-])"
+    r"|(?:^|[;&|(\n])[ \t]*\.[ \t]|\bPATH=|\bpath\+?=|\bpath\[|\baliases\[|\bfunctions\[|\bcommands\["
+    r"|(?<![\w./-])functions\s+-c\b"
+)
+CAT_REDEFINED = False  # set by inline_cat_subs: the line may redefine cat, so nothing was rewritten
 
 
 def inline_cat_subs(cmd):
@@ -173,8 +185,12 @@ def inline_cat_subs(cmd):
     output, escaped for the double quotes: a quoted-delimiter heredoc is
     literal, so the substitution is exactly that text (less trailing
     newlines), and every rule then reads it as the value it is. The walk
-    stops at the first substitution or backtick of any other shape."""
-    out, i, n, dq = [], 0, len(cmd), False
+    stops at the first substitution or backtick of any other shape, and never
+    starts on a line that may redefine cat (CAT_REDEF): there the substitution
+    stays live, for the rules to read and refuse. The redefinition is looked
+    for outside the heredoc bodies, so prose like foo() in a body is text."""
+    global CAT_REDEFINED
+    out, bodies, i, n, dq = [], [], 0, len(cmd), False
     while i < n:
         c = cmd[i]
         m = CAT_SUB.match(cmd, i) if dq else None
@@ -191,6 +207,7 @@ def inline_cat_subs(cmd):
             if end is not None:
                 body = cmd[m.end() : max(m.end(), k - 1)].rstrip("\n")
                 out.append(re.sub(r'([\\"$`])', r"\\\1", body))
+                bodies.append(len(out) - 1)
                 i = end
                 continue
         if c == "`" or cmd[i : i + 2] == "$(":
@@ -210,6 +227,10 @@ def inline_cat_subs(cmd):
             dq = not dq
         out.append(c)
         i += 1
+    outside = "".join(x for k, x in enumerate(out) if k not in bodies) + cmd[i:]
+    if bodies and (CAT_REDEF.search(outside) or CAT_REDEF.search(UNQUOTE.sub("", outside))):
+        CAT_REDEFINED = True
+        return cmd
     return "".join(out) + cmd[i:]
 
 
@@ -530,10 +551,12 @@ def shell_words(text):
     return segs, " ".join(" ".join(x["deq"] for x in g) for g in segs), ansi
 
 
-def expansion_rules(text):
+def expansion_rules(text, role=""):
     """Rules on how bash builds a word, for every role: $'...'/$"..." quoting,
     brace expansion, ${...} holding gh/git, a variable assigned gh/git, zsh's
-    ${=L} splitting, and a variable standing in for a gh flag or label."""
+    ${=L} splitting, and a variable standing in for a gh flag or label. For the
+    source-blind roles (consumer, curator, reviewer) no git word may hold a
+    brace: --git{-dir,}=X would slip past consumer_git_rule's flag check."""
     segs, decoded, ansi = shell_words(text)
     if ansi and "$''" in live_text(text) and re.search(GH_WORD, decoded):
         deny("$'...' quoting is not allowed in a gh/git command: write the word plainly.")
@@ -550,13 +573,25 @@ def expansion_rules(text):
         body = plain[len(deq) - len(command_words(deq)) :]
         if not body or os.path.basename(body[0]["deq"]) not in ("gh", "git"):
             continue
-        for x in body:
-            if re.search(r"\{[^{}]*(?:,|\.\.)[^{}]*\}", x["unq"]):
-                deny(
-                    "brace expansion ({a,b}, {a..b}) in a gh/git command makes words the guard never sees: write each out."
-                )
+        braced = [bool(re.search(r"\{[^{}]*(?:,|\.\.)[^{}]*\}", x["unq"])) for x in body]
+        brace_msg = (
+            "brace expansion ({a,b}, {a..b}) in a gh/git command makes words the guard never sees: write each out."
+        )
+        if os.path.basename(body[0]["deq"]) == "git":
+            j = 1  # git's own options, then the subcommand: no brace up to it (git {pu,}sh is a push)
+            while j < len(body) and body[j]["deq"].startswith("-"):
+                j += 2 if body[j]["deq"] in ("-C", "-c", "--git-dir", "--work-tree", "--namespace") else 1
+            if any(braced[: j + 1]) or (role in ("consumer", "curator", "reviewer") and any(braced)):
+                deny(brace_msg)
+            if not any(x["deq"] == "push" for x in body[j:]):
+                continue  # a git read: a brace in its arguments writes nothing the guard rules on
+        if any(braced):
+            deny(brace_msg)
         if os.path.basename(body[0]["deq"]) != "gh":
             continue
+        body_rule(body)
+        if any(x["exp"] and "harnest:" in x["deq"] for x in body):
+            deny("harnest: text and an expansion in one gh word: the marker would be built after the guard reads it.")
         allowed, j = set(), 1  # gh's leading flags, then the subcommand and the positional after it
         while j < len(body) and body[j]["deq"].startswith("-") and len(body[j]["deq"]) > 1:
             j += 2 if body[j]["deq"] in ("-R", "--repo", "--hostname") else 1
@@ -1029,6 +1064,105 @@ def carries_release_marker(words):
     return False
 
 
+def marker_through_punctuation(cmd):
+    """The release marker on a gh line, read through quotes, $(, ), backticks and
+    backslashes, or `harnest:release` with an expansion or quote straight after it."""
+    if not re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", cmd)):
+        return False
+    bare = re.sub(r"\$\(|[)`\"'\\]", "", cmd)
+    return RELEASE_MARKER in cmd or RELEASE_MARKER in bare or bool(re.search(r"harnest:release[$`\"'\\]", cmd))
+
+
+BODY_SUB_MSG = "a body may not be read from a file through a substitution: use --body-file"
+
+
+BODY_FLAGS = ("--body", "-b")
+BODY_PREFIXES = ("--body=", "body=", "-fbody=", "-Fbody=", "--field=body=", "--raw-field=body=")
+# the substitutions a body may hold: a timestamp or a commit id, nothing that reads a file or runs more
+BODY_SUB_OK = re.compile(r"\s*(?:date|git\s+rev-parse)(?:\s[^;&|`$()<>\n]*)?")
+FULL_CMD = ""  # the whole command line, set by main(): where a body's $VAR is assigned
+
+
+def body_words(body):
+    """The words of a gh segment (shell_words dicts) that are inline body values."""
+    out = []
+    for k, x in enumerate(body):
+        d = x["deq"]
+        if (k and body[k - 1]["deq"] in BODY_FLAGS) or d.startswith(BODY_PREFIXES):
+            out.append(x)
+        elif d.startswith("-b") and len(d) > 2 and not d.startswith("--"):  # pflag's attached -bVALUE
+            out.append(x)
+    return out
+
+
+def substitution_texts(live):
+    """The command text of each $(...) and `...` in live text (quotes already resolved)."""
+    out, i, n = [], 0, len(live)
+    while i < n:
+        if live[i] == "`":
+            e = live.find("`", i + 1)
+            e = n if e < 0 else e
+            out.append(live[i + 1 : e])
+            i = e + 1
+        elif live[i : i + 2] == "$(":
+            depth, k = 1, i + 2
+            while k < n and depth:
+                depth += {"(": 1, ")": -1}.get(live[k], 0)
+                k += 1
+            out.append(live[i + 2 : k - 1])
+            i = k
+        else:
+            i += 1
+    return out
+
+
+# an assigned value bash fills in from nothing but text: quoted or bare pieces, and
+# inside double quotes only escapes and $NAME/${NAME} (each checked in turn)
+ASSIGNED_VALUE = re.compile(
+    r"""(?:'[^']*'|"(?:[^"\\$`]|\\.|\$\{?[A-Za-z_]\w*\}?)*"|\\.|[^\s$`'"\;&|()<>])*(?=[\s;&|)]|$)"""
+)
+
+
+def literal_assignment(name, line, depth=0):
+    """True when every assignment of name on the line is text (or a date/git
+    rev-parse substitution), counting a `for name in WORDS` over literal words,
+    and there is at least one. A $VAR inside a double-quoted value must be
+    literal too."""
+    found = False
+    for m in re.finditer(r"(?<![\w$-])for\s+%s\s+in\s+([^;\n]*)" % re.escape(name), line):
+        if re.search(r"[$`'\"\\]", m.group(1)):
+            return False
+        found = True
+    for m in re.finditer(r"(?<![\w$-])%s=" % re.escape(name), line):
+        rest, found = line[m.end() :], True
+        sub = re.match(r"""["']?\$\(([^()]*)\)["']?(?=[\s;&|)]|$)""", rest)
+        if sub and BODY_SUB_OK.fullmatch(sub.group(1)):
+            continue
+        v = ASSIGNED_VALUE.match(rest)
+        if not v:
+            return False
+        inner = re.findall(r"(?<!\\)\$\{?([A-Za-z_]\w*)", re.sub(r"'[^']*'", " ", v.group(0)))
+        if any(n == name or depth > 3 or not literal_assignment(n, line, depth + 1) for n in inner):
+            return False
+    return found
+
+
+def body_rule(body):
+    """An inline gh body is checked as the text gh will get: a substitution in it
+    may only be date or git rev-parse, and a $VAR in it must be assigned a plain
+    literal on the same line. Anything else (a file read through $(cat ...),
+    $(<...), a printf, a variable filled from a command) would carry text the
+    guard never read."""
+    for x in body_words(body):
+        live = live_text(x["raw"])
+        for sub in substitution_texts(live):
+            if not BODY_SUB_OK.fullmatch(sub):
+                deny(BODY_SUB_MSG)
+        for name in re.findall(r"\$\{?([A-Za-z_]\w*)", re.sub(r"\$\([^()]*\)|`[^`]*`", " ", live)):
+            if not literal_assignment(name, FULL_CMD):
+                deny(BODY_SUB_MSG)
+
+
 def suite_request(words):
     """A suite-change request on the harness repo: `gh issue create --repo
     <HARNEST_HARNESS_REPO>` labeled exactly suite + status:needs-approval.
@@ -1367,19 +1501,26 @@ def main():
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
+    global FULL_CMD
+    FULL_CMD = cmd
     stripped, written = heredoc_cut(inline_cat_subs(cmd))  # a quoted-delimiter heredoc body is data, not commands
     subsegs, inner, residual = substitutions(stripped)
     segs = segments(stripped) + subsegs
     ifs_rule(stripped, segs)
     for text in [stripped] + inner:
-        expansion_rules(text)
+        expansion_rules(text, role)
     unread = live_text(residual)
     left = bool(re.search(r"(?<!\\)(?:\$\(|`)", unread))
     while re.search(r"\([^()]*\)", unread):
         unread = re.sub(r"\([^()]*\)", " ", unread)
     # a $( or backtick left over, or (once a substitution was read) a stray ) that a case
     # pattern or a comment inside it would explain: the substitution was not read whole
-    if re.search(GH_WORD, stripped) and (left or (inner and ")" in unread)):
+    bare = UNQUOTE.sub("", stripped)
+    gh_or_push = any(
+        re.search(r"(?<![\w.-])gh(?![\w.-])", t) or re.search(r"(?<![\w.-])git(?![\w.-])[\s\S]*?\bpush\b", t)
+        for t in (stripped, bare)
+    )
+    if gh_or_push and (left or (inner and ")" in unread)):
         deny(
             "a command substitution the guard cannot read (parentheses inside $(...)) on a gh/git line: run gh directly."
         )
@@ -1397,6 +1538,12 @@ def main():
         and RELEASE_MARKER not in cmd
         and all(redirects_ok(g) for g in rsegs)
     )
+    if CAT_REDEFINED and re.search(GH_WORD, UNQUOTE.sub("", cmd)):
+        deny("this line may redefine cat (a function, alias, hash, PATH, ...), so its $(cat <<EOF) runs: split it.")
+    if marker_through_punctuation(cmd):
+        deny(
+            "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."
+        )
     if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", stripped)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     for words in segs:
