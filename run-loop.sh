@@ -222,6 +222,10 @@ resolve_token || exit 1
 for l in $(printf 'target:%s ' $TARGETS) backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
   gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
 done
+# The lock before anything that touches the server: the Mac loop's startup
+# deploy below restarts the test bed, which must not happen under a
+# regression run (or another loop) that holds it.
+acquire_driver_lock run-loop
 if [ "$DW_TARGET" != lem ]; then
   # Nothing answering is a test bed left stopped (or a failed deploy):
   # deploy develop there. Then refuse to run against nothing, or against
@@ -237,7 +241,6 @@ SERVER_NAME="$(server_name)"
 # (agents/tester/target.md); suite_commit_paths then commits suite files.
 export SUITE_EDITS=1
 
-acquire_driver_lock run-loop
 LAST_SESSION="$LOGS/.last-session.loop$TARGET_SUFFIX"
 refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
   || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
@@ -947,9 +950,13 @@ consolidation_pass() {
 # comment saying why. It stays when the history has no owner to restore,
 # when Don's own park (status:needs-approval) is on it, or when the park
 # names a rule that outlives the freeze (the hot zone, the ratchet).
+# The stamp is written only when every gh call worked: a blip leaves the
+# lift to the next cycle, which skips the "left with Don" comments already
+# posted for it (logs/.unparked-stabilization.told).
 unpark_pass() {
-  local stamp="$LOGS/.unparked-stabilization" n prev why since text report=""
-  if [ "$DW_FROZEN" != 0 ]; then rm -f "$stamp"; return 0; fi
+  local stamp="$LOGS/.unparked-stabilization" n prev why since text report="" failed=0
+  local told="$stamp.told"
+  if [ "$DW_FROZEN" != 0 ]; then rm -f "$stamp" "$told"; return 0; fi
   [ ! -e "$stamp" ] || return 0
   shared_passes_here || return 0
   local -a parked=()
@@ -976,14 +983,21 @@ unpark_pass() {
     if [ -z "$why" ]; then
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:don --remove-label stabilization --add-label "$prev" >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Unparked by the loop driver: dw's stabilization freeze has lifted (\`docs/stabilization/FREEZE\` left \`develop\`), so this goes back to \`$prev\`, its owner before the park." >/dev/null \
-        && report="$report #$n->$prev" || report="$report #$n:gh-failed"
+        && report="$report #$n->$prev" || { report="$report #$n:gh-failed"; failed=1; }
+    elif grep -qx "$n" "$told" 2>/dev/null; then
+      report="$report #$n:left(already said)"
     else
       gh issue comment "$n" --repo "$TICKET_REPO" --body "Left with Don after dw's stabilization freeze lifted: $why." >/dev/null \
-        && report="$report #$n:left($why)" || report="$report #$n:gh-failed"
+        && { report="$report #$n:left($why)"; echo "$n" >> "$told"; } || { report="$report #$n:gh-failed"; failed=1; }
     fi
   done
-  echo "[lead:unpark] freeze lifted; stabilization issues:${report:- none}" | tee -a "$LOOP_LOG"
-  date > "$stamp"
+  if [ "$failed" = 0 ]; then
+    echo "[lead:unpark] freeze lifted; stabilization issues:${report:- none}" | tee -a "$LOOP_LOG"
+    date > "$stamp"
+    rm -f "$told"
+  else
+    echo "[lead:unpark] freeze lifted; stabilization issues:$report; a gh call failed, so the next cycle tries again" | tee -a "$LOOP_LOG"
+  fi
 }
 
 # nightly_regression_pass: run-regression.sh once a day (REGRESSION_NIGHTLY_AT),

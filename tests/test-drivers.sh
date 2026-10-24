@@ -359,6 +359,21 @@ has "  as does one with no owner in its history" "no owner from before the park"
 has "unpark: the log lists what it touched" "[lead:unpark] freeze lifted; stabilization issues: #10->owner:lead #40:left" "$(cat "$T/loop.out")"
 loop 1
 eq  "unpark: once per lift" 0 "$(grep -c '\[lead:unpark\]' "$T/loop.out")"
+# a gh blip on the unpark edit: no stamp, so the next cycle retries it, and
+# what it already told Don (the issues it leaves) it does not say twice.
+# Stage #11 is ready to build again (the ledger parked it after two builds).
+jq '.["o/r"] |= map(if .number == 11 then .labels = [{"name": "feature"}, {"name": "stage"}, {"name": "owner:lead"}] else . end)' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/board.json"
+dev_file add docs/stabilization/FREEZE
+loop 1
+eq  "unpark retry: the freeze parks the feature again" "feature,owner:don,stabilization,status:plan-approved,target:lem" "$(labels_of 10)"
+dev_file rm docs/stabilization/FREEZE
+FAKE_GH_FAIL_MATCH='^issue edit 10 .*--remove-label stabilization' loop 1
+has "unpark retry: the failed edit is logged" "#10:gh-failed" "$(cat "$T/loop.out")"
+fails "unpark retry: no stamp after a failed edit" test -e "$T/h/logs/.unparked-stabilization"
+loop 1
+eq  "unpark retry: the next cycle hands it back" "feature,owner:lead,status:plan-approved,target:lem" "$(labels_of 10)"
+ok  "unpark retry: and stamps the lift done" test -e "$T/h/logs/.unparked-stabilization"
+eq  "unpark retry: one 'left' comment per lift, not per attempt" 2 "$(jq -r '[.["o/r"][] | select(.number == 40) | .comments[] | select(.body | startswith("Left with Don"))] | length' "$T/board.json")"
 # a stage parked after four bounces that Don hands back gets a build, not
 # another park (#499 was re-parked twice with no session in between)
 fpv='{"event": "labeled", "label": {"name": "status:fixed-pending-verify"}}'
@@ -511,6 +526,21 @@ has "mini-ai loop: no standing task" "standing task: lem only" "$(cat "$T/h/logs
 eq  "mini-ai loop: lem's lock untouched" "$$ run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
 has "mini-ai loop: behind develop, it deploys develop" "deploy develop" "$(cat "$T/deploys")"
 eq  "mini-ai loop: over ssh to mini-ai, never lem" "" "$(grep 'deploy.sh' "$T/ssh-calls" | grep -v ' mini-ai ' || true)"
+# the Mac lock is held and nothing answers: the loop waits for the lock before
+# its startup deploy, so no deploy.sh reaches the test bed under another run
+: > "$T/ssh-calls"
+printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"; chmod +x "$T/bin/curl"
+sleep 300 & holder=$!
+mkdir "$T/h/logs/.driver.lock.mini-ai"; echo "$holder run-regression" > "$T/h/logs/.driver.lock.mini-ai/owner"
+mini_loop & mini_pid=$!
+for _ in $(seq 1 100); do grep -q 'waiting for' "$T/loop-mini.out" 2>/dev/null && break; sleep 0.1; done
+cp "$T/ssh-calls" "$T/ssh-before-lock"
+has "mini-ai lock: the loop waits for the held lock" "[lock] run-loop waiting for '$holder run-regression' to finish" "$(cat "$T/loop-mini.out")"
+eq  "mini-ai lock: no deploy.sh before it holds the lock" "" "$(grep 'deploy.sh' "$T/ssh-before-lock" || true)"
+killtree() { local c; for c in $(pgrep -P "$1"); do killtree "$c"; done; kill -KILL "$1" 2>/dev/null; }
+killtree "$mini_pid"; kill -KILL "$holder" 2>/dev/null; wait "$mini_pid" "$holder" 2>/dev/null
+rm -rf "$T/h/logs/.driver.lock.mini-ai"
+mini_health
 
 # IMPLEMENTER_CLAIM_MAX: a pass claims at most N, oldest first; the rest stay unclaimed
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]},

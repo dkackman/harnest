@@ -9,6 +9,7 @@
     FAKE_GH_AUTHOR=<login> author of comments added by `issue comment` (default dkackman)
     FAKE_GH_FAIL_AFTER=<n> every call after the nth fails (counted across calls in <board>.count)
     FAKE_GH_LOG=<file>     every call is appended, one line each
+    FAKE_GH_FAIL_MATCH=<re> a call whose arguments (space-joined) match the regex fails
 
 Covers what the drivers call: issue list/view/edit/comment/close/create,
 api (events, from an issue's "events" list, and the comment PATCH), and auth status. --json projects the
@@ -17,6 +18,7 @@ fields asked for, and --jq is applied with the real jq.
 
 import json
 import os
+import re
 import subprocess
 import sys
 
@@ -29,6 +31,11 @@ if args[:2] == ["auth", "status"]:
 if os.environ.get("FAKE_GH_FAIL") == "1":
     print("gh: simulated outage", file=sys.stderr)
     sys.exit(1)
+
+if os.environ.get("FAKE_GH_FAIL_MATCH"):
+    if re.search(os.environ["FAKE_GH_FAIL_MATCH"], " ".join(args)):
+        print("gh: simulated failure of this call", file=sys.stderr)
+        sys.exit(1)
 
 path = os.environ["FAKE_GH_BOARD"]
 if os.environ.get("FAKE_GH_FAIL_AFTER"):
