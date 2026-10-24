@@ -996,4 +996,18 @@ for r in implementer consumer; do
   row 2 $r "" $none "G=g${nl}exec <<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl}bash"
   row 2 $r "" $none "G=g${nl}exec {fd}<<'EOF'${nl}\$G\"\"h issue close 5${nl}EOF${nl}bash <&\$fd"
 done
+# every registered shell and runner is case-folded, and a word after a runner (sudo, xargs,
+# find -exec, ...) is held to the same built-word rule as the command word
+for r in implementer consumer; do
+  row 2 $r "" $none "TCSH <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "CAFFEINATE bash <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "BUSYBOX sh <<'EOF'${nl}G=g; \$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none 'sudo G\H issue close 5'
+  row 2 $r "" $none 'caffeinate G\H issue close 5'
+  row 2 $r "" $none 'xargs G\H issue close 5'
+  row 2 $r "" $none 'find . -exec G\H issue close 5 \;'
+  row 2 $r "" $none 'timeout 5 g\H issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'sudo -u x G\IT push --force origin master'
+  row 0 $r "" $none 'find . -name x -exec grep -l y {} \;'
+done
 finish

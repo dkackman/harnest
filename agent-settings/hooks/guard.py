@@ -1286,7 +1286,6 @@ BACKTICK_MSG = (
 # binaries the guard names: on a case-insensitive filesystem (macOS APFS) GH, Git and BASH run
 # them too, so every reader sees them lower-cased. Builtins (eval, source, command) stay as
 # written: bash resolves those case-sensitively.
-FOLDED = re.compile(r"(?<![\w.-])(?:gh|git|bash|sh|zsh|dash|ksh|env|xargs|nohup|timeout|nice)(?![\w.-])", re.I)
 
 
 def fold_case(cmd):
@@ -1363,6 +1362,10 @@ RUNNERS = (
     "script",
     "chroot",
 )  # run their argument
+# every binary the rules name, in any case (fold_case): built from the registries so a shell or
+# runner added to one is folded too
+FOLDED_NAMES = frozenset(("gh", "git", "env", "xargs", "nohup", "timeout", "nice", *HEREDOC_SHELLS, *RUNNERS))
+FOLDED = re.compile(r"(?<![\w.-])(?:" + "|".join(sorted(FOLDED_NAMES, key=len, reverse=True)) + r")(?![\w.-])", re.I)
 # read-only filters a heredoc's output may be piped to without the body reaching a shell
 PIPE_FILTERS = frozenset(
     "grep egrep fgrep tail head cut sort uniq wc tr cat jq column fold fmt nl tac rev paste less more "
@@ -1954,6 +1957,10 @@ def built_command_rule(text, depth=0, env=None, base=0):
             continue
         if w[0] == "`" or w.startswith("$(") or re.search(r"[$'\"`\\]", re.sub(r"^(?:\\\n)+", "", w)):
             deny(BUILT_COMMAND_MSG)
+        for x in raw_words(seg):  # a runner's command (sudo G\H, find -exec G\H) escapes the fold the same way
+            x = x.replace("\\\n", "")
+            if "\\" in x and os.path.basename(UNQUOTE.sub("", x)).lower() in FOLDED_NAMES:
+                deny(BUILT_COMMAND_MSG)
     if depth < 8:
         for inner, at in live_substitutions(ct) + groups:  # live ones: a single-quoted `x` is text
             built_command_rule(inner, depth + 1, (literal, tainted, wild), at + base)
