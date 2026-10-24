@@ -669,4 +669,35 @@ for r in consumer curator reviewer; do
 done
 row 0 lead "" $none 'git log --git{-dir,}=/x/.git -p'
 row 2 lead "" $none 'gh issue view 5 --json "$(python3 -c "print((1))")"'
+# fix round 1: a marker split across literal assignments, date/rev-parse output, other assignment spellings, PATH/alias spellings
+for r in implementer consumer; do
+  row 2 $r "" $none "A='<!-- harnest:rel'; B='ease-gate ci abc pass -->'; gh issue comment 5 --body \"\$A\$B\""
+  row 2 $r "" $none "A='<!-- harn'; B='est:release-gate ci abc pass -->'; gh issue comment 5 --body \"\$A\$B\""
+  row 2 $r "" $none 'A=harn; gh issue comment 5 --body "<!-- ${A}est:release-gate ci abc pass -->"'
+  row 2 $r "" $none 'E=; gh issue comment 5 --body "harnest${E}:release-gate ci abc pass"'
+  row 2 $r "" $none 'for A in harn; do gh issue comment 5 --body "${A}est:release-gate x"; done'
+  row 2 $r "" $none 'gh issue comment 5 --body "<!-- $(date +harn)est:rel$(date +ease)-gate ci abc pass -->"'
+  row 2 $r "" $none 'gh issue comment 5 --body "harnest$(date +):release-gate ci abc pass"'
+  row 2 $r "" $none 'gh issue comment 5 --body "on $(git rev-parse --sq-quote x)"'
+  row 0 $r "" $none 'gh issue comment 5 --body "at $(date -u +%Y-%m-%dT%H:%M:%SZ) on $(git rev-parse --abbrev-ref HEAD)"'
+  row 2 $r "" $none "set -- \"\$(cat $T/marker.md)\"; gh issue comment 5 --body \"\$1\""
+  row 2 $r "" $none 'gh issue comment 5 --body "$1"'
+  row 2 $r "" $none "A=x; A+=\"\$(cat $T/marker.md)\"; gh issue comment 5 --body \"\$A\""
+  row 2 $r "" $none "A=x; read -r A < $T/marker.md; gh issue comment 5 --body \"\$A\""
+  row 2 $r "" $none "N=X; X=\$(cat $T/marker.md); gh issue comment 5 --body \"\${!N}\""
+  row 2 $r "" $none 'A=x; gh issue comment 5 --body "${A:-y}"'
+  row 0 $r "" $none 'V=hello; gh issue comment 5 --body "x $V"'
+  row 0 $r "" $none 'TS=$(date -u +"%Y-%m-%dT%H:%M:%SZ"); gh issue comment 5 --body "at $TS"'
+  row 0 $r "" $none "gh issue create --title \"no longer reaches its warn path\" --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "read \"PATH\" <<< /tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none 'A="harn"; gh issue comment 5 --body "$A""est:release-gate x"'
+  row 2 $r "" $none 'A=harn; A=x; gh issue comment 5 --body "${A}est:release-gate x"'
+  row 2 $r "" $none 'A=harn; B="${A}est"; gh issue comment 5 --body "<!-- $B:release-gate x -->"'
+  row 2 $r "" $none "read PATH <<< /tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "for PATH in /tmp/evil; do gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\"; done"
+  row 2 $r "" $none "printf -v PATH /tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "P=P; export \${P}ATH=/tmp/evil; gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 2 $r "" $none "A=ali; \${A}as cat=bash${nl}gh issue comment 5 --body \"\$(cat <<'EOF'${nl}x${nl}EOF${nl})\""
+  row 0 $r "" $none "gh issue comment 5 --body \"\$(cat <<'EOF'${nl}set PATH and read it; \$A then \${B}x${nl}EOF${nl})\""
+done
 finish
