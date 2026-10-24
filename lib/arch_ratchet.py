@@ -202,16 +202,16 @@ def check(checkout, src="HEAD", python=None):
         measured = []
         for tree in trees:  # by tree, so an unchanged tree (or a repeated hand-off) is measured once
             stamp = os.path.join(cache, cache_key(tree, script_text, versions) + ".json")
-            if os.path.exists(stamp):
-                measured.append(json.load(open(stamp)))
+            cached = _read_stamp(stamp)
+            if cached is not None:
+                measured.append(cached)
                 continue
             dest = os.path.join(work, tree)
             os.mkdir(dest)
             _archive(checkout, tree, dest)
             metrics = _measure(script, dest, python)
             shutil.rmtree(dest, ignore_errors=True)
-            with open(stamp, "w") as fh:
-                json.dump(metrics, fh)
+            _write_stamp(stamp, metrics)
             measured.append(metrics)
         return _load_regressions(script)(measured[1], measured[0])
     finally:

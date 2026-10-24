@@ -137,5 +137,29 @@ class Failures(unittest.TestCase):
         self.assertEqual([["issue", "view", "12"]], [c[:3] for c in calls if c[0] == "issue" and c[1] == "view"])
 
 
+class StreamIndexLock(unittest.TestCase):
+    def test_concurrent_refreshes_count_each_session_once(self):
+        import threading
+
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "loop.log"
+            log.write_text("".join(f"=== 09:00:{i % 60:02d} session {i} ===\n" for i in range(150)))
+            idx = serve.StreamIndex(log)
+            line = idx._line
+            idx._line = lambda raw: (serve.time.sleep(0.001), line(raw))[1]  # a slow parse
+            # a refresh that finds the lock held waits for it, then sees the other's work done
+            idx.lock.acquire()
+            ts = [threading.Thread(target=idx.refresh) for _ in range(2)]
+            for t in ts:
+                t.start()
+            serve.time.sleep(0.1)
+            self.assertEqual(0, len(idx.sessions), "a refresh ran without the lock")
+            idx.lock.release()
+            for t in ts:
+                t.join()
+            self.assertEqual(150, len(idx.sessions))
+            self.assertEqual(log.stat().st_size, idx.offset)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -77,6 +77,10 @@ class StreamIndex:
     at startup and a few KB after that."""
 
     def __init__(self, path):
+        self.lock = threading.Lock()  # refresh and every reader; the handler threads share one index
+        self._reset(path)
+
+    def _reset(self, path):
         self.path = path
         self.offset = 0
         self.inode = None
@@ -260,12 +264,16 @@ class StreamIndex:
             s["last_line"] = rest[:300]
 
     def refresh(self):
+        with self.lock:
+            self._refresh()
+
+    def _refresh(self):
         try:
             st = self.path.stat()
         except FileNotFoundError:
             return
         if st.st_ino != self.inode or st.st_size < self.offset:
-            self.__init__(self.path)
+            self._reset(self.path)
             self.inode = st.st_ino
         if st.st_size == self.offset:
             return
@@ -517,13 +525,14 @@ def _loop_key():
     """Changes when a session starts or ends, or a cycle begins, in either loop."""
     key = []
     for idx in INDEXES.values():
-        last = idx.sessions[-1] if idx.sessions else None
-        key.append(
-            (
-                idx.run_header and idx.run_header["time"],
-                last and (last["time"], last["label"], last["usage"] is not None),
+        with idx.lock:
+            last = idx.sessions[-1] if idx.sessions else None
+            key.append(
+                (
+                    idx.run_header and idx.run_header["time"],
+                    last and (last["time"], last["label"], last["usage"] is not None),
+                )
             )
-        )
     return tuple(key)
 
 
@@ -693,12 +702,14 @@ def state():
             mtime = idx.path.stat().st_mtime
         except FileNotFoundError:
             mtime = None
-        recent = [dict(s) for s in idx.sessions[-40:]]
+        with idx.lock:
+            recent = [dict(s) for s in idx.sessions[-40:]]
+            run_header = idx.run_header and dict(idx.run_header)
         streams[name] = {
             "file": STREAMS[name],
             "mtime": mtime,
             "lock": lock(LOCKS[name]),
-            "run": idx.run_header,
+            "run": run_header,
             "sessions": recent,
         }
     flags = sorted(p.name for p in LOGS.glob("stop-after-cycle*"))
@@ -791,7 +802,8 @@ def regression_state():
     failures = REG_ISSUES.failures(fleet.get("cases", {}) if fleet else {})
     single = {}
     for name, idx in INDEXES.items():
-        runs = [dict(r) for r in idx.regression_runs[-6:]]
+        with idx.lock:
+            runs = [dict(r) for r in idx.regression_runs[-6:]]
         held = (lock(LOCKS[name]) or {}).get("alive")
         if runs and runs[-1]["status"] == "running" and not held:
             runs[-1]["status"], runs[-1]["current"] = "interrupted", None
@@ -799,7 +811,8 @@ def regression_state():
     req_driver = any(d["driver"] == "requirements" for d in procs)
     reqs = {}
     for name, idx in INDEXES.items():
-        rs = [dict(r) for r in idx.requirements_runs[-3:]]
+        with idx.lock:
+            rs = [dict(r) for r in idx.requirements_runs[-3:]]
         if rs and rs[-1]["status"] == "running" and not req_driver:
             rs[-1]["status"] = "interrupted"
         reqs[name] = rs

@@ -212,6 +212,10 @@ script v1b 'metrics["complex_functions"] *= 10' > "$s/scripts/arch_metrics.py"; 
 hrow 2 "cache: same trees, changed script"
 has "  re-measured by the new script" "complex_functions: 10 -> 20" "$out"
 ok "  and stamped separately" test "$(ls "$w/.git/harnest-arch" | wc -l | tr -d ' ')" -gt "$n1"
+# a stamp cut short (a crash mid-write) is measured again, not a traceback
+for f in "$w"/.git/harnest-arch/*.json; do printf '{"complex_fun' > "$f"; done
+hrow 2 "cache: truncated stamps"
+has "  re-measured, not refused with a traceback" "complex_functions: 10 -> 20" "$out"
 ok "cache_key: same inputs, same key; any one changed, another key" python3 - "$HARNEST/lib" <<'PY'
 import sys; sys.path.insert(0, sys.argv[1]); from arch_ratchet import cache_key as k
 base = k("t1", "script", {"ruff": "1"})
