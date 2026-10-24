@@ -678,11 +678,14 @@ has "regression waits on the mini-ai loop" "waiting for '$$ run-loop'" "$(cat "$
 rm -rf "$T/h/logs/.driver.lock.mini-ai"; rm -f "$T/bin/curl"
 
 # --- 8. run-curate: a forced audit of one level runs one session
+: > "$FAKE_CLAUDE_LOG.argv"
 : > "$FAKE_CLAUDE_LOG"
 (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r CURATE_FORCE=1 \
    SESSION_RETRY_PAUSE_SECS=0 ./run-curate.sh smoke) > "$T/curate.out" 2>&1
 eq  "curate: exits cleanly" 0 $?
 eq  "curate: one audit session" 1 "$(grep -c 'AUDIT session' "$FAKE_CLAUDE_LOG")"
+has "curate: the prompt carries the per-case evidence" "Per-case evidence" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+has "curate: from rank-cases.py, not a failure" "no case has run" "$(cat "$FAKE_CLAUDE_LOG.argv")"
 
 # --- 9. run-retro: one session over the evidence
 : > "$FAKE_CLAUDE_LOG"

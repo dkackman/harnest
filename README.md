@@ -705,6 +705,8 @@ The standalone drivers have their own knobs:
 | `CURATE_BUDGET_USD` | `6` | per audit session |
 | `CURATE_EVERY_DAYS` / `CURATE_FORCE` | `7` / `0` | how often a level is due; `1` audits even if it was curated recently |
 | `CURATE_RUNS` | `3` | recent runs of a level in the audit's cost table |
+| `COST_PER_CASE_USD` | `0.20` | `scripts/rank-cases.py`: a case run's estimated cost (`est_cost` = runs × this), the measured chunk median per case |
+| `MIN_RUNS` / `MIN_SECS` | `4` / `300` | `rank-cases.py --candidates` (the audit's per-case evidence): a case listed has run at least this often, never failed, at a median of at least this many seconds |
 | `CURATE_BUDGET_SMOKE` / `_COMPLETE` / `_MODEL_SPECIFIC` / `_SECURITY` | `65 16` / `60 20` / `60 12` / `15 6` | a level's target for one full run: minutes, then USD |
 | `RETRO_MODEL` / `RETRO_PROVIDER` / `RETRO_EFFORT` / `RETRO_BUDGET_USD` | `claude-opus-5-5` / `$PROVIDER` / `$EFFORT` / `5` | `run-retro.sh` |
 | `DIGEST_MODEL` / `DIGEST_PROVIDER` / `DIGEST_BUDGET_USD` | `claude-sonnet-5-5` / `$PROVIDER` / `1` | `run-digest.sh` |

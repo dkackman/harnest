@@ -138,6 +138,9 @@ Level budget for one full run: $(set -- $budget; echo "$1 minutes and \$$2")
 Recent runs of this level (from logs/loop.log, as of $(date '+%F %H:%M')):
 $(chunk_table "$level" "$CURATE_RUNS")
 
+Per-case evidence (scripts/rank-cases.py --candidates, from regression-results/: cases run at least ${MIN_RUNS:-4} times without a failure at a median of ${MIN_SECS:-300}s or more):
+$(cd "$REPO" && python3 scripts/rank-cases.py --level "$level" --candidates 2>&1 || echo "(rank-cases.py failed)")
+
 $(runtime_note curator "$CURATE_PROVIDER" "$CURATE_MODEL")" \
     "${SESSION_FLAGS[@]}" "${CURATE_FLAGS[@]}"
   if session_ok "$LAST_SESSION"; then touch "$stamp"; fi   # a died, cut-off or rejected audit is run again

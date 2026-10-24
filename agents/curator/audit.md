@@ -17,10 +17,21 @@ evidence the driver collected:
 - the suite file's path (read it: header first, then the cases);
 - its `regression-perf/` files for this level's cases (`<case>.jsonl`, one
   measurement per line; see `regression-perf/README.md`);
-- a chunk table from the last few runs of this level: which cases ran in
-  which session, and that session's cost, wall time and turns. Cost per
-  case is only known per chunk; say "the chunk holding X cost $Y", never a
-  per-case figure you divided out yourself;
+- **per-case evidence, the primary evidence**: a rank table from the
+  results ledger (`scripts/rank-cases.py --candidates`, over
+  `regression-results/`), one row per case that has run often, never
+  failed and is slow: `case, runs, fails, last_fail, median_secs,
+  est_cost`. `median_secs` is measured per case (fleet runs only, one
+  server's hardware); `est_cost` is runs × a flat per-case estimate, not a
+  measurement. Base a move or a budget argument on this table first. An
+  empty table says no case qualifies yet (only fleet runs are timed), not
+  that every case is cheap;
+- a chunk table from the last few runs of this level, the secondary
+  evidence: which cases ran in which session, and that session's cost,
+  wall time and turns. Use it for what the rank table lacks: the level's
+  real cost, and a chunk's. Cost per case is only known per chunk there;
+  say "the chunk holding X cost $Y", never a per-case figure you divided
+  out yourself;
 - the sibling suite files' paths, for overlap across levels.
 
 `gh issue list/view --repo <ticket repo> --state all --search "<case id>"`
@@ -33,7 +44,8 @@ retirement.
 
 1. **Over budget.** If the level's recent runs exceed its budget (wall time
    or cost, either one), propose which cases move to a slower level, until
-   the projected run fits. Use the chunk table for projections and
+   the projected run fits. Start from the rank table's slowest cases and
+   use the chunk table for the level's projected cost and
    `Where a case belongs` in the suite header as the test. A move needs no
    rewrite, just the same case under a new ID in the other file.
 2. **Overlap.** Two cases, in this file or across files, that check the same
