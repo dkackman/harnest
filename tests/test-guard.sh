@@ -1010,4 +1010,21 @@ for r in implementer consumer; do
   row 2 $r "" $none 'sudo -u x G\IT push --force origin master'
   row 0 $r "" $none 'find . -name x -exec grep -l y {} \;'
 done
+# after a runner, a name built from quotes or an expansion is refused like a command word;
+# a heredoc delimiter the case fold changed still ends the body where bash ends it
+for r in implementer consumer; do
+  row 2 $r "" $none 'sudo "G"H issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'caffeinate "G"H issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'watch "G"H issue edit 5 --add-label status:verified'
+  row 2 $r "" $none 'echo 5 | xargs "G"H issue edit --add-label status:verified'
+  row 2 $r "" $none 'xargs ${G}h issue close 5'
+  row 2 $r "" $none 'G=g; sudo ${G}h issue close 5'
+  row 2 $r "" $none 'sudo $(echo gh) issue close 5'
+  row 2 $r "" $none "cat <<'G'H${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "cat <<'W'ATCH${nl}WATCH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "cat <<'T'CSH${nl}TCSH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "cat <<'G'H${nl}GH${nl}sudo \"G\"H issue close 5"
+  row 0 $r "" $none 'sudo -u x ls /tmp'
+  row 0 $r "" $none "cat <<'EOF' > /tmp/x${nl}hi${nl}EOF"
+done
 finish

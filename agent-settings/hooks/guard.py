@@ -252,7 +252,7 @@ def inline_cat_subs(cmd):
             while k <= n:  # the body ends at the first line that is exactly the delimiter
                 e = cmd.find("\n", k)
                 e = n if e < 0 else e
-                if cmd[k:e] == delim:
+                if cmd[k:e].lower() == delim.lower():  # case-blind: the fold may have changed either side
                     t = re.match(r"[ \t\n]*\)", cmd[e:])
                     end = e + t.end() if t else None
                     break
@@ -364,7 +364,7 @@ def live_text(text, keep_quoted=False, heredocs=True):
                     e = n if e < 0 else e
                     line = text[k:e]
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line) == delim:
+                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
                         break
             pending = []
             out.append("\n")
@@ -399,7 +399,7 @@ def heredoc_cut(cmd):
                     e = cmd.find("\n", k)
                     e = n if e < 0 else e
                     line = cmd[k:e]
-                    if (line.lstrip("\t") if dash else line) == delim:
+                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
                         end = min(e + 1, n)
                         break
                     k = e + 1
@@ -513,7 +513,7 @@ def join_continuations(cmd):
                     e = n if e < 0 else e
                     line = cmd[k:e]
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line) == delim:
+                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
                         break
             pending = []
             out.append(cmd[i:k])
@@ -1363,8 +1363,15 @@ RUNNERS = (
     "chroot",
 )  # run their argument
 # every binary the rules name, in any case (fold_case): built from the registries so a shell or
-# runner added to one is folded too
-FOLDED_NAMES = frozenset(("gh", "git", "env", "xargs", "nohup", "timeout", "nice", *HEREDOC_SHELLS, *RUNNERS))
+# runner added to one is folded too; the builtins (command, builtin, exec, time) stay as written.
+# fold_case runs before heredocs are read, so every delimiter comparison is case-blind: a body then ends
+# at or before the line bash ends it on (<<'G'H, whose GH line the fold made gh)
+FOLDED_NAMES = frozenset(("gh", "git", "env", "xargs", "nohup", "timeout", "nice", *HEREDOC_SHELLS, *RUNNERS)) - {
+    "command",
+    "builtin",
+    "exec",
+    "time",
+}
 FOLDED = re.compile(r"(?<![\w.-])(?:" + "|".join(sorted(FOLDED_NAMES, key=len, reverse=True)) + r")(?![\w.-])", re.I)
 # read-only filters a heredoc's output may be piped to without the body reaching a shell
 PIPE_FILTERS = frozenset(
@@ -1515,7 +1522,7 @@ def command_text(text):
                     e = n if e < 0 else e
                     line = text[k:e]
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line) == delim:
+                    if (line.lstrip("\t") if dash else line).lower() == delim.lower():
                         break
                     body.append(line)
                 if fed:  # a child shell's script: its commands are read, its assignments reach nothing here
@@ -1915,6 +1922,29 @@ def var_sets(text):
     return literal, tainted, sublit, wild
 
 
+RUNNER_FLAGS = ("-exec", "-execdir", "-ok", "-okdir")  # find's: the words after one are a command
+
+
+def runner_word_rule(seg):
+    """The words of <seg>: any of them with a backslash that names a folded
+    binary (G\\H, the shell drops it after the fold ran) is refused; and
+    after a runner (sudo, xargs, timeout, find -exec, ...), where any word
+    may be the command it runs, a word built from quotes or an expansion
+    ("G"H, ${G}h, $(echo gh)) is refused when it names a folded binary or
+    holds a $ or a backtick. An assignment (env A=$x) is not a command."""
+    after = False
+    for x in raw_words(seg):
+        x = x.replace("\\\n", "")
+        name = os.path.basename(UNQUOTE.sub("", x)).lower()
+        if "\\" in x and name in FOLDED_NAMES:
+            deny(BUILT_COMMAND_MSG)
+        if after and not ASSIGN.match(x) and re.search(r"[$'\"`\\]", x):
+            if name in FOLDED_NAMES or re.search(r"[$`]", x):
+                deny(BUILT_COMMAND_MSG)
+        if name in RUNNERS or x in RUNNER_FLAGS:
+            after = True
+
+
 def built_command_rule(text, depth=0, env=None, base=0):
     """Refuse a command word built at run time: one that starts with a
     backtick or $(, or that mixes an expansion or a quote with literal
@@ -1948,8 +1978,10 @@ def built_command_rule(text, depth=0, env=None, base=0):
         pos = idx + base
         w = raw_command_word(raw_words(seg))
         if not w:
+            runner_word_rule(seg)
             continue
         if PLAIN_EXPANSION.fullmatch(w):
+            runner_word_rule(seg)
             name = re.match(r'"?\$\{?(\w+)', w).group(1)
             set_here = name in literal and wild < literal[name] < pos
             if name in tainted or name in sublit or not (set_here or (name in INTERPRETER_VARS and wild < 0)):
@@ -1957,10 +1989,7 @@ def built_command_rule(text, depth=0, env=None, base=0):
             continue
         if w[0] == "`" or w.startswith("$(") or re.search(r"[$'\"`\\]", re.sub(r"^(?:\\\n)+", "", w)):
             deny(BUILT_COMMAND_MSG)
-        for x in raw_words(seg):  # a runner's command (sudo G\H, find -exec G\H) escapes the fold the same way
-            x = x.replace("\\\n", "")
-            if "\\" in x and os.path.basename(UNQUOTE.sub("", x)).lower() in FOLDED_NAMES:
-                deny(BUILT_COMMAND_MSG)
+        runner_word_rule(seg)
     if depth < 8:
         for inner, at in live_substitutions(ct) + groups:  # live ones: a single-quoted `x` is text
             built_command_rule(inner, depth + 1, (literal, tainted, wild), at + base)
