@@ -3,11 +3,12 @@ entries, eligibility against a server's facts and policy, and the plan.
 Facts are made up here; facts.gather and validate_workflows are what read
 them from a live server."""
 
+import json
 import tempfile
 import unittest
 from pathlib import Path
 
-from harness import durations, facts
+from harness import durations, facts, outcome
 from harness import requirements as r
 from harness.drivers import fleet
 from harness.profile import Server, load
@@ -65,7 +66,12 @@ def _bare_fleet(outcomes, per=8):
     f.lanes, f.est, f.ref, f.stamp = [lane], durations.Estimates(), {}, "test"
     said = []
     f.said = said
-    f.servers = {"lem": type("S", (), {"down": False, "log": type("L", (), {"say": staticmethod(said.append)})()})()}
+    f.servers = {
+        "lem": type(
+            "S", (), {"down": False, "head": "develop @ t", "log": type("L", (), {"say": staticmethod(said.append)})()}
+        )()
+    }
+    f.results_root, f.logs, f.model = Path(d, "regression-results"), Path(d), "claude-sonnet-5-5"
     f.queues, f.case_need, f.group_need = {lane.name: []}, {}, {}
     cases = {}
     for c, o in outcomes.items():
@@ -505,9 +511,10 @@ class Running(unittest.TestCase):
             "REGRESSION-SKIP: S-F003 fixture qa-cast/x.wav\nREGRESSION-RESULT: S-F003 skip\n"
         )
         self.assertEqual(
-            [("S-F001", "pass", ""), ("S-F002", "fail", "#812"), ("S-F003", "skip", "")], fleet.RESULT_RE.findall(text)
+            [("S-F001", "pass", ""), ("S-F002", "fail", "#812"), ("S-F003", "skip", "")],
+            outcome.RESULT_RE.findall(text),
         )
-        self.assertEqual(["S-F003"], fleet.SKIP_RE.findall(text))
+        self.assertEqual(["S-F003"], outcome.SKIP_RE.findall(text))
         self.assertEqual("S-F004", fleet.CASE_RE.match("REGRESSION-CASE: S-F004").group(1))
 
 
@@ -532,8 +539,8 @@ class Outcomes(unittest.TestCase):
 
     def _settle(self, f, batch, text, log):
         last = Path(f.state.path.parent, "last")
-        last.write_text(log)
-        f.settle(f.lanes[0], batch, text, 0.25, last)
+        last.write_text(text + log)  # what a session leaves: its answers, then how it ended
+        f.settle(f.lanes[0], batch, text + log, 0.25, last, label="regression:smoke.lem-1.1", model="m")
 
     def test_settle_requeues_an_unanswered_case_once(self):
         f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})
@@ -551,6 +558,12 @@ class Outcomes(unittest.TestCase):
         self._settle(f, [again], "", usage)
         self.assertEqual("unreported", cases["S-F002"]["outcome"], "only once")
         self.assertEqual([], f.queues["lem-1"])
+        ledger = {p.stem: p.read_text().splitlines() for p in f.results_root.glob("*.jsonl")}
+        self.assertEqual({"S-F001": 1, "S-F002": 2}, {c: len(v) for c, v in ledger.items()}, "a line per session")
+        self.assertEqual(
+            ["unreported", "unreported"], [json.loads(l)["outcome"] for l in ledger["S-F002"]], "each session's own"
+        )
+        self.assertEqual("develop @ t", json.loads(ledger["S-F001"][0])["head"])
 
     def test_an_aborted_session_hands_its_unanswered_cases_to_another_server(self):
         f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})

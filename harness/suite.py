@@ -93,14 +93,14 @@ def workspace_for_suite_file(path):
     return "regression-" + base
 
 
-def commit_paths(server, perf_dir="regression-perf"):
-    """What a regression run may commit: on the primary, the suites and the
-    perf history; elsewhere only that server's own perf directory. (The
-    loop's SUITE_EDITS widening doesn't apply: a regression run never sets
-    it.)"""
+def commit_paths(server, perf_dir="regression-perf", results_dir="regression-results"):
+    """What a regression run may commit: on the primary, the suites, the
+    perf history and the results ledger; elsewhere only that server's own
+    perf and results directories. (The loop's SUITE_EDITS widening doesn't
+    apply: a regression run never sets it.)"""
     if server.primary:
-        return ["regression-suite-*.md", perf_dir]
-    return [f"{perf_dir}/{server.name}"]
+        return ["regression-suite-*.md", perf_dir, results_dir]
+    return [f"{perf_dir}/{server.name}", f"{results_dir}/{server.name}"]
 
 
 def _dirty(repo, paths):
@@ -157,6 +157,12 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
     try:
         if not _dirty(repo, paths):
             return
+        # a directory nothing has written yet is no pathspec git add or commit will take
+        paths = [
+            p
+            for p in paths
+            if "*" in p or os.path.exists(os.path.join(repo, p)) or git("-C", repo, "ls-files", "--", p).stdout.strip()
+        ]
         git("-C", repo, "add", "--", *paths)
         shrunk = _shrunk(repo, paths)
         git("-C", repo, "commit", "-q", "-m", msg, "-m", f"Co-Authored-By: {name} <{email}>", "--", *paths)

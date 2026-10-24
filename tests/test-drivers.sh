@@ -22,13 +22,15 @@ git -C "$T/h" init -q && git -C "$T/h" add -A && git -C "$T/h" -c user.name=t -c
 ln -s "$HARNEST/tests/fake-gh.py" "$T/bin/gh"
 printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${sha:0:9}" > "$T/bin/ssh"
 # claude: one well-formed session that changes nothing, unless
-# FAKE_CLAUDE_DO holds a command to run first (an agent's action).
+# FAKE_CLAUDE_DO holds a command to run first (an agent's action), or
+# FAKE_CLAUDE_SAY one whose output is the session's text (what it reports).
 cat > "$T/bin/claude" <<'EOS'
 #!/usr/bin/env bash
 echo "claude $*" | cut -c1-200 >> "$FAKE_CLAUDE_LOG"
 echo "claude $*" >> "$FAKE_CLAUDE_LOG.argv"
 [ -z "${FAKE_CLAUDE_DO:-}" ] || eval "$FAKE_CLAUDE_DO" >/dev/null
 echo '{"type":"system","subtype":"init","model":"claude-fake"}'
+[ -z "${FAKE_CLAUDE_SAY:-}" ] || jq -cn --arg t "$(eval "$FAKE_CLAUDE_SAY")" '{type: "assistant", message: {content: [{type: "text", text: $t}]}}'
 # FAKE_CLAUDE_REJECT: "always", or a marker file: rejected by the rate limit until it exists
 if [ "${FAKE_CLAUDE_REJECT:-}" = always ] || { [ -n "${FAKE_CLAUDE_REJECT:-}" ] && [ ! -e "$FAKE_CLAUDE_REJECT" ] && touch "$FAKE_CLAUDE_REJECT"; }; then
   echo '{"type":"rate_limit_event","rate_limit_info":{"status":"rejected","rateLimitType":"five_hour","isUsingOverage":false}}'
@@ -411,8 +413,13 @@ steps
 ### S-F002 — second
 steps
 EOS
+reg_before="$(git -C "$T/h" rev-parse HEAD)"
+results_lines() { cat "$T/h/regression-results"/*.jsonl 2>/dev/null | wc -l | tr -d ' '; }
+lines_before="$(results_lines)"   # the release gate above ran a level too
 (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
-   PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg.out" 2>&1
+   PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 SESSION_RETRY_PAUSE_SECS=0 \
+   FAKE_CLAUDE_SAY='case "$2" in *"order: S-F001."*) echo "REGRESSION-RESULT: S-F001 pass" ;; *"order: S-F002."*) echo "REGRESSION-RESULT: S-F002 fail #12" ;; esac' \
+   ./run-regression.sh smoke regression-suite-tiny.md) > "$T/reg.out" 2>&1
 eq  "regression: exits cleanly" 0 $?
 eq  "regression: two chunks and a sweep" 3 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "regression: the level header names lem's commit" "target=lem, head=develop @ " "$(grep 'regression run (' "$T/h/logs/loop.log" | tail -1)"
@@ -421,6 +428,12 @@ has "chunk: the prompt carries the case text" "### S-F002 — second" "$(cat "$F
 eq  "chunk: each case's text in its own chunk only" "1 1" "$(grep -c '^### S-F001 ' "$FAKE_CLAUDE_LOG.argv") $(grep -c '^### S-F002 ' "$FAKE_CLAUDE_LOG.argv")"
 eq  "chunk: the Fixtures section in both chunks and the sweep" 3 "$(grep -c '^## Fixtures' "$FAKE_CLAUDE_LOG.argv")"
 fails "chunk: the rest of the header is not handed over" grep -q '^# tiny suite' "$FAKE_CLAUDE_LOG.argv"
+eq  "results: one line per case" 2 "$(( $(results_lines) - lines_before ))"
+eq  "results: each case's own outcome" "pass fail 12" \
+    "$(tail -1 "$T/h/regression-results/S-F001.jsonl" | jq -r .outcome) $(tail -1 "$T/h/regression-results/S-F002.jsonl" | jq -r '"\(.outcome) \(.issue)"')"
+eq  "results: named for the session that ran it" "regression:smoke.2 of 2 lem claude-fake" \
+    "$(tail -1 "$T/h/regression-results/S-F002.jsonl" | jq -r '[.session, .server, .model] | join(" ")')"
+has "results: committed with the run" "regression-results/S-F001.jsonl" "$(git -C "$T/h" diff --name-only "$reg_before" HEAD)"
 
 # --- 7b. run-regression against the mini-ai test bed (harnest#15), with
 # the loop's lock held: it must not wait on lem's. ssh: lem reports its
@@ -464,7 +477,8 @@ has "regression mini-ai: system prompt files for the implementer with a backend"
 has "regression mini-ai: system prompt forbids suite edits" "The suite files. Every case in them runs on lem" "$sysprompt"
 eq  "regression mini-ai: the guard is told the target" "mini-ai" "$(cat "$T/mini-prompt.target")"
 has "regression mini-ai: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/reg-mini.out")"
-eq  "regression mini-ai: no suite commit" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
+eq  "regression mini-ai: no suite commit, only its own results" "regression-results/mini-ai/S-F001.jsonl regression-results/mini-ai/S-F002.jsonl" \
+    "$(git -C "$T/h" diff --name-only "$before_head" HEAD | tr '\n' ' ' | sed 's/ $//')"
 has "regression mini-ai: header tags the level for the curator" "level=smoke.mini-ai," "$(grep 'regression run (' "$T/h/logs/loop.mini-ai.log" | tail -1)"
 has "regression mini-ai: sessions are labelled for retro" "[regression-mini-ai:smoke] usage:" "$(cat "$T/reg-mini.out")"
 # what the test bed deploys is origin/develop, so its plugin is its own worktree there

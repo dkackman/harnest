@@ -159,6 +159,9 @@ if [ "$DW_TARGET" != lem ]; then
     --description "Found against a non-lem server (DW_TARGET=$DW_TARGET); Don triages" >/dev/null 2>&1 || true
   mkdir -p "$REPO/regression-perf/$DW_TARGET"
 fi
+# Each case's outcome per session (scripts/record-results.sh), split by
+# server as regression-perf/ is.
+RESULTS_DIR="$REPO/regression-results${TARGET_SUFFIX:+/$DW_TARGET}"
 # guard.py reads it: on another target, lem's suite and perf files are off
 # limits and a new issue goes to owner:don + target:<target>.
 SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_REPO="$TICKET_REPO")
@@ -238,14 +241,16 @@ REGRESSION_FLAGS=(
   "${CONSUMER_PERMISSION_FLAGS[@]}"
 )
 
-# run_session <level> <suite_file> <workspace> <tag> <kind> <instructions>
+# run_session <level> <suite_file> <workspace> <tag> <kind> <instructions> [case...]
 # One `claude -p` invocation of the regression agent. <kind> (whole, chunk,
 # sweep) picks its system prompt: role_prompt in providers.sh. <instructions> is the
 # run-specific paragraph that follows the standard override preamble; <tag>
 # is appended to the log prefix ("[regression:smoke.2 of 8]") so a chunked run's
-# sessions are distinguishable in loop.log.
+# sessions are distinguishable in loop.log. <case>s are the ones it was
+# handed: each gets a line in regression-results/ however it ended.
 run_session() {
   local level="$1" suite_file="$2" workspace="$3" tag="$4" kind="$5" instructions="$6" prompt_file
+  shift 6
   prompt_file="$(role_prompt regression "$kind" "$LOGS/.prompt.$LOGNAME_REGRESSION.$kind.md")" \
     || { echo "[$RPFX:$level$tag] no role prompt for '$kind'" | tee -a "$LOOP_LOG"; return 0; }
   # On another server, its rules (agents/regression/target.md) join the
@@ -263,6 +268,11 @@ $(runtime_note regression "$REGRESSION_PROVIDER" "$REGRESSION_MODEL")" \
   # A case ID must follow, so "REGRESSION-SKIP: none" is not a skip.
   LEVEL_SKIPS=$((LEVEL_SKIPS + $(grep -cE '^[-*` ]*REGRESSION-SKIP:[[:space:]]*[A-Z]+-[A-Z][0-9]' "$LAST_SESSION" 2>/dev/null || true)))
   LEVEL_DIFFERS=$((LEVEL_DIFFERS + $(grep -cE '^[-*` ]*REGRESSION-DIFFERS:[[:space:]]*[A-Z]+-[A-Z][0-9]' "$LAST_SESSION" 2>/dev/null || true)))
+  # Every case this session was handed or answered for: its outcome, one
+  # line each (scripts/record-results.sh). A lost line is not worth the run.
+  "$REPO/scripts/record-results.sh" "$RESULTS_DIR" "$DW_TARGET" "$level" "$RPFX:$level$tag" "${head:-unknown}" \
+      "$(resolved_model "$LOGNAME_REGRESSION" "$REGRESSION_MODEL")" "$@" < "$LAST_SESSION" \
+    || echo "[$RPFX:$level$tag] could not record its results in $RESULTS_DIR" | tee -a "$LOOP_LOG"
 }
 
 # session_aborted
@@ -337,20 +347,22 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOOP_LOG"
     done
   fi
+  # Case IDs in file order, from the `### <ID> — title` headings. The
+  # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
+  # heading that doesn't match isn't a case and is skipped.
+  local ids=()
+  while read -r id; do
+    case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
+    case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
+    ids+=("$id")
+  done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOOP_LOG"
     run_session "$level" "$suite_file" "$workspace" "" whole \
-      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.${held:+ Never run these cases on this server, whatever the suite says; the driver already counted them as skipped:$held.}$script_note"
+      "Exercise every case in the suite file against the $workspace workspace, file or comment on issues for failures and performance regressions, add any cases worth adding, then do the final sweep.${held:+ Never run these cases on this server, whatever the suite says; the driver already counted them as skipped:$held.}$script_note" \
+      ${ids[@]+"${ids[@]}"}
   else
-    # Case IDs in file order, from the `### <ID> — title` headings. The
-    # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
-    # heading that doesn't match isn't a case and is skipped.
-    local ids=() chunk=() seen=0 total=0 session=0 nchunks=0 text
-    while read -r id; do
-      case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
-      case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
-      ids+=("$id")
-    done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
+    local chunk=() seen=0 total=0 session=0 nchunks=0 text
     total=${#ids[@]}
     nchunks=$(( (total + CASES_PER_SESSION - 1) / CASES_PER_SESSION ))
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head, $total cases in sessions of $CASES_PER_SESSION) ===" | tee -a "$LOOP_LOG"
@@ -367,7 +379,7 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
 
 $text
 
-(End of the suite text.)"
+(End of the suite text.)" "${chunk[@]}"
         chunk=()
         if session_aborted; then
           echo "[$RPFX:$level] session $session aborted (MCP unreachable); skipping the rest of this level and the sweep" | tee -a "$LOOP_LOG"

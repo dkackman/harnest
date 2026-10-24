@@ -58,7 +58,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import REPO, deploy, durations, facts, lock, outcome, prompts, providers, requirements, session, suite
+from .. import REPO, deploy, durations, facts, lock, outcome, prompts, providers, requirements, results, session, suite
 from ..gitops import refresh_plugin_tree
 from ..log import Log, err, ts
 from ..profile import ProfileError, load, resolve_token, resolve_url
@@ -66,11 +66,7 @@ from ..stream import resolved_model
 from . import regression as reg
 
 _ID = r"([A-Z]+-[A-Z][0-9]+)"
-RESULT_RE = re.compile(
-    r"^[-*` ]*REGRESSION-RESULT:[ \t]*" + _ID + r"[ \t]+(pass|fail|skip|pending)\b[ \t]*(#\d+)?", re.M
-)
 CASE_RE = re.compile(r"^[-*` ]*REGRESSION-CASE:[ \t]*" + _ID)
-SKIP_RE = re.compile(r"^[-*` ]*REGRESSION-SKIP:[ \t]*" + _ID, re.M)
 COST_RE = re.compile(r"^usage: .*?cost=\$([0-9.]+)", re.M)
 FLEET_DIR = REPO / "logs" / "fleet"
 # outcomes a case still has when nothing ever answered for it: a run that ends with one failed
@@ -325,6 +321,7 @@ class Fleet:
         self.sidecar = sidecar
         self.server_facts = server_facts
         self.logs = REPO / "logs"
+        self.results_root = REPO / profile.get("suite.results_dir", "regression-results")
         self.ticket_repo = env("TICKET_REPO", profile.get("ticket_repo"))
         self.model = env("REGRESSION_MODEL", "claude-sonnet-5-5")
         self.provider = env("REGRESSION_PROVIDER", env("PROVIDER", "anthropic"))
@@ -788,22 +785,36 @@ class Fleet:
                 secs = {}
         finally:
             s.gate.leave(excl)
-        self.settle(lane, batch, text, cost, last, secs)
+        model = resolved_model(self.logs / f"regression.fleet.{lane.name}.jsonl", self.model)
+        self.settle(lane, batch, text, cost, last, secs, label, model)
         if outcome.aborted(last):
             self.server_down(lane.server.name)
             return True
         return False
 
-    def settle(self, lane, batch, text, cost, last, secs=None):
+    def settle(self, lane, batch, text, cost, last, secs=None, label="", model=""):
         """Each case's outcome from the session's REGRESSION-RESULT lines, and
         for a pass or fail its time (<secs>), which later plans weigh it by
-        (harness/durations.py)."""
+        (harness/durations.py). Every case the session was handed gets its
+        line in regression-results/ (harness/results.py), re-queued or not."""
         secs = secs or {}
-        results = {c: (o, issue) for c, o, issue in RESULT_RE.findall(text)}
-        skipped = set(SKIP_RE.findall(text))
+        s = self.servers[lane.server.name]
+        results.record_session(
+            results.results_dir(self.results_root, lane.server),
+            lane.server.name,
+            batch[0].level if batch else "",
+            label,
+            s.head,
+            model,
+            text,
+            [it.case for it in batch],
+            secs,
+        )
+        answers = {c: (o, issue) for c, o, issue in outcome.RESULT_RE.findall(text)}
+        skipped = set(outcome.SKIP_RE.findall(text))
         died, aborted = outcome.died(last), outcome.aborted(last)
         for it in batch:
-            o, issue = results.get(it.case, (None, ""))
+            o, issue = answers.get(it.case, (None, ""))
             if it.case in skipped or o == "skip":
                 if not self.requeue(it, lane):
                     self.case_state(it.case, outcome="skip")
@@ -929,7 +940,11 @@ class Fleet:
         suite.commit_changes(
             REPO,
             str(self.logs),
-            suite.commit_paths(self.lanes[0].server, self.profile.get("suite.perf_dir", "regression-perf")),
+            suite.commit_paths(
+                self.lanes[0].server,
+                self.profile.get("suite.perf_dir", "regression-perf"),
+                self.profile.get("suite.results_dir", "regression-results"),
+            ),
             f"regression: update {','.join(self.levels)} from {ts()} fleet run ({self.model_env.label})",
             name,
             email,

@@ -1019,8 +1019,9 @@ audit_issue() {
 }
 
 # commit_suite_changes <msg> [co_author] [co_author_email]
-# Commits any pending changes to regression-suite-*.md and regression-perf/
-# (the per-case measurement log the suite files point at) in $REPO — from any
+# Commits any pending changes to regression-suite-*.md, regression-perf/
+# (the per-case measurement log the suite files point at) and
+# regression-results/ (the drivers' per-case outcome ledger) in $REPO — from any
 # source: the tester adding a case this cycle, the regression agent's run
 # just now, or an edit made by hand between runs — with <msg> as the subject
 # and a Co-Authored-By trailer built from the name/email given (defaulting to
@@ -1062,8 +1063,9 @@ commit_suite_changes() {
 }
 
 # suite_commit_paths
-# What a commit_suite_changes may stage. On a server other than lem, only
-# that server's own perf directory: the suite files and lem's readings
+# What a commit_suite_changes may stage: the suites, regression-perf/ and
+# regression-results/ (each case's outcome per session). On a server other
+# than lem, only that server's own perf and results directories: the suite files and lem's readings
 # belong to runs on lem, and a local run's commit would otherwise take the
 # loop tester's edit in progress under the local run's name.
 suite_commit_paths() {
@@ -1072,11 +1074,11 @@ suite_commit_paths() {
     # fix (agents/tester/target.md), and its readings are its own. While
     # lem's loop runs, its tester may be mid-edit in the same tree, so the
     # suite files are left for lem's loop to commit.
-    echo "regression-suite-*.md regression-perf/$DW_TARGET"
+    echo "regression-suite-*.md regression-perf/$DW_TARGET regression-results/$DW_TARGET"
   elif [ -n "$TARGET_SUFFIX" ]; then
-    echo "regression-perf/$DW_TARGET"
+    echo "regression-perf/$DW_TARGET regression-results/$DW_TARGET"
   else
-    echo "regression-suite-*.md regression-perf"
+    echo "regression-suite-*.md regression-perf regression-results"
   fi
 }
 
@@ -1086,6 +1088,13 @@ commit_suite_changes_locked() {
   # Again, under the lock: the other writer may have just committed these.
   ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
       && [ -z "$(git ls-files --others --exclude-standard -- "${paths[@]}")" ] ) && return 0
+  # A directory nothing has written yet (regression-results/mini-ai before
+  # that server's first run) is no pathspec git add or commit will take.
+  local p kept=()
+  for p in "${paths[@]}"; do
+    if [[ "$p" == *'*'* ]] || [ -e "$REPO/$p" ] || [ -n "$(git -C "$REPO" ls-files -- "$p")" ]; then kept+=("$p"); fi
+  done
+  paths=(${kept[@]+"${kept[@]}"})
   git -C "$REPO" add -- "${paths[@]}"
   # Suites only grow and regression-perf/ is append-only, except for an edit
   # the curator approved and applied in a review session. Removed lines

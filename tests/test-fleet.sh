@@ -219,6 +219,17 @@ eq  "  the retried S-F005 is timed" "number" "$(jq -r '.cases["S-F005"].secs | t
 (cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" python3 -m harness.drivers.fleet --plan smoke) > "$T/plan2.out" 2>&1
 has "  the next plan reads those times" "case(s) measured in" "$(cat "$T/plan2.out")"
 has "  the suite edit is committed once" "regression: update smoke from" "$(git -C "$T/h" log -1 --format=%s)"
+# regression-results/: a line per session that was handed a case, under its server's directory
+eq  "  results: every case has its lines, under its server's own directory" "" \
+    "$(jq -r '.cases | to_entries[] | select(.value.lane != "script") | "\(.key) \(.value.server)"' "$st" | while read -r c s; do
+         d="$T/h/regression-results"; [ "$s" = alpha ] || d="$d/$s"; [ -s "$d/$c.jsonl" ] || echo "$c"; done)"
+eq  "  results: a failure keeps its issue" "9" \
+    "$(cat "$T/h/regression-results"/S-F004.jsonl "$T/h/regression-results"/*/S-F004.jsonl 2>/dev/null | jq -rs 'map(select(.outcome == "fail")) | .[0].issue')"
+eq  "  results: the skipped S-F007 has its skip and its pass" "pass skip" \
+    "$(cat "$T/h/regression-results"/S-F007.jsonl "$T/h/regression-results"/*/S-F007.jsonl 2>/dev/null | jq -r .outcome | sort | tr '\n' ' ' | sed 's/ $//')"
+eq  "  results: a timed case keeps its seconds" "number" \
+    "$(cat "$T/h/regression-results"/S-F005.jsonl "$T/h/regression-results"/*/S-F005.jsonl 2>/dev/null | jq -rs 'map(select(.outcome == "pass")) | .[-1].secs | type')"
+has "  results: committed with the run" "regression-results/" "$(git -C "$T/h" show --name-only --format= HEAD)"
 eq  "  locks released" "" "$(ls -d "$T/h"/logs/.driver.lock* 2>/dev/null || true)"
 # each server's first lane in the level's workspace; alpha's second in its own, seeded from it
 eq  "  workspaces: the level's, and alpha-2's own" "regression-smoke regression-smoke-alpha-2 " \

@@ -9,7 +9,15 @@ import os
 import re
 import time
 
-_SKIP_RE = re.compile(r"^[-*` ]*REGRESSION-SKIP:[ \t\f\v]*[A-Z]+-[A-Z][0-9]", re.M)
+# The regression agent's lines (agents/regression/run-cases.md, step 6). A
+# leading bullet or backtick is tolerated: a model writes a list as one. A
+# case ID must follow, so "REGRESSION-SKIP: none" is not a skip. The one
+# copy: the fleet, the dashboard and the results ledger read these.
+_ID = r"([A-Z]+-[A-Z][0-9]+)"
+RESULT_RE = re.compile(
+    r"^[-*` ]*REGRESSION-RESULT:[ \t]*" + _ID + r"[ \t]+(pass|fail|skip|pending)\b[ \t]*(#\d+)?", re.M
+)
+SKIP_RE = re.compile(r"^[-*` ]*REGRESSION-SKIP:[ \t\f\v]*" + _ID, re.M)
 _DIFFERS_RE = re.compile(r"^[-*` ]*REGRESSION-DIFFERS:[ \t\f\v]*[A-Z]+-[A-Z][0-9]", re.M)
 
 
@@ -58,7 +66,7 @@ def aborted(path):
 def regression_counts(path):
     """(skips, differs) lines the agent listed, each naming a case ID."""
     t = _read(path) or ""
-    return len(_SKIP_RE.findall(t)), len(_DIFFERS_RE.findall(t))
+    return len(SKIP_RE.findall(t)), len(_DIFFERS_RE.findall(t))
 
 
 def rejected_until(path):

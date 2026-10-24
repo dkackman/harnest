@@ -320,8 +320,12 @@ class Suite(unittest.TestCase):
             self.assertEqual("regression-x", suite.workspace_for_suite_file(f))
             self.assertEqual("regression-mine", suite.workspace_for_suite_file("/a/mine.md"))
         p = load()
-        self.assertEqual(["regression-suite-*.md", "regression-perf"], suite.commit_paths(p.server("lem")))
-        self.assertEqual(["regression-perf/mini-ai"], suite.commit_paths(p.server("mini-ai")))
+        self.assertEqual(
+            ["regression-suite-*.md", "regression-perf", "regression-results"], suite.commit_paths(p.server("lem"))
+        )
+        self.assertEqual(
+            ["regression-perf/mini-ai", "regression-results/mini-ai"], suite.commit_paths(p.server("mini-ai"))
+        )
 
     def test_commit_warns_on_removed_lines(self):
         with tempfile.TemporaryDirectory() as d:

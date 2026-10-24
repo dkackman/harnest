@@ -46,8 +46,8 @@ and runs the real drivers end to end. See "Tests" below.
   non-Claude name under `anthropic`, a Claude name under `ollama`) at startup. It also holds
   the helpers both drivers share: `validate_fallback_model`/`fallback_model_flags`,
   `co_author_for` (commit-trailer identity), `runtime_note` (the per-role "Runtime:" prompt
-  paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md` and
-  `regression-perf/`). It also holds what every session leaves *out*: `ISOLATION_FLAGS`
+  paragraph), and `commit_suite_changes` (commits only `regression-suite-*.md`,
+  `regression-perf/` and `regression-results/`). It also holds what every session leaves *out*: `ISOLATION_FLAGS`
   (`--setting-sources project,local` — no user-level plugins, hooks, memory or MCP servers
   reach an unattended agent; measured 2026-09-19, those were ~12 KB of SessionStart hook
   text per session, and the `remember` plugin was capturing agent sessions into Don's own
@@ -165,6 +165,11 @@ and runs the real drivers end to end. See "Tests" below.
   agent reads only the history it needs, never the whole log. Checked in and committed by
   the drivers alongside the suite files (#135 is where the old "record it in `last run:`"
   instruction met the no-edit-on-pass rule and this replaced both).
+  `regression-results/` is the drivers' own ledger beside it: one JSONL per case, a line per
+  session handed it (outcome, issue, seconds where the fleet timed it), written by
+  `harness/results.py` after every session and never by an agent (format in its `README.md`).
+  A chunk session is handed its cases' text in the prompt (`scripts/case-text.sh`: the
+  Fixtures section and each case's block) rather than reading the suite for it.
 - `agents/lead/` / `run-features.sh` — the feature lead (roadmap R11). It owns `feature`
   issues from design to delivery, and `idea` issues: a design session decides whether an
   idea is a feature, a single fix it hands to `owner:implementer`, or not worth doing
@@ -339,7 +344,7 @@ against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongsi
   - a new Mac issue carries exactly one `backend:mps|shared` and no `target:`;
   - no comment on a `target:lem` issue;
   - a Mac verification adds `verified-on:mps`.
-- **Regression runs.** A Mac run commits only `regression-perf/mini-ai/`
+- **Regression runs.** A Mac run commits only `regression-perf/mini-ai/` and `regression-results/mini-ai/`
   (`regression-perf/local/` is the earlier local server's history, other hardware).
 - **Preflight.** `target_preflight` refuses a server whose `/api/health` hostname isn't
   the target's host, so a tunnel to lem can't pass as the test bed.

@@ -120,7 +120,7 @@ eq "non-Bash tool passes" 0 $?
 # --- a consumer on a server other than lem (HARNEST_TARGET; harnest#15)
 # frow <expect> <target> <tool> <path, relative to a fake harness root> [role]
 # role is HARNEST_ROLE: regression (the default) or tester
-root="$T/root"; mkdir -p "$root/regression-perf/mini-ai"
+root="$T/root"; mkdir -p "$root/regression-perf/mini-ai" "$root/regression-results/mini-ai"
 frow() {
   jq -n --arg t "$3" --arg p "$root/$4" '{tool_name: $t, tool_input: {file_path: $p}, cwd: "/tmp"}' \
     | HARNEST_ROOT="$root" HARNEST_TARGET="$2" HARNEST_ROLE="${5:-regression}" python3 "$guard" consumer >/dev/null 2>&1
@@ -132,6 +132,10 @@ frow 2 mini-ai Edit  regression-perf/S-P001.jsonl
 frow 2 mini-ai Write regression-perf/other/S-P001.jsonl
 frow 0 mini-ai Write regression-perf/mini-ai/S-P001.jsonl
 frow 0 mini-ai Edit  regression-perf/mini-ai/S-P001.jsonl
+frow 2 mini-ai Write regression-results/S-F001.jsonl
+frow 2 mini-ai Edit  regression-results/other/S-F001.jsonl
+frow 0 mini-ai Write regression-results/mini-ai/S-F001.jsonl
+frow 0 mini-ai Edit  regression-results/mini-ai/S-F001.jsonl
 frow 0 mini-ai Write qa-bible.md
 frow 0 lem   Edit  regression-suite-smoke.md
 frow 0 ""    Edit  regression-perf/S-P001.jsonl

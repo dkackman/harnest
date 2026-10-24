@@ -22,6 +22,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -29,6 +30,10 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 ROOT = Path(__file__).resolve().parent.parent
+if str(ROOT) not in sys.path:  # run as a script, from anywhere
+    sys.path.insert(0, str(ROOT))
+from harness.outcome import RESULT_RE, SKIP_RE  # noqa: E402 - the one copy of the agent's lines
+
 LOGS = ROOT / "logs"
 PAGE = Path(__file__).resolve().parent / "index.html"
 REGRESSION_PAGE = Path(__file__).resolve().parent / "regression.html"
@@ -44,7 +49,6 @@ DRIVER_RE = re.compile(
 PY_DRIVER_RE = re.compile(r"(?:^|/)python3?(?:\.\d+)?\s+(?:-\S+\s+)*-m\s+harness\.drivers\.(\w+)(\s.*)?$", re.I)
 HEADER_RE = re.compile(r"^=== (\d\d:\d\d:\d\d) (.*?) ===$")
 CHUNK_RE = re.compile(r"^--- (\d\d:\d\d:\d\d) (\S+) session (\d+)(?: of (\d+))?: (.*) ---$")
-RESULT_RE = re.compile(r"REGRESSION-RESULT:\s*([A-Z]+-[A-Z][0-9]+)\s+(pass|fail|skip|pending)\b")
 RUN_FIELDS_RE = re.compile(r"level=([^,]+),.*?target=([^,]+), head=([^,)]+)(?:, (\d+) cases in sessions of (\d+))?")
 REQ_RUN_RE = re.compile(r"requirements run \(([^,]+), ([^,]+), (\d+) cases in (\d+) sessions")
 RECORDED_RE = re.compile(r"^(\d+) of (\d+) case\(s\) recorded")
@@ -212,7 +216,7 @@ class StreamIndex:
         r = RESULT_RE.search(rest)
         if r:
             run["results"][r.group(1)] = r.group(2)
-        elif "REGRESSION-SKIP:" in rest:
+        elif SKIP_RE.search(rest):
             run["skips"] += 1
         elif "aborted (MCP unreachable)" in rest or "stopping: MCP unreachable" in rest:
             run["status"] = "aborted"
@@ -745,10 +749,6 @@ def coverage():
         return _COVERAGE["value"]
     out = []
     try:
-        import sys
-
-        if str(ROOT) not in sys.path:
-            sys.path.insert(0, str(ROOT))
         from harness import requirements as req
         from harness.profile import load
 

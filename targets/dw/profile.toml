@@ -122,6 +122,7 @@ case_id_regex = "[A-Z]+-[A-Z][0-9]+"
 contract_runner = "contract/run.py"
 contract_cases = "contract/cases"
 perf_dir = "regression-perf"
+results_dir = "regression-results"   # each case's outcome per session (regression-results/README.md)
 
 # Regression levels in run order. `implies` runs first, as a prerequisite.
 [[suite.levels]]

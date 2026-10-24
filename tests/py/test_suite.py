@@ -78,5 +78,29 @@ class CaseText(unittest.TestCase):
         self.assertEqual(suite.case_text(self.suite, ["S-F002", "S-F001"]) + "\n", out)
 
 
+class Commit(unittest.TestCase):
+    def test_a_directory_not_written_yet_does_not_stop_the_commit(self):
+        d = tempfile.mkdtemp()
+        g = lambda *a: subprocess.run(["git", "-C", d, *a], capture_output=True, text=True, check=True)
+        g("init", "-q")
+        g("config", "user.name", "t")
+        g("config", "user.email", "t@t")
+        Path(d, "regression-suite-a.md").write_text("x\n")
+        g("add", "-A")
+        g("commit", "-qm", "init")
+        Path(d, "regression-suite-a.md").write_text("x\ny\n")
+        said = []
+        suite.commit_changes(
+            d,
+            d,
+            ["regression-suite-*.md", "regression-perf", "regression-results"],
+            "suite: y",
+            "N",
+            "n@x",
+            said.append,
+        )
+        self.assertEqual("suite: y", g("log", "-1", "--format=%s").stdout.strip())
+
+
 if __name__ == "__main__":
     unittest.main()

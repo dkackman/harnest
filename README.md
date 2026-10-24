@@ -396,7 +396,7 @@ scripts/sync-fixtures.sh                            # lem's qa-cast media, when 
   The Mac loop runs the same check before it starts.
 - **Plugin and commits.** It loads the plugin from its own worktree at `origin/develop`
   (`dw-agent-plugin-mini-ai`), so lem's `PLUGIN_TREE` is never reset. It commits only
-  `regression-perf/mini-ai/`, never the suite files or lem's readings, and makes no
+  `regression-perf/mini-ai/` and `regression-results/mini-ai/`, never the suite files or lem's readings, and makes no
   startup commit. (`regression-perf/local/` is history from the earlier local server, on
   other hardware: kept, never compared with.)
 

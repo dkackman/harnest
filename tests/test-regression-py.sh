@@ -101,14 +101,18 @@ for impl in bash py; do
   has "$impl lem: the sweep is labelled" "[regression:smoke.sweep] usage:" "$(cat "$T/$impl/lem.out")"
   cp "$T/h/logs/loop.log" "$T/$impl/lem.loop.log"; cp "$FAKE_CLAUDE_LOG" "$T/$impl/lem.calls"
   cp "$T/h/logs/.prompt.regression.chunk.md" "$T/$impl/lem.prompt.chunk.md"
+  for c in S-F001 S-F002; do tail -1 "$T/h/regression-results/$c.jsonl" | jq -c 'del(.ts)'; done > "$T/$impl/lem.results"
+  has "$impl lem: a case it was handed and never answered is unreported" '"case":"S-F002","outcome":"unreported"' "$(cat "$T/$impl/lem.results")"
 
   # --- lem: a dirty suite is committed before the run, under no model's name
   echo "an edit made by hand" >> "$T/h/regression-suite-tiny.md"
   reg "$impl" dirty.out PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=0 -- smoke regression-suite-tiny.md
+  # (the run's own commit, of its results, follows it)
   eq  "$impl lem: hand edit committed" "regression: capture suite edits of unknown origin made outside a regression run" \
-      "$(git -C "$T/h" log -1 --format=%s)"
+      "$(git -C "$T/h" log -1 --format=%s -- regression-suite-tiny.md)"
   has "$impl lem: under a neutral trailer" "Co-Authored-By: unknown (edited outside a regression run) <noreply@localhost>" \
-      "$(git -C "$T/h" log -1 --format=%b)"
+      "$(git -C "$T/h" log -1 --format=%b -- regression-suite-tiny.md)"
+  has "$impl lem: the run's results are its own commit" "regression-results/S-F001.jsonl" "$(git -C "$T/h" show --name-only --format= HEAD)"
 
   # --- lem: an edit during the run is committed under the model that ran
   : > "$FAKE_CLAUDE_LOG"
@@ -138,7 +142,8 @@ for impl in bash py; do
   has "$impl mini-ai: system prompt forbids suite edits" "The suite files. Every case in them runs on lem" "$sysprompt"
   eq  "$impl mini-ai: the guard is told the target" "mini-ai" "$(cat "$T/$impl/mini-prompt.target")"
   has "$impl mini-ai: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/$impl/mini.out")"
-  eq  "$impl mini-ai: no suite commit" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
+  eq  "$impl mini-ai: no suite commit, only its own results" "regression-results/mini-ai/S-F001.jsonl regression-results/mini-ai/S-F002.jsonl" \
+      "$(git -C "$T/h" diff --name-only "$before_head" HEAD | tr '\n' ' ' | sed 's/ $//')"
   has "$impl mini-ai: header tags the level for the curator" "level=smoke.mini-ai," "$(grep 'regression run (' "$T/h/logs/loop.mini-ai.log" | tail -1)"
   has "$impl mini-ai: sessions are labelled for retro" "[regression-mini-ai:smoke] usage:" "$(cat "$T/$impl/mini.out")"
   has "$impl mini-ai: plugin is its own worktree's" "--plugin-dir
@@ -219,7 +224,7 @@ $T/plugin-mini/plugins/dw" "$(cat "$T/$impl/mini-prompt.args")"
 done
 
 # --- the same output, line for line
-for f in lem.out lem.loop.log lem.calls lem.prompt.chunk.md mini.out mini.loop.log mini.args mini.prompt.whole.md \
+for f in lem.out lem.loop.log lem.calls lem.prompt.chunk.md lem.results mini.out mini.loop.log mini.args mini.prompt.whole.md \
          mem.out down.out wrong.out level.out model.out chunk.out token.out ptok.args ftok.args etok.args; do
   d="$(diff <(norm "$T/bash/$f") <(norm "$T/py/$f") | head -10)"
   eq "parity: $f" "" "$d"

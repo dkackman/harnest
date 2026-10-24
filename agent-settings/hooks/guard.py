@@ -127,9 +127,9 @@ implementer on a server other than lem (HARNEST_TARGET, set by run-loop.sh):
 consumer on a server other than lem (HARNEST_TARGET and HARNEST_ROLE, set
 by run-loop.sh and run-regression.sh; harnest#15). Also runs on Edit and
 Write:
-  - no Edit/Write to lem's perf history (a top-level
-    `regression-perf/*.jsonl`, or another target's directory); its own
-    `regression-perf/<target>/` is allowed
+  - no Edit/Write to lem's perf history or results ledger (a top-level
+    `regression-perf/*.jsonl` or `regression-results/*.jsonl`, or another
+    target's directory); its own `<dir>/<target>/` is allowed
   - no Edit/Write to a `regression-suite-*.md` from a regression run: every
     case runs on lem. The loop's tester may add one (a verified
     backend:shared fix; its prompt says when)
@@ -2186,11 +2186,13 @@ def target_file_rule(path, cwd, target, role):
             "on the %s server the suite files are read-only: every case in them runs on lem, "
             "so propose a case in the issue or comment instead." % target
         )
-    if parts[0] == "regression-perf" and len(parts) > 1 and not (len(parts) > 2 and parts[1] == target):
-        deny(
-            "on the %s server, readings go to regression-perf/%s/<case>.jsonl; the rest of "
-            "regression-perf/ is another server's history." % (target, target)
-        )
+    # regression-results/ (the drivers' outcome ledger) is split by server the same way
+    for d in ("regression-perf", "regression-results"):
+        if parts[0] == d and len(parts) > 1 and not (len(parts) > 2 and parts[1] == target):
+            deny(
+                "on the %s server, readings go to %s/%s/<case>.jsonl; the rest of "
+                "%s/ is another server's history." % (target, d, target, d)
+            )
 
 
 SHELL_KEYWORDS = ("do", "then", "else", "elif", "if", "while", "until", "{", "!", "nohup")

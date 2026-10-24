@@ -24,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .. import REPO, deploy, lock, outcome, prompts, providers, session, suite
+from .. import REPO, deploy, lock, outcome, prompts, providers, results, session, suite
 from ..gitops import refresh_plugin_tree
 from ..log import Log, err, ts
 from ..profile import ProfileError, load, resolve_token, resolve_url
@@ -208,6 +208,10 @@ class Regression:
             (REPO / self.profile.get("suite.perf_dir", "regression-perf") / self.target).mkdir(
                 parents=True, exist_ok=True
             )
+        # Each case's outcome per session, split by server as regression-perf/ is.
+        self.results_dir = results.results_dir(
+            REPO / self.profile.get("suite.results_dir", "regression-results"), self.server
+        )
         # guard.py reads these.
         self.session_env = {
             "HARNEST_TARGET": self.target,
@@ -258,7 +262,7 @@ class Regression:
 
     # --- sessions
 
-    def run_session(self, level, suite_file, workspace, tag, kind, instructions, head):
+    def run_session(self, level, suite_file, workspace, tag, kind, instructions, head, cases=()):
         prompt_file = self.logs / f".prompt.{self.logname}.{kind}.md"
         try:
             system_prompt(kind, prompt_file, self.server, self.health, self.url)
@@ -293,6 +297,22 @@ class Regression:
         skips, differs = outcome.regression_counts(self.last)
         self.level_skips += skips
         self.level_differs += differs
+        # Every case this session was handed or answered for: its outcome, one
+        # line each (harness/results.py). A lost line is not worth the run.
+        label = f"{self.rpfx}:{level}{tag}"
+        try:
+            results.record_session(
+                self.results_dir,
+                self.target,
+                level,
+                label,
+                head or "unknown",
+                resolved_model(self.logs / f"{self.logname}.jsonl", self.model),
+                self.last.read_text(encoding="utf-8", errors="replace"),
+                cases,
+            )
+        except OSError:
+            self.log.say(f"[{label}] could not record its results in {self.results_dir}")
 
     def script_report(self, ids):
         runner = REPO / self.profile.get("suite.contract_runner", "contract/run.py")
@@ -372,6 +392,7 @@ class Regression:
             f"=== {ts()} regression run ({self.model_env.label}, level={tag}, suite={suite_file}, "
             f"workspace={workspace}, target={self.target}, head={head}"
         )
+        ids = [i for i in ids_in_file if i not in script_ids and i not in held]
         if self.cases_per_session == 0:
             self.log.say(header + ") ===")
             self.run_session(
@@ -384,9 +405,9 @@ class Regression:
                 "comment on issues for failures and performance regressions, add any cases worth "
                 f"adding, then do the final sweep.{held_clause}{script_note}",
                 head,
+                ids,
             )
         else:
-            ids = [i for i in ids_in_file if i not in script_ids and i not in held]
             total, n = len(ids), self.cases_per_session
             nchunks = (total + n - 1) // n
             self.log.say(header + f", {total} cases in sessions of {n}) ===")
@@ -403,6 +424,7 @@ class Regression:
                     "chunk",
                     chunk_instructions(chunk, suite.case_text(suite_file, chunk)),
                     head,
+                    chunk,
                 )
                 if outcome.aborted(self.last):
                     self.log.say(
@@ -442,7 +464,11 @@ class Regression:
         suite.commit_changes(
             REPO,
             str(self.logs),
-            suite.commit_paths(self.server, self.profile.get("suite.perf_dir", "regression-perf")),
+            suite.commit_paths(
+                self.server,
+                self.profile.get("suite.perf_dir", "regression-perf"),
+                self.profile.get("suite.results_dir", "regression-results"),
+            ),
             msg,
             name,
             email,
