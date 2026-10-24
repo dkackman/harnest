@@ -111,8 +111,12 @@ ws="${prompt#*workspace is }"; ws="${ws%%;*}"
 echo "start $(now) $HARNEST_TARGET $$ $ws [$cases]" >> "$FAKE_TIMELINE"
 shift_args=("$@")
 for i in "${!shift_args[@]}"; do
-  [ "${shift_args[$i]}" = --mcp-config ] && echo "$HARNEST_TARGET $(jq -r '.mcpServers.dw.url + " " + .mcpServers.dw.headers.Authorization' "${shift_args[$((i+1))]}")" >> "$FAKE_TIMELINE.mcp"
+  [ "${shift_args[$i]}" = --mcp-config ] && url="$(jq -r .mcpServers.dw.url "${shift_args[$((i+1))]}")" &&
+    echo "$HARNEST_TARGET $(jq -r '.mcpServers.dw.url + " " + .mcpServers.dw.headers.Authorization' "${shift_args[$((i+1))]}")" >> "$FAKE_TIMELINE.mcp"
 done
+# a chunk session's first case runs a workflow in its workspace, as the agent would
+[ -n "$cases" ] && curl -s -X POST "$url" -H 'Content-Type: application/json' \
+  -d "$(jq -nc --arg ws "$ws" '{jsonrpc:"2.0",id:1,method:"tools/call",params:{name:"run_workflow",arguments:{workspace:$ws}}}')" >/dev/null
 # the first session holding S-F005 goes silent: the watchdog stops it, and
 # the session runner's retry runs it again
 case " $cases " in *" S-F005 "*)
@@ -219,6 +223,17 @@ eq  "  workspaces: the level's, and alpha-2's own" "regression-smoke regression-
     "$(awk '/^start/ {print $5}' "$T/timeline" | sort -u | tr '\n' ' ')"
 has "  alpha-2's workspace is created" 'alpha create_workspace {"name": "regression-smoke-alpha-2"}' "$(cat "$T/mcp-calls")"
 has "  and seeded with the level's own assets" '"source": "regression-smoke", "destination": "regression-smoke-alpha-2", "assets": ["fixture.wav"]' "$(cat "$T/mcp-calls")"
+eq  "  alpha-2's workspace is seeded before its first session runs there" "ok" "$(python3 - "$T/mcp-calls" <<'EOF'
+import json, sys
+first = {}
+for n, line in enumerate(open(sys.argv[1])):
+    host, name, args = line.split(" ", 2)
+    ws = json.loads(args).get("name" if name == "create_workspace" else "workspace")
+    first.setdefault((name, ws), n)
+made, ran = first.get(("create_workspace", "regression-smoke-alpha-2")), first.get(("run_workflow", "regression-smoke-alpha-2"))
+print("ok" if made is not None and ran is not None and made < ran else f"create={made} run={ran}")
+EOF
+)"
 
 # --- a session that ends with cases unanswered (budget or turns ran out)
 # One server, one lane, three cases in one session: the fake answers only

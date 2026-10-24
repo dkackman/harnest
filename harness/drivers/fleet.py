@@ -92,6 +92,7 @@ class Lane:
     groups: list = field(default_factory=list)  # [(level, Group)]
     load: float = 0.0  # assigned work, in primary-lane seconds (durations.Estimates)
     batch: list = field(default_factory=list)  # the Items its session is running now
+    seeded: set = field(default_factory=set)  # levels whose workspace it has made ready (Fleet.seed_for)
 
     @property
     def name(self):
@@ -100,7 +101,7 @@ class Lane:
     def workspace(self, base):
         """A server's first lane works in the level's own workspace, as a
         one-server run does, fixtures and all; another lane on the same
-        server gets its own, seeded from it (Fleet.seed)."""
+        server gets its own, seeded from it (Fleet.seed_for)."""
         return base if self.slot == 1 else f"{base}-{self.name}"
 
 
@@ -478,7 +479,6 @@ class Fleet:
                     capture_output=True,
                 )
         self.state = State(FLEET_DIR / "state.json", self.initial_state())
-        self.seed()
         self.state.update(lambda d: [d["servers"][n].update(head=s.head) for n, s in self.servers.items()])
         total = sum(len(q) for q in self.queues.values())
         for s in self.servers.values():
@@ -492,18 +492,21 @@ class Fleet:
             + (f"; unplaced: {sum(len(g.cases) for _, g, _ in self.unplaced)}" if self.unplaced else "")
         )
 
-    def seed(self):
-        """A second lane on a server works in its own workspace: create it
-        and copy the level workspace's own assets into it, once per run (it
-        persists, so later runs find it ready)."""
-        for lane in self.lanes:
-            if lane.slot == 1:
-                continue
-            s = self.servers[lane.server.name]
-            for lv in sorted({it.level for it in self.queues[lane.name]}):
-                base = suite.workspace_for_suite_file(self.suite_files[lv])
-                said = facts.seed_workspace(s.url, s.token, base, lane.workspace(base))
-                s.log.say(f"[fleet] {lane.workspace(base)}: {said}")
+    def seed_for(self, lane, level):
+        """A second lane on a server works in its own workspace: before its
+        first session of <level>, create it and copy the level workspace's
+        own assets into it (it persists, so later runs find it ready). Lazy,
+        since a lane may run a level it was never planned, by stealing or a
+        re-queue."""
+        if level in lane.seeded:
+            return
+        lane.seeded.add(level)
+        if lane.slot == 1:
+            return  # the level's own workspace
+        s = self.servers[lane.server.name]
+        base = suite.workspace_for_suite_file(self.suite_files[level])
+        said = facts.seed_workspace(s.url, s.token, base, lane.workspace(base))
+        s.log.say(f"[fleet] {lane.workspace(base)}: {said}")
 
     # -- the shared queue
 
@@ -732,6 +735,7 @@ class Fleet:
         level, excl = batch[0].level, batch[0].exclusive
         label = f"{s.rpfx}:{level}.{lane.name}.{n}"
         cases = [it.case for it in batch]
+        self.seed_for(lane, level)
         for c in cases:
             self.case_state(c, outcome="running" if c == cases[0] else "next", lane=lane.name)
         self.lane_state(

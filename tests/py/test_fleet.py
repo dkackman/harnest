@@ -564,6 +564,39 @@ class Outcomes(unittest.TestCase):
         self.assertEqual([], f.queues["lem-1"], "not back on the server that went away")
         self.assertEqual("mac", f.state.data["cases"]["S-F002"]["server"])
 
+    def test_a_stealing_lane_seeds_the_level_it_steals(self):
+        """A lane planned no case of a level gets one by stealing: it seeds
+        that level's workspace before its first session there, once."""
+        from unittest import mock
+
+        f = fleet_with_cases({c: "queued" for c in ("S-F001", "S-F002", "S-F003")})
+        lem2 = fleet.Lane(server=f.lanes[0].server, slot=2, facts=fx("lem"))
+        f.lanes.append(lem2)
+        f.queues[lem2.name] = []
+        s = f.servers["lem"]
+        s.url, s.token, s.rpfx, s.gate = "u", "t", "regression", fleet.Gate()
+        f.suite_files = {"smoke": Path("regression-suite-smoke.md")}
+        last = Path(f.state.path.parent, "last")
+        last.write_text("usage: turns=2\n")
+        sessions = []
+
+        def run_session(lane, kind, level, instructions, label, on_line=None):
+            sessions.append((lane.name, len(seeded)))
+            return "".join(f"REGRESSION-RESULT: {c} pass\n" for c in ("S-F001", "S-F002", "S-F003")), 0.0, last
+
+        f.run_session = run_session
+        seeded = []
+        with mock.patch.object(fleet.facts, "seed_workspace", lambda *a: seeded.append(a[2:]) or "ready"):
+            stolen = f.take(lem2)
+            f.done()
+            self.assertTrue(stolen, "lem-2 steals from lem-1")
+            f.run_batch(lem2, stolen, 1)
+            self.assertEqual([("regression-smoke", "regression-smoke-lem-2")], seeded)
+            self.assertEqual([("lem-2", 1)], sessions, "seeded before its session")
+            f.run_batch(lem2, [fleet.Item(level="smoke", case="S-F001", gid="g", exclusive=False)], 2)
+            f.run_batch(f.lanes[0], [fleet.Item(level="smoke", case="S-F002", gid="h", exclusive=False)], 1)
+        self.assertEqual(1, len(seeded), "once per lane and level; a first lane works in the level's own")
+
     def test_main_exits_1_on_a_failed_run_or_a_failing_case(self):
         from unittest import mock
 

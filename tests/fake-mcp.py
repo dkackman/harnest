@@ -8,7 +8,8 @@ on several ports at once, each answering as a different server.
 spec.json: {"<port>": {"hostname": "alpha", "device": "cuda", "workers": 2,
             "models": {"repo/id": 5.0}, "assets": ["qa-cast/a.wav"],
             "workspace_assets": {"regression-smoke": ["fixture.wav"]}}, ...}
-create_workspace and copy_to_workspace calls are appended to $FAKE_MCP_LOG.
+create_workspace, copy_to_workspace and run_workflow calls are appended to
+$FAKE_MCP_LOG, in the order they arrive.
 Prints "ready" once every port listens; runs until killed.
 """
 
@@ -61,7 +62,7 @@ def handler_for(spec):
                         ]
                         + [{"name": a, "reference": f"asset:{a}", "origin": "workspace"} for a in own]
                     }
-                elif name in ("create_workspace", "copy_to_workspace"):
+                elif name in ("create_workspace", "copy_to_workspace", "run_workflow"):
                     with open(os.environ.get("FAKE_MCP_LOG", os.devnull), "a") as f:
                         f.write(f"{spec['hostname']} {name} {json.dumps(msg['params'].get('arguments', {}))}\n")
                     value = {"ok": True}
