@@ -799,17 +799,21 @@ class Fleet:
         line in regression-results/ (harness/results.py), re-queued or not."""
         secs = secs or {}
         s = self.servers[lane.server.name]
-        results.record_session(
-            results.results_dir(self.results_root, lane.server),
-            lane.server.name,
-            batch[0].level if batch else "",
-            label,
-            s.head,
-            model,
-            text,
-            [it.case for it in batch],
-            secs,
-        )
+        where = results.results_dir(self.results_root, lane.server)
+        try:  # a lost ledger line is not worth the outcomes below
+            results.record_session(
+                where,
+                lane.server.name,
+                batch[0].level if batch else "",
+                label,
+                s.head,
+                model,
+                text,
+                [it.case for it in batch],
+                secs,
+            )
+        except OSError:
+            s.log.say(f"[{label}] could not record its results in {where}")
         answers = {c: (o, issue) for c, o, issue in outcome.RESULT_RE.findall(text)}
         skipped = set(outcome.SKIP_RE.findall(text))
         died, aborted = outcome.died(last), outcome.aborted(last)

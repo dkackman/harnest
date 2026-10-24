@@ -22,7 +22,10 @@ cat > "$T/h/regression-suite-tiny.md" <<'EOS'
 ## Fixtures
 none
 ### S-F001 — first
-steps
+steps, with a fenced example that is not a case:
+```
+### S-F999 — an example heading
+```
 ### S-F002 — second
 steps
 EOS
@@ -102,6 +105,7 @@ for impl in bash py; do
   cp "$T/h/logs/loop.log" "$T/$impl/lem.loop.log"; cp "$FAKE_CLAUDE_LOG" "$T/$impl/lem.calls"
   cp "$T/h/logs/.prompt.regression.chunk.md" "$T/$impl/lem.prompt.chunk.md"
   for c in S-F001 S-F002; do tail -1 "$T/h/regression-results/$c.jsonl" | jq -c 'del(.ts)'; done > "$T/$impl/lem.results"
+  fails "$impl lem: no line for a fenced heading" test -e "$T/h/regression-results/S-F999.jsonl"
   has "$impl lem: a case it was handed and never answered is unreported" '"case":"S-F002","outcome":"unreported"' "$(cat "$T/$impl/lem.results")"
 
   # --- lem: a dirty suite is committed before the run, under no model's name

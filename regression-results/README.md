@@ -41,6 +41,14 @@ One object per line, keys in this order:
 - `model` — the model id the session resolved to.
 - `server` — the server the case ran on (`lem`, `mini-ai`, …).
 
+**Measurement gap.** Only fleet runs (`harness.drivers.fleet`) carry
+`secs` today: the fleet watches each session's `REGRESSION-CASE` lines as
+they arrive, and the level drivers (`run-regression.sh`,
+`harness.drivers.regression`) read the session's log only after it ends,
+when it holds no times. Their rows have `"secs": null`. A reader of case
+times filters out null and groups by `server`: a time is its server's
+hardware, never pooled with another's.
+
 A server other than the primary keeps its own ledger in a subdirectory
 named for it (`regression-results/mini-ai/S-F001.jsonl`), same format, as
 `regression-perf/` does: its outcomes and times are its own hardware's.

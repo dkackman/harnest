@@ -565,6 +565,14 @@ class Outcomes(unittest.TestCase):
         )
         self.assertEqual("develop @ t", json.loads(ledger["S-F001"][0])["head"])
 
+    def test_settle_survives_a_results_ledger_it_cannot_write(self):
+        f = fleet_with_cases({"S-F001": "running"})
+        f.results_root.write_text("a file, not a directory")
+        batch = [fleet.Item(level="smoke", case="S-F001", gid="smoke:S-F001", exclusive=False)]
+        self._settle(f, batch, "REGRESSION-RESULT: S-F001 pass\n", "usage: turns=3\n")
+        self.assertEqual("pass", f.state.data["cases"]["S-F001"]["outcome"])
+        self.assertTrue(any("could not record its results" in l for l in f.said), f.said)
+
     def test_an_aborted_session_hands_its_unanswered_cases_to_another_server(self):
         f = fleet_with_cases({"S-F001": "running", "S-F002": "next"})
         mac = fleet.Lane(server=srv("mac"), slot=1, facts=fx("mac"))

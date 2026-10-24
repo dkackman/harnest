@@ -347,15 +347,16 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
       echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOOP_LOG"
     done
   fi
-  # Case IDs in file order, from the `### <ID> — title` headings. The
-  # regex is the same shape every suite uses (S-F001, SE-P001, ...); a
-  # heading that doesn't match isn't a case and is skipped.
+  # Case IDs in file order, from the `### <ID> — title` headings outside
+  # code fences (harness.suite case_ids, which the Python driver calls too):
+  # a heading in a case's fenced example is not a case. One that doesn't
+  # match the ID shape (S-F001, SE-P001, ...) isn't one either.
   local ids=()
   while read -r id; do
     case " ${script_ids[*]:-} " in *" $id "*) continue ;; esac   # run by contract/run.py above
     case "$held " in *" $id "*) continue ;; esac                 # TARGET_SKIP_CASES, above
     ids+=("$id")
-  done < <(sed -n 's/^### \([A-Z][A-Z]*-[A-Z][0-9][0-9]*\) .*/\1/p' "$suite_file")
+  done < <(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$suite_file")
   if [ "$CASES_PER_SESSION" -eq 0 ]; then
     echo "=== $(ts) regression run ($MODEL_LABEL, level=$tag, suite=$suite_file, workspace=$workspace, target=$DW_TARGET, head=$head) ===" | tee -a "$LOOP_LOG"
     run_session "$level" "$suite_file" "$workspace" "" whole \

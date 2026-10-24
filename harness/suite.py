@@ -16,14 +16,11 @@ CASE_HEADING = re.compile(r"^### ([A-Z]+-[A-Z][0-9]+) ")
 
 
 def case_ids(suite_file):
-    """Case IDs in file order."""
-    ids = []
-    with open(suite_file, encoding="utf-8") as f:
-        for line in f:
-            m = CASE_HEADING.match(line)
-            if m:
-                ids.append(m.group(1))
-    return ids
+    """Case IDs in file order, outside code fences: a `### ` heading in a
+    case's fenced example is not a case (requirements.case_blocks)."""
+    from .requirements import case_blocks  # requirements imports this module
+
+    return list(case_blocks(suite_file))
 
 
 def has_cases(suite_file):
@@ -69,16 +66,40 @@ def fixtures_section(suite_file):
     return "".join(out).rstrip()
 
 
+def opening(suite_file):
+    """Everything above the suite's first `## ` section (fence-aware)."""
+    out, fence = [], False
+    for line in Path(suite_file).read_text(encoding="utf-8").splitlines(keepends=True):
+        if line.lstrip().startswith(_FENCE):
+            fence = not fence
+        if not fence and _SECTION_END.match(line) and not line.startswith("# "):
+            break
+        out.append(line)
+    return "".join(out).rstrip()
+
+
+# Suites whose opening is a rule for running every case, not background,
+# and the case every session runs first: the security suite's says a refusal
+# that came too late is a failure and that SE-F001 (the server's trust
+# posture) gates the rest, in every slice of a chunked run.
+OPENING_SUITES = {"regression-suite-security.md": "SE-F001"}
+
+
 def case_text(suite_file, ids):
     """What a chunk session is handed instead of reading the suite: the
-    Fixtures section, then each case's block in the order given (fence-aware,
+    security suite's opening (OPENING_SUITES), the Fixtures section, its
+    gating case when <ids> lacks it, then each case's block in the order
+    given (fence-aware,
     requirements.case_blocks). An id with no block is left out; the prompt
     still names it. No trailing newline, so `$(scripts/case-text.sh ...)`
     and this are the same bytes."""
     from .requirements import case_blocks  # requirements imports this module
 
     blocks = case_blocks(suite_file)
-    parts = [fixtures_section(suite_file)] + [blocks[i].rstrip() for i in ids if i in blocks]
+    gate = OPENING_SUITES.get(Path(suite_file).name)
+    head = [opening(suite_file)] if gate else []
+    first = [gate] if gate and ids and gate not in ids else []
+    parts = head + [fixtures_section(suite_file)] + [blocks[i].rstrip() for i in [*first, *ids] if i in blocks]
     return "\n\n".join(p for p in parts if p)
 
 
@@ -181,13 +202,18 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
 
 
 def main(argv=None):
-    """python3 -m harness.suite case-text <suite-file> <id>... (scripts/case-text.sh)"""
+    """python3 -m harness.suite case-text <suite-file> <id>...   (scripts/case-text.sh)
+    python3 -m harness.suite case-ids <suite-file>             (run-regression.sh)"""
     args = sys.argv[1:] if argv is None else argv
-    if len(args) < 2 or args[0] != "case-text":
-        print("usage: python3 -m harness.suite case-text <suite-file> <id>...", file=sys.stderr)
-        return 2
-    print(case_text(args[1], args[2:]))
-    return 0
+    if len(args) >= 2 and args[0] == "case-text":
+        print(case_text(args[1], args[2:]))
+        return 0
+    if len(args) == 2 and args[0] == "case-ids":
+        for i in case_ids(args[1]):
+            print(i)
+        return 0
+    print("usage: python3 -m harness.suite case-text <suite-file> <id>... | case-ids <suite-file>", file=sys.stderr)
+    return 2
 
 
 if __name__ == "__main__":

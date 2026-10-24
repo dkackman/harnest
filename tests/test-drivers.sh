@@ -409,7 +409,10 @@ cat > "$T/h/regression-suite-tiny.md" <<'EOS'
 ## Fixtures
 none
 ### S-F001 — first
-steps
+steps, with a fenced example that is not a case:
+```
+### S-F999 — an example heading
+```
 ### S-F002 — second
 steps
 EOS
@@ -429,6 +432,8 @@ eq  "chunk: each case's text in its own chunk only" "1 1" "$(grep -c '^### S-F00
 eq  "chunk: the Fixtures section in both chunks and the sweep" 3 "$(grep -c '^## Fixtures' "$FAKE_CLAUDE_LOG.argv")"
 fails "chunk: the rest of the header is not handed over" grep -q '^# tiny suite' "$FAKE_CLAUDE_LOG.argv"
 eq  "results: one line per case" 2 "$(( $(results_lines) - lines_before ))"
+fails "results: no line for a fenced heading" test -e "$T/h/regression-results/S-F999.jsonl"
+eq  "chunk: a fenced heading is no chunk of its own" "" "$(grep 'session .*S-F999' "$T/h/logs/loop.log" || true)"
 eq  "results: each case's own outcome" "pass fail 12" \
     "$(tail -1 "$T/h/regression-results/S-F001.jsonl" | jq -r .outcome) $(tail -1 "$T/h/regression-results/S-F002.jsonl" | jq -r '"\(.outcome) \(.issue)"')"
 eq  "results: named for the session that ran it" "regression:smoke.2 of 2 lem claude-fake" \
