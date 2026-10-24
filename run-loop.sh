@@ -281,7 +281,7 @@ ts() { date '+%H:%M:%S'; }
 # inherits every account-level claude.ai connector (Gmail, Drive, Calendar),
 # and an unattended agent has no business holding those. Tool schemas come from the server and are always fresh.
 MCP_FLAGS=(
-  --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
+  --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
   --strict-mcp-config
 )
 # --plugin-dir loads the dw plugin from the plugin tree (origin/develop,

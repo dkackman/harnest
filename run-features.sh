@@ -79,7 +79,7 @@ LAST_SESSION="$LOGS/.last-session.features"
 ts() { date '+%H:%M:%S'; }
 
 LEAD_DESIGN_FLAGS=(
-  --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
+  --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
   --strict-mcp-config
   "${ISOLATION_FLAGS[@]}"
   --tools "$LEAD_DESIGN_TOOLS"

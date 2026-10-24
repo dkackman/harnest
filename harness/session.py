@@ -105,13 +105,18 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
 
 
 def mcp_config(name, url, token):
-    """--mcp-config for one HTTP MCP server with a Bearer token, as the bash
-    interpolates it."""
-    return '{"mcpServers":{"%s":{"type":"http","url":"%s","headers":{"Authorization":"Bearer %s"}}}}' % (
-        name,
-        url,
-        token,
-    )
+    """--mcp-config for one HTTP MCP server with a Bearer token: the path of a
+    0600 file, logs/.mcp.<pid>.json, as providers.sh's mcp_config_file writes
+    it. The token is in the file, never in argv, where ps shows it."""
+    logs = REPO / "logs"
+    logs.mkdir(exist_ok=True)
+    path = logs / (".mcp.%d.json" % os.getpid())
+    doc = {"mcpServers": {name: {"type": "http", "url": url, "headers": {"Authorization": "Bearer " + token}}}}
+    fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w") as f:
+        f.write(json.dumps(doc, separators=(",", ":")) + "\n")
+    os.chmod(path, 0o600)
+    return str(path)
 
 
 def _kill_group(proc):

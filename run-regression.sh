@@ -229,7 +229,7 @@ workspace_for_suite_file() {
 # checkout so skill fixes are covered without a reinstall. The permission
 # allowlist (providers.sh) is the same fence the tester runs behind.
 REGRESSION_FLAGS=(
-  --mcp-config "{\"mcpServers\":{\"dw\":{\"type\":\"http\",\"url\":\"$DW_URL\",\"headers\":{\"Authorization\":\"Bearer $DW_TOKEN\"}}}}"
+  --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
   --strict-mcp-config
   --plugin-dir "$PLUGIN_DIR"
   "${ISOLATION_FLAGS[@]}"
@@ -310,7 +310,7 @@ run_level() {
   while read -r id; do [ -n "$id" ] && script_ids+=("$id"); done < <(script_cases "$suite_file")
   if [ "${#script_ids[@]}" -gt 0 ]; then
     local report
-    report="$(python3 "$REPO/contract/run.py" --url "$DW_URL" --token "$DW_TOKEN" "${script_ids[@]}" 2>&1 || true)"
+    report="$(DW_TOKEN="$DW_TOKEN" python3 "$REPO/contract/run.py" --url "$DW_URL" "${script_ids[@]}" 2>&1 || true)"
     echo "[$RPFX:$level] script cases: $(printf '%s' "$report" | jq -r '"\(.passed // 0) passed, \(.failed // 0) failed, \(.errors // 0) errored\(if .error then " - " + .error else "" end)"' 2>/dev/null || echo "report unreadable")" | tee -a "$LOOP_LOG"
     script_note="
 

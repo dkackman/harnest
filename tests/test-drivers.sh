@@ -26,6 +26,7 @@ printf '#!/usr/bin/env bash\necho "develop @ %s"\n' "${sha:0:9}" > "$T/bin/ssh"
 cat > "$T/bin/claude" <<'EOS'
 #!/usr/bin/env bash
 echo "claude $*" | cut -c1-200 >> "$FAKE_CLAUDE_LOG"
+echo "claude $*" >> "$FAKE_CLAUDE_LOG.argv"
 [ -z "${FAKE_CLAUDE_DO:-}" ] || eval "$FAKE_CLAUDE_DO" >/dev/null
 echo '{"type":"system","subtype":"init","model":"claude-fake"}'
 echo '{"type":"result","subtype":"success","num_turns":2,"duration_ms":1000,"total_cost_usd":0.01,"usage":{"input_tokens":1,"cache_read_input_tokens":1,"cache_creation_input_tokens":1,"output_tokens":1}}'
@@ -67,6 +68,8 @@ FAKE_CLAUDE_DO='case "$*" in *"fix session"*) gh issue edit 2 --repo o/r --remov
 eq  "hand-off: fix then verify in one cycle" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 eq  "hand-off: closed as verified" "CLOSED" "$(jq -r '.["o/r"][0].state' "$T/board.json")"
 eq  "hand-off: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
+has "mcp config: handed to claude as a file in logs" "--mcp-config $T/h/logs/.mcp." "$(cat "$FAKE_CLAUDE_LOG.argv")"
+fails "mcp config: no token in argv" grep -q "$DW_TOKEN" "$FAKE_CLAUDE_LOG.argv"
 has "lem loop: makes sure its claim label exists" "gh label create target:lem --repo o/r" "$(cat "$T/gh-calls")"
 has "lem loop: and the backend labels its prompts file with" "gh label create backend:shared --repo o/r" "$(cat "$T/gh-calls")"
 

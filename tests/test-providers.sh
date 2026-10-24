@@ -86,6 +86,13 @@ eq  "one Don handed back is left alone" "" "$(grep 'edit 4' "$GH_CALLS" || true)
 stub_gh 'exit 1'
 ok "a gh failure is logged, not fatal" park_external_issues
 
+# --- mcp_config_file: the dw --mcp-config in a private file, built by jq
+f="$(mcp_config_file "http://x/\"q" 't"k')"
+eq  "mcp config: valid json with odd characters" 't"k' "$(jq -r '.mcpServers.dw.headers.Authorization' "$f" | sed 's/^Bearer //')"
+eq  "mcp config: the url survives a quote" 'http://x/"q' "$(jq -r '.mcpServers.dw.url' "$f")"
+eq  "mcp config: private" "600" "$(stat -f %Lp "$f")"
+eq  "mcp config: under the logs dir, named by pid" "$LOGS/.mcp.$$.json" "$f"
+
 # --- the driver lock
 lock_test() {
   bash -c '. "$1/providers.sh"; acquire_driver_lock t; cat "$LOGS/.driver.lock/owner"' _ "$HARNEST"

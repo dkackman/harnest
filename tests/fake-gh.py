@@ -128,7 +128,11 @@ elif cmd == ["issue", "comment"]:
     i = find(args[2])
     body = opt("--body") or (open(opt("--body-file")).read() if opt("--body-file") else "")
     i.setdefault("comments", []).append(
-        {"author": {"login": os.environ.get("FAKE_GH_AUTHOR", "dkackman")}, "body": body, "createdAt": "2026-01-01T00:00:00Z"}
+        {
+            "author": {"login": os.environ.get("FAKE_GH_AUTHOR", "dkackman")},
+            "body": body,
+            "createdAt": "2026-01-01T00:00:00Z",
+        }
     )
     save()
 elif cmd == ["issue", "create"]:
