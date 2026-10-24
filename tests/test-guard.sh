@@ -322,7 +322,6 @@ ok "freeze.py active: lifted" bash -c "! python3 '$HARNEST/lib/freeze.py' active
 g "$T/seed" rm -q docs/stabilization/hot-zone.txt; g "$T/seed" commit -m "no hot zone"; g "$T/seed" push origin develop
 g "$w" checkout -q fix-hot; hrow 0 8 "a former hot-zone file, hot-zone.txt gone"
 prow 0 "" 'gh pr merge 12 --merge'
-finish
 # labels compare case-insensitively; consumers get only the issue verbs they use
 row 2 consumer "" $none 'gh issue edit 5 --add-label Status:Verified'
 row 2 implementer "" $none 'gh issue edit 5 --remove-label Owner:Don'
@@ -362,3 +361,31 @@ row 2 implementer "" $none 'while gh issue edit 5 --add-label status:verified; d
 row 2 implementer "" $none 'bash -lc "gh issue close 5"'
 row 2 implementer "" $none 'sh -ec "gh issue close 5"'
 row 2 lead "" $none 'bash -c "gh issue edit 5 --add-label status:plan-approved"'
+# task 7b: env -S re-splits its argument; an unreadable marker body; endpoint charset; gh as another command's argument
+row 2 implementer "" $none 'env -S "gh issue edit 5 --add-label status:verified"'
+row 2 consumer "" $none 'env -S "gh issue edit 5 --add-label status:verified"'
+row 2 implementer "" $none 'env -i --split-string="gh issue close 5"'
+row 0 implementer "" $none 'env -S "echo hi"'
+printf '%s\n' 'a plain comment' > "$T/plain.md"
+row 2 implementer "" $none 'gh api repos/o/r/issues/5/comments -f body=@-'
+row 2 implementer "" $none 'gh api repos/o/r/issues/5/comments --input -'
+row 2 lead "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 -F body=@/dev/stdin'
+row 2 lead "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 -f body=@/no/such/yet.md'
+row 2 lead "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 --input /dev/stdin'
+row 0 lead "" $none "gh api -X PATCH repos/o/r/issues/comments/7 -F body=@$T/plain.md"
+row 2 implementer "" $none 'gh issue comment 5 --body-file -'
+row 2 lead "" $none 'gh issue comment 5 --body-file /nonexistent/x.md'
+row 2 implementer "" $none 'gh issue create --title x -F /dev/stdin'
+row 0 implementer "" $none "gh issue comment 5 --body-file $T/plain.md"
+row 2 lead "" $none 'gh api -X PATCH "repos/o/r/issues/comments/7?x=1" -f body=plan'
+row 2 lead "" $none 'gh api -X PATCH "repos/o/r/issues/comments/7#x" -f body=plan'
+row 2 implementer "" $none 'gh api -X POST repos/o/r/pulls/3/merge'
+row 2 implementer "" $none 'nice gh issue close 5'
+row 2 implementer "" $none 'sudo git push origin master'
+row 2 lead "" $none 'watch gh api -X PATCH repos/o/r/issues/5 -f state=closed'
+row 0 implementer "" $none 'python3 -c "import subprocess"'
+row 0 implementer "" $none 'echo "gh is fine"'
+row 0 implementer "" $none 'git log --grep gh'
+row 0 implementer "" $none 'grep gh file.txt'
+row 0 implementer "" $none 'echo foo -- gh issue close 5'
+finish

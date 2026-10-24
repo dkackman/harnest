@@ -66,6 +66,14 @@ every role:
     waiver, `harnest:release-waive`): run-release.sh records a gate's result
     and Don's waivers that way on the release issue, and every agent posts
     as Don's login, so an agent's copy would read as a gate that passed
+implementer and lead, further (spec B.1/B.5/B.6):
+  - a comment or issue body (--body-file, -F, gh api -f body=@file, --input)
+    from stdin or a file missing or unreadable at call time: the guard cannot
+    check a marker it cannot read
+  - `gh` or `git push` as a later bare word of another command (`watch gh
+    issue ...`); a gh api write's endpoint outside [A-Za-z0-9_./-]; the PR
+    merge endpoint with any method but PUT
+every role: `env -S`/`--split-string` is expanded, and its command held to every rule
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -726,6 +734,22 @@ def command_words(words):
         elif name in PREFIX_COMMANDS:
             i += 1
             while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
+                if name == "env":  # -S / --split-string re-splits its argument into a command
+                    w = words[i]
+                    m = re.fullmatch(r"-[i0v]*S(.*)", w)
+                    text, i = None, i + 1
+                    if w.startswith("--split-string="):
+                        text = w.split("=", 1)[1]
+                    elif w == "--split-string" or (m and not m.group(1)):
+                        text, i = (words[i] if i < len(words) else ""), i + 1
+                    elif m:
+                        text = m.group(1)
+                    if text is not None:
+                        try:
+                            return command_words(shlex.split(text) + words[i:])
+                        except ValueError:
+                            deny("env -S with a string the guard cannot parse: run the command directly.")
+                    i -= 1
                 i += 2 if words[i] in PREFIX_COMMANDS[name] else 1
             if name == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
                 i += 1
@@ -734,10 +758,21 @@ def command_words(words):
     return words[i:]
 
 
+ARG_GH_MSG = "gh/git may not be an argument of another command: run it directly."
+
+
 def wrapper_rule(words):
     """A shell wrapper (bash -c, eval, xargs) hands gh or a push to a shell
     the label and push rules never see."""
     name = os.path.basename(words[0])
+    if name not in ("gh", "git"):
+        for j, w in enumerate(words[1:], 1):
+            if w == "--":
+                break
+            if os.path.basename(w) == "gh" and words[j + 1 : j + 2] and words[j + 1] in ("issue", "api", "pr"):
+                deny(ARG_GH_MSG)
+            if os.path.basename(w) == "git" and git_push_args(words[j:]):
+                deny(ARG_GH_MSG)
     has_c = any(re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", w) for w in words[1:])
     wraps = (name in ("bash", "sh", "zsh") and has_c) or name in ("eval", "xargs")
     rest = " ".join(words[1:])
@@ -784,6 +819,21 @@ def api_parse(args):
     return method, fields, inputs, pos
 
 
+UNREADABLE_BODY_MSG = "body must be inline or a readable file: the guard cannot check a marker it cannot read."
+
+
+def unreadable_body_rule(paths):
+    """Refuse a comment body the guard cannot read: stdin, or a file that is
+    missing or unreadable now, so a release marker could reach it unseen."""
+    for path in paths:
+        try:
+            if path == "-" or not os.path.isfile(path):
+                raise OSError
+            open(path).close()
+        except OSError:
+            deny(UNREADABLE_BODY_MSG)
+
+
 def api_text_has_marker(fields, inputs):
     for v in fields:
         if RELEASE_MARKER in v:
@@ -812,7 +862,12 @@ def implementer_api_rule(words):
     if method.upper() == "GET" and not fields and not inputs:
         return
     endpoint = pos[0].strip("/")
+    unreadable_body_rule([v.split("=@", 1)[1] for v in fields if "=@" in v] + inputs)
+    if not re.fullmatch(r"[A-Za-z0-9_./-]+", endpoint):
+        deny("a gh api write names its endpoint in plain path characters only (no ?, #, &, % or spaces).")
     if API_MERGE.fullmatch(endpoint):
+        if method.upper() != "PUT":
+            deny("the PR merge endpoint takes PUT only.")
         return
     if API_COMMENT_EDIT.fullmatch(endpoint) and method.upper() == "PATCH":
         if api_text_has_marker(fields, inputs):
@@ -956,6 +1011,10 @@ def main():
                 "scripts/file-advisory.sh --summary ... --description-file ... --severity ... "
                 "(the implementer: $HARNEST_ROOT/scripts/file-advisory.sh)."
             )
+        if role in ("implementer", "lead") and (
+            is_gh_issue(words, "comment") or is_gh_issue(words, "create") or is_gh_issue(words, "edit")
+        ):
+            unreadable_body_rule(flag_values(words, "--body-file", "-F"))
         if carries_release_marker(words):
             deny(
                 "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."

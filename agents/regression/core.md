@@ -176,6 +176,9 @@ its last line. Stage an issue body with `Write` to `/tmp/<case>-issue.md`
 and pass it with `--body-file <path>`. Read any file, including a saved tool
 result, with `Read`.
 
+The hook also reads through `env -S "..."` (it re-splits its string into a command),
+so that command meets every rule too.
+
 ## Guardrails
 
 - If the MCP server is down or unresponsive, that isn't a suite result:
