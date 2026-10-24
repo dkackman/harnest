@@ -1309,43 +1309,11 @@ def heredoc_keep(text):
     """The (start, end) spans of text fold_case leaves as written: each
     heredoc header's operator and delimiter word, each body's ending line,
     and each body line that folding would make equal to its delimiter.
-    Headers are found as command_text finds them (outside quotes, by
-    heredoc_header); an unreadable header is not one, and is folded."""
-    keep, i, n, dq, pending = [], 0, len(text), False, []
-    while i < n:
-        c = text[i]
-        if c == "\\":
-            i += 2
-        elif not dq and c == "'":
-            e = text.find("'", i + 1)
-            i = n if e < 0 else e + 1
-        elif c == '"':
-            dq = not dq
-            i += 1
-        elif not dq and (h := heredoc_header(text, i)):
-            k, delim, dash, _quoted = h
-            keep.append((i, k))
-            pending.append((delim, dash))
-            i = k
-        elif not dq and c == "\n" and pending:
-            k = i + 1
-            for delim, dash in pending:
-                while k < n:
-                    e = text.find("\n", k)
-                    e = n if e < 0 else e
-                    line = text[k:e]
-                    body = line.lstrip("\t") if dash else line
-                    folded = FOLDED.sub(lambda m: m.group(0).lower(), body)
-                    if body == delim or folded == delim:
-                        keep.append((k, e))
-                    k = e + 1
-                    if body == delim:
-                        break
-            pending = []
-            i = k
-        else:
-            i += 1
-    return keep
+    They come from command_text's own scan of text as written, so headers
+    and bodies are found by the one lexer every later reader uses."""
+    keep = []
+    command_text(text, keep)
+    return sorted(keep)
 
 
 def heredoc_header(text, i):
@@ -1531,7 +1499,7 @@ def heredoc_fed(text, i, k, ls, tainted):
     return False
 
 
-def command_text(text):
+def command_text(text, keep=None):
     """text as written, less what is not a command: the body of a heredoc fed
     to anything but a shell. A quoted-delimiter body is dropped; an unquoted
     one keeps only its substitutions ($(...) and backticks), which run. The
@@ -1539,7 +1507,8 @@ def command_text(text):
     body stays when heredoc_fed says a shell may read it, wrapped as a ( )
     group: a child shell's script, whose commands are read and whose
     assignments set nothing on this line. It also stays, as written, when
-    heredoc_header cannot read the header the way bash does."""
+    heredoc_header cannot read the header the way bash does. <keep>, a list,
+    collects the spans heredoc_keep needs for fold_case."""
     out, i, n, dq, pending, ls = [], 0, len(text), False, [], 0
     tainted = var_sets(text)[1]  # names this line sets by anything but a literal, read before any body is dropped
     while i < n:
@@ -1563,6 +1532,8 @@ def command_text(text):
             k, delim, dash, quoted = h
             fed = heredoc_fed(text, i, k, ls, tainted)
             pending.append((delim, dash, quoted, fed))
+            if keep is not None:
+                keep.append((i, k))
             out.append(text[i:k] if fed else " ")  # a fed header stays; a dropped one goes with its body
             i = k
         elif not dq and c == "\n" and pending:
@@ -1573,8 +1544,13 @@ def command_text(text):
                     e = text.find("\n", k)
                     e = n if e < 0 else e
                     line = text[k:e]
+                    bline = line.lstrip("\t") if dash else line
+                    if keep is not None and (
+                        bline == delim or FOLDED.sub(lambda m: m.group(0).lower(), bline) == delim
+                    ):
+                        keep.append((k, e))  # its end, or a line the fold would make its end: as written
                     k = e + 1
-                    if (line.lstrip("\t") if dash else line) == delim:
+                    if bline == delim:
                         break
                     body.append(line)
                 if fed:  # a child shell's script: its commands are read, its assignments reach nothing here
@@ -2002,10 +1978,12 @@ def runner_word_rule(seg):
     words = [x.replace("\\\n", "") for x in raw_words(seg)]
     names = [os.path.basename(UNQUOTE.sub("", x)).lower() for x in words]
 
-    def built(x, name):
+    def built(x, name, command_word=False):
         if not re.search(r"[$'\"`\\]", x):
             return False
-        return name in FOLDED_NAMES or bool(re.search(r"[$`]", re.sub(r"'[^']*'", "", x)))
+        # a single-quoted $ is text to the command word's runner, but a shell it hands words to evaluates it
+        live = re.sub(r"'[^']*'", "", x) if command_word else x
+        return name in FOLDED_NAMES or bool(re.search(r"[$`]", live))
 
     for x, name in zip(words, names, strict=True):
         if "\\" in x and name in FOLDED_NAMES:
@@ -2019,12 +1997,25 @@ def runner_word_rule(seg):
         if every:
             continue
         if name in RUNNER_OPTS:
-            opts = RUNNER_OPTS[name]
+            opts, known = RUNNER_OPTS[name], True
             while i < len(words) and (ASSIGN.match(words[i]) or (words[i].startswith("-") and len(words[i]) > 1)):
-                i += 2 if words[i] in opts else 1
-            if name == "timeout" and i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
-                i += 1
-            if i < len(words) and built(words[i], names[i]):
+                w = words[i]
+                if ASSIGN.match(w) or (w.startswith("--") and "=" in w):
+                    i += 1
+                elif w in opts:
+                    i += 2
+                else:  # an option the table does not know may take the next word: where the command is is unknown
+                    known = False
+                    break
+            if known and name == "timeout":
+                if i < len(words) and re.fullmatch(r"[0-9.]+[smhd]?", words[i]):
+                    i += 1
+                else:
+                    known = False  # 1e2, 0x10, inf: not a duration this reads
+            if not known:
+                every = True
+                continue
+            if i < len(words) and built(words[i], names[i], command_word=True):
                 deny(BUILT_COMMAND_MSG)
             continue  # the command word itself may be a runner: read on from it
         if name in RUNNERS or x in RUNNER_FLAGS:

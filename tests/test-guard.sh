@@ -1051,4 +1051,26 @@ for r in implementer consumer; do
   row 2 $r "" $none 'timeout -s KILL 5 nohup ${G}h issue close 5'
   row 2 $r "" $none 'xargs -n1 echo "$(echo gh)"'
 done
+# heredoc_keep takes its spans from command_text's own scan (one lexer); a $ in single quotes is
+# text only for a runner's command word, never where a receiving shell evaluates it; an option or
+# duration the runner table does not know reads every word after it
+for r in implementer consumer; do
+  row 2 $r "" $none "# it's${nl}cat <<\"G\"H${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "# it's${nl}cat <<G\\H${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "x=1 # don't${nl}cat <<\"G\"H${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "echo hi # '${nl}cat <<\"G\"H${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "echo ok #'${nl}cat <<\"G\"H${nl}GH${nl}G=g; \$G\"\"h issue close 5"
+  row 2 $r "" $none "watch 'G=g; \$G\"\"h issue close 5'"
+  row 2 $r "" $none "parallel ::: 'G=g; \$G\"\"h issue close 5'"
+  row 2 $r "" $none "xargs -I{} sh -c 'G=g; \$G\"\"h issue close 5'"
+  row 2 $r "" $none "script -q /dev/null sh -c 'G=g; \$G\"\"h issue close 5'"
+  row 2 $r "" $none "find . -exec sh -c 'G=g; \$G\"\"h issue close 5' \;"
+  row 2 $r "" $none 'sudo -c class "G"H issue close 5'
+  row 2 $r "" $none 'env --argv0 x "G"H issue close 5'
+  row 2 $r "" $none 'timeout 1e2 "G"H issue close 5'
+  row 2 $r "" $none 'timeout 0x10 "G"H issue close 5'
+  row 2 $r "" $none 'timeout inf "G"H issue close 5'
+  row 0 $r "" $none 'timeout 60 pytest -k "$K"'
+  row 0 $r "" $none 'nice -n 5 make "$TARGET"'
+done
 finish
