@@ -490,4 +490,47 @@ rowc 0 "$T" "gh issue comment 5 --body-file plain.md && gh issue edit 5 --remove
 rowc 0 "$T" "cat > $T/c1.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue edit 6 --add-label bug && gh issue comment 5 -R o/r -F $T/c1.md >/dev/null"
 rowc 2 "$T" "gh issue edit 6 --add-label bug && cp marker.md plain.md && gh issue comment 5 --body-file plain.md"
 rowc 2 "$T" "gh api -X GET repos/o/r/issues/5 -o plain.md && gh issue comment 5 --body-file plain.md"
+# task 7b fix round 4: the heredoc cut is a shell-aware walk, not a regex over the whole line
+rowc 2 "$T" "cat > $T/p.md <<'EOF'${nl}EOF${nl}gh issue edit 5 --add-label status:verified${nl}EOF"
+rowc 2 "$T" "cat > $T/p.md <<'EOF'${nl}EOF${nl}gh issue comment 5 --body \"<!-- harnest:release-gate x -->\"${nl}EOF"
+rowc 2 "$T" "cat <<EOF${nl}cat > /tmp/q <<'Q'${nl}EOF${nl}gh issue close 5 --reason completed${nl}Q"
+rowc 2 "$T" "echo \"x${nl}cat > /tmp/q <<'Q'${nl}\"${nl}gh issue edit 5 --add-label status:verified${nl}Q"
+rowc 2 "$T" "# x; cat > /tmp/q <<'Q'${nl}gh issue edit 5 --add-label status:verified${nl}Q"
+rowc 2 "$T" "echo \; cat > /tmp/q <<'Q'${nl}gh issue edit 5 --add-label status:verified${nl}Q"
+# "EOF " is not the delimiter line: bash reads the gh line as body, so nothing runs
+rowc 0 "$T" "cat > $T/p.md <<'EOF'${nl}hi${nl}EOF ${nl}gh issue edit 5 --add-label status:verified${nl}EOF"
+rowc 2 "$T" "cat > \"\$(cp marker.md c1.md)c1.md\" <<'EOF'${nl}hi${nl}EOF${nl}gh issue comment 5 --body-file c1.md"
+rowc 2 "$T" "cat > /tmp/x\$(gh\${IFS}issue\${IFS}edit\${IFS}5\${IFS}--add-label\${IFS}status:verified) <<'EOF'${nl}hi${nl}EOF"
+row 2 consumer "" $none "cat > /tmp/x\`gh issue close 5 --reason completed\` <<'EOF'${nl}hi${nl}EOF"
+rowc 0 "$T" "true && cat > $T/c1.md <<'EOF'${nl}hi${nl}EOF${nl}echo done"
+rowc 0 "$T" "cat > $T/c1.md <<'EOF'${nl}${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 0 "$T" "cat > $T/c1.md <<-'EOF'${nl}	hi${nl}	EOF${nl}gh issue comment 5 --body-file $T/c1.md"
+rowc 0 "$T" "cat > $T/c1.md <<'EOF'${nl}uses \`code\` and \$(x)${nl}EOF${nl}gh issue comment 5 --body-file $T/c1.md && gh issue edit 5 --remove-label owner:implementer --add-label owner:tester"
+# a command substitution runs inside double quotes and backticks too, for every role
+for r in consumer curator reviewer; do
+  row 2 $r "" $none 'echo `gh issue edit 5 --add-label status:plan-approved`'
+  row 2 $r "" $none 'echo "$(gh issue edit 5 --add-label release)"'
+  row 2 $r "" $none 'echo "`gh issue edit 5 --add-label status:plan-approved`"'
+  row 2 $r "" $none 'echo "$(echo $(true); gh issue edit 5 --add-label status:plan-approved)"'
+done
+row 0 consumer "" $none 'echo "today is $(date +%F)"'
+row 2 consumer "" $none 'echo "`gh issue edit 5 --add-label status:verified`"'
+# ride-alongs beside a body file: plain gh issue comment|edit|close|reopen|view, no --web/--editor
+rowc 2 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}GH_BROWSER=\"sh -c 'cp marker.md c1.md'\" gh issue view 5 --web && gh issue comment 5 -F c1.md"
+rowc 2 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue develop 5 --checkout --name evil && gh issue comment 5 -F c1.md"
+rowc 2 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue view 5 -w && gh issue comment 5 -F c1.md"
+rowc 2 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue comment 6 --editor && gh issue comment 5 -F c1.md"
+rowc 2 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}nice gh issue view 5 && gh issue comment 5 -F c1.md"
+rowc 2 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}./gh issue view 5 && gh issue comment 5 -F c1.md"
+rowc 0 "$T" "cat > c1.md <<'EOF'${nl}hello${nl}EOF${nl}gh issue view 5 --json state && gh issue comment 5 -F c1.md && gh issue close 6 --reason \"not planned\""
+# \$IFS word splitting: the guard reads one word, bash splits it
+for r in implementer consumer; do
+  row 2 $r "" $none 'gh${IFS}issue${IFS}close${IFS}5${IFS}--reason${IFS}completed'
+  row 2 $r "" $none 'echo $(gh${IFS}issue${IFS}close${IFS}5${IFS}--reason${IFS}completed)'
+  row 2 $r "" $none 'g${X}h issue close 5 --reason completed'
+  row 2 $r "" $none 'gh$E issue close 5 --reason completed'
+  row 2 $r "" $none 'echo ${IFS}x'
+  row 0 $r "" $none 'echo "costs $3 in gh"'
+done
+row 0 lead "" $none 'gh api -X PATCH repos/o/r/issues/comments/7 -f body="plan v2"'
 finish

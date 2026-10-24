@@ -155,11 +155,89 @@ HOOK_CWD = ""  # the tool call's cwd, set by main(): relative body-file paths ar
 SOLE_COMMAND = False  # main(): the gh call is the only command on the line, bar heredoc writes of its body file
 HEREDOC_PATHS = []  # the files `cat > PATH <<EOF` writes on that line
 ENV_CHDIR = False  # command_words(): an env -C/--chdir prefix was stripped from the current segment
-HEREDOC_WRITE = re.compile(  # quoted delimiter only: the body is then literal, never expanded
-    r"^[ \t]*(?:cat[ \t]*>|tee[ \t]+)[ \t]*(\S+?)[ \t]*<<-?[ \t]*(['\"])(\w+)\2"
-    r"(?:[ \t]*(?:>[ \t]*/dev/null|2>&1))*[ \t]*\n(.*?)\n[ \t]*\3[ \t]*(?:\n|$)",
-    re.M | re.S,
+# A heredoc write of a body file: `cat > PATH <<'D'`, `cat >PATH <<"D"` or `tee PATH <<'D'`.
+# Quoted delimiter only (the body is then literal, never expanded); PATH plain path characters,
+# optionally after one $VAR/${VAR} (never IFS); nothing after the delimiter but /dev/null or 2>&1.
+HEREDOC_HEADER = re.compile(
+    r"(?:cat[ \t]*>|tee[ \t]+)[ \t]*((?!-)(?:\$(?!\{?IFS\b)(?:\{\w+\}|\w+))?[A-Za-z0-9_./-]+)"
+    r"[ \t]*<<(-?)[ \t]*(['\"])(\w+)\3(?:[ \t]*(?:>[ \t]*/dev/null|2>&1))*[ \t]*\n"
 )
+
+
+def heredoc_cut(cmd):
+    """(cmd with each heredoc write cut out, the paths written). A shell-aware
+    walk: a header counts only at a real command position (the start, or after
+    an unquoted, unescaped newline, ;, && or || outside a comment), and its
+    body ends at the first line that is exactly the delimiter, as bash ends it.
+    Anything the walk cannot follow ($(, `, ${...}, another <<) stops the
+    cutting, so the rest of the line is checked as commands."""
+    out, paths = [], []
+    i, keep, at_cmd, n = 0, 0, True, len(cmd)
+    while i < n:
+        if at_cmd:
+            j = i
+            while j < n and cmd[j] in " \t":
+                j += 1
+            m = HEREDOC_HEADER.match(cmd, j)
+            if m:
+                delim, dash = m.group(4), m.group(2) == "-"
+                k, end = m.end(), None
+                while k <= n:
+                    e = cmd.find("\n", k)
+                    e = n if e < 0 else e
+                    line = cmd[k:e]
+                    if (line.lstrip("\t") if dash else line) == delim:
+                        end = min(e + 1, n)
+                        break
+                    k = e + 1
+                if end is not None:
+                    out.append(cmd[keep:j] + "\n")
+                    paths.append(m.group(1))
+                    i = keep = end
+                    continue
+        c = cmd[i]
+        two = cmd[i : i + 2]
+        if two in ("$(", "<<") or c == "`" or (two == "${" and not re.match(r"\$\{\w+\}", cmd[i:])):
+            break  # cannot follow: no further cuts
+        if c == "\\":
+            at_cmd = False
+            i += 2
+        elif c == "'":
+            e = cmd.find("'", i + 1)
+            if e < 0:
+                break
+            at_cmd, i = False, e + 1
+        elif two == "$'":
+            k = i + 2
+            while k < n and cmd[k] != "'":
+                k += 2 if cmd[k] == "\\" else 1
+            if k >= n:
+                break
+            at_cmd, i = False, k + 1
+        elif c == '"':
+            k = i + 1
+            while k < n and cmd[k] != '"':
+                if cmd[k] == "`" or cmd[k : k + 2] in ("$(", "${"):
+                    return "".join(out) + cmd[keep:], paths
+                k += 2 if cmd[k] == "\\" else 1
+            if k >= n:
+                break
+            at_cmd, i = False, k + 1
+        elif c == "#" and (i == 0 or cmd[i - 1] in " \t\n;&|()<>"):
+            e = cmd.find("\n", i)
+            if e < 0:
+                break
+            at_cmd, i = True, e + 1
+        elif c in "\n;" or two in ("&&", "||"):
+            at_cmd = True
+            i += 1 if c in "\n;" else 2
+        elif c in " \t":
+            i += 1
+        else:
+            at_cmd = False
+            i += 1
+    out.append(cmd[keep:])
+    return "".join(out), paths
 
 
 def resolve(path):
@@ -194,6 +272,26 @@ def segments(cmd):
         return [w for w in ([UNQUOTE.sub("", x) for x in part.split()] for part in parts) if w]
     if cur:
         out.append(cur)
+    return out
+
+
+SUBSTITUTION = re.compile(r"(?<!\\)\$\(([^()]*)\)|(?<!\\)`((?:\\.|[^`\\])*)`")
+
+
+def substitution_segments(cmd):
+    """The commands inside $(...) and `...`, innermost first, which segments()
+    leaves inside one word when they are quoted or backticked: a command
+    substitution runs even inside double quotes. Escaped ones (\\`, \\$() are
+    text. Read only for the rules: an apostrophe inside one is not an
+    unbalanced quote on the line."""
+    global UNBALANCED
+    out, prev, flag = [], None, UNBALANCED
+    while prev != cmd:
+        prev = cmd
+        for m in SUBSTITUTION.finditer(cmd):
+            out += segments(m.group(1) if m.group(1) is not None else m.group(2))
+        cmd = SUBSTITUTION.sub(" ", cmd)
+    UNBALANCED = flag
     return out
 
 
@@ -846,10 +944,34 @@ def api_parse(args):
 UNREADABLE_BODY_MSG = "body must be inline or a readable file: the guard cannot check a marker it cannot read."
 
 
-def only_issue_calls(words):
-    """A segment that is a `gh issue ...` call: it cannot rewrite a body file."""
-    w = command_words(words)
-    return len(w) >= 2 and os.path.basename(w[0]) == "gh" and w[1] == "issue"
+RIDE_ALONG_VERBS = ("comment", "edit", "close", "reopen", "view")
+
+
+def ride_along_ok(words):
+    """A segment that may share a line with a body-file call: a plain `gh issue
+    comment|edit|close|reopen|view` (or the body-file `create` itself), with no
+    assignment or prefix command before it and no --web/--editor, which run a
+    browser or editor command that could rewrite the body file."""
+    if len(words) < 3 or words[0] != "gh" or words[1] != "issue":
+        return False
+    if words[2] not in RIDE_ALONG_VERBS and not (words[2] == "create" and flag_values(words, "--body-file", "-F")):
+        return False
+    return not any(re.match(r"--(web|editor)\b|-[A-Za-z]*[we][A-Za-z]*$", w) for w in words[3:])
+
+
+IFS_MSG = "$IFS is not allowed in a command word: bash splits it where the guard reads one word."
+EXPANSION = r"\$(?:\{[^}]*\}|\w+|.)"
+
+
+def ifs_rule(text, segs):
+    """$IFS (or any expansion inside a gh/git word, g${X}h, gh$E) is split or
+    filled in by bash after the guard has read the word."""
+    if re.search(r"\$\{?IFS\b", text):
+        deny(IFS_MSG)
+    for words in segs:
+        for w in words:
+            if "$" in w and not re.search(r"\s", w) and re.match(r"(gh|git)(?![\w.-])", re.sub(EXPANSION, "", w)):
+                deny("an expansion inside a gh or git word is filled in after the guard reads it: write the word out.")
 
 
 def redirects_ok(words):
@@ -968,16 +1090,17 @@ def main():
     if data.get("tool_name") != "Bash":
         return
     cmd = data.get("tool_input", {}).get("command", "")
-    stripped = HEREDOC_WRITE.sub("", cmd)  # a quoted-delimiter heredoc body is data, not commands
-    segs = segments(stripped)
+    stripped, written = heredoc_cut(cmd)  # a quoted-delimiter heredoc body is data, not commands
+    segs = segments(stripped) + substitution_segments(stripped)
+    ifs_rule(stripped, segs)
     global HOOK_CWD, SOLE_COMMAND
     HOOK_CWD = data.get("cwd") or ""
-    HEREDOC_PATHS[:] = [m.group(1).strip("'\"") for m in HEREDOC_WRITE.finditer(cmd)]
+    HEREDOC_PATHS[:] = written
     rest = re.sub(r"\d*>&\d+", " ", stripped)
     rsegs = segments(rest)
     SOLE_COMMAND = (
         bool(rsegs)
-        and (len(rsegs) == 1 or all(only_issue_calls(g) for g in rsegs))
+        and (len(rsegs) == 1 or all(ride_along_ok(g) for g in rsegs))
         and "`" not in rest
         and "$(" not in rest
         and "harnest:" not in rest

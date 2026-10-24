@@ -176,7 +176,7 @@ its last line. Stage an issue body with `Write` to `/tmp/<case>-issue.md`
 and pass it with `--body-file <path>`. Read any file, including a saved tool
 result, with `Read`.
 
-The hook refuses `env -S` (and `--split-string`): it re-splits and expands its string.
+The hook refuses `env -S` (and `--split-string`): it re-splits and expands its string. It also refuses `$IFS` anywhere in a command, and an expansion inside a `gh`/`git` word (`g${X}h`).
 
 ## Guardrails
 

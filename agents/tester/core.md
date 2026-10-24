@@ -158,4 +158,5 @@ It also refuses, with labels read in any case: lifting an `owner:don` or
 release label; `git` pointed at another tree (`--git-dir`, `--work-tree`,
 `-C`, `--no-index`); a `gh issue` verb outside view, list, create, comment,
 edit, close, reopen and status; a `gh` command with an unbalanced quote, and `env -S` (also `--split-string` and abbreviations: it re-splits
-and expands its string).
+and expands its string); `$IFS` anywhere in a command, and an expansion inside a
+`gh`/`git` word (`g${X}h`).
