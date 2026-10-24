@@ -79,8 +79,13 @@ implementer and lead, further (spec B.1/B.5/B.6):
     merge endpoint with any method but PUT
 every role: `env -S`/`--split-string` is expanded, and its command held to every rule
 every role: a command word built at run time ($G""h, "g"h, ${G}h, `...`, $(...)) is
-  refused (a plain $VAR or $VAR/literal/path passes), and a zsh glob qualifier (a `(`
-  glued to a word) on any line, backtick text included
+  refused; a plain $VAR or $VAR/literal/path passes only when VAR is set to a plain
+  literal earlier on the line in the same shell and nowhere set another way, or names
+  an interpreter (PY, PYTHON, VENV, V), which may be set no other way; a zsh glob
+  qualifier (a `(` glued to a word) on any line, backtick text included. Both read
+  a heredoc body as commands unless it is provably data: no shell command word on
+  the header's line, no pipe after the header except to a plain filter, and a
+  header read the way bash reads it (command_text)
 curator (suite review sessions, via `guard_settings curator`):
   - no removing `owner:don` (Don's hand-back is his to make)
   - the one-owner rule is not applied: harness-repo issues carry no owner
@@ -307,12 +312,14 @@ def inline_cat_subs(cmd):
 SHELLS = r"(?<![\w.-])(?:bash|sh|zsh|dash|ksh|eval|source)(?![\w.-])|(?<![\w./-])\.(?=[ \t])"
 
 
-def live_text(text, keep_quoted=False):
+def live_text(text, keep_quoted=False, heredocs=True):
     """The parts of text bash substitutes in: unquoted and double-quoted text,
     without single-quoted strings, $'...' strings, or the bodies of
     quoted-delimiter heredocs fed to a command that is not a shell. With
     keep_quoted, single-quoted and $'...' strings stay as written (only the
-    heredoc bodies and escaped characters go)."""
+    heredoc bodies and escaped characters go). With heredocs=False no header
+    is read: the caller ran command_text, which already dropped the bodies
+    that are data and kept the ones a shell runs."""
     out, i, n, dq, pending, line_start = [], 0, len(text), False, [], 0
     while i < n:
         c, two = text[i], text[i : i + 2]
@@ -338,7 +345,7 @@ def live_text(text, keep_quoted=False):
             dq = not dq
             out.append(c)
             i += 1
-        elif not dq and (m := re.match(r"<<-?[ \t]*(['\"])(\w+)\1", text[i:])):
+        elif heredocs and not dq and (m := re.match(r"<<-?[ \t]*(['\"])(\w+)\1", text[i:])):
             if not re.search(SHELLS, text[line_start:i]):
                 pending.append((m.group(2), two == "<<" and text[i + 2 : i + 3] == "-"))
             out.append(" ")
@@ -1275,7 +1282,11 @@ def heredoc_header(text, i):
     it, or None: `<<` that is not part of `<<<` (a here-string), an optional
     `-`, blanks, then the delimiter word. The delimiter is the whole word with
     its quotes and backslashes removed, and it is quoted (the body is literal)
-    if any quote or backslash was in it (<<"E"OF and <<E\OF end at EOF)."""
+    if any quote or backslash was in it (<<"E"OF and <<E\OF end at EOF). None
+    too for a header the guard cannot read the way bash does: a delimiter
+    starting with $ (<<$'EOF', <<$"EOF"), a backslash inside its quotes
+    (<<"EO\"F"), or a quote left open on the line. The caller then keeps the
+    body as commands."""
     if text[i : i + 2] != "<<" or (i > 0 and text[i - 1] == "<") or text[i + 2 : i + 3] == "<":
         return None
     k, n = i + 2, len(text)
@@ -1283,12 +1294,15 @@ def heredoc_header(text, i):
     k += dash
     while k < n and text[k] in " \t":
         k += 1
+    if text[k : k + 1] == "$":
+        return None
     word, quoted = [], False
     while k < n and text[k] not in " \t\n;|&<>()":
         c = text[k]
         if c in "'\"":
             e = text.find(c, k + 1)
-            e = n if e < 0 else e
+            if e < 0 or "\n" in text[k:e] or "\\" in text[k:e]:
+                return None
             word.append(text[k + 1 : e])
             quoted, k = True, e + 1
         elif c == "\\":
@@ -1301,45 +1315,74 @@ def heredoc_header(text, i):
     return (k, delim, dash, quoted) if delim else None
 
 
-def pipeline_at(text, i):
-    """The pipeline on i's line that holds position i: the line cut at
-    unquoted ;, &&, || and a lone & (not a redirection's), but not at |, so
-    `cat <<'EOF' | bash` is one pipeline and `source x; python - <<'EOF'`
-    is two."""
-    ls, le = text.rfind("\n", 0, i) + 1, text.find("\n", i)
-    le = len(text) if le < 0 else le
-    start, k, q = ls, ls, ""
-    while k < le:
-        c = text[k]
+HEREDOC_SHELLS = ("bash", "sh", "zsh", "dash", "ksh")  # what runs a heredoc body it reads from stdin
+# read-only filters a heredoc's output may be piped to without the body reaching a shell
+PIPE_FILTERS = frozenset(
+    "grep egrep fgrep tail head cut sort uniq wc tr cat jq column fold fmt nl tac rev paste less more "
+    "md5sum shasum sha256sum base64 od hexdump xxd strings diff cmp".split()
+)
+
+
+def pipe_stages(text):
+    """The text after each unquoted single | in text (not ||, not one inside
+    quotes, $(...) or backticks): what a pipeline feeds its earlier stages to."""
+    out, i, n, q, depth = [], 0, len(text), "", 0
+    while i < n:
+        c = text[i]
         if c == "\\":
-            k += 2
+            i += 2
             continue
         if q:
             q = "" if c == q else q
-        elif c in "'\"":
+        elif c in "'\"`":
             q = c
-        elif (
-            text[k : k + 2] in ("&&", "||")
-            or c == ";"
-            or (c == "&" and text[k - 1 : k] not in ("<", ">", "|") and text[k + 1 : k + 2] != ">")
-        ):
-            w = 2 if text[k : k + 2] in ("&&", "||") else 1
-            if k + w > i:
-                return text[start:k]
-            start = k + w
-            k += w
-            continue
-        k += 1
-    return text[start:le]
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth = max(depth - 1, 0)
+        elif c == "|" and not depth:
+            if text[i + 1 : i + 2] == "|":
+                i += 2
+                continue
+            out.append(i + 1)
+        i += 1
+    return [text[p:] for p in out]
+
+
+def heredoc_fed(text, i, k, ls):
+    """True when the body of the heredoc whose header spans text[i:k] may reach
+    a shell, read as the header's whole line, from ls (the last newline outside
+    quotes, so a quoted argument spanning lines is read whole): a shell (HEREDOC_SHELLS) as the
+    command word of any simple command on the line, after unescaping and
+    dequoting (b\\ash, "bash"), or a | after the header whose stage is not a
+    plain read-only filter (| bash, | $SH, | xargs bash, | $(x), an empty
+    stage). Fail closed: anything the line has that this cannot model keeps
+    the body as commands."""
+    le = text.find("\n", i)
+    le = len(text) if le < 0 else le
+    segs, sure = raw_segments(text[ls:le])
+    if not sure:
+        return True
+    for seg in segs:
+        w = raw_command_word(raw_words(seg))
+        if os.path.basename(UNQUOTE.sub("", w)) in HEREDOC_SHELLS:
+            return True
+    for stage in pipe_stages(text[k:le]):
+        segs, sure = raw_segments(stage)
+        w = raw_command_word(raw_words(segs[0])) if segs else ""
+        if not sure or not re.fullmatch(r"[\w.+-]+", w) or os.path.basename(w) not in PIPE_FILTERS:
+            return True
+    return False
 
 
 def command_text(text):
     """text as written, less what is not a command: the body of a heredoc fed
     to anything but a shell. A quoted-delimiter body is dropped; an unquoted
     one keeps only its substitutions ($(...) and backticks), which run. The
-    header goes too, so no later reader looks for a body that is gone. A
-    shell anywhere on the header's line (cat <<'EOF' | bash) keeps the body."""
-    out, i, n, dq, pending = [], 0, len(text), False, []
+    header goes too, so no later reader looks for a body that is gone. The
+    body stays as commands when heredoc_fed says a shell may read it, and
+    when heredoc_header cannot read the header the way bash does."""
+    out, i, n, dq, pending, ls = [], 0, len(text), False, [], 0
     while i < n:
         c = text[i]
         if c == "\\":
@@ -1347,7 +1390,10 @@ def command_text(text):
             i += 2
         elif not dq and c == "'":
             e = text.find("'", i + 1)
-            e = n - 1 if e < 0 else e
+            if e < 0:  # a quote left open: the rest stays live text, since nothing ends the quote (fail closed)
+                out.append(" ")
+                i += 1
+                continue
             out.append(text[i : e + 1])
             i = e + 1
         elif c == '"':
@@ -1356,7 +1402,7 @@ def command_text(text):
             i += 1
         elif not dq and (h := heredoc_header(text, i)):
             k, delim, dash, quoted = h
-            if re.search(SHELLS, pipeline_at(text, i)):
+            if heredoc_fed(text, i, k, ls):
                 out.append(text[i:k])  # fed to a shell: header and body stay as written
             else:
                 pending.append((delim, dash, quoted))
@@ -1378,8 +1424,10 @@ def command_text(text):
                     out.extend("\n" + m.group(0) for m in SUBSTITUTION.finditer("\n".join(body)))
             pending = []
             out.append("\n")
-            i = k
+            i = ls = k
         else:
+            if c == "\n" and not dq:
+                ls = i + 1
             out.append(c)
             i += 1
     return "".join(out)
@@ -1543,71 +1591,267 @@ def raw_command_word(words):
     return ""
 
 
-DYNAMIC_VAR_MSG = "a command name may not come from a variable set at run time: write the command name literally."
+INTERPRETER_VARS = frozenset(("PY", "PYTHON", "VENV", "V"))  # the names the logs use for an interpreter path
+VAR_COMMAND_MSG = (
+    "a command name may not come from a variable unless it is set to a literal on this line "
+    "(before the use, in the same shell), or names an interpreter: PY, PYTHON, VENV, V. Write the command name literally."
+)
+RESERVED_VAR_MSG = (
+    "PY, PYTHON, VENV and V name an interpreter path and may run as a command on a later line: "
+    "set one only to a literal (no $, backtick, read, +=, for)."
+)
+SETTERS = ("read", "mapfile", "readarray", "getopts", "let", "for", "select", "printf", "unset")
+EXPORTERS = ("export", "local", "declare", "typeset", "readonly")
+WILD = ("eval", "source", ".")  # may set any variable
+NAME = r"[A-Za-z_]\w*"
 
 
-def dynamic_vars(text, depth=0):
-    """Names the line sets at run time, by anything but a plain literal:
-    NAME=value with a $ or backtick in it (export/local/declare forms too),
-    read, printf -v, mapfile/readarray, getopts, a for loop over a list that
-    is not literal, and ${NAME:=...}. Over-approximate: any word of those
-    commands that looks like a name counts."""
-    ct = command_text(text)
-    names = set(re.findall(r"\$\{(\w+):?=", ct))
-    for seg in raw_segments(ct)[0]:
-        words = raw_words(seg)
-        for w in words:
-            m = re.match(r"([A-Za-z_]\w*)(?:\[[^]]*\])?\+?=(.*)", w, re.S)
-            if m and re.search(r"[$`]", m.group(2)):
-                names.add(m.group(1))
-        cmd = [w for w in words if not re.match(r"[A-Za-z_]\w*=", w)]
-        head = os.path.basename(cmd[0]) if cmd else ""
-        if head in ("read", "mapfile", "readarray", "getopts"):
-            names.update(w for w in cmd[1:] if re.fullmatch(r"[A-Za-z_]\w*", w))
-        elif head == "printf":
-            names.update(cmd[k + 1] for k, w in enumerate(cmd[:-1]) if w == "-v")
-        elif head == "for" and len(cmd) > 1:
-            rest = " ".join(cmd[2:])
-            if not re.fullmatch(r"in(?: [\w./:+-]+)*", rest):
-                names.add(cmd[1])
-    if depth < 8:
-        for m in SUBSTITUTION.finditer(live_text(ct)):
-            names |= dynamic_vars(m.group(1) if m.group(1) is not None else m.group(2), depth + 1)
-    return names
+def single_quoted_mask(text):
+    """mask[i] is True where text[i] is inside single quotes or $'...': what
+    bash never substitutes in."""
+    mask, i, n, dq = bytearray(len(text)), 0, len(text), False
+    while i < n:
+        c, two = text[i], text[i : i + 2]
+        if c == "\\":
+            i += 2
+        elif not dq and (c == "'" or two == "$'"):
+            k = i + (2 if two == "$'" else 1)
+            while k < n and text[k] != "'":
+                k += 2 if two == "$'" and text[k] == "\\" else 1
+            for j in range(i, min(k + 1, n)):
+                mask[j] = 1
+            i = k + 1
+        elif c == '"':
+            dq = not dq
+            i += 1
+        else:
+            i += 1
+    return mask
 
 
-def built_command_rule(text, depth=0, dynamic=None):
+def live_substitutions(text):
+    """(inner text, start) of each $(...) and `...` in text outside single
+    quotes: the ones that run."""
+    mask = single_quoted_mask(text)
+    return [
+        (m.group(1) if m.group(1) is not None else m.group(2), m.start())
+        for m in SUBSTITUTION.finditer(text)
+        if not mask[m.start()]
+    ]
+
+
+COMPOUND_OPEN = ("{", "if", "while", "until", "for", "select", "case")
+COMPOUND_CLOSE = ("}", "fi", "done", "esac")
+
+
+def top_statements(text):
+    """(statements, groups) for text at nesting depth 0. A statement is
+    (text, start, same_shell) for each simple command, split at unquoted ; &
+    | && || |& and newlines; same_shell is False when bash runs it in a
+    subshell: a pipeline's stage, a background job, or a { } / if / while /
+    for / case compound that is piped or backgrounded as a whole. groups is
+    (inner text, start) of each bare ( ) subshell, which the statements skip
+    over."""
+    pieces, groups, start, stack, i, n = [], [], 0, [], 0, len(text)
+    seps = []  # the separator after each piece
+
+    def emit(end, sep):
+        nonlocal start
+        if text[start:end].strip():
+            pieces.append([text[start:end], start, True])
+            seps.append(sep)
+        elif seps:
+            seps[-1] = sep if sep in ("|", "&") or seps[-1] not in ("|", "&") else seps[-1]
+
+    while i < n:
+        c, two, top = text[i], text[i : i + 2], (stack[-1] if stack else "")
+        if c == "\\":
+            i += 2
+            continue
+        if (not top or top[0] != '"') and c == "'":
+            e = text.find("'", i + 1)
+            i = n if e < 0 else e + 1
+            continue
+        if two in ("$(", "${"):
+            stack.append((two, i))
+            i += 2
+            continue
+        if c == '"':
+            stack.pop() if top and top[0] == '"' else stack.append(('"', i))
+        elif c == "`":
+            stack.pop() if top and top[0] == "`" else stack.append(("`", i))
+        elif c == ")" and top and top[0] in ("$(", "("):
+            if top[0] == "(" and len(stack) == 1:
+                groups.append((text[top[1] + 1 : i], top[1] + 1))
+            stack.pop()
+        elif c == "}" and top and top[0] == "${":
+            stack.pop()
+        elif c == "(" and not stack:
+            stack.append(("(", i))
+        elif not stack and (two in ("&&", "||", "|&") or c in ";|&\n"):
+            if c == "&" and ((i > 0 and text[i - 1] in "<>") or text[i + 1 : i + 2] == ">"):
+                i += 1
+                continue
+            sep = two if two in ("&&", "||", "|&") else c
+            emit(i, "|" if sep == "|&" else sep)
+            i += len(sep)
+            start = i
+            continue
+        i += 1
+    emit(n, "")
+    # a piped or backgrounded statement, and every statement of a compound that is
+    # piped or backgrounded as a whole (or fed by a pipe), runs in a subshell
+    open_at = []  # (index of the opening piece, fed by a pipe)
+    for k, (piece, _, _) in enumerate(pieces):
+        words = raw_words(piece)
+        before = seps[k - 1] if k else ""
+        if before == "|" or seps[k] in ("|", "&"):
+            pieces[k][2] = False
+        j = 0
+        while j < len(words) and words[j] in SHELL_KEYWORDS and words[j] not in COMPOUND_OPEN:
+            j += 1
+        lead = words[j] if j < len(words) else ""
+        if lead in COMPOUND_OPEN:
+            open_at.append((k, before == "|"))
+        elif lead in COMPOUND_CLOSE and open_at:
+            k0, fed = open_at.pop()
+            if fed or seps[k] in ("|", "&"):
+                for m in range(k0, k + 1):
+                    pieces[m][2] = False
+    for k0, _ in open_at:  # a compound left open: nothing in it is surely set
+        for m in range(k0, len(pieces)):
+            pieces[m][2] = False
+    return [tuple(x) for x in pieces], groups
+
+
+def literal_value(word):
+    """True when the assignment word NAME=value sets a plain literal: no $ or
+    backtick, and a dequoted value whose basename is not gh or git."""
+    value = word.split("=", 1)[1]
+    return not re.search(r"[$`]", value) and os.path.basename(UNQUOTE.sub("", value)) not in ("gh", "git")
+
+
+ASSIGN = re.compile(r"(" + NAME + r")(\[[^]]*\])?(\+?)=")
+
+
+def var_sets(text):
+    """(literal, tainted, sublit, wild) for text: literal maps a name to the
+    start of its first plain `NAME=literal` assignment statement (alone, or
+    after export/local/declare without options, at depth 0, in the same
+    shell); tainted holds every name this shell sets any other way: a
+    standalone assignment with a $ or backtick, +=, an array element, read,
+    mapfile, readarray, getopts, let, unset (any name-like word of those),
+    printf -v, for/select's variable, declare/local/typeset with options
+    (declare -n), and ${NAME:=}. A prefix or argument NAME=word (env V=1 cmd,
+    echo V=1) sets nothing and taints nothing. sublit holds every name a
+    substitution or ( ) subshell sets, literal or not, which the outer shell
+    never sees; wild is the end of the last eval/source/. statement, which may
+    set anything, or -1."""
+    literal, tainted, sublit, wild = {}, set(), set(), -1
+    mask = single_quoted_mask(text)
+    tainted |= {m.group(1) for m in re.finditer(r"\$\{(" + NAME + r"):?=", text) if not mask[m.start()]}
+    statements, groups = top_statements(text)
+    for piece, start, same in statements:
+        words = raw_words(piece)
+        k = 0
+        while k < len(words) and words[k] in SHELL_KEYWORDS:
+            k += 1
+        words = words[k:]
+        if not words:
+            continue
+        deq = [UNQUOTE.sub("", w) for w in words]
+        if deq[0] in WILD:
+            wild = start + len(piece)
+        if words[0] in EXPORTERS and not any(w.startswith("-") for w in words[1:]):
+            words, deq = words[1:], deq[1:]
+        if words and all(ASSIGN.match(w) for w in words):  # an assignment statement
+            for w in words:
+                m = ASSIGN.match(w)
+                if same and not m.group(2) and not m.group(3) and literal_value(w):
+                    literal.setdefault(m.group(1), start)
+                else:
+                    tainted.add(m.group(1))
+            continue
+        k = 0  # past prefix assignments (IFS= read) and command/builtin, to the command itself
+        while k < len(deq) and (ASSIGN.match(deq[k]) or deq[k] in ("command", "builtin")):
+            k += 1
+        head, rest = (deq[k], deq[k + 1 :]) if k < len(deq) else ("", [])
+        if head == "printf":
+            for j, d in enumerate(rest):
+                if d == "-v" and j + 1 < len(rest):
+                    tainted.add(rest[j + 1])
+                elif d.startswith("-v") and len(d) > 2:
+                    tainted.add(d[2:])
+        elif head in ("for", "select"):
+            tainted.update(rest[:1])
+        elif head in SETTERS or (head in EXPORTERS and any(d.startswith("-") for d in rest)):
+            for d in rest:
+                if m := ASSIGN.match(d):
+                    tainted.add(m.group(1))
+                elif re.fullmatch(NAME, d):
+                    tainted.add(d)
+    for inner, _ in live_substitutions(text) + groups:
+        lit, tnt, sub, _ = var_sets(inner)
+        sublit |= set(lit) | tnt | sub
+    return literal, tainted, sublit, wild
+
+
+def built_command_rule(text, depth=0, env=None, base=0):
     """Refuse a command word built at run time: one that starts with a
     backtick or $(, or that mixes an expansion or a quote with literal
     characters ($G""h, "g"h, g'h', ${G}h). The guard reads the word it
-    sees, and bash runs the one it builds. A plain $VAR or "$VAR" alone
-    passes (an interpreter path in a variable). Read in every substitution
-    too, since each holds commands of its own."""
-    if dynamic is None:
-        dynamic = dynamic_vars(text)
+    sees, and bash runs the one it builds. A plain $VAR, "$VAR" or
+    $VAR/literal/path passes only when VAR is set to a plain literal earlier
+    on this line, in the same shell, and nowhere set another way (var_sets),
+    or when VAR names an interpreter (INTERPRETER_VARS) and no eval/source
+    ran: an allowlist, since a deny-list of setters kept losing to shell
+    grammar. An interpreter name this shell sets any other way is refused
+    outright: it may run as a command on a later line. Read in every live
+    substitution and ( ) subshell too, each with its own assignments, since
+    each holds commands of its own."""
     ct = command_text(text)
-    for seg in raw_segments(ct)[0]:
+    literal, tainted, sublit, wild = var_sets(ct)
+    if depth == 0:
+        if tainted & INTERPRETER_VARS:
+            deny(RESERVED_VAR_MSG)
+        env = ({}, set(), -1)
+    out_lit, out_tnt, out_wild = env
+    literal = {**out_lit, **{k: v + base for k, v in literal.items()}}
+    tainted = out_tnt | tainted
+    wild = max(out_wild, wild if wild < 0 else wild + base)
+    groups = top_statements(ct)[1]
+    outer = ct
+    for inner, at in groups:  # a ( ) subshell is read on its own, below
+        outer = outer[:at] + " " * len(inner) + outer[at + len(inner) :]
+    idx = 0
+    for seg in raw_segments(outer)[0]:
+        idx = outer.find(seg, idx)
+        pos = idx + base
         w = raw_command_word(raw_words(seg))
         if not w:
             continue
         if PLAIN_EXPANSION.fullmatch(w):
-            if re.match(r'"?\$\{?(\w+)', w).group(1) in dynamic:
-                deny(DYNAMIC_VAR_MSG)
+            name = re.match(r'"?\$\{?(\w+)', w).group(1)
+            set_here = name in literal and wild < literal[name] < pos
+            if name in tainted or name in sublit or not (set_here or (name in INTERPRETER_VARS and wild < 0)):
+                deny(VAR_COMMAND_MSG)
             continue
         if w[0] == "`" or w.startswith("$(") or re.search(r"[$'\"`]", w):
             deny(BUILT_COMMAND_MSG)
     if depth < 8:
-        for m in SUBSTITUTION.finditer(live_text(ct)):  # live ones: a single-quoted `x` is text
-            built_command_rule(m.group(1) if m.group(1) is not None else m.group(2), depth + 1, dynamic)
+        for inner, at in live_substitutions(ct) + groups:  # live ones: a single-quoted `x` is text
+            built_command_rule(inner, depth + 1, (literal, tainted, wild), at + base)
 
 
 def glob_rule(text):
     """glob_qualifier over every line, every role (a qualifier runs its code
     whatever command the word belongs to), and over each backtick's text,
     quoted or not: a backtick in double quotes runs its own command words."""
-    lt = live_text(command_text(text))
+    lt = live_text(command_text(text), heredocs=False)
     if glob_qualifier(lt) or any(
-        glob_qualifier(live_text(m.group(2))) for m in SUBSTITUTION.finditer(lt) if m.group(2) is not None
+        glob_qualifier(live_text(m.group(2), heredocs=False))
+        for m in SUBSTITUTION.finditer(lt)
+        if m.group(2) is not None
     ):
         deny("zsh glob qualifiers are not allowed (a ( glued to a word): quote the word or add a space.")
 

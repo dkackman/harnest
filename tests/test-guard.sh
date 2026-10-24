@@ -554,7 +554,7 @@ for r in implementer consumer; do
   row 2 $r "" $none 'G="gh issue"; $G close 5 --reason completed'
   row 2 $r "" $none 'export G=/usr/bin/gh'
 done
-row 0 implementer "" $none '"$GIT" status'
+row 2 implementer "" $none '"$GIT" status'  # fix round 4: GIT is neither a literal on this line nor an interpreter name
 row 0 implementer "" $none '$PY -m pytest -q'
 # D: ANSI-C and locale quoting
 for r in implementer lead consumer curator reviewer; do
@@ -883,5 +883,72 @@ for r in implementer consumer; do
   row 2 $r "" $none 'for G in $(echo gh); do $G issue close 5; done'
   row 0 $r "" $none 'PY=venv/bin/python; $PY -m pytest'
   row 0 $r "" $none 'PY=venv/bin/python; "$PY" -m pytest -q'
+done
+# fix round 4: a command word from a variable is an allowlist (a literal set on this line before
+# the use, or an interpreter name: PY PYTHON VENV V); a heredoc body stays commands unless provably data
+for r in implementer consumer; do
+  row 2 $r "" $none 'command read G <<< gh; $G issue close 5'
+  row 2 $r "" $none 'builtin read G <<< gh; $G issue close 5'
+  row 2 $r "" $none 'if read G <<< gh; then $G issue close 5; fi'
+  row 2 $r "" $none '{ read G <<< gh; }; $G issue close 5'
+  row 2 $r "" $none 'select G in $(echo gh); do $G issue close 5; done'
+  row 2 $r "" $none 'G=g; G+=h; $G issue close 5'
+  row 2 $r "" $none 'printf -vG gh; $G issue close 5'
+  row 2 $r "" $none '$G issue close 5'
+  row 2 $r "" $none 'G=ls true; $G issue close 5'
+  row 2 $r "" $none '(G=ls); $G issue close 5'
+  row 2 $r "" $none 'G=ls | cat; $G issue close 5'
+  row 2 $r "" $none '$G issue close 5; G=ls'
+  row 2 $r "" $none 'PY=venv/bin/python; read PY <<< gh; $PY issue close 5'
+  row 2 $r "" $none 'for PY in $(echo gh); do $PY issue close 5; done'
+  row 2 $r "" $none 'eval "PY=gh"; $PY issue close 5'
+  row 2 $r "" $none 'declare -n PY=G; $PY issue close 5'
+  row 2 $r "" $none 'P=$(ls venv/bin/python); $P -c "import x"'
+  row 0 $r "" $none 'PY=venv/bin/python; $PY -m pytest'
+  row 0 $r "" $none '"$PY" -m pytest'
+  row 0 $r "" $none '$PY -m pytest'
+  row 0 $r "" $none '$V/pytest -q'
+  row 0 $r "" $none 'P=venv/bin/python; $P -c "import x"'
+  row 0 $r "" $none 'export PY=venv/bin/python && $PY -m pytest -q'
+  row 0 $r "" $none 'venv=venv/bin; $venv/pytest -q'
+  row 0 $r "" $none "V=venv/bin${nl}\$V/ruff check dw && \$V/pytest -q"
+  # a set counts only in this shell: not a pipeline stage, a background job, a piped compound, a subshell
+  row 2 $r "" $none '{ G=ls; } | cat; $G issue close 5'
+  row 2 $r "" $none 'if true; then G=ls; fi | cat; $G issue close 5'
+  row 2 $r "" $none '(read PY <<< gh); $PY issue close 5'
+  row 2 $r "" $none 'x=$(for V in a b; do echo $V; done); $V/ruff check'
+  row 0 $r "" $none '(PY=venv/bin/python; $PY -m pytest)'
+  row 0 $r "" $none '(P=venv/bin/python; $P -c "import x")'
+  row 0 $r "" $none 'P=venv/bin/python; D=$($P -c "import x"); echo $D'
+  row 0 $r "" $none 'if [ -x venv/bin/python ]; then P=venv/bin/python; else P=python3; fi; $P -c "import x"'
+  # an interpreter name is reserved: set any other way, the line is refused even with no use
+  row 2 $r "" $none 'V=$(ls venv/bin/python)'
+  row 2 $r "" $none 'read V <<< x'
+  row 2 $r "" $none 'PY=venv/bin/python; PY+=3'
+  # a NAME=word beside a command, or in a message, sets nothing
+  row 0 $r "" $none 'env V=1 venv/bin/python x.py'
+  row 0 $r "" $none 'echo "V=1"; grep -n "PY=" f; printf "%s\n" V PY'
+  row 0 $r "" $none 'x=$(for V in a b; do echo $V; done); echo $x'
+  # heredoc bodies: a shell command word on the header's line, a pipe to anything but a
+  # plain filter, or a header the guard cannot read keeps the body as commands
+  row 2 $r "" $none "G=g${nl}{ cat <<'EOF'; } | bash${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g; SH=bash; cat <<'EOF' | \$SH${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}cat <<'EOF' | b\\ash${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}cat <<'EOF' | xargs bash${nl}\$G\"\"h issue close 5${nl}EOF"
+  row 2 $r "" $none "G=g${nl}cat <<\"EO\\\"F\" >/dev/null${nl}x${nl}EO\"F${nl}\$G\"\"h issue close 5"
+  row 2 $r "" $none "G=g${nl}cat <<\$'EOF'${nl}x${nl}EOF${nl}\$G\"\"h issue close 5"
+  row 2 $r "" $none "G=g${nl}cat <<\$\"EOF\"${nl}x${nl}EOF${nl}\$G\"\"h issue close 5"
+  row 2 $r "" $none "G=g${nl}cat <<'EOF >/dev/null${nl}x${nl}EOF${nl}\$G\"\"h issue close 5"
+  row 2 $r "" $none "b\\ash <<'EOF'${nl}gh issue close 5${nl}EOF"
+  row 2 $r "" $none "\"bash\" <<'EOF'${nl}gh issue close 5${nl}EOF"
+  row 2 $r "" $none "{ cat <<'EOF'; } | zsh${nl}echo /tmp(e{touch /tmp/pwn})${nl}EOF"
+  row 2 $r "" $none "cat <<'EOF' > /tmp/x; bash /tmp/x${nl}gh issue close 5${nl}EOF"
+  row 2 $r "" $none "cat <<'EOF' > /tmp/x${nl}gh issue close 5${nl}EOF${nl}bash /tmp/x"  # the label rules read that body already
+  row 0 $r "" $none "cat <<'EOF' > /tmp/x; echo done${nl}print(fn(x))${nl}EOF"
+  row 0 $r "" $none "source ./activate 2>/dev/null; python - <<'EOF' 2>&1 | grep -v Warn | tail -8${nl}print(fn(x))${nl}EOF"
+  row 0 $r "" $none "venv/bin/python - <<'E' 2>&1 | cut -c1-300 | tail -30${nl}print(fn(x))${nl}E"
+  row 0 $r "" $none "sed -n '1p${nl}2p' f; venv/bin/python - <<'EOF' 2>&1 | grep -v Warn | tail -30${nl}print(fn(x))${nl}EOF"
+  row 0 $r "" $none "python -c \"${nl}print(1)\"; python - <<'EOF'${nl}print(fn(x))${nl}EOF"
+  row 0 $r "" $none "gh issue comment 5 --body \"it doesn't; see \\\`(a, b)\\\`\" && gh issue list --json number --jq '.[] | \"\\(.number)\"'"
 done
 finish
