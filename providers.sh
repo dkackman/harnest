@@ -815,12 +815,14 @@ claim_issue() {
   labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
   printf '%s\n' "$labels" | grep -qx "$mine" && return 0
   printf '%s\n' "$labels" | grep -q '^target:' && return 1
+  snapshot_invalidate  # whether or not the edit lands: gh may fail after GitHub took it
   gh issue edit "$n" --repo "$TICKET_REPO" --add-label "$mine" >/dev/null 2>&1 || return 1
   labels="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null)" || return 1
   printf '%s\n' "$labels" | grep -qx "$mine" || return 1
   if printf '%s\n' "$labels" | grep '^target:' | grep -vqx "$mine"; then
     [ "$(claim_winner "$n" "$(printf '%s\n' "$labels" | grep '^target:')")" = "$mine" ] && return 0
     gh issue edit "$n" --repo "$TICKET_REPO" --remove-label "$mine" >/dev/null 2>&1 || true
+    snapshot_invalidate
     return 1
   fi
 }
@@ -993,6 +995,7 @@ driver_exit() {
 # label; only the tester closes an issue as completed.
 audit_issue() {
   local n="$1" role="$2" facts state reason owners
+  snapshot_invalidate  # it reads the board a session just edited
   # "|"-separated, not @tsv: stateReason is empty on an open issue, and read
   # collapses consecutive tabs (whitespace IFS), shifting owners into reason.
   facts="$(gh issue view "$n" --repo "$TICKET_REPO" --json state,stateReason,labels \
@@ -1299,6 +1302,7 @@ run_claude_session() {
     set +m
     [ -z "${driver_session_dir:-}" ] || echo "$SESSION_PGID" > "$driver_session_dir/session.$$" 2>/dev/null || true
     wait "$SESSION_PGID" || echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
+    snapshot_invalidate  # the session may have edited any issue
     [ -z "${driver_session_dir:-}" ] || rm -f "$driver_session_dir/session.$$"
     SESSION_PGID=""
     if ! sleep_if_rate_limited "$LAST_SESSION"; then
@@ -1354,6 +1358,7 @@ park_external_issues() {
       && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked for human review: filed by @$author, not by @$TICKET_OWNER. The agent loop only acts on issues from @$TICKET_OWNER unasked; a human will triage this and hand it off (\`owner:implementer\`, drop \`status:needs-approval\`) if it should enter the loop." >/dev/null \
       && echo "[loop] parked #$n (filed by @$author) as owner:don + status:needs-approval" | tee -a "$LOOP_LOG" \
       || echo "[loop] failed to park #$n (filed by @$author)" | tee -a "$LOOP_LOG"
+      snapshot_invalidate
     done
 }
 
@@ -1440,7 +1445,37 @@ plan_text() {
 # caller must never read a failed snapshot as an empty board. (gh returns an
 # issue's first 100 comments; a feature thread longer than that would lose
 # its later markers.)
+#
+# Cached for SNAPSHOT_TTL_SECS (0: never) in $LOGS/.snapshot<suffix>.json,
+# for the driver process tree that wrote it (HARNEST_SNAPSHOT_OWNER, the
+# top driver's pid, inherited by run-features.sh): an idle cycle listed the
+# board 16 times over, four calls each. What keeps a cached board from
+# being acted on after it changed: snapshot_invalidate after every session
+# (run_claude_session) and after every label edit a driver makes itself,
+# and still_ready, which reads a fresh board right before a session. What
+# the cache can miss is an edit from outside this process tree (Don, the
+# other loop) for up to the TTL, which the next snapshot then sees.
+SNAPSHOT_TTL_SECS="${SNAPSHOT_TTL_SECS:-20}"
+: "${HARNEST_SNAPSHOT_OWNER:=$$}"
+export HARNEST_SNAPSHOT_OWNER
+snapshot_file() { echo "$LOGS/.snapshot${TARGET_SUFFIX-}.json"; }
+snapshot_invalidate() { [ -z "${LOGS-}" ] || rm -f "$(snapshot_file)"; }
 issue_snapshot() {
+  local f snap now
+  case "$SNAPSHOT_TTL_SECS" in ''|*[!0-9]*|0) issue_snapshot_read; return ;; esac
+  [ -n "${LOGS-}" ] || { issue_snapshot_read; return; }
+  f="$(snapshot_file)"; now="$(date +%s)"
+  if [ -f "$f" ] && snap="$(jq -ce --arg o "$HARNEST_SNAPSHOT_OWNER" --argjson now "$now" --argjson ttl "$SNAPSHOT_TTL_SECS" \
+       'select(.cache.owner == $o and $now - .cache.at < $ttl and $now >= .cache.at) | del(.cache)' "$f" 2>/dev/null)"; then
+    printf '%s\n' "$snap"
+    return 0
+  fi
+  snap="$(issue_snapshot_read)" || return 1
+  printf '%s\n' "$snap" | jq -c --arg o "$HARNEST_SNAPSHOT_OWNER" --argjson now "$now" '. + {cache: {owner: $o, at: $now}}' \
+    > "$f.$$" 2>/dev/null && mv -f "$f.$$" "$f" || rm -f "$f.$$"
+  printf '%s\n' "$snap"
+}
+issue_snapshot_read() {
   local issues markers
   issues="$(gh issue list --repo "$TICKET_REPO" --state open --limit 500 \
     --json number,title,labels,author,parent,blockedBy,subIssuesSummary 2>/dev/null)" || return 1
@@ -1591,6 +1626,7 @@ queue_issues() {
 # Re-checks one issue just before its session: an earlier session this pass
 # (a triage, a batch, a hand-off) may have moved it on.
 still_ready() {
+  snapshot_invalidate  # never a cached board: this is the last look before the session
   queue_issues "$2" | cut -f1 | grep -x "$1" >/dev/null
 }
 
@@ -1670,6 +1706,7 @@ note_progress() {
   else
     echo "[$tag] could not park #$n (gh failed)" | tee -a "$LOOP_LOG"
   fi
+  snapshot_invalidate
 }
 
 # role_prompt <role> <kind> <out-file>

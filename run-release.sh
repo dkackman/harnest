@@ -71,6 +71,10 @@ done
 gh auth status >/dev/null 2>&1 || { echo "gh CLI not authenticated" >&2; exit 1; }
 mkdir -p "$LOGS"
 . "$REPO/providers.sh"
+# A release reads the board fresh every time (no snapshot cache): its gates
+# count what it just filed, and a stale board is the costly mistake here.
+# shellcheck disable=SC2034  # read by issue_snapshot (providers.sh)
+SNAPSHOT_TTL_SECS=0
 
 # A release is gated on what lem runs: its check reads lem's commit, and
 # its regression gate runs the levels there. DW_TARGET=mini-ai is for

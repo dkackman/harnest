@@ -679,6 +679,7 @@ tail -f logs/loop.log                           # watch from another terminal
 | `CASES_PER_SESSION` | 3 or 8 | `run-regression.sh` only; see above |
 | `FALLBACK_MODEL` | unset | `--fallback-model`; must be servable by the role's provider |
 | `SESSION_RETRY_PAUSE_SECS` | `30` | a session that ends without a result is retried once; a rejected rate limit instead sleeps the driver until the reset, then runs the session once more |
+| `SNAPSHOT_TTL_SECS` | `20` | how long one driver process tree reuses its board snapshot (four `gh issue list` calls) across queues and passes; dropped after every session and every label edit the driver makes, and never used for the re-check right before a session; `0` reads the board fresh every time (`run-release.sh` always does) |
 | `RATE_LIMIT_FALLBACK_SECS` | `300` | how long a rejected rate limit sleeps when the event names no reset time (never zero, which would spin) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | override the commit trailer on suite edits |
 | `SLEEP_SECS` / `MAX_CYCLES` | `120` / `0` | pause after an idle cycle; `0` = run forever |

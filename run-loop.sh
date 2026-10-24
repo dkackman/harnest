@@ -408,6 +408,7 @@ arch_review_after() {
     && gh issue comment "$n" --repo "$TICKET_REPO" --body "<!-- harnest:arch-review $base $head -->
 Architecture review queued by the loop driver: this hand-off changed \`dw/\` or \`dw_mcp/\` on \`develop\` (\`${base:0:10}..${head:0:10}\`: $(printf '%s' "$files" | head -8 | tr '\n' ' ')). The reviewer checks it against \`docs/ARCHITECTURE.md\` before the tester verifies." >/dev/null \
     || echo "[reviewer:#$n] could not queue the architecture review (gh failed); the tester verifies it unreviewed" | tee -a "$LOOP_LOG"
+  snapshot_invalidate
 }
 
 # Queues come from lib/classify.jq through queue_issues and still_ready
@@ -571,6 +572,7 @@ $( [ "${#stranded[@]}" -gt 0 ] && { echo; echo "To unstrand (with their latest c
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:implementer --add-label owner:don --add-label status:needs-approval >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this issue has been handed off as fixed and bounced back by the tester $bounces times since it was last opened (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER)$last_on. The two roles are not converging on what \"fixed\" means here; a human should look at the bounce comments and either narrow the ask or say which side is right, then hand it back with \`owner:implementer\`." >/dev/null \
         || echo "[implementer:#$n] could not park (gh failed); skipping this cycle" | tee -a "$LOOP_LOG"
+      snapshot_invalidate
       continue
     elif [ "$IMPLEMENTER_ESCALATE_AFTER" -gt 0 ] && [ "$bounces" -ge "$IMPLEMENTER_ESCALATE_AFTER" ]; then
       model="$TESTER_MODEL"; provider="$TESTER_PROVIDER"
@@ -640,6 +642,7 @@ lead_pass() {
       gh issue edit "$parent" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label stabilization >/dev/null \
         && gh issue comment "$parent" --repo "$TICKET_REPO" --body "Paused by the loop driver for dw's stabilization freeze (\`docs/stabilization/FREEZE\` is on \`develop\`; see \`docs/stabilization/ROADMAP.md\`): no stage builds while it holds. Stage #${n%% *} was next. When the freeze lifts the loop hands this back to \`owner:lead\` itself, and the build resumes where it stopped." >/dev/null \
         || echo "[lead:#$parent] could not park (gh failed)" | tee -a "$LOOP_LOG"
+      snapshot_invalidate
       continue
     fi
     [ "$built" -lt "$LEAD_STAGES_PER_CYCLE" ] || break
@@ -650,6 +653,7 @@ lead_pass() {
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label status:needs-approval >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this stage of #$parent has been handed off and bounced back by the tester $bounces times since it was last opened (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER). The lead and the tester's acceptance cases are not converging; a human should read the bounce comments and either amend the plan (a new version on #$parent) or say which side is right, then hand it back with \`owner:lead\`." >/dev/null \
         || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"
+      snapshot_invalidate
       continue
     fi
     # A feature is claimed whole (lib/classify.jq): the parent first, so a
@@ -689,6 +693,7 @@ $(plan_text "$parent")" \
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:lead --add-label owner:don --add-label status:needs-approval >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: this feature has been handed to the tester for its final check and failed it $bounces times (IMPLEMENTER_PARK_AFTER=$IMPLEMENTER_PARK_AFTER). A human should read the bounce comments and decide." >/dev/null \
         || echo "[lead:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"
+      snapshot_invalidate
       continue
     fi
     claim_issue "$n" \
@@ -984,6 +989,7 @@ unpark_pass() {
       gh issue edit "$n" --repo "$TICKET_REPO" --remove-label owner:don --remove-label stabilization --add-label "$prev" >/dev/null \
         && gh issue comment "$n" --repo "$TICKET_REPO" --body "Unparked by the loop driver: dw's stabilization freeze has lifted (\`docs/stabilization/FREEZE\` left \`develop\`), so this goes back to \`$prev\`, its owner before the park." >/dev/null \
         && report="$report #$n->$prev" || { report="$report #$n:gh-failed"; failed=1; }
+      snapshot_invalidate
     elif grep -qx "$n" "$told" 2>/dev/null; then
       report="$report #$n:left(already said)"
     else

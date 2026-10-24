@@ -56,6 +56,15 @@ eq  "outage: the driver finishes the cycle" 0 "$rc"
 has "outage: logged, not fatal" "could not" "$(cat "$T/loop.out")"
 eq  "outage: no session launched" 0 "$(wc -l < "$FAKE_CLAUDE_LOG" | tr -d ' ')"
 
+# --- 1a. an idle board, gh healthy: the passes share one board snapshot
+# (SNAPSHOT_TTL_SECS) rather than listing it again for every queue
+board '[{"number": 1, "state": "OPEN", "labels": [{"name": "owner:don"}, {"name": "status:needs-approval"}]}]'
+: > "$FAKE_GH_LOG"
+loop 1
+eq  "idle: no session" 0 "$(wc -l < "$FAKE_CLAUDE_LOG" | tr -d ' ')"
+cp "$FAKE_GH_LOG" "$T/gh-idle"
+eq  "snapshot: at most 12 list calls in an idle cycle" 1 "$(( $(grep -c 'issue list' "$T/gh-idle") <= 12 ))"
+
 # --- 2. a session that changes nothing, twice: the ledger parks it
 board '[{"number": 1, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
 loop 2; rc=$?
@@ -167,10 +176,11 @@ has "freeze: the board says so" "release freeze #30 Release 0.5.0: only release-
 # an unreadable board is not "no freeze". gh call 57 of this run is the last of
 # the tester pass closures lookups (the 58th is its release_freeze snapshot), so
 # the outage starts there and
-# the tester task must hold, not run
+# the tester task must hold, not run. The count is of uncached snapshots
+# (SNAPSHOT_TTL_SECS=0); a cached board would answer release_freeze itself.
 : > "$FAKE_CLAUDE_LOG"; : > "$T/gh-calls"; rm -f "$T/board.json.count"
 board '[{"number": 30, "state": "OPEN", "title": "Release 0.5.0", "labels": [{"name": "release"}, {"name": "owner:don"}]}]'
-FAKE_GH_FAIL_AFTER=57 FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
+SNAPSHOT_TTL_SECS=0 FAKE_GH_FAIL_AFTER=57 FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
 eq  "freeze unknown: the standing task did not run" 0 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG" || true)"
 has "freeze unknown: it says why" "[tester:task] board unreadable; holding under a possible release freeze" "$(cat "$T/loop.out")"
 rm -f "$T/board.json.count"
