@@ -160,6 +160,21 @@ eq  "TERM: the lock is released" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
 wait "$drv"; eq "TERM: the driver exits 143" 143 "$?"
 fails "TERM: the driver stopped, not carried on" grep -q "after session" "$T/term.out"
 pkill -f 'sleep 30.1' 2>/dev/null
+# --- a nested driver that ignores TERM is KILLed after CHILD_DRIVER_KILL_SECS
+# (the driver is a file: the masked-TERM child's quoting doesn't survive a bash -c string)
+printf '%s\n' '. "$HARNEST/providers.sh"; driver_traps' \
+  'run_child_driver bash -c '"'"'trap "" TERM; sleep 30.6'"'"'; echo "after child"' > "$T/stubborn.sh"
+HARNEST="$HARNEST" CHILD_DRIVER_KILL_SECS=1 bash "$T/stubborn.sh" > "$T/stubborn.out" 2>&1 &
+drv=$!
+for _ in $(seq 50); do pgrep -f 'sleep 30.6' >/dev/null && break; sleep 0.1; done
+ok  "child KILL: the stubborn child is running" pgrep -f 'sleep 30.6'
+t0=$(date +%s); kill -TERM "$drv"
+wait "$drv"; rc=$?; t1=$(date +%s)
+eq  "child KILL: the driver exits 143" 143 "$rc"
+ok  "child KILL: within the bound, not the child's lifetime" [ "$((t1 - t0))" -lt 10 ]
+eq  "child KILL: the child is gone" "" "$(pgrep -f 'sleep 30.6')"
+has "child KILL: says it killed the child" "ignored TERM for 1s" "$(cat "$T/stubborn.out")"
+pkill -f 'sleep 30.6' 2>/dev/null
 # a holder killed outright (KILL) leaves its claude session running: wait for it
 mkdir "$LOGS/.driver.lock"; echo "999999 dead" > "$LOGS/.driver.lock/owner"
 set -m; sleep 30.2 & orphan=$!; set +m

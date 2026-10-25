@@ -283,8 +283,11 @@ ts() { date '+%H:%M:%S'; }
 # has dw at local scope, but without --strict-mcp-config the session also
 # inherits every account-level claude.ai connector (Gmail, Drive, Calendar),
 # and an unattended agent has no business holding those. Tool schemas come from the server and are always fresh.
+# A failed write would otherwise pass --mcp-config "" silently ($( ) in an array
+# hides the status): resolve the path first and stop if it isn't there.
+MCP_CONFIG_PATH="$(mcp_config_file "$DW_URL" "$DW_TOKEN")" || { echo "[loop] cannot write the mcp config under $LOGS" >&2; exit 1; }
 MCP_FLAGS=(
-  --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
+  --mcp-config "$MCP_CONFIG_PATH"
   --strict-mcp-config
 )
 # --plugin-dir loads the dw plugin from the plugin tree (origin/develop,
@@ -846,7 +849,7 @@ $(issue_context "$n")" \
     # (agents/tester/standing-task.md) it costs every later one
     local bible_bytes
     if [ -f "$REPO/qa-bible.md" ] && bible_bytes="$(wc -c < "$REPO/qa-bible.md" | tr -d ' ')" && [ "$bible_bytes" -gt 12288 ]; then
-      echo "[audit] WARNING: qa-bible.md is $(( bible_bytes / 1024 )) KB, over its 12 KB cap" | tee -a "$LOOP_LOG"
+      echo "[audit] WARNING: qa-bible.md is $bible_bytes bytes, over its 12 KB (12288) cap" | tee -a "$LOOP_LOG"
     fi
   elif [ "${#closures[@]}" -gt 0 ]; then
     local list

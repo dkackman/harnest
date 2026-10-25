@@ -232,8 +232,9 @@ workspace_for_suite_file() {
 # only server visible. --plugin-dir loads the dw plugin live from the source
 # checkout so skill fixes are covered without a reinstall. The permission
 # allowlist (providers.sh) is the same fence the tester runs behind.
+MCP_CONFIG_PATH="$(mcp_config_file "$DW_URL" "$DW_TOKEN")" || { echo "[regression] cannot write the mcp config under $LOGS" >&2; exit 1; }
 REGRESSION_FLAGS=(
-  --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
+  --mcp-config "$MCP_CONFIG_PATH"
   --strict-mcp-config
   --plugin-dir "$PLUGIN_DIR"
   "${ISOLATION_FLAGS[@]}"

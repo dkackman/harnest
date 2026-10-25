@@ -262,7 +262,7 @@ head -c 13312 /dev/zero | tr '\0' x > "$T/h/qa-bible.md"
 FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
 eq  "bible cap: the task session ran" 1 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG")"
 has "house rules: the task prompt carries them" "## MCP house rules" "$(cat "$T/h/logs/.prompt.tester.task.md")"
-has "bible cap: an over-cap bible is flagged" "[audit] WARNING: qa-bible.md is 13 KB, over its 12 KB cap" "$(cat "$T/loop.out")"
+has "bible cap: an over-cap bible is flagged" "[audit] WARNING: qa-bible.md is 13312 bytes, over its 12 KB (12288) cap" "$(cat "$T/loop.out")"
 head -c 2048 /dev/zero | tr '\0' x > "$T/h/qa-bible.md"
 FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
 fails "bible cap: one under the cap is not" grep -q "qa-bible.md is" "$T/loop.out"

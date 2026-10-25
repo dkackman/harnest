@@ -51,7 +51,7 @@
 # A re-plan bumps P, so every marker for the old version stops counting and
 # decompose and spec run again for the new one.
 # A plan comment whose first line also says `draft:` (the design session's
-# resumable draft, agents/lead/design.md step 3) is not a plan yet: it sets
+# resumable draft, agents/lead/design.md section 2b) is not a plan yet: it sets
 # no version, and a feature whose only plan is a draft goes back to design,
 # approved or not.
 
