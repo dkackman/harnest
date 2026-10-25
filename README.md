@@ -645,6 +645,14 @@ tail -f logs/loop.log                           # watch from another terminal
   `dw-serve` systemd user unit. The script falls back to a `screen` session if the unit
   isn't installed.
 
+**Schedules.** `scripts/install-schedules.sh` writes two launchd agents to
+`~/Library/LaunchAgents`: `com.harnest.retro.plist` runs `./run-retro.sh` every Monday at
+06:00, and `com.harnest.digest.plist` runs `./run-digest.sh` daily at 07:00. Both `cd` to
+this checkout, append to `logs/schedule-<name>.log`, and skip when `logs/.driver.lock` is
+absent, since with no loop running there is nothing new to retro or digest. Add `--load` to
+load them into launchd as well; `--uninstall` (with `--load`, also unloads) removes them.
+Without `--load` the script only writes or removes files.
+
 | var | default | what |
 |---|---|---|
 | `SOURCE_DIR` | `~/src/dkackman/dw-agent` (`-<target>` on another target) | agents' clone of the dw repo, with its own `venv`; the implementer's and the lead's builds' cwd |
