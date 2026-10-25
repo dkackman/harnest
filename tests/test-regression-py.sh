@@ -17,6 +17,8 @@ sha="$(git -C "$T/src" rev-parse HEAD)"
 
 mkdir "$T/h"
 (cd "$HARNEST" && tar cf - --exclude ./logs --exclude ./.git --exclude ./.env .) | (cd "$T/h" && tar xf -)
+# start from an empty results ledger: real history in the checkout must not leak into the copy
+rm -f "$T/h"/regression-results/*.jsonl "$T/h"/regression-results/*/*.jsonl
 cat > "$T/h/regression-suite-tiny.md" <<'EOS'
 # tiny suite
 ## Fixtures
