@@ -13,16 +13,16 @@ rather than in a separate log.
 | R1  | Replay benchmark (measure the loop itself)        | done; baseline + checklist run | —   |
 | R2  | Pre-hand-off reviewer subagent                    | checklist applied; watch live bounces | — |
 | R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
-| R4  | Tester-authored acceptance specs for features     | todo    | —          |
+| R4  | Tester-authored acceptance specs for features     | built, as R11's phase 3: the tester's `spec` kind (`status:needs-spec`) writes `pending: #<stage>` cases from the approved plan before any code exists | R11 |
 | R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56); schedule weekly | — |
-| R6  | Graduate mechanical cases to an executable client | runner built; 3 cases; graduation needs approval | R5 helps |
-| R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; watch denial counts | R1 |
-| R8  | Port the drivers to Python (Agent SDK optional, later) | planned 2026-09-28: `docs/superpowers/specs/2026-09-27-r8-port-inputs.md`, `plans/2026-09-27-r8-port.md`; decisions accepted | R12 |
-| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`); the dashboard's Needs you card lists the queue live | — |
+| R6  | Graduate mechanical cases to an executable client | runner built; 2 cases script-run (S-F002, S-F028, marked `runner: script`), `S-F036.json` orphaned (its case is not marked); graduation needs approval | R5 helps |
+| R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; weekly launchd schedule (`scripts/install-schedules.sh`); watch denial counts | R1 |
+| R8  | Port the drivers to Python (Agent SDK optional, later) | built: `harness/` (stdlib only); `harness.drivers.regression` at parity with `run-regression.sh` (`tests/test-regression-py.sh`); the regression fleet (`harness.drivers.fleet`) and the requirements generator; the loop itself is still bash | R12 |
+| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`, daily via `scripts/install-schedules.sh`); the dashboard's Needs you card lists the queue live | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); first two features delivered: dw#376 and dw#378 (stages A–D) closed verified; design now runs first in the cycle | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
-| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | step 1 (profile and pack line) drafted in R8's inputs spec; split during R8; feature flag first. A second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
+| R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | partly built: `targets/dw/profile.toml` holds every server's policy (facts come from the server at startup), and the regression fleet runs a level across every server's lanes at once; a second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
 | R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; nightly regression cadence is Don's call | R12 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
@@ -56,7 +56,12 @@ line between framework and target first, and port along it.
 
 ## Baseline (2026-09-22)
 
-The numbers later work gets compared against:
+Superseded on 2026-10-23 by the numbers in `docs/superpowers/specs/2026-10-23-harness-review.md`
+("Numbers that frame the review": 2,817 sessions and $3,086 logged, 111 `[audit] WARNING`
+lines, 93 of them removed suite lines, and suites now 761 cases). Kept as the 2026-09-22
+snapshot that R1–R12 were measured against; compare new work with the review's numbers.
+
+The numbers later work gets compared against (as of 2026-09-22):
 
 - Issues on `dkackman/diffusers-workflow`: 280 total, 31 open. 179 carry `status:verified`,
   18 `wontfix`, 55 `regression`. 40 carry `owner:don` and 27 `status:needs-approval`. These

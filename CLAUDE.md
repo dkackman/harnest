@@ -77,10 +77,13 @@ and runs the real drivers end to end. See "Tests" below.
   guardrails, and one fragment per session kind holds only that kind's steps.
   `role_prompt <role> <kind> <file>` (`providers.sh`) concatenates them, and `run_agent`,
   `run_session` and `run-bench.sh` pass the result as `--append-system-prompt-file`.
-  Kinds: implementer `fix`/`triage`; tester `verify`/`handoff`/`answer`/`closures`/`task`
-  (`task` also loads `standing-task.md`, `verify`/`handoff`/`task` load `cases.md`, and
+  Kinds: implementer `fix`/`triage`; tester `verify`/`handoff`/`answer`/`closures`/`task`/`spec`
+  (`task` also loads `standing-task.md`, `verify`/`handoff`/`task`/`spec` load `cases.md`, and
   `verify`/`spec`/`task`, the kinds that call the dw tools, load `mcp-rules.md`, the MCP house rules);
-  regression `whole`/`chunk`/`sweep`; reviewer `docs`/`arch`. State each rule once, in the core if more than one
+  regression `whole`/`chunk`/`sweep`, where `whole` is `core` + `run-cases` + `sweep` and
+  `chunk` is `core` + `run-cases` + `chunk` (there is no `whole.md`); reviewer `docs`/`arch`;
+  lead `design`/`decompose`/`build`/`closeout`; curator `audit`/`review`; release
+  `review`/`notes`. `role_prompt`'s `case` in `providers.sh` is the map. State each rule once, in the core if more than one
   kind needs it, and have fragments point at it by section name, never by step number
   across files. A rule enforced by `guard.py` stays in the core as a one-line pointer.
 - `agents/implementer/` — role prompt for the agent with source access and SSH to the
@@ -385,21 +388,46 @@ real budget (see issue #101).
 
 ## Tests
 
-`tests/run.sh [name]` runs every `tests/test-*.sh` (plain bash on `tests/lib.sh`, no bats):
+`tests/run.sh [name]` runs every `tests/test-*.sh` (plain bash on `tests/lib.sh`, no bats).
+Sixteen files:
 - `test-classify.sh`: `lib/classify.jq` over fixture boards in `tests/classify-cases.json`,
   one per protocol state. Add a board when you add or change a state.
-- `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).
-- `test-providers.sh`: the shared helpers. Session outcomes on canned logs, the stream
-  renderer against `tests/fixtures/stream.expected`, model/effort validation, the
-  no-progress ledger, `handoff_count`, `park_external_issues` and the driver lock.
+- `test-consolidation.sh`: the curator's weekly consolidation (`lib/consolidation.py`) on a
+  fixture tree with a canned `arch_report.py`.
 - `test-drivers.sh`: the real `run-loop.sh`, `run-features.sh`, `run-regression.sh`,
-  `run-curate.sh` and `run-retro.sh` against `tests/fake-gh.py` (a JSON board that edits
-  change) and a throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
-  fix-then-verify in one cycle, an outside filing, and the spec race.
+  `run-release.sh`, `run-curate.sh` and `run-retro.sh` against `tests/fake-gh.py` (a JSON
+  board that edits change; it lists newest first within `--limit`, honours the `--search`
+  qualifiers the drivers use, and stamps comments with `FAKE_GH_AUTHOR` and the time) and a
+  throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
+  fix-then-verify in one cycle, an outside filing, the closures window, withheld comments,
+  the curator's audited removals, and the spec race.
+- `test-fleet.sh`: a whole regression fleet run (`harness/drivers/fleet.py`) against three
+  `tests/fake-mcp.py` servers.
+- `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).
 - `test-lint.sh`: `bash -n` under `/bin/bash` 3.2, `shellcheck -S error`, Python parses,
   `ruff check` and `ruff format --check` clean under `ruff.toml` (a missing ruff fails; fix with
-  `ruff check --fix . && ruff format .`), and every `${KNOB:-}` a driver reads is named in the
-  README.
+  `ruff check --fix . && ruff format .`), and every knob read (`${KNOB:-}` in the drivers and
+  `scripts/*.sh`, `environ.get("KNOB")` in `lib/`, `scripts/` and `harness/` Python) is named
+  in the README.
+- `test-providers.sh`: the shared helpers. Session outcomes on canned logs, the stream
+  renderer against `tests/fixtures/stream.expected`, model/effort validation, the
+  no-progress ledger, `handoff_count`, `park_external_issues`, the driver lock, suite commits
+  and the board snapshot cache.
+- `test-python.sh`: the `harness/` unit tests in `tests/py/` (stdlib `unittest`: contract,
+  dashboard, fleet, parity, perf check, rank, results, suite).
+- `test-ratchet.sh`: the architecture ratchet (`lib/arch_ratchet.py`, the guard's
+  `arch_gate`) on fixture repos with a stand-in `arch_metrics.py`.
+- `test-regression-py.sh`: the Python regression driver against `run-regression.sh`, same
+  scenarios, outputs diffed (parity).
+- `test-release.sh`: `lib/release.sh`'s gate markers, board check, findings validation and
+  notes insertion.
+- `test-requirements-py.sh`: the requirements generator (`harness/drivers/requirements.py`)
+  end to end.
+- `test-setup.sh`: `scripts/setup-mac-loop.sh` (twice, the second a no-op) and
+  `scripts/install-schedules.sh` under a throwaway `HOME`.
+- `test-sync.sh`: `scripts/sync-fixtures.sh` with fake curl, rsync and ssh.
+- `test-testbed.sh`: `scripts/testbed.sh` with fake ssh and curl.
+- `test-ui-ratchet.sh`: the UI's architecture ratchet (`check_ui`) on fixture repos.
 
 Two bash 3.2 traps the suite has already caught: an apostrophe in a comment inside `<( )`
 ("bad substitution"), and `source <(…)`, which 3.2 doesn't support.
@@ -455,6 +483,13 @@ call time what `audit_issue` otherwise only finds afterwards:
   (`HARNEST_SESSION_KIND`, set by `run_agent`). It still can't add `status:verified`;
 - `status:verified` from the docs reviewer, which closes as `completed` without an MCP call
   and marks it `status:reviewed` instead.
+
+What it does not cover: a command the hook never sees whole. That means a script the agent
+writes and then runs, a `bash -c` string (whose obfuscation detectors don't read inside it),
+and a line hidden from its lexers by a `#` comment or `$'…'` quoting (harnest#141, the
+hidden-script class). The consumer roles are held there by their tool allowlist instead:
+`Write`/`Edit` are allow-only on the suite files, `regression-perf/**`, `qa-bible.md` and
+`/tmp`, so a consumer cannot write a script it could run, and `dontAsk` denies the rest.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
 changed files, the UI's `npm run check`/`lint`/`test` must pass when `ui/` changed (about

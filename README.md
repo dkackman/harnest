@@ -676,7 +676,7 @@ Without `--load` the script only writes or removes files.
 | `LEAD_MODEL` / `LEAD_PROVIDER` | the tester's | the feature lead, in both drivers; `LEAD_WORKER_MODEL` (`claude-sonnet-5-5`) runs its code subagents |
 | `LEAD_STAGE_BUDGET_USD` / `LEAD_CLOSEOUT_BUDGET_USD` / `TESTER_SPEC_BUDGET_USD` | `15` / `3` / `8` | per-session caps in `run-loop.sh`; `run-features.sh` has `LEAD_DESIGN_BUDGET_USD` (6) and `LEAD_DECOMPOSE_BUDGET_USD` (2) |
 | `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` and `REVIEWER_EFFORT` (triage and the docs reviewer follow the tester's) |
-| `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` (`8` on local) / `3` | `--max-budget-usd` per session; `0` = uncapped |
+| `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` (`8` on a non-lem target) / `3` | `--max-budget-usd` per session; `0` = uncapped |
 | `REGRESSION_BUDGET_USD` | `6` | per regression chunk |
 | `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's labels unchanged before the driver parks it with Don; `0` = never |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
@@ -725,6 +725,11 @@ The standalone drivers have their own knobs:
 | `BENCH_WORK` / `BENCH_RESCORE` | `$TMPDIR/harnest-bench` / `0` | where replays run; `1` re-scores a kept session without a new one, `judge` re-judges only |
 | `JUDGE_MODEL` / `JUDGE_PROVIDER` / `JUDGE_EFFORT` / `JUDGE_BUDGET_USD` | `claude-opus-5-5` / `anthropic` / `high` / `1` | the bench's judge |
 | `JUDGE_TIMEOUT_SECS` / `JUDGE_TRIES` | `150` / `3` | bound on each judge try, and how many tries |
+| `ADVISORY_PACKAGE` | `diffusers-workflow` | `scripts/file-advisory.sh`: the package a draft security advisory names |
+| `DW_PORT` | `8765` | `scripts/testbed.sh stop`: the port whose listener it stops; read on the target host, so set it in that host's environment |
+| `LOGS` | `logs/` at the harness root | `scripts/setup-mac-loop.sh` and `scripts/sync-fixtures.sh`: where they keep their state; the tests point it at a temp dir |
+| `HARNEST_PROFILE` | `targets/<target>/profile.toml` | the Python drivers (`harness/profile.py`): a profile file to load instead of the target's |
+| `HARNEST_ARCH_TOOLS` | `grimp networkx pylint pygount ruff` | `lib/arch_ratchet.py`: the tools the ratchet requires before it measures; the tests narrow it to a stdlib stand-in |
 
 ### Models and providers
 

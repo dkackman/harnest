@@ -29,9 +29,16 @@ ok "classify.jq compiles" jq -f lib/classify.jq tests/fixtures/empty-board.json
 if command -v node >/dev/null; then
   ok "regression page renders" node tests/fixtures/render-regression.js dashboard/regression.html
 fi
-# Knobs: ${NAME:-...} reads in the drivers, less the few that aren't settings.
-internal="SESSION_HEADER TMPDIR"
-for k in $(grep -ohE '\$\{[A-Z][A-Z0-9_]+:-' run-*.sh providers.sh | sed 's/\${//; s/:-//' | sort -u); do
+# Knobs: ${NAME:-...} reads in the drivers and scripts/*.sh, and
+# environ.get("NAME"...) reads in lib/, scripts/ and harness/ Python, less
+# the few that aren't settings.
+internal="SESSION_HEADER TMPDIR PWD"
+knobs() {
+  grep -ohE '\$\{[A-Z][A-Z0-9_]+:-' run-*.sh providers.sh scripts/*.sh | sed 's/\${//; s/:-//'
+  find lib scripts harness -name '*.py' -not -path '*/__pycache__/*' -print0 \
+    | xargs -0 grep -ohE "environ\.get\( *[\"'][A-Z][A-Z0-9_]+[\"']" | sed -E "s/.*[\"']([A-Z0-9_]+)[\"']/\1/"
+}
+for k in $(knobs | sort -u); do
   case " $internal " in *" $k "*) continue ;; esac
   base="${k#CURATE_BUDGET_}"; [ "$base" = "$k" ] || [ "$base" = USD ] || k2="_$base"
   if grep -qw "$k" README.md || { [ -n "${k2:-}" ] && grep -q "\`${k2}\`" README.md; }; then _report 0 "knob $k"; else _report 1 "knob $k is not in README.md"; fi
