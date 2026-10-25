@@ -940,7 +940,7 @@ The request as of $(ts):
 $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
       "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$CURATOR_REVIEW_TOOLS" "${CURATOR_REVIEW_PERMISSION_FLAGS[@]}"
     co_author_for "$CURATOR_PROVIDER" "$(resolved_model curator "$CURATOR_MODEL")"
-    commit_suite_changes "regression: curator applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" \
+    commit_suite_changes "curator: applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" curator:review \
       || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   done
 }

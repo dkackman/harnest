@@ -360,7 +360,8 @@ and `run-curate.sh` make only read-only MCP calls (or none) and take no lock. Ea
 After every per-issue session (and on each triaged issue after triage) `audit_issue` checks
 the invariants the prompts state — an open issue has exactly one `owner:*` label; only the
 tester (or the docs reviewer) closes as `completed` — and `commit_suite_changes` flags a suite commit that removed
-lines (cases and `regression-perf/` readings are add-only unless a human approved it). Both log
+lines (cases and `regression-perf/` readings are add-only unless a human approved it; a
+curator review's `curator:` commit applies an approved change, so it is logged, not warned). Both log
 `[audit] WARNING` to `loop.log` and repair nothing: `grep '\[audit\]' logs/loop.log` after a
 model change is how drift from the prompts shows up.
 

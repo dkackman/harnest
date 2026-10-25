@@ -352,6 +352,22 @@ jq '.["o/r"][0].state = "CLOSED"' "$T/board.json" > "$T/b2" && mv "$T/b2" "$T/bo
 loop 1
 eq  "curator: runs once the freeze lifts" 1 "$(grep -c 'suite-change request #7' "$FAKE_CLAUDE_LOG")"
 
+# --- 3f2. a curator ruling that deletes suite lines is the approved route,
+# so its commit is logged, not warned; a tester commit that deletes lines
+# still warns
+: > "$FAKE_CLAUDE_LOG"
+printf '%s\n' '{"o/r": [], "h/r": [{"number": 8, "state": "OPEN", "labels": [{"name": "suite"}, {"name": "status:needs-approval"}]}]}' > "$T/board.json"
+FAKE_CLAUDE_DO='case "$*" in *"suite-change request #8"*) f="$T/h/regression-suite-smoke.md"; sed "\$d" "$f" > "$f.t" && mv "$f.t" "$f"; gh issue close 8 --repo h/r --reason completed ;; esac' T="$T" loop 1
+eq  "curator removal: the ruling ran" 1 "$(grep -c 'suite-change request #8' "$FAKE_CLAUDE_LOG")"
+has "curator removal: committed as the curator's" "curator: applied h/r#8" "$(git -C "$T/h" log -1 --format=%s)"
+has "curator removal: logged at info level" "[audit] curator removed lines from regression-suite-smoke.md(-1)" "$(cat "$T/loop.out")"
+eq  "curator removal: no audit warning" "" "$(grep '\[audit\] WARNING' "$T/loop.out" || true)"
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 9, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]}]'
+FAKE_CLAUDE_DO='case "$*" in *"VERIFY session"*) f="$T/h/regression-suite-smoke.md"; sed "\$d" "$f" > "$f.t" && mv "$f.t" "$f"; gh issue edit 9 --repo o/r --remove-label status:fixed-pending-verify --add-label status:verified; gh issue close 9 --repo o/r --reason completed ;; esac' T="$T" loop 1
+has "tester removal: committed as the tester's" "regression: tester added case" "$(git -C "$T/h" log -1 --format=%s)"
+has "tester removal: still warns" "[audit] WARNING: $(git -C "$T/h" rev-parse --short HEAD) removed lines from regression-suite-smoke.md(-1)" "$(cat "$T/loop.out")"
+
 # --- 4. an outside filing is parked once, and stays out of the loop
 : > "$FAKE_CLAUDE_LOG"
 board '[{"number": 3, "state": "OPEN", "author": {"login": "stranger"}, "labels": [{"name": "owner:implementer"}]}]'

@@ -32,7 +32,7 @@
 #   acquire_driver_lock <name>                  one lem-touching driver at a time
 #   audit_issue <n> <role>                      [audit] WARNING on a broken
 #                                               owner/close invariant
-#   commit_suite_changes <msg> [name] [email]   commits regression-suite-*.md
+#   commit_suite_changes <msg> [name] [email] [kind]   commits regression-suite-*.md
 #                                               and regression-perf/ (warns if
 #                                               the commit removed lines)
 #   park_external_issues                        relabels issues filed by a
@@ -1032,7 +1032,7 @@ audit_issue() {
   return 0
 }
 
-# commit_suite_changes <msg> [co_author] [co_author_email]
+# commit_suite_changes <msg> [co_author] [co_author_email] [session_kind]
 # Commits any pending changes to regression-suite-*.md, regression-perf/
 # (the per-case measurement log the suite files point at) and
 # regression-results/ (the drivers' per-case outcome ledger) in $REPO — from any
@@ -1045,8 +1045,11 @@ audit_issue() {
 # and $LOGS/loop.log when a commit was made. Needs REPO and LOGS from the
 # driver; the driver should call co_author_for for the role that just ran
 # *before* this, so the trailer names the model that made the edit.
+# Removed lines are audited: a WARNING, except for a commit whose <msg>
+# starts `curator:` or whose [session_kind] is curator:review (the curator
+# applying an approved request), which is logged at info level.
 commit_suite_changes() {
-  local msg="$1" name="${2:-${CO_AUTHOR:-}}" email="${3:-${CO_AUTHOR_EMAIL:-}}"
+  local msg="$1" name="${2:-${CO_AUTHOR:-}}" email="${3:-${CO_AUTHOR_EMAIL:-}}" kind="${4:-}"
   : "${REPO:?commit_suite_changes: REPO must be set by the driver}"
   : "${LOGS:?commit_suite_changes: LOGS must be set by the driver}"
   if [ -z "$name" ] || [ -z "$email" ]; then
@@ -1071,7 +1074,7 @@ commit_suite_changes() {
     sleep 1
   done
   local rc=0
-  commit_suite_changes_locked "$msg" "$name" "$email" || rc=$?
+  commit_suite_changes_locked "$msg" "$name" "$email" "$kind" || rc=$?
   rmdir "$lock" 2>/dev/null || true
   return "$rc"
 }
@@ -1097,7 +1100,7 @@ suite_commit_paths() {
 }
 
 commit_suite_changes_locked() {
-  local msg="$1" name="$2" email="$3" paths
+  local msg="$1" name="$2" email="$3" kind="${4:-}" paths
   read -r -a paths <<<"$(suite_commit_paths)"
   # Again, under the lock: the other writer may have just committed these.
   ( cd "$REPO" && git diff HEAD --quiet -- "${paths[@]}" \
@@ -1125,7 +1128,15 @@ commit_suite_changes_locked() {
       END { for (k in n) printf "%s(-%s) ", k, n[k] }')"
   git -C "$REPO" commit -q -m "$msg" -m "Co-Authored-By: $name <$email>" -- "${paths[@]}"
   echo "$msg" | tee -a "$LOOP_LOG"
-  [ -z "$shrunk" ] || echo "[audit] WARNING: $(git -C "$REPO" rev-parse --short HEAD) removed lines from ${shrunk}- cases and readings are add-only unless a human approved the change; review it" | tee -a "$LOOP_LOG"
+  [ -n "$shrunk" ] || return 0
+  # A curator review session applying an approved request is that route, so
+  # its removals are logged for the record, not flagged for a human.
+  case "$msg|$kind" in
+    curator:*|*"|curator:review")
+      echo "[audit] curator removed lines from ${shrunk}in $(git -C "$REPO" rev-parse --short HEAD) (an approved suite change)" | tee -a "$LOOP_LOG" ;;
+    *)
+      echo "[audit] WARNING: $(git -C "$REPO" rev-parse --short HEAD) removed lines from ${shrunk}- cases and readings are add-only unless a human approved the change; review it" | tee -a "$LOOP_LOG" ;;
+  esac
 }
 
 # STREAM_FLAGS / render_stream <name>
