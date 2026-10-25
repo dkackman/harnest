@@ -1,0 +1,1 @@
+{"date": "2026-10-25", "case": "M-F070", "metric": "latency", "condition": "asset-plus-gather-512", "value": 278.6, "unit": "s", "commit": "68ae280a", "model": "claude-sonnet-5-5", "note": "first run on mini-ai (mps), job started_at->finished_at"}

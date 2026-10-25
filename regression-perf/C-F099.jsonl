@@ -3,3 +3,4 @@
 {"ts":"2026-10-02T21:44:00Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job baa82e7dd045"}
 {"ts":"2026-10-08T07:40:00Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"run 2026-10-08 regression-complete"}
 {"ts":"2026-10-18T19:50:00Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job fa725327cbf3, lem develop c2a2bb94"}
+{"ts":"2026-10-25T21:53:00Z","level":"complete","case":"C-F099","metric":"seam_level_step_db","condition":"-","value":12.0,"unit":"dB","server":null,"model":"claude-sonnet-5-5","provider":"anthropic","ref":"job ac9cd597b2b3, lem develop cb87cfe9"}

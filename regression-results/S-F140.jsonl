@@ -1,1 +1,2 @@
 {"ts": "2026-10-25T03:31:35Z", "level": "smoke", "case": "S-F140", "outcome": "fail", "issue": 987, "secs": null, "session": "regression:smoke.10 of 10", "head": "develop @ 68ae280a", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-10-25T19:30:08Z", "level": "smoke", "case": "S-F140", "outcome": "fail", "issue": 995, "secs": 54.3, "session": "regression:smoke.lem-2.7", "head": "develop @ cb87cfe9", "model": "claude-sonnet-5-5", "server": "lem"}

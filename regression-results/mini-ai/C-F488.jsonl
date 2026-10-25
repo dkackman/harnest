@@ -1,0 +1,1 @@
+{"ts": "2026-10-25T21:47:42Z", "level": "complete", "case": "C-F488", "outcome": "skip", "issue": null, "secs": 2.2, "session": "regression-mini-ai:complete.mini-ai-1.49", "head": "develop @ 68ae280a", "model": "claude-sonnet-5-5", "server": "mini-ai"}

@@ -1,0 +1,1 @@
+{"ts": "2026-10-25T21:25:38Z", "level": "model-specific", "case": "M-F045", "outcome": "pass", "issue": null, "secs": 42.3, "session": "regression-minid:model-specific.minid-1.34", "head": "develop @ cb87cfe9", "model": "claude-sonnet-5-5", "server": "minid"}

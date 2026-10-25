@@ -1,0 +1,1 @@
+{"ts":"2026-10-25T22:09:00Z","level":"model-specific","case":"M-F068","metric":"latency","condition":"insert-cached","value":32.96,"unit":"s","server":"develop@68ae280a","model":"claude-sonnet-5-5","provider":"anthropic","ref":"job 28c8bb702246 started_at->finished_at; step 1 job 725c0634f22f took 190.6 s","note":"mps on mini-ai.lan"}
