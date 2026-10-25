@@ -973,9 +973,37 @@ live_session_group() {
 # driver_exit. Without it a TERM left `claude -p` running against the server
 # with the lock gone (bash defers a trap until a foreground child returns,
 # so run_claude_session runs the session in the background and waits).
+# A nested driver (run_child_driver) is TERMed and waited on first: it has
+# its own driver_traps, so it stops its own session.
 driver_traps() {
   trap driver_exit EXIT
-  trap 'kill_session_tree; exit 143' TERM INT HUP
+  trap 'kill_child_driver; kill_session_tree; exit 143' TERM INT HUP
+}
+
+# run_child_driver <cmd...>
+# Runs a nested driver (run-loop.sh's run-features.sh and nightly
+# run-regression.sh) in the background and waits on it, so a TERM to this
+# driver runs its trap at once (bash defers a trap until a foreground child
+# returns) and kill_child_driver forwards it. Returns the child's status.
+CHILD_DRIVER_PID=""  # the running nested driver, set by run_child_driver
+run_child_driver() {
+  local rc=0
+  "$@" &
+  CHILD_DRIVER_PID=$!
+  wait "$CHILD_DRIVER_PID" || rc=$?
+  CHILD_DRIVER_PID=""
+  return "$rc"
+}
+
+# kill_child_driver
+# TERM the running nested driver and wait for it to tear down its session,
+# so the lock this driver releases next isn't freed under a live one. A
+# no-op when none runs.
+kill_child_driver() {
+  [ -n "$CHILD_DRIVER_PID" ] || return 0
+  kill -TERM "$CHILD_DRIVER_PID" 2>/dev/null || true
+  wait "$CHILD_DRIVER_PID" 2>/dev/null || true
+  CHILD_DRIVER_PID=""
 }
 
 # kill_session_tree
@@ -995,6 +1023,7 @@ kill_session_tree() {
 # lock it took (if any) and removes its own --mcp-config file, so the token
 # isn't left on disk.
 driver_exit() {
+  kill_child_driver
   kill_session_tree
   [ -z "${driver_lock_dir:-}" ] || rm -rf "$driver_lock_dir"
   rm -f "$LOGS/.mcp.$$.json"

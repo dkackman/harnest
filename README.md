@@ -635,6 +635,9 @@ touch logs/stop-after-cycle          # finish the current cycle, then exit (a re
 tail -f logs/loop.log                           # watch from another terminal
 ```
 
+The loop stops at a cycle boundary with `touch logs/stop-after-cycle`, or immediately with
+`kill -TERM <pid>`, which also stops a nested features or nightly regression run.
+
 **Preconditions:**
 - `claude` and `gh` on `PATH`, with `gh` authenticated as `TICKET_OWNER`.
 - Passwordless `ssh don@lem`.

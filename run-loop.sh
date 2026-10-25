@@ -622,7 +622,13 @@ features_pass() {
     [ -n "$only" ] || { echo "[features] skipping: nothing claimed here, lem's loop runs the rest" | tee -a "$LOOP_LOG"; return 0; }
   fi
   [ -n "$(queue_issues lead:design; queue_issues lead:decompose)" ] || return 0
-  env LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT"     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO"     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN"     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS"     ONLY_ISSUES="$only" "$REPO/run-features.sh"
+  # Prefix assignments, not env(1): the token stays out of any argv, and
+  # run_child_driver lets a TERM to the loop reach the child (driver_traps).
+  LEAD_MODEL="$LEAD_MODEL" LEAD_PROVIDER="$LEAD_PROVIDER" LEAD_EFFORT="$LEAD_EFFORT" \
+    PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO" \
+    TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN" \
+    FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS" \
+    ONLY_ISSUES="$only" run_child_driver "$REPO/run-features.sh"
 }
 
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).
@@ -1036,11 +1042,12 @@ nightly_regression_pass() {
   if [ -n "$freeze" ]; then freeze_hold_line "$freeze" nightly | tee -a "$LOOP_LOG"; return 0; fi
   echo "$today" > "$stamp"
   echo "[nightly] run-regression.sh $REGRESSION_NIGHTLY_LEVEL (log logs/nightly-regression$TARGET_SUFFIX.log)" | tee -a "$LOOP_LOG"
+  # Prefix assignments, not env(1), and run_child_driver: as in features_pass.
   # shellcheck disable=SC2086  # a level and an optional suite file
-  env HARNEST_HELD_LOCK="$$ run-loop" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO" TICKET_OWNER="$TICKET_OWNER" \
+  HARNEST_HELD_LOCK="$$ run-loop" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO" TICKET_OWNER="$TICKET_OWNER" \
     SOURCE_DIR="$SOURCE_DIR" PLUGIN_TREE="$PLUGIN_TREE" PROVIDER="$PROVIDER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN" \
     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS" \
-    "$REPO/run-regression.sh" $REGRESSION_NIGHTLY_LEVEL >> "$LOGS/nightly-regression$TARGET_SUFFIX.log" 2>&1 || rc=$?
+    run_child_driver "$REPO/run-regression.sh" $REGRESSION_NIGHTLY_LEVEL >> "$LOGS/nightly-regression$TARGET_SUFFIX.log" 2>&1 || rc=$?
   echo "[nightly] done (exit $rc); what it filed is on the board" | tee -a "$LOOP_LOG"
 }
 

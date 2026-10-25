@@ -339,6 +339,19 @@ FAKE_CLAUDE_DO=''
 rel 0.9.0 cut --next 0.10.0; rc=$?
 eq  "release: cut refuses without its gates" 1 "$rc"
 has "release: naming what is missing" "check ci preflight security" "$(cat "$T/rel.out")"
+# a TERM mid-review stops its claude session: review takes no lock, but its
+# session runs in its own process group, so the driver must forward the TERM
+(cd "$T/h" && exec env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
+   SOURCE_DIR="$T/src" RELEASE_TREE="$T/reltree" RELEASE_FORCE=1 FAKE_CLAUDE_DO='sleep 30.3' \
+   ./run-release.sh 0.9.0 review) > "$T/rel-term.out" 2>&1 &
+drv=$!
+for _ in $(seq 100); do pgrep -f 'sleep 30.3' >/dev/null && break; sleep 0.1; done
+ok  "release review TERM: the fake claude is running" pgrep -f 'sleep 30.3'
+kill -TERM "$drv"
+for _ in $(seq 50); do pgrep -f 'sleep 30.3' >/dev/null || break; sleep 0.1; done
+eq  "release review TERM: no claude child is left" "" "$(pgrep -f 'sleep 30.3')"
+wait "$drv"; eq "release review TERM: the driver exits 143" 143 "$?"
+pkill -f 'sleep 30.3' 2>/dev/null
 
 # --- 3f. the curator waits out a release freeze: a suite edit mid-freeze
 # changes what the regression gate tests
@@ -840,6 +853,29 @@ REGRESSION_NIGHTLY_AT=0 REGRESSION_NIGHTLY_LEVEL="smoke regression-suite-tiny.md
 eq  "nightly: once a day" 1 "$(grep -c '\[nightly\] run-regression' "$T/h/logs/loop.log")"
 loop 1
 eq  "nightly: off unless asked" 1 "$(grep -c '\[nightly\] run-regression' "$T/h/logs/loop.log")"
+# a TERM to the loop mid-nightly stops the nested run-regression.sh and its
+# claude session, and releases the lock (the child is waited on, not foreground)
+rm -f "$T/h/logs/.nightly-regression"
+(cd "$T/h" && exec env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
+   SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" MAX_CYCLES=1 SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 \
+   REGRESSION_NIGHTLY_AT=0 REGRESSION_NIGHTLY_LEVEL="smoke regression-suite-tiny.md" FAKE_CLAUDE_DO='sleep 30.4' \
+   ./run-loop.sh) > "$T/loop-term.out" 2>&1 &
+drv=$!
+for _ in $(seq 150); do pgrep -f 'sleep 30.4' >/dev/null && break; sleep 0.1; done
+ok  "loop TERM: the nightly's fake claude is running" pgrep -f 'sleep 30.4'
+kill -TERM "$drv"
+for _ in $(seq 50); do { pgrep -f 'sleep 30.4' || pgrep -f 'run-regression.sh' || [ -d "$T/h/logs/.driver.lock" ]; } >/dev/null || break; sleep 0.1; done
+eq  "loop TERM: no claude child is left" "" "$(pgrep -f 'sleep 30.4')"
+eq  "loop TERM: no run-regression.sh is left" "" "$(pgrep -f "$T/h/run-regression.sh")"
+eq  "loop TERM: the lock is released" "" "$(ls -d "$T/h/logs/.driver.lock" 2>/dev/null)"
+wait "$drv"; eq "loop TERM: the loop exits 143" 143 "$?"
+pkill -f 'sleep 30.4' 2>/dev/null; pkill -f "$T/h/run-regression.sh" 2>/dev/null
+# the token reaches nested drivers through the environment, never env's argv
+env_token_lines() { # every `env ... DW_TOKEN=` command line in run-loop.sh, continuations joined
+  awk '/\\$/ { sub(/\\$/, ""); printf "%s", $0; next } { print }' "$HARNEST/run-loop.sh" \
+    | grep -E '(^|[;&|(]|then|do)[[:space:]]*env [^#]*DW_TOKEN='
+}
+fails "run-loop.sh: no DW_TOKEN in an env command line" env_token_lines
 
 # --- 10. run-release.sh across a moving develop: a waiver holds check, and
 # gates carry across the notes and a verified blocker's fix (last: it moves
