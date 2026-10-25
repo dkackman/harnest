@@ -11,14 +11,20 @@
     FAKE_GH_LOG=<file>     every call is appended, one line each
     FAKE_GH_FAIL_MATCH=<re> a call whose arguments (space-joined) match the regex fails
 
+`issue list` answers like gh: newest first, at most --limit rows (default
+30), filtered by --search (see matches()); comments, creates and closes are
+stamped with the current UTC time.
+
 Covers what the drivers call: issue list/view/edit/comment/close/create,
 api (events, from an issue's "events" list, and the comment PATCH), and auth status. --json projects the
 fields asked for, and --jq is applied with the real jq.
 """
 
+import datetime
 import json
 import os
 import re
+import shlex
 import subprocess
 import sys
 
@@ -102,6 +108,55 @@ def save():
     json.dump(board, open(path, "w"), indent=1)
 
 
+def now():
+    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+QUALIFIERS = {"closed", "created", "updated", "merged", "author", "reason", "in", "is", "label", "state", "sort"}
+
+
+def matches(issue, search):
+    """gh's --search, for the qualifiers the drivers use: closed:/created:/
+    updated: with >=, >, <=, < or a bare date; author:/-author:; reason:;
+    in:title (free words match the title only, else title or body). Free
+    words and quoted phrases match case-insensitively; other qualifiers
+    (is:, label:, ...) are ignored."""
+    words, title_only = [], False
+    for term in shlex.split(search):
+        neg = term.startswith("-")
+        key, _, val = term.lstrip("-").partition(":")
+        if key not in QUALIFIERS:  # a word, or a quoted phrase that holds a colon
+            words.append(term.lower())
+        elif key in ("closed", "created", "updated"):
+            have = issue.get(key + "At") or ""
+            m = re.match(r"(>=|<=|>|<)?(.*)", val)
+            op, d = m.group(1) or "=", m.group(2)
+            have = have[: len(d)]
+            ok = (
+                bool(have)
+                and {
+                    ">=": have >= d,
+                    ">": have > d,
+                    "<=": have <= d,
+                    "<": have < d,
+                    "=": have == d,
+                }[op]
+            )
+            if ok == neg:
+                return False
+        elif key == "author":
+            if (issue.get("author", {"login": "dkackman"}).get("login") == val) == neg:
+                return False
+        elif key == "reason":
+            want = val.replace(" ", "_").upper()
+            if (issue.get("stateReason", "") == want) == neg:
+                return False
+        elif key == "in" and val == "title":
+            title_only = True
+    hay = issue.get("title", "") + ("" if title_only else "\n" + issue.get("body", ""))
+    return all(w in hay.lower() for w in words)
+
+
 cmd = args[:2]
 if cmd == ["issue", "list"]:
     state = (opt("--state") or "open").upper()
@@ -112,9 +167,11 @@ if cmd == ["issue", "list"]:
         for i in issues
         if (state == "ALL" or i.get("state", "OPEN") == state)
         and all(l in labels(i) for l in want)
-        and not (search.startswith("-author:") and i.get("author", {}).get("login") == search[8:])
+        and matches(i, search)
     ]
-    out([project(i) for i in rows])
+    # gh lists newest first and returns at most --limit rows (default 30)
+    rows.sort(key=lambda i: -i["number"])
+    out([project(i) for i in rows[: int(opt("--limit") or opt("-L") or 30)]])
 elif cmd == ["issue", "view"]:
     out(project(find(args[2])))
 elif cmd == ["issue", "edit"]:
@@ -138,7 +195,7 @@ elif cmd == ["issue", "comment"]:
         {
             "author": {"login": os.environ.get("FAKE_GH_AUTHOR", "dkackman")},
             "body": body,
-            "createdAt": "2026-01-01T00:00:00Z",
+            "createdAt": now(),
         }
     )
     save()
@@ -153,6 +210,8 @@ elif cmd == ["issue", "create"]:
             "body": opt("--body") or "",
             "labels": [{"name": l} for l in names],
             "comments": [],
+            "createdAt": now(),
+            "updatedAt": now(),
         }
     )
     save()
@@ -160,6 +219,7 @@ elif cmd == ["issue", "create"]:
 elif cmd == ["issue", "close"]:
     i = find(args[2])
     i["state"] = "CLOSED"
+    i["closedAt"] = i["updatedAt"] = now()
     i["stateReason"] = "NOT_PLANNED" if (opt("--reason") or "").lower() == "not planned" else "COMPLETED"
     save()
 elif cmd[0] == "api" and "security-advisories" in " ".join(args):
