@@ -112,6 +112,9 @@ consumer (tester, regression):
     run-loop.sh) may close as completed, since it applies a harness-side
     edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
+  - scripts/perf-check.py runs only as `python3 -I "$HARNEST_ROOT"/scripts/perf-check.py`:
+    the consumer's Write is unscoped, so a relative path or a non-isolated
+    interpreter would run whatever it wrote to the cwd or sys.path first
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -2435,6 +2438,22 @@ def consumer_git_rule(words):
             )
 
 
+PERF_CHECK = "$HARNEST_ROOT/scripts/perf-check.py"
+
+
+def consumer_perf_check_rule(words):
+    """perf-check.py only by the absolute, isolated spelling on the allowlist."""
+    cmd = os.path.basename(words[0])
+    if cmd == "perf-check.py" or (
+        cmd.startswith("python") and any(os.path.basename(w) == "perf-check.py" for w in words[1:])
+    ):
+        if words[:3] != ["python3", "-I", PERF_CHECK]:
+            deny(
+                'run the perf check as: python3 -I "$HARNEST_ROOT"/scripts/perf-check.py <case> <metric> '
+                "<condition> <value> [--perf-dir DIR] [--baseline X] (isolated, from the harness root)."
+            )
+
+
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
 
 
@@ -2512,6 +2531,7 @@ def main():
             continue
         if role == "consumer":
             consumer_git_rule(words)
+            consumer_perf_check_rule(words)
         if role in ("implementer", "lead"):
             implementer_api_rule(words)
         if role in ("implementer", "lead"):

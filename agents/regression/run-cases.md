@@ -30,8 +30,8 @@
      functional case with a `metrics:` line: run its checks as usual, and
      measure each named metric too. History is `regression-perf/<case>.jsonl`
      (format in `regression-perf/README.md`). Run
-     `python3 scripts/perf-check.py <case> <metric> <condition> <value>`
-     (it is on your allowlist; add `--baseline X` when the case sets a
+     `python3 -I "$HARNEST_ROOT"/scripts/perf-check.py <case> <metric> <condition> <value>`
+     (spelled exactly so: that is the form on your allowlist; add `--baseline X` when the case sets a
      human `baseline:`, and `--perf-dir regression-perf/<server>` when your
      prompt keeps this server's history in a subdirectory) and treat its
      verdict as the comparison: exit 3 and a `regression: …` line is a
