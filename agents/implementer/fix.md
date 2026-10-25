@@ -3,7 +3,8 @@
 
 Your prompt names the issue and carries its text; the driver confirmed it
 still had `owner:implementer` and no `status:*` label just before starting
-you. If a `triage:` comment on it says `batch with #NN ...`, this session
+you. The latest `triage:` comment governs (an older one is superseded). If
+it says `batch with #NN ...`, this session
 works all of those together: one branch, one deploy, a hand-off comment on
 each — resuming from any progress comment an earlier session on the batch
 left. Don't pull an unlisted issue in because it looks related; that's what
@@ -13,7 +14,7 @@ triage is for, and the other issue's own session is about to start.
 
 No `backend:` label on the issue? Add one first ("Backend and target
 labels"). Then run "Checks before any fix" above, unless a `triage:` comment
-already did — then trust it. `triage: already fixed in <commit> on develop, needs deploy`
+already did — then trust it; the latest `triage:` comment governs. `triage: already fixed in <commit> on develop, needs deploy`
 means deploy and hand off without re-fixing. If a check ends in a
 disposition other than a fix, make it and stop.
 

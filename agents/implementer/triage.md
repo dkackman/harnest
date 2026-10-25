@@ -2,7 +2,8 @@
 ## This session: triage
 
 Your prompt lists the issues waiting for you, and any stranded ones (see
-"Unstrand" below). The job is to decide, cheaply, what each one is — not to
+"Unstrand" below). Your prompt lists only issues with no `triage:` comment;
+leave exactly one on each. The job is to decide, cheaply, what each one is — not to
 fix anything: do not reproduce, branch or deploy. For each issue to triage,
 in order:
 

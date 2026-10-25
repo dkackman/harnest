@@ -535,9 +535,14 @@ implementer_pass() {
     echo "[implementer] nothing owned, skipping" | tee -a "$LOOP_LOG"; return 0
   fi
 
-  # A queue of one skips triage, unless there is something to unstrand.
+  # A queue of one skips triage, unless there is something to unstrand. Of a
+  # longer queue, triage sees only what has no `triage:` comment by
+  # TICKET_OWNER yet (triaged_issue): one already triaged is its fix
+  # session's, and re-triaging it every cycle it waits was spend for nothing.
   local -a triaged=()
-  [ "${#queue[@]}" -ge 2 ] && triaged=("${queue[@]}")
+  if [ "${#queue[@]}" -ge 2 ]; then
+    for n in "${queue[@]}"; do triaged_issue "$n" || triaged+=("$n"); done
+  fi
   if [ "${#triaged[@]}" -gt 0 ] || [ "${#stranded[@]}" -gt 0 ]; then
     local ask="" unstrand=""
     [ "${#triaged[@]}" -gt 0 ] && ask=" triage exactly these issues: $(printf '#%s ' "${triaged[@]}")."
@@ -550,7 +555,7 @@ Unstrand these issues (the Unstrand step in your system prompt): as labeled, no 
 $SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
 The issues as of $(ts) — start from these; gh is for acting on them, for their earlier comments, and for anything newer:
-$( [ "${#triaged[@]}" -gt 0 ] && { echo; echo "To triage (bodies only):"; echo; for q in "${triaged[@]}"; do issue_context "$q" brief; echo; done; } )
+$( [ "${#triaged[@]}" -gt 0 ] && { echo; echo "To triage (bodies, and the latest owner comment):"; echo; for q in "${triaged[@]}"; do issue_context "$q" brief; echo; done; } )
 $( [ "${#stranded[@]}" -gt 0 ] && { echo; echo "To unstrand (with their latest comments, the record of how each got here):"; echo; for q in "${stranded[@]}"; do issue_context "$q"; echo; done; } )" \
       "${IMPLEMENTER_FLAGS[@]}"
     for n in ${triaged[@]+"${triaged[@]}"} ${stranded[@]+"${stranded[@]}"}; do audit_issue "$n" implementer; done
