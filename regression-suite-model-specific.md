@@ -5049,8 +5049,8 @@ expected:
   `minutes: null` is also acceptable, not a finding) and `downloads_required` is empty on lem.
 - (c) and (f) each carry the warning that `lora_model_name` is null so the LoRA is not loaded
   (the M-F038 warning). (a), (e) and (g) carry no such warning: the turbo LoRA is on.
-- (a) and (g) return different `plan.fingerprint`s (the seed is part of the run); (a) and (e)
-  differ too (dtype).
+- (a) and (g) return the **same** `plan.fingerprint` (the cost fingerprint is seed-independent);
+  (a) and (e) differ (dtype).
 It is a **finding** if any arm is refused, if 345 frames or the 544×672 canvas is refused or
 snapped, or if the null-LoRA warning is missing on (c)/(f) or present on (a)/(e).
 cleanup: none (validate only).
