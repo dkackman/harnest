@@ -21,7 +21,7 @@ Prints one line and exits 0 (ok, or insufficient history) or 3 (regression):
 
 It reads only; appending the reading is still the caller's job.
 
-    python3 scripts/perf-check.py <case> <metric> <condition> <value>
+    ./scripts/perf-check.sh <case> <metric> <condition> <value>
                                   [--perf-dir regression-perf] [--baseline X]
 """
 

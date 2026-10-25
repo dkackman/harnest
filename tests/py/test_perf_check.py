@@ -43,6 +43,20 @@ def check(d, *args):
     return p.returncode, p.stdout.strip()
 
 
+class Wrapper(unittest.TestCase):
+    def test_wrapper_runs_the_script(self):
+        d = tempfile.mkdtemp()
+        wrapper = REPO / "scripts" / "perf-check.sh"
+        run = lambda *a: subprocess.run(
+            [str(wrapper), *a, "--perf-dir", d], capture_output=True, text=True, check=False, cwd=d
+        )  # noqa: E731
+        self.assertEqual("insufficient history (0 prior)", run("S-P001", "latency", "cold", "9").stdout.strip())
+        history(d, "S-P001", [10, 10, 10, 10, 10])
+        p = run("S-P001", "latency", "cold", "16")
+        self.assertEqual((3, True), (p.returncode, p.stdout.startswith("regression:")))
+        self.assertEqual("ok", run("S-P001", "latency", "cold", "10").stdout.strip())
+
+
 class PerfCheck(unittest.TestCase):
     def setUp(self):
         self.d = tempfile.mkdtemp()

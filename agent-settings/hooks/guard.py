@@ -112,8 +112,8 @@ consumer (tester, regression):
     run-loop.sh) may close as completed, since it applies a harness-side
     edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
-  - scripts/perf-check.py runs only as `python3 -I "$HARNEST_ROOT"/scripts/perf-check.py`:
-    the consumer may Write under /tmp, so a relative path or a non-isolated
+  - perf-check runs only as `./scripts/perf-check.sh` (a wrapper that runs the
+    script isolated): the consumer may Write under /tmp, so any other path or
     interpreter would run whatever it wrote to the cwd or sys.path first
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
@@ -2441,24 +2441,26 @@ def consumer_git_rule(words):
             )
 
 
-PERF_CHECK = "$HARNEST_ROOT/scripts/perf-check.py"
+PERF_CHECK = "./scripts/perf-check.sh"
+PERF_CHECK_NAMES = ("perf-check.py", "perf-check.sh")
 
 
 def consumer_perf_check_rule(words):
-    """perf-check.py only by the absolute, isolated spelling on the allowlist."""
+    """perf-check only by the wrapper spelling on the allowlist."""
     cmd = os.path.basename(words[0])
-    if cmd == "perf-check.py" or (
-        cmd.startswith("python") and any(os.path.basename(w) == "perf-check.py" for w in words[1:])
+    if cmd in PERF_CHECK_NAMES or (
+        (cmd.startswith("python") or cmd in ("bash", "sh", "zsh", "env"))
+        and any(os.path.basename(w) in PERF_CHECK_NAMES for w in words[1:])
     ):
-        if words[:3] != ["python3", "-I", PERF_CHECK]:
+        if words[0] != PERF_CHECK:
             deny(
-                'run the perf check as: python3 -I "$HARNEST_ROOT"/scripts/perf-check.py <case> <metric> '
-                "<condition> <value> [--perf-dir DIR] [--baseline X] (isolated, from the harness root)."
+                "run the perf check as: ./scripts/perf-check.sh <case> <metric> "
+                "<condition> <value> [--perf-dir DIR] [--baseline X]."
             )
 
 
 def consumer_root_rule(text):
-    """HARNEST_ROOT is the driver's: the allowlisted perf-check spelling resolves through it, so a
+    """HARNEST_ROOT is the driver's: the harness scripts resolve through it, so a
     consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
     mention of the name (an assignment, export, unset, env -u, read) is refused; only its
     expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed."""
@@ -2472,7 +2474,7 @@ def consumer_root_rule(text):
     ):
         deny(
             "HARNEST_ROOT is set by the driver; a consumer does not assign, export or unset it. "
-            'Run the perf check as: python3 -I "$HARNEST_ROOT"/scripts/perf-check.py ...'
+            "Run the perf check as: ./scripts/perf-check.sh ..."
         )
 
 

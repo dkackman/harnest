@@ -62,6 +62,8 @@ cflags="$(printf '"%s" ' "${CONSUMER_PERMISSION_FLAGS[@]}")"
 for p in 'regression-suite-*.md' 'regression-perf/**' qa-bible.md '/tmp/**' '//tmp/**' '/private/tmp/**' '//private/tmp/**'; do
   has "consumer flags allow Write/Edit on $p" "\"Write($p)\" \"Edit($p)\"" "$cflags"
 done
+has "consumer flags allow the perf-check wrapper" '"Bash(./scripts/perf-check.sh *)"' "$cflags"
+fails "consumer flags: no perf-check.py spelling" grep -qF 'perf-check.py' <<< "$cflags"
 fails "consumer flags: no bare Write" grep -qF '"Write" ' <<< "$cflags"
 fails "consumer flags: no bare Edit" grep -qF '"Edit" ' <<< "$cflags"
 eq "consumer flags: Write/Edit on nothing else" 14 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | wc -l | tr -d ' ')"
