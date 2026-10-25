@@ -45,6 +45,10 @@ eq    "effort under ollama is dropped" "" "$(effort_flags ollama high)"
 eq    "fallback flags" "--fallback-model sonnet" "$(fallback_model_flags anthropic sonnet)"
 fails "fallback must suit the provider" fallback_model_flags ollama sonnet
 
+# --- the consumer's unscoped Write/Edit cannot rewrite an allowlisted script
+has "consumer flags deny Write under scripts/" '"Write(scripts/**)" "Edit(scripts/**)"' \
+  "$(printf '"%s" ' "${CONSUMER_PERMISSION_FLAGS[@]}")"
+
 # --- ONLY_ISSUES
 rows=$'5\tq\t-\tr\n7\tq\t12\tr\n9\tq\t-\tr'
 eq "no filter keeps all" "5 7 9" "$(printf '%s\n' "$rows" | only_issues_filter | cut -f1 | xargs)"

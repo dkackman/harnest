@@ -103,6 +103,8 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)',
         "--disallowedTools",
         *[f"mcp__{mcp_name}__{t}" for t in deny],
+        "Write(scripts/**)",
+        "Edit(scripts/**)",
     ]
 
 

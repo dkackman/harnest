@@ -115,6 +115,9 @@ consumer (tester, regression):
   - scripts/perf-check.py runs only as `python3 -I "$HARNEST_ROOT"/scripts/perf-check.py`:
     the consumer's Write is unscoped, so a relative path or a non-isolated
     interpreter would run whatever it wrote to the cwd or sys.path first
+  - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
+    spelling resolves through it (and --disallowedTools keeps Write/Edit off
+    scripts/)
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -2454,6 +2457,25 @@ def consumer_perf_check_rule(words):
             )
 
 
+def consumer_root_rule(text):
+    """HARNEST_ROOT is the driver's: the allowlisted perf-check spelling resolves through it, so a
+    consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
+    mention of the name (an assignment, export, unset, env -u, read) is refused; only its
+    expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed."""
+    literal, tainted, sublit, _ = var_sets(text)
+    if (
+        "HARNEST_ROOT" in literal
+        or "HARNEST_ROOT" in tainted
+        or "HARNEST_ROOT" in sublit
+        or re.search(r"(?<![\w${])HARNEST_ROOT\b", text)
+        or re.search(r"\$\{HARNEST_ROOT[^}]*=", text)
+    ):
+        deny(
+            "HARNEST_ROOT is set by the driver; a consumer does not assign, export or unset it. "
+            'Run the perf check as: python3 -I "$HARNEST_ROOT"/scripts/perf-check.py ...'
+        )
+
+
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
 
 
@@ -2517,6 +2539,8 @@ def main():
     )
     glob_rule(stripped)
     built_command_rule(stripped)
+    if role == "consumer":
+        consumer_root_rule(stripped)
     if re.search(GH_WORD, stripped) and gh_git_backtick(stripped):
         deny(BACKTICK_MSG)
     if marker_through_punctuation(cmd):

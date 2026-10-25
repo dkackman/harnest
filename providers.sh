@@ -346,6 +346,7 @@ CONSUMER_PERMISSION_FLAGS=(
     'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)'   # literal: the agent types the variable, and the guard holds it to this spelling
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
+    "Write(scripts/**)" "Edit(scripts/**)"   # Write/Edit are unscoped: never over an allowlisted script
 )
 
 # Permission flags for the feature lead's design and decompose sessions

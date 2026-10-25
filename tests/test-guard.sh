@@ -54,6 +54,14 @@ row 0 consumer "" $none 'python3 -I "$HARNEST_ROOT"/scripts/perf-check.py S-P001
 row 2 consumer "" $none 'python3 scripts/perf-check.py x'
 row 2 consumer "" $none 'python3 "$HARNEST_ROOT"/scripts/perf-check.py x'
 row 2 consumer "" $none './scripts/perf-check.py x'
+row 2 consumer "" $none 'python3 -I /tmp/perf-check.py x'
+# HARNEST_ROOT is the driver's: a consumer that sets it points the allowlisted spelling at its own script
+row 2 consumer "" $none 'HARNEST_ROOT=/tmp/x; python3 -I "$HARNEST_ROOT"/scripts/perf-check.py S-P001 latency cold 9.1'
+row 2 consumer "" $none 'export HARNEST_ROOT=/tmp/x'
+row 2 consumer "" $none 'HARNEST_ROOT=/tmp/x python3 -I "$HARNEST_ROOT"/scripts/perf-check.py x'
+row 2 consumer "" $none 'unset HARNEST_ROOT; python3 -I "$HARNEST_ROOT"/scripts/perf-check.py x'
+row 2 consumer "" $none 'python3 -I "${HARNEST_ROOT:=/tmp/x}"/scripts/perf-check.py x'
+row 0 consumer "" $none 'echo "$HARNEST_ROOT"'
 printf '%s\n' '<!-- harnest:release-gate regression abc pass -->' > "$T/marker.md"
 row 2 consumer "" $none "gh issue comment 5 --body-file $T/marker.md"
 row 0 consumer "" $none 'gh issue comment 5 --body "the release gates ran fine"'
