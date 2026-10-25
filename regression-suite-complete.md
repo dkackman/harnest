@@ -14473,4 +14473,23 @@ repo shows up as text. The offline arm, if not reachable over MCP, is recorded a
 cleanup: none.
 metrics: none.
 
+### C-F537 — `slice_audio` with `start_seconds` + `num_frames`/`fps` is `num_frames/fps` long, not the rest of the track; `duration_seconds` still wins
+source: tester, verified in #990 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Task-only, a few seconds. One inline workflow, validated, then run:
+- step `frames`: `slice_audio` with `audio: "asset:qa-cast/ep15-song.mp3"` (the 30.0 s fixture),
+  `start_seconds: 10.0`, `num_frames: 124`, `fps: 24`;
+- step `dur`: the same, plus `duration_seconds: 3.0`;
+- step `len`: `measure_sync` with `audio: "previous_result:dur"`, `reference: "previous_result:frames"`,
+  `device: "cpu"`.
+Its JSON gives both lengths. Clipping warnings on the two wavs come from the hot master of
+`ep15-song.mp3` and aren't part of this case.
+expected:
+- `reference_seconds` ≈ 5.1667 (124/24), not ≈ 20 (the remainder of the track after 10 s).
+- `audio_seconds` = 3.0: `duration_seconds` takes precedence over `num_frames`/`fps`.
+- `lag_seconds` 0.0; the job succeeds.
+It is a **finding** if `reference_seconds` is the rest of the track (the #990 bug, where `num_frames`
+was ignored beside `start_seconds`) or `audio_seconds` is anything but 3.0.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance

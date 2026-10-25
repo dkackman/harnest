@@ -4820,7 +4820,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F158 — the WanGP probe record on #985 has a row per arm, and every cited job exists, finished and ran its arm
-pending: #988
 source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 turbo — ref2va (`templates/minimax/reference-to-video`, or the #852
 Ref2VA `[keyframe completion + audio reuse]` route) and fl2va (`templates/minimax/image-to-video`),
@@ -4866,7 +4865,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F159 — every WanGP probe job ran one pinned configuration: int8 weights and one turbo-LoRA state
-pending: #988
 source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (the probe jobs of M-F158). Free: reads only.
 Don's addition at approval: a lip-sync verdict must not secretly be a verdict on quantization
@@ -4889,7 +4887,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F160 — the probe record's measurements reproduce: each held output is its source track, and P4's frame 0 matches the record
-pending: #988
 source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 probe outputs (M-F158), plus the CPU task `measure_sync`
 (`audio`, `reference`, `max_lag_seconds` 2.0, `threshold_seconds` 0.1, `min_confidence` 0.3 today).
