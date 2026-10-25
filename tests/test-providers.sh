@@ -45,16 +45,16 @@ eq    "effort under ollama is dropped" "" "$(effort_flags ollama high)"
 eq    "fallback flags" "--fallback-model sonnet" "$(fallback_model_flags anthropic sonnet)"
 fails "fallback must suit the provider" fallback_model_flags ollama sonnet
 
-# --- the consumer's unscoped Write/Edit cannot rewrite an allowlisted script,
-# the guard, or the code and docs that drive it; what it does write stays open
+# --- the consumer's Write and Edit are allowed only where it writes: the
+# suite files, perf history, the bible and /tmp. dontAsk denies the rest
+# (an allowlisted script, the guard hook, the drivers).
 cflags="$(printf '"%s" ' "${CONSUMER_PERMISSION_FLAGS[@]}")"
-for p in 'scripts/**' 'agent-settings/**' 'agents/**' 'harness/**' 'lib/**' 'dashboard/**' 'contract/**' 'tests/**' '.claude/**' \
-         '*.sh' '*.py' '*.jq' '*.json' CLAUDE.md README.md HARNESS-ROADMAP.md; do
-  has "consumer flags deny Write/Edit on $p" "\"Write($p)\" \"Edit($p)\"" "$cflags"
+for p in 'regression-suite-*.md' 'regression-perf/**' qa-bible.md '/tmp/**' '//tmp/**' '/private/tmp/**' '//private/tmp/**'; do
+  has "consumer flags allow Write/Edit on $p" "\"Write($p)\" \"Edit($p)\"" "$cflags"
 done
-for p in regression-suite qa-bible regression-perf /tmp '*.md' '*.jsonl'; do
-  fails "consumer flags leave $p writable" grep -qF "Write($p" <<< "$cflags"
-done
+fails "consumer flags: no bare Write" grep -qF '"Write" ' <<< "$cflags"
+fails "consumer flags: no bare Edit" grep -qF '"Edit" ' <<< "$cflags"
+eq "consumer flags: Write/Edit on nothing else" 14 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | wc -l | tr -d ' ')"
 
 # --- ONLY_ISSUES
 rows=$'5\tq\t-\tr\n7\tq\t12\tr\n9\tq\t-\tr'

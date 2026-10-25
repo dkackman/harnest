@@ -416,8 +416,9 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   `gh repo clone`. `--disallowedTools` denies `delete_model` and `update_diffusers` outright
   (server-wide, used by no case); the other destructive dw tools are exercised by suite cases
   and stay on the prompts. This is what makes
-  consumer-only isolation enforced rather than honor-system; the remaining gap is that
-  `Read`/`Edit`/`Write` aren't path-scoped, which the role prompts cover. If a cycle shows a
+  consumer-only isolation enforced rather than honor-system. `Write`/`Edit` are allowed only on
+  the suite files, `regression-perf/**`, `qa-bible.md` and `/tmp`; the remaining gap is that
+  `Read` isn't path-scoped, which the role prompts cover. If a cycle shows a
   denial in `logs/tester.log` for something the role legitimately needs, widen the list there,
   deliberately, rather than reaching for the bypass flag.
 - Implementer: `--permission-mode auto`. Its shell surface (`git`, `gh`, `ssh lem`, `pytest`,

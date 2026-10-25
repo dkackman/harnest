@@ -113,11 +113,11 @@ consumer (tester, regression):
     edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
   - scripts/perf-check.py runs only as `python3 -I "$HARNEST_ROOT"/scripts/perf-check.py`:
-    the consumer's Write is unscoped, so a relative path or a non-isolated
+    the consumer may Write under /tmp, so a relative path or a non-isolated
     interpreter would run whatever it wrote to the cwd or sys.path first
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
-    spelling resolves through it (and --disallowedTools keeps Write/Edit off
-    scripts/)
+    spelling resolves through it (and Write/Edit are allowed only on the
+    suite files, perf history, the bible and /tmp, never scripts/)
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:

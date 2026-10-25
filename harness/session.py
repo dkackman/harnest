@@ -74,24 +74,16 @@ def guard_settings(role):
     )
 
 
-# Paths the consumer's otherwise unscoped Write/Edit may not touch (providers.sh says why).
-CONSUMER_WRITE_DENY = (
-    "scripts/**",
-    "agent-settings/**",
-    "agents/**",
-    "harness/**",
-    "lib/**",
-    "dashboard/**",
-    "contract/**",
-    "tests/**",
-    ".claude/**",
-    "*.sh",
-    "*.py",
-    "*.jq",
-    "*.json",
-    "CLAUDE.md",
-    "README.md",
-    "HARNESS-ROADMAP.md",
+# Where the consumer's Write and Edit are allowed; dontAsk denies the rest
+# (providers.sh says why each is spelled as it is).
+CONSUMER_WRITABLE = (
+    "regression-suite-*.md",
+    "regression-perf/**",
+    "qa-bible.md",
+    "/tmp/**",
+    "//tmp/**",
+    "/private/tmp/**",
+    "//private/tmp/**",
 )
 
 
@@ -111,8 +103,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         "Read",
         "Glob",
         "Grep",
-        "Edit",
-        "Write",
+        *[f"{tool}({path})" for path in CONSUMER_WRITABLE for tool in ("Write", "Edit")],
         "Bash(gh issue *)",
         "Bash(date *)",
         "Bash(file *)",
@@ -124,7 +115,6 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)',
         "--disallowedTools",
         *[f"mcp__{mcp_name}__{t}" for t in deny],
-        *[f"{tool}({path})" for path in CONSUMER_WRITE_DENY for tool in ("Write", "Edit")],
     ]
 
 

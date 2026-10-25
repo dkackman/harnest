@@ -295,9 +295,10 @@ fallback_model_flags() {
 # --permission-mode dontAsk anything outside the list is denied outright — a
 # headless session never prompts — so this is the fence that makes the
 # consumer-only isolation enforced rather than honor-system: no ssh, no curl,
-# no python, no git writes (the drivers commit suite edits themselves). Read /
-# Edit / Write are unscoped by path, so a read of the source checkout by
-# absolute path is still on the honor system; the role prompts cover that.
+# no python, no git writes (the drivers commit suite edits themselves).
+# Write and Edit are path-scoped to what a consumer writes (below). Read is
+# not, so a read of the source checkout by absolute path is still on the
+# honor system; the role prompts cover that.
 # The implementer needs open-ended shell (git, gh, ssh lem, pytest, uv, ...)
 # and gets --permission-mode auto in run-loop.sh instead.
 #
@@ -339,22 +340,25 @@ CONSUMER_PERMISSION_FLAGS=(
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__*" "ToolSearch" "Skill" "TodoWrite"
-    "Read" "Glob" "Grep" "Edit" "Write"
+    "Read" "Glob" "Grep"
+    # Write and Edit only where a consumer writes: anything else (a script on
+    # the allowlist, the guard hook, the drivers) is denied by dontAsk.
+    # /tmp is spelled both ways: `//tmp` is an absolute path in Claude Code's
+    # rule syntax, `/tmp` is the form the role prompts use; macOS resolves it
+    # under /private/tmp.
+    "Write(regression-suite-*.md)" "Edit(regression-suite-*.md)"
+    "Write(regression-perf/**)" "Edit(regression-perf/**)"
+    "Write(qa-bible.md)" "Edit(qa-bible.md)"
+    "Write(/tmp/**)" "Edit(/tmp/**)"
+    "Write(//tmp/**)" "Edit(//tmp/**)"
+    "Write(/private/tmp/**)" "Edit(/private/tmp/**)"
+    "Write(//private/tmp/**)" "Edit(//private/tmp/**)"
     "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
     "Bash(./scripts/file-advisory.sh *)"
     'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)'   # literal: the agent types the variable, and the guard holds it to this spelling
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
-    # Write/Edit are otherwise unscoped: never over an allowlisted script, the
-    # guard hook that runs on every Bash call, or the code and docs that drive
-    # the session (CONSUMER_WRITE_DENY in harness/session.py is the same list).
-    # A consumer writes regression-suite-*.md, regression-perf/**, qa-bible.md
-    # and /tmp staging files; none of those falls under a pattern here.
-    "Write(scripts/**)" "Edit(scripts/**)" "Write(agent-settings/**)" "Edit(agent-settings/**)" "Write(agents/**)" "Edit(agents/**)" "Write(harness/**)" "Edit(harness/**)" "Write(lib/**)" "Edit(lib/**)"
-    "Write(dashboard/**)" "Edit(dashboard/**)" "Write(contract/**)" "Edit(contract/**)" "Write(tests/**)" "Edit(tests/**)" "Write(.claude/**)" "Edit(.claude/**)"
-    "Write(*.sh)" "Edit(*.sh)" "Write(*.py)" "Edit(*.py)" "Write(*.jq)" "Edit(*.jq)" "Write(*.json)" "Edit(*.json)"
-    "Write(CLAUDE.md)" "Edit(CLAUDE.md)" "Write(README.md)" "Edit(README.md)" "Write(HARNESS-ROADMAP.md)" "Edit(HARNESS-ROADMAP.md)"
 )
 
 # Permission flags for the feature lead's design and decompose sessions
