@@ -40,6 +40,11 @@
      same `metric` + `condition`, or of every entry with that key (slow
      creep a short window hides); a human-set `baseline:` a hard ceiling on
      top; fewer than 3 prior entries, record only — so don't re-derive it.
+     If that call is denied, apply the rule yourself as it is stated here
+     (more than 50% over the median of the last 5 or of all prior readings
+     for the same metric and condition; a `baseline:` is a hard ceiling;
+     fewer than 3 prior readings → record only) and say in your result that
+     the comparison was done by hand.
      An explicit ceiling in the case's own text is still yours to check.
      Append the reading as the last line of that case's file, as before:
      one line per `metric`+`condition`, pass or regression.
