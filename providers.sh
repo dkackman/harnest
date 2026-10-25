@@ -1022,11 +1022,24 @@ kill_child_driver() {
 # kill_session_tree
 # TERM the running session's process group (run_claude_session starts it
 # under set -m, so the group is the pipeline's pid), or failing that its
-# children. A no-op when no session runs.
+# children, then wait up to SESSION_KILL_SECS (default 10) for the group to
+# go and KILL what's left. Measured live (2026-10-25): `claude -p` takes a
+# second or two to act on TERM while a tool call is in flight, so the driver
+# must not return before it has, or the lock is free under a live session;
+# a session that never acts on it is KILLed rather than left on the server.
+# A no-op when no session runs.
 SESSION_PGID=""  # the running session's process group, set by run_claude_session
 kill_session_tree() {
   [ -n "$SESSION_PGID" ] || return 0
+  local waited=0 limit="${SESSION_KILL_SECS:-10}"
   kill -TERM -- "-$SESSION_PGID" 2>/dev/null || pkill -TERM -P "$SESSION_PGID" 2>/dev/null || true
+  while pgrep -g "$SESSION_PGID" >/dev/null 2>&1 && [ "$waited" -lt "$((limit * 10))" ]; do
+    sleep 0.1; waited=$((waited + 1))
+  done
+  if pgrep -g "$SESSION_PGID" >/dev/null 2>&1; then
+    echo "[driver] session group $SESSION_PGID ignored TERM for ${limit}s; killing it" >&2
+    kill -KILL -- "-$SESSION_PGID" 2>/dev/null || true
+  fi
   [ -z "${driver_session_dir:-}" ] || rm -f "$driver_session_dir/session.$$"
   SESSION_PGID=""
 }
