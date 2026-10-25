@@ -5025,7 +5025,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### M-F165 — the four H3 cause-split configurations validate on `image-to-video` at the `sci0fi` takes' size, and only the LoRA-off ones get the null-LoRA warning
-pending: #991
 source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va, `templates/minimax/image-to-video` (variables today: `width`,
 `height`, `num_frames`, `num_inference_steps`, `video_shift`, `audio_shift`, `weights_dtype`,
@@ -5058,7 +5057,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### M-F166 — the #984 B0 record has a row per arm and seed, and every cited job exists, succeeded and is noted
-pending: #991
 source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va (`templates/minimax/image-to-video`), int4/int8 × turbo on/off.
 Free: reads only (no job is run).
@@ -5093,7 +5091,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F167 — every #984 B0 job ran its arm exactly, on the `sci0fi` take's shot, and differs from its seed pair only in seed
-pending: #991
 source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va, the 8 jobs M-F166 collected. Free: reads only.
 Steps:
@@ -5125,7 +5122,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F168 — the #984 B0 record's readouts reproduce from the jobs: timings, levels and assessments
-pending: #991
 source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va outputs (the M-F166 jobs). Free: `get_job`, `get_gallery_metadata`
 and `assess_output` (no GPU, no job queued).
