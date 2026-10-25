@@ -112,8 +112,8 @@ consumer (tester, regression):
     run-loop.sh) may close as completed, since it applies a harness-side
     edit with nothing to verify; it still may not add status:verified
   - the same exactly-one-owner rule
-  - scripts/perf-check.py runs only as `python3 -I "$HARNEST_ROOT"/scripts/perf-check.py`:
-    the consumer may Write under /tmp, so a relative path or a non-isolated
+  - perf-check runs only as `./scripts/perf-check.sh` (a wrapper that runs the
+    script isolated): the consumer may Write under /tmp, so any other path or
     interpreter would run whatever it wrote to the cwd or sys.path first
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
@@ -2441,24 +2441,73 @@ def consumer_git_rule(words):
             )
 
 
-PERF_CHECK = "$HARNEST_ROOT/scripts/perf-check.py"
+PERF_CHECK = "./scripts/perf-check.sh"
+PERF_CHECK_NAMES = ("perf-check.py", "perf-check.sh")
 
 
 def consumer_perf_check_rule(words):
-    """perf-check.py only by the absolute, isolated spelling on the allowlist."""
+    """perf-check only by the wrapper spelling on the allowlist."""
     cmd = os.path.basename(words[0])
-    if cmd == "perf-check.py" or (
-        cmd.startswith("python") and any(os.path.basename(w) == "perf-check.py" for w in words[1:])
+    if cmd in PERF_CHECK_NAMES or (
+        (cmd.startswith("python") or cmd in ("bash", "sh", "zsh", "env"))
+        and any(os.path.basename(w) in PERF_CHECK_NAMES for w in words[1:])
     ):
-        if words[:3] != ["python3", "-I", PERF_CHECK]:
+        if words[0] != PERF_CHECK:
             deny(
-                'run the perf check as: python3 -I "$HARNEST_ROOT"/scripts/perf-check.py <case> <metric> '
-                "<condition> <value> [--perf-dir DIR] [--baseline X] (isolated, from the harness root)."
+                "run the perf check as: ./scripts/perf-check.sh <case> <metric> "
+                "<condition> <value> [--perf-dir DIR] [--baseline X]."
             )
 
 
+SCRIPT_CALLS = ("./scripts/perf-check.sh", "./scripts/file-advisory.sh")
+SCRIPT_PREFIXES = ("env", "sudo", "nice", "nohup", "time", "command", "exec", "xargs", "timeout", "stdbuf", "builtin")
+SCRIPT_RUNNERS = ("bash", "sh", "zsh", "dash", "ksh")
+
+
+def consumer_script_call_rule(segs, cwd):
+    """A consumer's allowlisted script call is `./scripts/<name> args` and nothing else around it:
+    no NAME=value or env/sudo/nice/... prefix (PATH, BASH_ENV and the like steer what runs), and no
+    cd/pushd on the line (the path is cwd-relative, so a changed directory runs a script of its own)."""
+    names = {os.path.basename(c) for c in SCRIPT_CALLS}
+    called = False
+    for seg in segs:
+        if not seg:
+            continue
+        first = seg[0]
+        if first in SCRIPT_CALLS:
+            called = True
+            continue
+        base = os.path.basename(first)
+        prefixed = (
+            re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", first)
+            or base in SCRIPT_PREFIXES
+            or base in SCRIPT_RUNNERS
+            or base.startswith("python")
+        )
+        if prefixed and any(os.path.basename(w) in names for w in seg[1:]):
+            deny(
+                "run the script exactly as ./scripts/perf-check.sh ... or ./scripts/file-advisory.sh ...: "
+                "no variable assignment or command prefix before it."
+            )
+        if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", first) and any(w in SCRIPT_CALLS for w in command_words(seg)[:1]):
+            deny("no variable assignment before a harness script call.")
+    if not called:
+        return
+    root = os.path.realpath(
+        os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    )
+    if not cwd or os.path.realpath(cwd) != root:
+        deny("run harness scripts from the harness root: ./scripts/... resolves against your cwd.")
+    for seg in segs:
+        words = command_words(seg)
+        while words and words[0] in ("builtin", "command", "exec", "--"):
+            words = words[1:]
+        if (words and os.path.basename(words[0]) in ("cd", "pushd", "popd", "chdir")) or ENV_CHDIR:
+            deny("no directory change on a line that calls a harness script: the path is relative to your cwd.")
+
+
 def consumer_root_rule(text):
-    """HARNEST_ROOT is the driver's: the allowlisted perf-check spelling resolves through it, so a
+    """HARNEST_ROOT is the driver's: the harness scripts resolve through it, so a
     consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
     mention of the name (an assignment, export, unset, env -u, read) is refused; only its
     expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed."""
@@ -2472,7 +2521,7 @@ def consumer_root_rule(text):
     ):
         deny(
             "HARNEST_ROOT is set by the driver; a consumer does not assign, export or unset it. "
-            'Run the perf check as: python3 -I "$HARNEST_ROOT"/scripts/perf-check.py ...'
+            "Run the perf check as: ./scripts/perf-check.sh ..."
         )
 
 
@@ -2549,6 +2598,8 @@ def main():
         )
     if UNBALANCED and re.search(r"(?<![\w.-])gh(?![\w.-])", UNQUOTE.sub("", stripped)):
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
+    if role == "consumer":
+        consumer_script_call_rule(segs, data.get("cwd") or "")
     for words in segs:
         words = command_words(words)
         if not words:

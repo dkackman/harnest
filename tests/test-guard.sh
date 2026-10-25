@@ -21,6 +21,14 @@ row() {
   eq "$role${kind:+/$kind}: $cmd" "$want" "$rc"
 }
 none=/nonexistent
+# rowr: a consumer call whose cwd is the harness root (./scripts/... resolves against it)
+rowr() {
+  local want="$1" cmd="$2" rc cwd="${3:-$HARNEST}"
+  jq -n --arg c "$cmd" --arg d "$cwd" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: $d}' \
+    | python3 "$guard" consumer >/dev/null 2>&1
+  rc=$?
+  eq "consumer@root: $cmd" "$want" "$rc"
+}
 # every role: approval is Don's
 for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue edit 5 --add-label status:plan-approved'
@@ -49,11 +57,28 @@ row 2 lead "" $none '(gh issue edit 5 --add-label status:plan-approved) # it'"'"
 row 2 lead "" $none 'echo a & gh issue edit 5 --add-label status:plan-approved # it'"'"'s'
 row 2 lead "" $none '/usr/bin/gh issue edit 5 --add-label "bug, status:plan-approved" # it'"'"'s'
 row 0 consumer "" $none 'gh issue create --title "S-F001 fails" --label owner:implementer,regression'
-row 0 consumer "" $none './scripts/file-advisory.sh --summary x --description-file y --severity high'
-row 0 consumer "" $none 'python3 -I "$HARNEST_ROOT"/scripts/perf-check.py S-P001 latency cold 9.1 --baseline 12'
+rowr 0 './scripts/file-advisory.sh --summary x --description-file y --severity high'
+rowr 0 './scripts/perf-check.sh S-P001 render_secs cuda 12.3'
+rowr 0 './scripts/perf-check.sh S-P001 latency cold 9.1 --baseline 12'
+row 2 consumer "" $none 'python3 -I "$HARNEST_ROOT"/scripts/perf-check.py S-P001 latency cold 9.1'
+row 2 consumer "" $none 'bash scripts/perf-check.sh x'
+rowr 2 'PATH=/tmp ./scripts/perf-check.sh x y z 1'
+rowr 2 'BASH_ENV=/tmp/e ./scripts/perf-check.sh S-P001 render_secs cuda 12.3'
+rowr 2 'env PATH=/tmp ./scripts/perf-check.sh x y z 1'
+rowr 2 'cd /tmp && ./scripts/perf-check.sh S-P001 render_secs cuda 12.3'
+rowr 2 'PATH=/tmp ./scripts/file-advisory.sh --summary x'
+rowr 2 'cd /tmp; ./scripts/file-advisory.sh --summary x'
+rowr 2 'env ./scripts/file-advisory.sh --summary x'
+rowr 2 'builtin cd /tmp && ./scripts/perf-check.sh x y z 1'
+rowr 2 'command cd /tmp && ./scripts/perf-check.sh x y z 1'
+rowr 2 './scripts/perf-check.sh x y z 1' /tmp
+rowr 0 './scripts/perf-check.sh S-P001 render_secs cuda 12.3'
+row 2 consumer "" $none '/tmp/other/perf-check.sh x'
+row 2 consumer "" $none 'scripts/perf-check.sh x'
+row 0 implementer "" $none 'python3 scripts/perf-check.py x'
 row 2 consumer "" $none 'python3 scripts/perf-check.py x'
 row 2 consumer "" $none 'python3 "$HARNEST_ROOT"/scripts/perf-check.py x'
-row 2 consumer "" $none './scripts/perf-check.py x'
+rowr 2 './scripts/perf-check.py x'
 row 2 consumer "" $none 'python3 -I /tmp/perf-check.py x'
 # HARNEST_ROOT is the driver's: a consumer that sets it points the allowlisted spelling at its own script
 row 2 consumer "" $none 'HARNEST_ROOT=/tmp/x; python3 -I "$HARNEST_ROOT"/scripts/perf-check.py S-P001 latency cold 9.1'

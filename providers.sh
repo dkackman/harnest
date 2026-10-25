@@ -356,7 +356,7 @@ CONSUMER_PERMISSION_FLAGS=(
     "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
     "Bash(./scripts/file-advisory.sh *)"
-    'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)'   # literal: the agent types the variable, and the guard holds it to this spelling
+    "Bash(./scripts/perf-check.sh *)"   # a wrapper: the python3 -I spelling was never matched by the allowlist at run time
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
 )
