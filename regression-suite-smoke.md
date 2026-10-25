@@ -2060,7 +2060,7 @@ expected:
   `loop_audio`. There's no warning for `short` (inside the source) or `chained`
   (`previous_result:`).
 - Call 2: `valid: true`, one warning at `steps[0].task.arguments.audio` naming `1.52 s past the
-  end of a 6.48 s source` and `8.00 s requested`. This is the frame form, with the start offset counted.
+  end of a 6.48 s source`, `6.00 s requested` and `ending at 8.00 s`. This is the frame form, with the start offset counted.
 It is a **finding** if either overrun validates without a warning, if `short` or `chained` is
 flagged, or if the overrun is turned into an error (`valid: false`). A tail pad is legitimate.
 cleanup: none. Nothing is queued or written.
