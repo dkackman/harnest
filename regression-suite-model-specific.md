@@ -4819,4 +4819,216 @@ upscaler file is listed.
 cleanup: none.
 metrics: none.
 
+### M-F158 — the WanGP probe record on #985 has a row per arm, and every cited job exists, finished and ran its arm
+pending: #988
+source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 turbo — ref2va (`templates/minimax/reference-to-video`, or the #852
+Ref2VA `[keyframe completion + audio reuse]` route) and fl2va (`templates/minimax/image-to-video`),
+each with `hold_audio`. Free: reads only (no job is run).
+The record is #985's stage-A results comment
+(`gh issue view 985 --repo dkackman/diffusers-workflow --comments`; the comment with one row per
+probe arm). The plan names six arms:
+- P1a-sung, P1a-spoken: Ref2VA portrait + held track, the words written in `<d>…</d>`;
+- P1b-sung, P1b-spoken: the same with no `<d>` — the character named, the prompt asking for
+  "speaking/singing with natural lip movements synchronized", the action limited to speaking/singing;
+- P4a: fl2va (`image-to-video`) with a first frame plus `hold_audio` of a sung slice;
+- P4b: #852's Ref2VA keyframe-completion + audio-reuse route, same picture and slice.
+Steps:
+1. Read the record. For each arm, collect its verdict, job ids, `measure_sync` figure and observation.
+2. For every cited job id: `get_job(job_id, workspace="qa-h3-wangp-probes")` and
+   `get_job_workflow(job_id, workspace="qa-h3-wangp-probes")`.
+expected:
+- The record has a row for each of the six arms. Each row either carries a verdict, one or more
+  job ids, a `measure_sync` figure and an observation, or says *not run* with a reason (and then
+  cites no job). P1 and P4 each end in a claim verdict that is exactly one of confirmed, refuted
+  or inconclusive; a claim whose arms are all *not run* is inconclusive or *not run*, never
+  confirmed or refuted.
+- Each run arm cites two jobs, one per seed: 1001 and 2002 (P1: 8 jobs across its four arms, P4: 4).
+- Every cited job exists in `qa-h3-wangp-probes` (not another workspace) and finished as succeeded.
+  Its `note` names its arm (enough to tell P1a from P1b, sung from spoken, P4a from P4b), its
+  `weights_dtype` and its turbo-LoRA state (on or off).
+- Each job's `get_job_workflow` shows: 960×544, 124 frames, its seed; `hold_audio` set on the H3
+  step; the arm's task type (ref2va for P1 and P4b, fl2va for P4a); and the prompt the arm calls
+  for — a `<d>…</d>` block holding the track's words for P1a, no `<d>` anywhere for P1b. P4's prompt
+  follows P1's winning arm if the record says P1 had finished first, else P1b's form.
+- Within an arm, the two jobs differ only in `seed`; across P1a/P1b the same track and portrait
+  are used per track.
+It is a **finding** if an arm is missing from the record with no *not run* row, a cited job is
+absent, failed or in another workspace, a note omits arm/dtype/LoRA state, a job's workflow
+contradicts its arm (a P1b prompt containing `<d>`, a job with no `hold_audio`, the wrong task
+type), or a verdict outside the three allowed words. Once #988 has closed verified, a cited job
+or the workspace that was later pruned is recorded as "evidence pruned" and skipped, not a finding.
+The audit doc (`docs/proposals/audits/2026-10-h3-wangp-probes.md` on `develop`) is not served
+over MCP (`list_guides` has no such guide); its agreement with the record is a `docs-review`
+item, not part of this case, unless a guide comes to serve it — then its verdicts must equal the
+record's.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F159 — every WanGP probe job ran one pinned configuration: int8 weights and one turbo-LoRA state
+pending: #988
+source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (the probe jobs of M-F158). Free: reads only.
+Don's addition at approval: a lip-sync verdict must not secretly be a verdict on quantization
+(#984: int4 + turbo sounded digitized where int8 base did not).
+Steps: for every job M-F158 collected, read `get_job_workflow(job_id, workspace="qa-h3-wangp-probes")`
+and find the H3 step's resolved `weights_dtype` (today `{int4}`-style; the template variable of the
+same name) and its LoRA wiring (`lora_model_name` / `lora_weight_name`; null `lora_model_name`
+means turbo off, per M-F038).
+expected:
+- Every cited job's resolved `weights_dtype` is int8 (`{int8}` or the equivalent the server
+  resolves) — none int4, none bf16.
+- Every cited job has the same turbo-LoRA state: all on (and then the turbo weight each task type
+  ships with — the fl2v turbo file on fl2va, the ref2v one on ref2va) or all off. Mixed states
+  across P1 and P4 fail too, not only within an arm.
+- Each job's `note` states the same dtype and LoRA state its workflow shows.
+- The #985 record states that one configuration (int8 + the LoRA state) once for the whole probe.
+It is a **finding** if any job differs from the others in dtype or LoRA state, if a note claims a
+configuration its workflow doesn't run, or if the record omits the configuration.
+cleanup: none.
+metrics: none.
+
+### M-F160 — the probe record's measurements reproduce: each held output is its source track, and P4's frame 0 matches the record
+pending: #988
+source: tester, spec for #988 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 probe outputs (M-F158), plus the CPU task `measure_sync`
+(`audio`, `reference`, `max_lag_seconds` 2.0, `threshold_seconds` 0.1, `min_confidence` 0.3 today).
+No GPU: `measure_sync` runs on cpu (`device: "cpu"`).
+Steps, in workspace `qa-h3-wangp-probes`:
+1. For each cited job, find its mp4 (`get_job`) and the track it held (`get_job_workflow`'s
+   `hold_audio`).
+2. Save an inline task-only workflow `m-wangp-sync` with one `measure_sync` step per job
+   (`audio: "output:<job's mp4>"`, `reference: <the held track>`, `device: "cpu"`), validate it, and
+   `run_workflow(..., acknowledged_cost=<validate's fingerprint>, wait_seconds=55)`.
+3. For P4a and P4b, `get_output_frames(name=<mp4>, at=[0])` and `get_output_image` on the input
+   picture `get_job_workflow` names (or `get_output_frames` if it is an `asset:`).
+expected:
+- Every `measure_sync` reading is a lag within ±0.1 s at confidence ≥ 0.3 — with `hold_audio`
+  the output audio is the held track, cropped to the clip — and agrees with the figure the
+  record cites for that job to within 0.05 s.
+- P4a's frame 0 keeps the input picture's pixels (same composition, face, colours; not merely
+  similar framing). P4b's frame 0 is whatever the record says it observed (pixels kept or framing
+  only), and the record's P4 row says which for each arm.
+It is a **finding** if a held output's lag is outside ±0.1 s or its confidence is unreliable, if a
+reading disagrees with the record's figure by more than 0.05 s, or if P4a's frame 0 is not the
+picture or contradicts the record. Evidence pruned after #988 verified: skip, as in M-F158.
+cleanup: `delete_output(job_id=<the m-wangp-sync job>)`, `delete_workflow("m-wangp-sync")`. Never
+delete the probe jobs themselves.
+metrics: none.
+
+### M-F161 — the H3 enhancer keeps a held or reused track's words out of `<d>`
+pending: #989
+source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `h3` enhancer preset ("MiniMax-H3 Context-IR", `list_enhancers`; default
+model `Qwen/Qwen3-4B-Instruct-2507`), through `enhance_prompt(preset="h3", acknowledged_cost=true)`,
+plus `templates/minimax/enhance-prompt-with-image` once (variables `idea`, `image`,
+`enhancer_model_name`, `seed`; it also renders an I2VA clip, so validate first and quote its estimate).
+Applies only if #989 changed the enhancer, which the plan ties to claim 1 (P1) being **confirmed**
+in #985's record (see M-F158). If P1 was refuted or inconclusive, `get_job_workflow` of the
+enhancer is unchanged, this case records "not applicable: P1 <verdict>" and passes.
+Ideas (one person in frame each), run with `enhance_prompt`, three times each since the preset takes
+no seed:
+- (a) held sung: `"Task: R2VA. Duration: 5.17 seconds. Idea: a woman in a red coat sings along to the
+  supplied track, held with hold_audio, on a small stage, medium close-up. The lyrics are 'la vela
+  se apaga, la noche se va'."`;
+- (b) held spoken: `"Task: R2VA. Duration: 5.17 seconds. Idea: a man at a desk speaks the supplied
+  voice track (held audio, lip-sync to it): 'I checked the logs twice and the numbers still don't add up.'"`;
+- (c) reused, fl2va: `"Task: FL2VA. Duration: 5.17 seconds. Idea: the singer in the first frame lip-syncs
+  to the reused audio track 'we are the river, we are the stone'."`.
+Then once: `enhance-prompt-with-image` with `idea` (a) re-tagged `Task: I2VA`, `image:
+"asset:qa-cast/priya-portrait.jpg"`, `seed: 42`, in workspace `regression-model-specific`.
+Read each enhanced text from the job's text output (`get_output_text`).
+expected:
+- In all ten outputs, the quoted lyrics or line do not appear inside any `<d>…</d>` block, and no
+  `<d>` block holds sung or spoken words for that person. The prompt still names the character and
+  describes speaking/singing with lip movements synchronized to the track.
+- Every job succeeds and returns a non-empty prompt.
+It is a **finding** if any of the ten puts the track's words (or a paraphrase of them) in `<d>`.
+Three runs per idea is the chance guard: one `<d>` lyric in nine is still a finding, since the rule
+is meant to hold every time.
+cleanup: `delete_output(job_id=...)` for every job.
+metrics: none.
+
+### M-F162 — the H3 enhancer still writes `<d>` lines for ordinary dialogue and generated song, with no supplied track
+pending: #989
+source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F161 (`enhance_prompt(preset="h3")`). Runs whatever P1's verdict was: the
+rule must be scoped, and an unchanged enhancer must still pass this.
+Ideas, three runs each:
+- (a) T2VA dialogue: `"Task: T2VA. Duration: 5.17 seconds. Idea: two engineers argue in a server room;
+  the first says 'it was the cache', the second answers 'it is always the cache'."`;
+- (b) T2VA single speaker: `"Task: T2VA. Duration: 5.17 seconds. Idea: a lighthouse keeper looks at the
+  camera and says 'the storm is coming in tonight'."`;
+- (c) T2VA generated song, no supplied track: `"Task: T2VA. Duration: 5.17 seconds. Idea: a street
+  busker sings 'oh the rain won't stop' to a guitar."`.
+expected:
+- Every output carries the quoted words in `<d>…</d>` (one block per speaker line for (a), the
+  line for (b), the sung words for (c)). Paraphrase inside `<d>` is acceptable; the words outside
+  any `<d>` with none written is not.
+It is a **finding** if any of the nine drops `<d>` for a line H3 must voice itself — the
+held-track rule leaking into ordinary dialogue.
+cleanup: `delete_output(job_id=...)` for every job.
+metrics: none.
+
+### M-F163 — the minimax-h3 skill states the probed verdicts: FL2VA with `hold_audio`, lip-sync without `<d>`, and nothing for claims 2 and 3
+pending: #989
+source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text for MiniMax H3. No job. Read the P1 and P4 verdicts from #985's
+record (M-F158). Invoke the `dw:minimax-h3` skill and read SKILL.md as loaded, then
+`references/dialogue.md` (and `references/staging.md`, `references/cuts.md` if SKILL.md points
+there) from the skill's own base directory, the way the skill directs a reader to them.
+expected:
+- SKILL.md no longer says FL2VA "takes no audio" (or any wording that FL2VA accepts no audio or
+  can't hold a track). It says, by P4's verdict:
+  - confirmed: FL2VA + `hold_audio` is the locked-frame lip-sync route that keeps the first
+    frame's pixels, and Ref2VA (#852) is the fallback;
+  - refuted: FL2VA + `hold_audio` runs but doesn't lip-sync (citing #985), so use Ref2VA;
+  - inconclusive: that FL2VA accepts `hold_audio`, with no claim that it lip-syncs.
+  If the detail moved to `references/cuts.md` (the plan's byte-cap fallback), SKILL.md keeps a
+  sentence on it and cuts.md holds the rest.
+- Claim 1, by P1's verdict:
+  - confirmed: SKILL.md's lip-sync rule (around the `hold_audio` guidance) carries one line
+    pointing to `references/dialogue.md`, and dialogue.md states the rule — with a held or
+    supplied track, one person in frame, don't write the words in `<d>`; name the character, ask
+    for natural lip movements synchronized, keep the action to speaking;
+  - refuted: dialogue.md has a one-line note that it was tested (#985) and refuted, and no file
+    states it as a rule;
+  - inconclusive: no rule anywhere.
+- `references/staging.md`'s two-singer rule (spell the sung line in `<d>` to pick which of two
+  singers lip-syncs, #484) is still there (Q4, a non-goal).
+- No skill file states claim 2 (discard ~5 tail frames before a window's end image) or claim 3
+  (`input_video_strength` ≈ 0.5) as a rule. A note that they were dropped/deferred is fine.
+It is a **finding** if the "takes no audio" wording survives, the text contradicts the record's
+verdict, a refuted or inconclusive claim reads as a rule, the two-singer rule was removed, or a
+claim-2/3 rule appears.
+cleanup: none.
+metrics: none.
+
+### M-F164 — the workflows guide and the H3 templates' description agree with the FL2VA and `<d>` verdicts
+pending: #989
+source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 docs served over MCP. No job.
+Steps:
+1. `get_guide("workflows")` and find the `hold_audio` lip-sync passage (search "hold_audio").
+2. `get_workflow("templates/minimax/image-to-video")` and `get_workflow("templates/minimax/music-video")`:
+   their descriptions and any `hold_audio` wording.
+3. `validate_workflow(name="templates/minimax/image-to-video", arguments={"image":
+   "asset:qa-cast/priya-portrait.jpg", "hold_audio": "asset:qa-cast/priya-voice.wav", "seed": 1001})`
+   in workspace `regression-model-specific` (use the variable or step key `get_workflow` shows for
+   the held track; M-F074 is the precedent).
+expected:
+- If P4 confirmed: the guide's passage has a line naming FL2VA + `hold_audio` as the locked-frame
+  lip-sync route. If refuted or inconclusive: the guide makes no claim that it lip-syncs.
+- Nowhere in the guide or these descriptions does it say FL2VA takes no audio.
+- If P1 confirmed: no served text tells an author to write a held track's lyrics in `<d>` for one
+  person in frame (the two-singer exception may stay). If refuted: served text is unchanged on this.
+- The step-3 validate is `valid: true` with no warning about audio on FL2VA.
+- `workflows/templates/minimax/README.md` (the plan's reworded :194-198) is not served over MCP
+  today; if a guide or `get_workflow` comes to serve it, it must agree with the above. Otherwise
+  that file is the docs reviewer's, not this case's.
+It is a **finding** if served text contradicts #985's verdicts, or the validate refuses or warns
+about held audio on fl2va.
+cleanup: none (validate only).
+metrics: none.
+
 ## Performance
