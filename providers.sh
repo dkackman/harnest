@@ -1420,17 +1420,31 @@ issue_context() {
 
 # triaged_issue <issue>
 # True when a comment by TICKET_OWNER on <issue> has a line starting
-# `triage:` (agents/implementer/triage.md): triage already ran on it, and its
-# fix session follows that comment. One by any other login doesn't count:
-# the repo is public. The snapshot carries no comments (it lists the whole
-# board, and comments for every issue would multiply each of its calls), so
-# this is one `gh issue view`, run only when two or more issues wait. A
-# failed read is "not triaged": a second triage costs a comment, a skipped
-# one an unchecked fix.
+# `triage:` (agents/implementer/triage.md) and nothing since has superseded
+# it: triage already ran on it, and its fix session follows that comment.
+# One by any other login doesn't count: the repo is public. Superseded, so
+# the issue is triaged again: any later owner comment whose first line
+# isn't another `triage:` or a `progress:` note (fix.md's resumable trail),
+# such as a tester's bounce or Don's hand-back, or a `reopened` event after
+# it. A stale `already fixed ... needs deploy` or `escalate` would otherwise
+# keep steering every fix session until the bounce ledger parked the issue.
+# The snapshot carries no comments (it lists the whole board, and comments
+# for every issue would multiply each of its calls), so this is one `gh
+# issue view` (plus the timeline, when a triage comment stands), run only
+# when two or more issues wait. A failed read is "not triaged": a second
+# triage costs a comment, a skipped one an unchecked fix.
 triaged_issue() {
-  gh issue view "$1" --repo "$TICKET_REPO" --json comments 2>/dev/null \
-    | jq -e --arg me "$TICKET_OWNER" \
-        'any(.comments[]; .author.login == $me and (.body | test("(^|\n)triage:")))' >/dev/null 2>&1
+  local at events
+  at="$(gh issue view "$1" --repo "$TICKET_REPO" --json comments 2>/dev/null \
+    | jq -r --arg me "$TICKET_OWNER" '
+        [.comments[] | select(.author.login == $me)] as $own
+        | ([range(0; $own | length) | select($own[.].body | test("(^|\n)triage:"))] | last) as $t
+        | if $t == null then empty
+          elif any($own[$t + 1:][]; .body | split("\n")[0] | test("^\\s*(triage|progress):") | not) then empty
+          else $own[$t].createdAt // "" end' 2>/dev/null)" || return 1
+  [ -n "$at" ] || return 1
+  events="$(gh api --paginate "repos/$TICKET_REPO/issues/$1/events" 2>/dev/null)" || return 1
+  printf '%s\n' "$events" | jq -se --arg at "$at" 'add // [] | all(.[]; .event != "reopened" or .created_at <= $at)' >/dev/null 2>&1
 }
 
 # mcp_config_file <url> <token>

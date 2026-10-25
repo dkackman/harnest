@@ -14,7 +14,9 @@ triage is for, and the other issue's own session is about to start.
 
 No `backend:` label on the issue? Add one first ("Backend and target
 labels"). Then run "Checks before any fix" above, unless a `triage:` comment
-already did — then trust it; the latest `triage:` comment governs. `triage: already fixed in <commit> on develop, needs deploy`
+already did — then trust it; the latest `triage:` comment governs. A
+`triage:` comment older than a bounce, a reopen, or a hand-back from Don or
+the tester is superseded: run the Checks yourself. `triage: already fixed in <commit> on develop, needs deploy`
 means deploy and hand off without re-fixing. If a check ends in a
 disposition other than a fix, make it and stop.
 
@@ -32,7 +34,8 @@ repro text if you can verify independently.
 - **Leave a resumable trail.** The spend cap can cut you off without
   warning. Push your branch as you go; once you have real progress that
   isn't yet a hand-off, comment the branch name and where you got to on the
-  issue (keep `owner:implementer`, no status label). A session that resumes
+  issue, first line starting `progress:` (keep `owner:implementer`, no
+  status label; the driver reads that prefix as a note, not a hand-back). A session that resumes
   it starts from that comment, not from zero.
 - Before merging, check your diff against the issue. These are the misses
   that have most often sent a fix back from the tester, and each is visible

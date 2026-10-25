@@ -110,11 +110,20 @@ eq  "unstrand: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/triage-prompt"
 board '[{"number": 12, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "dkackman"}, "body": "triage: work - narrow repro", "createdAt": "2026-10-01T00:00:00Z"}]},
         {"number": 13, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "stranger"}, "body": "triage: work", "createdAt": "2026-10-01T00:00:00Z"}]},
-        {"number": 14, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "dkackman"}, "body": "progress: branch pushed", "createdAt": "2026-10-01T00:00:00Z"}]}]'
+        {"number": 14, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "dkackman"}, "body": "progress: branch pushed", "createdAt": "2026-10-01T00:00:00Z"}]},
+        {"number": 15, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "dkackman"}, "body": "triage: already fixed in abc123 on develop, needs deploy", "createdAt": "2026-10-01T00:00:00Z"},
+          {"author": {"login": "dkackman"}, "body": "Bounced (tester, claude-opus-5-5): still fails on lem", "createdAt": "2026-10-02T00:00:00Z"}]},
+        {"number": 16, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "dkackman"}, "body": "triage: work", "createdAt": "2026-10-01T00:00:00Z"},
+          {"author": {"login": "dkackman"}, "body": "progress: branch fix/16 pushed, repro written", "createdAt": "2026-10-02T00:00:00Z"}]},
+        {"number": 17, "state": "OPEN", "labels": [{"name": "owner:implementer"}], "comments": [{"author": {"login": "dkackman"}, "body": "triage: work", "createdAt": "2026-10-01T00:00:00Z"}],
+          "events": [{"event": "reopened", "created_at": "2026-10-03T00:00:00Z"}]}]'
 FAKE_CLAUDE_DO='case "$*" in *"TRIAGE session"*) printf "%s" "$*" > "$T/triage-prompt" ;; esac' T="$T" loop 1
 has "triage: names the untriaged issue" "#13" "$(cat "$T/triage-prompt")"
 has "triage: and the one with no comment" "#14" "$(cat "$T/triage-prompt")"
 fails "triage: not the one the owner triaged" grep -q "#12" "$T/triage-prompt"
+has "triage: a bounce after the triage comment supersedes it" "#15" "$(cat "$T/triage-prompt")"
+fails "triage: a progress note after it does not" grep -q "#16" "$T/triage-prompt"
+has "triage: nor does a reopen after it" "#17" "$(cat "$T/triage-prompt")"
 has "triage: brief context shows the last owner comment" "progress: branch pushed" "$(cat "$T/triage-prompt")"
 has "triage: and withholds a stranger's" "withheld by the driver" "$(cat "$T/triage-prompt")"
 
@@ -203,7 +212,7 @@ rm -f "$T/board.json.count"
 
 # --- 3d2. the MCP house rules are a prompt fragment every MCP-using tester
 # kind loads, and an over-cap bible is flagged after a task session
-has "house rules: the verify prompt carries them" "`wait_seconds` per family" "$(cat "$T/h/logs/.prompt.tester.verify.md")"
+has "house rules: the verify prompt carries them" '`wait_seconds` per family' "$(cat "$T/h/logs/.prompt.tester.verify.md")"
 : > "$FAKE_CLAUDE_LOG"
 board '[]'
 head -c 13312 /dev/zero | tr '\0' x > "$T/h/qa-bible.md"
