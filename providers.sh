@@ -1689,7 +1689,7 @@ still_ready() {
 # one per hand-off, so on an issue that is owner:implementer or owner:lead
 # again it is the number of bounces. Counting the whole timeline would
 # include hand-offs that passed verification before the issue regressed and
-# was reopened (as the implementer's prompt says to do), and a reopened
+# was reopened (by Don: agents file a regression as a new issue), and a reopened
 # regression would escalate or park before its first new attempt. Don's
 # hand-back resets it for the same reason: a park at IMPLEMENTER_PARK_AFTER
 # asks him to decide, and a count that ignored his answer re-parked #499

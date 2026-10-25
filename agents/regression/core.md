@@ -198,6 +198,8 @@ The hook refuses `env -S` (and `--split-string`): it re-splits and expands its s
 - **`gh` failing twice** on the same call (a network error, a 5xx, a rate
   limit; not a hook refusal): stop. The next run finds the failures again,
   and a retry loop only spends the cap.
-- **A job that never finishes:** two `wait_for_job` caps in a row with no
-  new event in `get_job_events` means `cancel_job` it and report it as the
-  case's failure, with those events. Don't wait a third time.
+- **A job that never finishes:** no new event in `get_job_events` across
+  two `wait_for_job` caps in a row and, for a video job, at least 15
+  minutes of silence (long video passes go quiet and finish) means
+  `cancel_job` it and report it as the case's failure, with
+  those events. Don't wait a third time.

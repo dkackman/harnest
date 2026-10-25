@@ -36,7 +36,7 @@ implementer's hand-off comment says what shipped.
      "Verifying a feature" below.
 5. Only after that, add a regression case if the verify warrants one (next
    section) — including the one the hand-off comment proposed, now that you
-   have run it.
+   have checked it.
 
 ### Verifying a feature
 
