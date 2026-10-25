@@ -4914,7 +4914,6 @@ delete the probe jobs themselves.
 metrics: none.
 
 ### M-F161 — the H3 enhancer keeps a held or reused track's words out of `<d>`
-pending: #989
 source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `h3` enhancer preset ("MiniMax-H3 Context-IR", `list_enhancers`; default
 model `Qwen/Qwen3-4B-Instruct-2507`), through `enhance_prompt(preset="h3", acknowledged_cost=true)`,
@@ -4947,7 +4946,6 @@ cleanup: `delete_output(job_id=...)` for every job.
 metrics: none.
 
 ### M-F162 — the H3 enhancer still writes `<d>` lines for ordinary dialogue and generated song, with no supplied track
-pending: #989
 source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F161 (`enhance_prompt(preset="h3")`). Runs whatever P1's verdict was: the
 rule must be scoped, and an unchanged enhancer must still pass this.
@@ -4968,7 +4966,6 @@ cleanup: `delete_output(job_id=...)` for every job.
 metrics: none.
 
 ### M-F163 — the minimax-h3 skill states the probed verdicts: FL2VA with `hold_audio`, lip-sync without `<d>`, and nothing for claims 2 and 3
-pending: #989
 source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job. Read the P1 and P4 verdicts from #985's
 record (M-F158). Invoke the `dw:minimax-h3` skill and read SKILL.md as loaded, then
@@ -5002,7 +4999,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F164 — the workflows guide and the H3 templates' description agree with the FL2VA and `<d>` verdicts
-pending: #989
 source: tester, spec for #989 from #985's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 docs served over MCP. No job.
 Steps:
@@ -5026,6 +5022,132 @@ expected:
 It is a **finding** if served text contradicts #985's verdicts, or the validate refuses or warns
 about held audio on fl2va.
 cleanup: none (validate only).
+metrics: none.
+
+### M-F165 — the four H3 cause-split configurations validate on `image-to-video` at the `sci0fi` takes' size, and only the LoRA-off ones get the null-LoRA warning
+pending: #991
+source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va, `templates/minimax/image-to-video` (variables today: `width`,
+`height`, `num_frames`, `num_inference_steps`, `video_shift`, `audio_shift`, `weights_dtype`,
+`lora_scale`, `lora_model_name`, `seed`, `attention_backend` default `sparse`). Free: validate only,
+no job runs. This is the durable half of #991: the four arms must stay expressible as plain
+template arguments, with no engine code.
+Steps, in workspace `regression-model-specific`, the template's default `image` and `prompt`:
+`validate_workflow(name="templates/minimax/image-to-video", workspace="regression-model-specific",
+arguments={"width": 544, "height": 672, "num_frames": 345, "seed": 7, …arm})` for each arm:
+- (a) `"weights_dtype": "{int4}"`, `"num_inference_steps": 5`, `"video_shift": 6.0`, `"audio_shift": 3.0`
+  (the LoRA left at its default: `lightx2v/Minimax-h3-Turbo`, `lora_scale` 1.0);
+- (c) `"weights_dtype": "{int8}"`, `"lora_model_name": null`, `"num_inference_steps": 12`,
+  `"video_shift": 12.0`, `"audio_shift": 3.0`;
+- (e) as (a) with `"weights_dtype": "{int8}"`;
+- (f) as (c) with `"weights_dtype": "{int4}"`.
+Then (g) arm (a) again with `"seed": 8` (any second seed) in place of 7.
+expected:
+- All five: `valid: true`, no errors. `checked_arguments` names every argument passed. `num_frames`
+  345 (the template's `max_frames`, 17·20+5) draws no snap or bound warning; 544 and 672 draw no
+  multiple-of-32 error.
+- `plan.estimate` has a numeric `minutes` (any `basis` but `unknown` is fine; `unknown` with
+  `minutes: null` is also acceptable, not a finding) and `downloads_required` is empty on lem.
+- (c) and (f) each carry the warning that `lora_model_name` is null so the LoRA is not loaded
+  (the M-F038 warning). (a), (e) and (g) carry no such warning: the turbo LoRA is on.
+- (a) and (g) return different `plan.fingerprint`s (the seed is part of the run); (a) and (e)
+  differ too (dtype).
+It is a **finding** if any arm is refused, if 345 frames or the 544×672 canvas is refused or
+snapped, or if the null-LoRA warning is missing on (c)/(f) or present on (a)/(e).
+cleanup: none (validate only).
+metrics: none.
+
+### M-F166 — the #984 B0 record has a row per arm and seed, and every cited job exists, succeeded and is noted
+pending: #991
+source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va (`templates/minimax/image-to-video`), int4/int8 × turbo on/off.
+Free: reads only (no job is run).
+The record is #984's B0 results comment (`gh issue view 984 --repo dkackman/diffusers-workflow
+--comments`; the comment tabling arms (a), (c), (e), (f) by seed). The workspace the runs live in
+is the one the record names; if it names none, use `list_jobs` over the tester's `qa-` workspaces
+to find the jobs by id, and the missing workspace is itself a finding.
+Steps:
+1. Read the record: for each arm × seed, its run (job) id, assessment, levels, per-forward seconds
+   and load seconds; the two seeds; the two readings (cause, cost); the closing list of mp4s.
+2. For every cited job id: `get_job(job_id, workspace=<record's workspace>)`.
+expected:
+- Exactly 8 rows: arms (a), (c), (e), (f), each at seed 7 and at one other seed. The other seed is
+  one fixed integer, not 7, the same for all four arms, and stated in the record.
+- Each row has a job id, an assessment (from `assess_output`, with its transcript compared to the
+  prompt's `<d>` line), levels (integrated LUFS / peak or whatever `get_gallery_metadata` reports),
+  per-forward seconds and load seconds. A row that says *not run* or *failed* with a reason is
+  allowed only if the record says so plainly; it then still cites the failed job, and the stage
+  does not pass until it is rerun (all 8 must have succeeded).
+- Every cited job exists in that workspace, finished as `succeeded`, and its `note` names its arm
+  letter, its seed and "#984 B0". The 8 job ids are distinct.
+- The record answers "which digitizes the voice: int4, turbo, both, or neither" with exactly one of
+  those four words (or "inconclusive" when the two seeds disagree), and says whether the seeds
+  agree. It reads (a), (e) and (f) against (c), not against each other only.
+- The record states per-forward and per-load seconds for int4 and for int8 (cost question).
+- It ends with each arm's mp4 (8 files, or at least one per arm per seed), named as outputs a
+  consumer can fetch (`output:` names or `download_output` targets).
+It is a **finding** if a row is missing, a job is absent/failed/in another workspace, a note omits
+arm, seed or "#984 B0", the seed set differs between arms, or a verdict word is outside the five.
+Once #991 has closed verified, a job later pruned is recorded "evidence pruned" and skipped.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F167 — every #984 B0 job ran its arm exactly, on the `sci0fi` take's shot, and differs from its seed pair only in seed
+pending: #991
+source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va, the 8 jobs M-F166 collected. Free: reads only.
+Steps:
+1. `get_job_workflow("65267b93fd22", workspace="sci0fi")` (take 1): note its prompt text, its
+   `width`, `height`, `num_frames` and its image (`asset:uploads/spider/jumping-spider-face.png`).
+   If `sci0fi` or that job is gone, compare against the plan's stated values (544x672, 345
+   frames) and the record's quoted prompt, and say so.
+2. For each of the 8 jobs: `get_job_workflow(job_id, workspace=<record's workspace>)`, and read
+   the H3 step's resolved arguments.
+expected:
+- Every job: `templates/minimax/image-to-video` (or its resolved fl2va step); `width`/`height`/
+  `num_frames` equal take 1's (544x672 in the order take 1 used, 345 frames); the prompt equal to
+  take 1's, character for character; the image a copy of the spider image in the run's own
+  workspace (an `asset:` that resolves there, made by `copy_to_workspace` — not a `sci0fi` path);
+  `attention_backend` `sparse` with `sparse_tau` 0.5 and `sparse_topk` 0.15 (the template's).
+- Per arm, the resolved config is exactly:
+  - (a) `weights_dtype` `{int4}`, `lora_model_name` `lightx2v/Minimax-h3-Turbo` at `lora_scale` 1.0,
+    5 steps, shifts 6.0 / 3.0;
+  - (c) `{int8}`, `lora_model_name` null, 12 steps, 12.0 / 3.0;
+  - (e) `{int8}`, turbo at scale 1.0, 5 steps, 6.0 / 3.0;
+  - (f) `{int4}`, `lora_model_name` null, 12 steps, 12.0 / 3.0.
+- The two jobs of one arm differ only in `seed` (7 and the record's other seed). Across arms, a
+  pair at the same seed differs only in the arm's own knobs (dtype, LoRA, steps, shifts).
+- Each job's `note` states the same arm its workflow runs.
+It is a **finding** if any job's size, frames, prompt, image or attention differs from take 1, if
+a job's dtype/LoRA/steps/shifts don't match its arm, or a note names a different arm than the
+workflow runs. Evidence pruned after #991 verified: skip, as in M-F166.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F168 — the #984 B0 record's readouts reproduce from the jobs: timings, levels and assessments
+pending: #991
+source: tester, spec for #991 from #984's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va outputs (the M-F166 jobs). Free: `get_job`, `get_gallery_metadata`
+and `assess_output` (no GPU, no job queued).
+Steps, for each of the 8 jobs in the record's workspace:
+1. `get_job(job_id, workspace=…)`: the H3 step's `timing` (`load_s`, `load_cached`, `pass_s`,
+   `passes`, total).
+2. `get_gallery_metadata` on its mp4: duration, fps, frame count, audio levels.
+3. `assess_output` on its mp4.
+expected:
+- Each mp4 is 345 frames at 24 fps (≈14.4 s) with an audio stream; its size is take 1's.
+- `passes` is the step count minus 1: 4 for (a)/(e), 11 for (c)/(f). The record's per-forward
+  seconds equals `pass_s / passes` (or the per-pass figure `timing` reports) to within 0.5 s, and
+  its load seconds equals `load_s` to within 1 s, with `load_cached` stated where a load was warm
+  (a warm load is not a cold-load figure; the record must not table it as one).
+- The record's levels for each job equal `get_gallery_metadata`'s to within 0.1 dB.
+- The record's assessment for each job agrees with `assess_output`'s (same flags; transcript
+  compared to the `<d>` line). `assess_output` is deterministic for a fixed file; a disagreement is
+  the record's error, not chance.
+It is a **finding** if a job's mp4 has the wrong length/size or no audio, `passes` doesn't match
+its arm's steps, or a recorded figure disagrees beyond the tolerances above. Evidence pruned after
+#991 verified: skip.
+cleanup: none (reads only; never delete the B0 jobs).
 metrics: none.
 
 ## Performance
