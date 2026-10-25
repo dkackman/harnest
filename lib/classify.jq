@@ -50,6 +50,10 @@
 #   spec-questions vP  the tester found the plan too vague to test
 # A re-plan bumps P, so every marker for the old version stops counting and
 # decompose and spec run again for the new one.
+# A plan comment whose first line also says `draft:` (the design session's
+# resumable draft, agents/lead/design.md step 3) is not a plan yet: it sets
+# no version, and a feature whose only plan is a draft goes back to design,
+# approved or not.
 
 def names: [.labels[].name];
 # Statuses addressed to Don: a park, a plan waiting on his review, a question
@@ -71,16 +75,18 @@ def holder: holder_of(claims);
 def serves($t; $b): ($b == "" or $b == "shared") or ($b == "cuda" and $t == "lem") or ($b == "mps" and $t != "lem");
 
 def marker_versions($kind):
-  [ (.markers // [])[]
+  [ (.markers // [])[] | select(test("draft:") | not)
     | capture("^<!-- harnest:(?<k>[a-z-]+)(?: v(?<v>[0-9]+))? -->")
     | select(.k == $kind) | (.v // "0" | tonumber) ];
 def plan_version: (marker_versions("plan") | max) // 0;
 def marked($kind): plan_version as $p | marker_versions($kind) | index($p) != null;
+def plan_drafted: any((.markers // [])[]; startswith("<!-- harnest:plan") and test("draft:"));
 
 # What an owner:lead feature parent needs next, or why it waits.
 def parent_phase:
   if has("wontfix") then {queue: "lead:closeout", reason: "declined"}
   elif (has("status:plan-approved") | not) then {queue: "lead:design", reason: "no approved plan"}
+  elif plan_drafted and plan_version == 0 then {queue: "lead:design", reason: "the plan is still a draft"}
   elif (marked("decomposed") | not) then {queue: "lead:decompose", reason: "plan v\(plan_version) not decomposed"}
   elif marked("specced") then
     (if (.subIssuesSummary.total // 0) > 0

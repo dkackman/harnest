@@ -13,6 +13,9 @@ Read the thread and decide what Don's hand-back asks for:
 
 - **No plan yet.** Write the first one (steps 2–6). For an `idea`, first
   decide what it is (below).
+- **A draft plan** (its first line says `draft:`): a design session before
+  you was cut off. Resume from the step its status names (step 2b); don't
+  redo the sweep it records.
 - **Don answered or redirected.** Fold his answers into the plan as the
   next version (steps 2–6 as far as the answers reach). Don't re-litigate
   a question he answered.
@@ -73,6 +76,25 @@ current behavior, and docs that state the current rule. Delegate it to an
 `Explore` subagent, told to be very thorough and to report file:line per
 item with "breaks because…". Keep only its conclusions. The sweep is what
 finds the design's errors, so it isn't optional.
+
+### 2b. Post the draft plan
+
+A first plan only (no plan comment yet). The sweep is the expensive part
+of this session, and a spend cap you can't see may end it before step 6,
+so record it on the issue now. Stage the plan with `Write` to
+`/tmp/plan-<n>.md`, first line exactly:
+
+    <!-- harnest:plan v1 --> draft: sweep done
+
+then the sweep's conclusions (file:line, "breaks because…"), and post it
+with `gh issue comment <n> --body-file /tmp/plan-<n>.md`. This is the plan
+comment: from here on revise it in place (core, "The plan comment"), never
+post a second one. As each of steps 3–5 completes, PATCH it with that
+step's section added and the status moved on (`draft: demand measured`,
+`draft: verdict written`, `draft: design written`). The driver doesn't
+count a draft as a plan: an issue whose plan says `draft:` comes back to
+design, approved or not. A revision of an existing plan doesn't use a
+draft: stage it in /tmp and PATCH once, as core says.
 
 ### 3. Measure demand
 
@@ -164,8 +186,10 @@ default, and say what changes if Don picks otherwise. That way one reply
 from Don can approve or redirect everything. A questions-only turn is for
 when no sensible plan exists without the answer.
 
-- **Post.** The first version is a new comment (`gh issue comment <n>
-  --body-file`). Later ones are a PATCH, plus the "changed since" comment
+- **Post.** The first version is the draft from step 2b, PATCHed once
+  more with ` draft: …` removed from its first line, which is then exactly
+  `<!-- harnest:plan v1 -->`. Never hand off a plan that still says
+  `draft:`. Later versions are a PATCH, plus the "changed since" comment
   (core, "The plan comment").
 - **End the plan** with: "Reply in comments and hand back with
   `owner:lead`. Approve by adding `status:plan-approved` yourself. No agent

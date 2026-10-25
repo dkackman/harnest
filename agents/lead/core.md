@@ -65,6 +65,9 @@ scroll.
   that form, as its own command with nothing chained before it.
 - **Every revision** bumps `vN` and adds one short comment, "Plan vN:
   changed since vN-1", naming what moved and whether scope changed.
+- **A draft** first line, `<!-- harnest:plan v1 --> draft: <status>`, is a
+  first plan still being written (design, step 2b). The driver doesn't count
+  it as a plan.
 
 ## Phase markers
 
@@ -117,7 +120,9 @@ turn with background work still running is killed, and the work is lost
 (stage A's first build, 2026-09-23).
 
 One session per issue per step. Nothing carries over except what is
-written on GitHub (and, in a build, pushed to a branch). Your prompt carries
+written on GitHub (and, in a build, pushed to a branch). A design session
+leaves a draft plan after its sweep and resumes from one (design, "2b.
+Post the draft plan"). Your prompt carries
 the issue and, for a stage, its parent's plan; start from those. Every
 session has a spend cap you can't see: write the record on the issue before
 any optional work. When the step is done, stop. The driver runs the next

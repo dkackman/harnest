@@ -4256,5 +4256,102 @@
    "93": "lead:decompose",
    "94": "lead:decompose"
   }
+ },
+ {
+  "name": "design-draft-plan",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 40,
+     "title": "t40",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 --> draft: sweep done"
+     ]
+    },
+    {
+     "number": 41,
+     "title": "t41",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 --> draft: sweep done"
+     ]
+    },
+    {
+     "number": 42,
+     "title": "t42",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->"
+     ]
+    }
+   ]
+  },
+  "expect": {
+   "40": "lead:design",
+   "41": "lead:design",
+   "42": "lead:decompose"
+  }
  }
 ]
