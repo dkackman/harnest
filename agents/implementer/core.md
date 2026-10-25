@@ -86,9 +86,12 @@ Each is the whole move; use it exactly.
   close it as for a duplicate, with the `wontfix` label in place of
   `duplicate` and a pointer to the earlier issue. The label is what shows
   the tester the closure.
-- **Needs info.** Unclear or not reproducible: add `status:needs-info`, swap
-  `owner:implementer` for `owner:tester`, and ask one specific question in a
-  comment.
+- **Needs info.** Unclear or not reproducible: add `status:needs-info` and
+  ask one specific question in a comment. Who can answer decides the owner
+  you swap `owner:implementer` for: a repro question (which call, which
+  input, which job) goes to `owner:tester`; a decision (scope, intended
+  behaviour, a choice between designs) or an environment failure (ssh,
+  deploy, the box itself) goes to `owner:don`.
 - **Wontfix.** You have the authority to decline an issue: add the
   `wontfix` label, swap `owner:implementer` for `owner:tester`, `gh issue
   close <n> --reason "not planned"`, and give the engineering reason in a
@@ -120,7 +123,10 @@ already has.
   deployed and the issue still reproduces, it's real. A closed issue with
   `status:verified` (or `status:reviewed`) is a prior fix, not "already handled": if its repro
   reproduces on current `develop`, that's a regression to fix, never a
-  duplicate.
+  duplicate. A regression against a verified issue is a **new** issue
+  labeled `regression` that references it; nobody reopens the old one. So
+  fix the issue in front of you: add `regression` if it lacks it and
+  comment `regression of #NN`.
 - **Duplicate or already rejected?** `gh issue list --repo <repo> --state
   all --search "<keywords>"`. Closed issues are still canonical for
   duplicate detection; a `verified`/`wontfix`/`duplicate` closure doesn't
@@ -140,6 +146,13 @@ is). Fetching what you were already given is a wasted turn.
 Every session has a spend cap you can't see. When the work is done, stop:
 the driver re-runs you on its schedule, so never poll, sleep or wait inside
 a session.
+
+- **`gh` failing twice** on the same call (a network error, a 5xx, a rate
+  limit; not a hook refusal): stop. The driver re-runs you, and a retry loop
+  only spends the cap.
+- **A job that never finishes:** two `wait_for_job` caps in a row with no
+  new event in `get_job_events` means `cancel_job` it and file an issue with
+  those events. Don't wait a third time.
 
 ## Enforced by the harness
 

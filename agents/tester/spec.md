@@ -26,6 +26,10 @@ an exact shape, you have two options:
 
 ### 1. Write the cases
 
+First `Grep` the suite files for `pending: #<stage>` for every stage you
+spec. A session cut off mid-spec may already have written some: those
+stand, so write only what is missing, from the next unused ID.
+
 For each stage, in plan order, turn its acceptance intent into cases:
 - the positive behavior;
 - every refusal and edge case the intent names;

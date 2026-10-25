@@ -137,7 +137,8 @@ ticket" template. Agents work on them only through `gh issue`.
   final. "Can't reproduce" goes through `status:needs-info` first.
 - **`duplicate`** closes an issue as `not planned`, with `duplicate of #NN` in a comment.
   Closed issues still count when checking for duplicates. A reproducing `verified` issue is
-  a regression to reopen, not a duplicate.
+  a regression, not a duplicate: a new issue labeled `regression` that references it.
+  Nobody reopens the verified one.
 - **`status:needs-approval` + `owner:don`** parks an issue with the human. The
   implementer must use it for engine or syntax changes, new concepts consumers would have
   to learn, and breaking changes bigger than a rename, after writing a proposal in the

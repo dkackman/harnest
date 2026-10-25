@@ -127,3 +127,10 @@ the issue and, for a stage, its parent's plan; start from those. Every
 session has a spend cap you can't see: write the record on the issue before
 any optional work. When the step is done, stop. The driver runs the next
 one, so never poll, sleep or wait.
+
+- **`gh` failing twice** on the same call (a network error, a 5xx, a rate
+  limit; not a hook refusal): stop. The driver re-runs you, and a retry loop
+  only spends the cap.
+- **A job that never finishes:** two `wait_for_job` caps in a row with no
+  new event in `get_job_events` means `cancel_job` it and file an issue with
+  those events. Don't wait a third time.

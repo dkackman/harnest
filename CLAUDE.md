@@ -489,8 +489,8 @@ merged by hand before the tester ran. Both are driver-side (one `ls-remote`, the
 the tester still reaches lem only over MCP.
 
 Bounce escalation: `handoff_count` (labeled events for `status:fixed-pending-verify` on the
-issue's timeline since its last `reopened` event, so hand-offs that passed before a
-regression reopened it don't count) is how many fixes the tester has sent back. At `IMPLEMENTER_ESCALATE_AFTER`
+issue's timeline since its last `reopened` event, so a reopened issue's earlier hand-offs don't
+count; a regression is a new issue and starts at zero) is how many fixes the tester has sent back. At `IMPLEMENTER_ESCALATE_AFTER`
 (default 2) the issue's next implementer session runs on `TESTER_MODEL`/`TESTER_PROVIDER`
 with a prompt note that the bounce comments are now the spec; at `IMPLEMENTER_PARK_AFTER`
 (default 4) the driver parks it `owner:don` + `status:needs-approval` with a comment instead
@@ -565,8 +565,11 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   checking both open and closed issues (`gh issue list --state all`) — a closed issue is still
   canonical for duplicate detection. But a closed issue carrying `status:verified` is a prior fix,
   not a standing "already handled" — if the repro still reproduces against current `develop`/`lem`,
-  that's a regression, not a duplicate: reopen the old issue (or link a new one to it) and fix it,
-  never close the new report as `duplicate`/`wontfix` on the strength of the old verification alone.
+  that's a regression, not a duplicate. A regression against a verified issue is a **new** issue
+  labeled `regression` that references it (`regression of #NN`); nobody reopens the old one. The
+  implementer fixes the new issue and never closes it as `duplicate`/`wontfix` on the strength of
+  the old verification alone. (The tester's one reopen of a `wontfix` with new evidence is not a
+  regression and stands.)
   Only the tester may close an issue as `completed` (`verified`), and only from a real MCP call.
   The one exception is a fix that changed only text neither the server nor the plugin serves
   (README, non-guide `docs/`): the implementer labels it `docs-review` at hand-off (or the

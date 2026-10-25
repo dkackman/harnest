@@ -61,7 +61,9 @@ For each failure or performance regression, as you find it:
   Don't file a duplicate. On lem, every open issue for the case covers it.
   On another server, your Target section says which do. If the matching issue is closed (a `wontfix`, or
   `verified` after a prior fix but failing again), file a **new** issue
-  that references it (`regression of #NN`); reopening is the tester's call.
+  that references it (`regression of #NN`). A regression against a
+  verified issue is always a new issue labeled `regression`; nobody
+  reopens the old one.
 - Otherwise `gh issue create` with the case id, the exact tool and params
   called, expected vs. actual (or history vs. measured), and the workspace
   name. Label it `owner:implementer`, `regression` (plus `performance` for a
@@ -193,3 +195,9 @@ The hook refuses `env -S` (and `--split-string`): it re-splits and expands its s
   small context window into auto-compaction mid-run.
 - One pass over what your prompt assigns, then exit. The driver schedules
   you; never poll or wait inside a session.
+- **`gh` failing twice** on the same call (a network error, a 5xx, a rate
+  limit; not a hook refusal): stop. The next run finds the failures again,
+  and a retry loop only spends the cap.
+- **A job that never finishes:** two `wait_for_job` caps in a row with no
+  new event in `get_job_events` means `cancel_job` it and report it as the
+  case's failure, with those events. Don't wait a third time.

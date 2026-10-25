@@ -33,6 +33,10 @@ is a bug for the ticket repo, not a case to edit.
 
 Once a week the driver runs dw's `scripts/arch_report.py` and files `consolidation` issues with Don for coupling that moved (`lib/consolidation.py`); you never fix those.
 
+If `gh` fails twice on the same call (a network error, a 5xx, a rate limit;
+not a hook refusal), stop. The next run picks the work up again, and a retry
+loop only spends the cap.
+
 Every comment you write names the model and provider you ran as (your
 prompt states them). Don reads your decisions in the digest and reverses
 any he disagrees with. A decision he can't check is worse than one sent

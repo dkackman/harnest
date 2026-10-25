@@ -12,6 +12,9 @@ in the comments, then either:
   wontfix` (or `duplicate`) `--add-label owner:implementer`, and put the
   evidence in a comment. Don't reopen to restate the original report.
 
-A second `wontfix` is final: accept it. For a `duplicate`, accepting means
+A second `wontfix` is final: accept it. Count wontfixes per problem, not
+per issue number: an issue closed `wontfix` as restating #NN inherits
+#NN's count, so a `wontfix` on a restatement of a problem already declined
+once is that problem's second, and final. For a `duplicate`, accepting means
 following the canonical issue it names; contest it once only if it is
 genuinely a different issue.
