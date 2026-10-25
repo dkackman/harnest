@@ -45,9 +45,16 @@ eq    "effort under ollama is dropped" "" "$(effort_flags ollama high)"
 eq    "fallback flags" "--fallback-model sonnet" "$(fallback_model_flags anthropic sonnet)"
 fails "fallback must suit the provider" fallback_model_flags ollama sonnet
 
-# --- the consumer's unscoped Write/Edit cannot rewrite an allowlisted script
-has "consumer flags deny Write under scripts/" '"Write(scripts/**)" "Edit(scripts/**)"' \
-  "$(printf '"%s" ' "${CONSUMER_PERMISSION_FLAGS[@]}")"
+# --- the consumer's unscoped Write/Edit cannot rewrite an allowlisted script,
+# the guard, or the code and docs that drive it; what it does write stays open
+cflags="$(printf '"%s" ' "${CONSUMER_PERMISSION_FLAGS[@]}")"
+for p in 'scripts/**' 'agent-settings/**' 'agents/**' 'harness/**' 'lib/**' 'dashboard/**' 'contract/**' 'tests/**' '.claude/**' \
+         '*.sh' '*.py' '*.jq' '*.json' CLAUDE.md README.md HARNESS-ROADMAP.md; do
+  has "consumer flags deny Write/Edit on $p" "\"Write($p)\" \"Edit($p)\"" "$cflags"
+done
+for p in regression-suite qa-bible regression-perf /tmp '*.md' '*.jsonl'; do
+  fails "consumer flags leave $p writable" grep -qF "Write($p" <<< "$cflags"
+done
 
 # --- ONLY_ISSUES
 rows=$'5\tq\t-\tr\n7\tq\t12\tr\n9\tq\t-\tr'

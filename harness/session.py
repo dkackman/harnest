@@ -74,6 +74,27 @@ def guard_settings(role):
     )
 
 
+# Paths the consumer's otherwise unscoped Write/Edit may not touch (providers.sh says why).
+CONSUMER_WRITE_DENY = (
+    "scripts/**",
+    "agent-settings/**",
+    "agents/**",
+    "harness/**",
+    "lib/**",
+    "dashboard/**",
+    "contract/**",
+    "tests/**",
+    ".claude/**",
+    "*.sh",
+    "*.py",
+    "*.jq",
+    "*.json",
+    "CLAUDE.md",
+    "README.md",
+    "HARNESS-ROADMAP.md",
+)
+
+
 def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffusers")):
     """CONSUMER_PERMISSION_FLAGS: the tester's and the regression agent's
     fence (providers.sh says why each entry is there)."""
@@ -103,8 +124,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)',
         "--disallowedTools",
         *[f"mcp__{mcp_name}__{t}" for t in deny],
-        "Write(scripts/**)",
-        "Edit(scripts/**)",
+        *[f"{tool}({path})" for path in CONSUMER_WRITE_DENY for tool in ("Write", "Edit")],
     ]
 
 

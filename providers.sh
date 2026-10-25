@@ -346,7 +346,15 @@ CONSUMER_PERMISSION_FLAGS=(
     'Bash(python3 -I "$HARNEST_ROOT"/scripts/perf-check.py *)'   # literal: the agent types the variable, and the guard holds it to this spelling
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers"
-    "Write(scripts/**)" "Edit(scripts/**)"   # Write/Edit are unscoped: never over an allowlisted script
+    # Write/Edit are otherwise unscoped: never over an allowlisted script, the
+    # guard hook that runs on every Bash call, or the code and docs that drive
+    # the session (CONSUMER_WRITE_DENY in harness/session.py is the same list).
+    # A consumer writes regression-suite-*.md, regression-perf/**, qa-bible.md
+    # and /tmp staging files; none of those falls under a pattern here.
+    "Write(scripts/**)" "Edit(scripts/**)" "Write(agent-settings/**)" "Edit(agent-settings/**)" "Write(agents/**)" "Edit(agents/**)" "Write(harness/**)" "Edit(harness/**)" "Write(lib/**)" "Edit(lib/**)"
+    "Write(dashboard/**)" "Edit(dashboard/**)" "Write(contract/**)" "Edit(contract/**)" "Write(tests/**)" "Edit(tests/**)" "Write(.claude/**)" "Edit(.claude/**)"
+    "Write(*.sh)" "Edit(*.sh)" "Write(*.py)" "Edit(*.py)" "Write(*.jq)" "Edit(*.jq)" "Write(*.json)" "Edit(*.json)"
+    "Write(CLAUDE.md)" "Edit(CLAUDE.md)" "Write(README.md)" "Edit(README.md)" "Write(HARNESS-ROADMAP.md)" "Edit(HARNESS-ROADMAP.md)"
 )
 
 # Permission flags for the feature lead's design and decompose sessions
