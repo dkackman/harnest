@@ -39,10 +39,17 @@ release_marker() {
   printf '<!-- harnest:release-gate %s %s %s %s %s -->\n' "$2" "$3" "$4" "$ts" "$mac"
 }
 
+# release_ledger <issue> <marker>: records a marker run-release.sh posted, so
+# a reader notices if a comment carrying it is later deleted or edited.
+release_ledger() {
+  python3 "$RELEASE_MAC" ledger "$1" "$2"
+}
+
 # release_gate_results <issue>
 # stdin: the release issue's comments as `gh issue view --json comments`
 # gives them. stdout: "<gate> <sha> <result>" per gate and commit whose
-# marker verifies, the latest signed ts winning.
+# marker verifies, the latest signed ts winning. Fails (status 3) when a
+# marker in the ledger is no longer on the issue.
 release_gate_results() {
   python3 "$RELEASE_MAC" gate-results "$1"
 }

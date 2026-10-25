@@ -33,7 +33,9 @@
   },
   "permissions": {
     "deny": [
-      "Read(~/.config/harnest/**)"
+      "Read(~/.config/harnest/**)",
+      "Write(~/.config/harnest/**)",
+      "Edit(~/.config/harnest/**)"
     ]
   }
 }

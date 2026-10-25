@@ -117,6 +117,7 @@ record() {
   marker="$(release_marker "$REL" "$1" "$2" "$3")" || die "could not sign the $1 marker (lib/release_mac.py)"
   gh issue comment "$REL" --repo "$TICKET_REPO" --body "$marker
 **$1: $3** on \`${2:0:10}\` ($(date '+%Y-%m-%d %H:%M')). $4" >/dev/null
+  release_ledger "$REL" "$marker" || die "posted the $1 marker but could not record it in the ledger"
   say "$1: $3 on ${2:0:10}"
 }
 # carry_forward <sha>: records `carried` on <sha> for each carryable gate
@@ -464,6 +465,9 @@ stage_accept() {
       markers="$markers$m"$'\n'
     done
     gh issue comment "$REL" --repo "$TICKET_REPO" --body "$markers**check waives $(printf '#%s ' $waive | sed 's/ $//')** for the rest of $version: $why" >/dev/null
+    while IFS= read -r m; do
+      [ -z "$m" ] || release_ledger "$REL" "$m" || die "posted the waiver but could not record it in the ledger"
+    done <<<"$markers"
     say "check: waived $(printf '#%s ' $waive | sed 's/ $//') for the rest of the release"
   fi
   record "$gate" "$sha" accepted "Accepted by Don: $why"

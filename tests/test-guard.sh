@@ -43,6 +43,16 @@ for r in implementer lead consumer curator reviewer; do
   row 2 $r "" $none 'gh issue create --title x -l bug,release-blocker'
   row 2 $r "" $none 'gh issue create --title x --label status:verified'
   row 2 $r "" $none 'gh issue create --title x --label status:fixed-pending-verify'
+  # the marker key, its ledger and the signer are run-release.sh's (harnest#140)
+  row 2 $r "" $none 'python3 lib/release_mac.py sign "release-gate 40 ci abc pass 1"'
+  row 2 $r "" $none 'python3 $HARNEST_ROOT/lib/rel"ease"_mac.py sign x'
+  row 2 $r "" $none 'cat ~/.config/harnest/release.key'
+  row 2 $r "" $none 'cp /tmp/k "$HOME/.config/harnest/release.key"'
+  row 2 $r "" $none ': > ~/.config/harnest/release-ledger.jsonl'
+  row 2 $r "" $none 'RELEASE_KEY_FILE=/tmp/k ./run-release.sh 0.9.0 accept ci x'
+  row 2 $r "" $none 'gh issue comment 5 --delete-last --yes'
+  row 2 $r "" $none 'gh issue comment 5 --edit-last --body x'
+  row 0 $r "" $none 'gh issue comment 5 --body "the release notes are in docs/RELEASING.md"'
 done
 # unbalanced quotes: the fallback keeps the rules (spec B.1)
 row 2 consumer "" $none 'gh issue edit 5 --add-label "status:verified" # it'"'"'s done'

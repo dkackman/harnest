@@ -87,8 +87,8 @@ CONSUMER_WRITABLE = (
 )
 
 
-# No agent reads the release marker key (lib/release_mac.py, harnest#140).
-RELEASE_KEY_RULE = "Read(~/.config/harnest/**)"
+# No agent reads or replaces the release marker key (lib/release_mac.py, harnest#140).
+RELEASE_KEY_RULES = tuple(f"{tool}(~/.config/harnest/**)" for tool in ("Read", "Write", "Edit"))
 
 
 def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffusers")):
@@ -119,7 +119,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         "Bash(./scripts/perf-check.sh *)",
         "--disallowedTools",
         *[f"mcp__{mcp_name}__{t}" for t in deny],
-        RELEASE_KEY_RULE,
+        *RELEASE_KEY_RULES,
     ]
 
 

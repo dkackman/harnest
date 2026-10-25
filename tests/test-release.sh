@@ -43,6 +43,22 @@ results2="$(printf '%s\nregression %s accepted\n' "$results" $A)"
 eq "missing: an accepted gate counts" "check review security" \
   "$(printf '%s\n' "$results2" | release_missing_gates $A)"
 
+# --- the ledger: a marker run-release.sh posted can't silently disappear
+release_ledger 40 "$(release_marker 40 ci $A fail 300)" 2>/dev/null
+m="$(sed -n '$p' "${RELEASE_KEY_FILE%/*}/release-ledger.jsonl" | jq -r .marker)"
+eq  "ledger: a posted marker still on the issue reads" "ci $A fail" "$(comments "$m" | release_gate_results 40)"
+comments "$(release_marker 40 ci $A pass 200)" | release_gate_results 40 >/dev/null 2>&1; rc=$?
+eq  "ledger: a deleted or edited marker stops the read" 3 "$rc"
+eq  "ledger: another release's ledger rows don't" "" "$(comments | release_gate_results 41 2>/dev/null)"
+rm -f "${RELEASE_KEY_FILE%/*}/release-ledger.jsonl"
+fails "sign: refused inside an agent session" env HARNEST_SESSION_KIND=fix python3 "$RELEASE_MAC" sign x
+fails "ledger: refused inside an agent session" env HARNEST_ROLE=implementer python3 "$RELEASE_MAC" ledger 40 x
+cp "$RELEASE_KEY_FILE" "$T/loose.key"; chmod 644 "$T/loose.key"
+eq  "key: a group- or world-readable key verifies nothing" "" "$(comments "$signed" | RELEASE_KEY_FILE="$T/loose.key" release_gate_results 40 2>/dev/null)"
+printf 'short\n' > "$T/short.key"; chmod 600 "$T/short.key"
+fails "key: a short key signs nothing" env RELEASE_KEY_FILE="$T/short.key" python3 "$RELEASE_MAC" sign x
+eq  "markers: a ts in the future does not count" "" "$(comments "$(release_marker 40 ci $B pass $(( $(date +%s) + 3600 )))" | release_gate_results 40)"
+
 # --- board: only work in flight blocks a release
 board="$(printf '%s\t%s\t%s\t%s\n' \
   40 don - "release freeze: Release 0.5.0" \

@@ -554,7 +554,11 @@ every gate has passed, been accepted, or been carried forward on the commit it m
 Each marker carries an HMAC under a key on this machine (`lib/release_mac.py`, made 0600 on
 first use), because every agent posts as your login: a marker without a valid one is
 ignored, and without the key no gate has passed. Back the key up if a release is open:
-losing it means rerunning or re-accepting that release's gates.
+losing it means rerunning or re-accepting that release's gates. Every marker posted is also
+written to `release-ledger.jsonl` beside the key, and a read that finds one gone from the
+issue (a deleted or edited comment) stops the stage. The helper refuses to sign inside a
+driver's agent session (`HARNEST_ROLE` or `HARNEST_SESSION_KIND` set), and `guard.py` refuses
+any agent command naming the key, the ledger or the helper.
 
 ```sh
 ./run-release.sh 0.5.0 freeze      # opens "Release 0.5.0": the loop now moves only release-blockers

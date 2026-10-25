@@ -1206,6 +1206,9 @@ def session_called_mcp(transcript):
 
 # a gate result (harnest:release-gate) or a waiver (harnest:release-waive)
 RELEASE_MARKER = "harnest:release-"
+# what signs and records those markers (lib/release_mac.py, harnest#140): the key,
+# its ledger, and the script itself, which an agent could otherwise just run
+RELEASE_KEY_WORDS = r"release_mac|\.config/harnest|release\.key|release-ledger|release_key_file"
 
 
 def carries_release_marker(words):
@@ -2592,6 +2595,11 @@ def main():
         consumer_root_rule(stripped)
     if re.search(GH_WORD, stripped) and gh_git_backtick(stripped):
         deny(BACKTICK_MSG)
+    if any(re.search(RELEASE_KEY_WORDS, t, re.I) for t in (cmd, bare)):
+        deny(
+            "the release marker key, its ledger and lib/release_mac.py are run-release.sh's, which Don runs; "
+            "no agent reads, signs or changes them (harnest#140)."
+        )
     if marker_through_punctuation(cmd):
         deny(
             "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."
@@ -2690,6 +2698,11 @@ def main():
             )
         if is_gh_issue(words, "comment") or is_gh_issue(words, "create") or is_gh_issue(words, "edit"):
             unreadable_body_rule(flag_values(words, "--body-file", "-F"))  # every role: <(...), =(...), stdin
+        if is_gh_issue(words, "comment") and any(w.split("=")[0] in ("--delete-last", "--edit-last") for w in words):
+            deny(
+                "gh issue comment --delete-last/--edit-last acts on the newest comment by the login every agent "
+                "and run-release.sh share, which may be a release marker or Don's reply: post a new comment instead."
+            )
         if carries_release_marker(words):
             deny(
                 "a release marker is run-release.sh's record of a gate Don ran or a problem he waived; no agent writes one."

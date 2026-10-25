@@ -335,11 +335,12 @@ guard_settings() {
     {type: "command", command: ("python3 \"$HARNEST_HOOKS/guard.py\" " + $role), timeout: 30}]}]}}'
 }
 
-# No agent reads the release marker key (lib/release_mac.py, harnest#140).
-# A Read rule covers Grep and Glob too; a shell `cat` of it is outside every
-# consumer allowlist, and the implementer's own settings deny the same path.
-RELEASE_KEY_RULE="Read(~/.config/harnest/**)"
-RELEASE_KEY_DENY=(--disallowedTools "$RELEASE_KEY_RULE")
+# No agent reads or replaces the release marker key or its ledger
+# (lib/release_mac.py, harnest#140). A Read rule covers Grep and Glob too;
+# guard.py refuses a shell command naming the directory or the script, and
+# the implementer's own settings deny the same paths.
+RELEASE_KEY_RULES=("Read(~/.config/harnest/**)" "Write(~/.config/harnest/**)" "Edit(~/.config/harnest/**)")
+RELEASE_KEY_DENY=(--disallowedTools "${RELEASE_KEY_RULES[@]}")
 
 CONSUMER_PERMISSION_FLAGS=(
   --settings "$(guard_settings consumer)"
@@ -364,7 +365,7 @@ CONSUMER_PERMISSION_FLAGS=(
     "Bash(./scripts/file-advisory.sh *)"
     "Bash(./scripts/perf-check.sh *)"   # a wrapper: the python3 -I spelling was never matched by the allowlist at run time
   --disallowedTools
-    "mcp__dw__delete_model" "mcp__dw__update_diffusers" "$RELEASE_KEY_RULE"
+    "mcp__dw__delete_model" "mcp__dw__update_diffusers" "${RELEASE_KEY_RULES[@]}"
 )
 
 # Permission flags for the feature lead's design and decompose sessions
