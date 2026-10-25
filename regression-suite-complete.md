@@ -11823,7 +11823,9 @@ Free. The skill is the one a session loads from `develop`.
    argument it names with `get_workflow(<template>, variables_only=true)`.
 expected:
 - 1: the skill loads in full: it ends with its `## Sources` section and is not cut off.
-- 2: exactly one recipe or warning, and it matches the verdict.
+- 2: the line gives the recipe(s) for a locked frame with lip-sync, and none contradicts the verdict.
+  Since #985 the primary is FL2VA with the song held by `hold_audio`; the verdict's recipe may then
+  appear as a labelled fallback rather than the only recipe.
   - On *holds*: it gives the recipe. That is Ref2VA with the task `[keyframe completion + audio reuse]`,
     `<Picture 1>` as the first frame (and `<Picture 2>` as the last, if run 2 held), and `<Audio 1>` as the song,
     on the template(s) it names.
@@ -11833,7 +11835,9 @@ expected:
     `<Picture N>`/`<Audio N>` tag, and each template name.
   - No other line contradicts it. For example, no line still recommends Ref2VA for a locked two-shot after a
     *doesn't hold* verdict.
-- 3: every template named is listed, and every argument named is one of that template's variables.
+- 3: every template named is listed. Every argument named is one of that template's variables, or is
+  named as a step argument to add (as `hold_audio` is): check that one with `validate_workflow` on the
+  template's definition with the argument added to the step named, which must be `valid: true`.
 It is a **finding** if the line is missing, disagrees with #877's verdict, breaks a pinned phrase across lines, or
 names a template or argument the server doesn't have. The 12 KiB cap can't be measured as a consumer: only a visibly
 truncated skill fails it here.
@@ -14122,7 +14126,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F519 — a `remove_background` step lists `briaai/RMBG-2.0` as a whole-repo download when uncached, and omits it when cached
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only, no GPU). Before #975, `plan.downloads_required` walked only pipeline weights, so a
 task's first run pulled its weights unquoted. Workflow W, inline in workspace `regression-complete`:
@@ -14135,8 +14138,8 @@ task's first run pulled its weights unquoted. Workflow W, inline in workspace `r
    cached).
 expected:
 - Step 2 is `valid: true`. If step 1 did **not** list the repo, `plan.downloads_required` has exactly
-  one entry with `repo: "briaai/RMBG-2.0"`, a numeric `gb` of about 1 (0.5–2.5), `gated` and
-  `access_blocked` booleans, and no `filename` (absent or null): a whole-repo entry, today's shape.
+  one entry with `repo: "briaai/RMBG-2.0"`, `gb` numeric > 0 or null, `gated` true/false/null/`"auto"`,
+  `access_blocked` a boolean, and no `filename` (absent or null): a whole-repo entry, today's shape.
   If step 1 **did** list it, `downloads_required` is `[]`.
 - Step 3 (if the argument exists): exactly one entry, `repo: "qa-spec/c-f519-absent-975"`, `gb` null or
   numeric, and no entry for `briaai/RMBG-2.0` (the override replaces the default). A not-found note in
@@ -14148,20 +14151,18 @@ bogus-override sweep covers the walk itself.
 cleanup: none.
 metrics: none.
 
-### C-F520 — a `segment` step lists both of its repos, and its `detector_model`/`segmenter_model` overrides replace them
-pending: #977
+### C-F520 — a `segment` step lists both of its repos, and its `model_name`/`sam_model_name` overrides replace them
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Carrier W, inline in `regression-complete`:
 `{"id": "c-f520", "steps": [{"name": "mask", "task": {"command": "segment", "arguments": {"image":
 "asset:qa-cast/priya-portrait.jpg", "prompt": "picture frame"}}, "result": {"content_type": "image/png"}}]}`.
-Confirm the override argument names with `get_task("segment")` (the plan names `detector_model` and
-`segmenter_model`).
+Confirm the override argument names with `get_task("segment")`.
 1. `list_models()`: note which of `IDEA-Research/grounding-dino-base`, `facebook/sam2-hiera-large`,
    `IDEA-Research/grounding-dino-tiny` and `facebook/sam2-hiera-tiny` are cached.
 2. `validate_workflow(workflow=W)` (defaults).
-3. W with `detector_model: "qa-spec/c-f520-det-975"` and `segmenter_model: "qa-spec/c-f520-seg-975"`.
-4. W with only `detector_model: "qa-spec/c-f520-det-975"`.
-5. W with `detector_model: "IDEA-Research/grounding-dino-tiny"`, `segmenter_model:
+3. W with `model_name: "qa-spec/c-f520-det-975"` and `sam_model_name: "qa-spec/c-f520-seg-975"`.
+4. W with only `model_name: "qa-spec/c-f520-det-975"`.
+5. W with `model_name: "IDEA-Research/grounding-dino-tiny"`, `sam_model_name:
    "facebook/sam2-hiera-tiny"` (real repos; validate only, do **not** run).
 expected:
 - Step 2: each default repo is listed iff step 1 didn't list it, once each, whole-repo shape.
@@ -14175,33 +14176,37 @@ a repo appears twice, or a cached repo is listed.
 cleanup: none.
 metrics: none.
 
-### C-F521 — `judge` and `text_generation` steps list the Qwen repo, once, or their override
-source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
+### C-F521 — `judge` and `text_generation` steps list each task's default model repo, once, or their override
+source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic); defaults read from
+`get_task` per harnest#139
 Free (validate only). `get_task("judge")` and `get_task("text_generation")` first, for their required
-arguments and their model argument's name. Build W with one `judge` step judging
-`asset:qa-cast/priya-portrait.jpg` (fill its required arguments from `get_task`), and W2 with one
-`text_generation` step and one `judge` step, both at their default model.
-1. `list_models()`: is `Qwen/Qwen2.5-1.5B-Instruct` cached?
+arguments and each task's default model: `judge`'s is image_to_text's default vision model (today
+`HuggingFaceTB/SmolVLM-256M-Instruct`), `text_generation`'s without an image is
+`Qwen/Qwen2.5-1.5B-Instruct`. Build W with one `judge` step judging `asset:qa-cast/priya-portrait.jpg`
+(fill its required arguments from `get_task`), and W2 with one `text_generation` step (no image) and one
+`judge` step, both at their default model.
+1. `list_models()`: which of the two default repos are cached?
 2. `validate_workflow` on W, then on W2.
-3. W with the judge's model argument set to `qa-spec/c-f521-absent-975`, if the task has one.
+3. W with the judge's `model_name` set to `qa-spec/c-f521-absent-975`.
 expected:
-- Step 2: if Qwen is uncached, W lists `repo: "Qwen/Qwen2.5-1.5B-Instruct"` with `gb` about 3 (1.5–5),
-  whole-repo shape; W2 lists it **once**, not once per step. If it is cached, both list `[]`.
-- Step 3: `qa-spec/c-f521-absent-975` is listed and Qwen is not.
-It is a **finding** if an uncached Qwen is missing, W2 lists it twice, or the override is ignored. If
-Qwen is cached and there's no override argument, the positive arm can't be exercised: say so.
+- Step 2: W lists the judge's default repo iff uncached, with `gb` numeric > 0 or null, whole-repo
+  shape. W2 lists each distinct uncached default repo **once** (two entries if the defaults differ,
+  one if they are the same repo), never once per step. A cached repo is not listed.
+- Step 3: `qa-spec/c-f521-absent-975` is listed and the judge's default repo is not.
+It is a **finding** if an uncached default repo is missing, W2 lists a repo twice, a cached one is
+listed, or the override is ignored. If both defaults are cached, the positive arm of step 2 can't be
+exercised: say so (not a pass of that arm).
 cleanup: none.
 metrics: none.
 
 ### C-F522 — a task repo that is also a pipeline step's repo, or two task steps' repo, is listed once
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). X = `qa-spec/c-f522-shared-975` (exists nowhere, so never cached). Take
 `get_workflow("templates/text-to-image")`'s definition and set its pipeline step's
 `from_pretrained_arguments.model_name` to X (S-F079 shows a nonexistent pipeline repo validates and is
 listed). Append a `diffusion_upscale` step whose `image` is `previous_result:<the pipeline step>` and
 whose `model_name` is X (check argument names with `get_task("diffusion_upscale")`), with a `result`.
-That is W1. W2: C-F520's segment carrier with a second `segment` step, both with `detector_model: X`.
+That is W1. W2: C-F520's segment carrier with a second `segment` step, both with `model_name: X`.
 1. `validate_workflow(workflow=W1)`; `validate_workflow(workflow=W2)`.
 2. W1 with the upscale step's `model_name` changed to `qa-spec/c-f522-other-975`.
 expected:
@@ -14213,13 +14218,12 @@ cleanup: none.
 metrics: none.
 
 ### C-F523 — a model argument given as `previous_result:` or a local path validates clean with no entry for it and no error
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). The plan: a non-literal value, or a local-path-shaped name, gives no entry and
 never an error, and the walk never touches the disk. Carrier: C-F520's W (`segment`), with a first step
 added before `mask` so a `previous_result:` has something to name, e.g.
 `{"name": "src", "task": {"command": "resize_rescale", "arguments": {...}}}` (arguments from
-`get_task("resize_rescale")`). Probes, one `validate_workflow` each, on `mask`'s `detector_model`:
+`get_task("resize_rescale")`). Probes, one `validate_workflow` each, on `mask`'s `model_name`:
 - (a) `"previous_result:src"`;
 - (b) `"/tmp/qa-975-local"`, `"./weights"`, `"~/models/dino"`.
 Control: C-F520's step 3 (`qa-spec/c-f520-det-975`), which is listed.
@@ -14229,7 +14233,7 @@ expected:
   `previous_result:` model argument on its own type rule, that refusal is acceptable only if it names
   the argument and not the plan or a download; record which.
 - (b): no entry whose `repo` is any of the local strings, and no error from the walk. A refusal by the
-  task's own local-path rule (as `remove_object` has, C-F514) is acceptable; it names `detector_model`.
+  task's own local-path rule (as `remove_object` has, C-F514) is acceptable; it names `model_name`.
 - The default segmenter repo is listed or not by the cache as in C-F520, unaffected by the probe.
 - The control lists `qa-spec/c-f520-det-975`.
 It is a **finding** if any probe string appears as a `repo`, the walk raises an error or a server
@@ -14256,10 +14260,9 @@ cleanup: none.
 metrics: none.
 
 ### C-F525 — a bound acknowledgement that omits a task repo is refused with 409 `downloads`; resending `detail.acknowledge` queues it
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Cheap: the job fails in its load, since the repo doesn't exist. W:
-C-F520's carrier with `detector_model: "qa-spec/c-f525-absent-975"`.
+C-F520's carrier with `model_name: "qa-spec/c-f525-absent-975"`.
 1. `validate_workflow(workflow=W)` → plan P. Confirm P's `downloads_required` lists
    `qa-spec/c-f525-absent-975`.
 2. P' = P with that entry removed from `downloads_required` (everything else verbatim).
@@ -14279,7 +14282,6 @@ cleanup: `cancel_job` any still running; `delete_output(job_id=…)` on each job
 metrics: none.
 
 ### C-F526 — offline or unsized, task entries still appear, with `gb: null`
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). The plan: with no size lookup, the entries still appear, `gb: null`, never
 dropped. A consumer can't take the server offline, so this case uses what the interface offers.

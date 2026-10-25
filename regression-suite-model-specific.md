@@ -2025,7 +2025,8 @@ expected:
   `restore-decompression` carry the same two). The compact constraints read `32*n+0` for width and
   height and `8*n+1, 9+` for `num_frames`, the form the siblings show.
 - `get_workflow(name="templates/ltx2/upscale-clip", variables_only=true)` gives these defaults:
-  - `source_video` `asset:clip.mp4`, `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0, `lora_scale` 1.0;
+  - `source_video` `asset:clip.mp4`, `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0, `fit`
+    `letterbox`, `lora_scale` 1.0;
   - a `prompt`, a `negative_prompt` and a `seed`.
 - Its `constraints` are:
   - `width` and `height`: `modulus: 32, remainder: 0`;
@@ -2033,19 +2034,25 @@ expected:
 
   Each has a non-empty `reason`, matching `restore-deblur`'s text for the same variable.
 - The workflow's description (from `get_workflow` without `variables_only`, or the full `list_workflows`
-  entry) says four things:
-  1. a source whose aspect differs from width×height is center-cropped, and a source larger than half the
-     target is downscaled first;
-  2. `num_frames` must not exceed the source's length;
-  3. to call `get_gallery_metadata` on the source first, for its size, frame count and fps;
+  entry) says four things (rewired through `fit_to_model`/`restore_to_source` by #632):
+  1. the output is exactly 2× the source, at the source's own length, whatever its size;
+  2. a source of a different aspect is handled by `fit`: letterbox (the default, padding cut back off),
+     stretch or crop;
+  3. a source shorter than `num_frames` is held on its last frame and trimmed back after, and a longer one
+     is cut to its opening `num_frames` frames;
   4. that it is a re-render (generative, not a pixel-exact upscale).
 
   Its `cost_drivers` name `num_frames`, `width` and `height`. A description missing any of the four is a finding.
 - In `get_workflow`'s full document:
-  - step `upscaled` uses `reference_downscale_factor: 2`, a reference of `{"media_type": "video",
-    "location": "variable:source_video"}` and the Pixel-Spatial-Upscaler LoRA above, and its result is
+  - the steps are `fit`, `upscaled`, `restore`, `with_source_audio`, in that order;
+  - step `fit` is `fit_to_model(video=variable:source_video, width, height, num_frames, mode=variable:fit,
+    downscale=2)`, `save: false`;
+  - step `upscaled` uses `reference_downscale_factor: 2`, a reference whose frames are
+    `previous_result:fit.video`, and the Pixel-Spatial-Upscaler LoRA above, and its result is
     intermediate;
-  - step `with_source_audio` is `pair_audio(video=previous_result:upscaled, audio=variable:source_video,
+  - step `restore` is `restore_to_source(video=previous_result:upscaled, fit=previous_result:fit.fit)`,
+    `save: false`;
+  - step `with_source_audio` is `pair_audio(video=previous_result:restore, audio=variable:source_video,
     fit="video")`, and its result is final.
 - The `dw` plugin's LTX-2.5 skill names `upscale-clip` in two places: its "Repairing the user's own
   footage" guidance, and next to `generative-upscale` as the route for a clip dw didn't make.
@@ -2169,7 +2176,7 @@ expected:
     This is the same form `templates/ltx2/two-stage` shows.
 - `get_workflow(name="templates/ltx2/refine-clip", variables_only=true)` gives these defaults:
   - `source_video` `asset:clip.mp4`;
-  - `width` 512, `height` 288, `num_frames` 121, `frame_rate` 24.0;
+  - `width` 512, `height` 288, `num_frames` 121, `frame_rate` 24.0, `fit` `letterbox`;
   - `negative_prompt` `constant:diffusers.pipelines.ltx2.utils.DEFAULT_NEGATIVE_PROMPT`;
   - a `prompt`, a `seed`, and the two weight dtypes `transformer_weights_dtype` and
     `text_encoder_weights_dtype`.
@@ -2180,9 +2187,11 @@ expected:
 - In `get_workflow`'s full document:
   - Step `source_audio` is `normalize_audio` of `variable:source_video` to a −3 dBFS peak, and saves
     nothing. It is also the silent-source check (M-F066).
-  - Step `source_frames` is `loop_frames(video=variable:source_video, num_frames=variable:num_frames)`,
-    `save: false`. It trims (or laps) the source to `num_frames` before the upsampler.
-  - Step `upscale` is `LTX2LatentUpsamplePipeline`. Its `video` argument reads `previous_result:source_frames`,
+  - The steps are `source_audio`, `fit`, `upscale`, `refine`, `restore`, `with_source_audio`, in that
+    order (#632 replaced the old `source_frames` step with `fit` and `restore`).
+  - Step `fit` is `fit_to_model(video=variable:source_video, width, height, num_frames, mode=variable:fit)`,
+    `save: false`. It fits the source to the working size and length before the upsampler.
+  - Step `upscale` is `LTX2LatentUpsamplePipeline`. Its `video` argument reads `previous_result:fit.video`,
     and it has no `latents`. It passes `height`/`width`/`num_frames` from the variables and
     `output_type: "latent"`, is `save: false`, and publishes `shared_components` with `vae`.
   - Step `refine` has these values:
@@ -2193,17 +2202,19 @@ expected:
     - `reused_components` includes `vae`;
     - its result is intermediate.
 
-    Its width/height are the source size (the `width`/`height` variables), not 2×; the output comes
-    out at 2× that. M-F064 checks the real output size.
-  - Step `with_source_audio` is `pair_audio(video=previous_result:refine, audio=previous_result:source_audio,
+    Its width/height are the working size (the `width`/`height` variables), not 2×; the model renders
+    at 2× that. M-F064 checks the real output size.
+  - Step `restore` is `restore_to_source(video=previous_result:refine, fit=previous_result:fit.fit)`,
+    `save: false`.
+  - Step `with_source_audio` is `pair_audio(video=previous_result:restore, audio=previous_result:source_audio,
     fit="video")`, and its result is final.
   - `cost_drivers` names `num_frames`, `width` and `height`, and there is no `vram_estimate`.
 - The description (from the full `get_workflow` document or the full `list_workflows` entry) says five
   things:
-  1. The output is exactly 2× `width`×`height`.
-  2. Set `width`/`height` to the source's size. A source of a different aspect is *resized*
-     (stretched), not cropped.
-  3. `num_frames` must not exceed the source's length.
+  1. The output is exactly 2× the source, at the source's own length, whatever its size.
+  2. A source of a different aspect is handled by `fit`: letterbox (the default), stretch or crop.
+  3. A source shorter than `num_frames` is held on its last frame and trimmed back after; a longer
+     one is cut to its opening `num_frames` frames.
   4. The soundtrack is the source's own, not generated.
   5. A source with no soundtrack is refused.
 

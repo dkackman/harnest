@@ -1034,15 +1034,14 @@ cleanup: `delete_output(job_id=...)` for any job; `cancel_download` anything tha
 metrics: none.
 
 ### SE-F051 — the download walk is no existence oracle for a local-path task `model_name`
-pending: #977
 source: tester, spec for #977 from #975's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). #975 makes `validate_workflow` look at task model arguments. The plan says a
 local-path-shaped name gives no entry and never touches the disk; if it did, the plan would tell a
 caller which server paths exist. Carrier: complete's C-F520 workflow (`segment` on
-`asset:qa-cast/priya-portrait.jpg`). Validate it with `detector_model` set, in turn, to:
+`asset:qa-cast/priya-portrait.jpg`). Validate it with `model_name` set, in turn, to:
 - pair 1: `"/etc"` and `"/qa-975-absent"`;
 - pair 2: `"../../../../../../etc"` and `"../../../../../../qa-975-absent"`;
-- pair 3: `"~"` and `"~/qa-975-absent"`.
+- pair 3: `"~/.bashrc"` and `"~/qa-975-absent"`.
 expected:
 - Within each pair, the two responses are identical apart from the probe string itself: the same
   `valid`, the same error/warning codes and text, and the same `downloads_required` (neither lists
