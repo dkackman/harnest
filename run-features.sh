@@ -79,8 +79,9 @@ LAST_SESSION="$LOGS/.last-session.features"
 ts() { date '+%H:%M:%S'; }
 
 driver_traps   # no lock here; the EXIT trap removes the --mcp-config file, TERM stops a session
+MCP_CONFIG_PATH="$(mcp_config_file "$DW_URL" "$DW_TOKEN")" || { echo "[features] cannot write the mcp config under $LOGS" >&2; exit 1; }
 LEAD_DESIGN_FLAGS=(
-  --mcp-config "$(mcp_config_file "$DW_URL" "$DW_TOKEN")"
+  --mcp-config "$MCP_CONFIG_PATH"
   --strict-mcp-config
   "${ISOLATION_FLAGS[@]}"
   --tools "$LEAD_DESIGN_TOOLS"

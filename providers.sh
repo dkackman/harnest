@@ -997,11 +997,24 @@ run_child_driver() {
 
 # kill_child_driver
 # TERM the running nested driver and wait for it to tear down its session,
-# so the lock this driver releases next isn't freed under a live one. A
-# no-op when none runs.
+# so the lock this driver releases next isn't freed under a live one. The
+# wait is bounded (CHILD_DRIVER_KILL_SECS, default 30): a child whose trap is
+# deferred behind a foreground ssh or gh would otherwise hold this driver's
+# exit for as long as that call runs, so past the bound it is KILLed, and its
+# claude session with it (the child's own trap never ran, so its session
+# group gets the KILL too). A no-op when none runs.
 kill_child_driver() {
   [ -n "$CHILD_DRIVER_PID" ] || return 0
+  local waited=0 limit="${CHILD_DRIVER_KILL_SECS:-30}"
   kill -TERM "$CHILD_DRIVER_PID" 2>/dev/null || true
+  while kill -0 "$CHILD_DRIVER_PID" 2>/dev/null && [ "$waited" -lt "$((limit * 10))" ]; do
+    sleep 0.1; waited=$((waited + 1))
+  done
+  if kill -0 "$CHILD_DRIVER_PID" 2>/dev/null; then
+    echo "[driver] nested driver $CHILD_DRIVER_PID ignored TERM for ${limit}s; killing it" >&2
+    pkill -KILL -P "$CHILD_DRIVER_PID" 2>/dev/null || true
+    kill -KILL "$CHILD_DRIVER_PID" 2>/dev/null || true
+  fi
   wait "$CHILD_DRIVER_PID" 2>/dev/null || true
   CHILD_DRIVER_PID=""
 }

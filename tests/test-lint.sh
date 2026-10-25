@@ -36,6 +36,9 @@ done
 if command -v node >/dev/null; then
   ok "regression page renders" node tests/fixtures/render-regression.js dashboard/regression.html
 fi
+# Tokens never ride in an argv: env(1) with a *TOKEN= assignment shows the
+# value in ps. A bash prefix assignment (TOKEN=x cmd) does not.
+fails "no token passed through env(1)" grep -nE '(^|[;&|(] *)env +([A-Za-z_]+=[^ ]* +)*[A-Za-z_]*TOKEN[A-Za-z_]*=' run-*.sh providers.sh scripts/*.sh
 # Knobs: ${NAME:-...} reads in the drivers and scripts/*.sh, and
 # environ.get("NAME"...) reads in lib/, scripts/ and harness/ Python, less
 # the few that aren't settings.

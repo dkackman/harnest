@@ -636,7 +636,9 @@ tail -f logs/loop.log                           # watch from another terminal
 ```
 
 The loop stops at a cycle boundary with `touch logs/stop-after-cycle`, or immediately with
-`kill -TERM <pid>`, which also stops a nested features or nightly regression run.
+`kill -TERM <pid>`, which also stops a nested features or nightly regression run (the loop
+waits `CHILD_DRIVER_KILL_SECS`, default 30, for that child to tear its session down, then
+KILLs it).
 
 **Preconditions:**
 - `claude` and `gh` on `PATH`, with `gh` authenticated as `TICKET_OWNER`.
@@ -654,7 +656,9 @@ The loop stops at a cycle boundary with `touch logs/stop-after-cycle`, or immedi
 this checkout, append to `logs/schedule-<name>.log`, and skip when `logs/.driver.lock` is
 absent, since with no loop running there is nothing new to retro or digest. Add `--load` to
 load them into launchd as well; `--uninstall` (with `--load`, also unloads) removes them.
-Without `--load` the script only writes or removes files.
+Without `--load` the script only writes or removes files. The agents run with the `PATH` the
+installing shell had, frozen into the plist: a `gh` or `jq` installed somewhere new later
+isn't found until you re-run the script.
 
 | var | default | what |
 |---|---|---|

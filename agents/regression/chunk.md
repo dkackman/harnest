@@ -8,11 +8,15 @@ does the final sweep.
 
 - Run only the cases named in your prompt, in that order, from the text in
   your prompt. This replaces step 1 of "Running cases" and the
-  section-by-section reads in "Guardrails": don't read the suite file for
-  these cases. Read it only where a case points elsewhere in it (another
-  case's steps, a section by name), and then just that part. Never start on
-  a case outside your slice, even if the suite says it depends on one of
-  yours.
+  section-by-section reads in "Guardrails". Do not open the suite file at
+  all, by `Read` or `Grep`, unless a case's own text names another case or a
+  section by name and tells you to follow it; then `Grep` for that heading
+  and `Read` only those lines. Your prompt already holds the Fixtures section
+  and every case in your slice, so a read "to get oriented", to check the
+  header, or to see the neighbouring cases is a wasted turn, and a
+  measured one: a smoke run's chunks averaged 2.6 suite reads each with no
+  case needing one. Never start on a case outside your slice, even if the
+  suite says it depends on one of yours.
 - Follow each case's `cleanup:` line literally across the slice boundary.
   If it says to hold an output for a later case, hold it even when that case
   belongs to a later session — that session will find it. If a case in your
