@@ -182,5 +182,10 @@ The hook also refuses, in any spelling of the label's case:
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.
 
+The hook reads only the command line it is given, so it can't see a script you wrote and then
+run, a `bash -c` string, or a function or variable set in an earlier call. Those are not a way
+around it: anything listed above is just as forbidden when it runs that way, and the auto-mode
+classifier and the post-session audit see what it did.
+
 The hook also refuses the `security` label on any issue: a hole is filed privately
 (`scripts/file-advisory.sh`), never on the public tracker.
