@@ -2125,42 +2125,48 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: `latency` (job `started_at`→`finished_at`, s), condition `480x272-121f`, to `regression-perf/M-F060.jsonl`.
 The first run seeds the file.
 
-### M-F061 — `upscale-clip` on off-shape sources: larger is downscaled, wider is center-cropped, too long a `num_frames` runs past the source, and a silent source fails at the audio step
-source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: as M-F058. Paid: up to four LTX-2.5 jobs, run one at a time. The plan records these as behavior,
-not refusals: validate passes each one (M-F059). Each arm uses `"seed": 548` in workspace
-`regression-model-specific`, with a `get_gallery_metadata` on its source first. If a fixture is missing,
-record "fixture missing" for that arm and skip it.
+### M-F061 — `upscale-clip` on off-shape sources: any size or aspect comes back at 2× the source, a long source is cut to `num_frames`, a short one is held and trimmed back, and a silent source fails at the audio step
+source: tester, spec for #548 from #542's plan v2 (claude-opus-5-5 via anthropic); arms re-derived after #632's `fit`/`restore` rewiring by Don on lem, 2026-10-25 (harnest#148)
+Model/pipeline: as M-F058. Paid: up to five LTX-2.5 jobs, about 1–2.5 min each, run one at a time. None is a
+refusal: validate passes each one (M-F059). Each arm uses `"seed": 548` in workspace
+`regression-model-specific`, with a `get_gallery_metadata` on its source first, and checks its final with
+`get_gallery_metadata`. If a fixture is missing, record "fixture missing" for that arm and skip it.
 expected:
-- **Larger source, downscaled.** `source_video: "asset:qa-cast/ep3-shot1-incident.mp4"` (960×544, 124 frames) with
+- **Larger, longer source.** `source_video: "asset:qa-cast/ep3-shot1-incident.mp4"` (960×544, 124 frames) with
   the default `num_frames` 121:
-  - the job succeeds, and the final is 960×544, 121 frames, 24 fps, carrying the source's audio;
-  - frames `0` and `120` show the source's framing at the same frames, uncropped, since the aspect already matches.
-- **16:9 source, center-cropped.** `source_video: "asset:upscale/src-640x360.mp4"`:
-  - the final is 960×544, 121 frames;
-  - its `frame:60` matches the source's `frame:60` with a thin equal band trimmed left and right (1.778 → 1.765),
-    and is not squeezed. A stretched subject or a one-sided crop is a finding.
+  - the job succeeds, and the final is 1920×1088 (2× the source), 121 frames, 24 fps, carrying the source's
+    audio;
+  - a `with_source_audio` warning that `fit` trimmed about 0.12 s off the track is expected, not a finding;
+  - frame 60 shows the source's framing at its frame 60, uncropped, since the aspect already matches.
+- **16:9 source, letterbox (the default `fit`).** `source_video: "asset:upscale/src-640x360.mp4"` (121 frames):
+  - the final is 1280×720, exactly 2× the source, 121 frames;
+  - its frame 60 (`compare_outputs` against the source at `frame:60`) shows the whole source frame, edge to
+    edge, not squeezed and with no letterbox bars left in it. Bars, a stretched subject or lost edges are a
+    finding.
+- **16:9 source, `fit: "crop"`.** The same source with `"fit": "crop"`:
+  - the final is 1270×720, 121 frames: 2× the region crop kept (635×360), since a crop's edges are cut for good
+    (`get_task("restore_to_source")`: "A crop fit restores only the part it kept");
+  - its frame 60 matches the source's with a thin equal band trimmed left and right, and is not squeezed. A
+    stretched subject or a one-sided crop is a finding.
 - **`num_frames` past the source.** `source_video: "asset:upscale/src-480x272.mp4"` (121 frames), `num_frames: 161`:
-  - the job succeeds, and the final is 161 frames at 24 fps;
-  - frames 0–120 follow the source;
-  - `frame:160` is not a frame of the source, which is the tail the description warns of;
-  - with `fit: "video"`, the source audio is padded to the video, so an `audio_padded_to_video` warning is
-    expected and is not a finding;
-  - the final's audio duration is within a frame of 161/24 s.
+  - the job succeeds; the `upscaled` intermediate is 960×544, 161 frames (the source held on its last frame);
+  - the final is 960×544, **121** frames at 24 fps (trimmed back to the source's length), and its audio
+    duration is within a frame of 121/24 s;
+  - frames 0–120 follow the source.
 - **Silent source.** `source_video: "asset:upscale/src-480x272-silent.mp4"`:
   - the job **fails at step `with_source_audio`**, not at `upscaled` and not at validate;
   - its error names the missing audio: the source has no audio stream;
-  - the `upscaled` output is already saved under `intermediate/` at 960×544, 121 frames, so the GPU work
-    isn't lost.
+  - the `upscaled` output is already saved under `intermediate/`, so the GPU work isn't lost.
 
   A job that succeeds with silent or generated audio in `final/` is a finding. So is an error that doesn't say
   the audio is what's missing.
-It is a **finding** if an arm's behavior differs from the above in the direction the plan rules out: a refusal
-where it promises a run, a stretch where it promises a crop, a truncation at 121 where 161 was asked, or a silent
-success.
+It is a **finding** if a final is not at the size and length above, if an arm is refused where it should run, if
+letterbox leaves bars or crop stretches, if the long arm's final keeps the held tail, or if the silent arm
+succeeds.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each arm's job, the failed one included.
-metrics: `latency` (s) per arm, conditions `larger-960x544`, `crop-640x360`, `long-161f`, `silent-fail`, to
-`regression-perf/M-F061.jsonl`. The first run seeds the file.
+metrics: `latency` (s) per arm, conditions `larger-960x544`, `letterbox-640x360`, `fitcrop-640x360`,
+`held-161f`, `silent-fail`, to `regression-perf/M-F061.jsonl`. `crop-640x360` and `long-161f` there are the
+pre-#632 arms and are not compared with these.
 
 ### M-F062 — `templates/ltx2/refine-clip` is a catalog shot with a curated cost, built from the upsampler's own `video=` encode, and `two-stage` is untouched
 source: tester, spec for #549 from #543's plan v2 (claude-opus-5-5 via anthropic)
