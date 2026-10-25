@@ -23,6 +23,13 @@ else
   _report 1 "ruff is not on PATH: brew install ruff (or uv tool install ruff)"
 fi
 ok "classify.jq compiles" jq -f lib/classify.jq tests/fixtures/empty-board.json
+# A suite's Fixtures section (`## Fixtures` to the next `## `) holds no `###`
+# heading: harness/suite.py's fixtures_section stops at any heading up to
+# `###`, so a sub-heading there would silently cut the section short.
+for f in regression-suite-*.md; do
+  fails "no ### heading in the Fixtures section of $f" \
+    awk '/^```/ { fence = !fence } !fence && /^## / { inside = ($0 ~ /^## Fixtures/) ; next } inside && !fence && /^### / { found = 1 } END { exit !found }' "$f"
+done
 # The dashboard pages' scripts: the regression page rendered against a
 # synthetic fleet state (every outcome and lane status). node is optional:
 # the harness doesn't need it, so its absence skips rather than fails.
