@@ -77,15 +77,19 @@ fixed sections, in order:
   open issue (if any) it holds a repro for. A missing workspace isn't news.
 - **Episodes** — one line per episode: number, title, workspace, what was
   produced, what it exercised.
-- **House rules** — the *current* rules for working the MCP well, each a
-  short bullet. When a rule changes (a fix lands, a workaround becomes
-  unnecessary), edit or delete the old bullet — never add a "cycle N"
-  subsection that contradicts an earlier one and leaves both standing.
+- **House rules** — only the series' own working notes (its templates,
+  levels, cast-specific workarounds), each a short bullet. The durable rules
+  for working the MCP (waits, workspaces, discovery, outputs) are not here:
+  they are in your system prompt ("MCP house rules"), loaded by every kind
+  that calls the dw tools. When a rule changes (a fix lands, a workaround
+  becomes unnecessary), edit or delete the old bullet — never add a "cycle
+  N" subsection that contradicts an earlier one and leaves both standing.
 - **Next** — what the next cycle should do, replaced every cycle, not
   appended to.
 
-Read it in full at the start of the standing task — that is what it is
-for, so keep it readable in full: under about 12 KB. If a cycle's edits
+The bible keeps episode state only. Read it in full at the start of the
+standing task — that is what it is for, so keep it readable in full: its
+cap is 12 KB, and the driver flags a bible over it after the session. If a cycle's edits
 push it past that, the fix is to condense (merge rules, trim episode lines
 to their essentials, drop a workspace that's been deleted), not to move the
 overflow somewhere else. Per-cycle narrative — what you ran, what you

@@ -78,7 +78,8 @@ and runs the real drivers end to end. See "Tests" below.
   `role_prompt <role> <kind> <file>` (`providers.sh`) concatenates them, and `run_agent`,
   `run_session` and `run-bench.sh` pass the result as `--append-system-prompt-file`.
   Kinds: implementer `fix`/`triage`; tester `verify`/`handoff`/`answer`/`closures`/`task`
-  (`task` also loads `standing-task.md`, and `verify`/`handoff`/`task` load `cases.md`);
+  (`task` also loads `standing-task.md`, `verify`/`handoff`/`task` load `cases.md`, and
+  `verify`/`spec`/`task`, the kinds that call the dw tools, load `mcp-rules.md`, the MCP house rules);
   regression `whole`/`chunk`/`sweep`; reviewer `docs`/`arch`. State each rule once, in the core if more than one
   kind needs it, and have fragments point at it by section name, never by step number
   across files. A rule enforced by `guard.py` stays in the core as a one-line pointer.

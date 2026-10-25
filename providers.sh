@@ -1762,12 +1762,12 @@ role_prompt() {
   case "$role:$kind" in
     implementer:fix)    set -- core fix ;;
     implementer:triage) set -- core triage ;;
-    tester:verify)      set -- core verify cases ;;
+    tester:verify)      set -- core verify cases mcp-rules ;;
     tester:handoff)     set -- core handoff cases ;;
     tester:answer)      set -- core answer ;;
     tester:closures)    set -- core closures ;;
-    tester:task)        set -- core closures task cases standing-task ;;
-    tester:spec)        set -- core spec cases ;;
+    tester:task)        set -- core closures task cases standing-task mcp-rules ;;
+    tester:spec)        set -- core spec cases mcp-rules ;;
     lead:design)        set -- core design ;;
     lead:decompose)     set -- core decompose ;;
     lead:build)         set -- core build ;;

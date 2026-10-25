@@ -836,6 +836,12 @@ $(issue_context "$n")" \
     # Only when the session ran to its end: a closure has one chance at a
     # reopen, and a died or cut-off session may not have reached it.
     [ "$SESSION_OK" = 1 ] && mark_closures_seen ${closures[@]+"${closures[@]}"}
+    # The bible is read whole every task session: past its cap
+    # (agents/tester/standing-task.md) it costs every later one
+    local bible_bytes
+    if [ -f "$REPO/qa-bible.md" ] && bible_bytes="$(wc -c < "$REPO/qa-bible.md" | tr -d ' ')" && [ "$bible_bytes" -gt 12288 ]; then
+      echo "[audit] WARNING: qa-bible.md is $(( bible_bytes / 1024 )) KB, over its 12 KB cap" | tee -a "$LOOP_LOG"
+    fi
   elif [ "${#closures[@]}" -gt 0 ]; then
     local list
     list="$(printf '#%s ' "${closures[@]}")"

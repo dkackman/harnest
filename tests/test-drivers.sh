@@ -201,6 +201,21 @@ eq  "freeze unknown: the standing task did not run" 0 "$(grep -c 'TASK session' 
 has "freeze unknown: it says why" "[tester:task] board unreadable; holding under a possible release freeze" "$(cat "$T/loop.out")"
 rm -f "$T/board.json.count"
 
+# --- 3d2. the MCP house rules are a prompt fragment every MCP-using tester
+# kind loads, and an over-cap bible is flagged after a task session
+has "house rules: the verify prompt carries them" "`wait_seconds` per family" "$(cat "$T/h/logs/.prompt.tester.verify.md")"
+: > "$FAKE_CLAUDE_LOG"
+board '[]'
+head -c 13312 /dev/zero | tr '\0' x > "$T/h/qa-bible.md"
+FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
+eq  "bible cap: the task session ran" 1 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG")"
+has "house rules: the task prompt carries them" "## MCP house rules" "$(cat "$T/h/logs/.prompt.tester.task.md")"
+has "bible cap: an over-cap bible is flagged" "[audit] WARNING: qa-bible.md is 13 KB, over its 12 KB cap" "$(cat "$T/loop.out")"
+head -c 2048 /dev/zero | tr '\0' x > "$T/h/qa-bible.md"
+FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
+fails "bible cap: one under the cap is not" grep -q "qa-bible.md is" "$T/loop.out"
+rm -f "$T/h/qa-bible.md"
+
 # --- 3e. run-release.sh: freeze, check, the gates' lock refusal, accept,
 # status, and cut refusing without its gates. (pr/run/release/workflow have
 # no fake: the CI and preflight gates, review, notes and cut's GitHub steps

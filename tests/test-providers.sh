@@ -45,6 +45,16 @@ eq    "effort under ollama is dropped" "" "$(effort_flags ollama high)"
 eq    "fallback flags" "--fallback-model sonnet" "$(fallback_model_flags anthropic sonnet)"
 fails "fallback must suit the provider" fallback_model_flags ollama sonnet
 
+# --- the MCP house rules ride in every tester kind that calls the dw tools
+for k in verify spec task; do
+  has "house rules: tester $k loads them" "## MCP house rules" "$(cat "$(role_prompt tester $k "$T/rp-$k.md")")"
+done
+for k in handoff answer closures; do
+  fails "house rules: tester $k does not" grep -q "## MCP house rules" "$(role_prompt tester $k "$T/rp-$k.md")"
+done
+eq "house rules: the Python port loads the same fragments" "$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); from harness import prompts; print(" ".join(prompts.FRAGMENTS["tester:verify"] + prompts.FRAGMENTS["tester:spec"] + prompts.FRAGMENTS["tester:task"]))' "$HARNEST")" \
+  "core verify cases mcp-rules core spec cases mcp-rules core closures task cases standing-task mcp-rules"
+
 # --- the consumer's Write and Edit are allowed only where it writes: the
 # suite files, perf history, the bible and /tmp. dontAsk denies the rest
 # (an allowlisted script, the guard hook, the drivers).
