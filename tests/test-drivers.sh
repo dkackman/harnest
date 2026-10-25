@@ -362,6 +362,15 @@ eq  "curator removal: the ruling ran" 1 "$(grep -c 'suite-change request #8' "$F
 has "curator removal: committed as the curator's" "curator: applied h/r#8" "$(git -C "$T/h" log -1 --format=%s)"
 has "curator removal: logged at info level" "[audit] curator removed lines from regression-suite-smoke.md(-1)" "$(cat "$T/loop.out")"
 eq  "curator removal: no audit warning" "" "$(grep '\[audit\] WARNING' "$T/loop.out" || true)"
+# a ruling that did not apply the request (left open, or closed not planned)
+# but whose session removed lines anyway is overreach: plain subject, WARNING
+for how in open "not planned"; do
+  : > "$FAKE_CLAUDE_LOG"
+  printf '%s\n' '{"o/r": [], "h/r": [{"number": 8, "state": "OPEN", "labels": [{"name": "suite"}, {"name": "status:needs-approval"}]}]}' > "$T/board.json"
+  FAKE_CLAUDE_DO='case "$*" in *"suite-change request #8"*) f="$T/h/regression-suite-smoke.md"; sed "\$d" "$f" > "$f.t" && mv "$f.t" "$f"; [ "$HOW" = open ] || gh issue close 8 --repo h/r --reason "not planned" ;; esac' T="$T" HOW="$how" loop 1
+  has "curator denied ($how): not committed as applied" "suite: curator session on h/r#8" "$(git -C "$T/h" log -1 --format=%s)"
+  has "curator denied ($how): removed lines still warn" "[audit] WARNING: $(git -C "$T/h" rev-parse --short HEAD) removed lines from regression-suite-smoke.md(-1)" "$(cat "$T/loop.out")"
+done
 : > "$FAKE_CLAUDE_LOG"
 board '[{"number": 9, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]}]'
 FAKE_CLAUDE_DO='case "$*" in *"VERIFY session"*) f="$T/h/regression-suite-smoke.md"; sed "\$d" "$f" > "$f.t" && mv "$f.t" "$f"; gh issue edit 9 --repo o/r --remove-label status:fixed-pending-verify --add-label status:verified; gh issue close 9 --repo o/r --reason completed ;; esac' T="$T" loop 1

@@ -364,7 +364,8 @@ After every per-issue session (and on each triaged issue after triage) `audit_is
 the invariants the prompts state — an open issue has exactly one `owner:*` label; only the
 tester (or the docs reviewer) closes as `completed` — and `commit_suite_changes` flags a suite commit that removed
 lines (cases and `regression-perf/` readings are add-only unless a human approved it; a
-curator review's `curator:` commit applies an approved change, so it is logged, not warned). Both log
+curator review whose request closed as `completed` commits as `curator: applied`, which is
+logged, not warned; any other ruling that changed a suite still warns). Both log
 `[audit] WARNING` to `loop.log` and repair nothing: `grep '\[audit\]' logs/loop.log` after a
 model change is how drift from the prompts shows up.
 
@@ -487,9 +488,10 @@ call time what `audit_issue` otherwise only finds afterwards:
 What it does not cover: a command the hook never sees whole. That means a script the agent
 writes and then runs, a `bash -c` string (whose obfuscation detectors don't read inside it),
 and a line hidden from its lexers by a `#` comment or `$'…'` quoting (harnest#141, the
-hidden-script class). The consumer roles are held there by their tool allowlist instead:
+hidden-script class). The consumer roles are held there by their tool allowlists instead:
 `Write`/`Edit` are allow-only on the suite files, `regression-perf/**`, `qa-bible.md` and
-`/tmp`, so a consumer cannot write a script it could run, and `dontAsk` denies the rest.
+`/tmp/**`, so a consumer can write a file under `/tmp`, but its `Bash` allowlist runs no file
+it wrote, and `dontAsk` denies the rest.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
 changed files, the UI's `npm run check`/`lint`/`test` must pass when `ui/` changed (about

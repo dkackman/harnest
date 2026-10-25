@@ -278,11 +278,11 @@ gate_regression() {
   # Every regression filed during the gate blocks, whichever server filed
   # it or holds it: a backend:mps regression blocks a release too (Don,
   # 2026-09-26; harnest#15).
-  filed="$(gh issue list --repo "$TICKET_REPO" --state all --label regression --search "created:>=$start" \
+  filed="$(gh issue list --repo "$TICKET_REPO" --state all --label regression --limit 500 --search "created:>=$start" \
     --json number,title --jq '.[] | "- #\(.number) \(.title)"')"
   # Stale suite text goes to the harness repo as a suite request, not a
   # ticket (agents/regression/core.md): listed, never counted
-  drift="$(gh issue list --repo "$HARNESS_REPO" --state all --label suite --search "created:>=$start" \
+  drift="$(gh issue list --repo "$HARNESS_REPO" --state all --label suite --limit 500 --search "created:>=$start" \
     --json number,title --jq '.[] | "- '"$HARNESS_REPO"'#\(.number) \(.title)"' 2>/dev/null || true)"
   drift="${drift:+
 
@@ -394,7 +394,7 @@ stage_review() {
     if [ "$(jq -r --argjson i "$i" '[.[] | select(.security | not)][$i].severity' "$findings")" = blocker ]; then
       labels="$labels,release-blocker"; blockers=$((blockers + 1))
     fi
-    existing="$(gh issue list --repo "$TICKET_REPO" --state open --search "in:title \"$title\"" --json number,title \
+    existing="$(gh issue list --repo "$TICKET_REPO" --state open --limit 500 --search "in:title \"$title\"" --json number,title \
       --jq ".[] | select(.title == $(jq -Rn --arg t "$title" '$t')) | .number" | head -n 1)"
     if [ -n "$existing" ]; then filed="$filed #$existing(existing)"; i=$((i + 1)); continue; fi
     filed="$filed $(gh issue create --repo "$TICKET_REPO" --title "$title" --body "$body" --label "$labels" | sed -n 's|.*/issues/\([0-9][0-9]*\)$|#\1|p')"
@@ -481,7 +481,7 @@ stage_status() {
   waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers)"
   [ -z "$waived" ] || printf '  %-11s %s\n' waived "$(printf '#%s ' $waived | sed 's/ $//') (check ignores them)"
   printf '  %-11s %s\n' notes "$(git -C "$SOURCE_DIR" show "$sha:docs/RELEASING.md" 2>/dev/null | grep -q "^### $version\$" && echo present || echo "missing on develop")"
-  echo "  open release-blockers: $(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --json number --jq '[.[].number | "#\(.)"] | join(" ")')"
+  echo "  open release-blockers: $(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --limit 500 --json number --jq '[.[].number | "#\(.)"] | join(" ")')"
   local flags
   flags="$(cd "$LOGS" && ls stop-after-cycle* 2>/dev/null | tr '\n' ' ' || true)"
   [ -z "$flags" ] || echo "  stop flags: $flags(cut removes them)"
@@ -496,7 +496,7 @@ stage_cut() {
   carry_forward "$sha"
   missing="$(gate_results | release_missing_gates "$sha")"
   [ -z "$missing" ] || die "cut: not passed or accepted on ${sha:0:10}: $missing (see '$0 $version status')"
-  blockers="$(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --json number --jq '[.[].number | "#\(.)"] | join(" ")')"
+  blockers="$(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --limit 500 --json number --jq '[.[].number | "#\(.)"] | join(" ")')"
   [ -z "$blockers" ] || die "cut: open release-blockers: $blockers"
   notes_file="$WORK/release-notes.md"
   git -C "$SOURCE_DIR" show "$sha:docs/RELEASING.md" > "$WORK/RELEASING.md"

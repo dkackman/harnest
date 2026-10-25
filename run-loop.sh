@@ -940,7 +940,14 @@ The request as of $(ts):
 $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
       "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$CURATOR_REVIEW_TOOLS" "${CURATOR_REVIEW_PERMISSION_FLAGS[@]}"
     co_author_for "$CURATOR_PROVIDER" "$(resolved_model curator "$CURATOR_MODEL")"
-    commit_suite_changes "curator: applied $HARNESS_REPO#$n" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" curator:review \
+    # Only a request the ruling closed as completed was applied: its
+    # removals are the approved route and are logged, not warned. Any other
+    # outcome (denied, escalated, unreadable) that still changed the suite
+    # is overreach, so it commits under a plain subject and still warns.
+    local verdict subj="suite: curator session on $HARNESS_REPO#$n" kind=""
+    verdict="$(gh issue view "$n" --repo "$HARNESS_REPO" --json state,stateReason --jq '.state + " " + .stateReason' 2>/dev/null || true)"
+    [ "$verdict" = "CLOSED COMPLETED" ] && { subj="curator: applied $HARNESS_REPO#$n"; kind=curator:review; }
+    commit_suite_changes "$subj" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" "$kind" \
       || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   done
 }

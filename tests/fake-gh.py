@@ -109,7 +109,7 @@ def save():
 
 
 def now():
-    return datetime.datetime.now(datetime.UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: UP017 (any python3, not 3.11+)
 
 
 QUALIFIERS = {"closed", "created", "updated", "merged", "author", "reason", "in", "is", "label", "state", "sort"}

@@ -114,7 +114,7 @@ run_level() {
   local waiting
   # A failed lookup skips the level: read as "none open", it would file a
   # second proposal on top of one still waiting.
-  if ! waiting="$(gh issue list --repo "$HARNESS_REPO" --state open --search "\"curation: $level suite\" in:title" \
+  if ! waiting="$(gh issue list --repo "$HARNESS_REPO" --state open --limit 500 --search "\"curation: $level suite\" in:title" \
                --json number,title --jq ".[] | select(.title | startswith(\"curation: $level suite\")) | .number" 2>/dev/null | head -n 1)"; then
     echo "[curate:$level] could not check $HARNESS_REPO for an open curation issue; skipping" | tee -a "$LOGS/loop.log"; return 0
   fi
