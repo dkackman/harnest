@@ -11,12 +11,18 @@ B=bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb
 
 # --- markers: the latest per gate and commit wins, and only that commit counts
 python3 "$RELEASE_MAC" sign warm-up >/dev/null   # makes the key before any pipe reads it
+LEDGER="${RELEASE_KEY_FILE%/*}/release-ledger.jsonl"
 comments() { jq -n --args '{comments: [$ARGS.positional[] | {body: .}]}' "$@"; }
+# posted <issue> <gate> <sha> <result> [ts] / waived <issue> <n>: a marker as
+# run-release.sh posts it, signed and in the ledger. Each block below uses its
+# own issue, since a read checks every ledger row for its issue.
+posted() { local m; m="$(release_marker "$@")" && release_ledger "$1" "$m" && printf '%s\n' "$m"; }
+waived() { local m; m="$(release_waive_marker "$@")" && release_ledger "$1" "$m" && printf '%s\n' "$m"; }
 results="$(comments \
-  "$(release_marker 40 ci $A fail 100; echo 'CI failed on backend.')" \
-  "$(release_marker 40 ci $A pass 200)" \
-  "$(release_marker 40 preflight $A pass)" \
-  "$(release_marker 40 regression $B pass)" \
+  "$(posted 40 ci $A fail 100; echo 'CI failed on backend.')" \
+  "$(posted 40 ci $A pass 200)" \
+  "$(posted 40 preflight $A pass)" \
+  "$(posted 40 regression $B pass)" \
   "an ordinary comment that mentions harnest:release-gate in prose" \
   | release_gate_results 40)"
 eq "markers: one row per gate and commit" 3 "$(printf '%s\n' "$results" | grep -c .)"
@@ -25,39 +31,44 @@ ok "gate ok on its commit" release_gate_ok ci $A <<<"$results"
 fails "gate not ok on another commit" release_gate_ok regression $A <<<"$results"
 eq "missing: every gate not passed on this commit" "check regression review security" \
   "$(printf '%s\n' "$results" | release_missing_gates $A)"
+results2="$(printf '%s\nregression %s accepted\n' "$results" $A)"
+eq "missing: an accepted gate counts" "check review security" \
+  "$(printf '%s\n' "$results2" | release_missing_gates $A)"
+
 # --- markers are signed (harnest#140): every agent posts as Don's login, so
 # marker text alone must not pass a gate
 ok  "markers: the key is made 0600 on first sign" test "$(stat -f %Lp "$RELEASE_KEY_FILE" 2>/dev/null || stat -c %a "$RELEASE_KEY_FILE")" = 600
 forged="$(comments \
   "<!-- harnest:release-gate review $A pass -->" \
   "<!-- harnest:release-gate review $A pass 300 $(printf '0%.0s' $(seq 64)) -->" \
-  "$(release_marker 41 security $A pass)" \
-  "$(release_marker 40 check $A pass | sed 's/ check / ci /')" \
-  | release_gate_results 40)"
+  "$(posted 43 security $A pass)" \
+  "$(release_marker 42 check $A pass | sed 's/ check / ci /')" \
+  | release_gate_results 42)"
 eq  "markers: unsigned, mis-signed, another release's and edited markers all fail" "" "$forged"
-replay="$(comments "$(release_marker 40 ci $A pass 100)" "$(release_marker 40 ci $A fail 200)" "$(release_marker 40 ci $A pass 100)" | release_gate_results 40)"
+old="$(posted 44 ci $A pass 100)"
+replay="$(comments "$old" "$(posted 44 ci $A fail 200)" "$old" | release_gate_results 44)"
 eq  "markers: a re-posted old pass does not undo a later fail" "ci $A fail" "$replay"
-signed="$(release_marker 40 ci $A pass)"
-eq  "markers: without the key nothing verifies" "" "$(comments "$signed" | RELEASE_KEY_FILE="$T/absent.key" release_gate_results 40 2>/dev/null)"
-results2="$(printf '%s\nregression %s accepted\n' "$results" $A)"
-eq "missing: an accepted gate counts" "check review security" \
-  "$(printf '%s\n' "$results2" | release_missing_gates $A)"
+signed="$(posted 45 ci $A pass)"
+eq  "markers: without the key nothing verifies" "" "$(comments "$signed" | RELEASE_KEY_FILE="$T/absent.key" release_gate_results 45 2>/dev/null)"
+eq  "markers: a ts in the future does not count" "" "$(comments "$(posted 46 ci $B pass $(( $(date +%s) + 3600 )))" | release_gate_results 46)"
 
-# --- the ledger: a marker run-release.sh posted can't silently disappear
-release_ledger 40 "$(release_marker 40 ci $A fail 300)" 2>/dev/null
-m="$(sed -n '$p' "${RELEASE_KEY_FILE%/*}/release-ledger.jsonl" | jq -r .marker)"
-eq  "ledger: a posted marker still on the issue reads" "ci $A fail" "$(comments "$m" | release_gate_results 40)"
-comments "$(release_marker 40 ci $A pass 200)" | release_gate_results 40 >/dev/null 2>&1; rc=$?
-eq  "ledger: a deleted or edited marker stops the read" 3 "$rc"
-eq  "ledger: another release's ledger rows don't" "" "$(comments | release_gate_results 41 2>/dev/null)"
-rm -f "${RELEASE_KEY_FILE%/*}/release-ledger.jsonl"
+# --- the ledger: what run-release.sh posted and what the issue carries agree
+eq  "ledger: a posted marker still on the issue reads" "ci $A pass" "$(comments "$signed" | release_gate_results 45)"
+comments | release_gate_results 45 >/dev/null 2>&1; rc=$?
+eq  "ledger: a deleted marker stops the read" 3 "$rc"
+comments "x $signed" | release_gate_results 45 >/dev/null 2>&1; rc=$?
+eq  "ledger: one moved off its line (text kept, parser blind) stops it" 3 "$rc"
+cp "$LEDGER" "$T/ledger.saved"; : > "$LEDGER"
+comments "$signed" | release_gate_results 45 >/dev/null 2>&1; rc=$?
+eq  "ledger: a signed marker the ledger lacks (truncated) stops it" 3 "$rc"
+mv "$T/ledger.saved" "$LEDGER"
+eq  "ledger: another release's rows don't count here" "" "$(comments | release_gate_results 41 2>/dev/null)"
 fails "sign: refused inside an agent session" env HARNEST_SESSION_KIND=fix python3 "$RELEASE_MAC" sign x
 fails "ledger: refused inside an agent session" env HARNEST_ROLE=implementer python3 "$RELEASE_MAC" ledger 40 x
 cp "$RELEASE_KEY_FILE" "$T/loose.key"; chmod 644 "$T/loose.key"
-eq  "key: a group- or world-readable key verifies nothing" "" "$(comments "$signed" | RELEASE_KEY_FILE="$T/loose.key" release_gate_results 40 2>/dev/null)"
+eq  "key: a group- or world-readable key verifies nothing" "" "$(comments "$signed" | RELEASE_KEY_FILE="$T/loose.key" release_gate_results 45 2>/dev/null)"
 printf 'short\n' > "$T/short.key"; chmod 600 "$T/short.key"
 fails "key: a short key signs nothing" env RELEASE_KEY_FILE="$T/short.key" python3 "$RELEASE_MAC" sign x
-eq  "markers: a ts in the future does not count" "" "$(comments "$(release_marker 40 ci $B pass $(( $(date +%s) + 3600 )))" | release_gate_results 40)"
 
 # --- board: only work in flight blocks a release
 board="$(printf '%s\t%s\t%s\t%s\n' \
@@ -102,8 +113,8 @@ eq "commits: an issue named only in passing is not" "" "$(printf '%s\n' "$unfini
 eq "commits: without its withdrawal it is" "#71" "$(printf '%s\n' "$log" | grep -v withdraw | release_open_with_commits "71" | cut -d' ' -f1)"
 
 # --- waivers: Don's accepted problems, honoured by every later check
-wv="$(comments "$(release_waive_marker 40 474)$(printf '\n')$(release_waive_marker 40 497)" "prose naming harnest:release-waive 12" \
-  "<!-- harnest:release-waive 13 -->" "$(release_waive_marker 41 14)" | release_waivers 40)"
+wv="$(comments "$(waived 47 474)$(printf '\n')$(waived 47 497)" "prose naming harnest:release-waive 12" \
+  "<!-- harnest:release-waive 13 -->" "$(waived 48 14)" | release_waivers 47)"
 eq "waivers: parsed from this release's signed markers only" "474 497" "$wv"
 kept="$(printf '%s\n' "#474 is open, but develop carries its commits" "#497 is a stage being built" "#50 waits on verification" "lem runs develop @ 0000000" | release_drop_waived "$wv")"
 eq "waivers: waived issues dropped, the rest kept" "#50 waits on verification|lem runs develop @ 0000000" "$(printf '%s\n' "$kept" | paste -sd'|' -)"

@@ -27,7 +27,8 @@ closed.
 
 Deleting or editing a comment could still drop a `fail`, so every marker
 run-release.sh posts is also written to a ledger beside the key. A reader
-that finds a ledger marker missing from the issue exits 3 and names it:
+that finds the ledger and the issue disagreeing (a ledger marker the parser
+no longer finds, or a signed marker the ledger lacks) exits 3 and names it:
 the release stops until Don looks.
 """
 
@@ -121,15 +122,35 @@ def waivers(issue, bodies, key):
     )
 
 
-def ledger_missing(issue, bodies):
-    """The markers the ledger says were posted on <issue> that it no longer carries."""
+def _posted(issue, bodies, key):
+    """Every marker on the issue that verifies, as the exact text the parser read."""
+    found = set()
+    for body in bodies:
+        for m in GATE.finditer(body):
+            gate, sha, result, ts, tag = m.groups()
+            if hmac.compare_digest(tag, mac(key, f"release-gate {issue} {gate} {sha} {result} {ts}")):
+                found.add(m.group(0))
+        for m in WAIVE.finditer(body):
+            n, tag = m.groups()
+            if hmac.compare_digest(tag, mac(key, f"release-waive {issue} {n}")):
+                found.add(m.group(0))
+    return found
+
+
+def ledger_drift(issue, bodies, key):
+    """Markers the ledger and the issue disagree on, both ways: one the ledger
+    holds that the parser no longer finds (a deleted or edited comment), and a
+    verified one on the issue the ledger lacks (a truncated or deleted ledger).
+    Rolling both back together is out of reach here: that needs state the
+    agents' Unix user can't write (harnest#140)."""
     try:
         with open(LEDGER) as f:
             rows = [json.loads(line) for line in f if line.strip()]
     except FileNotFoundError:
-        return []
-    text = "\n".join(bodies)
-    return [r["marker"] for r in rows if str(r.get("issue")) == str(issue) and r.get("marker", "") not in text]
+        rows = []
+    logged = {r.get("marker", "") for r in rows if str(r.get("issue")) == str(issue)}
+    posted = _posted(issue, bodies, key)
+    return sorted(logged - posted), sorted(posted - logged)
 
 
 def main(argv):
@@ -154,13 +175,16 @@ def main(argv):
         return 0
     issue = argv[2]
     bodies = _bodies(sys.stdin)
-    missing = ledger_missing(issue, bodies)
-    if missing:
-        _fail(f"{len(missing)} marker(s) run-release.sh posted on #{issue} are gone or edited: " + "; ".join(missing))
-        return 3
     key = _key(create=False)
     if key is None:
         return 0
+    gone, unlogged = ledger_drift(issue, bodies, key)
+    if gone or unlogged:
+        if gone:
+            _fail(f"{len(gone)} marker(s) run-release.sh posted on #{issue} are gone or edited: " + "; ".join(gone))
+        if unlogged:
+            _fail(f"{len(unlogged)} signed marker(s) on #{issue} are missing from {LEDGER}: " + "; ".join(unlogged))
+        return 3
     if cmd == "gate-results":
         for row in gate_results(issue, bodies, key):
             print(" ".join(row))
