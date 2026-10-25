@@ -160,6 +160,22 @@ eq  "TERM: the lock is released" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
 wait "$drv"; eq "TERM: the driver exits 143" 143 "$?"
 fails "TERM: the driver stopped, not carried on" grep -q "after session" "$T/term.out"
 pkill -f 'sleep 30.1' 2>/dev/null
+# --- a session that ignores TERM is KILLed after SESSION_KILL_SECS
+printf '#!/usr/bin/env bash\ntrap "" TERM\nsleep 30.7\n' > "$T/term-bin/claude"
+chmod +x "$T/term-bin/claude"
+SESSION_KILL_SECS=1 session_driver > "$T/term2.out" 2>&1 &
+drv=$!
+for _ in $(seq 50); do pgrep -f 'sleep 30.7' >/dev/null && break; sleep 0.1; done
+ok  "session KILL: the stubborn fake claude is running" pgrep -f 'sleep 30.7'
+t0=$(date +%s); kill -TERM "$drv"
+wait "$drv"; rc=$?; t1=$(date +%s)
+eq  "session KILL: the driver exits 143" 143 "$rc"
+ok  "session KILL: within the bound" [ "$((t1 - t0))" -lt 10 ]
+eq  "session KILL: the session is gone" "" "$(pgrep -f 'sleep 30.7')"
+has "session KILL: says it killed it" "ignored TERM for 1s" "$(cat "$T/term2.out")"
+eq  "session KILL: the lock is released" "" "$(ls -d "$LOGS/.driver.lock" 2>/dev/null)"
+pkill -f 'sleep 30.7' 2>/dev/null
+
 # --- a nested driver that ignores TERM is KILLed after CHILD_DRIVER_KILL_SECS
 # (the driver is a file: the masked-TERM child's quoting doesn't survive a bash -c string)
 printf '%s\n' '. "$HARNEST/providers.sh"; driver_traps' \

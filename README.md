@@ -637,8 +637,9 @@ tail -f logs/loop.log                           # watch from another terminal
 
 The loop stops at a cycle boundary with `touch logs/stop-after-cycle`, or immediately with
 `kill -TERM <pid>`, which also stops a nested features or nightly regression run (the loop
-waits `CHILD_DRIVER_KILL_SECS`, default 30, for that child to tear its session down, then
-KILLs it).
+waits `SESSION_KILL_SECS`, default 10, for its `claude -p` to act on the TERM, and
+`CHILD_DRIVER_KILL_SECS`, default 30, for a nested driver to tear its session down; past
+either bound it KILLs what's left).
 
 **Preconditions:**
 - `claude` and `gh` on `PATH`, with `gh` authenticated as `TICKET_OWNER`.
