@@ -133,7 +133,23 @@ advisories_section() {
   printf '\n## Private security findings (draft advisories)\n\nFiled privately instead of as issues. Fix out of band, then publish or close each.\n\n%s\n' "$rows"
 }
 
+# requirements_section: one line when a suite case has no entry in
+# regression-requirements.json. The fleet still runs such a case, as heavy
+# on the primary, but can't spread it; regenerating the file fixes that.
+requirements_section() {
+  local n
+  n="$(cd "$REPO" && python3 -c '
+import glob
+from harness import requirements as r
+s = r.load_sidecar()
+print(sum(1 for f in glob.glob("regression-suite-*.md") for c, b in r.case_blocks(f).items()
+          if r.need_for(c, b, s).why_unknown == r.NO_ENTRY))' 2>/dev/null)" || return 0
+  case "$n" in ''|*[!0-9]*|0) return 0 ;; esac
+  printf '\n%s regression case(s) have no requirements entry (the fleet runs them as heavy, on the primary); regenerate: python3 -m harness.drivers.requirements\n' "$n"
+}
+
 curator="$(curator_section)"
+requirements="$(requirements_section)"
 advisories="$(advisories_section)"
 stranded="$(stranded_section)"
 harness="$(harness_section)"
@@ -144,7 +160,7 @@ if [ "${#issues[@]}" -eq 0 ]; then
   out="# owner:don digest — $(date '+%F %H:%M')
 
 nothing parked with owner:don
-$advisories$stranded$harness$curator"
+$advisories$stranded$harness$curator$requirements"
   printf '%s\n' "$out" | tee "$LOGS/digest.md"
   exit 0
 fi
@@ -194,7 +210,7 @@ out="# owner:don digest — $(date '+%F %H:%M')
 ${#issues[@]} parked; median $median days parked.
 
 $table
-$advisories$stranded$harness$curator"
+$advisories$stranded$harness$curator$requirements"
 printf '%s\n' "$out" | tee "$LOGS/digest.md"
 if [ -n "$DIGEST_ISSUE" ]; then
   printf '%s\n' "$out" | gh issue comment "$DIGEST_ISSUE" --repo "$TICKET_REPO" --body-file - >/dev/null \

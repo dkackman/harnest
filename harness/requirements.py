@@ -89,10 +89,16 @@ def load_sidecar(path=None):
     return data.get("cases", {}) if isinstance(data, dict) else {}
 
 
+# A case regression-requirements.json doesn't list yet (it was added since
+# the file was generated): dispatched as heavy, so on the primary, where it
+# runs rather than going unplaced. The fleet names every such case.
+NO_ENTRY = "no requirements entry"
+
+
 def need_for(case_id, block, sidecar):
     e = sidecar.get(case_id)
     if not isinstance(e, dict):
-        return Need(why_unknown="no requirements entry")
+        return Need(load="heavy", why_unknown=NO_ENTRY)
     if e.get("hash") != block_hash(block):
         return Need(why_unknown="the case changed since its entry")
     load = e.get("load", "light")

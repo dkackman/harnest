@@ -108,6 +108,15 @@ class Plan:
     lanes: list
     unplaced: list = field(default_factory=list)  # (group, {server: why})
     script_cases: list = field(default_factory=list)
+    missing: list = field(default_factory=list)  # cases with no requirements entry
+
+
+def missing_line(cases):
+    """The one line naming every case regression-requirements.json lacks."""
+    return (
+        f"[fleet] {len(cases)} case(s) have no requirements entry: {' '.join(cases)};"
+        " dispatched as heavy on the primary"
+    )
 
 
 def gather_all(
@@ -169,6 +178,11 @@ def plan_level(profile, level, server_facts, sidecar, level_servers=None, lanes=
     usable = [l for l in lanes if level_servers is None or l.server.name in level_servers]
     ref = requirements.reference_sizes(server_facts.values())
     p = Plan(level=level, suite_file=suite_file, lanes=usable, script_cases=script)
+    p.missing = [
+        c
+        for c, b in requirements.case_blocks(suite_file).items()
+        if c not in script and requirements.need_for(c, b, sidecar).why_unknown == requirements.NO_ENTRY
+    ]
     for g in sorted(requirements.groups(suite_file, sidecar, skip=script), key=lambda g: -est.of(g.cases)):
         why, best = {}, None
         for lane in usable:
@@ -201,10 +215,12 @@ def render(p, workspace, timed=False):
             out.append(f"   {'':10} in exclusive groups: {' '.join(excl)}")
     for g, why in p.unplaced:
         out.append(f"   unplaced {' '.join(g.cases)}: " + "; ".join(f"{s}: {w}" for s, w in why.items()))
+    if p.missing:
+        out.append(f"   {missing_line(p.missing)}")
     reasons = {}
     for lane in p.lanes:
         for lv, g in lane.groups:
-            if lv == p.level and not g.need.known:
+            if lv == p.level and not g.need.known and g.need.why_unknown != requirements.NO_ENTRY:
                 reasons[g.need.why_unknown] = reasons.get(g.need.why_unknown, 0) + len(g.cases)
     for r, n in sorted(reasons.items(), key=lambda x: -x[1]):
         out.append(f"   {n} case(s) primary only: {r}")
@@ -361,6 +377,7 @@ class Fleet:
     # -- setup
 
     def plan(self):
+        missing = []
         for lv in self.levels:
             servers = [n for n in self.servers if len(self.levels) == 1 or lv in self.profile.server(n).regression_all]
             p = plan_level(self.profile, lv, self.server_facts, self.sidecar, servers, self.lanes, self.est)
@@ -370,6 +387,9 @@ class Fleet:
             for c, b in blocks.items():
                 self.case_need[c] = requirements.need_for(c, b, self.sidecar)
             self.unplaced += [(lv, g, why) for g, why in p.unplaced]
+            missing += p.missing
+        if missing:
+            self.servers[self.lanes[0].server.name].log.say(missing_line(missing))
         for lane in self.lanes:
             for lv, g in lane.groups:
                 gid = f"{lv}:{g.cases[0]}"
@@ -377,6 +397,10 @@ class Fleet:
                 for c in g.cases:
                     excl = self.case_need[c].load == "exclusive"
                     self.queues[lane.name].append(Item(level=lv, case=c, gid=gid, exclusive=excl))
+
+    def _load_of(self, case):
+        need = self.case_need[case]
+        return need.load if need.known or need.why_unknown == requirements.NO_ENTRY else "unknown"
 
     def initial_state(self):
         cases = {}
@@ -386,7 +410,7 @@ class Fleet:
                     "level": it.level,
                     "lane": lane.name,
                     "server": lane.server.name,
-                    "load": self.case_need[it.case].load if self.case_need[it.case].known else "unknown",
+                    "load": self._load_of(it.case),
                     "outcome": "queued",
                 }
         for lv, ids in self.script.items():

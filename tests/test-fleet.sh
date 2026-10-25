@@ -300,6 +300,25 @@ eq  "  and the run exits 0" 0 "$rc"
 eq  "  with every case passing" "pass pass pass" "$(case_of S-F001 outcome) $(case_of S-F002 outcome) $(case_of S-F003 outcome)"
 eq  "  state says done" "done" "$(jq -r .status "$st")"
 
+# --- a case with no requirements entry: named in one line, and still run,
+# as heavy, on the primary (alpha), never on beta (light only)
+(cd "$T/h" && python3 - <<'EOF'
+import json
+d = json.load(open("regression-requirements.json"))
+del d["cases"]["S-F002"]
+json.dump(d, open("regression-requirements.json", "w"))
+EOF
+)
+git -C "$T/h" add -A && git -C "$T/h" -c user.name=t -c user.email=t@t commit -qm missing
+(cd "$T/h" && env HARNEST_PROFILE="$T/profile2.toml" FLEET_SERVERS="alpha beta" python3 -m harness.drivers.fleet --plan smoke) > "$T/plan3.out" 2>&1
+missing_line="[fleet] 1 case(s) have no requirements entry: S-F002; dispatched as heavy on the primary"
+has "missing entry: the plan names it" "$missing_line" "$(cat "$T/plan3.out")"
+fleet PATH="$T/bin2:$PATH" FLEET_SERVERS="alpha beta" CASES_PER_SESSION=1 DW_TOKEN_ALPHA=tok-alpha DW_TOKEN_BETA=tok-beta
+eq  "  the run exits 0" 0 $?
+has "  the run names it" "$missing_line" "$(cat "$T/fleet.out")"
+eq  "  once" 1 "$(grep -cF "$missing_line" "$T/fleet.out")"
+eq  "  queued heavy on the primary, and passes" "alpha heavy pass" "$(case_of S-F002 server) $(case_of S-F002 load) $(case_of S-F002 outcome)"
+
 # --- a server that's down stops the run before it starts
 kill $mcppid; wait $mcppid 2>/dev/null
 fleet

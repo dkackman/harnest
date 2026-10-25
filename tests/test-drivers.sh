@@ -704,6 +704,25 @@ has "rate limit: a missing reset sleeps the fallback" "no reset time; sleeping 0
    SESSION_RETRY_PAUSE_SECS=0 RATE_LIMIT_FALLBACK_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
 eq  "rate limit: run again once, not forever" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "retro: a rejected session does not advance the window" "window not advanced" "$(cat "$T/retro.out")"
+# --- 9a. run-digest: cases missing a requirements entry get one line
+python3 - "$T/h/regression-requirements.json" <<'EOF'
+import json, sys
+d = json.load(open(sys.argv[1]))
+d["cases"].pop(next(iter(d["cases"])))
+json.dump(d, open(sys.argv[1], "w"))
+EOF
+want="$(cd "$T/h" && python3 -c '
+import glob
+from harness import requirements as r
+s = r.load_sidecar()
+print(sum(1 for f in glob.glob("regression-suite-*.md") for c in r.case_blocks(f) if c not in s))')"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r ./run-digest.sh) > "$T/digest.out" 2>&1
+eq  "digest: exits cleanly" 0 $?
+has "digest: counts the cases missing a requirements entry, with the regen command" \
+    "$want regression case(s) have no requirements entry (the fleet runs them as heavy, on the primary); regenerate: python3 -m harness.drivers.requirements" \
+    "$(cat "$T/digest.out")"
+git -C "$T/h" checkout -q -- regression-requirements.json
+
 # --- 9b. the nightly regression run: once a day, inside the loop, under its lock
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/.nightly-regression"
 board '[]'
