@@ -2367,9 +2367,10 @@ and pass it as `acknowledged_cost`, with `wait_seconds=55`.
 expected:
 - Both jobs succeed.
 - Call 3 returns `total: 0`.
-- Call 4's listing has `total: 1`, and that job is J2. `get_job(J1)` errors `Unknown job`.
+- Call 4's listing has `total: 1`, and that job is J2. `get_job(J1)` answers with
+  `historical: true` and `workspace: "regression-smoke-913 (deleted)"` (#944).
 It is a **finding** if J1 shows up in either listing, with or without `historical: true`, or if
-`get_job(J1)` still answers.
+`get_job(J1)` errors `Unknown job`.
 cleanup: `delete_workspace("regression-smoke-913", acknowledged_cost=true)`. Confirm
 `list_workspaces` no longer has it.
 metrics: none.
@@ -2393,11 +2394,11 @@ The asset's metadata names that job, and `get_job_workflow` is how its workflow 
 expected:
 - Call 4: the metadata's `job.id` is K. `get_job_workflow(K)` returns `realized: false` with the
   ReLevelClip definition and `clip` folded into `variables`. `get_job(K)` answers with
-  `historical: true` and `workspace: "regression-smoke-917 (deleted)"`. `get_job(U)` errors
-  `Unknown job`.
+  `historical: true` and `workspace: "regression-smoke-917 (deleted)"`. `get_job(U)` answers the
+  same way (#944).
 - Call 5 returns `total: 0`.
-It is a **finding** if `get_job_workflow(K)` or `get_job(K)` errors `Unknown job`, if U still
-answers, or if K shows up in the recreated workspace's listing.
+It is a **finding** if `get_job_workflow(K)`, `get_job(K)` or `get_job(U)` errors `Unknown job`,
+or if K shows up in the recreated workspace's listing.
 cleanup: `delete_asset("regression-smoke-917/kept.mp4")`, then
 `delete_workspace("regression-smoke-917", acknowledged_cost=true)`.
 metrics: none.
