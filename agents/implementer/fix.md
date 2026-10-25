@@ -88,6 +88,12 @@ is `journalctl --user -u dw-serve` (unit) or `~/dw-serve.log` (screen).
 Don't restart the server except to deploy, and confirm it is healthy before
 you exit: the tester runs right after you.
 
+Confirm health only (the script's last line, or `get_health`): never re-run
+the repro over MCP to confirm your own fix. Check the fix with the source
+checkout's tests; MCP is for reproducing the bug, and confirming the fix
+over it is the tester's job. A check you run yourself shares your blind
+spots, and the tester's independent one is the point.
+
 If ssh fails, or the script fails or the server doesn't come back healthy,
 don't force it and don't hand off: put the script's output in a comment,
 add `status:needs-info`, and swap `owner:implementer` for `owner:don`. No
@@ -98,10 +104,13 @@ so leaving it with you strands it. A plugin-only fix skips this step.
 
 - `gh issue edit <n> --remove-label owner:implementer --add-label
   owner:tester --add-label status:fixed-pending-verify`
-- `gh issue comment <n>` with what changed and how it shipped (commit hash
-  or diff summary, deploy or plugin-only, timestamp). In a batch, comment on
-  each issue exactly what shipped for *it*, so the tester can tell which fix
-  it is verifying.
+- `gh issue comment <n>` describing what a consumer now observes: the tool,
+  the input, the response before the fix and the response now. Then the
+  commit hash and how it shipped (deploy or plugin-only, timestamp).
+  Describe behaviour, not code: the tester designs its own check from the
+  issue's `expected:`, and a call you suggest is one input to it, not the
+  test. In a batch, comment on each issue exactly what shipped for *it*, so
+  the tester can tell which fix it is verifying.
 - If every file the fix changed is text neither the server nor the plugin
   serves (the README, a `docs/` page that isn't a guide in the `GUIDES`
   table of `dw/server/guides.py`, other repository prose), add the
@@ -118,8 +127,9 @@ so leaving it with you strands it. A plugin-only fix skips this step.
   general-purpose but slower/edge-case-y,
   `regression-suite-model-specific.md` for tied-to-one-model,
   `regression-suite-security.md` for a fix that closed a boundary escape),
-  the exact call(s) to make, and the expected result. Don't write it
-  yourself: the suite files live in the harness repo, which you don't have
+  and the behaviour to lock in (what a consumer must keep seeing, on what
+  kind of input), not the call: the tester writes the call when it adds the
+  case. Don't write it yourself: the suite files live in the harness repo, which you don't have
   checked out, and a case isn't confirmed behavior until the tester has run
   it over MCP — the tester adds it when it verifies. Most fixes are one-off
   and warrant no case.

@@ -8,7 +8,12 @@ implementer's hand-off comment says what shipped.
    interface change, adjust your calls to the new shape first. Don't report
    the shape change itself as a new bug unless it seems accidental or
    undocumented.
-2. Re-run the exact repro from the issue body and comments, via MCP.
+2. Design your check from the issue's `expected:` first, before you look
+   at any call the hand-off suggests: re-run the exact repro from the issue
+   body and comments via MCP, plus whatever call would best show
+   `expected:` holds where the repro alone wouldn't. The hand-off's
+   suggested call runs last, as one of step 3's adjacent cases: a check
+   the implementer wrote can share the fix's blind spot.
 3. Try 1–2 adjacent cases (edge inputs, the original bug's neighbours) to
    catch a partial fix.
 4. Record the outcome — this, not a regression case, is the deliverable:

@@ -18,10 +18,10 @@ it does. The guard refuses the deploy scripts. "Plugin or skill: merge and
 push" is unchanged, and so is "merge to `develop`": lem's loop deploys the
 same branch. Never commit in `{{HOST}}:{{SERVER_DIR}}`; it is only deployed.
 
-Check your fix with the source checkout's tests before you hand off. The
-MCP server you can reach is still running the previous `develop`, so use
-it only to reproduce the bug, not to confirm the fix. Say in the hand-off
-that the driver deploys the fix.
+Check your fix with the source checkout's tests before you hand off, as
+everywhere (MCP reproduces the bug; it never confirms your fix). Here the
+MCP server you can reach is also still running the previous `develop`. Say
+in the hand-off that the driver deploys the fix.
 
 ### No lem
 
