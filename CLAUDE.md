@@ -201,7 +201,9 @@ and runs the real drivers end to end. See "Tests" below.
 - `run-release.sh` / `lib/release.sh` / `agents/release/` (R14) — cuts a release in stages
   Don runs: `freeze`, `check`, `review`, `notes`, `gates`, `accept`, `status`, `cut`. It
   records each gate as a marker comment on the release issue, keyed to the full
-  `origin/develop` commit (`<!-- harnest:release-gate <gate> <sha> <result> -->`). `cut`
+  `origin/develop` commit (`<!-- harnest:release-gate <gate> <sha> <result> <ts> <mac> -->`),
+  signed with an HMAC under `RELEASE_KEY_FILE` (`lib/release_mac.py`, harnest#140): every agent
+  posts as Don's login, so an unsigned marker is ignored and no role may read the key. `cut`
   refuses unless every gate passed, was accepted, or was carried on the commit it merges.
   Review, security and regression carry across the notes, and review and security
   across a verified release-blocker's fix (`release_carry_ok`). `accept check --waive`

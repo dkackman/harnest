@@ -109,11 +109,13 @@ develop_sha() {
   git -C "$SOURCE_DIR" rev-parse origin/develop
 }
 gate_results() {
-  gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_gate_results
+  gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_gate_results "$REL"
 }
 # record <gate> <sha> <result> <text>
 record() {
-  gh issue comment "$REL" --repo "$TICKET_REPO" --body "$(release_marker "$1" "$2" "$3")
+  local marker
+  marker="$(release_marker "$REL" "$1" "$2" "$3")" || die "could not sign the $1 marker (lib/release_mac.py)"
+  gh issue comment "$REL" --repo "$TICKET_REPO" --body "$marker
 **$1: $3** on \`${2:0:10}\` ($(date '+%Y-%m-%d %H:%M')). $4" >/dev/null
   say "$1: $3 on ${2:0:10}"
 }
@@ -204,7 +206,7 @@ stage_check() {
     | release_open_with_commits "$(printf '%s\n' "$board" | cut -f1 | tr '\n' ' ')" \
         "$(printf '%s\n' "$problems" | sed -n 's/^#\([0-9][0-9]*\) .*/\1/p' | tr '\n' ' ')")"
   problems="$problems${problems:+${unfinished:+$'\n'}}$unfinished"
-  waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers)"
+  waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers "$REL")"
   if [ -n "$waived" ] && [ -n "$problems" ]; then
     problems="$(printf '%s\n' "$problems" | release_drop_waived "$waived")"
   fi
@@ -445,7 +447,7 @@ stage_notes() {
 
 stage_accept() {
   need_release_issue
-  local gate="${1:-}" why sha waive="" n markers=""
+  local gate="${1:-}" why sha waive="" n m markers=""
   shift || true
   if [ "${1:-}" = --waive ]; then
     [ "$gate" = check ] || die "--waive is for check: it names the issues check stops reporting"
@@ -457,7 +459,10 @@ stage_accept() {
   case " $RELEASE_GATES_FOR_CUT " in *" $gate "*) ;; *) die "no gate '$gate' ($RELEASE_GATES_FOR_CUT)" ;; esac
   sha="$(develop_sha)"
   if [ -n "${waive// /}" ]; then
-    for n in $waive; do markers="$markers$(release_waive_marker "$n")"$'\n'; done
+    for n in $waive; do
+      m="$(release_waive_marker "$REL" "$n")" || die "could not sign the waiver for #$n (lib/release_mac.py)"
+      markers="$markers$m"$'\n'
+    done
     gh issue comment "$REL" --repo "$TICKET_REPO" --body "$markers**check waives $(printf '#%s ' $waive | sed 's/ $//')** for the rest of $version: $why" >/dev/null
     say "check: waived $(printf '#%s ' $waive | sed 's/ $//') for the rest of the release"
   fi
@@ -479,7 +484,7 @@ stage_status() {
     fi
     printf '  %-11s %s\n' "$gate" "$state"
   done
-  waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers)"
+  waived="$(gh issue view "$REL" --repo "$TICKET_REPO" --json comments | release_waivers "$REL")"
   [ -z "$waived" ] || printf '  %-11s %s\n' waived "$(printf '#%s ' $waived | sed 's/ $//') (check ignores them)"
   printf '  %-11s %s\n' notes "$(git -C "$SOURCE_DIR" show "$sha:docs/RELEASING.md" 2>/dev/null | grep -q "^### $version\$" && echo present || echo "missing on develop")"
   echo "  open release-blockers: $(gh issue list --repo "$TICKET_REPO" --state open --label release-blocker --limit 500 --json number --jq '[.[].number | "#\(.)"] | join(" ")')"

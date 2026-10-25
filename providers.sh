@@ -335,6 +335,12 @@ guard_settings() {
     {type: "command", command: ("python3 \"$HARNEST_HOOKS/guard.py\" " + $role), timeout: 30}]}]}}'
 }
 
+# No agent reads the release marker key (lib/release_mac.py, harnest#140).
+# A Read rule covers Grep and Glob too; a shell `cat` of it is outside every
+# consumer allowlist, and the implementer's own settings deny the same path.
+RELEASE_KEY_RULE="Read(~/.config/harnest/**)"
+RELEASE_KEY_DENY=(--disallowedTools "$RELEASE_KEY_RULE")
+
 CONSUMER_PERMISSION_FLAGS=(
   --settings "$(guard_settings consumer)"
   --permission-mode dontAsk
@@ -358,7 +364,7 @@ CONSUMER_PERMISSION_FLAGS=(
     "Bash(./scripts/file-advisory.sh *)"
     "Bash(./scripts/perf-check.sh *)"   # a wrapper: the python3 -I spelling was never matched by the allowlist at run time
   --disallowedTools
-    "mcp__dw__delete_model" "mcp__dw__update_diffusers"
+    "mcp__dw__delete_model" "mcp__dw__update_diffusers" "$RELEASE_KEY_RULE"
 )
 
 # Permission flags for the feature lead's design and decompose sessions
@@ -394,6 +400,7 @@ LEAD_DESIGN_PERMISSION_FLAGS=(
     "Bash(gh issue *)" "Bash(gh api -X PATCH repos/*/issues/comments/*)"
     "Bash(date *)" "Bash(file *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
+  "${RELEASE_KEY_DENY[@]}"
 )
 
 # Permission flags for the docs reviewer (run-loop.sh, reviewer_pass). It
@@ -417,6 +424,7 @@ REVIEWER_PERMISSION_FLAGS=(
     "ToolSearch" "TodoWrite" "Read" "Glob" "Grep"
     "Bash(gh issue *)" "Bash(date *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
+  "${RELEASE_KEY_DENY[@]}"
 )
 REVIEWER_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
 
@@ -438,6 +446,7 @@ RELEASE_PERMISSION_FLAGS=(
     "Read" "Glob" "Grep" "Write" "Agent" "ToolSearch" "TodoWrite"
     "Bash(gh issue view *)" "Bash(gh issue list *)" "Bash(date *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
+  "${RELEASE_KEY_DENY[@]}"
 )
 RELEASE_TOOLS="Bash,Read,Write,Glob,Grep,ToolSearch,Agent,TodoWrite"
 ISOLATION_FLAGS_RELEASE=(--setting-sources local)
@@ -462,6 +471,7 @@ CURATOR_REVIEW_PERMISSION_FLAGS=(
     "ToolSearch" "TodoWrite" "Read" "Glob" "Grep" "Edit" "Write"
     "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)"
+  "${RELEASE_KEY_DENY[@]}"
 )
 CURATOR_REVIEW_TOOLS="Bash,Read,Edit,Write,Glob,Grep,ToolSearch,TodoWrite"
 
@@ -472,6 +482,7 @@ CURATOR_AUDIT_TOOLS="Bash,Read,Glob,Grep,ToolSearch,TodoWrite"
 CURATOR_AUDIT_PERMISSION_FLAGS=(
   --permission-mode dontAsk
   --allowedTools "Read" "Glob" "Grep" "ToolSearch" "TodoWrite" "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
+  "${RELEASE_KEY_DENY[@]}"
 )
 
 # The retro session (run-retro.sh): read-only on this repo and its history,
@@ -481,6 +492,7 @@ RETRO_PERMISSION_FLAGS=(
   --permission-mode dontAsk
   --allowedTools "Read" "Glob" "Grep" "ToolSearch" "TodoWrite"
     "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)" "Bash(git log *)" "Bash(git show *)" "Bash(git diff *)"
+  "${RELEASE_KEY_DENY[@]}"
 )
 
 # Context every session carries on every turn, and doesn't need. Measured

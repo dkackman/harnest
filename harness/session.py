@@ -87,6 +87,10 @@ CONSUMER_WRITABLE = (
 )
 
 
+# No agent reads the release marker key (lib/release_mac.py, harnest#140).
+RELEASE_KEY_RULE = "Read(~/.config/harnest/**)"
+
+
 def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffusers")):
     """CONSUMER_PERMISSION_FLAGS: the tester's and the regression agent's
     fence (providers.sh says why each entry is there)."""
@@ -115,6 +119,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         "Bash(./scripts/perf-check.sh *)",
         "--disallowedTools",
         *[f"mcp__{mcp_name}__{t}" for t in deny],
+        RELEASE_KEY_RULE,
     ]
 
 

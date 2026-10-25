@@ -4,7 +4,7 @@
 #
 # State lives on the release issue as marker comments, one per gate result:
 #
-#   <!-- harnest:release-gate <gate> <sha> <result> -->
+#   <!-- harnest:release-gate <gate> <sha> <result> <ts> <mac> -->
 #
 # gate    check | ci | preflight | regression | review | security
 # sha     the full origin/develop commit it ran against
@@ -14,32 +14,37 @@
 # that failed or ran on an earlier commit, taken as good enough for this one.
 # `carried` is a pass or acceptance on an earlier commit that the driver
 # carried forward, because every commit since was one it may carry across
-# (release_carry_ok). A later marker for the same gate and commit replaces
-# an earlier one.
+# (release_carry_ok). A later marker (by its signed ts) for the same gate
+# and commit replaces an earlier one.
 #
 # A known problem Don has accepted for the whole release is a waiver, one
 # marker per issue, which every later `check` honours:
 #
-#   <!-- harnest:release-waive <n> -->
+#   <!-- harnest:release-waive <n> <mac> -->
+#
+# <mac> is an HMAC under a key only Don's machine holds (lib/release_mac.py,
+# harnest#140): every agent posts as the same login, so a marker without a
+# valid one is ignored, and a gate without a verified marker has not passed.
 
 # Whether the notes exist is read from docs/RELEASING.md at the commit being
 # cut, not from a marker: it is a fact of the tree.
 RELEASE_GATES_FOR_CUT="check ci preflight regression review security"
+RELEASE_MAC="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/release_mac.py"
 
-# release_marker <gate> <sha> <result>
+# release_marker <issue> <gate> <sha> <result> [<ts>]
+# <ts> (epoch seconds, default now) orders markers for the same gate and commit.
 release_marker() {
-  printf '<!-- harnest:release-gate %s %s %s -->\n' "$1" "$2" "$3"
+  local ts="${5:-$(date +%s)}" mac
+  mac="$(python3 "$RELEASE_MAC" sign "release-gate $1 $2 $3 $4 $ts")" || return 1
+  printf '<!-- harnest:release-gate %s %s %s %s %s -->\n' "$2" "$3" "$4" "$ts" "$mac"
 }
 
-# release_gate_results
+# release_gate_results <issue>
 # stdin: the release issue's comments as `gh issue view --json comments`
-# gives them. stdout: "<gate> <sha> <result>" per gate and commit, the latest
-# marker winning.
+# gives them. stdout: "<gate> <sha> <result>" per gate and commit whose
+# marker verifies, the latest signed ts winning.
 release_gate_results() {
-  jq -r '.comments[]?.body' \
-    | sed -n 's/^<!-- harnest:release-gate \([a-z-]*\) \([0-9a-f]*\) \([a-z]*\) -->.*/\1 \2 \3/p' \
-    | awk '{ key = $1 " " $2; last[key] = $3; if (!(key in order)) { order[key] = ++n; keys[n] = key } }
-           END { for (i = 1; i <= n; i++) print keys[i], last[keys[i]] }'
+  python3 "$RELEASE_MAC" gate-results "$1"
 }
 
 # release_gate_ok <gate> <sha>
@@ -49,18 +54,18 @@ release_gate_ok() {
   awk -v g="$1" -v s="$2" '$1 == g && $2 == s && ($3 == "pass" || $3 == "accepted" || $3 == "carried") { ok = 1 } END { exit !ok }'
 }
 
-# release_waive_marker <n>
+# release_waive_marker <issue> <n>
 release_waive_marker() {
-  printf '<!-- harnest:release-waive %s -->\n' "$1"
+  local mac
+  mac="$(python3 "$RELEASE_MAC" sign "release-waive $1 $2")" || return 1
+  printf '<!-- harnest:release-waive %s %s -->\n' "$2" "$mac"
 }
 
-# release_waivers
+# release_waivers <issue>
 # stdin: the release issue's comments, as for release_gate_results.
-# stdout: the waived issue numbers, space-separated.
+# stdout: the waived issue numbers whose marker verifies, space-separated.
 release_waivers() {
-  jq -r '.comments[]?.body' \
-    | { grep -oE '<!-- harnest:release-waive [0-9]+ -->' || true; } | tr -cd '0-9\n' \
-    | sort -un | tr '\n' ' ' | sed 's/ $//'
+  python3 "$RELEASE_MAC" waivers "$1"
 }
 
 # release_drop_waived <waived numbers>

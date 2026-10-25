@@ -551,6 +551,10 @@ review session in `run-loop.sh` (below), which escalates judgment calls to a hum
 run each stage. The script records each result on the release issue as a marker keyed to
 the exact `origin/develop` commit, so a stage can be rerun or resumed. `cut` refuses until
 every gate has passed, been accepted, or been carried forward on the commit it merges.
+Each marker carries an HMAC under a key on this machine (`lib/release_mac.py`, made 0600 on
+first use), because every agent posts as your login: a marker without a valid one is
+ignored, and without the key no gate has passed. Back the key up if a release is open:
+losing it means rerunning or re-accepting that release's gates.
 
 ```sh
 ./run-release.sh 0.5.0 freeze      # opens "Release 0.5.0": the loop now moves only release-blockers
@@ -623,6 +627,7 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 | `RELEASE_NOTES_BUDGET_USD` | `3` | the notes session |
 | `RELEASE_REGRESSION_LEVELS` | `security complete` | the levels the regression gate runs (`complete` runs smoke first) |
 | `RELEASE_FORCE` | `0` | `1` reruns a gate or review area that already passed on this commit |
+| `RELEASE_KEY_FILE` | `~/.config/harnest/release.key` | the key the gate and waiver markers are signed with; no agent role may read under `~/.config/harnest/` |
 
 ## Running it
 
