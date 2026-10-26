@@ -14501,7 +14501,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F538 — every `analyze_seams` seam carries the six look fields, and a saturation-graded copy shows a positive `saturation_step` that `look_ratio` sees
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 #1031: `analyze_seams` saw a seam's picture only through `jump_ratio` (grey frame-to-frame
 change), so a join that keeps the framing but shifts colour scored low. Stage A adds six
@@ -14577,7 +14576,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: `look_ratio` of `sat_cut` and of `self_cut` (conditions `sat1.6`, `self`).
 
 ### C-F539 — a darkened copy gives a negative `lightness_step`; a flat black before-window gives a null `detail_ratio`
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 Uses C-F538's workflow L (run it if this pass has not). CPU only.
 1. `assess_output(name=<dark_cut file>, probe="analyze_seams")`.
@@ -14599,7 +14597,6 @@ cleanup: `delete_output(job_id=…)` for workflow L, if this case ran it.
 metrics: none.
 
 ### C-F540 — a softened copy gives `detail_ratio` below 1; an unchanged copy gives one near 1
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 Uses C-F538's workflow L. CPU only.
 1. `assess_output(name=<soft_cut file>, probe="analyze_seams")`.
@@ -14619,7 +14616,6 @@ cleanup: as C-F539.
 metrics: `detail_ratio` of `soft_cut` (condition `clarity-1`).
 
 ### C-F541 — grey input gives `saturation_step` 0 with the fields present, and a `hard_cut` seam still carries them
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 The plan reports the fields at every seam; `hard_cut` and fade skips affect rules only.
 Uses C-F538's workflow L. CPU only.
@@ -14640,7 +14636,6 @@ cleanup: as C-F539.
 metrics: none.
 
 ### C-F542 — edges: no fields on an audio-only file, `seams: []` on a single shot, and a dissolve is measured across its fade
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 CPU only. Steps 1–2 need no job.
 1. `assess_output(name="asset:uploads/qa-cast/room-bed.wav", probe="analyze_seams")`.
@@ -14666,7 +14661,6 @@ cleanup: `delete_output(job_id=…)` for step 3's job.
 metrics: none.
 
 ### C-F543 — `analyze_seams` on a long assembled film still returns inside the MCP client's timeout, with the fields on every seam
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 The stage adds a 128x72 colour reformat per decoded frame to the assess read. The plan
 names the risk: the read was unmeasured on a long cut, against the client's 30 s request
@@ -14689,7 +14683,6 @@ metrics: seconds for step 1 and step 2 (conditions `ep54`, `long-4089`), from th
 `date` readings around each call.
 
 ### C-F544 — the look fields add no surface: same task schema, same probe list, and the docs call them measures
-pending: #1042
 source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
 The plan touches no MCP, REST or syntax surface. Read-only, no job.
 1. `get_task("analyze_seams")`.
