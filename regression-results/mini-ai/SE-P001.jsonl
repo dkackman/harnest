@@ -1,1 +1,2 @@
 {"ts": "2026-10-25T21:40:52Z", "level": "security", "case": "SE-P001", "outcome": "pass", "issue": null, "secs": null, "session": "regression-mini-ai:security.mini-ai-1.40", "head": "develop @ 68ae280a", "model": "claude-sonnet-5-5", "server": "mini-ai"}
+{"ts": "2026-10-26T23:27:21Z", "level": "security", "case": "SE-P001", "outcome": "pass", "issue": null, "secs": null, "session": "regression-mini-ai:security.mini-ai-1.4", "head": "develop @ b8f7174d", "model": "claude-sonnet-5-5", "server": "mini-ai"}
