@@ -12001,7 +12001,7 @@ It is a **finding** if 1 or 2 is accepted, or if the section offers a base rung 
 cleanup: none.
 metrics: none.
 
-### C-F420 — every H3 template declares `attention_backend`, default `null`, and the four that had it are unchanged
+### C-F420 — every H3 template declares `attention_backend`, default `"sparse"`, with `sparse_tau` and `sparse_topk`
 source: tester, spec for #883 from #865's plan v1 (claude-opus-5-5 via anthropic)
 Free. The stage's list, all under `templates/minimax/`: `first-and-last-frame`, `last-frame-only`, `chained-segments`,
 `composable-references`, `chain-matched-to-audio`, `chain-matched-and-aligned`, `chain-video-continuity`,
@@ -12013,14 +12013,17 @@ under `templates/minimax/`). The four that had it before: `video-with-audio`, `v
 2. For each of the 19 templates, `get_workflow(name=...)` and read its `variables`.
 expected:
 - 1: every minimax `shot` entry lists `attention_backend`.
-- 2: each of the 19 declares `attention_backend` with default `null`. In the 15 new ones it is wired the way the four
-  older templates wire it (`attention_backend` on the H3 pipeline's transformer component: `components.transformer`,
-  or `components.transformer_ref` on ref2va templates). In `dialogue-short`,
+- 2: each of the 19 declares `attention_backend` with default `"sparse"`, plus `sparse_tau` (default 0.5) and
+  `sparse_topk` (default 0.15); dw#931 and dw#932 made that the default on every H3 template. In the 15 new
+  ones it is wired the way the four older templates wire it (`attention_backend` on the H3 pipeline's
+  transformer component: `components.transformer`, or `components.transformer_ref` on ref2va templates). In
+  `dialogue-short`,
   `shots-batch` and `music-video` it sits on the H3 step inside the `for_each`. No Z-Image step (the portrait steps in
   `dialogue-short`, and any other) references it.
-- The four older templates still declare it with default `null`, wired as before.
-It is a **finding** if any listed template lacks the variable, has a non-null default, wires it to a non-H3 step, or
-if one of the four older templates changed its declaration.
+- The four older templates declare the same three variables with the same defaults, wired as before, and their
+  `cost_drivers` list `attention_backend`.
+It is a **finding** if any listed template lacks one of the three variables, has a default other than the ones above,
+or wires `attention_backend` to a non-H3 step.
 cleanup: none.
 metrics: none.
 
@@ -13090,7 +13093,9 @@ Setup: take `get_workflow("templates/text-to-image")` and make these changes:
 Save it as `c-f480-t2i`. Its catalog `cost` is 0.2 at 25 steps.
 1. Call `validate_workflow(workflow="c-f480-t2i", arguments={num_inference_steps: 100})` and record
    `plan.estimate`, before any run of the copy.
-2. Call `run_workflow(workflow="c-f480-t2i", arguments={num_inference_steps: 100},
+2. Call `clear_memory()` so J1 loads its model cold: the estimate learns only from cold runs, and an
+   earlier case can leave SD1.5 resident (harnest#149, dw#1009). Then call
+   `run_workflow(workflow="c-f480-t2i", arguments={num_inference_steps: 100},
    acknowledged_cost=true, wait_seconds=55, note="C-F480 tempering run")` → J1, which should
    complete. Note its wall time T in minutes.
 3. Repeat call 1.
@@ -13100,6 +13105,7 @@ expected:
 - Call 3 reports `runs` ≥ 1 for this rung, with `curated_minutes` ≈ 0.8, the scaled figure, not
   the unscaled 0.2. Its `minutes` lies between T and `curated_minutes`, inclusive, allowing for
   rounding to 0.1.
+- J1's manifest timing shows `load_cached: false`.
 It is a **finding** if:
 - `curated_minutes` in call 3 is 0.2;
 - call 3's `minutes` falls outside [T, curated_minutes];
