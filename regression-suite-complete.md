@@ -14500,4 +14500,214 @@ was ignored beside `start_seconds`) or `audio_seconds` is anything but 3.0.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F538 — every `analyze_seams` seam carries the six look fields, and a saturation-graded copy shows a positive `saturation_step` that `look_ratio` sees
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+#1031: `analyze_seams` saw a seam's picture only through `jump_ratio` (grey frame-to-frame
+change), so a join that keeps the framing but shifts colour scored low. Stage A adds six
+fields to every seam record, measured between the 4 frames before the seam and the 4 after:
+`saturation_step`, `lightness_step`, `contrast_step` (signed, after − before, 0–255 scale),
+`look_ratio` (the largest |step| over that measure's own local rate, ≥ 0),
+`look_ratio_measure` (`saturation`, `lightness` or `contrast`) and `detail_ratio` (after ÷
+before high-frequency detail, or null when the before window is flat). They are measures
+only: no new rule or finding. C-F539–C-F544 reuse this case's workflow L. CPU only, no
+model.
+
+**Workflow L** (one inline `run_workflow` in this suite's workspace, id `qa-c-f538`;
+`validate_workflow` first and bind its `acknowledged_cost`; `wait_seconds=55`, then
+`wait_for_job` if `still_running`). `I` below is `asset:qa-cast/ep3-shot1-incident.mp4`
+(124 frames, 24 fps). Grade steps are `grade` with `media: I` plus the named argument, result
+`{"content_type": "video/mp4", "save": false}`:
+1. `sat`: `saturation: 1.6`.
+2. `dark`: `exposure: -1.0`.
+3. `soft`: `clarity: -1.0`.
+4. `black`: `exposure: -20, saturation: 0` (a flat black picture).
+5. `grey`: `saturation: 0`.
+
+Join steps are `concat_videos` with `fps: 24`, result `{"content_type": "video/mp4",
+"subfolder": "final"}`; each is 248 frames with one seam at frame 124:
+6. `self_cut`: `[I, I]` (the control: the clip joined to itself, ungraded).
+7. `sat_cut`: `[I, "previous_result:sat"]`.
+8. `sat_rev`: `["previous_result:sat", I]`.
+9. `dark_cut`: `[I, "previous_result:dark"]`.
+10. `soft_cut`: `[I, "previous_result:soft"]`.
+11. `black_cut`: `["previous_result:black", I]`.
+12. `grey_cut`: `["previous_result:grey", "previous_result:grey"]`.
+
+Probe steps, result `{"content_type": "application/json", "subfolder": "final"}`:
+13. `sat_mem`: `analyze_seams` `{"video": "previous_result:sat_cut"}` (the in-memory path).
+14. `sat_hard`: `analyze_seams` `{"video": "previous_result:sat_cut", "shots": [{"name": "a",
+    "start_frame": 0, "num_frames": 124}, {"name": "b", "start_frame": 124, "num_frames":
+    124, "hard_cut": true}]}`.
+
+**Steps** (this case): `assess_output(name=<self_cut file>, probe="analyze_seams")`, the
+same on `sat_cut` and `sat_rev`, and `get_output_text` on `sat_mem`. Use the detail form
+`assess_output` documents if the default leaves out the seam records.
+
+expected:
+- Job `succeeded`. Each join's seam list has exactly one seam, at frame 124.
+- **Shape**, on every seam record of every body: `saturation_step`, `lightness_step`,
+  `contrast_step` are numbers (negative allowed); `look_ratio` is a number ≥ 0;
+  `look_ratio_measure` is one of `"saturation"`, `"lightness"`, `"contrast"`;
+  `detail_ratio` is a number or null. `jump_ratio` and every field the seam carried before
+  are still there.
+- `sat_cut`: `saturation_step` > 0 and clearly so (at least 3 on the 0–255 scale);
+  `look_ratio_measure` is `"saturation"`; `look_ratio` is at least 3× `self_cut`'s.
+  `jump_ratio` may stay under the `seam_frame_jump` threshold; that is the gap the fields
+  close, not a failure.
+- `sat_rev`: `saturation_step` < 0, of about the same size as `sat_cut`'s (within 50%).
+  The sign follows the order of the join.
+- `sat_mem` (in-memory) agrees with the saved file's `assess_output` reading for
+  `sat_cut`: the same `look_ratio_measure`, the same signs, and each step within 2.0
+  (the difference is the mp4 encode).
+- **No new findings:** across all three bodies, every `findings[].rule` and every name in
+  `rules_applied` / `rules_skipped` is one of `seam_frame_jump`, `seam_level_step`,
+  `seam_click`, `seam_hole`. No rule name mentions look, saturation, lightness, contrast
+  or detail.
+
+If `sat_cut`'s `saturation_step` is under 3 but positive, check that the clip isn't near
+grey (`get_output_frames` on `I`) before calling it a finding; a substitute must be a
+colourful shot.
+
+It is a **finding** if any seam record lacks one of the six fields or has one of the wrong
+type, if `sat_cut`'s step is not positive or its `look_ratio` isn't 3× the control's, if
+`sat_rev`'s sign doesn't flip, if the in-memory and file readings disagree past the
+tolerance, or if any new rule or finding appears.
+cleanup: `delete_output(job_id=…)`.
+metrics: `look_ratio` of `sat_cut` and of `self_cut` (conditions `sat1.6`, `self`).
+
+### C-F539 — a darkened copy gives a negative `lightness_step`; a flat black before-window gives a null `detail_ratio`
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+Uses C-F538's workflow L (run it if this pass has not). CPU only.
+1. `assess_output(name=<dark_cut file>, probe="analyze_seams")`.
+2. `assess_output(name=<black_cut file>, probe="analyze_seams")`.
+3. `assess_output(name=<self_cut file>, probe="analyze_seams")` (the control, if not
+   already read this pass).
+
+expected:
+- Step 1: `lightness_step` < 0 and clearly so (at least 10 on the 0–255 scale: exposure −1
+  halves the picture). Its `look_ratio` is above `self_cut`'s.
+- Step 2: the before window is black, so `lightness_step` > 0, and `detail_ratio` is
+  **null** (the before window's detail is below the 0.5 floor; a division by a near-zero
+  number would give a huge or infinite value instead). `look_ratio` is a finite number.
+- No body holds a non-finite number (`NaN`, `Infinity`) in any of the six fields, and no
+  new rule or finding appears (C-F538's list).
+It is a **finding** if `lightness_step` isn't negative on step 1, if step 2's
+`detail_ratio` is a number (or the call errors), or if any field is non-finite.
+cleanup: `delete_output(job_id=…)` for workflow L, if this case ran it.
+metrics: none.
+
+### C-F540 — a softened copy gives `detail_ratio` below 1; an unchanged copy gives one near 1
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+Uses C-F538's workflow L. CPU only.
+1. `assess_output(name=<soft_cut file>, probe="analyze_seams")`.
+2. `assess_output(name=<self_cut file>, probe="analyze_seams")` and the same on `sat_cut`.
+
+expected:
+- Step 1: `detail_ratio` < 1, and below both step 2 readings.
+- Step 2: `self_cut`'s `detail_ratio` is near 1, between 0.8 and 1.25. `sat_cut`'s is
+  within 0.1 of `self_cut`'s: `grade` saturation turns about each pixel's own luma, so it
+  leaves the detail alone.
+If `self_cut`'s ratio falls outside 0.8–1.25, look at the two windows
+(`get_output_frames(seams=true)`): the clip's own last and first frames may differ in
+detail. Then the step 1 comparison against `self_cut` is still the case.
+It is a **finding** if step 1's `detail_ratio` is ≥ 1 or not below `self_cut`'s, or if
+`sat_cut`'s differs from `self_cut`'s by more than 0.1.
+cleanup: as C-F539.
+metrics: `detail_ratio` of `soft_cut` (condition `clarity-1`).
+
+### C-F541 — grey input gives `saturation_step` 0 with the fields present, and a `hard_cut` seam still carries them
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+The plan reports the fields at every seam; `hard_cut` and fade skips affect rules only.
+Uses C-F538's workflow L. CPU only.
+1. `assess_output(name=<grey_cut file>, probe="analyze_seams")`.
+2. `get_output_text` on `sat_hard`, and on `sat_mem` (C-F538's control for it).
+
+expected:
+- Step 1: the six fields are present on the seam. `saturation_step` is 0 (within 0.5:
+  a greyscale picture has no saturation, before or after, apart from encode noise).
+  `look_ratio_measure` is still one of the three names, and `look_ratio` ≥ 0.
+- Step 2: `sat_hard` reports `shots_source: "argument"` and one seam with
+  `hard_cut: true`, and it carries all six fields with the same values as `sat_mem`
+  (within 0.01; both read the same in-memory clip). What `hard_cut` changes in
+  `rules_applied`/`rules_skipped` is what it changes today, with no new rule name.
+It is a **finding** if any field is missing or null on either seam, or if the hard-cut
+seam's values differ from the unmarked one's.
+cleanup: as C-F539.
+metrics: none.
+
+### C-F542 — edges: no fields on an audio-only file, `seams: []` on a single shot, and a dissolve is measured across its fade
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+CPU only. Steps 1–2 need no job.
+1. `assess_output(name="asset:uploads/qa-cast/room-bed.wav", probe="analyze_seams")`.
+2. `assess_output(name="asset:qa-cast/ep3-shot1-incident.mp4", probe="analyze_seams")`.
+3. Run `templates/dissolve-between-shots` (`validate_workflow` first, bind its cost) with
+   `shots: ["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"]`,
+   `score: "asset:qa-cast/ep20-score.wav"`, `dissolve_frames: 12`, `total_frames: 236`,
+   then `assess_output(name=<its final video>, probe="analyze_seams")`.
+4. `assess_output(name="asset:qa-cast/ep53-episode.mp4", probe="analyze_seams")`: 8 shots,
+   the last three joined by 12-frame dissolves.
+
+expected:
+- Step 1: the reply is what it is today for an audio-only file: shotless and seamless (no
+  seam records), with no error. None of the six field names appears anywhere in the body.
+- Step 2: `seams: []`, and the call succeeds.
+- Step 3: one seam, a dissolve (as today), carrying all six fields, each of the right type
+  (C-F538's shape) and finite. Two different shots meet here, so `look_ratio` > 0.
+- Step 4: 7 seams; every one, cut or dissolve, carries all six fields of the right type.
+- No new rule or finding name in any body (C-F538's list).
+It is a **finding** if an audio-only or single-shot body grows a field or a seam, if any
+seam in steps 3–4 lacks a field, or if a call errors.
+cleanup: `delete_output(job_id=…)` for step 3's job.
+metrics: none.
+
+### C-F543 — `analyze_seams` on a long assembled film still returns inside the MCP client's timeout, with the fields on every seam
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+The stage adds a 128x72 colour reformat per decoded frame to the assess read. The plan
+names the risk: the read was unmeasured on a long cut, against the client's 30 s request
+ceiling. CPU only, no job.
+1. Note the time (`date`), then `assess_output(name="asset:qa-cast/ep54-episode.mp4",
+   probe="analyze_seams")` (956 frames, 8 shots, an `assemble-and-score` output); note
+   the time after.
+2. The same on `asset:qa-cast/long-film-4089.mp4` (4089 frames, 170 s), with the default
+   probes.
+
+expected:
+- Step 1 returns a body (no timeout, no error) in under 30 s, with 7 seams, each carrying
+  the six fields.
+- Step 2 returns a body in under 30 s. Whatever seams it reports carry the six fields.
+It is a **finding** if either call times out or errors, or takes 30 s or more. Step 2 was
+not timed before the stage; if it is over 30 s, check `regression-perf/C-F543.jsonl` and
+the issue history for an earlier reading before blaming the look stats.
+cleanup: none.
+metrics: seconds for step 1 and step 2 (conditions `ep54`, `long-4089`), from the two
+`date` readings around each call.
+
+### C-F544 — the look fields add no surface: same task schema, same probe list, and the docs call them measures
+pending: #1042
+source: tester, spec for #1042 from #1031's plan v1 (claude-opus-5-5 via anthropic)
+The plan touches no MCP, REST or syntax surface. Read-only, no job.
+1. `get_task("analyze_seams")`.
+2. `list_tasks` (compact form).
+3. `get_guide("tasks")`, the `analyze_seams` field table (find its section in the index
+   first), and `get_guide("workflows")`'s assessment section.
+
+expected:
+- Step 1: the parameters are exactly `video`, `shots`, `device`, as before the stage.
+- Step 2: the assessment probes are still exactly `analyze_seams`, `analyze_shots` and
+  `analyze_sync_drift` (plus whatever has been added since by another verified issue); no
+  `analyze_look` or other new probe.
+- Step 3: the field table has a row for each of the six fields, and a line saying they are
+  measures, not rules, and that the numbers aren't perceptual. The workflows guide's
+  assessment section points at them in a sentence.
+It is a **finding** if a parameter or probe was added, or a field is missing from the
+table, or the table presents a threshold for them as a rule.
+cleanup: none.
+metrics: none.
+
 ## Performance
