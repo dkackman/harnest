@@ -270,7 +270,7 @@ suite handed to the tester wastes a whole cycle.
 versioned with the harness. How to cache the test result so the gate doesn't rerun the
 suite every time (a stamp file keyed on HEAD).
 
-**Done when.** Each invariant in CLAUDE.md's "Ticket protocol" section is either enforced by
+**Done when.** Each invariant in `docs/harness/ticket-protocol.md` (formerly CLAUDE.md's "Ticket protocol") is either enforced by
 a hook or explicitly marked as prompt-only, with a reason.
 
 **Done (2026-09-22).** `agent-settings/hooks/guard.py` is one `PreToolUse` hook on `Bash`
@@ -286,7 +286,7 @@ under the drivers' isolation flags confirmed it fires.
 - **Tester's "real MCP call" check:** reads the session transcript for an `mcp__dw__*`
   tool use.
 
-| Invariant (CLAUDE.md "Ticket protocol") | How it is held |
+| Invariant (`docs/harness/ticket-protocol.md`) | How it is held |
 |---|---|
 | Exactly one `owner:*` label | **hook**: adding one requires removing one in the same command; `audit_issue` still checks after |
 | Only the tester closes as `completed` | **hook**: implementer `gh issue close` without `--reason "not planned"` is refused (gh's default is completed) |
@@ -1164,7 +1164,7 @@ label logic in jq, in four files, which is where the holes come from.
 
 **Phase C done (2026-09-23).**
 - **`tests/run.sh`** is offline and takes about a minute. It holds 274 checks in 5 files (see
-  CLAUDE.md "Tests"). It uses plain bash on a small assert library rather than bats,
+  `docs/harness/tests.md`). It uses plain bash on a small assert library rather than bats,
   which isn't installed.
   - The driver tests run the real drivers against `tests/fake-gh.py`, a JSON board
     that edits change.
@@ -1369,7 +1369,7 @@ as one answer to where a second server runs.
   second target exists.
 - **Whether the lead and the curator need a target pack at all.** Their prompts are nearly
   generic today.
-- **Measured claims in `CLAUDE.md` and the README.** They are dw's history. They stay with
+- **Measured claims in `CLAUDE.md`, `docs/harness/` and the README.** They are dw's history. They stay with
   the dw target's docs, not the framework's.
 
 **Done when.** A second MCP server runs unattended on the same framework code, with no
