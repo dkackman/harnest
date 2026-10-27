@@ -1412,10 +1412,11 @@ calls, nothing runs.
    "bad", "task": {"command": "nonexistent_processor", "arguments": {"image": "x"}}}]})`.
 2. `validate_workflow(name="templates/image-processors")`.
 expected:
-- Step 1 is `valid: false` with exactly one error at `steps[0].task.command` whose message
+- Step 1 is `valid: false` with an error at `steps[0].task.command` whose message
   names `nonexistent_processor` and says it is not a registered task command — the
   refusal lands at the command, before any missing/unknown-argument complaint about
-  `image`.
+  `image`. The bare-name refusal of `image` at `steps[0].task.arguments.image` may also
+  appear (#952); it is not a finding.
 - Step 2 is `valid: true`, and `plan.steps` equals the number of steps `get_workflow`
   reports for the template (25 as of #285) — the shipped template names only commands
   the engine registers.
