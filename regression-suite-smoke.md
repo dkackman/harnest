@@ -1409,19 +1409,21 @@ step), so the run did nine steps' worth of work before dying with the engine's o
 resolved; a command that did not exist at all fell through silently. Free: two validate
 calls, nothing runs.
 1. `validate_workflow(inline_workflow={"id": "regression-bad-command", "steps": [{"name":
-   "bad", "task": {"command": "nonexistent_processor", "arguments": {"image": "x"}}}]})`.
+   "bad", "task": {"command": "nonexistent_processor", "arguments": {"strength": 0.5}}}]})`.
 2. `validate_workflow(name="templates/image-processors")`.
 expected:
-- Step 1 is `valid: false` with an error at `steps[0].task.command` whose message
+- Step 1 is `valid: false` with exactly one error at `steps[0].task.command` whose message
   names `nonexistent_processor` and says it is not a registered task command — the
-  refusal lands at the command, before any missing/unknown-argument complaint about
-  `image`. The bare-name refusal of `image` at `steps[0].task.arguments.image` may also
-  appear (#952); it is not a finding.
+  refusal lands at the command, with no missing/unknown-argument complaint about
+  `strength`. (The argument was `image: "x"` until dw#952 made validate refuse a bare
+  media name on its own; `strength` is not a media key, so the one-error check still
+  isolates the command refusal - harnest#151.)
 - Step 2 is `valid: true`, and `plan.steps` equals the number of steps `get_workflow`
   reports for the template (25 as of #285) — the shipped template names only commands
   the engine registers.
 It is a **finding** if step 1 comes back `valid: true`, or reports only argument-level
-errors with no error at `steps[0].task.command`, or if step 2 reports any step's
+errors with no error at `steps[0].task.command`, or reports any error besides the one
+at `steps[0].task.command`, or if step 2 reports any step's
 `task.command` as unregistered.
 cleanup: none — nothing is written.
 metrics: none.
