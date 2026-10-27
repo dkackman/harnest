@@ -5278,7 +5278,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F173 — the guide's *Refining above 768p in tiles* section documents `refine_tiles`, and its inline workflow validates clean with no false VRAM warning
-pending: #1048
 source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va + `upscale_h3_latents` + H3 refine (`refine_strength`, `refine_tiles`).
 Free: validation only.
@@ -5304,7 +5303,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F174 — `validate_workflow` refuses each bad `refine_tiles`, naming the argument, and `run_workflow` queues nothing; the boundary values pass
-pending: #1048
 source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine with `refine_tiles`; SD 1.5 template as a non-H3 step. Free.
 The carrier is M-F173's workflow, inline (canvas 1920×1088). Each probe edits only the refine step:
@@ -5343,7 +5341,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### M-F175 — `upscale_h3_latents` caps at 1920×1088 (and 1088×1920): beyond it is refused naming the cap; the old 768p targets still pass
-pending: #1048
 source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `upscale_h3_latents` (`LBH-123-AI/Minimax_h3_latent_Upscaler`). Free: `get_task`
 and validation.
@@ -5365,7 +5362,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F176 — the guide's tiled refine runs to one 1920×1088 × 124 clip at 24 fps with base's audio once, no seams, per-tile progress and one decode
-pending: #1048
 source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va (544p base) + `upscale_h3_latents` + tiled H3 refine on the 768p
 turbo LoRA + `decode_h3_latents`. GPU: the plan estimates ~25–30 min on lem; `wait_seconds=1500`.
@@ -5398,7 +5394,6 @@ metrics: `wall_minutes` and the decode's peak VRAM if the events report it, to
 `regression-perf/M-F176.jsonl` on each run.
 
 ### M-F177 — without `refine_tiles` the refine pass is unchanged, and H3 introspection lists `refine_tiles`
-pending: #1048
 source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 modular pipeline signature; H3 refine (`refine_strength`). Free.
 Steps:
