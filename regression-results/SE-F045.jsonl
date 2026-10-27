@@ -1,1 +1,2 @@
 {"ts": "2026-10-26T23:28:53Z", "level": "security", "case": "SE-F045", "outcome": "pass", "issue": null, "secs": null, "session": "regression:security.lem-1.2", "head": "develop @ b8f7174d", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-10-27T23:14:28Z", "level": "security", "case": "SE-F045", "outcome": "fail", "issue": null, "secs": 47.5, "session": "regression:security.lem-2.2", "head": "develop @ 3595d8be", "model": "claude-sonnet-5-5", "server": "lem"}
