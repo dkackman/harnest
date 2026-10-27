@@ -5163,4 +5163,300 @@ its arm's steps, or a recorded figure disagrees beyond the tolerances above. Evi
 cleanup: none (reads only; never delete the B0 jobs).
 metrics: none.
 
+### M-F169 — pre-gate arm (a): native `video-with-audio-768p` on the #500 crowd case renders 1344×768 × 124 frames with its own audio, and its wall time is recorded
+pending: #1047
+source: tester, spec for #1047 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va, `templates/minimax/video-with-audio-768p` (768p turbo LoRA). GPU:
+~10 min on lem (catalog cost 9.87 min on an RTX 3090).
+The #500 case is the crowd-faces prompt held in job `f90ea84a796e` (the #500 preview): read it with
+`get_job_workflow("f90ea84a796e")` → `workflow.variables.prompt` (it opens "integrated_multimodal_description:
+[Shot 1] Live-action, cinematic, a wide shot at night frames an open iron gate…" and ends with the
+"slow low drum pulse" music line). The recorded copy is not realized, so the text is the submitted one.
+Steps, in workspace `qa-h3-tiled-refine` (create it if missing):
+1. `validate_workflow("templates/minimax/video-with-audio-768p", arguments={"prompt": <that text>,
+   "seed": 42, "num_frames": 124}, workspace="qa-h3-tiled-refine")`.
+2. `run_workflow(..., acknowledged_cost=<validate's fingerprint/minutes>, note="#1043 pre-gate arm (a):
+   native 768p, #500 prompt, seed 42, 124f", wait_seconds=1500, workspace="qa-h3-tiled-refine")`, then
+   `wait_for_job` while `still_running`.
+3. `get_job` (wall time: the job's start to finish, and the H3 step's `timing`), and
+   `get_gallery_metadata` on the final mp4.
+expected:
+- The job succeeds. Its mp4 is 1344×768, 124 frames at 24 fps (≈5.17 s), with one audio stream.
+- `get_job_workflow` of the job shows the #500 prompt verbatim, seed 42, 124 frames, and the
+  template's defaults otherwise (768p turbo LoRA, its own schedule).
+- The wall time is recorded in minutes beside M-F086's 9.59 and the issue's 12.7 (the record is
+  M-F172's; this case only produces the number).
+It is a **finding** if the run fails, or the clip's size, length, fps or audio differ from the above.
+cleanup: keep the job (arms (e) and (f) and the record read it). Delete it only after #1043's
+pre-gate has been ruled on and the record no longer cites it.
+metrics: `wall_minutes` (job total) and `h3_pass_s`, to `regression-perf/M-F169.jsonl` on each run.
+
+### M-F170 — pre-gate arm (e): arm (a)'s clip through the spandrel `upscale` task to 1920×1088, with (a)'s soundtrack, and its wall time recorded
+pending: #1047
+source: tester, spec for #1047 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the spandrel `upscale` task (`image`, `model_name`, `filename`, `tile_size`,
+`tile_overlap` today) on the M-F169 output; no diffusion model. Existing tasks only: no new code.
+Steps, in workspace `qa-h3-tiled-refine`:
+1. Author an inline task-only workflow over `output:<M-F169's mp4>`: `video_frames` → `upscale` (a
+   spandrel super-resolution model of 2x; record its `model_name`/`filename`) → `fit_to_model`
+   (`width` 1920, `height` 1088, `num_frames` 124, `mode` "stretch" or "crop": 1344×768 ×2 is
+   2688×1536, whose aspect differs from 1920×1088 by <1%) → `pair_audio` (`video` that result,
+   `audio` M-F169's mp4, `fit` "video"), saved as `video/mp4` at 24 fps in `final`. If `upscale`
+   refuses a frame array, use any other chain of existing tasks that applies `upscale` per frame.
+2. `validate_workflow` it until clean, then `run_workflow(..., acknowledged_cost=..., note="#1043
+   pre-gate arm (e): (a) → spandrel 2x → 1920x1088 + (a) audio", wait_seconds=55, workspace=...)`
+   and `wait_for_job` while `still_running`.
+3. `get_gallery_metadata` on its mp4; `get_job` for wall time.
+expected:
+- The mp4 is 1920×1088, 124 frames at 24 fps, with exactly one audio stream whose duration equals
+  M-F169's to within one frame (≈0.04 s).
+- Frame 0 (`get_output_frames(at=[0])`) is (a)'s frame 0 enlarged: same composition, no
+  letterbox bars wider than 8 px.
+- The wall time is recorded (minutes, model download excluded and stated if one happened).
+It is a **finding** if the clip's size, length or audio differ from the above. If no chain of
+existing tasks applies spandrel to a video at all, that is recorded on #1047 as "(e) not runnable
+today" for Don (the plan assumed it is), not filed as a bug from this case alone.
+cleanup: keep the job until the pre-gate ruling, as M-F169.
+metrics: `wall_minutes`, to `regression-perf/M-F170.jsonl` on each run.
+
+### M-F171 — pre-gate arm (f): arm (a)'s clip through LTX-2.5 `upscale-clip` at 1920×1088, re-paired with (a)'s H3 soundtrack, and its wall time recorded
+pending: #1047
+source: tester, spec for #1047 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5, `templates/ltx2/upscale-clip` (#542), then the `pair_audio` task.
+`upscale-clip`'s `num_frames` must be 8n+1 (validate refuses 124), so this arm renders **121**
+frames, the largest on-grid count ≤ 124: its deliverable is 3 frames (0.125 s) shorter than (a).
+Steps, in workspace `qa-h3-tiled-refine`:
+1. `validate_workflow("templates/ltx2/upscale-clip", arguments={"source_video": "output:<M-F169's mp4>",
+   "width": 1920, "height": 1088, "num_frames": 121, "seed": 42, "fit": <"crop" if the template takes
+   it, else its default>}, workspace=...)`. Its default `prompt` stands.
+2. `run_workflow(..., acknowledged_cost=..., note="#1043 pre-gate arm (f): (a) → LTX upscale-clip
+   1920x1088 121f", wait_seconds=55, ...)`, `wait_for_job` while `still_running`.
+3. An inline `pair_audio` workflow: `video` the step 2 mp4, `audio` M-F169's mp4, `fit` "video",
+   saved as `video/mp4` at 24 fps; validate, run.
+4. `get_gallery_metadata` on both mp4s; `get_job` on both for wall time.
+expected:
+- Step 1 validates clean. (A 1920×1088 render that validate refuses on size or VRAM is recorded as
+  "(f) not runnable at 1080p today" with the message, and the arm is retried at the largest size
+  validate accepts, stated.)
+- The final mp4 is 1920×1088, 121 frames at 24 fps, with one audio stream: (a)'s H3 track cut to
+  the video (≈5.04 s), not LTX's own soundtrack. `measure_sync` (cpu) of the final against M-F169's
+  mp4 reads a lag within ±0.05 s.
+- Wall time is recorded as the two jobs' sum.
+It is a **finding** if the final clip's size, length or audio differ from the above, or its audio is
+LTX's.
+cleanup: keep both jobs until the pre-gate ruling.
+metrics: `wall_minutes` (sum), to `regression-perf/M-F171.jsonl` on each run.
+
+### M-F172 — the #1047 pre-gate record has arms (a), (e), (f) with face crops against (a) and the #500 preview, wall times, and is parked with Don
+pending: #1047
+source: tester, spec for #1047 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: outputs of M-F169–M-F171 and the #500 preview job `f90ea84a796e` (MiniMax H3 latent
+upscale, no refine). Free: reads and `compare_outputs` only.
+The record is the tester's pre-gate comment on #1047 (`gh issue view 1047 --repo
+dkackman/diffusers-workflow --comments`).
+Steps:
+1. Read the record: per arm its job id(s), output name, wall time and observation.
+2. For each cited job, `get_job` and `get_job_workflow`.
+3. `compare_outputs(names=[<(a) mp4>, <(e) mp4>, <(f) mp4>, <#500 preview mp4>], at=[<two moments
+   with front-row faces, e.g. 2.0 and 4.5 s>], crop=<one box per name around the same front-row
+   face, scaled per clip: ×1 at 1344×768, ×1.43 at 1920×1088>, workspace=...)`.
+expected:
+- The record has a row for each of (a), (e), (f): job id, output, wall time in minutes, and an
+  observation of front-row faces (soft/waxy or distinct). (a)'s wall time is quoted beside 9.59 and 12.7.
+- It shows face crops of (e) and (f) against (a) and the #500 preview, made with `compare_outputs`
+  (the grid and its PSNR/SSIM are in the comment or linked from it). If the preview's output is gone,
+  the record says so and compares against (a) only.
+- Every cited job exists, succeeded, and its `get_job_workflow` is its arm (M-F169–M-F171): the #500
+  prompt, seed 42, (a)'s output as the source of (e) and (f).
+- The record makes no build/no-build call of its own: the ruling is Don's. #1047 carries `owner:don`
+  + `status:needs-approval` after it.
+- Step 3's crops show the same face in every row (a mis-scaled box is the record's error).
+It is a **finding** if an arm is missing with no *not run* reason, a cited job is absent or failed
+or runs a different arm, crops or wall times are missing, or the stage isn't parked with Don.
+Evidence pruned after #1043's pre-gate ruling: skip.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F173 — the guide's *Refining above 768p in tiles* section documents `refine_tiles`, and its inline workflow validates clean with no false VRAM warning
+pending: #1048
+source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va + `upscale_h3_latents` + H3 refine (`refine_strength`, `refine_tiles`).
+Free: validation only.
+Steps:
+1. `get_guide("workflows", section="Refining above 768p in tiles")`, and the index to find where it sits.
+2. `validate_workflow(inline_workflow=<the section's workflow as written>, workspace="regression-model-specific")`.
+3. For comparison, validate the 768p section's refine example (M-F096's, no `refine_tiles`).
+expected:
+- The section exists under *Promoting an H3 take to 768p in latent space*. Its workflow is base at
+  960×544 → `upscale_h3_latents` to 1920×1088 → an H3 refine step with `latents` from the upscale,
+  `refine_strength` 0.2, 5 schedule points, `video_shift` 6 on the 768p turbo LoRA,
+  `refine_tiles: {"width": 1344, "height": 768, "overlap": 256}`, `hold_audio` from base → `pair_audio`
+  (step names may differ). It carries a `num_frames` constraint (17n+5, as the 768p example's).
+- The section states that an upscale-only plate above 768p (no refine) is soft, that references,
+  guides, keyframes and `<Picture N>` are refused in tile mode, that the audio is base's, and the
+  tile rules (multiple of 32, ≤1344×768, overlap ≥192 and < half the tile's shorter side).
+- Step 2 is `valid: true` with no VRAM warning in `warnings`/`plan`: tile mode is priced by the
+  tile and the decode, not as a 1920×1088 denoise. Its `plan.estimate` (if present) is stated.
+- Step 3 still validates clean, its estimate unchanged by the stage.
+It is a **finding** if the section is missing, its workflow differs in shape, it fails validation,
+or validate warns of VRAM on it.
+cleanup: none.
+metrics: none.
+
+### M-F174 — `validate_workflow` refuses each bad `refine_tiles`, naming the argument, and `run_workflow` queues nothing; the boundary values pass
+pending: #1048
+source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine with `refine_tiles`; SD 1.5 template as a non-H3 step. Free.
+The carrier is M-F173's workflow, inline (canvas 1920×1088). Each probe edits only the refine step:
+- (a) `refine_tiles` kept, `refine_strength` removed;
+- (b) tile 1000×544 (width not a multiple of 32);
+- (c) tile 1344×750 (height not a multiple of 32);
+- (d) overlap 200 (not a multiple of 32);
+- (e) tile `"width": "1344"` (a string), and separately `1344.5`;
+- (f) tile 1920×1088 (over the 1344×768 H3 canvas);
+- (g) tile 1376×768 (over by one grid step);
+- (h) tile 768×1344 (within the portrait canvas, but taller than the 1088 canvas);
+- (i) overlap 128, and overlap 160 (under 192);
+- (j) overlap 400 on 768-high tiles (≥ half, as the plan names it) and overlap 384 (exactly half,
+  a multiple of 32);
+- (k) a reference image argument on the step (an H3 reference image input, `asset:` any picture);
+- (l) a `guides` argument (one clip);
+- (m) `<Picture 1>` in the prompt with its image; (n) a keyframe argument;
+- (o) explicit `width` 1344, `height` 768 on the refine step (disagrees with the 1920×1088 latents);
+- (p) `refine_tiles` missing `overlap`;
+- (q) the SD 1.5 template with `refine_tiles` and `refine_strength` added to its pipeline step.
+Boundary controls, each expected **valid**: overlap 192; overlap 352 on 768-high tiles; tile
+1344×768 and 1024×576; explicit `width` 1920, `height` 1088 matching the latents.
+For each refused probe, also `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Every probe (a)–(o), (q) is `valid: false`, and the error names `refine_tiles` (or the offending
+  key in it: `width`, `height`, `overlap`) and the rule: requires `refine_strength` (a); multiple of
+  32 (b)–(d); integer (e); over the H3 canvas, with 1344×768 named (f)–(g); larger than the canvas
+  (h); overlap ≥ 192 (i); under half the shorter side (j); the reference/guide/picture/keyframe
+  argument named as refused in tile mode (k)–(n); `width`/`height` disagreeing with `latents` (o);
+  not an H3 input (q). (p) is either refused naming `overlap`, or accepted with a default the guide
+  states (M-F173); either counts, a silent default the guide doesn't name doesn't.
+- No probe queues a job. Each boundary control validates clean, and the unedited carrier too.
+It is a **finding** if any refused probe validates, a boundary control is refused, an error doesn't
+name the argument, or a probe is refused only after queuing (at run time).
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### M-F175 — `upscale_h3_latents` caps at 1920×1088 (and 1088×1920): beyond it is refused naming the cap; the old 768p targets still pass
+pending: #1048
+source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `upscale_h3_latents` (`LBH-123-AI/Minimax_h3_latent_Upscaler`). Free: `get_task`
+and validation.
+Steps:
+1. `get_task("upscale_h3_latents")`.
+2. On the guide's *Promoting an H3 take to 768p* workflow (960×544 base), validate with the `up`
+   step's target set to each of: 1344×768 (control), 1920×1088, 1088×1920 (portrait base:
+   544×960), 1952×1088, 1920×1120, 1088×1952, 3840×2176 (4x but over the cap).
+expected:
+- `get_task`'s `width`/`height` descriptions say the target must be within 1920×1088 (or
+  1088×1920), not 1344×768.
+- 1344×768, 1920×1088 and 1088×1920 validate clean. 1952×1088, 1920×1120, 1088×1952 and
+  3840×2176 are `valid: false`, each naming the dimension and **1920×1088** as the limit (the
+  form of the refusal otherwise as before).
+- The 1x–4x and multiple-of-16 rules still apply (unchanged).
+It is a **finding** if a target over the cap validates, 1920×1088 is refused, the message still
+names 1344×768 as the cap, or a refusal shows up only at run time.
+cleanup: none.
+metrics: none.
+
+### M-F176 — the guide's tiled refine runs to one 1920×1088 × 124 clip at 24 fps with base's audio once, no seams, per-tile progress and one decode
+pending: #1048
+source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (544p base) + `upscale_h3_latents` + tiled H3 refine on the 768p
+turbo LoRA + `decode_h3_latents`. GPU: the plan estimates ~25–30 min on lem; `wait_seconds=1500`.
+Setup: M-F173's workflow, inline, with the #500 prompt (M-F169) and seed 42, 124 frames, plus the
+guide's extra `pair_audio` that saves the 544p take (`base.videos` + `base.audio`, 24 fps,
+`intermediate`) so base's audio can be read back.
+Steps, in workspace `regression-model-specific`:
+1. Validate (clean, no VRAM warning: M-F173), `run_workflow(..., acknowledged_cost=..., note="#1048
+   tiled refine 1920x1088, #500 prompt, seed 42", wait_seconds=1500)`, `wait_for_job` while running.
+2. `get_job`, `get_job_events`, `get_gallery_metadata` on the final and the intermediate mp4.
+3. `measure_sync` (cpu, inline) of the final against the intermediate.
+4. With the 2×2 tile plan the plan gives for 1920×1088 at 1344×768/256 (x tiles at 0 and 576,
+   y at 0 and 320; blend bands x 576–1344, y 320–768; or the boxes the events report), take
+   `get_output_frames(at=[0, 2.5, 5.0])` and `compare_outputs` with crops spanning x=576, x=1344,
+   y=320 and y=768 in flat areas (wall, sky); `assess_output` on the final.
+expected:
+- The job succeeds. The final mp4 is 1920×1088, 124 frames at 24 fps, with **exactly one** audio
+  stream, whose duration equals the intermediate's to within one frame; step 3 reads a lag within
+  ±0.05 s (the same waveform). The job's outputs hold no per-tile audio files.
+- The events show progress for 4 tiles (each its refine evaluations) and one decode of the full
+  canvas; the job's wall time is quoted.
+- No visible seam line or tile-shaped brightness step at the band edges in step 4's crops;
+  `assess_output` raises no seam flag.
+- A face crossing a blend band is no softer than one inside a tile (noted for the gate).
+It is a **finding** if the run fails (an OOM at the 1080p decode is a finding for the plan, filed
+against #1043, not a stage bounce), the size, frame count, fps or audio differ, more than one audio
+track comes out, the events show a decode per tile, or a seam shows.
+cleanup: `delete_output(job_id=...)` unless the gate (#1049) cites the job.
+metrics: `wall_minutes` and the decode's peak VRAM if the events report it, to
+`regression-perf/M-F176.jsonl` on each run.
+
+### M-F177 — without `refine_tiles` the refine pass is unchanged, and H3 introspection lists `refine_tiles`
+pending: #1048
+source: tester, spec for #1048 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 modular pipeline signature; H3 refine (`refine_strength`). Free.
+Steps:
+1. `get_pipeline_signature` on the H3 pipeline, as M-F113 calls it.
+2. Run the free refine cases M-F096, M-F097 and M-F115 as written.
+3. Validate M-F096's 768p refine example (no `refine_tiles`) and note its `plan.estimate`.
+expected:
+- The signature lists `refine_tiles` (with its `width`/`height`/`overlap` shape or a description
+  naming them), beside `refine_strength`, `hold_audio` and `latents`, which are all still listed.
+- M-F096, M-F097 and M-F115 pass unchanged; their refusal messages are byte-identical (M-F115's
+  standard).
+- Step 3 validates clean with no new warning.
+It is a **finding** if `refine_tiles` is missing from the signature, any H3 input M-F113 lists is
+gone, or a plain refine case changed.
+cleanup: none.
+metrics: none.
+
+### M-F178 — `templates/minimax/tiled-refine-1080p` is listed with a measured cost, shows its variables and constraints, and the minimax-h3 skill says when to pick it
+pending: #1049
+source: tester, spec for #1049 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the stage B template (H3 base → `upscale_h3_latents` 1920×1088 → tiled refine →
+`pair_audio`). Free.
+Steps:
+1. `list_workflows(shape="shot", traits="has-audio")`; find the entry.
+2. `get_workflow("templates/minimax/tiled-refine-1080p")` and with `variables_only=true`.
+3. `validate_workflow("templates/minimax/tiled-refine-1080p", workspace="regression-model-specific")`
+   at its defaults; then with `num_frames` 125 (off the 17n+5 grid) and 360 (over 345).
+4. Load the `dw:minimax-h3` skill and find the template's row.
+expected:
+- The entry has shape `shot`, trait `has-audio`, a non-null `cost` naming a device and minutes, and
+  `constraints` for `num_frames` (17n+5, 124–345).
+- `get_workflow` shows the variables, `cost_drivers` (at least `num_frames`), and the
+  `refine_tiles` step at 1920×1088 with the winning gate arm's base (544p or 768p).
+- Defaults validate clean with no VRAM warning. 125 snaps up or is refused per its constraint
+  (as `video-with-audio-768p`'s does), and 360 is refused, both at validate.
+- The skill's row names the template and says when to use it over the spandrel route and LTX
+  `upscale-clip` (arms (e), (f)), with its cost.
+It is a **finding** if the entry is missing or has no cost, the constraints are absent, the defaults
+fail validation, or the skill has no row.
+cleanup: none.
+metrics: none.
+
+### M-F179 — `tiled-refine-1080p` at its defaults runs to a 1920×1088 clip with base audio once
+pending: #1049
+source: tester, spec for #1049 from #1043's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/tiled-refine-1080p` (MiniMax H3, 768p turbo LoRA). GPU: its
+listed cost (~25–30 min per the plan); `wait_seconds=1500`.
+Steps, in workspace `regression-model-specific`: validate at defaults, `run_workflow(...,
+acknowledged_cost=..., wait_seconds=1500)` with `seed` 42, `wait_for_job` while running; `get_job`,
+`get_gallery_metadata` and `assess_output` on the final mp4.
+expected:
+- The job succeeds. The final mp4 is 1920×1088 at 24 fps with the template's default frame count,
+  and exactly one audio stream lasting the clip.
+- Wall time is within 25% of the template's listed `cost` (a cold model load stated).
+- `assess_output` raises no seam or silence flag.
+It is a **finding** if the run fails, the size, fps, frame count or audio differ, or the wall time is
+far outside the listed cost.
+cleanup: `delete_output(job_id=...)`.
+metrics: `wall_minutes`, to `regression-perf/M-F179.jsonl` on each run.
+
 ## Performance
