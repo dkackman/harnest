@@ -204,17 +204,20 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
 
 def main(argv=None):
     """python3 -m harness.suite case-text <suite-file> <level> <id>...   (scripts/case-text.sh)
-    python3 -m harness.suite case-ids <suite-file>             (run-regression.sh)"""
+    python3 -m harness.suite case-ids <suite-file> [<id>...]   (run-regression.sh)
+    With ids, case-ids lists only those and their dependency groups."""
     args = sys.argv[1:] if argv is None else argv
     if len(args) >= 3 and args[0] == "case-text":
         print(case_text(args[1], args[3:], args[2]))
         return 0
-    if len(args) == 2 and args[0] == "case-ids":
-        for i in case_ids(args[1]):
+    if len(args) >= 2 and args[0] == "case-ids":
+        from .requirements import select  # it imports this module
+
+        for i in select(args[1], args[2:]) if args[2:] else case_ids(args[1]):
             print(i)
         return 0
     print(
-        "usage: python3 -m harness.suite case-text <suite-file> <level> <id>... | case-ids <suite-file>",
+        "usage: python3 -m harness.suite case-text <suite-file> <level> <id>... | case-ids <suite-file> [<id>...]",
         file=sys.stderr,
     )
     return 2

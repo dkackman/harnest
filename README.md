@@ -235,6 +235,7 @@ affect each other's timings:
 ./run-regression.sh security           # one opt-in level
 ./run-regression.sh all                # all four, once each
 ./run-regression.sh smoke my-suite.md  # override one level's file; workspace comes from the filename
+REGRESSION_CASES=M-F176 ./run-regression.sh model-specific  # one case, and the cases it depends on
 ```
 
 - **Case IDs** carry a per-level prefix (`S-`/`C-`/`M-`/`SE-`). A case states its intent
@@ -703,6 +704,7 @@ isn't found until you re-run the script.
 | `IMPLEMENTER_CLAIM_MAX` | `10` | most issues one implementer pass claims; the rest stay unclaimed for another loop; `0` = no cap |
 | `ONLY_ISSUES` | unset | restrict a cycle to these issue numbers |
 | `CASES_PER_SESSION` | 3 or 8 | `run-regression.sh` only; see above |
+| `REGRESSION_CASES` | empty (every case) | `run-regression.sh` only: the case IDs to run, each with the cases its `setup:`/`cleanup:` lines tie it to; the level's prerequisite is not run, and an ID in none of the run's suite files is refused; see above |
 | `FALLBACK_MODEL` | unset | `--fallback-model`; must be servable by the role's provider |
 | `SESSION_RETRY_PAUSE_SECS` | `30` | a session that ends without a result is retried once; a rejected rate limit instead sleeps the driver until the reset, then runs the session once more |
 | `SNAPSHOT_TTL_SECS` | `20` | how long one driver process tree reuses its board snapshot (four `gh issue list` calls) across queues and passes; dropped after every session and every label edit the driver makes, and never used for the re-check right before a session; `0` reads the board fresh every time (`run-release.sh` always does) |

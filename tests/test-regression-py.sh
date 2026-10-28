@@ -129,6 +129,27 @@ for impl in bash py; do
       "$(git -C "$T/h" log -1 --format=%b)"
   has "  naming the model label" "run (anthropic/claude-sonnet-5-5)" "$(git -C "$T/h" log -1 --format=%s)"
 
+  # --- REGRESSION_CASES: only the named cases (and their groups) run
+  : > "$FAKE_CLAUDE_LOG"; : > "$T/h/logs/loop.log"
+  reg "$impl" sel.out PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 REGRESSION_CASES=S-F002 -- complete regression-suite-tiny.md
+  eq  "$impl cases: exits cleanly" 0 $?
+  eq  "$impl cases: one chunk and a sweep" 2 "$(calls)"
+  has "$impl cases: the chunk is the named case" "complete session 1 of 1: S-F002 ---" "$(cat "$T/h/logs/loop.log")"
+  eq  "$impl cases: no smoke prerequisite" "" "$(grep 'level=smoke' "$T/h/logs/loop.log" || true)"
+  cp "$T/h/logs/loop.log" "$T/$impl/sel.loop.log"
+  : > "$FAKE_CLAUDE_LOG"; : > "$T/h/logs/loop.log"
+  reg "$impl" selall.out PLUGIN_TREE="$T/plugin" CASES_PER_SESSION=1 REGRESSION_CASES=S-F001 -- all
+  eq  "$impl cases all: exits cleanly" 0 $?
+  eq  "$impl cases all: one chunk and a sweep, smoke only" 2 "$(calls)"
+  has "$impl cases all: a level without them is skipped" "complete: none of REGRESSION_CASES in regression-suite-complete.md, skipping" "$(cat "$T/h/logs/loop.log")"
+  eq  "$impl cases all: script cases not selected don't run" "" "$(grep 'script cases:' "$T/h/logs/loop.log" || true)"
+  cp "$T/h/logs/loop.log" "$T/$impl/selall.loop.log"
+  : > "$FAKE_CLAUDE_LOG"
+  reg "$impl" selbad.out PLUGIN_TREE="$T/plugin" REGRESSION_CASES="S-F002 S-F404" -- smoke regression-suite-tiny.md
+  eq  "$impl cases: an unknown case is refused" 1 $?
+  has "  naming it" "REGRESSION_CASES: S-F404 is in none of this run's suite files" "$(cat "$T/$impl/selbad.out")"
+  eq  "  before any session" 0 "$(calls)"
+
   # --- mini-ai: one whole-level session, with lem's lock held
   mini_health
   printf '%s\n' "${sha:0:7}" > "$T/mini-head"
@@ -241,7 +262,8 @@ done
 
 # --- the same output, line for line
 for f in lem.out lem.loop.log lem.calls lem.prompt.chunk.md lem.results mini.out mini.loop.log mini.args mini.prompt.whole.md \
-         mem.out bad.loop.log down.out wrong.out level.out model.out chunk.out token.out ptok.args ftok.args etok.args; do
+         mem.out bad.loop.log down.out wrong.out level.out model.out chunk.out token.out ptok.args ftok.args etok.args \
+         sel.out sel.loop.log selall.loop.log selbad.out; do
   d="$(diff <(norm "$T/bash/$f") <(norm "$T/py/$f") | head -10)"
   eq "parity: $f" "" "$d"
 done

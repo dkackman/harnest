@@ -104,6 +104,9 @@ DW_URL="${DW_URL:-}"           # empty: the target's own (resolve_target)
 # C-F007 and C-F023 near 61 GB of host RSS; C-F047 tens of GB). Not left to
 # the agent's reading of target.md: one misjudged case is an outage.
 TARGET_SKIP_CASES="${TARGET_SKIP_CASES:-S-F079 C-F005 C-F007 C-F023 C-F047}"
+# Case IDs to run, each with its dependency group (harness.requirements
+# select); empty runs every case.
+REGRESSION_CASES="${REGRESSION_CASES:-}"
 
 LEVEL="${1:-smoke}"
 SUITE_OVERRIDE="${2:-}"
@@ -126,6 +129,9 @@ case "$LEVEL" in
     exit 1
     ;;
 esac
+# Named cases run in the level named alone: its prerequisite's file would
+# match its own cases of the same ID prefix.
+[ -n "$REGRESSION_CASES" ] && [ "$LEVEL" = complete ] && RUN_SPECS=("complete:$SUITE_OVERRIDE")
 
 [ -d "$SOURCE_DIR" ] || { echo "SOURCE_DIR not found: $SOURCE_DIR" >&2; exit 1; }
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
@@ -298,17 +304,34 @@ script_cases() {
   | while read -r id; do [ -f "$REPO/contract/cases/$id.json" ] && echo "$id"; done
 }
 
+# suite_file_for <level> <override-or-empty>
+suite_file_for() {
+  if [ -n "$2" ]; then
+    case "$2" in
+      /*) echo "$2" ;;
+      *)  echo "$REPO/$2" ;;
+    esac
+  else
+    echo "$REPO/$(default_suite_file "$1")"
+  fi
+}
+
+# Every REGRESSION_CASES ID is in one of this run's suite files.
+check_cases() {
+  local found="" spec id
+  for spec in "${RUN_SPECS[@]}"; do
+    # an unreadable file says so when its level runs
+    found="$found $(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$(suite_file_for "${spec%%:*}" "${spec#*:}")" 2>/dev/null | tr '\n' ' ' || true)"
+  done
+  for id in $REGRESSION_CASES; do
+    case "$found " in *" $id "*) ;; *) echo "REGRESSION_CASES: $id is in none of this run's suite files" >&2; exit 1 ;; esac
+  done
+}
+
 run_level() {
   local level="$1" suite_arg="$2" suite_file workspace
 
-  if [ -n "$suite_arg" ]; then
-    case "$suite_arg" in
-      /*) suite_file="$suite_arg" ;;
-      *)  suite_file="$REPO/$suite_arg" ;;
-    esac
-  else
-    suite_file="$REPO/$(default_suite_file "$level")"
-  fi
+  suite_file="$(suite_file_for "$level" "$suite_arg")"
   [ -f "$suite_file" ] || { echo "suite file not found: $suite_file" >&2; exit 1; }
   workspace="$(workspace_for_suite_file "$suite_file")"
 
@@ -316,10 +339,24 @@ run_level() {
     echo "$(ts) $level${TARGET_SUFFIX}: $(basename "$suite_file") has no cases yet, skipping" | tee -a "$LOOP_LOG"
     return 0
   fi
+  local chosen=""
+  if [ -n "$REGRESSION_CASES" ]; then
+    # shellcheck disable=SC2086  # one argument per ID
+    chosen="$(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$suite_file" $REGRESSION_CASES)" \
+      || { echo "[$RPFX:$level] could not read case ids from $suite_file" | tee -a "$LOOP_LOG"; exit 1; }
+    if [ -z "$chosen" ]; then
+      echo "$(ts) $level${TARGET_SUFFIX}: none of REGRESSION_CASES in $(basename "$suite_file"), skipping" | tee -a "$LOOP_LOG"
+      return 0
+    fi
+  fi
 
   local -a script_ids=()
   local script_note="" id
-  while read -r id; do [ -n "$id" ] && script_ids+=("$id"); done < <(script_cases "$suite_file")
+  while read -r id; do
+    [ -n "$id" ] || continue
+    [ -z "$chosen" ] || printf '%s\n' "$chosen" | grep -qx "$id" || continue
+    script_ids+=("$id")
+  done < <(script_cases "$suite_file")
   if [ "${#script_ids[@]}" -gt 0 ]; then
     local report
     report="$(DW_TOKEN="$DW_TOKEN" python3 "$REPO/contract/run.py" --url "$DW_URL" "${script_ids[@]}" 2>&1 || true)"
@@ -346,11 +383,14 @@ For each case whose status is fail or error, report it ('Reporting a failure' in
   # match the ID shape (S-F001, SE-P001, ...) isn't one either. Read first,
   # and checked: an empty list from a file with headings would run nothing
   # and say nothing.
-  file_ids="$(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$suite_file")" && [ -n "$file_ids" ] \
+  if [ -n "$chosen" ]; then file_ids="$chosen"; else
+    file_ids="$(PYTHONPATH="$REPO" python3 -m harness.suite case-ids "$suite_file")" || file_ids=""
+  fi
+  [ -n "$file_ids" ] \
     || { echo "[$RPFX:$level] could not read case ids from $suite_file" | tee -a "$LOOP_LOG"; exit 1; }
   if [ -n "$TARGET_SUFFIX" ]; then
     for id in $TARGET_SKIP_CASES; do
-      grep -q "^### $id " "$suite_file" || continue
+      printf '%s\n' "$file_ids" | grep -qx "$id" || continue
       held="$held $id"
       LEVEL_SKIPS=$((LEVEL_SKIPS + 1))
       echo "[$RPFX:$level] REGRESSION-SKIP: $id memory (TARGET_SKIP_CASES: not run on this server)" | tee -a "$LOOP_LOG"
@@ -432,6 +472,7 @@ main() {
   || commit_suite_changes "regression: capture suite edits of unknown origin made outside a regression run" \
        "unknown (edited outside a regression run)" "noreply@localhost"
 
+check_cases
 for spec in "${RUN_SPECS[@]}"; do
   run_level "${spec%%:*}" "${spec#*:}"
 done

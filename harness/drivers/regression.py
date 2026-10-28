@@ -24,7 +24,7 @@ import subprocess
 import sys
 from pathlib import Path
 
-from .. import REPO, deploy, lock, outcome, prompts, providers, results, session, suite
+from .. import REPO, deploy, lock, outcome, prompts, providers, requirements, results, session, suite
 from ..gitops import refresh_plugin_tree
 from ..log import Log, err, ts
 from ..profile import ProfileError, load, resolve_token, resolve_url
@@ -118,6 +118,7 @@ class Regression:
         self.model_provider = env("REGRESSION_PROVIDER", self.provider)
         self.fallback = env("FALLBACK_MODEL")
         self.cases_per_session = env("CASES_PER_SESSION")
+        self.cases = env("REGRESSION_CASES", "").split()  # empty: every case
         self.budget = env("REGRESSION_BUDGET_USD", "6")
         self.autocompact = env("AUTOCOMPACT_TOKENS", "120000")
         self.mcp_name = self.profile.get("mcp.name", "dw")
@@ -140,7 +141,10 @@ class Regression:
         if lv is None:
             err(f"unknown level '{self.level}' (expected: {', '.join(names)}, all)")
             raise Abort(1)
-        return ([(lv.implies, "")] if lv.implies else []) + [(lv.name, self.override)]
+        # Named cases run in the level named alone: its prerequisite's file
+        # would match its own cases of the same ID prefix.
+        pre = [(lv.implies, "")] if lv.implies and not self.cases else []
+        return pre + [(lv.name, self.override)]
 
     def start(self):
         try:
@@ -335,12 +339,26 @@ class Regression:
             summary = "report unreadable"
         return report, summary
 
-    def run_level(self, level, override):
-        lv = self.profile.level(level)
+    def suite_file(self, level, override):
         if override:
-            suite_file = Path(override) if override.startswith("/") else REPO / override
-        else:
-            suite_file = REPO / lv.file
+            return Path(override) if override.startswith("/") else REPO / override
+        return REPO / self.profile.level(level).file
+
+    def check_cases(self):
+        """Every REGRESSION_CASES ID is in one of this run's suite files."""
+        found = set()
+        for level, override in self.run_specs:
+            try:
+                found.update(suite.case_ids(self.suite_file(level, override)))
+            except (OSError, ValueError):
+                pass  # its level says so when it runs
+        for cid in self.cases:
+            if cid not in found:
+                err(f"REGRESSION_CASES: {cid} is in none of this run's suite files")
+                raise Abort(1)
+
+    def run_level(self, level, override):
+        suite_file = self.suite_file(level, override)
         if not suite_file.is_file():
             err(f"suite file not found: {suite_file}")
             raise Abort(1)
@@ -349,8 +367,20 @@ class Regression:
         if not suite.has_cases(suite_file):
             self.log.say(f"{ts()} {level}{sfx}: {suite_file.name} has no cases yet, skipping")
             return
+        chosen = None
+        if self.cases:
+            try:
+                chosen = requirements.select(suite_file, self.cases)
+            except (OSError, ValueError):
+                self.log.say(f"[{self.rpfx}:{level}] could not read case ids from {suite_file}")
+                raise Abort(1) from None
+            if not chosen:
+                self.log.say(f"{ts()} {level}{sfx}: none of REGRESSION_CASES in {suite_file.name}, skipping")
+                return
 
         script_ids = suite.script_cases(suite_file, REPO / self.profile.get("suite.contract_cases", "contract/cases"))
+        if chosen is not None:
+            script_ids = [i for i in script_ids if i in chosen]
         script_note = ""
         if script_ids:
             report, summary = self.script_report(script_ids)
@@ -371,7 +401,7 @@ class Regression:
         self.level_skips = self.level_differs = 0
         # read first, and checked: an empty list from a file with headings would run nothing and say nothing
         try:
-            ids_in_file = suite.case_ids(suite_file)
+            ids_in_file = chosen if chosen is not None else suite.case_ids(suite_file)
         except (OSError, ValueError):
             ids_in_file = []
         if not ids_in_file:
@@ -483,6 +513,7 @@ class Regression:
         )
 
     def main(self):
+        self.check_cases()
         # Fallback only: anything still dirty is of unknown origin (a hand
         # edit between runs, or a cycle that died before committing), so it
         # is committed under a neutral name, never the regression model's.

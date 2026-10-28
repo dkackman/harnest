@@ -81,6 +81,16 @@ class CaseText(unittest.TestCase):
         ).stdout
         self.assertEqual("S-F001\nS-F002\nS-F003\n", out)
 
+    def test_case_ids_script_with_ids_is_their_selection(self):
+        out = subprocess.run(
+            ["python3", "-m", "harness.suite", "case-ids", str(self.suite), "S-F003", "S-F404"],
+            capture_output=True,
+            text=True,
+            check=True,
+            cwd=REPO,
+        ).stdout
+        self.assertEqual("S-F003\n", out)
+
     def test_case_text_of_a_fenced_heading_is_the_fixtures_alone(self):
         self.assertEqual(suite.fixtures_section(self.suite), suite.case_text(self.suite, ["S-F999"]))
 

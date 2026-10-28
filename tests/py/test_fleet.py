@@ -138,6 +138,11 @@ class Groups(unittest.TestCase):
         )
         self.assertEqual([["S-F001", "S-F002"]], [g.cases for g in r.groups(Path(self.d.name, "s.md"), {})])
 
+    def test_selecting_a_case_brings_its_group_in_file_order(self):
+        self.assertEqual(["S-F002", "S-F003"], r.select(self.suite, ["S-F003"]))
+        self.assertEqual(["S-F001", "S-F004"], r.select(self.suite, ["S-F004", "S-F001"]))
+        self.assertEqual([], r.select(self.suite, ["S-F404"]))
+
     def test_skipped_cases_drop_out_with_their_links(self):
         g = r.groups(self.suite, {}, skip=("S-F003",))
         self.assertEqual([["S-F001"], ["S-F002"], ["S-F004"], ["S-F005"]], [x.cases for x in g])

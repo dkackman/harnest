@@ -169,6 +169,13 @@ def groups(suite_file, sidecar, skip=()):
     return list(out.values())
 
 
+def select(suite_file, wanted):
+    """<wanted>'s cases and every case of their dependency groups, in file
+    order (REGRESSION_CASES). An ID not in the file selects nothing."""
+    picked = {c for g in groups(suite_file, {}) if set(g.cases) & set(wanted) for c in g.cases}
+    return [c for c in case_blocks(suite_file) if c in picked]
+
+
 def reference_sizes(all_facts):
     """A model's full size: the largest any server reports, from its cache
     or from validate_workflow's downloads_required (a partial cache
