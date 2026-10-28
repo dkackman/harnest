@@ -132,6 +132,12 @@ class Groups(unittest.TestCase):
         g = r.groups(self.suite, {})
         self.assertEqual([["S-F001"], ["S-F002", "S-F003"], ["S-F004"], ["S-F005"]], [x.cases for x in g])
 
+    def test_a_capitalized_setup_links_too(self):
+        Path(self.d.name, "s.md").write_text(
+            "### S-F001 — makes it\nsteps\n\n### S-F002 — reuses it\nSetup: S-F001's image, kept.\nsteps\n"
+        )
+        self.assertEqual([["S-F001", "S-F002"]], [g.cases for g in r.groups(Path(self.d.name, "s.md"), {})])
+
     def test_skipped_cases_drop_out_with_their_links(self):
         g = r.groups(self.suite, {}, skip=("S-F003",))
         self.assertEqual([["S-F001"], ["S-F002"], ["S-F004"], ["S-F005"]], [x.cases for x in g])

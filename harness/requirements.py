@@ -124,10 +124,10 @@ class Group:
 
 
 def _link_text(block):
-    """A case's `cleanup:` and `setup:` paragraphs (each runs to a blank line)."""
+    """A case's `cleanup:` and `setup:` (or `Setup:`) paragraphs, each to a blank line."""
     out, on = [], False
     for line in block.splitlines():
-        if re.match(r"(cleanup|setup):", line):
+        if re.match(r"(cleanup|setup):", line, re.IGNORECASE):
             on = True
         elif not line.strip():
             on = False
