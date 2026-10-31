@@ -5934,7 +5934,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F202 — the #1074 probe record on #1061 gives two runs and all three answers, each citing jobs that ran what it says
-pending: #1074
 source: tester, spec for #1074 from #1061's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 ref2va (hand-built probe shots). Free: reads only, and no job is run.
 The record is the stage-A results comment on #1061 (`gh issue view 1061 --repo
@@ -5973,7 +5972,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F203 — the probe's seam verdict and motion answer reproduce from shot 2's output
-pending: #1074
 source: tester, spec for #1074 from #1061's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 ref2va, the shot 2 job of M-F202. Free: reads only.
 Steps:
