@@ -15022,7 +15022,6 @@ cleanup: `delete_output(job_id=…)` for both jobs. Never delete the shared asse
 metrics: none.
 
 ### C-F558 — `transcribe_audio` on the htdemucs `vocals` stem of a scored dialogue mix yields the shot's line
-pending: #1096
 source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
 Utility jobs only (htdemucs plus Whisper on CPU): about a minute each, warm. Workspace `regression-complete`.
 Same fixtures and shots as C-F557.
@@ -15073,7 +15072,6 @@ cleanup: `delete_output(job_id=…)` for both jobs. Never delete the shared asse
 metrics: none.
 
 ### C-F560 — the `dw:series-episodes` skill's dialogue-stem recipe names `separate_stems`' results and `mix_audio`'s arguments exactly, and validates as written
-pending: #1096
 source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
 Free, validate only. Applies once Don's listening verdict on #1096 is "good enough", which is when the plan
 writes the paragraph. If #1096 records the verdict as "inadequate" and the skill has no such paragraph,
@@ -15100,7 +15098,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F561 — the tasks guide's *Stem separation* section names the dialogue/rest use and gives one source for htdemucs' weights
-pending: #1096
 source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
 Free.
 1. `get_guide("tasks", section="Stem separation")`. Search the same guide for any other mention of
@@ -15120,7 +15117,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F562 — #1096's kept stems, the ones its record names for Don's listening, resolve as audio
-pending: #1096
 source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
 Free. The A/B record's stems are kept (`keep_output`) so Don can listen to them. This case checks that
 they're still there and are what the record says.
@@ -15416,7 +15412,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F576 — `analyze_phrases` is listed and described: `audio` required, the gap/phrase/floor/centre knobs and their defaults
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_tasks()`, `get_task("analyze_phrases")`, and `get_guide("tasks")` (index, then the
 section naming `analyze_phrases`).
@@ -15436,7 +15431,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F577 — `analyze_phrases` on a sung stereo stem gives ordered, non-overlapping phrases that start where lines start, with no download
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 GPU-light (one `separate_stems`, then CPU). In `regression-complete`, author a json workflow:
 `stems` = `separate_stems` on `asset:qa-cast/ep15-song.mp3`, saved `audio/wav` intermediate;
@@ -15465,7 +15459,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F578 — `analyze_phrases` on mono input falls back to `band` and warns
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. One-step json workflow: `analyze_phrases` on `asset:qa-cast/priya-voice.wav` (mono, 7.45 s),
 saved `application/json` final. Validate, run with `wait_seconds=55`, and read with `get_output_text`.
@@ -15481,7 +15474,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F579 — `analyze_phrases` on near-silence returns no phrases and a warning, not an error
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Workflow: `quiet` = `gain_audio` on `asset:uploads/qa-cast/room-bed.wav` by −40 dB
 (intermediate); `p_quiet` = `analyze_phrases` on `previous_result:quiet`; `p_bed` = `analyze_phrases`
@@ -15497,7 +15489,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F580 — `validate_workflow` refuses a negative gap and a missing `audio` for `analyze_phrases`, and accepts the boundaries
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 Free. Validate a one-step `analyze_phrases` workflow on `asset:qa-cast/ep15-song.mp3` with each argument
 set below (nothing is run).
@@ -15516,7 +15507,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F581 — each `analyze_phrases` knob moves the answer the way its doc says
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 GPU-light. One workflow: `stems` = `separate_stems` on `asset:qa-cast/ep15-song.mp3` (intermediate),
 then six `analyze_phrases` steps on `previous_result:stems.vocals`, each saved `application/json`
@@ -15537,7 +15527,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F582 — `analyze_phrases` on a dense full mix warns when one phrase covers over 90% of the track and suggests the vocal stem
-pending: #1104
 source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Make a track that is sound end to end: one json workflow with `analyze_phrases`, `centre:
 false`, `floor_db: -60` on `asset:qa-cast/ep15-song.mp3` (the raw mix, music under every second), and
