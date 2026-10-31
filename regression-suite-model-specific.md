@@ -6811,7 +6811,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### M-F247 — the `regional-edit` template defaults `refine_strength` to 0.9 and validates across the measured bands
-pending: #1078
 source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/regional-edit` (stage B). Free. This is plan v2's change to M-F220: the
 default `refine_strength` is 0.9, not 0.7; M-F220's other checks stand.
@@ -6833,7 +6832,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F248 — the `minimax-h3` skill's regional-edit branch picks `refine_strength` from the measured bands and says a big recolour isn't a regional edit's job
-pending: #1078
 source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3` skill as loaded from `develop`. Free. This is plan v2's change to
 M-F221's strength bullet ("about 0.5 for a light change, 1.0 to replace the region"); M-F221's other
@@ -6853,7 +6851,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F249 — a `regional-edit` run at its defaults (0.9) overriding only `source_video`, `mask_image` and `prompt` replaces the region's object, keeps identity, the outside and the audio
-pending: #1078
 source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.9,
 `num_inference_steps` 8). GPU on lem, at the template's listed cost. Workspace
