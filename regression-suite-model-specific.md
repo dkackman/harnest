@@ -5862,7 +5862,6 @@ cleanup: `delete_output(job_id=…)` on both jobs.
 metrics: none.
 
 ### M-F200 — the #1073 measurement record on #1060 gives all three stage-0 results, each citing jobs that exist and ran what the result says
-pending: #1073
 source: tester, spec for #1073 from #1060's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 ref2va (`templates/minimax/composable-references`, which is the only
 template that takes a video reference, or `templates/minimax/reference-to-video` for the image
@@ -5911,7 +5910,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F201 — the R1 lead-in split reproduces from the cited jobs' events
-pending: #1073
 source: tester, spec for #1073 from #1060's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 ref2va, the R1 jobs of M-F200. Free: reads only.
 How a block's time is read today: `get_job_events(job_id, kinds=["log"])` emits one
