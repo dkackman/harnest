@@ -6723,8 +6723,7 @@ Steps:
 expected:
 - The job succeeds. The output is 960×544, 124 frames at 24 fps, with one audio stream lasting the clip.
 - **Events:** exactly one regional-edit `log` event for the step. It names a regenerated cell count and a
-  kept cell count (both above 0, regenerated well under the total since `region.png` covers 2–50% of the
-  frame), `mask_grow` 1 and `refine_strength` 0.9. No error event.
+  kept cell count (both above 0 and summing to the total; `mask_grow` 1 grows the region by a cell on each side, so regenerated can exceed the share `region.png` covers), `mask_grow` 1 and `refine_strength` 0.9. No error event.
 - **Inside the mask:** the region's content visibly changed at every sampled time; an object the person
   holds or wears is replaced or reshaped (the sweep saw the cup become a different cup). The person's
   face, hair and pose are still the source's, and their motion follows the take. The prompt's red
@@ -6781,7 +6780,7 @@ Steps:
    "prompt": "<as M-F245>"}, workspace="regression-model-specific")`.
 3. Step 2 with `refine_strength` set to 0.85, then 0.95, then 1.0.
 expected:
-- `refine_strength` defaults to **0.9**; `num_inference_steps` defaults to 8.
+- `refine_strength` defaults to **0.9**; `num_inference_steps` defaults to 5.
 - Steps 2 and 3 are all `valid: true`, each with a `plan.estimate`.
 - If the template's description or variable help mentions the strength, it uses the bands (0.9 replaces
   an object, 0.95 reworks clothing, 1.0 a fresh generation), not "0.5 light / 1.0 replace".
@@ -6812,7 +6811,7 @@ metrics: none.
 ### M-F249 — a `regional-edit` run at its defaults (0.9) overriding only `source_video`, `mask_image` and `prompt` replaces the region's object, keeps identity, the outside and the audio
 source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.9,
-`num_inference_steps` 8). GPU on lem, at the template's listed cost. Workspace
+`num_inference_steps` 5). GPU on lem, at the template's listed cost. Workspace
 `regression-model-specific`. This is plan v2's amended M-F222: the default is 0.9, and the inside check
 is M-F245's (object replaced, identity holds), not "the prompted change lands".
 Setup: M-F215 (masks), and M-F245's prompt.
