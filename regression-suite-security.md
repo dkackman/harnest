@@ -1073,6 +1073,92 @@ send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `cancel_download` anything that appeared.
 metrics: none.
 
+### SE-F053 — Kokoro's `voice` holds the voice-file boundary: no path, no other file, no existence oracle
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only, plus one refused `run_workflow`). #1068 turns `voice` into a hub file
+`voices/<voice>.pt` that dw loads itself (`torch.load(weights_only=True)`), checked against
+`^[ab][fm]_[a-z]+$` and for existence at plan time. Carrier: an inline `generate_speech` step,
+`model_name: "hexgrad/Kokoro-82M"`, `text: "Hello there."`, workspace `regression-security`; control
+`voice: "af_heart"`. Validate with `voice` set, in turn, to:
+- traversal and absolute: `"../../x"`, `"af_heart/../../config"`, `"../af_heart"`, `"/etc/passwd"`,
+  `"/etc/qa-1058-absent"`, `"voices/af_heart"`, `"..\\..\\x"`;
+- a file name rather than a voice: `"foo.pt"`, `"af_heart.pt"`, `"kokoro-v1_0"`, `"config"`;
+- a URL or repo: `"https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices/af_heart.pt"`,
+  `"hexgrad/Kokoro-82M"`;
+- an existence-oracle pair: `"af_qanoexist"` and `"af_qanoexistb"` (both pattern-valid, both absent);
+- a non-string: `["af_heart"]`, `{"path": "x"}`, `7`.
+Send `"../../x"` and the URL to `run_workflow(..., acknowledged_cost=<the control's bound>)` too.
+`list_downloads` before and after.
+expected:
+- Every probe is `valid: false` at `steps[0].task.arguments.voice`; every pattern violation is refused by
+  the pattern rule before any hub lookup, and `run_workflow` queues no job.
+- The two absent voices are refused identically apart from the name, as "no such voice in
+  `hexgrad/Kokoro-82M`" (the hub's file list, not the server's disk).
+- No response echoes a resolved server path, a cache directory or `torch.load` text; `list_downloads`
+  gains nothing; no plan lists any file but `config.json`, `kokoro-v1_0.pth` and a `voices/<v>.pt`.
+- The control validates.
+It is a **finding** if any probe validates, plans a file outside `voices/`, a fetch appears, or a
+response discloses a path. A traversal or URL that reaches a load, or a pickle loaded without
+`weights_only`, is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `cancel_download` anything that appeared.
+metrics: none.
+
+### SE-F054 — H3 regional edit: `source_video`, `mask_image` and `mask_video` hold the path boundary, and the mask blocks aren't nameable from a workflow
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+#1062 adds three media-taking arguments to the MiniMax H3 step: `source_video`, which loads by its
+`_video` suffix, `mask_image` and `mask_video`. It also adds two dw blocks,
+`DwH3SourceLatentsStep` and `DwH3MaskBlendStep`. The plan says no boundary is loosened. So each
+new argument must hold the same path boundary as `hold_audio` (SE-F040), and no workflow may reach
+the new block classes.
+
+Carrier: `templates/minimax/video-with-audio` as an inline workflow (from `get_workflow`), in
+workspace `regression-security`. Add to its H3 step `"source_video":
+"asset:qa-cast/ep6-cold-open.mp4"`, `"mask_image": "<mask>"`, `"refine_strength": 0.8` and
+`"hold_audio": "asset:qa-cast/ep6-cold-open.mp4"`. For `<mask>`, use any 960×544 PNG uploaded
+to this workspace with `upload_asset`, or `asset:h3-mask/region.png` copied in with
+`copy_to_workspace` if it exists in `regression-model-specific` (M-F215). Only one argument changes
+per probe.
+
+Probes, all through `validate_workflow`. Each of (a)–(c) is run in turn on `source_video`, on
+`mask_image`, and on `mask_video` (with `mask_image` removed):
+- (a) P1 `/usr/share/pixmaps/debian-logo.png` (an existing file; for `source_video` and
+  `mask_video`, any existing file under `/usr/share` will do), P2 `/nonexistent-dw-probe/x.mp4`,
+  and P3 `../../../../../usr/share/pixmaps/debian-logo.png`. Try each bare and as `asset:` + the
+  probe;
+- (b) `output:../../../../usr/share/pixmaps/debian-logo.png` and
+  `output:/usr/share/pixmaps/debian-logo.png`;
+- (c) `http://127.0.0.1:8765/x.mp4` and `file:///usr/share/pixmaps/debian-logo.png`;
+- (d) a workflow that names the new blocks: the H3 step given a `pipeline_type`, or any other
+  `*_type`/class-name argument the schema accepts, set to
+  `dw.pipeline_processors.h3_mask_steps.DwH3SourceLatentsStep` and to
+  `dw.pipeline_processors.h3_mask_steps.DwH3MaskBlendStep`. Also try the bare class names, and
+  `list_classes`/`get_class` for both.
+
+For every refused probe, also call `run_workflow(..., acknowledged_cost=true,
+workspace="regression-security")`.
+expected:
+- Every (a)–(c) probe is `valid: false` at the H3 step's argument path for the argument probed.
+  Each is refused as a path or reference outside the server's roots, or as a scheme or host that
+  isn't allowed.
+- P1 (exists) and P2 (doesn't exist) get the same message on each argument, so the error can't be
+  used to test whether a file exists. A probe is never refused with a size or frame-count mismatch
+  (M-F216 (e), (f), (i)), because that would mean the file was opened.
+- No error echoes a resolved server path.
+- (d) is refused as an untrusted or unknown type/class, the same way any non-allowlisted class
+  name is refused today. `list_classes`/`get_class` don't offer either block as a workflow-nameable
+  class.
+- `run_workflow` queues no job for any probe.
+- The control (the carrier unchanged) validates clean.
+It is a **finding** if any probe validates, if P1 and P2 are told apart, if a mismatch message
+shows that an out-of-root file was read, if a server path is echoed, if a `127.0.0.1` fetch or a
+`file://` read happens, or if a workflow can name either block. Each of those is a hole: send it to
+`scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist). Delete the uploaded mask
+asset if one was uploaded.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

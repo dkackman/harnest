@@ -155,6 +155,49 @@ fixture) when nothing uses it anymore.
   4. Confirm with `get_gallery_metadata` that they have 22 and 30 frames at 24 fps.
   5. `delete_output(job_id=<id>)`, then `delete_workflow("m-guide-clips")`.
   The 124-frame guide in those cases is `asset:qa-cast/ep6-cold-open.mp4` itself.
+- Driving sources for the #1061 `match_video` cases (M-F204–M-F213). All are in the **shared**
+  `common/assets`: do not sweep them, and do not expect them under `regression-model-specific`.
+  Only their length and 24 fps matter. A substitute's `frame_count` is re-read with
+  `get_gallery_metadata` and the cases' segment counts are re-derived from it.
+  - `asset:qa-cast/ep49-episode.mp4`: 372 frames, 24 fps, 960×544, 44.1 kHz stereo. A hard cut of
+    three 124-frame shots, so its cuts are at 5.17 s and 10.33 s.
+  - `asset:qa-cast/ep33-episode.mp4`: 224 frames, 24 fps, 32 kHz stereo.
+  - `asset:qa-cast/ep6-cold-open.mp4`: 124 frames, 24 fps, with audio.
+  - `asset:qa-cast/long-film-4089.mp4`: 4089 frames, 24 fps.
+- Masks for the #1062 regional-edit cases (M-F214–M-F222), in `regression-model-specific` under
+  `asset:h3-mask/`. M-F215 builds them, and every case that uses them names M-F215 in its `Setup:`
+  line. The take they cut is `asset:qa-cast/ep6-cold-open.mp4` (shared; 124 frames, 960×544,
+  24 fps, with audio), which matches `templates/minimax/video-with-audio`'s canvas.
+  - `h3-mask/region.png`: 960×544, white over one object in the take's first frame, black
+    elsewhere. It covers between 2% and 50% of the frame.
+  - `h3-mask/black.png` (all black) and `h3-mask/white.png` (all white): 960×544.
+  - `h3-mask/region-480.png`: `region.png` resized to 480×272.
+  - `h3-mask/region-124f.mp4` and `h3-mask/region-141f.mp4`: `region.png` held for 124 and 141
+    frames.
+- Sources for the #1064 IC-LoRA cases (M-F223–M-F229). The base clip is the shared
+  `asset:qa-cast/ep6-shot1-priya.mp4` (960×544, 124 frames, 24 fps, with audio). What matters is that
+  it shows one clear human subject against a scene. Before a run, look at it with
+  `get_output_frames(at=["frame:60"])`. A substitute needs one person in frame and needs to be
+  960×544 at 24 fps, more than 121 frames long. The three derived clips go in `regression-model-specific`.
+  M-F226 and M-F229 make any that are missing, all on CPU, with no model:
+  1. `save_workflow(name="m-ic-sources", ...)`: a task-only workflow with five steps.
+     - `crop_p`: `fit_to_model(video="asset:qa-cast/ep6-shot1-priya.mp4", width=384, height=544, num_frames=97, mode="crop")`, `save: false`.
+     - `portrait`: `loop_frames(video="previous_result:crop_p.video", num_frames=97)`.
+     - `crop_s`: the same as `crop_p` with `width=544`, `save: false`.
+     - `square`: `loop_frames(video="previous_result:crop_s.video", num_frames=97)`.
+     - `bw`: `grade(media="asset:qa-cast/ep6-shot1-priya.mp4", saturation=0.0)`.
+  2. `validate_workflow`, then `run_workflow(workflow_path="m-ic-sources", workspace="regression-model-specific", acknowledged_cost=..., wait_seconds=55)`.
+  3. `keep_output` the three files as `ic-alpha/src-384x544-97f.mp4`, `ic-alpha/src-544x544-97f.mp4`
+     and `ic-colorize/src-bw-124f.mp4`.
+  4. Confirm each with `get_gallery_metadata`:
+     - the first is 384×544 and the second 544×544, each 97 frames at 24 fps (`fit_to_model` drops
+       the soundtrack, so no audio stream is expected);
+     - the third is 960×544, 124 frames at 24 fps, with audio.
+
+     Look at frame 60 of the third: it is grey, with no colour.
+  5. `delete_output(job_id=<id>)`, then `delete_workflow("m-ic-sources")`.
+  Keep them across runs, and don't sweep them. If a task's argument names have changed, pin them
+  with `get_task` first.
 
 ## Functional
 
@@ -5340,5 +5383,1837 @@ It is a **finding** if the run fails, the size, fps, frame count or audio differ
 far outside the listed cost.
 cleanup: `delete_output(job_id=...)`.
 metrics: `wall_minutes`, to `regression-perf/M-F179.jsonl` on each run.
+
+### M-F180 — Kokoro: `get_task` documents `voice` and `speed`, and the plan lists the repo's three files with real sizes, the voice interpolated
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `generate_speech` with `model_name: "hexgrad/Kokoro-82M"` (Kokoro-82M on its own `kokoro`
+engine, not transformers). Free: discovery and validate only. Run on each box the suite targets (lem
+CUDA, mini-ai MPS); take `device` from `get_server_info`'s accelerator.
+Carrier `K(v)`, inline in workspace `regression-model-specific`:
+`{"id": "mf180-kokoro", "steps": [{"name": "speak", "task": {"command": "generate_speech", "arguments":
+{"model_name": "hexgrad/Kokoro-82M", "voice": v, "text": "The lighthouse keeper climbed the stairs at
+dusk. Below him, the harbour lights came on one by one.", "device": "<accelerator>"}}, "result":
+{"content_type": "audio/wav", "subfolder": "final"}}]}`.
+Steps:
+1. `get_task("generate_speech")`.
+2. `validate_workflow(inline_workflow=K("af_heart"), workspace="regression-model-specific")`.
+3. The same with `K("am_michael")`, and with `voice` omitted from the arguments altogether.
+expected:
+- Step 1: the summary names Kokoro (`hexgrad/Kokoro-82M`) as a family. A `voice` parameter exists, default
+  `af_heart`, its description naming the English-only prefixes (`a`/`b` × `f`/`m`) and that it is
+  Kokoro-only. `speed` is documented (default 1.0, range 0.5–2.0). `speaker_embedding`'s text says Kokoro
+  refuses it. The task's `model_name` default is still `suno/bark-small` (a non-goal to change it).
+- Step 2: `valid: true`. The plan's downloads (when the repo isn't fully cached on that box) list
+  `hexgrad/Kokoro-82M` as **three file entries**: `config.json`, `kokoro-v1_0.pth` and
+  `voices/af_heart.pt`, each `{repo, filename, gb}` with a non-null `gb` (the `.pth` ~0.3 GB, a voice
+  file well under 0.01 GB). **No** whole-repo entry for `hexgrad/Kokoro-82M`, and no other repo.
+  When some of those files are already cached, only the uncached ones are listed.
+- Step 3: `am_michael` lists `voices/am_michael.pt` in place of `af_heart.pt` (the voice is
+  interpolated, not fixed). Omitting `voice` plans exactly what `af_heart` does.
+It is a **finding** if `voice` is missing from `get_task`, the repo is listed whole, a size is `null`
+while the box is online, the voice file isn't the one named, or a non-Kokoro repo appears.
+cleanup: none.
+metrics: none.
+
+### M-F181 — Kokoro runs to one 24 kHz track of recognisable English, and a cached second run makes no network, pip or spaCy fetch
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: Kokoro-82M through `generate_speech`. GPU/CPU: seconds once loaded (82M params).
+On each box (lem, mini-ai), workspace `regression-model-specific`.
+Steps:
+1. `validate_workflow` then `run_workflow(..., acknowledged_cost=<bound>, wait_seconds=55)` on M-F180's
+   `K("af_heart")` with `"seed": 7` added at the workflow level.
+2. `get_job`; `get_gallery_metadata` on the wav; `get_output_audio` on it.
+3. A one-step inline `transcribe_audio` over `output:<that wav>` (default Whisper), result `text/plain`.
+4. Re-submit step 1's workflow with a **different workflow `id`** (`mf181-kokoro-b`) so it isn't served
+   from the step cache; confirm its manifest has no `reused` step. `get_job_events` on it, and
+   `list_downloads` before and after it.
+5. `validate_workflow` on step 1's workflow again.
+expected:
+- Step 2: `succeeded`, `error: null`, one `.wav` in the `speak` entry. Metadata: `sample_rate: 24000`,
+  `channels: 1`, `duration_seconds` between 3 and 12 for the two sentences, `mean_dbfs` above −40 (no
+  near-silent warning). Listening, it is clear English speech in one female voice.
+- Step 3: the transcript holds both sentences' content words (lighthouse, keeper, stairs, harbour/harbor,
+  lights) — a garbled or one-sentence transcript is a finding.
+- Step 4: the job succeeds and its events show **no** download/fetch phase, and no event text containing
+  `pip`, `Collecting`, `spacy.cli`, `en_core_web_sm` download, `urlopen` or `espeak`. `list_downloads`
+  gains no entry.
+- Step 5: the plan now lists no `hexgrad/Kokoro-82M` file (all three are cached).
+It is a **finding** if the run fails, the rate is not 24000, the track is silent, truncated or not
+English speech, or any run-time fetch beyond the first HF weight download appears. A pip install or
+package fetch at run time is a finding against #1058's "Done when", not a hole.
+cleanup: `delete_output(job_id=...)` on both runs and the transcription.
+metrics: none.
+
+### M-F182 — two Kokoro voices are two different speakers
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: Kokoro-82M. Seconds of compute plus one `attribute_voices` run.
+Steps, workspace `regression-model-specific`, on each box:
+1. Run M-F180's carrier with `"seed": 7` twice: `K("af_heart")` and `K("am_michael")`, workflow ids
+   `mf182-af` and `mf182-am`. `get_gallery_metadata` on both wavs; listen to both with `get_output_audio`.
+2. Make a two-voice test track: one inline workflow that speaks a third line, "Every window in the town
+   was dark except one.", with each voice (two `generate_speech` steps, same seed), then joins them into
+   one track (the `concat_audio`/`mix_audio` family — confirm the joining task's name with `list_tasks`),
+   saved as `application/json`-free audio. Note the join point in seconds (the first line's duration).
+3. `attribute_voices` over step 2's track with `voices: {"heart": "output:<mf182-af wav>", "michael":
+   "output:<mf182-am wav>"}`, `lines` = the two halves `{start, end}` from the join point, `separate:
+   false` (dry speech), result `application/json`.
+expected:
+- Step 1: both `succeeded`, 24000 Hz mono. Listening, `af_heart` is a female and `am_michael` a male
+  speaker; a single voice in both is the regression.
+- Step 3: the first half is attributed to `heart` and the second to `michael`, neither `uncertain`, and
+  no `voices_too_similar` warning. (Each reference must be ≥ 3 s; if a step-1 line is shorter, lengthen
+  its `text` by one sentence rather than lowering `min_reference_seconds`.)
+It is a **finding** if the two voices sound alike, `attribute_voices` reports them too similar, or it
+attributes a half to the wrong voice.
+cleanup: `delete_output(job_id=...)` on every job.
+metrics: none.
+
+### M-F183 — a ~1,500-character multi-paragraph `text` comes back as one 24 kHz track, not truncated at the end
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: Kokoro-82M. KPipeline splits on newlines and on its ~510-phoneme context and yields
+segments; the plan concatenates them in order into one track with no added silence.
+Text `T`: three paragraphs separated by `\n\n`, about 1,500 characters in total, each paragraph several
+plain sentences of ordinary English (no names, digits or abbreviations, so OOV spelling doesn't muddy the
+transcript). Its **last** sentence is a distinctive marker: "The final word of this passage is
+marmalade." Its first sentence begins "At first light". Write `T` into the workflow; the case needs no
+fixture.
+Steps, workspace `regression-model-specific`, on each box:
+1. `validate_workflow`, then `run_workflow(..., wait_seconds=55)` on M-F180's carrier with `text: T`,
+   `voice: "af_heart"`, `"seed": 7`.
+2. `get_gallery_metadata(..., envelope=true)` on the output; `transcribe_audio` over it with `timestamps:
+   "segment"` (result `application/json`).
+3. Control: the same with a one-paragraph, ~300-character `text` (the first paragraph of `T`).
+expected:
+- Step 1: `succeeded`, and the manifest's `speak` entry holds **exactly one** `.wav` (not one per
+  segment), 24000 Hz mono.
+- Step 2: `duration_seconds` is roughly proportional to the text: about 4–6 times the control's. The
+  transcript starts at "At first light" and its last chunk contains "marmalade", ending within ~1.5 s of
+  the track's end. No envelope second inside the track is near-silent for more than ~1 s (segments are
+  joined with no added silence; a sentence pause is fine).
+It is a **finding** if more than one file is saved, the transcript lacks the opening or the marker, the
+track stops mid-passage, or a segment is dropped or duplicated (a paragraph missing or repeated in the
+transcript).
+cleanup: `delete_output(job_id=...)` on every job.
+metrics: `duration_seconds` of the long track, to `regression-perf/M-F183.jsonl`.
+
+### M-F184 — a Kokoro track composes through `slice_audio`, `fade_audio` and `pair_audio` in one workflow
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: Kokoro-82M plus three model-free audio tasks. Seconds.
+Steps, workspace `regression-model-specific`, on each box: one inline workflow, `"seed": 7`:
+- `speak`: M-F180's `K("af_heart")` step, `result.save: false`;
+- `slice`: `slice_audio` over `previous_result:speak`, `start_seconds: 0.5`, `duration_seconds: 3.0`;
+- `fade`: `fade_audio` over `previous_result:slice`, `fade_in_ms: 200`, `fade_out_ms: 400`;
+- `mux`: `pair_audio` with `video: "asset:qa-cast/ep6-cold-open.mp4"` (shared fixture, 124 frames / 5.17
+  s, 32 kHz) and `audio: "previous_result:fade"`, `fit: "video"`, result `video/mp4`, `subfolder: final`.
+Confirm each task's argument names with `get_task` first. Then `get_job`, `get_gallery_metadata` and
+`get_output_frames(at=[1.0, 2.5], hear=1)` on the mp4.
+expected:
+- `succeeded`, one mp4: 124 frames, 24 fps, 960×544, with one audio stream lasting the clip.
+- `warnings[]` carries the expected `audio_padded_to_video` (3.0 s of speech padded to 5.17 s) and may
+  carry the mono→stereo note; no error, and no complaint about the 24 kHz rate (it is resampled to the
+  container's rate or kept, but not refused).
+- The heard window at 1.0 s is speech; the track's head is faded (quiet first 200 ms).
+It is a **finding** if any step refuses Kokoro's `AudioTrack`, the rate breaks the mux, or the mp4 has no
+audio.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### M-F185 — Kokoro is reproducible under a seed, and `speed` changes the length within its range
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: Kokoro-82M. Seconds.
+Steps, workspace `regression-model-specific`, on each box:
+1. M-F180's `K("af_heart")` with `"seed": 7`, submitted twice under **different workflow ids**
+   (`mf185-a`, `mf185-b`) so neither is served from the step cache (confirm no `reused` step).
+2. `get_gallery_metadata(..., envelope=true)` on both wavs.
+3. The same carrier with `speed: 0.5`, then `speed: 2.0` (both boundaries), `"seed": 7`.
+expected:
+- Step 2: the two wavs agree on `duration_seconds`, `peak_dbfs` and `mean_dbfs` to the printed digit,
+  and on every `envelope` entry.
+- Step 3: both validate and succeed. The 0.5 track is clearly longer and the 2.0 one clearly shorter than
+  step 1's (roughly 2× and 0.5×; ±30% is fine). Both still 24000 Hz.
+It is a **finding** if the seeded pair differs in any figure, if `speed` has no effect on the length, or
+if a boundary value is refused. (Out-of-range `speed` is M-F186's.)
+cleanup: `delete_output(job_id=...)` on every job.
+metrics: none.
+
+### M-F186 — Kokoro refuses the arguments it can't take, before any load, each error naming the argument; and the old families refuse `voice`
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `generate_speech` on Kokoro, VITS (`facebook/mms-tts-eng`) and Bark (`suno/bark-small`).
+Free: `validate_workflow` for every probe; one `run_workflow` per group to confirm it refuses too.
+Carrier: M-F180's `K("af_heart")` in workspace `regression-model-specific`; each probe changes one thing.
+Probes:
+- (a) Kokoro plus one of: `speaker_embedding: "asset:qa-cast/priya-voice.wav"`, `voice_preset:
+  "v2/en_speaker_6"`, `messages: [{"role": "user", "content": "Hello."}]` (with `text` removed),
+  `generate_kwargs: {"temperature": 0.7}`, `forward_params: {"speaker_id": 1}`, `speaker_id: 1`.
+- (b) `voice: "af_heart"` with `model_name: "facebook/mms-tts-eng"`, and with `model_name:
+  "suno/bark-small"`.
+- (c) non-English and malformed voices on Kokoro: `jf_alpha`, `zf_xiaobei`, `ef_dora`, `AF_heart`,
+  `af_`, `af`, `af-heart`, `""`.
+- (d) a pattern-valid voice the repo doesn't ship: `af_nosuchvoice`.
+- (e) `speed: 0.49` and `speed: 2.01`.
+- (f) Kokoro with neither `text` nor `messages`.
+- Control: the carrier unchanged, and with `voice: "bf_emma"` (British female).
+Pass one probe from each of (a), (b), (c), (d) to `run_workflow(..., acknowledged_cost=<bound from the
+control>, wait_seconds=55)`.
+expected:
+- Every probe is `valid: false`, its error at `steps[0].task.arguments.<the argument>` naming it:
+  - (a) says the argument isn't supported with Kokoro (`speaker_embedding` cloning is SpeechT5-only);
+  - (b) says `voice` is Kokoro-only;
+  - (c) names the English prefixes (`a`/`b` with `f`/`m`), and non-English is refused, not attempted;
+  - (d) says the voice file doesn't exist in `hexgrad/Kokoro-82M`, at validate (plan time), not at load;
+  - (e) names the 0.5–2.0 range;
+  - (f) says exactly one of `text`/`messages` is required, as today.
+- `run_workflow` refuses each the same way and queues no job; `list_downloads` gains nothing.
+- The controls validate clean; `bf_emma` plans `voices/bf_emma.pt`.
+It is a **finding** if any probe validates, queues a job, or fails only after a model load (an error in
+`get_job` instead of at validate), or if a message doesn't name its argument.
+cleanup: `delete_output(job_id=...)` for any job that ran.
+metrics: none.
+
+### M-F187 — `voice-timbre-reference` speaks its reference with Kokoro: a `voice` variable, 24 kHz, two voices two speakers, and `voice_preset` refused
+pending: #1069
+source: tester, spec for #1069 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/voice-timbre-reference`'s `voice` step (`generate_speech`, now
+`hexgrad/Kokoro-82M`). Seconds. The template's voice step is `save: false`, so the rate and speaker
+checks run that step inline with `save: true`. On each box, workspace `regression-model-specific`.
+Steps:
+1. `get_workflow("templates/voice-timbre-reference")`.
+2. Copy its `voice` step's `task` verbatim into a one-step inline workflow, the template's own
+   variables block with it, `result: {"content_type": "audio/wav", "save": true}`, `"seed": 7`.
+   `validate_workflow` then `run_workflow(..., wait_seconds=55)` with no arguments, and again with
+   `arguments: {"voice": "am_michael"}` (a different workflow `id`). `get_gallery_metadata` and
+   `get_output_audio` on both.
+3. `validate_workflow(workflow_name="templates/voice-timbre-reference", arguments=...)` with
+   `{"voice_preset": "v2/en_speaker_6"}`, then with `{"voice": "jf_alpha"}`, then with no arguments.
+expected:
+- Step 1: the voice step's `model_name` is `hexgrad/Kokoro-82M` with `voice: "variable:voice"`; there is
+  a `voice` variable defaulting to `af_heart` and **no** `voice_preset` variable or argument left.
+- Step 2: both `succeeded` at `sample_rate: 24000`, mono, clear English; `af_heart` female and
+  `am_michael` male, audibly two speakers.
+- Step 3: `voice_preset` is refused with a message naming `voice` as its replacement; `jf_alpha` is
+  refused as M-F186's (c); the no-argument validate is clean and its plan lists Kokoro's files (not
+  `suno/bark-small`) alongside the H3 weights.
+It is a **finding** if the template still runs Bark, its reference is not 24 kHz, the two voices are
+one speaker, or `voice_preset` is silently accepted or refused without pointing at `voice`.
+cleanup: `delete_output(job_id=...)` on both runs.
+metrics: none.
+
+### M-F188 — the Kokoro reference conditions H3 end to end in `voice-timbre-reference`
+pending: #1069
+source: tester, spec for #1069 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the whole `templates/voice-timbre-reference` (Kokoro reference → MiniMax H3 clip
+conditioned on it). lem only (H3 on CUDA); on mini-ai, validate only, unless the template's
+catalog entry says it runs there, in which case run it there too. About 7 minutes of GPU on lem.
+Workspace `regression-model-specific`.
+Steps:
+1. `validate_workflow(workflow_name="templates/voice-timbre-reference")` with the template's defaults
+   (Kokoro `af_heart`); bind its `acknowledged_cost`.
+2. `run_workflow(..., wait_seconds=55)`, then `wait_for_job` to the end (H3 house rules for silence).
+3. `get_job`, `get_gallery_metadata` and `get_output_frames(at=[1.0, <mid>], hear=2)` on the clip.
+expected:
+- `succeeded`; the plan named Kokoro, not Bark. The clip has an audio stream, the frames are coherent,
+  and the heard speech is a female voice of `af_heart`'s timbre rather than an arbitrary or male one.
+- `warnings[]` carries no rate or reference-length complaint about the 24 kHz reference.
+It is a **finding** if the run fails at the reference hand-off, the clip has no audio, or the voice is
+plainly not the reference's (a male voice under the `af_heart` default).
+cleanup: `delete_output(job_id=...)`.
+metrics: `wall_minutes`, to `regression-perf/M-F188.jsonl` on each run.
+
+### M-F189 — the minimax-h3 skill links `references/style.md`, the file ships, and SKILL.md keeps its pinned lines
+pending: #1070
+source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text for MiniMax H3. No job, no GPU. Invoke the `dw:minimax-h3` skill
+with the `Skill` tool (the plugin tree follows `develop`) and read SKILL.md as loaded. Then list
+the skill's own `references/` directory under the base directory the skill reports, and `Read`
+each file there.
+expected:
+- SKILL.md has a backticked `references/style.md` pointer, near its Prompts lines (where it
+  already points at the prompt-writing references). The pointer says what the file is for: a
+  request that wants a particular look or medium.
+- `references/style.md` exists in the skill's directory.
+- Parity, both ways: every backticked `references/<x>.md` SKILL.md names exists in the
+  directory, and every `.md` file in the directory is named in SKILL.md.
+- SKILL.md still carries the lines the plan pins: the rule that a style prompt does not restyle
+  a guide clip, the "629 s" and "90 s" figures, and the `## Run and judge` section.
+- The skill's Sources section still points at MiniMax's `h3-prompt-writing` skill. It may be
+  shorter, since that's the trim the plan makes room with.
+- The 12,288-byte cap on SKILL.md and a green `pytest tests/test_plugin_skills.py
+  tests/test_guide_pointers.py` are source-side checks. A consumer session can't measure bytes
+  or run the tests. Record them as `docs-review` items, and as a pass only if the stage's
+  verify comment cites a green run at the stage's commit.
+It is a **finding** if the pointer is missing, the file is missing, a link and the directory
+disagree, or a pinned line is gone.
+cleanup: none.
+metrics: none.
+
+### M-F190 — `references/style.md` names all eight MiniMax style packs by bare name, each with its shape, installed by name
+pending: #1070
+source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` as in M-F189.
+expected:
+- The file names exactly these eight packs, each by its bare upstream name, each with a line on
+  the kind of video it suits:
+  `papercraft-stop-motion-explainer` (papercraft stop-motion explainer),
+  `paper-collage-explainer-generator` (paper collage explainer),
+  `3d-animation-short-generator` (3D animated short),
+  `handdrawn-live-video-generator` (hand-drawn over live action),
+  `minimalist-product-ad-generator` (minimalist product ad),
+  `music-video-subtitle-generator` (music video with subtitles),
+  `brand-promo-video-generator` (brand promo),
+  `co-op-game-intro-generator` (co-op game intro).
+  A name that is misspelled or missing counts as missing.
+- It gives the per-pack install line `npx skills add MiniMax-AI/MiniMax-H3 --skill <name>`, by
+  name. Nowhere does it advise `--skill '*'` or installing all of them, apart from a warning
+  against doing so.
+- No pack name is written as a backticked `templates/...` or `models/...` path, and the file
+  claims no dw template for a pack (none exists).
+- It copies none of einhorn13/AISkills' style recipes or A/B/C style ratings, and says nothing
+  about ComfyUI `embedding:` prompts (the plan's non-goals).
+It is a **finding** if a pack is missing or misnamed, the install isn't by name, `'*'` is
+advised, or a recipe/rating/embedding appears.
+cleanup: none.
+metrics: none.
+
+### M-F191 — the "name the medium, then its physical traits" line is attributed and marked unprobed, or its absence is stated; it doesn't override the guide-clip rule
+pending: #1070
+source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` and SKILL.md as
+in M-F189.
+expected, one of the two branches:
+- **Line kept.** `style.md` says, in its own words: name the medium, then describe what it
+  physically looks like, with the claymation example (fingerprints, tool marks, stepped motion),
+  because a bare "clay" tends to render as smooth CG. In the same place it:
+  - attributes the advice to MiniMax's style packs;
+  - says it is **unprobed on dw** (not tested on lem);
+  - says it doesn't override SKILL.md's rule that a style prompt does not restyle a guide clip,
+    i.e. a guided or first-frame shot keeps its source's look whatever the medium words say.
+- **Line cut.** `style.md` contains no medium rule, and the file (or the stage's record on #1070)
+  says it was cut because the upstream packs read don't prompt that way.
+In neither branch does any skill file present the line as a probed rule, or cite a dw job or
+audit row for it.
+It is a **finding** if the line appears with no attribution, isn't marked unprobed, reads as if
+it overrides the guide-clip rule, or is absent with nothing saying so.
+cleanup: none.
+metrics: none.
+
+### M-F192 — the plugin README and `references/style.md` agree: install a style pack by name when a request wants that look
+pending: #1070
+source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text. No job. Read the `dw` plugin's `README.md` at the plugin root (two
+levels above the skill's base directory) and `references/style.md`.
+expected:
+- The README's passage on MiniMax's skills still says to install `h3-prompt-writing` by name,
+  and that `--skill '*'` would also pull in the eight style packs.
+- It now also says a style pack is worth installing, by name, when a request wants that pack's
+  look. It points at the minimax-h3 skill's style reference, or else agrees with it.
+- The two files give the same install form, the same count (eight) and no pack name the other
+  lacks. Neither says not to install packs while the other says to.
+It is a **finding** if the README still treats the packs only as something to avoid, or the
+two files disagree on the command, the count or the advice.
+cleanup: none.
+metrics: none.
+
+### M-F193 — the AISkills probe record has a verdict for P2, P3 and P5 with both seeds of both arms cited, and states its configuration once
+pending: #1071
+source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 probe record. Free: reads only. The record lives in dw's
+`docs/proposals/audits/2026-1x-h3-aiskills-probes.md` (`2026-10-` or `2026-11-`), which isn't
+served over MCP. Read its copy on the ticket instead: the results comment on #1071, or
+failing that on #1059 (`gh issue view <n> --repo dkackman/diffusers-workflow --comments`). If
+`list_guides` comes to serve the doc, read it there, and its verdicts must equal the comment's.
+Then `list_jobs` in workspace `qa-h3-aiskills-probes`.
+expected:
+- A configuration statement at the top: dtype, LoRA state, frames and resolution, per probe
+  where they differ. P2 runs `voice-timbre-reference` as shipped, with its own ref2v turbo LoRA.
+  P3 and P5 run template defaults. A `<d>` shot that isn't P2 has the turbo LoRA off.
+- One row each for **P2** (a timbre-only audio reference replays its source's words, or the new
+  line isn't spoken), **P3** (a style-only image reference carries its person and composition
+  into the shot) and **P5** ("left hand" alone misses the screen side, "left hand, on screen
+  right" holds it).
+- Each row's verdict is exactly one of **held**, **refuted**, **not settled** or **not run**.
+  The bar: held means both broken-arm seeds show the effect and neither followed-arm seed does.
+  Refuted means the broken arm doesn't show it. Not settled means the seeds disagree.
+- Each run arm cites two jobs on seeds 1001 and 2002. P2 has four arm-and-clip cells (two
+  source clips × two seeds). A **not run** row or cell gives the job id and error that stopped
+  it (a failed job, an OOM), never an observed result.
+- Each row gives what was observed, not just the verdict. For P2, `line_mismatch`, any
+  transcribed source words and whether the new line was spoken, per job. For P3, whether the
+  person, pose or window framing appeared, whether the style carried, and any frame-0 leak. For
+  P5, the screen side and the anatomical hand at the raise.
+- Probes 1 and 4 are listed as deferred and 6 and 7 as dropped, with no verdict and no jobs.
+It is a **finding** if a probe has no row, a verdict word isn't one of the four, a run arm cites
+fewer than two seeds, a failed run is reported as a result, or the configuration is missing.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F194 — every job the AISkills record cites exists in `qa-h3-aiskills-probes`, succeeded, is noted, and ran its arm
+pending: #1071
+source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 probe jobs (M-F193). Free: reads only. For **every** cited job id:
+`get_job(job_id, workspace="qa-h3-aiskills-probes")` and `get_job_workflow`.
+expected:
+- Each job is in `qa-h3-aiskills-probes` (not a `regression-*`, `default` or one of Don's own
+  workspaces) and `succeeded` with an mp4 output, except one a **not run** row cites, which
+  shows the error the row quotes.
+- Its `note` names the probe, the arm and the seed, enough to tell P2 clip 1 from clip 2, P3a
+  from P3b and P5a from P5b.
+- Its resolved seed is 1001 or 2002. Within a probe, the arms use the same seed pair, and two
+  jobs of the same arm and seed differ only in what the arm varies.
+- **P2:** the workflow is `templates/minimax/voice-timbre-reference`, or a copy whose H3 step
+  matches it (ref2va, the shipped ref2v turbo LoRA, 9 steps, shift 12). The `<d>` line shares no
+  content words (articles, pronouns and auxiliaries aside) with the reference clip's spoken text
+  (the template's `voice_line`, or whatever text made the second clip). The second clip's words
+  differ from the first's. They may differ by a `voice_line` override, or by a separately made
+  asset (`templates/generate-speech` or similar) wired into a copy. Either way, the record says
+  which.
+- **P3:** a Ref2VA workflow with exactly one image reference and no audio reference. Its prompt
+  gives the image a style-only role, in the record's quoted words (e.g. "<Image 1> sets only the
+  medium and palette. Its subject and framing are not used"). It names a text subject unrelated
+  to the image (e.g. a cyclist on a beach). Read the two reference pictures (`get_output_image`
+  on their job outputs, or `get_output_frames` on an `asset:`): arm a's shows a distinctive
+  person and composition (e.g. an old man at a window), arm b's the same medium with no person
+  (e.g. a still life). Both arms' prompts are otherwise the same.
+- **P5:** T2VA (`templates/minimax/video-with-audio` or the same H3 step), turbo, 960×544,
+  124 frames. One person facing camera raises a red mug. Arm a's prompt says "in her left hand"
+  and arm b's says "in her left hand, on screen right", and the prompts are otherwise identical.
+It is a **finding** if a cited job is missing, failed without a not-run row, in another
+workspace, or un-noted, or if its workflow contradicts its arm: a P2 `<d>` that shares the
+source's words, a P3 prompt with no style-only role or a second reference, or P5 prompts that
+differ by more than the screen-side phrase.
+cleanup: none.
+metrics: none.
+
+### M-F195 — P2's `check-script` reading reproduces for one job per source clip
+pending: #1071
+source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/check-script` (Whisper, word timestamps) over P2's outputs. About
+10–60 s each on lem. Workspace `qa-h3-aiskills-probes`.
+Steps: pick one P2 job per source clip, the broken-looking one if the record shows any leak. For
+each, `validate_workflow(workflow_name="templates/check-script", arguments={"input_audio":
+"output:<the job's mp4>", "lines": <its <d> line, without the [English] label, in the shape
+get_workflow("templates/check-script") documents>})`. Bind its `acknowledged_cost`, then
+`run_workflow(..., wait_seconds=55)` and `get_output_text` on the report.
+expected:
+- `line_mismatch` (present or absent, and its similarity if reported) agrees with the row's
+  reading of that job.
+- The transcript's source words agree with the row: content words of the clip's text that
+  aren't in the new line. If the row says "none", there are none. If it lists words, they're in
+  the transcript.
+- Whether the new line was spoken agrees with the row.
+It is a **finding** if any of the three disagrees with the record, i.e. the record says no leak
+where the transcript shows source words, or the reverse.
+cleanup: `delete_output(job_id=…)` on each check-script job this case ran.
+metrics: none.
+
+### M-F196 — P3's and P5's cited frames show what their rows say, and every held verdict meets the two-seed bar
+pending: #1071
+source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 probe outputs (M-F194). Free: reads only. Workspace
+`qa-h3-aiskills-probes`.
+Steps:
+- **P3:** for at least one job in each arm, `get_output_frames(name=<mp4>, count=12)` and
+  `get_output_frames(name=<mp4>, at=["frame:0", "frame:1", "frame:2", "frame:3", "frame:4",
+  "frame:5"])`. Compare them with the reference picture.
+- **P5:** for at least one job in each arm, `get_output_frames` at the raise (the record's
+  moment, or `count=12` to find it).
+- For **every** row marked held, judge all four of its jobs (both arms, both seeds) the same way.
+  For P2, use M-F195's reading on the jobs it covered, and the record's per-job figures for the
+  rest.
+expected:
+- P3: the reference's person, pose or window framing appears, or doesn't, as the row says. Style
+  carry-over and any frame-0 leak of the reference picture match the row too.
+- P5: the mug's screen side and the hand holding it match the row for each job read. "Screen
+  right" means the viewer's right. For a person facing camera, that's their left hand.
+- A held row has the effect in both broken-arm seeds and in neither followed-arm seed. A row
+  where one seed shows it and the other doesn't is **not settled**, never held or refuted.
+It is a **finding** if a read output contradicts its row, a held row fails the bar, or a split
+is called held or refuted.
+cleanup: none.
+metrics: none.
+
+### M-F197 — each AISkills verdict lands where the plan says: held as a rule citing its row, the rest in a "Probed and not a rule" list
+pending: #1072
+source: tester, spec for #1072 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text for MiniMax H3. No job. Take each verdict from M-F193's record.
+Invoke `dw:minimax-h3` and read SKILL.md, `references/per-character.md`, `references/staging.md`
+and `references/dialogue.md` from the skill's base directory.
+expected:
+- **P3 held:** `per-character.md` has the rule. A style reference image also carries its person
+  and composition, so use a person-free style picture. The rule cites the audit row.
+- **P5 held:** `staging.md` has a handedness line: give the screen side as well as the
+  anatomical hand (e.g. "in her left hand, on screen right"). It sits next to #484's
+  landmark-in-frame rule, which is still there, and cites the audit row.
+- **P2 held:** M-F198 applies. `dialogue.md` may also carry the rule, citing its row.
+- **Refuted, not settled or not run:** a one-line entry in a "Probed and not a rule" list. For
+  P2 that's `dialogue.md`'s existing list. For P3 and P5 it's the same layout in
+  `per-character.md` and `staging.md`. The entry names the claim and the verdict, and states no
+  rule.
+- The references that gained a line cite the audit doc by name, as `dialogue.md` cites
+  `2026-10-h3-dialogue-probes.md`.
+- No skill file states claim 1 (FL2VA anime at ~12 unique fps), 4 (POV breaks), 6 (ongoing
+  motion vs. settle) or 7 (positives beat negations, beyond the existing `dialogue.md` rule) as a
+  new rule.
+- SKILL.md gained no new `references/` link in this stage, and M-F189's parity still holds. The
+  byte cap and `test_plugin_skills.py`/`test_guide_pointers.py`/`test_text_sections.py` are
+  `docs-review`, as in M-F189.
+It is a **finding** if a held verdict has no rule, a rule cites no row, a refuted, not-settled or
+not-run claim reads as a rule, an unprobed claim appears as a rule, or the landmark rule was
+removed.
+cleanup: none.
+metrics: none.
+
+### M-F198 — `voice-timbre-reference` changes only if P2 held, and only its prompt or description; its served prose agrees
+pending: #1072
+source: tester, spec for #1072 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/voice-timbre-reference`. No job. Read
+`get_workflow("templates/minimax/voice-timbre-reference")` and P2's verdict (M-F193).
+Before this stage, the template's description begins "Generates the voice it conditions on".
+Its default `<d>` line is "We have come a long way, and the way ahead is longer still.", and
+its reference text (`voice_line`) is "The way ahead is longer still, and we are going anyway."
+A separate feature (#1069) may already have changed the reference voice from Bark to Kokoro
+(`voice_preset` → `voice`). That isn't this stage's change, so don't count it here.
+expected:
+- **P2 not held:** the default `prompt` and `description` are as before this stage, apart from
+  #1069's edit.
+- **P2 held:** the default `prompt` is the form the record says avoided the leak, e.g. a `<d>`
+  line sharing no content words with `voice_line`. If no prompt avoided it, the `description`
+  carries a caveat that the reference's words can be replayed. Either way:
+  - the ref2v turbo LoRA (`minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors`), 9 steps
+    and `video_shift` 12 are unchanged;
+  - the variable names, the two steps and the reference wiring are unchanged;
+  - `validate_workflow(workflow_name="templates/minimax/voice-timbre-reference")` is
+    `valid: true`;
+  - the served prose that describes the template agrees with the change: its `list_workflows`
+    entry, and any `get_guide` section that names `voice-timbre-reference` (find it with
+    `list_guides`). Neither still shows a prompt that repeats the reference's words as the
+    recommended form.
+It is a **finding** if the template changed with P2 not held, changed beyond prompt and
+description, lost its pinned LoRA, steps or shift, or the served prose contradicts it.
+cleanup: none.
+metrics: none.
+
+### M-F199 — a changed `voice-timbre-reference`, run on a new seed, passes `check-script` with no source words
+pending: #1072
+source: tester, spec for #1072 from #1059's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/voice-timbre-reference`, then `templates/check-script`. lem
+only (H3 on CUDA), about 7 minutes of GPU. Workspace `regression-model-specific`. Run this only
+if M-F198 found the default prompt changed. Otherwise record "not applicable: P2 <verdict>, no
+template change" and skip.
+Steps:
+1. `validate_workflow(workflow_name="templates/minimax/voice-timbre-reference",
+   arguments={"seed": 3003})`. 3003 is a seed the probe didn't use. Bind `acknowledged_cost`.
+2. `run_workflow(..., wait_seconds=55)`, then `wait_for_job` to the end (H3 house rules for
+   silence).
+3. Run `templates/check-script` on its mp4 as in M-F195, with `lines` set to the default
+   prompt's `<d>` text.
+expected:
+- The H3 job `succeeded` with an audio stream.
+- check-script reports no `line_mismatch` for the line, and its transcript holds none of
+  `voice_line`'s content words that aren't in the `<d>` line.
+It is a **finding** if source words are spoken, the new line isn't spoken, or the run fails.
+cleanup: `delete_output(job_id=…)` on both jobs.
+metrics: none.
+
+### M-F200 — the #1073 measurement record on #1060 gives all three stage-0 results, each citing jobs that exist and ran what the result says
+pending: #1073
+source: tester, spec for #1073 from #1060's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va (`templates/minimax/composable-references`, which is the only
+template that takes a video reference, or `templates/minimax/reference-to-video` for the image
+reference). Free: reads only, and no job is run.
+The record is the #1073 results comment on #1060 (`gh issue view 1060 --repo
+dkackman/diffusers-workflow --comments`), or on #1073 if #1060 links it from there. The plan's
+stage 0 names three results:
+- R1: the `vae_encoder` share of the reference lead-in, for an image reference and for a video
+  reference (the issue's case is 5 s at 960×544), taken from the per-block `log` events and
+  `timing.encode_s`;
+- R2: whether the stock H3 reference block samples `latent_dist` with the job's generator or
+  takes a deterministic value (the mode or the mean);
+- R3: the on-disk size of one cached video-reference latent at 544p (960×544) and at 768p.
+Steps:
+1. Read the record. For each of R1–R3, collect its figure or verdict, its job ids and the
+   workspace they are in.
+2. For every cited job, call `get_job(job_id, workspace=<ws>)` and `get_job_workflow(job_id,
+   workspace=<ws>)`.
+expected:
+- The record gives all three results, and each one cites at least one job id. A result that
+  could not be settled over MCP says *not settled*, gives the reason, and names what would
+  settle it. It still cites the jobs it tried.
+- R1 gives, per reference kind (image and video): the lead-in in seconds (from `generating` to the
+  first `pipeline_step`); the `vae_encoder` block's seconds; the `text_encoder` block's seconds;
+  and `timing.encode_s`. It also states the share as seconds and as a fraction of the lead-in, so
+  it is clear whether the 629 s figure is mostly VAE encode or mostly the first denoise pass.
+- R1 also states the per-reference VAE seconds for an image reference against Q4's ~30 s bar, and
+  says which side of the bar it falls. For an audio reference it either does the same or states
+  that audio was not measured.
+- R2 is exactly one of: *samples with the job generator*, *deterministic (mode or mean)*, or
+  *not settled*. The record states the MCP evidence it rests on: an event, a `get_class` /
+  `get_pipeline_signature` reading, or a run comparison.
+- R3 gives a size in bytes or MB for each of 544p and 768p. Each size comes with the latent shape
+  and dtype it rests on, and shape × bytes per element equals the stated size to within 5%. The
+  768p/544p size ratio matches the ratio of the two latent shapes' element counts.
+- Every cited job exists in the workspace the record names and finished `succeeded`. Its `note`
+  says what it measured. Its `get_job_workflow` shows an H3 ref2va step with the reference kind
+  and canvas the result claims: a video reference for the video rows, an image reference for the
+  image rows, and 960×544 or the 768p canvas as stated.
+It is a **finding** if a result is missing with no *not settled* line, a result cites no job, a
+cited job is absent or failed or ran a different reference kind or canvas, R2's verdict is
+outside the three allowed words, or R3's size contradicts its own shape and dtype. If the jobs or
+their workspace were pruned after #1073 closed verified, record "evidence pruned" and skip. That
+is not a finding.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F201 — the R1 lead-in split reproduces from the cited jobs' events
+pending: #1073
+source: tester, spec for #1073 from #1060's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va, the R1 jobs of M-F200. Free: reads only.
+How a block's time is read today: `get_job_events(job_id, kinds=["log"])` emits one
+`MiniMaxAI/MiniMax-H3: <block>` line as each block **starts**, with `at` in seconds since the job
+started. A block's seconds are therefore the `at` of the next log line minus its own. On an fl2va
+job, for example, `text_encoder` at 0.0 is followed by `vae_encoder` at 25.1 and then
+`denoise.prepare_layout` at 28.4.
+Steps: for each R1 job, call `get_job_events(job_id, kinds=["log"])`, then the same call without
+`kinds` filtered to the first `pipeline_step` (page with `after` if needed). Also read
+`get_job(job_id, workspace=<ws>)` for the manifest's `timing.encode_s`.
+expected:
+- Each job has a `MiniMaxAI/MiniMax-H3: vae_encoder` log line and a `text_encoder` line, and the
+  seconds computed from them agree with the record's figures to within 1 s.
+- The lead-in (from the `generating` phase to the first `pipeline_step`) agrees with the record
+  to within 2 s. `timing.encode_s` equals the figure the record cites.
+- For each job, the record's VAE seconds + text-encode seconds + the remainder it attributes
+  elsewhere (the first denoise pass, preparation) add up to the lead-in to within 2 s.
+It is a **finding** if a cited job has no per-block `vae_encoder` line (the narration that both
+this stage and the planned cache wrapper rely on), or if any figure disagrees with the job's
+events beyond the bounds above. Evidence pruned: skip, as in M-F200.
+cleanup: none.
+metrics: none.
+
+### M-F202 — the #1074 probe record on #1061 gives two runs and all three answers, each citing jobs that ran what it says
+pending: #1074
+source: tester, spec for #1074 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va (hand-built probe shots). Free: reads only, and no job is run.
+The record is the stage-A results comment on #1061 (`gh issue view 1061 --repo
+dkackman/diffusers-workflow --comments`), or on #1074 if #1061 links it from there. The plan
+names two runs:
+- shot 1: one ref2va shot with two `MiniMaxH3VideoReference`s, the driving window (source frames
+  `[0,124)`) and a 48-frame tail of an earlier H3 render standing in for the carry;
+- shot 2: the window `[85,209)` of the same source, carrying shot 1's tail.
+It also names three answers: (a) does the motion follow, (b) the peak VRAM and pass/OOM at
+124 frames with 2 video references, (c) the seam verdict.
+Steps:
+1. Read the record. Collect both runs' job ids, the workspace they are in, and each answer.
+2. For every cited job, call `get_job(job_id, workspace=<ws>)` and `get_job_workflow(job_id,
+   workspace=<ws>)`. For each job (or upstream cut job) that made a driving window, call
+   `get_gallery_metadata` on the window it fed in.
+expected:
+- The record cites both runs by job id, and gives all three answers:
+  - (a) is *yes* or *no*, with frames: named times or a `get_output_frames` /
+    `compare_outputs` call, set beside the source at the same times;
+  - (b) gives a peak VRAM figure in GB and *pass* or *OOM* for each run;
+  - (c) gives a seam verdict that rests on `get_output_frames(seams=true)` (and `assess_output`
+    if used).
+- Each shot job's workflow is a ref2va step with `num_frames` 124 and exactly two
+  `MiniMaxH3VideoReference`s. Shot 1's driving window is 124 frames from the source's head.
+  Shot 2's is 124 frames starting at source frame 85, and its second video reference is
+  shot 1's output tail, not the stand-in render.
+- A run marked *pass* finished `succeeded`. A run marked *OOM* failed with an out-of-memory error
+  in its events.
+- The record states the gate: *build* if (a) is yes and (b) passes. Otherwise it says *don't
+  build* and names what would reopen it: a lighter H3 build, or #1045's guide path.
+It is a **finding** if an answer is missing, a run cites no job, a cited job is absent or ran
+other windows, reference count or frame count than the record says, the VRAM figure has no
+pass/OOM beside it, or the gate verdict contradicts (a) and (b). If the jobs or their workspace
+were pruned after #1074 closed, record "evidence pruned" and skip. That is not a finding.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F203 — the probe's seam verdict and motion answer reproduce from shot 2's output
+pending: #1074
+source: tester, spec for #1074 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va, the shot 2 job of M-F202. Free: reads only.
+Steps:
+1. `get_output_frames(<shot 2's mp4>, workspace=<ws>, seams=true)`.
+2. `compare_outputs` over shot 2's mp4 and its driving window, at four times spread over the
+   clip (e.g. `at=[0.5, 2.0, 3.5, 5.0]`).
+expected:
+- The seam reading agrees with the record's verdict (c): where the record says the seam holds,
+  no hard cut or look step is reported at shot 2's head. Where it says it fails, the reading
+  shows the step the record names.
+- The side-by-side agrees with answer (a). On *yes*, the output's camera framing and the main
+  figure's position and direction of travel match the window at each time. On *no*, they don't,
+  and the record says what does carry (composition, identity or nothing).
+It is a **finding** if either reading contradicts the record. Evidence pruned: skip, as in M-F202.
+cleanup: none.
+metrics: none.
+
+### M-F204 — the schema and the chain guide document `match_video`: one source, its own clock, its exclusions and refusals
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va chains. Free: reads only.
+Steps:
+1. `get_schema(section="pipelines")`. Read `$defs.chain`.
+2. `get_guide("workflows", section="Chained Video Generation")`.
+expected:
+- The `chain` schema has a `match_video` property of type boolean, with a description. Its
+  length rule (today's `oneOf` over `segments` / `match_audio`) now takes exactly one of
+  `segments`, `match_audio` or `match_video`.
+- The guide's chain section has a `match_video` bullet that says all of these:
+  - the source is the step's one video reference besides the carry;
+  - segment i reads source frames `[i * (num_frames - trim_frames), … + num_frames)`, so the
+    slice advances on the chain's own clock and a reroll reads the same slice;
+  - the source's paired audio is sliced with its frames;
+  - the segment count comes from the source length, and the output is trimmed to that length;
+  - it can't be combined with `segments` or `match_audio`;
+  - it needs `continuity: last_segment`;
+  - a source shorter than one `num_frames` window is refused, not padded.
+- The `match_audio` and `continuity` text is otherwise unchanged in meaning. `guide` is still
+  ref2va-excluded.
+It is a **finding** if the key is missing from the schema, if the length rule still allows only
+two keys, or if any listed point is missing from the guide.
+cleanup: none.
+metrics: none.
+
+### M-F205 — a `match_video` chain with one video reference validates clean and plans the derived segment count
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va (`templates/minimax/chain-video-continuity` as the base). Free:
+validate only, no job. Workspace `regression-model-specific`.
+**The base workflow** (M-F206–M-F210 use it too). Take
+`get_workflow("templates/minimax/chain-video-continuity")`'s definition and change it as follows:
+- `id`: `MFollowBase`.
+- `chain`: delete `segments` and `prompts`, and add `"match_video": true`. Set
+  `"trim_frames": "variable:trim_frames"`. Keep `continuity: "last_segment"`,
+  `segment_argument: "references"`, `carry_frames`, `carry_audio: true`, `fps: 24` and
+  `frame_snap`.
+- `arguments.references`: replace both entries with the one
+  `{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference",
+  "from_file": "variable:source"}`.
+- `variables`: delete `segments`, `prompts`, `subject` and `voice`. Add
+  `"source": "asset:qa-cast/ep49-episode.mp4"` and `"trim_frames": 2`.
+- `cost_drivers`: delete `segments`.
+Pass it inline to `validate_workflow` (the tool's inline-definition argument), with
+`workspace="regression-model-specific"`.
+The count rule the plan promises is the least n for which `(n - 1) * (num_frames - trim_frames) +
+num_frames >= L`, where L is the source's `frame_count`. That is
+`n = 1 + ceil((L - num_frames) / (num_frames - trim_frames))`.
+Steps (each step is one `validate_workflow` with these `arguments`):
+1. `{}`: ep49 (L 372), `num_frames` 124, trim 2.
+2. `{"num_frames": 192}`: ep49.
+3. `{"trim_frames": 0}`: ep49, stride 124, no overshoot.
+4. `{"source": "asset:qa-cast/ep33-episode.mp4"}`: L 224.
+5. `{"source": "asset:qa-cast/long-film-4089.mp4"}`: L 4089.
+expected:
+- Every call is `valid` with no error, and the plan gives a segment count. Wherever the plan
+  states it (a chain or segments field), the counts are:
+  1. 4 (slices start at 0, 122, 244, 366);
+  2. 2 (slices start at 0, 190);
+  3. 3 (slices start at 0, 124, 248, exactly 372);
+  4. 2;
+  5. 34.
+- Where the plan states an output length, it is the source's L (372, 372, 372, 224, 4089), not
+  the overshoot (490, 382, 372, 246, 4150).
+- `plan.estimate` scales with the count: call 5's figure is larger than call 1's, and call 1's is
+  larger than call 4's. A `basis: "unknown"` estimate passes this check.
+It is a **finding** if any call is refused, if the plan has no segment count, if a count differs
+from the rule above, or if a stated output length is the overshoot.
+cleanup: none (nothing saved).
+metrics: none.
+
+### M-F206 — without `match_video` a chain is unchanged, and no catalog template uses the key yet
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 chains. Free: validate and reads only. Workspace
+`regression-model-specific`.
+Steps:
+1. Validate M-F205's base with `match_video: false` and `"segments": 2` added to `chain`.
+2. Validate M-F205's base with `match_video: false` and no `segments` or `match_audio`.
+3. `validate_workflow` each of `templates/minimax/chain-video-continuity`,
+   `templates/minimax/chained-segments`, `templates/minimax/chain-matched-to-audio` and
+   `templates/minimax/chain-matched-and-aligned` at their defaults.
+4. `get_workflow` on every entry of `list_workflows(traits="chained")`.
+expected:
+- 1 is clean, and plans 2 segments: `false` means today's behavior, with no source slicing.
+- 2 is refused, naming the missing length key (`segments`, `match_audio` or `match_video`).
+  `match_video: false` doesn't count as a length.
+- Every template in 3 validates clean, as it did before the key.
+- No chained catalog entry's `chain` holds `match_video` while #1075 is the deployed stage. Once
+  #1076 ships, only `chain-follow-video` may hold it.
+It is a **finding** if 1 or 3 is refused, if 2 is accepted, or if another template carries the key.
+cleanup: none.
+metrics: none.
+
+### M-F207 — `match_video` refuses zero or two-plus source video references before the first segment, naming the count
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va. Free: validate only, and one refused `run_workflow`.
+Workspace `regression-model-specific`.
+Each step is M-F205's base with `arguments.references` replaced as stated:
+1. **zero**: only the template's original image and audio references (the `subject` and `voice`
+   URLs as literals). There is no video reference.
+2. **zero, empty**: `references: []`.
+3. **two**: the `source` video reference plus a second
+   `MiniMaxH3VideoReference` from `asset:qa-cast/ep33-episode.mp4`. With the carry this makes 3
+   videos, within `reference_limits`' cap, so only the `match_video` rule can refuse it.
+4. **one plus non-video**: the `source` video reference plus the original image and audio
+   references.
+5. Step 3's document again, through `run_workflow(..., workspace="regression-model-specific")`.
+   Then `list_jobs(workspace="regression-model-specific")`.
+expected:
+- 1, 2 and 3 are refused by `validate_workflow`. Each message names `match_video` and the video
+  reference count it found (0, 0 and 2), and says exactly one is needed.
+- 4 validates clean: image and audio references beside the one video don't count against the
+  rule. Its plan gives 4 segments, as in M-F205's call 1.
+- 5 is refused with the same message and creates no job: `list_jobs` shows no new entry.
+It is a **finding** if a zero or two-video form validates, if a message lacks the count or the
+key, if 4 is refused, or if 5 queues a job.
+cleanup: none (if 5 queued a job, `cancel_job` it at once and `delete_output(job_id=…)`).
+metrics: none.
+
+### M-F208 — `match_video` with `segments`, or with `match_audio`, is refused naming both keys
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va. Free: validate only. Workspace `regression-model-specific`.
+Steps (each step is M-F205's base with `chain` changed as stated):
+1. add `"segments": 3`;
+2. add `"segments": "variable:segments"`, and the variable `"segments": 3`;
+3. add `"match_audio": true`, and add an audio reference
+   (`MiniMaxH3AudioReference` from `asset:qa-cast/hal-voice.wav`) so `match_audio` has its own
+   source;
+4. add `"match_audio": false`.
+expected:
+- 1, 2 and 3 are refused. Each message names `match_video` and the other key (`segments` or
+  `match_audio`) as mutually exclusive. A schema-level `oneOf` refusal passes only if its message
+  names both keys.
+- 4 validates clean: a false `match_audio` is not a second length key. If the server instead
+  treats the presence of any two length keys as exclusive and refuses 4 too, that is acceptable
+  only if the message says so plainly. Record which.
+It is a **finding** if 1, 2 or 3 validates, or if a refusal names neither key.
+cleanup: none.
+metrics: none.
+
+### M-F209 — `match_video` needs `continuity: last_segment`; `guide`, `last_frame` and the default are refused saying why
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va. Free: validate only. Workspace `regression-model-specific`.
+Steps (each step is M-F205's base with `chain.continuity` set as stated):
+1. `"guide"`;
+2. `"last_frame"`;
+3. key deleted (the schema default is `last_frame`);
+4. `"variable:continuity"`, with the variable `"continuity": "last_segment"`;
+5. step 4's document, called with `arguments={"continuity": "guide"}`.
+expected:
+- 1, 2 and 5 are refused. Each message names `match_video` and says it needs `last_segment`. For
+  `guide`, it also says guides are refused on ref2va.
+- 3 is refused in the same way. Alternatively it validates clean, but only if the chain guide
+  (M-F204) says plainly that `match_video` implies `last_segment`. Record which.
+- 4 validates clean: the substituted value is checked, not the literal.
+It is a **finding** if 1, 2 or 5 validates, if 3 validates with no documented implication, or if
+4 is refused.
+cleanup: none.
+metrics: none.
+
+### M-F210 — a source shorter than one `num_frames` window is refused, not padded; one exactly that long is one segment
+pending: #1075
+source: tester, spec for #1075 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va. Free: validate only. Workspace `regression-model-specific`.
+Steps (each step is M-F205's base with these `arguments`):
+1. `{"source": "asset:qa-cast/ep6-cold-open.mp4", "num_frames": 141}`: 124 frames < 141.
+2. `{"source": "asset:qa-cast/ep6-cold-open.mp4", "num_frames": 124}`: exactly one window.
+3. `{"source": "asset:qa-cast/ep33-episode.mp4", "num_frames": 345}`: 224 < the maximum window.
+4. `{"source": "asset:qa-cast/ep6-cold-open.mp4", "num_frames": 130}`: 130 snaps up to 141
+   (`snap: up`), and 141 > 124.
+expected:
+- 1, 3 and 4 are refused before any GPU time. Each message names the source's length (124 or 224
+  frames) and the window it needs (141 or 345), and says the source is too short. No padding is
+  offered as a fallback.
+- 2 validates clean and plans 1 segment, with an output length of 124.
+It is a **finding** if 1, 3 or 4 validates, or if one is accepted with a padding warning. It is
+also one if 2 is refused or plans more than one segment, or if 4's message quotes the unsnapped
+130 as the window.
+cleanup: none.
+metrics: none.
+
+### M-F211 — the catalog lists `chain-follow-video` as a chained sequence that needs input media, and it validates over a long source
+pending: #1076
+source: tester, spec for #1076 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/chain-follow-video`. Free: reads and validate only. Workspace
+`regression-model-specific`.
+Steps:
+1. `list_workflows(shape="sequence")`, then `list_workflows(shape="sequence",
+   traits="chained,needs-input-media")`.
+2. `get_workflow("templates/minimax/chain-follow-video")`.
+3. `validate_workflow(workflow_name="templates/minimax/chain-follow-video",
+   arguments={<source variable>: "asset:qa-cast/ep49-episode.mp4"},
+   workspace="regression-model-specific")`.
+expected:
+- Both listings hold `templates/minimax/chain-follow-video`, with `chained` and
+  `needs-input-media` in its `traits`. Its `variable_names` include a source-video variable,
+  `prompt`, `num_frames`, `carry_frames` and `trim_frames`, and no `segments`.
+- Its definition's chain has `match_video: true` and `continuity: "last_segment"`, and no
+  `segments`. Its references hold exactly one video reference, fed by the source variable.
+- 3 is clean, with a `plan.estimate` and a segment count that follows M-F205's rule for 372
+  frames at the template's own `num_frames` and `trim_frames` defaults.
+It is a **finding** if the entry is missing from either listing, if a tag or variable is
+missing, or if 3 is refused. The plan says `sequence`, and today's other chained H3 templates
+list as `shot`. An entry that lists as `shot` instead is a finding against the plan's acceptance
+intent: report it, and do not rewrite this case.
+cleanup: none.
+metrics: none.
+
+### M-F212 — the `minimax-h3` skill says when to pick `chain-follow-video`, to write a prompt true of every window, and the cost model
+pending: #1076
+source: tester, spec for #1076 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3` plugin skill. Free: no MCP spend.
+Steps: load the `dw:minimax-h3` skill (as refreshed from `develop`) and find its
+`chain-follow-video` rule block.
+expected:
+- The block names `templates/minimax/chain-follow-video` and says when to pick it: a long
+  output, past 345 frames, that follows a supplied driving clip's motion and camera.
+- It tells the author to write the prompt so that it is true for **every** window, not a
+  description of the whole clip.
+- It states the cost model: video-reference encode time × segments, where the segment count comes
+  from the source's length.
+- No other line in the skill contradicts it, for example by saying a chain cannot take a
+  per-segment reference.
+It is a **finding** if any of the three points is missing, or the template name is wrong.
+cleanup: none.
+metrics: none.
+
+### M-F213 — a `chain-follow-video` run on a 372-frame source gives 372 frames that follow the source window by window, with its seams holding
+pending: #1076
+source: tester, spec for #1076 from #1061's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/chain-follow-video` on lem only (H3 on CUDA). It is 2 segments,
+each with 2 video references (slice + carry), so expect roughly 40–60 min of GPU. Workspace
+`regression-model-specific`.
+The source is `asset:qa-cast/ep49-episode.mp4` (372 frames, more than 345). `num_frames` 192 with
+`trim_frames` 2 gives slices `[0,192)` and `[190,382)`, and the second runs past the source's end
+at 372. So 2 segments, a 382-frame overshoot, and a tail trim to 372. 192 × 2 references sits
+between the 175 × 2 and 209 × 2 shapes that ran on 24 GB.
+Steps:
+1. `validate_workflow(workflow_name="templates/minimax/chain-follow-video",
+   arguments={<source variable>: "asset:qa-cast/ep49-episode.mp4", "num_frames": 192,
+   "trim_frames": 2, "carry_frames": 48, "seed": 1061}, workspace="regression-model-specific")`.
+   Bind `acknowledged_cost` from it. If the template's prompt default is not true of every window
+   for this source, pass a `prompt` that is. Write it per the skill line (M-F212), describing
+   people in a room speaking in turn.
+2. `run_workflow(..., note="M-F213 follow-video 372f", wait_seconds=1500)`, then
+   `wait_for_job` until the end (H3 house rules for silence).
+3. `get_gallery_metadata` on the final mp4.
+4. `get_output_frames(<mp4>, seams=true)` and `assess_output(<mp4>)`.
+5. `compare_outputs` over the output mp4 and `asset:qa-cast/ep49-episode.mp4`, at
+   `at=[1.0, 4.0, 7.0, 9.5, 12.0, 15.0]`. These cover both segments and all three source shots.
+6. `get_output_frames(<mp4>, at=[2.5, 8.0, 13.0], hear=1)`, and the same call on the source.
+expected:
+- The job is `succeeded`. Its events show 2 segments, and no padding or `slice_past_end`
+  warning for the video.
+- The output is 372 frames at 24 fps, 15.5 s (±1 frame): longer than 345 frames, trimmed to the
+  source, not the 382-frame overshoot. It has an audio stream for its whole length.
+- The chain seam (output frame 190, about 7.92 s) holds: no hard cut or look step there in the
+  seams reading, and no dead air there in `assess_output`.
+- Window by window, the motion follows. At every sampled time, the output's camera framing and
+  the main figure's position and direction of travel correspond to the source at the same time.
+  That includes the times after 7.92 s, which come from the second slice, not a repeat of the
+  first. Also record whether the output changes composition near the source's own cuts (5.17 s,
+  10.33 s). That is an observation, not a pass condition.
+- The soundtrack follows the source: at each heard time, the output's sound is the same kind as
+  the source's there (speech where it speaks, room tone where it is quiet).
+It is a **finding** if the run fails or OOMs, if the length is wrong, if the seam shows a step,
+if any segment's frames don't correspond to the source at the same time, or if the second
+segment repeats the first window. The seed is pinned (1061), so a judgment that differs on a
+rerun is itself worth reporting.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### M-F214 — the workflows guide has a "Regional edit" section that states the mask rules, `refine_strength`'s meaning and what stays unchanged
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 regional edit (`source_video` + `mask_image`/`mask_video` +
+`refine_strength` on a t2va step). Free: discovery only.
+Steps:
+1. `get_guide("workflows")` (the index form). Find the "Regional edit" section and its position
+   relative to the refine section ("Promoting an H3 take to 768p in latent space" or its successor).
+2. `get_guide("workflows", section="Regional edit")`.
+expected:
+- The section exists and sits beside the refine section, either directly before or directly after it.
+- It names `source_video`, `mask_image`, `mask_video`, `mask_grow`, `refine_strength` and
+  `hold_audio`, and states these rules:
+  - `source_video` must match the step's `width`, `height` and `num_frames`;
+  - white means regenerate, and the mask is binarized at 128;
+  - the grain is the patch grid, 16 px × patch size in space and about 4 pixel frames per latent
+    frame in time;
+  - `mask_grow` dilates by whole cells and defaults to 1;
+  - an empty mask is refused;
+  - `refine_strength` is required with a mask, where 1.0 regenerates from noise and lower values
+    rework lightly (e.g. 0.4);
+  - `hold_audio` is still required, normally the `source_video` itself.
+- It says the area outside the mask comes back **near-identical, not bit-identical**, because
+  there is no paste-back.
+- It has a worked example that is a complete step (it passes as M-F215's carrier shape) and lists
+  the refused combinations: a mask with `refine_tiles`, a chained step, a non-H3 step, or both
+  mask kinds.
+It is a **finding** if the section is missing, if it omits any argument or rule above, or if it
+promises a bit-identical outside.
+cleanup: none.
+metrics: none.
+
+### M-F215 — build the #1062 masks; a regional edit with `mask_image` or `mask_video` validates clean and quotes an estimate, at the boundary values too
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va with the regional-edit arguments. The setup runs CPU tasks only
+(`get_first_frame`, `segment`, `resize_rescale`, `loop_frames`). The rest is free, validate only.
+Workspace `regression-model-specific`, passed on every call.
+Setup (the masks in Fixtures). Skip it when all six `asset:h3-mask/` files are already listed by
+`list_assets`.
+1. Run an inline workflow `m-h3mask-fixtures` with these steps:
+   - `frame0`: `get_first_frame` with `video: "asset:qa-cast/ep6-cold-open.mp4"`, giving an
+     `image/png`.
+   - `region`: `segment` with `image: "previous_result:frame0"`, `prompt: "person"` and
+     `device: "cpu"`.
+   - `black`: `segment`, the same with `prompt: "giraffe"` and `threshold: 0.95`.
+   - `white`: as `black`, plus `invert: true`.
+   - `small`: `resize_rescale` with `image: "previous_result:region"`, `width` 480 and `height` 272.
+   - `mv124` and `mv141`: `loop_frames` with `video: "previous_result:region"` and `num_frames`
+     124 and 141, each with result `video/mp4` at `fps` 24.
+2. `get_output_image` on `region`, `black` and `white`.
+   - `region` must be white over one object and cover 2–50% of the frame. If it doesn't, rerun
+     with the prompt `face`, then `chair`, then `window`, and record which prompt held and what
+     the mask covers.
+   - `black` must be wholly black and `white` wholly white.
+   - If no prompt gives a usable region mask, or `black` and `white` aren't uniform, every case
+     that names M-F215 is "not run". Say so.
+3. `keep_output` each one to its Fixtures name. Then `delete_output(job_id=<fixture job>)`.
+
+Carrier **RE**: the JSON from `get_workflow("templates/minimax/video-with-audio")`, passed inline.
+Add these keys to its `text_to_video_audio` step's arguments:
+`"source_video": "asset:qa-cast/ep6-cold-open.mp4"`, `"mask_image": "asset:h3-mask/region.png"`,
+`"refine_strength": 0.8` and `"hold_audio": "asset:qa-cast/ep6-cold-open.mp4"`. Keep the
+template's `num_frames` 124, `width` 960 and `height` 544.
+
+Validate each of these with `validate_workflow(workflow=..., workspace="regression-model-specific")`:
+- (a) RE as written.
+- (b) RE with `mask_image` replaced by `"mask_video": "asset:h3-mask/region-124f.mp4"`.
+- (c) RE with `mask_image: "asset:h3-mask/white.png"` (whole-frame edge case).
+- (d) RE with `refine_strength: 1.0` (regenerate the region from noise).
+- (e) RE with `refine_strength: 0.4`.
+- (f) RE with `mask_grow: 0`, and separately with `mask_grow: 3`.
+expected:
+- Every probe is `valid: true`, with no error.
+- Each quotes a `plan.estimate` comparable to `video-with-audio`'s own cost (an H3 124-frame pass).
+  Its basis is named.
+- `source_video` and `mask_video` load as videos and `mask_image` as an image. No warning says an
+  argument is unknown or not an H3 input.
+- (d) is accepted. M-F083 refuses 1.0 *without* a mask (a plain refine), and the plan makes 1.0
+  the "regenerate" value *with* one.
+It is a **finding** if any probe is refused, if (d) is refused, or if `mask_video` is treated as an
+image (or `mask_image` as a video).
+cleanup: none (keep the `h3-mask/` masks for M-F216–M-F222 and SE-F054. Delete them only after the
+last of those cases runs).
+metrics: none.
+
+### M-F216 — each bad regional-edit combination is refused at validate, naming the argument, and `run_workflow` queues nothing
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 regional edit, plus SD 1.5 as the non-H3 step. Free.
+Setup: M-F215 (its masks and carrier RE). Workspace `regression-model-specific`. Each probe edits
+only RE's H3 step, unless it says otherwise:
+- (a) `source_video` removed (mask kept);
+- (b) `refine_strength` removed;
+- (c) `hold_audio` removed;
+- (d) both `mask_image` and `"mask_video": "asset:h3-mask/region-124f.mp4"`;
+- (e) `mask_image: "asset:h3-mask/region-480.png"` (480×272 against 960×544);
+- (f) `mask_image` replaced by `"mask_video": "asset:h3-mask/region-141f.mp4"` (141 frames against
+  124);
+- (g) `mask_image: "asset:h3-mask/black.png"` (an empty mask);
+- (h) `"refine_tiles": {"width": 960, "height": 544, "overlap": 192}` added;
+- (i) `source_video: "asset:refine/src-512x288.mp4"` (512×288, 121 frames against 960×544, 124);
+- (j) `num_frames: 141` on the step (so ep6's 124 frames mismatches), with the mask a matching
+  141-frame `mask_video` (`asset:h3-mask/region-141f.mp4`);
+- (k) `refine_strength: 0`, and separately `1.5` and `"0.8"` (a string);
+- (l) `mask_grow: -1`, and separately `1.5` and `"1"`;
+- (m) the SD 1.5 carrier from M-F115 with `source_video`, `mask_image`, `refine_strength` 0.8 and
+  `hold_audio` added to its pipeline step;
+- (n) a chained H3 step. Take an H3 template from `list_workflows(traits="chained")` (for example
+  `templates/minimax/chain-follow-video` or the chained long-take template). Add `source_video`,
+  `mask_image`, `refine_strength` 0.8 and `hold_audio` to the step that the template's chain
+  continues from. If no H3 chained template exists, skip (n) and say so.
+For each refused probe, also call `run_workflow(workflow=..., acknowledged_cost=true,
+workspace="regression-model-specific")`.
+expected:
+- Every probe is `valid: false`, refused at `validate_workflow`. The error names the offending
+  argument and the rule:
+  - (a) requires `source_video`;
+  - (b) requires `refine_strength`;
+  - (c) requires `hold_audio`;
+  - (d) only one of `mask_image`/`mask_video`;
+  - (e) gives both sizes, 480×272 and 960×544;
+  - (f) gives both frame counts, 141 and 124;
+  - (g) the mask is empty;
+  - (h) a mask with `refine_tiles` is refused;
+  - (i) and (j) name `source_video` with both sizes or both frame counts;
+  - (k) the (0,1] range, or the type for the string;
+  - (l) a whole number, 0 or above;
+  - (m) not an H3 pipeline input;
+  - (n) a mask on a chained step is refused.
+- No probe queues a job. Every refused `run_workflow` is refused before queueing.
+- No refusal echoes a server filesystem path. It names only the reference the workflow wrote.
+It is a **finding** if any probe validates, if one queues and then fails in the pipeline (refused
+too late), if (e), (f), (i) or (j) leaves out either size or count, or if (g) runs (an empty mask
+reproduces the source at full cost).
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### M-F217 — without a mask, refine and `hold_audio` refusals are unchanged
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine. Free. Stage A adds blocks to the H3 denoise. The plan promises
+that a step without a mask runs exactly as before.
+Steps:
+1. Run M-F083 (all probes) and M-F115 (all probes) as written.
+2. Run the example in `get_guide("workflows", section="Promoting an H3 take to 768p in latent
+   space")` as `validate_workflow` only. Compare its `plan.estimate` with the regional-edit RE
+   from M-F215 (a).
+expected:
+- M-F083 and M-F115 pass as written. M-F115's messages are still verbatim. M-F083 (b)
+  (`refine_strength: 1.0` with `latents`, no mask) is still refused, and M-F083 (j) is still
+  refused with the "requires both `latents` and `hold_audio`" reason. A plain `video-with-audio`
+  with `refine_strength` and no `source_video` or mask is not treated as a regional edit.
+- The latent refine example validates clean. No warning mentions masks or `source_video`.
+It is a **finding** if any M-F083 or M-F115 expectation now fails, or if a mask-free refine gains a
+mask-related warning or requirement.
+cleanup: none.
+metrics: none.
+
+### M-F218 — a regional edit changes only the masked region per the prompt, keeps the rest close to the take, and keeps the take's audio
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va regional edit at 960×544, 124 frames, with the turbo LoRA (about
+one `video-with-audio` pass). GPU on lem. Workspace `regression-model-specific`.
+Setup: M-F215 (masks and carrier RE, with the setup's record of what `region.png` covers).
+Steps:
+1. Edit RE's `prompt`. Describe the take's scene as the setup saw it, with the masked object
+   changed visibly. For example, a person becomes "wearing a bright red raincoat", or a chair
+   becomes "a bright green armchair". Keep `refine_strength` 0.8 and set `seed` 1062.
+   `validate_workflow` it, and bind `acknowledged_cost`.
+2. `run_workflow(..., note="M-F218 regional edit 0.8", wait_seconds=55)`, then `wait_for_job`
+   until done.
+3. `get_gallery_metadata` on the output mp4.
+4. `get_output_frames(<mp4>, at=[0.5, 2.5, 4.5])`, and the same on
+   `asset:qa-cast/ep6-cold-open.mp4`.
+5. Read the white box of `region.png` from M-F215's `get_output_image`. Grow it by 32 px on each
+   side (`mask_grow` 1 at 16 px × patch grain, plus a margin).
+   Call `compare_outputs(names=["asset:qa-cast/ep6-cold-open.mp4", <mp4>], at=[0.5, 2.5, 4.5],
+   crop=<a box wholly outside the grown box>)`.
+   Then call `compare_outputs` again with `crop` = the grown box itself.
+6. `get_output_audio(<mp4>)`, and `measure_sync` or `get_output_frames(..., hear=1)` against the
+   source at the same times.
+expected:
+- The job succeeds. The output is 960×544, 124 frames at 24 fps, with one audio stream lasting the
+  clip.
+- Inside the mask, the object shows the prompted change at every sampled time, and its motion
+  still follows the take.
+- Outside the mask, the crop measures close to the source: SSIM ≥ 0.9 (or the equivalent PSNR
+  that the guide gives as "near-identical"). Not bit-identical, which is expected (no paste-back).
+  The crop inside the mask measures clearly further from the source than the crop outside.
+- The audio is the take's own track, `hold_audio` = the source, at the same times. It is not new
+  sound.
+- The job's events or warnings name the regional edit (mask cells, `refine_strength`), with no
+  error.
+It is a **finding** if the run fails, if the region doesn't change, if the outside visibly
+changes (composition shift, look shift, SSIM well under the guide's claim), if a hard seam shows at
+the mask boundary in the frames, or if the audio isn't the source's. The seed is pinned, so a
+judgment that differs on a rerun is itself worth reporting.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### M-F219 — an all-white mask behaves as a plain refine of the whole take
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 regional edit with the whole frame masked. GPU, about one
+`video-with-audio` pass. Workspace `regression-model-specific`.
+Setup: M-F215 (carrier RE and `asset:h3-mask/white.png`).
+Steps:
+1. RE with `mask_image: "asset:h3-mask/white.png"`, `refine_strength: 0.4`, `seed` 1062, and the
+   template's prompt changed to describe the take (no change asked). Validate, then
+   `run_workflow(..., note="M-F219 white mask 0.4", wait_seconds=55)` and `wait_for_job`.
+2. `compare_outputs(names=["asset:qa-cast/ep6-cold-open.mp4", <mp4>], at=[0.5, 2.5, 4.5])`
+   without a crop.
+3. `get_output_frames(<mp4>, seams=true)` and `assess_output(<mp4>)`.
+expected:
+- The job succeeds with no refusal and no "empty mask" or "full mask" error. The output is 960×544,
+  124 frames, 24 fps, with the take's audio.
+- The whole frame is reworked lightly. Composition, subjects and motion follow the take
+  everywhere, with no region left untouched and no seam, as a light refine of the whole take would
+  do.
+- `assess_output` raises no seam or silence flag.
+It is a **finding** if a full mask is refused or errors, if part of the frame comes back
+untouched (a boundary artifact), or if the result departs from the take as a fresh generation
+would.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### M-F220 — `templates/minimax/regional-edit` is listed as a shot that needs input media and has audio, and validates over an uploaded take and mask with an estimate
+pending: #1078
+source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the stage B template (MiniMax H3 t2va regional edit). Free.
+Setup: M-F215 (masks). Workspace `regression-model-specific`.
+Steps:
+1. `list_workflows(shape="shot")`. Find `templates/minimax/regional-edit`.
+2. `get_workflow("templates/minimax/regional-edit", variables_only=true)`, then the full form.
+3. `validate_workflow(workflow_name="templates/minimax/regional-edit",
+   arguments={"source_video": "asset:qa-cast/ep6-cold-open.mp4",
+   "mask_image": "asset:h3-mask/region.png", "prompt": "<as M-F218>"},
+   workspace="regression-model-specific")`.
+4. The same with `arguments` also setting `refine_strength` 0.5, then 1.0.
+5. The same as step 3 with `mask_image: "asset:h3-mask/region-480.png"`.
+expected:
+- The entry has shape `shot`, traits including `needs-input-media` and `has-audio`, and a non-null
+  `cost`.
+- The variables include `source_video`, `mask_image`, `prompt`, `refine_strength` (default 0.7)
+  and `num_inference_steps` (default 8). The H3 step's `hold_audio` is `variable:source_video`,
+  and its `source_video` and `mask_image` come from the variables.
+- Steps 3 and 4 are `valid: true`, with a `plan.estimate` quoted.
+- Step 5 is refused, naming the mask and both sizes (M-F216 (e) through the template).
+It is a **finding** if the entry is missing, the traits or the cost are missing, the variables or
+defaults differ from the plan without a guide note, `hold_audio` isn't tied to `source_video`, or
+step 3 or 4 is refused.
+cleanup: none.
+metrics: none.
+
+### M-F221 — the `minimax-h3` skill has a "fix one region of a good take" branch that covers the mask, `refine_strength` and the grain
+pending: #1078
+source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3` skill (consumer surface), as loaded from `develop`. Free.
+Steps: load the `dw:minimax-h3` skill. Find the branch for fixing one region of a good take.
+expected:
+- The branch names `templates/minimax/regional-edit` and says when to pick it over a fresh take or
+  a whole-take refine: the take is good except in one region.
+- It says how to make the mask, either by `segment` on a frame of the take (`get_first_frame` or
+  `get_frame`) or by uploading one with `upload_asset`. It says white means regenerate and that
+  the mask must match the take's size.
+- It says how to choose `refine_strength`: about 0.5 for a light change, 1.0 to replace the region
+  outright.
+- It states the grain: 16 px × patch in space (the mask is dilated to that grid), so a small or
+  thin region grows.
+- It says the outside comes back near-identical, not bit-identical, and that the take's own audio
+  is kept. It quotes the cost or points at the template's listed `cost`.
+It is a **finding** if the branch is missing or omits the mask route, the strength guidance or the
+grain, or if the template it names does not exist in `list_workflows`.
+cleanup: none.
+metrics: none.
+
+### M-F222 — a `regional-edit` run overriding only `source_video`, `mask_image` and `prompt` gives the take back with the region changed and its audio kept
+pending: #1078
+source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.7,
+`num_inference_steps` 8). GPU on lem, at the template's listed cost. Workspace
+`regression-model-specific`.
+Setup: M-F215 (masks), and M-F218's prompt for the region change.
+Steps:
+1. `validate_workflow` with `arguments` holding only `source_video:
+   "asset:qa-cast/ep6-cold-open.mp4"`, `mask_image: "asset:h3-mask/region.png"` and `prompt`.
+   Bind `acknowledged_cost`.
+2. `run_workflow(..., note="M-F222 regional-edit template", wait_seconds=55)`, then `wait_for_job`.
+3. Run M-F218's steps 3–6 on the output.
+expected:
+- The job succeeds. Wall time is within 25% of the template's listed `cost`, with a cold load
+  stated.
+- The output is 960×544, 124 frames at 24 fps, with the take's audio.
+- The region shows the prompted change. The crop outside the grown mask box measures close to the
+  source, as M-F218's threshold. No seam at the mask boundary.
+It is a **finding** if the run fails, needs any argument beyond the three, changes the unmasked
+area or the audio, or is far outside its listed cost.
+cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` each
+`h3-mask/` asset.
+metrics: `wall_minutes`, to `regression-perf/M-F222.jsonl` on each run.
+
+### M-F223 — `templates/ltx2/alpha-matte` is a catalog shot with a cost, the card's bounds, no prompt variable, a fixed empty prompt, and a letterbox fit undone after
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5 `LTX2InContextPipeline` on `Lightricks/LTX-2.5-Diffusers` with
+`Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen` (`ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors`), via
+`templates/ltx2/alpha-matte`. Free: discovery calls and a skill read only, no GPU.
+expected:
+- **Catalog.** `list_workflows(shape="shot", traits="needs-input-media")` lists `templates/ltx2/alpha-matte`:
+  - it has a non-null curated `cost`;
+  - its traits include `needs-input-media` and do **not** include `has-audio` or `image-conditioned`;
+  - its compact constraints read `32*n+0` for `width` and `height`. For `num_frames` they show the 8n+1
+    grid, a minimum of 9 and a maximum of 145, in whatever compact form the server uses for a capped
+    range.
+  - Its variable names include `source_video`, `width`, `height`, `num_frames`, `frame_rate` and `seed`, and
+    do **not** include `prompt`, `negative_prompt` or `lora_scale`.
+- **Variables.** `get_workflow(name="templates/ltx2/alpha-matte", variables_only=true)`:
+  - `width` 960, `height` 544, `frame_rate` 24.0, and a `seed`;
+  - `num_frames` defaults to an 8n+1 value from 9 to 145. Record it, since M-F225 and M-F226 use it.
+  - `constraints`:
+    - `width` and `height`: `modulus: 32, remainder: 0`;
+    - `num_frames`: `modulus: 8, remainder: 1, min_frames: 9`, plus a maximum of 145. Its `reason`
+      says why: past 145 frames the source's RGB leaks into the matte.
+- **Document.** In the full `get_workflow` document:
+  - the steps run in this order: a `fit_to_model` step, the `LTX2InContextPipeline` step, then a
+    `restore_to_source` step;
+  - the fit step reads `variable:source_video` with `mode` fixed at `letterbox` (not a variable) and
+    `downscale` 1, and it doesn't save;
+  - the pipeline step's LoRA is the Alpha-Gen weight above at a fixed scale of 1.0;
+  - its single reference condition reads the fit step's video at strength 1.0, with
+    `reference_downscale_factor` 1;
+  - its `prompt` is the literal `""`;
+  - the restore step reads the pipeline's output and the fit record, and its result is final;
+  - `cost_drivers` names `num_frames`, `width` and `height`.
+- **Description.** The full description says four things:
+  1. white = foreground;
+  2. use the matte as the source's alpha in an editor;
+  3. the model picks the subject itself (the prompt doesn't steer it);
+  4. the 145-frame cap and why.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`:
+  - `ltx-2.5/ic-alpha-gen` is `status: proven`, with `workflow` naming `templates/ltx2/alpha-matte`;
+  - `ltx-2.5/ic-clean-plate` and `ltx-2.5/ic-day-to-night` are still `trial` with `workflow: null`.
+    If the listing exposes their `notes`, each gives the card mismatch and the trigger that would bring
+    it back. If no field shows notes, that half can't be checked over MCP. Record that it can't, and
+    don't file it.
+- **Skill.** The `dw:ltx-2.5` skill, loaded with the Skill tool:
+  - has a route row naming `alpha-matte`, saying white = foreground, saying that the prompt doesn't steer
+    it, and giving the 145-frame cap;
+  - mentions the matte in its description (frontmatter);
+  - has no row for Clean-Plate or Day-To-Night;
+  - if it lists which templates carry a `cost`, the list agrees with `list_workflows`: every LTX
+    template there with a non-null `cost` is named, `restore-deblur` and `alpha-matte` included.
+It is a **finding** if any of the following holds:
+- the template is missing from that listing, or has no `cost`;
+- it has a `prompt` or `lora_scale` variable;
+- its `num_frames` constraint has no 145 maximum;
+- its fit mode is anything but a fixed letterbox;
+- the description or skill misses one of the points above;
+- the registry entry is not promoted.
+cleanup: none. Discovery only, writes nothing.
+metrics: none.
+
+### M-F224 — `alpha-matte` refuses off-grid sizes, frame counts past 145 and below 9 for free, and accepts the boundary values and 1920×1088
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F223. Free: `validate_workflow` only, no GPU. `A` is
+`asset:qa-cast/ep6-shot1-priya.mp4` (shared). Every call below is
+`validate_workflow(name="templates/ltx2/alpha-matte", workspace="regression-model-specific",
+arguments={"source_video": A, ...})` with the stated override.
+expected:
+- **The defaults are clean.** With no override the result is `valid: true`, with `checked_arguments`
+  including `source_video`. `plan.estimate` is non-null, since the template carries a `cost`.
+- **The 145 cap.**
+  - `num_frames: 153` (the next 8n+1 above 145) → `valid: false`, with one error at
+    `arguments.num_frames` whose text names 145. `plan` downloads and load never happen. The refusal is
+    free.
+  - `num_frames: 145` → `valid: true` (the cap is inclusive).
+  - `num_frames: 289` → `valid: false` at `arguments.num_frames`.
+- **The grid and the floor.**
+  - `num_frames: 120` → `valid: false` at `arguments.num_frames`, naming the 8n+1 rule.
+  - `num_frames: 1` → `valid: false` at `arguments.num_frames`, since 1 is below 9.
+  - `num_frames: 9` → `valid: true`.
+- **Width and height.**
+  - `width: 1000` → `valid: false` at `arguments.width`, naming 32.
+  - `height: 550` → `valid: false` at `arguments.height`.
+- **The card's ceiling validates.** `width: 1920, height: 1088` (with the default `num_frames`) →
+  `valid: true`. A VRAM-ceiling warning is allowed, and so is a larger `plan.estimate`. An error is a
+  finding.
+- **`run_workflow` agrees.** `run_workflow(name="templates/ltx2/alpha-matte", workspace="regression-model-specific",
+  arguments={"source_video": A, "num_frames": 153}, acknowledged_cost=true)` is refused with the
+  same `arguments.num_frames` error, and `list_jobs` shows no new job queued. If it queues one, cancel it
+  at once (`cancel_job`). That's a finding.
+It is a **finding** if any of the following holds:
+- an off-grid or past-cap value passes;
+- 9, 145 or 1920×1088 is refused;
+- an error lands at a path other than the argument;
+- the 153 refusal doesn't name 145.
+cleanup: none (unless the `run_workflow` arm queued a job: `cancel_job`, then `delete_output(job_id=<id>)`).
+metrics: none.
+
+### M-F225 — `alpha-matte` on a person clip gives a grey soft-edged matte at the source's size, frame-aligned, with no soundtrack; at 145 frames it is still a matte
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs on lem (RTX 3090), the first at the template's
+default size. Workspace `regression-model-specific`, `"seed": 1079` on both. `A` is
+`asset:qa-cast/ep6-shot1-priya.mp4` (shared; 960×544, 124 frames). `L` is
+`asset:qa-cast/ep13-episode.mp4` (shared; 282 frames, 960×544, 24 fps).
+Steps, for each arm:
+1. `get_gallery_metadata` on the source.
+2. `validate_workflow` with its arguments, binding `acknowledged_cost` from `plan.estimate`.
+3. `run_workflow(..., note="M-F225 <arm>", wait_seconds=55)`, then `wait_for_job` to the end.
+Arms:
+- **default**: `arguments={"source_video": A, "seed": 1079}`.
+- **cap**: `arguments={"source_video": L, "num_frames": 145, "seed": 1079}`.
+expected:
+- **default arm.**
+  - The job succeeds, and its warnings are empty.
+  - `get_gallery_metadata` on the final file reports:
+    - 960×544, the source's own size;
+    - a frame count equal to M-F223's recorded `num_frames` default, since A's 124 frames are cut
+      to it, or 124 if the default is above that and the template trims back;
+    - 24 fps;
+    - no audio stream.
+  - `get_output_frames` on the final at `frame:0`, the middle frame and the last frame:
+    - each is grey-scale, with no colour cast;
+    - the person is white (or near white) and the scene behind them is black (or near black);
+    - the white region sits over the person exactly where they are in A at the same frame (check
+      with `compare_outputs` against A or a side-by-side `get_output_frames`);
+    - the boundary at hair and at any motion blur is a soft grey ramp, not a one-pixel hard step.
+  - An RGB-looking frame (the source's colours or scene showing through) is a finding. So is a frame
+    that is all white, all black, or a hard binary cutout.
+- **cap arm.**
+  - The job succeeds.
+  - The final is 960×544 at 24 fps, with exactly 145 frames.
+  - `get_output_frames` at `frame:0`, `frame:72` and `frame:144` are still grey mattes, with no RGB
+    content leaking in. Leaking at 145 or below is the failure the cap exists to prevent.
+  - The job's own events or the job record show it ran under 24 GB with no OOM. An OOM is a finding;
+    file it naming the 145-frame default-size shape.
+It is a **finding** if any of the following holds:
+- either arm fails;
+- a final isn't at the source's size, or isn't the frame count above;
+- a final carries audio;
+- a frame isn't a grey matte that tracks the subject.
+If the default arm's matte is consistently poor (hard, blotchy or missing the subject) at the seeded
+take, the plan's risk applies. The finding is "loadable, not good at 24 GB", recorded on the stage, not
+a pass.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs.
+metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-default` and
+`960x544-145f`, to `regression-perf/M-F225.jsonl`. The first run seeds the file.
+
+### M-F226 — `alpha-matte` on portrait and square sources comes back at each source's own size, with the letterbox padding cut off and the matte aligned
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs at the default 960×544 working size. Workspace
+`regression-model-specific`, `"seed": 1079`.
+Setup: the `ic-alpha/` fixtures (see Fixtures, "Sources for the #1064 IC-LoRA cases"). Make them if
+`list_assets(prefix="ic-alpha/", workspace="regression-model-specific")` lacks either.
+Arms (validate, bind cost, run with `wait_seconds=55`, then `wait_for_job`, as M-F225):
+- **portrait, default length**: `arguments={"source_video": "asset:ic-alpha/src-384x544-97f.mp4", "seed": 1079}`.
+  The 97-frame source runs against the default `num_frames`.
+- **square, explicit length**: `arguments={"source_video": "asset:ic-alpha/src-544x544-97f.mp4", "num_frames": 97, "seed": 1079}`.
+expected:
+- Both jobs succeed. Neither is refused at validate.
+- **Size is the source's, not the working size.** `get_gallery_metadata` on each final:
+  - portrait: **384×544**, square: **544×544**, at 24 fps;
+  - a 960×544 final is the padding baked in, and that's a finding. (In a matte a pad is black and
+    would read as background, so the size is the check that can tell.)
+- **Length.**
+  - portrait: 97 frames if the default `num_frames` is 97 or more (held, then trimmed back to the
+    source), or the default itself if it's below 97;
+  - square: 97 frames.
+- **Aligned, not squeezed.** For each arm, `get_output_frames` on the final and on its source at
+  `frame:48`:
+  - the white subject region has the same position and proportions as the person in the source;
+  - it isn't stretched sideways, offset toward a band, or cropped at an edge that the source shows.
+  - Each is a grey matte as M-F225 defines it.
+It is a **finding** if a final is the working size, a band of padding survives along a side, the
+matte is displaced or squeezed against the source, or the frame count is wrong.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
+fixtures.
+metrics: `latency` (s), conditions `portrait-384x544` and `square-544x544`, to
+`regression-perf/M-F226.jsonl`.
+
+### M-F227 — `templates/ltx2/restore-colorize` is a catalog shot with a cost, the card's bucket, a `lora_scale` variable at 1.0 and a stored dual-panel prompt
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: LTX-2.5 `LTX2InContextPipeline` with `Lightricks/LTX-2.5-22b-IC-LoRA-Colorization`
+(`ltx-2.5-22b-ic-lora-colorization-0.9.safetensors`), via `templates/ltx2/restore-colorize`. Free:
+discovery and a skill read, no GPU.
+expected:
+- **Catalog.** `list_workflows(shape="shot", traits="needs-input-media")` lists
+  `templates/ltx2/restore-colorize`:
+  - it has a non-null curated `cost`;
+  - it has the same traits as `templates/ltx2/restore-deblur` in the same listing;
+  - its compact constraints read `32*n+0` for `width` and `height` and `8*n+1, 9+` for `num_frames`, as
+    deblur's do.
+- **Variables.** `get_workflow(name="templates/ltx2/restore-colorize", variables_only=true)`:
+  - `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0, **`lora_scale` 1.0**, and a `seed`;
+  - `prompt` is a `prompt:ltx2/…` reference, not inline text;
+  - the same variable set and `constraints` (moduli, `min_frames: 9`, reasons) as `restore-deblur`,
+    except where the plan changes them;
+  - today deblur has `transformer_weights_dtype`, `text_encoder_weights_dtype`, `source_video`, `prompt`,
+    `negative_prompt`, `width`, `height`, `num_frames`, `frame_rate`, `lora_scale` and `seed`.
+- **Stored prompt.** `get_prompt(<the name the `prompt` default references, minus `prompt:`>)` returns
+  a prompt whose text is in the card's dual-panel form:
+  - it contains "Reference shows";
+  - it contains "Edited shows the same scene with natural colors restored";
+  - it contains the trigger `COLORIZE`;
+  - it contains "only color information differs";
+  - its `intended_model` names LTX-2.5.
+- **Document.** In the full `get_workflow` document, the pipeline step's LoRA is the Colorization weight
+  above from that repo. Its scale reads `variable:lora_scale`, and `reference_downscale_factor` is 1.
+  The description:
+  - says the template is for black-and-white or washed-out source footage;
+  - says to lower `lora_scale` toward 0.8 if it oversaturates or bleeds.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is
+  `status: proven`, with `workflow` naming `templates/ltx2/restore-colorize`.
+- **Skill.** The `dw:ltx-2.5` skill:
+  - has a route row naming `restore-colorize` and saying it is for black-and-white or washed-out
+    footage;
+  - mentions colourising in its description.
+  M-F223's skill points (the `alpha-matte` row, no Clean-Plate or Day-To-Night row) still hold.
+It is a **finding** if any of the following holds:
+- the template is missing, or has no `cost`;
+- `lora_scale` is absent or not 1.0;
+- the prompt is inline or missing any of the four phrases;
+- the constraints differ from deblur's;
+- the description, registry or skill misses a point above.
+cleanup: none. Discovery only.
+metrics: none.
+
+### M-F228 — `restore-colorize` validates a real clip clean and refuses off-bucket sizes and frame counts, as `restore-deblur` does
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Free: `validate_workflow` only. `B` is `asset:ic-colorize/src-bw-124f.mp4`
+(Fixtures, "Sources for the #1064 IC-LoRA cases"). If it's missing, use `asset:qa-cast/ep6-shot1-priya.mp4`,
+since validation doesn't read colour. Calls are `validate_workflow(name="templates/ltx2/restore-colorize",
+workspace="regression-model-specific", arguments={"source_video": B, ...})`.
+expected:
+- With no override → `valid: true`, `warnings: []`, and a non-null `plan.estimate`.
+- `lora_scale: 0.8` → `valid: true`.
+- `num_frames: 120` → `valid: false` at `arguments.num_frames`.
+- `num_frames: 9` → `valid: true`.
+- `width: 1000` → `valid: false` at `arguments.width`.
+- `height: 550` → `valid: false` at `arguments.height`.
+- Each of these gives the same verdict, at the same path, as the same override on
+  `templates/ltx2/restore-deblur`. Run deblur's call too and compare: a difference is a finding.
+It is a **finding** if an off-bucket value passes, a valid one is refused, or the verdicts differ from
+deblur's.
+cleanup: none.
+metrics: none.
+
+### M-F229 — `restore-colorize` on a black-and-white clip gives a colour clip at the source's size, keeping subject, framing and motion
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Paid: one LTX-2.5 job at 960×544×121 on lem (RTX 3090), the shape of
+M-F014's restore runs. Workspace `regression-model-specific`.
+Setup: `asset:ic-colorize/src-bw-124f.mp4` (see Fixtures). Make it if it's missing. Before running,
+confirm it's grey: `get_output_frames(at=["frame:60"])` shows no colour.
+Steps:
+1. `get_gallery_metadata` on the source.
+2. `validate_workflow(name="templates/ltx2/restore-colorize", workspace="regression-model-specific",
+   arguments={"source_video": "asset:ic-colorize/src-bw-124f.mp4", "seed": 1080})`, and bind
+   `acknowledged_cost`.
+3. `run_workflow(..., note="M-F229 colorize bw", wait_seconds=55)`, then `wait_for_job`.
+expected:
+- The job succeeds, with no warning except, at most, an audio fit/trim notice of the kind
+  `restore-deblur`'s output carries.
+- **Shape.** `get_gallery_metadata` on the final file: **960×544** (the source's size), **121** frames,
+  24 fps.
+- **In colour.** `get_output_frames` on the final at `frame:0`, `frame:60` and `frame:120`:
+  - each shows plainly non-grey colour: skin, clothing and background in distinct, natural hues;
+  - frames that are still grey, or tinted with one flat cast (sepia, all-blue), are a finding;
+  - heavy oversaturation or colour bleeding across object edges is the plan's risk. Record it as
+    "oversaturates at 1.0", then rerun once with `"lora_scale": 0.8`. If that's clean, the stage passes
+    with a note. If both are poor, the result is "loadable, not good at 24 GB" and goes on the stage.
+- **Same scene.** At each of those frames, against the source at the same frame (`compare_outputs` or
+  side-by-side `get_output_frames`):
+  - the same subject is in the same position and pose, with the same framing and no crop or stretch;
+  - between frames 0 and 120 the motion matches the source's.
+  - Only colour differs: a changed subject, a new object or shifted framing is a finding.
+It is a **finding** if the run fails, the final isn't 960×544×121 at 24 fps, it stays grey, or the scene
+changes beyond colour.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each job. Keep the
+fixture.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-121f` (and
+`960x544-121f-scale0.8` if the rerun ran), to `regression-perf/M-F229.jsonl`.
+
+### M-F230 — the Open-H3 refiner is catalogued as a keyframe `trial` LoRA with a pinned NVlabs-derived file, its licence, and a note that the sharp branches aren't loaded; the tiled-refine guide quotes a measured time
+pending: #1081
+source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 LoRA catalog, entry `minimax-h3/open-h3-regenerate-2k`. Free: discovery only.
+Plan v1, with Don's "approve defaults", picks **Q1's default**: Kijai's refiner-only rank-384 extraction
+(`Kijai/MiniMax-H3-experimental`), stacked at run time with `minimax-h3/turbo-4step-keyframe`. It is not NVlabs'
+12.45 GB merged file, and not the community `..._open_regenerate_2k_r128_comfyui_bf16` file.
+Steps:
+1. `list_loras(model="MiniMaxAI/MiniMax-H3")`, then the same with `status="trial"`, and with `workflow="ref2va"`.
+2. `get_guide("workflows", section="Refining above 768p in tiles")`.
+expected:
+- Step 1 lists `minimax-h3/open-h3-regenerate-2k` with these fields:
+  - `status: "trial"`;
+  - `workflow` `["t2va","fl2va"]`;
+  - `base_models` containing `MiniMaxAI/MiniMax-H3`;
+  - `model_name` `Kijai/MiniMax-H3-experimental`, with a `weight_name` naming the refiner extraction at rank 384.
+    Under Q1's alternative it would be NVlabs' `Efficient-Large-Model/Open-H3-Regenerate-2K` merged file. That
+    is a note, not a finding, only if a comment on #1065 or #1081 records the switch;
+  - a `revision` that is a 40-hex commit, not a branch name and not missing;
+  - `license` `minimax-h3-community`;
+  - a non-empty `use_when` about redrawing or refining a 768p draft at a higher size (the refine step);
+  - a `description` saying the sharp-curve (AdaLN) branches are **not** loaded, and that alpha is left to the
+    file (no stated `lora_alpha` field forcing one).
+- The entry appears in the `status="trial"` listing and **not** in the `workflow="ref2va"` listing.
+- No catalog entry points at a `..._r128_comfyui_bf16` file, from any repo.
+- Step 2: the section no longer says "25-30 min" or "not measured" for the tiled refine. It quotes a measured wall
+  time, about 12 min per the plan, though the figure itself is the doc's to set.
+- If #1081's gate has failed (#1082 closed `not planned`), the entry is `status: "rejected"` instead. Its
+  `evidence` or description must then cite the probe job and the reason (not loadable, not fitting, or not better).
+  That counts as a pass.
+It is a **finding** if:
+- the entry is missing, or its status is neither of the above;
+- `workflow` includes `ref2va`;
+- the licence, the revision pin or the sharp-branch note is missing;
+- it points at the community r128 file;
+- the guide still carries the unmeasured 25-30 min figure.
+cleanup: none.
+metrics: none.
+
+### M-F231 — the Open-H3 refiner entry warns on a `ref2va` step through the partition check, and is quiet on `t2va`/`fl2va`, alone or stacked with the keyframe turbo
+pending: #1081
+source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 partition check against the catalog's `trial` entries (M-F152's rule: a `trial` entry
+that disagrees with the step warns and never refuses). Validation only, no GPU.
+Setup:
+- Read `model_name` and `weight_name` for `minimax-h3/open-h3-regenerate-2k` and `minimax-h3/turbo-4step-keyframe`
+  from `list_loras(model="MiniMaxAI/MiniMax-H3")`.
+- Call them `R` and `T`, each as a one-element `loras` list `[{"model_name":…,"weight_name":…}]`.
+- `RT` is the two-element list `R` then `T`.
+- The carrier is M-F142's `C(WF, LORAS)`.
+- If the refiner entry is `rejected` or its `workflow` changed, record it and skip: the case no longer probes what
+  it says.
+Probes (all `validate_workflow(…, workspace="regression-model-specific")`):
+- (a) `C(ref2va, R)`;
+- (b) `C(t2va, R)` and `C(fl2va, R)`;
+- (c) `C(t2va, RT)`;
+- (d) `C(ref2va, RT)`.
+expected:
+- (a) `valid: true`, with a warning at `steps[0].pipeline.loras[0].weight_name` that:
+  - names `minimax-h3/open-h3-regenerate-2k` and its `trial` status;
+  - says the step's partition (`transformer_ref` / `ref2va`) differs from the entry's (`transformer`, `t2va`/`fl2va`).
+- (b) and (c): `valid: true`, with no warning mentioning `weight_name`, "names neither", `transformer` or
+  `transformer_ref`.
+- (d) `valid: false`, because `T` is a `proven` keyframe entry and M-F142's refusal applies to it at `loras[1]`.
+  The refiner's warning at `loras[0]` is still present beside that error. If `T` isn't `proven` on the day,
+  record its status and expect a warning there instead.
+It is a **finding** if:
+- (a) is refused, or carries no warning naming the entry;
+- (b) or (c) warn about the partition;
+- (d) loses the refiner's warning.
+cleanup: none.
+metrics: none.
+
+### M-F232 — the stage A probe record: the recorded P2 (or P3) job ran the refiner on the refine step to a 1920×1088 clip with base audio, with no LoRA-load warning, and its workflow re-validates clean
+pending: #1081
+source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va 768p base → `upscale_h3_latents` 1920×1088 → H3 refine with the Open-H3 refiner
+LoRA. Free: it reads the recorded jobs, it doesn't re-run them. The record is the table stage A posts on #1065
+(`gh issue view 1065 --repo dkackman/diffusers-workflow --comments`). Workspace `qa-h3-regen-2k`.
+Steps:
+1. From the table, take the P2 job id. If P2 ran out of memory, also take the P3 job id, and the P2 job id that
+   records the OOM.
+2. `get_job(<id>, workspace="qa-h3-regen-2k")` and `get_job_events` on each.
+3. `get_job_workflow(<P2-or-P3 id>)`. Then `validate_workflow(inline_workflow=<that workflow>,
+   workspace="qa-h3-regen-2k")`.
+4. `get_gallery_metadata` on the final mp4.
+5. `assess_output` on the final mp4. Do this only for P3 (tiles), as a check for seams.
+expected:
+- **Workflow shape.** The workflow from step 3 has:
+  - a 768p base (1344×768, 124 frames, seed 42, the #500 crowd-face prompt);
+  - `upscale_h3_latents` to 1920×1088;
+  - a refine step with `refine_strength: 0.909375`, `num_inference_steps: 4`, and `hold_audio` from the base;
+  - a video shift about 2;
+  - the draft's own prompt;
+  - `loras` that include the refiner entry's file, plus `turbo-4step-keyframe` per Q1's default.
+  - For P3: `refine_tiles` `{"width":1344,"height":768,"overlap":256}`.
+  - Validation is `valid: true` with no error.
+- **Job.** `get_job` shows the job `succeeded`.
+- **Events.**
+  - They show **3** refine evaluations (4 points), or 3 per tile under P3.
+  - No event or `job.warnings` entry mentions unmatched keys, unexpected keys, skipped modules, or a LoRA that
+    didn't load.
+  - Which transformer ran (pruned or not) is recorded, either in the events or on the record. Missing is a note,
+    not a finding.
+- **Output.** The final mp4 is 1920×1088, 124 frames, 24 fps, with exactly one audio stream lasting the clip.
+- **Record.**
+  - The table's wall time for the job matches `get_job`'s `started_at`→`finished_at` to within a minute.
+  - The table has a peak-memory column and #1049's crop PSNR/SSIM at 2.0 s and 4.5 s against arm (a).
+- **P3 only.** `assess_output` raises no seam flag, or the record names the seam or duplicated subject as the
+  finding that failed the gate.
+It is a **finding** if:
+- there is no recorded job;
+- the job failed but the table reports it as run;
+- the size, frame count or audio are wrong;
+- a LoRA-load warning appears;
+- the evaluation count isn't 3;
+- the recorded workflow fails validation;
+- the table's wall time doesn't match the job's.
+cleanup: none. Never delete the probe jobs: the gate cites them.
+metrics: none.
+
+### M-F233 — `refine_sigmas` with the regenerate recipe validates, at its boundaries and with `refine_tiles`, and the guide documents it with that example
+pending: #1082
+source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine (`refine_strength`, new `refine_sigmas`). Free: validation and discovery.
+Q3's default holds: `refine_sigmas` and `num_inference_steps` are both required, and must agree
+(`len(refine_sigmas) == num_inference_steps`).
+Carriers:
+- `F` is M-F096's refine example, inline, with the refine step's arguments changed to `refine_strength: 0.909375`,
+  `num_inference_steps: 4`, `refine_sigmas: [0.909375, 0.857143, 0.666667, 0]`.
+- `T` is M-F173's tiled workflow, inline, with the same three changes.
+Steps:
+1. `get_guide("workflows", section="Explicit refine sigmas")`. Validate its example as written.
+2. `get_pipeline_signature` on the H3 pipeline, as M-F177 calls it.
+3. `validate_workflow` on each carrier and variant below, in workspace `regression-model-specific`.
+- (a) `F` as given.
+- (b) `T` as given (tiles allowed, same schedule per tile).
+- (c) Two points, the smallest legal list: `refine_sigmas: [0.909375, 0]` with `num_inference_steps: 2`.
+- (d) First point within tolerance: `[0.9093755, 0.857143, 0.666667, 0]` (off by 5e-7).
+- (e) Last point as integer `0` and as float `0.0`.
+- (f) The recipe at a lower strength: `refine_strength: 0.2`, `num_inference_steps: 5`,
+  `refine_sigmas: [0.2, 0.15, 0.1, 0.05, 0]`.
+expected:
+- Step 1:
+  - The section exists and states the rules: ≥2 points, strictly decreasing, first = `refine_strength`, last 0,
+    count = `num_inference_steps`, needs `refine_strength`.
+  - It says `refine_sigmas` replaces the shift grid for both video and audio.
+  - Its example is the regenerate recipe (0.909375 / 0.857143 / 0.666667 / 0, `num_inference_steps` 4), and it
+    validates clean.
+- Step 2: the signature lists `refine_sigmas` beside `refine_strength` and `refine_tiles`.
+- (a)–(f) are all `valid: true`, with no error and no warning that mentions `refine_sigmas`.
+It is a **finding** if:
+- the section is missing or doesn't use the recipe;
+- the signature omits the input;
+- any of (a)–(f) is refused;
+- (b) is refused for combining with `refine_tiles`.
+cleanup: none.
+metrics: none.
+
+### M-F234 — `validate_workflow` and `run_workflow` refuse each broken `refine_sigmas` rule, naming the rule, and queue nothing
+pending: #1082
+source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine with `refine_sigmas`; `templates/sd15` (or the SD 1.5 template M-F174 (q)
+uses) as a non-H3 step. Free.
+The carrier is M-F233's `F`. Each probe changes only the refine step:
+- (a) not decreasing: `[0.909375, 0.6, 0.666667, 0]`;
+- (b) not strictly decreasing (a repeat): `[0.909375, 0.857143, 0.857143, 0]` with `num_inference_steps` 4;
+- (c) first point differs from `refine_strength`: `[0.9, 0.857143, 0.666667, 0]`;
+- (d) first point off by just over the tolerance: `[0.909377, 0.857143, 0.666667, 0]` (2e-6);
+- (e) last point isn't 0: `[0.909375, 0.857143, 0.666667, 0.1]`;
+- (f) last point is negative: `[0.909375, 0.857143, 0.666667, -0.1]`;
+- (g) count too short: the recipe list with `num_inference_steps: 5`;
+- (h) count too long: the recipe list with `num_inference_steps: 3`;
+- (i) one point: `[0.909375]` with `num_inference_steps: 1`;
+- (j) empty: `[]`;
+- (k) `refine_sigmas` kept, `refine_strength` removed;
+- (l) not numbers: `["0.909375", "0.857143", "0.666667", "0"]`;
+- (m) not a list: `0.909375`;
+- (n) on the SD 1.5 template's pipeline step, with `refine_strength: 0.2` and `refine_sigmas: [0.2, 0]`.
+For each, also call `run_workflow(..., acknowledged_cost=true, workspace="regression-model-specific")`. Note
+`list_jobs` before and after.
+expected:
+- Every probe is `valid: false`. The error is at the refine step's `refine_sigmas`, or at
+  `refine_strength`/`num_inference_steps` where that's the half that's wrong, and names the rule:
+  - strictly decreasing for (a) and (b);
+  - first point must equal `refine_strength` for (c) and (d);
+  - must end at 0 for (e) and (f);
+  - the count must match `num_inference_steps` for (g) and (h);
+  - at least 2 points for (i) and (j);
+  - requires `refine_strength` for (k);
+  - numbers/list for (l) and (m);
+  - not an input of that pipeline, or H3-only, for (n).
+  - Where a probe breaks two rules (for example (i) breaks the count and the minimum), naming either rule
+    passes.
+- No probe queues a job: `run_workflow` refuses each with the same rule, and `list_jobs` is unchanged.
+It is a **finding** if:
+- any probe validates;
+- an error doesn't name `refine_sigmas` (or the paired argument) and the rule;
+- a probe queues and fails in the pipeline: refused too late, which is what "enforced at both static and run
+  time" rules out.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### M-F235 — a 768p refine with explicit `refine_sigmas` runs 3 denoise steps, keeps base audio, and doesn't reuse the shift-grid refine from the step cache
+pending: #1082
+source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va 960×544 + `upscale_h3_latents` + H3 refine at 1344×768 (M-F098's shape, the
+cheap one, not the 1080p arm). GPU: two short refine passes, about M-F098's run A each; `wait_seconds=55`, then
+`wait_for_job`.
+Setup: `save_workflow` M-F096's refine example as `m-f235-h3-sigmas`, with `num_frames` 124 and `seed` 42.
+Give the refine step these variables:
+- `refine_strength` (default 0.909375);
+- `num_inference_steps` (default 4);
+- `refine_sigmas` (default `[0.909375, 0.857143, 0.666667, 0]`).
+Steps, in workspace `regression-model-specific`:
+1. Run S: validate, then `run_workflow(name="m-f235-h3-sigmas", acknowledged_cost=..., note="M-F235 explicit
+   sigmas", wait_seconds=55)`.
+2. Run G: the same workflow with the refine step's `refine_sigmas` removed (save it as `m-f235-h3-grid`,
+   same id-insensitive content otherwise), so it runs the shift grid at 0.909375 / 4 points.
+3. `get_job` and `get_job_events` on both. `get_gallery_metadata` and `get_output_frames(at=[0, 2.5, 5.0])` on
+   both refined mp4s.
+expected:
+- **S.**
+  - The job succeeds.
+  - Its refine step shows **3** denoise evaluations (progress total 3).
+  - The refined mp4 is 1344×768, 124 frames, 24 fps, with exactly one audio stream: the base's, with the same
+    duration to within a frame.
+  - No warning mentions `refine_sigmas`.
+- **G.**
+  - The job succeeds, also with 3 evaluations.
+  - Its refine step is **not** served from the step cache (its manifest has no `reused` refine step), while base
+    and upscale may be. A refine reused across a different schedule would mean the cache key ignores
+    `refine_sigmas`.
+- **Picture.** S and G are each a coherent picture of the #500-shaped scene at the base's composition level. At
+  σ 0.91 detail is expected to differ from the base. Record a one-line description of each; how they differ is
+  not judged here.
+It is a **finding** if:
+- either job fails;
+- S doesn't run exactly 3 evaluations;
+- the size, frames or audio are wrong;
+- G's refine step is reused from S's cache.
+cleanup:
+- `delete_output(job_id=...)` for both jobs;
+- `delete_workflow("m-f235-h3-sigmas")` and `delete_workflow("m-f235-h3-grid")`.
+metrics: `refine_s` and `refine_evals` per job, conditions `768p-s0.909-sigmas` and `768p-s0.909-grid`, to
+`regression-perf/M-F235.jsonl`. The first run seeds the file.
+
+### M-F236 — with no `refine_sigmas`, the refine pass is unchanged: existing refine cases hold and their evaluation counts don't move
+pending: #1082
+source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 refine (`refine_strength`, `refine_tiles`) without the new input. Free, except where it
+reuses M-F098's runs when the same pass runs them.
+Steps:
+1. Run the free refine cases M-F083, M-F096, M-F097, M-F173, M-F174 and M-F177 as written.
+2. If this pass also runs M-F098, compare its evaluation counts and `refine_s` with the medians in
+   `regression-perf/M-F098.jsonl`.
+expected:
+- Every listed case passes unchanged. Their refusal messages are the same as before; M-F115's standard is
+  byte-identical.
+- None of their valid carriers gains a warning or error that mentions `refine_sigmas`.
+- M-F098 (if run): A, B and C still run 4, 5 and 4 evaluations, and `refine_s` is within that file's 50% flag
+  band. Without `refine_sigmas`, the shift grid is the same as before.
+It is a **finding** if a plain refine case changes verdict or message, or a count or time drifts outside the band.
+cleanup: none.
+metrics: none.
+
+### M-F237 — the faithful-arm record: the stage B job ran the recipe's exact sigmas at 1920×1088 and sits in #1065's table beside the stage A arm
+pending: #1082
+source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F232, with `refine_sigmas`. Free: it reads the recorded job. Workspace `qa-h3-regen-2k`.
+Steps:
+1. From #1065's table (`gh issue view 1065 --repo dkackman/diffusers-workflow --comments`), take the faithful
+   arm's job id.
+2. `get_job`, `get_job_events` and `get_job_workflow` on it.
+3. `validate_workflow(inline_workflow=<that workflow>, workspace="qa-h3-regen-2k")`.
+4. `get_gallery_metadata` on the final.
+expected:
+- **Workflow.** It is M-F232's probe workflow with:
+  - `refine_sigmas: [0.909375, 0.857143, 0.666667, 0]`;
+  - `refine_strength: 0.909375`;
+  - `num_inference_steps: 4`;
+  - the same base draft and seed as stage A's arm.
+  It validates clean.
+- **Job.** It succeeded, with 3 refine evaluations (3 per tile if it ran tiled) and no LoRA-load warning.
+- **Output.** 1920×1088, 124 frames, 24 fps, with one audio stream.
+- **Record.** The table row has the job id, peak memory, the measured wall time (matching `get_job` to within a
+  minute) and crop PSNR/SSIM at 2.0 s and 4.5 s against (a), like the stage A row.
+It is a **finding** if:
+- there's no row;
+- the sigmas differ from the recipe;
+- the job didn't succeed;
+- the size or audio are wrong;
+- the wall time doesn't match.
+cleanup: none. Never delete the arm's job: the gate cites it.
+metrics: none.
 
 ## Performance

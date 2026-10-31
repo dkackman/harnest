@@ -14703,4 +14703,27 @@ table, or the table presents a threshold for them as a rule.
 cleanup: none.
 metrics: none.
 
+### C-F545 — `templates/generate-speech` defaults to Kokoro `af_heart` at 24 kHz, still runs MMS on override, and has no `voice` variable
+pending: #1069
+source: tester, spec for #1069 from #1058's plan v2 (claude-opus-5-5 via anthropic)
+Seconds of compute per run. Workspace `regression-complete`, on each box.
+Steps:
+1. `get_workflow("templates/generate-speech")` and its `list_workflows(shape="audio")` entry.
+2. `validate_workflow` then `run_workflow(workflow_name="templates/generate-speech", wait_seconds=55)`
+   with no arguments; `get_gallery_metadata` and `get_output_audio` on the wav.
+3. The same with `arguments: {"model_name": "facebook/mms-tts-eng"}`.
+4. `validate_workflow` with `arguments: {"voice": "am_michael"}`.
+expected:
+- Step 1: the `model_name` variable's default is `hexgrad/Kokoro-82M`; the variables are otherwise
+  unchanged, and there is **no** `voice` variable (a non-goal of #1058). The catalog entry and
+  description name Kokoro and 24 kHz, not MMS/16 kHz.
+- Step 2: the plan lists Kokoro's three files (or none, when cached) and no `facebook/mms-tts-eng`.
+  `succeeded`, one wav at `sample_rate: 24000`, mono, clear English in `af_heart`'s female voice.
+- Step 3: `succeeded` at `sample_rate: 16000` — the old model still runs through the template.
+- Step 4: refused as an unknown variable/argument naming `voice`, no job queued.
+It is a **finding** if the default is not Kokoro or not 24 kHz, the MMS override fails, or the template
+accepts `voice`.
+cleanup: `delete_output(job_id=...)` on both runs.
+metrics: none.
+
 ## Performance
