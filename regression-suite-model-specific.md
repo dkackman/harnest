@@ -6142,7 +6142,6 @@ cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` 
 metrics: `wall_minutes`, to `regression-perf/M-F222.jsonl` on each run.
 
 ### M-F223 — `templates/ltx2/alpha-matte` is a catalog shot with a cost, the card's bounds, no prompt variable, a fixed empty prompt, and a letterbox fit undone after
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: LTX-2.5 `LTX2InContextPipeline` on `Lightricks/LTX-2.5-Diffusers` with
 `Lightricks/LTX-2.5-22b-IC-LoRA-Alpha-Gen` (`ltx-2.5-22b-ic-lora-alpha-gen-0.9.safetensors`), via
@@ -6203,7 +6202,6 @@ cleanup: none. Discovery only, writes nothing.
 metrics: none.
 
 ### M-F224 — `alpha-matte` refuses off-grid sizes, frame counts past 145 and below 9 for free, and accepts the boundary values and 1920×1088
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F223. Free: `validate_workflow` only, no GPU. `A` is
 `asset:qa-cast/ep6-shot1-priya.mp4` (shared). Every call below is
@@ -6241,7 +6239,6 @@ cleanup: none (unless the `run_workflow` arm queued a job: `cancel_job`, then `d
 metrics: none.
 
 ### M-F225 — `alpha-matte` on a person clip gives a grey soft-edged matte at the source's size, frame-aligned, with no soundtrack; at 145 frames it is still a matte
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs on lem (RTX 3090), the first at the template's
 default size. Workspace `regression-model-specific`, `"seed": 1079` on both. `A` is
@@ -6291,7 +6288,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-de
 `960x544-145f`, to `regression-perf/M-F225.jsonl`. The first run seeds the file.
 
 ### M-F226 — `alpha-matte` on portrait and square sources comes back at each source's own size, with the letterbox padding cut off and the matte aligned
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs at the default 960×544 working size. Workspace
 `regression-model-specific`, `"seed": 1079`.
@@ -6906,7 +6902,6 @@ cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` 
 metrics: `wall_minutes`, to `regression-perf/M-F249.jsonl` on each run.
 
 ### M-F250 — `alpha-matte`'s `frame_rate` defaults to `"source"`, its matte step is held at 24, its restore step carries the rate, and the registry links Alpha-Gen by an `evidence` item with `workflow: null`
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F223. Free: discovery calls and a skill read only, no GPU. This is plan v3/v4's
 amendment of M-F223 (Q5, Q6). Where the two differ, this case is the plan's current wording: M-F223's
@@ -6955,7 +6950,6 @@ cleanup: none. Discovery only, writes nothing.
 metrics: none.
 
 ### M-F251 — `restore_to_source`'s `fps` refuses a non-positive or non-numeric value other than `"source"` for free, and `alpha-matte` validates with each legal `frame_rate`
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `fit_to_model` → `restore_to_source` tasks, and `templates/ltx2/alpha-matte`. Free:
 `validate_workflow` only, no GPU. Workspace `regression-model-specific`. `P` is
@@ -6991,7 +6985,6 @@ cleanup: none (inline validation writes nothing).
 metrics: none.
 
 ### M-F252 — `restore_to_source` writes the rate the caller picks: the fit record's source rate with `"source"`, the input's rate when omitted, a number when given, and never changes the frame count
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: `fit_to_model` and `restore_to_source` only. CPU, no model, no GPU time beyond the
 queue. Workspace `regression-model-specific`. This is plan v3's engine change tested over MCP: an 8 fps
@@ -7024,7 +7017,6 @@ cleanup: `delete_output(job_id=<id>)`, then `delete_workflow("m-fps-restore")`. 
 metrics: none.
 
 ### M-F253 — `alpha-matte` on an 8 fps source writes the matte at 8 fps with the source's frame count by default, and at 24 fps with the same count when `frame_rate=24`
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs at the default 960×544 working size on lem (RTX
 3090), 97 frames each. Workspace `regression-model-specific`, `"seed": 1079`.
@@ -7647,7 +7639,6 @@ cleanup: none (nothing runs); delete any copied asset.
 metrics: none.
 
 ### M-F272 — `alpha-matte`'s 145-frame cap finishes on a warm card, straight after the default arm on the same card with no `clear_memory`, and `get_memory` is recorded after each arm
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v6 (claude-opus-5-5 via anthropic)
 Amends M-F225's cap arm (plan v5/v6, Q8): M-F225 as written passes a cap arm run on a cold card (job
 e794e441ce21) and doesn't say which card or what ran before it. This case is the warm form. Run it in
@@ -8086,7 +8077,6 @@ metrics: `latency` (s), condition `portrait-384x544-97f-30fps`, to `regression-p
 first run seeds the file.
 
 ### M-F289 — `alpha-matte`'s description and the `ltx-2.5` skill row say a hard cut can leak source texture into the frames after it, so a clip is matted one shot at a time; the cap stays 145
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v8 (claude-opus-5-5 via anthropic)
 Plan v8, Q9 (a): keep 145 and describe the cut limit. Free: discovery and validation only. Workspace
 `regression-model-specific`. `L` is `asset:qa-cast/ep13-episode.mp4` (shared; 282 frames, 960×544,
@@ -8116,7 +8106,6 @@ without the fallback's description, or 153 validates.
 cleanup: none (nothing runs).
 
 ### M-F290 — `alpha-matte` at 145 frames on a cut-free source is a clean matte on every frame, last frame included; on `ep13-episode.mp4` the frames before the cut are clean
-pending: #1079
 source: tester, spec for #1079 from #1064's plan v8 (claude-opus-5-5 via anthropic)
 Amends M-F272's no-leak criterion (plan v8, Q9 (a)). M-F272 found grille texture on frame 144 of its
 cap arm, just after a shot cut in `ep13-episode.mp4`. This case tells a cut apart from the length

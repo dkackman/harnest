@@ -1,0 +1,2 @@
+{"ts":"2026-10-31T20:44:24Z","level":"model-specific","case":"M-F272","metric":"latency","condition":"960x544-default-warm","value":110.7,"unit":"s","server":"develop@6b1dcfcb","model":"claude-opus-5-5","provider":"anthropic","ref":"job bc88c91aff8d"}
+{"ts":"2026-10-31T20:46:15Z","level":"model-specific","case":"M-F272","metric":"latency","condition":"960x544-145f-warm","value":101.6,"unit":"s","server":"develop@6b1dcfcb","model":"claude-opus-5-5","provider":"anthropic","ref":"job 6e93a6728f9b"}
