@@ -15307,7 +15307,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F571 — `templates/minimax/face-repair` is a catalog `shot` template: crop at H3's grid and window → H3 refine holding the crops' audio → paste
-pending: #1099
 source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Free and read-only.
 1. `list_workflows(shape="shot")`.
@@ -15331,7 +15330,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F572 — `minimax/face-repair` validates clean with only the take (and picture) supplied, and quotes an estimate
-pending: #1099
 source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` on `templates/minimax/face-repair` with `arguments` holding only
 `source_video: "asset:qa-cast/ep21-shot1-receipt.mp4"` — plus, if the template is ref2va,
@@ -15349,7 +15347,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F573 — `minimax/face-repair` on an H3 dialogue take: the source's frames, fps and soundtrack, a sharper face, the mouth on the same frames, no seam
-pending: #1099
 source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 GPU (H3, about the template's quoted cost per arm). Input: one of the two small-face dialogue takes
 #1097's record names (its `asset:` or `output:` reference; `copy_to_workspace` it into
@@ -15384,7 +15381,6 @@ delete the probe's take.
 metrics: none.
 
 ### C-F574 — `minimax/face-repair` refuses a 4 s clip and a 30 fps clip at the crop step, before H3 loads, naming the value
-pending: #1099
 source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Setup: `trim_video` `asset:qa-cast/ep6-cold-open.mp4` to 96 frames (4 s at 24 fps) and save it; and
 make R30 per C-F569's setup (124 frames saved at 30 fps). `keep_output` each under `qa-1099/`.
@@ -15401,7 +15397,6 @@ cleanup: `delete_output(job_id=…)` for every job; `delete_asset` both `qa-1099
 metrics: none.
 
 ### C-F575 — the `minimax-h3` skill points a good take with a soft small face at `templates/minimax/face-repair`
-pending: #1099
 source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Free. Load the `dw:minimax-h3` skill (as loaded from `develop`) and read it. Then
 `get_workflow("templates/minimax/face-repair")`.
