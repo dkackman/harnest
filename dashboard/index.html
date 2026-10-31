@@ -360,7 +360,9 @@ function render(st) {
 
   // targets
   let anyLive = false, summary = [];
-  keepScroll($("targets"), () => $("targets").innerHTML = Object.entries(st.streams).map(([name, s]) => {
+  // a target shows only while a driver holds its lock: a loop, or a regression run
+  const active = Object.entries(st.streams).filter(([, s]) => s.lock && s.lock.alive);
+  keepScroll($("targets"), () => $("targets").innerHTML = active.length ? active.map(([name, s]) => {
     const quiet = s.mtime ? st.now - s.mtime : null;
     const held = s.lock && s.lock.alive;
     const sessions = s.sessions.filter((x) => x.turns || x.usage || x.model);
@@ -404,7 +406,7 @@ function render(st) {
           <td class="num"><b>$${total.toFixed(2)}</b></td></tr>
       </table></div>
     </section>`;
-  }).join(""));
+  }).join("") : '<section class="card"><p class="empty">no loop or regression run holds a target</p></section>');
   document.querySelectorAll(".burn").forEach(drawBurn);
   const runs = Object.values(st.streams).filter((s) => s.loop_run);
   $("hcost").textContent = runs.length ? `· $${runs.reduce((a, s) => a + s.loop_run.cost, 0).toFixed(2)} this run` : "";
@@ -425,7 +427,8 @@ function render(st) {
 // ---- loop progress: the board after each cycle, as a burn-up ----------
 // Each column is one cycle's board that differed from the last: the tickets
 // closed since the run began, under the ones still open by owner. Its height
-// is every ticket the run has seen, so tickets filed mid-run raise it.
+// is every ticket the run has seen, so tickets filed mid-run raise it. A board
+// that names its loop counts that loop's claims only (serve.py).
 const SERIES = [ // bottom of the stack first (the --s-* order)
   { key: "closed", label: "closed", css: "--s-closed" },
   { key: "other", label: "other owner", css: "--s-other" },
@@ -454,7 +457,7 @@ function progress(name, lr) {
       `<span><i style="background:var(${x.css})"></i>${x.label} <b>${last[x.key] || 0}</b></span>`).join("")}</div>
     <div class="burn" data-stream="${esc(name)}" role="img"
       aria-label="${esc(`${lr.points.length} boards since ${lr.start}: ${last.closed} closed, ${last.agents} with agents, ${last.don} waiting on you`)}"></div>
-    ${list("closed", "closed or left the board this run", lr.closed)}
+    ${list("closed", "closed or handed to another loop this run", lr.closed)}
     ${list("arrived", "arrived this run", lr.arrived)}
   </div>`;
 }

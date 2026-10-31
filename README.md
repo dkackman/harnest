@@ -881,7 +881,8 @@ raw events.
 - `logs/progress.tsv`: the no-progress ledger. An issue that sessions leave unchanged
   `NO_PROGRESS_PARK_AFTER` times in a row is parked with Don instead of re-run.
 - After every cycle, the driver prints a status board with one line per open issue:
-  number, status, owner and title.
+  number, status, owner and title. The title is marked `[lem]` or `[mini-ai]` with the loop
+  that holds the issue (its own claim, else its feature's) and `(parked) ` on a parked issue.
 - `python3 dashboard/serve.py` (port 8780, or `--port`/`DASHBOARD_PORT`), then open
   http://127.0.0.1:8780. It's a local, read-only page, served from this machine only, that
   refreshes every few seconds. `--host 0.0.0.0` shares it on the LAN
@@ -899,9 +900,10 @@ raw events.
   - what the current session on lem (`loop.log`) and on the Mac (`loop.mini-ai.log`) is doing:
     turns, context, last tool call;
   - while `run-loop.sh` holds a target's lock, that run's progress from the status board after
-    each cycle: a burn-up of the tickets closed since the run began, under those still open
-    (with agents, with you, parked), so tickets filed mid-run raise the column, plus the
-    run's sessions and cost;
+    each cycle: a burn-up of the tickets this loop has claimed, closed (or handed to the other
+    loop) since the run began, under those still open (with agents, with you, parked), so
+    tickets claimed mid-run raise the column, plus the run's sessions and cost. A target
+    shows only while a driver holds its lock;
   - the recent sessions, with their cost;
   - a release's gate log, while one is running;
   - a live tail of any file in `logs/`, with a filter.

@@ -57,8 +57,9 @@ USAGE_RE = re.compile(r"turns=(\d+) duration=(\d+)s cost=\$([\d.]+) ctx_peak=([\
 CTX_RE = re.compile(r"· ctx=([\d.]+k?)")
 # The board run-loop.sh prints after each cycle (status_board): the loop's progress
 CYCLE_HDR_RE = re.compile(r"^cycle (\d+): ")
-BOARD_HDR_RE = re.compile(r"^--- (\d\d:\d\d:\d\d) cycle (\d+) tickets ---$")
-BOARD_ROW_RE = re.compile(r"^  #(\d+)\s+(\S+)\s+(\S+)\s+(.*)$")
+# ", <target>" names the loop that wrote it; its rows then carry claim marks
+BOARD_HDR_RE = re.compile(r"^--- (\d\d:\d\d:\d\d) cycle (\d+) tickets(?:, (\S+))? ---$")
+BOARD_ROW_RE = re.compile(r"^  #(\d+)\s+(\S+)\s+(\S+)\s+(?:\[([\w.-]+)\] )?(.*)$")
 PARKED = "(parked) "  # status_board's mark on a parked issue's title
 AGENT_OWNERS = {"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"}
 
@@ -252,7 +253,11 @@ class StreamIndex:
         b = self._board
         r = BOARD_ROW_RE.match(line)
         if r:
-            title = r.group(4)
+            b["read"] = True
+            # a board that names its loop counts only that loop's claims
+            if b["target"] and r.group(4) != b["target"]:
+                return True
+            title = r.group(5)
             # a parked issue counts as parked, whoever owns it
             owner = "parked" if title.startswith(PARKED) else r.group(3)
             b["rows"][int(r.group(1))] = (r.group(2), owner, title.removeprefix(PARKED))
@@ -261,7 +266,7 @@ class StreamIndex:
             return False
         self._board = None
         run, rows = self.loop_run, b["rows"]
-        if not run or not rows:  # gh failed: an empty board is not everything closed
+        if not run or not b["read"]:  # gh failed: an empty board is not everything closed
             return False
         if run["baseline"] is None:
             run["baseline"] = set(rows)
@@ -292,7 +297,13 @@ class StreamIndex:
         bh = BOARD_HDR_RE.match(line)
         if bh:
             self._loop_cycle(bh.group(1), int(bh.group(2)))
-            self._board = {"time": bh.group(1), "cycle": int(bh.group(2)), "rows": {}}
+            self._board = {
+                "time": bh.group(1),
+                "cycle": int(bh.group(2)),
+                "target": bh.group(3),
+                "rows": {},
+                "read": False,
+            }
             return
         self._regression_line(line)
         m = HEADER_RE.match(line)

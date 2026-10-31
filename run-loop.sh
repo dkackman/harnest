@@ -1095,16 +1095,24 @@ stranded_here() {
   done < <(queue_issues stranded)
 }
 
-# One line per open issue: #NN  status-labels  owner-label  title. Prints
-# nothing when gh fails: the board is a report, never a reason to stop.
+# One line per open issue: #NN  status-labels  owner-label  title. The title
+# is marked "[<loop>] " with the loop that holds the issue (its own target:
+# claim, else its parent's, lem's when both claim it, as in lib/classify.jq)
+# and "(parked) " on a parked issue; the dashboard's loop chart reads both.
+# Prints nothing when gh fails: the board is a report, never a reason to stop.
 status_board() {
   gh issue list --repo "$TICKET_REPO" --state open --limit 200 \
-    --json number,title,labels \
-    --jq '.[] | [
+    --json number,title,labels,parent \
+    --jq '(map({key: (.number|tostring), value: [.labels[].name | select(startswith("target:")) | ltrimstr("target:")]})
+        | from_entries) as $claims
+      | .[] | . as $i
+      | (($claims[$i.number|tostring] // []) | if length > 0 then . else ($claims[($i.parent.number // 0)|tostring] // []) end) as $t
+      | [
       ("#" + (.number|tostring)),
       (([.labels[].name | select(startswith("status:"))]) + ["open"])[0],
       (([.labels[].name | select(startswith("owner:"))]) + ["unowned"])[0],
-      .title
+      ((if $t == [] then "" elif ($t | index("lem")) then "[lem] " else "[" + $t[0] + "] " end)
+        + (if any(.labels[]; .name == "parked") then "(parked) " else "" end) + .title)
     ] | @tsv' \
   | awk -F'\t' '{printf "  %-5s %-24s %-18s %s\n", $1, $2, $3, $4}' || true
 }
@@ -1183,7 +1191,7 @@ while true; do
     || echo "[tester] suite commit failed, continuing" | tee -a "$LOOP_LOG"
   step curator_pass curator_pass
 
-  { echo "--- $(ts) cycle $cycle tickets ---"; status_board; stranded_board
+  { echo "--- $(ts) cycle $cycle tickets, $DW_TARGET ---"; status_board; stranded_board
     freeze="$(release_freeze)"; [ -z "$freeze" ] || { [ "$freeze" = UNKNOWN ] && echo "  board unreadable: a release freeze is possible" || echo "  release freeze $freeze: only release-blocker issues move"; }
     drafts="$(gh api "repos/$TICKET_REPO/security-advisories?state=draft&per_page=100" --jq length 2>/dev/null || true)"
     [ "${drafts:-0}" = 0 ] || echo "  $drafts private security finding(s) in draft advisories: ./scripts/file-advisory.sh --list"
