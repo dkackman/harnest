@@ -6510,7 +6510,6 @@ cleanup: none. Never delete the probe jobs: the gate cites them.
 metrics: none.
 
 ### M-F233 — `refine_sigmas` with the regenerate recipe validates, at its boundaries and with `refine_tiles`, and the guide documents it with that example
-pending: #1082
 source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine (`refine_strength`, new `refine_sigmas`). Free: validation and discovery.
 Q3's default holds: `refine_sigmas` and `num_inference_steps` are both required, and must agree
@@ -6548,7 +6547,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F234 — `validate_workflow` and `run_workflow` refuse each broken `refine_sigmas` rule, naming the rule, and queue nothing
-pending: #1082
 source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine with `refine_sigmas`; `templates/sd15` (or the SD 1.5 template M-F174 (q)
 uses) as a non-H3 step. Free.
@@ -6592,7 +6590,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### M-F235 — a 768p refine with explicit `refine_sigmas` runs 3 denoise steps, keeps base audio, and doesn't reuse the shift-grid refine from the step cache
-pending: #1082
 source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va 960×544 + `upscale_h3_latents` + H3 refine at 1344×768 (M-F098's shape, the
 cheap one, not the 1080p arm). GPU: two short refine passes, about M-F098's run A each; `wait_seconds=55`, then
@@ -6636,7 +6633,6 @@ metrics: `refine_s` and `refine_evals` per job, conditions `768p-s0.909-sigmas` 
 `regression-perf/M-F235.jsonl`. The first run seeds the file.
 
 ### M-F236 — with no `refine_sigmas`, the refine pass is unchanged: existing refine cases hold and their evaluation counts don't move
-pending: #1082
 source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine (`refine_strength`, `refine_tiles`) without the new input. Free, except where it
 reuses M-F098's runs when the same pass runs them.
@@ -6655,7 +6651,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F237 — the faithful-arm record: the stage B job ran the recipe's exact sigmas at 1920×1088 and sits in #1065's table beside the stage A arm
-pending: #1082
 source: tester, spec for #1082 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F232, with `refine_sigmas`. Free: it reads the recorded job. Workspace `qa-h3-regen-2k`.
 Steps:
