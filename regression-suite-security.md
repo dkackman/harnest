@@ -1180,15 +1180,20 @@ SE-F018 refuses an internal host at validation. But the host check covers only t
 public URL that answers 302 to `http://127.0.0.1:8765/…` used to be followed, and the server
 fetched its own API. `safe_get` now re-validates every `Location` and follows at most 5 hops.
 This covers every media fetch site: arguments, `gather_inputs`, audio and video.
-Needs an open redirector: `https://httpbin.org/redirect-to?url=<target>&status_code=302` and
-`https://httpbin.org/redirect/<n>` (n hops, ending at `/get`, which is JSON). If httpbin is down,
-use any public open redirector and name it in the report. Each arm below is a one-step
+Needs an open redirector that will 302 to an internal or `file:` target. For (a)–(e) use
+`https://postman-echo.com/redirect-to?url=<target>&status_code=302` (fallback
+`https://httpbin.dev/redirect-to?url=<target>&status_code=302`). httpbin.org's `redirect-to`
+refuses internal targets itself with a 403, and a redirector on the box can't be the first hop
+because SE-F018 refuses it at validation. For (f) use `https://httpbin.org/redirect/<n>` (n hops,
+ending at `/get`, which is JSON). If both are down, use any public open redirector that 302s to
+the target and name it in the report. Each arm below is a one-step
 task workflow run with `run_workflow(workflow=…, acknowledged_cost=<from validate>,
 wait_seconds=55)`. These are CPU-only tasks.
 - (a) Loopback: `get_image_size` with `image:
-  "https://httpbin.org/redirect-to?url=http://127.0.0.1:8765/api/server&status_code=302"`.
+  "https://postman-echo.com/redirect-to?url=http://127.0.0.1:8765/api/server&status_code=302"`.
   Validation passes, because the first host is public. The job must fail.
-- (b) Scheme change: the same with `url=file:///etc/hostname`.
+- (b) Scheme change: the same with `url=file:///etc/hostname` (or `url=file:///etc/hosts` where
+  `/etc/hostname` doesn't exist, as on macOS).
 - (c) Private range: the same with `url=http://10.0.0.1/x.png`. **Stop it within 60 s**
   (`cancel_job`) if it hasn't failed. It is a finding if it tries to connect.
 - (d) Audio site: `analyze_audio` with `audio` set to (a)'s URL.
@@ -1199,12 +1204,16 @@ wait_seconds=55)`. These are CPU-only tasks.
   limit.
 
 expected:
-- (a)–(e) each end `failed`, with an error that refuses the **redirect target**: it names
-  `127.0.0.1`, `10.0.0.1` or the `file` scheme, and says it is internal, or is a redirect, or is
-  a disallowed scheme. `get_job_events` shows no decode step, and the error holds no text from
+- (a)–(e) each end `failed`, with an error that refuses the **redirect target**: it begins
+  `Refusing a redirect to '<target>' (from '<the arm's URL>'): `, then says `inside this
+  deployment` for (a), (c), (d) and (e), or `URL scheme not allowed: file` for (b).
+  `get_job_events` shows no decode step, and the error holds no text from
   the target. For (a), that means no JSON from `/api/server` (`version`, `accelerator`) and no
   "cannot identify image file" or similar decode error. A decode error means the body was
   fetched and handed to PIL. That is the vulnerability, and a **high-severity finding**.
+- `403 Client Error ... for url:` means the redirector didn't redirect. The arm is inconclusive,
+  not a pass: rerun it on the fallback redirector. "cannot identify image file" means the body
+  was fetched and decoded, which is the high-severity finding above.
 - (f) `/redirect/4` is not refused for its hop count. It may still fail decoding `/get`'s JSON,
   and that is fine. `/redirect/7` is refused with a message about too many redirects.
 - It is a **finding** if the limit lands anywhere but 5 hops: `/redirect/5` passes the hop check
