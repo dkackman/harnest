@@ -263,6 +263,19 @@ smoke's Fixtures lists the asset too.
   `ep3-shot2-reply.mp4` (any two colourful 124-frame 960×544 shots with audio substitute; re-derive the
   frame arithmetic from their counts), `priya-portrait.jpg` (any still not 960×544), and the
   `qa-fit/` clips. Nothing new to keep.
+- C-F557–C-F559 (dialogue/rest split, #1096) reuse `ep6-shot1-priya.mp4`, `ep21-shot1-receipt.mp4` and
+  `ep20-score.wav` from above. The shots need one voice at a time with audible speech, and the score needs
+  to be at least 124 frames (5.17 s) long. Nothing new to keep. C-F562 reads the stems #1096 kept in Don's
+  workspace and never deletes them.
+- C-F564–C-F575 (H3 face refine, #1092) reuse `ep25-episode.mp4` (360 frames with audio to the end; C-F566
+  and C-F568 trim it to 96–346 frames, so a substitute needs ≥ 346 frames with sound throughout),
+  `ep6-cold-open.mp4`, `ep3-shot1-incident.mp4`, `ep21-shot1-receipt.mp4`, `priya-portrait.jpg` and
+  `qa-fit/src-640x480-50f-silent.mp4`. C-F573 reads a take #1097's record names in `probe-1092`; never
+  delete it. Nothing new to keep.
+- C-F576–C-F589 (`analyze_phrases` and phrase-fed `plan_cuts`, #1095) reuse `ep15-song.mp3` (stereo
+  sung mix, 30.03 s), `priya-voice.wav` (mono speech), `room-bed.wav` (near-silent mono) and synthetic
+  phrase results passed as workflow variables. C-F589 reads `verse_s7.wav` from the `russian-anthem`
+  workspace (job `0838f676f51f`) and never deletes it. Nothing new to keep.
 
 ## Functional
 
@@ -14967,6 +14980,748 @@ expected:
 It is a **finding** if either repo is listed without a `filename`, or step 2's entry is priced near 104.7 GB (the
 whole repo, which is the #1088 bug).
 cleanup: none.
+metrics: none.
+
+### C-F557 — htdemucs as a dialogue/rest splitter: score + dialogue shot → `separate_stems` → three-stem rest → `[score, dialogue, rest]` mix validates clean and runs, with no `stacked_vocals`
+pending: #1096
+source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
+Utility jobs only (htdemucs on CPU, two mixes): about a minute each, warm. Workspace `regression-complete`.
+Uses the shared fixtures `asset:qa-cast/ep6-shot1-priya.mp4` and `asset:qa-cast/ep21-shot1-receipt.mp4`
+(124-frame 24 fps dialogue shots with their own 32 kHz audio) and `asset:qa-cast/ep20-score.wav` (a ~10.3 s
+score). The shots are the "dialogue", the score is the "bed". What matters is that each shot has one voice
+speaking at a time (no overlapping or layered speech). A substitute shot needs that, and audible speech.
+1. For each shot `<shot>`, build this inline workflow (one job per shot):
+   - step `score`: `slice_audio` with `audio: "asset:qa-cast/ep20-score.wav"`, `start_frame: 0`,
+     `num_frames: 124`, `fps: 24`, saved to `intermediate` (or `save: false`);
+   - step `mix`: `mix_audio` with `audios: ["asset:qa-cast/<shot>", "previous_result:score"]`, saved as
+     `audio/wav`;
+   - step `stems`: `separate_stems` with `audio: "previous_result:mix"`, saved as `audio/wav`;
+   - step `rest`: `mix_audio` with `audios: ["previous_result:stems.drums", "previous_result:stems.bass",
+     "previous_result:stems.other"]`, saved as `audio/wav`;
+   - step `film`: `mix_audio` with `audios: ["previous_result:score", "previous_result:stems.vocals",
+     "previous_result:rest"]` and `gains: [0.5, 1.4, 0.8]`, saved as `audio/wav`. This is the recipe's final
+     three-track mix, each part at its own gain.
+2. `validate_workflow(workflow=…)` on each. Then `run_workflow(..., acknowledged_cost=…, wait_seconds=55)`,
+   binding the validate's fingerprint (`minutes: null` if its basis is `unknown`), and `wait_for_job` if it is
+   still running.
+3. `get_job` on each. `get_gallery_metadata` on the `stems` outputs and on the `rest` and `film` outputs.
+expected:
+- Both validates return `valid: true` with no errors. A resample warning (32 kHz shot under a 44.1 kHz
+  score, or the 44.1 kHz stems under the slice) is fine. Nothing else is an error.
+- Both jobs succeed. `stems` saves exactly four audio files, `-vocals`, `-drums`, `-bass` and `-other`.
+  `rest` and `film` each save one audio file.
+- The stems are 44.1 kHz stereo, as the tasks guide promises. Each stem, `rest` and `film` lasts as long as
+  `mix`, within 0.05 s (about 5.17 s).
+- `get_job` `warnings` has **no** `stacked_vocals` entry on either job: single-speaker dialogue isn't
+  layered stereo voices. A near-silent warning on `drums` or `bass` is fine (a score may have none). One on
+  `vocals`, `rest` or `film` is not.
+- `vocals` and `rest` are both audible (`mean_dbfs` above about −50).
+It is a **finding** if either workflow fails to validate or run, if a result name differs from the five
+above, if `stacked_vocals` fires on a single-speaker shot, or if `vocals` or `rest` comes back silent.
+cleanup: `delete_output(job_id=…)` for both jobs. Never delete the shared assets.
+metrics: none.
+
+### C-F558 — `transcribe_audio` on the htdemucs `vocals` stem of a scored dialogue mix yields the shot's line
+pending: #1096
+source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
+Utility jobs only (htdemucs plus Whisper on CPU): about a minute each, warm. Workspace `regression-complete`.
+Same fixtures and shots as C-F557.
+1. For each shot `<shot>`, one inline workflow:
+   - steps `score`, `mix` and `stems` exactly as in C-F557 (`stems` may be saved to `intermediate`);
+   - step `dry`: `transcribe_audio` with `audio: "asset:qa-cast/<shot>"`, saved as `text/plain`;
+   - step `wet`: `transcribe_audio` with `audio: "previous_result:stems.vocals"`, saved as `text/plain`;
+   - step `raw`: `transcribe_audio` with `audio: "previous_result:mix"`, saved as `text/plain`. This is the
+     control: the scored mix with no separation.
+2. Validate, run with `wait_seconds=55` (bound acknowledgement as in C-F557), `get_job`, then
+   `get_output_text` on the three transcripts.
+expected:
+- Both jobs succeed, with no `stacked_vocals` warning.
+- `dry` holds the shot's spoken line. This is the reference.
+- `wet` holds the same line: every content word in `dry` (ignoring case, punctuation and filler such as
+  "uh") is in `wet`, in the same order. One word missing or misheard in a line of eight or more is allowed.
+  A word Whisper invents that isn't in `dry` is noted but isn't a failure.
+- `wet` agrees with `dry` at least as well as `raw` does (the same number of `dry` content words found, or
+  more). Separating shouldn't lose words that the unseparated mix kept.
+It is a **finding** if `wet` drops the line or most of it, if it agrees with `dry` worse than `raw`, or if
+either job fails. A finding here is evidence for Stage B in #1091's re-plan, not just a bug, so say so in
+the issue.
+cleanup: `delete_output(job_id=…)` for both jobs. Never delete the shared assets.
+metrics: none.
+
+### C-F559 — edges of the dialogue split: a score with no speech and a dry shot with no score
+pending: #1096
+source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
+Utility jobs only, about a minute each, warm. Workspace `regression-complete`. Same fixtures as C-F557.
+1. **No dialogue:** C-F557's workflow with step `mix` replaced by `mix_audio` with `audios:
+   ["previous_result:score"]` (the score alone), plus a step `wet`: `transcribe_audio(audio:
+   "previous_result:stems.vocals", timestamps: "segment")` saved as `application/json`.
+2. **No score:** C-F557's workflow for `ep6-shot1-priya.mp4` with step `mix` replaced by `mix_audio` with
+   `audios: ["asset:qa-cast/ep6-shot1-priya.mp4"]` (the shot alone), plus steps `dry` and `wet` as in C-F558.
+3. Validate, run (`wait_seconds=55`) and `get_job` on each. `get_gallery_metadata` on the stems and `rest`,
+   and `get_output_text` on the transcripts.
+expected:
+- Both validate clean and both jobs succeed. The recipe doesn't depend on the mix holding speech or a
+  score. Neither job warns `stacked_vocals`.
+- Run 1: the `vocals` stem is far quieter than `rest` (at least 15 dB lower `mean_dbfs`), or near-silent
+  with a near-silent warning. `wet` has no chunks, or every chunk carries a `suspect` reason. No run-time
+  error comes from transcribing a near-empty stem.
+- Run 2: `rest` is far quieter than `vocals` (at least 10 dB lower `mean_dbfs`). `wet` holds `dry`'s line, as
+  C-F558 measures it.
+It is a **finding** if either run fails or errors, if a no-speech score yields an unflagged transcript of
+words, or if the score-free shot's dialogue mostly lands in `rest`.
+cleanup: `delete_output(job_id=…)` for both jobs. Never delete the shared assets.
+metrics: none.
+
+### C-F560 — the `dw:series-episodes` skill's dialogue-stem recipe names `separate_stems`' results and `mix_audio`'s arguments exactly, and validates as written
+pending: #1096
+source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only. Applies once Don's listening verdict on #1096 is "good enough", which is when the plan
+writes the paragraph. If #1096 records the verdict as "inadequate" and the skill has no such paragraph,
+record the case as not applicable and file a `suite` + `status:needs-approval` request on `dkackman/harnest`
+to retire it. Its absence isn't a pass.
+1. Load the `dw:series-episodes` skill and find the paragraph about separating the `world` track into a
+   dialogue stem and a bed.
+2. `get_task("separate_stems")` and `get_task("mix_audio")`.
+3. Write out the chain the paragraph describes as an inline workflow, using its own step names, result
+   names and arguments, with `asset:qa-cast/ep6-shot1-priya.mp4` standing in for `world` and
+   `asset:qa-cast/ep20-score.wav` for the score. `validate_workflow` on it.
+expected:
+- The paragraph replaces the "`world_gain` lifts everything" dead end. It says to separate `world` with
+  `separate_stems`, take `vocals` as the dialogue, mix `drums`, `bass` and `other` with `mix_audio` as the
+  rest, and then mix score, dialogue and rest with `mix_audio`, each with its own gain.
+- Every name the paragraph uses matches the live schemas: the command names `separate_stems` and
+  `mix_audio`, the result keys `vocals`/`drums`/`bass`/`other` as `previous_result:<step>.<key>`, and the
+  `mix_audio` arguments `audios` and `gains`, with gains written as plain multipliers, not decibels.
+- No template variable is offered for a dialogue gain (Q2: none). The recipe is a three-track `mix_audio`.
+- The written-out chain validates with `valid: true`.
+It is a **finding** if any name is misspelled or doesn't exist (`stems.dialogue`, `gain_db` on `mix_audio`,
+a `dialogue_gain` variable), if gains are given in dB, or if the chain as written doesn't validate.
+cleanup: none.
+metrics: none.
+
+### C-F561 — the tasks guide's *Stem separation* section names the dialogue/rest use and gives one source for htdemucs' weights
+pending: #1096
+source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
+Free.
+1. `get_guide("tasks", section="Stem separation")`. Search the same guide for any other mention of
+   `htdemucs` or `HTDemucs` (the `separate_stems` command reference, if it has its own section).
+2. `get_task("separate_stems")`.
+expected:
+- The section names the dialogue use: on a film's world track, `vocals` is the dialogue stem and `drums` +
+  `bass` + `other` (through `mix_audio`) is the effects/ambience bed, to be levelled separately.
+- Everything the guide says about where htdemucs' weights come from says the same thing. It doesn't say
+  the weights come from Hugging Face `adefossez/HTDemucs` in one place and from outside the HF cache in
+  another (the inconsistency #1091's plan found).
+- `get_task("separate_stems")` still lists exactly `audio`, `sample_rate` and `device`, and the four stems
+  are unchanged. Stage A adds no code.
+It is a **finding** if the dialogue use isn't named, if two weight sources are still given, or if
+`separate_stems` gained or lost an argument.
+cleanup: none.
+metrics: none.
+
+### C-F562 — #1096's kept stems, the ones its record names for Don's listening, resolve as audio
+pending: #1096
+source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
+Free. The A/B record's stems are kept (`keep_output`) so Don can listen to them. This case checks that
+they're still there and are what the record says.
+1. Read the hand-off comment on dkackman/diffusers-workflow#1096 that lists the stem references for Don
+   (`output:` or `asset:` names), and the workspace they're in.
+2. `get_gallery_metadata(name=<ref>, workspace=<that workspace>)` on each listed reference.
+expected:
+- The comment lists, for each of the 2–3 shots measured, the mix, its `vocals` stem and its rest mix (or
+  the `drums`/`bass`/`other` stems). Each listed reference resolves with no "Unknown asset" error.
+- Each one is audio: a stem is 44.1 kHz stereo, and the stems of one mix are the same length within 0.05 s.
+- The comment, or the record it points at, gives each mix's transcription agreement and level numbers next
+  to the stems (Q1). The listening verdict is Don's, so this case doesn't judge it.
+It is a **finding** if a listed reference doesn't resolve, isn't audio, or if a mix's stems differ in
+length. A reference later removed on Don's say-so isn't a finding, so check #1096's thread first.
+cleanup: none. Never delete the kept stems.
+metrics: none.
+
+### C-F563 — every job #1097's probe record cites exists and finished
+pending: #1097
+source: tester, spec for #1097 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Free. Stage A ships no MCP surface: Don judges the probe from its record. The tester's only check is
+that the record stands on real, finished jobs.
+1. Read the record on dkackman/diffusers-workflow#1097 (or the parent #1092, wherever the stage A
+   session posted it). List every job id it cites, and the workspace (`probe-1092` per the plan).
+2. `get_job(job_id=<id>)` on each.
+expected:
+- The record names the two takes it used (Q3), and per take the arms the plan lists: LTX
+  `ltx2/face-repair` at strength 2; H3 t2va refine at `refine_strength` 0.6, 0.72 and 0.8; the best
+  strength again as ref2va where the take has a cast picture (or says why not); one #1062 masked
+  full-frame edit. Each arm cites a job id, at seed 1092.
+- Every cited job exists and its status is finished (succeeded). A failed arm is acceptable only if
+  the record itself says it failed and why.
+- One comment holds every arm's `compare_outputs` face grid side by side (Q4).
+It is a **finding** if a cited job id doesn't resolve, is still queued or running, or failed without
+the record saying so, or if an arm the plan lists has no job and no stated reason. The judgement of
+identity, sync and seam is Don's, so this case doesn't make it.
+cleanup: none. Never delete the probe's outputs.
+metrics: none.
+
+### C-F564 — `crop_face_track` exposes optional `min_frames`, `max_frames` and `fps`, and the tasks guide gives H3's grid
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Free and read-only.
+1. `get_task("crop_face_track")`.
+2. `get_guide("tasks")` (the index), then the section documenting `crop_face_track`.
+expected:
+- Step 1 lists `min_frames`, `max_frames` and `fps`, each **optional** with no default that turns a
+  check on (null/absent), each with a positive domain. Every argument C-F357 lists is unchanged,
+  defaults included (`modulus` 8, `remainder` 1, `multiple` 32).
+- The descriptions say the window is checked against the crop count, and `fps` against the clip's
+  rate within ±0.01.
+- Step 2's section documents the three arguments, says `crops` carries the source's soundtrack
+  padded with silence over the padded frames (head and tail), says the grid defaults are LTX's, and
+  gives H3's: `modulus` 17, `remainder` 5, `multiple` 32.
+It is a **finding** if any of the three is missing or required, if an existing argument changed, or
+if the guide omits the soundtrack or H3's grid.
+cleanup: none.
+metrics: none.
+
+### C-F565 — bad literal `min_frames` / `max_frames` / `fps` are refused at the free pre-flight
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with `clip:
+"asset:qa-cast/ep3-shot1-incident.mp4"` plus the arguments given. Nothing runs.
+- Refused: `min_frames: 0`; `min_frames: -124`; `max_frames: 0`; `fps: 0`; `fps: -24`;
+  `min_frames: 345, max_frames: 124` (a window with min above max).
+- Accepted: `min_frames: 124, max_frames: 345`; `min_frames: 124, max_frames: 124`; `fps: 24`;
+  `fps: 23.976`; `min_frames: 124` alone; `max_frames: 345` alone; the control, `clip` alone.
+For every refused arm, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Each refused arm is `valid: false` at `steps[0].task.arguments.<name>`, with a message that states
+  the rule (positive; `min_frames` not above `max_frames`, naming both).
+- Every accepted arm is `valid: true`.
+- `run_workflow` queues no job for any refused arm.
+It is a **finding** if a refused arm validates or is refused only at run time, or if an accepted arm
+is refused. If the min-above-max arm validates but the crop step refuses it at run time naming both,
+record that as a finding against the plan's "validate catches bad literal values", not a pass.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F566 — `crops` carries the source's soundtrack, silence-padded at head and tail, lined up frame for frame
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+The plan's first acceptance arm, and the alignment fix it exists for. One workflow (`id:
+"qa-c-f566"`, workspace `regression-complete`):
+- `src`: `trim_video` `{"video": "asset:qa-cast/ep25-episode.mp4", "start_frame": 0, "num_frames":
+  200}`, saved as `video/mp4` (SRC: 200 frames, 24 fps, 32 kHz stereo, audio to its last frame).
+- `crop`: `crop_face_track` `{"clip": "previous_result:src", "modulus": 17, "remainder": 5,
+  "multiple": 32}`, saving `crops` (`video/mp4`) and `track` (`application/json`) as C-F192 does.
+200 is not 17n+5: the crop count is 209, so 9 frames are padded.
+Then: `get_output_text` on `track` (read `pad_before`/`pad_after`, whatever the warm-up and
+cool-down counts are named); `get_gallery_metadata` and `get_output_audio` on `crops`; and a
+measuring workflow (`id: "qa-c-f566-m"`) over the two saved outputs' `output:` references, confirming
+each task's call shape with `get_task` first:
+- `slice_audio` of `crops`' track over frames [0, `pad_before`) and over [209 − `pad_after`, 209),
+  each `analyze_audio`'d (skip a slice whose pad count is 0);
+- `measure_sync` of SRC's track against `crops`' track;
+- `slice_audio` of `crops`' track from frame `pad_before` for 200 frames, and `measure_sync` of SRC
+  against that.
+expected:
+- Both jobs succeed. `crops` has **209** frames at 24 fps and an audio stream (`get_output_audio`
+  returns audio), at SRC's sample rate and channel count.
+- `crops`' audio duration equals 209 / 24 = 8.708 s within one frame (±0.042 s), not SRC's 8.333 s.
+- `pad_before + pad_after == 9`. The head slice (if any) and tail slice (if any) are silent: peak at
+  or below −60 dBFS (digital silence reads −inf).
+- `measure_sync` of SRC against the whole `crops` track reports `crops` late by `pad_before` frames
+  (± 1 frame); against the slice starting at `pad_before`, offset 0 (± 1 frame).
+It is a **finding** if `crops` has no audio, if its audio length is SRC's or otherwise off by more
+than a frame, if a padded span holds sound, or if the offset isn't `pad_before` (the sound would lead
+or trail the mouth).
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F567 — a silent source gives `crops` with no audio and no error, at either grid
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Two one-step runs of `crop_face_track` on `asset:qa-fit/src-640x480-50f-silent.mp4` (Fixtures; C-F238's
+setup makes it if missing), saving `crops` and `track` as C-F192 does:
+- a. `modulus: 17, remainder: 5, multiple: 32` (50 frames → 56 crops);
+- b. the defaults (50 → 57 crops).
+Check `get_job` (status, `warnings`), `get_job_events`, `get_gallery_metadata` and `get_output_audio`
+on each `crops`.
+expected:
+- Both succeed with no error and no audio-related warning. a has 56 frames, b has 57.
+- Neither `crops` has an audio stream: `get_output_audio` reports no audio (an error or empty result
+  saying the file has none), and the metadata shows no audio channels. No silent track is invented.
+It is a **finding** if either run fails or warns about missing audio, or if `crops` carries a track
+the source didn't have.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F568 — the frame window is checked at the crop step against the crop count, naming both numbers, with its boundaries accepted
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Each arm is a two-step workflow: `trim_video` `{"video": "asset:qa-cast/ep25-episode.mp4",
+"start_frame": 0, "num_frames": <n>}` then `crop_face_track` on `previous_result:<trim>` with
+`modulus: 17, remainder: 5, multiple: 32` plus the window given. Validate each first (the window is
+not knowable until the clip is read, so `valid: true` is expected), then run it.
+- a. n = 200, `max_frames: 124` — **refused** (the plan's named arm).
+- b. n = 124, `min_frames: 124, max_frames: 345` — accepted: 124 is on the grid, 124 crops, no pad.
+- c. n = 345, `min_frames: 124, max_frames: 345` — accepted: 345 = 17·20+5, 345 crops.
+- d. n = 346, `max_frames: 345` — **refused**: pads to 362.
+- e. n = 96 (4 s), `min_frames: 124` — **refused**: pads to 107.
+- f. n = 200, no window — accepted, 209 crops (the control).
+expected:
+- a, d and e fail **at the crop step** (the trim step succeeded), each before writing `crops`, with
+  an error naming the bound (124 / 345 / 124) and the clip's frame count (200 / 346 / 96). Naming the
+  padded crop count too (209 / 362 / 107) is fine; naming only the padded count is acceptable if the
+  message says it is the padded crop count.
+- b, c and f succeed with 124, 345 and 209 frames.
+It is a **finding** if a refused arm writes `crops` or fails anywhere but the crop step, if its
+message omits the bound or every frame count, or if a boundary arm (b, c) is refused.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F569 — `fps` refuses a source at another rate, naming it, within a ±0.01 tolerance
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Setup, one workflow (`id: "qa-c-f569-setup"`): `video_frames` `{"video":
+"asset:qa-cast/ep6-cold-open.mp4"}` (124 frames), saved three times as `video/mp4`: with `result.fps`
+30 (R30), 23.976 (R23976) and 24 (R24). Confirm each saved rate with `get_gallery_metadata`; if the
+save can't write 23.976, say so in the notes and skip arm c (setup, not a finding).
+Then one-step runs of `crop_face_track` with `modulus: 17, remainder: 5, multiple: 32`:
+- a. on R30 with `fps: 24` — **refused**;
+- b. on R24 with `fps: 24` — accepted;
+- c. on R23976 with `fps: 24` — **refused** (0.024 off, outside ±0.01);
+- d. on R23976 with `fps: 23.98` — accepted (0.004 off);
+- e. on R30 with no `fps` — accepted (the check is opt-in).
+expected:
+- a and c fail at the crop step without writing `crops`, the message naming the clip's rate (30,
+  or 23.976/23.98 for c) and the 24 asked for.
+- b, d and e succeed, 124 crops each.
+It is a **finding** if a refused arm succeeds or its message doesn't name the clip's rate, if the
+tolerance refuses d or admits c, or if e is refused without `fps` given.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F570 — `ltx2/face-repair` still runs unchanged after the crop step gains audio and the window
+pending: #1098
+source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+- a. `get_workflow("templates/ltx2/face-repair")`. Find the `crop_face_track` step.
+- b. Run C-F360 (b and c), which reruns C-F201's validation and C-F202/C-F203's runs.
+- c. Run C-F198's round trip (`crop` then `paste` with unmodified crops) on TWO_A, which has audio.
+expected:
+- a. The crop step passes no `min_frames`, `max_frames` or `fps`, and keeps `modulus: 8`,
+  `remainder: 1`, `multiple: 32`.
+- b. C-F360's, C-F201's, C-F202's and C-F203's expected results hold. The final output's audio is
+  the source's (one track, the source's length), not doubled or shifted by the crops' new track.
+- c. C-F198's expected results hold.
+It is a **finding** if the template changed, or if any of those cases' expectations now fail.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F571 — `templates/minimax/face-repair` is a catalog `shot` template: crop at H3's grid and window → H3 refine holding the crops' audio → paste
+pending: #1099
+source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Free and read-only.
+1. `list_workflows(shape="shot")`.
+2. `get_workflow("templates/minimax/face-repair")`.
+expected:
+- Step 1 lists `templates/minimax/face-repair` with traits `needs-input-media` and `has-audio`, plus
+  `identity-referenced` if (and only if) it takes a `face_reference`. It carries a `cost` (the plan's
+  lem-measured cost), not null.
+- Step 2 has three steps in order: `crop_face_track` with `modulus: 17`, `remainder: 5`, `multiple:
+  32`, `min_frames: 124`, `max_frames: 345`, `fps: 24` (literals, or variables defaulting to them);
+  an H3 step whose source video is the crops, with `hold_audio:
+  "previous_result:<crop>.crops"` and a `refine_strength` (one of 0.6 / 0.72 / 0.8, the probe's pick);
+  `paste_face_track` on the source with the refined crops and the crop step's track.
+- It ships **one** mode (Q2): either ref2va, with a required `face_reference` passed as the first
+  reference (image only, no audio reference), or t2va with no picture variable.
+- The default prompt is our own (no Longshot_Studio wording; the plan's draft is the model) and asks
+  for the same expression and mouth movement in time with the speech, and a still camera.
+It is a **finding** if the template is missing from `shot`, lacks a trait above, has no cost, holds
+audio from anything but the crops, omits the window or fps, or ships both modes.
+cleanup: none.
+metrics: none.
+
+### C-F572 — `minimax/face-repair` validates clean with only the take (and picture) supplied, and quotes an estimate
+pending: #1099
+source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow` on `templates/minimax/face-repair` with `arguments` holding only
+`source_video: "asset:qa-cast/ep21-shot1-receipt.mp4"` — plus, if the template is ref2va,
+`face_reference: "asset:qa-cast/priya-portrait.jpg"`. Then the same with nothing overridden, and (if
+ref2va) with `source_video` alone.
+expected:
+- The first call is `valid: true` with no errors, and `plan.estimate` quotes minutes (not `unknown`,
+  since the template carries a cost) and a fingerprint for `acknowledged_cost`.
+- If ref2va: omitting `face_reference` is refused at validate, naming it.
+- With nothing overridden: refused or warned at validate for the missing input media, not left to
+  fail mid-run (any form a caller can read before spending GPU passes).
+It is a **finding** if the supplied call isn't clean, quotes no estimate, or a required input's
+absence is caught only at run time.
+cleanup: none.
+metrics: none.
+
+### C-F573 — `minimax/face-repair` on an H3 dialogue take: the source's frames, fps and soundtrack, a sharper face, the mouth on the same frames, no seam
+pending: #1099
+source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+GPU (H3, about the template's quoted cost per arm). Input: one of the two small-face dialogue takes
+#1097's record names (its `asset:` or `output:` reference; `copy_to_workspace` it into
+`regression-complete` if it lives only in `probe-1092`). Read its frame count N, fps and audio with
+`get_gallery_metadata`.
+- a. Run the template with `source_video` = the take (plus `face_reference`, the cast picture the
+  record used, if ref2va), `seed: 1092`, validated first and its fingerprint bound,
+  `wait_seconds=1500`.
+- b. The padded arm (the Q1 risk): `trim_video` the take to 125 frames from frame 0, `keep_output`
+  it, and run the template on it the same way. 125 pads to 141 crops.
+For each: `get_gallery_metadata` and `get_output_audio` on the final mp4; `compare_outputs` the source
+and result as face-crop grids across one spoken word (find a word's span with `transcribe_audio` word
+timestamps on the source, or by ear with `get_output_frames(hear=…)`); `get_output_frames` of both at
+three syllable onsets in that word, and at frames 0–6 for b; `assess_output` on the result.
+expected:
+- Both runs succeed. Each final mp4 has the source's frame count (N for a, 125 for b), the
+  source's fps, and its soundtrack: same sample rate, channels and duration within a frame, and
+  `measure_sync` of source against result reads 0.
+- In the face grids the result's face is visibly sharper or more detailed than the source's, with
+  the same identity (same person, hair, lighting).
+- At every onset the result's mouth is open or closed as the source's is; the mouth opens and closes
+  on the same frames across the word. In b, frames 0–6's mouth state matches the source's (the head
+  silence did not pull it shut).
+- No visible seam or colour step at the feather boundary in the frames, and `assess_output` reports
+  no seam problem.
+It is a **finding** if a run fails, if frames, fps or audio differ from the source, if the face is
+not sharper or changes identity, if the mouth shifts off the source's frames (in b, especially the
+first frames), or if a seam shows. A b-only failure on the first frames is the plan's named trigger
+for tail-only padding: say so in the issue.
+cleanup: `delete_output(job_id=…)` for every job; `delete_asset` the kept 125-frame trim. Never
+delete the probe's take.
+metrics: none.
+
+### C-F574 — `minimax/face-repair` refuses a 4 s clip and a 30 fps clip at the crop step, before H3 loads, naming the value
+pending: #1099
+source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Setup: `trim_video` `asset:qa-cast/ep6-cold-open.mp4` to 96 frames (4 s at 24 fps) and save it; and
+make R30 per C-F569's setup (124 frames saved at 30 fps). `keep_output` each under `qa-1099/`.
+Validate the template on each (plus `face_reference` if ref2va), bind the fingerprint, and run it
+with `wait_seconds=55`. Read `get_job` and `get_job_events`.
+expected:
+- Both jobs fail at the `crop_face_track` step. The 4 s clip's error names its frame count (96, the
+  padded 107 may also appear) and the 124 minimum; the 30 fps clip's names 30 and 24.
+- `get_job_events` shows no H3 pipeline load or download for either job, and each fails within a
+  minute or two of starting (no model time spent).
+It is a **finding** if either runs H3, fails anywhere but the crop step, or gives a message without
+the clip's value.
+cleanup: `delete_output(job_id=…)` for every job; `delete_asset` both `qa-1099/` clips.
+metrics: none.
+
+### C-F575 — the `minimax-h3` skill points a good take with a soft small face at `templates/minimax/face-repair`
+pending: #1099
+source: tester, spec for #1099 from #1092's plan v2 (claude-opus-5-5 via anthropic)
+Free. Load the `dw:minimax-h3` skill (as loaded from `develop`) and read it. Then
+`get_workflow("templates/minimax/face-repair")`.
+expected:
+- The skill has one line sending a good H3 take with a soft or small face to
+  `templates/minimax/face-repair` by that exact catalog name, which resolves.
+- Anything the line states about the template (the 124–345 frame window, 24 fps, the held audio, a
+  picture if ref2va) agrees with `get_workflow`. It says or implies shorter takes use
+  `ltx2/face-repair`.
+- The skill's other template pointers still resolve in `list_workflows` (the trim made to pay for
+  the line removed no live pointer).
+It is a **finding** if the line is missing, names a template that doesn't resolve, contradicts the
+template, or the trim broke another pointer.
+cleanup: none.
+metrics: none.
+
+### C-F576 — `analyze_phrases` is listed and described: `audio` required, the gap/phrase/floor/centre knobs and their defaults
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_tasks()`, `get_task("analyze_phrases")`, and `get_guide("tasks")` (index, then the
+section naming `analyze_phrases`).
+expected:
+- `list_tasks` lists `analyze_phrases` with a JSON result, in the same family as `analyze_beats` and
+  `measure_sync`.
+- `get_task` shows `audio` required; `min_gap_seconds` default 0.35; `min_phrase_seconds` default 0.3;
+  `floor_db` optional (no default, or null); `centre` a bool defaulting to true. The result doc names
+  `phrases` (a list of `{start, end}` in seconds), `duration_seconds`, `method` (`"centre"` or
+  `"band"`) and `warnings`.
+- The doc or guide says what the floor is relative to (p95 − 35 dB, never below −60 dBFS), that
+  shorter gaps are bridged and shorter runs dropped, and that mono input falls back to `band`.
+- The tasks guide lists it beside `measure_sync` and `analyze_beats`.
+It is a **finding** if the task is missing, a default differs, `audio` isn't required, or the result
+fields aren't documented.
+cleanup: none.
+metrics: none.
+
+### C-F577 — `analyze_phrases` on a sung stereo stem gives ordered, non-overlapping phrases that start where lines start, with no download
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+GPU-light (one `separate_stems`, then CPU). In `regression-complete`, author a json workflow:
+`stems` = `separate_stems` on `asset:qa-cast/ep15-song.mp3`, saved `audio/wav` intermediate;
+`phr_vocals` = `analyze_phrases` on `previous_result:stems.vocals`, saved `application/json` final;
+`phr_mix` = `analyze_phrases` on `asset:qa-cast/ep15-song.mp3`, saved `application/json` final. Validate,
+bind the fingerprint, run with `wait_seconds=55`. Read both results with `get_output_text`, the job's
+`get_job_events`, and `get_output_audio` on the vocals stem at three phrase starts (pick the 1st, a
+middle and the last; listen 0.5 s either side).
+expected:
+- Each result is `{phrases:[{start,end}…], duration_seconds, method, warnings}`. `duration_seconds`
+  is 30.03 ± 0.05. Every `start`/`end` has at most 2 decimals.
+- Phrases are sorted by `start`; every `end` > its `start`; each `start` ≥ the previous `end`
+  (no overlap); all values in [0, `duration_seconds`]. The vocals result has at least 2 phrases.
+- Both are stereo, so `method` is `"centre"` unless the stem is all-centre. If it is all-centre,
+  `method` is `"band"` with no mono warning (the input isn't mono).
+- Adjacent vocals phrases are separated by ≥ 0.35 s (shorter gaps were bridged), and every phrase
+  lasts ≥ 0.3 s.
+- By ear, each sampled `start` falls at the onset of a sung line (silence or instrumental just
+  before, voice just after), within about 0.2 s.
+- `get_job_events` shows no model download for the `analyze_phrases` steps, and they take seconds
+  each (not minutes).
+It is a **finding** if the shape differs, phrases overlap, run backwards or fall outside the duration,
+a gap < 0.35 s or a phrase < 0.3 s survives under the defaults, a start lands mid-line or in silence,
+or the step downloads a model.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F578 — `analyze_phrases` on mono input falls back to `band` and warns
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. One-step json workflow: `analyze_phrases` on `asset:qa-cast/priya-voice.wav` (mono, 7.45 s),
+saved `application/json` final. Validate, run with `wait_seconds=55`, and read with `get_output_text`.
+Check two starts by ear with `get_output_audio` on the asset.
+expected:
+- The job succeeds; `method` is `"band"`; `warnings` has one entry saying the input is mono (so no
+  centre weighting was possible).
+- Phrases follow C-F577's ordering, overlap and bounds rules; `duration_seconds` is 7.45 ± 0.05; there
+  is at least one phrase, and the starts fall on spoken onsets.
+It is a **finding** if mono input reports `centre`, gives no mono warning, fails, or gives no phrases
+for clearly audible speech.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F579 — `analyze_phrases` on near-silence returns no phrases and a warning, not an error
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Workflow: `quiet` = `gain_audio` on `asset:uploads/qa-cast/room-bed.wav` by −40 dB
+(intermediate); `p_quiet` = `analyze_phrases` on `previous_result:quiet`; `p_bed` = `analyze_phrases`
+on the bed itself; both saved `application/json` final. Run with `wait_seconds=55`, then read both.
+expected:
+- The job succeeds. `p_quiet` has `phrases: []`, `duration_seconds` 4.96 ± 0.05, and a warning saying
+  no phrases were found. The −60 dBFS floor keeps the floor from following the signal down into the noise.
+- `p_bed` either has no phrases (with the same warning) or a short list. Either way it has no single
+  phrase spanning more than 90% of the clip without the >90% warning beside it.
+It is a **finding** if either step fails, near-silence yields phrases (the floor tracked the noise
+down), or an empty result carries no warning.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F580 — `validate_workflow` refuses a negative gap and a missing `audio` for `analyze_phrases`, and accepts the boundaries
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+Free. Validate a one-step `analyze_phrases` workflow on `asset:qa-cast/ep15-song.mp3` with each argument
+set below (nothing is run).
+- Refused: `min_gap_seconds: -1`; no `audio` argument at all; `min_phrase_seconds: -0.1`;
+  `min_phrase_seconds: 0` (a non-positive duration); `centre: "yes"` (not a bool).
+- Accepted: the defaults; `min_gap_seconds: 0` (no bridging); `min_phrase_seconds: 0.01`;
+  `floor_db: -60`; `floor_db: -20`; `centre: false`.
+expected:
+- Each refused set gives an `ok: false` (or an error) that names the step and the argument, with the
+  bad value or the rule (e.g. "≥ 0", "> 0", "required").
+- Each accepted set validates clean.
+It is a **finding** if any refused set validates (the bad value would only fail at run time, or
+never), if the message doesn't name the argument, or if a boundary value in the accepted list is refused.
+A `floor_db` below −60 that validates is not a finding by itself: the plan clamps it at run time.
+cleanup: none.
+metrics: none.
+
+### C-F581 — each `analyze_phrases` knob moves the answer the way its doc says
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+GPU-light. One workflow: `stems` = `separate_stems` on `asset:qa-cast/ep15-song.mp3` (intermediate),
+then six `analyze_phrases` steps on `previous_result:stems.vocals`, each saved `application/json`
+final: `base` (defaults); `gap0` (`min_gap_seconds: 0`); `gap2` (`min_gap_seconds: 2.0`); `minp2`
+(`min_phrase_seconds: 2.0`); `floor_hi` (`floor_db: -10`); `flat` (`centre: false`). Run with
+`wait_seconds=55` and read all six.
+expected:
+- count(`gap0`) ≥ count(`base`) ≥ count(`gap2`). In `gap2` every gap between phrases is ≥ 2.0 s, and
+  every `gap2` phrase covers one or more whole `base` phrases (merging, not moving).
+- Every `minp2` phrase lasts ≥ 2.0 s, and count(`minp2`) ≤ count(`base`).
+- `floor_hi` has fewer phrases than `base` or none, and none outside `base`'s voiced spans (with
+  `phrases: []` the no-phrases warning appears).
+- `flat` reports `method: "band"`, and `base` reports `"centre"` (unless C-F577 found the stem
+  all-centre, in which case both say `band`).
+It is a **finding** if a knob moves the count the wrong way, a constraint it promises is violated in
+its output, or `centre: false` still reports `centre`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F582 — `analyze_phrases` on a dense full mix warns when one phrase covers over 90% of the track and suggests the vocal stem
+pending: #1104
+source: tester, spec for #1104 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Make a track that is sound end to end: one json workflow with `analyze_phrases`, `centre:
+false`, `floor_db: -60` on `asset:qa-cast/ep15-song.mp3` (the raw mix, music under every second), and
+`min_gap_seconds: 5`. Saved final, run with `wait_seconds=55`.
+expected:
+- If any one phrase covers more than 90% of `duration_seconds` (27.03 s or more), `warnings` has an
+  entry saying so that names `stems.vocals` (or vocal stem separation) as the input to use.
+- If no phrase covers 90%, there is no such warning. Report the longest phrase's share in the
+  verification so the setup can be tightened. That alone is not a finding.
+It is a **finding** if a phrase covers > 90% and the warning is missing, or the warning appears when no
+phrase covers 90%.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F583 — `plan_cuts` and the cuts docs name the phrase result as a `transcript`, and the cuts chain shows `separate_stems`
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_task("plan_cuts")`; `get_guide("tasks")` at the `plan_cuts` section;
+`get_workflow("templates/minimax/music-video-cuts")`; load the `dw:minimax-h3` skill (as loaded from
+`develop`) and read `references/cuts.md`.
+expected:
+- `plan_cuts.transcript`'s doc accepts either `transcribe_audio`'s timestamped result or
+  `analyze_phrases`' result (named, and recognised by its `phrases` key). It still says `transcript`
+  is required.
+- The tasks guide's `plan_cuts` section says the same, and says what lyrics do with phrases: one-to-one
+  in order when the counts match, a warning plus an even spread when they don't.
+- The template's `description` has one sentence on swapping `transcribe` for `analyze_phrases` (on
+  `previous_result:stems.vocals`) when the vocals can't be transcribed.
+- `cuts.md`'s chain includes `separate_stems` before transcription, and names the `analyze_phrases`
+  swap.
+It is a **finding** if any of these is missing, or names a step, key or argument that the live
+schema or template doesn't have.
+cleanup: none.
+metrics: none.
+
+### C-F584 — `plan_cuts` fed phrases without lyrics gives one scene per phrase, each with `lyric: null`, starting at the phrase
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. Author a one-step json workflow, saved `application/json` final: `plan_cuts` with
+`transcript: variable:transcript`, `fps: 24`, `duration_s: 20`, `segment_by: "line"`,
+`min_scene_s: 1.0`, and the variable
+`transcript = {"phrases":[{"start":2.0,"end":4.0},{"start":4.5,"end":6.0},{"start":6.5,"end":9.0},{"start":12.0,"end":17.0}],"duration_seconds":20.0,"method":"centre","warnings":[]}`.
+Two arms, each run with `acknowledged_cost=true, wait_seconds=55` and read with `get_output_text`:
+a. `include_instrumental_gaps: false`; b. `include_instrumental_gaps: true`.
+expected:
+- Both succeed. In a, the vocal shots are exactly four, in order, with `lyric: null` and
+  `start_frame`s 48, 108, 156, 288 (± 1 frame for any `vocal_tail_s`/`lead_s` rule the existing
+  line mode applies).
+- In b, the same four vocal shots, plus instrumental-kind shots only over the uncovered stretches
+  (0–2 s, 9–12 s, 17–20 s), where the existing rules make one. Shots tile the timeline in order with
+  no overlap, and `render_frames` covers the 20 s.
+- `warnings` has no "none of the lyrics' words were heard", no suspect-transcript warning, and nothing
+  about missing lyrics (none were given).
+It is a **finding** if the phrase dict is refused as a transcript, a phrase is merged, split or
+dropped, a vocal shot carries a non-null lyric, a start is off its phrase, or a transcription-only
+warning fires.
+cleanup: `delete_output(job_id=…)` for both.
+metrics: none.
+
+### C-F585 — `plan_cuts` maps matching lyrics one-to-one onto phrases, and warns with both counts and the `min_gap_seconds` direction when they don't match
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. C-F584's workflow and `transcript` variable, arm a's settings, plus a `lyrics` argument.
+Three arms:
+a. 4 lines: `"Alpha line one\nBravo line two\nCharlie line three\nDelta line four"`;
+b. 3 lines (drop Delta), fewer lines than phrases;
+c. 5 lines (add `"Echo line five"`), more lines than phrases.
+Run each with `wait_seconds=55` and read it.
+expected:
+- a: four vocal shots at 48/108/156/288 whose `lyric`s are Alpha, Bravo, Charlie and Delta in order,
+  whole (no word split across shots). No mismatch warning.
+- b: a warning naming 4 phrases and 3 lines that says to raise `analyze_phrases`' `min_gap_seconds`
+  (more phrases than lines). The 3 lines are spread evenly over 2.0–17.0 s: line starts near
+  2.0/7.0/12.0 s (frames 48/168/288 ± the scene minimums), in order, each lyric whole.
+- c: a warning naming 4 phrases and 5 lines that says to lower `min_gap_seconds`. The 5 lines are
+  spread evenly over 2.0–17.0 s (starts near 2/5/8/11/14 s), in order.
+- No arm has a suspect-transcript warning or a "none of the lyrics' words were heard" warning.
+It is a **finding** if a matching count isn't one-to-one in order, a mismatch is silent or lacks a
+count or the direction (or gives the wrong direction), the spread runs outside the first-start to
+last-end span, a line is split into words, or a transcription-only warning fires.
+cleanup: `delete_output(job_id=…)` for every arm.
+metrics: none.
+
+### C-F586 — phrase-fed `plan_cuts` honours `segment_by: stanza`, the render grid and `max_scene_s`, and a split phrase keeps its whole lyric
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+CPU only. C-F585 arm a's workflow (4 phrases, 4 lyrics, `include_instrumental_gaps: false`) with:
+a. `segment_by: "stanza"` (`plan_cuts`' own `min_gap_seconds` left at 2.0). The gaps are 0.5, 0.5
+   and 3.0 s, so phrases 1–3 form one stanza and phrase 4 another;
+b. `segment_by: "line"`, `max_scene_s: 3.0`, so phrase 4 (5 s) must split;
+c. `segment_by: "line"` with the template's grid: `modulus: 17, remainder: 5, min_frames: 124,
+   max_frames: 345`.
+Run each with `wait_seconds=55` and read it.
+expected:
+- a: two vocal shots, starting at 48 and 288. The first lyric holds Alpha–Charlie in order (or the
+  stanza's lines joined as the existing stanza mode joins transcript lines); the second holds Delta.
+- b: phrase 4 becomes ≥ 2 shots, each ≤ 72 frames, tiling 288 to about 408, and **every** piece's
+  `lyric` is the whole "Delta line four". Phrases 1–3 are unchanged.
+- c: every shot's `num_frames` (or render length) is 17n+5 within 124–345, and `render_frames`
+  agrees. Starts hold to their phrases as the existing grid rules allow, and no grid warning is
+  louder than the transcript path gives for the same spans.
+It is a **finding** if stanza mode ignores the grouping, a split piece carries part of a line or a
+null lyric, or the grid is violated.
+cleanup: `delete_output(job_id=…)` for every arm.
+metrics: none.
+
+### C-F587 — `music-video-cuts` with `transcribe` swapped for `analyze_phrases` and matching lyrics gives scenes on the phrases, in order, on the render grid
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+GPU-light (stems, beats, no Whisper). `get_workflow("templates/minimax/music-video-cuts")` and save a
+copy, `qa-1105/cuts-phrases`, in `regression-complete` with one change: the `transcribe` step becomes
+`analyze_phrases` on `previous_result:stems.vocals` (same step name, so `plan` reads it unchanged).
+Remove `timestamps` and `model_name` from that step only.
+1. Pre-run: the template-shaped C-F577 `stems` → `analyze_phrases` chain on
+   `asset:qa-cast/ep15-song.mp3` to learn the phrase count P and starts. Write P lyric lines
+   (`"Line 1"` … `"Line P"`).
+2. Validate the copy with `song: asset:qa-cast/ep15-song.mp3` and those `lyrics`, bind the
+   fingerprint, and run with `wait_seconds=55`. Read the plan with `get_output_text`, and
+   `get_job`/`get_job_events`.
+3. Repeat step 2 with `segment_by: "beat"` and with `segment_by: "stanza"`.
+expected:
+- Step 2 succeeds. The vocal shots carry `Line 1` … `Line P` in order, one each. Each starts at its
+  phrase's start (± the template's `lead_s` 0.5 s and the grid's snap), every shot length is on the
+  17n+5 grid within 124–345 frames, and `render_frames` is consistent.
+- No "none of the lyrics' words were heard" warning and no suspect warning. No Whisper load or
+  download in `get_job_events`.
+- Step 3's runs both succeed with a valid plan on the grid, lyrics in order.
+It is a **finding** if the swapped template fails or validates dirty, lines are reordered, missing or
+duplicated, a scene starts away from its phrase beyond lead and snap, the grid breaks, or a
+transcription warning appears.
+cleanup: `delete_output(job_id=…)` for every job; `delete_workflow("qa-1105/cuts-phrases")`.
+metrics: none.
+
+### C-F588 — the unmodified `music-video-cuts` template still plans from Whisper as before
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+GPU-light. Run `templates/minimax/music-video-cuts` unchanged with `song: asset:qa-cast/ep15-song.mp3`
+(no lyrics), validated first, with `wait_seconds=55`. Read the plan, and run it once more with the
+song's lyrics if C-F218/C-F326 used them.
+expected:
+- The run succeeds as C-F218 and C-F326 expect: shots with transcript-derived lyrics from
+  `transcribe_audio`, on the 17n+5 grid, about 0.11 min cold on an RTX 3090. No phrase-mismatch
+  warning appears (it belongs to phrase input only), and the result shape is unchanged.
+It is a **finding** if the unmodified template's plan changes shape, loses its transcript lyrics, or
+gains a phrase-path warning.
+cleanup: `delete_output(job_id=…)` for every job.
+metrics: none.
+
+### C-F589 — field case: `russian-anthem`'s verse, phrase-fed, puts its lines on its phrases with no transcript warnings
+pending: #1105
+source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
+GPU-light. `get_job("0838f676f51f")` (try `workspace="russian-anthem"`) to find `verse_s7.wav`'s
+`output:` reference or file. If it is only an output there, use that reference directly, or
+`copy_to_workspace` it into `regression-complete`. Take the verse's lyric lines from that job's
+workflow or arguments (`get_job_workflow`). Never delete the source.
+1. Run the C-F587 `stems` → `analyze_phrases` chain on the verse to get the phrase count P.
+2. If P equals the verse's line count, run `qa-1105/cuts-phrases` (C-F587's copy; re-create it if
+   cleaned up) with `song` = the verse and those lyrics, `wait_seconds=55`. If P differs, run it
+   anyway: the mismatch warning must name both counts and the right `min_gap_seconds` direction, then
+   re-run step 1 with `analyze_phrases` `min_gap_seconds` moved that way (in the saved copy's step)
+   until the counts match or two moves fail, and run step 2 at the matching setting.
+3. Listen with `get_output_audio` to the verse at three scene starts.
+expected:
+- At matching counts, every line appears once, in order, on its own scene, each starting where the
+  line is sung (by ear, within about 0.5 s with the template's lead), on the 17n+5 grid.
+- No "none of the lyrics' words were heard" warning and no suspect warning (the failure #1095 exists
+  to fix).
+It is a **finding** if the lines are out of order or off their sung onsets, a transcript warning
+fires, or no `min_gap_seconds` within two moves of the default lines the counts up (report the
+counts at each setting).
+cleanup: `delete_output(job_id=…)` for every job made here; `delete_workflow("qa-1105/cuts-phrases")`
+if this case re-created it; `delete_asset` any copy made into `regression-complete`. Never touch the
+`russian-anthem` workspace's files.
 metrics: none.
 
 ## Performance

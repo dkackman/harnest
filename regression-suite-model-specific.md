@@ -7178,4 +7178,458 @@ rebuilt template, and the size and no-band checks still apply.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the fixture.
 metrics: `latency` (s), condition `portrait-384x544-97f`, to `regression-perf/M-F257.jsonl`.
 
+### M-F258 — the `script-to-video` skill gives each shot an optional `join` (`continue`, `cut`, `cutaway`, `lead_in`), takes `opening_state` from the shot's source, and links `references/joins.md`
+pending: #1100
+source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:script-to-video` skill as loaded from `develop` (written for MiniMax H3). Free.
+Steps: load the `dw:script-to-video` skill; read SKILL.md's step 2 (the shot list) and step 5, and
+follow its link to `references/joins.md`.
+expected:
+- Step 2's per-shot shape has an optional `join` field with exactly four values: `continue` (the
+  default, today's rule: open where the previous shot ended), `cut` (opens fresh), `cutaway` (an
+  insert; the shot after it continues from the shot before it) and `lead_in` (this shot's last frame is
+  the next shot's first frame). A shot with no `join` is `continue`.
+- The old sentence "a shot's `opening_state` is the previous shot's `ending_state`" is gone. In its
+  place, `opening_state` is the `ending_state` of the shot's **source**: the shot before it, or the
+  shot before a cutaway when the shot follows one.
+- Step 2 links `references/joins.md`, and the link resolves inside the skill (the file loads).
+- Step 5 has a line on render order / re-roll that points at `references/joins.md`.
+- SKILL.md does not claim that `join` is read by any template, task or the server: it's the agent's
+  field.
+- The `minimax-h3` skill's SKILL.md says nothing new about joins (the plan leaves it untouched).
+It is a **finding** if any of the four values is missing or renamed, the default isn't `continue`, the
+old `opening_state` sentence survives unqualified, the link is missing or dead, or the skill implies
+the server reads `join`.
+cleanup: none.
+metrics: none.
+
+### M-F259 — `joins.md` states the cutaway and lead-in recipes over existing templates, each named template resolves, and the A-tail video reference is one line, not the recipe
+pending: #1100
+source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `dw:script-to-video`'s `references/joins.md`, and the MiniMax H3 templates it names.
+Free (discovery calls only).
+Steps:
+1. Read `references/joins.md` from the loaded skill.
+2. For each catalog name it gives, `get_workflow(name=<name>, variables_only=true)`. At least
+   `templates/minimax/image-to-video`, `templates/minimax/first-and-last-frame`,
+   `templates/minimax/last-frame-only` and `templates/minimax/dialogue-short`.
+3. `get_task("get_first_frame")` and `get_task("get_last_frame")`.
+expected:
+- **Cutaway A, B, C**, as separate runs: render A; render B as its own shot (a `continue` off A's last
+  frame through `image-to-video`, or a fresh `cut`; it says real B-roll is usually a cut); render C
+  **from A, not B**: `get_last_frame` of A's output into `templates/minimax/image-to-video` for a
+  silent or action C, or `templates/minimax/dialogue-short` with the same cast references for a talking
+  C; C's prompt opens on A's ending state. Assemble A, B, C with `concat_videos` in **story order**,
+  and check C's re-entry by comparing A's last frame with C's first (`get_output_frames`), not by the
+  B→C seam.
+- **One line**, not a recipe, names A's tail as a video reference (the `chain-video-continuity`
+  pattern) for a C that picks up motion mid-action, and states its cost: a reference slot and the VRAM
+  it takes.
+- **Lead-in B → C**: render C first; `get_first_frame` of C's output; render B with
+  `templates/minimax/first-and-last-frame`, `image` = B's own opening (A's last frame, or a still) and
+  `last_image` = C's first frame; `templates/minimax/last-frame-only` when B has no fixed opening;
+  concat in story order. It says to keep a lead-in short (a long first-and-last-frame shot drifts) and
+  to look at the B→C frames, since the concat seam is a `hard_cut` and its jump check doesn't fire.
+- One line says an LTX-2.5 `image-to-video` re-entry works the same way.
+- Every catalog name in step 2 resolves (no "Unknown workflow"), and both tasks in step 3 exist and
+  take a `video`.
+It is a **finding** if C's source is B or unstated, the lead-in doesn't render its target first, a
+named template or task doesn't resolve, the A-tail video reference is presented as the default route,
+or the concat order isn't story order.
+cleanup: none.
+metrics: none.
+
+### M-F260 — `joins.md` states render order, re-roll invalidation and the attempt budget, and that concat here is assembly, not a chain splice
+pending: #1100
+source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `dw:script-to-video`'s `references/joins.md` and SKILL.md. Free.
+Steps: read `references/joins.md` and SKILL.md's seams/splices text (step 5 and the "never splice"
+rule).
+expected:
+- **Render order follows sources, not the story**: a lead-in's target renders before the lead-in.
+- **Re-rolling C invalidates the lead-in B** built on its first frame, so B is re-rendered after it,
+  and the quote given before a re-roll covers **both** C and B.
+- **Re-rolling A invalidates** any C that continues from it, and any cutaway taken off it.
+- The skill's three-attempt budget per shot counts a forced re-render as an attempt on the
+  **dependent** shot.
+- "Never splice a re-rolled segment into a *chain* with concat" still stands, and the text says these
+  joins are separate shots, so concat is the assembly, not a splice. No sentence contradicts the other.
+It is a **finding** if any of the four rules is missing, if a re-roll of C is quoted without B, or if
+the skill reads as both forbidding and requiring concat for these shots.
+cleanup: none.
+metrics: none.
+
+### M-F261 — a dialogue–cutaway–dialogue triple built per `joins.md`: C opens on A's scene, not B's, and the concat plays A, B, C with two cuts
+pending: #1100
+source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 at the draft tier: `templates/minimax/video-with-audio` for A and B,
+`templates/minimax/image-to-video` for C, each at its defaults (5 steps, turbo LoRA), 960×544,
+124 frames. Paid: three H3 shots on lem plus one `concat_videos` join, each at its `validate_workflow`
+estimate (today ≈4 min cold per shot). Workspace `regression-model-specific`. The instructions are the
+`dw:script-to-video` skill's `references/joins.md`; this case uses its silent/single-frame re-entry route
+for C so the A→C check has a pinned frame to compare. The `dialogue-short` route is M-F259's text check.
+Steps (each H3 run: `validate_workflow` with `workspace="regression-model-specific"` and the arguments,
+bind `acknowledged_cost`, then `run_workflow(..., wait_seconds=55)` and `wait_for_job`; prompts written
+in the `minimax-h3` skill's prompt format):
+1. **A** (`video-with-audio`, `"seed": 1093`, note `M-F261 A dialogue`): two people at a small café
+   table by a window, medium two-shot, warm interior light; one says a short line to the other.
+2. **B** (`video-with-audio`, `"seed": 1094`, note `M-F261 B broll`): a `cut` per `joins.md`: the
+   rainy street outside, wide, passing traffic, no people from A. Not built from A.
+3. **C** per `joins.md`'s cutaway recipe: `get_last_frame` of **A**'s output (not B's) as `image` into
+   `image-to-video`, `"seed": 1095`, note `M-F261 C from A`; prompt: the same two people at the same
+   table, the second answers with a short line.
+4. Concat A, B, C in story order with `concat_videos`, in the call shape `joins.md` gives (an inline
+   utility workflow over the three outputs if it gives none), note `M-F261 concat`.
+5. `get_output_frames` on A's last frame, C's first frame and B's first frame; `get_gallery_metadata`
+   and `assess_output` on the concat, and `get_output_frames` at frames 123/124 and 247/248 of it.
+expected:
+- All four jobs succeed. Every shot is 960×544, 124 frames at 24 fps, with an audio stream.
+- **C re-enters A.** C's first frame and A's last frame show the same scene state: the same two people,
+  the same table and window, the same framing family (a two-shot, not a wide street).
+- **C is not B.** C's first frame shows no street, rain or traffic from B.
+- **Story order, two cuts.** The concat is A, then B, then C (the frames sampled around 124 and 248
+  show café → street → café), about 372 frames at 24 fps (less any trim the join reports), with audio.
+  The join records two seams, both `hard_cut`; `assess_output` raises no seam problem it would also
+  raise on any real picture cut.
+It is a **finding** if C opens on B's scene, on a cold or unrelated scene, or with different people;
+if the concat is out of story order or has more or fewer than two seams; or if following `joins.md`
+literally can't produce C from A (name the step the text is missing).
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for all four jobs.
+metrics: none.
+
+### M-F262 — a lead-in pair built per `joins.md`: C renders first, B lands on C's first frame, and the B→C concat has no visible jump
+pending: #1100
+source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 at the draft tier: `templates/minimax/video-with-audio` for C and
+`templates/minimax/first-and-last-frame` for B, at their defaults except 960×544 for B (its default is
+544×544), 124 frames. Paid: two H3 shots on lem plus one `concat_videos` join. Workspace
+`regression-model-specific`. Instructions: `references/joins.md`'s lead-in recipe. Each run as in
+M-F261's steps preamble.
+Steps:
+1. **C** (`video-with-audio`, `"seed": 1096`, note `M-F262 C target`): a woman opens a red front door
+   and steps into a hallway, medium shot.
+2. `get_first_frame` of C's output, per `joins.md`.
+3. **B** (`first-and-last-frame`, `"width": 960, "height": 544, "seed": 1097`, note
+   `M-F262 B lead-in`): `image` = a still of the same woman walking up a garden path toward the red door
+   (make it with `get_last_frame` of a short run, or any still `joins.md` allows; record which),
+   `last_image` = step 2's frame; prompt: she walks up the path to the door and reaches for it.
+4. Concat B, C in story order, note `M-F262 concat`.
+5. `get_output_frames` on B's last frame and C's first frame; on the concat, frames 121–126;
+   `get_gallery_metadata` on the concat.
+expected:
+- All jobs succeed; C was run before B (job order on the record). Both shots 960×544, 124 frames,
+  24 fps, with audio.
+- **B lands on C.** B's last frame and C's first frame match: same person, door, pose and framing,
+  with no shift a viewer would read as a cut.
+- **No jump at the seam.** Frames 121–126 of the concat (B's tail into C's head) read as one
+  continuous moment: no jump in position, framing, lighting or colour. The seam is recorded `hard_cut`,
+  which is expected here (the plan says the frame is pinned by construction).
+- The concat is about 248 frames at 24 fps, B then C.
+It is a **finding** if B's last frame visibly differs from C's first, the seam jumps, B drifts off its
+`image` opening mid-shot so badly the shot is unusable (name the plan's long-FL2VA risk), or the recipe
+can't be followed as written.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for every job, including
+any job made for step 3's still.
+metrics: none.
+
+### M-F263 — a lead-in run before its target exists fails at validate on the unresolved `output:` reference, and a requested re-roll of the target is quoted with the lead-in
+pending: #1100
+source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/first-and-last-frame` and `templates/minimax/last-frame-only`
+(MiniMax H3), plus `dw:script-to-video`'s `references/joins.md`. Free: validate and discovery only, and
+nothing may queue. Workspace `regression-model-specific`.
+Steps:
+1. **Out of order.** Build B's lead-in exactly as `joins.md` gives it (the `get_first_frame` of C's
+   output feeding `last_image`), but name an `output:` reference, in the form the guide's References
+   section defines, for a C run that doesn't exist (e.g. an unused run id under
+   `templates/minimax/video-with-audio`). `validate_workflow` it, `workspace="regression-model-specific"`.
+2. `run_workflow` the same request with any `acknowledged_cost`; then `list_jobs` for the workspace.
+3. **Empty edge:** the same with an `output:` reference whose run directory exists but has no such
+   file (any real run in the workspace, a made-up file name).
+4. **Re-roll quote.** Acting as a session that follows the skill after M-F262 (or any existing C and
+   B), you're asked to "re-roll C". Do what `joins.md` says before spending: `validate_workflow` C's
+   re-render and B's re-render (B's `last_image` still pointing at C's current output; the run
+   resolves it after C), and give the quote. Then also `validate_workflow` B on
+   `templates/minimax/last-frame-only` with the same `last_image`, as the no-fixed-opening variant.
+expected:
+- Steps 1 and 3 are refused at `validate_workflow`, with an error that names the unresolved `output:`
+  reference (the path or run id) and says it doesn't exist. No silent fallback: no default image, no
+  template default `last_image`, no estimate offered as if it were clean.
+- Step 2 is refused the same way and queues no job (`list_jobs` shows none new).
+- Step 4's quote lists **both** C and B, each with its own `plan.estimate`, and their sum; the skill's
+  text is what made B appear in it. `last-frame-only` validates clean with an estimate.
+It is a **finding** if an out-of-order lead-in validates clean, queues, or runs on a default
+`last_image`; if the error doesn't name the reference; or if following `joins.md` a re-roll of C is
+quoted without B.
+cleanup: none (nothing runs). If step 2 did queue a job, `cancel_job` it and `delete_output` it, and
+file the finding.
+metrics: none.
+
+### M-F264 — the #1102 probe record on #1094 cites every job, gives the metric table, take drift, identity, tail snap and a win-rule verdict, and every cited job ran its arm and shot
+pending: #1102
+source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3: ref2va (shot 1, arm A's `last_segment` chain, arm B's odd shots 3 and 5)
+and fl2va via `templates/minimax/first-and-last-frame` (arm B's bridges 2 and 4). Free: reads only,
+and no job is run.
+The record is the stage-A results comment on #1094 (`gh issue view 1094 --repo
+dkackman/diffusers-workflow --comments`), or on #1102 if #1094 links it from there. The plan fixes the
+protocol: one take, 5 shots, no dialogue, workspace `qa-1094-bridge`; shot 1 is one Ref2VA render of
+124 frames that both arms use; arm A is shots 2–5 as a `last_segment` Ref2VA chain from shot 1; arm B
+is shots 3 and 5 as independent Ref2VA renders (separate jobs) and shots 2 and 4 as
+`first-and-last-frame` bridges; both arms are concatenated with `trim_frames: 1` and measured with
+`analyze_seams(video, shots=...)`.
+Steps:
+1. Read the record. Collect every job id, the arm and shot each one is cited for, and the
+   workspace.
+2. For every cited job, call `get_job(job_id, workspace="qa-1094-bridge")` and
+   `get_job_workflow(job_id, workspace="qa-1094-bridge")`.
+expected:
+- The record gives, in this order or clearly labelled: every job id; a metric table with a row per
+  arm per seam (4 seams per arm) carrying `seam_frame_jump` and the look steps (saturation,
+  lightness, contrast); the take drift per arm (shot 1's first 8 frames against shot 5's last 8, as
+  saturation, lightness and contrast deltas); identity notes per arm; the bridge tail-snap finding
+  for each bridge; audio at the bridge seams (noted, not scored); and a verdict.
+- The verdict is exactly one of *wins*, *wins with tail discard* or *doesn't win*, and *doesn't win*
+  names which win-rule condition failed (M-F268 checks it follows the rule).
+- Two one-line notes: whether #1031's take-drift reopen condition ("seams all score low but the end
+  visibly looks different from its start") was met, and whether #985's "end image snaps" claim was
+  reproduced. Each is yes or no, not omitted.
+- Every cited job exists in `qa-1094-bridge` and finished `succeeded`, except a re-roll the record
+  itself marks as a failed render. Its `note` names its arm and shot (e.g. "arm B shot 3"). The
+  backing jobs carry a `set_note`.
+- At most 11 H3 render jobs are cited (9 renders plus up to 2 re-rolls), and every H3 render ran the
+  same width, height, `num_inference_steps` and LoRA state (one draft tier for the whole probe).
+- Each render job's workflow matches its role: shot 1 and shots 3 and 5 of arm B are ref2va steps;
+  arm A's shots 2–5 are a ref2va chain whose carry is `last_segment`; shots 2 and 4 of arm B are
+  `first-and-last-frame` (an fl2va step with `image` and `last_image`) with `num_frames` ≥ 124.
+  No step in any job has dialogue (`<d>`) in its prompt.
+It is a **finding** if a section above is missing, a result cites no job, a cited job is absent,
+failed without being marked a failed re-roll, has no arm/shot note, or ran a different pipeline,
+tier or role than the record says, or if more than 11 renders are cited. If the jobs or the workspace
+were pruned after #1102 closed verified, record "evidence pruned" and skip. That is not a finding.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F265 — both arms share one shot-1 output, and the two arms differ only in how shots 2–5 were made
+pending: #1102
+source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 ref2va and fl2va, the M-F264 jobs. Free: reads only.
+Steps:
+1. From M-F264's `get_job_workflow` readings, take shot 1's job and output file, arm A's chain job
+   (or jobs) and assembly job, and arm B's shot 3, shot 5, bridge and assembly jobs.
+2. `get_gallery_metadata` on shot 1's output.
+expected:
+- Shot 1 is one job and one output. Arm A's chain continues from it (its first carry, or its first
+  segment's input, is an `output:` reference to that file), and arm A's concat lists that same
+  `output:` reference as its first video. Arm B's concat lists the same reference first, and bridge
+  2's `image` reads its last frame. "Same" means the same `output:` path, not a re-render with the
+  same seed.
+- Shot 1 is 124 frames (`frame_count` 124 at 24 fps).
+- Shots 3 and 5 of arm B are two **separate** jobs (two job ids), each a single ref2va render, not a
+  chain and not one job with both.
+- The reference image(s) are the same `asset:` reference(s) in shot 1, every arm A segment, and arm
+  B's shots 3 and 5. Arm B's shots 3 and 5 use the seed the record states for them, and the record
+  states every render's seed.
+- Each beat's prompt (shots 2–5) is the same text in arm A's segment and arm B's shot for that beat,
+  except that a bridge's prompt may add its arrival. Every beat prompt says its arrival state.
+It is a **finding** if shot 1 was rendered twice, an arm's assembly or chain names a different shot-1
+file, shots 3 and 5 are one job or chained, the references or a beat's prompt differ between arms,
+or a seed is unstated. Evidence pruned: skip, as in M-F264.
+cleanup: none.
+metrics: none.
+
+### M-F266 — every bridge is pinned to its neighbours: `image` is the previous odd shot's last frame and `last_image` the next one's first
+pending: #1102
+source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va (`templates/minimax/first-and-last-frame`), arm B's bridges 2 and 4
+of M-F264. Free: reads only.
+Steps:
+1. `get_job_workflow` for bridge 2 and bridge 4 (`workspace="qa-1094-bridge"`).
+2. For each bridge, `get_gallery_metadata` on its output for `frame_count`. Then (`compare_outputs`
+   uses one frame number for every output, so it can't pair a last frame with a first one):
+   `get_output_frames(<previous odd shot's mp4>, at=["frame:<its last index>"])` beside
+   `get_output_frames(<bridge mp4>, at=["frame:0"])`, and
+   `get_output_frames(<bridge mp4>, at=["frame:<its last index>"])` beside
+   `get_output_frames(<next odd shot's mp4>, at=["frame:0"])`.
+expected:
+- Bridge 2's `image` resolves (through a `get_last_frame` step or an equivalent `output:` frame) to
+  shot 1's output's last frame, and its `last_image` (through `get_first_frame`) to shot 3's output's
+  first frame. Bridge 4 does the same for shots 3 and 5. The references name those exact `output:`
+  files, not an asset copy and not the template's default URL.
+- Each bridge's `num_frames` is ≥ 124, and its output's `frame_count` equals it.
+- Each bridge's first frame shows the previous shot's last frame and its last frame shows the next
+  shot's first frame: the same composition, subject position and colour, by eye at 512 px. The
+  record's tail-snap finding for that bridge agrees with what its last ~8 frames show
+  (`get_output_frames(<bridge mp4>, at=["frame:<last-7>", ..., "frame:<last>"])`): a visible jump
+  onto the pinned frame where it says *snap*, none where it says *no snap*.
+- Each bridge's prompt is its beat's prompt plus a stated arrival.
+It is a **finding** if a bridge's endpoint names any file other than its neighbouring odd shot's
+output, a bridge is under 124 frames, an endpoint frame visibly differs from the frame it was pinned
+to, or the tail-snap reading contradicts the record. Evidence pruned: skip, as in M-F264.
+cleanup: none.
+metrics: none.
+
+### M-F267 — both arms were joined with `trim_frames: 1` and measured with `analyze_seams(shots=...)`, no seam `hard_cut`, and the seam table reproduces
+pending: #1102
+source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: utility tasks over the M-F264 H3 outputs (`concat_videos`, `analyze_seams`). No GPU
+render; step 3 runs a utility job. Workspace `qa-1094-bridge` for reading, `regression-model-specific`
+for the re-run.
+Background (today's behaviour): `concat_videos` marks every seam it makes `hard_cut`, and
+`analyze_seams` skips `seam_frame_jump` at a `hard_cut` seam. Passing `shots=` overrides the records
+the video carries.
+Steps:
+1. `get_job_workflow` for each arm's assembly and seam jobs.
+2. Read each arm's `analyze_seams` result (`get_job`, and `get_output_text` if the result is a
+   file).
+3. Re-run one arm's measurement: an inline workflow with one `analyze_seams` step whose `video` is
+   that arm's concat output (`output:` reference into `qa-1094-bridge`, or `copy_to_workspace` it into
+   `regression-model-specific` first) and whose `shots` are exactly the records the original job
+   passed. `validate_workflow`, then `run_workflow(..., workspace="regression-model-specific",
+   wait_seconds=55)` with the quoted `acknowledged_cost`.
+expected:
+- Each arm's concat step has `trim_frames: 1`, lists five videos in shot order (1, 2, 3, 4, 5), and its
+  output's `frame_count` is the sum of the five shots' frame counts minus 4.
+- Each arm's `analyze_seams` step passes `shots`, and no record in it has `hard_cut: true`. Its result
+  has 4 seams, and every seam carries a numeric `seam_frame_jump` (none skipped as a cut).
+- The boundaries in `shots` fall where the shots meet in the trimmed concat (the cumulative frame
+  counts after the head trims), to within 1 frame.
+- Step 3's numbers equal the original job's for every seam (`seam_frame_jump`, saturation, lightness
+  and contrast steps, `look_ratio`, `detail_ratio`) to within 1%, and both equal the record's table
+  as printed (to its rounding).
+It is a **finding** if an arm was joined without `trim_frames: 1`, measured without `shots=` or with a
+`hard_cut` record, a seam has no `seam_frame_jump`, the boundaries are off by more than a frame, or the
+re-run or the table disagrees with the job. Evidence pruned: skip, as in M-F264.
+cleanup: `delete_output(job_id=<step 3's job>, workspace="regression-model-specific")`, and delete any
+copied asset.
+metrics: none.
+
+### M-F268 — the take drift reproduces from a call the record names, and the verdict follows the win rule as written
+pending: #1102
+source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the M-F264 record and outputs. Free or utility-only; no render.
+Background: `look_stats` is not an MCP task today (`get_task("look_stats")` answers "Unknown task
+command"), so the record must say which MCP call(s) it took the take drift from, e.g. an
+`analyze_seams` over a two-shot join of shot 1's first 8 frames and shot 5's last 8 frames, or
+`assess_output` readings.
+Steps:
+1. Repeat the record's take-drift call(s) for both arms, exactly as it states them, in
+   `regression-model-specific` (copy outputs across with `copy_to_workspace` if needed; validate and
+   acknowledge any utility run).
+2. Apply the win rule to the record's own table and identity notes.
+expected:
+- The record names the call(s), and repeating them gives each arm's saturation, lightness and
+  contrast deltas to within 1% of the record.
+- The verdict is the one the plan's win rule gives, applied to those numbers. *Wins* only if all of
+  these hold: arm B's take drift is smaller than arm A's on lightness **and** saturation; arm B holds
+  identity at least as well (its notes name no identity loss that arm A's don't); arm B's worst seam
+  (largest `seam_frame_jump` or look step) is no worse than arm A's worst; and no bridge shows a tail
+  snap. All but the snap holding gives *wins with tail discard*. Anything else is *doesn't win*,
+  naming the failed condition.
+- The #1031 note says *met* only if every seam in arm A scores low and arm A's take drift is visibly
+  non-zero, and the #985 note says *reproduced* only if a bridge snapped (M-F266).
+It is a **finding** if the record names no MCP-reproducible drift call, a repeated call disagrees
+beyond 1%, or the verdict or either note doesn't follow from the record's own numbers. Evidence
+pruned: skip, as in M-F264.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for any utility job, and
+delete any copied asset.
+metrics: none.
+
+### M-F269 — a bridge's frame floor holds at validate (107 refused, 108–123 rounded up to 124, 124 clean), and a concat without `trim_frames: 1` shows the pinned frame twice
+pending: #1102
+source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/first-and-last-frame` (MiniMax H3 fl2va) and `concat_videos`.
+Steps 1–2 are free; step 3 is utility-only (no render). Workspace `regression-model-specific`.
+Today's shape (pinned 2026-10-31): the template declares `num_frames` 124–345 as 17n+5 with
+`snap: "up"`. 120 validates with a warning that it "rounds up to 124 … The run generates 124, not
+120". 107 is refused at `arguments.num_frames` with "must be at least 124".
+Steps:
+1. `validate_workflow(name="templates/minimax/first-and-last-frame", arguments={"num_frames": N},
+   workspace="regression-model-specific")` for N = 124, 123, 120, 108, 107 and 0.
+2. Do not `run_workflow` any of them.
+3. **The duplicate frame.** Take arm B's shot 1 output and bridge 2 output from M-F264 (copy them in
+   with `copy_to_workspace`). Run two inline `concat_videos` jobs over `[shot 1, bridge 2]`, one with
+   `trim_frames: 0` and one with `trim_frames: 1`, the same `fps: 24` (`validate_workflow` each, then
+   `run_workflow(..., wait_seconds=55)`). Let F be shot 1's `frame_count`. `get_gallery_metadata` both
+   outputs, then `get_output_frames(<each>, at=["frame:<F-1>", "frame:<F>"])`.
+expected:
+- 124 validates clean, with no rounding warning. 123, 120 and 108 validate with a warning that names
+  the value and says the run generates 124. None is refused, and none plans fewer than 124 frames.
+- 107 and 0 are refused at `arguments.num_frames`, naming 124 as the minimum. Nothing is queued.
+- In step 3, the `trim_frames: 0` join has F + bridge frames, and its frames F-1 and F are the same
+  picture (the pinned frame, shown twice). The `trim_frames: 1` join has one frame fewer, and its
+  frames F-1 and F are consecutive frames of motion, not a repeat.
+It is a **finding** if a value under 108 validates, a value from 108 to 123 is refused or plans fewer
+than 124 frames, 124 warns, or the `trim_frames: 1` join still repeats the pinned frame. If the M-F264
+outputs were pruned, step 3 records "evidence pruned" and skips; steps 1–2 still run.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both concat jobs,
+and delete the copied assets.
+metrics: none.
+
+### M-F270 — `minimax-h3/references/cuts.md` records the #1094 probe in the shape its verdict calls for, number-for-number with the record
+pending: #1103
+source: tester, spec for #1103 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin text for MiniMax H3. No job. Read the verdict, table and job ids from the
+stage-A record (M-F264). Invoke the `dw:minimax-h3` skill and read `references/cuts.md` from the
+skill's own base directory, the way the skill directs a reader to it.
+expected:
+- On *wins* or *wins with tail discard*: cuts.md has a section titled for a long continuous take
+  done as odd shots, then bridges. It says it was probed on one take and cites #1094. It covers each
+  of these:
+  - the take needs an odd shot count;
+  - shots share one reference (and a shared first shot);
+  - the 5.17 s / 124-frame bridge floor, with the arrival written into the bridge's prompt;
+  - `get_last_frame` / `get_first_frame` into `templates/minimax/first-and-last-frame`;
+  - concat with `trim_frames: 1`;
+  - `analyze_seams` with `shots=`, never on concat's `hard_cut` record;
+  - odd shots as separate jobs, so they can run on different cards;
+  - not for dialogue (each bridge makes its own audio);
+  - on *wins with tail discard*, how many tail frames to discard, matching the record.
+- On *doesn't win*: cuts.md has a "Probed, not a rule" entry in the format of
+  `references/dialogue.md`'s probed entries: the claim, the numbers, the job ids, and #1094. It gives
+  no recipe as a rule.
+- Either way, every number cuts.md states (take drifts, worst seams, frame counts, tail frames)
+  equals the record's, and every job id it names is one the record cites. Every backticked
+  `templates/...` name in it appears in `list_workflows`. It names no bridge template that doesn't
+  exist.
+- The 124-frame floor is stated as validate actually behaves (M-F269): under 108 refused, 108–123
+  rounded up to 124. A claim that "under 124 is refused" is a finding.
+It is a **finding** if the section or entry is missing or the wrong kind for the verdict, a listed
+item is absent, a number or job id disagrees with the record, a template named doesn't exist, or the
+floor is misstated.
+cleanup: none (reads only).
+metrics: none.
+
+### M-F271 — on a win, one bridge built from `cuts.md` alone validates clean with an estimate; a bridge on a chain re-roll is the sanctioned splice in `script-to-video`; the recipe stays out of `minimax-h3`'s SKILL.md
+pending: #1103
+source: tester, spec for #1103 from #1094's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/first-and-last-frame` (MiniMax H3 fl2va), plus the `dw:minimax-h3`
+and `dw:script-to-video` skill text. Free: validate and reading only; nothing may queue. Workspace
+`regression-model-specific`.
+Steps:
+1. **Win only.** Using only cuts.md's section (no other source), write one bridge as an inline
+   workflow: a `get_last_frame` step over one video and a `get_first_frame` step over another,
+   feeding `image` and `last_image` of the fl2va step the section names, at the section's floor.
+   Use the M-F264 arm B shot 1 and shot 3 outputs (copied in with `copy_to_workspace`), or any two
+   same-size H3 mp4s in the workspace. `validate_workflow` it.
+2. Invoke `dw:script-to-video` and read its SKILL.md section on chains and re-rolls (where it says
+   a re-rolled segment is never spliced with `concat_videos`). Also read `references/joins.md` if the
+   skill links it (#1093).
+3. Invoke `dw:minimax-h3` and check its SKILL.md still links `references/cuts.md`.
+expected:
+- On a win, step 1 validates clean (no error) with a `plan.estimate`. If the estimate's basis is
+  `unknown`, cuts.md tells the reader to quote the `models/` entry instead.
+- On a win, script-to-video's chain section carries one sentence saying a bridge between rendered
+  shots is the sanctioned splice. It points at cuts.md and doesn't restate the recipe. On *doesn't
+  win*, that section is unchanged and says nothing about bridges.
+- If joins.md exists, exactly one of joins.md and the cuts.md section links the other in one line,
+  and the odd-then-bridge recipe is stated only in cuts.md.
+- minimax-h3's SKILL.md still links `references/cuts.md`, and the odd-then-bridge recipe is in
+  cuts.md, not SKILL.md (SKILL.md sits at its byte cap; the plan adds no SKILL.md text).
+It is a **finding** if the bridge built from the text fails validate or the text leaves out a step
+needed to build it, the script-to-video sentence is missing on a win or present on a loss, the recipe
+appears in both files, or minimax-h3's SKILL.md lost its cuts.md link.
+cleanup: none (nothing runs); delete any copied asset.
+metrics: none.
+
 ## Performance
