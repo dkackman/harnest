@@ -5782,7 +5782,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F197 — each AISkills verdict lands where the plan says: held as a rule citing its row, the rest in a "Probed and not a rule" list
-pending: #1072
 source: tester, spec for #1072 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job. Take each verdict from M-F193's record.
 Invoke `dw:minimax-h3` and read SKILL.md, `references/per-character.md`, `references/staging.md`
@@ -5813,7 +5812,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F198 — `voice-timbre-reference` changes only if P2 held, and only its prompt or description; its served prose agrees
-pending: #1072
 source: tester, spec for #1072 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/voice-timbre-reference`. No job. Read
 `get_workflow("templates/minimax/voice-timbre-reference")` and P2's verdict (M-F193).
@@ -5843,7 +5841,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F199 — a changed `voice-timbre-reference`, run on a new seed, passes `check-script` with no source words
-pending: #1072
 source: tester, spec for #1072 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/voice-timbre-reference`, then `templates/check-script`. lem
 only (H3 on CUDA), about 7 minutes of GPU. Workspace `regression-model-specific`. Run this only
