@@ -391,7 +391,7 @@ function render(st) {
         <span class="spacer" style="flex:1"></span>
         <span class="muted" style="text-transform:none;letter-spacing:0">lock ${lockTxt} · last write ${quiet == null ? "never" : ago(quiet) + " ago"}</span></h2>
       ${now || '<p class="empty">no sessions in this log</p>'}
-      ${progress(name, s.loop_run)}
+      ${progress(name, s.loop_run, s.looping)}
       <div class="scroll"><table>
         <tr><th>start</th><th>session</th><th>model</th><th class="num">turns</th><th class="num">time</th><th class="num">ctx peak</th><th class="num">cost</th></tr>
         ${rows.map((x) => `<tr class="${x === cur && running ? "live" : ""}">
@@ -440,9 +440,10 @@ const burns = {}, burnHover = {}, openLists = new Set();
 // other and parked only when some board had one (a board logged before the parked mark has none)
 const seriesOf = (lr) => SERIES.filter((x) => !["other", "parked"].includes(x.key) || lr.points.some((p) => p[x.key]));
 
-function progress(name, lr) {
+function progress(name, lr, looping) {
   delete burns[name];
-  if (!lr || !lr.points.length) return "";
+  if (!lr || !lr.points.length)  // the board is logged as a cycle ends
+    return looping ? `<p class="prog muted">Progress shows once cycle ${lr ? lr.cycle : 1} of this run ends and logs its ticket board.</p>` : "";
   burns[name] = lr;
   const last = lr.points[lr.points.length - 1];
   const item = (i) => `<li><a href="https://github.com/${esc(lr.repo)}/issues/${i.number}" target="_blank" rel="noopener">#${i.number}</a>

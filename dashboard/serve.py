@@ -760,6 +760,7 @@ def lock(name):
     owner = LOGS / name / "owner"
     try:
         text = owner.read_text().strip()
+        since = owner.stat().st_mtime  # written once, when the driver took the lock
     except (FileNotFoundError, NotADirectoryError):
         return None
     pid = text.split()[0] if text else ""
@@ -770,7 +771,14 @@ def lock(name):
             alive = True
         except OSError:
             pass
-    return {"owner": text, "alive": alive}
+    return {"owner": text, "alive": alive, "since": since}
+
+
+def _clock_epoch(hms, now):
+    """The most recent past instant a log's HH:MM:SS names (it carries no date)."""
+    h, m, sec = map(int, hms.split(":"))
+    t = time.mktime(time.localtime(now)[:3] + (h, m, sec, 0, 0, -1))
+    return t - 86400 if t > now + 60 else t
 
 
 def release():
@@ -817,8 +825,11 @@ def state():
             run_header = idx.run_header and dict(idx.run_header)
             loop_run = idx.loop_run and _loop_run(idx.loop_run)
         held = lock(LOCKS[name])
-        if not (held and held["alive"] and held["owner"].split()[1:2] == ["run-loop"]):
-            loop_run = None  # a finished run's board, and the log has no dates to tell when it ran
+        looping = bool(held and held["alive"] and held["owner"].split()[1:2] == ["run-loop"])
+        # A run is the live loop's only if it began after that loop took the lock:
+        # a restarted loop's first cycle hasn't logged yet, and the log has no dates
+        if not looping or (loop_run and _clock_epoch(loop_run["start"], time.time()) < held["since"] - 5):
+            loop_run = None
         streams[name] = {
             "file": STREAMS[name],
             "mtime": mtime,
@@ -826,6 +837,7 @@ def state():
             "run": run_header,
             "sessions": recent,
             "loop_run": loop_run,
+            "looping": looping,
         }
     flags = sorted(p.name for p in LOGS.glob("stop-after-cycle*"))
     ATTENTION.poke(_loop_key())
