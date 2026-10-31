@@ -6088,7 +6088,7 @@ expected:
   - Its variable names include `source_video`, `width`, `height`, `num_frames`, `frame_rate` and `seed`, and
     do **not** include `prompt`, `negative_prompt` or `lora_scale`.
 - **Variables.** `get_workflow(name="templates/ltx2/alpha-matte", variables_only=true)`:
-  - `width` 960, `height` 544, `frame_rate` 24.0, and a `seed`;
+  - `width` 960, `height` 544, `frame_rate` `"source"`, and a `seed`;
   - `num_frames` defaults to an 8n+1 value from 9 to 145. Record it, since M-F225 and M-F226 use it.
   - `constraints`:
     - `width` and `height`: `modulus: 32, remainder: 0`;
@@ -6111,7 +6111,7 @@ expected:
   3. the model picks the subject itself (the prompt doesn't steer it);
   4. the 145-frame cap and why.
 - **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`:
-  - `ltx-2.5/ic-alpha-gen` is `status: proven`, with `workflow` naming `templates/ltx2/alpha-matte`;
+  - `ltx-2.5/ic-alpha-gen` is `status: proven`, with `workflow: null` and an `evidence` item naming `templates/ltx2/alpha-matte`;
   - `ltx-2.5/ic-clean-plate` and `ltx-2.5/ic-day-to-night` are still `trial` with `workflow: null`.
     If the listing exposes their `notes`, each gives the card mismatch and the trigger that would bring
     it back. If no field shows notes, that half can't be checked over MCP. Record that it can't, and
@@ -6265,7 +6265,7 @@ expected:
   - its compact constraints read `32*n+0` for `width` and `height` and `8*n+1, 9+` for `num_frames`, as
     deblur's do.
 - **Variables.** `get_workflow(name="templates/ltx2/restore-colorize", variables_only=true)`:
-  - `width` 960, `height` 544, `num_frames` 121, `frame_rate` 24.0, **`lora_scale` 1.0**, and a `seed`;
+  - `width` 960, `height` 544, `num_frames` 121, `frame_rate` `"source"`, **`lora_scale` 1.0**, and a `seed`;
   - `prompt` is a `prompt:ltx2/…` reference, not inline text;
   - the same variable set and `constraints` (moduli, `min_frames: 9`, reasons) as `restore-deblur`,
     except where the plan changes them;
@@ -6284,7 +6284,7 @@ expected:
   - says the template is for black-and-white or washed-out source footage;
   - says to lower `lora_scale` toward 0.8 if it oversaturates or bleeds.
 - **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is
-  `status: proven`, with `workflow` naming `templates/ltx2/restore-colorize`.
+  `status: proven`, with `workflow: null` and an `evidence` item naming `templates/ltx2/restore-colorize`.
 - **Skill.** The `dw:ltx-2.5` skill:
   - has a route row naming `restore-colorize` and saying it is for black-and-white or washed-out
     footage;
