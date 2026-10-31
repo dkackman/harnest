@@ -15355,8 +15355,10 @@ GPU (H3, about the template's quoted cost per arm). Input: one of the two small-
 - a. Run the template with `source_video` = the take (plus `face_reference`, the cast picture the
   record used, if ref2va), `seed: 1092`, validated first and its fingerprint bound,
   `wait_seconds=1500`.
-- b. The padded arm (the Q1 risk): `trim_video` the take to 125 frames from frame 0, `keep_output`
-  it, and run the template on it the same way. 125 pads to 141 crops.
+- b. The padded arm (the Q1 risk): make a 125-frame clip from the take: `concat_videos` the take
+  with a 1-frame `trim_video` of its own last frame (or `trim_video` a take longer than 124 frames
+  to 125 from frame 0), `keep_output` it, and run the template on it the same way. 125 pads to 141
+  crops.
 For each: `get_gallery_metadata` and `get_output_audio` on the final mp4; `compare_outputs` the source
 and result as face-crop grids across one spoken word (find a word's span with `transcribe_audio` word
 timestamps on the source, or by ear with `get_output_frames(hear=…)`); `get_output_frames` of both at
@@ -15371,13 +15373,14 @@ expected:
   on the same frames across the word. In b, frames 0–6's mouth state matches the source's (the head
   silence did not pull it shut).
 - No visible seam or colour step at the feather boundary in the frames, and `assess_output` reports
-  no seam problem.
+  no seam problem. (In b, a level finding such as `seam_level_step` at the built 123/124 joint
+  comes from the input clip, not the template; any seam finding elsewhere still counts.)
 It is a **finding** if a run fails, if frames, fps or audio differ from the source, if the face is
 not sharper or changes identity, if the mouth shifts off the source's frames (in b, especially the
 first frames), or if a seam shows. A b-only failure on the first frames is the plan's named trigger
 for tail-only padding: say so in the issue.
-cleanup: `delete_output(job_id=…)` for every job; `delete_asset` the kept 125-frame trim. Never
-delete the probe's take.
+cleanup: `delete_output(job_id=…)` for every job; `delete_asset` the kept 125-frame clip and the
+1-frame trim, if kept. Never delete the probe's take.
 metrics: none.
 
 ### C-F574 — `minimax/face-repair` refuses a 4 s clip and a 30 fps clip at the crop step, before H3 loads, naming the value
@@ -15404,8 +15407,7 @@ expected:
 - The skill has one line sending a good H3 take with a soft or small face to
   `templates/minimax/face-repair` by that exact catalog name, which resolves.
 - Anything the line states about the template (the 124–345 frame window, 24 fps, the held audio, a
-  picture if ref2va) agrees with `get_workflow`. It says or implies shorter takes use
-  `ltx2/face-repair`.
+  picture if ref2va) agrees with `get_workflow`.
 - The skill's other template pointers still resolve in `list_workflows` (the trim made to pay for
   the line removed no live pointer).
 It is a **finding** if the line is missing, names a template that doesn't resolve, contradicts the
