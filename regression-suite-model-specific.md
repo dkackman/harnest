@@ -165,27 +165,48 @@ fixture) when nothing uses it anymore.
   - `h3-mask/region-480.png`: `region.png` resized to 480×272.
   - `h3-mask/region-124f.mp4` and `h3-mask/region-141f.mp4`: `region.png` held for 124 and 141
     frames.
-- Sources for the #1064 IC-LoRA cases (M-F223–M-F229). The base clip is the shared
+- Sources for the #1064 IC-LoRA cases (M-F223–M-F229, M-F250–M-F257). The base clip is the shared
   `asset:qa-cast/ep6-shot1-priya.mp4` (960×544, 124 frames, 24 fps, with audio). What matters is that
   it shows one clear human subject against a scene. Before a run, look at it with
   `get_output_frames(at=["frame:60"])`. A substitute needs one person in frame and needs to be
-  960×544 at 24 fps, more than 121 frames long. The three derived clips go in `regression-model-specific`.
-  M-F226 and M-F229 make any that are missing, all on CPU, with no model:
-  1. `save_workflow(name="m-ic-sources", ...)`: a task-only workflow with five steps.
+  960×544 at 24 fps, more than 121 frames long. The derived clips go in `regression-model-specific`.
+  M-F226, M-F229, M-F252, M-F253, M-F256 and M-F257 make any that are missing, all on CPU, with no
+  model. **Check the rate as well as the presence:** `loop_frames` writes at 8 fps unless its step's
+  `result` declares an `fps`, and the first build of these fixtures (before plan v3 of #1064) came out
+  at 8 fps under the 24 fps names. If `get_gallery_metadata` on `ic-alpha/src-384x544-97f.mp4` or
+  `ic-alpha/src-544x544-97f.mp4` reports anything but 24 fps, `delete_asset` both and remake them.
+  1. `save_workflow(name="m-ic-sources", ...)`: a task-only workflow with these steps. A step whose
+     result is kept below carries `"result": {"content_type": "video/mp4", "fps": <rate>}` with the
+     rate given; a declared rate that differs from what the frames carry may warn, which is expected
+     here.
      - `crop_p`: `fit_to_model(video="asset:qa-cast/ep6-shot1-priya.mp4", width=384, height=544, num_frames=97, mode="crop")`, `save: false`.
-     - `portrait`: `loop_frames(video="previous_result:crop_p.video", num_frames=97)`.
+     - `portrait`: `loop_frames(video="previous_result:crop_p.video", num_frames=97)`, fps **24**.
+     - `portrait8`: the same as `portrait`, fps **8**.
      - `crop_s`: the same as `crop_p` with `width=544`, `save: false`.
-     - `square`: `loop_frames(video="previous_result:crop_s.video", num_frames=97)`.
+     - `square`: `loop_frames(video="previous_result:crop_s.video", num_frames=97)`, fps **24**.
      - `bw`: `grade(media="asset:qa-cast/ep6-shot1-priya.mp4", saturation=0.0)`.
+     - `crop_w`: the same as `crop_p` with `width=960`, `save: false`.
+     - `bw8`: `grade(media="previous_result:crop_w.video", saturation=0.0)`, fps **8**.
+     - `bwp`: `grade(media="previous_result:portrait", saturation=0.0)`, fps **24**.
   2. `validate_workflow`, then `run_workflow(workflow_path="m-ic-sources", workspace="regression-model-specific", acknowledged_cost=..., wait_seconds=55)`.
-  3. `keep_output` the three files as `ic-alpha/src-384x544-97f.mp4`, `ic-alpha/src-544x544-97f.mp4`
-     and `ic-colorize/src-bw-124f.mp4`.
-  4. Confirm each with `get_gallery_metadata`:
-     - the first is 384×544 and the second 544×544, each 97 frames at 24 fps (`fit_to_model` drops
-       the soundtrack, so no audio stream is expected);
-     - the third is 960×544, 124 frames at 24 fps, with audio.
+     To make only some of the clips, drop the other kept steps (keep the `crop_*` steps they read).
+  3. `keep_output` the files as:
+     - `portrait` → `ic-alpha/src-384x544-97f.mp4`;
+     - `portrait8` → `ic-alpha/src-384x544-97f-8fps.mp4`;
+     - `square` → `ic-alpha/src-544x544-97f.mp4`;
+     - `bw` → `ic-colorize/src-bw-124f.mp4`;
+     - `bw8` → `ic-colorize/src-bw-960x544-97f-8fps.mp4`;
+     - `bwp` → `ic-colorize/src-bw-384x544-97f.mp4`.
+  4. Confirm each with `get_gallery_metadata` (`fit_to_model` drops the soundtrack, so only `bw` has
+     an audio stream):
+     - `ic-alpha/src-384x544-97f.mp4` 384×544 and `ic-alpha/src-544x544-97f.mp4` 544×544, each 97
+       frames at **24 fps**;
+     - `ic-alpha/src-384x544-97f-8fps.mp4`: 384×544, 97 frames at **8 fps** (about 12.1 s);
+     - `ic-colorize/src-bw-124f.mp4`: 960×544, 124 frames at 24 fps, with audio;
+     - `ic-colorize/src-bw-960x544-97f-8fps.mp4`: 960×544, 97 frames at **8 fps**;
+     - `ic-colorize/src-bw-384x544-97f.mp4`: 384×544, 97 frames at 24 fps.
 
-     Look at frame 60 of the third: it is grey, with no colour.
+     Look at frame 60 of each `ic-colorize/` clip: it is grey, with no colour.
   5. `delete_output(job_id=<id>)`, then `delete_workflow("m-ic-sources")`.
   Keep them across runs, and don't sweep them. If a task's argument names have changed, pin them
   with `get_task` first.
@@ -6692,5 +6713,469 @@ It is a **finding** if (a) or (c) validates, since the run would then fail about
 `index_copy_()`, or if (b) or (d) is refused.
 cleanup: none (no job is queued).
 metrics: none.
+
+### M-F244 — the "Regional edit" guide section carries the measured `refine_strength` bands, the conditions they were measured under, and the shifted-σ meaning
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 regional edit docs. Free: discovery only. This adds plan v2's docs to M-F214;
+where M-F214's strength bullet (1.0 regenerates, 0.4 reworks lightly) and this case differ, this case is
+the plan's current wording.
+Steps:
+1. `get_guide("workflows", section="Regional edit")`.
+2. `get_guide("workflows")` (the index form), to confirm no second, conflicting strength table lives in
+   another section (the refine section may point at this one).
+expected:
+- **The bands**, as a table or a list, each with what happens inside the mask:
+  - up to 0.85 (0.8 and 0.85 named or covered by "≤0.85"): a light rework, re-detail only; the source's
+    objects and colours stay;
+  - 0.9: a held object is replaced, while the person, pose and clothing hold;
+  - 0.95: garments are reworked too, and identity (face, hair, pose) mostly holds;
+  - 1.0: a fresh generation inside the mask, which loses identity.
+- It says a large recolour of a big region (dark to bright) doesn't land below 1.0, stated as a limit,
+  not a promise that the prompt lands at lower strengths.
+- **The conditions**: the bands were measured on one take, one seed, 5 turbo steps at `video_shift` 6,
+  and another shift or step count moves them.
+- **The shifted-σ note**: `refine_strength` is the start σ on the **shifted** sigma grid (the same one
+  `refine_tiles` uses), so the useful range sits high. Either the formula (u = s / (shift − (shift−1)·s),
+  i.e. s / (6 − 5s) at shift 6) or at least one worked value (0.8 → about 0.40, 0.9 → about 0.60,
+  0.95 → about 0.76 of the unshifted schedule). Values within ±0.02 of these meet it.
+- Its worked example (the one M-F214 checks) uses a strength from the bands, 0.9 or 0.95, not 0.4 or 0.8
+  presented as a region change.
+It is a **finding** if the bands are missing or contradict the list above, if the section still says
+0.8 (or any value below 1.0) changes the region "per the prompt" in general, if the measurement
+conditions or the shifted-σ meaning are missing, or if another section gives different bands.
+cleanup: none.
+metrics: none.
+
+### M-F245 — a regional edit at `refine_strength` 0.9 replaces the held object while identity and pose hold, logs a regional-edit event, keeps the outside close, and keeps the take's audio
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va regional edit at 960×544, 124 frames, with the turbo LoRA (about one
+`video-with-audio` pass). GPU on lem. Workspace `regression-model-specific`. This is plan v2's amended
+M-F218: the strength moves from 0.8 to 0.9, the inside check no longer needs the prompt's colour to land,
+and a job-event check is added.
+Setup: M-F215 (masks and carrier RE, with the setup's record of what `region.png` covers).
+Steps:
+1. Take RE and set `refine_strength: 0.9`, `seed: 1062`, `mask_grow` absent (default 1). Set `prompt` to
+   describe the take's scene as the setup saw it, with the masked person "wearing a bright red raincoat"
+   (the prompt the plan's sweep used). `validate_workflow` it and bind `acknowledged_cost`.
+2. `run_workflow(..., note="M-F245 regional edit 0.9", wait_seconds=55)`, then `wait_for_job` until done.
+3. `get_job_events(<job>)`.
+4. `get_gallery_metadata` on the output mp4.
+5. `get_output_frames(<mp4>, at=[0.5, 2.5, 4.5])`, and the same on `asset:qa-cast/ep6-cold-open.mp4`.
+6. Read the white box of `region.png` from M-F215's `get_output_image`. Grow it by 32 px on each side.
+   `compare_outputs(names=["asset:qa-cast/ep6-cold-open.mp4", <mp4>], at=[0.5, 2.5, 4.5], crop=<a box
+   wholly outside the grown box>)`, then again with `crop` = the region's own (ungrown) box.
+7. `get_output_audio(<mp4>)`, and `get_output_frames(..., hear=1)` on the output and the source at the
+   same times.
+expected:
+- The job succeeds. The output is 960×544, 124 frames at 24 fps, with one audio stream lasting the clip.
+- **Events:** exactly one regional-edit `log` event for the step. It names a regenerated cell count and a
+  kept cell count (both above 0, regenerated well under the total since `region.png` covers 2–50% of the
+  frame), `mask_grow` 1 and `refine_strength` 0.9. No error event.
+- **Inside the mask:** the region's content visibly changed at every sampled time; an object the person
+  holds or wears is replaced or reshaped (the sweep saw the cup become a different cup). The person's
+  face, hair and pose are still the source's, and their motion follows the take. The prompt's red
+  raincoat is **not** required, and its absence is not a finding.
+- **Outside the mask:** the outside crop measures close to the source, SSIM ≥ 0.95 (the sweep measured
+  0.977), or whatever "near-identical" figure M-F244's section states if it is lower. Not bit-identical,
+  which is expected.
+- The region crop measures clearly further from the source than the outside crop (the sweep measured
+  about 0.78); an inside SSIM ≥ 0.9 means the region didn't change.
+- The audio is the take's own track at the same times, not new sound.
+It is a **finding** if the run fails, the event is missing or misreports the strength or `mask_grow`, the
+region comes back unchanged, the person's identity or pose is lost (a fresh generation inside the mask at
+0.9), the outside visibly shifts or measures under the threshold, a hard seam shows at the mask boundary,
+or the audio isn't the source's. The seed is pinned, so a judgment that differs on a rerun is worth
+reporting.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### M-F246 — a `source_video` step with no mask validates as a whole-take re-denoise and its event says so
+pending: #1077
+source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va with `source_video` and no mask (the plan's "refine_strength gets latents
+from a file", and v2's observability item: "an unmasked edit says it re-denoises the whole take"). Step 1
+is free; step 2 is GPU, about one `video-with-audio` pass. Workspace `regression-model-specific`.
+Setup: M-F215 (carrier RE).
+Steps:
+1. RE with `mask_image` removed (`source_video`, `refine_strength: 0.9` and `hold_audio` kept), `seed`
+   1062, prompt describing the take with no change asked. `validate_workflow`, binding
+   `acknowledged_cost`.
+2. `run_workflow(..., note="M-F246 source_video no mask 0.9", wait_seconds=55)`, `wait_for_job`, then
+   `get_job_events(<job>)` and `compare_outputs(names=["asset:qa-cast/ep6-cold-open.mp4", <mp4>],
+   at=[0.5, 2.5, 4.5])` without a crop.
+expected:
+- Step 1 is `valid: true` with a `plan.estimate`; no "mask required" error and no mask-related warning.
+- Step 2 succeeds at 960×544, 124 frames, 24 fps, with the take's audio.
+- The job's `log` event for the step says the whole take is re-denoised (no kept cells, or words to that
+  effect) and names `refine_strength` 0.9.
+- The output follows the take's composition and subjects (it started from the source's latents, not from
+  noise): the uncropped comparison is clearly closer to the source than an unrelated generation would be,
+  and the frames show the same person and setting.
+It is a **finding** if step 1 is refused, the event is missing or claims kept cells, or the output is a
+fresh generation unrelated to the take.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### M-F247 — the `regional-edit` template defaults `refine_strength` to 0.9 and validates across the measured bands
+pending: #1078
+source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/regional-edit` (stage B). Free. This is plan v2's change to M-F220: the
+default `refine_strength` is 0.9, not 0.7; M-F220's other checks stand.
+Setup: M-F215 (masks). Workspace `regression-model-specific`.
+Steps:
+1. `get_workflow("templates/minimax/regional-edit", variables_only=true)`.
+2. `validate_workflow(workflow_name="templates/minimax/regional-edit",
+   arguments={"source_video": "asset:qa-cast/ep6-cold-open.mp4", "mask_image": "asset:h3-mask/region.png",
+   "prompt": "<as M-F245>"}, workspace="regression-model-specific")`.
+3. Step 2 with `refine_strength` set to 0.85, then 0.95, then 1.0.
+expected:
+- `refine_strength` defaults to **0.9**; `num_inference_steps` defaults to 8.
+- Steps 2 and 3 are all `valid: true`, each with a `plan.estimate`.
+- If the template's description or variable help mentions the strength, it uses the bands (0.9 replaces
+  an object, 0.95 reworks clothing, 1.0 a fresh generation), not "0.5 light / 1.0 replace".
+It is a **finding** if the default isn't 0.9, if any step 2–3 probe is refused, or if the template text
+gives strength guidance that contradicts the bands.
+cleanup: none.
+metrics: none.
+
+### M-F248 — the `minimax-h3` skill's regional-edit branch picks `refine_strength` from the measured bands and says a big recolour isn't a regional edit's job
+pending: #1078
+source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3` skill as loaded from `develop`. Free. This is plan v2's change to
+M-F221's strength bullet ("about 0.5 for a light change, 1.0 to replace the region"); M-F221's other
+checks stand.
+Steps: load the `dw:minimax-h3` skill and find the "fix one region of a good take" branch.
+expected:
+- It picks `refine_strength` from the bands: ≤0.85 a light rework, 0.9 to replace an object, 0.95 to
+  rework clothing, 1.0 a fresh generation inside the mask that loses identity. It names 0.9 as the
+  template's default.
+- It says a large recolour of a big region needs 1.0 and gives up identity, so it isn't a regional
+  edit's job (or points at a fresh take instead).
+- It doesn't promise that the prompt lands inside the mask at any strength below 1.0.
+- Its numbers agree with M-F244's guide section.
+It is a **finding** if the branch still gives 0.5 / 1.0 guidance, omits the bands or the recolour limit,
+or disagrees with the guide.
+cleanup: none.
+metrics: none.
+
+### M-F249 — a `regional-edit` run at its defaults (0.9) overriding only `source_video`, `mask_image` and `prompt` replaces the region's object, keeps identity, the outside and the audio
+pending: #1078
+source: tester, spec for #1078 from #1062's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.9,
+`num_inference_steps` 8). GPU on lem, at the template's listed cost. Workspace
+`regression-model-specific`. This is plan v2's amended M-F222: the default is 0.9, and the inside check
+is M-F245's (object replaced, identity holds), not "the prompted change lands".
+Setup: M-F215 (masks), and M-F245's prompt.
+Steps:
+1. `validate_workflow` with `arguments` holding only `source_video: "asset:qa-cast/ep6-cold-open.mp4"`,
+   `mask_image: "asset:h3-mask/region.png"` and `prompt`. Bind `acknowledged_cost`.
+2. `run_workflow(..., note="M-F249 regional-edit template 0.9", wait_seconds=55)`, then `wait_for_job`.
+3. Run M-F245's steps 3–7 on the output.
+expected:
+- The job succeeds. Wall time is within 25% of the template's listed `cost`, with a cold load stated.
+- The output is 960×544, 124 frames at 24 fps, with the take's audio.
+- The regional-edit event names `refine_strength` 0.9 and `mask_grow` 1.
+- Inside the mask the content changed while the person's face, hair and pose hold; outside, the crop
+  meets M-F245's threshold; no seam at the mask boundary.
+It is a **finding** if the run fails, needs any argument beyond the three, runs at a strength other than
+0.9, loses the person's identity, changes the unmasked area or the audio, or is far outside its listed
+cost.
+cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` each `h3-mask/` asset.
+metrics: `wall_minutes`, to `regression-perf/M-F249.jsonl` on each run.
+
+### M-F250 — `alpha-matte`'s `frame_rate` defaults to `"source"`, its matte step is held at 24, its restore step carries the rate, and the registry links Alpha-Gen by an `evidence` item with `workflow: null`
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F223. Free: discovery calls and a skill read only, no GPU. This is plan v3/v4's
+amendment of M-F223 (Q5, Q6). Where the two differ, this case is the plan's current wording: M-F223's
+`frame_rate` 24.0 default and its "`workflow` naming `templates/ltx2/alpha-matte`" bullet are replaced by
+the checks below. M-F223's other checks stand.
+expected:
+- **Catalog.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
+  `templates/ltx2/alpha-matte` entry shows `frame_rate`'s default as the string `"source"`, not a number.
+- **Variables.** `get_workflow(name="templates/ltx2/alpha-matte", variables_only=true)`: `frame_rate`
+  defaults to `"source"`. `width` 960, `height` 544, the `num_frames` default and constraints, and `seed`
+  are as M-F223 records them.
+- **Document.** In the full `get_workflow` document:
+  - the pipeline (matte) step's own `frame_rate` argument is the literal number 24 (24.0), **not**
+    `variable:frame_rate`, and its `result.fps` is a literal 24, not a variable;
+  - the restore step is `restore_to_source` with an `fps` argument of `variable:frame_rate`;
+  - the restore step's `result` declares **no** `fps`.
+- **Task.** `get_task("restore_to_source")` lists an optional `fps` parameter. Its description says:
+  - omitted keeps the input video's rate;
+  - `"source"` takes the fit record's source rate, falling back to the input video's rate when the
+    record has none;
+  - a positive number sets that rate;
+  - it is for a fixed-edit route whose output has to line up frame for frame with its source.
+- **Description.** The full description says the matte is written at the source's frame rate and that
+  `frame_rate` overrides it. It no longer says "24 fps - set 'frame_rate' to the source's" or any
+  wording that the output is 24 fps by default.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`:
+  - `ltx-2.5/ic-alpha-gen` is `status: proven`, with `workflow: null`, and an `evidence` item whose note
+    names `templates/ltx2/alpha-matte` (a lem job id beside it, e.g. `7219cf6b4cf5`, is expected but its
+    exact value isn't checked);
+  - `ltx-2.5/ic-clean-plate` and `ltx-2.5/ic-day-to-night` are still `trial` with `workflow: null`, each
+    with an `evidence` item for issue 1064 whose note gives the card mismatch and the trigger that would
+    bring it back (a guided dev/full IC route or a `field-report`; Day-To-Night also fps resampling).
+    If `list_loras` shows no `evidence` field at all, that half can't be checked over MCP. Record that,
+    and leave it to docs-review.
+- **Skill.** The `dw:ltx-2.5` skill's `alpha-matte` row says, in a few words, that the matte keeps the
+  source's frame rate (or that `frame_rate` overrides it). It doesn't say it is written at 24 fps.
+It is a **finding** if any of the following holds:
+- `frame_rate` defaults to a number;
+- the matte step's `frame_rate` or `result.fps` reads the variable, or the restore step doesn't;
+- the restore step's `result` declares an `fps`;
+- `restore_to_source` has no `fps` parameter, or its description misses one of the three modes;
+- the description or skill still says 24 fps by default;
+- `ic-alpha-gen` isn't `proven`, has a non-null `workflow`, or has no `evidence` item naming the
+  template.
+cleanup: none. Discovery only, writes nothing.
+metrics: none.
+
+### M-F251 — `restore_to_source`'s `fps` refuses a non-positive or non-numeric value other than `"source"` for free, and `alpha-matte` validates with each legal `frame_rate`
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `fit_to_model` → `restore_to_source` tasks, and `templates/ltx2/alpha-matte`. Free:
+`validate_workflow` only, no GPU. Workspace `regression-model-specific`. `P` is
+`asset:ic-alpha/src-384x544-97f.mp4` and `P8` is `asset:ic-alpha/src-384x544-97f-8fps.mp4` (Fixtures,
+"Sources for the #1064 IC-LoRA cases"). Validation reads only the files' headers, so if `P8` is missing
+use `P` for the probes below and say so.
+Steps:
+1. An inline task-only workflow `W(fps)` for `validate_workflow(workflow=..., workspace="regression-model-specific")`:
+   - `fit`: `fit_to_model(video=P8, width=384, height=544, num_frames=97, mode="letterbox")`,
+     `save: false`;
+   - `back`: `restore_to_source(video=P, fit="previous_result:fit.fit", fps=<fps>)`, result
+     `video/mp4`.
+   (If the fit record's reference form has changed, pin it from `get_task("restore_to_source")`'s `fit`
+   description.)
+2. Validate `W` with `fps` set to each of: omitted, `"source"`, `12`, `24`, `0`, `-8`, `"fast"`, `"Source"`.
+3. `validate_workflow(name="templates/ltx2/alpha-matte", workspace="regression-model-specific",
+   arguments={"source_video": P8, "num_frames": 97, ...})` with `frame_rate` omitted, `24`, `12`, then
+   `0` and `"fast"`.
+expected:
+- Step 2:
+  - omitted, `"source"`, `12` and `24` → `valid: true`;
+  - `0`, `-8` and `"fast"` → `valid: false`, each with an error at the `back` step's `fps` argument
+    naming what it accepts (a positive number or `"source"`). No download or load is planned. The
+    refusal is free.
+  - `"Source"` (a different case): either refused like `"fast"` or accepted as `"source"`. Record which.
+    Neither is a finding, but an accept that then writes at some other rate would be, in M-F252.
+- Step 3: omitted, `24` and `12` → `valid: true`, each with a non-null `plan.estimate`. `0` and
+  `"fast"` → `valid: false`, with the error at `arguments.frame_rate` or at the restore step's `fps`.
+  A pass on either is a finding.
+It is a **finding** if a bad `fps` passes validate, a legal one is refused, or the refusal names
+no path.
+cleanup: none (inline validation writes nothing).
+metrics: none.
+
+### M-F252 — `restore_to_source` writes the rate the caller picks: the fit record's source rate with `"source"`, the input's rate when omitted, a number when given, and never changes the frame count
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `fit_to_model` and `restore_to_source` only. CPU, no model, no GPU time beyond the
+queue. Workspace `regression-model-specific`. This is plan v3's engine change tested over MCP: an 8 fps
+source is fitted, and a 24 fps clip at the fitted size stands in for the model's output.
+Setup: `P8` = `asset:ic-alpha/src-384x544-97f-8fps.mp4` (8 fps, 97 frames) and `P` =
+`asset:ic-alpha/src-384x544-97f.mp4` (24 fps, 97 frames). Make either if missing, and check `P` is
+24 fps (Fixtures).
+Steps:
+1. `save_workflow(name="m-fps-restore", ...)`: a task-only workflow with these steps, each `back_*`
+   result `video/mp4` with **no** `fps`, and a distinct `file_base_name`:
+   - `fit`: `fit_to_model(video=P8, width=384, height=544, num_frames=97, mode="letterbox")`, `save: false`;
+   - `back_src`: `restore_to_source(video=P, fit="previous_result:fit.fit", fps="source")`;
+   - `back_none`: the same without `fps`;
+   - `back_12`: the same with `fps=12`.
+   If the fit step's result can save its record, save it too and read it: it carries `source_fps` 8.
+2. `validate_workflow`, then `run_workflow(workflow_path="m-fps-restore", workspace="regression-model-specific", acknowledged_cost=..., wait_seconds=55)`.
+3. `get_gallery_metadata` on each `back_*` file. `get_job_events` for the job.
+expected:
+- The job succeeds.
+- `back_src`: **8 fps**, 97 frames, 384×544, about 12.1 s.
+- `back_none`: **24 fps**, 97 frames (today's behaviour: the input video's rate).
+- `back_12`: **12 fps**, 97 frames.
+- Each is the same frames: `compare_outputs` between `back_src` and `back_none` at `frame:0`, `frame:48`
+  and `frame:96` (frame-indexed, not by time) measures them identical or near it. Only the rate
+  differs; no frame was dropped or duplicated to retime.
+- If step 1's saved record is readable, it has a `source_fps` of 8.
+It is a **finding** if `back_src` isn't 8 fps, `back_none` isn't 24, `back_12` isn't 12, any frame count
+isn't 97, or the frames differ between arms (a resample where a relabel was promised).
+cleanup: `delete_output(job_id=<id>)`, then `delete_workflow("m-fps-restore")`. Keep the fixtures.
+metrics: none.
+
+### M-F253 — `alpha-matte` on an 8 fps source writes the matte at 8 fps with the source's frame count by default, and at 24 fps with the same count when `frame_rate=24`
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs at the default 960×544 working size on lem (RTX
+3090), 97 frames each. Workspace `regression-model-specific`, `"seed": 1079`.
+Setup: `P8` = `asset:ic-alpha/src-384x544-97f-8fps.mp4` (Fixtures). Make it if missing. Confirm with
+`get_gallery_metadata` that it is 8 fps and 97 frames.
+Arms (validate, bind `acknowledged_cost`, `run_workflow(..., note="M-F253 <arm>", wait_seconds=55)`,
+then `wait_for_job`, as M-F225):
+- **follow**: `arguments={"source_video": P8, "num_frames": 97, "seed": 1079}`, no `frame_rate`.
+- **override**: the same plus `"frame_rate": 24`.
+expected:
+- Both jobs succeed.
+- **follow.** `get_gallery_metadata` on the final: 384×544, **97 frames at 8 fps**, so its duration
+  (about 12.1 s) matches the source's within one frame. No audio stream. `job.warnings` has no
+  frame-rate warning (the file is written at the rate the source carries).
+- **override.** 384×544, **97 frames at 24 fps** (about 4.0 s). The frame count is unchanged. A
+  warning that the file is written at a rate other than the source's is allowed here; record it.
+- **The frames are the same matte.** `compare_outputs` between the two finals at `frame:0`, `frame:48`
+  and `frame:96` measures them identical or near it (same seed, same model rate of 24): `frame_rate` only
+  relabels the file. A grey matte that tracks the subject, as M-F225 defines it, at `frame:48` of the
+  follow arm, aligned with `P8` at `frame:48`.
+It is a **finding** if any of the following holds:
+- the follow arm isn't 8 fps, or its frame count isn't 97;
+- the override arm isn't 24 fps, or `frame_rate` changed the frame count;
+- the two arms' frames differ beyond encoding noise (the model was conditioned on the variable, not on
+  the fixed 24);
+- the follow arm warns about its rate.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
+fixture.
+metrics: none.
+
+### M-F254 — `restore-colorize` is `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, and the registry linking Colorization by an `evidence` item with `workflow: null`
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Free: discovery calls and a skill read only, no GPU. This is plan v4's
+amendment of M-F227 (Q5, Q7). Where the two differ, this case is the plan's current wording: M-F227's
+`frame_rate` 24.0 default, its "same variable set as `restore-deblur`" where `frame_rate` is concerned,
+and its "`workflow` naming `templates/ltx2/restore-colorize`" bullet are replaced by the checks below.
+M-F227's other checks (cost, constraints as deblur's, `lora_scale` 1.0, the stored prompt's four
+phrases, the skill row) stand.
+expected:
+- **Catalog.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
+  `templates/ltx2/restore-colorize` entry has a non-null `cost`, a `lora_scale` default of 1.0 and a
+  `frame_rate` default of the string `"source"`.
+- **Variables.** `get_workflow(name="templates/ltx2/restore-colorize", variables_only=true)`: `width` 960,
+  `height` 544, `num_frames` 121, `lora_scale` 1.0, `frame_rate` `"source"`, a `prompt` that is a
+  `prompt:ltx2/…` reference, and a `seed`.
+- **Document.** In the full `get_workflow` document the steps are, in order:
+  1. a `fit_to_model` step reading `variable:source_video`, `mode` fixed at `letterbox` (not a
+     variable; see below for `crop`), `downscale` 1, not saved;
+  2. the `LTX2InContextPipeline` step:
+     - the Colorization weight from `Lightricks/LTX-2.5-22b-IC-LoRA-Colorization` at
+       `variable:lora_scale`;
+     - one reference condition reading the fit step's video at strength 1.0, with
+       `reference_downscale_factor` 1;
+     - its own `frame_rate` argument and its `result.fps` are a literal 24, not `variable:frame_rate`;
+     - its result is not saved (or is intermediate);
+  3. a `restore_to_source` step reading the pipeline's output and the fit record, with
+     `fps: variable:frame_rate`, whose `result` declares no `fps` and is final.
+  If the stage records that the build switched the fit to `crop` (the plan's letterbox-bleed risk),
+  the fit's mode reads `crop`, fixed, and the rest of this case holds.
+- **Description.** It says:
+  - the template is for black-and-white or washed-out source footage;
+  - the output keeps the source's size and frame rate, and `frame_rate` overrides the rate;
+  - how a longer or shorter source is fitted (as `alpha-matte`'s does: trimmed or held to
+    `num_frames`);
+  - to lower `lora_scale` toward 0.8 if it oversaturates or bleeds.
+  It doesn't say the output is 960×544 or 24 fps.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is
+  `status: proven`, `workflow: null`, with an `evidence` item whose note names
+  `templates/ltx2/restore-colorize` (and a lem job). If no `evidence` field shows, record that the link
+  can't be checked over MCP; `proven` and `workflow: null` still can.
+- **Skill.** The `dw:ltx-2.5` skill's `restore-colorize` row doesn't say the output is 960×544 or 24
+  fps. If it gives a size or rate, it is the source's.
+It is a **finding** if any of the following holds:
+- `frame_rate` defaults to a number;
+- there is no fit step before the pipeline or no `restore_to_source` step after it;
+- the pipeline's `frame_rate` or `result.fps` reads the variable, or the restore step's `fps` doesn't;
+- the description says the output is the working size or 24 fps;
+- `ic-colorization` isn't `proven`, or has a non-null `workflow`.
+cleanup: none. Discovery only.
+metrics: none.
+
+### M-F255 — `restore-colorize` validates 8 fps and non-16:9 sources clean, accepts each legal `frame_rate`, and refuses a bad one for free
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Free: `validate_workflow` only. Workspace `regression-model-specific`. This
+adds to M-F228, whose size and frame checks stand. Calls are
+`validate_workflow(name="templates/ltx2/restore-colorize", workspace="regression-model-specific",
+arguments={"source_video": <S>, ...})`.
+Setup: `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` and `BP` =
+`asset:ic-colorize/src-bw-384x544-97f.mp4` (Fixtures). Make them if missing.
+expected:
+- `S = B8`, `num_frames: 97`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
+- `S = BP`, `num_frames: 97` → `valid: true`, `warnings: []`. The non-16:9 source isn't refused or
+  warned about for its aspect.
+- `S = B8`, `num_frames: 97`, `frame_rate` `24`, then `12` → `valid: true`.
+- `S = B8`, `frame_rate` `0`, then `"fast"` → `valid: false`, with the error at `arguments.frame_rate`
+  or at the restore step's `fps`, naming what it accepts. Free: nothing is downloaded or loaded.
+- `S = B8` with the default `num_frames` (121, longer than the 97-frame source) → `valid: true`. The
+  template holds or loops a short source as the description says; it isn't refused.
+It is a **finding** if either source is refused or warned about, a legal `frame_rate` is refused, or a
+bad one passes.
+cleanup: none.
+metrics: none.
+
+### M-F256 — `restore-colorize` on an 8 fps black-and-white source comes back in colour at 8 fps with the source's frame count by default, and at 24 fps with the same count when `frame_rate=24`
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Paid: two LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem
+(RTX 3090). Workspace `regression-model-specific`, `"seed": 1080`.
+Setup: `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` (Fixtures). Make it if missing. Confirm
+it is 8 fps, 97 frames, and grey at `frame:48`.
+Arms (validate, bind `acknowledged_cost`, `run_workflow(..., note="M-F256 <arm>", wait_seconds=55)`,
+then `wait_for_job`):
+- **follow**: `arguments={"source_video": B8, "num_frames": 97, "seed": 1080}`, no `frame_rate`.
+- **override**: the same plus `"frame_rate": 24`.
+expected:
+- Both jobs succeed.
+- **follow.** `get_gallery_metadata` on the final: **960×544, 97 frames at 8 fps**, its duration
+  (about 12.1 s) matching the source's within one frame. `job.warnings` has no frame-rate warning.
+- **override.** 960×544, **97 frames at 24 fps**. The frame count is unchanged. A rate warning is
+  allowed; record it.
+- **In colour, same scene.** `get_output_frames` on the follow final and on `B8` at `frame:0`,
+  `frame:48` and `frame:96`: the final is in natural colour as M-F229 defines it, with the same subject,
+  position, pose and framing as the source frame at the same index.
+- `compare_outputs` between the two finals at those frame indices measures them identical or near it:
+  `frame_rate` only relabels the file.
+It is a **finding** if any of the following holds:
+- the follow arm isn't 8 fps or isn't 97 frames;
+- the override arm isn't 24 fps or changed the frame count;
+- either final stays grey or changes the scene beyond colour;
+- the two arms' frames differ beyond encoding noise;
+- the follow arm warns about its rate.
+Oversaturation follows M-F229's one rerun at `lora_scale` 0.8, on the follow arm only.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each job. Keep the
+fixture.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-97f-8fps`, to
+`regression-perf/M-F256.jsonl`. The first run seeds the file.
+
+### M-F257 — `restore-colorize` on a portrait black-and-white source comes back at the source's own size, with no letterbox band and no colour bleeding in from the padding
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Paid: one LTX-2.5 job at the 960×544 working size, 97 frames, on lem.
+Workspace `regression-model-specific`, `"seed": 1080`. This is the plan's letterbox-bars risk: the
+fit pads a 384×544 source out to 960×544 with black, the model reads the padding, and `final` crops it
+off.
+Setup: `BP` = `asset:ic-colorize/src-bw-384x544-97f.mp4` (Fixtures; 384×544, 97 frames, 24 fps, grey).
+Make it if missing.
+Steps:
+1. `validate_workflow(name="templates/ltx2/restore-colorize", workspace="regression-model-specific",
+   arguments={"source_video": BP, "num_frames": 97, "seed": 1080})`, bind `acknowledged_cost`.
+2. `run_workflow(..., note="M-F257 colorize portrait", wait_seconds=55)`, then `wait_for_job`.
+3. `get_gallery_metadata` on the final; `get_output_frames` on the final and on `BP` at `frame:0`,
+   `frame:48` and `frame:96`; `assess_output` on the final.
+expected:
+- The job succeeds.
+- **Size and rate are the source's.** The final is **384×544**, 97 frames at **24 fps**. A 960×544
+  final is the padding baked in.
+- **No band.** No black or flat-coloured strip runs down either side of any sampled frame; the frame
+  edges show the same picture content as `BP`'s at the same index (`assess_output` reports no border
+  or letterbox, if it reports one at all).
+- **No bleed from the padding.** The leftmost and rightmost ~32 px columns of each sampled frame carry
+  the scene's own colours, continuous with the interior: no tint, glow, colour fringe or smeared hue
+  along the left and right edges that the interior doesn't have. Compare against the frame's centre.
+- **In colour, same scene, not squeezed.** Natural colour as M-F229 defines it; the subject has the
+  same position and proportions as in `BP` at the same frame, not stretched sideways or offset.
+It is a **finding** if the final is the working size, a band survives, the edges carry colour that
+bled in from the padding, the frame stays grey, or the subject is squeezed or displaced. On a bleed,
+name the plan's risk (the build may switch the fit to `crop`); if it does, rerun this case on the
+rebuilt template, and the size and no-band checks still apply.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the fixture.
+metrics: `latency` (s), condition `portrait-384x544-97f`, to `regression-perf/M-F257.jsonl`.
 
 ## Performance
