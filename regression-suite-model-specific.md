@@ -5717,7 +5717,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F193 — the AISkills probe record has a verdict for P2, P3 and P5 with both seeds of both arms cited, and states its configuration once
-pending: #1071
 source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 probe record. Free: reads only. The record lives in dw's
 `docs/proposals/audits/2026-1x-h3-aiskills-probes.md` (`2026-10-` or `2026-11-`), which isn't
@@ -5750,7 +5749,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F194 — every job the AISkills record cites exists in `qa-h3-aiskills-probes`, succeeded, is noted, and ran its arm
-pending: #1071
 source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 probe jobs (M-F193). Free: reads only. For **every** cited job id:
 `get_job(job_id, workspace="qa-h3-aiskills-probes")` and `get_job_workflow`.
@@ -5787,7 +5785,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F195 — P2's `check-script` reading reproduces for one job per source clip
-pending: #1071
 source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/check-script` (Whisper, word timestamps) over P2's outputs. About
 10–60 s each on lem. Workspace `qa-h3-aiskills-probes`.
@@ -5809,7 +5806,6 @@ cleanup: `delete_output(job_id=…)` on each check-script job this case ran.
 metrics: none.
 
 ### M-F196 — P3's and P5's cited frames show what their rows say, and every held verdict meets the two-seed bar
-pending: #1071
 source: tester, spec for #1071 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 probe outputs (M-F194). Free: reads only. Workspace
 `qa-h3-aiskills-probes`.
@@ -7211,5 +7207,149 @@ It is a **finding** if:
 - the wall time doesn't match.
 cleanup: none. Never delete the arm's job: the gate cites it.
 metrics: none.
+
+### M-F238 — `voice-timbre-reference` names vits-vctk and a `speaker_id` variable, says the accent, and its defaults plan the vits-vctk download
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/voice-timbre-reference`, `generate_speech` docs. Free: no job. Run on lem and on
+mini-ai, workspace `regression-model-specific`.
+Steps:
+1. `get_workflow(name="templates/minimax/voice-timbre-reference")`.
+2. `validate_workflow(name="templates/minimax/voice-timbre-reference", workspace="regression-model-specific")` with no
+   arguments.
+3. `get_task("generate_speech")`.
+4. Load the `dw:minimax-h3` skill and find the line that describes how to make a voice reference (before #1068 it said
+   "a Bark line").
+expected:
+- Step 1, the `voice` step: its `task.arguments` hold `model_name: "kakao-enterprise/vits-vctk"`,
+  `text: "variable:voice_line"` and `forward_params: {"speaker_id": "variable:speaker_id"}`, and **no** `voice_preset`.
+  It is still `release_models: true`, and the H3 step's audio reference is still `from_previous_result: "voice"`.
+- Step 1, variables: there is a `speaker_id` variable whose default is an integer in 0–108, and **no** `voice_preset`
+  variable. The H3 prompt still describes `<Audio 1>` as a male voice.
+- Step 1, prose: `description` and `summary` don't mention Bark. They say "VCTK speaker" with `speaker_id` and the
+  range 0–108. The `description` says VCTK speakers speak UK/Irish-accented English, or uses equivalent words (British
+  and Irish accents).
+- Step 2: `valid: true`. `plan.estimate` is present. `kakao-enterprise/vits-vctk` is in the plan's models, and
+  `suno/bark-small` is not. On a box where vits-vctk isn't cached yet, `downloads_required` has a vits-vctk entry with
+  a real, non-zero size, a few hundred MB at most. Where it is cached, record that, and the size isn't checked on that
+  box.
+- Step 3: the docstring names `kakao-enterprise/vits-vctk` as its multi-speaker VITS example, with `speaker_id` passed
+  through `forward_params`.
+- Step 4: the skill line names vits-vctk or a VCTK `speaker_id` reference, and doesn't say Bark.
+It is a **finding** if:
+- the voice step still runs Bark, or keeps `voice_preset`;
+- `speaker_id` doesn't reach the step through `forward_params`, or its default is out of range or not an integer;
+- the description has no accent note, or still says "Bark preset";
+- the defaults don't validate, or the plan still lists `suno/bark-small`;
+- a box with no cached vits-vctk shows no download for it, or shows one with no size.
+cleanup: none.
+metrics: none.
+
+### M-F239 — the vits-vctk voice step gives 22050 Hz mono speech of the line as written, in a male default voice; it is reproducible, and speakers 0 and 108 run
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/voice-timbre-reference`'s `voice` step (`generate_speech`,
+`kakao-enterprise/vits-vctk`). Seconds per run. The template's voice step is `save: false`, so this case runs that step
+inline with `save: true`. Run on lem and on mini-ai, workspace `regression-model-specific`.
+Setup: from `get_workflow(name="templates/minimax/voice-timbre-reference")`, build a one-step inline workflow. Its
+`variables` are the template's `voice_line` and `speaker_id`, with their defaults, and `seed`. Its one step is the
+template's `voice` step with the `task` copied verbatim and `result: {"content_type": "audio/wav", "save": true}`. Set
+`"seed": "variable:seed"` at the top, with `seed` defaulting to 7. Give each run below its own workflow `id`.
+Steps:
+1. `validate_workflow` the inline workflow, then `run_workflow(..., wait_seconds=55, workspace="regression-model-specific")`
+   with no arguments: run (a).
+2. Run it again, same everything: run (b).
+3. Run it with `arguments: {"speaker_id": 0}`: run (c). Then with `{"speaker_id": 108}`: run (d).
+4. On each run, `get_job` (manifest and `warnings`), `get_gallery_metadata` on the wav, and `assess_output` on the wav.
+   Listen to (a) with `get_output_audio`.
+expected:
+- All four `succeeded` with `warnings: []`. Each wav is `sample_rate: 22050`, `channels: 1`, with a few seconds of
+  duration, consistent with the line's length.
+- (a) is a male voice. The words heard are the template's `voice_line`, all of it and nothing added, no hallucinated
+  words or long dead air.
+- (a) and (b) are the same: `duration_seconds` and `frame_count` are equal, and `assess_output`'s level figures
+  (loudness or RMS, whatever it reports) are equal to within rounding.
+- (c) and (d) both produce speech, which shows both ends of 0–108 are valid ids.
+It is a **finding** if:
+- a rate other than 22050 Hz, or stereo;
+- a female or garbled default voice;
+- words that aren't in the line, or part of the line missing;
+- (a) and (b) differ in duration or level;
+- either boundary id fails.
+cleanup: `delete_output(job_id=...)` on all four runs.
+metrics: none.
+
+### M-F240 — two `speaker_id` values in `voice-timbre-reference`'s voice step are two different speakers
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F239. Seconds. Run on lem and on mini-ai, workspace `regression-model-specific`.
+Setup: M-F239's inline workflow. Take the default `speaker_id` (D). Take a second id (E) from the ids the stage issue
+#1068 records as tried, one other than D. If the issue records none, use `(D + 50) mod 109`.
+Steps:
+1. Run the inline workflow with `{"speaker_id": D}` and with `{"speaker_id": E}`, `wait_seconds=55`, seed 7 both.
+2. `get_output_audio` on both and listen.
+3. `get_task("attribute_voices")` for its arguments, then run it over the two wavs (or over one `pair_audio`/concat of
+   them, if it needs a single track) the way its schema says.
+expected:
+- Both `succeeded` at 22050 Hz. By ear, they are clearly two different people (timbre, pitch, or accent), not one voice
+  slightly shifted.
+- `attribute_voices` puts them in two different speakers.
+It is a **finding** if the two clips sound like one speaker, or `attribute_voices` merges them. That is risk 1 of the
+plan: VCTK speakers too uniform for H3 to tell apart.
+cleanup: `delete_output(job_id=...)` on both runs and on the `attribute_voices` job.
+metrics: none.
+
+### M-F241 — `voice-timbre-reference` refuses `voice_preset` at validate; an out-of-range `speaker_id` validates, then fails in the VITS step before H3 loads
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/voice-timbre-reference`. The refusals are free, and each run-time failure costs
+seconds of VITS only. Run on lem and on mini-ai, workspace `regression-model-specific`.
+Steps:
+1. `validate_workflow(name="templates/minimax/voice-timbre-reference", arguments={"voice_preset": "v2/en_speaker_6"},
+   workspace="regression-model-specific")`. Then `run_workflow` with the same arguments and the defaults'
+   `acknowledged_cost`.
+2. `validate_workflow` with `arguments={"speaker_id": 109}`, then with `{"speaker_id": -1}`.
+3. For each of 109 and -1: `run_workflow(workflow_path="templates/minimax/voice-timbre-reference",
+   arguments={"speaker_id": <v>}, acknowledged_cost=<bound from its validate>, wait_seconds=55,
+   workspace="regression-model-specific")`, then `get_job` and `get_job_events`.
+expected:
+- Step 1: the validate is refused at `arguments.voice_preset` as an undeclared variable. The message names `speaker_id`
+  as the replacement, or is the generic unknown-variable message: the stage's hand-off on #1068 says which, and the
+  case holds the build to what it says. `run_workflow` is refused the same way and queues no job.
+- Step 2: both validate `valid: true`. The plan says this range is checked at run time, not at validate.
+- Step 3: both jobs end `failed` within about a minute. The failing step is `voice`, and the error is VITS's range error
+  naming the speaker id (or saying it is out of range). `get_job_events` show no MiniMax-H3 load: no H3 component load,
+  no `reference_to_video_audio` step start. The run leaves no video output.
+It is a **finding** if:
+- `voice_preset` validates, or runs and is ignored;
+- 109 or -1 is silently clamped or wrapped and the job succeeds;
+- the failure comes only after H3 has started loading;
+- the error doesn't say the speaker id is the problem.
+cleanup: `delete_output(job_id=...)` on any job that left output.
+metrics: none.
+
+### M-F242 — the vits-vctk reference conditions H3 end to end in `voice-timbre-reference`, with a male voice heard
+pending: #1068
+source: tester, spec for #1068 from #1058's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: the whole `templates/minimax/voice-timbre-reference` (vits-vctk reference → MiniMax H3 clip conditioned
+on it). Runs on lem only (H3 on CUDA). On mini-ai, validate only, unless the template's catalog entry says it runs
+there; if it does, run it there too. About 4–7 minutes of GPU on lem. Workspace `regression-model-specific`.
+Steps:
+1. `validate_workflow(name="templates/minimax/voice-timbre-reference", workspace="regression-model-specific")` with
+   defaults, and bind its `acknowledged_cost`.
+2. `run_workflow(..., wait_seconds=55)`, then `wait_for_job` until it finishes (house rules for silence apply).
+3. `get_job`, `get_job_events`, `get_gallery_metadata` on the clip, and `get_output_frames(at=[1.0, <mid>], hear=2)`.
+expected:
+- `succeeded`. The events show the `voice` step ran `kakao-enterprise/vits-vctk`, not Bark, and released before H3
+  loaded.
+- The clip is 124 frames at 24 fps, 960×544, with one audio stream. The frames are coherent, and the speech heard is a
+  male voice consistent with the default VCTK speaker (and with the prompt's "male, mid-range" `<Audio 1>`).
+- `warnings[]` has no sample-rate or reference-length complaint about the 22050 Hz reference.
+It is a **finding** if:
+- the run fails at the reference hand-off;
+- the clip has no audio;
+- the voice heard is plainly not the reference's, such as a female voice under the male default.
+cleanup: `delete_output(job_id=...)`.
+metrics: `wall_minutes`, to `regression-perf/M-F242.jsonl` on each run.
 
 ## Performance
