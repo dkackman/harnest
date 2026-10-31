@@ -6857,7 +6857,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-121
 `960x544-121f-scale0.8` if the rerun ran), to `regression-perf/M-F229.jsonl`.
 
 ### M-F230 — the Open-H3 refiner is catalogued as a keyframe `trial` LoRA with a pinned NVlabs-derived file, its licence, and a note that the sharp branches aren't loaded; the tiled-refine guide quotes a measured time
-pending: #1081
 source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 LoRA catalog, entry `minimax-h3/open-h3-regenerate-2k`. Free: discovery only.
 Plan v1, with Don's "approve defaults", picks **Q1's default**: Kijai's refiner-only rank-384 extraction
@@ -6896,7 +6895,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F231 — the Open-H3 refiner entry warns on a `ref2va` step through the partition check, and is quiet on `t2va`/`fl2va`, alone or stacked with the keyframe turbo
-pending: #1081
 source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 partition check against the catalog's `trial` entries (M-F152's rule: a `trial` entry
 that disagrees with the step warns and never refuses). Validation only, no GPU.
@@ -6930,7 +6928,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F232 — the stage A probe record: the recorded P2 (or P3) job ran the refiner on the refine step to a 1920×1088 clip with base audio, with no LoRA-load warning, and its workflow re-validates clean
-pending: #1081
 source: tester, spec for #1081 from #1065's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va 768p base → `upscale_h3_latents` 1920×1088 → H3 refine with the Open-H3 refiner
 LoRA. Free: it reads the recorded jobs, it doesn't re-run them. The record is the table stage A posts on #1065
