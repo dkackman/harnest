@@ -5577,55 +5577,6 @@ It is a **finding** if any probe validates, queues a job, or fails only after a 
 cleanup: `delete_output(job_id=...)` for any job that ran.
 metrics: none.
 
-### M-F187 — `voice-timbre-reference` speaks its reference with Kokoro: a `voice` variable, 24 kHz, two voices two speakers, and `voice_preset` refused
-pending: #1069
-source: tester, spec for #1069 from #1058's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/voice-timbre-reference`'s `voice` step (`generate_speech`, now
-`hexgrad/Kokoro-82M`). Seconds. The template's voice step is `save: false`, so the rate and speaker
-checks run that step inline with `save: true`. On each box, workspace `regression-model-specific`.
-Steps:
-1. `get_workflow("templates/voice-timbre-reference")`.
-2. Copy its `voice` step's `task` verbatim into a one-step inline workflow, the template's own
-   variables block with it, `result: {"content_type": "audio/wav", "save": true}`, `"seed": 7`.
-   `validate_workflow` then `run_workflow(..., wait_seconds=55)` with no arguments, and again with
-   `arguments: {"voice": "am_michael"}` (a different workflow `id`). `get_gallery_metadata` and
-   `get_output_audio` on both.
-3. `validate_workflow(workflow_name="templates/voice-timbre-reference", arguments=...)` with
-   `{"voice_preset": "v2/en_speaker_6"}`, then with `{"voice": "jf_alpha"}`, then with no arguments.
-expected:
-- Step 1: the voice step's `model_name` is `hexgrad/Kokoro-82M` with `voice: "variable:voice"`; there is
-  a `voice` variable defaulting to `af_heart` and **no** `voice_preset` variable or argument left.
-- Step 2: both `succeeded` at `sample_rate: 24000`, mono, clear English; `af_heart` female and
-  `am_michael` male, audibly two speakers.
-- Step 3: `voice_preset` is refused with a message naming `voice` as its replacement; `jf_alpha` is
-  refused as M-F186's (c); the no-argument validate is clean and its plan lists Kokoro's files (not
-  `suno/bark-small`) alongside the H3 weights.
-It is a **finding** if the template still runs Bark, its reference is not 24 kHz, the two voices are
-one speaker, or `voice_preset` is silently accepted or refused without pointing at `voice`.
-cleanup: `delete_output(job_id=...)` on both runs.
-metrics: none.
-
-### M-F188 — the Kokoro reference conditions H3 end to end in `voice-timbre-reference`
-pending: #1069
-source: tester, spec for #1069 from #1058's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: the whole `templates/voice-timbre-reference` (Kokoro reference → MiniMax H3 clip
-conditioned on it). lem only (H3 on CUDA); on mini-ai, validate only, unless the template's
-catalog entry says it runs there, in which case run it there too. About 7 minutes of GPU on lem.
-Workspace `regression-model-specific`.
-Steps:
-1. `validate_workflow(workflow_name="templates/voice-timbre-reference")` with the template's defaults
-   (Kokoro `af_heart`); bind its `acknowledged_cost`.
-2. `run_workflow(..., wait_seconds=55)`, then `wait_for_job` to the end (H3 house rules for silence).
-3. `get_job`, `get_gallery_metadata` and `get_output_frames(at=[1.0, <mid>], hear=2)` on the clip.
-expected:
-- `succeeded`; the plan named Kokoro, not Bark. The clip has an audio stream, the frames are coherent,
-  and the heard speech is a female voice of `af_heart`'s timbre rather than an arbitrary or male one.
-- `warnings[]` carries no rate or reference-length complaint about the 24 kHz reference.
-It is a **finding** if the run fails at the reference hand-off, the clip has no audio, or the voice is
-plainly not the reference's (a male voice under the `af_heart` default).
-cleanup: `delete_output(job_id=...)`.
-metrics: `wall_minutes`, to `regression-perf/M-F188.jsonl` on each run.
-
 ### M-F189 — the minimax-h3 skill links `references/style.md`, the file ships, and SKILL.md keeps its pinned lines
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job, no GPU. Invoke the `dw:minimax-h3` skill
