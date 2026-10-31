@@ -5627,7 +5627,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: `wall_minutes`, to `regression-perf/M-F188.jsonl` on each run.
 
 ### M-F189 — the minimax-h3 skill links `references/style.md`, the file ships, and SKILL.md keeps its pinned lines
-pending: #1070
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job, no GPU. Invoke the `dw:minimax-h3` skill
 with the `Skill` tool (the plugin tree follows `develop`) and read SKILL.md as loaded. Then list
@@ -5654,7 +5653,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F190 — `references/style.md` names all eight MiniMax style packs by bare name, each with its shape, installed by name
-pending: #1070
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` as in M-F189.
 expected:
@@ -5682,7 +5680,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F191 — the "name the medium, then its physical traits" line is attributed and marked unprobed, or its absence is stated; it doesn't override the guide-clip rule
-pending: #1070
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job. Read `references/style.md` and SKILL.md as
 in M-F189.
@@ -5704,7 +5701,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F192 — the plugin README and `references/style.md` agree: install a style pack by name when a request wants that look
-pending: #1070
 source: tester, spec for #1070 from #1059's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text. No job. Read the `dw` plugin's `README.md` at the plugin root (two
 levels above the skill's base directory) and `references/style.md`.
