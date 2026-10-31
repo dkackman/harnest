@@ -1074,7 +1074,6 @@ cleanup: `cancel_download` anything that appeared.
 metrics: none.
 
 ### SE-F054 — H3 regional edit: `source_video`, `mask_image` and `mask_video` hold the path boundary, and the mask blocks aren't nameable from a workflow
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 #1062 adds three media-taking arguments to the MiniMax H3 step: `source_video`, which loads by its
 `_video` suffix, `mask_image` and `mask_video`. It also adds two dw blocks,

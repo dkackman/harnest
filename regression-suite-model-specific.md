@@ -5809,7 +5809,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F214 — the workflows guide has a "Regional edit" section that states the mask rules, `refine_strength`'s meaning and what stays unchanged
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 regional edit (`source_video` + `mask_image`/`mask_video` +
 `refine_strength` on a t2va step). Free: discovery only.
@@ -5841,7 +5840,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F215 — build the #1062 masks; a regional edit with `mask_image` or `mask_video` validates clean and quotes an estimate, at the boundary values too
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va with the regional-edit arguments. The setup runs CPU tasks only
 (`get_first_frame`, `segment`, `resize_rescale`, `loop_frames`). The rest is free, validate only.
@@ -5895,7 +5893,6 @@ last of those cases runs).
 metrics: none.
 
 ### M-F216 — each bad regional-edit combination is refused at validate, naming the argument, and `run_workflow` queues nothing
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 regional edit, plus SD 1.5 as the non-H3 step. Free.
 Setup: M-F215 (its masks and carrier RE). Workspace `regression-model-specific`. Each probe edits
@@ -5947,7 +5944,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### M-F217 — without a mask, refine and `hold_audio` refusals are unchanged
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 refine. Free. Stage A adds blocks to the H3 denoise. The plan promises
 that a step without a mask runs exactly as before.
@@ -6010,7 +6006,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### M-F219 — an all-white mask behaves as a plain refine of the whole take
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 regional edit with the whole frame masked. GPU, about one
 `video-with-audio` pass. Workspace `regression-model-specific`.
@@ -6715,7 +6710,6 @@ cleanup: none (no job is queued).
 metrics: none.
 
 ### M-F244 — the "Regional edit" guide section carries the measured `refine_strength` bands, the conditions they were measured under, and the shifted-σ meaning
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 regional edit docs. Free: discovery only. This adds plan v2's docs to M-F214;
 where M-F214's strength bullet (1.0 regenerates, 0.4 reworks lightly) and this case differ, this case is
@@ -6748,7 +6742,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F245 — a regional edit at `refine_strength` 0.9 replaces the held object while identity and pose hold, logs a regional-edit event, keeps the outside close, and keeps the take's audio
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va regional edit at 960×544, 124 frames, with the turbo LoRA (about one
 `video-with-audio` pass). GPU on lem. Workspace `regression-model-specific`. This is plan v2's amended
@@ -6792,7 +6785,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### M-F246 — a `source_video` step with no mask validates as a whole-take re-denoise and its event says so
-pending: #1077
 source: tester, spec for #1077 from #1062's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 t2va with `source_video` and no mask (the plan's "refine_strength gets latents
 from a file", and v2's observability item: "an unmasked edit says it re-denoises the whole take"). Step 1
