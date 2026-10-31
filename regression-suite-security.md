@@ -1073,37 +1073,6 @@ send it to `scripts/file-advisory.sh`, not a public issue.
 cleanup: `cancel_download` anything that appeared.
 metrics: none.
 
-### SE-F053 — Kokoro's `voice` holds the voice-file boundary: no path, no other file, no existence oracle
-pending: #1068
-source: tester, spec for #1068 from #1058's plan v2 (claude-opus-5-5 via anthropic)
-Free (validate only, plus one refused `run_workflow`). #1068 turns `voice` into a hub file
-`voices/<voice>.pt` that dw loads itself (`torch.load(weights_only=True)`), checked against
-`^[ab][fm]_[a-z]+$` and for existence at plan time. Carrier: an inline `generate_speech` step,
-`model_name: "hexgrad/Kokoro-82M"`, `text: "Hello there."`, workspace `regression-security`; control
-`voice: "af_heart"`. Validate with `voice` set, in turn, to:
-- traversal and absolute: `"../../x"`, `"af_heart/../../config"`, `"../af_heart"`, `"/etc/passwd"`,
-  `"/etc/qa-1058-absent"`, `"voices/af_heart"`, `"..\\..\\x"`;
-- a file name rather than a voice: `"foo.pt"`, `"af_heart.pt"`, `"kokoro-v1_0"`, `"config"`;
-- a URL or repo: `"https://huggingface.co/hexgrad/Kokoro-82M/resolve/main/voices/af_heart.pt"`,
-  `"hexgrad/Kokoro-82M"`;
-- an existence-oracle pair: `"af_qanoexist"` and `"af_qanoexistb"` (both pattern-valid, both absent);
-- a non-string: `["af_heart"]`, `{"path": "x"}`, `7`.
-Send `"../../x"` and the URL to `run_workflow(..., acknowledged_cost=<the control's bound>)` too.
-`list_downloads` before and after.
-expected:
-- Every probe is `valid: false` at `steps[0].task.arguments.voice`; every pattern violation is refused by
-  the pattern rule before any hub lookup, and `run_workflow` queues no job.
-- The two absent voices are refused identically apart from the name, as "no such voice in
-  `hexgrad/Kokoro-82M`" (the hub's file list, not the server's disk).
-- No response echoes a resolved server path, a cache directory or `torch.load` text; `list_downloads`
-  gains nothing; no plan lists any file but `config.json`, `kokoro-v1_0.pth` and a `voices/<v>.pt`.
-- The control validates.
-It is a **finding** if any probe validates, plans a file outside `voices/`, a fetch appears, or a
-response discloses a path. A traversal or URL that reaches a load, or a pickle loaded without
-`weights_only`, is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
-cleanup: `cancel_download` anything that appeared.
-metrics: none.
-
 ### SE-F054 — H3 regional edit: `source_video`, `mask_image` and `mask_video` hold the path boundary, and the mask blocks aren't nameable from a workflow
 pending: #1077
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)

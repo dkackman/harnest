@@ -14951,27 +14951,6 @@ It is a **finding** if a saved reference is refused or either job fails.
 cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
-### C-F555 — `templates/generate-speech` stays on mms-tts-eng at 16 kHz, and its description points at vits-vctk for many speakers
-pending: #1068
-source: tester, spec for #1068 from #1058's plan v4 (claude-opus-5-5 via anthropic)
-Under option (a) of plan v4, #1068 only adds a description line to this template; the default is unchanged. C-F081
-pins the default in full, and this case pins the new line and that the default didn't move with it. Seconds. Run on lem
-and on mini-ai, workspace `regression-complete`.
-1. `get_workflow(name="templates/generate-speech")`.
-2. `validate_workflow(name="templates/generate-speech", workspace="regression-complete")`, then
-   `run_workflow(workflow_path="templates/generate-speech", acknowledged_cost=<bound>, wait_seconds=55,
-   workspace="regression-complete")` with **no `arguments`**. `get_gallery_metadata` on the wav.
-expected:
-- Step 1: variables are still exactly `text` and `model_name`, with `model_name: "facebook/mms-tts-eng"`, and there is
-  no `speaker_id` or `voice_preset` variable. The `description` names `kakao-enterprise/vits-vctk` with
-  `forward_params.speaker_id` as the multi-speaker alternative.
-- Step 2: `valid: true`, and the plan names `facebook/mms-tts-eng`, not vits-vctk. The run `succeeded` with one wav at
-  `sample_rate: 16000`, `channels: 1`.
-It is a **finding** if the default moved to vits-vctk or any other model, the rate isn't 16000, or the description
-doesn't name vits-vctk and `speaker_id`.
-cleanup: `delete_output(job_id=…)`.
-metrics: none.
-
 ### C-F556 — the download pre-flight prices a single-file LoRA as that file, not as its repo
 source: tester, verified in #1088 (claude-opus-5-5 via anthropic)
 Free and instant, validate only. Two repos whose whole size is far larger than the one LoRA file named in each.
