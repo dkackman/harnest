@@ -8085,4 +8085,97 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 metrics: `latency` (s), condition `portrait-384x544-97f-30fps`, to `regression-perf/M-F288.jsonl`. The
 first run seeds the file.
 
+### M-F289 — `alpha-matte`'s description and the `ltx-2.5` skill row say a hard cut can leak source texture into the frames after it, so a clip is matted one shot at a time; the cap stays 145
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v8 (claude-opus-5-5 via anthropic)
+Plan v8, Q9 (a): keep 145 and describe the cut limit. Free: discovery and validation only. Workspace
+`regression-model-specific`. `L` is `asset:qa-cast/ep13-episode.mp4` (shared; 282 frames, 960×544,
+24 fps, with a hard cut before frame 144).
+Steps:
+1. `list_workflows(shape="shot", traits="needs-input-media")` and
+   `get_workflow("templates/ltx2/alpha-matte")`.
+2. Read the `dw:ltx-2.5` skill's route row for `ltx2/alpha-matte` (the loaded skill text is the consumer
+   surface).
+3. `validate_workflow(workflow_path="templates/ltx2/alpha-matte", arguments={"source_video": L, "num_frames": 145, "seed": 1079}, workspace="regression-model-specific")`.
+4. The same with `"num_frames": 153`. Don't run either.
+expected:
+- The description, in `list_workflows` or `get_workflow` (either is enough; say which), has a sentence
+  saying that a hard cut (a shot change) inside the clip can leak source texture or colour into the
+  matte on the frames just after it, and that a multi-shot clip is matted one shot at a time. Any
+  wording that says both of those meets it.
+- The skill's `alpha-matte` row says the same in a few words: one shot at a time, or cuts can leak.
+- Nothing else in the template changed with it: `num_frames`' maximum is still 145, `frame_rate`'s
+  default is still `"source"`, and `matte`'s `vae`, `audio_vae` and `vocoder` are still `on_demand`.
+  (If a later build has applied the length fallback, the maximum is that build's 8n+1 and the
+  description says the card's 145 is not clean under this quantization; step 3 then refuses, and the
+  case reads "145" as that maximum.)
+- Step 3 validates with a `plan.estimate` and no error; step 4 is refused for free, naming
+  `num_frames` and its 145 maximum, with no job queued.
+It is a **finding** if the description or the skill row lacks the cut sentence, the maximum moved
+without the fallback's description, or 153 validates.
+cleanup: none (nothing runs).
+
+### M-F290 — `alpha-matte` at 145 frames on a cut-free source is a clean matte on every frame, last frame included; on `ep13-episode.mp4` the frames before the cut are clean
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v8 (claude-opus-5-5 via anthropic)
+Amends M-F272's no-leak criterion (plan v8, Q9 (a)). M-F272 found grille texture on frame 144 of its
+cap arm, just after a shot cut in `ep13-episode.mp4`. This case tells a cut apart from the length
+limit. Where both are due, it replaces M-F272's frame-144 no-RGB expectation; M-F272's warm-card and
+`get_memory` expectations stand as written.
+Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs on lem at 960×544×145, plus a CPU setup job. Workspace
+`regression-model-specific`, `"seed": 1079` on both arms.
+Setup, the cut-free source `C` = `asset:ic-alpha/priya-cutfree-145f.mp4`. Make it if
+`list_assets(prefix="ic-alpha/", workspace="regression-model-specific")` lacks it, and keep it across
+runs (never sweep it). It is the single-shot `asset:qa-cast/ep6-shot1-priya.mp4` (124 frames, one
+person, no cut; look at `frame:0`, `frame:60` and `frame:123` first to be sure it is one shot)
+slowed with RIFE so it is long enough without a loop seam (`loop_frames` repeats, which makes a jump,
+the very thing this arm must avoid):
+1. `save_workflow(name="m-ic-cutfree", ...)`, a task-only workflow:
+   - `slow`: `interpolate_frames(video="asset:qa-cast/ep6-shot1-priya.mp4", multiplier=2, device="cpu")`, `save: false`;
+   - `cut`: `fit_to_model(video="previous_result:slow", width=960, height=544, num_frames=145, mode="crop")`, with
+     `"result": {"content_type": "video/mp4", "fps": 24}`. (If `fit_to_model` returns a record and a
+     video, the kept output is the video, as in the Fixtures' `crop_*` steps.)
+2. `validate_workflow` (it may list the RIFE weights as a download: bind them), then
+   `run_workflow(workflow_path="m-ic-cutfree", workspace="regression-model-specific", acknowledged_cost=..., wait_seconds=55)`
+   and `wait_for_job` to the end.
+3. `keep_output` the kept video as `ic-alpha/priya-cutfree-145f.mp4`. `get_gallery_metadata` on it:
+   960×544, **145 frames at 24 fps**. `get_output_frames` at `frame:0`, `frame:72`, `frame:136`,
+   `frame:140` and `frame:144`: the same person in the same scene throughout, no shot change.
+4. `delete_output(job_id=<id>)`, then `delete_workflow("m-ic-cutfree")`.
+If `interpolate_frames` or its weights are unavailable, any shared 24 fps single-shot clip of at least
+145 frames with one clear person is a substitute; name it on the stage.
+Before the limit arm, find the cut in `L` = `asset:qa-cast/ep13-episode.mp4`:
+`get_output_frames(name=L, at=["frame:136", "frame:137", ..., "frame:144"])`. Record `F`, the first frame
+of the new shot (the plan places it between 139 and 144).
+Arms, each `validate_workflow` with its arguments, bind `acknowledged_cost`, then
+`run_workflow(workflow_path="templates/ltx2/alpha-matte", ..., wait_seconds=55)` and `wait_for_job` to
+the end. No `clear_memory` is needed between them.
+- **cut-free**: `arguments={"source_video": C, "num_frames": 145, "seed": 1079}`, `note="M-F290 cut-free 145f"`.
+- **limit**: `arguments={"source_video": L, "num_frames": 145, "seed": 1079}`, `note="M-F290 ep13 cut 145f"`.
+expected:
+- Both jobs succeed with no OOM. Each final is 960×544 at 24 fps, exactly 145 frames, no audio.
+- **cut-free arm, the no-leak criterion.** `get_output_frames` at `frame:0`, `frame:72`, `frame:120`,
+  `frame:136`, `frame:140` and `frame:144` (the last latent group is frames 137–144): each is a grey
+  matte, white over the person and black behind, with no source colour or texture showing through.
+  Frame 144 is judged like the others. `assess_output` on the final, if it reports anything, has no
+  finding about colour content.
+- **limit arm, the described limit.** At `frame:0`, `frame:72` and `F-1` (the last frame before the
+  cut) the matte is clean, as above. On frames `F` to 144, source texture leaking in is the described
+  limit, not a finding: record which of those frames leak and what shows (the chrome mic and its
+  grille, in M-F272's runs).
+- Record on the stage `F`, the frames checked on each arm, and which leaked.
+- **If the cut-free arm leaks** on any frame, the cause is the length, not the cut, and the plan's
+  fallback applies. Record exactly which frames leak, then bracket the largest clean length: re-run
+  the cut-free arm at `num_frames` 137, then 129, 121, ... (8n+1), checking each final's last frame
+  and its last 8 frames as above, down to the first length that is clean on every frame checked. Name
+  that largest clean 8n+1 on #1079 for the next build. Each bracket run is a paid job, validated and
+  bound like the arms, `note="M-F290 bracket <n>f"`.
+It is a **finding** if: either arm fails or OOMs; a final's size, rate or frame count is off; the
+cut-free arm leaks on any frame (the fallback trigger above); the limit arm leaks on a frame before
+`F`; or a frame isn't a grey matte that tracks the subject.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for every job run (arms,
+any bracket runs, the setup job). Keep `ic-alpha/priya-cutfree-145f.mp4`.
+metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-145f-cutfree` and
+`960x544-145f-ep13`, to `regression-perf/M-F290.jsonl`. The first run seeds the file.
+
 ## Performance

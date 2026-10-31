@@ -15160,7 +15160,6 @@ cleanup: none. Never delete the probe's outputs.
 metrics: none.
 
 ### C-F564 — `crop_face_track` exposes optional `min_frames`, `max_frames` and `fps`, and the tasks guide gives H3's grid
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Free and read-only.
 1. `get_task("crop_face_track")`.
@@ -15180,7 +15179,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F565 — bad literal `min_frames` / `max_frames` / `fps` are refused at the free pre-flight
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with `clip:
 "asset:qa-cast/ep3-shot1-incident.mp4"` plus the arguments given. Nothing runs.
@@ -15201,7 +15199,6 @@ cleanup: `delete_output(job_id=…)` for any job (none should exist).
 metrics: none.
 
 ### C-F566 — `crops` carries the source's soundtrack, silence-padded at head and tail, lined up frame for frame
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 The plan's first acceptance arm, and the alignment fix it exists for. One workflow (`id:
 "qa-c-f566"`, workspace `regression-complete`):
@@ -15234,7 +15231,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F567 — a silent source gives `crops` with no audio and no error, at either grid
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Two one-step runs of `crop_face_track` on `asset:qa-fit/src-640x480-50f-silent.mp4` (Fixtures; C-F238's
 setup makes it if missing), saving `crops` and `track` as C-F192 does:
@@ -15252,7 +15248,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F568 — the frame window is checked at the crop step against the crop count, naming both numbers, with its boundaries accepted
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Each arm is a two-step workflow: `trim_video` `{"video": "asset:qa-cast/ep25-episode.mp4",
 "start_frame": 0, "num_frames": <n>}` then `crop_face_track` on `previous_result:<trim>` with
@@ -15276,7 +15271,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F569 — `fps` refuses a source at another rate, naming it, within a ±0.01 tolerance
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Setup, one workflow (`id: "qa-c-f569-setup"`): `video_frames` `{"video":
 "asset:qa-cast/ep6-cold-open.mp4"}` (124 frames), saved three times as `video/mp4`: with `result.fps`
@@ -15298,7 +15292,6 @@ cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
 ### C-F570 — `ltx2/face-repair` still runs unchanged after the crop step gains audio and the window
-pending: #1098
 source: tester, spec for #1098 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 - a. `get_workflow("templates/ltx2/face-repair")`. Find the `crop_face_track` step.
 - b. Run C-F360 (b and c), which reruns C-F201's validation and C-F202/C-F203's runs.
@@ -15721,6 +15714,127 @@ counts at each setting).
 cleanup: `delete_output(job_id=…)` for every job made here; `delete_workflow("qa-1105/cuts-phrases")`
 if this case re-created it; `delete_asset` any copy made into `regression-complete`. Never touch the
 `russian-anthem` workspace's files.
+metrics: none.
+
+### C-F590 — a `for_each` member reading another entry of its own list (`previous_result:shot@a` in `shot@b`) is refused at validate and at submission
+pending: #1111
+source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
+CPU only, no GPU time. Before #1111 this workflow validated clean (checked over MCP at spec time); the
+refusal is the new behaviour. Every call passes `workspace="regression-complete"`. The workflow
+(`W1`):
+```json
+{"id": "qa-1111-cross",
+ "variables": {"shots": [
+   {"name": "a", "audio": "asset:uploads/qa-cast/room-bed.wav"},
+   {"name": "b", "audio": "previous_result:shot@a"}]},
+ "steps": [{"name": "shot", "for_each": "variable:shots",
+   "task": {"command": "gain_audio", "arguments": {"audio": "item:audio", "gain_db": -3}}}]}
+```
+1. `validate_workflow(inline_workflow=W1)`.
+2. Same, but with W1's `shots` default replaced by a one-entry list `[{"name": "a", "audio":
+   "asset:uploads/qa-cast/room-bed.wav"}]` and the two-entry list above passed as
+   `arguments={"shots": [...]}` (the caller's list, not the template's).
+3. A three-entry list where `c` reads `previous_result:shot@a` (not adjacent) and `b` is a plain asset
+   entry like `a`.
+4. A forward read: entry `a` carries `previous_result:shot@b`, `b` the asset.
+5. `list_jobs` (note the newest job id), then `run_workflow(inline_workflow=W1, wait_seconds=55)`
+   with no `acknowledged_cost` beyond what a task-only workflow needs (`minutes: null` per the
+   house rules, using step 1's fingerprint if step 1 returned one), then `list_jobs` again.
+expected:
+- 1: `valid: false`. Exactly one error for the reference. Its message names **both** `shot@a` and
+  `shot@b`, says entries of one `for_each` list can't read each other, and points at the fix:
+  separate runs plus an `output:` reference. Its `path` is in the file as written (at the `for_each`
+  step `steps[0]…`, or the entry), not an index into the expanded step list.
+- 2: the same refusal, its path under `arguments.shots…` or the step; the caller-supplied list
+  gets no pass the default list doesn't.
+- 3: the same refusal naming `shot@a` and `shot@c`.
+- 4: refused (today's "no earlier step" refusal, or the new one; either is a pass, as long as it is
+  refused and its message is not self-contradictory).
+- 5: `run_workflow` refuses at submission with the same error, and the second `list_jobs` shows no
+  new job.
+It is a **finding** if any arm validates clean, the message names only one member or gives no fix,
+the path points at an expanded `steps[N]` that is not in the file, or a job is queued in step 5.
+cleanup: none if no job was queued; else `cancel_job`/`delete_output(job_id=…)` for it.
+metrics: none.
+
+### C-F591 — the cross-entry refusal also covers `from_previous_result` inside a `references` item, a `.property` suffix, and unnamed (index-keyed) entries
+pending: #1111
+source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
+No GPU time: every arm is `validate_workflow` only, `workspace="regression-complete"`.
+a. **`references` item.** `get_workflow("templates/minimax/music-video", variables_only=true)` to
+   read one default `shots` entry and the name `G` of its `for_each` step (`get_workflow` without
+   `variables_only` if the step name isn't otherwise visible). Build a two-entry `shots` from that
+   entry, named `a` and `b`; give `b` a `references` list holding one item copied from the default's
+   shape but with `"from_previous_result": "G@a"` (drop any other source key in that item).
+   `validate_workflow(name="templates/minimax/music-video", arguments={"shots": [...]})`.
+b. **`.property`.** C-F590's W1 with entry `b`'s `audio` set to `"previous_result:shot@a.frames"`.
+c. **Index keys.** C-F590's W1 with both `name` fields removed and the second entry's `audio` set to
+   `"previous_result:shot@0"` (the member names become `shot@0`, `shot@1`).
+expected:
+- a: `valid: false`, an error naming `G@a` and `G@b` with the separate-runs / `output:` fix, at a
+  path under `arguments.shots[1].references…` or the step. No other error points at that reference
+  (a "no earlier step" or property error alongside it is a finding: one error, not two).
+- b: `valid: false` with the cross-entry error naming `shot@a` and `shot@b`. A property-not-found
+  error **in place of** it is a finding; the cross-entry rule matches with or without `.property`.
+- c: `valid: false`, the cross-entry error naming `shot@0` and `shot@1`.
+It is a **finding** if any arm validates clean or the error doesn't name both members.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F592 — references the cross-entry rule must leave legal: same-key pairing, another group over the same list, a step after the list, `gather:`, and catalog list templates
+pending: #1111
+source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
+CPU only. This workflow (`W2`) validated clean before #1111 (checked over MCP at spec time); it
+must stay clean. `workspace="regression-complete"` on every call.
+```json
+{"id": "qa-1111-legal",
+ "variables": {"shots": [
+   {"name": "a", "audio": "asset:uploads/qa-cast/room-bed.wav", "same": "previous_result:shot@a", "other": "previous_result:shot@b"},
+   {"name": "b", "audio": "asset:uploads/qa-cast/room-bed.wav", "same": "previous_result:shot@b", "other": "previous_result:shot@a"}]},
+ "steps": [
+   {"name": "shot",  "for_each": "variable:shots", "task": {"command": "gain_audio", "arguments": {"audio": "item:audio", "gain_db": -3}}},
+   {"name": "trim",  "for_each": "variable:shots", "task": {"command": "gain_audio", "arguments": {"audio": "previous_result:shot", "gain_db": -1}}},
+   {"name": "pair",  "for_each": "variable:shots", "task": {"command": "gain_audio", "arguments": {"audio": "item:same", "gain_db": -1}}},
+   {"name": "cross", "for_each": "variable:shots", "task": {"command": "gain_audio", "arguments": {"audio": "item:other", "gain_db": -1}}},
+   {"name": "after", "task": {"command": "gain_audio", "arguments": {"audio": "previous_result:shot@a", "gain_db": -1}}},
+   {"name": "mix",   "task": {"command": "mix_audio", "arguments": {"audios": "gather:shot"}}}]}
+```
+`trim` is bare same-key pairing; `pair` is literal same key (`pair@a` → `shot@a`); `cross` is a
+*different* group reading another key (`cross@b` → `shot@a`, `cross@a` → `shot@b`), legal per Q2;
+`after` is an ordinary step after the list; `mix` gathers.
+1. `validate_workflow(inline_workflow=W2)`.
+2. Run it for real so the legal cross-group read resolves: W2 with `mix`'s `audios` changed to
+   `"gather:cross"` (so `cross@*` is not elided). Validate, bind the fingerprint (`minutes: null`),
+   `run_workflow(..., wait_seconds=55)`, then `get_job`.
+3. `validate_workflow(name="templates/minimax/music-video")` and
+   `validate_workflow(name="templates/ltx2/restore-long")`, defaults only.
+expected:
+- 1: `valid: true`, no errors (elision warnings/notes about unread steps are fine), `list_entries`
+  `{"shots": 2}`.
+- 2: the job completes; `cross@a` and `cross@b` both ran (in `get_job`'s steps or events) and the
+  mix output exists.
+- 3: both `valid: true` with no errors, as before #1111.
+It is a **finding** if any of these is refused by the new rule (or any error appears), or step 2
+fails resolving `shot@a`/`shot@b`.
+cleanup: `delete_output(job_id=…)` for step 2's job.
+metrics: none.
+
+### C-F593 — a member reading an earlier member's *video* as `image` gets only the cross-entry error, not also #813's `get_last_frame` advice
+pending: #1111
+source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
+Validate only, no GPU time, `workspace="regression-complete"`. `get_workflow("templates/ltx2/image-to-video")`
+and build an inline copy, `qa-1111-video-into-image`, in which the step whose pipeline arguments carry
+`image` gains `"for_each": "variable:shots"` and `"image": "item:image"`, and a new variable
+`shots` = `[{"name": "a", "image": "asset:qa-cast/priya-portrait.jpg"}, {"name": "b", "image":
+"previous_result:shot@a"}]`. Name that step `shot` (rename every reference to its old name, if
+any). Leave every other step and variable as the template has it. `validate_workflow(inline_workflow=…)`.
+expected:
+- `valid: false` with **one** error for `shot@b`'s `image`: the cross-entry error naming `shot@a` and
+  `shot@b` with the separate-runs / `output:` fix. No second error or warning for the same reference
+  telling the author to take a still with `get_last_frame` (#813's message), which cannot be followed
+  inside one list.
+It is a **finding** if both messages appear, only #813's appears, or the copy validates clean.
+cleanup: none (validate only, nothing saved).
 metrics: none.
 
 ## Performance
