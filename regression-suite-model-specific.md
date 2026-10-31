@@ -7199,7 +7199,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`. Ke
 metrics: `latency` (s), condition `portrait-384x544-97f`, to `regression-perf/M-F257.jsonl`.
 
 ### M-F258 — the `script-to-video` skill gives each shot an optional `join` (`continue`, `cut`, `cutaway`, `lead_in`), takes `opening_state` from the shot's source, and links `references/joins.md`
-pending: #1100
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:script-to-video` skill as loaded from `develop` (written for MiniMax H3). Free.
 Steps: load the `dw:script-to-video` skill; read SKILL.md's step 2 (the shot list) and step 5, and
@@ -7224,7 +7223,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F259 — `joins.md` states the cutaway and lead-in recipes over existing templates, each named template resolves, and the A-tail video reference is one line, not the recipe
-pending: #1100
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `dw:script-to-video`'s `references/joins.md`, and the MiniMax H3 templates it names.
 Free (discovery calls only).
@@ -7260,7 +7258,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F260 — `joins.md` states render order, re-roll invalidation and the attempt budget, and that concat here is assembly, not a chain splice
-pending: #1100
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `dw:script-to-video`'s `references/joins.md` and SKILL.md. Free.
 Steps: read `references/joins.md` and SKILL.md's seams/splices text (step 5 and the "never splice"
@@ -7280,7 +7277,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F261 — a dialogue–cutaway–dialogue triple built per `joins.md`: C opens on A's scene, not B's, and the concat plays A, B, C with two cuts
-pending: #1100
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 at the draft tier: `templates/minimax/video-with-audio` for A and B,
 `templates/minimax/image-to-video` for C, each at its defaults (5 steps, turbo LoRA), 960×544,
@@ -7318,7 +7314,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 metrics: none.
 
 ### M-F262 — a lead-in pair built per `joins.md`: C renders first, B lands on C's first frame, and the B→C concat has no visible jump
-pending: #1100
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 at the draft tier: `templates/minimax/video-with-audio` for C and
 `templates/minimax/first-and-last-frame` for B, at their defaults except 960×544 for B (its default is
@@ -7353,7 +7348,6 @@ any job made for step 3's still.
 metrics: none.
 
 ### M-F263 — a lead-in run before its target exists fails at validate on the unresolved `output:` reference, and a requested re-roll of the target is quoted with the lead-in
-pending: #1100
 source: tester, spec for #1100 from #1093's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/first-and-last-frame` and `templates/minimax/last-frame-only`
 (MiniMax H3), plus `dw:script-to-video`'s `references/joins.md`. Free: validate and discovery only, and
