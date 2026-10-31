@@ -7293,4 +7293,29 @@ It is a **finding** if:
 cleanup: `delete_output(job_id=...)`.
 metrics: `wall_minutes`, to `regression-perf/M-F242.jsonl` on each run.
 
+### M-F243 — a full-frame H3 refine whose width/height don't match the upscaled canvas is refused at validate, naming both sizes
+source: tester, verified in #1087 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 t2va (`MiniMaxAI/MiniMax-H3`, ModularPipeline) base → `upscale_h3_latents` → H3 refine
+(`refine_strength`, no `refine_tiles`). Free: validation only. Workspace `regression-model-specific`.
+Carrier `C`: an inline workflow with three steps. `base` is an H3 t2va pipeline step with `width` 1344, `height` 768,
+`num_frames` 124, `num_inference_steps` 5 and `output` `["videos","audio","sampling_rate","latents"]`. `up` is
+`upscale_h3_latents(latents: previous_result:base.latents, width: 1920, height: 1088)`. `refine` is an H3 t2va
+pipeline step with `latents: previous_result:up`, `refine_strength: 0.909375`, `num_inference_steps: 4` and
+`hold_audio: previous_result:base.audio`. `load_components` `{"dtype": "torch.bfloat16"}` is enough on both pipeline
+steps. Validate each probe:
+- (a) `C` with no `width`/`height` on `refine` (the #1087 repro; job `fc673788417c` failed at the denoise this way);
+- (b) `C` with refine `width: 1920, height: 1088`;
+- (c) `C` with refine `width: 1920, height: 1024`;
+- (d) `C` with base at 960×544, `up` to 1344×768, and no `width`/`height` on `refine`.
+expected:
+- (a) `valid: false` at `steps[2].pipeline.arguments.refine_strength`. The message names the canvas (1920x1088), says
+  the step sets no width so its layout falls to 1344x768, and says to set width 1920 and height 1088.
+- (b) `valid: true`, with no refine error.
+- (c) `valid: false` at the same path, naming `height` 1024 and the canvas 1920x1088 (set it to 1088).
+- (d) `valid: true`. The canvas is the layout default, so omitting the size is fine.
+It is a **finding** if (a) or (c) validates, since the run would then fail about six minutes in at
+`index_copy_()`, or if (b) or (d) is refused.
+cleanup: none (no job is queued).
+metrics: none.
+
 ## Performance
