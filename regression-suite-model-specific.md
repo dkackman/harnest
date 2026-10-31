@@ -6438,12 +6438,11 @@ expected:
 - (b) and (c): `valid: true`, with no warning mentioning `weight_name`, "names neither", `transformer` or
   `transformer_ref`.
 - (d) `valid: false`, because `T` is a `proven` keyframe entry and M-F142's refusal applies to it at `loras[1]`.
-  The refiner's warning at `loras[0]` is still present beside that error. If `T` isn't `proven` on the day,
-  record its status and expect a warning there instead.
+  If `T` isn't `proven` on the day, record its status and expect a warning there instead.
 It is a **finding** if:
 - (a) is refused, or carries no warning naming the entry;
 - (b) or (c) warn about the partition;
-- (d) loses the refiner's warning.
+- (d) is accepted while `T` is `proven`.
 cleanup: none.
 metrics: none.
 
