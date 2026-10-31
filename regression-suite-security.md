@@ -1159,6 +1159,34 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist). Delete the
 asset if one was uploaded.
 metrics: none.
 
+### SE-F055 — `match_color.reference` and `match_color.media` hold the media path gate at validate time
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+#1067 adds a task that reads a second media file, `reference`, and the plan declares it a media
+argument so an unconfined path is refused at validate time, not only at run time (#630). Carrier, in
+workspace `regression-security`: `{"id": "qa-se-f055", "steps": [{"name": "m", "task": {"command":
+"match_color", "arguments": {"media": "asset:qa-cast/ep6-cold-open.mp4", "reference":
+"asset:qa-cast/ep6-cold-open.mp4"}}, "result": {"content_type": "video/mp4"}}]}`. One argument
+changes per probe, first on `reference`, then on `media`:
+- P1 `/etc/passwd` (exists), P2 `/nonexistent-dw-probe/x.mp4`, P3 `../../../../etc/passwd`, each bare
+  and as `asset:` + the probe;
+- `output:../../../../etc/passwd` and `output:/etc/passwd`;
+- `file:///etc/passwd` and `http://127.0.0.1:8765/x.mp4`.
+For every refused probe, also `run_workflow(..., acknowledged_cost=true, workspace="regression-security")`.
+expected:
+- Every probe is `valid: false` at `match_color`'s argument path for the argument probed, with the
+  refusal SE-F014 gives a media argument (or the scheme/host refusal for the URLs).
+- P1 and P2 get the same wording; no message shows a frame size, frame count or contents, or a
+  resolved server path. No probe is refused with a C-F552-style size or length mismatch, which would
+  mean the file was opened.
+- `run_workflow` queues no job. The unchanged carrier validates clean.
+It is a **finding** if a probe validates or is refused only at run time. A probe that validates, P1
+and P2 being told apart, a mismatch message on an out-of-root file, an echoed server path, or a
+`127.0.0.1` fetch or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public
+issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

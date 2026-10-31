@@ -259,6 +259,10 @@ smoke's Fixtures lists the asset too.
   `music-video` cut with two inner shots (124 f each), used by C-F382 beside
   `ep63-shot-ltx-priya.mp4`. Read-only, never deleted; a substitute must be 44.1 kHz with
   `media.shots`.
+- C-F546–C-F554 (`match_color`, #1083) reuse fixtures listed above: `ep3-shot1-incident.mp4` and
+  `ep3-shot2-reply.mp4` (any two colourful 124-frame 960×544 shots with audio substitute; re-derive the
+  frame arithmetic from their counts), `priya-portrait.jpg` (any still not 960×544), and the
+  `qa-fit/` clips. Nothing new to keep.
 
 ## Functional
 
@@ -14724,6 +14728,250 @@ expected:
 It is a **finding** if the default is not Kokoro or not 24 kHz, the MMS override fails, or the template
 accepts `voice`.
 cleanup: `delete_output(job_id=...)` on both runs.
+metrics: none.
+
+### C-F546 — `match_color` is a listed CPU task with the plan's seven arguments and a tasks-guide section
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+#1067 adds one finishing task, `match_color`, which fits a per-channel gain and offset (mean and std
+of R, G, B) over an overlap between `media` and `reference`, applies it to all of `media`, and returns
+`{"matched": <media>, "fit": <JSON record>}`. C-F547–C-F554 and SE-F055 cover the rest. Free calls only.
+Steps: `list_tasks`; `get_task("match_color")`; `get_guide("tasks")` (index), then the section that
+names `match_color`.
+expected:
+- `match_color` is in `list_tasks`' `commands`, and not under `assessment`.
+- `get_task` lists `media` and `reference` (both required), `frames` and `reference_frames` (both
+  optional, defaulting to the whole clip), `samples` (default `12`, a whole number 1–64), `strength`
+  (default `1.0`, range 0–1) and `threshold` (default `1.0`, zero or above), plus `device`. The summary
+  or descriptions say the ranges are `[start, end]`, end-exclusive, negatives counting from the end,
+  and that the two resolved ranges must be the same length.
+- The guide section sits beside `grade`/`apply_lut`, shows the guided-segment example (`frames` on the
+  head of the new segment, `reference_frames` on the tail of the previous one), says how to write
+  "to the end" in a range, and says the fit is skipped (`applied: false`) under the threshold.
+- `paste_face_track` is still listed, its `color_match` argument still described.
+It is a **finding** if the task is missing, any argument or default differs from the above with no
+note on #1083 saying why, or the guide has no section for it.
+cleanup: none.
+metrics: none.
+
+### C-F547 — `match_color` pulls a graded copy back to its source: two outputs, an inverse fit, the shift gone
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+CPU only, no model. `I` is `asset:qa-cast/ep3-shot1-incident.mp4` (124 frames, 24 fps, 960×544,
+32 kHz stereo).
+
+**Workflow MC** (inline `run_workflow` in `regression-complete`, id `qa-c-f547`; `validate_workflow`
+first and bind its `acknowledged_cost`; `wait_seconds=55`, then `wait_for_job` if `still_running`).
+Video results are `{"content_type": "video/mp4", "subfolder": "final"}`; for a `match_color` step use
+the result form `get_task("match_color")`/the guide section gives for its `{matched, fit}` output, so
+that both the matched video and the fit `.json` are saved. Steps:
+1. `shift`: `grade` `{"media": I, "exposure": 0.3, "contrast": 1.15, "temperature": 0.2}` (saved).
+2. `match`: `match_color` `{"media": "previous_result:shift", "reference": I}`.
+3. `self`: `match_color` `{"media": I, "reference": I}`.
+4. `same`: `match_color` `{"media": "previous_result:shift", "reference": "previous_result:shift"}`.
+5. `zero`: as `match` plus `"strength": 0`.
+6. `half`: as `match` plus `"strength": 0.5`.
+7. `self_cut`: `concat_videos` `{"videos": [I, I], "fps": 24}`.
+8. `shift_cut`: `concat_videos` `[I, "previous_result:shift"]`, `fps` 24.
+9. `match_cut`: `concat_videos` `[I, "previous_result:match.matched"]`, `fps` 24 (the `.matched` key
+   as the guide spells it).
+(Confirm `concat_videos`' argument names with `get_task` first.)
+
+**Probes** after it succeeds: `get_job` (outputs); `get_output_text` on every fit; 
+`get_gallery_metadata` on `match`'s video; `get_output_frames` on `I`, `shift` and `match` at frame
+60; `compare_outputs(names=[I, <shift video>, <match video>, <half video>], baseline=I)`;
+`assess_output(name=<each *_cut video>, probe="analyze_seams")`.
+
+expected:
+- Job `succeeded`. Each `match_color` step saves exactly two outputs: one video and one `.json` fit.
+- **`match` fit:** `applied: true`; `gain`, `offset` and `delta_mean` are each `{r, g, b}` of finite
+  numbers; every gain is below 1.0 and inside [0.5, 2.0] (the grade raised exposure and contrast, so
+  the correction narrows the spread); `delta_mean` is non-zero on every channel with red's magnitude
+  above blue's (temperature +0.2 pushed red up and blue down), in the sign convention the guide
+  documents; `strength: 1.0`, `threshold: 1.0`; `frames` and `reference_frames` resolved to the whole
+  clip (`[0, 124]` each); `sampled` is 12 index-aligned pairs (each pair's two indexes equal),
+  strictly increasing, spread over the clip (first ≤ 11, last ≥ 112).
+- **Matched clip:** 124 frames, 24 fps, 960×544, with a 32 kHz stereo soundtrack.
+- **By eye:** frame 60 of `match` looks like `I`'s, not like `shift`'s brighter, warmer one.
+- **`compare_outputs`:** `match` scores clearly closer to `I` than `shift` does (higher PSNR and
+  SSIM); `half` falls between them on PSNR.
+- **`analyze_seams`:** `match_cut`'s `look_ratio` is within 1.5× of `self_cut`'s and at most half of
+  `shift_cut`'s; its `|lightness_step|` is under a third of `shift_cut`'s.
+- **`self` fit:** `applied: false`, gains within 2% of 1 and every `|delta_mean|` under 1.0.
+- **`same`:** `applied: false`, and `compare_outputs(names=[<shift video>, <same video>])` is
+  `identical: true` (the skip returns the media frame for frame through the same writer).
+- **`zero`:** `compare_outputs(names=[<shift video>, <zero video>])` is `identical: true`; its fit is
+  still saved, with `strength: 0` and `gain`/`offset` equal to `match`'s within 1e-6. Whether it says
+  `applied` true or false is not pinned.
+- The job's events or log carry one line per `match_color` step saying what was applied or why it was
+  skipped.
+It is a **finding** if a fit is missing or not JSON, a gain points the wrong way, the matched clip
+loses frames, fps or audio, `match` isn't closer to `I` than `shift`, the seam measures don't drop, or
+`same`/`zero` are not identical to the input.
+cleanup: `delete_output(job_id=…)`.
+metrics: `look_ratio` of `match_cut`, `shift_cut` and `self_cut` (conditions `matched`, `shifted`,
+`self`).
+
+### C-F548 — frame ranges: a segment's head matched to another clip's tail, negatives resolved, a later step reads `.fit`
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+The guided-segment shape: segment 2's first 40 frames re-render segment 1's last 40, but brighter.
+CPU only. `I` as C-F547, `J` is `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames, same geometry).
+
+**Workflow MR** (inline, id `qa-c-f548`, as C-F547's run procedure):
+1. `shift`: `grade` `{"media": I, "exposure": 0.3, "contrast": 1.15, "temperature": 0.2}`, not saved.
+2. `head`: `trim_video` `{"video": "previous_result:shift", "start_frame": 84, "num_frames": 40}`.
+3. `seg2`: `concat_videos` `["previous_result:head", J]`, `fps` 24 (164 frames, carrying two shots).
+4. `neg`: `match_color` `{"media": "previous_result:seg2", "reference": I, "frames": [0, 40],
+   "reference_frames": [-40, <to the end, as the guide spells it>]}`.
+5. `abs`: as `neg` with `"reference_frames": [84, 124]`.
+6. `few`: as `abs` plus `"samples": 1`.
+7. `many`: as `abs` plus `"samples": 64`.
+8. `read`: `get_dict_value` `{"dict": "previous_result:neg.fit", "key": "applied"}`, result
+   `{"content_type": "application/json", "subfolder": "final"}` (or the text form the task returns).
+9. `negfull`: `match_color` `{"media": "previous_result:seg2", "reference": I, "frames": [-164, -124],
+   "reference_frames": [84, 124]}` (a fully negative range on `media`).
+expected:
+- Job `succeeded`.
+- `neg` fit: `applied: true`; `frames` resolved to `[0, 40]`, `reference_frames` to `[84, 124]`;
+  `sampled` is 12 pairs, each `(i, 84 + i)` for an `i` in 0–39, strictly increasing.
+- `abs` fit equals `neg`'s (same `gain`, `offset`, `sampled`, within 1e-6). `negfull`'s `frames`
+  resolves to `[0, 40]` and its fit equals them too.
+- Gains below 1.0 on every channel, as in C-F547.
+- `few`: exactly 1 sampled pair. `many`: no more pairs than the range holds (≤ 40), each distinct and
+  increasing.
+- `neg`'s matched clip is 164 frames, 24 fps, with audio, and its `get_gallery_metadata` shots list
+  is the same as `seg2`'s would be (two shots, 40 and 124 frames). The correction is applied to the
+  whole clip, not only the 40-frame range: frame 100 of the matched clip differs from `J`'s frame 60
+  (`compare_outputs` not `identical`).
+- `read`'s output says `true`.
+It is a **finding** if a negative bound resolves wrongly, pairs aren't index-aligned at the offset,
+`samples` isn't honoured, the shots or audio are lost, or `previous_result:<step>.fit` can't be read.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F549 — `match_color` on stills: an image pair, and a still reference against a video
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+CPU only. `P` is `asset:qa-cast/priya-portrait.jpg`; `I` as C-F547.
+**Workflow MI** (inline, id `qa-c-f549`, as C-F547's run procedure; image results
+`{"content_type": "image/png", "subfolder": "final"}`):
+1. `p_shift`: `grade` `{"media": P, "exposure": 0.3, "contrast": 1.15, "temperature": 0.2}`.
+2. `p_match`: `match_color` `{"media": "previous_result:p_shift", "reference": P}`.
+3. `still`: `I`'s first frame as an image, via the `get_first_frame` video processor (confirm the step
+   form with `get_schema(section="steps")`).
+4. `v_shift`: `grade` of `I` as C-F547's `shift`, not saved.
+5. `v_on_still`: `match_color` `{"media": "previous_result:v_shift", "reference": "previous_result:still"}`.
+expected:
+- Job `succeeded`.
+- `p_match` is one image the size of `P`; its fit is `applied: true` with every gain below 1.0;
+  `compare_outputs(names=[P, <p_shift>, <p_match>], baseline=P)` scores `p_match` clearly closer to `P`.
+  Its fit's `sampled` holds a single pair.
+- `v_on_still` is a 124-frame 24 fps video with audio; its fit is `applied: true`, every sampled pair
+  pairs a video frame with the one reference frame (the reference index is the same in every pair),
+  and frame 0 of the matched clip looks like `I`'s frame 0 by eye.
+It is a **finding** if either step fails, an image comes back as a video or the other way, or the
+still reference is refused.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F550 — the fit's edges: a flat target and an over-clamp gain stay finite and clamped; identity at threshold 0
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+CPU only. `I` as C-F547.
+**Workflow ME** (inline, id `qa-c-f550`, as C-F547's run procedure):
+1. `black`: `grade` `{"media": I, "exposure": -20, "saturation": 0}` (flat black, σ < 1), not saved.
+2. `flat`: `grade` `{"media": I, "contrast": 0.2}` (std cut to about a fifth), not saved.
+3. `m_black`: `match_color` `{"media": "previous_result:black", "reference": I}`.
+4. `m_flat`: `match_color` `{"media": "previous_result:flat", "reference": I}`.
+5. `t0`: `match_color` `{"media": I, "reference": I, "threshold": 0}`.
+6. `s1`: `match_color` `{"media": I, "reference": I, "strength": 1, "samples": 1}` (both boundaries).
+expected:
+- Job `succeeded`; no fit holds `NaN`, `Infinity` or a null number.
+- `m_black`: every gain is exactly 2.0 (σ floored at 1, then clamped); its matched clip decodes, 124
+  frames.
+- `m_flat`: every gain is 2.0 (the clamp, not ~5); `offset` finite.
+- `t0`: gains 1.0 and offsets 0.0 within 1e-3, and `compare_outputs` against `self`'s output from
+  C-F547 (or a `match_color` of `I` to `I` at defaults in this job) is `identical: true`. `applied` is
+  not pinned.
+- `s1`: succeeds with one sampled pair.
+It is a **finding** if any step fails or crashes, a gain leaves [0.5, 2.0], or a value is non-finite.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F551 — `match_color` refuses bad literals at `validate_workflow`, and accepts the boundaries and a reference
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+Free calls only. Base: `{"id": "qa-c-f551", "steps": [{"name": "m", "task": {"command": "match_color",
+"arguments": {"media": I, "reference": "asset:qa-cast/ep3-shot2-reply.mp4"}}, "result":
+{"content_type": "video/mp4"}}]}` with `I` as C-F547. Each arm is one `validate_workflow` with one
+argument added.
+Refused arms: `strength: 1.5`; `strength: -0.1`; `threshold: -1`; `samples: 0`; `samples: 2.5`;
+`samples: 65`; `frames: [10, 5]`; `frames: [5, 5]`; `frames: [-5, -10]`; `frames: "abc"`;
+`frames: [1, 2, 3]`; `frames: [0.5, 10]`; `reference_frames: [10, 5]`.
+Accepted arms: `strength: 0`; `strength: 1`; `threshold: 0`; `samples: 1`; `samples: 64`;
+`frames: [0, 40]`; `frames: [-40, <to the end>]`; `frames: [-10, 5]` (mixed signs, not checkable
+until run time); and a two-step form whose first step is `get_dict_value` and whose `m` step has
+`"frames": "previous_result:<first step>"`.
+expected:
+- Every refused arm is `valid: false`, naming the argument (`strength`, `threshold`, `samples`,
+  `frames` or `reference_frames`) and why; `run_workflow` on one of them queues no job.
+- Every accepted arm is `valid: true` with no error naming `match_color`'s arguments.
+It is a **finding** if a refused arm validates (it would only fail at run time) or an accepted one is
+refused.
+cleanup: none.
+metrics: none.
+
+### C-F552 — run-time refusals: unequal lengths, a range past the clip, frames on a still, mismatched sizes, an empty mixed range
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Each arm is its own one- or two-step inline job in `regression-complete`
+(`validate_workflow` must pass first, then `run_workflow(wait_seconds=55)`), on C-F551's base with
+`I` as C-F547:
+1. `frames: [0, 40]`, `reference_frames: [0, 50]`.
+2. `frames: [0, 200]`.
+3. `frames: [-200, -100]` (validates: same sign, start < end).
+4. `frames: [-10, 5]` (resolves to `[114, 5]`, empty).
+5. `media` and `reference` both `asset:qa-cast/priya-portrait.jpg` with `frames: [0, 1]`; then the same
+   with only `reference_frames: [0, 1]`.
+6. `media: I`, `frames: [0, 50]`, `reference: "asset:qa-fit/src-640x480-50f.mp4"` (C-F238's setup makes
+   it if missing).
+7. `media: I`, `reference: "asset:qa-cast/priya-portrait.jpg"` (a still of another size).
+expected:
+- Every arm validates, then its job ends `failed` (no server error, no partial output) with an error
+  naming the problem: 1 names both lengths (40 and 50); 2 and 3 name the range and the clip's 124
+  frames; 4 says the resolved range is empty or reversed; 5 says frame ranges don't apply to an image;
+  6 and 7 name both frame sizes (960×544 and the other).
+It is a **finding** if an arm succeeds (silently resampling, truncating or clamping), crashes with a
+traceback-style error that doesn't name the problem, or writes an output.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F553 — the face-track colour match is unchanged after the shared helper moves in
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+Stage A moves `paste_face_track`'s mean-only `color_match` onto the new shared colour-stats helper,
+with no change in behaviour. Run C-F198, C-F199 and C-F200 as written.
+expected: each passes exactly as its own `expected:` says; in particular C-F199's `color_match` arm
+still pulls the repair's colour back to the source only around the face.
+It is a **finding** if any of the three no longer passes, against a pass on the server before #1083.
+cleanup: as those cases.
+metrics: none.
+
+### C-F554 — `match_color` reads saved media: an `output:` and `asset:` pair, and media with no audio
+pending: #1083
+source: tester, spec for #1083 from #1067's plan v1 (claude-opus-5-5 via anthropic)
+The guided-segment case is two separate jobs, so the task must take two saved files. CPU only.
+1. Run C-F547's step 1 alone as its own job (`shift`, saved); call its video `<S>`.
+2. A one-step job: `match_color` `{"media": "output:<S>", "reference":
+   "asset:qa-cast/ep3-shot1-incident.mp4"}`.
+3. A one-step job: `match_color` `{"media": "asset:qa-fit/src-640x480-50f-silent.mp4", "reference":
+   "asset:qa-fit/src-640x480-50f.mp4"}` (same picture, no audio stream on `media`).
+expected:
+- Step 2 `succeeded`, its fit `applied: true` with every gain below 1.0, as C-F547's `match`.
+- Step 3 `succeeded`, `applied: false`, and the matched clip has no audio stream (none is invented).
+It is a **finding** if a saved reference is refused or either job fails.
+cleanup: `delete_output(job_id=…)` for all three jobs.
 metrics: none.
 
 ## Performance
