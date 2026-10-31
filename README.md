@@ -894,9 +894,14 @@ raw events.
     proposals awaiting approval, and draft security advisories. It re-checks once the loops
     have been quiet 20 s after a session starts or ends (at most once a minute, at least every
     5 min), backs off 15 min if GitHub answers with a rate limit, and a new item shows in
-    Events;
+    Events. Grouped by repo, urgent labels first; parked issues and those waiting on an
+    open blocker are hidden behind a "show" link;
   - what the current session on lem (`loop.log`) and on the Mac (`loop.mini-ai.log`) is doing:
     turns, context, last tool call;
+  - while `run-loop.sh` holds a target's lock, that run's progress from the status board after
+    each cycle: a burn-up of the tickets closed since the run began, under those still open
+    (with agents, with you, parked), so tickets filed mid-run raise the column, plus the
+    run's sessions and cost;
   - the recent sessions, with their cost;
   - a release's gate log, while one is running;
   - a live tail of any file in `logs/`, with a filter.

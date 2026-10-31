@@ -11,12 +11,16 @@
   --ok: #1f9d55; --warn: #c27c0e; --bad: #c9362b; --idle: #9aa1ad; --accent: #3b6fd8;
   --code: #f1f3f6; --tool: #3b6fd8; --result: #8a93a3; --usage: #1f9d55; --hdr: #7b4bc4;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  /* the loop progress chart, bottom of the stack first: an order that passes
+     the palette validator's adjacent-pair checks in both modes */
+  --s-closed: #1baf7a; --s-other: #eda100; --s-agents: #2a78d6; --s-don: #eb6834;
 }
 @media (prefers-color-scheme: dark) {
   :root {
     --bg: #12151b; --panel: #1a1e26; --ink: #e3e7ee; --muted: #8d95a3; --line: #2a303b;
     --ok: #3ccf7a; --warn: #e5a53a; --bad: #ef5d50; --idle: #5d6573; --accent: #6f9bff;
     --code: #141820; --tool: #7aa6ff; --result: #6b7483; --usage: #3ccf7a; --hdr: #b48cf2;
+    --s-closed: #199e70; --s-other: #c98500; --s-agents: #3987e5; --s-don: #d95926;
   }
 }
 * { box-sizing: border-box; }
@@ -57,7 +61,8 @@ td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
 tr.live td { background: color-mix(in srgb, var(--ok) 10%, transparent); }
 tr.note td { color: var(--muted); }
 td a, .link { color: var(--accent); cursor: pointer; text-decoration: none; }
-.scroll { max-height: 260px; overflow: auto; }
+.scroll { max-height: 340px; overflow: auto; }
+#attn .scroll { max-height: 70vh; }
 .gates div { font-family: var(--mono); font-size: 12.5px; white-space: pre-wrap; }
 .gates .pass { color: var(--ok); } .gates .fail { color: var(--bad); }
 #logbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 8px; }
@@ -89,16 +94,37 @@ header button.on { border-color: var(--ok); color: var(--ok); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 #events div.fail { border-color: var(--bad); } #events div.pass { border-color: var(--ok); }
 #attn table td { vertical-align: top; }
-#attn tr.parked { opacity: .55; }
 #attn td.title { white-space: normal; width: 100%; }
-#attn .scroll { max-height: 380px; }
-#attn .repo { font-size: 11.5px; font-family: var(--mono); color: var(--muted); white-space: nowrap; }
+#attn tr.parked { opacity: .55; }
+#attn tr.grp th { padding-top: 10px; color: var(--ink); font-weight: 600; font-family: var(--mono); font-size: 12px; }
+#attn tr.grp:first-child th { padding-top: 2px; }
+#attn td.stale { color: var(--warn); }
+#attn .hidden-note { margin: 6px 0 0; font-size: 12px; }
 #attn .tag { font-size: 11.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px;
   color: var(--muted); white-space: nowrap; margin-left: 4px; }
 #attn .tag.hot { border-color: var(--warn); color: var(--warn); }
 #attn-count { background: var(--warn); color: #fff; border-radius: 999px; padding: 0 7px; font-size: 11.5px;
   text-transform: none; letter-spacing: 0; }
 #attn-count.zero { background: var(--idle); }
+.prog { margin: 0 0 12px; }
+.prog .kpis, .prog .legend { display: flex; flex-wrap: wrap; gap: 2px 14px; font-size: 12.5px; color: var(--muted); }
+.prog .kpis { margin-bottom: 4px; }
+.prog b { color: var(--ink); font-weight: 600; }
+.prog .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.burn { position: relative; height: 130px; margin-top: 4px; }
+.burn svg { display: block; }
+.burn .grid { stroke: var(--line); stroke-width: 1; }
+.burn .hl { fill: var(--code); }
+.burn text { fill: var(--muted); font-size: 10.5px; font-family: var(--mono); }
+.burn .tip { position: absolute; top: 0; pointer-events: none; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 5px 8px; font-size: 12px; white-space: nowrap; z-index: 1;
+  box-shadow: 0 2px 10px color-mix(in srgb, var(--ink) 15%, transparent); }
+.burn .tip div { display: flex; gap: 12px; justify-content: space-between; }
+.burn .tip i { display: inline-block; width: 9px; height: 9px; border-radius: 2px; margin-right: 5px; }
+.prog details { margin-top: 4px; font-size: 12.5px; }
+.prog summary { cursor: pointer; color: var(--muted); }
+.prog ul { margin: 4px 0; padding-left: 18px; max-height: 220px; overflow: auto; }
+.prog li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #events time { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
 </style>
 </head>
@@ -107,6 +133,7 @@ header button.on { border-color: var(--ok); color: var(--ok); }
   <span class="dot" id="hdot"></span>
   <h1>harnest</h1>
   <span class="muted" id="hsummary">loading…</span>
+  <span class="muted mono" id="hcost" title="spent since each running loop began: every session in its log"></span>
   <a href="/regression" style="color:var(--accent);text-decoration:none;font-size:13px;margin-left:8px">regression →</a>
   <span class="spacer"></span>
   <button id="notify" title="Browser notifications when a driver exits or a gate result lands">🔔 notify</button>
@@ -195,7 +222,7 @@ function events(st) {
   const cur = {
     drivers: new Map(st.drivers.map((d) => [d.pid, `${d.name || `run-${d.driver}.sh`} ${d.args}`.trim()])),
     gates: st.release ? st.release.lines : [],
-    attn: st.attention && st.attention.fetched ? new Set(st.attention.items.map(attnKey)) : null,
+    attn: st.attention && st.attention.fetched ? new Set(st.attention.items.filter(live).map(attnKey)) : null,
   };
   const out = [];
   if (prev) {
@@ -208,7 +235,7 @@ function events(st) {
       if (!seen.has(l) && /: (pass|fail|accepted)\b| (pass|fail) on /.test(l))
         out.push({ text: l, cls: /\bfail/.test(l) ? "fail" : "pass" });
     if (prev.attn && cur.attn)
-      for (const i of st.attention.items)
+      for (const i of st.attention.items.filter(live))
         if (!prev.attn.has(attnKey(i))) out.push({ text: `needs you: ${attnKey(i)} ${i.title}`, cls: "" });
   }
   if (prev && !cur.attn) cur.attn = prev.attn;
@@ -253,8 +280,13 @@ $("notify").addEventListener("click", async () => {
 paintNotify();
 
 const attnKey = (i) => i.repo === "advisory" ? i.number : `${i.repo}#${i.number}`;
-const idle = (i) => i.tags.includes("parked") || i.waiting.length > 0;
+// parked, or blocked by an open issue: nothing to act on, so not shown
+const live = (i) => !i.tags.includes("parked") && !i.waiting.length;
 const HOT = /^(release-blocker|release|status:needs-approval|status:plan-review|status:needs-info|critical|high)$/;
+const hot = (i) => i.tags.some((t) => HOT.test(t));
+const REPOS = ["dw", "harnest", "advisory"]; // group order
+const STALE_SECS = 3 * 86400; // no activity this long: the age turns amber
+let lastAttn = null;
 
 function renderAttention(a) {
   if (!a) return;
@@ -262,22 +294,48 @@ function renderAttention(a) {
     : a.held_until ? `rate limited · next check in ${ago(a.held_until - Date.now() / 1000)}`
     : a.fetched ? `checked ${ago(Date.now() / 1000 - a.fetched)} ago` : "not checked yet";
   if (!a.fetched) return;
-  const items = [...a.items].sort((x, y) => (x.repo === "advisory") - (y.repo === "advisory")
-    || (x.repo === "harnest") - (y.repo === "harnest")
-    || idle(x) - idle(y) || String(y.updated).localeCompare(String(x.updated)));
-  const live = items.filter((i) => !idle(i)).length;
-  $("attn-count").textContent = live;
-  $("attn-count").className = live ? "" : "zero";
-  $("attn-count").title = `${live} to act on, ${items.length - live} parked or waiting on another issue`;
+  lastAttn = a;
+  const all = LS.get("attn-all", "") === "1";
+  const acting = a.items.filter(live), hidden = a.items.length - acting.length;
+  // by repo; in each, what to act on, urgent first, then the most recently touched
+  const items = (all ? [...a.items] : acting).sort((x, y) => REPOS.indexOf(x.repo) - REPOS.indexOf(y.repo)
+    || live(y) - live(x) || hot(y) - hot(x) || String(y.updated).localeCompare(String(x.updated)));
+  $("attn-count").textContent = acting.length;
+  $("attn-count").className = acting.length ? "" : "zero";
+  $("attn-count").title = `${acting.length} to act on, ${hidden} parked or waiting on another issue`;
   const errs = a.errors.map((e) => `<p class="w" style="color:var(--bad);margin:4px 0">${esc(e)}</p>`).join("");
-  $("attn").innerHTML = errs + (items.length ? `<div class="scroll"><table>
-    ${items.map((i) => `<tr class="${idle(i) ? "parked" : ""}">
-      <td class="repo">${esc(i.repo)}</td>
+  const now = Date.now() / 1000;
+  let rows = "", repo = null;
+  for (const i of items) {
+    if (i.repo !== repo) {
+      repo = i.repo;
+      rows += `<tr class="grp"><th colspan="3">${esc(repo)} <span class="muted">${acting.filter((x) => x.repo === repo).length}</span></th></tr>`;
+    }
+    const age = i.updated ? now - Date.parse(i.updated) / 1000 : null;
+    rows += `<tr class="${live(i) ? "" : "parked"}">
       <td class="mono"><a href="${esc(i.url)}" target="_blank" rel="noopener" title="${esc(i.number)}">${i.repo === "advisory" ? esc(String(i.number).slice(0, 9)) + "…" : "#" + i.number}</a></td>
       <td class="title">${esc(i.title)}${i.tags.map((t) => `<span class="tag ${HOT.test(t) ? "hot" : ""}">${esc(t.replace(/^status:/, ""))}</span>`).join("")}${i.waiting.length ? `<span class="tag">waiting on ${i.waiting.map((b) =>
         `<a href="${esc(b.url)}" target="_blank" rel="noopener">#${b.number}</a>`).join(", ")}</span>` : ""}</td>
-      <td class="num muted">${i.updated ? ago(Date.now() / 1000 - Date.parse(i.updated) / 1000).replace(/ \d+s$/, "") : ""}</td></tr>`).join("")}
-    </table></div>` : '<p class="empty">nothing waiting on you</p>');
+      <td class="num ${age > STALE_SECS ? "stale" : "muted"}" title="last activity ${age == null ? "unknown" : ago(age) + " ago"}">${age == null ? ""
+        : age >= 2 * 86400 ? `${Math.floor(age / 86400)}d ${Math.floor(age % 86400 / 3600)}h` : ago(age).replace(/ \d+s$/, "")}</td></tr>`;
+  }
+  keepScroll($("attn"), () => {
+    $("attn").innerHTML = errs + (items.length ? `<div class="scroll"><table>${rows}</table></div>`
+      : '<p class="empty">nothing waiting on you</p>')
+      + (hidden ? `<p class="muted hidden-note">${hidden} parked or waiting on another issue ·
+          <span class="link" id="attn-all">${all ? "hide" : "show"}</span></p>` : "");
+  });
+}
+$("attn").addEventListener("click", (e) => {
+  if (e.target.id !== "attn-all") return;
+  LS.set("attn-all", LS.get("attn-all", "") === "1" ? "" : "1");
+  renderAttention(lastAttn);
+});
+// A redraw replaces a panel's tables: keep where each was scrolled to
+function keepScroll(el, draw) {
+  const tops = [...el.querySelectorAll(".scroll, .prog ul")].map((x) => x.scrollTop);
+  draw();
+  el.querySelectorAll(".scroll, .prog ul").forEach((x, n) => { if (tops[n]) x.scrollTop = tops[n]; });
 }
 $("attn-refresh").addEventListener("click", async () => {
   $("attn-when").textContent = "checking GitHub…";
@@ -302,7 +360,7 @@ function render(st) {
 
   // targets
   let anyLive = false, summary = [];
-  $("targets").innerHTML = Object.entries(st.streams).map(([name, s]) => {
+  keepScroll($("targets"), () => $("targets").innerHTML = Object.entries(st.streams).map(([name, s]) => {
     const quiet = s.mtime ? st.now - s.mtime : null;
     const held = s.lock && s.lock.alive;
     const sessions = s.sessions.filter((x) => x.turns || x.usage || x.model);
@@ -331,6 +389,7 @@ function render(st) {
         <span class="spacer" style="flex:1"></span>
         <span class="muted" style="text-transform:none;letter-spacing:0">lock ${lockTxt} · last write ${quiet == null ? "never" : ago(quiet) + " ago"}</span></h2>
       ${now || '<p class="empty">no sessions in this log</p>'}
+      ${progress(name, s.loop_run)}
       <div class="scroll"><table>
         <tr><th>start</th><th>session</th><th>model</th><th class="num">turns</th><th class="num">time</th><th class="num">ctx peak</th><th class="num">cost</th></tr>
         ${rows.map((x) => `<tr class="${x === cur && running ? "live" : ""}">
@@ -345,7 +404,10 @@ function render(st) {
           <td class="num"><b>$${total.toFixed(2)}</b></td></tr>
       </table></div>
     </section>`;
-  }).join("");
+  }).join(""));
+  document.querySelectorAll(".burn").forEach(drawBurn);
+  const runs = Object.values(st.streams).filter((s) => s.loop_run);
+  $("hcost").textContent = runs.length ? `· $${runs.reduce((a, s) => a + s.loop_run.cost, 0).toFixed(2)} this run` : "";
 
   // release
   const rel = st.release;
@@ -359,6 +421,108 @@ function render(st) {
   $("hdot").className = "dot " + (anyLive ? "ok" : d.length ? "warn" : "");
   $("hsummary").textContent = anyLive ? summary.join("  ·  ") : d.length ? "drivers running, no session live" : "idle";
 }
+
+// ---- loop progress: the board after each cycle, as a burn-up ----------
+// Each column is one cycle's board that differed from the last: the tickets
+// closed since the run began, under the ones still open by owner. Its height
+// is every ticket the run has seen, so tickets filed mid-run raise it.
+const SERIES = [ // bottom of the stack first (the --s-* order)
+  { key: "closed", label: "closed", css: "--s-closed" },
+  { key: "other", label: "other owner", css: "--s-other" },
+  { key: "agents", label: "with agents", css: "--s-agents" },
+  { key: "don", label: "waiting on you", css: "--s-don" },
+  { key: "parked", label: "parked", css: "--idle" }, // recessive: nothing will move it
+];
+const burns = {}, burnHover = {}, openLists = new Set();
+// other and parked only when some board had one (a board logged before the parked mark has none)
+const seriesOf = (lr) => SERIES.filter((x) => !["other", "parked"].includes(x.key) || lr.points.some((p) => p[x.key]));
+
+function progress(name, lr) {
+  delete burns[name];
+  if (!lr || !lr.points.length) return "";
+  burns[name] = lr;
+  const last = lr.points[lr.points.length - 1];
+  const item = (i) => `<li><a href="https://github.com/${esc(lr.repo)}/issues/${i.number}" target="_blank" rel="noopener">#${i.number}</a>
+    ${esc(i.title)}${i.open === false ? ' <span class="muted">· closed</span>' : ""}</li>`;
+  const list = (key, label, items) => items.length ? `<details data-list="${esc(name)}:${key}" ${openLists.has(`${name}:${key}`) ? "open" : ""}>
+    <summary>${items.length} ${label}</summary><ul>${items.map(item).join("")}</ul></details>` : "";
+  return `<div class="prog">
+    <div class="kpis"><span>loop since <b>${esc(lr.start)}</b></span><span>cycle <b>${lr.cycle}</b></span>
+      <span><b>${lr.closed.length}</b> closed</span><span><b>${lr.arrived.length}</b> arrived</span>
+      <span><b>${lr.sessions}</b> sessions · <b>$${lr.cost.toFixed(2)}</b></span></div>
+    <div class="legend">${seriesOf(lr).slice().reverse().map((x) =>
+      `<span><i style="background:var(${x.css})"></i>${x.label} <b>${last[x.key] || 0}</b></span>`).join("")}</div>
+    <div class="burn" data-stream="${esc(name)}" role="img"
+      aria-label="${esc(`${lr.points.length} boards since ${lr.start}: ${last.closed} closed, ${last.agents} with agents, ${last.don} waiting on you`)}"></div>
+    ${list("closed", "closed or left the board this run", lr.closed)}
+    ${list("arrived", "arrived this run", lr.arrived)}
+  </div>`;
+}
+
+function niceStep(max) { // a 1/2/5 step giving at most four gridlines
+  const mag = 10 ** Math.floor(Math.log10(max));
+  return [1, 2, 5, 10].map((m) => m * mag).find((st) => max / st <= 4);
+}
+
+function drawBurn(el) {
+  const name = el.dataset.stream, lr = burns[name];
+  if (!lr) return;
+  const pts = lr.points, series = seriesOf(lr);
+  const W = el.clientWidth, H = el.clientHeight, L = 26, R = 2, T = 6, B = 16;
+  const pw = W - L - R, ph = H - T - B;
+  const tot = (p) => series.reduce((a, x) => a + (p[x.key] || 0), 0);
+  const step = niceStep(Math.max(1, ...pts.map(tot)));
+  const top = Math.ceil(Math.max(1, ...pts.map(tot)) / step) * step;
+  const y = (v) => T + ph - v / top * ph;
+  const slot = pw / pts.length, bw = Math.max(1, Math.min(24, slot - 2));
+  let svg = "";
+  for (let v = 0; v <= top; v += step)
+    svg += `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v) + .5}" y2="${y(v) + .5}"/>
+      <text x="${L - 5}" y="${y(v) + 3.5}" text-anchor="end">${v}</text>`;
+  const hov = burnHover[name];
+  pts.forEach((p, i) => {
+    const x = L + i * slot + (slot - bw) / 2;
+    if (i === hov) svg += `<rect class="hl" x="${L + i * slot}" y="${T}" width="${slot}" height="${ph}"/>`;
+    const segs = series.filter((s) => p[s.key] > 0);
+    let acc = 0;
+    segs.forEach((s, n) => {
+      const y0 = y(acc), y1 = y(acc += p[s.key]);
+      const h = y0 - y1 - (n ? 2 : 0); // a 2px surface gap under every segment but the first
+      if (h <= 0) return;
+      const r = n === segs.length - 1 && bw >= 8 ? Math.min(4, h, bw / 2) : 0; // rounded data end
+      svg += `<path fill="var(${s.css})" d="M${x},${y1 + h}V${y1 + r}${r ? `Q${x},${y1} ${x + r},${y1}` : ""}H${x + bw - r}${r ? `Q${x + bw},${y1} ${x + bw},${y1 + r}` : ""}V${y1 + h}Z"/>`;
+    });
+  });
+  const lbl = (p) => `c${p.cycle} ${p.time.slice(0, 5)}`;
+  svg += `<text x="${L}" y="${H - 3}">${lbl(pts[0])}</text>`;
+  if (pts.length > 1) svg += `<text x="${W - R}" y="${H - 3}" text-anchor="end">${lbl(pts[pts.length - 1])}</text>`;
+  pts.forEach((_, i) => svg += `<rect data-i="${i}" x="${L + i * slot}" y="0" width="${slot}" height="${H}" fill="transparent"/>`);
+  el.innerHTML = `<svg width="${W}" height="${H}">${svg}</svg>`;
+  if (hov != null && pts[hov]) {
+    const p = pts[hov];
+    el.insertAdjacentHTML("beforeend", `<div class="tip"><b>cycle ${p.cycle} · ${esc(p.time)}</b>
+      ${series.slice().reverse().map((x) => `<div><span><i style="background:var(${x.css})"></i>${x.label}</span><b>${p[x.key] || 0}</b></div>`).join("")}
+      <div class="muted"><span>arrived since ${esc(lr.start)}</span><span>${p.arrived}</span></div></div>`);
+    const tip = el.lastElementChild, cx = L + (hov + .5) * slot;
+    tip.style.left = Math.max(0, Math.min(W - tip.offsetWidth, cx < W / 2 ? cx + 12 : cx - 12 - tip.offsetWidth)) + "px";
+  }
+}
+
+$("targets").addEventListener("mousemove", (e) => {
+  const hit = e.target.closest(".burn [data-i]"); if (!hit) return;
+  const el = hit.closest(".burn"), i = +hit.dataset.i;
+  if (burnHover[el.dataset.stream] !== i) { burnHover[el.dataset.stream] = i; drawBurn(el); }
+});
+$("targets").addEventListener("mouseout", (e) => {
+  const el = e.target.closest(".burn");
+  if (el && !el.contains(e.relatedTarget)) { delete burnHover[el.dataset.stream]; drawBurn(el); }
+});
+// <details> don't bubble toggle; the redraw every poll keeps the open ones open
+$("targets").addEventListener("toggle", (e) => {
+  const k = e.target.dataset && e.target.dataset.list; if (!k) return;
+  e.target.open ? openLists.add(k) : openLists.delete(k);
+}, true);
+window.addEventListener("resize", () => document.querySelectorAll(".burn").forEach(drawBurn));
 
 $("targets").addEventListener("click", (e) => {
   const a = e.target.closest("a[data-tag]"); if (!a) return;

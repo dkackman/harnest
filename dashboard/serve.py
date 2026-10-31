@@ -55,6 +55,12 @@ RECORDED_RE = re.compile(r"^(\d+) of (\d+) case\(s\) recorded")
 TAG_RE = re.compile(r"^\[([^\]]+)\] (.*)$")
 USAGE_RE = re.compile(r"turns=(\d+) duration=(\d+)s cost=\$([\d.]+) ctx_peak=([\d.]+k?)")
 CTX_RE = re.compile(r"· ctx=([\d.]+k?)")
+# The board run-loop.sh prints after each cycle (status_board): the loop's progress
+CYCLE_HDR_RE = re.compile(r"^cycle (\d+): ")
+BOARD_HDR_RE = re.compile(r"^--- (\d\d:\d\d:\d\d) cycle (\d+) tickets ---$")
+BOARD_ROW_RE = re.compile(r"^  #(\d+)\s+(\S+)\s+(\S+)\s+(.*)$")
+PARKED = "(parked) "  # status_board's mark on a parked issue's title
+AGENT_OWNERS = {"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"}
 
 # The two combined streams, one per server target
 STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log", "minid": "loop.minid.log"}  # mac: the mini-ai test bed
@@ -95,6 +101,8 @@ class StreamIndex:
         self.regression_runs = []  # one-server regression runs, oldest first (the fleet has its own state)
         self.requirements_runs = []
         self._chunk = None
+        self.loop_run = None  # the latest run-loop.sh run: its board after each cycle
+        self._board = None  # a board being read, until its first non-row line
 
     def _session(self, when, label, tag):
         s = {
@@ -222,11 +230,77 @@ class StreamIndex:
             run["status"] = "aborted"
             run["current"] = None
 
+    def _loop_cycle(self, when, n):
+        """A cycle number lower than the last one is a new run-loop.sh run."""
+        run = self.loop_run
+        if run is None or n < run["cycle"]:
+            self.loop_run = run = {
+                "start": when,
+                "cycle": n,
+                "cost": 0.0,
+                "sessions": 0,
+                "points": [],  # one per distinct board, oldest first
+                "baseline": None,  # the run's first board
+                "seen": {},  # number -> title, every ticket any board this run showed
+                "board": {},  # number -> (status, owner, title), the latest board
+            }
+        run["cycle"] = n
+
+    def _board_line(self, line):
+        """Reads a cycle's board; True while the line belonged to it. A
+        concurrent driver's [tag] or === line may land inside one."""
+        b = self._board
+        r = BOARD_ROW_RE.match(line)
+        if r:
+            title = r.group(4)
+            # a parked issue counts as parked, whoever owns it
+            owner = "parked" if title.startswith(PARKED) else r.group(3)
+            b["rows"][int(r.group(1))] = (r.group(2), owner, title.removeprefix(PARKED))
+            return True
+        if line.startswith("[") or line.startswith("=== "):
+            return False
+        self._board = None
+        run, rows = self.loop_run, b["rows"]
+        if not run or not rows:  # gh failed: an empty board is not everything closed
+            return False
+        if run["baseline"] is None:
+            run["baseline"] = set(rows)
+        for n, (_, _, title) in rows.items():
+            run["seen"][n] = title
+        if rows == run["board"]:  # an idle cycle: nothing moved
+            return False
+        run["board"] = rows
+        owners = [o for _, o, _ in rows.values()]
+        run["points"].append(
+            {
+                "time": b["time"],
+                "cycle": b["cycle"],
+                "closed": len(run["seen"]) - len(rows),
+                "agents": sum(o in AGENT_OWNERS for o in owners),
+                "don": sum(o == "owner:don" for o in owners),
+                "parked": owners.count("parked"),
+                "other": sum(o not in AGENT_OWNERS and o not in ("owner:don", "parked") for o in owners),
+                "arrived": len(run["seen"].keys() - run["baseline"]),
+            }
+        )
+        del run["points"][:-400]
+        return False
+
     def _line(self, line):
+        if self._board and self._board_line(line):
+            return
+        bh = BOARD_HDR_RE.match(line)
+        if bh:
+            self._loop_cycle(bh.group(1), int(bh.group(2)))
+            self._board = {"time": bh.group(1), "cycle": int(bh.group(2)), "rows": {}}
+            return
         self._regression_line(line)
         m = HEADER_RE.match(line)
         if m:
             when, label = m.groups()
+            c = CYCLE_HDR_RE.match(label)
+            if c:
+                self._loop_cycle(when, int(c.group(1)))
             if label.startswith("cycle ") or " run (" in label:
                 # A cycle or run banner: context for the sessions under it,
                 # whose tags ([implementer], [tester:#N]) start afresh
@@ -253,6 +327,9 @@ class StreamIndex:
                     "cost": float(u.group(3)),
                     "ctx_peak": u.group(4),
                 }
+                if self.loop_run:  # every session in this log since the run began
+                    self.loop_run["cost"] += s["usage"]["cost"]
+                    self.loop_run["sessions"] += 1
             return
         if rest.startswith("model: "):
             s["model"] = rest[7:].strip()
@@ -697,6 +774,24 @@ def release():
     return {"file": str(p.relative_to(LOGS)), "lines": lines[-12:], "mtime": p.stat().st_mtime}
 
 
+def _loop_run(run):
+    """The page's view of a loop run: its board history, and the tickets
+    that left the board (closed) or joined it (arrived) since it began."""
+    board, base = run["board"], run["baseline"] or set()
+    gone = sorted(run["seen"].keys() - board.keys(), reverse=True)
+    new = sorted(run["seen"].keys() - base, reverse=True)
+    return {
+        "start": run["start"],
+        "cycle": run["cycle"],
+        "cost": round(run["cost"], 2),
+        "sessions": run["sessions"],
+        "points": list(run["points"]),
+        "repo": TICKET_REPO,
+        "closed": [{"number": n, "title": run["seen"][n]} for n in gone],
+        "arrived": [{"number": n, "title": run["seen"][n], "open": n in board} for n in new],
+    }
+
+
 def state():
     procs, claude = processes()
     streams = {}
@@ -709,12 +804,17 @@ def state():
         with idx.lock:
             recent = [dict(s) for s in idx.sessions[-40:]]
             run_header = idx.run_header and dict(idx.run_header)
+            loop_run = idx.loop_run and _loop_run(idx.loop_run)
+        held = lock(LOCKS[name])
+        if not (held and held["alive"] and held["owner"].split()[1:2] == ["run-loop"]):
+            loop_run = None  # a finished run's board, and the log has no dates to tell when it ran
         streams[name] = {
             "file": STREAMS[name],
             "mtime": mtime,
-            "lock": lock(LOCKS[name]),
+            "lock": held,
             "run": run_header,
             "sessions": recent,
+            "loop_run": loop_run,
         }
     flags = sorted(p.name for p in LOGS.glob("stop-after-cycle*"))
     ATTENTION.poke(_loop_key())
