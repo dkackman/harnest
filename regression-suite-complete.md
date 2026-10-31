@@ -14972,4 +14972,22 @@ doesn't name vits-vctk and `speaker_id`.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F556 — the download pre-flight prices a single-file LoRA as that file, not as its repo
+source: tester, verified in #1088 (claude-opus-5-5 via anthropic)
+Free and instant, validate only. Two repos whose whole size is far larger than the one LoRA file named in each.
+1. `validate_workflow(name="origami-fight", arguments={"lora_model_name": "Alissonerdx/Minimax-H3-ComfyUI",
+   "lora_weight_name": "loras/minimax_h3_lms_v1.0_r64.safetensors", "lora_adapter_name": "lms"})`.
+2. The same with `"lora_model_name": "Kijai/MiniMax-H3-experimental"`, `"lora_weight_name":
+   "loras/minimax_h3_open_regenerate_2k_refiner_rank_384_bf16.safetensors"`, `"lora_adapter_name": "refiner"`.
+3. The same as step 2 but with `"lora_weight_name": "../loras/minimax_h3_open_regenerate_2k_refiner_rank_384_bf16.safetensors"`.
+expected:
+- Steps 1–2: `valid: true`. In `plan.downloads_required`, each LoRA repo is either absent (that file is already
+  cached) or listed once as a file entry, with `filename` set to the full `loras/...` name and `gb` the size of that
+  one file (about 1.15 for step 1, about 5.9 for step 2). Neither repo appears without a `filename`.
+- Step 3: `valid: false`, with the error at `steps[0].pipeline.loras[0].weight_name` refusing the `..` segment.
+It is a **finding** if either repo is listed without a `filename`, or step 2's entry is priced near 104.7 GB (the
+whole repo, which is the #1088 bug).
+cleanup: none.
+metrics: none.
+
 ## Performance
