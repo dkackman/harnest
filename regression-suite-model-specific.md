@@ -5999,48 +5999,6 @@ mask-related warning or requirement.
 cleanup: none.
 metrics: none.
 
-### M-F218 — a regional edit changes only the masked region per the prompt, keeps the rest close to the take, and keeps the take's audio
-pending: #1077
-source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 t2va regional edit at 960×544, 124 frames, with the turbo LoRA (about
-one `video-with-audio` pass). GPU on lem. Workspace `regression-model-specific`.
-Setup: M-F215 (masks and carrier RE, with the setup's record of what `region.png` covers).
-Steps:
-1. Edit RE's `prompt`. Describe the take's scene as the setup saw it, with the masked object
-   changed visibly. For example, a person becomes "wearing a bright red raincoat", or a chair
-   becomes "a bright green armchair". Keep `refine_strength` 0.8 and set `seed` 1062.
-   `validate_workflow` it, and bind `acknowledged_cost`.
-2. `run_workflow(..., note="M-F218 regional edit 0.8", wait_seconds=55)`, then `wait_for_job`
-   until done.
-3. `get_gallery_metadata` on the output mp4.
-4. `get_output_frames(<mp4>, at=[0.5, 2.5, 4.5])`, and the same on
-   `asset:qa-cast/ep6-cold-open.mp4`.
-5. Read the white box of `region.png` from M-F215's `get_output_image`. Grow it by 32 px on each
-   side (`mask_grow` 1 at 16 px × patch grain, plus a margin).
-   Call `compare_outputs(names=["asset:qa-cast/ep6-cold-open.mp4", <mp4>], at=[0.5, 2.5, 4.5],
-   crop=<a box wholly outside the grown box>)`.
-   Then call `compare_outputs` again with `crop` = the grown box itself.
-6. `get_output_audio(<mp4>)`, and `measure_sync` or `get_output_frames(..., hear=1)` against the
-   source at the same times.
-expected:
-- The job succeeds. The output is 960×544, 124 frames at 24 fps, with one audio stream lasting the
-  clip.
-- Inside the mask, the object shows the prompted change at every sampled time, and its motion
-  still follows the take.
-- Outside the mask, the crop measures close to the source: SSIM ≥ 0.9 (or the equivalent PSNR
-  that the guide gives as "near-identical"). Not bit-identical, which is expected (no paste-back).
-  The crop inside the mask measures clearly further from the source than the crop outside.
-- The audio is the take's own track, `hold_audio` = the source, at the same times. It is not new
-  sound.
-- The job's events or warnings name the regional edit (mask cells, `refine_strength`), with no
-  error.
-It is a **finding** if the run fails, if the region doesn't change, if the outside visibly
-changes (composition shift, look shift, SSIM well under the guide's claim), if a hard seam shows at
-the mask boundary in the frames, or if the audio isn't the source's. The seed is pinned, so a
-judgment that differs on a rerun is itself worth reporting.
-cleanup: `delete_output(job_id=...)`.
-metrics: none.
-
 ### M-F219 — an all-white mask behaves as a plain refine of the whole take
 source: tester, spec for #1077 from #1062's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 regional edit with the whole frame masked. GPU, about one
@@ -6076,15 +6034,15 @@ Steps:
 2. `get_workflow("templates/minimax/regional-edit", variables_only=true)`, then the full form.
 3. `validate_workflow(workflow_name="templates/minimax/regional-edit",
    arguments={"source_video": "asset:qa-cast/ep6-cold-open.mp4",
-   "mask_image": "asset:h3-mask/region.png", "prompt": "<as M-F218>"},
+   "mask_image": "asset:h3-mask/region.png", "prompt": "<as M-F245>"},
    workspace="regression-model-specific")`.
 4. The same with `arguments` also setting `refine_strength` 0.5, then 1.0.
 5. The same as step 3 with `mask_image: "asset:h3-mask/region-480.png"`.
 expected:
 - The entry has shape `shot`, traits including `needs-input-media` and `has-audio`, and a non-null
   `cost`.
-- The variables include `source_video`, `mask_image`, `prompt`, `refine_strength` (default 0.7)
-  and `num_inference_steps` (default 8). The H3 step's `hold_audio` is `variable:source_video`,
+- The variables include `source_video`, `mask_image`, `prompt`, `refine_strength` (default 0.9)
+  and `num_inference_steps` (default 5). The H3 step's `hold_audio` is `variable:source_video`,
   and its `source_video` and `mask_image` come from the variables.
 - Steps 3 and 4 are `valid: true`, with a `plan.estimate` quoted.
 - Step 5 is refused, naming the mask and both sizes (M-F216 (e) through the template).
@@ -6105,8 +6063,7 @@ expected:
 - It says how to make the mask, either by `segment` on a frame of the take (`get_first_frame` or
   `get_frame`) or by uploading one with `upload_asset`. It says white means regenerate and that
   the mask must match the take's size.
-- It says how to choose `refine_strength`: about 0.5 for a light change, 1.0 to replace the region
-  outright.
+- It says how to choose `refine_strength` from the measured bands, as M-F248 states them.
 - It states the grain: 16 px × patch in space (the mask is dilated to that grid), so a small or
   thin region grows.
 - It says the outside comes back near-identical, not bit-identical, and that the take's own audio
@@ -6115,31 +6072,6 @@ It is a **finding** if the branch is missing or omits the mask route, the streng
 grain, or if the template it names does not exist in `list_workflows`.
 cleanup: none.
 metrics: none.
-
-### M-F222 — a `regional-edit` run overriding only `source_video`, `mask_image` and `prompt` gives the take back with the region changed and its audio kept
-pending: #1078
-source: tester, spec for #1078 from #1062's plan v1 (claude-opus-5-5 via anthropic)
-Model/pipeline: `templates/minimax/regional-edit` at its defaults (`refine_strength` 0.7,
-`num_inference_steps` 8). GPU on lem, at the template's listed cost. Workspace
-`regression-model-specific`.
-Setup: M-F215 (masks), and M-F218's prompt for the region change.
-Steps:
-1. `validate_workflow` with `arguments` holding only `source_video:
-   "asset:qa-cast/ep6-cold-open.mp4"`, `mask_image: "asset:h3-mask/region.png"` and `prompt`.
-   Bind `acknowledged_cost`.
-2. `run_workflow(..., note="M-F222 regional-edit template", wait_seconds=55)`, then `wait_for_job`.
-3. Run M-F218's steps 3–6 on the output.
-expected:
-- The job succeeds. Wall time is within 25% of the template's listed `cost`, with a cold load
-  stated.
-- The output is 960×544, 124 frames at 24 fps, with the take's audio.
-- The region shows the prompted change. The crop outside the grown mask box measures close to the
-  source, as M-F218's threshold. No seam at the mask boundary.
-It is a **finding** if the run fails, needs any argument beyond the three, changes the unmasked
-area or the audio, or is far outside its listed cost.
-cleanup: `delete_output(job_id=...)`. After the last #1062 case, `delete_asset` each
-`h3-mask/` asset.
-metrics: `wall_minutes`, to `regression-perf/M-F222.jsonl` on each run.
 
 ### M-F223 — `templates/ltx2/alpha-matte` is a catalog shot with a cost, the card's bounds, no prompt variable, a fixed empty prompt, and a letterbox fit undone after
 source: tester, spec for #1079 from #1064's plan v2 (claude-opus-5-5 via anthropic)
