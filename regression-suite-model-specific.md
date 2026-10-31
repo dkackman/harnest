@@ -210,6 +210,42 @@ fixture) when nothing uses it anymore.
   5. `delete_output(job_id=<id>)`, then `delete_workflow("m-ic-sources")`.
   Keep them across runs, and don't sweep them. If a task's argument names have changed, pin them
   with `get_task` first.
+- Sources for the #1090 frame-rate cases (M-F273–M-F288): non-24 clips **with their own audio**,
+  made from shared 24 fps shots by relabelling their frames to 30 fps (no frame added or dropped) and
+  cutting the source's audio to the new picture length. The content is not load-bearing beyond what
+  each line names; the rate, frame count, size and the presence of audio are. They live in
+  `regression-model-specific`. Keep them across runs, never sweep them. Any case that needs one makes
+  the missing ones first, all on CPU, with no model:
+  1. `save_workflow(name="m-fps1090-sources", ...)`: a task-only workflow. Each kept step's `result` is
+     `{"content_type": "video/mp4", "fps": 30}`; each `crop_*` step is `save: false`.
+     - `crop_a`: `fit_to_model(video="asset:qa-cast/ep6-shot1-priya.mp4", width=960, height=544, num_frames=124, mode="crop")`;
+     - `pic_a`: `loop_frames(video="previous_result:crop_a.video", num_frames=124)`;
+     - `crop_b`: `fit_to_model(video="asset:qa-cast/ep13-episode.mp4", width=960, height=544, num_frames=282, mode="crop")`;
+     - `pic_b`: `loop_frames(video="previous_result:crop_b.video", num_frames=282)`;
+     - `crop_p`: `fit_to_model(video="asset:qa-cast/ep6-shot1-priya.mp4", width=384, height=544, num_frames=97, mode="crop")`;
+     - `pic_p`: `loop_frames(video="previous_result:crop_p.video", num_frames=97)`.
+     `validate_workflow`, `run_workflow(workflow_path="m-fps1090-sources", workspace="regression-model-specific", acknowledged_cost=..., wait_seconds=55)`,
+     then `keep_output`: `pic_a` → `fps-1090/priya-30fps-124f-silent.mp4`, `pic_b` →
+     `fps-1090/ep13-30fps-282f-silent.mp4`, `pic_p` → `fps-1090/priya-30fps-384x544-97f.mp4`.
+  2. `save_workflow(name="m-fps1090-pair", ...)`, two steps, each `result` `video/mp4` with **no**
+     `fps` (a loaded file brings its rate along, per `get_task("pair_audio")`):
+     - `a30`: `pair_audio(video="asset:fps-1090/priya-30fps-124f-silent.mp4", audio="asset:qa-cast/ep6-shot1-priya.mp4", fit="video")`;
+     - `b30`: `pair_audio(video="asset:fps-1090/ep13-30fps-282f-silent.mp4", audio="asset:qa-cast/ep13-episode.mp4", fit="video")`.
+     Run it the same way (an `audio_trimmed_to_video` warning is expected), then `keep_output`:
+     `a30` → `fps-1090/priya-30fps-124f.mp4`, `b30` → `fps-1090/ep13-30fps-282f.mp4`.
+  3. Confirm with `get_gallery_metadata`:
+     - `fps-1090/priya-30fps-124f.mp4`: 960×544, **124 frames at 30 fps** (about 4.133 s), with an
+       audio stream whose duration matches the picture within one frame. It shows one clear face
+       (look at `frame:60`); `face-repair` needs it.
+     - `fps-1090/ep13-30fps-282f.mp4`: 960×544, **282 frames at 30 fps** (9.4 s), with audio of the
+       same length. 282 frames is three `restore-long` windows at its defaults (121 frames, overlap 16).
+     - `fps-1090/priya-30fps-384x544-97f.mp4`: 384×544, 97 frames at 30 fps, no audio needed.
+     If a kept file is not 30 fps, `delete_asset` it and remake it; if step 2 comes out at 8 fps,
+     the loaded file's rate was not carried, so file that and pass `fps=30` to `pair_audio`.
+  4. `delete_output(job_id=<id>)` for both jobs (the kept assets stay), then `delete_workflow` both
+     workflows.
+  The 24 fps controls are the shared originals: `asset:qa-cast/ep6-shot1-priya.mp4` (124 frames) and
+  `asset:qa-cast/ep13-episode.mp4` (282 frames, 44.1 kHz).
 
 ## Functional
 
@@ -7615,5 +7651,444 @@ needed to build it, the script-to-video sentence is missing on a win or present 
 appears in both files, or minimax-h3's SKILL.md lost its cuts.md link.
 cleanup: none (nothing runs); delete any copied asset.
 metrics: none.
+
+### M-F272 — `alpha-matte`'s 145-frame cap finishes on a warm card, straight after the default arm on the same card with no `clear_memory`, and `get_memory` is recorded after each arm
+pending: #1079
+source: tester, spec for #1079 from #1064's plan v6 (claude-opus-5-5 via anthropic)
+Amends M-F225's cap arm (plan v5/v6, Q8): M-F225 as written passes a cap arm run on a cold card (job
+e794e441ce21) and doesn't say which card or what ran before it. This case is the warm form. Run it in
+place of M-F225's two arms when both are due; M-F225's other expectations (matte quality, size,
+frame count, no RGB leak at `frame:144`) still apply to these two jobs.
+Model/pipeline: as M-F223. Paid: two LTX-2.5 jobs on lem (RTX 3090 ×2), back to back. Workspace
+`regression-model-specific`, `"seed": 1079` on both. `A` and `L` as M-F225.
+Steps:
+1. `get_workflow("templates/ltx2/alpha-matte")`: the `matte` step's `vae`, `audio_vae` and `vocoder`
+   components each carry `"residency": "on_demand"`. (If the build instead applied fallback (b), the
+   template has no such residency and `num_frames`' maximum is below 145; see the last bullet below.)
+2. **Default arm.** `validate_workflow` with `arguments={"source_video": A, "seed": 1079}`, bind
+   `acknowledged_cost`, `run_workflow(..., note="M-F272 warm default", wait_seconds=55)`, then
+   `wait_for_job` to the end. `get_job`: note its `device` as `D`.
+3. Straight away, with no other call in between that runs or clears anything (no `clear_memory`, no
+   other `run_workflow`): `get_memory(device=<D's cuda:N>)`. Record that worker's `live`,
+   `gpu_memory_allocated_mb`, `gpu_memory_reserved_mb`, `host_memory_rss_mb` and
+   `host_memory_peak_rss_mb`. A `live: false` reading is retaken once when the card is idle.
+4. **Cap arm.** `validate_workflow` with `arguments={"source_video": L, "num_frames": 145, "seed":
+   1079}`, bind cost, `run_workflow(..., note="M-F272 warm cap 145f", wait_seconds=55)`, then
+   `wait_for_job` to the end. `get_job`: its `device` must equal `D`.
+5. `get_memory(device=<D's cuda:N>)` again; record the same fields.
+6. If the cap job's `device` isn't `D` (the engine put it on the other, colder card), the arm
+   doesn't count as warm: record both jobs, then repeat steps 2–5 once. If the pair splits across
+   cards again, the case is **inconclusive**, not a pass: say so on the stage and file an issue
+   that a warm-card check can't be pinned to one card over MCP.
+expected:
+- Both jobs succeed on the same card `D`. The cap job has no OOM in its `error` or in
+  `get_job_events` (the failure being fixed is job 376a537cc3e6: `Triton Error [CUDA]: out of memory`
+  in `matte`, cap arm straight after the default arm on `cuda:0`).
+- The cap final is 960×544 at 24 fps (L is 24 fps), exactly 145 frames, no audio, and
+  `get_output_frames` at `frame:0`, `frame:72` and `frame:144` are grey mattes with no RGB content
+  (the plan's frame-144 risk: grille texture on the microphone in the cold run is a finding here).
+- The default final meets M-F225's default arm as written.
+- Both `get_memory` readings are recorded in the stage comment, with `D` and the two job ids, so a
+  fallback to (b) has a bracket.
+- **If the cap arm OOMs warm**, that is the finding that triggers fallback (b): file it on #1079
+  with the readings. The bracket for (b) is then measured by re-running the cap arm warm (each
+  straight after a default arm on the same card) at `num_frames` 137, 129, 121, ... down to the first
+  that passes, and naming the largest passing 8n+1. When a later build has applied (b), this case's
+  cap arm runs at the template's new maximum instead of 145, `validate_workflow` at 145 is refused
+  for free, and the description says the card's 145 is not a warm 24 GB length.
+It is a **finding** if the cap arm OOMs on a warm `D`, either job fails otherwise, the template
+lacks the `on_demand` residency without having applied (b), or a cap frame shows RGB content.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for every job run.
+metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-default-warm` and
+`960x544-145f-warm`, to `regression-perf/M-F272.jsonl`. The first run seeds the file.
+
+### M-F273 — `upscale-clip`, `refine-clip` and `refine-in-place` default `frame_rate` to `"source"`, hold the model at 24, carry the rate on the restore step, and declare no `fps` after it
+pending: #1107
+source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/upscale-clip`, `templates/ltx2/refine-clip`, `templates/ltx2/refine-in-place`.
+Free: discovery calls and a skill read only, no GPU.
+Steps: `list_workflows(shape="shot", traits="needs-input-media")`; for each template
+`get_workflow(name=<t>, variables_only=true)` and the full `get_workflow(name=<t>)`; load the `dw:ltx-2.5`
+skill (as loaded from `develop`) and read its rows for the three.
+expected, for each of the three:
+- **Catalog and variables.** `frame_rate` defaults to the string `"source"`, not a number.
+- **Document.**
+  - The LTX pipeline step's own `frame_rate` argument is a literal `24` (or `24.0`), not
+    `variable:frame_rate`, and its `result.fps`, if any, is a literal 24.
+  - The `restore_to_source` step carries `fps: variable:frame_rate`.
+  - No step downstream of the restore (`with_source_audio`, the final `pair_audio`, or whatever the
+    final step is named) declares `result.fps`. The `save: false` restore step declares none either.
+  - The `fit_to_model` step and the `pair_audio` step (`fit: "video"`) are still there, in fit →
+    model → restore → pair order.
+- **Description.** It says the output is written at the source's frame rate and that `frame_rate`
+  overrides it (the output rate, not the model's). It no longer tells the caller to "set
+  'frame_rate' to the source's".
+- **Skill.** Each row says the output is at the source's frame rate, or gives no rate; none says 24 fps.
+It is a **finding** if `frame_rate` defaults to a number on any of the three, the pipeline reads
+the variable, the restore step lacks the `fps` binding, any step after the restore declares an
+`fps`, or a description or skill row still gives the old advice or a fixed 24.
+cleanup: none.
+metrics: none.
+
+### M-F274 — the three fit-shaped templates validate a 30 fps source clean, accept each legal `frame_rate`, and refuse a bad one for free, naming `fps`
+pending: #1107
+source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F273. Free: `validate_workflow` only. Workspace `regression-model-specific`.
+Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` (Fixtures, "Sources for the #1090 frame-rate
+cases"); make it if missing. `S24` = `asset:qa-cast/ep6-shot1-priya.mp4`.
+Calls: `validate_workflow(name=<t>, workspace="regression-model-specific", arguments={"source_video": <S>, ...})`
+for each of the three templates.
+expected, for each template:
+- `S30`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
+- `S24`, no `frame_rate` → `valid: true`, `warnings: []`.
+- `S30` with `frame_rate` `24`, `30`, `12`, the string `"24"` and `"source"` → each `valid: true`.
+- `S30` with `frame_rate` `0`, `-8`, `"fast"` → `valid: false`, each with an error that names `fps`
+  (at the restore step's `fps`, or at `arguments.frame_rate` while saying it feeds `fps`) and what it
+  accepts (a positive number or `"source"`). Nothing is downloaded or loaded.
+It is a **finding** if a legal value is refused, a bad one passes, the refusal doesn't name `fps`,
+or a clean source draws a warning.
+cleanup: none.
+metrics: none.
+
+### M-F275 — `refine-in-place` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and the source's audio paired to it, and at 24 fps with the same frames when `frame_rate=24`
+pending: #1107
+source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/refine-in-place`. Paid: two LTX-2.5 jobs at the default 960×544,
+121 frames, on lem (RTX 3090). Workspace `regression-model-specific`, `"seed": 1090`.
+Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` (Fixtures). Confirm with `get_gallery_metadata`:
+124 frames at 30 fps, with audio.
+Arms (validate, bind `acknowledged_cost`, `run_workflow(..., note="M-F275 <arm>", wait_seconds=55)`,
+then `wait_for_job`):
+- **follow**: `arguments={"source_video": S30, "seed": 1090}`, no `frame_rate`.
+- **override**: the same plus `"frame_rate": 24`.
+Read each job with `get_job` (its `warnings`) and `get_job_events`; `get_gallery_metadata` and
+`assess_output` on each final.
+expected:
+- Both jobs succeed.
+- **follow.** 960×544, **121 frames at 30 fps** (the 124-frame source trimmed to `num_frames`), about
+  4.033 s. It has an audio stream whose length matches the picture within one frame (`assess_output`'s
+  `sync_length`, or the audio duration in the metadata). `job.warnings` and the events have **no**
+  `video_fps_defaulted` and **no** `fps_mismatch`. An `audio_trimmed_to_video` from the pair step is
+  expected (the source's audio is 4.133 s).
+- **override.** 960×544, **121 frames at 24 fps** (about 5.04 s): `frame_rate` changed the rate, not
+  the frame count. Its audio is the source's fitted to 5.04 s; an `audio_padded_to_video` warning is
+  allowed (the source's track is shorter) and is recorded. No `video_fps_defaulted`.
+- **Same frames.** `compare_outputs` between the two finals at `frame:0`, `frame:60` and `frame:120`
+  measures them identical or near it (same seed, the model held at 24): only the label differs.
+- Refined, same scene: at `frame:60` the follow final shows the source's subject, framing and pose
+  (`get_output_frames` beside `S30` at the same index).
+It is a **finding** if the follow arm isn't 30 fps or 121 frames, its audio and picture lengths
+disagree by more than a frame, either arm warns `video_fps_defaulted` or the follow arm warns
+`fps_mismatch`, the override arm isn't 24 fps or changes the frame count, or the arms' frames differ
+beyond encoding noise.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
+fixture.
+metrics: none.
+
+### M-F276 — `upscale-clip` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and paired audio, and at 24 fps with the same frame count when `frame_rate=24`
+pending: #1107
+source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/upscale-clip`. Paid: two LTX-2.5 jobs at the defaults (960×544 working
+size, 121 frames) on lem. Workspace `regression-model-specific`, `"seed": 1090`.
+Setup: `S30` as M-F275.
+Arms (as M-F275, note `"M-F276 <arm>"`): **follow** `{"source_video": S30, "seed": 1090}`; **override**
+the same plus `"frame_rate": 24`.
+expected:
+- Both jobs succeed. The final's size is whatever `upscale-clip`'s description promises for a
+  960×544 source; this case doesn't pin it, but both arms give the same size.
+- **follow.** **121 frames at 30 fps**, about 4.033 s, with the source's audio paired to that length
+  (within one frame). No `video_fps_defaulted`, no `fps_mismatch` in `job.warnings` or the events.
+- **override.** **121 frames at 24 fps**. Frame count unchanged. A pad warning on the audio is allowed
+  and recorded.
+- `compare_outputs` between the two finals at `frame:0`, `frame:60` and `frame:120` measures them
+  identical or near it.
+It is a **finding** on the same conditions as M-F275.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Keep the
+fixture.
+metrics: none.
+
+### M-F277 — the fit-shaped templates on a 24 fps source are unchanged: 24 fps out, the fitted count, the same warnings as before #1107
+pending: #1107
+source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/refine-in-place` (run), `upscale-clip` and `refine-clip` (validate).
+Paid: one LTX-2.5 job at the defaults on lem. Workspace `regression-model-specific`, `"seed": 1090`.
+Steps:
+1. Before running, `list_jobs` for the latest succeeded `templates/ltx2/refine-in-place` job on lem
+   over a 24 fps source that finished before #1107 deployed (any workspace you can read). Note its
+   `warnings` kinds. If none is found, say so; the rest of the case still runs.
+2. Run `refine-in-place` with `{"source_video": "asset:qa-cast/ep6-shot1-priya.mp4", "seed": 1090}`
+   (validate, bind, `wait_seconds=55`, `wait_for_job`). `get_gallery_metadata` and `get_job`.
+expected:
+- 960×544, **121 frames at 24 fps**, about 5.04 s, with the source's audio paired to that length.
+- No `video_fps_defaulted`, no `fps_mismatch`. The set of warning kinds equals step 1's, if one was
+  found (seeds may differ; kinds must not).
+It is a **finding** if the rate isn't 24, the frame count isn't 121, a frame-rate warning appears,
+or a warning kind is new relative to the pre-change job.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+metrics: none.
+
+### M-F278 — `paste_face_track` gains an optional `fps` and `join_windows`' `fps` accepts `"source"`, both described; `face-repair` and `restore-long` default `frame_rate` to `"source"` and carry it on the paste and join
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `paste_face_track`, `join_windows`, `templates/ltx2/face-repair`,
+`templates/ltx2/restore-long`. Free: discovery calls and a skill read only.
+Steps: `get_task("paste_face_track")`, `get_task("join_windows")`, `get_task("window_video")`;
+`get_workflow` (variables and full) for both templates; `list_workflows(shape="shot",
+traits="needs-input-media")`; the `dw:ltx-2.5` skill's rows for both.
+expected:
+- **`paste_face_track`** lists an optional `fps` (default null/omitted) whose description says:
+  omitted or `"source"` keeps the clip's own rate; a positive number writes at that rate; the frame
+  count doesn't change. The `clip` parameter's "its audio, frame rate and shots are kept" (or
+  equivalent) no longer contradicts it.
+- **`join_windows`'** `fps` description says it also accepts `"source"`, meaning the same as omitted
+  (the source's rate), and a positive number otherwise. Its domain no longer reads as numbers only.
+- **`face-repair`:** `frame_rate` defaults to `"source"`; the LTX pipeline's `frame_rate` is a literal
+  24; the `paste_face_track` step passes `fps: variable:frame_rate`; neither the `pasted` step nor the
+  `crop` step declares `result.fps`. Its description still says the frame rate is the source's, and
+  says `frame_rate` overrides the output rate.
+- **`restore-long`:** `frame_rate` defaults to `"source"`; the per-window LTX step's `frame_rate` is a
+  literal 24; `join_windows` passes `fps: variable:frame_rate` and its step declares no `result.fps`;
+  the `window_video` step passes no `fps`. Its description says the output is at the source's frame
+  rate and `frame_rate` overrides it.
+- The catalog shows `frame_rate` `"source"` for both. The skill rows say the source's rate or give no
+  rate; neither says 24 fps.
+It is a **finding** if either task argument is missing or undescribed, either template defaults
+`frame_rate` to a number, a pipeline step reads the variable, the paste or join doesn't carry it, or a
+`result.fps` survives on `pasted`, `crop` or the join.
+cleanup: none.
+metrics: none.
+
+### M-F279 — the new `fps` arguments refuse a non-positive or non-numeric value other than `"source"` for free, and both templates validate with each legal `frame_rate`
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F278. Free: `validate_workflow` only. Workspace `regression-model-specific`.
+Setup: `F30` = `asset:fps-1090/priya-30fps-124f.mp4`, `L30` = `asset:fps-1090/ep13-30fps-282f.mp4`
+(Fixtures). Validation reads headers only; if either is missing, make it first.
+Steps:
+1. Copy `face-repair`'s `crop` (`crop_face_track`) and paste steps from its document into an inline
+   task-only workflow that pastes the crops straight back (`repaired` = the crop step's crops, no model
+   step), on `F30`. Validate it with the paste's `fps` omitted, `"source"`, `12`, `"12"`, then `0`,
+   `-5`, `"x"`.
+2. Copy `restore-long`'s `window` and `join` steps (and its `windows` list) into an inline task-only
+   workflow that joins the windows unprocessed, on `L30`. Validate it with the join's `fps` omitted,
+   `"source"`, `12`, then `0`, `"x"`.
+3. Validate both templates (`face-repair` on `F30`, `restore-long` on `L30` with its default three
+   windows) with `frame_rate` omitted, `24`, `30`, `"source"`, then `0` and `"fast"`.
+expected:
+- Steps 1 and 2: omitted, `"source"` and the positive numbers (and `"12"`) → `valid: true`. `0`, `-5`
+  and `"x"` → `valid: false`, each with an error at that step's `fps` naming what it accepts. Free.
+- Step 3: the legal values → `valid: true`, `warnings: []`, non-null `plan.estimate`. `0` and `"fast"` →
+  `valid: false` with the error at `arguments.frame_rate` or the carrying step's `fps`.
+It is a **finding** if a bad `fps` passes validate, a legal one is refused, or the refusal names no
+path.
+cleanup: none.
+metrics: none.
+
+### M-F280 — `paste_face_track` writes the clip's rate when `fps` is omitted or `"source"` and the given rate otherwise, never changing the frame count or dropping the clip's audio
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `crop_face_track` → `paste_face_track` only (a face detector at most, no LTX).
+Workspace `regression-model-specific`.
+Setup: `F30` (Fixtures; 124 frames at 30 fps, with audio).
+Steps:
+1. `save_workflow(name="m-fps-paste", ...)`: step 1's crop-and-paste-back workflow from M-F279 with
+   three paste steps reading the same crop, each `result` `video/mp4` with **no** `fps` and its own
+   `file_base_name`: `p_none` (no `fps`), `p_src` (`fps: "source"`), `p_12` (`fps: 12`).
+2. `validate_workflow`, `run_workflow(..., acknowledged_cost=..., wait_seconds=55)`.
+3. `get_gallery_metadata` on each output; `get_job` for warnings.
+expected:
+- The job succeeds.
+- `p_none` and `p_src`: **124 frames at 30 fps**, with an audio stream the same length as `F30`'s
+  (about 4.133 s).
+- `p_12`: **124 frames at 12 fps**. The clip's audio is still there; a length warning is allowed and
+  recorded.
+- `compare_outputs` between `p_none` and `p_12` at `frame:0`, `frame:60`, `frame:123` measures them
+  identical or near it: a relabel, not a resample.
+- No `fps_mismatch` and no `video_fps_defaulted` on `p_none` or `p_src`.
+It is a **finding** if an omitted or `"source"` arm isn't 30 fps, `p_12` isn't 12, a frame count
+isn't 124, the audio is dropped, or the frames differ between arms.
+cleanup: `delete_output(job_id=<id>)`, then `delete_workflow("m-fps-paste")`. Keep the fixture.
+metrics: none.
+
+### M-F281 — `face-repair` on a 30 fps source writes at 30 fps with the source's frame count and its audio intact by default, and at 24 fps when `frame_rate=24`
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/face-repair`. Paid: two LTX-2.5 face-crop jobs at `crop_size` 512 on
+lem (about 1.3 min each cold). Workspace `regression-model-specific`, `"seed": 1090`.
+Setup: `F30` (Fixtures). Confirm 124 frames at 30 fps with audio, and one clear face at `frame:60`.
+Arms (validate, bind, `run_workflow(..., note="M-F281 <arm>", wait_seconds=55)`, `wait_for_job`):
+- **follow**: `{"source_video": F30, "seed": 1090}`, no `frame_rate`.
+- **override**: the same plus `"frame_rate": 24`.
+expected:
+- Both jobs succeed.
+- **follow.** 960×544, **124 frames at 30 fps** (about 4.133 s), the source's own frame count. Its
+  audio is `F30`'s: the same duration within a frame, and `assess_output`'s `sync_length` reports no
+  drift. **No** `fps_mismatch` and no `video_fps_defaulted` in `job.warnings` or the events.
+- **override.** **124 frames at 24 fps**: the rate changed, the count didn't. The clip's audio is kept
+  (now shorter than the picture); a length warning is allowed and recorded.
+- **Repaired, in place.** At `frame:60` (`get_output_frames` beside `F30`), the face is repaired and
+  sits where it sat in the source; the rest of the frame matches the source.
+- `compare_outputs` between the two finals at `frame:0`, `frame:60`, `frame:123` measures them identical
+  or near it.
+It is a **finding** if the follow arm isn't 30 fps or 124 frames, its audio is missing or a different
+length, it warns `fps_mismatch` (the declared-24 bug this stage exists to remove), the override arm
+isn't 24 fps or changes the count, or the arms' frames differ.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both. Keep the fixture.
+metrics: none.
+
+### M-F282 — `restore-long` on a 30 fps source longer than one window joins at 30 fps with the source's frame count and keeps the source's audio
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/restore-long`. Paid: one three-window LTX-2.5 job at the defaults on
+lem (about 11 min cold). Workspace `regression-model-specific`, `"seed": 1090`.
+Setup: `L30` = `asset:fps-1090/ep13-30fps-282f.mp4` (Fixtures; 282 frames at 30 fps, 9.4 s, with audio).
+Steps: validate `{"source_video": L30, "seed": 1090}` (the default three windows, no `frame_rate`),
+bind, `run_workflow(..., note="M-F282 follow", wait_seconds=55)`, then `wait_for_job` until done.
+`get_gallery_metadata`, `assess_output` and `get_job` on the final.
+expected:
+- The job succeeds.
+- 960×544, **282 frames at 30 fps** (9.4 s): the joined count equals the source's.
+- The audio is `L30`'s, kept whole: duration 9.4 s within one frame, `sync_length` with no drift.
+- No `fps_mismatch`, no `video_fps_defaulted`. No seam warning that a 24 fps run of the same
+  template doesn't also give.
+It is a **finding** if the output isn't 30 fps, its frame count isn't 282, the audio is missing or cut,
+or a frame-rate warning appears.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`. Keep the fixture.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-282f-30fps-3w`, to
+`regression-perf/M-F282.jsonl`. The first run seeds the file.
+
+### M-F283 — `join_windows` writes the source's rate when `fps` is omitted or `"source"`, the given rate otherwise, on a 30 fps and a 24 fps source
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `window_video` → `join_windows` only. CPU, no model. Workspace
+`regression-model-specific`.
+Setup: `L30` (Fixtures) and the 24 fps control `asset:qa-cast/ep13-episode.mp4` (282 frames).
+Steps:
+1. `save_workflow(name="m-fps-join", ...)`: M-F279 step 2's window-and-join-unprocessed workflow, its
+   source a variable `src`, with three join steps over the same windows, each `result` `video/mp4` with
+   no `fps` and its own `file_base_name`: `j_none` (no `fps`), `j_src` (`fps: "source"`), `j_12`
+   (`fps: 12`).
+2. Run it with `src = L30`, then with `src` = the 24 fps control (validate and bind each).
+3. `get_gallery_metadata` on every output.
+expected:
+- With `L30`: `j_none` and `j_src` are **282 frames at 30 fps** with `L30`'s audio (9.4 s); `j_12` is 282
+  frames at 12 fps with the audio kept (a length warning allowed).
+- With the control: `j_none` and `j_src` are **282 frames at 24 fps** with the control's audio (as
+  before the change); `j_12` is 282 frames at 12 fps.
+- No `fps_mismatch` on any `j_none` or `j_src`.
+It is a **finding** if a `"source"` or omitted join isn't at the source's rate, `j_12` isn't 12, a
+frame count isn't 282, or the source's audio is dropped.
+cleanup: `delete_output(job_id=<id>)` for both jobs, then `delete_workflow("m-fps-join")`.
+metrics: none.
+
+### M-F284 — `face-repair` on a 24 fps source is unchanged: 24 fps, the source's frame count, its audio, no frame-rate warning
+pending: #1106
+source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/face-repair`. Paid: one job at the defaults on lem. Workspace
+`regression-model-specific`, `"seed": 1090`. (`restore-long`'s 24 fps behaviour is covered by M-F283's
+control arm; a paid 24 fps run of it is not repeated here.)
+Steps: validate and run `{"source_video": "asset:qa-cast/ep6-shot1-priya.mp4", "seed": 1090}`
+(`wait_seconds=55`, `wait_for_job`); `get_gallery_metadata`, `get_job`.
+expected:
+- 960×544, **124 frames at 24 fps**, with the source's audio (5.167 s within a frame).
+- No `fps_mismatch` and no `video_fps_defaulted`.
+It is a **finding** if the rate, frame count or audio differs from the source, or a frame-rate
+warning appears.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
+metrics: none.
+
+### M-F285 — `restore-deblur` and `restore-decompression` are `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, and descriptions promising the source's size and rate
+pending: #1108
+source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/restore-deblur`, `templates/ltx2/restore-decompression`. Free: discovery
+calls and a skill read only. The shape is `restore-colorize`'s (M-F254); where #1080's build settled a
+detail (letterbox or `crop` fit), these two follow it.
+Steps: `list_workflows(shape="shot", traits="needs-input-media")`; `get_workflow` (variables and full)
+for each; the `dw:ltx-2.5` skill's rows for both.
+expected, for each:
+- **Catalog and variables.** `frame_rate` defaults to `"source"`; `width` 960, `height` 544,
+  `num_frames` 121 and `lora_scale` 1.0 as today; the same `constraints` as today (32-px grid, 8n+1
+  frames ≥ 9).
+- **Document,** in order:
+  1. a `fit_to_model` step reading `variable:source_video`, its mode fixed (letterbox, or `crop` if
+     #1080 switched), `downscale` 1, not saved;
+  2. the existing IC pipeline step and LoRA (the same pipeline as today), its reference reading the
+     fit step's video, its `frame_rate` a literal 24 and its `result.fps` a literal 24, not saved
+     as the final;
+  3. a final `restore_to_source` step reading the pipeline's output and the fit record, with
+     `fps: variable:frame_rate`, whose `result` declares no `fps`.
+  There is no `pair_audio` step (plan Q3).
+- **Description.** It says the output comes back at the source's size and frame rate and that
+  `frame_rate` overrides the rate. It doesn't say 960×544 or 24 fps.
+- **Skill.** The rows give the source's size and rate, or none; not 960×544 or 24 fps.
+It is a **finding** if `frame_rate` defaults to a number, the fit or restore step is missing, the
+pipeline reads the variable, the restore lacks the `fps` binding, a `result.fps` follows the restore,
+a `pair_audio` step appears, or the description or skill row still promises 960×544 or 24 fps.
+cleanup: none.
+metrics: none.
+
+### M-F286 — `restore-deblur` and `restore-decompression` validate 30 fps 16:9 and portrait sources clean, accept each legal `frame_rate`, hold a short source, and refuse a bad rate for free
+pending: #1108
+source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F285. Free: `validate_workflow` only. Workspace `regression-model-specific`.
+Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` and `SP30` = `asset:fps-1090/priya-30fps-384x544-97f.mp4`
+(Fixtures).
+expected, for each template:
+- `S30`, no `frame_rate` → `valid: true`, `warnings: []`, non-null `plan.estimate`.
+- `SP30` with `num_frames: 97` → `valid: true`, `warnings: []`: the non-16:9 source isn't refused or
+  warned about.
+- `SP30` with the default `num_frames` 121 (longer than its 97 frames) → `valid: true`: the short
+  source is held as the fit does, not refused.
+- `SP30`, `num_frames: 97`, `frame_rate` `24`, `12`, `"source"` → `valid: true`.
+- `SP30`, `frame_rate` `0`, `"fast"` → `valid: false`, with the error at `arguments.frame_rate` or the
+  restore step's `fps`, naming what it accepts. Nothing is downloaded or loaded.
+It is a **finding** if either source is refused or warned about, a legal `frame_rate` is refused, or a
+bad one passes.
+cleanup: none.
+metrics: none.
+
+### M-F287 — `restore-deblur` on a 30 fps portrait source comes back at 384×544, 30 fps and 97 frames, with no letterbox band or edge bleed, and at 24 fps with the same frames when `frame_rate=24`
+pending: #1108
+source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/restore-deblur`. Paid: two LTX-2.5 jobs at the 960×544 working size,
+97 frames, on lem (about 3 min each cold). Workspace `regression-model-specific`, `"seed": 1090`.
+Setup: `SP30` (Fixtures; 384×544, 97 frames, 30 fps).
+Arms (validate, bind, `run_workflow(..., note="M-F287 <arm>", wait_seconds=55)`, `wait_for_job`):
+- **follow**: `{"source_video": SP30, "num_frames": 97, "seed": 1090}`, no `frame_rate`.
+- **override**: the same plus `"frame_rate": 24`.
+`get_gallery_metadata`, `assess_output` and `get_job` on each final; `get_output_frames` on the follow
+final and on `SP30` at `frame:0`, `frame:48`, `frame:96`.
+expected:
+- Both jobs succeed.
+- **follow.** **384×544, 97 frames at 30 fps** (about 3.23 s). A 960×544 final is the working size
+  leaking through. No `fps_mismatch` and no `video_fps_defaulted`.
+- **override.** 384×544, **97 frames at 24 fps**; the count unchanged.
+- **No band, no bleed.** No black or flat strip down either side of a sampled frame (`assess_output`
+  reports no border or letterbox, if it reports one); the leftmost and rightmost ~32 px columns carry
+  the scene's own content, continuous with the interior, with no smear, glow or tint the centre lacks.
+- **Same scene, restored.** Each sampled frame shows `SP30`'s subject at the same position and
+  proportions (not squeezed), at least as sharp as the source.
+- `compare_outputs` between the two finals at those indices measures them identical or near it.
+- **Audio.** The source's audio is not expected (plan Q3). Record whether the final has the model's
+  generated track or no audio stream; neither is a finding.
+It is a **finding** if the follow arm isn't 384×544, 30 fps and 97 frames, the override arm isn't 24
+fps or changes the count, a band or edge bleed shows, the subject is squeezed or displaced, a
+frame-rate warning appears on the follow arm, or the arms' frames differ beyond encoding noise.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both. Keep the fixture.
+metrics: `latency` (s), condition `portrait-384x544-97f-30fps`, to `regression-perf/M-F287.jsonl`. The
+first run seeds the file.
+
+### M-F288 — `restore-decompression` on a 30 fps portrait source comes back at 384×544, 30 fps and 97 frames with no band or bleed, and at 24 fps when `frame_rate=24`
+pending: #1108
+source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/ltx2/restore-decompression`. Paid: two LTX-2.5 jobs, as M-F287. Workspace
+`regression-model-specific`, `"seed": 1090`.
+Setup and arms: M-F287's, run on `templates/ltx2/restore-decompression`, notes `"M-F288 <arm>"`.
+expected: M-F287's, with "restored" read as de-artifacted (no blockiness or ringing beyond the
+source's) instead of deblurred.
+It is a **finding** on M-F287's conditions.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both. Keep the fixture.
+metrics: `latency` (s), condition `portrait-384x544-97f-30fps`, to `regression-perf/M-F288.jsonl`. The
+first run seeds the file.
 
 ## Performance

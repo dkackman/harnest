@@ -15139,7 +15139,6 @@ cleanup: none. Never delete the kept stems.
 metrics: none.
 
 ### C-F563 — every job #1097's probe record cites exists and finished
-pending: #1097
 source: tester, spec for #1097 from #1092's plan v2 (claude-opus-5-5 via anthropic)
 Free. Stage A ships no MCP surface: Don judges the probe from its record. The tester's only check is
 that the record stands on real, finished jobs.
