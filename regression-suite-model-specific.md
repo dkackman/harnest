@@ -7612,7 +7612,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-de
 `960x544-145f-warm`, to `regression-perf/M-F272.jsonl`. The first run seeds the file.
 
 ### M-F273 — `upscale-clip`, `refine-clip` and `refine-in-place` default `frame_rate` to `"source"`, hold the model at 24, carry the rate on the restore step, and declare no `fps` after it
-pending: #1107
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/upscale-clip`, `templates/ltx2/refine-clip`, `templates/ltx2/refine-in-place`.
 Free: discovery calls and a skill read only, no GPU.
@@ -7640,7 +7639,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F274 — the three fit-shaped templates validate a 30 fps source clean, accept each legal `frame_rate`, and refuse a bad one for free, naming `fps`
-pending: #1107
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F273. Free: `validate_workflow` only. Workspace `regression-model-specific`.
 Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` (Fixtures, "Sources for the #1090 frame-rate
@@ -7660,7 +7658,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F275 — `refine-in-place` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and the source's audio paired to it, and at 24 fps with the same frames when `frame_rate=24`
-pending: #1107
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/refine-in-place`. Paid: two LTX-2.5 jobs at the default 960×544,
 121 frames, on lem (RTX 3090). Workspace `regression-model-specific`, `"seed": 1090`.
@@ -7695,7 +7692,6 @@ fixture.
 metrics: none.
 
 ### M-F276 — `upscale-clip` on a 30 fps source with audio writes at 30 fps by default with the fitted frame count and paired audio, and at 24 fps with the same frame count when `frame_rate=24`
-pending: #1107
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/upscale-clip`. Paid: two LTX-2.5 jobs at the defaults (960×544 working
 size, 121 frames) on lem. Workspace `regression-model-specific`, `"seed": 1090`.
@@ -7717,7 +7713,6 @@ fixture.
 metrics: none.
 
 ### M-F277 — the fit-shaped templates on a 24 fps source are unchanged: 24 fps out, the fitted count, the same warnings as before #1107
-pending: #1107
 source: tester, spec for #1107 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/refine-in-place` (run), `upscale-clip` and `refine-clip` (validate).
 Paid: one LTX-2.5 job at the defaults on lem. Workspace `regression-model-specific`, `"seed": 1090`.
