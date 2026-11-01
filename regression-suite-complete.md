@@ -16378,7 +16378,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F613 — the Synchformer port, decoder loader and diffusers floor change nothing over MCP, and the installed diffusers meets the new floor
-pending: #1132
 source: tester, spec for #1132 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Free: discovery calls only. #1132 adds unreferenced modules, a frame-sampling helper, `spectral_centroid`
 and raises the `diffusers` floor to `>=0.42.0`.
