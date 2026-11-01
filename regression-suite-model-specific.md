@@ -8311,4 +8311,32 @@ any of the three job ids or the earlier ones, or either validate is refused.
 cleanup: none. Discovery and validate only.
 metrics: none.
 
+### M-F296 — `separate_stems` on a clip shorter than htdemucs' segment is repeatable and never louder than its input
+source: tester, verified in #1130 (claude-opus-5-5 via anthropic)
+Model/pipeline: htdemucs (the `demucs` package's pretrained `BagOfModels`, `max_allowed_segment` 7.8 s), via the
+`separate_stems` task. A clip shorter than the segment is separated once, with no random shift averaging, so its
+output is deterministic and this case may assert levels. GPU-light: each run took 1 to 5 s on cuda, with nothing to download.
+Setup: workspace = this suite's, passed on every call. The input is the shared asset
+`asset:qa-cast/instrumental-bed.mp3` (a Music 3 instrumental, 38.2 s, 44.1 kHz stereo). Inline workflow,
+`id: "QAM296"`, two steps: `score`: `slice_audio(audio: "asset:qa-cast/instrumental-bed.mp3", start_frame: 0,
+num_frames: 124, fps: 24)`, result `{content_type: "audio/wav", file_base_name: "slice"}`, a 5.17 s slice. `stems`:
+`separate_stems(audio: "previous_result:score")`, result `{content_type: "audio/wav", file_base_name: "stems"}`.
+validate → bind cost (`minutes: null`, basis `unknown`) → `run_workflow(wait_seconds=55)`, three times in a row.
+expected:
+- All three jobs succeed, and no step is `reused`.
+- No stem clips. Each run's `job.warnings` names no stem at or over full scale, and no stem's peak (from the
+  warnings, or `get_gallery_metadata` where a stem has no warning) is more than 1 dB above the slice's own peak
+  (about −3.16 dBFS; read it with `get_gallery_metadata` on the slice).
+- Most of the slice's energy is in `other`. `get_gallery_metadata` on `stems-0.0-other.wav` reports a
+  `mean_dbfs` and `integrated_lufs` within 1 dB of the slice's own. No stem's mean is above the slice's.
+- The three runs agree. Each stem's peak and mean level matches across the runs to within 0.1 dB. When #1130
+  was verified, they matched exactly: drums −3.35 peak / −44.98 mean, bass −26.56 / −46.43, other −12.05 /
+  −32.14 (−29.11 LUFS), vocals −26.78 / −46.51.
+It is a **finding** if a stem clips or peaks well above the input, as stems once did at +6 to +14 dBFS (job
+`4c41eb4246fa`). It is also a finding if the levels move between identical runs: before the fix, the drums
+peak ranged over 11.5 dB across five runs. A "quiet overall" or "near-silent" warning on drums, bass or vocals is
+expected for this instrumental and isn't a finding.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each of the three jobs.
+metrics: none.
+
 ## Performance

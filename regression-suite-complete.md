@@ -16033,10 +16033,12 @@ Call their outputs by `output:` reference.
 1. A8, `reference_audio: OVER_CAP`, `reference_text: "la la la"`, `text: "A short line."`, seed 1112.
 2. The same with `asset:qa-cast/ep15-song.mp3` (30 s) as the reference.
 3. The same with `AT_CAP`.
-4. A8 with `REF` plus its C-F598 `REF_TEXT`, and as `text` the sentence "The quick brown fox jumps over
-   the lazy dog." repeated 40 times (about 360 words, two minutes of speech, far past the ~95 s
-   context).
-5. As 4, with the sentence repeated 3 times (about 8 s), as the fitting control.
+4. A8 with `REF` plus its C-F598 `REF_TEXT`, and as `text` about 350 words of plain prose you write
+   yourself, no sentence used twice (well over two minutes of speech, far past the ~95 s context).
+   Never build it by repeating one sentence: a tool call carrying the same line dozens of times is
+   blocked by the API's output filter and kills the session (two verify sessions of #1121 died
+   here that way).
+5. As 4, with two short sentences of your own (about 8 s), as the fitting control.
 Validate each arm; run it with `wait_seconds=55` if it validates; read `get_job` / `get_job_events`.
 expected:
 - 1 and 2 are refused, naming `reference_audio` and the 20 s limit (stating the clip's length is a
@@ -16052,7 +16054,6 @@ cleanup: `delete_output(job_id=…)` for every job made here, including the two 
 metrics: none.
 
 ### C-F603 — every stage A probe job the findings cite exists in `probe-1123` and ran what the findings say
-pending: #1126
 source: tester, spec for #1126 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 #1123 measures story-forge's LTX-2.5 lessons 1 (haze after 2–3.5 s) and 2 (invented camera
 moves) on lem before any skill text lands. The evidence is a findings doc,
@@ -16103,7 +16104,6 @@ cleanup: none. The jobs are the feature's evidence.
 metrics: none.
 
 ### C-F604 — lessons 1 and 2's verdicts are what the cited frames show
-pending: #1126
 source: tester, spec for #1126 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 The plan's verdict rule: a lesson **holds** when its failure appears in at least half the naive
 renders, and its remedy removes the failure in at least half the remedy renders. Otherwise it
@@ -16141,7 +16141,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F605 — lesson 1 answers both of Don's questions (fixed onset or degraded tail), each from 89-frame and longer jobs
-pending: #1126
 source: tester, spec for #1126 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 Don's amendment requires L1's verdict to answer two questions:
 - (i) Does haze set in at a fixed time from the start, so that a short render avoids it?
