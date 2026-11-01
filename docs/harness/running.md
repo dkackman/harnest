@@ -5,6 +5,7 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
 ```sh
 ./run-loop.sh                          # forever; SOURCE_DIR defaults to ~/src/dkackman/dw-agent
 MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh                # three cycles, then stop
+DRAIN=1 ./run-loop.sh                  # work the board, exit once only deferred issues are left
 TESTER_MODEL=opus IMPLEMENTER_MODEL=haiku ./run-loop.sh # per-role models (defaults claude-opus-5-5 / claude-sonnet-5-5)
 PROVIDER=ollama IMPLEMENTER_MODEL=qwen2.5:32b TESTER_MODEL=qwen2.5:32b ./run-loop.sh   # non-Anthropic: name every role
 IMPLEMENTER_BUDGET_USD=0 TESTER_TASK_EVERY=1 ./run-loop.sh   # no implementer cap; standing task every cycle
@@ -31,7 +32,18 @@ commits are attributed by trailer, honestly: a non-Anthropic model gets
 
 The loop sleeps only when a cycle left the ticket board unchanged; if either agent's issue
 activity changed it, the next cycle starts immediately. (Whether an agent also appended a
-regression case in the same cycle isn't part of that check.)
+regression case in the same cycle isn't part of that check.) When an idle cycle has nothing
+left but issues waiting on Don's decision, the sleep doubles each time, from `SLEEP_SECS` up
+to `SLEEP_MAX_SECS`, and the loop looks at the board every `SLEEP_SECS` meanwhile, so a
+hand-back starts the next cycle at once (`drain_left`, `idle_wait`). A deferred issue
+(`parked`, or parked by dw's stabilization freeze; `lib/classify.jq` starts its `don`
+reason with "deferred") doesn't count as waiting on him.
+
+`DRAIN=1 ./run-loop.sh` works the board and exits at the first cycle boundary where nothing
+is left for this loop but deferred issues and ones waiting on another (`wait`). Issues with
+Don keep a drain going, under the backoff. The tester's standing task still runs on its
+cadence. A drain doesn't wait on an unclaimed design or review that another loop's shared
+passes will run, or on curator escalations parked with Don on this repo.
 
 `run-loop.sh` and `run-regression.sh` never run at once: both take `logs/.driver.lock`
 (`acquire_driver_lock`, a `mkdir` lock; a stale one is taken over) and wait for the other,

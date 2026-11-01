@@ -651,6 +651,7 @@ touch logs/stop-after-cycle         # then, once the loop has exited:
 ```sh
 ./run-loop.sh                                   # forever
 MAX_CYCLES=1 ./run-loop.sh                      # one cycle, then stop
+DRAIN=1 ./run-loop.sh                           # exit once only deferred (parked) issues are left
 ONLY_ISSUES=227 ./run-loop.sh                   # work only #227 (comma-separate for more)
 IMPLEMENTER_MODEL=haiku SLEEP_SECS=60 ./run-loop.sh
 touch logs/stop-after-cycle          # finish the current cycle, then exit (a release freeze)
@@ -723,6 +724,8 @@ isn't found until you re-run the script.
 | `RATE_LIMIT_FALLBACK_SECS` | `300` | how long a rejected rate limit sleeps when the event names no reset time (never zero, which would spin) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | override the commit trailer on suite edits |
 | `SLEEP_SECS` / `MAX_CYCLES` | `120` / `0` | pause after an idle cycle; `0` = run forever |
+| `SLEEP_MAX_SECS` | `1800` | while only issues waiting on your decision are left, each idle sleep doubles up to this; the loop still looks at the board every `SLEEP_SECS` and wakes on a change |
+| `DRAIN` | `0` | `1`: exit at the first cycle boundary where only deferred issues (`parked`, or parked by dw's freeze) are left; issues waiting on you keep it going, under the backoff. The standing task still runs |
 | `REGRESSION_NIGHTLY_AT` | empty (off) | an hour, 0-23: once a day, at the first cycle boundary at or after it, the loop runs `run-regression.sh` under its own lock (log `logs/nightly-regression.log`), so drift reaches the loop before a freeze. Held during a freeze. About $68 and 5.5 h at 0.5.0's suite size |
 | `REGRESSION_NIGHTLY_LEVEL` | `all` | what the nightly run passes `run-regression.sh`: a level, optionally a suite file |
 | `IMPLEMENTER_PROVIDER` / `TESTER_PROVIDER` / `REGRESSION_PROVIDER` | `$PROVIDER` | where each role's model is served |

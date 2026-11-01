@@ -18,7 +18,9 @@
 #              `arch-review`): the architecture review comes before the
 #              tester's verify, against dw's docs/ARCHITECTURE.md
 #   lead:design  lead:decompose  lead:build  lead:closeout
-#   don        parked with Don; reason says why
+#   don        parked with Don; reason says why, and starts "deferred" when
+#              the issue waits on a trigger (parked, stabilization) rather
+#              than on his decision
 #   wait       a legitimate pause: blocked, or its parent isn't building yet
 #   external   filed by another login and not yet parked; park_external_issues
 #              parks it. Once Don hands a parked one back, it is ordinary.
@@ -121,7 +123,12 @@ def parent_phase:
     if $o[0] == "owner:don" then {queue: "don", reason: "release freeze: \(.title)"}
     else {queue: "stranded", reason: "a release issue is owner:don's, not \($o[0])'s"} end
   elif $o[0] == "owner:don" then
-    {queue: "don", reason: ($st | join(",") | if . == "" then "no status" else . end)}
+    # Parked, or parked by dw's stabilization freeze: waiting on a trigger,
+    # not on a decision. Still Don's queue, but the reason starts "deferred",
+    # which is how the driver's drain and idle backoff tell them apart.
+    {queue: "don", reason: ((if has("parked") then "deferred (parked): "
+                             elif has("stabilization") then "deferred (stabilization): " else "" end)
+                            + ($st | join(",") | if . == "" then "no status" else . end))}
   elif $o[0] == "owner:implementer" then
     # needs-info on an implementer's issue is a question Don was asked (a
     # failed deploy) and has handed back: stale too.

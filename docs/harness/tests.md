@@ -8,7 +8,8 @@ Seventeen files:
   issues still in the batch lane, skips the rest untouched, asks once, and logs each
   approval.
 - `test-classify.sh`: `lib/classify.jq` over fixture boards in `tests/classify-cases.json`,
-  one per protocol state. Add a board when you add or change a state.
+  one per protocol state. Add a board when you add or change a state; a board's
+  `expect_reason` checks reasons too, for a state a driver reads by reason.
 - `test-consolidation.sh`: the curator's weekly consolidation (`lib/consolidation.py`) on a
   fixture tree with a canned `arch_report.py`.
 - `test-drivers.sh`: the real `run-loop.sh`, `run-features.sh`, `run-regression.sh`,
@@ -17,7 +18,7 @@ Seventeen files:
   qualifiers the drivers use, and stamps comments with `FAKE_GH_AUTHOR` and the time) and a
   throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
   fix-then-verify in one cycle, an outside filing, the closures window, withheld comments,
-  the curator's audited removals, and the spec race.
+  the curator's audited removals, the spec race, and `DRAIN=1` with the idle backoff.
 - `test-fleet.sh`: a whole regression fleet run (`harness/drivers/fleet.py`) against three
   `tests/fake-mcp.py` servers.
 - `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).

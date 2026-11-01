@@ -943,5 +943,38 @@ FAKE_CLAUDE_DO=''
 eq  "drift: a suite request alone passes the gate" 0 "$rc"
 has "drift: and is listed, not counted" "h/r#1 suite: C-F037 - the template plans 8 steps" "$(jq -r '.["o/r"][] | select(.number == 70) | .comments[].body' "$T/board.json")"
 
+# --- 18. DRAIN=1: work the board, exit once only deferred issues are left;
+# a decision waiting on Don keeps it going, and the idle sleep backs off
+dloop() { # dloop <cycles> [VAR=value...]: loop() with DRAIN=1 and the sleeps settable
+  local c="$1"; shift
+  (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
+     SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" MAX_CYCLES="$c" SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 \
+     DRAIN=1 "$@" ./run-loop.sh) > "$T/loop.out" 2>&1
+}
+deferred='{"number": 81, "state": "OPEN", "labels": [{"name": "owner:don"}, {"name": "parked"}]},
+          {"number": 82, "state": "OPEN", "labels": [{"name": "owner:don"}, {"name": "stabilization"}]}'
+: > "$FAKE_CLAUDE_LOG"
+board "[{\"number\": 80, \"state\": \"OPEN\", \"labels\": [{\"name\": \"owner:implementer\"}]}, $deferred]"
+FAKE_CLAUDE_DO='case "$*" in *"fix session"*) gh issue close 80 --repo o/r --reason completed ;; esac' dloop 5
+eq  "drain: exits cleanly" 0 $?
+eq  "drain: the fix ran, once" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "drain: then stops, only deferred issues left" "drain: nothing left but deferred issues, exiting after cycle 1." "$(cat "$T/loop.out")"
+board "[{\"number\": 83, \"state\": \"OPEN\", \"labels\": [{\"name\": \"owner:don\"}, {\"name\": \"status:needs-approval\"}]}, $deferred]"
+dloop 3
+fails "drain: a decision waiting on Don does not end it" grep -q "drain: nothing left" "$T/loop.out"
+has "drain: it backs off instead" "idle, only Don's decisions left: sleeping up to 0s" "$(cat "$T/loop.out")"
+eq  "drain: until MAX_CYCLES" 1 "$(grep -c 'Reached MAX_CYCLES=3' "$T/loop.out")"
+# the backoff doubles to SLEEP_MAX_SECS, without DRAIN too (two real sleeps: 1s, 2s, then 2s)
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
+   SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" MAX_CYCLES=4 SLEEP_SECS=1 SLEEP_MAX_SECS=2 SESSION_RETRY_PAUSE_SECS=0 \
+   ./run-loop.sh) > "$T/loop.out" 2>&1
+eq  "backoff: doubles, then holds at the cap" "1 2 2" "$(grep -o "sleeping up to [0-9]*s" "$T/loop.out" | grep -o '[0-9]*' | tr '\n' ' ' | sed 's/ $//')"
+board "[$deferred]"
+loop 2
+has "backoff: none when only deferred issues wait" "idle, sleeping 0s" "$(cat "$T/loop.out")"
+fails "backoff: so no backoff line" grep -q "sleeping up to" "$T/loop.out"
+dloop 1 DRAIN=2; rc=$?
+eq  "drain: a bad DRAIN is refused" 1 "$rc"
+
 for f in loop features reg curate retro; do cp "$T/$f.out" "/tmp/claude-501/last-$f.out" 2>/dev/null; done
 finish

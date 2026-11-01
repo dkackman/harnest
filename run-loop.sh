@@ -4,6 +4,7 @@
 #
 #   ./run-loop.sh                       # run forever
 #   MAX_CYCLES=3 SLEEP_SECS=60 ./run-loop.sh
+#   DRAIN=1 ./run-loop.sh               # exit once only deferred issues are left
 #   IMPLEMENTER_MODEL=haiku TESTER_MODEL=opus ./run-loop.sh
 #                                       # per-role models; defaults claude-sonnet-5-5 / claude-opus-5-5
 #   TRIAGE_MODEL=sonnet ./run-loop.sh   # triage session's model; defaults to TESTER_MODEL
@@ -94,6 +95,13 @@ HARNESS_REPO="${HARNESS_REPO:-dkackman/harnest}"   # this repo: where suite-chan
 LOGS="$REPO/logs"
 SLEEP_SECS="${SLEEP_SECS:-120}"
 MAX_CYCLES="${MAX_CYCLES:-0}"   # 0 = run forever
+# An idle cycle with nothing left but Don's decisions doubles the sleep, up
+# to this, and wakes early when the board changes (drain_left, idle_wait).
+SLEEP_MAX_SECS="${SLEEP_MAX_SECS:-1800}"
+# 1: work the board until nothing is left but deferred issues (parked, or
+# parked by dw's freeze), then exit. Waiting on Don doesn't end a drain; it
+# backs off. The tester's standing task still runs on its cadence.
+DRAIN="${DRAIN:-0}"
 # A full regression run once a day, at the first cycle boundary at or after
 # this hour (0-23, local time), so drift and regressions reach the loop days
 # before a freeze and a release's gate confirms rather than discovers (R14,
@@ -206,6 +214,8 @@ PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
 case "$TESTER_TASK_EVERY" in
   ''|0|*[!0-9]*) echo "TESTER_TASK_EVERY must be a whole number >= 1, got '$TESTER_TASK_EVERY'" >&2; exit 1 ;;
 esac
+case "$DRAIN" in 0|1) ;; *) echo "DRAIN must be 0 or 1, got '$DRAIN'" >&2; exit 1 ;; esac
+case "$SLEEP_SECS$SLEEP_MAX_SECS" in ''|*[!0-9]*) echo "SLEEP_SECS and SLEEP_MAX_SECS must be whole numbers, got '$SLEEP_SECS' / '$SLEEP_MAX_SECS'" >&2; exit 1 ;; esac
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
 command -v gh >/dev/null     || { echo "gh CLI not on PATH" >&2; exit 1; }
 command -v jq >/dev/null     || { echo "jq not on PATH" >&2; exit 1; }
@@ -917,6 +927,17 @@ $(issue_context "$n")" \
   done < <(queue_issues "reviewer:$kind" | cut -f1,2)
 }
 
+# curator_requests — the open suite-change requests on this repo the curator
+# rules on, ascending. Not filtered on status:needs-approval: Don hands an
+# escalation back by removing owner:don, and often clears the status too.
+# Any open request not with him is for the curator.
+curator_requests() {
+  gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite \
+    --json number,labels,author \
+    --jq ".[] | select(.author.login == \"$TICKET_OWNER\") | select([.labels[].name] | index(\"owner:don\") == null) | .number" 2>/dev/null \
+  | sort -n | only_issues_filter
+}
+
 # curator_pass — one review session per suite-change request on this repo
 # (an open `suite` issue not waiting on Don), then a commit
 # of whatever it applied, under the curator's name and naming the request.
@@ -931,15 +952,7 @@ curator_pass() {
   if [ -n "$freeze" ]; then freeze_hold_line "$freeze" curator | tee -a "$LOOP_LOG"; return 0; fi
   consolidation_pass
   local -a reqs=()
-  # Not filtered on status:needs-approval: Don hands an escalation back by
-  # removing owner:don, and often clears the status too. Any open request
-  # not with him is for the curator. (No comments inside the <( ) below:
-  # bash 3.2 misparses an apostrophe in a comment there.)
-  while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(
-    gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite \
-      --json number,labels,author \
-      --jq ".[] | select(.author.login == \"$TICKET_OWNER\") | select([.labels[].name] | index(\"owner:don\") == null) | .number" 2>/dev/null \
-    | sort -n | only_issues_filter)
+  while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(curator_requests)
   for n in ${reqs[@]+"${reqs[@]}"}; do
     run_agent curator "harnest#$n" "$CURATOR_REVIEW_BUDGET_USD" "$REPO" "$CURATOR_PROVIDER" "$CURATOR_MODEL" "$CURATOR_EFFORT" review \
       "This is a REVIEW session for suite-change request #$n on $HARNESS_REPO (this repo) only: your role instructions for it are in your system prompt. Case history lives on the ticket repo, $TICKET_REPO. Then stop.
@@ -1129,6 +1142,61 @@ stranded_board() {
   return 0
 }
 
+# drain_left — what is left for this loop at a cycle boundary:
+#   work     a pass of this loop's has something to run: an issue in an
+#            agent queue (one a pass here would skip, like another loop's
+#            design or reviews, doesn't count), a stranded or outside
+#            issue, a closure to answer, or a suite request for the curator
+#   don      the rest is with Don for a decision
+#   done     only deferred issues are left (lib/classify.jq: parked, or
+#            parked by dw's freeze), or ones that wait on another (`wait`)
+#   unknown  the board can't be read
+# DRAIN=1 exits on done; on don the idle sleep backs off (idle_wait).
+drain_left() {
+  local rows n q parent shared=1 design=1
+  rows="$(classify_issues)" || { echo unknown; return 0; }
+  shared_passes_here || shared=0
+  { [ "$LEAD_DESIGN_IN_LOOP" = 1 ] && [ "$DW_FROZEN" = 0 ]; } || design=0
+  while IFS=$'\t' read -r n q parent _; do
+    case "$q" in implementer:*|tester:*|lead:*|reviewer:*|stranded|external) ;; *) continue ;; esac
+    case "$q" in lead:design|lead:decompose) [ "$design" = 1 ] || continue ;; esac
+    case "$q" in lead:design|lead:decompose|reviewer:*)
+      [ "$shared" = 1 ] || claimed_here "$n" "$parent" || continue ;;
+    esac
+    echo work; return 0
+  done < <(printf '%s\n' "$rows" | only_issues_filter)
+  [ -z "$(pending_closures)" ] || { echo work; return 0; }
+  if [ "$shared" = 1 ] && [ -z "$(release_freeze)" ] && [ -n "$(curator_requests)" ]; then echo work; return 0; fi
+  if printf '%s\n' "$rows" | only_issues_filter \
+       | awk -F'\t' '$2 == "don" && index($4, "deferred") != 1 { f = 1 } END { exit !f }'; then
+    echo don
+  else
+    echo "done"
+  fi
+}
+
+# idle_wait <secs> <board>
+# Sleeps up to <secs>, looking at the board every SLEEP_SECS and returning
+# early once it differs from <board>: Don handing an issue back ends a long
+# backoff at the next look, not at its end. An unreadable board (empty) is
+# not a change.
+idle_wait() {
+  local left="$1" board="$2" step now
+  while [ "$left" -gt 0 ]; do
+    step="$SLEEP_SECS"
+    { [ "$step" -gt 0 ] && [ "$step" -lt "$left" ]; } || step="$left"
+    sleep "$step"
+    left=$((left - step))
+    [ "$left" -gt 0 ] || break
+    now="$(status_board)"
+    if [ -n "$now" ] && [ "$now" != "$board" ]; then
+      echo "tickets changed while idle, starting next cycle now" | tee -a "$LOOP_LOG"
+      break
+    fi
+  done
+  return 0
+}
+
 # step <name> <command...>
 # Runs one top-level step of a cycle. A failure is logged and the cycle goes
 # on: this driver runs forever, and one GitHub or network blip must not
@@ -1146,6 +1214,7 @@ step() {
 # An edit takes effect at the next start.
 main() {
 cycle=0
+backoff="$SLEEP_SECS"   # the next idle sleep while only Don's decisions are left
 while true; do
   cycle=$((cycle + 1))
   step park_external_issues park_external_issues
@@ -1212,11 +1281,29 @@ while true; do
     break
   fi
 
+  left=""
+  if [ "$DRAIN" = 1 ]; then
+    left="$(drain_left)"
+    if [ "$left" = "done" ]; then
+      echo "drain: nothing left but deferred issues, exiting after cycle $cycle." | tee -a "$LOOP_LOG"
+      break
+    fi
+  fi
+
   if [ "$(status_board)" != "$before" ]; then
+    backoff="$SLEEP_SECS"
     echo "tickets changed this cycle, starting next cycle now" | tee -a "$LOOP_LOG"
   else
-    echo "idle, sleeping ${SLEEP_SECS}s" | tee -a "$LOOP_LOG"
-    sleep "$SLEEP_SECS"
+    [ -n "$left" ] || left="$(drain_left)"
+    if [ "$left" = don ]; then
+      echo "idle, only Don's decisions left: sleeping up to ${backoff}s (backoff, max ${SLEEP_MAX_SECS}s)" | tee -a "$LOOP_LOG"
+      idle_wait "$backoff" "$before"
+      backoff=$((backoff * 2)); [ "$backoff" -le "$SLEEP_MAX_SECS" ] || backoff="$SLEEP_MAX_SECS"
+    else
+      backoff="$SLEEP_SECS"
+      echo "idle, sleeping ${SLEEP_SECS}s" | tee -a "$LOOP_LOG"
+      sleep "$SLEEP_SECS"
+    fi
   fi
 done
 }

@@ -4630,5 +4630,98 @@
    "7": "wait",
    "8": "lead:design"
   }
+ },
+ {
+  "name": "don: a decision vs a deferral",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "stabilization"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "don",
+   "2": "don",
+   "3": "don"
+  },
+  "expect_reason": {
+   "1": "status:needs-approval",
+   "2": "deferred (parked): no status",
+   "3": "deferred (stabilization): status:plan-approved"
+  }
  }
 ]
