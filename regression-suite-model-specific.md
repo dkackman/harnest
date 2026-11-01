@@ -8212,7 +8212,6 @@ metrics: as M-F256 and M-F257, to their own `regression-perf/` files, with `-mat
 each condition (`960x544-97f-8fps-matched-prompt`, `portrait-384x544-97f-matched-prompt`).
 
 ### M-F294 — `restore-colorize`'s 8 fps and portrait arms keep the source's rate, frame count and size with no band; whether each colours is recorded, and grey is the documented limit, not a finding
-pending: #1114
 source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem
 (the same three as M-F293). Workspace `regression-model-specific`, `"seed": 1080`. This is plan v12's
@@ -8253,7 +8252,6 @@ Keep the fixtures.
 metrics: as M-F293 (its conditions and `regression-perf/` files). No new file.
 
 ### M-F295 — `restore-colorize` documents its colour limit: reliable on a 24 fps 16:9 source, a low-rate or portrait source may stay grey; the skill says to check a frame; the registry names the three grey runs
-pending: #1114
 source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Free: discovery calls, a skill read and two `validate_workflow` calls, no
 GPU. This checks plan v12's stage C wording (Q12 (a)). M-F291's checks stand alongside it: the new
