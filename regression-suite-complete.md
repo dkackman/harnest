@@ -15843,7 +15843,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F595 — vendoring the Audio8-TTS module changes nothing over MCP: `list_tasks`, `generate_speech`'s schema and the audio catalog are as before
-pending: #1120
 source: tester, spec for #1120 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 Free: discovery calls only. #1120 adds a model module that nothing calls yet, so its whole acceptance is
 that the consumer surface does not move. The baseline below was read over MCP at spec time (2026-11-01,
@@ -16045,6 +16044,318 @@ expected:
 It is a **finding** if an over-cap reference runs, the 20.0 s reference is refused, the long text
 generates (truncated or not), or a refusal comes after a load event.
 cleanup: `delete_output(job_id=…)` for every job made here, including the two slices.
+metrics: none.
+
+### C-F603 — every stage A probe job the findings cite exists in `probe-1123` and ran what the findings say
+pending: #1126
+source: tester, spec for #1126 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+#1123 measures story-forge's LTX-2.5 lessons 1 (haze after 2–3.5 s) and 2 (invented camera
+moves) on lem before any skill text lands. The evidence is a findings doc,
+`docs/proposals/audits/2026-11-story-forge-lessons.md`, with a row per cell (job id, note,
+verdict, frame times inspected). A tester can't read the checkout. So the case reads the doc's
+cell table and verdicts as the stage's hand-off comment reproduces them. If that comment
+doesn't carry the table, that is a **finding** against the hand-off, not a reason to read the
+source. No GPU: read-only calls only. `probe-1123` is evidence. Never sweep it, and never
+delete a job in it.
+
+The cells the plan requires. Each one has a seed 1 job and a seed 2 job:
+- L1 naive, `templates/ltx2/text-to-video`, `num_frames` 241: 3 prompts (a daylight exterior,
+  a dim interior, a character action).
+- L1 naive, `templates/ltx2/image-to-video`, one still, at `num_frames` 241 and at 401.
+- L1 control, `templates/ltx2/text-to-video`, `num_frames` 121: the same 3 prompts.
+- L1 remedy (Don's amendment), `num_frames` 89: the same 3 text-to-video prompts, plus
+  image-to-video on the same still.
+- L2, `templates/ltx2/image-to-video`, `num_frames` 121, on 3 stills × 3 wordings: no camera
+  sentence; the spec form "the camera remains static"; and the spec form plus "locked-off on a
+  tripod, no pan, no zoom".
+
+Steps:
+1. For every job id the table cites, call `get_job` with `workspace="probe-1123"`, then
+   `get_job_workflow(job_id)`.
+2. In the realized workflow, read the template, `num_frames`, `seed`, `image` and `prompt`.
+   Read the stored prompt the table names too: `get_prompt("probe-1123/<cell>")`.
+
+expected:
+- Every cited job exists, is in `probe-1123`, and completed.
+- Its `note` is the one the table gives, and names the lesson, the cell and the seed.
+- The realized workflow has the template, `num_frames` and seed the table states, with
+  `realized: true`. A `num_frames` silently rounded to a different `8k+1` than the one stated
+  is a mismatch.
+- The prompt is the stored `prompt:probe-1123/<cell>` text, inlined unchanged.
+- Each cell in the list above has both seeds, 1 and 2. A cell with one seed, or none, is
+  missing. The plan's own render totals don't add up per cell, so count cells, not jobs.
+- The text-to-video prompts are the same text in the 241, 121 and 89-frame cells. Every L1
+  image-to-video job uses the same `image`.
+- In the L2 cells, the three wordings differ only by their camera sentence. The "no camera
+  sentence" arm has none. The other two contain their phrases verbatim.
+- The hand-off states N (2 per cell), and that "not reproduced" means "not on our pipeline at
+  this N".
+
+It is a **finding** if a cited job is missing, in another workspace, or failed. It is also one
+if a note, frame count, seed or prompt disagrees with the table, or if a required cell or seed
+is absent.
+cleanup: none. The jobs are the feature's evidence.
+metrics: none.
+
+### C-F604 — lessons 1 and 2's verdicts are what the cited frames show
+pending: #1126
+source: tester, spec for #1126 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+The plan's verdict rule: a lesson **holds** when its failure appears in at least half the naive
+renders, and its remedy removes the failure in at least half the remedy renders. Otherwise it
+is **not reproduced**. Read-only: `get_output_frames` and `assess_output` on existing
+`probe-1123` jobs, with `workspace="probe-1123"`. Check every cited job, not just two of them.
+- **L1 frame times:** for 241 and 401 frames, `at=[1, 2, 3, 3.5, 5, 8, "frame:<num_frames-1>"]`,
+  dropping any time past the clip's end. For 121 frames, the same list up to 5 s plus the last
+  frame. For 89 frames, `at=[1, 2, 3, 3.5, "frame:88"]`.
+- **L1 failure:** haze, a washed-out or greyed frame, or a fade toward dark, compared with the
+  same job's 1 s frame.
+- **L2 frame times:** `at=["frame:0", 2.5, "frame:120"]`.
+- **L2 failure:** the framing changes. The background scales (a push-in or pull-back), or
+  slides (a pan), between frame 0 and the last frame. A subject moving in front of a fixed
+  background is not a camera move. Optionally, `crop` a background region to check it.
+- Wherever the hand-off cites an `assess_output` number for a job, re-run
+  `assess_output(name=<that output>, workspace="probe-1123")` with the same `probe`.
+
+expected:
+- For each lesson ruled **holds**: at least half its naive renders, and never fewer than two
+  cited ones, show the failure at the times stated. At least half its remedy renders, and
+  never fewer than two, are clean at those times.
+- For each lesson ruled **not reproduced**: the naive renders don't reach the "at least half"
+  bar, and two cited naive jobs are clean at every stated time.
+- L2's verdict names which arm is naive and which is the remedy. The plan words lesson 2 as
+  "a forced static prefix did not fix it", so the doc says, for each of the three arms, whether
+  the camera moved in each render.
+- Every re-read `assess_output` number matches the cited one, to the precision the doc gives.
+- Every per-cell verdict in the table agrees with the frames by this tester's eye. Where the
+  judgment is borderline, the hand-off says so.
+
+It is a **finding** if a verdict claims a failure the frames don't show, or misses one they
+do. It is also one if a holds verdict falls short of the half-and-half counts, or if a cited
+`assess_output` number doesn't reproduce.
+cleanup: none.
+metrics: none.
+
+### C-F605 — lesson 1 answers both of Don's questions (fixed onset or degraded tail), each from 89-frame and longer jobs
+pending: #1126
+source: tester, spec for #1126 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+Don's amendment requires L1's verdict to answer two questions:
+- (i) Does haze set in at a fixed time from the start, so that a short render avoids it?
+- (ii) Does the tail of any render degrade whatever its length, so that trimming the end is
+  the fix?
+
+Stage C's lesson 1 text depends on which answer holds. Read-only, with
+`workspace="probe-1123"`, using C-F604's frame times.
+
+The two answers predict different frames. Let `T` be the earliest degraded time the doc gives:
+- **Fixed onset:** the 241 and 401-frame jobs degrade near the same `T` seconds from the start.
+  An 89-frame job of the same prompt and seed shows the same state at `T` if `T` is 3.7 s or
+  less. If `T` is later than that, it is clean to its last frame.
+- **Degraded tail:** the degradation sits near the same distance from each clip's end. The
+  89-frame jobs degrade near `frame:88`, while the 241-frame jobs are still clean at 3–3.5 s.
+- **Neither:** every L1 job is clean at every time it was inspected at. This is a legitimate
+  outcome, recorded as "not reproduced".
+
+expected:
+- The hand-off gives an explicit answer to (i) and to (ii), and each answer cites at least one
+  89-frame job and at least one 241 or 401-frame job of the same prompt or still, with frame
+  times.
+- The cited frames match the prediction of the answer given, and contradict the other
+  answer's prediction (or both answers are "no").
+- The 401-frame image-to-video cell gets its own statement: degraded or not. Stage C needs
+  that statement to decide whether to file the default-change follow-up (Q2).
+
+It is a **finding** if either question is unanswered, if an answer cites only one length, or
+if the cited frames fit the other answer better.
+cleanup: none.
+metrics: none.
+
+### C-F606 — every stage B probe job the findings cite exists in `probe-1123` and ran what the findings say
+pending: #1127
+source: tester, spec for #1127 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+Stage B measures lessons 3 (contact fuses two characters), 4 (an ALL-CAPS word becomes
+literal text) and 6 (an impact becomes a continuous spray). The same rules as C-F603 apply:
+- the table is read from the hand-off comment;
+- read-only calls only;
+- `probe-1123` is never swept.
+
+The cells. Each one has a seed 1 job and a seed 2 job:
+- **L3 LTX:** `templates/ltx2/text-to-video` with a hug, a handshake and a hand on a shoulder,
+  each paired with a "just before contact" restaging of the same scene.
+- **L3 H3:** `templates/minimax/dialogue-short` with a hug. The plan says 2 renders. Its
+  `shots` entries run at `num_frames` of the form `17n+5`, from 124 to 345.
+- **L6:** `templates/ltx2/text-to-video` with 2 impacts (an axe splitting a log, a door slammed
+  shut), each paired with an effort-only restaging.
+- **L4:** `templates/flux3/text-to-image` and `models/z-image`, 3 prompts, each in a caps form
+  (one word in ALL CAPS) and a lowercase form, on both models.
+
+Steps: `get_job` and `get_job_workflow` on each cited job, then `get_prompt` on each stored
+`probe-1123/<cell>` prompt.
+
+expected:
+- Everything in C-F603's expected list holds for these jobs too: they exist, completed, carry
+  the stated note, used the stated workflow and seed, and inline the stored prompt.
+- Each cell above has seeds 1 and 2. Here too, count cells, not jobs.
+- Each L4 caps prompt and its lowercase partner are identical except for that one word's case.
+  The same prompt pair runs on both models.
+- No L4 prompt asks for a sign, label, caption, poster or lettering. A prompt that requests
+  text invalidates the cell.
+- Each L3 and L6 restaging keeps the naive prompt's subjects and setting, and changes only the
+  moment staged.
+
+It is a **finding** under any of C-F603's conditions, or if an L4 pair differs by more than
+the one word's case, or an L4 prompt requests text.
+cleanup: none.
+metrics: none.
+
+### C-F607 — lessons 3 and 6's verdicts are what the cited frames show, with H3 judged separately
+pending: #1127
+source: tester, spec for #1127 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+The same verdict rule and the same read-only method as C-F604. For each cited job, call
+`get_output_frames(name=…, workspace="probe-1123", at=<the times the hand-off cites>)`. If
+the hand-off cites no times for a job, use `count=8`.
+- **L3 failure:** at the moment of contact, the touching parts merge. Arms or hands blend
+  into one shape, or a limb vanishes into the other body.
+- **L6 failure:** the impact reads as a continuous spray or a grinding or drilling motion, not
+  a single hit.
+
+expected:
+- L3 on LTX and L3 on H3 each get their own verdict, since they land in different files.
+- Each holds or not-reproduced verdict meets C-F604's counts against the frames.
+- Any restaging that still makes contact, or still shows the impact, is labeled as such. It
+  isn't counted as a clean remedy.
+
+It is a **finding** if any verdict isn't supported by the cited frames, or if H3 is folded
+into the LTX verdict.
+cleanup: none.
+metrics: none.
+
+### C-F608 — lesson 4 holds per model only when the caps word is legible text in half the caps renders and in no lowercase one
+pending: #1127
+source: tester, spec for #1127 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+Stage B's own criterion: L4 holds when the capitalised word appears as legible text in at
+least half the caps renders, and in **none** of the lowercase ones. Klein and Z-Image land in
+different places, so each model gets its own verdict. For every cited L4 job, call
+`get_output_image` on the job's output (not an `asset:` reference, #445) with
+`workspace="probe-1123"`. Use `crop` to read small lettering.
+
+expected:
+- For each model ruled **holds**:
+  - at least 3 of its 6 caps images show the word as readable lettering;
+  - none of its 6 lowercase images shows that word as lettering.
+- For each model ruled **not reproduced**: fewer than 3 caps images show it, or some lowercase
+  image does too. The hand-off says which of the two applies.
+- Other text that appears in an image is recorded, but doesn't count toward the word's tally.
+
+It is a **finding** if the counts behind a per-model verdict differ from what the images show,
+if one verdict covers both models, or if a "holds" verdict has a lowercase image showing the
+word.
+cleanup: none.
+metrics: none.
+
+### C-F609 — the skills carry a rule for each lesson ruled holds, and none for a lesson ruled not reproduced or cut
+pending: #1128
+source: tester, spec for #1128 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+Stage C lands skill text only. Read the skills through the plugin surface: the `Skill` tool
+for `dw:ltx-2.5`, `dw:minimax-h3`, `dw:flux3-klein`, `dw:script-to-video` and
+`dw:series-episodes`, plus the `references/` files they link. Take stage A's and stage B's
+verdicts from C-F604, C-F605, C-F607 and C-F608 as they were verified. Read-only MCP calls
+only: `get_workflow` and `list_workflows`.
+
+expected:
+- **Holds:** each lesson that holds has its rule in the place the plan's landing table names:
+  - **L1, fixed onset:** `ltx-2.5`, or its `references/staging.md`, says to size `num_frames`
+    to the cut plus about 0.5 s of handles, as the smallest `8k+1` at or above that, and to
+    trim with `trim_video`. `script-to-video` §2 states an LTX shot length beside H3's.
+    - Any worked numbers in the text must satisfy `8k+1`, and be the smallest such value at
+      or above cut + 0.5 s at the stated fps. For example, a 3.0 s cut at 24 fps needs
+      84 frames, so the rule gives 89.
+  - **L1, degraded tail:** the same places say to trim the degraded end, and don't make
+    render length the rule.
+  - **L2:** the `ltx-2.5` *Prompts* section gives the static wording that worked, and says
+    that a beat needing a still frame should come from a still or a cut.
+  - **L3, L6:** `ltx-2.5/references/staging.md` says to stage just before or after the
+    contact or impact. `minimax-h3/references/staging.md` covers H3 contact, but only if
+    that cell held.
+  - **L4:** `flux3-klein`, and `series-episodes` step 0 (portraits), say not to put
+    all-caps words in an image prompt. This applies only to the models that held.
+- Each landed rule cites the findings doc.
+- `ltx-2.5/SKILL.md` links `references/staging.md` in one line.
+- **Not reproduced:** a lesson ruled not reproduced has no rule in any of the five skills. A
+  model-specific L4 verdict counts per model too: no Klein rule if Klein didn't hold.
+- **Cut:** none of the five skills carries lesson 7 (3+ setups per line, 3x acquired seconds)
+  or lesson 8 (the viewer-feeling beat). There is no Qwen-Image rule.
+- **Caption spec:** `ltx-2.5/references/caption-spec.md` still says that camera movement is
+  expected and good, and the L2 rule doesn't tell the reader to edit the spec.
+- **No default change:** `get_workflow("templates/ltx2/image-to-video")` still defaults
+  `num_frames` to 401. `list_workflows(shape="shot")` gives the ltx2 templates the same
+  `constraints` as before (`num_frames` "8*n+1, 9+").
+- **Follow-up:** if C-F605 found the 401-frame cell degraded, a follow-up issue for the
+  `image-to-video` default exists on `dkackman/diffusers-workflow`
+  (`gh issue list --search "1123 401"`).
+
+It is a **finding** if:
+- a held lesson has no rule, or its rule sits in the wrong place;
+- a rule's wording contradicts its verdict (for example, a fixed-onset rule when the doc
+  found a degraded tail);
+- a not-reproduced or cut lesson has a rule;
+- a template default changed;
+- the 401-frame follow-up is missing when it is owed.
+cleanup: none.
+metrics: none.
+
+### C-F610 — lesson 5 lands as unmeasured framing guidance in `script-to-video` §3 and `series-episodes` step 0
+pending: #1128
+source: tester, spec for #1128 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+Lesson 5: wide shots drift hardest on identity. The plan lands it without a measurement
+(Q4). Read `dw:script-to-video` §3 and `dw:series-episodes` step 0 through the `Skill` tool.
+No MCP calls.
+
+expected:
+- Both places say that a recurring character is framed large, and that a piece which needs
+  wides keeps a wide master as well.
+- Both are worded as guidance. They don't claim the lesson was measured or verified on lem,
+  and don't cite a findings-doc verdict for it. Words like "prefer" or "tends to" fit;
+  "measured" doesn't.
+- Neither place says that wides must never be used.
+
+It is a **finding** if lesson 5 is missing from either place, if it is presented as a
+measured rule, or if it bans wide shots outright.
+cleanup: none.
+metrics: none.
+
+### C-F611 — one render following each landed LTX or image rule's wording behaves as the findings say
+pending: #1128
+source: tester, spec for #1128 from #1123's plan v2 (claude-opus-5-5 via anthropic)
+Don approved stage C's verification as one render per landed LTX or image rule. Run these in
+`workspace="regression-complete"`. Call `validate_workflow(arguments=…)` on each run first and
+bind its `acknowledged_cost`. Then `run_workflow(..., wait_seconds=55)`, with a `note` naming
+`C-F611` and the rule, and seed 1 on every run. Only run the arms whose rule landed (C-F609):
+- **L1, fixed onset:** `templates/ltx2/text-to-video`, using stage A's daylight-exterior prompt
+  (`prompt:probe-1123/<that cell>`, used read-only from `probe-1123` or copied). Take a 3.0 s
+  cut at 24 fps. Size `num_frames` exactly as the landed text says (89 for this cut), then
+  `trim_video` the clip to 72 frames as the text describes.
+  - Check the trimmed clip with `get_output_frames` at `at=[1, 2, 2.9]`.
+  - **L1, degraded tail** instead: render at the template default length, trim the end as the
+    text says, and inspect the last kept frame.
+- **L2:** `templates/ltx2/image-to-video`, `num_frames` 121, on one of stage A's L2 stills,
+  with the static wording the skill now gives. Inspect `at=["frame:0", 2.5, "frame:120"]`.
+- **L3 / L6:** `templates/ltx2/text-to-video` with the hug cell's (or the axe cell's) staging,
+  reworded the way the skill's staging reference says. Inspect `count=8`.
+- **L4:** the landed model's template (`templates/flux3/text-to-image` or `models/z-image`),
+  with the stage B caps prompt rewritten per the rule (no all-caps word). Inspect it with
+  `get_output_image`.
+
+expected:
+- Each validate is clean, and the L1 `num_frames` is accepted as given.
+- The L1 trimmed output is 72 frames (`get_gallery_metadata` `frame_count`), with no haze at
+  1, 2 or 2.9 s. The degraded-tail variant is clean at its last kept frame.
+- The L2 framing doesn't change between frame 0 and frame 120, by C-F604's test.
+- The L3 or L6 render shows no fused contact, and no spray read as drilling.
+- The L4 image shows the word only as the thing it names, never as lettering.
+
+It is a **finding** if any render shows the failure its rule says it avoids, or if a rule's
+own numbers fail validation.
+cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ## Performance
