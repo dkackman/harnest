@@ -7895,7 +7895,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: none.
 
 ### M-F285 — `restore-deblur` and `restore-decompression` are `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, and descriptions promising the source's size and rate
-pending: #1108
 source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/restore-deblur`, `templates/ltx2/restore-decompression`. Free: discovery
 calls and a skill read only. The shape is `restore-colorize`'s (M-F254); where #1080's build settled a
@@ -7925,7 +7924,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F286 — `restore-deblur` and `restore-decompression` validate 30 fps 16:9 and portrait sources clean, accept each legal `frame_rate`, hold a short source, and refuse a bad rate for free
-pending: #1108
 source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F285. Free: `validate_workflow` only. Workspace `regression-model-specific`.
 Setup: `S30` = `asset:fps-1090/priya-30fps-124f.mp4` and `SP30` = `asset:fps-1090/priya-30fps-384x544-97f.mp4`
@@ -7945,7 +7943,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F287 — `restore-deblur` on a 30 fps portrait source comes back at 384×544, 30 fps and 97 frames, with no letterbox band or edge bleed, and at 24 fps with the same frames when `frame_rate=24`
-pending: #1108
 source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/restore-deblur`. Paid: two LTX-2.5 jobs at the 960×544 working size,
 97 frames, on lem (about 3 min each cold). Workspace `regression-model-specific`, `"seed": 1090`.
@@ -7976,7 +7973,6 @@ metrics: `latency` (s), condition `portrait-384x544-97f-30fps`, to `regression-p
 first run seeds the file.
 
 ### M-F288 — `restore-decompression` on a 30 fps portrait source comes back at 384×544, 30 fps and 97 frames with no band or bleed, and at 24 fps when `frame_rate=24`
-pending: #1108
 source: tester, spec for #1108 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/restore-decompression`. Paid: two LTX-2.5 jobs, as M-F287. Workspace
 `regression-model-specific`, `"seed": 1090`.
