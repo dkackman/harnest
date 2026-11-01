@@ -15577,15 +15577,16 @@ Two arms, each run with `acknowledged_cost=true, wait_seconds=55` and read with 
 a. `include_instrumental_gaps: false`; b. `include_instrumental_gaps: true`.
 expected:
 - Both succeed. In a, the vocal shots are exactly four, in order, with `lyric: null` and
-  `start_frame`s 48, 108, 156, 288 (± 1 frame for any `vocal_tail_s`/`lead_s` rule the existing
-  line mode applies).
+  `start_frame`s 0, 108, 156, 288 (with gaps off the first shot tiles from frame 0 and absorbs the
+  lead-in, as the transcript path does; the rest ± 1 frame for any `vocal_tail_s`/`lead_s` rule the
+  existing line mode applies).
 - In b, the same four vocal shots, plus instrumental-kind shots only over the uncovered stretches
   (0–2 s, 9–12 s, 17–20 s), where the existing rules make one. Shots tile the timeline in order with
   no overlap, and `render_frames` covers the 20 s.
 - `warnings` has no "none of the lyrics' words were heard", no suspect-transcript warning, and nothing
   about missing lyrics (none were given).
 It is a **finding** if the phrase dict is refused as a transcript, a phrase is merged, split or
-dropped, a vocal shot carries a non-null lyric, a start is off its phrase, or a transcription-only
+dropped, a vocal shot carries a non-null lyric, a start other than the first is off its phrase, or a transcription-only
 warning fires.
 cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
@@ -15600,7 +15601,7 @@ b. 3 lines (drop Delta), fewer lines than phrases;
 c. 5 lines (add `"Echo line five"`), more lines than phrases.
 Run each with `wait_seconds=55` and read it.
 expected:
-- a: four vocal shots at 48/108/156/288 whose `lyric`s are Alpha, Bravo, Charlie and Delta in order,
+- a: four vocal shots at 0/108/156/288 whose `lyric`s are Alpha, Bravo, Charlie and Delta in order,
   whole (no word split across shots). No mismatch warning.
 - b: a warning naming 4 phrases and 3 lines that says to raise `analyze_phrases`' `min_gap_seconds`
   (more phrases than lines). The 3 lines are spread evenly over 2.0–17.0 s: line starts near
@@ -15618,17 +15619,19 @@ metrics: none.
 pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. C-F585 arm a's workflow (4 phrases, 4 lyrics, `include_instrumental_gaps: false`) with:
-a. `segment_by: "stanza"` (`plan_cuts`' own `min_gap_seconds` left at 2.0). The gaps are 0.5, 0.5
-   and 3.0 s, so phrases 1–3 form one stanza and phrase 4 another;
-b. `segment_by: "line"`, `max_scene_s: 3.0`, so phrase 4 (5 s) must split;
+a. `segment_by: "stanza"`, **no `lyrics`** (`plan_cuts`' own `min_gap_seconds` left at 2.0). The
+   gaps are 0.5, 0.5 and 3.0 s, so phrases 1–3 form one stanza and phrase 4 another;
+b. `segment_by: "line"`, `max_scene_s: 3.0`, `include_instrumental_gaps: true`, so phrase 4 (5 s)
+   must split;
 c. `segment_by: "line"` with the template's grid: `modulus: 17, remainder: 5, min_frames: 124,
    max_frames: 345`.
 Run each with `wait_seconds=55` and read it.
 expected:
-- a: two vocal shots, starting at 48 and 288. The first lyric holds Alpha–Charlie in order (or the
-  stanza's lines joined as the existing stanza mode joins transcript lines); the second holds Delta.
+- a: two vocal shots, 0–288 and 288–480 (gaps off, so the first tiles from 0), each with
+  `lyric: null`.
 - b: phrase 4 becomes ≥ 2 shots, each ≤ 72 frames, tiling 288 to about 408, and **every** piece's
-  `lyric` is the whole "Delta line four". Phrases 1–3 are unchanged.
+  `lyric` is the whole "Delta line four". Phrases 1–3 are unchanged; instrumental shots fill the
+  gaps.
 - c: every shot's `num_frames` (or render length) is 17n+5 within 124–345, and `render_frames`
   agrees. Starts hold to their phrases as the existing grid rules allow, and no grid warning is
   louder than the transcript path gives for the same spans.
@@ -15652,14 +15655,16 @@ Remove `timestamps` and `model_name` from that step only.
    `get_job`/`get_job_events`.
 3. Repeat step 2 with `segment_by: "beat"` and with `segment_by: "stanza"`.
 expected:
-- Step 2 succeeds. The vocal shots carry `Line 1` … `Line P` in order, one each. Each starts at its
+- Step 2 succeeds. The vocal shots carry `Line 1` … `Line P` in order; each line appears on the
+  shot(s) starting at its phrase, and a line split by `max_scene_s` (with its split warning) repeats
+  only on its own consecutive shots. Each starts at its
   phrase's start (± the template's `lead_s` 0.5 s and the grid's snap), every shot length is on the
   17n+5 grid within 124–345 frames, and `render_frames` is consistent.
 - No "none of the lyrics' words were heard" warning and no suspect warning. No Whisper load or
   download in `get_job_events`.
 - Step 3's runs both succeed with a valid plan on the grid, lyrics in order.
-It is a **finding** if the swapped template fails or validates dirty, lines are reordered, missing or
-duplicated, a scene starts away from its phrase beyond lead and snap, the grid breaks, or a
+It is a **finding** if the swapped template fails or validates dirty, lines are reordered, missing, or
+duplicated outside a `max_scene_s` split, a scene starts away from its phrase beyond lead and snap, the grid breaks, or a
 transcription warning appears.
 cleanup: `delete_output(job_id=…)` for every job; `delete_workflow("qa-1105/cuts-phrases")`.
 metrics: none.
