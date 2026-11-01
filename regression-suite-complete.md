@@ -276,7 +276,7 @@ smoke's Fixtures lists the asset too.
   delete it. Nothing new to keep.
 - C-F576–C-F589 (`analyze_phrases` and phrase-fed `plan_cuts`, #1095) reuse `ep15-song.mp3` (stereo
   sung mix, 30.03 s), `priya-voice.wav` (mono speech), `room-bed.wav` (near-silent mono) and synthetic
-  phrase results passed as workflow variables. C-F589 reads `verse_s7.wav` from the `russian-anthem`
+  phrase results passed as workflow variables. C-F628 reads `verse_s7.wav` from the `russian-anthem`
   workspace (job `0838f676f51f`) and never deletes it. Nothing new to keep.
 - C-F624–C-F628 (#1095 plan v3) use the same fixtures as C-F576–C-F589: synthetic phrase results as
   workflow variables, `ep15-song.mp3`, and (C-F628) `verse_s7.wav`, which only lem holds. Nothing new
@@ -16698,9 +16698,10 @@ metrics: none.
 ### C-F628 — field case (v3): `russian-anthem`'s fused verse gets a true span, both counts, both knobs and the even spread
 source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
 GPU-light. Needs `verse_s7.wav` from the `russian-anthem` workspace (job `0838f676f51f`), which only
-lem holds: on a server without it, hand the verify to lem's loop and say so. Find it and the verse's 4
-lyric lines as C-F589 says (`get_job`, `get_job_workflow`, `workspace="russian-anthem"`); use its
-`output:` reference or `copy_to_workspace` it into `regression-complete`. Never delete the source.
+lem holds: on a server without it, hand the verify to lem's loop and say so. `get_job("0838f676f51f")` (try
+`workspace="russian-anthem"`) for its `output:` reference, and take the verse's 4 lyric lines from
+that job's workflow or arguments (`get_job_workflow`); use the `output:` reference or
+`copy_to_workspace` it into `regression-complete`. Never delete the source.
 1. Run C-F587's `stems` → `analyze_phrases` chain on the verse at defaults; record P and the span.
 2. Run `qa-1105/cuts-phrases` (C-F587's copy; re-create it if cleaned up) with `song` = the verse and
    the 4 lines, `wait_seconds=55`. Read the plan, `get_job` and `get_job_events`.
