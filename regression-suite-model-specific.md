@@ -7424,9 +7424,12 @@ expected:
   has 4 seams, and every seam carries a numeric `seam_frame_jump` (none skipped as a cut).
 - The boundaries in `shots` fall where the shots meet in the trimmed concat (the cumulative frame
   counts after the head trims), to within 1 frame.
-- Step 3's numbers equal the original job's for every seam (`seam_frame_jump`, saturation, lightness
-  and contrast steps, `look_ratio`, `detail_ratio`) to within 1%, and both equal the record's table
-  as printed (to its rounding).
+- Step 3's numbers match the original job's for every seam. If step 3 reads the encoded concat
+  output, the match is within ±0.15 absolute on `seam_frame_jump`, `jump_ratio`, `look_ratio` and
+  `detail_ratio` and ±0.25 on the saturation, lightness and contrast steps, and no seam's
+  classification changes. If it repeats the original's in-job chain (concat → `previous_result` →
+  `analyze_seams`), the match is within 1%. The original job's numbers equal the record's table as
+  printed (to its rounding).
 It is a **finding** if an arm was joined without `trim_frames: 1`, measured without `shots=` or with a
 `hard_cut` record, a seam has no `seam_frame_jump`, the boundaries are off by more than a frame, or the
 re-run or the table disagrees with the job. Evidence pruned: skip, as in M-F264.
@@ -7448,8 +7451,10 @@ Steps:
    acknowledge any utility run).
 2. Apply the win rule to the record's own table and identity notes.
 expected:
-- The record names the call(s), and repeating them gives each arm's saturation, lightness and
-  contrast deltas to within 1% of the record.
+- The record names the call(s). Repeating them gives each arm's saturation, lightness and contrast
+  deltas within ±0.25 absolute of the record when the repeat reads encoded outputs, or within 1% when
+  it repeats the in-job chain. The win-rule verdict is the same on the repeated numbers as on the
+  record's.
 - The verdict is the one the plan's win rule gives, applied to those numbers. *Wins* only if all of
   these hold: arm B's take drift is smaller than arm A's on lightness **and** saturation; arm B holds
   identity at least as well (its notes name no identity loss that arm A's don't); arm B's worst seam
@@ -7459,7 +7464,7 @@ expected:
 - The #1031 note says *met* only if every seam in arm A scores low and arm A's take drift is visibly
   non-zero, and the #985 note says *reproduced* only if a bridge snapped (M-F266).
 It is a **finding** if the record names no MCP-reproducible drift call, a repeated call disagrees
-beyond 1%, or the verdict or either note doesn't follow from the record's own numbers. Evidence
+beyond that tolerance, or the verdict or either note doesn't follow from the record's own numbers. Evidence
 pruned: skip, as in M-F264.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for any utility job, and
 delete any copied asset.
