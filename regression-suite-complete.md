@@ -16363,4 +16363,283 @@ own numbers fail validation.
 cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
+### C-F612 — vendoring MMAudio's flow network and CLIP conditioning changes nothing over MCP
+pending: #1131
+source: tester, spec for #1131 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Free: discovery calls only. #1131 adds a model module that nothing calls, so its whole acceptance is
+that the consumer surface does not move. Baseline read over MCP at spec time (2026-11-01, before
+#1131 built). A change made on purpose by another issue verified since (named in that issue) is not a
+finding; check its record before reporting.
+1. `list_tasks`.
+2. `list_workflows(shape="audio")`.
+3. Run the smoke level as usual (`regression-suite-smoke.md`); this case adds no run of its own.
+expected:
+- 1: no command whose name mentions MMAudio, sound effects, `sfx`, foley, Synchformer or CLIP. At spec
+  time `commands` had 65 entries (`analyze_audio` … `window_video`), with no `generate_sound_effects`.
+- 2: exactly the four spec-time entries (`parhelion-score`, `templates/generate-speech`,
+  `templates/minimax/music`, `templates/voice-clone`) plus any added by another verified issue; no
+  `video-to-sound-effects` or `text-to-sound-effect`.
+- 3: no smoke case fails that passed in the last smoke run before #1131 deployed.
+It is a **finding** if any MMAudio surface (task, template, argument) shows up before #1133, or a smoke
+case newly fails after the deploy.
+cleanup: none.
+metrics: none.
+
+### C-F613 — the Synchformer port, decoder loader and diffusers floor change nothing over MCP, and the installed diffusers meets the new floor
+pending: #1132
+source: tester, spec for #1132 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Free: discovery calls only. #1132 adds unreferenced modules, a frame-sampling helper, `spectral_centroid`
+and raises the `diffusers` floor to `>=0.42.0`.
+1. C-F612 steps 1–3, unchanged.
+2. `get_diffusers_state` and `get_health`.
+expected:
+- 1: as C-F612 (no MMAudio command or template yet; smoke passes).
+- 2: `status` is `idle` with no `error`, and `get_health` reports the workers up. `version` satisfies
+  `>=0.42.0` under PEP 440. At spec time it read `0.42.0.dev0` at commit `d8c1b13c`, which sorts
+  **below** `0.42.0`; after #1132 a dev build of 0.42.0 or earlier is a finding (the floor is declared
+  but not met by what lem runs), while `0.42.0`, `0.42.1` or a `0.43.0.dev*` build passes.
+It is a **finding** if an MMAudio surface shows up before #1133, a smoke case newly fails, or the installed
+diffusers does not meet the floor.
+cleanup: none.
+metrics: none.
+
+### C-F614 — `generate_sound_effects` is listed, and `get_task` documents every argument, its defaults and limits, both licences with Apple's notice, and that video-only is the weaker mode
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Free: discovery calls only.
+1. `list_tasks`.
+2. `get_task("generate_sound_effects")`.
+expected:
+- 1: `generate_sound_effects` is in `commands`. It is the only new command against C-F612's baseline
+  (bar commands added by other verified issues).
+- 2: the parameters (named parameters, or documented in the `**kwargs` description if the task takes
+  kwargs) include `video`, `prompt`, `negative_prompt`, `duration`, `steps`, `guidance_scale` and
+  `seed`; `device` may appear too. Between summary and descriptions the docs say:
+  - `video` and `prompt` are each optional, but at least one is required;
+  - `prompt` is recommended even with a video, and video-only is the weaker mode (it generalises to
+    the setting and misses on-screen detail);
+  - `duration` defaults to the clip's length with a video, or 8 s text-only; quality is best near 8 s,
+    with a warning outside 4–12 s, a refusal over 20 s, and with a video it can't exceed the clip;
+  - `steps` defaults to 25 and `guidance_scale` to 4.5;
+  - the output is 44.1 kHz mono audio, sound only (muxing is a template's or `pair_audio`'s job);
+  - a warning for a noise-like result;
+  - the licences: **CC-BY-NC 4.0** for the MMAudio weights and the **Apple Machine Learning Research
+    Model License** (research purposes only) for DFN5B, with the notice verbatim: "Apple Machine
+    Learning Research Model is licensed under the Apple Machine Learning Research Model License
+    Agreement."
+It is a **finding** if the command is missing, any listed argument is undocumented, a default or limit
+differs from the above, either licence or the verbatim notice is missing, or the docs don't say
+video-only is the weaker mode.
+cleanup: none.
+metrics: none.
+
+### C-F615 — the catalog lists `video-to-sound-effects` and `text-to-sound-effect` as audio, the video one needing input media, both stating the licences
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Free: discovery calls only.
+1. `list_workflows(shape="audio")` and `list_workflows(shape="audio", traits="needs-input-media")`.
+2. `get_workflow` on each new template, by the name step 1 gives (expected
+   `templates/video-to-sound-effects` and `templates/text-to-sound-effect`; called VTS and TXS below).
+expected:
+- 1: both are in the first listing with `shape: "audio"`. VTS is in the second listing (its traits
+  include `needs-input-media`); TXS is not. The four spec-time audio entries (C-F612) are still there.
+- 2: each template's step is the `generate_sound_effects` task. VTS takes the clip as a variable with
+  no usable default (call it V) and has a prompt variable (P) whose description asks for the
+  **on-screen sound sources**; it outputs the effects stem **and** the clip with that sound muxed on.
+  TXS takes a prompt. Each description states both licences (CC-BY-NC 4.0; Apple ML Research Model
+  License, research purposes only) and carries the Apple notice verbatim (C-F614).
+It is a **finding** if either template is missing or mis-shaped, VTS lacks `needs-input-media` or has
+a default clip, VTS doesn't output both the stem and the muxed clip, or a description lacks a licence
+or the notice.
+cleanup: none.
+metrics: none.
+
+### C-F616 — both templates validate clean, and their plans price every weight file at a pinned revision with real sizes, with no `v1-44.pth` or `bigvgan_generator.pt`
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Free: validate only, `workspace="regression-complete"`. Setup: C-F617's MELEE fixture.
+1. `validate_workflow(name=VTS, arguments={V: "asset:s07-melee-i2v.mp4", P: "sword clashes and
+   grunts"}, workspace="regression-complete")`.
+2. `validate_workflow(name=TXS, arguments={<its prompt variable>: "a heavy wooden door slams shut"},
+   workspace="regression-complete")`.
+3. `validate_workflow(name=VTS, arguments={}, workspace="regression-complete")`.
+expected:
+- 1 and 2: `valid: true`, no errors. The `plan`'s download/weights list names, each with a real
+  (non-null, non-zero) byte size and pinned at a full commit sha (not `main`, not unpinned):
+  - `hkchengrex/MMAudio`: `weights/mmaudio_large_44k_v2.pth` and
+    `ext_weights/synchformer_state_dict.pth`;
+  - `kandinskylab/Kandinsky-6.0-Lite-distill-5s-Diffusers`: only `audio_vae/` and `vocoder/` config
+    and safetensors files (pinned at a sha starting `4c487e8b`), not the rest of the K6 repo;
+  - `apple/DFN5B-CLIP-ViT-H-14-384`: its weights file(s) and tokenizer files.
+  Files already cached are still named, marked present. No entry is `v1-44.pth`,
+  `best_netG.pt` or `bigvgan_generator.pt`, and none comes from an NVIDIA BigVGAN repo. The estimate is
+  a number or an explicit `unknown` basis.
+- 3: refused (`valid: false`) naming V as missing, not a run-time error.
+It is a **finding** if a required file is missing, an entry is unpinned or sizeless, a dropped decoder
+file or the whole K6 repo appears, or VTS validates without a clip.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F617 — a prompted video run gives a 44.1 kHz stem the clip's length, muxed onto the clip, with its onsets on the picture's hits
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+GPU, about a minute warm (plus a one-time ~several-GB download, quoted by `validate_workflow`).
+`workspace="regression-complete"` on every call; validate first and bind `acknowledged_cost` per the
+house rules.
+Setup (MELEE): if `asset:s07-melee-i2v.mp4` is missing from `regression-complete`, `copy_to_workspace(
+source="acorn-wars", destination="regression-complete", assets=["s07-melee-i2v.mp4"])`. It is stage A's
+H3 melee clip: 192 frames / 8.0 s / 24 fps / 960x544 with H3's own 32 kHz stereo sound (read 2026-11-01).
+Keep it across runs; never delete it from `acorn-wars`. Any substitute needs ~8 s of on-screen impacts
+and its own picture-synced sound.
+1. `run_workflow(name=VTS, arguments={V: "asset:s07-melee-i2v.mp4", P: "sword clashes, blows landing
+   and grunts", seed: 1124}, wait_seconds=55)`. If VTS has no `seed` variable, use an inline copy with
+   `"seed": 1124` on the step. Then `get_job` and `get_job_events`.
+2. `get_gallery_metadata` on the stem and on the muxed clip (`include_workflow=false`), and on the stem
+   again with `envelope=true, interval_seconds=0.1`.
+3. Take the stem's three strongest onsets (the largest rises in `peak_dbfs` bin to bin) and
+   `get_output_frames` on the muxed clip at each onset time and ±0.2 s. Then a `measure_sync` task step,
+   `audio` = the stem, `reference` = MELEE (its native track), defaults.
+expected:
+- 1: completes. `get_job_events` show the pinned revisions' download or load, and no
+  `trust_remote_code` or remote-code load. `job.warnings` carries no duration warning (8 s is inside
+  4–12) and no noise warning (stage A's melee measured flatness 0.016).
+- 2: the stem is 44100 Hz, 1 channel, 8.0 s (within one 24 fps frame, 0.042 s), non-silent (peak above
+  −40 dBFS; stage A's prompted melee sat at −32 dBFS level). The muxed clip is 192 frames, 24 fps,
+  960x544, 8.0 s, with an audio stream as long as the picture: the picture is untouched and the sound is
+  the stem's, not H3's (its level differs from MELEE's −41.6 dBFS mean).
+- 3: each of the three onsets has a visible strike, contact or impact within ±0.2 s in the frames. If
+  `measure_sync` reports confidence at or above its `min_confidence`, its lag is within ±0.2 s; a
+  low-confidence answer is not a finding by itself (the two tracks are different sounds).
+It is a **finding** if the run fails, the stem's rate, channels or length is off, either output is
+silent, the mux changed the picture, an onset has no visible event within 0.2 s, a confident lag
+exceeds 0.2 s, or an event shows remote code.
+cleanup: `delete_output(job_id=…)` for every job made here (keep MELEE).
+metrics: none.
+
+### C-F618 — a video-only run (no prompt) completes with the same shape
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+GPU, under a minute warm. As C-F617 step 1 with P left out entirely (not an empty string), seed 1124.
+If VTS requires P, use an inline one-step `generate_sound_effects` workflow with only `video:
+"asset:s07-melee-i2v.mp4"` and `seed: 1124`, result `audio/wav`, and note in the record that the
+template forces a prompt. Then `get_gallery_metadata` on the stem.
+expected:
+- `valid: true`; the job completes with no error and no warning asking for a prompt.
+- The stem is 44100 Hz mono, 8.0 s (within 0.042 s), peak above −40 dBFS.
+It is a **finding** if a prompt is demanded by the task, the run fails, or the shape differs.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F619 — text-only gives 8 s by default, the same seed gives identical audio, and the 4–12 s warning's boundaries hold
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a few seconds per arm warm. `workspace="regression-complete"`. SFX(args) below is an inline one-step
+`generate_sound_effects` workflow, result `audio/wav`, `prompt: "a heavy wooden door slams shut"`,
+`seed: 1124`, plus args. Validate each, run with `wait_seconds=55`, read `get_job` (its `warnings`) and
+`get_gallery_metadata` on the output.
+1. `run_workflow(name=TXS, arguments={<prompt variable>: "a heavy wooden door slams shut", seed: 1124})`
+   (inline copy with the seed on the step if TXS has no seed variable).
+2. Step 1 again, exactly.
+3. `compare_outputs` between the two outputs.
+4. SFX with no `duration`.
+5. SFX at `duration` 4.0, 12.0, 3.9, 12.1 and 20.0, one job each.
+expected:
+- 1, 2, 4: each 44100 Hz mono, 8.0 s (within 1 ms), peak above −40 dBFS, no duration warning.
+- 2 vs 1: identical audio. `compare_outputs` reports them identical (zero difference, or its exact-match
+  verdict), and `get_gallery_metadata`'s `peak_dbfs`, `mean_dbfs` and `integrated_lufs` agree to every
+  digit. Stage A found same-seed runs bit-identical.
+- 5: every arm completes, its output that many seconds long (within 1 ms). 4.0 and 12.0 carry **no**
+  duration warning; 3.9, 12.1 and 20.0 each carry one in `job.warnings` (and `get_job_events`) naming
+  `duration`, the 4–12 s range or the 8 s training length.
+- No run in this case carries the noise warning (stage A's door slam measured flatness 0.019).
+It is a **finding** if text-only isn't 8 s by default, the seeded pair differs, a boundary is warned
+or an out-of-range value isn't, 20.0 is refused, or a tonal result draws the noise warning.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F620 — the clip-length default warns outside 4–12 s on a short silent clip and a 15 s clip, and the run still succeeds
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+GPU, under a minute each warm. `workspace="regression-complete"`, seed 1124, no `duration` (it defaults
+to the clip's length). Fixtures: `asset:qa-fit/src-640x480-50f-silent.mp4` (50 frames at 24 fps,
+2.083 s, **no** audio stream — the silent-clip use; C-F238 makes it if missing) and the shared
+`asset:qa-cast/ep25-episode.mp4` (360 frames, exactly 15.0 s). Re-read both lengths with
+`get_gallery_metadata` first.
+1. VTS with V = the silent clip, P: "a cardboard box sliding across a wooden floor".
+2. VTS with V = `ep25-episode.mp4`, P: "room tone, footsteps and a door".
+expected:
+- 1: completes; the stem is 44100 Hz mono, as long as the clip (2.083 s within 0.042 s), non-silent;
+  the muxed clip now **has** an audio stream, 50 frames. `job.warnings` carries the duration warning.
+- 2: completes; the stem is 15.0 s (within 0.042 s) and the muxed clip 360 frames with audio to its end;
+  the duration warning is there. It is not refused (15 s is under 20 s and equals the clip).
+It is a **finding** if either run is refused, a stem's length isn't the clip's, the silent clip comes back
+without sound, or the warning is missing.
+cleanup: `delete_output(job_id=…)` for every job made here (never the fixtures).
+metrics: none.
+
+### C-F621 — argument refusals come before any model load, each naming the argument, and the at-limit values are accepted
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Near-free: every refused arm should die before a load. `workspace="regression-complete"`. Each arm is an
+inline one-step `generate_sound_effects` workflow, result `audio/wav`, `seed: 1124`; MELEE as in
+C-F617 (8.0 s). Per arm `validate_workflow`; if it validates, run it with `wait_seconds=55` and read
+`get_job` and `get_job_events`.
+a. No `video` and no `prompt` (only `seed`).
+b. `prompt: ""` and no `video` (the empty prompt is not a prompt).
+c. `prompt: "a door slam"`, `duration: 20.5`.
+d. `prompt: "a door slam"`, `duration: 0`; and separately `duration: -1`.
+e. `video: MELEE`, `prompt: "sword clashes"`, `duration: 21` (over 20 s and over the clip).
+f. `video: MELEE`, `prompt: "sword clashes"`, `duration: 8.5` (under 20 s but longer than the clip).
+g. `prompt: "a door slam"`, `num_inference_steps: 25` (an argument the task doesn't take); and
+   separately `cfg_strength: 4.5`.
+h. Controls, which must run: `video: MELEE`, `prompt: "sword clashes"`, `duration: 8.0` (equal to the
+   clip); and `video: MELEE`, `prompt: "sword clashes"`, `duration: 5.0` (shorter than the clip).
+expected:
+- a–g each fail, at validate or as a failed job, with an error naming the offending argument: `video`
+  and `prompt` (at least one required) in a/b, `duration` with the 20 s limit in c and e, `duration`
+  in d, `duration` and the clip's length in f, and the unknown key in g.
+- For any arm that got as far as a job, `get_job_events` show no download or model load phase before
+  the failure.
+- No arm silently drops or clamps the argument and succeeds.
+- h: both complete; the first stem is 8.0 s, the second 5.0 s (within 0.042 s).
+It is a **finding** if an arm succeeds, a message doesn't name the argument, a load or download event
+comes before a refusal, or a control is refused.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F622 — the noise warning, when it fires, names flatness and centroid and leaves the run successful
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a few seconds per arm warm. Stage A could not force a noise-like result, and the unit test covers
+the threshold, so this case asserts the warning's form when it fires and its absence on tonal takes
+(C-F617, C-F619). Inline `generate_sound_effects`, result `audio/wav`, `seed: 1124`, text-only:
+1. `prompt: "white noise hiss, harsh broadband static"`.
+2. `prompt: "a long cinematic riser, rising airy whoosh"` (story-forge's failing case).
+Read `get_job` (`warnings`), `get_job_events` and `assess_output` on each output.
+expected:
+- Both runs complete (a warning, never a refusal).
+- If a run carries the noise warning, it says the result is noise-like and names spectral flatness and
+  centroid with the measured values and the thresholds (0.3, 8 kHz). Whether it fires is not asserted.
+- A run whose take is plainly tonal by ear-proxy (`assess_output` reports no noise problem) carries no
+  noise warning.
+It is a **finding** if either run is refused or fails, or a fired warning lacks the measured numbers or
+thresholds.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F623 — on mps, a text-only run completes in fp32
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+Only on an mps server (mini-ai), when a target there is in scope; skip on cuda and say so. GPU, under a
+few minutes (plus the one-time download). C-F619 step 4 (inline text-only, door slam, seed 1124), in
+that server's regression workspace. Read `get_server_info` first (it should report mps), then `get_job`
+and `get_job_events`.
+expected:
+- The job completes with a 44100 Hz mono 8.0 s output, peak above −40 dBFS.
+- The events or the job's load record show fp32 (`float32`), not bf16 or fp16, and no fp64 error.
+It is a **finding** if the run fails on mps, the output's shape differs, or it ran in a 16-bit dtype by
+default.
+cleanup: `delete_output(job_id=…)` for the job.
+metrics: none.
+
 ## Performance

@@ -1207,6 +1207,59 @@ that loads the model with remote code is a hole: send it to `scripts/file-adviso
 cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
 
+### SE-F058 — `generate_sound_effects.video` holds the media path gate at validate time
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+#1133 adds `generate_sound_effects`, whose `video` argument MMAudio reads frames from (and whose
+length sets the default duration). The plan promises a `video` outside the workspace is refused at
+validate time. Carrier, in workspace `regression-security`: `{"id": "qa-se-f058", "steps": [{"name":
+"s", "task": {"command": "generate_sound_effects", "arguments": {"video":
+"asset:qa-cast/ep6-cold-open.mp4", "prompt": "footsteps and a door", "seed": 1}}, "result":
+{"content_type": "audio/wav"}}]}`. Change only `video` per probe:
+- P1 `/etc/passwd` (exists), P2 `/nonexistent-dw-probe/x.mp4`, P3 `../../../../etc/passwd`, each bare
+  and as `asset:` + the probe;
+- `output:../../../../etc/passwd` and `output:/etc/passwd`;
+- `file:///etc/passwd` and `http://127.0.0.1:8765/x.mp4`.
+Also run the same probes through `templates/video-to-sound-effects`'s clip variable as `arguments`
+(with its prompt variable set). For every refused probe, also `run_workflow(...,
+acknowledged_cost=true, workspace="regression-security")`.
+expected:
+- Every probe is `valid: false` at `video`'s argument path (or the template variable that feeds it),
+  with the refusal SE-F014 gives a media argument, or the scheme/host refusal for the URLs.
+- P1 and P2 get the same wording. No message shows a duration, frame count, fps, a "longer than the
+  clip" or "over 20 s" verdict, or any contents, all of which would mean the file was opened, and none
+  echoes a resolved server path.
+- `run_workflow` queues no job. The unchanged carrier validates clean.
+It is a **finding** if a probe is refused only at run time. A probe that validates, P1 and P2 being
+told apart, a length message about an out-of-root file, an echoed server path, or a `127.0.0.1` fetch
+or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### SE-F059 — `generate_sound_effects` runs the trust gate before any load
+pending: #1133
+source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
+MMAudio is vendored code loading three repos (MMAudio, Kandinsky 6 decoder files, DFN5B CLIP); the plan
+says the trust gate runs before any load. Use SE-F058's carrier, unmodified, as the base. Each probe
+adds one key:
+a. `"trust_remote_code": true` in the step's task `arguments`;
+b. `"model_kwargs": {"trust_remote_code": true}`;
+c. `"clip_kwargs": {"trust_remote_code": true}`;
+d. `"custom_pipeline": "lpw_stable_diffusion"` in the arguments.
+Also a text-only form of a (carrier without `video`). `validate_workflow` each; for any that validates
+or isn't clearly refused, `run_workflow(..., acknowledged_cost=true, wait_seconds=55,
+workspace="regression-security")`, then `get_job_events`.
+expected:
+- Each probe is refused, at validate or as a failed job, with the trust-gate message naming the key
+  (as SE-F005 / SE-F006). b–d may instead get the task's unknown-argument refusal naming the key; that
+  passes too, as long as it comes before any load.
+- A failed job shows no download or load phase event before the refusal (SE-F026's rule).
+- No MMAudio, Kandinsky or DFN5B file is fetched for these probes.
+It is a **finding** if a probe runs, or the refusal arrives after a download or load event. A probe
+that loads any of the three with remote code is a hole: send it to `scripts/file-advisory.sh`.
+cleanup: `delete_output(job_id=...)` for any job.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must
