@@ -7296,7 +7296,6 @@ file the finding.
 metrics: none.
 
 ### M-F264 — the #1102 probe record on #1094 cites every job, gives the metric table, take drift, identity, tail snap and a win-rule verdict, and every cited job ran its arm and shot
-pending: #1102
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3: ref2va (shot 1, arm A's `last_segment` chain, arm B's odd shots 3 and 5)
 and fl2va via `templates/minimax/first-and-last-frame` (arm B's bridges 2 and 4). Free: reads only,
@@ -7304,7 +7303,8 @@ and no job is run.
 The record is the stage-A results comment on #1094 (`gh issue view 1094 --repo
 dkackman/diffusers-workflow --comments`), or on #1102 if #1094 links it from there. The plan fixes the
 protocol: one take, 5 shots, no dialogue, workspace `qa-1094-bridge`; shot 1 is one Ref2VA render of
-124 frames that both arms use; arm A is shots 2–5 as a `last_segment` Ref2VA chain from shot 1; arm B
+124 frames that both arms use; arm A is shots 2–5 as a Ref2VA chain from shot 1 (amended per Don's
+ruling on #1094, 2026-10-31: a hand-built `last_segment`-equivalent carry, job `e1d37983f04a`); arm B
 is shots 3 and 5 as independent Ref2VA renders (separate jobs) and shots 2 and 4 as
 `first-and-last-frame` bridges; both arms are concatenated with `trim_frames: 1` and measured with
 `analyze_seams(video, shots=...)`.
@@ -7316,8 +7316,8 @@ Steps:
 expected:
 - The record gives, in this order or clearly labelled: every job id; a metric table with a row per
   arm per seam (4 seams per arm) carrying `seam_frame_jump` and the look steps (saturation,
-  lightness, contrast); the take drift per arm (shot 1's first 8 frames against shot 5's last 8, as
-  saturation, lightness and contrast deltas); identity notes per arm; the bridge tail-snap finding
+  lightness, contrast); the take drift per arm (shot 1's first 4 frames against shot 5's last 4, as
+  saturation, lightness and contrast deltas; amended from 8 vs 8 per Don's ruling on #1094); identity notes per arm; the bridge tail-snap finding
   for each bridge; audio at the bridge seams (noted, not scored); and a verdict.
 - The verdict is exactly one of *wins*, *wins with tail discard* or *doesn't win*, and *doesn't win*
   names which win-rule condition failed (M-F268 checks it follows the rule).
@@ -7330,7 +7330,9 @@ expected:
 - At most 11 H3 render jobs are cited (9 renders plus up to 2 re-rolls), and every H3 render ran the
   same width, height, `num_inference_steps` and LoRA state (one draft tier for the whole probe).
 - Each render job's workflow matches its role: shot 1 and shots 3 and 5 of arm B are ref2va steps;
-  arm A's shots 2–5 are a ref2va chain whose carry is `last_segment`; shots 2 and 4 of arm B are
+  arm A's shots 2–5 are a ref2va chain whose carry is `last_segment` or its hand-built equivalent
+  (each segment's `trim_video` tail, `start_frame: 76`, `num_frames: 48`, passed into the next
+  segment's references; amended per Don's ruling on #1094); shots 2 and 4 of arm B are
   `first-and-last-frame` (an fl2va step with `image` and `last_image`) with `num_frames` ≥ 124.
   No step in any job has dialogue (`<d>`) in its prompt.
 It is a **finding** if a section above is missing, a result cites no job, a cited job is absent,
@@ -7341,7 +7343,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F265 — both arms share one shot-1 output, and the two arms differ only in how shots 2–5 were made
-pending: #1102
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 ref2va and fl2va, the M-F264 jobs. Free: reads only.
 Steps:
@@ -7357,8 +7358,9 @@ expected:
 - Shot 1 is 124 frames (`frame_count` 124 at 24 fps).
 - Shots 3 and 5 of arm B are two **separate** jobs (two job ids), each a single ref2va render, not a
   chain and not one job with both.
-- The reference image(s) are the same `asset:` reference(s) in shot 1, every arm A segment, and arm
-  B's shots 3 and 5. Arm B's shots 3 and 5 use the seed the record states for them, and the record
+- The reference image(s) are the same reference(s) in shot 1, every arm A segment, and arm B's
+  shots 3 and 5: an `asset:`, or the one shared HF-URL subject and voice pair the #1102 run used
+  (amended per Don's ruling on #1094). Arm B's shots 3 and 5 use the seed the record states for them, and the record
   states every render's seed.
 - Each beat's prompt (shots 2–5) is the same text in arm A's segment and arm B's shot for that beat,
   except that a bridge's prompt may add its arrival. Every beat prompt says its arrival state.
@@ -7369,7 +7371,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F266 — every bridge is pinned to its neighbours: `image` is the previous odd shot's last frame and `last_image` the next one's first
-pending: #1102
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va (`templates/minimax/first-and-last-frame`), arm B's bridges 2 and 4
 of M-F264. Free: reads only.
@@ -7400,7 +7401,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F267 — both arms were joined with `trim_frames: 1` and measured with `analyze_seams(shots=...)`, no seam `hard_cut`, and the seam table reproduces
-pending: #1102
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: utility tasks over the M-F264 H3 outputs (`concat_videos`, `analyze_seams`). No GPU
 render; step 3 runs a utility job. Workspace `qa-1094-bridge` for reading, `regression-model-specific`
@@ -7435,12 +7435,12 @@ copied asset.
 metrics: none.
 
 ### M-F268 — the take drift reproduces from a call the record names, and the verdict follows the win rule as written
-pending: #1102
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the M-F264 record and outputs. Free or utility-only; no render.
 Background: `look_stats` is not an MCP task today (`get_task("look_stats")` answers "Unknown task
 command"), so the record must say which MCP call(s) it took the take drift from, e.g. an
-`analyze_seams` over a two-shot join of shot 1's first 8 frames and shot 5's last 8 frames, or
+`analyze_seams` over a two-shot join of shot 1's first 4 frames and shot 5's last 4 frames (the
+window the #1102 run used, accepted by Don's ruling on #1094 in place of 8 vs 8), or
 `assess_output` readings.
 Steps:
 1. Repeat the record's take-drift call(s) for both arms, exactly as it states them, in
@@ -7466,7 +7466,6 @@ delete any copied asset.
 metrics: none.
 
 ### M-F269 — a bridge's frame floor holds at validate (107 refused, 108–123 rounded up to 124, 124 clean), and a concat without `trim_frames: 1` shows the pinned frame twice
-pending: #1102
 source: tester, spec for #1102 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/first-and-last-frame` (MiniMax H3 fl2va) and `concat_videos`.
 Steps 1–2 are free; step 3 is utility-only (no render). Workspace `regression-model-specific`.
@@ -8213,5 +8212,101 @@ cleanup: as M-F256 and M-F257: `delete_output(job_id=<id>, workspace="regression
 each job. Keep the fixtures.
 metrics: as M-F256 and M-F257, to their own `regression-perf/` files, with `-matched-prompt` appended to
 each condition (`960x544-97f-8fps-matched-prompt`, `portrait-384x544-97f-matched-prompt`).
+
+### M-F294 — `restore-colorize`'s 8 fps and portrait arms keep the source's rate, frame count and size with no band; whether each colours is recorded, and grey is the documented limit, not a finding
+pending: #1114
+source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem
+(the same three as M-F293). Workspace `regression-model-specific`, `"seed": 1080`. This is plan v12's
+amendment of M-F293 (Q12 (a)). Where both are due, run M-F293 exactly as written (its setup, prompts
+and runs, so the M-F256 and M-F257 expectations it carries) and judge it by this case: M-F293's
+"In colour, as named" clause, its "No bleed, with colour present" clause and its "Fallback" clause are
+replaced by the colour record below. Everything else M-F293 expects (through M-F256 and M-F257: rate,
+frame count, size, no band, the follow/override comparison, cleanup, metrics) stands and still fails
+the case. M-F292 (the 24 fps 16:9 fixture) is untouched: grey there is still a finding, because the
+documented limit says colour is reliable on that kind of source.
+Prompts: write `P_8` and `P_P` from each fixture's frame as M-F293 says, or reuse verbatim the `P_8` and
+`P_P` recorded on #1064 in the M-F293 bounce (2026-11-01). Reusing them keeps the record comparable with
+jobs `763968953985`, `3579d7d376b2` and `cf3ad9b05f4f`; say which you used.
+expected:
+- **Rate, count, geometry (still pass/fail).** M-F256 follow arm: 97 frames at **8 fps** (source rate,
+  `frame_rate` omitted). M-F256 override arm (`frame_rate: 24`): 97 frames at **24 fps**, same frames as
+  the follow arm (`compare_outputs` at frames 0 and 48 near-identical, `fps_differs`). M-F257: the
+  source's own **384×544** aspect, 97 frames at the source rate, no letterbox band at the edges. Each
+  run succeeds with empty `job.warnings`. Any of these failing is a finding, as before.
+- **Colour (record, don't fail).** For each of the three finals, at `frame:48`, record one of:
+  `colours` (plainly non-grey natural colour on the subject: skin, hair, clothing) or `grey` (essentially
+  monochrome; a faint tint on one small object, such as M-F293's faint blue lanyard, still counts as
+  `grey`). Record the job id and the word for each arm on the run's report. `grey` on any of the three
+  is the documented limit (M-F295) and **not a finding**.
+- **If an arm colours.** Then judge M-F293's "as named" and no-bleed points on that arm: the named
+  objects roughly carry the named colours, and on the M-F257 final the edge columns carry colour
+  continuous with the centre (no bleed in from the padding). A flat cast (sepia, all-blue), colours
+  plainly unlike those named, or colour bleeding at the edges **is** a finding: the documented limit is
+  "may stay grey", not "may take wrong colour". Also note on the report that this source now colours,
+  so the documented limit may be broader than the behaviour (a note, not a finding).
+- **If the M-F257 arm is grey**, its no-bleed point can't be judged for colour; record "no-bleed: not
+  judgeable (grey)". The no-band point is still judged and still fails the case.
+It is a **finding** if any run fails or warns, any rate, frame count, size, band or follow/override
+expectation fails, or an arm that colours takes a cast, unlike colours or edge bleed. Grey alone is never
+a finding here.
+cleanup: as M-F293: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each job.
+Keep the fixtures.
+metrics: as M-F293 (its conditions and `regression-perf/` files). No new file.
+
+### M-F295 — `restore-colorize` documents its colour limit: reliable on a 24 fps 16:9 source, a low-rate or portrait source may stay grey; the skill says to check a frame; the registry names the three grey runs
+pending: #1114
+source: tester, spec for #1114 from #1064's plan v12 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Free: discovery calls, a skill read and two `validate_workflow` calls, no
+GPU. This checks plan v12's stage C wording (Q12 (a)). M-F291's checks stand alongside it: the new
+wording is added, not swapped for the clip-matched-prompt wording.
+expected:
+- **Template description.** In the full `get_workflow(name="templates/ltx2/restore-colorize")` document
+  (the `list_workflows` compact entry may be shortened; read the full one), the description says, in
+  substance, both of:
+  - colour is reliable on a **24 fps 16:9** source;
+  - a **low-frame-rate** or **portrait** source **may stay grey even with a matched prompt**.
+  Wording may differ. Naming only one of the two source kinds, or saying the limit applies only to an
+  unmatched prompt, is a finding.
+- **M-F291's description points still there.** The same description still says the prompt must describe
+  the clip and name its colours, and that an unmatched prompt (the default included) leaves it grey.
+- **No false cure.** Neither the description nor the skill row suggests that setting `frame_rate` (for
+  example to 24), lowering `lora_scale`, or another argument of this template fixes the grey on a
+  low-rate or portrait source. The plan names no fix (Q12 (b) is a non-goal), and the override arm
+  `3579d7d376b2` at `frame_rate: 24` stayed grey. Suggesting one is a finding. Pointing the caller to
+  another route or to a 24 fps 16:9 source is fine.
+- **Frame rate unchanged (Q7).** `get_workflow(name="templates/ltx2/restore-colorize",
+  variables_only=true)`: `frame_rate` still defaults to `"source"`; `lora_scale` still defaults to 1.0;
+  `prompt` still defaults to a `prompt:ltx2/…` reference; no variable added or removed against M-F227
+  and M-F291 (stage C changes no variable).
+- **Skill row.** The `dw:ltx-2.5` skill's `restore-colorize` row (or the text it links for that route):
+  - states the limit in a few words: reliable on 24 fps 16:9, low-rate or portrait may stay grey;
+  - tells the composing agent to **check a frame of the result**, and that a grey result means this
+    route doesn't take that source (in substance; wording may differ);
+  - still carries M-F291's skill points (look at a frame of the source, write both panels naming the
+    colours) and M-F227's ("black-and-white or washed-out footage").
+  A row that says only "check the result" without saying what grey means, or that tells the agent to
+  re-run with another prompt or seed as the remedy for grey on such a source, is a finding.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers", status="proven")`: the
+  `ltx-2.5/ic-colorization` entry is still `proven` with `workflow: null`, and its `evidence` (in any
+  item, whether the existing note was extended or a new item added) names all three of
+  `763968953985`, `3579d7d376b2` and `cf3ad9b05f4f` and says those runs stayed grey on an 8 fps / portrait
+  source. The existing evidence still names `f80056a98e62` (M-F291) and `b70c30a5e8e4`. Naming
+  `718e232f76b0` as the coloured 24 fps 16:9 contrast is expected by the plan; its absence is a note,
+  not a finding. (As of 2026-10-31 the entry's `evidence` is visible over MCP, as a list of
+  `{job, issue, note}` items, so "can't check" is not an outcome here.)
+- **Still validates clean.** `validate_workflow(name="templates/ltx2/restore-colorize",
+  workspace="regression-model-specific", arguments={"source_video":
+  "asset:ic-colorize/src-bw-960x544-97f-8fps.mp4", "num_frames": 97})` and the same with
+  `"source_video": "asset:ic-colorize/src-bw-384x544-97f.mp4"`: each `valid: true` with a non-null
+  `plan.estimate`, as M-F255 has them. The limit is documentation only; a new refusal of a low-rate or
+  portrait source is a finding. (A new advisory warning on these sources is not promised by the plan:
+  record it as a note if one appears.)
+It is a **finding** if any point above misses: the description or skill row lacks either half of the
+limit, the skill row lacks "check a frame of the result" and what grey means, any wording offers a
+`frame_rate`/`lora_scale`/argument cure, a variable or default changed, the registry evidence lacks
+any of the three job ids or the earlier ones, or either validate is refused.
+cleanup: none. Discovery and validate only.
+metrics: none.
 
 ## Performance
