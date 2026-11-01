@@ -16357,7 +16357,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F612 — vendoring MMAudio's flow network and CLIP conditioning changes nothing over MCP
-pending: #1131
 source: tester, spec for #1131 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Free: discovery calls only. #1131 adds a model module that nothing calls, so its whole acceptance is
 that the consumer surface does not move. Baseline read over MCP at spec time (2026-11-01, before
