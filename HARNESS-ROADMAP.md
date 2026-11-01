@@ -11,20 +11,21 @@ rather than in a separate log.
 | ID  | Item                                              | Status  | Depends on |
 |-----|---------------------------------------------------|---------|------------|
 | R1  | Replay benchmark (measure the loop itself)        | done; baseline + checklist run | —   |
-| R2  | Pre-hand-off reviewer subagent                    | checklist applied; watch live bounces | — |
-| R3  | Invariant hooks for the implementer               | done; watch live cycles | —   |
+| R2  | Pre-hand-off reviewer subagent                    | checklist applied. Measured 2026-11-01: 83% of verified dw issues since 09-01 passed on the first hand-off (402 of 484), but 72% since 10-01 (129 of 177, the feature-stage month). No reviewer subagent beyond the checklist | — |
+| R3  | Invariant hooks for the implementer               | done; hardened again in R16 (2026-10-23 to 25: 34 `fix(guard)` commits closing hidden-script, heredoc and label routes) | —   |
 | R4  | Tester-authored acceptance specs for features     | built, as R11's phase 3: the tester's `spec` kind (`status:needs-spec`) writes `pending: #<stage>` cases from the approved plan before any code exists | R11 |
-| R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56); schedule weekly | — |
-| R6  | Graduate mechanical cases to an executable client | runner built; 2 cases script-run (S-F002, S-F028, marked `runner: script`), `S-F036.json` orphaned (its case is not marked); graduation needs approval | R5 helps |
-| R7  | Retro agent (the self-improvement loop)           | built; harnest#3 applied; weekly launchd schedule (`scripts/install-schedules.sh`); watch denial counts | R1 |
+| R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56). Since R16: a per-case results ledger (`regression-results/`) and `scripts/rank-cases.py`, which the curator reads. The audit (`run-curate.sh`) is not scheduled: its last run was 2026-10-12 | — |
+| R6  | Graduate mechanical cases to an executable client | runner built; harnest#40 approved marking S-F002, S-F028 and S-F036 `runner: script` (2026-09-30), but only S-F002 and S-F028 carry it (S-F036 is still orphaned). No graduations since | R5 helps |
+| R7  | Retro agent (the self-improvement loop)           | built; 6 proposals filed (4 applied, 2 declined). The weekly launchd schedule exists (`scripts/install-schedules.sh`) but **is not installed**: the last retro ran 2026-09-23 | R1 |
 | R8  | Port the drivers to Python (Agent SDK optional, later) | built: `harness/` (stdlib only); `harness.drivers.regression` at parity with `run-regression.sh` (`tests/test-regression-py.sh`); the regression fleet (`harness.drivers.fleet`) and the requirements generator; the loop itself is still bash | R12 |
-| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`, daily via `scripts/install-schedules.sh`); the dashboard's Needs you card lists the queue live | — |
+| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`); the dashboard's Needs you card lists the queue live. R15 adds the Batch and Deferred sections. The daily schedule **is not installed**: the last digest ran 2026-09-24, so run `scripts/install-schedules.sh --load` | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
-| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh` (design and decompose via `features_pass`); first two features delivered: dw#376 and dw#378 (stages A–D) closed verified; design now runs first in the cycle | R4 (absorbs it), R1 |
+| R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh`. 56 features closed since 2026-10-01 (about $19 each in logged sessions; a one-stage plugin feature runs 6 sessions, about $9). Design posts a resumable draft plan (R16) | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
 | R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | partly built: `targets/dw/profile.toml` holds every server's policy (facts come from the server at startup), and the regression fleet runs a level across every server's lanes at once; a second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
-| R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; nightly regression cadence is Don's call | R12 |
+| R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; gate and waiver markers are HMAC-signed since 2026-10-25 (harnest#140); nightly regression cadence is Don's call | R12 |
 | R15 | Escalation lanes: ask Don only what Don decides | built 2026-11-01 (batch lane, `parked` state, pending cases follow the plan, curator dedupe); measure two weeks, then decide on silence-as-consent | R9, R11 |
+| R16 | Hardening round 2: the 2026-10-23 review (guard, drivers, fleet, regression cost, prompts) | done 2026-10-25: tasks 1–34 of `docs/superpowers/plans/2026-10-23-harness-hardening.md` landed; task 35 (measure) only partly done | R12, R8 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1635,6 +1636,10 @@ breaking changes.
 missed the first: 12 `accept` calls on top of the approvals. Plan items 1–2 are meant to
 close that, and the next release will show whether they do.
 
+**Since (2026-10-25).** Gate and waiver markers are signed with an HMAC instead of being
+trusted as marker text (harnest#140), and the ledger check is two-way and parse-based.
+The signing key is `RELEASE_KEY_FILE`.
+
 ## R15 — Escalation lanes: ask Don only what Don decides
 
 **Why.** Don was approving a lot of escalations with their defaults (2026-11-01). Of 342
@@ -1667,6 +1672,63 @@ stays near zero.
 **Done when.** After two weeks, count Don's overrides by kind and lane. Each batch-lane override
 is a kind to move to the blocking lane. Each blocking-lane kind he never changes is a candidate
 for the batch.
+
+## R16 — Hardening round 2: the 2026-10-23 review
+
+**Why.** A month after R12, Don asked for another step back. The review is
+`docs/superpowers/specs/2026-10-23-harness-review.md`. It found 2,817 sessions and $3,086
+logged, and 111 `[audit] WARNING`s. Most of the cost was regression chunks reading the suite
+files to find their own cases. The guard also had routes around its label rules that it could
+not see. The plan is `docs/superpowers/plans/2026-10-23-harness-hardening.md`: 35 tasks in 6
+phases.
+
+**Built (2026-10-23 to 2026-10-25).** Tasks 1–34, one commit or more each:
+- **Guard** (phase 1):
+  - unbalanced quotes and internal errors fail closed;
+  - Don-only labels are refused on create as well as edit;
+  - no role lifts a park, and an unknown role is refused;
+  - labels compare in any case;
+  - consumers get only the `gh issue` verbs they use;
+  - the git-dir, `gh api` and wrapper-shell routes are closed;
+  - then follow-up fixes (34 `fix(guard)` commits in all) for heredocs, built command
+    words, `env -S` and hidden scripts (harnest#141).
+- **Drivers** (phase 2):
+  - plan and arch-review markers are read only from `TICKET_OWNER`;
+  - the MCP config lives in one private file, never in argv;
+  - an unreadable board holds the freeze-gated passes;
+  - TERM reaches every session and nested driver, with `SESSION_KILL_SECS` bounding the
+    wait;
+  - a rate-limited attempt is run again;
+  - one board snapshot per pass.
+- **Fleet** (phase 3):
+  - a lost or unanswered case fails the run, or is re-queued once;
+  - workspaces are seeded lazily;
+  - per-case time covers one attempt;
+  - contract cases must assert something.
+- **Regression cost** (phase 4):
+  - the chunk prompt carries its cases' text;
+  - a per-case results ledger (`regression-results/`) and `scripts/rank-cases.py`, which the
+    curator reads;
+  - the perf rule is computed in code;
+  - a case with no requirements entry still runs, on the primary.
+- **Prompts** (phase 5):
+  - triage sees only untriaged issues;
+  - the MCP house rules are a fragment every MCP-using kind loads;
+  - the design session posts a resumable draft plan;
+  - hand-offs describe behaviour, and the tester designs its own check;
+  - three contradictions are settled.
+- **Hygiene** (phase 6):
+  - `fake-gh.py` behaves like `gh` for limits, dates and authors;
+  - audit warnings only where a human should look;
+  - launchd schedules for the retro and digest (written, not installed: see R7, R9);
+  - docs match the tree.
+
+**Not done.** Task 35, the measurement:
+- The bench ran: `post-hardening@0c948b6` against `pre-hardening-s55`, prompt-neutral
+  (`bench/results/results.jsonl`).
+- Still open: one smoke run before and after the chunk-prompt change, recorded in
+  `regression-results/README.md`, and the first `rank-cases.py --candidates` pass with its
+  tier-move requests. The ledger now holds enough runs for the second.
 
 ## dw stabilization freeze, stage A (2026-09-28)
 

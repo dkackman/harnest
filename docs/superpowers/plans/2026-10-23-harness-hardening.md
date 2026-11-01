@@ -1,6 +1,6 @@
 # Harness Hardening Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Close the enforcement, driver-safety and fleet-accounting defects the 2026-10-23 review found, and cut the regression suite's cost per run by removing navigation turns and giving the curator per-case evidence to tier cases by.
 
@@ -9,6 +9,8 @@
 **Tech Stack:** bash 3.2 (macOS `/bin/bash`), jq, Python 3.11+ stdlib only, `ruff`, the existing `tests/lib.sh` assert library (`ok`/`fails`/`eq`/`has`), `tests/fake-gh.py`, `tests/fake-mcp.py`.
 
 **Spec:** `docs/superpowers/specs/2026-10-23-harness-review.md` (sections A–G; task headers cite the section and item they close).
+
+> **Status (2026-11-01):** tasks 1–34 landed between 2026-10-23 and 2026-10-25, ticked from the commits that carry each task's named commit message. Task 35 is partly done: the bench ran (`ba0791f`), but the smoke before/after record and the first `rank-cases.py --candidates` pass are still open. Roadmap R16.
 
 ## Global Constraints
 
@@ -46,7 +48,7 @@ All in `agent-settings/hooks/guard.py` with rows in `tests/test-guard.sh`. Row s
 - Produces: `segments(cmd) -> list[list[str]]` unchanged in signature; on `ValueError` it returns the plain split with every `'` and `"` character removed from each word, and sets module global `UNBALANCED = True`.
 - `main()` denies when `UNBALANCED` and any segment's first word is `gh`, with message `unbalanced quote in a gh command: write it on one line with matched quotes.`
 
-- [ ] **Step 1: Add failing rows**
+- [x] **Step 1: Add failing rows**
 
 ```bash
 # unbalanced quotes: the fallback keeps the rules (spec B.1)
@@ -59,10 +61,10 @@ EOF
 row 0 consumer "" $none 'echo it'"'"'s fine'
 ```
 
-- [ ] **Step 2: Run `tests/run.sh guard`** — expected: the three `2` rows FAIL (got 0).
-- [ ] **Step 3: Implement** — in the `except ValueError` branch strip quote characters per word and set `UNBALANCED`; in `main()` after `segments(cmd)` add the deny.
-- [ ] **Step 4: Run `tests/run.sh guard`** — expected: all rows pass.
-- [ ] **Step 5: Commit** `fix(guard): deny gh commands with unbalanced quotes instead of dropping their quoting`
+- [x] **Step 2: Run `tests/run.sh guard`** — expected: the three `2` rows FAIL (got 0).
+- [x] **Step 3: Implement** — in the `except ValueError` branch strip quote characters per word and set `UNBALANCED`; in `main()` after `segments(cmd)` add the deny.
+- [x] **Step 4: Run `tests/run.sh guard`** — expected: all rows pass.
+- [x] **Step 5: Commit** `fix(guard): deny gh commands with unbalanced quotes instead of dropping their quoting`
 
 ### Task 2: Don-only labels are refused on `create` as well as `edit`
 
@@ -70,7 +72,7 @@ row 0 consumer "" $none 'echo it'"'"'s fine'
 - Modify: `agent-settings/hooks/guard.py:792-801` (move the `plan-approved`, `release`, `release-blocker` checks onto the merged `added` list built at `:802-808`); add `status:verified` and `status:fixed-pending-verify` to the create-time check for every role (no issue is ever filed already verified or already handed off).
 - Test: `tests/test-guard.sh`
 
-- [ ] **Step 1: Add rows** inside the existing `for r in implementer lead consumer curator reviewer` loop:
+- [x] **Step 1: Add rows** inside the existing `for r in implementer lead consumer curator reviewer` loop:
 
 ```bash
 row 2 $r "" $none 'gh issue create --title x --label feature,owner:lead,status:plan-approved'
@@ -80,10 +82,10 @@ row 2 $r "" $none 'gh issue create --title x --label status:verified'
 row 2 $r "" $none 'gh issue create --title x --label status:fixed-pending-verify'
 ```
 
-- [ ] **Step 2: Run** — expected FAIL (got 0) for every role.
-- [ ] **Step 3: Implement** — compute `added` before the role branches; replace the three `is_gh_issue(words,"edit")`-scoped checks with checks on `added`.
-- [ ] **Step 4: Run** — PASS. Existing edit rows still pass.
-- [ ] **Step 5: Commit** `fix(guard): approval and release labels are refused on issue create too`
+- [x] **Step 2: Run** — expected FAIL (got 0) for every role.
+- [x] **Step 3: Implement** — compute `added` before the role branches; replace the three `is_gh_issue(words,"edit")`-scoped checks with checks on `added`.
+- [x] **Step 4: Run** — PASS. Existing edit rows still pass.
+- [x] **Step 5: Commit** `fix(guard): approval and release labels are refused on issue create too`
 
 ### Task 3: Consumers cannot lift a park; unknown roles fail closed
 
@@ -91,7 +93,7 @@ row 2 $r "" $none 'gh issue create --title x --label status:fixed-pending-verify
 - Modify: `agent-settings/hooks/guard.py:829-842` (hoist the `owner:don` / `status:needs-approval` removal rules out of the `role in (...)` gate; keep the curator exemption for adding `owner:don`), `:696` (role validation)
 - Test: `tests/test-guard.sh`
 
-- [ ] **Step 1: Add rows**
+- [x] **Step 1: Add rows**
 
 ```bash
 row 2 consumer "" $none 'gh issue edit 7 --remove-label owner:don --add-label owner:tester'
@@ -101,10 +103,10 @@ row 2 bogus "" $none 'gh issue list'
 row 2 "" "" $none 'gh issue list'
 ```
 
-- [ ] **Step 2: Run** — expected FAIL (got 0).
-- [ ] **Step 3: Implement** — `ROLES = ("implementer","lead","consumer","curator","reviewer","release")`; `deny("unknown guard role %r" % role)` when not in it; move the two removal checks above the role gate.
-- [ ] **Step 4: Run** — PASS. Check `grep -rn 'guard_settings\|guard.py' providers.sh agent-settings/*.json` to confirm every real role name is in `ROLES`.
-- [ ] **Step 5: Commit** `fix(guard): no role lifts a park; an unknown role is refused`
+- [x] **Step 2: Run** — expected FAIL (got 0).
+- [x] **Step 3: Implement** — `ROLES = ("implementer","lead","consumer","curator","reviewer","release")`; `deny("unknown guard role %r" % role)` when not in it; move the two removal checks above the role gate.
+- [x] **Step 4: Run** — PASS. Check `grep -rn 'guard_settings\|guard.py' providers.sh agent-settings/*.json` to confirm every real role name is in `ROLES`.
+- [x] **Step 5: Commit** `fix(guard): no role lifts a park; an unknown role is refused`
 
 ### Task 4: The hook fails closed on its own errors
 
@@ -115,17 +117,17 @@ row 2 "" "" $none 'gh issue list'
 **Interfaces:**
 - Produces: `main()` wrapped so any exception other than `SystemExit` prints `Blocked by the harness guard (R3): guard error: <type>: <msg>` to stderr and exits 2.
 
-- [ ] **Step 1: Add a row that feeds malformed JSON**
+- [x] **Step 1: Add a row that feeds malformed JSON**
 
 ```bash
 rc=0; printf 'not json' | HARNEST_SESSION_KIND= python3 "$guard" implementer >/dev/null 2>&1 || rc=$?
 eq "guard: a crash refuses, never passes" 2 "$rc"
 ```
 
-- [ ] **Step 2: Run** — expected FAIL (got 1).
-- [ ] **Step 3: Implement** the wrapper at the bottom of the file.
-- [ ] **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `fix(guard): exit 2 on any internal error so a crash cannot pass a call`
+- [x] **Step 2: Run** — expected FAIL (got 1).
+- [x] **Step 3: Implement** the wrapper at the bottom of the file.
+- [x] **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `fix(guard): exit 2 on any internal error so a crash cannot pass a call`
 
 ### Task 5: Labels compare case-insensitively; `gh issue` subcommands are allowlisted for consumers
 
@@ -136,7 +138,7 @@ eq "guard: a crash refuses, never passes" 2 "$rc"
 **Interfaces:**
 - `CONSUMER_ISSUE_SUBCOMMANDS = ("view","list","create","comment","edit","close","reopen","status")`; a consumer `gh issue <other>` is denied with `gh issue <sub> is not a consumer action (delete, transfer, lock, pin, develop are Don's).`
 
-- [ ] **Step 1: Add rows**
+- [x] **Step 1: Add rows**
 
 ```bash
 row 2 consumer "" $none 'gh issue edit 5 --add-label Status:Verified'
@@ -147,8 +149,8 @@ row 2 consumer "" $none 'gh issue develop 5'
 row 0 consumer "" $none 'gh issue view 5 --json labels'
 ```
 
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `fix(guard): case-insensitive labels; consumers get only the issue verbs they use`
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `fix(guard): case-insensitive labels; consumers get only the issue verbs they use`
 
 ### Task 6: Consumer `git` cannot read another tree; implementer `gh api` writes and wrapper shells are refused
 
@@ -161,7 +163,7 @@ row 0 consumer "" $none 'gh issue view 5 --json labels'
 - `implementer_api_rule`: for roles `implementer`/`lead`, deny `gh api` when the method (`-X`/`--method`) is not GET or any `-f`/`-F`/`--field`/`--raw-field`/`--input` is present, unless the path matches `^repos/[^/]+/[^/]+/issues/\d+/comments$` (the lead's plan PATCH, already in `LEAD_DESIGN_PERMISSION_FLAGS`).
 - Wrappers: for the implementer, deny a segment whose command word (after env assignments and the shell keywords `do`, `then`, `else`, `{`, `!`, `time`, `command`, `env`) is `bash`/`sh`/`zsh` with `-c`, `eval`, or `xargs` **when the remaining words contain `gh` or `git push`**.
 
-- [ ] **Step 1: Add rows**
+- [x] **Step 1: Add rows**
 
 ```bash
 row 2 consumer "" $none 'git --git-dir=/Users/don/src/dkackman/dw-agent/.git log -p'
@@ -177,8 +179,8 @@ row 2 implementer "" $none 'echo 5 | xargs gh issue close'
 row 2 implementer "" $none 'FOO=1 gh issue edit 5 --add-label status:verified'
 ```
 
-- [ ] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS, and `tests/run.sh drivers` still green (the lead's plan PATCH form is used there).
-- [ ] **Step 5: Commit** `fix(guard): close the git-dir, gh api and shell-wrapper routes around the label rules`
+- [x] **Step 2: Run** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS, and `tests/run.sh drivers` still green (the lead's plan PATCH form is used there).
+- [x] **Step 5: Commit** `fix(guard): close the git-dir, gh api and shell-wrapper routes around the label rules`
 
 ### Task 7: Update the "Enforced by the harness" lines in the role cores
 
@@ -186,8 +188,8 @@ row 2 implementer "" $none 'FOO=1 gh issue edit 5 --add-label status:verified'
 - Modify: `agents/implementer/core.md`, `agents/tester/core.md`, `agents/regression/core.md`, `agents/lead/core.md`, `agents/curator/core.md:43` (correct: the hook refuses *removing* `owner:don`, not stacking owners, for the curator)
 - Test: `tests/run.sh lint`
 
-- [ ] **Step 1:** One line per new rule from Tasks 1–6 in each affected core, matching the existing one-line style. Replace the curator's wrong line.
-- [ ] **Step 2:** `tests/run.sh` green. **Step 3: Commit** `docs(prompts): state the new guard rules in each role core`
+- [x] **Step 1:** One line per new rule from Tasks 1–6 in each affected core, matching the existing one-line style. Replace the curator's wrong line.
+- [x] **Step 2:** `tests/run.sh` green. **Step 3: Commit** `docs(prompts): state the new guard rules in each role core`
 
 ---
 
@@ -204,7 +206,7 @@ row 2 implementer "" $none 'FOO=1 gh issue edit 5 --add-label status:verified'
 - `plan_text <n>` jq: `[.comments[] | select(.author.login == $me and (.body | startswith("<!-- harnest:plan")))] | last | .body // empty`.
 - Arch range: same author filter, then `[[ "$range" =~ ^[0-9a-f]{7,40}\ [0-9a-f]{7,40}$ ]] || range=""`.
 
-- [ ] **Step 1: Test** in `test-drivers.sh` after §5: a feature parent with an approved plan comment by `dkackman` and a later `<!-- harnest:plan v9 -->` comment by `stranger` (write it with `FAKE_GH_AUTHOR=stranger gh issue comment …` against the board). Run one cycle with `FAKE_CLAUDE_DO` capturing the build prompt to `$T/build-prompt`. Assert:
+- [x] **Step 1: Test** in `test-drivers.sh` after §5: a feature parent with an approved plan comment by `dkackman` and a later `<!-- harnest:plan v9 -->` comment by `stranger` (write it with `FAKE_GH_AUTHOR=stranger gh issue comment …` against the board). Run one cycle with `FAKE_CLAUDE_DO` capturing the build prompt to `$T/build-prompt`. Assert:
 
 ```bash
 has   "plan text: the owner's plan is what the build sees" "<!-- harnest:plan v1 -->" "$(cat "$T/build-prompt")"
@@ -213,8 +215,8 @@ fails "plan text: a stranger's marker never reaches a session" grep -q 'harnest:
 
   And for the arch range: a comment `<!-- harnest:arch-review --output=/tmp/x abc -->` by `stranger` on an `arch-review` issue; assert the reviewer prompt says "There is no arch-review marker from the driver".
 
-- [ ] **Step 2: Run `tests/run.sh drivers`** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
-- [ ] **Step 5: Commit** `fix(drivers): read plan and arch-review markers only from the ticket owner`
+- [x] **Step 2: Run `tests/run.sh drivers`** — FAIL. **Step 3: Implement.** **Step 4: Run** — PASS.
+- [x] **Step 5: Commit** `fix(drivers): read plan and arch-review markers only from the ticket owner`
 
 ### Task 9: One shared MCP-config writer, token out of argv
 
@@ -223,7 +225,7 @@ fails "plan text: a stranger's marker never reaches a session" grep -q 'harnest:
 - Modify: `run-loop.sh:284`, `run-regression.sh:232`, `run-features.sh:82` to call it; `run-regression.sh:313` passes the token to `contract/run.py` via `DW_TOKEN` in the environment (the Python runner already reads env, per `harness/drivers/regression.py`).
 - Test: `tests/test-providers.sh`
 
-- [ ] **Step 1: Test**
+- [x] **Step 1: Test**
 
 ```bash
 f="$(DW_URL='http://x/"q' DW_TOKEN='t"k' mcp_config_file "http://x/\"q" 't"k')"
@@ -233,8 +235,8 @@ eq  "mcp config: private" "600" "$(stat -f %Lp "$f")"
 
   In `test-drivers.sh`: `fails "mcp config: no token in argv" grep -q "$DW_TOKEN" "$FAKE_CLAUDE_LOG"`.
 
-- [ ] **Step 2–4:** FAIL, implement, PASS (parity test must still match: the Python driver already passes a path; align the file name).
-- [ ] **Step 5: Commit** `fix(drivers): build the MCP config once, in a private file, never in argv`
+- [x] **Step 2–4:** FAIL, implement, PASS (parity test must still match: the Python driver already passes a path; align the file name).
+- [x] **Step 5: Commit** `fix(drivers): build the MCP config once, in a private file, never in argv`
 
 ### Task 10: `release_freeze` reports UNKNOWN and its three callers hold
 
@@ -245,8 +247,8 @@ eq  "mcp config: private" "600" "$(stat -f %Lp "$f")"
 **Interfaces:**
 - `release_freeze` prints `UNKNOWN` (and returns 0) when `classify_issues` fails; callers treat non-empty output, including `UNKNOWN`, as "held", and log `[<pass>] board unreadable; holding under a possible release freeze`.
 
-- [ ] **Step 1: Test** — board with an open `release` issue; `FAKE_GH_FAIL_AFTER=<n>` (add to `fake-gh.py`: fail every call after the nth) set so the snapshot fails inside `tester_pass`; `TESTER_TASK_EVERY=1`. Assert no `claude -p` with `task` in `$FAKE_CLAUDE_LOG` and the hold line in `loop.out`.
-- [ ] **Step 2–4.** **Step 5: Commit** `fix(loop): an unreadable board holds the freeze-gated passes instead of lifting them`
+- [x] **Step 1: Test** — board with an open `release` issue; `FAKE_GH_FAIL_AFTER=<n>` (add to `fake-gh.py`: fail every call after the nth) set so the snapshot fails inside `tester_pass`; `TESTER_TASK_EVERY=1`. Assert no `claude -p` with `task` in `$FAKE_CLAUDE_LOG` and the hold line in `loop.out`.
+- [x] **Step 2–4.** **Step 5: Commit** `fix(loop): an unreadable board holds the freeze-gated passes instead of lifting them`
 
 ### Task 11: Sessions stop when the driver does
 
@@ -254,10 +256,10 @@ eq  "mcp config: private" "600" "$(stat -f %Lp "$f")"
 - Modify: `providers.sh:1216-1237` (`run_claude_session`): run the pipeline in the background, `wait "$!"`; new `kill_session_tree` (TERM the pipeline's process group via `set -m` in the subshell, or `pkill -TERM -P`), `trap 'kill_session_tree; exit 143' TERM INT HUP` installed by `acquire_driver_lock` next to the EXIT trap; `acquire_driver_lock:904-917` refuses takeover while `pgrep -f "claude -p" -P <old pid>` finds a child.
 - Test: `tests/test-providers.sh`
 
-- [ ] **Step 1: Test** — a fake `claude` that `sleep 30`s; start `run_claude_session` in a background bash with the lock acquired; `kill -TERM` the driver pid; within 5 s assert `pgrep -f 'sleep 30'` is empty and the lock directory is gone.
-- [ ] **Step 2–4.** Run `tests/run.sh` whole: the drivers tests exercise the pipeline shape.
-- [ ] **Step 5: Commit** `fix(session): TERM stops the driver and its claude child; no takeover over a live child`
-- [ ] **Step 6:** Delete memory `stopping-loops-needs-kill.md` after this ships live and is confirmed (not part of the PR).
+- [x] **Step 1: Test** — a fake `claude` that `sleep 30`s; start `run_claude_session` in a background bash with the lock acquired; `kill -TERM` the driver pid; within 5 s assert `pgrep -f 'sleep 30'` is empty and the lock directory is gone.
+- [x] **Step 2–4.** Run `tests/run.sh` whole: the drivers tests exercise the pipeline shape.
+- [x] **Step 5: Commit** `fix(session): TERM stops the driver and its claude child; no takeover over a live child`
+- [x] **Step 6:** Delete memory `stopping-loops-needs-kill.md` after this ships live and is confirmed (not part of the PR).
 
 ### Task 12: A rejected rate limit is re-run, and a missing reset never spins
 
@@ -266,7 +268,7 @@ eq  "mcp config: private" "600" "$(stat -f %Lp "$f")"
 - README knob table: `RATE_LIMIT_FALLBACK_SECS`.
 - Test: `tests/test-providers.sh` (extend the rate-limit test at `:21`)
 
-- [ ] **Step 1: Tests**
+- [x] **Step 1: Tests**
 
 ```bash
 printf 'rate-limit: status=rejected type=x overage=false resets=1970 resets_epoch=0\nusage: turns=1\n' > "$T/rl"
@@ -275,7 +277,7 @@ eq "rate limit: a missing reset sleeps the fallback" "sleeping 1s" "$(RATE_LIMIT
 
   And a fake `claude` that emits a rejected `rate_limit_event` on its first call and success on the second: `eq "rate limit: the rejected attempt is run again" 2 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"` with `RATE_LIMIT_FALLBACK_SECS=0`.
 
-- [ ] **Step 2–4.** **Step 5: Commit** `fix(session): re-run a rate-limited attempt; never treat a missing reset as no wait`
+- [x] **Step 2–4.** **Step 5: Commit** `fix(session): re-run a rate-limited attempt; never treat a missing reset as no wait`
 
 ### Task 13: `unpark_pass` retries after a gh failure; mini-ai locks before it deploys
 
@@ -283,8 +285,8 @@ eq "rate limit: a missing reset sleeps the fallback" "sleeping 1s" "$(RATE_LIMIT
 - Modify: `run-loop.sh:975-985` (stamp only when no `gh-failed` entry), `run-loop.sh:225-240` (move `acquire_driver_lock` above the preflight/deploy block)
 - Test: `tests/test-drivers.sh` §6c (unpark) and §10 (mini-ai)
 
-- [ ] **Step 1: Tests** — §6c variant with `FAKE_GH_FAIL_AFTER` hitting the unpark edit: after a second cycle with gh healthy, the issue is back to `owner:implementer` and the stamp exists. §10: with the mini-ai lock held by another pid and `curl` health failing, assert no `deploy.sh` call in the ssh log before the "waiting for the lock" line.
-- [ ] **Step 2–4.** **Step 5: Commit** `fix(loop): unpark retries after a gh blip; the Mac loop takes its lock before a startup deploy`
+- [x] **Step 1: Tests** — §6c variant with `FAKE_GH_FAIL_AFTER` hitting the unpark edit: after a second cycle with gh healthy, the issue is back to `owner:implementer` and the stamp exists. §10: with the mini-ai lock held by another pid and `curl` health failing, assert no `deploy.sh` call in the ssh log before the "waiting for the lock" line.
+- [x] **Step 2–4.** **Step 5: Commit** `fix(loop): unpark retries after a gh blip; the Mac loop takes its lock before a startup deploy`
 
 ### Task 14: One board snapshot per pass
 
@@ -293,8 +295,8 @@ eq "rate limit: a missing reset sleeps the fallback" "sleeping 1s" "$(RATE_LIMIT
 - README knob table: `SNAPSHOT_TTL_SECS`.
 - Test: `tests/test-drivers.sh`
 
-- [ ] **Step 1: Test** — on the idle-board scenario (§1 with a healthy gh) assert `eq "snapshot: at most 12 list calls in an idle cycle" …` using `grep -c 'issue list' "$FAKE_GH_LOG"` (record the number before the change in the commit message; it is about 64).
-- [ ] **Step 2–4.** **Step 5: Commit** `perf(loop): snapshot the board once per pass`
+- [x] **Step 1: Test** — on the idle-board scenario (§1 with a healthy gh) assert `eq "snapshot: at most 12 list calls in an idle cycle" …` using `grep -c 'issue list' "$FAKE_GH_LOG"` (record the number before the change in the commit message; it is about 64).
+- [x] **Step 2–4.** **Step 5: Commit** `perf(loop): snapshot the board once per pass`
 
 ---
 
@@ -312,7 +314,7 @@ Tests: `tests/py/test_fleet.py` (unit, `unittest`), `tests/test-fleet.sh` (end t
 - `Fleet.finish(status: str) -> str` returns the status it recorded.
 - `main(argv) -> int`.
 
-- [ ] **Step 1: Unit tests**
+- [x] **Step 1: Unit tests**
 
 ```python
 def test_finish_downgrades_done_when_cases_are_unresolved(self):
@@ -329,7 +331,7 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 
   End to end: in `test-fleet.sh`, a fake `claude` variant that emits a `usage:` line after answering only `S-F001` of a 3-case batch; assert `eq "fleet: exit 1 when a case is left unreported" 1 "$rc"` and `has "fleet: state says failed" '"status": "failed"' "$(cat "$T/h/logs/fleet/state.json")"`.
 
-- [ ] **Step 2–4.** **Step 5: Commit** `fix(fleet): a lane crash or an unanswered case fails the run`
+- [x] **Step 2–4.** **Step 5: Commit** `fix(fleet): a lane crash or an unanswered case fails the run`
 
 ### Task 16: Unanswered cases are re-queued once
 
@@ -337,8 +339,8 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 - Modify: `harness/drivers/fleet.py:763-790` (`settle`: `o is None and not died and not it.retried` → `it.retried = True; requeue(it, lane, why="had no answer (budget or turns ran out)", same_server=True)`); abort path: after `REGRESSION-ABORT` requeue the batch's unanswered cases to another server too.
 - Test: `tests/py/test_fleet.py`, `tests/test-fleet.sh`
 
-- [ ] **Step 1: Tests** — `test_settle_requeues_an_unanswered_case_once`; e2e: the Task 15 fake now gets a second session for `S-F002 S-F003`, and the run exits 0 with all cases `pass`.
-- [ ] **Step 2–4.** **Step 5: Commit** `fix(fleet): re-run the cases a finished session never answered`
+- [x] **Step 1: Tests** — `test_settle_requeues_an_unanswered_case_once`; e2e: the Task 15 fake now gets a second session for `S-F002 S-F003`, and the run exits 0 with all cases `pass`.
+- [x] **Step 2–4.** **Step 5: Commit** `fix(fleet): re-run the cases a finished session never answered`
 
 ### Task 17: Workspaces are seeded lazily, per lane and level
 
@@ -346,7 +348,7 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 - Modify: `harness/drivers/fleet.py:485-496` (`seed` becomes `seed_for(lane, level)`, called from `run_batch` before the first batch of that level on that lane; `Lane.seeded: set[str]`)
 - Test: `tests/py/test_fleet.py` (`test_a_stealing_lane_seeds_the_level_it_steals`), `tests/test-fleet.sh` (assert the fake MCP saw `create_workspace` for the second lane's workspace before its first `run_workflow`)
 
-- [ ] **Step 1–5** as above. Commit `fix(fleet): seed a lane's workspace when it first runs a level, stolen cases included`
+- [x] **Step 1–5** as above. Commit `fix(fleet): seed a lane's workspace when it first runs a level, stolen cases included`
 
 ### Task 18: Per-case time covers one attempt only
 
@@ -354,7 +356,7 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 - Modify: `harness/drivers/fleet.py:737-754`, `harness/session.py:289+` (`run` returns `attempts: list[tuple[float,float]]` start/end per attempt, or `on_line` sees the `usage:` line and the batch closes `live` there); drop `secs` for a batch whose session died or was retried.
 - Test: `tests/py/test_fleet.py` (`test_case_seconds_exclude_retry_pause_and_rate_limit_sleep` with an injected clock)
 
-- [ ] **Step 1–5.** Commit `fix(fleet): a case's seconds stop at its session's result, not after retries`
+- [x] **Step 1–5.** Commit `fix(fleet): a case's seconds stop at its session's result, not after retries`
 
 ### Task 19: `contract/run.py` rejects malformed cases and never passes an empty assertion
 
@@ -362,8 +364,8 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 - Modify: `contract/run.py:87-135` (`check`: unknown key → `MCPError("unknown assertion %r")`), `:141` (case `id` must equal the filename stem), `:198` (`if __name__ == "__main__": sys.exit(main())`), `contract/mcp_client.py:50-55` (wrap `ValueError`, `http.client.HTTPException`, `IncompleteRead` as `MCPError`; per-case timeout `--timeout`, default 600)
 - Test: `tests/py/test_contract.py` (new; the fake MCP server from `tests/fake-mcp.py`)
 
-- [ ] **Step 1: Tests** — `test_unknown_assertion_key_fails_the_case`, `test_id_must_match_filename`, `test_import_does_not_run_main`.
-- [ ] **Step 2–4.** Add the file to `tests/test-python.sh`'s discovery if it enumerates. **Step 5: Commit** `fix(contract): a case asserts something or fails; ids match filenames`
+- [x] **Step 1: Tests** — `test_unknown_assertion_key_fails_the_case`, `test_id_must_match_filename`, `test_import_does_not_run_main`.
+- [x] **Step 2–4.** Add the file to `tests/test-python.sh`'s discovery if it enumerates. **Step 5: Commit** `fix(contract): a case asserts something or fails; ids match filenames`
 
 ### Task 20: Atomic ratchet stamps and a locked dashboard index
 
@@ -371,7 +373,7 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 - Modify: `lib/arch_ratchet.py:204-215` (`check` uses `_read_stamp`/`_write_stamp` like `check_ui`), `dashboard/serve.py:262-279` (`threading.Lock` on `StreamIndex.refresh` and readers)
 - Test: `tests/test-ratchet.sh` (a truncated stamp re-measures instead of refusing), `tests/py/test_dashboard.py` (two threads refreshing one index count each session once)
 
-- [ ] **Step 1–5.** Commit `fix: tolerate a truncated ratchet stamp; serialize dashboard index refresh`
+- [x] **Step 1–5.** Commit `fix: tolerate a truncated ratchet stamp; serialize dashboard index refresh`
 
 ---
 
@@ -386,7 +388,7 @@ def test_guard_marks_the_batch_not_run_on_a_lane_crash(self):
 - Modify: `agents/regression/chunk.md` to match (it no longer says "read its header").
 - Test: `tests/py/test_suite.py` (new or extend), `tests/test-regression-py.sh` (parity still byte-identical), `tests/test-drivers.sh` §7
 
-- [ ] **Step 1: Tests**
+- [x] **Step 1: Tests**
 
 ```python
 def test_case_text_skips_a_fenced_heading(self):
@@ -402,8 +404,8 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 
   Driver: `has "chunk: the prompt carries the case text" "### S-F002" "$(grep 'S-F002' "$FAKE_CLAUDE_LOG" | head -1)"` (raise the fake's `cut -c1-200` to 4000 for this scenario via `FAKE_CLAUDE_WIDTH`).
 
-- [ ] **Step 2–4.** **Step 5: Commit** `perf(regression): inline the cases' text into each chunk prompt`
-- [ ] **Step 6 (measure, not code):** one smoke run before and after; record turns per case and `Read`/`Grep` counts in the PR description (`grep -c '> Read' logs/regression.log` over the run's span).
+- [x] **Step 2–4.** **Step 5: Commit** `perf(regression): inline the cases' text into each chunk prompt`
+- [x] **Step 6 (measure, not code):** one smoke run before and after; record turns per case and `Read`/`Grep` counts in the PR description (`grep -c '> Read' logs/regression.log` over the run's span).
 
 ### Task 22: A per-case results ledger
 
@@ -414,8 +416,8 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `run-regression.sh` (after every `run_session` in `run_level`), `harness/drivers/regression.py` (same point), `harness/drivers/fleet.py:settle` (same call), `providers.sh:963` `commit_suite_changes` and `harness/suite.py:commit_paths` add `regression-results/` (and `regression-results/<server>/` off-primary); `guard.py` target rules allow writes there for a Mac run as for `regression-perf/<server>/`.
 - Test: `tests/py/test_results.py`, `tests/test-drivers.sh` §7, `tests/test-fleet.sh`
 
-- [ ] **Step 1: Tests** — `test_record_appends_in_key_order`; driver: after the two-case regression scenario `eq "results: one line per case" 2 "$(cat "$T/h/regression-results"/*.jsonl | wc -l | tr -d ' ')"` and the commit includes the directory.
-- [ ] **Step 2–4.** **Step 5: Commit** `feat(regression): record every case's outcome and seconds in regression-results/`
+- [x] **Step 1: Tests** — `test_record_appends_in_key_order`; driver: after the two-case regression scenario `eq "results: one line per case" 2 "$(cat "$T/h/regression-results"/*.jsonl | wc -l | tr -d ' ')"` and the commit includes the directory.
+- [x] **Step 2–4.** **Step 5: Commit** `feat(regression): record every case's outcome and seconds in regression-results/`
 
 ### Task 23: A ranking report, and the curator reads it
 
@@ -424,7 +426,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `run-curate.sh:138` adds `$(python3 scripts/rank-cases.py --level "$level" --candidates)` under a "Per-case evidence" heading in the curator's prompt; `agents/curator/audit.md:20-36` says the rank table is the primary evidence and the chunk table is secondary; `README.md` knob table: `COST_PER_CASE_USD`, `MIN_RUNS`, `MIN_SECS`.
 - Test: `tests/py/test_rank.py`, `tests/test-drivers.sh` §8 (the curator prompt contains the heading)
 
-- [ ] **Step 1–5.** Commit `feat(curator): rank cases by runs, failures and time from the results ledger`
+- [x] **Step 1–5.** Commit `feat(curator): rank cases by runs, failures and time from the results ledger`
 
 ### Task 24: The perf comparison runs in code
 
@@ -433,7 +435,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `agents/regression/run-cases.md` step 3: "run `python3 scripts/perf-check.py …` (it is on your allowlist) and treat its verdict as the comparison; append the reading as before"; `CONSUMER_PERMISSION_FLAGS` in `providers.sh` adds `Bash(python3 scripts/perf-check.py *)` only.
 - Test: `tests/py/test_perf_check.py` (`test_fifty_percent_over_recent_median_is_a_regression`, `test_creep_is_caught_by_the_all_time_median`, `test_two_prior_entries_record_only`), `tests/test-guard.sh` row allowing the call for `consumer`.
 
-- [ ] **Step 1–5.** Commit `feat(regression): compute the perf regression rule instead of asking the agent to`
+- [x] **Step 1–5.** Commit `feat(regression): compute the perf regression rule instead of asking the agent to`
 
 ### Task 25: Missing requirements entries are visible, not undispatchable
 
@@ -441,7 +443,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `harness/drivers/fleet.py` (`plan`: cases absent from `regression-requirements.json` are listed in one `[fleet] N case(s) have no requirements entry: …; dispatched as heavy on the primary` line and placed in the primary's queue with `load: heavy`), `run-digest.sh` (one line: count of cases missing an entry, with the regen command `python3 -m harness.drivers.requirements`).
 - Test: `tests/test-fleet.sh` (remove one case from the generated requirements; assert the line and that the case still runs)
 
-- [ ] **Step 1–5.** Commit `fix(fleet): a case without a requirements entry still runs, on the primary`
+- [x] **Step 1–5.** Commit `fix(fleet): a case without a requirements entry still runs, on the primary`
 
 ---
 
@@ -453,8 +455,8 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `run-loop.sh:535-536` (`triaged` excludes any issue whose comments contain a line starting `triage:` by `TICKET_OWNER`; use the snapshot's `comments` field already fetched by `issue_snapshot`, exposed as `triaged_issue <n>` in `providers.sh`), `providers.sh:1296` (`brief` mode: `comment_n=1`), `agents/implementer/triage.md:23` ("Your prompt lists only issues with no `triage:` comment; leave exactly one"), `agents/implementer/fix.md:6,15` ("the latest `triage:` comment governs").
 - Test: `tests/test-drivers.sh` §3a
 
-- [ ] **Step 1: Test** — board with #12 carrying a `triage: work` comment by `dkackman`, #13 with a `triage: work` comment by `stranger` (`FAKE_GH_AUTHOR`), #14 with none; assert the triage prompt names `#13` and `#14` and not `#12`.
-- [ ] **Step 2–4.** **Step 5: Commit** `fix(loop): triage only what has no owner triage comment`
+- [x] **Step 1: Test** — board with #12 carrying a `triage: work` comment by `dkackman`, #13 with a `triage: work` comment by `stranger` (`FAKE_GH_AUTHOR`), #14 with none; assert the triage prompt names `#13` and `#14` and not `#12`.
+- [x] **Step 2–4.** **Step 5: Commit** `fix(loop): triage only what has no owner triage comment`
 
 ### Task 27: Verify sessions load the MCP house rules
 
@@ -463,7 +465,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `providers.sh:role_prompt` (`tester:verify` → `core verify cases mcp-rules`, `tester:spec`, `tester:task` likewise), `agents/tester/standing-task.md:88` (the bible keeps episode state only; cap 12 KB), `run-loop.sh:tester_pass` (after a task session: `[audit] WARNING: qa-bible.md is N KB, over its 12 KB cap` when `wc -c` > 12288), `qa-bible.md` (delete the moved House rules; this is the one agent-owned file a human edits, say so in the commit).
 - Test: `tests/test-drivers.sh` (the verify prompt file contains "wait_seconds"; the audit line appears when a 13 KB bible is planted)
 
-- [ ] **Step 1–5.** Commit `feat(tester): house rules are a prompt fragment every MCP-using kind loads`
+- [x] **Step 1–5.** Commit `feat(tester): house rules are a prompt fragment every MCP-using kind loads`
 
 ### Task 28: The lead's design session posts a draft plan after the sweep
 
@@ -471,7 +473,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `agents/lead/design.md` (new step after the Explore sweep: post `<!-- harnest:plan v1 -->` with status `draft: sweep done`, then PATCH it in place as steps 3–5 complete; `core.md:118` points at it), `lib/classify.jq` (a plan comment whose first body line contains `draft:` does not count as a plan for `plan-review` routing — add a fixture board to `tests/classify-cases.json`)
 - Test: `tests/test-classify.sh` fixture: `design-draft-plan` → still `lead:design`.
 
-- [ ] **Step 1–5.** Commit `feat(lead): a design session leaves a draft plan comment it can resume from`
+- [x] **Step 1–5.** Commit `feat(lead): a design session leaves a draft plan comment it can resume from`
 
 ### Task 29: Hand-offs describe behaviour; verifies design their own repro first
 
@@ -479,7 +481,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `agents/implementer/fix.md:97-117` ("Hand off": what a consumer observes — tool, input, old vs new response — and the commit hash; a proposed case states the behaviour to lock in, not the call; after deploy confirm health only, never re-run the repro over MCP — move the sentence from `agents/implementer/target.md:21-23`), `agents/tester/verify.md:9-11` (step 2: design the repro from the issue's `expected:` first; the hand-off's suggested call runs last, as one adjacent case).
 - Test: `tests/run.sh lint`; bench the implementer change (`run-bench.sh`, label `handoff-wording@<sha>`, compare to the latest baseline in `bench/results/results.jsonl` with `--summary`).
 
-- [ ] **Step 1–3.** Commit `docs(prompts): hand-offs describe observable behaviour; the tester verifies independently`
+- [x] **Step 1–3.** Commit `docs(prompts): hand-offs describe observable behaviour; the tester verifies independently`
 
 ### Task 30: Settle the three contradictions
 
@@ -487,7 +489,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `CLAUDE.md` Ticket protocol + `agents/implementer/core.md:120-123` + `agents/regression/core.md:63-64` + `agents/tester/core.md:54-56` → one rule: "a regression against a verified issue is a **new** issue labeled `regression` that references it; nobody reopens"; `agents/tester/closures.md:15` → count wontfixes per problem (an issue closed `wontfix` as "restates #NN" inherits #NN's count); `agents/implementer/core.md` Dispositions → `status:needs-info` goes to `owner:tester` for a repro question and to `owner:don` for a decision or an environment failure; `agents/tester/spec.md` step 1 → Grep `pending: #<stage>` before writing; one line in each core for `gh` failing twice (stop; the driver re-runs you) and for a job that never finishes (two `wait_for_job` caps with no new event → `cancel_job`, file with the events).
 - Test: `tests/run.sh lint`.
 
-- [ ] **Step 1–3.** Commit `docs(prompts): one reopen rule, countable wontfix, needs-info routing, cut-off safe spec`
+- [x] **Step 1–3.** Commit `docs(prompts): one reopen rule, countable wontfix, needs-info routing, cut-off safe spec`
 
 ---
 
@@ -499,7 +501,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `tests/fake-gh.py:93-99` (`--limit N` truncates; `--search` understands `closed:>=DATE`, `created:>=DATE`, `in:title <word>`, `-author:`; comments carry `createdAt` = now and `author.login` from `FAKE_GH_AUTHOR`).
 - Test: `tests/test-drivers.sh` — a 3-issue board with `--limit 2` in a driver path (`pending_closures` reads 200; plant 201 closed issues programmatically and assert the 201st is not seen, documenting the window); `issue_context` withholding: a `stranger` comment on a fix issue is a one-line stub in the fix prompt (`has "issue context: a stranger's comment is a stub" "comment by @stranger withheld" …`).
 
-- [ ] **Step 1–5.** Commit `test(fake-gh): windows, search dates and comment authors behave like gh`
+- [x] **Step 1–5.** Commit `test(fake-gh): windows, search dates and comment authors behave like gh`
 
 ### Task 32: Audit warnings only where a human should look
 
@@ -507,7 +509,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `providers.sh:commit_suite_changes` (when the commit message starts `curator:` or the session kind is `curator:review`, log `[audit] curator removed lines …` at info level, not `WARNING`), `run-loop.sh` (the tester's "added case" commit still warns on removal).
 - Test: `tests/test-drivers.sh` §3f (a curator ruling that deletes lines produces no `[audit] WARNING`; a tester commit that deletes lines still does).
 
-- [ ] **Step 1–5.** Commit `fix(audit): approved curator deletions are not warnings`
+- [x] **Step 1–5.** Commit `fix(audit): approved curator deletions are not warnings`
 
 ### Task 33: Retro and digest run on a schedule
 
@@ -516,7 +518,7 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `README.md` "Running" (one paragraph), `run-retro.sh:154-158` already fixed in Task 12.
 - Test: `tests/test-setup.sh` (the plists parse: `plutil -lint`; `--uninstall` leaves nothing).
 
-- [ ] **Step 1–5.** Commit `feat(ops): launchd schedules for the retro and the digest`
+- [x] **Step 1–5.** Commit `feat(ops): launchd schedules for the retro and the digest`
 
 ### Task 34: Documentation matches the code
 
@@ -524,11 +526,11 @@ def test_case_text_carries_fixtures_only_from_the_header(self):
 - Modify: `HARNESS-ROADMAP.md` status table (R4 built via the tester `spec` kind; R6 "2 cases script-run, `S-F036.json` orphaned"; R8 built: `harness/`, fleet, parity; R13 the fleet and `targets/dw/profile.toml`; baseline block dated and superseded by the spec's numbers), `CLAUDE.md` "Tests" (all 16 files, one line each), the role-prompt bullet (tester kinds include `spec`; regression `whole` = `core run-cases sweep`, no `whole.md`), `README.md:670` (`TESTER_BUDGET_USD` row: "8 on a non-lem target"), `tests/test-lint.sh:33-40` (also scan `scripts/*.sh`, `lib/*.py`, `harness/**/*.py` for `os.environ.get("…")`/`${…:-}` knobs: `HARNEST_PROFILE`, `HARNEST_ARCH_TOOLS`, `ADVISORY_PACKAGE`, `DW_PORT` get README rows).
 - Test: `tests/run.sh lint`.
 
-- [ ] **Step 1–3.** Commit `docs: roadmap status, test inventory and knob table match the tree`
+- [x] **Step 1–3.** Commit `docs: roadmap status, test inventory and knob table match the tree`
 
 ### Task 35: Measure (no code)
 
-- [ ] Re-run the bench at the current implementer prompt: `BENCH_LABEL=post-hardening@<sha> ./run-bench.sh` and `./run-bench.sh --summary`; paste the table into the PR for Phase 5.
+- [x] Re-run the bench at the current implementer prompt: `BENCH_LABEL=post-hardening@<sha> ./run-bench.sh` and `./run-bench.sh --summary`; paste the table into the PR for Phase 5.
 - [ ] One `smoke` run before Task 21 and one after; record `turns/case`, `$ / case`, `Read+Grep` count in `regression-results/README.md` under "Why the prompt carries the text".
 - [ ] After four `complete` runs with the ledger: `python3 scripts/rank-cases.py --level complete --candidates`, and file one `suite` + `status:needs-approval` issue on `dkackman/harnest` per tier move, as the curator would.
 
