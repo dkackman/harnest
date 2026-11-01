@@ -844,6 +844,27 @@ has "digest: counts the cases missing a requirements entry, with the regen comma
     "$(cat "$T/digest.out")"
 git -C "$T/h" checkout -q -- regression-requirements.json
 
+# --- 9a2. run-digest: batch-lane plans and parked issues get sections of their own (R15)
+board '[{"number": 10, "state": "OPEN", "title": "batch plan",
+         "labels": [{"name": "feature"}, {"name": "owner:don"}, {"name": "status:plan-review"}, {"name": "lane:batch"}],
+         "comments": [{"author": {"login": "dkackman"}, "createdAt": "2026-11-01T00:00:00Z",
+                       "body": "<!-- harnest:plan v2 -->\n## Verdict: build smaller\n- **Q1** [none] which file. Default: x."}]},
+        {"number": 11, "state": "OPEN", "title": "deferred idea", "labels": [{"name": "feature"}, {"name": "owner:don"}, {"name": "parked"}]},
+        {"number": 12, "state": "OPEN", "title": "a park", "labels": [{"name": "owner:don"}, {"name": "status:needs-approval"}]}]'
+: > "$FAKE_CLAUDE_LOG.argv"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r ./run-digest.sh) > "$T/digest.out" 2>&1
+d="$(cat "$T/digest.out")"
+has "digest: a batch section" "## Batch: plans with no question for you" "$d"
+has "  with the one command that approves it" "scripts/approve-batch.sh 10" "$d"
+has "  showing each plan's version and verdict" "#10 plan v2: batch plan — ## Verdict: build smaller" "$d"
+has "  and each question with its kind" "**Q1** [none] which file. Default: x." "$d"
+has "digest: a deferred section" "## Deferred: waiting on a trigger, not on you" "$d"
+has "  listing the parked issue" "- #11 (" "$d"
+m="$(cat "$FAKE_CLAUDE_LOG.argv")"
+has "digest: the rest still go to the model for the table" "## #12: a park" "$m"
+case "$m" in *"## #10:"*|*"## #11:"*) _report 1 "digest: batch and parked issues are not in the table too" ;; *) _report 0 "digest: batch and parked issues are not in the table too" ;; esac
+has "digest: the count covers all three" "3 parked" "$d"
+
 # --- 9b. the nightly regression run: once a day, inside the loop, under its lock
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/.nightly-regression"
 board '[]'

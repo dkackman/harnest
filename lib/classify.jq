@@ -33,6 +33,13 @@
 # The driver reads the freeze from that row, to hold the tester's standing
 # task too, which no issue queues.
 #
+# `parked` (roadmap R15) on an owner:lead issue is a deferral: it waits on
+# its triggers, the ones that are issues linked as blockers. With no
+# blocker, or any still open, it waits; once every blocker has closed, a
+# feature or idea goes to lead:design and a stage to its usual build route,
+# and that session rechecks the triggers. A parked owner:don issue is Don's
+# like any other: the digest lists it apart, as deferred.
+#
 # A loop runs against one server (`target` in the snapshot, lem when it is
 # absent; harnest#15). An issue another loop holds, or whose backend this
 # server can't serve, waits here: see the target post-filter at the end. The
@@ -130,6 +137,11 @@ def parent_phase:
     elif has("status:needs-info") then {queue: "tester:answer", reason: "question from the implementer"}
     elif (($st - don_statuses) | length) == 0 then {queue: "tester:handoff", reason: "harness-side edit requested"}
     else {queue: "stranded", reason: "owner:tester with \($st | join(","))"} end
+  elif $o[0] == "owner:lead" and has("parked")
+       and ([(.blockedBy.nodes // [])[] | .state] | length == 0 or index("OPEN") != null) then
+    {queue: "wait", reason: "parked: waiting on its triggers"}
+  elif $o[0] == "owner:lead" and has("parked") and (has("stage") | not) then
+    {queue: "lead:design", reason: "parked: every blocker closed, recheck the triggers"}
   elif $o[0] == "owner:lead" then
     if has("stage") then
       ($open[(.parent.number // -1) | tostring]) as $p

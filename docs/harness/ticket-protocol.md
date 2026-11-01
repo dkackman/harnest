@@ -82,6 +82,16 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   The tester stays source-blind: that is why this is a separate role, not a wider fence.
   That rule is about the ticket repo: on this repo the curator closes the suite requests it
   applies as `completed`.
+- **Asking Don, and the two lanes** (R15, `docs/superpowers/specs/2026-11-01-escalation-lanes.md`).
+  A hand-off to `owner:don` ends with an ask block: the decision, its kind (`taste`,
+  `default`, `spend`, `trust`, `loosen`, `scope`, `record`), the default, reversibility.
+  A plan review whose questions are all `[none]` and that adds no MCP/REST/syntax surface,
+  dependency or download also carries `lane:batch`. The digest lists those apart, and Don
+  approves them with `scripts/approve-batch.sh`, which runs as him: no agent adds
+  `status:plan-approved`. `parked` on an `owner:lead` issue is a deferral. `classify.jq`
+  holds it at `wait` until every issue it is blocked by has closed, then hands it to the
+  lead to recheck its triggers. A parked `owner:don` issue is Don's, and the digest lists
+  it under "Deferred".
 - Implementer commits reference the issue number (`fix(mcp): #42 - ...`), works on branches
   merged to `develop`, never `master`.
 - Breaking MCP interface changes get the `breaking-change` label plus a comment, so the tester

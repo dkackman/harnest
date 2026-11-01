@@ -3,7 +3,10 @@
 Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling files: Running → `running.md`, Tests → `tests.md`, Permissions → `permissions.md`, Ticket protocol → `ticket-protocol.md`, the component list → `components.md`.
 
 `tests/run.sh [name]` runs every `tests/test-*.sh` (plain bash on `tests/lib.sh`, no bats).
-Sixteen files:
+Seventeen files:
+- `test-approve-batch.sh`: `scripts/approve-batch.sh` on a fake-gh board. It approves only
+  issues still in the batch lane, skips the rest untouched, asks once, and logs each
+  approval.
 - `test-classify.sh`: `lib/classify.jq` over fixture boards in `tests/classify-cases.json`,
   one per protocol state. Add a board when you add or change a state.
 - `test-consolidation.sh`: the curator's weekly consolidation (`lib/consolidation.py`) on a

@@ -144,6 +144,13 @@ ticket" template. Agents work on them only through `gh issue`.
   to learn, and breaking changes bigger than a rename, after writing a proposal in the
   source repo's `docs/proposals/`. Triage can escalate earlier, without a proposal. No
   agent touches a parked issue.
+- **Asking Don** (roadmap R15). Every hand-off to you ends with a block naming the
+  decision, its kind (`taste`, `default`, `spend`, `trust`, `loosen`, `scope`,
+  `record`), the default and whether it's reversible. A plan tags each question
+  with its kind. A plan whose questions are all `[none]`, with no new MCP, REST or
+  syntax surface, dependency or download, carries `lane:batch` and is approved in a
+  batch (`scripts/approve-batch.sh`). `parked` with `owner:lead` is a deferral that
+  waits on its blocker issues (`lib/classify.jq`).
 - **`field-report`** marks an issue filed from Don's own dw sessions (real use) rather
   than by the harness. The loop works it like any other issue. The feature lead (roadmap
   R11) reads it as evidence of demand.
@@ -185,9 +192,11 @@ owner swap is the whole move. `lib/classify.jq` encodes this, and
 | Hand back an issue you were asked about (a park, a question, a failed deploy) | Comment your answer, then swap `owner:don` for `owner:implementer` (a bug) or `owner:lead` (a feature, idea or stage). |
 | Start a feature or an idea | Swap `owner:don` for `owner:lead`. A comment on scope or priority is optional. |
 | Approve a plan | Add `status:plan-approved` and swap to `owner:lead`. Only you can add that label. |
+| Approve the batch | Run the `scripts/approve-batch.sh <n>...` line from the digest's "Batch" section: plans the lead put in the batch lane (`lane:batch`, every question `[none]`). It shows each plan, asks once, and approves them as you. Leave one out to rule on it as usual. |
 | Ask for changes to a plan | Comment what you want, then swap to `owner:lead`. |
 | Decline a feature or idea | Comment "don't build", then swap to `owner:lead`. The lead records it, and a close-out closes it. |
-| Defer one | Comment, and keep `owner:don`. |
+| Defer one | Comment "not now" with what would bring it back, then swap to `owner:lead` (and remove `status:plan-approved` if it has one, or decompose picks it up instead of design). The lead links each trigger that is an issue as a blocker and adds `parked`; the driver holds it until those close. One with no issue to wait on comes back to you as `owner:don` + `parked`, listed under "Deferred" in the digest. |
+| Bring a parked issue back | Remove `parked`. |
 | Verify a stage the plan gave you (no MCP surface) | Check it, then `gh issue close <n> --reason completed`. |
 | Reject a bug | Add `wontfix`, then close it `not planned`. |
 | Answer a curator escalation (harnest) | Comment approve, deny or your amendment, then remove `owner:don`. |
@@ -525,11 +534,14 @@ review session in `run-loop.sh` (below), which escalates judgment calls to a hum
   it (61 cases, 2026-09-23) took 61 min and $14.53, so smoke's budget is now 65 min / $16.
 - **Curator review** (`curator_pass` in `run-loop.sh`, on the tester's model). One session
   per open `suite` request on this repo, from any agent or from an audit.
-  - It applies what the record settles: a stale reference, or an expectation that a
-    verified or `breaking-change` issue changed on purpose.
+  - It applies what the record settles: a stale reference, an expectation that a
+    verified or `breaking-change` issue changed on purpose, or a `pending:` case brought
+    in line with the plan you approved (with every other `pending:` case of that stage).
   - It denies an edit that would make a failing case pass with no such record.
   - It escalates judgment calls to you with `owner:don`: moves, merges, audit retirements,
-    the security suite beyond a stale reference, and anything touching more than 3 cases.
+    the security suite beyond a stale reference, and anything touching more than 3 cases
+    (bar the pending-case kinds), each with its kind. It rules on duplicate requests
+    together first, so one question reaches you, not three.
 
   Its rulings appear in `run-digest.sh`'s output; reverse one by reopening it with a
   comment.
@@ -746,7 +758,7 @@ The standalone drivers have their own knobs:
 | `JUDGE_TIMEOUT_SECS` / `JUDGE_TRIES` | `150` / `3` | bound on each judge try, and how many tries |
 | `ADVISORY_PACKAGE` | `diffusers-workflow` | `scripts/file-advisory.sh`: the package a draft security advisory names |
 | `DW_PORT` | `8765` | `scripts/testbed.sh stop`: the port whose listener it stops; read on the target host, so set it in that host's environment |
-| `LOGS` | `logs/` at the harness root | `scripts/setup-mac-loop.sh` and `scripts/sync-fixtures.sh`: where they keep their state; the tests point it at a temp dir |
+| `LOGS` | `logs/` at the harness root | `scripts/setup-mac-loop.sh`, `scripts/sync-fixtures.sh` and `scripts/approve-batch.sh` (`approvals.jsonl`): where they keep their state; the tests point it at a temp dir |
 | `HARNEST_PROFILE` | `targets/<target>/profile.toml` | the Python drivers (`harness/profile.py`): a profile file to load instead of the target's |
 | `HARNEST_ARCH_TOOLS` | `grimp networkx pylint pygount ruff` | `lib/arch_ratchet.py`: the tools the ratchet requires before it measures; the tests narrow it to a stdlib stand-in |
 

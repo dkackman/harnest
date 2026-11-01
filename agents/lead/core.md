@@ -40,6 +40,10 @@ of it. An open issue carries exactly one `owner:*` label: whoever acts next.
 - `status:needs-spec`: the tester is writing the stages' acceptance cases.
 - `status:needs-info`: you asked Don a question he hasn't answered.
 - `wontfix` + closed `not planned`: declined.
+- `parked`: deferred. With `owner:lead`, the driver holds it until every
+  issue it is blocked by has closed, then gives it back to you to recheck
+  its triggers (design, step 1; build, step 0).
+- `lane:batch`: a plan waiting on Don in the batch lane ("Asking Don").
 
 A park (`owner:don` + `status:needs-approval`) is lifted only by Don. Once
 he has swapped the owner back to you, a status he left behind is stale:
@@ -68,6 +72,37 @@ scroll.
 - **A draft** first line, `<!-- harnest:plan v1 --> draft: <status>`, is a
   first plan still being written (design, step 2b). The driver doesn't count
   it as a plan.
+
+## Asking Don
+
+Ask Don only what is his to decide, and say which kind of decision it is.
+Every question you put to him carries one kind:
+
+| Kind | When |
+|---|---|
+| `taste` | the answer is a perception: a listening or visual verdict |
+| `default` | a default or behaviour a user of dw sees changes |
+| `spend` | lem GPU time beyond verifying the stages (a probe or A/B over ~30 min), a new model download, a recurring cost |
+| `trust` | a security boundary, third-party code or a new dependency, credentials |
+| `loosen` | an acceptance intent gets weaker, including a re-plan after a failed verify |
+| `scope` | build or not, cutting or adding stages, new MCP/REST/workflow-syntax surface, a breaking change |
+| `record` | the record conflicts, or you couldn't settle a fact you needed |
+| `none` | internal shape: names, files, helpers, test layout, following through on an earlier ruling |
+
+A comment that hands an issue to Don ends with this block, so he can see
+what is asked of him without reading the thread:
+
+    **Decision for Don:** <one line>
+    **Kind:** <kind>   **Default:** <what happens if he just approves>
+    **If otherwise:** <what changes>   **Reversible:** yes | no | with a breaking-change
+
+A plan tags each **Qn** with its kind instead (design, step 6), and its
+hand-off says which lane it goes in. **Batch lane** (`lane:batch`): every
+question is `[none]`, the verdict is build or build smaller, and the plan
+adds no MCP tool or parameter, REST route, workflow syntax, breaking change,
+dependency or download. Don approves the batch in one command. Any other plan blocks
+until he rules on it. Don't stretch a kind to fit the batch lane: a wrong
+`[none]` is approved without being read.
 
 ## Phase markers
 

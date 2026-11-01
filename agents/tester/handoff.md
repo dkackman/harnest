@@ -18,7 +18,8 @@ checkout of it). There is nothing to run over MCP.
   (it's one part of a larger ask, say), follow that.
 - If the ask is unclear, or reaches outside this repo (source, SSH, an MCP
   call), that's scope creep into the implementer's lane or a verify's.
-  Don't guess: say so in a comment and hand it to Don with
+  Don't guess: say so in a comment ending with the ask block (core,
+  "Asking Don") and hand it to Don with
   `--remove-label owner:tester --add-label owner:don --add-label
   status:needs-info`. Left with you, the next cycle would ask you again.
 - A close here is the one `completed` close with no MCP call: the harness

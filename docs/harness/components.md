@@ -227,7 +227,9 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   `BENCH_LABEL`. Offline, so no driver lock. Use it before and after any change to
   `agents/implementer/` or the implementer's model.
 - `run-curate.sh` / `agents/curator/` (R5; `audit` kind here, `review` kind in `run-loop.sh`), `run-retro.sh` / `agents/RETRO.agent.md`
-  (R7) and `run-digest.sh` (R9) are standalone drivers that only propose changes. None of
+  (R7) and `run-digest.sh` (R9; its "Batch" and "Deferred" sections, R15, are built
+  without the model, and `scripts/approve-batch.sh` is the one command Don runs on the
+  batch) are standalone drivers that only propose changes. None of
   them edits a suite, prompt or driver, and none takes the driver lock (no MCP).
   - **Curator:** files one issue per level on **this** repo, labeled `suite` +
     `status:needs-approval`, and searches the ticket repo for case history. Its evidence is

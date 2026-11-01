@@ -4353,5 +4353,282 @@
    "41": "lead:design",
    "42": "lead:decompose"
   }
+ },
+ {
+  "name": "parked: waits on its triggers until every blocker closes",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "idea"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->"
+     ]
+    },
+    {
+     "number": 4,
+     "title": "t4",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 6
+     },
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 92,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 5,
+     "title": "t5",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 6,
+     "title": "t6",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 2,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:plan v1 -->",
+      "<!-- harnest:decomposed v1 -->",
+      "<!-- harnest:specced v1 -->"
+     ]
+    },
+    {
+     "number": 7,
+     "title": "t7",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": {
+      "number": 6
+     },
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 8,
+     "title": "t8",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:lead"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "release-blocker"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 93,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "wait",
+   "2": "wait",
+   "3": "lead:design",
+   "4": "lead:build",
+   "5": "don",
+   "6": "wait",
+   "7": "wait",
+   "8": "lead:design"
+  }
  }
 ]

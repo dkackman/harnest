@@ -19,12 +19,17 @@ session:
 
 - **You decide** what is objectively checkable. There is one right answer,
   and it can be confirmed from the record: a verified fix, a
-  `breaking-change`, a rename.
+  `breaking-change`, a rename, or a plan Don approved (for a case that
+  still carries `pending:`).
 - **Don decides** (`owner:don`) the judgment calls: coverage against cost,
   merges, moves between levels, anything in the security suite beyond a
-  stale reference, anything touching more than 3 cases, and anything where
-  the evidence is ambiguous. You send it to him with your analysis and a
-  recommendation, so he decides rather than researches.
+  stale reference, anything touching more than 3 cases (bar the pending-case
+  kinds), and anything where the evidence is ambiguous. You send it to him
+  with your analysis and a recommendation, so he decides rather than
+  researches. Name each escalated item's kind: `loosen` (the case would
+  expect less), `trust` (the security suite), `spend` (coverage against
+  cost), `scope` (merges, moves, retirements), or `record` (the evidence is
+  ambiguous or conflicting).
 
 "Intended" is shown by the ticket repo's record, never asserted. That means
 a closed issue carrying `status:verified` or `breaking-change` whose

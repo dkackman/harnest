@@ -18,7 +18,11 @@ Read the thread and decide what Don's hand-back asks for:
   redo the sweep it records.
 - **Don answered or redirected.** Fold his answers into the plan as the
   next version (steps 2–6 as far as the answers reach). Don't re-litigate
-  a question he answered.
+  a question he answered. The "changed since" comment carries one line
+  naming each question where he picked other than your default, with its
+  kind: `Don changed: Q3 [default], Q5 [spend]`, or `Don changed: nothing`.
+  That line is how the lanes get measured. A batch approval ("Approved with
+  the batch: plan vN, its defaults") is an approval like any other.
 - **Don declined it** ("don't build", "not doing this"): record it and
   stop. Comment the record: the verdict, the evidence, and what would
   reopen it. Then `gh issue edit <n> --add-label wontfix`, removing any
@@ -26,8 +30,20 @@ Read the thread and decide what Don's hand-back asks for:
   `owner:lead`. A close-out session moves the design doc and closes it:
   this session can't commit.
 - **Don deferred it** ("not now", "later"): comment the triggers that
-  would bring it back, then park it: `--remove-label owner:lead
-  --add-label owner:don --add-label status:needs-approval`. Stop.
+  would bring it back. Link each trigger that is an issue as a blocker
+  (`gh issue edit <n> --add-blocked-by <m>`), then add `parked` and keep
+  `owner:lead`, removing any stale status in the same command. The driver
+  holds it until those blockers close. If no trigger is an issue, nothing
+  could wake it: park it with Don instead, `--remove-label owner:lead
+  --add-label owner:don --add-label parked`. Stop.
+- **Parked, and every blocker has closed** (the driver's reason says so):
+  recheck each trigger in the deferral comment against the record. If the
+  triggers are met, comment the evidence, remove `parked`, and carry on from
+  where the feature stood: no approved plan means steps 2–6, and an approved
+  one means stop there, because the driver routes it on. If they aren't met
+  and no open blocker is left, comment why and hand it to Don with the ask
+  block (core, "Asking Don"), keeping `parked`: `--remove-label owner:lead
+  --add-label owner:don`.
 - **Don asked a question**: answer it in a comment, then hand back as in
   step 6.
 - **The tester's spec questions** (a `spec-questions vN` comment on an
@@ -181,10 +197,13 @@ After the verdict:
 
 ### 6. Questions, then hand to Don
 
-Ask with the plan, not before it. Mark each question **Qn**, give your
+Ask with the plan, not before it. Mark each question **Qn** followed by
+its kind in brackets (`**Q2** [spend] ...`; core, "Asking Don"), give your
 default, and say what changes if Don picks otherwise. That way one reply
 from Don can approve or redirect everything. A questions-only turn is for
-when no sensible plan exists without the answer.
+when no sensible plan exists without the answer. End the plan with the ask
+block, its **Kind** the highest kind among the questions, or the verdict's
+when that is the decision (`scope` for "don't build" or "defer").
 
 - **Post.** The first version is the draft from step 2b, PATCHed once
   more with ` draft: …` removed from its first line, which is then exactly
@@ -195,4 +214,6 @@ when no sensible plan exists without the answer.
   `owner:lead`. Approve by adding `status:plan-approved` yourself. No agent
   may set it."
 - **Hand off:** `gh issue edit <n> --remove-label owner:lead --add-label
-  owner:don --add-label status:plan-review`.
+  owner:don --add-label status:plan-review`, plus `--add-label lane:batch`
+  when the plan meets the batch-lane test (core, "Asking Don"). A plan that
+  doesn't meet it goes without the label.

@@ -19,6 +19,12 @@ the cases will test what the plan says.
   that satisfies the plan's words but not the bounce will bounce again.
 - **A blocker closed `not planned`**: apply the plan's named fallback for
   it. If the plan names none, re-plan (below).
+- **The stage is `parked`** (the driver's reason says every blocker has
+  closed): it waits on a build gate in the plan. Check the gate against the
+  record. If it's met, comment the evidence, remove `parked`, and build. If
+  it isn't, comment why and hand the stage to Don with the ask block (core,
+  "Asking Don"), keeping `parked`: `--remove-label owner:lead --add-label
+  owner:don`. Don't build past an unmet gate.
 
 ### 1. Build, fanning out code-only work
 
@@ -110,7 +116,8 @@ Then don't bend the code to fit the words. Stop, in this order:
    (core, "The plan comment").
 5. Hand the *parent* to Don: `gh issue edit <parent> --add-label
    status:plan-review` plus the owner swap from its current owner to
-   `owner:don`. The new version makes the old `decomposed` and `specced`
+   `owner:don` (and `lane:batch` only if the new version meets that test;
+   core, "Asking Don". A plan that broke on the code is rarely `[none]`). The new version makes the old `decomposed` and `specced`
    markers stop counting, so after his approval decompose reconciles the
    stages with the new plan and the tester specs what changed.
 6. Leave the stage with `owner:lead`, no status.

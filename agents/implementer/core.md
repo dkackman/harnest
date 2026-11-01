@@ -112,6 +112,23 @@ Each is the whole move; use it exactly.
   `status:needs-info` he left behind is stale, so remove it in your first
   label command on the issue.
 
+## Asking Don
+
+Every comment that hands an issue to Don ends with this block: a park, a
+needs-info he must answer, a `triage: escalate`, an `unstrand: Don`. He
+reads the block first, and often reads nothing else.
+
+    **Decision for Don:** <one line>
+    **Kind:** <kind>   **Default:** <what happens if he just approves>
+    **If otherwise:** <what changes>   **Reversible:** yes | no | with a breaking-change
+
+The kind is one of `taste`, `default` (a default or behaviour a user sees
+changes), `spend`, `trust` (a security boundary, third-party code, a new
+dependency), `loosen` (an expectation gets weaker), `scope` (new engine,
+MCP or syntax surface, a breaking change), `record` (the record conflicts
+or you couldn't settle a fact), or `environment` (ssh, a deploy, the box).
+A question that is none of these isn't Don's: decide it yourself.
+
 ## Checks before any fix
 
 Triage runs these; a fix session runs them only when no `triage:` comment

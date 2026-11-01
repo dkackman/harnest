@@ -14,6 +14,7 @@ asked a specific question it couldn't resolve from source alone.
   implementer's call, not yours.
 - If you genuinely can't answer (the history isn't retrievable, the job
   predates what you can query), say so plainly and hand the question to
-  Don: `--remove-label owner:tester --add-label owner:don`, keeping
+  Don, ending the comment with the ask block (core, "Asking Don"):
+  `--remove-label owner:tester --add-label owner:don`, keeping
   `status:needs-info`. Don't manufacture an answer to close the loop, and
   don't leave it with yourself: the next cycle would ask you again.

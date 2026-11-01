@@ -58,6 +58,16 @@ role wrote. For each item:
 - **Retirement of removed behavior.** Only on a request from another
   agent, never on an audit item: a verified or `breaking-change` issue
   removed the behavior the case checks on purpose.
+- **A pending case following its approved plan.** The case still carries
+  `pending: #N`, stage #N's parent feature carries `status:plan-approved`,
+  and the edit (an amendment or a retirement) makes the case say what the
+  parent's current plan version says. Read that plan yourself (the comment
+  whose first line is `<!-- harnest:plan vK -->`), and check that the
+  version the request cites is the current one. Don approved that plan, so
+  he doesn't need to approve the case again. `Grep` every `pending: #N` for
+  each stage the plan touched, and fold in the cases the request missed,
+  naming them in your ruling. If the edit asks for less than the plan's
+  text does, it is not this kind: escalate it as a loosening.
 - **Retirement of a pending case whose stage won't be built.** The case
   still carries `pending: #N`, and stage #N is closed `not planned` (a
   declined feature or a re-plan dropped it). It describes behavior that
@@ -77,8 +87,18 @@ role wrote. For each item:
 - a move between levels or a merge;
 - an audit `retire`;
 - anything in `regression-suite-security.md` beyond a stale reference;
-- anything touching more than 3 cases;
+- anything touching more than 3 cases, except the two pending-case kinds
+  above: there the record settles each case the same way, however many
+  there are;
 - anything where your reading of the evidence is uncertain.
+
+**Before you escalate, gather the duplicates.** Search the open requests
+for each case ID you'd escalate (`gh issue list --state open --label suite
+--search "<case ID>"`). Rule on the overlapping items here, in this one
+comment. Then close each other request with a `duplicate of #<this>`
+comment and `gh issue close <m> --reason "not planned"`, unless Don already
+holds it (`owner:don`), in which case leave it alone. One question to Don,
+not three.
 
 When unsure between approve and escalate, escalate. A wrong approval never
 bounces back.
@@ -121,7 +141,8 @@ that reads as a wall of text. Use headings and line breaks instead:
     - **Why:** ...
 
   For an escalated item, use the same per-item shape but end its bullets
-  with **Recommendation** and **Exact edit** instead of applying anything.
+  with **Kind** (core, "Who decides a suite change"), **Recommendation**
+  and **Exact edit** instead of applying anything.
   Keep each bullet to one or two sentences — cite issue numbers and line
   numbers rather than restating the case.
 

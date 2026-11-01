@@ -24,6 +24,7 @@ rather than in a separate log.
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
 | R13 | A reusable framework: target profile, per-target prompt packs, a second target; feature branches off the one `lem` server | partly built: `targets/dw/profile.toml` holds every server's policy (facts come from the server at startup), and the regression fleet runs a level across every server's lanes at once; a second dw *server* runs (harnest#15, the Mac loop), not a second target | R8 |
 | R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; nightly regression cadence is Don's call | R12 |
+| R15 | Escalation lanes: ask Don only what Don decides | built 2026-11-01 (batch lane, `parked` state, pending cases follow the plan, curator dedupe); measure two weeks, then decide on silence-as-consent | R9, R11 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1633,6 +1634,39 @@ breaking changes.
 `develop`, and the published body leads with "Breaking and behaviour changes". It
 missed the first: 12 `accept` calls on top of the approvals. Plan items 1–2 are meant to
 close that, and the next release will show whether they do.
+
+## R15 — Escalation lanes: ask Don only what Don decides
+
+**Why.** Don was approving a lot of escalations with their defaults (2026-11-01). Of 342
+hand-offs to `owner:don`, the 99 since 2026-10-13 were read by hand.
+- Plan reviews were mostly "approve defaults": 13 of about 17 rulings since 10-26.
+- Curator escalations were not formalities: he changed about 12 of 30. But 13 of those 30
+  re-approved `pending:` cases that only followed a plan he'd already approved.
+- All 11 open dw `owner:don` issues were deferrals waiting on a trigger.
+
+Every ruling where he departed from the default was one of seven kinds: `taste`, `default`,
+`spend`, `trust`, `loosen`, `scope`, `record`. The analysis is in
+`docs/superpowers/specs/2026-11-01-escalation-lanes.md`.
+
+**Built (2026-11-01).**
+- An ask block on every hand-off to Don, and a kind on every plan question.
+- A batch lane for plans whose questions are all `[none]`:
+  - the lead adds `lane:batch` at hand-off;
+  - the digest lists those plans apart;
+  - `scripts/approve-batch.sh` runs as Don, so he still approves every plan.
+- `parked` as a state in `classify.jq`: it waits on its blockers, then goes back to the lead.
+- Curator changes:
+  - a pending case following its approved plan is curator-approvable, exempt from the 3-case cap;
+  - the curator rules on duplicate requests together.
+- The data for tuning: `logs/approvals.jsonl`, and the design session's `Don changed:` line.
+
+**Not built.** Silence as consent, where the driver approves a batch plan after a hold. It would
+break "only Don adds `status:plan-approved`". Consider it only if the batch lane's override rate
+stays near zero.
+
+**Done when.** After two weeks, count Don's overrides by kind and lane. Each batch-lane override
+is a kind to move to the blocking lane. Each blocking-lane kind he never changes is a candidate
+for the batch.
 
 ## dw stabilization freeze, stage A (2026-09-28)
 
