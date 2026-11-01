@@ -6252,7 +6252,6 @@ metrics: `latency` (s), conditions `portrait-384x544` and `square-544x544`, to
 `regression-perf/M-F226.jsonl`.
 
 ### M-F227 — `templates/ltx2/restore-colorize` is a catalog shot with a cost, the card's bucket, a `lora_scale` variable at 1.0 and a stored dual-panel prompt
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: LTX-2.5 `LTX2InContextPipeline` with `Lightricks/LTX-2.5-22b-IC-LoRA-Colorization`
 (`ltx-2.5-22b-ic-lora-colorization-0.9.safetensors`), via `templates/ltx2/restore-colorize`. Free:
@@ -6300,7 +6299,6 @@ cleanup: none. Discovery only.
 metrics: none.
 
 ### M-F228 — `restore-colorize` validates a real clip clean and refuses off-bucket sizes and frame counts, as `restore-deblur` does
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Free: `validate_workflow` only. `B` is `asset:ic-colorize/src-bw-124f.mp4`
 (Fixtures, "Sources for the #1064 IC-LoRA cases"). If it's missing, use `asset:qa-cast/ep6-shot1-priya.mp4`,
@@ -6321,7 +6319,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F229 — `restore-colorize` on a black-and-white clip gives a colour clip at the source's size, keeping subject, framing and motion
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: one LTX-2.5 job at 960×544×121 on lem (RTX 3090), the shape of
 M-F014's restore runs. Workspace `regression-model-specific`.
@@ -6979,7 +6976,6 @@ fixture.
 metrics: none.
 
 ### M-F254 — `restore-colorize` is `fit` → model → `final`, with `frame_rate` defaulting to `"source"`, the model held at 24, and the registry linking Colorization by an `evidence` item with `workflow: null`
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Free: discovery calls and a skill read only, no GPU. This is plan v4's
 amendment of M-F227 (Q5, Q7). Where the two differ, this case is the plan's current wording: M-F227's
@@ -7031,7 +7027,6 @@ cleanup: none. Discovery only.
 metrics: none.
 
 ### M-F255 — `restore-colorize` validates 8 fps and non-16:9 sources clean, accepts each legal `frame_rate`, and refuses a bad one for free
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Free: `validate_workflow` only. Workspace `regression-model-specific`. This
 adds to M-F228, whose size and frame checks stand. Calls are
@@ -7054,7 +7049,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F256 — `restore-colorize` on an 8 fps black-and-white source comes back in colour at 8 fps with the source's frame count by default, and at 24 fps with the same count when `frame_rate=24`
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: two LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem
 (RTX 3090). Workspace `regression-model-specific`, `"seed": 1080`.
@@ -7088,7 +7082,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-97f
 `regression-perf/M-F256.jsonl`. The first run seeds the file.
 
 ### M-F257 — `restore-colorize` on a portrait black-and-white source comes back at the source's own size, with no letterbox band and no colour bleeding in from the padding
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: one LTX-2.5 job at the 960×544 working size, 97 frames, on lem.
 Workspace `regression-model-specific`, `"seed": 1080`. This is the plan's letterbox-bars risk: the
@@ -7744,7 +7737,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")`.
 metrics: none.
 
 ### M-F278 — `paste_face_track` gains an optional `fps` and `join_windows`' `fps` accepts `"source"`, both described; `face-repair` and `restore-long` default `frame_rate` to `"source"` and carry it on the paste and join
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `paste_face_track`, `join_windows`, `templates/ltx2/face-repair`,
 `templates/ltx2/restore-long`. Free: discovery calls and a skill read only.
@@ -7775,7 +7767,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F279 — the new `fps` arguments refuse a non-positive or non-numeric value other than `"source"` for free, and both templates validate with each legal `frame_rate`
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F278. Free: `validate_workflow` only. Workspace `regression-model-specific`.
 Setup: `F30` = `asset:fps-1090/priya-30fps-124f.mp4`, `L30` = `asset:fps-1090/ep13-30fps-282f.mp4`
@@ -7801,7 +7792,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F280 — `paste_face_track` writes the clip's rate when `fps` is omitted or `"source"` and the given rate otherwise, never changing the frame count or dropping the clip's audio
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `crop_face_track` → `paste_face_track` only (a face detector at most, no LTX).
 Workspace `regression-model-specific`.
@@ -7827,7 +7817,6 @@ cleanup: `delete_output(job_id=<id>)`, then `delete_workflow("m-fps-paste")`. Ke
 metrics: none.
 
 ### M-F281 — `face-repair` on a 30 fps source writes at 30 fps with the source's frame count and its audio intact by default, and at 24 fps when `frame_rate=24`
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/face-repair`. Paid: two LTX-2.5 face-crop jobs at `crop_size` 512 on
 lem (about 1.3 min each cold). Workspace `regression-model-specific`, `"seed": 1090`.
@@ -7853,7 +7842,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 metrics: none.
 
 ### M-F282 — `restore-long` on a 30 fps source longer than one window joins at 30 fps with the source's frame count and keeps the source's audio
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/restore-long`. Paid: one three-window LTX-2.5 job at the defaults on
 lem (about 11 min cold). Workspace `regression-model-specific`, `"seed": 1090`.
@@ -7874,7 +7862,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-282
 `regression-perf/M-F282.jsonl`. The first run seeds the file.
 
 ### M-F283 — `join_windows` writes the source's rate when `fps` is omitted or `"source"`, the given rate otherwise, on a 30 fps and a 24 fps source
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `window_video` → `join_windows` only. CPU, no model. Workspace
 `regression-model-specific`.
@@ -7898,7 +7885,6 @@ cleanup: `delete_output(job_id=<id>)` for both jobs, then `delete_workflow("m-fp
 metrics: none.
 
 ### M-F284 — `face-repair` on a 24 fps source is unchanged: 24 fps, the source's frame count, its audio, no frame-rate warning
-pending: #1106
 source: tester, spec for #1106 from #1090's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/ltx2/face-repair`. Paid: one job at the defaults on lem. Workspace
 `regression-model-specific`, `"seed": 1090`. (`restore-long`'s 24 fps behaviour is covered by M-F283's
@@ -8099,7 +8085,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-14
 `960x544-145f-ep13`, to `regression-perf/M-F290.jsonl`. The first run seeds the file.
 
 ### M-F291 — `restore-colorize` tells the caller to write a clip-matched prompt, in its description, its stored prompt and the skill row; its traits are `needs-input-media` only and its registry note names the clip-matched run
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Free: discovery calls, a skill read and `validate_workflow`, no GPU. This is
 plan v10's amendment (Q10 (a), Q11 (i)). It replaces M-F227's "it has the same traits as
@@ -8150,7 +8135,6 @@ cleanup: none. Discovery and validate only.
 metrics: none.
 
 ### M-F292 — `restore-colorize` on the black-and-white clip with a prompt written from a frame of it comes back in colour at the source's size, keeping the scene, and silent
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: one LTX-2.5 job at 960×544×121 on lem (RTX 3090). Workspace
 `regression-model-specific`, `"seed": 1080`. This is plan v10's amendment of M-F229's colour arm
@@ -8198,7 +8182,6 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-121
 `regression-perf/M-F292.jsonl`. The first run seeds the file.
 
 ### M-F293 — `restore-colorize`'s 8 fps and portrait arms pass a prompt written from a frame of their own fixture, and come back in colour with every other M-F256 and M-F257 expectation intact
-pending: #1080
 source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem.
 Workspace `regression-model-specific`, `"seed": 1080`. This is plan v10's amendment of the colour arms
