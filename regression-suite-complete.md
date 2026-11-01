@@ -263,9 +263,11 @@ smoke's Fixtures lists the asset too.
   `ep3-shot2-reply.mp4` (any two colourful 124-frame 960×544 shots with audio substitute; re-derive the
   frame arithmetic from their counts), `priya-portrait.jpg` (any still not 960×544), and the
   `qa-fit/` clips. Nothing new to keep.
-- C-F557–C-F559 (dialogue/rest split, #1096) reuse `ep6-shot1-priya.mp4`, `ep21-shot1-receipt.mp4` and
-  `ep20-score.wav` from above. The shots need one voice at a time with audible speech, and the score needs
-  to be at least 124 frames (5.17 s) long. Nothing new to keep. C-F562 reads the stems #1096 kept in Don's
+- C-F557–C-F559 (dialogue/rest split, #1096) reuse `ep6-shot1-priya.mp4` and `ep21-shot1-receipt.mp4` from
+  above. The shots need one voice at a time with audible speech. C-F557 and C-F559 use
+  `asset:qa-cast/instrumental-bed.mp3` (kept from job `98ec48338649`, `templates/minimax/music`, seed 1163,
+  38.2 s, 44.1 kHz stereo, instrumental; any ≥ 124-frame instrumental with drums/bass/pitched content
+  substitutes). C-F558 uses `ep20-score.wav` from above (at least 124 frames, 5.17 s). C-F562 reads the stems #1096 kept in Don's
   workspace and never deletes them.
 - C-F564–C-F575 (H3 face refine, #1092) reuse `ep25-episode.mp4` (360 frames with audio to the end; C-F566
   and C-F568 trim it to 96–346 frames, so a substitute needs ≥ 346 frames with sound throughout),
@@ -14991,11 +14993,11 @@ pending: #1096
 source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthropic)
 Utility jobs only (htdemucs on CPU, two mixes): about a minute each, warm. Workspace `regression-complete`.
 Uses the shared fixtures `asset:qa-cast/ep6-shot1-priya.mp4` and `asset:qa-cast/ep21-shot1-receipt.mp4`
-(124-frame 24 fps dialogue shots with their own 32 kHz audio) and `asset:qa-cast/ep20-score.wav` (a ~10.3 s
-score). The shots are the "dialogue", the score is the "bed". What matters is that each shot has one voice
+(124-frame 24 fps dialogue shots with their own 32 kHz audio) and `asset:qa-cast/instrumental-bed.mp3` (a ~38 s
+instrumental Music 3 score with drums/bass/pitched content; a substitute needs that, and ≥ 124 frames). The shots are the "dialogue", the score is the "bed". What matters is that each shot has one voice
 speaking at a time (no overlapping or layered speech). A substitute shot needs that, and audible speech.
 1. For each shot `<shot>`, build this inline workflow (one job per shot):
-   - step `score`: `slice_audio` with `audio: "asset:qa-cast/ep20-score.wav"`, `start_frame: 0`,
+   - step `score`: `slice_audio` with `audio: "asset:qa-cast/instrumental-bed.mp3"`, `start_frame: 0`,
      `num_frames: 124`, `fps: 24`, saved to `intermediate` (or `save: false`);
    - step `mix`: `mix_audio` with `audios: ["asset:qa-cast/<shot>", "previous_result:score"]`, saved as
      `audio/wav`;
@@ -15030,7 +15032,8 @@ source: tester, spec for #1096 from #1091's plan v2 (claude-opus-5-5 via anthrop
 Utility jobs only (htdemucs plus Whisper on CPU): about a minute each, warm. Workspace `regression-complete`.
 Same fixtures and shots as C-F557.
 1. For each shot `<shot>`, one inline workflow:
-   - steps `score`, `mix` and `stems` exactly as in C-F557 (`stems` may be saved to `intermediate`);
+   - steps `score`, `mix` and `stems` as in C-F557, but with `score` slicing `asset:qa-cast/ep20-score.wav`
+     (`stems` may be saved to `intermediate`);
    - step `dry`: `transcribe_audio` with `audio: "asset:qa-cast/<shot>"`, saved as `text/plain`;
    - step `wet`: `transcribe_audio` with `audio: "previous_result:stems.vocals"`, saved as `text/plain`;
    - step `raw`: `transcribe_audio` with `audio: "previous_result:mix"`, saved as `text/plain`. This is the
