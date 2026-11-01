@@ -15912,8 +15912,9 @@ expected:
 - 1: `valid: true`, no errors. The `plan` (`downloads_required` / the download list, whichever field
   this server uses) names the Audio8 repo's weight file(s) **and** `codec.pth`. Each entry is pinned at
   revision `1e857568bfd4f02931aca3988ee773a44d2d26d3`, not `main` or unpinned, and has a real byte
-  size; `codec.pth` is about 1.35 GB. If they are already cached, the plan still names them, marked
-  present. The estimate is a number or an explicit `unknown` basis.
+  size; `codec.pth` is about 1.35 GB. If they are already cached, `downloads_required` is `[]`, as for
+  every model (it lists only missing downloads, #382), and the naming, pin and size checks above can't
+  be made on that box. The estimate is a number or an explicit `unknown` basis.
 - 2: refused (`valid: false`), naming the reference variable as missing, not a run-time error.
 It is a **finding** if the codec is missing from the plan, any entry is unpinned or has a null or zero
 size, or the template validates without a reference.
