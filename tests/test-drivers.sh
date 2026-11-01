@@ -973,6 +973,22 @@ board "[$deferred]"
 loop 2
 has "backoff: none when only deferred issues wait" "idle, sleeping 0s" "$(cat "$T/loop.out")"
 fails "backoff: so no backoff line" grep -q "sleeping up to" "$T/loop.out"
+# a feature claimed here whose stage went to another loop's tester comes back
+# here for its close-out, which only this loop runs: the drain waits for it
+# (dw#1095, 2026-11-01: mini-ai drained with its stage at lem's tester)
+away() { # away <parent's claim>: a specced feature, its one stage at lem's tester
+  board "[{\"number\": 90, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:lead\"}, {\"name\": \"status:plan-approved\"}, {\"name\": \"$1\"}], $specced, \"subIssuesSummary\": {\"total\": 1, \"completed\": 0}},
+          {\"number\": 91, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:tester\"}, {\"name\": \"status:fixed-pending-verify\"}, {\"name\": \"target:lem\"}], \"parent\": {\"number\": 90}}, $deferred]"
+}
+mini_health
+away target:mini-ai
+mini_loop DRAIN=1 MAX_CYCLES=3
+fails "drain: a feature claimed here, out at another loop, does not end it" grep -q "drain: nothing left" "$T/loop-mini.out"
+has "drain: it backs off for it" "idle, an issue claimed here waits on another loop: sleeping up to 0s" "$(cat "$T/loop-mini.out")"
+eq  "drain: and runs nothing meanwhile" "" "$(grep '^=== ' "$T/loop-mini.out")"
+away target:lem
+mini_loop DRAIN=1 MAX_CYCLES=3
+has "drain: another loop's feature does end it" "drain: nothing left but deferred issues, exiting after cycle 1." "$(cat "$T/loop-mini.out")"
 dloop 1 DRAIN=2; rc=$?
 eq  "drain: a bad DRAIN is refused" 1 "$rc"
 

@@ -18,7 +18,7 @@ Seventeen files:
   qualifiers the drivers use, and stamps comments with `FAKE_GH_AUTHOR` and the time) and a
   throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
   fix-then-verify in one cycle, an outside filing, the closures window, withheld comments,
-  the curator's audited removals, the spec race, and `DRAIN=1` with the idle backoff.
+  the curator's audited removals, the spec race, and `DRAIN=1` with the idle backoff (and waiting out a claimed feature's stage at another loop).
 - `test-fleet.sh`: a whole regression fleet run (`harness/drivers/fleet.py`) against three
   `tests/fake-mcp.py` servers.
 - `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).

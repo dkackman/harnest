@@ -40,8 +40,10 @@ hand-back starts the next cycle at once (`drain_left`, `idle_wait`). A deferred 
 reason with "deferred") doesn't count as waiting on him.
 
 `DRAIN=1 ./run-loop.sh` works the board and exits at the first cycle boundary where nothing
-is left for this loop but deferred issues and ones waiting on another (`wait`). Issues with
-Don keep a drain going, under the backoff. The tester's standing task still runs on its
+is left for this loop but deferred issues and unclaimed ones waiting on another (`wait`).
+Issues with Don keep a drain going, under the backoff, and so does a `wait` on an issue this
+loop claimed (`target:<loop>` on it or its parent): a feature whose stage went to lem's tester
+comes back here for its close-out, and no other loop runs that. The tester's standing task still runs on its
 cadence. A drain doesn't wait on an unclaimed design or review that another loop's shared
 passes will run, or on curator escalations parked with Don on this repo.
 

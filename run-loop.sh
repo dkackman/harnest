@@ -1147,13 +1147,17 @@ stranded_board() {
 #            agent queue (one a pass here would skip, like another loop's
 #            design or reviews, doesn't count), a stranded or outside
 #            issue, a closure to answer, or a suite request for the curator
+#   away     an issue this loop claimed (target:<loop> on it or its
+#            parent) waits on another: a feature whose stage went to lem's
+#            tester comes back here for its close-out, and only this loop
+#            runs it (dw#1095 sat unclosed on 2026-11-01 after mini-ai drained)
 #   don      the rest is with Don for a decision
 #   done     only deferred issues are left (lib/classify.jq: parked, or
-#            parked by dw's freeze), or ones that wait on another (`wait`)
+#            parked by dw's freeze), or unclaimed ones that wait on another
 #   unknown  the board can't be read
-# DRAIN=1 exits on done; on don the idle sleep backs off (idle_wait).
+# DRAIN=1 exits on done; on away and don the idle sleep backs off (idle_wait).
 drain_left() {
-  local rows n q parent shared=1 design=1
+  local rows n q parent mine shared=1 design=1
   rows="$(classify_issues)" || { echo unknown; return 0; }
   shared_passes_here || shared=0
   { [ "$LEAD_DESIGN_IN_LOOP" = 1 ] && [ "$DW_FROZEN" = 0 ]; } || design=0
@@ -1167,6 +1171,13 @@ drain_left() {
   done < <(printf '%s\n' "$rows" | only_issues_filter)
   [ -z "$(pending_closures)" ] || { echo work; return 0; }
   if [ "$shared" = 1 ] && [ -z "$(release_freeze)" ] && [ -n "$(curator_requests)" ]; then echo work; return 0; fi
+  mine="$(issue_snapshot | jq -r --arg t "target:$DW_TARGET" '
+    (.issues | map({key: (.number | tostring), value: [.labels[].name]}) | from_entries) as $l
+    | .issues[] | select(($l[.number | tostring] + ($l[(.parent.number // 0) | tostring] // [])) | any(. == $t))
+    | .number')" || { echo unknown; return 0; }
+  if printf '%s\n' "$rows" | awk -F'\t' -v mine=" $(echo $mine) " '$2 == "wait" && index(mine, " " $1 " ") { f = 1 } END { exit !f }'; then
+    echo away; return 0
+  fi
   if printf '%s\n' "$rows" | only_issues_filter \
        | awk -F'\t' '$2 == "don" && index($4, "deferred") != 1 { f = 1 } END { exit !f }'; then
     echo don
@@ -1295,8 +1306,12 @@ while true; do
     echo "tickets changed this cycle, starting next cycle now" | tee -a "$LOOP_LOG"
   else
     [ -n "$left" ] || left="$(drain_left)"
-    if [ "$left" = don ]; then
-      echo "idle, only Don's decisions left: sleeping up to ${backoff}s (backoff, max ${SLEEP_MAX_SECS}s)" | tee -a "$LOOP_LOG"
+    if [ "$left" = don ] || [ "$left" = away ]; then
+      if [ "$left" = don ]; then
+        echo "idle, only Don's decisions left: sleeping up to ${backoff}s (backoff, max ${SLEEP_MAX_SECS}s)" | tee -a "$LOOP_LOG"
+      else
+        echo "idle, an issue claimed here waits on another loop: sleeping up to ${backoff}s (backoff, max ${SLEEP_MAX_SECS}s)" | tee -a "$LOOP_LOG"
+      fi
       idle_wait "$backoff" "$before"
       backoff=$((backoff * 2)); [ "$backoff" -le "$SLEEP_MAX_SECS" ] || backoff="$SLEEP_MAX_SECS"
     else
