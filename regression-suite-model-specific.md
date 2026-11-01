@@ -8171,6 +8171,7 @@ metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-121
 
 ### M-F293 — `restore-colorize`'s 8 fps and portrait arms pass a prompt written from a frame of their own fixture, and come back in colour with every other M-F256 and M-F257 expectation intact
 source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
+amended by M-F294 (plan v12, Q12 (a)): its colour, no-bleed-with-colour and fallback clauses are judged as M-F294 records them; grey is not a finding once #1114 has verified.
 Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem.
 Workspace `regression-model-specific`, `"seed": 1080`. This is plan v10's amendment of the colour arms
 of M-F256 and M-F257 (Q10 (a)). Where both are due, run M-F256 and M-F257 exactly as written **with
