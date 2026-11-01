@@ -15684,33 +15684,6 @@ gains a phrase-path warning.
 cleanup: `delete_output(job_id=…)` for every job.
 metrics: none.
 
-### C-F589 — field case: `russian-anthem`'s verse, phrase-fed, puts its lines on its phrases with no transcript warnings
-pending: #1105
-source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
-GPU-light. `get_job("0838f676f51f")` (try `workspace="russian-anthem"`) to find `verse_s7.wav`'s
-`output:` reference or file. If it is only an output there, use that reference directly, or
-`copy_to_workspace` it into `regression-complete`. Take the verse's lyric lines from that job's
-workflow or arguments (`get_job_workflow`). Never delete the source.
-1. Run the C-F587 `stems` → `analyze_phrases` chain on the verse to get the phrase count P.
-2. If P equals the verse's line count, run `qa-1105/cuts-phrases` (C-F587's copy; re-create it if
-   cleaned up) with `song` = the verse and those lyrics, `wait_seconds=55`. If P differs, run it
-   anyway: the mismatch warning must name both counts and the right `min_gap_seconds` direction, then
-   re-run step 1 with `analyze_phrases` `min_gap_seconds` moved that way (in the saved copy's step)
-   until the counts match or two moves fail, and run step 2 at the matching setting.
-3. Listen with `get_output_audio` to the verse at three scene starts.
-expected:
-- At matching counts, every line appears once, in order, on its own scene, each starting where the
-  line is sung (by ear, within about 0.5 s with the template's lead), on the 17n+5 grid.
-- No "none of the lyrics' words were heard" warning and no suspect warning (the failure #1095 exists
-  to fix).
-It is a **finding** if the lines are out of order or off their sung onsets, a transcript warning
-fires, or no `min_gap_seconds` within two moves of the default lines the counts up (report the
-counts at each setting).
-cleanup: `delete_output(job_id=…)` for every job made here; `delete_workflow("qa-1105/cuts-phrases")`
-if this case re-created it; `delete_asset` any copy made into `regression-complete`. Never touch the
-`russian-anthem` workspace's files.
-metrics: none.
-
 ### C-F590 — a `for_each` member reading another entry of its own list (`previous_result:shot@a` in `shot@b`) is refused at validate and at submission
 source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
 CPU only, no GPU time. Before #1111 this workflow validated clean (checked over MCP at spec time); the
