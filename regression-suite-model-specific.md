@@ -7496,7 +7496,6 @@ and delete the copied assets.
 metrics: none.
 
 ### M-F270 — `minimax-h3/references/cuts.md` records the #1094 probe in the shape its verdict calls for, number-for-number with the record
-pending: #1103
 source: tester, spec for #1103 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin text for MiniMax H3. No job. Read the verdict, table and job ids from the
 stage-A record (M-F264). Invoke the `dw:minimax-h3` skill and read `references/cuts.md` from the
@@ -7530,7 +7529,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### M-F271 — on a win, one bridge built from `cuts.md` alone validates clean with an estimate; a bridge on a chain re-roll is the sanctioned splice in `script-to-video`; the recipe stays out of `minimax-h3`'s SKILL.md
-pending: #1103
 source: tester, spec for #1103 from #1094's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/first-and-last-frame` (MiniMax H3 fl2va), plus the `dw:minimax-h3`
 and `dw:script-to-video` skill text. Free: validate and reading only; nothing may queue. Workspace
