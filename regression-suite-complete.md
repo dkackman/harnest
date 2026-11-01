@@ -16221,7 +16221,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F609 — the skills carry a rule for each lesson ruled holds, and none for a lesson ruled not reproduced or cut
-pending: #1128
 source: tester, spec for #1128 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 Stage C lands skill text only. Read the skills through the plugin surface: the `Skill` tool
 for `dw:ltx-2.5`, `dw:minimax-h3`, `dw:flux3-klein`, `dw:script-to-video` and
@@ -16272,7 +16271,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F610 — lesson 5 lands as unmeasured framing guidance in `script-to-video` §3 and `series-episodes` step 0
-pending: #1128
 source: tester, spec for #1128 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 Lesson 5: wide shots drift hardest on identity. The plan lands it without a measurement
 (Q4). Read `dw:script-to-video` §3 and `dw:series-episodes` step 0 through the `Skill` tool.
@@ -16292,7 +16290,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F611 — one render following each landed LTX or image rule's wording behaves as the findings say
-pending: #1128
 source: tester, spec for #1128 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 Don approved stage C's verification as one render per landed LTX or image rule. Run these in
 `workspace="regression-complete"`. Call `validate_workflow(arguments=…)` on each run first and
