@@ -15819,4 +15819,23 @@ It is a **finding** if both messages appear, only #813's appears, or the copy va
 cleanup: none (validate only, nothing saved).
 metrics: none.
 
+### C-F594 — check-script on a single-shot take with no `shots` still flags a line spoken twice
+source: tester, verified in #1117 (claude-opus-5-5 via anthropic)
+Input: the shared asset `asset:qa-cast/ep345-shot2-breadbin.mp4`. It is one shot in which the line
+"Rolling pins are unreliable witnesses." is spoken twice (about 0.4–2.8 s and 3.0–5.5 s). No manifest
+sits beside it. If the asset is gone, report the case as blocked, not as a finding. Use
+`workspace="regression-complete"` on every call.
+1. `validate_workflow(name="templates/check-script", arguments={"input_audio": "asset:qa-cast/ep345-shot2-breadbin.mp4",
+   "lines": ["Rolling pins are unreliable witnesses."]})`, bind the plan, `run_workflow(..., wait_seconds=55)`,
+   then `get_output_text` on the step's JSON. Pass no `shots`.
+2. The same, with `lines: [{"text": "Rolling pins are unreliable witnesses.", "shot": "breadbin"}]` and again no `shots`.
+expected:
+- In both runs, `shots_source` is `"none"`, `unscripted_speech` appears in `rules_applied` and not in
+  `rules_skipped`, and `findings` holds an `unscripted_speech` warn over the second reading (about 3.0–5.5 s)
+  with `at.repeats_line: true`. In step 2 that finding also carries `at.shot: "breadbin"`.
+It is a **finding** if either run returns `findings: []`, or if `unscripted_speech` is skipped with
+"no shots are known". That is #1117's silent clean verdict: the repeated words appear only in `unmatched`.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
 ## Performance
