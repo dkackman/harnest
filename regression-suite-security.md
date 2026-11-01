@@ -1155,6 +1155,58 @@ issue.
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
+### SE-F056 — `generate_speech.reference_audio` holds the media path gate at validate time
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+#1121 adds a media argument, `reference_audio`, that Audio8 reads as a cloning reference. The plan
+relies on its `_audio` suffix to get the validate-time path checks. Carrier, in workspace
+`regression-security`: `{"id": "qa-se-f056", "steps": [{"name": "s", "task": {"command":
+"generate_speech", "arguments": {"model_name": "Edge0/Audio8-TTS-Realistic-0.6b", "text": "A short
+line.", "reference_audio": "asset:qa-cast/priya-voice.wav", "reference_text": "Some words.", "seed":
+1}}, "result": {"content_type": "audio/wav"}}]}`. Change only `reference_audio` per probe:
+- P1 `/etc/passwd` (exists), P2 `/nonexistent-dw-probe/x.wav`, P3 `../../../../etc/passwd`, each bare
+  and as `asset:` + the probe;
+- `output:../../../../etc/passwd` and `output:/etc/passwd`;
+- `file:///etc/passwd` and `http://127.0.0.1:8765/x.wav`.
+Also run the same probes through `templates/voice-clone`'s reference variable as `arguments`. For
+every refused probe, also `run_workflow(..., acknowledged_cost=true, workspace="regression-security")`.
+expected:
+- Every probe is `valid: false` at `reference_audio`'s argument path (or the template variable that
+  feeds it), with the refusal SE-F014 gives a media argument, or the scheme/host refusal for the URLs.
+- P1 and P2 get the same wording. No message shows a duration, a sample rate, a "longer than 20 s"
+  verdict or any contents, all of which would mean the file was opened, and none echoes a resolved
+  server path.
+- `run_workflow` queues no job. The unchanged carrier validates clean.
+It is a **finding** if a probe is refused only at run time. A probe that validates, P1 and P2 being
+told apart, a length or format message about an out-of-root file, an echoed server path, or a
+`127.0.0.1` fetch or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public
+issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
+### SE-F057 — the Audio8 branch of `generate_speech` runs the trust gate before any load
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+Audio8 gets its own dispatch branch ahead of the transformers pipeline, and upstream loads only with
+`trust_remote_code`. The plan says the branch runs the trust gate first. Use SE-F056's carrier,
+unmodified, as the base. Each probe adds one key:
+a. `"trust_remote_code": true` in the step's task `arguments`;
+b. `"forward_params": {"trust_remote_code": true}`;
+c. `"generate_kwargs": {"trust_remote_code": true}`;
+d. `"custom_pipeline": "lpw_stable_diffusion"` in the arguments.
+`validate_workflow` each; for any that validates or isn't clearly refused, `run_workflow(...,
+acknowledged_cost=true, wait_seconds=55, workspace="regression-security")`, then `get_job_events`.
+expected:
+- Each probe is refused with the trust-gate message naming the key (as SE-F005 / SE-F006), at validate
+  or as a failed job.
+- A failed job shows no download or load phase event before the refusal (SE-F026's rule: a trust
+  refusal emits no phase event).
+- No Audio8 file is fetched for these probes.
+It is a **finding** if a probe runs, or the refusal arrives after a download or load event. A probe
+that loads the model with remote code is a hole: send it to `scripts/file-advisory.sh`.
+cleanup: `delete_output(job_id=...)` for any job.
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

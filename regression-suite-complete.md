@@ -276,6 +276,10 @@ smoke's Fixtures lists the asset too.
   sung mix, 30.03 s), `priya-voice.wav` (mono speech), `room-bed.wav` (near-silent mono) and synthetic
   phrase results passed as workflow variables. C-F589 reads `verse_s7.wav` from the `russian-anthem`
   workspace (job `0838f676f51f`) and never deletes it. Nothing new to keep.
+- C-F597–C-F602 (Audio8 voice cloning, #1121) use `priya-voice.wav` as the cloning reference: mono
+  speech under 20 s, with a transcript read by `transcribe_audio` at run time, so any short clean
+  single-voice clip substitutes. C-F602 slices `ep15-song.mp3` (it must be over 21 s) into 20.0 s and
+  21.0 s references and deletes the slices afterwards. Nothing new to keep.
 
 ## Functional
 
@@ -15836,6 +15840,211 @@ expected:
 It is a **finding** if either run returns `findings: []`, or if `unscripted_speech` is skipped with
 "no shots are known". That is #1117's silent clean verdict: the repeated words appear only in `unmatched`.
 cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F595 — vendoring the Audio8-TTS module changes nothing over MCP: `list_tasks`, `generate_speech`'s schema and the audio catalog are as before
+pending: #1120
+source: tester, spec for #1120 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+Free: discovery calls only. #1120 adds a model module that nothing calls yet, so its whole acceptance is
+that the consumer surface does not move. The baseline below was read over MCP at spec time (2026-11-01,
+before #1120 built). A change made on purpose by another issue verified since (named in that issue) is
+not a finding; check its record before reporting.
+1. `list_tasks`.
+2. `get_task("generate_speech")`.
+3. `list_workflows(shape="audio")`.
+4. Run the smoke level as usual (`regression-suite-smoke.md`); this case adds no run of its own.
+expected:
+- 1: no new command whose name mentions Audio8, `arktts`, a codec or cloning. At spec time `commands`
+  had 65 entries, `generate_speech` among them.
+- 2: `accepts_kwargs: true` and exactly these parameters, in this order: `text`, `device`, `seed`,
+  `messages`, `model_name`, `voice_preset`, `speaker_embedding`, `forward_params`, `generate_kwargs`.
+  There is no `reference_audio` or `reference_text`, and the summary and descriptions don't mention
+  Audio8 (they name Bark, MMS/VITS and SpeechT5).
+- 3: no `voice-clone` template. `templates/generate-speech` is still listed, with variables `model_name`
+  and `text`.
+- 4: no smoke case fails that passed in the last smoke run before #1120 deployed.
+It is a **finding** if any Audio8 surface (argument, template, task, doc line) shows up before #1121, or
+a smoke case newly fails after the deploy.
+cleanup: none.
+metrics: none.
+
+### C-F596 — `generate_speech` documents `reference_audio` / `reference_text` for Audio8, and the catalog lists `voice-clone` as audio needing input media
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+Free: discovery calls only.
+1. `get_task("generate_speech")`.
+2. `list_workflows(shape="audio")` and `list_workflows(shape="audio", traits="needs-input-media")`.
+3. `get_workflow("templates/voice-clone")` (the name `list_workflows` gives, if it lives under
+   another prefix), and `get_workflow("templates/generate-speech")`.
+expected:
+- 1: `reference_audio` and `reference_text` are documented, as parameters or in the `**kwargs`
+  description `get_task` shows. Between them the docs say:
+  - they belong to `Edge0/Audio8-TTS-Realistic-0.6b` only;
+  - each needs the other, and `reference_text` is the clip's exact transcript;
+  - a reference may be at most 20 s;
+  - without them Audio8 speaks in its default voice.
+  The summary names Audio8 next to Bark, MMS/VITS and SpeechT5. The existing parameters are all
+  still there.
+- 2: `voice-clone` is in both listings, `shape: "audio"`, with `has-audio` and `needs-input-media`
+  among its traits. `templates/generate-speech` is still listed, without `needs-input-media`.
+- 3: `voice-clone`'s step is `generate_speech` with `model_name` `Edge0/Audio8-TTS-Realistic-0.6b`,
+  and it takes the reference clip and its transcript as variables. The reference variable has no
+  usable default, so the caller has to supply it. The default text is a short English line. The
+  description carries the model card's consent note: clone only a voice you have the right to use.
+  `generate-speech`'s description gains a line naming the Audio8 option.
+It is a **finding** if either argument is undocumented, `voice-clone` is missing or lacks
+`needs-input-media`, the reference has a default clip, or there is no consent note.
+cleanup: none.
+metrics: none.
+
+### C-F597 — `voice-clone` validates clean with a reference, and its plan prices the Audio8 weights and `codec.pth` pinned at `1e857568`
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+Free: validate only, `workspace="regression-complete"`. The reference is the shared fixture
+`asset:qa-cast/priya-voice.wav` (mono speech, 7.453 s). The variable names are those
+C-F596 step 3 reads (call them R for the clip and T for the transcript).
+1. `validate_workflow(name="templates/voice-clone", arguments={R: "asset:qa-cast/priya-voice.wav",
+   T: "placeholder transcript"})`. Validate doesn't check the transcript's words, so any text does here.
+2. The same with no arguments at all.
+expected:
+- 1: `valid: true`, no errors. The `plan` (`downloads_required` / the download list, whichever field
+  this server uses) names the Audio8 repo's weight file(s) **and** `codec.pth`. Each entry is pinned at
+  revision `1e857568bfd4f02931aca3988ee773a44d2d26d3`, not `main` or unpinned, and has a real byte
+  size; `codec.pth` is about 1.35 GB. If they are already cached, the plan still names them, marked
+  present. The estimate is a number or an explicit `unknown` basis.
+- 2: refused (`valid: false`), naming the reference variable as missing, not a run-time error.
+It is a **finding** if the codec is missing from the plan, any entry is unpinned or has a null or zero
+size, or the template validates without a reference.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F598 — Audio8 clones the reference voice in English: 44.1 kHz mono, read back by Whisper, closer to the reference than Bark, same seed gives the same duration, no Hub code
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+GPU, about 1–2 minutes warm (plus a one-time ~1.4 GB download, quoted by `validate_workflow`).
+`workspace="regression-complete"` on every call. Validate first and bind `acknowledged_cost` per the
+house rules on each run.
+Setup: get the reference's transcript. Run `transcribe_audio` on `asset:qa-cast/priya-voice.wav`
+(`get_task("transcribe_audio")` for its shape) and take the text it returns as `REF_TEXT`.
+1. `run_workflow(name="templates/voice-clone", arguments={R: "asset:qa-cast/priya-voice.wav",
+   T: REF_TEXT, text: "Nobody touched the pistachio, and yet the jar is empty again.", seed: 1112},
+   wait_seconds=55)`. If the template exposes no `seed` variable, use an inline copy of it with
+   `"seed": 1112` on the step. Then `get_job` and `get_job_events`.
+2. Repeat step 1 exactly.
+3. Bark control: an inline `generate_speech` step with `model_name: "suno/bark-small"`,
+   `voice_preset: "v2/en_speaker_6"`, the same `text` and `seed: 1112`, saved as `audio/wav`.
+4. `transcribe_audio` on step 1's output.
+5. `attribute_voices(audio=<step 1 output>, voices={"ref": "asset:qa-cast/priya-voice.wav", "bark":
+   <step 3 output>}, separate=false)` as a task step. Leave out `lines`: the 2 s windows do. If step 3's
+   take is under 3 s, give the Bark control a longer line and re-run it. Optionally also
+   `compare_outputs` between the reference, step 1 and step 3.
+expected:
+- 1: completes. One wav output, 44100 Hz, 1 channel (from the job's output listing or `analyze_audio`),
+  about 3–8 s long. `get_job_events` show the pinned `1e857568` download or load and no remote-code
+  load: no `trust_remote_code`, no `modeling_arktts`/`configuration_arktts` module fetched from the Hub,
+  no `auto_map` resolution. `job.warnings` is empty or carries nothing about remote code.
+- 2: same duration as step 1 (to the sample, or within 1 ms).
+- 4: the transcript reads back the line: every word, in order, ignoring case and punctuation.
+- 5: the clone's voiced windows go mostly (over half) to `ref`, not `bark`.
+It is a **finding** if the output is not 44.1 kHz mono, the two seeded durations differ, Whisper misses
+words, `bark` wins the attribution, or any event shows Hub code loading.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F599 — Audio8 clones the same English reference into a Russian line, with no `language` argument
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+GPU, about 1 minute warm. As C-F598 (same reference, `REF_TEXT`, workspace and seed), but with
+`text: "Мы не знаем, работает ли это. Но у нас есть надежда."`. Pass no language argument; the plan has
+none. Then `transcribe_audio` on the output, auto-detecting the language (pass Russian explicitly only
+if the task needs a language). Then the C-F598 step 5 attribution against a Bark `v2/ru_speaker_0` take
+of the same line, seed 1112.
+expected:
+- The run completes: 44100 Hz mono, about 3–9 s long.
+- Whisper detects (or, given Russian, reads) Russian and returns the line with at most one word
+  different. Stage A's seeded take slipped one word once.
+- The attribution gives the clone's voiced windows mostly to `ref` over the Russian Bark preset.
+It is a **finding** if the run is refused for the language, the speech isn't Russian, more than one
+word is wrong, or the Bark preset wins.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F600 — Audio8 with no reference speaks in its default voice
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+GPU, under a minute warm. `workspace="regression-complete"`. An inline workflow, one `generate_speech`
+step with `model_name: "Edge0/Audio8-TTS-Realistic-0.6b"`, `text: "Nobody touched the pistachio, and
+yet the jar is empty again."`, `seed: 1112`, with no `reference_audio` and no `reference_text`, and
+result `audio/wav`. Validate, then run with `wait_seconds=55`. Then `transcribe_audio` on the output.
+expected:
+- `valid: true`, and the job completes with one 44100 Hz mono wav.
+- No warning or error asks for a reference.
+- Whisper reads the line back in full.
+It is a **finding** if a reference is demanded, the run fails, or the output's rate or channel count
+differs.
+cleanup: `delete_output(job_id=…)` for both jobs (this one and the transcription).
+metrics: none.
+
+### C-F601 — reference pairing and per-model arguments are refused before any model load, each naming the argument
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+Near-free: every arm should die before a load. `workspace="regression-complete"`. Each arm is an inline
+one-step `generate_speech` workflow (result `audio/wav`, `text: "A short line."`, `seed: 1112`).
+`A8` = `Edge0/Audio8-TTS-Realistic-0.6b`, `REF` = `asset:qa-cast/priya-voice.wav`. Per arm,
+`validate_workflow`; if it validates, run it with `wait_seconds=55` and read `get_job` and
+`get_job_events`.
+a. A8, `reference_audio: REF`, no `reference_text`.
+b. A8, `reference_text: "Some words."`, no `reference_audio`.
+c. A8, `reference_audio: REF`, `reference_text: ""` (the empty transcript).
+d. `suno/bark-small` with `reference_audio: REF`, `reference_text: "Some words."`.
+e. `microsoft/speecht5_tts` with `speaker_embedding: REF` plus `reference_audio: REF`,
+   `reference_text: "Some words."`.
+f. A8, `reference_audio: REF`, `reference_text: "Some words."`, plus `speaker_embedding: REF`.
+g. A8 with `voice_preset: "v2/en_speaker_6"` (no reference).
+h. A8 with `messages: [{"role": "user", "content": "A short line."}]` and no `text`.
+i. Control: d's model and preset with no reference arguments (`voice_preset: "v2/en_speaker_6"`),
+   which must still run.
+expected:
+- a–h each fail, at validate or as a failed job, with an error naming the offending argument: the
+  missing partner in a/b/c, `reference_audio` in d/e, and `speaker_embedding` / `voice_preset` /
+  `messages` in f/g/h. In a/b the message also says each needs the other.
+- For any arm that got as far as a job, `get_job_events` show no model download or load phase before
+  the failure, so the refusal was raised by the task before loading.
+- No arm silently drops the argument and succeeds.
+- i completes.
+It is a **finding** if an arm succeeds, the message doesn't name the argument, or a load or download
+event comes before the refusal.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F602 — the 20 s reference cap and the context limit refuse before generation, and their boundaries are accepted
+pending: #1121
+source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
+GPU-light. `workspace="regression-complete"`, `A8` and `REF` as in C-F601.
+Setup: make two references from the shared 30.0 s `asset:qa-cast/ep15-song.mp3` (read-only, never
+modified). Each is a one-step `slice_audio` workflow, `start_seconds: 0`, saved as `audio/wav`:
+- one with `duration_seconds: 20.0` (`AT_CAP`);
+- one with `duration_seconds: 21.0` (`OVER_CAP`).
+Call their outputs by `output:` reference.
+1. A8, `reference_audio: OVER_CAP`, `reference_text: "la la la"`, `text: "A short line."`, seed 1112.
+2. The same with `asset:qa-cast/ep15-song.mp3` (30 s) as the reference.
+3. The same with `AT_CAP`.
+4. A8 with `REF` plus its C-F598 `REF_TEXT`, and as `text` the sentence "The quick brown fox jumps over
+   the lazy dog." repeated 40 times (about 360 words, two minutes of speech, far past the ~95 s
+   context).
+5. As 4, with the sentence repeated 3 times (about 8 s), as the fitting control.
+Validate each arm; run it with `wait_seconds=55` if it validates; read `get_job` / `get_job_events`.
+expected:
+- 1 and 2 are refused, naming `reference_audio` and the 20 s limit (stating the clip's length is a
+  plus). No model load event comes first.
+- 3 is not refused for length. It runs to completion; the output's content isn't judged, since the
+  reference is a song.
+- 4 is refused before generation, saying the text is too long for the model's context. It is not
+  truncated: there is no completed job with a shortened take.
+- 5 completes, and its output is shorter than 95 s.
+It is a **finding** if an over-cap reference runs, the 20.0 s reference is refused, the long text
+generates (truncated or not), or a refusal comes after a load event.
+cleanup: `delete_output(job_id=…)` for every job made here, including the two slices.
 metrics: none.
 
 ## Performance
