@@ -15873,7 +15873,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F596 — `generate_speech` documents `reference_audio` / `reference_text` for Audio8, and the catalog lists `voice-clone` as audio needing input media
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 Free: discovery calls only.
 1. `get_task("generate_speech")`.
@@ -15902,7 +15901,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F597 — `voice-clone` validates clean with a reference, and its plan prices the Audio8 weights and `codec.pth` pinned at `1e857568`
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 Free: validate only, `workspace="regression-complete"`. The reference is the shared fixture
 `asset:qa-cast/priya-voice.wav` (mono speech, 7.453 s). The variable names are those
@@ -15923,7 +15921,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F598 — Audio8 clones the reference voice in English: 44.1 kHz mono, read back by Whisper, closer to the reference than Bark, same seed gives the same duration, no Hub code
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about 1–2 minutes warm (plus a one-time ~1.4 GB download, quoted by `validate_workflow`).
 `workspace="regression-complete"` on every call. Validate first and bind `acknowledged_cost` per the
@@ -15956,7 +15953,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F599 — Audio8 clones the same English reference into a Russian line, with no `language` argument
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about 1 minute warm. As C-F598 (same reference, `REF_TEXT`, workspace and seed), but with
 `text: "Мы не знаем, работает ли это. Но у нас есть надежда."`. Pass no language argument; the plan has
@@ -15974,7 +15970,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F600 — Audio8 with no reference speaks in its default voice
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 GPU, under a minute warm. `workspace="regression-complete"`. An inline workflow, one `generate_speech`
 step with `model_name: "Edge0/Audio8-TTS-Realistic-0.6b"`, `text: "Nobody touched the pistachio, and
@@ -15990,7 +15985,6 @@ cleanup: `delete_output(job_id=…)` for both jobs (this one and the transcripti
 metrics: none.
 
 ### C-F601 — reference pairing and per-model arguments are refused before any model load, each naming the argument
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 Near-free: every arm should die before a load. `workspace="regression-complete"`. Each arm is an inline
 one-step `generate_speech` workflow (result `audio/wav`, `text: "A short line."`, `seed: 1112`).
@@ -16022,7 +16016,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F602 — the 20 s reference cap and the context limit refuse before generation, and their boundaries are accepted
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 GPU-light. `workspace="regression-complete"`, `A8` and `REF` as in C-F601.
 Setup: make two references from the shared 30.0 s `asset:qa-cast/ep15-song.mp3` (read-only, never

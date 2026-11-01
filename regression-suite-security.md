@@ -1156,7 +1156,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F056 — `generate_speech.reference_audio` holds the media path gate at validate time
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 #1121 adds a media argument, `reference_audio`, that Audio8 reads as a cloning reference. The plan
 relies on its `_audio` suffix to get the validate-time path checks. Carrier, in workspace
@@ -1185,7 +1184,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F057 — the Audio8 branch of `generate_speech` runs the trust gate before any load
-pending: #1121
 source: tester, spec for #1121 from #1112's plan v2 (claude-opus-5-5 via anthropic)
 Audio8 gets its own dispatch branch ahead of the transformers pipeline, and upstream loads only with
 `trust_remote_code`. The plan says the branch runs the trust gate first. Use SE-F056's carrier,
