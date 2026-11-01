@@ -8098,4 +8098,146 @@ any bracket runs, the setup job). Keep `ic-alpha/priya-cutfree-145f.mp4`.
 metrics: `latency` (job `started_at`→`finished_at`, s), conditions `960x544-145f-cutfree` and
 `960x544-145f-ep13`, to `regression-perf/M-F290.jsonl`. The first run seeds the file.
 
+### M-F291 — `restore-colorize` tells the caller to write a clip-matched prompt, in its description, its stored prompt and the skill row; its traits are `needs-input-media` only and its registry note names the clip-matched run
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Free: discovery calls, a skill read and `validate_workflow`, no GPU. This is
+plan v10's amendment (Q10 (a), Q11 (i)). It replaces M-F227's "it has the same traits as
+`templates/ltx2/restore-deblur`" bullet with the traits check below. M-F227's and M-F254's other checks
+stand.
+expected:
+- **Traits.** In `list_workflows(shape="shot", traits="needs-input-media")`, the
+  `templates/ltx2/restore-colorize` entry's traits are exactly `["needs-input-media"]`. `has-audio` in
+  particular is absent: the output is silent (Q11 (i)). Any other trait is a finding, whatever
+  `restore-deblur`'s traits are.
+- **Template description** (the full `get_workflow(name="templates/ltx2/restore-colorize")` document,
+  or the `list_workflows` entry if it carries the full text). It says, in substance, all of:
+  - the `prompt` must describe this clip and name its colours;
+  - a prompt that doesn't (the default included) leaves the clip grey, and the default is a worked
+    example of the form, not a general-purpose prompt.
+  Wording may differ; a description that only says "edit the prompt" or "the prompt can be changed"
+  without saying an unmatched prompt leaves it grey is a finding.
+- **The default stays.** `get_workflow(..., variables_only=true)`: `prompt` still defaults to a
+  `prompt:ltx2/…` reference (the stored prompt is kept as the example, not removed or made required).
+- **Stored prompt.** `get_prompt(<that name, minus "prompt:">)`: its text still has M-F227's four
+  phrases ("Reference shows", "Edited shows the same scene with natural colors restored", `COLORIZE`,
+  "only color information differs"). Its **`description`** field says the same as the template's: the
+  prompt has to describe the caller's clip and name its colours, and this one is an example that leaves
+  an unlike clip grey.
+- **Skill.** The `dw:ltx-2.5` skill's `restore-colorize` row (or the text it links for that route):
+  - tells the composing agent to look at a frame of the source (it names `get_output_frames`, or says
+    "look at a frame" of the source clip) before writing the prompt;
+  - tells it to write both panels of the dual-panel prompt for that clip, naming the colours;
+  - doesn't present the stored default as enough on its own.
+  M-F227's skill points (the route row, "black-and-white or washed-out footage") still hold.
+- **Registry.** `list_loras(model="Lightricks/LTX-2.5-Diffusers")`: `ltx-2.5/ic-colorization` is still
+  `proven` with `workflow: null`. Its `evidence` note says the colour holds **with a clip-matched
+  prompt** and names job `f80056a98e62`. If no `evidence` field shows over MCP, record that the note
+  can't be checked; `proven` and `workflow: null` still can.
+- **An inline caller prompt validates.** `validate_workflow(name="templates/ltx2/restore-colorize",
+  workspace="regression-model-specific", arguments={"source_video": "asset:ic-colorize/src-bw-124f.mp4",
+  "prompt": "Reference shows a woman talking to camera in an office, in black and white. Edited shows the same scene with natural colors restored: warm skin, dark brown hair, a blue shirt, beige walls. COLORIZE. Only color information differs."})`
+  → `valid: true`, `warnings: []`, a non-null `plan.estimate`. The caller-written prompt is the route
+  the plan relies on, so refusing or warning on inline text is a finding. (The colours named here are
+  only a shape check; nothing runs.)
+It is a **finding** if any of the following holds:
+- the traits include anything but `needs-input-media`;
+- the description, the stored prompt's description or the skill row misses its point above;
+- the default `prompt` is gone or no longer a stored-prompt reference;
+- the registry note doesn't mention a clip-matched prompt or doesn't name `f80056a98e62`;
+- the inline-prompt validate is refused or warns.
+cleanup: none. Discovery and validate only.
+metrics: none.
+
+### M-F292 — `restore-colorize` on the black-and-white clip with a prompt written from a frame of it comes back in colour at the source's size, keeping the scene, and silent
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Paid: one LTX-2.5 job at 960×544×121 on lem (RTX 3090). Workspace
+`regression-model-specific`, `"seed": 1080`. This is plan v10's amendment of M-F229's colour arm
+(Q10 (a)): the run passes a clip-matched `prompt`. Where both are due, it replaces M-F229's run and its
+"In colour" expectation; M-F229's shape, same-scene, oversaturation-rerun and cleanup clauses apply to
+this run as written, except where this case says otherwise. Running the stored default and getting a
+grey clip is the documented limit (M-F291), never a finding, and this case doesn't run it.
+Setup: `B` = `asset:ic-colorize/src-bw-124f.mp4` (Fixtures; 960×544, 124 frames, 24 fps, with audio,
+grey). Make it if missing.
+**Writing the prompt `P_bw`**, as the skill tells a composing agent to:
+1. `get_output_frames(name=B, at=["frame:60"])` to see the scene and its subject. `B` is
+   `asset:qa-cast/ep6-shot1-priya.mp4` with its saturation at 0, so also look at
+   `get_output_frames(name="asset:qa-cast/ep6-shot1-priya.mp4", at=["frame:60"])` to name the real
+   colours (skin, hair, each visible garment, the background's main surfaces).
+2. Write `P_bw` in the stored prompt's dual-panel form (M-F227's four phrases, in that order):
+   `Reference shows <one sentence: who, where, doing what>, in black and white. Edited shows the same scene with natural colors restored: <each named colour, e.g. "warm light skin, dark hair, a navy jacket, a grey wall">. COLORIZE. Only color information differs.`
+   Name at least four distinct colours, each tied to an object. Record `P_bw` verbatim on the stage.
+Steps:
+1. `validate_workflow(name="templates/ltx2/restore-colorize", workspace="regression-model-specific",
+   arguments={"source_video": B, "prompt": P_bw, "seed": 1080})`, bind `acknowledged_cost`.
+2. `run_workflow(..., note="M-F292 colorize bw, clip-matched prompt", wait_seconds=55)`, then
+   `wait_for_job`.
+3. `get_gallery_metadata` on the final; `get_output_frames` on the final and on `B` at `frame:0`,
+   `frame:60` and `frame:120`.
+expected:
+- The job succeeds.
+- **Shape.** The final is **960×544** (the source's size), **121** frames at **24 fps** (the source's
+  rate; `frame_rate` defaults to `"source"`).
+- **Silent (Q11 (i)).** `get_gallery_metadata` shows **no audio stream** on the final, although `B` has
+  one. An audio track on the final is a finding: the plan made the output silent and the traits say so.
+- **In colour, as named.** At each sampled frame the final shows plainly non-grey, natural colour, and
+  the objects `P_bw` names carry roughly the colours it names (a navy jacket reads as a dark blue, not
+  grey, not red). Still grey, one flat cast (sepia, all-blue), or colours plainly unlike those named is
+  a finding. A colour that is close but not exact (navy vs. royal blue) is not.
+- **Same scene.** As M-F229: same subject, position, pose and framing as `B` at the same index, no crop
+  or stretch, motion matching between frames 0 and 120; only colour differs.
+- **Fallback.** If the final is still grey with `P_bw`, the plan's fallback applies: record
+  "loadable, prompt-sensitive; not good at 24 GB on `ic-colorize/src-bw-124f.mp4`" on #1080, with
+  `P_bw` and the job id. That is the stage's outcome to report, and still a finding against this case.
+It is a **finding** if the run fails, the final isn't 960×544×121 at 24 fps, it has an audio stream, it
+stays grey or takes colours unlike those named, or the scene changes beyond colour.
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each job (including an
+oversaturation rerun at `lora_scale` 0.8, which passes `P_bw` too). Keep the fixture.
+metrics: `latency` (job `started_at`→`finished_at`, s), condition `960x544-121f-matched-prompt`, to
+`regression-perf/M-F292.jsonl`. The first run seeds the file.
+
+### M-F293 — `restore-colorize`'s 8 fps and portrait arms pass a prompt written from a frame of their own fixture, and come back in colour with every other M-F256 and M-F257 expectation intact
+pending: #1080
+source: tester, spec for #1080 from #1064's plan v10 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F227. Paid: three LTX-2.5 jobs at the 960×544 working size, 97 frames each, on lem.
+Workspace `regression-model-specific`, `"seed": 1080`. This is plan v10's amendment of the colour arms
+of M-F256 and M-F257 (Q10 (a)). Where both are due, run M-F256 and M-F257 exactly as written **with
+one change: every arm's `arguments` also carry the fixture's clip-matched `prompt`** (below). All their
+other expectations (rate, frame count, size, no band, no bleed, the follow/override comparison,
+cleanup and metrics) stand unchanged and are judged on these runs; their "in colour" clauses are judged
+as this case defines them.
+Setup: `B8` = `asset:ic-colorize/src-bw-960x544-97f-8fps.mp4` and `BP` =
+`asset:ic-colorize/src-bw-384x544-97f.mp4` (Fixtures). Make them if missing.
+**Writing the prompts**, one per fixture, each from that fixture's own frame, as M-F292 does:
+- `P_8`: from `get_output_frames(name=B8, at=["frame:48"])`. `B8` is a 960×544 crop of
+  `asset:qa-cast/ep6-shot1-priya.mp4` at 0 saturation; name its real colours from the colour original
+  at about the same moment (look at it near `frame:48`, matching the pose).
+- `P_P`: from `get_output_frames(name=BP, at=["frame:48"])`. `BP` is a 384×544 centre crop of the same
+  clip, so it shows less background: describe and colour only what is in this crop.
+- Each in M-F292's dual-panel form, with at least four named colours tied to objects visible in that
+  fixture. Record both verbatim on the stage. Don't reuse `P_bw` unchanged for `BP`: a prompt naming
+  objects outside the crop isn't written from this clip's frame.
+Runs:
+- M-F256 **follow** and **override**: both with `"prompt": P_8` (the same text on both, so their frames
+  still compare as identical).
+- M-F257: with `"prompt": P_P`.
+expected:
+- Everything M-F256 and M-F257 expect, on these runs.
+- **In colour, as named.** On both M-F256 finals and the M-F257 final, at the frames those cases
+  sample: plainly non-grey, natural colour, with the named objects carrying roughly the named colours,
+  as M-F292 judges it.
+- **No bleed, with colour present.** In the M-F257 final the edge columns carry the scene's colours
+  continuous with the centre. This is only meaningful once the frame is in colour, which is why the
+  arm is re-run with `P_P`.
+- **Fallback.** A fixture still grey with its matched prompt is recorded on #1080 as "loadable,
+  prompt-sensitive; not good at 24 GB on <fixture>", with the prompt and job id, and is a finding
+  here.
+It is a **finding** if any M-F256 or M-F257 expectation fails on these runs, any final stays grey or
+takes colours unlike those named, or the two M-F256 arms didn't receive the same prompt.
+cleanup: as M-F256 and M-F257: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
+each job. Keep the fixtures.
+metrics: as M-F256 and M-F257, to their own `regression-perf/` files, with `-matched-prompt` appended to
+each condition (`960x544-97f-8fps-matched-prompt`, `portrait-384x544-97f-matched-prompt`).
+
 ## Performance
