@@ -15703,7 +15703,6 @@ if this case re-created it; `delete_asset` any copy made into `regression-comple
 metrics: none.
 
 ### C-F590 — a `for_each` member reading another entry of its own list (`previous_result:shot@a` in `shot@b`) is refused at validate and at submission
-pending: #1111
 source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
 CPU only, no GPU time. Before #1111 this workflow validated clean (checked over MCP at spec time); the
 refusal is the new behaviour. Every call passes `workspace="regression-complete"`. The workflow
@@ -15744,7 +15743,6 @@ cleanup: none if no job was queued; else `cancel_job`/`delete_output(job_id=…)
 metrics: none.
 
 ### C-F591 — the cross-entry refusal also covers `from_previous_result` inside a `references` item, a `.property` suffix, and unnamed (index-keyed) entries
-pending: #1111
 source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
 No GPU time: every arm is `validate_workflow` only, `workspace="regression-complete"`.
 a. **`references` item.** `get_workflow("templates/minimax/music-video", variables_only=true)` to
@@ -15768,7 +15766,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F592 — references the cross-entry rule must leave legal: same-key pairing, another group over the same list, a step after the list, `gather:`, and catalog list templates
-pending: #1111
 source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
 CPU only. This workflow (`W2`) validated clean before #1111 (checked over MCP at spec time); it
 must stay clean. `workspace="regression-complete"` on every call.
@@ -15806,7 +15803,6 @@ cleanup: `delete_output(job_id=…)` for step 2's job.
 metrics: none.
 
 ### C-F593 — a member reading an earlier member's *video* as `image` gets only the cross-entry error, not also #813's `get_last_frame` advice
-pending: #1111
 source: tester, spec for #1111 from #1101's plan v1 (claude-opus-5-5 via anthropic)
 Validate only, no GPU time, `workspace="regression-complete"`. `get_workflow("templates/ltx2/image-to-video")`
 and build an inline copy, `qa-1111-video-into-image`, in which the step whose pipeline arguments carry
