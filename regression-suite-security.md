@@ -1206,7 +1206,6 @@ cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
 
 ### SE-F058 — `generate_sound_effects.video` holds the media path gate at validate time
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 #1133 adds `generate_sound_effects`, whose `video` argument MMAudio reads frames from (and whose
 length sets the default duration). The plan promises a `video` outside the workspace is refused at
@@ -1235,7 +1234,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F059 — `generate_sound_effects` runs the trust gate before any load
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 MMAudio is vendored code loading three repos (MMAudio, Kandinsky 6 decoder files, DFN5B CLIP); the plan
 says the trust gate runs before any load. Use SE-F058's carrier, unmodified, as the base. Each probe

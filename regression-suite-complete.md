@@ -16362,7 +16362,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F614 — `generate_sound_effects` is listed, and `get_task` documents every argument, its defaults and limits, both licences with Apple's notice, and that video-only is the weaker mode
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Free: discovery calls only.
 1. `list_tasks`.
@@ -16392,7 +16391,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F615 — the catalog lists `video-to-sound-effects` and `text-to-sound-effect` as audio, the video one needing input media, both stating the licences
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Free: discovery calls only.
 1. `list_workflows(shape="audio")` and `list_workflows(shape="audio", traits="needs-input-media")`.
@@ -16413,7 +16411,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F616 — both templates validate clean, and their plans price every weight file at a pinned revision with real sizes, with no `v1-44.pth` or `bigvgan_generator.pt`
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Free: validate only, `workspace="regression-complete"`. Setup: C-F617's MELEE fixture.
 1. `validate_workflow(name=VTS, arguments={V: "asset:s07-melee-i2v.mp4", P: "sword clashes and
@@ -16439,7 +16436,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F617 — a prompted video run gives a 44.1 kHz stem the clip's length, muxed onto the clip, with its onsets on the picture's hits
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 GPU, about a minute warm (plus a one-time ~several-GB download, quoted by `validate_workflow`).
 `workspace="regression-complete"` on every call; validate first and bind `acknowledged_cost` per the
@@ -16475,7 +16471,6 @@ cleanup: `delete_output(job_id=…)` for every job made here (keep MELEE).
 metrics: none.
 
 ### C-F618 — a video-only run (no prompt) completes with the same shape
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 GPU, under a minute warm. As C-F617 step 1 with P left out entirely (not an empty string), seed 1124.
 If VTS requires P, use an inline one-step `generate_sound_effects` workflow with only `video:
@@ -16489,7 +16484,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F619 — text-only gives 8 s by default, the same seed gives identical audio, and the 4–12 s warning's boundaries hold
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a few seconds per arm warm. `workspace="regression-complete"`. SFX(args) below is an inline one-step
 `generate_sound_effects` workflow, result `audio/wav`, `prompt: "a heavy wooden door slams shut"`,
@@ -16516,7 +16510,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F620 — the clip-length default warns outside 4–12 s on a short silent clip and a 15 s clip, and the run still succeeds
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 GPU, under a minute each warm. `workspace="regression-complete"`, seed 1124, no `duration` (it defaults
 to the clip's length). Fixtures: `asset:qa-fit/src-640x480-50f-silent.mp4` (50 frames at 24 fps,
@@ -16536,7 +16529,6 @@ cleanup: `delete_output(job_id=…)` for every job made here (never the fixtures
 metrics: none.
 
 ### C-F621 — argument refusals come before any model load, each naming the argument, and the at-limit values are accepted
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Near-free: every refused arm should die before a load. `workspace="regression-complete"`. Each arm is an
 inline one-step `generate_sound_effects` workflow, result `audio/wav`, `seed: 1124`; MELEE as in
@@ -16566,7 +16558,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F622 — the noise warning, when it fires, names flatness and centroid and leaves the run successful
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a few seconds per arm warm. Stage A could not force a noise-like result, and the unit test covers
 the threshold, so this case asserts the warning's form when it fires and its absence on tonal takes
@@ -16586,7 +16577,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F623 — on mps, a text-only run completes in fp32
-pending: #1133
 source: tester, spec for #1133 from #1124's plan v2 (claude-opus-5-5 via anthropic)
 Only on an mps server (mini-ai), when a target there is in scope; skip on cuda and say so. GPU, under a
 few minutes (plus the one-time download). C-F619 step 4 (inline text-only, door slam, seed 1124), in
