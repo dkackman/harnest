@@ -278,6 +278,9 @@ smoke's Fixtures lists the asset too.
   sung mix, 30.03 s), `priya-voice.wav` (mono speech), `room-bed.wav` (near-silent mono) and synthetic
   phrase results passed as workflow variables. C-F589 reads `verse_s7.wav` from the `russian-anthem`
   workspace (job `0838f676f51f`) and never deletes it. Nothing new to keep.
+- C-F624–C-F628 (#1095 plan v3) use the same fixtures as C-F576–C-F589: synthetic phrase results as
+  workflow variables, `ep15-song.mp3`, and (C-F628) `verse_s7.wav`, which only lem holds. Nothing new
+  to keep.
 - C-F597–C-F602 (Audio8 voice cloning, #1121) use `priya-voice.wav` as the cloning reference: mono
   speech under 20 s, with a transcript read by `transcribe_audio` at run time, so any short clean
   single-voice clip substitutes. C-F602 slices `ep15-song.mp3` (it must be over 21 s) into 20.0 s and
@@ -15549,7 +15552,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F583 — `plan_cuts` and the cuts docs name the phrase result as a `transcript`, and the cuts chain shows `separate_stems`
-pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_task("plan_cuts")`; `get_guide("tasks")` at the `plan_cuts` section;
 `get_workflow("templates/minimax/music-video-cuts")`; load the `dw:minimax-h3` skill (as loaded from
@@ -15570,7 +15572,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F584 — `plan_cuts` fed phrases without lyrics gives one scene per phrase, each with `lyric: null`, starting at the phrase
-pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. Author a one-step json workflow, saved `application/json` final: `plan_cuts` with
 `transcript: variable:transcript`, `fps: 24`, `duration_s: 20`, `segment_by: "line"`,
@@ -15595,7 +15596,6 @@ cleanup: `delete_output(job_id=…)` for both.
 metrics: none.
 
 ### C-F585 — `plan_cuts` maps matching lyrics one-to-one onto phrases, and warns with both counts and the `min_gap_seconds` direction when they don't match
-pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. C-F584's workflow and `transcript` variable, arm a's settings, plus a `lyrics` argument.
 Three arms:
@@ -15619,7 +15619,6 @@ cleanup: `delete_output(job_id=…)` for every arm.
 metrics: none.
 
 ### C-F586 — phrase-fed `plan_cuts` honours `segment_by: stanza`, the render grid and `max_scene_s`, and a split phrase keeps its whole lyric
-pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 CPU only. C-F585 arm a's workflow (4 phrases, 4 lyrics, `include_instrumental_gaps: false`) with:
 a. `segment_by: "stanza"`, **no `lyrics`** (`plan_cuts`' own `min_gap_seconds` left at 2.0). The
@@ -15644,7 +15643,6 @@ cleanup: `delete_output(job_id=…)` for every arm.
 metrics: none.
 
 ### C-F587 — `music-video-cuts` with `transcribe` swapped for `analyze_phrases` and matching lyrics gives scenes on the phrases, in order, on the render grid
-pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 GPU-light (stems, beats, no Whisper). `get_workflow("templates/minimax/music-video-cuts")` and save a
 copy, `qa-1105/cuts-phrases`, in `regression-complete` with one change: the `transcribe` step becomes
@@ -15673,7 +15671,6 @@ cleanup: `delete_output(job_id=…)` for every job; `delete_workflow("qa-1105/cu
 metrics: none.
 
 ### C-F588 — the unmodified `music-video-cuts` template still plans from Whisper as before
-pending: #1105
 source: tester, spec for #1105 from #1095's plan v2 (claude-opus-5-5 via anthropic)
 GPU-light. Run `templates/minimax/music-video-cuts` unchanged with `song: asset:qa-cast/ep15-song.mp3`
 (no lyrics), validated first, with `wait_seconds=55`. Read the plan, and run it once more with the
@@ -16171,7 +16168,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F606 — every stage B probe job the findings cite exists in `probe-1123` and ran what the findings say
-pending: #1127
 source: tester, spec for #1127 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 Stage B measures lessons 3 (contact fuses two characters), 4 (an ALL-CAPS word becomes
 literal text) and 6 (an impact becomes a continuous spray). The same rules as C-F603 apply:
@@ -16209,7 +16205,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F607 — lessons 3 and 6's verdicts are what the cited frames show, with H3 judged separately
-pending: #1127
 source: tester, spec for #1127 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 The same verdict rule and the same read-only method as C-F604. For each cited job, call
 `get_output_frames(name=…, workspace="probe-1123", at=<the times the hand-off cites>)`. If
@@ -16231,7 +16226,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F608 — lesson 4 holds per model only when the caps word is legible text in half the caps renders and in no lowercase one
-pending: #1127
 source: tester, spec for #1127 from #1123's plan v2 (claude-opus-5-5 via anthropic)
 Stage B's own criterion: L4 holds when the capitalised word appears as legible text in at
 least half the caps renders, and in **none** of the lowercase ones. Klein and Z-Image land in
@@ -16634,6 +16628,130 @@ expected:
 It is a **finding** if the run fails on mps, the output's shape differs, or it ran in a 16-bit dtype by
 default.
 cleanup: `delete_output(job_id=…)` for the job.
+metrics: none.
+
+### C-F624 — with fewer phrases than lyric lines, the mismatch warning also says to raise `floor_db` and to check by ear; with more phrases it doesn't
+source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
+CPU only. C-F584's one-step `plan_cuts` workflow (arm a's settings: `fps: 24`, `segment_by: "line"`,
+`min_scene_s: 1.0`, `include_instrumental_gaps: false`), with a `lyrics` argument. Run each arm with
+`wait_seconds=55` and read it with `get_output_text`.
+a. C-F584's 4-phrase `transcript`, `duration_s: 20`, 5 lines (C-F585 arm c's lyrics): fewer phrases.
+b. A fused verse: `transcript = {"phrases":[{"start":1.44,"end":33.0}],"duration_seconds":33.03,"method":"centre","warnings":[]}`,
+   `duration_s: 33`, 4 lines (C-F585 arm a's lyrics): 1 phrase for 4 lines.
+c. C-F584's 4-phrase `transcript`, `duration_s: 20`, 3 lines (C-F585 arm b's lyrics): more phrases.
+expected:
+- a and b: one mismatch warning naming both counts (4 and 5; 1 and 4), saying to lower
+  `analyze_phrases`' `min_gap_seconds`, **and** naming `floor_db`: raise it (less negative, e.g. −30)
+  when the voice never drops between lines (legato or reverberant singing). The `floor_db` advice
+  says to check the phrases by ear (`get_output_audio`) before trusting a one-to-one pairing.
+- b: the 4 lines are spread evenly over 1.44–33.0 s (starts near 1.4/9.3/17.2/25.1 s ± the scene
+  minimums), in order, each lyric whole, on frames the existing rules give.
+- c: the warning names 4 and 3 and says to raise `min_gap_seconds`, as C-F585 b. It does **not** say
+  to raise `floor_db` (that would split more phrases, the wrong way). Mentioning `floor_db` in another
+  direction is not a finding by itself; report the wording.
+- No arm has a suspect-transcript or "none of the lyrics' words were heard" warning.
+It is a **finding** if a or b lacks either count, either knob, the direction for either, or the
+check-by-ear caution; if c advises raising `floor_db`; or if the spread leaves the first-start to
+last-end span.
+cleanup: `delete_output(job_id=…)` for every arm.
+metrics: none.
+
+### C-F625 — `analyze_phrases`' 90% warning names both remedies: the vocal stem on a mix, a higher `floor_db` on a stem
+source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
+CPU only. C-F582's setup (one json workflow, `analyze_phrases` on `asset:qa-cast/ep15-song.mp3`,
+`centre: false`, `floor_db: -60`, `min_gap_seconds: 5`), saved final, `wait_seconds=55`. If that
+gives no phrase over 90% of `duration_seconds`, raise `min_gap_seconds` to 30 and run again.
+expected:
+- With a phrase covering more than 90% of the duration, `warnings` has one entry saying so that names
+  **both** remedies: feed `stems.vocals` (vocal stem separation) if this is a full mix, and raise
+  `floor_db` if it is already a vocal stem (legato or reverberant singing). It doesn't assert the input
+  is a mix: the task can't tell.
+- The result shape is otherwise C-F577's, `phrases` and `duration_seconds` included.
+- With no phrase over 90% (both settings), there is no such warning; report the longest share. That
+  alone is not a finding.
+It is a **finding** if the warning fires and names only one remedy, or tells the caller the input is
+a raw mix.
+cleanup: `delete_output(job_id=…)` for every run.
+metrics: none.
+
+### C-F626 — matched pairings warn when a paired phrase is under 1/4 or over 4× the median phrase, naming the line, and still pair
+source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
+CPU only. C-F584's one-step `plan_cuts` workflow (`fps: 24`, `segment_by: "line"`, `min_scene_s: 1.0`,
+`include_instrumental_gaps: false`), 4 lyric lines (C-F585 arm a's) unless an arm says otherwise. Each
+arm's 4 phrases have equal middle durations, so the median is the same under either even-count
+convention. Run each with `wait_seconds=55` and read it.
+a. Too short: phrases 1.0–7.0, 7.5–8.7, 9.5–15.5, 16.0–22.0 (6, 1.2, 6, 6 s; median 6, 1.2 < 1.5),
+   `duration_s: 24`.
+b. Too long: phrases 1.0–3.0, 3.5–5.5, 6.0–8.0, 8.5–17.5 (2, 2, 2, 9 s; median 2, 9 > 8),
+   `duration_s: 20`.
+c. At 1/4 exactly: phrases 1.0–7.0, 7.5–9.0, 9.5–15.5, 16.0–22.0 (6, 1.5, 6, 6 s), `duration_s: 24`.
+d. At 4× exactly: phrases 1.0–3.0, 3.5–5.5, 6.0–8.0, 8.5–16.5 (2, 2, 2, 8 s), `duration_s: 20`.
+e. Arm a's phrases with **no** `lyrics`.
+f. Arm a's phrases with 5 lines (C-F585 arm c's): counts differ.
+g. C-F584's own phrases (2, 1.5, 2.5, 5 s; median 2.25) with the 4 lines.
+expected:
+- a: a warning naming the line paired with the 1.2 s phrase ("Bravo line two" or line 2) as short
+  for its phrase, saying to check the phrases by ear. The pairing still happens: four vocal shots
+  carrying Alpha, Bravo, Charlie, Delta in order, each starting at its phrase as in C-F585 a.
+- b: the same, naming "Delta line four" (line 4) as long for its phrase. Delta is still paired (its
+  pieces, if `max_scene_s` splits it, each carry the whole line).
+- c and d: no disproportion warning (the plan says "under 1/4" and "over 4×").
+- e: no disproportion warning (no lines are paired); one `lyric: null` shot per phrase.
+- f: the count-mismatch warning (C-F624 a's) and no disproportion warning (nothing is paired one to
+  one); the even spread.
+- g: no disproportion warning.
+It is a **finding** if a or b gives no warning, names the wrong line or none, lacks the check-by-ear
+advice, or drops or re-pairs a line because of it; or if c, d, e, f or g gives the warning.
+cleanup: `delete_output(job_id=…)` for every arm.
+metrics: none.
+
+### C-F627 — the docs name `floor_db` as the knob for a fused legato verse, with the check-by-ear caution
+source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
+Free. `get_guide("tasks")` at the `plan_cuts` section (and the `analyze_phrases` section); load the
+`dw:minimax-h3` skill (as loaded from `develop`) and read `references/cuts.md`;
+`get_task("analyze_phrases")`.
+expected:
+- The tasks guide and `cuts.md` each say that when phrases are fused (fewer phrases than lyric lines,
+  legato or reverberant singing on a clean stem), raising `analyze_phrases`' `floor_db` (less negative)
+  is what splits them, as well as lowering `min_gap_seconds`.
+- Both say to check the phrases by ear before trusting a one-to-one pairing, since a matching count
+  can sit on bad boundaries.
+- Where they mention the disproportion warning, its rule matches C-F626 (under 1/4 or over 4× the
+  median, the pairing kept).
+- `get_task("analyze_phrases")` still documents `floor_db` as C-F576 does (`non_positive`, relative
+  default when unset).
+It is a **finding** if either doc lacks the `floor_db` advice or the caution, or names a knob, key or
+direction the live schema doesn't have.
+cleanup: none.
+metrics: none.
+
+### C-F628 — field case (v3): `russian-anthem`'s fused verse gets a true span, both counts, both knobs and the even spread
+source: tester, spec for #1105 from #1095's plan v3 (claude-opus-5-5 via anthropic)
+GPU-light. Needs `verse_s7.wav` from the `russian-anthem` workspace (job `0838f676f51f`), which only
+lem holds: on a server without it, hand the verify to lem's loop and say so. Find it and the verse's 4
+lyric lines as C-F589 says (`get_job`, `get_job_workflow`, `workspace="russian-anthem"`); use its
+`output:` reference or `copy_to_workspace` it into `regression-complete`. Never delete the source.
+1. Run C-F587's `stems` → `analyze_phrases` chain on the verse at defaults; record P and the span.
+2. Run `qa-1105/cuts-phrases` (C-F587's copy; re-create it if cleaned up) with `song` = the verse and
+   the 4 lines, `wait_seconds=55`. Read the plan, `get_job` and `get_job_events`.
+3. Repeat 1 and 2 with `analyze_phrases` `floor_db: -30` in the saved copy's step.
+expected:
+- Step 2: no hallucinated text anywhere in the plan (every vocal shot's `lyric` is one of the 4 given
+  lines), no suspect-transcript warning and no "none of the lyrics' words were heard" warning. If P ≠ 4,
+  the mismatch warning names P and 4, the `min_gap_seconds` direction (lower, when P < 4) and raising
+  `floor_db` with the check-by-ear caution (C-F624). The 4 lines are spread evenly, in order, over the
+  vocal's true span (first phrase start to last phrase end, about 1.4–33.0 s, from step 1), on the
+  17n+5 grid within 124–345 frames. If P = 4 at defaults, the lines pair one to one instead (C-F587).
+- Step 3: if P = 4, the lines pair one to one in order, and if a paired phrase is under 1/4 of the
+  median phrase (on lem, a 0.34 s phrase), the C-F626 disproportion warning names its line. If P ≠ 4,
+  step 2's expectations hold at this setting. Report the phrases at each setting.
+- The case does **not** owe a matching count at any setting.
+It is a **finding** if any shot carries text not in the 4 lines, a transcript warning fires, the
+mismatch warning lacks a count, a knob or the caution, the spread leaves the true span or the grid, or
+a matched pairing with a phrase under 1/4 of the median gives no disproportion warning.
+cleanup: `delete_output(job_id=…)` for every job made here; `delete_workflow("qa-1105/cuts-phrases")`
+if this case re-created it; `delete_asset` any copy made into `regression-complete`. Never touch the
+`russian-anthem` workspace's files.
 metrics: none.
 
 ## Performance
