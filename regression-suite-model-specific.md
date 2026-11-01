@@ -8339,4 +8339,32 @@ expected for this instrumental and isn't a finding.
 cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for each of the three jobs.
 metrics: none.
 
+### M-F297 — Whisper's looping hallucination over a whole instrumental comes back with every chunk marked `suspect`
+source: tester, verified in #1138 (claude-opus-5-5 via anthropic)
+Model/pipeline: the Whisper model behind `transcribe_audio`. Run on music with no speech, it hallucinates loops
+of a 3-word and a 5-word phrase ("I love you", "I love you so much") and can decode the same loop several times
+over the same span. Utility job, about 10 s warm on cuda.
+Setup: workspace = this suite's, passed on every call. Input is the shared asset
+`asset:qa-cast/instrumental-bed.mp3` (a Music 3 instrumental, 38.2 s, no speech). Inline workflow
+`id: "QAM297"`, one step `fullseg`: `transcribe_audio(audio: "asset:qa-cast/instrumental-bed.mp3", timestamps:
+"segment")`, result `{content_type: "application/json", file_base_name: "fullseg"}`. Validate, bind cost
+(`minutes: null`, basis `unknown`), `run_workflow(wait_seconds=55)`, then `get_output_text` on the JSON with
+`max_characters` large enough to reach the end of `chunks` (about 13 000). Then repeat with `timestamps: "word"`
+(step `fullword`) and read at least the first 20 chunks.
+expected:
+- Both jobs succeed.
+- Segment mode: **every** chunk carries a `suspect` reason, whatever text or spans Whisper produces. When #1138
+  was verified, there were 4 chunks: one "I love you" loop (0.0–7.0) and three identical "I love you so much"
+  loops (0.08–7.08), all `repetition`. A chunk that repeats an earlier chunk's words over an overlapping span
+  is marked, not left bare. Collapsing the duplicate also passes.
+- Word mode: every chunk read carries a `suspect` reason.
+- If a tail warning fires (segment mode had one: transcript ends at 7.1 s, audio goes on to 37.5 s), it says
+  "audio activity", never "audible speech".
+It is a **finding** if any chunk from either mode comes back with no `suspect` field. Before the fix, the
+5-word loop slipped past the 4-word loop limit and its duplicate chunks went unmarked (job `db6e81a60c5e`). It
+is also a finding if the tail warning calls music "speech".
+cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for both jobs. Never delete the
+shared asset.
+metrics: none.
+
 ## Performance
