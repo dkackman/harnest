@@ -8368,7 +8368,6 @@ shared asset.
 metrics: none.
 
 ### M-F298 — the H3 anti-burn LoRA is catalogued `trial` or `rejected`, never `proven`, as `fl2va` continuation-only, with its licence and evidence citing real `probe-1151` jobs
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 LoRA catalog, entry `minimax-h3/h3-antiburn` (file `loras/minimax-h3/h3-antiburn.json`).
 The weights are `Imagineer13/H3-Anti-Burn-LoRA`, `h3_antiburn_universal_v1.safetensors`. Free: discovery and
@@ -8407,7 +8406,6 @@ cleanup: none. Never delete the `probe-1151` jobs: the entry cites them.
 metrics: none.
 
 ### M-F299 — the anti-burn load check: one seed-42 `fl2va` clip, with and without the LoRA, both succeed, warn no key mismatch, and differ frame for frame
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` with the 4-step v1.2 fl2v turbo, alone and stacked with `minimax-h3/h3-antiburn`
 at 0.6. Free: it reads the recorded jobs and doesn't re-run them. Workspace `probe-1151`. Skip with a note if
@@ -8440,7 +8438,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F300 — a `rejected` anti-burn entry cites the failing job, and that job's events show the load error or the unmatched keys
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` with `minimax-h3/h3-antiburn`, whose model card says it uses ComfyUI
 (`diffusion_model.*`) keys. Free: job reads only. Workspace `probe-1151`. If M-F298 shows the entry `trial`, record
@@ -8465,7 +8462,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F301 — the A/B arms: two hand-built 5-segment chains, seed 42 and `guide_frames` 39, joined, that differ only in anti-burn (off everywhere in A, 0.6 on segments 2–5 in B)
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` segments with the v1.2 fl2v turbo. Segments 2–5 are each guided by the previous
 clip's 39-frame tail, cut with `trim_video`. The guide heads are dropped and the clips joined with `concat_videos`.
@@ -8509,7 +8505,6 @@ cleanup: none. Never delete the arm jobs: the comparison and the catalog cite th
 metrics: none.
 
 ### M-F302 — the comparison comment on #1151 shows segments 1, 3 and 5 of each arm with job ids, and its cited frames reproduce
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the record of the #1159 anti-burn A/B on MiniMax H3. Free: one issue read and a few frame reads.
 Workspace `probe-1151`. Skip with a note if the entry is `rejected`; M-F300 covers that branch.
@@ -8537,7 +8532,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F303 — the anti-burn entry stays off single-clip and reference-to-video use: `recommend_loras` doesn't offer it there, and the partition check warns on `ref2va` only
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 catalog matching for `minimax-h3/h3-antiburn` (catalog `workflow` `fl2va`). It covers
 `recommend_loras` and the `trial` partition check (M-F152's rule: a `trial` entry that disagrees with the step
@@ -8567,7 +8561,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F304 — the anti-burn probe changes no shipped template and adds no skill line while the entry is `trial`
-pending: #1159
 source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/chained-segments` and the H3 chained templates, plus the `dw:minimax-h3`
 plugin skill. Free: discovery only. The baseline was pinned over MCP at develop on 2026-11-01, before #1159 was
