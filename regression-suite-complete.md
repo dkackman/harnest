@@ -17789,7 +17789,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F681 — #1166's drift probe: every chain in its comparison exists, is what the comment says, and the posted measures reproduce
-pending: #1175
 source: tester, spec for #1175 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads and CPU measures; no generation), `workspace="probe-1166"`. Reads the stage-3 comparison comment on
 `dkackman/diffusers-workflow#1166` (`gh issue view 1166 --comments`). A 10-segment chain of 124 frames at
