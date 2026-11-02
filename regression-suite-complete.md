@@ -17701,7 +17701,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F677 — `guide_noise` takes [0, 1) on an H3 guided step, refuses 1, a negative, a string or a boolean and any non-H3 step, and warns when there is nothing to noise
-pending: #1174
 source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 Free, validate only, `workspace="regression-complete"`. Fixtures: `asset:qa-fit/src-640x480-50f.mp4` (made by C-F238's
 setup when missing), `asset:qa-cast/priya-portrait.jpg`. `guide_noise` is a pipeline argument (the step's
@@ -17733,7 +17732,6 @@ cleanup: `delete_workflow` on every `c-f677-*` copy.
 metrics: none.
 
 ### C-F678 — on a guided `fl2va` call, `guide_noise: 0.4` changes the output and `guide_noise: 0` matches no noise
-pending: #1174
 source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 GPU: three single H3 `fl2va` runs, about 2.5 min each, `workspace="regression-complete"`. Validate each and bind its
 `acknowledged_cost`. Each is C-F677's G with the guide's `"audio": true` set (so a guide audio row is in play), run with
@@ -17755,7 +17753,6 @@ cleanup: `delete_output(job_id=…)` on all three; `delete_workflow` on the thre
 metrics: none.
 
 ### C-F679 — a 2-segment guide chain with `guide_noise` leaves segment 1 alone, changes segment 2, and keeps its carried audio
-pending: #1174
 source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 GPU: two 2-segment H3 chains, about 12 min each, `workspace="regression-complete"`. Validate each, bind its
 `acknowledged_cost`. Shared arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "continuity": "guide",
@@ -17778,7 +17775,6 @@ cleanup: `delete_output(job_id=…)` on both; `delete_workflow("c-f679-noise")`.
 metrics: none.
 
 ### C-F680 — the workflows guide documents `guide_noise` with its range and what it leaves alone
-pending: #1174
 source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 Free: guide reads only.
 1. `get_guide("workflows", section="H3: holding a clip with guides")` and, if it has its own subsection,
