@@ -17226,7 +17226,6 @@ cleanup: `delete_output(job_id=…)` for any transcribe job.
 metrics: none.
 
 ### C-F657 — the `cinematography` skill's camera moves carry a measured honoured/not-honoured verdict per video family, each backed by a job that exists
-pending: #1148
 source: tester, spec for #1148 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free: plugin reading plus `get_job`. Invoke `dw:cinematography`.
 expected:
