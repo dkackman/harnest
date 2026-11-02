@@ -17077,12 +17077,12 @@ source: tester, spec for #1145 from #1141's plan v1 (claude-opus-5-5 via anthrop
 Free. Needs C-F639. `workspace="regression-complete"`.
 1. `list_workflows(shape="utility")` (or the shape the template declares; also try a no-filter listing).
 2. `get_workflow("animatic")`.
-3. `validate_workflow` with the three boards, durations `[1, 2, 1.5]`, voice
-   `asset:qa-cast/priya-voice.wav` and bed `asset:qa-cast/ep20-score.wav`, under the names step 2 gives.
+3. `validate_workflow` with the three boards, durations `[1, 2, 1.5]` and
+   `soundtrack: "asset:qa-cast/priya-voice.wav"`, under the names step 2 gives.
 expected:
-- 1: `animatic` is listed with a description that says it times boards with voice and a bed.
-- 2: it has a `stills_to_video` step and audio steps for the voice and the bed; its variables cover
-  the boards, durations, voice and bed.
+- 1: `animatic` is listed with a description that says it times boards under a soundtrack.
+- 2: it has a `stills_to_video` step, then `pair_audio` (`fit: "video"`); its variables are
+  `boards`, `durations`, `fps` and `soundtrack`.
 - 3: `valid: true`, no errors. `plan.estimate`'s basis is `unknown` with a reason that says
   **task-only workflow** (Don's ruling on #1141), and `minutes` is null — not a small number.
 It is a **finding** if the template is missing, doesn't use `stills_to_video`, or reports a numeric
@@ -17101,12 +17101,13 @@ CPU. Needs C-F639. `workspace="regression-complete"`. Arguments as C-F647 step 3
    each board (1: 0.5 s, 2.0 s, 3.75 s; 2: 1.5 s, 4.5 s, 7.5 s); `assess_output` on 2.
 expected:
 - 1: video and audio both 4.5 s (±1 frame); boards 1, 2, 3 at the three midpoints in order.
-- 2: video and audio both 9 s; the voice is audible until ~7.45 s, then only the bed (or silence if the
-  bed is below the voice's level by design); the boards are in order. `assess_output` reports no
+  `job.warnings` names the trim (2.95 s).
+- 2: video and audio both 9 s; the voice is audible until ~7.45 s, then silence; the boards are in
+  order. `job.warnings` names the pad (1.55 s). `assess_output` reports no
   silence gap or seam before 7.4 s.
 - Neither output's audio is longer or shorter than its video.
-It is a **finding** if the audio runs past the last board, stops before it, a board is shown at the
-wrong time, or the bed is missing.
+It is a **finding** if the audio runs past the last board, stops before it, or a board is shown at
+the wrong time.
 cleanup: `delete_output(job_id=…)` for each.
 metrics: none.
 
