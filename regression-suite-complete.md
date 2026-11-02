@@ -17818,7 +17818,6 @@ cleanup: none (the probe's outputs are Don's evidence).
 metrics: none.
 
 ### C-F682 — #1170's seam-source probe: inputs as stated, two assemblies of equal length and audio, measures that reproduce, and a gate read correctly
-pending: #1176
 source: tester, spec for #1176 from #1170's plan v1 (claude-opus-5-5 via anthropic)
 Free: reads and CPU tasks only, no generation, `workspace="constitution-walk"`. Reads the stage-A results comment on
 `dkackman/diffusers-workflow#1170` (`gh issue view 1170 --comments`). P = 39. Write N1..N4 for the four segments' frame
