@@ -17982,4 +17982,189 @@ rule disagrees with C-F683 or C-F684.
 cleanup: none.
 metrics: none.
 
+### C-F687 — every H3 pacing-probe job the audit cites exists in `qa-h3-dialogue-pacing`, succeeded, and ran the stated arm on the non-turbo dialogue settings
+pending: #1184
+source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+#1180 stage A probes whether splitting an H3 line into `<d>` segments, with or without a body action between them,
+removes the silent lead-in. Its evidence is `docs/proposals/audits/2026-11-h3-dialogue-pacing-probes.md`. A tester
+can't read the checkout, so the case reads the doc's per-clip table (arm, seed, job id, the `transcribe_audio` output,
+lead, gaps, per-segment words/s, tail, action words heard, mouth-in-silence, action placement, verdicts) as the
+stage's hand-off comment reproduces it. If the comment doesn't carry that table, that is a **finding** against the
+hand-off, not a reason to read the source. No GPU: read-only calls only, all with `workspace="qa-h3-dialogue-pacing"`.
+That workspace is evidence. Never sweep it, and never delete a job in it.
+
+The arms the plan requires, each at seed 1001 and at seed 2002 (6 clips; arm D was dropped and must not be needed):
+- **A:** `<d>[English] I left the light on for you, Daniel.</d>`
+- **B:** `<d>[English] I left the light on.</d> <d>[English] For you, Daniel.</d>`
+- **C:** B with `He sniffs and looks down at the table.` between the two segments.
+
+Steps:
+1. For every job id the table cites, call `get_job`, then `get_job_workflow(job_id)`.
+2. In the realized workflow, read the H3 step's mode, size, frame count, seed, quantization, `lora_model_name`, step
+   count, both shifts and the prompt. Read the `transcribe_audio` step's arguments.
+
+expected:
+- Every cited job exists, is in `qa-h3-dialogue-pacing`, and completed (no failed or cancelled status).
+- Each realized H3 step is T2VA, 960x544, 124 frames, int4 sdnq, `lora_model_name` null (or absent, with no LoRA
+  loaded), 12 steps, shifts 12 and 3, and has the seed the table states.
+- The prompt has the arm's dialogue verbatim: the `<d>…</d>` text as listed above, the `[English]` tags included, with
+  C's action sentence verbatim between the two segments and no action sentence in A or B. The scene and voice text
+  (one man at a kitchen table facing the camera; "a mid-pitched baritone voice, a neutral American accent and a
+  natural speaking rate") is the same in all six prompts, character for character, outside the dialogue part.
+- The two seeds of one arm have identical prompts. The spoken words are the same eight in every arm.
+- Each clip has a `transcribe_audio` step (in the same job or a cited follow-up job) on that clip's soundtrack with
+  `timestamps: "word"`.
+- All six arm/seed cells have a job. A cell with no job is marked **not run** in the table with a reason; if any cell
+  is silently missing, that is a finding. The doc says arm A is a non-turbo re-run of the 2026-10 record's row 1 r150
+  line, not that record's configuration.
+- The sum of the cited H3 jobs' run times is within the approved ~50 GPU minutes, or the stage says it stopped at the
+  cap and which cells that left **not run**.
+It is a **finding** if a cited job is missing, in another workspace or failed, if a prompt, seed or setting differs
+from the above (a turbo LoRA, 9 steps, other shifts or another size), or if a cell is absent and not marked.
+cleanup: none. The jobs are the feature's evidence.
+metrics: none.
+
+### C-F688 — every pacing-probe lead, gap, rate, tail and spoken-action reading reproduces from the cited word timestamps
+pending: #1184
+source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+Read-only. For each clip C-F687 accepted, `get_output_text` on its cited `transcribe_audio` output
+(`workspace="qa-h3-dialogue-pacing"`); the reply is `{text, chunks}`, each chunk `{start, end, text}` in seconds, and a
+chunk may carry `suspect`. Clip length is 124 frames at the clip's fps (about 5.17 s at 24 fps; take the duration
+from `get_gallery_metadata` on the clip).
+- **lead** = the first spoken word's `start`. **tail** = clip duration − the last spoken word's `end`.
+- **gap at a written break** (B and C only) = the `start` of "For" − the `end` of "on".
+- **segment rate** = the segment's word count ÷ (its last word's `end` − its first word's `start`). Segments: B and C's
+  "I left the light on." (5 words) and "For you, Daniel." (3 words); A's single segment (8 words).
+- **action words heard** = any chunk in C (or any arm) holding "sniff", "sniffs", "looks", "down" or "table", or other
+  words of the action sentence.
+expected:
+- Each lead and tail in the table equals the recomputed value within 0.1 s. Each gap and each segment rate the table
+  gives matches within 0.1 s and 0.2 words/s.
+- Where a clip opens on a stray early word, set off from the rest of the line (row 1's s2002 had a lone "I"), the table
+  gives the lead both ways: from that word, and from the start of the rest of the line. If it gives one value, the
+  case must be able to tell which it is.
+- A chunk marked `suspect` is not counted as speech without the table saying so.
+- The table says, per clip, whether any action word was heard. It answers "yes" for every clip where a word above is
+  in the transcript, and "no" where none is.
+- A segment boundary that the transcript can't place (a missing or merged word) is reported as such in the table, not
+  given a made-up gap.
+It is a **finding** if any reading falls outside its tolerance, if a heard action word is reported as not heard, or the
+reverse.
+cleanup: none.
+metrics: none.
+
+### C-F689 — the pacing probe's verdicts follow from its table by the plan's bar, boundaries included
+pending: #1184
+source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+No calls beyond C-F687/C-F688's: apply the plan's bar to the readings C-F688 confirmed. An arm's seed **passes** when
+its lead is under 1.0 s and its delivered rate is at or below 4.5 words/s. The doc must say which rate it judges by (the
+whole line's, or each segment's), and that choice must hold for every arm.
+- **"split paces the line"** is **confirmed** only if both B seeds pass and neither A seed does.
+- **"an action between segments paces it"** is **confirmed** only if both C seeds pass, neither A seed does, and the
+  action is rendered at its break on both C seeds (C-F690).
+- **"the action prose is spoken"** is a warning if an action word is heard on any one seed of any arm.
+expected:
+- Each of the three verdicts is stated as **confirmed**, **refuted** or **inconclusive** (an arm not run is **not run**),
+  and is the one the bar gives.
+- Boundary values: a lead of exactly 1.0 s fails (the bar says "under"). A rate of exactly 4.5 words/s passes.
+- If one B seed passes and the other fails, or one A seed passes, "split paces the line" is not confirmed. The same goes
+  for C. A rule holds on both seeds or not at all.
+- If neither A seed shows a lead-in (both A seeds pass), the B and C pacing verdicts are **inconclusive**, not
+  **refuted**, and the probe was not reshaped (no longer clip, no other line). "The action prose is spoken" is still
+  reported.
+- If C passes the timing on both seeds but the action is not at its break on one of them, the C verdict is not
+  confirmed.
+- No verdict rests on listening. The doc makes no "more natural", "less read-through" or similar claim.
+It is a **finding** if a stated verdict differs from the one its numbers give, or if a verdict is missing.
+cleanup: none.
+metrics: none.
+
+### C-F690 — mouth-in-silence and action placement match the frames, and the audit lists the A and C job ids for listening
+pending: #1184
+source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+Read-only. For each cited clip, `get_output_frames(workspace="qa-h3-dialogue-pacing", at=[0, 0.5, 1.0, ..., 5.0,
+"frame:123"])` on the job's video output. Use C-F688's word timestamps to tell silence from speech.
+expected:
+- **Mouth in silence:** the table's yes/no per clip agrees with the frames that fall before the lead and inside each
+  break gap. "Yes" means the lips part or move in a frame inside silence, compared with the closed-mouth frames.
+- **Action placement (C, and any B clip where an action turns up):** the table says, per clip, whether a sniff or a
+  look down at the table shows in the frames within ±0.5 s of the break gap, shows elsewhere (with its time), or doesn't
+  show. This tester's eye agrees on each C clip. Where the call is borderline, the table says so.
+- The doc lists the arm A and arm C job ids (both seeds) for Don to listen to, as their own list, not only inside the
+  table.
+It is a **finding** if a placement or mouth call disagrees with the frames, or the listening list is missing or holds a
+wrong id.
+cleanup: none.
+metrics: none.
+
+### C-F691 — the minimax-h3 skill's new pacing lines match the stage A record, and no rule lands that the record didn't confirm
+pending: #1185
+source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+#1180 stage B writes the minimax-h3 skill's lines from what stage A found. The tester checks it by reading the plugin
+files (the `dw:minimax-h3` skill's `SKILL.md`, `references/dialogue.md` and `references/prompt-lint.md`, loaded from
+`develop`), against #1184's verified hand-off table and verdicts. No MCP calls are needed for this case.
+expected:
+- **If B or C was confirmed:** `dialogue.md`'s *How long a line can be* has 3–6 new lines. They give the technique, its
+  measured lead and rate, the limit (non-turbo dialogue settings, 124 frames, one speaker) and a citation of the stage A
+  doc's row. Each number matches that row's (within its stated precision). They say whether the action prose counts
+  toward the line's length. `SKILL.md`, at the check-script line, has one sentence: pass only the `<d>` contents as
+  `lines`.
+- **If an action word was heard on any seed:** `dialogue.md` warns that H3 may speak action prose written between
+  `<d>` segments, citing the row, whatever the other verdicts were.
+- **For each verdict refuted or inconclusive:** one bullet under *Probed and not a rule* (refuted) or *Not settled*
+  (inconclusive), citing the row. That technique gets no rule anywhere in the skill, including `prompt-lint.md` and
+  `SKILL.md`.
+- **If no rule landed:** `SKILL.md` and its check-script line are unchanged on this point. The "markup and all" advice is
+  not replaced.
+- No new line in any of the three files claims the technique sounds "more natural", "less read-through", or similar,
+  unless the stage hand-off cites Don's recorded listening verdict. Where it does, the line says it is his verdict.
+- If `prompt-lint.md` changed, every string it held before is still there (the pinned ones the plugin test checks).
+It is a **finding** if a new line has no row citation or a number that differs from its row, if a rule lands for a
+verdict that wasn't confirmed, or if the warning is missing when an action word was heard.
+cleanup: none.
+metrics: none.
+
+### C-F692 — SKILL.md stays under the 12 KiB cap, the plugin version moves, and a landed rule leaves an enhancer idea issue
+pending: #1185
+source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+File reads plus `gh` only.
+1. Get the size in bytes of the `dw:minimax-h3` skill's `SKILL.md` as loaded from `develop`. Use any local byte count
+   the session's tools allow. If none is allowed, the verification says the cap was not checked by the tester; it
+   doesn't pass that point.
+2. Read the dw plugin's version as loaded, and the version the previous release or `develop` before #1185 carried, as
+   the stage hand-off states it.
+3. If any rule landed (C-F691's first two bullets): `gh issue list --repo dkackman/diffusers-workflow --label idea
+   --state all --search "enhancer"` and look for an issue that references #1180 or #1185.
+expected:
+- `SKILL.md` is under 12,288 bytes.
+- The plugin version is higher than before #1185.
+- If a rule landed, an `idea` issue proposes the enhancer change (split `<d>` segments, or action beats between them, in
+  `h3_context_ir`'s output) and references #1180 or #1185. If no rule landed, no such issue is needed.
+It is a **finding** if `SKILL.md` is at or over the cap, the version didn't move, or a landed rule has no enhancer
+idea issue.
+cleanup: none.
+metrics: none.
+
+### C-F693 — following the new check-script sentence, an arm C take passes on its `<d>` contents and fails on markup and all
+pending: #1185
+source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
+Run this only if C-F691 found the check-script sentence landed. Otherwise it passes as not applicable. CPU-only
+utility, about one Whisper load. Use an arm C clip that C-F688 found with no action word heard. Pick its job id from
+#1184's table and get its video output name.
+1. `validate_workflow("templates/check-script", arguments={"input_audio": "output:<that clip>", "lines": ["I left the
+   light on.", "For you, Daniel."]}, workspace="qa-h3-dialogue-pacing")` (the clip's own workspace, so the
+   `output:` reference resolves), then `run_workflow` with its
+   `acknowledged_cost` and `wait_seconds=55`. Read the JSON with `get_output_text`.
+2. The same with `lines` holding the whole dialogue part of the C prompt, markup and all:
+   `["<d>[English] I left the light on.</d> He sniffs and looks down at the table. <d>[English] For you, Daniel.</d>"]`.
+expected:
+- Run 1 reports every line matched, with no `line_mismatch`.
+- Run 2 reports a `line_mismatch` (the action prose is expected but not spoken). That is why the sentence exists.
+  If run 2 also matches, the new sentence is harmless but the plan's reason for it is wrong. Report that as a note on
+  the stage, not a failure of this case.
+It is a **finding** if run 1 reports a mismatch on a clip whose transcript holds the eight words.
+cleanup: `delete_output(job_id=<id>, workspace="qa-h3-dialogue-pacing")` for these two check-script runs only, by
+their own job ids. The cited probe jobs are evidence; don't touch them.
+metrics: none.
+
 ## Performance
