@@ -17065,7 +17065,7 @@ It is a **finding** if any of these is missing, a template name the skill gives 
 cleanup: none.
 metrics: none.
 
-### C-F647 — the `animatic` template is in the catalog, built on `stills_to_video`, and its estimate reports unknown for a task-only workflow
+### C-F647 — the `animatic` template is in the catalog, built on `stills_to_video`, and its estimate is unknown or near-zero observed for a task-only workflow
 pending: #1145
 source: tester, spec for #1145 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free. Needs C-F639. `workspace="regression-complete"`.
@@ -17077,10 +17077,12 @@ expected:
 - 1: `animatic` is listed with a description that says it times boards under a soundtrack.
 - 2: it has a `stills_to_video` step, then `pair_audio` (`fit: "video"`); its variables are
   `boards`, `durations`, `fps` and `soundtrack`.
-- 3: `valid: true`, no errors. `plan.estimate`'s basis is `unknown` with a reason that says
-  **task-only workflow** (Don's ruling on #1141), and `minutes` is null — not a small number.
-It is a **finding** if the template is missing, doesn't use `stills_to_video`, or reports a numeric
-estimate or an unknown with a different reason.
+- 3: `valid: true`, no errors. `plan.estimate` is either of (Don's ruling on #1164):
+  - basis `unknown` with a reason that says **task-only workflow**, and `minutes` null (no
+    `animatic` history on the box yet); or
+  - basis `observed` with `minutes` under 0.1 (the template has run here, #439/#921).
+It is a **finding** if the template is missing, doesn't use `stills_to_video`, or reports any other
+basis, an `observed` estimate of 0.1 minutes or more, or an unknown with a different reason.
 cleanup: none (validate only).
 metrics: none.
 
