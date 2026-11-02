@@ -8367,4 +8367,236 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-model-specific")` for
 shared asset.
 metrics: none.
 
+### M-F298 — the H3 anti-burn LoRA is catalogued `trial` or `rejected`, never `proven`, as `fl2va` continuation-only, with its licence and evidence citing real `probe-1151` jobs
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 LoRA catalog, entry `minimax-h3/h3-antiburn` (file `loras/minimax-h3/h3-antiburn.json`).
+The weights are `Imagineer13/H3-Anti-Burn-LoRA`, `h3_antiburn_universal_v1.safetensors`. Free: discovery and
+job reads only. The probe jobs live in workspace `probe-1151`, not this suite's workspace.
+Steps:
+1. `list_loras(model="MiniMaxAI/MiniMax-H3")`. Then the same call with `status="proven"`, with `workflow="fl2va"`
+   and with `workflow="ref2va"`.
+2. For every job id in the entry's `evidence`: `get_job(<id>, workspace="probe-1151")`.
+expected:
+- Step 1 lists one entry named `minimax-h3/h3-antiburn` (another name is a pass only if it contains `antiburn`
+  and a comment on #1151 or #1159 states the name). Its fields:
+  - `status` is `trial` or `rejected`;
+  - `model_name` `Imagineer13/H3-Anti-Burn-LoRA` and `weight_name` `h3_antiburn_universal_v1.safetensors`;
+  - `base_models` contains `MiniMaxAI/MiniMax-H3`;
+  - `license` names the MiniMax H3 Community License (the free text or the `minimax-h3-community` id other entries
+    use);
+  - `workflow` contains `fl2va` and does not contain `ref2va`;
+  - `evidence` names #1151 (or #1159) and at least one job id.
+- If `trial`, also:
+  - `scale.default` is 0.6, and the range, where the schema holds one, is [0.4, 0.8];
+  - `stacks_with` names the turbo entry the chained-segments template uses (`lightx2v/Minimax-h3-Turbo`,
+    `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors`, by its catalog name);
+  - `use_when` says continuation segments only, never segment 1, and that it needs a hand-built chain until a
+    chain option exists.
+- The entry is in the `workflow="fl2va"` listing and in neither the `status="proven"` nor the `workflow="ref2va"`
+  listing.
+- Step 2: every cited job exists in `probe-1151`. Each job a `trial` entry cites `succeeded`. A `rejected` entry
+  may cite a failed job; that is M-F300's subject.
+It is a **finding** if:
+- the entry is missing;
+- it is `proven` while #1151 carries no comment from Don giving the Q4 verdict "yes, better";
+- the licence is missing, or `workflow` includes `ref2va`;
+- `evidence` names no job, or a job that `get_job` can't find in `probe-1151`;
+- a `trial` entry's scale default isn't 0.6, or its `use_when` doesn't confine it to continuation segments.
+cleanup: none. Never delete the `probe-1151` jobs: the entry cites them.
+metrics: none.
+
+### M-F299 — the anti-burn load check: one seed-42 `fl2va` clip, with and without the LoRA, both succeed, warn no key mismatch, and differ frame for frame
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` with the 4-step v1.2 fl2v turbo, alone and stacked with `minimax-h3/h3-antiburn`
+at 0.6. Free: it reads the recorded jobs and doesn't re-run them. Workspace `probe-1151`. Skip with a note if
+M-F298 shows the entry `rejected` (M-F300 covers that branch).
+Steps:
+1. From the entry's `evidence` or the comparison comment on #1151, take the two load-check job ids: turbo only
+   (`L0`) and turbo plus anti-burn (`L1`).
+2. `get_job`, `get_job_events` and `get_job_workflow` on each, `workspace="probe-1151"`.
+3. `validate_workflow(inline_workflow=<each workflow>, workspace="probe-1151")`.
+4. `compare_outputs` on the two final mp4s. If it doesn't take two videos, use `get_output_frames` at frames 0,
+   61 and 123 of each instead.
+expected:
+- Both jobs `succeeded`, each giving one 124-frame clip (`get_gallery_metadata`), and both re-validate
+  `valid: true`.
+- The workflows differ **only** in the `loras` list:
+  - `L0` has turbo, plus nothing or an anti-burn entry disabled with `model_name: null`;
+  - `L1` has turbo plus the anti-burn file at scale 0.6;
+  - both use `fl2va`, seed 42, 124 frames and the chained-segments template's other settings (960×544,
+    5 steps, `{int4}`, sparse attention).
+- No event and no `job.warnings` entry on `L1` mentions unmatched keys, unexpected keys, missing keys, "no LoRA
+  keys found", skipped modules, or a LoRA that didn't load.
+- The outputs differ: `compare_outputs` reports a non-identical result, or at least one of the three frame pairs
+  differs visibly. A frame-for-frame identical pair means the adapter attached nowhere.
+It is a **finding** if:
+- either job is missing or failed while the entry is `trial`;
+- the workflows differ in anything besides the anti-burn entry (seed, prompt, image, frames, steps);
+- a key-mismatch warning appears on `L1`;
+- the two outputs are identical.
+cleanup: none.
+metrics: none.
+
+### M-F300 — a `rejected` anti-burn entry cites the failing job, and that job's events show the load error or the unmatched keys
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` with `minimax-h3/h3-antiburn`, whose model card says it uses ComfyUI
+(`diffusion_model.*`) keys. Free: job reads only. Workspace `probe-1151`. If M-F298 shows the entry `trial`, record
+"not rejected" and skip.
+Steps:
+1. From the entry's `evidence` and `description`, take the failing job id(s).
+2. `get_job` and `get_job_events` on each, `workspace="probe-1151"`. Then `get_job_workflow`.
+expected:
+- The cited job's workflow loads the anti-burn file (`Imagineer13/H3-Anti-Burn-LoRA`) on an `fl2va` step.
+- Its record shows the failure the entry names. Either the job `failed` with an error naming the LoRA load or its
+  keys, or it `succeeded` but its events or `job.warnings` carry an unmatched-key or "no LoRA keys found" warning.
+  A third case also counts: it succeeded with no warning, but the entry says its output is identical to a cited
+  turbo-only twin, and `compare_outputs` on the pair confirms that.
+- The entry's `description` or `use_when` states why it was rejected in a sentence: not loadable, or loads
+  nowhere.
+- No arm jobs are required: the plan skips the A/B when the load check fails.
+It is a **finding** if:
+- the entry is `rejected` without a cited job;
+- the cited job neither failed on the LoRA nor shows a key warning or an identical twin;
+- the reason is missing.
+cleanup: none.
+metrics: none.
+
+### M-F301 — the A/B arms: two hand-built 5-segment chains, seed 42 and `guide_frames` 39, joined, that differ only in anti-burn (off everywhere in A, 0.6 on segments 2–5 in B)
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` segments with the v1.2 fl2v turbo. Segments 2–5 are each guided by the previous
+clip's 39-frame tail, cut with `trim_video`. The guide heads are dropped and the clips joined with `concat_videos`.
+Free: it reads the recorded jobs. Workspace `probe-1151`. Skip with a note if the entry is `rejected`.
+Steps:
+1. From the comparison comment on #1151, take each arm's job id(s): arm A, arm B, and arm C if it was run. An arm
+   may be one job or one job per segment; read all of them.
+2. `get_job`, `get_job_workflow` and `get_job_events` on each, `workspace="probe-1151"`. Then
+   `validate_workflow(inline_workflow=<each>, workspace="probe-1151")`.
+3. `get_gallery_metadata` on each arm's final joined mp4.
+expected:
+- **Jobs.** Every arm job `succeeded`, and every workflow re-validates `valid: true`.
+- **Shape, both arms.**
+  - There are five H3 segment steps, every one `fl2va`. Segment 1 has no `guides`.
+  - Segment k (k = 2–5) has one `guides` entry at frame 0 with `audio: true`. It is a `trim_video` of segment k−1's
+    output, 39 frames long, ending on that output's last frame.
+  - Segment k's `image` is the first frame of that tail.
+  - Each segment's guide head is dropped before a `concat_videos` that joins all five in order.
+  - The `workflow` and the arm's description say `guide_frames` is 39, never 22.
+- **Same scene.** The prompt, seed (42), still image, size, steps and turbo entry are the same on every segment of
+  both arms.
+- **LoRA, arm A.** The anti-burn entry is absent or disabled (`model_name: null`) on every segment.
+- **LoRA, arm B.** The anti-burn entry is disabled on segment 1 and at scale 0.6 on segments 2–5.
+- **Only the LoRA differs.** Diffing A's workflow against B's, step by step, shows no change outside the anti-burn
+  entries.
+- **Arm C**, if present: it is identical to B except for scale 0.4 on segments 2–5. The comment says B looked
+  waxy. If C is absent, the comment either says B didn't look waxy or doesn't mention C. Neither is a finding.
+- **Output.** Each joined mp4 is 960×544 at 24 fps with one audio stream. Its frame count is
+  `N + 4 × (N − 39)` for the per-segment `num_frames` N in the workflow: 464 at N = 124. A difference of up to one
+  frame per seam is a note, not a finding, if the record states it.
+- No event on any B or C segment-2+ job carries a key-mismatch warning (M-F299's list).
+It is a **finding** if:
+- an arm is missing, failed, or has other than five segments;
+- a segment-2+ step is a stock `chain` block rather than a hand-built step;
+- the guide length isn't 39;
+- B has the anti-burn entry active on segment 1;
+- A has it active anywhere;
+- A and B differ in anything but the anti-burn entries;
+- a joined output's frame count, size or audio is wrong beyond the note above.
+cleanup: none. Never delete the arm jobs: the comparison and the catalog cite them.
+metrics: none.
+
+### M-F302 — the comparison comment on #1151 shows segments 1, 3 and 5 of each arm with job ids, and its cited frames reproduce
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the record of the #1159 anti-burn A/B on MiniMax H3. Free: one issue read and a few frame reads.
+Workspace `probe-1151`. Skip with a note if the entry is `rejected`; M-F300 covers that branch.
+Steps:
+1. `gh issue view 1151 --repo dkackman/diffusers-workflow --comments`. Find the build session's comparison comment.
+2. For one arm-A and one arm-B segment reference the comment cites, call `get_output_frames` on the cited output at
+   the cited frame (`workspace="probe-1151"`).
+expected:
+- The comment names the job id(s) of arms A and B (and C if run), and the load-check pair.
+- For each arm, it gives a middle frame of segments 1, 3 and 5, as a frame reference or an image.
+- It covers skin, fabric and a flat background region: as crops, or named regions of those frames.
+- Where it gives a number (`compare_outputs` or `assess_output`), it names the call and the outputs it ran on.
+- It compares within each arm (segment 1 against segment 5) and across arms at the same segment, not segment 5
+  alone. The plan's over-smoothing risk rests on this.
+- It leaves Q4 to Don, and the catalog entry stays `trial`, not `proven`.
+- Step 2: each frame fetched is from a job of the arm the comment says, at a frame inside the segment it says. In
+  joined-output frame numbers, segment k's middle lies in `[N + (k−2)(N−39), N + (k−1)(N−39))` for k ≥ 2 and in
+  `[0, N)` for k = 1.
+It is a **finding** if:
+- there is no comparison comment;
+- an arm, or one of segments 1, 3 and 5 of an arm, is missing from it;
+- a cited job or frame doesn't resolve, or lands in a different segment or arm from the one the comment states;
+- the comment declares the entry `proven` itself.
+cleanup: none.
+metrics: none.
+
+### M-F303 — the anti-burn entry stays off single-clip and reference-to-video use: `recommend_loras` doesn't offer it there, and the partition check warns on `ref2va` only
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 catalog matching for `minimax-h3/h3-antiburn` (catalog `workflow` `fl2va`). It covers
+`recommend_loras` and the `trial` partition check (M-F152's rule: a `trial` entry that disagrees with the step
+warns, and never refuses). Free: `recommend_loras` queries the Hub but downloads nothing, and the rest is
+validation only. Workspace `regression-model-specific`. Skip with a note if the entry is absent.
+Steps:
+1. `recommend_loras(model="templates/minimax/reference-to-video", query="anti-burn skin texture continuation")`.
+2. `recommend_loras(model="templates/minimax/video-with-audio", query="anti-burn skin texture continuation")`.
+3. Take `A` = the entry's `{"model_name","weight_name"}` from `list_loras(model="MiniMaxAI/MiniMax-H3")`. Using M-F142's
+   carrier `C(WF, LORAS)`:
+   - (a) `validate_workflow` on `C(ref2va, [A])`;
+   - (b) `validate_workflow` on `C(fl2va, [A])`.
+expected:
+- Step 1 (`ref2va`): the catalog rows don't include `minimax-h3/h3-antiburn`.
+- Step 2 (`t2va`, a single clip): the catalog rows don't include it. If they do, because `workflow`/`use_when`
+  matching can't express "continuation only", the plan counts it as a **note, not a failure**. Record it on #1151
+  with the reply's row.
+- (a) `valid: true`, with a warning at `steps[0].pipeline.loras[0].weight_name` that names
+  `minimax-h3/h3-antiburn`, its status and the partition mismatch. If the entry is `rejected`, a refusal naming it
+  is also correct (M-F153's status gate).
+- (b) `valid: true`, with no partition or "names neither" warning about the anti-burn file.
+It is a **finding** if:
+- step 1 offers the entry for `ref2va`;
+- (a) is clean, or is refused while the entry is `trial`;
+- (b) warns about the partition.
+cleanup: none.
+metrics: none.
+
+### M-F304 — the anti-burn probe changes no shipped template and adds no skill line while the entry is `trial`
+pending: #1159
+source: tester, spec for #1159 from #1151's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/chained-segments` and the H3 chained templates, plus the `dw:minimax-h3`
+plugin skill. Free: discovery only. The baseline was pinned over MCP at develop on 2026-11-01, before #1159 was
+built.
+Steps:
+1. `get_workflow("templates/minimax/chained-segments", variables_only=true)`.
+2. `get_workflow("templates/minimax/chained-segments")`, plus each template from
+   `list_workflows(shape="shot", traits="chained")`, with `variables_only=true`.
+3. Read the loaded `dw:minimax-h3` skill (SKILL.md and its `references/checkpoints-and-loras.md`).
+expected:
+- Step 1: the variables are the 2026-11-01 set, with no additions or removals: `prompts`, `prompt`, `image`,
+  `num_frames`, `segments`, `continuity`, `guide_frames`, `width`, `height`, `num_inference_steps`, `video_shift`,
+  `audio_shift`, `weights_dtype`, `lora_scale`, `lora_alpha`, `lora_model_name`, `lora_weight_name`,
+  `lora_adapter_name`, `seed`, `attention_backend`, `sparse_tau`, `sparse_topk`, `cache`. The defaults that matter
+  here are unchanged:
+  - `continuity` `"last_frame"`, `guide_frames` 22, `segments` 3, `num_frames` 124;
+  - `lora_model_name` `lightx2v/Minimax-h3-Turbo` and `lora_weight_name`
+    `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors`.
+  A later unrelated, verified change to these is a note, not a finding: cite its issue.
+- Step 2: no definition and no variable default names `Imagineer13`, `antiburn` or `anti-burn`, and none has a
+  `continuation_lora*` variable or a `chain.continuation_loras` key. That follow-up was cut from plan v1.
+- Step 3: while the entry is `trial` or `rejected`, the skill doesn't recommend the anti-burn LoRA. The plan adds a
+  skill line only with `proven`. A "don't try" or "rejected" mention is fine.
+It is a **finding** if:
+- the chained-segments template gained or lost a variable, or changed one of the defaults above, citing #1151 or
+  #1159;
+- any shipped template references the anti-burn LoRA;
+- the skill recommends it before `proven`.
+cleanup: none.
+metrics: none.
+
 ## Performance

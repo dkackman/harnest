@@ -293,6 +293,10 @@ smoke's Fixtures lists the asset too.
   reuse the shared `priya-portrait.jpg`, `hal-portrait.jpg` (a different person), `ep6-shot1-priya.mp4`,
   `ep63-shot-ltx-priya.mp4`, `priya-voice.wav` (7.453 s mono), `ep20-score.wav`, `ep21-shot1-receipt.mp4`,
   `ep21-shot2-verdict.mp4` and `ep25-episode.mp4`.
+- C-F662–C-F669 (texture bands on `compare_outputs`, #1160) reuse the shared `ep3-shot1-incident.mp4`,
+  `ep3-shot2-reply.mp4` (colour 124-frame 960×544 shots) and `ep25-episode.mp4` (360 frames), plus C-F454's
+  QR fixture workflow for the greyscale stills of C-F667. Any colour shots of the same geometry substitute,
+  with the frame indices re-derived. Nothing new to keep.
 
 ## Functional
 
@@ -16722,7 +16726,6 @@ if this case re-created it; `delete_asset` any copy made into `regression-comple
 metrics: none.
 
 ### C-F629 — the `cinematography` skill holds a closed six-axis vocabulary compiled per family, the hints rule with its check, no camera brands, and a pointer from each family skill
-pending: #1142
 source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free: plugin reading only. Invoke the `dw:cinematography` skill and read every reference file it points
 at; then invoke `dw:minimax-h3`, `dw:ltx-2-5`, `dw:kandinsky-6` and `dw:flux3-klein`.
@@ -16750,7 +16753,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F630 — each named grade validates and runs as `apply_lut` + `film_grain` on a still and a clip, keeping the clip's frames, rate and sound
-pending: #1142
 source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU, seconds per arm. `workspace="regression-complete"` on every call. For each of the five grades in
 C-F629's table, GRADE(media) is an inline two-step workflow: `apply_lut` with `media` and the row's
@@ -16770,7 +16772,6 @@ cleanup: `delete_output(job_id=…)` for every job made here.
 metrics: none.
 
 ### C-F631 — following the skill, "a slow dolly-in on a close-up, noir look" for LTX-2.5 gives a caption with LTX's compiled move and shot-size sentences, and the caption and the noir grade validate clean
-pending: #1142
 source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free: validate only, `workspace="regression-complete"`. Act as a cold agent: use only what `dw:ltx-2-5`
 and `dw:cinematography` say.
@@ -16793,7 +16794,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F632 — the same request for Kandinsky 6 yields exactly one camera sentence, and validates clean
-pending: #1142
 source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free: validate only, `workspace="regression-complete"`. As C-F631 step 1, but for Kandinsky 6 text-to-video,
 using `dw:kandinsky-6` and `dw:cinematography`. Then `validate_workflow` on the K6 template the skill names
@@ -16809,7 +16809,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F633 — compiled captions for H3 and FLUX 3 Klein validate clean in their templates, and Klein handles a move the way the table says
-pending: #1142
 source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free: validate only, `workspace="regression-complete"`.
 1. Request: "a wide shot, crane up, golden-hour light, 70s stock" of a harbour at dusk. Compose the H3
@@ -16831,7 +16830,6 @@ cleanup: none (validate only).
 metrics: none.
 
 ### C-F634 — asked for a camera move on Music 3, the skill says it doesn't apply
-pending: #1142
 source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free: plugin reading. Request: "a Music 3 track with a slow dolly-in and a noir look". Read what
 `dw:cinematography` (and `dw:minimax-music3`, if it is pointed to) says about it.
@@ -17246,6 +17244,307 @@ expected:
   `get_output_frames`), per the hints rule in C-F629.
 It is a **finding** if a verdict has no job behind it, a cited job doesn't exist or is another family's,
 or the table still reads as unmeasured after #1148 closes.
+cleanup: none.
+metrics: none.
+
+### C-F658 — `get_gallery_metadata` on a wav and an mp3 asset returns `pcm_sha256` with its four descriptors, stable across calls, and the tool says when two hashes compare
+pending: #1158
+source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
+Free: metadata reads only, `workspace="regression-complete"`, `include_workflow=false`. Fixtures (shared
+`common/assets`): `asset:qa-cast/priya-voice.wav` (7.453333 s, 24000 Hz, mono) and `asset:qa-cast/ep15-song.mp3`.
+1. `get_gallery_metadata(name="asset:qa-cast/priya-voice.wav")`, twice.
+2. `get_gallery_metadata(name="asset:qa-cast/ep15-song.mp3")`.
+3. Read the `get_gallery_metadata` tool description (its schema).
+expected:
+- 1: `media` carries `pcm_sha256` (exactly 64 chars of lowercase hex, `^[0-9a-f]{64}$`), `sample_format`,
+  `frames` (an integer), `sample_rate` 24000 and `channels` 1. `frames / sample_rate` is within one frame
+  (plus 1e-6 s for the 6-digit rounding) of `duration_seconds`: `frames` is 178880 ± 1. Both calls return
+  the same hash and descriptors. The keys it had before stay with their values (`kind` "audio",
+  `duration_seconds`, `peak_dbfs` ≈ −16.66, `mean_dbfs` ≈ −37.43, `integrated_lufs` ≈ −33.78,
+  `true_peak_dbfs` ≈ −16.60, each to 0.01).
+- 1 and 2: `sample_format` is a numpy dtype name (`int16`, `int32`, `float32`, `float64`, `uint8`, ...),
+  never a libav name (`s16`, `s16p`, `s32`, `fltp`, `flt`, `dbl`).
+- 2: the mp3 (a lossy, priming-padded decode) also carries all five keys, with `frames / sample_rate`
+  within one frame (+1e-6 s) of its `duration_seconds`: the hash covers the trimmed samples. Its hash
+  differs from the wav's.
+- 3: the description names `pcm_sha256` as a hash of the decoded samples and says two hashes compare
+  only when `sample_format`, `frames`, `sample_rate` and `channels` agree.
+It is a **finding** if a key is missing or misnamed, the hash isn't 64 hex chars, two reads differ,
+`frames` disagrees with the duration by more than a frame, `sample_format` is a libav name, an existing
+level changed, or the description lacks the comparability rule.
+cleanup: none.
+metrics: none.
+
+### C-F659 — an mp4's soundtrack carries `pcm_sha256`; a mute video and an image carry none of the five keys
+pending: #1158
+source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
+Free: metadata reads only, `workspace="regression-complete"`, `include_workflow=false`. Fixtures:
+`asset:qa-cast/ep6-shot1-priya.mp4` (124 frames / 5.175 s, 32000 Hz stereo, shared),
+`asset:qa-fit/src-640x480-50f-silent.mp4` (50 frames, **no** audio stream; C-F238 makes it if missing),
+`asset:qa-cast/priya-portrait.jpg` (shared).
+1. `get_gallery_metadata` on each of the three.
+expected:
+- ep6 mp4: `media` carries `pcm_sha256` (64 lowercase hex), `sample_format` (a numpy dtype name),
+  `sample_rate` 32000, `channels` 2 and `frames` 165600 ± 1 (5.175 s × 32000, within one frame). The video
+  keys stand beside them unchanged: `kind` "video", `fps` 24.0, 960x544, `frame_count` 124. (`frame_count`
+  counts video frames, `frames` audio sample frames; both present is correct.) Its hash differs from
+  `priya-voice.wav`'s (C-F658).
+- silent mp4: none of `pcm_sha256`, `sample_format`, `frames`, `sample_rate`, `channels` is present (not
+  even as null); `frame_count` 50, `fps` 24.0 and 640x480 stay.
+- jpg: none of the five keys; `media` is still exactly `kind` "image", `width` 768, `height` 768, `mode`.
+It is a **finding** if the mp4's soundtrack has no hash or wrong descriptors, a video key moved, or the
+mute video or image carries any of the five keys.
+cleanup: none.
+metrics: none.
+
+### C-F660 — `envelope` returns the same bins with the hash on, and the hash doesn't depend on `envelope` or `interval_seconds`
+pending: #1158
+source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
+Free: metadata reads only, `workspace="regression-complete"`, `include_workflow=false`. Fixture:
+`asset:uploads/qa-cast/room-bed.wav` (4.96 s, 16000 Hz mono, shared). The bins below were read before
+stage A was built (spec session, 2026-11-01).
+1. `get_gallery_metadata(name="asset:uploads/qa-cast/room-bed.wav")`.
+2. The same with `envelope=true`.
+3. The same with `envelope=true, interval_seconds=0.05`.
+expected:
+- 2: `media.envelope.interval_seconds` 1.0, five bins. `rms_dbfs` = −50.72, −50.78, −50.79, −47.85,
+  −50.61 and `peak_dbfs` = −28.89 in all five (each to 0.01). The envelope's keys are still exactly
+  `interval_seconds`, `rms_dbfs`, `peak_dbfs`.
+- 3: 100 bins in each list (ceil(4.96 / 0.05)); every `peak_dbfs` bin ≤ `media.peak_dbfs` + 0.01 and
+  the largest equals it to 0.01; every value is a finite number.
+- 1, 2, 3: `pcm_sha256`, `sample_format`, `frames` (79360 ± 1), `sample_rate` 16000 and `channels` 1 are
+  present and identical across the three calls; `peak_dbfs`, `mean_dbfs`, `integrated_lufs`,
+  `true_peak_dbfs` agree to every digit across them.
+It is a **finding** if a bin moved by more than 0.01, the bin count changed, the envelope gained or lost
+a key, or the hash or a descriptor differs between the three calls.
+cleanup: none.
+metrics: none.
+
+### C-F661 — two runs of one seeded sound effect hash equal, another seed hashes different, the kept asset hashes the same, and `list_gallery` doesn't carry it
+pending: #1158
+source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
+GPU, a few seconds per run warm. `workspace="regression-complete"`. SFX(seed) is C-F619's inline one-step
+`generate_sound_effects` workflow (the `templates/text-to-sound-effect` step via `get_workflow`, result
+`audio/wav`, `prompt: "a heavy wooden door slams shut"`, no `duration`, the seed set on the step; the
+template has no seed variable). Validate each and bind its `acknowledged_cost`, run with
+`wait_seconds=55`.
+1. Run SFX(1124) → job A. 2. Run SFX(1124) again, exactly → job B. 3. Run SFX(1125) → job C.
+4. `get_gallery_metadata` (`include_workflow=false`) on each job's wav output.
+5. `get_gallery_metadata(name="asset:qa-1139/sfx-1124.wav")` first: it must answer "Unknown asset"
+   (else pick a free name). Then `keep_output` A's wav under that name, and `get_gallery_metadata` on
+   the `asset:` reference.
+6. `list_gallery(media=true, workspace="regression-complete")`.
+expected:
+- 4: each `media` carries all five keys, `sample_rate` 44100, `channels` 1, `frames` 352800 ± 1
+  (8.0 s, within one frame of `duration_seconds`). A and B: equal `pcm_sha256` **and** equal
+  `sample_format`, `frames`, `sample_rate`, `channels`. C: the same descriptors as A, a **different**
+  `pcm_sha256`.
+- 5: the asset's hash and four descriptors equal A's output's exactly.
+- 6: no entry carries `pcm_sha256` (the listing's probe doesn't compute it; the plan keeps it to
+  `get_gallery_metadata`). The other `media` keys it lists today are still there.
+It is a **finding** if the seeded pair's hashes or descriptors differ, the other seed's hash matches,
+the kept asset hashes differently from its source, or `list_gallery` carries the hash.
+cleanup: `delete_output(job_id=…)` for A, B and C; `delete_asset` `qa-1139/sfx-1124.wav` (with its
+`acknowledged_cost`).
+metrics: none.
+
+### C-F662 — `compare_outputs(texture_bands=true)` over two H3 shots gives nine band numbers per output per moment, nine ratios per non-baseline output, and the pairwise metrics still
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free (CPU decode only), `workspace="regression-complete"`. Fixtures (shared `common/assets`, read-only):
+`asset:qa-cast/ep3-shot1-incident.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames, 960x544, 24 fps).
+Plan shape: each reply cell gains `texture: {luma: {fine, mid, coarse}, chroma_rg: {...}, chroma_bg: {...}}`; each
+non-baseline cell also gains `texture_ratio` of the same shape (output / baseline); a `texture_bands` header states
+the px range of each band (`fine` 2–8, `mid` 8–32, `coarse` 32–128). The summary prints a bands line per output per
+moment. Numbers are a measurement, not a score: this case asserts shape and consistency, never a value.
+1. `compare_outputs(names=["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"],
+   at=["frame:10", "frame:60", "frame:120"], crop=[352, 144, 256, 256], texture_bands=true)`.
+2. The same call again, exactly.
+expected:
+- 1: the grid is 2 rows × 3 columns, as without bands. Both outputs, at each of the three moments, carry
+  `texture` with the three keys `luma`, `chroma_rg`, `chroma_bg`, each holding exactly `fine`, `mid`, `coarse`:
+  nine finite numbers ≥ 0 (a 256 px box is longer than every band, so none is null). Only the second output
+  (the non-baseline one) carries `texture_ratio`, the same 3×3 shape, each a finite number ≥ 0 or null, and
+  each ratio equals that output's band / the baseline's band at the same moment to the printed precision.
+  The baseline row carries no `texture_ratio`.
+- 1: the second output's `psnr_db`, `ssim` and `mean_abs_diff` (mean and min) are still reported: bands add
+  to the pairwise metrics, they don't replace them. The reply's `texture_bands` header names the three bands
+  with their px ranges 2–8, 8–32, 32–128. The text summary has a bands line for each output at each moment.
+- 1: nothing in the reply or summary calls a number good, bad, better, worse, or a pass/fail (no verdict,
+  no threshold).
+- 2: every band and ratio equals call 1's to every printed digit.
+It is a **finding** if a cell lacks `texture`, a channel or band key is missing or extra, a band is null or
+negative in a 256 px box, the baseline gets ratios, a ratio disagrees with the division, the pairwise
+metrics vanish, the header lacks the px ranges, the summary has no bands lines, or a repeat call differs.
+cleanup: none.
+metrics: none.
+
+### C-F663 — `texture_bands=true` with one name measures each moment with no pairwise metrics; one name without it is still refused
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free, `workspace="regression-complete"`. Fixture: `asset:qa-cast/ep25-episode.mp4` (360 frames, 960x544, 24 fps,
+shared, read-only; one cut of two shots, standing in for one chain's segments).
+1. `compare_outputs(names=["asset:qa-cast/ep25-episode.mp4"], at=["frame:30", "frame:180", "frame:330"],
+   crop=[352, 144, 256, 256], texture_bands=true)`.
+2. `compare_outputs(names=["asset:qa-cast/ep25-episode.mp4"], at=["frame:30"])` (no `texture_bands`).
+3. `compare_outputs(names=["asset:qa-cast/ep25-episode.mp4"], at=["frame:30"], texture_bands=false)`.
+expected:
+- 1: accepted. A 1-row × 3-column grid; each of the three cells carries `texture` with nine finite numbers ≥ 0
+  (C-F662's shape). No cell carries `texture_ratio` (there is no other output to divide by). No `psnr_db`,
+  `ssim` or `mean_abs_diff` anywhere. The text summary prints a bands line per moment and does **not** say
+  "no metrics", "no SSIM" or anything reading as an empty result.
+- 2 and 3: refused as today's one-name call is (the 2–8 names rule), with no grid. The refusal may now
+  mention `texture_bands` as the way one name is allowed.
+It is a **finding** if 1 is refused, a moment lacks bands, a ratio or pairwise metric appears, the summary
+reads as "no metrics", or 2 or 3 is accepted.
+cleanup: none.
+metrics: none.
+
+### C-F664 — the same output named twice gives texture ratios of 1.0, and `baseline` moves the ratios to the other row
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` and
+`asset:qa-cast/ep3-shot2-reply.mp4` (shared, read-only; colour footage, so no band is 0).
+1. `compare_outputs(names=["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot1-incident.mp4"],
+   at=["frame:0", "frame:60", "frame:123"], crop=[352, 144, 256, 256], texture_bands=true)`.
+2. `compare_outputs(names=["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"],
+   at=["frame:60"], crop=[352, 144, 256, 256], texture_bands=true, baseline="asset:qa-cast/ep3-shot2-reply.mp4")`.
+expected:
+- 1: both rows' `texture` are equal band for band at every moment, and every one of the second row's 27
+  `texture_ratio` values (9 × 3 moments) is 1.0 (to the printed precision; `1`, `1.0`, `1.000` all count),
+  never null. Frame 123 (the last of 124) is measured, not past the end. Pairwise metrics read `identical`
+  as in C-F455.
+- 2: rows stay in the given order; `texture_ratio` sits on the first row (shot 1) and not on the baseline
+  (shot 2); each ratio equals shot 1's band / shot 2's band. The `texture` values of both rows equal what
+  C-F662 call 1 reported for those outputs at frame 60 (same box), so `baseline` moves only the ratios.
+It is a **finding** if any ratio in 1 differs from 1.0 or is null, the bands of a duplicate differ, ratios
+sit on the baseline row in 2, or `baseline` changes a band value.
+cleanup: none.
+metrics: none.
+
+### C-F665 — without `texture_bands` (omitted or false) the reply and summary are today's, and per-name crops still work
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4`,
+`asset:qa-cast/ep3-shot2-reply.mp4` (shared, read-only).
+1. `compare_outputs(names=["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep3-shot2-reply.mp4"],
+   at=["frame:10", "frame:60"], crop=[352, 144, 256, 256])`.
+2. The same with `texture_bands=false`.
+3. `compare_outputs(names=[the same two], at=["frame:60"], crop=[[0, 0, 128, 128], [64, 64, 256, 200]])`
+   (per-name boxes, no bands: C-F458's shape).
+expected:
+- 1 and 2 are identical replies: the same grid, the same `psnr_db`/`ssim`/`mean_abs_diff` (mean and min) to
+  every digit, and no `texture`, `texture_ratio` or `texture_bands` key or bands line anywhere. The summary has
+  the same lines as before the feature (one metrics line set per non-baseline output, nothing new).
+- 3 is accepted as in C-F458: each row its own crop, metrics full-frame, the reply saying per-output crops are
+  display only. No texture keys.
+It is a **finding** if 1 and 2 differ, any texture key or bands line appears without `texture_bands=true`,
+or the per-name crop call without bands is now refused.
+cleanup: none.
+metrics: none.
+
+### C-F666 — `texture_bands` refuses a per-name crop list and a box under 16 px a side, takes 16 px and the full frame, and keeps the 8-name cap
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` (written `S1` below)
+and `asset:qa-cast/ep3-shot2-reply.mp4` (`S2`), shared, read-only.
+1. `compare_outputs(names=[S1, S2], at=["frame:60"], crop=[[0, 0, 128, 128], [64, 64, 128, 128]],
+   texture_bands=true)` (one box per name, same size).
+2. `compare_outputs(names=[S1], at=["frame:60"], crop=[[0, 0, 128, 128]], texture_bands=true)` (a one-entry
+   per-name list).
+3. `compare_outputs(names=[S1, S2], at=["frame:60"], crop=[100, 100, 15, 64], texture_bands=true)`; then
+   `crop=[100, 100, 64, 15]`; then `crop=[100, 100, 15, 15]`.
+4. `compare_outputs(names=[S1, S2], at=["frame:60"], crop=[100, 100, 16, 16], texture_bands=true)`.
+5. `compare_outputs(names=[S1, S2], at=["frame:60"], texture_bands=true)` (no crop: the full 960x544 frame).
+6. `compare_outputs(names=[S1, S2, S1, S2, S1, S2, S1, S2, S1], at=["frame:60"], texture_bands=true)` (9 names).
+7. The same as 3's first box but without `texture_bands`: `crop=[100, 100, 15, 64]`.
+expected:
+- 1 and 2: refused, the message naming the shared-box rule (along the lines of "texture bands need one shared
+  box"). No grid. 2 is refused for the list form even though there is only one name; if it is instead
+  accepted as one shared box, note that in the run report (the plan doesn't say), but 1 must refuse.
+- 3: all three refused, each message saying the box is too small (naming 16 px or the 2–8 px band). No grid.
+- 4: accepted: a 16×16 box is the boundary. `fine` is a finite number in every channel. `coarse` (32–128 px,
+  longer than a 16 px side) is null in every channel and in `texture_ratio`, not 0 and not an error. Record
+  whether `mid` (8–32 px, straddling 16) is a number or null in the run report; either meets the plan.
+- 5: accepted with bands over the full frame (the plan allows it; the guide says to crop). Nine finite numbers
+  per cell, none null (544 px is longer than every band).
+- 6: refused by the 8-name cap, as without bands.
+- 7: accepted as today (the 16 px rule binds only with bands): a grid and pairwise metrics.
+It is a **finding** if 1 is accepted, any of 3 is accepted, 4 is refused or its `coarse` is a number, 5 is
+refused or has a null band, 6 is accepted, or 7 is refused.
+cleanup: none.
+metrics: none.
+
+### C-F667 — texture bands on stills: one moment, a band that is 0 in the baseline gives a null ratio, and a blurred copy loses fine-band energy
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+CPU utility runs only, `workspace="regression-complete"`. Setup: C-F454's fixture workflow W (a greyscale QR
+still `still*.png`, 512×512, then a clip). Run **A** and **A2** (defaults) and **Bl**: W with two steps inserted
+between `fit` and `grain`, `{"name": "down", "task": {"command": "resize_rescale", "arguments": {"image":
+"previous_result:fit", "width": 128, "height": 128}}}` and `{"name": "up", "task": {"command": "resize_rescale",
+"arguments": {"image": "previous_result:down", "width": 512, "height": 512}}}`, with `grain`'s `media` set to
+`previous_result:up` (the same QR, blurred by a 4× down-up). Validate each, bind its `acknowledged_cost`, run with
+`wait_seconds=55`. Name each run's still by the gallery name `get_job` reports (`A.png`, `A2.png`, `Bl.png`).
+1. `compare_outputs(names=["A.png", "A2.png", "Bl.png"], texture_bands=true)` (no `at`, no crop).
+2. `compare_outputs(names=["A.png"], texture_bands=true)`.
+expected:
+- 1: accepted; one column (a still has one moment). Every row has `texture`. A grey image has R = G = B, so
+  every `chroma_rg` and `chroma_bg` band of A is 0 (≤ 1e-6), and so is A2's and Bl's. Because those baseline
+  bands are 0, every chroma value in A2's and Bl's `texture_ratio` is **null**, not a huge number, `inf`,
+  `NaN` or an error. A2's three `luma` ratios are 1.0. Bl's `luma.fine` ratio is strictly below 1.0. Record
+  Bl's `mid` and `coarse` luma ratios in the run report; the plan promises only that blur lowers bands, and a
+  4× down-up mostly reaches `fine`.
+- 2: accepted: one row, one column, nine numbers, no ratio, no pairwise metrics.
+It is a **finding** if a still is refused with bands, a still gets more than one column, a grey chroma band is
+non-zero, a zero-baseline ratio is anything but null, A2's luma ratios aren't 1.0, or Bl's fine ratio is ≥ 1.0.
+cleanup: `delete_output(job_id=…)` for A, A2 and Bl.
+metrics: none.
+
+### C-F668 — a moment past an output's end gets no bands and no ratio, without failing the other cells
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep25-episode.mp4` (360 frames) and
+`asset:qa-cast/ep3-shot1-incident.mp4` (124 frames), shared, read-only.
+1. `compare_outputs(names=["asset:qa-cast/ep25-episode.mp4", "asset:qa-cast/ep3-shot1-incident.mp4"],
+   at=["frame:60", "frame:200"], crop=[352, 144, 256, 256], texture_bands=true)`.
+2. `compare_outputs(names=["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-cast/ep25-episode.mp4"],
+   at=["frame:60", "frame:200"], crop=[352, 144, 256, 256], texture_bands=true)` (the short one as baseline).
+expected:
+- 1: accepted. At frame 60 both rows have nine bands and shot 1 has nine ratios. At frame 200 shot 1's cell is
+  the blank `past end` cell it is today (C-F460), with no `texture` numbers (absent or null) and no ratios;
+  ep25's frame-200 cell still has its nine bands.
+- 2: at frame 200 the baseline is past its end, so ep25's frame-200 bands are reported and its
+  `texture_ratio` there is null (or absent), never a division by a missing value. Frame 60 is as in 1.
+It is a **finding** if either call errors, a past-end cell carries band numbers, a ratio is computed against
+a missing baseline cell, or one past-end cell blanks the other cells' bands.
+cleanup: none.
+metrics: none.
+
+### C-F669 — the tool description, the workflows guide and the minimax-h3 skill carry the texture-bands caveats and point at each other
+pending: #1160
+source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
+Free: schema and guide reads only.
+Note (spec session, 2026-11-01): `get_guide("workflows", section="Comparing outputs")` is refused today ("no
+section 'Comparing outputs'"; the sections listed don't include it). The plan targets that heading, so once
+built it must resolve, as a section or as a loosely matched subsection.
+1. Read the `compare_outputs` tool description and its parameter list.
+2. `get_guide("workflows", section="Comparing outputs")`, then `get_guide("workflows", section="Texture bands")`.
+3. Read the `dw:minimax-h3` skill: its `SKILL.md` limits section on seam drift and `references/cuts.md`'s drift
+   section.
+expected:
+- 1: `texture_bands` is a boolean parameter defaulting to false. The description either carries the plan's
+  clause (per-output FFT band energy over `crop`, "a measurement, not a score") or, if the clause was moved
+  out for the surface budget as Don's ruling allows, a pointer to the guide's "Comparing outputs". It no longer
+  says outright that 2 names are the minimum without saying one is allowed with `texture_bands`.
+- 2: both calls resolve (neither is refused), and the "Texture bands" text covers, in substance: what each band
+  (`fine` 2–8, `mid` 8–32, `coarse` 32–128 px) suggests; that it is not a score; that mid rising can be real
+  detail and every band falling can be blur, not a cleaner image; that the box must be static framing (moving
+  content makes the numbers meaningless); that all measurement is after encoding, so the encoder's texture
+  lives in `fine`; the A/B method (branch from one clean first segment, same seeds and prompts, one variable
+  at a time); the one-shared-box and 16 px rules; and one name being allowed for one chain's segments.
+- 3: each of the two drift sections has a line pointing at the guide's texture-bands subsection.
+It is a **finding** if the parameter is missing or defaults true, the description neither says "not a score"
+nor points at the guide, either guide call is refused, a caveat is missing, or either skill pointer is missing.
 cleanup: none.
 metrics: none.
 
