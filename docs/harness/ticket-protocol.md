@@ -80,6 +80,10 @@ repo. Both agents act on them with the `gh` CLI (`gh issue create` / `edit` / `c
   model, read-only against the plugin tree at `origin/develop`) closes it as `completed` with
   `status:reviewed` — never `status:verified`, which `guard.py` refuses it — or bounces it.
   The tester stays source-blind: that is why this is a separate role, not a wider fence.
+  A verify, review or spec (`fixed-pending-verify`, `needs-spec`) with an open blocker waits
+  for it, as a stage does (harnest#180). A verify where nothing failed but some cases can only
+  run after another fix is incomplete, not a bounce: the tester links those issues as
+  blockers and leaves the labels, so it doesn't count toward `IMPLEMENTER_PARK_AFTER`.
   That rule is about the ticket repo: on this repo the curator closes the suite requests it
   applies as `completed`.
 - **Asking Don, and the two lanes** (R15, `docs/superpowers/specs/2026-11-01-escalation-lanes.md`).

@@ -4723,5 +4723,383 @@
    "2": "deferred (parked): no status",
    "3": "deferred (stabilization): status:plan-approved"
   }
+ },
+ {
+  "name": "a tester queue waits on an open blocker, not an answer or a hand-off",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 4,
+     "title": "t4",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "arch-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 5,
+     "title": "t5",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       },
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 6,
+     "title": "t6",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "docs-review"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 7,
+     "title": "t7",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 8,
+     "title": "t8",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-spec"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 9,
+     "title": "t9",
+     "labels": [
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:needs-info"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 10,
+     "title": "t10",
+     "labels": [
+      {
+       "name": "owner:tester"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 11,
+     "title": "t11",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:tester"
+      },
+      {
+       "name": "status:fixed-pending-verify"
+      },
+      {
+       "name": "status:plan-approved"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       },
+       {
+        "number": 92,
+        "state": "OPEN"
+       },
+       {
+        "number": 93,
+        "state": "OPEN"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "wait",
+   "2": "tester:verify",
+   "3": "wait",
+   "4": "reviewer:arch",
+   "5": "wait",
+   "6": "reviewer:docs",
+   "7": "wait",
+   "8": "tester:spec",
+   "9": "tester:answer",
+   "10": "tester:handoff",
+   "11": "wait"
+  },
+  "expect_reason": {
+   "1": "blocked by #90",
+   "5": "blocked by #90",
+   "11": "blocked by #92,#93"
+  }
  }
 ]

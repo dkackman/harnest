@@ -137,7 +137,13 @@ def parent_phase:
         {queue: "implementer:fix", reason: (if ($st | length) > 0 then "ready (stale \($st | join(",")) to clear)" else "ready" end)}
       else {queue: "stranded", reason: "owner:implementer with \($live | join(","))"} end
   elif $o[0] == "owner:tester" then
-    if has("status:fixed-pending-verify") and has("arch-review") then {queue: "reviewer:arch", reason: "changed dw/ or dw_mcp/: architecture review first"}
+    # A verify, review or spec whose blocker is still open waits for it, as a
+    # stage does: a session run now finds nothing runnable and only feeds the
+    # no-progress park. An answer or harness edit isn't held.
+    [(.blockedBy.nodes // [])[] | select(.state == "OPEN") | .number] as $blockers
+    | if ($blockers | length) > 0 and (has("status:fixed-pending-verify") or has("status:needs-spec")) then
+      {queue: "wait", reason: "blocked by \($blockers | map("#\(.)") | join(","))"}
+    elif has("status:fixed-pending-verify") and has("arch-review") then {queue: "reviewer:arch", reason: "changed dw/ or dw_mcp/: architecture review first"}
     elif has("status:fixed-pending-verify") and has("docs-review") then {queue: "reviewer:docs", reason: "docs-only fix, not observable over MCP"}
     elif has("status:fixed-pending-verify") then {queue: "tester:verify", reason: "handed off"}
     elif has("status:needs-spec") then {queue: "tester:spec", reason: "plan approved and decomposed"}

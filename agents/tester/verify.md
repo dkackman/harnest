@@ -68,3 +68,11 @@ implementer. They come in two kinds:
   `pending: #<stage>` for a stage closed `not planned` isn't run: list it
   in one retire request on the harness repo (`suite` +
   `status:needs-approval`).
+- **Nothing failed, but some cases are blocked by open issues** (a case
+  that can't run until another fix lands). That is an incomplete verify,
+  not a failure: don't bounce it, and leave the labels as they are. Link
+  each open issue as a blocker, `gh issue edit <n> --add-blocked-by
+  <m>,<k>`, and comment which cases pass and which wait on which issue. The
+  issue then waits until every blocker closes and comes back to you for
+  the rest. A bounce here would count against the implementer as a failed
+  hand-off.
