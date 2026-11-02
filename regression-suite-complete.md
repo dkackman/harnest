@@ -17704,8 +17704,6 @@ expected:
   channel's mean and spread to the clip's, before decode; off unless set; refused on non-H3 steps.
 - The "Chaining with a guide" table (or a section beside it) gives `anchor` with its values `"none"` (default) and
   `"segment_1"`, says it needs H3 and continuity `guide` or `last_frame`, and that segment 1 itself is not corrected.
-- It warns, in substance, that the anchor assumes one continuous scene (a lighting change or a subject leaving frame
-  is pulled back) and that a hard cut can take a new `latent_anchor`.
 It is a **finding** if either key is missing, a rule above is absent, or a stated rule disagrees with C-F671/C-F672.
 cleanup: none.
 metrics: none.
