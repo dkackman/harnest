@@ -17134,7 +17134,7 @@ Free. `workspace="regression-complete"`.
    `asset:qa-cast/priya-portrait.jpg`.
 expected:
 - 1: arguments `video`, `reference`, `threshold` (default 0.363, range −1 to 1) and `samples_per_shot`
-  (default 8, a positive integer); it says it is a CPU check.
+  (default 8, a positive integer).
 - 2: the template is listed and runs `analyze_face_drift`.
 - 3: `valid: true`. If the SFace weights aren't cached, the plan lists one download, about 37 MB,
   pinned to a fixed revision or hash (not "latest"), so the user can acknowledge it.
