@@ -16958,7 +16958,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F641 — `stills_to_video` takes a scalar duration, rounds tiny durations up to a frame, and defaults fps to 24
-pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. Needs C-F639. `workspace="regression-complete"`. Validate, then run each with `wait_seconds=55`, then
 `get_gallery_metadata`.
@@ -16976,7 +16975,6 @@ cleanup: `delete_output(job_id=…)` for each.
 metrics: none.
 
 ### C-F642 — `stills_to_video` refuses mismatched sizes, a wrong number of durations, and non-positive durations, naming the argument
-pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 Free unless a refusal fails to happen. Needs C-F639. `workspace="regression-complete"`. Each arm is
 `validate_workflow`; if it says `valid: true`, also `run_workflow(..., wait_seconds=55)` and judge the job.
@@ -16994,7 +16992,6 @@ cleanup: `delete_output(job_id=…)` for any job an arm queued.
 metrics: none.
 
 ### C-F643 — `stills_to_video`'s fps range and 600-second cap hold at their boundaries
-pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. Needs C-F639. `workspace="regression-complete"`. One still, `asset:qa-1141/tiny-64.png`, so the long
 arms stay small. Validate each; run the accepted ones with `wait_seconds=55` (follow with `wait_for_job`).
@@ -17011,7 +17008,6 @@ cleanup: `delete_output(job_id=…)` for each job.
 metrics: none.
 
 ### C-F644 — `stills_to_video`'s 36000-frame cap and 4 GiB byte budget refuse what the 600-second cap lets through
-pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU and some disk. Needs C-F639. `workspace="regression-complete"`. Don's ruling on #1141 adds both caps on
 top of 600 s; the byte budget is checked at run time. Validate each arm; run the ones validate accepts,
@@ -17032,7 +17028,6 @@ cleanup: `delete_output(job_id=…)` for each job.
 metrics: none.
 
 ### C-F645 — a `stills_to_video` clip goes through `concat_videos` and the assemble-and-score template like any other clip
-pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. Needs C-F639 and C-F640's recipe. `workspace="regression-complete"`.
 1. Make the C-F640 clip (B3, `[1, 2, 0.5]`, 24 fps, 512×512).

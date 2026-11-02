@@ -1257,7 +1257,6 @@ cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
 
 ### SE-F060 — `stills_to_video.images`, `analyze_face_drift.video`/`reference` and their templates' variables hold the media path gate at validate time
-pending: #1144
 pending: #1146
 source: tester, spec for #1144 and #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 #1144 adds `stills_to_video`, which reads a list of stills (a list argument, so each item is a path),
