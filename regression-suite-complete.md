@@ -16500,14 +16500,12 @@ GPU, a few seconds per arm warm. `workspace="regression-complete"`. SFX(args) be
 1. `run_workflow(name=TXS, arguments={<prompt variable>: "a heavy wooden door slams shut", seed: 1124})`
    (inline copy with the seed on the step if TXS has no seed variable).
 2. Step 1 again, exactly.
-3. `compare_outputs` between the two outputs.
+3. `get_gallery_metadata` on both stems, once plain and once with `envelope=true, interval_seconds=0.05`.
 4. SFX with no `duration`.
 5. SFX at `duration` 4.0, 12.0, 3.9, 12.1 and 20.0, one job each.
 expected:
 - 1, 2, 4: each 44100 Hz mono, 8.0 s (within 1 ms), peak above −40 dBFS, no duration warning.
-- 2 vs 1: identical audio. `compare_outputs` reports them identical (zero difference, or its exact-match
-  verdict), and `get_gallery_metadata`'s `peak_dbfs`, `mean_dbfs` and `integrated_lufs` agree to every
-  digit. Stage A found same-seed runs bit-identical.
+- 2 vs 1: identical audio. Their `media` `duration_seconds`, `peak_dbfs`, `mean_dbfs`, `integrated_lufs` and `true_peak_dbfs` agree to every digit, and so do `media.envelope.rms_dbfs` and `peak_dbfs` in every 0.05 s bin (`compare_outputs` takes images and video only). Stage A found same-seed runs bit-identical.
 - 5: every arm completes, its output that many seconds long (within 1 ms). 4.0 and 12.0 carry **no**
   duration warning; 3.9, 12.1 and 20.0 each carry one in `job.warnings` (and `get_job_events`) naming
   `duration`, the 4–12 s range or the 8 s training length.
