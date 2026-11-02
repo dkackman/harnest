@@ -17340,7 +17340,6 @@ cleanup: `delete_output(job_id=…)` for A, B and C; `delete_asset` `qa-1139/sfx
 metrics: none.
 
 ### C-F662 — `compare_outputs(texture_bands=true)` over two H3 shots gives nine band numbers per output per moment, nine ratios per non-baseline output, and the pairwise metrics still
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free (CPU decode only), `workspace="regression-complete"`. Fixtures (shared `common/assets`, read-only):
 `asset:qa-cast/ep3-shot1-incident.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames, 960x544, 24 fps).
@@ -17371,7 +17370,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F663 — `texture_bands=true` with one name measures each moment with no pairwise metrics; one name without it is still refused
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free, `workspace="regression-complete"`. Fixture: `asset:qa-cast/ep25-episode.mp4` (360 frames, 960x544, 24 fps,
 shared, read-only; one cut of two shots, standing in for one chain's segments).
@@ -17392,7 +17390,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F664 — the same output named twice gives texture ratios of 1.0, and `baseline` moves the ratios to the other row
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` and
 `asset:qa-cast/ep3-shot2-reply.mp4` (shared, read-only; colour footage, so no band is 0).
@@ -17414,7 +17411,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F665 — without `texture_bands` (omitted or false) the reply and summary are today's, and per-name crops still work
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4`,
 `asset:qa-cast/ep3-shot2-reply.mp4` (shared, read-only).
@@ -17435,7 +17431,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F666 — `texture_bands` refuses a per-name crop list and a box under 16 px a side, takes 16 px and the full frame, and keeps the 8-name cap
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` (written `S1` below)
 and `asset:qa-cast/ep3-shot2-reply.mp4` (`S2`), shared, read-only.
@@ -17467,7 +17462,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F667 — texture bands on stills: one moment, a band that is 0 in the baseline gives a null ratio, and a blurred copy loses fine-band energy
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 CPU utility runs only, `workspace="regression-complete"`. Setup: C-F454's fixture workflow W (a greyscale QR
 still `still*.png`, 512×512, then a clip). Run **A** and **A2** (defaults) and **Bl**: W with two steps inserted
@@ -17492,7 +17486,6 @@ cleanup: `delete_output(job_id=…)` for A, A2 and Bl.
 metrics: none.
 
 ### C-F668 — a moment past an output's end gets no bands and no ratio, without failing the other cells
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep25-episode.mp4` (360 frames) and
 `asset:qa-cast/ep3-shot1-incident.mp4` (124 frames), shared, read-only.
@@ -17512,7 +17505,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F669 — the tool description, the workflows guide and the minimax-h3 skill carry the texture-bands caveats and point at each other
-pending: #1160
 source: tester, spec for #1160 from #1152's plan v1 (claude-opus-5-5 via anthropic)
 Free: schema and guide reads only.
 Note (spec session, 2026-11-01): `get_guide("workflows", section="Comparing outputs")` is refused today ("no
