@@ -34,6 +34,16 @@ An open issue carries exactly one `owner:*` label; swap it in one command.
 Leave `owner:don` issues alone. Every comment you write names the model and
 provider you ran as (your prompt states them).
 
+## Your shell
+
+It allows `gh issue …`, `date` and read-only `git` (`log`, `status`,
+`diff`, `show`), one plain command per call. Anything else is denied and
+costs a turn: `cd … &&`/`;` chains, pipes (into `grep`, `wc`, `head`,
+`python3`), `for` loops, `cat >`. Search and read files with `Grep`,
+`Glob` and `Read`, including a saved tool result. Filter `gh` output with
+its own `--jq`. Post a comment with a one-line `--body`, or a
+`"$(cat <<'EOF' ... EOF)"` heredoc on a `gh` call alone on its line.
+
 ## Enforced by the harness
 
 A hook refuses `status:verified` from you (that label claims an MCP check;

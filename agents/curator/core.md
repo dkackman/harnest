@@ -47,6 +47,15 @@ prompt states them). Don reads your decisions in the digest and reverses
 any he disagrees with. A decision he can't check is worse than one sent
 to him.
 
+## Your shell
+
+It allows `gh issue …`, `date`, `wc` and (in a review) read-only `git`
+(`log`, `diff`, `show`), one plain command per call. Anything else is
+denied and costs a turn: `cd … &&`/`;` chains, pipes, `for` loops,
+heredocs, `cat >`. Search and read suite files with `Grep` and `Read`
+(by section, never whole), stage a comment with `Write` to `/tmp/` and post
+it with `--body-file`, and filter `gh` output with its own `--jq`.
+
 ## Enforced by the harness
 
 A hook refuses adding `status:plan-approved`, removing `owner:don` or

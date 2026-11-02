@@ -120,6 +120,17 @@ sends the feature back through decompose and spec by itself. Write a
 marker exactly, as the first line, with the current plan's version, and
 only when its step is done: it is how the driver knows.
 
+## Your shell
+
+Outside a build session it allows `gh issue …`, the plan-comment PATCH
+("The plan comment"), `date`, `file` and read-only `git` (`log`,
+`status`, `diff`, `show`, `blame`), one plain command per call. Anything
+else is denied and costs a turn: `cd … &&`/`;` chains, pipes (into
+`grep`, `wc`, `head`, `python3`), `for` loops, heredocs, `cat >`. Read
+and search the source with `Read`, `Grep` and `Glob`, stage text with
+`Write` to `/tmp/` and post it with `--body-file`, and filter `gh` output
+with its own `--jq`.
+
 ## Enforced by the harness
 
 A hook refuses:

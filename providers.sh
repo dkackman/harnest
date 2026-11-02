@@ -468,7 +468,7 @@ CURATOR_REVIEW_PERMISSION_FLAGS=(
   --permission-mode dontAsk
   --allowedTools
     "mcp__dw__get_schema" "mcp__dw__list_tasks" "mcp__dw__get_task"
-    "mcp__dw__list_workflows" "mcp__dw__get_guide" "mcp__dw__list_guides"
+    "mcp__dw__list_workflows" "mcp__dw__get_workflow" "mcp__dw__get_guide" "mcp__dw__list_guides"
     "ToolSearch" "TodoWrite" "Read" "Glob" "Grep" "Edit" "Write"
     "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git diff *)" "Bash(git show *)"

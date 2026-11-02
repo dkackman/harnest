@@ -195,6 +195,24 @@ eq "consumer@mini-ai: a write outside the harness passes" 0 $?
 jq -n --arg p "$root/regression-suite-smoke.md" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: "/tmp"}' \
   | HARNEST_ROOT="$root" HARNEST_TARGET=mini-ai HARNEST_TARGET_HOST=mini-ai python3 "$guard" implementer >/dev/null 2>&1
 eq "the target rule is the consumer's only" 0 $?
+
+# --- suite cases are add-only (harnest#176): a committed line may go only if it is `pending:`
+sroot="$T/sroot"; mkdir -p "$sroot"
+printf '### C-F001 — a case\npending: #12\nexpected: it works.\ncleanup: none.\n' > "$sroot/regression-suite-complete.md"
+git -C "$sroot" init -q && git -C "$sroot" add -A && git -C "$sroot" -c user.name=t -c user.email=t@t commit -qm base
+printf '\n### C-F002 — new this session\nexpected: draft.\ncleanup: none.\n' >> "$sroot/regression-suite-complete.md"
+# srow <expect> <role> <label> <tool_input json, file_path added>
+srow() {
+  jq -n --arg p "$sroot/regression-suite-complete.md" --argjson i "$4" '{tool_name: ($i.content | if . then "Write" else "Edit" end), tool_input: ($i + {file_path: $p}), cwd: "/tmp"}' \
+    | HARNEST_ROOT="$sroot" python3 "$guard" "$2" >/dev/null 2>&1
+  eq "suite add-only, $2: $3" "$1" $?
+}
+srow 0 consumer "append a case" '{"old_string": "expected: draft.\ncleanup: none.\n", "new_string": "expected: draft.\ncleanup: none.\n\n### C-F003 — x\ncleanup: none.\n"}'
+srow 0 consumer "remove a pending line" '{"old_string": "pending: #12\n", "new_string": ""}'
+srow 0 consumer "fix this session'\''s own case" '{"old_string": "expected: draft.", "new_string": "expected: final."}'
+srow 2 consumer "rewrite a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
+srow 2 consumer "Write that drops a committed case" '{"content": "### C-F002 — new this session\nexpected: draft.\ncleanup: none.\n"}'
+srow 0 curator "curator rewrites a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
 # trow <expect> <command>: gh on the mini-ai target
 trow() {
   jq -n --arg c "$2" --arg t "${3:-/nonexistent}" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: $t, cwd: "/tmp"}' \

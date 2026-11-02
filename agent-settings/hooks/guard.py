@@ -118,6 +118,10 @@ consumer (tester, regression):
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
     suite files, perf history, the bible and /tmp, never scripts/)
+  - suite cases are add-only (harnest#176): an Edit/Write to a
+    `regression-suite-*.md` may not drop or change a line the last commit
+    holds, bar a `pending:` line. Lines added since the commit (this
+    session's own new case) stay editable
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -2204,6 +2208,50 @@ def target_file_rule(path, cwd, target, role):
             )
 
 
+def suite_add_only_rule(tool, tool_input, cwd):
+    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`."""
+    root = os.path.realpath(
+        os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    )
+    full = os.path.realpath(os.path.join(cwd, tool_input.get("file_path", "")))
+    name = os.path.basename(full)
+    if os.path.dirname(full) != root or not (name.startswith("regression-suite-") and name.endswith(".md")):
+        return
+    try:
+        committed = subprocess.run(
+            ["git", "-C", root, "show", "HEAD:" + name], capture_output=True, text=True, timeout=10
+        )
+    except (OSError, subprocess.SubprocessError):
+        return
+    if committed.returncode != 0:
+        return  # a suite file the last commit doesn't hold: nothing to remove
+    if tool == "Write":
+        after = tool_input.get("content", "")
+    else:
+        try:
+            with open(full, encoding="utf-8") as f:
+                before = f.read()
+        except OSError:
+            return
+        old, new = tool_input.get("old_string", ""), tool_input.get("new_string", "")
+        if not old or old not in before:
+            return  # the Edit itself fails
+        after = before.replace(old, new) if tool_input.get("replace_all") else before.replace(old, new, 1)
+    left = {}
+    for line in after.splitlines():
+        left[line] = left.get(line, 0) + 1
+    for line in committed.stdout.splitlines():
+        if left.get(line, 0):
+            left[line] -= 1
+        elif not line.strip().startswith("pending:"):
+            deny(
+                "suite cases are add-only: this %s drops or rewrites %r in %s. To change or remove "
+                "a case, file `suite` + `status:needs-approval` on the harness repo naming the case "
+                "id; the only edit yours to make to a committed case is removing its "
+                "`pending: #<stage>` line." % (tool, line.strip()[:80], name)
+            )
+
+
 SHELL_KEYWORDS = ("do", "then", "else", "elif", "if", "while", "until", "{", "!", "nohup")
 # commands that run another command, and the options of theirs that take a value
 PREFIX_COMMANDS = {
@@ -2543,6 +2591,8 @@ def main():
     server = other_target()
     target = server if role == "consumer" else ""
     if data.get("tool_name") in ("Edit", "Write"):
+        if role == "consumer":
+            suite_add_only_rule(data.get("tool_name"), data.get("tool_input", {}), cwd)
         if target:
             target_file_rule(
                 data.get("tool_input", {}).get("file_path", ""),

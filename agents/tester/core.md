@@ -174,6 +174,9 @@ doesn't make a verification.
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.
 
+It also refuses an `Edit`/`Write` to a suite file that removes or changes a committed
+line other than a `pending:` line ("The regression suites").
+
 The hook also refuses the `security` label on any issue: a hole is filed privately
 (`scripts/file-advisory.sh`), never on the public tracker.
 
