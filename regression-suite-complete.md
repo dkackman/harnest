@@ -16937,7 +16937,7 @@ It is a **finding** (against the processors, not this feature) if a crop isn't t
 cleanup: none. These are fixtures; keep them.
 metrics: none.
 
-### C-F640 — `stills_to_video` holds each still for its own duration, records the cuts in `media.shots`, and has no audio
+### C-F640 — `stills_to_video` holds each still for its own duration, records the cuts in `media.shots`, and is silent
 pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. Needs C-F639. `workspace="regression-complete"`. First `get_task("stills_to_video")` and note the
@@ -16948,12 +16948,13 @@ argument names it documents; the case uses `images`, `durations` and `fps` for t
    `get_output_frames` at 0.5 s, 2.0 s and 3.25 s.
 expected:
 - 1: `valid: true`; the job completes.
-- 2: 84 frames, 3.5 s, 24 fps, 512×512, **no audio stream**. `media.shots` has 3 shots starting at
+- 2: 84 frames, 3.5 s, 24 fps, 512×512, **a silent audio track** (peak at or below -100 dBFS, or no
+  stream at all) lasting the clip's length. `media.shots` has 3 shots starting at
   frames 0, 24 and 72 (0 s, 1 s, 3 s). The frames show board 1, board 2 and board 3 in that order,
   each one unchanged (no crossfade, no motion).
 - `get_task` documents `durations` as either a list (one per image) or a single number.
-It is a **finding** if a count or boundary is off by even one frame, the shots aren't recorded, an
-audio track appears, or a still is altered.
+It is a **finding** if a count or boundary is off by even one frame, the shots aren't recorded, the
+audio isn't silent, or a still is altered.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
@@ -17013,7 +17014,7 @@ CPU and some disk. Needs C-F639. `workspace="regression-complete"`. Don's ruling
 top of 600 s; the byte budget is checked at run time. Validate each arm; run the ones validate accepts,
 with `wait_seconds=55` then `wait_for_job`.
 1. `tiny-64.png`, `fps: 120`, `durations: 300`: exactly 36000 frames, accepted, the output has 36000 frames.
-2. `tiny-64.png`, `fps: 120`, `durations: 300.01`: 36002 frames, refused naming the frame cap (36000)
+2. `tiny-64.png`, `fps: 120`, `durations: 300.01`: 36001 frames, refused naming the frame cap (36000)
    even though 300.01 s is under 600 s.
 3. `big-1024.png`, `fps: 24`, `durations: 62.5`: 1500 frames, 1500 × 1024 × 1024 × 3 bytes ≈ 4.39 GiB of
    frames, over the budget. Refused, at validate or by the job failing before encoding, naming the
