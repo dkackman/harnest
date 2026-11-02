@@ -17144,10 +17144,12 @@ pending: #1146
 source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. `workspace="regression-complete"`. Validate first each time, binding the plan's download if any.
 Setup: PRIYA2 = `concat_videos` of `asset:qa-cast/ep6-shot1-priya.mp4` with itself (two shots).
-1. `face-drift-check` on `ep6-shot1-priya.mp4` (H3) against `priya-portrait.jpg`.
+1. `face-drift-check` on `asset:qa-cast/h3-priya-portrait-i2v.mp4` (H3, rendered from the portrait) against `priya-portrait.jpg`.
 2. The same on `asset:qa-cast/ep63-shot-ltx-priya.mp4` (LTX-2.5).
 3. On PRIYA2 against `asset:qa-cast/hal-portrait.jpg` (a different person).
 Read each result with `get_output_text` (or `get_job`'s findings).
+Note: `ep6-shot1-priya.mp4` is a different person from `priya-portrait.jpg` (dkackman/diffusers-workflow#1165),
+so never use it as a same-person sample here; PRIYA2 in arm 3 stays valid as a different-person sample.
 expected:
 - The findings use the same answer shape as `assess_output` and `analyze_shots` (a per-shot list with
   times and a finding kind), with a similarity score per shot.
