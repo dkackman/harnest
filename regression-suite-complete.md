@@ -17243,7 +17243,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F658 — `get_gallery_metadata` on a wav and an mp3 asset returns `pcm_sha256` with its four descriptors, stable across calls, and the tool says when two hashes compare
-pending: #1158
 source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
 Free: metadata reads only, `workspace="regression-complete"`, `include_workflow=false`. Fixtures (shared
 `common/assets`): `asset:qa-cast/priya-voice.wav` (7.453333 s, 24000 Hz, mono) and `asset:qa-cast/ep15-song.mp3`.
@@ -17271,7 +17270,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F659 — an mp4's soundtrack carries `pcm_sha256`; a mute video and an image carry none of the five keys
-pending: #1158
 source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
 Free: metadata reads only, `workspace="regression-complete"`, `include_workflow=false`. Fixtures:
 `asset:qa-cast/ep6-shot1-priya.mp4` (124 frames / 5.175 s, 32000 Hz stereo, shared),
@@ -17293,7 +17291,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F660 — `envelope` returns the same bins with the hash on, and the hash doesn't depend on `envelope` or `interval_seconds`
-pending: #1158
 source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
 Free: metadata reads only, `workspace="regression-complete"`, `include_workflow=false`. Fixture:
 `asset:uploads/qa-cast/room-bed.wav` (4.96 s, 16000 Hz mono, shared). The bins below were read before
@@ -17316,7 +17313,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F661 — two runs of one seeded sound effect hash equal, another seed hashes different, the kept asset hashes the same, and `list_gallery` doesn't carry it
-pending: #1158
 source: tester, spec for #1158 from #1139's plan v1 (claude-opus-5-5 via anthropic)
 GPU, a few seconds per run warm. `workspace="regression-complete"`. SFX(seed) is C-F619's inline one-step
 `generate_sound_effects` workflow (the `templates/text-to-sound-effect` step via `get_workflow`, result
@@ -17541,6 +17537,27 @@ expected:
 It is a **finding** if the parameter is missing or defaults true, the description neither says "not a score"
 nor points at the guide, either guide call is refused, a caveat is missing, or either skill pointer is missing.
 cleanup: none.
+metrics: none.
+
+### C-F670 — a `silent_by_design` stills clip draws no dead-air or near-silent finding, on its own or concatenated
+source: tester, verified in #1162 (claude-opus-5-5 via anthropic)
+Seconds of GPU, `workspace="regression-complete"`. Fixture: `asset:qa-1141/tiny-64.png`. Task-only, so
+`validate_workflow` gives basis `unknown`; bind `minutes: null`.
+1. Inline workflow, one step `stills_to_video` with `arguments: {images: ["asset:qa-1141/tiny-64.png",
+   "asset:qa-1141/tiny-64.png"], durations: [2, 3], fps: 24}`, result `video/mp4`. Then
+   `assess_output(name=<its output>, workspace="regression-complete")` and the same with `probe="analyze_shots"`.
+2. Inline workflow: steps `a` (one still, `durations: 2`) and `b` (one still, `durations: 3`), both
+   `stills_to_video` to `video/mp4` in `subfolder: "intermediate"`, then `cut` = `concat_videos(videos:
+   ["previous_result:a", "previous_result:b"], fps: 24)`. `assess_output` on the `cut` output.
+expected:
+- 1: the manifest shots `still_1` and `still_2` both carry `silent_by_design: true`. `assess_output` returns
+  `findings: []` with `shot_dead_air` and `near_silent` listed in `rules_applied`. The `analyze_shots` probe
+  also returns `findings: []`. Its per-shot `dead_air_seconds` may still be reported, since that is a
+  measurement and not a finding.
+- 2: the `cut` manifest shots `a` and `b` both keep `silent_by_design: true`, and `assess_output` on the cut
+  returns `findings: []`.
+It is a **finding** if either cut draws `shot_dead_air` or `near_silent`, or the concat drops the flag.
+cleanup: `delete_output(job_id=...)` for both jobs.
 metrics: none.
 
 ## Performance
