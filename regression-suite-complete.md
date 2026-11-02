@@ -288,10 +288,11 @@ smoke's Fixtures lists the asset too.
 - C-F629–C-F657 (cinematic controls, #1141) use `asset:qa-1141/…` stills in **this** workspace's assets,
   made by C-F639's setup when they're missing: `board-1.png`, `board-2.png`, `board-3.png` (three visually
   distinct 512×512 stills), `board-wide.png` (640×512), `tiny-64.png` (64×64), `big-1024.png` (1024×1024)
-  and `street-960x544.png` (a seeded FLUX 3 Klein still of an empty street with **no person in it**).
+  and `street-960x544.png` (a seeded SD1.5 still of an empty street, resized, with **no person in it**).
   Geometry is the point, plus "no face" for the street; keep them across runs, never sweep them. They also
   reuse the shared `priya-portrait.jpg`, `hal-portrait.jpg` (a different person), `ep6-shot1-priya.mp4`,
-  `ep63-shot-ltx-priya.mp4`, `priya-voice.wav` (7.453 s mono), `ep20-score.wav`, `ep21-shot1-receipt.mp4`,
+  `ep63-shot-ltx-priya.mp4`, `h3-priya-portrait-i2v.mp4`, `ep351-shot2-whisk.mp4` (H3 from
+  `hal-portrait.jpg`, 960×544), `priya-voice.wav` (7.453 s mono), `ep20-score.wav`, `ep21-shot1-receipt.mp4`,
   `ep21-shot2-verdict.mp4` and `ep25-episode.mp4`.
 - C-F662–C-F669 (texture bands on `compare_outputs`, #1160) reuse the shared `ep3-shot1-incident.mp4`,
   `ep3-shot2-reply.mp4` (colour 124-frame 960×544 shots) and `ep25-episode.mp4` (360 frames), plus C-F454's
@@ -16920,7 +16921,7 @@ metrics: none.
 ### C-F639 — setup: the `qa-1141/` stills exist with the geometry the cinematic-controls cases need
 pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
-CPU, plus one Klein still on first run. `workspace="regression-complete"` on every call. Run this first; it
+CPU, plus one SD1.5 still on first run. `workspace="regression-complete"` on every call. Run this first; it
 costs nothing when the stills are already there. Run `list_assets(prefix="qa-1141/")`, and for each missing
 name below make it, check it, then `keep_output` it to that name:
 - `board-1.png`, `board-2.png`, `board-3.png`: `resize_center_crop` to 512×512 of, in order,
@@ -16928,8 +16929,9 @@ name below make it, check it, then `keep_output` it to that name:
   `asset:qa-cast/ep3-shot1-incident.mp4`.
 - `board-wide.png`: `resize_center_crop` of `priya-portrait.jpg` to 640×512.
 - `tiny-64.png`: 64×64. `big-1024.png`: 1024×1024 (same source and task).
-- `street-960x544.png`: the FLUX 3 Klein text-to-image template with prompt "an empty city street at
-  dawn, wet asphalt, shuttered shops, no people", `seed: 1141`, 960×544 (validate first, bind its cost).
+- `street-960x544.png`: SD1.5 `templates/text-to-image` with prompt "an empty city street at dawn, wet
+  asphalt, shuttered shops, no people", `seed: 1141`, 512×512 (validate first, bind its cost), then
+  `resize` to 960×544.
   Check it with `get_output_image`: no person or face anywhere in it. If one is there, re-run with
   seed 1142, 1143… and note the seed used in the run's `note`.
 expected: `list_assets(prefix="qa-1141/")` lists all seven, each with the stated size.
@@ -17100,7 +17102,8 @@ expected:
   `job.warnings` names the trim (2.95 s).
 - 2: video and audio both 9 s; the voice is audible until ~7.45 s, then silence; the boards are in
   order. `job.warnings` names the pad (1.55 s). `assess_output` reports no
-  silence gap or seam before 7.4 s.
+  `seam_hole` or `shot_dead_air` before 7.4 s; `seam_level_step` / `shot_level_spread` findings are the
+  voice fixture getting quiet by board 3 and are not findings of this case.
 - Neither output's audio is longer or shorter than its video.
 It is a **finding** if the audio runs past the last board, stops before it, or a board is shown at
 the wrong time.
@@ -17165,9 +17168,9 @@ pending: #1146
 source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. Needs C-F639. `workspace="regression-complete"`.
 Setup: ESTAB = `stills_to_video` of `asset:qa-1141/street-960x544.png` for 3 s at 24 fps, then
-`concat_videos` of ESTAB and `asset:qa-cast/ep6-shot1-priya.mp4` (both 960×544).
-1. `face-drift-check` on that concat against `priya-portrait.jpg`.
-2. `face-drift-check` on `ep6-shot1-priya.mp4` with **reference** `asset:qa-1141/street-960x544.png`.
+`concat_videos` of ESTAB and `asset:qa-cast/ep351-shot2-whisk.mp4` (both 960×544).
+1. `face-drift-check` on that concat against `asset:qa-cast/hal-portrait.jpg` (the whisk shot's person).
+2. `face-drift-check` on `ep351-shot2-whisk.mp4` with **reference** `asset:qa-1141/street-960x544.png`.
 expected:
 - 1: shot 1 gets `no_face`, and no `face_drift`; shot 2 gets nothing.
 - 2: refused (validate by preference, else a failed job) with a message naming `reference` and saying
@@ -17237,8 +17240,12 @@ expected:
   each video family the trial covered (H3, LTX-2.5, Kandinsky 6), the skill states a measured verdict
   (honoured, partial or not honoured), not "untested": 18 cells, or as many as the trial ran, with the
   rest marked plainly as not measured.
-- Every job id the skill (or the trial write-up it cites) gives for a verdict resolves with `get_job` to
-  a completed job of that family whose prompt carries that move's compiled sentence.
+- `get_job` on each trial job resolves to a succeeded job of that family whose prompt carries that
+  move's compiled sentence (ids from #1148, columns LTX-2.5 / K6 / H3):
+  static 417ce2c24c44 / 80b30f24fba1 / 8261c82d7308; dolly-in 9223e8eb9161 / c52734282a38 / 8d6786c0b6a2;
+  dolly-out 0602c1400c3e / 26843efb6392 / db5271519874; truck-left 6d46ed86d897 / 2192d6ca5dcf / 5cf0b0af6608;
+  crane-up 7dda520e6667 / 99b30c30371e / a9644e35f0fb; orbit 5134c962d4aa / 3361d11be518 / 28d0f4b327e8.
+- Docs review (not over MCP): `move-trial.md` names the same id in each of the 18 cells.
 - A move marked not honoured carries advice (describe it differently, or check with
   `get_output_frames`), per the hints rule in C-F629.
 It is a **finding** if a verdict has no job behind it, a cited job doesn't exist or is another family's,
