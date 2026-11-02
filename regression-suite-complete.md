@@ -16919,7 +16919,6 @@ cleanup: as C-F637's.
 metrics: none.
 
 ### C-F639 — setup: the `qa-1141/` stills exist with the geometry the cinematic-controls cases need
-pending: #1144
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU, plus one SD1.5 still on first run. `workspace="regression-complete"` on every call. Run this first; it
 costs nothing when the stills are already there. Run `list_assets(prefix="qa-1141/")`, and for each missing
@@ -17164,7 +17163,6 @@ cleanup: `delete_output(job_id=…)` for each job, and PRIYA2's.
 metrics: none.
 
 ### C-F652 — a shot with no face is reported `no_face`, not drift, and a faceless reference is refused
-pending: #1146
 source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 CPU. Needs C-F639. `workspace="regression-complete"`.
 Setup: ESTAB = `stills_to_video` of `asset:qa-1141/street-960x544.png` for 3 s at 24 fps, then
@@ -17564,7 +17562,6 @@ cleanup: `delete_output(job_id=...)` for both jobs.
 metrics: none.
 
 ### C-F671 — `chain.anchor` takes `"none"` and `"segment_1"` on an H3 guide or last-frame chain, and refuses any other value, a non-H3 chain and any other continuity
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 Free, validate only, `workspace="regression-complete"`. Needs `asset:qa-cast/priya-portrait.jpg`. The template has no
 `anchor` variable, so each variant is a saved copy: `get_workflow` the source, set the key in its `chain` block
@@ -17599,7 +17596,6 @@ cleanup: `delete_workflow` on every `c-f671-*` copy.
 metrics: none.
 
 ### C-F672 — `latent_anchor` takes a clip on an H3 `fl2va`/`t2va` step and is refused on a non-H3 step or for a missing file
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 Free, validate only, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` (anchor clip),
 `asset:qa-cast/priya-portrait.jpg`. `latent_anchor` is a pipeline argument (the step's `pipeline.arguments`), taking the
@@ -17625,7 +17621,6 @@ cleanup: `delete_workflow` on every `c-f672-*` copy.
 metrics: none.
 
 ### C-F673 — a 3-segment H3 guide chain with `chain.anchor: "segment_1"` leaves segment 1 alone and changes segments 2–3
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 GPU: two 3-segment H3 chains, about 18 min each, `workspace="regression-complete"`. Validate each first and bind its
 `acknowledged_cost`. Shared arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "continuity": "guide",
@@ -17651,7 +17646,6 @@ cleanup: `delete_output(job_id=…)` on both jobs; `delete_workflow("c-f673-anch
 metrics: none.
 
 ### C-F674 — a single `fl2va` call with `latent_anchor` succeeds, a foreign clip moves the output, and anchoring to the call's own output barely does
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 GPU: three single H3 `fl2va` runs, about 2.5 min each, `workspace="regression-complete"`. Validate each and bind its
 `acknowledged_cost`. Arguments for all three: `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`.
@@ -17675,7 +17669,6 @@ cleanup: `delete_output(job_id=…)` on all three; `delete_workflow` on `c-f672-
 metrics: none.
 
 ### C-F675 — without the anchor key, a guide chain matches a pre-stage run of the same arguments
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 GPU: one H3 chain at most, `workspace` = the pre-stage job's own. Runs only if a pre-stage run exists; otherwise record
 "no pre-stage chain kept" in the run report and pass the case.
@@ -17694,7 +17687,6 @@ cleanup: `delete_output(job_id=…)` on the rerun only; never touch the original
 metrics: none.
 
 ### C-F676 — the workflows guide documents `latent_anchor` and `chain.anchor` with their rules
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 Free: guide reads only.
 1. `get_guide("workflows", section="H3: holding a clip with guides")` and, if the anchor has its own subsection,

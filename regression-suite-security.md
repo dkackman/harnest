@@ -1293,7 +1293,6 @@ cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
 ### SE-F061 — H3 `latent_anchor` holds the media path gate at validate time
-pending: #1173
 source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
 #1173 adds `latent_anchor`, an H3 `t2va`/`fl2va` pipeline argument that reads a clip in the forms a
 guide's `video` takes, and so is a new media path the server opens. Carrier, in workspace
