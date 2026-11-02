@@ -16920,7 +16920,7 @@ metrics: none.
 
 ### C-F639 — setup: the `qa-1141/` stills exist with the geometry the cinematic-controls cases need
 source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
-CPU, plus one SD1.5 still on first run. `workspace="regression-complete"` on every call. Run this first; it
+CPU, plus one FLUX 3 Klein still on first run. `workspace="regression-complete"` on every call. Run this first; it
 costs nothing when the stills are already there. Run `list_assets(prefix="qa-1141/")`, and for each missing
 name below make it, check it, then `keep_output` it to that name:
 - `board-1.png`, `board-2.png`, `board-3.png`: `resize_center_crop` to 512×512 of, in order,
@@ -16928,9 +16928,10 @@ name below make it, check it, then `keep_output` it to that name:
   `asset:qa-cast/ep3-shot1-incident.mp4`.
 - `board-wide.png`: `resize_center_crop` of `priya-portrait.jpg` to 640×512.
 - `tiny-64.png`: 64×64. `big-1024.png`: 1024×1024 (same source and task).
-- `street-960x544.png`: SD1.5 `templates/text-to-image` with prompt "an empty city street at dawn, wet
-  asphalt, shuttered shops, no people", `seed: 1141`, 512×512 (validate first, bind its cost), then
-  `resize` to 960×544.
+- `street-960x544.png`: `templates/flux3/text-to-image` with prompt "an empty city street at dawn, wet
+  asphalt, shuttered shops, no people", `seed: 1141`, `width: 960`, `height: 544` (validate first, bind its
+  cost). Klein writes `.jpg`, so re-save it as PNG with a one-step `strip_exif` task (`result.content_type:
+  image/png`) and `keep_output` that file.
   Check it with `get_output_image`: no person or face anywhere in it. If one is there, re-run with
   seed 1142, 1143… and note the seed used in the run's `note`.
 expected: `list_assets(prefix="qa-1141/")` lists all seven, each with the stated size.
