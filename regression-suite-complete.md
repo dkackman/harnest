@@ -17556,4 +17556,438 @@ It is a **finding** if either cut draws `shot_dead_air` or `near_silent`, or the
 cleanup: `delete_output(job_id=...)` for both jobs.
 metrics: none.
 
+### C-F671 — `chain.anchor` takes `"none"` and `"segment_1"` on an H3 guide or last-frame chain, and refuses any other value, a non-H3 chain and any other continuity
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. Needs `asset:qa-cast/priya-portrait.jpg`. The template has no
+`anchor` variable, so each variant is a saved copy: `get_workflow` the source, set the key in its `chain` block
+(`steps[0].pipeline.chain`), and `save_workflow` the whole document under the name given. Note the newest job id from
+`list_jobs` first. Every H3 validate passes `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}` plus the extras named.
+1. From `templates/minimax/chained-segments`:
+   - a. `c-f671-seg1`: `"anchor": "segment_1"`. Validate with `"continuity": "guide"`, then with `"continuity": "last_frame"`.
+   - b. `c-f671-none`: `"anchor": "none"`. Validate with `"continuity": "guide"`.
+   - c. `c-f671-seg2`: `"anchor": "segment_2"`; `c-f671-num`: `"anchor": 1`; `c-f671-empty`: `"anchor": ""`.
+     Validate each with `"continuity": "guide"`.
+   - d. `c-f671-seg1` again with `"continuity": "guide", "segments": 1` (nothing after segment 1 to anchor).
+2. `templates/ltx2/chained-segments` saved as `c-f671-ltx2` with `"anchor": "segment_1"` in its chain block. Validate with
+   `{"image": "asset:qa-cast/priya-portrait.jpg"}`.
+3. `templates/minimax/chain-video-continuity` (H3, continuity `last_segment`) saved as `c-f671-lastseg` with `"anchor":
+   "segment_1"` added. Validate with its required inputs (`get_workflow(..., variables_only=true)`; reuse `qa-cast` assets).
+   Then validate the unedited template with the same arguments, as its control.
+4. `validate_workflow(name="templates/minimax/chained-segments", arguments={..., "continuity": "guide"})`, unedited: the
+   no-key control. `list_jobs`.
+expected:
+- 1a (both continuities) and 1b: `valid: true` with a `plan.estimate`, and no error naming `anchor`. 1b's `plan` matches 4's.
+- 1c: each `valid: false`, an error at the chain's `anchor` that names both allowed values, `"none"` and `"segment_1"`.
+  An error that only says "invalid" without the values misses the intent.
+- 1d: not refused (an anchor with one segment does nothing). A warning that it has no effect is welcome; record which.
+- 2: `valid: false`, the error saying the anchor needs an H3 pipeline (naming the step or pipeline as not H3). A refusal
+  only as an unknown key would mean the schema refuses `anchor` everywhere, which also breaks 1a: check 1a first.
+- 3: `valid: false` for the copy, naming the continuity rule (`guide` or `last_frame` only); the control validates clean,
+  so the refusal is the anchor's.
+- 4: clean. `list_jobs` shows no new job.
+It is a **finding** if 1a or 1b is refused, any of 1c, 2 or 3 validates, a refusal comes only at `run_workflow`, or any job
+was queued.
+cleanup: `delete_workflow` on every `c-f671-*` copy.
+metrics: none.
+
+### C-F672 — `latent_anchor` takes a clip on an H3 `fl2va`/`t2va` step and is refused on a non-H3 step or for a missing file
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` (anchor clip),
+`asset:qa-cast/priya-portrait.jpg`. `latent_anchor` is a pipeline argument (the step's `pipeline.arguments`), taking the
+forms a guide's `video` takes. Save each copy as in C-F671.
+1. `templates/minimax/image-to-video` (confirm with `get_workflow` that its step's `from_pretrained_arguments.workflow` is
+   `fl2va`) saved as `c-f672-anchor` with `"latent_anchor": "asset:qa-cast/ep3-shot1-incident.mp4"` in its arguments.
+   Validate with `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`.
+2. The same copy with `latent_anchor` set to `"asset:qa-cast/no-such-clip-1173.mp4"`, saved as `c-f672-missing`; validate.
+3. `templates/minimax/video-with-audio` (a `t2va` step; confirm) saved as `c-f672-t2va` with the anchor of 1; validate
+   with its defaults plus `"seed": 42`.
+4. `templates/ltx2/chained-segments` saved as `c-f672-ltx2` with the anchor of 1 in its step's arguments; validate with
+   `{"image": "asset:qa-cast/priya-portrait.jpg"}`.
+5. `list_jobs`.
+expected:
+- 1 and 3: `valid: true` with a `plan.estimate`. A cost line or note for the extra encode is welcome, not required.
+- 2: `valid: false` before any run, an error at `latent_anchor` saying the asset doesn't exist, worded as a guide's
+  missing `video` is. It must not echo a server path.
+- 4: `valid: false`, the error saying `latent_anchor` needs an H3 step. A run-time failure instead is a finding.
+- 5: no job queued.
+It is a **finding** if 1 or 3 is refused, 2 or 4 validates, or 2's message carries a server path (that one is a hole:
+`scripts/file-advisory.sh`, not a public issue).
+cleanup: `delete_workflow` on every `c-f672-*` copy.
+metrics: none.
+
+### C-F673 — a 3-segment H3 guide chain with `chain.anchor: "segment_1"` leaves segment 1 alone and changes segments 2–3
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+GPU: two 3-segment H3 chains, about 18 min each, `workspace="regression-complete"`. Validate each first and bind its
+`acknowledged_cost`. Shared arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "continuity": "guide",
+"guide_frames": 22, "segments": 3, "seed": 42}`. Segment spans in the 328-frame output: 1 = frames 0–123, 2 = 124–225,
+3 = 226–327. "Match" below means `compare_outputs` reports `identical`, or PSNR ≥ 35 dB at every frame compared (this
+server is not known to run `cudnn_deterministic`, so repeat runs match by eye, not to the bit).
+1. Arm A (control): `run_workflow(workflow_path="templates/minimax/chained-segments", arguments=<shared>,
+   wait_seconds=55)`, then `wait_for_job` until done.
+2. Arm B: save `c-f673-anchor` (C-F671's `c-f671-seg1` shape: the template with `chain.anchor: "segment_1"`) and run it
+   with the same arguments.
+3. `get_job` and `get_job_events` on both; `get_gallery_metadata` on both outputs.
+4. `compare_outputs(names=[A, B], at=["frame:60", "frame:120", "frame:175", "frame:220", "frame:280", "frame:325"],
+   texture_bands=false)`.
+expected:
+- Both jobs succeed with no error event, each 328 frames at 24 fps with an audio stream.
+- Frames 60 and 120 (segment 1) match.
+- Frames 175, 220, 280 and 325 (segments 2–3) do not match: each PSNR at least 3 dB below the lower of the two
+  segment-1 readings.
+- B's job log or events say the anchor was applied to segments 2 and 3 (any wording); A's say nothing about an anchor.
+It is a **finding** if either run fails, a length is not 328, segment 1 differs (the anchor touched the segment it is
+taken from), or segments 2–3 match (the anchor did nothing).
+cleanup: `delete_output(job_id=…)` on both jobs; `delete_workflow("c-f673-anchor")`.
+metrics: none.
+
+### C-F674 — a single `fl2va` call with `latent_anchor` succeeds, a foreign clip moves the output, and anchoring to the call's own output barely does
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+GPU: three single H3 `fl2va` runs, about 2.5 min each, `workspace="regression-complete"`. Validate each and bind its
+`acknowledged_cost`. Arguments for all three: `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`.
+1. Arm C (control): `run_workflow(workflow_path="templates/minimax/image-to-video", ...)`.
+2. Arm F (foreign anchor): C-F672's `c-f672-anchor` copy (saved again if gone), anchor
+   `asset:qa-cast/ep3-shot1-incident.mp4`.
+3. Arm S (self anchor): the same copy with `latent_anchor` set to arm C's output as an `output:` reference (the gallery
+   name `get_job` reports for C), saved as `c-f674-self`.
+4. `get_gallery_metadata` on all three; `compare_outputs(names=[C, F, S], at=["frame:10", "frame:60", "frame:120"])`.
+expected:
+- All three succeed with no error event; each is 124 frames at 24 fps with audio.
+- F does not match C (PSNR < 35 dB at some compared frame).
+- S is closer to C than F is at every compared frame: higher PSNR and lower `mean_abs_diff`. S's statistics come from
+  C's own frames, so its correction is near identity. Record the three PSNRs in the run report.
+- The audio is not touched by the anchor: compare `pcm_sha256` of C and F. Equal is the pass. If they differ, record it
+  in the run report with the server's determinism setting if known; unequal hashes alone are not a finding here, since
+  repeat runs on this server differ in level by a few dB.
+It is a **finding** if any run fails, F matches C, or S is as far from or farther from C than F is (a statistics match
+to the output's own content should change almost nothing).
+cleanup: `delete_output(job_id=…)` on all three; `delete_workflow` on `c-f672-anchor` and `c-f674-self`.
+metrics: none.
+
+### C-F675 — without the anchor key, a guide chain matches a pre-stage run of the same arguments
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+GPU: one H3 chain at most, `workspace` = the pre-stage job's own. Runs only if a pre-stage run exists; otherwise record
+"no pre-stage chain kept" in the run report and pass the case.
+1. `list_jobs` across workspaces for a succeeded `templates/minimax/chained-segments` job with `continuity: "guide"`, a
+   pinned `seed`, finished before #1173's deploy, whose output still exists (`get_job`; `get_job_workflow` for its
+   arguments). Take the newest.
+2. `rerun_job` on it (bind the cost), `wait_for_job` until done.
+3. `get_gallery_metadata` on both; `compare_outputs` on the two at three frames per segment (from the spans its
+   `segments`, `num_frames` and `guide_frames` give).
+expected:
+- The rerun succeeds with the same frame count and audio duration as the original.
+- Every compared frame matches (C-F673's bar).
+It is a **finding** if the rerun's length differs or any frame does not match: the stage changed a chain that never
+asked for an anchor.
+cleanup: `delete_output(job_id=…)` on the rerun only; never touch the original.
+metrics: none.
+
+### C-F676 — the workflows guide documents `latent_anchor` and `chain.anchor` with their rules
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+Free: guide reads only.
+1. `get_guide("workflows", section="H3: holding a clip with guides")` and, if the anchor has its own subsection,
+   `get_guide("workflows", section="latent_anchor")`.
+expected:
+- `latent_anchor` is described as an H3 `t2va`/`fl2va` argument taking a clip in a guide's `video` forms, matching each
+  channel's mean and spread to the clip's, before decode; off unless set; refused on non-H3 steps.
+- The "Chaining with a guide" table (or a section beside it) gives `anchor` with its values `"none"` (default) and
+  `"segment_1"`, says it needs H3 and continuity `guide` or `last_frame`, and that segment 1 itself is not corrected.
+- It warns, in substance, that the anchor assumes one continuous scene (a lighting change or a subject leaving frame
+  is pulled back) and that a hard cut can take a new `latent_anchor`.
+It is a **finding** if either key is missing, a rule above is absent, or a stated rule disagrees with C-F671/C-F672.
+cleanup: none.
+metrics: none.
+
+### C-F677 — `guide_noise` takes [0, 1) on an H3 guided step, refuses 1, a negative, a string or a boolean and any non-H3 step, and warns when there is nothing to noise
+pending: #1174
+source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. Fixtures: `asset:qa-fit/src-640x480-50f.mp4` (made by C-F238's
+setup when missing), `asset:qa-cast/priya-portrait.jpg`. `guide_noise` is a pipeline argument (the step's
+`pipeline.arguments`). Save each copy as in C-F671. Note the newest job id from `list_jobs` first.
+G = `templates/minimax/image-to-video` (an `fl2va` step) with `"guides": [{"video": "asset:qa-fit/src-640x480-50f.mp4",
+"frame": 0}]` added. Validate G-based copies with `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`.
+1. G with `guide_noise` at each of `0.4`, `0`, `0.999`: `c-f677-04`, `c-f677-0`, `c-f677-0999`.
+2. G with `guide_noise` at `1`, `-0.1`, `"0.4"` (a string), `true`: `c-f677-1`, `c-f677-neg`, `c-f677-str`, `c-f677-bool`.
+3. `templates/minimax/image-to-video` with `"guide_noise": 0.4` and no `guides`: `c-f677-noguide`; the same with
+   `"guides": []`: `c-f677-emptyguide`.
+4. `templates/minimax/chained-segments` with `"guide_noise": 0.4` in its step's arguments: `c-f677-chain`. Validate with
+   `{"image": ..., "continuity": "guide"}`, then with `{"image": ..., "continuity": "last_frame"}`.
+5. `templates/ltx2/chained-segments` with `"guide_noise": 0.4` in its step's arguments: `c-f677-ltx2`; validate with
+   `{"image": "asset:qa-cast/priya-portrait.jpg"}`.
+6. `list_jobs`.
+expected:
+- 1: all three `valid: true` with a `plan.estimate`. The guide-length cut warning (50 frames to 39) may appear; nothing
+  about `guide_noise`. 0 is the lower boundary and is accepted.
+- 2: each `valid: false`, an error at `guide_noise` naming the range `[0, 1)` (or "0 to below 1"). 1 must be refused
+  (the range is open at 1), not clamped. A boolean is not a number: accepting `true` as 1 or 1.0 is a finding.
+- 3: both `valid: true` with a warning that `guide_noise` has no guide to act on.
+- 4: `continuity: "guide"` validates with **no** such warning (the chain supplies guides to segments 2+);
+  `continuity: "last_frame"` validates with the warning.
+- 5: `valid: false`, saying `guide_noise` needs an H3 step.
+- 6: no job queued.
+It is a **finding** if a 1 value is refused, a 2 value validates or is refused only at run time, 3 is refused or silent,
+4's guide chain warns or its last-frame chain doesn't, or 5 validates.
+cleanup: `delete_workflow` on every `c-f677-*` copy.
+metrics: none.
+
+### C-F678 — on a guided `fl2va` call, `guide_noise: 0.4` changes the output and `guide_noise: 0` matches no noise
+pending: #1174
+source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+GPU: three single H3 `fl2va` runs, about 2.5 min each, `workspace="regression-complete"`. Validate each and bind its
+`acknowledged_cost`. Each is C-F677's G with the guide's `"audio": true` set (so a guide audio row is in play), run with
+`{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`. "Match" is C-F673's bar.
+1. Arm N: G with no `guide_noise` (`c-f678-n`).
+2. Arm Z: `"guide_noise": 0` (`c-f678-z`).
+3. Arm P: `"guide_noise": 0.4` (`c-f678-p`).
+4. `get_job_events` on each; `get_gallery_metadata` on each; `compare_outputs(names=[N, Z, P], at=["frame:5",
+   "frame:30", "frame:60", "frame:120"])`.
+expected:
+- All three succeed, each 124 frames at 24 fps with audio. No run fails over the guide's audio.
+- Z matches N at every compared frame.
+- P does not match N at some compared frame; frames 60 and 120 (outside the 39-frame guide) are not required to differ,
+  but record their PSNR in the run report.
+- No warning about `guide_noise` in any job's events (each has a guide).
+It is a **finding** if any run fails, Z differs from N (0 is not today's latent), or P matches N at every frame (the
+noise never reached the guide).
+cleanup: `delete_output(job_id=…)` on all three; `delete_workflow` on the three copies.
+metrics: none.
+
+### C-F679 — a 2-segment guide chain with `guide_noise` leaves segment 1 alone, changes segment 2, and keeps its carried audio
+pending: #1174
+source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+GPU: two 2-segment H3 chains, about 12 min each, `workspace="regression-complete"`. Validate each, bind its
+`acknowledged_cost`. Shared arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "continuity": "guide",
+"guide_frames": 22, "segments": 2, "seed": 42}`; `carry_audio` stays at its default (true). Output spans: segment 1 =
+frames 0–123, segment 2 = 124–225 (226 frames). "Match" is C-F673's bar.
+1. Arm A: `templates/minimax/chained-segments` with the shared arguments.
+2. Arm B: the template saved as `c-f679-noise` with `"guide_noise": 0.4` in its step's arguments; same arguments.
+3. `get_job_events`, `get_gallery_metadata` on both; `compare_outputs(names=[A, B], at=["frame:60", "frame:120",
+   "frame:150", "frame:220"])`.
+4. `get_output_audio` on B over about 1 s around the seam (~5.17 s); `assess_output` on B.
+expected:
+- Both succeed, 226 frames at 24 fps, with audio about 9.42 s.
+- Frames 60 and 120 match (segment 1 has no guide, so `guide_noise` does nothing there).
+- Frames 150 and 220 do not match (PSNR at least 3 dB below the lower segment-1 reading).
+- B's audio runs on through the seam: no silent gap, no restart; `assess_output` raises no dead-air or near-silent
+  finding at the seam.
+It is a **finding** if either run fails, a length is off, segment 1 differs, segment 2 matches, or B's audio breaks at
+the seam (the noise reached the held audio).
+cleanup: `delete_output(job_id=…)` on both; `delete_workflow("c-f679-noise")`.
+metrics: none.
+
+### C-F680 — the workflows guide documents `guide_noise` with its range and what it leaves alone
+pending: #1174
+source: tester, spec for #1174 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+Free: guide reads only.
+1. `get_guide("workflows", section="H3: holding a clip with guides")` and, if it has its own subsection,
+   `get_guide("workflows", section="guide_noise")`.
+expected:
+- `guide_noise` is described as an H3 `t2va`/`fl2va` argument, a number in `[0, 1)`, off unless set; noise on each video
+  guide that tapers to clean at the guide's last frame (the join); the guide's audio and the `fl2va` keyframe stay
+  clean; a guide chain carries it to segments 2+ with no chain key; one extra encode per guide when set.
+- It says a step with no guides gets a warning, and a non-H3 step is refused.
+It is a **finding** if `guide_noise` is missing, its range is not stated, or a stated rule disagrees with C-F677.
+cleanup: none.
+metrics: none.
+
+### C-F681 — #1166's drift probe: every chain in its comparison exists, is what the comment says, and the posted measures reproduce
+pending: #1175
+source: tester, spec for #1175 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads and CPU measures; no generation), `workspace="probe-1166"`. Reads the stage-3 comparison comment on
+`dkackman/diffusers-workflow#1166` (`gh issue view 1166 --comments`). A 10-segment chain of 124 frames at
+`guide_frames` 22 is 124 + 9 × 102 = 1042 frames; segment 1 = frames 0–123, segment 5 = 430–531, segment 10 = 940–1041.
+1. From the comment, list every job id, arm and scene. For each: `get_job` (status, workspace) and `get_job_workflow`
+   (arguments); `get_gallery_metadata` on its output.
+2. Pick one row per scene and re-run its posted `compare_outputs(texture_bands=true, crop=…)` call exactly; pick one
+   chain and re-run its posted `analyze_seams` call (via the call the comment names).
+3. `get_output_frames` at each posted crop box's frames for segments 1, 5 and 10, on one arm per scene.
+expected:
+- Round 1 has six chains: arms A (control), B (`guide_noise` 0.4) and C (`chain.anchor: "segment_1"`) per scene, the
+  static stripes-and-shapes scene and the moving-camera arc. Each succeeded in `probe-1166`, is 1042 frames at 24 fps,
+  and its workflow shows `continuity: "guide"`, `guide_frames: 22`, `segments: 10`, the arm's one setting and nothing
+  of the other arm's; within a scene all arms share seed and prompts.
+- Every arm has the texture-band measures and `jump_ratio`/`look_ratio` posted for segments 1, 5 and 10 (frames inside
+  the spans above). Segment 1 is the same across a scene's arms (C-F673's match bar on one frame, spot-checked).
+- 2's re-runs reproduce the posted numbers to their printed precision.
+- Each crop box is stated, and 3's frames show no subject inside it.
+- Round 2 (B+C on both scenes) either ran, with the same checks for its chains, or is skipped with a reason that agrees
+  with the table (B or C failing to beat A on any measure). If the arc's look flattened under C, the reading names
+  `latent_anchor_strength` as the follow-up. The reading states whether arm 3's and arm 4's return triggers fired.
+- The comment ends with Don's taste question (Q6).
+It is a **finding** if a posted job is missing, failed, outside `probe-1166` or set up other than stated, a measure is
+missing for an arm and segment, a re-run disagrees, a crop holds the subject, round 2's state contradicts its gate, or
+the Q6 question is absent. Whether the arms help is Don's call, not this case's.
+cleanup: none (the probe's outputs are Don's evidence).
+metrics: none.
+
+### C-F682 — #1170's seam-source probe: inputs as stated, two assemblies of equal length and audio, measures that reproduce, and a gate read correctly
+pending: #1176
+source: tester, spec for #1176 from #1170's plan v1 (claude-opus-5-5 via anthropic)
+Free: reads and CPU tasks only, no generation, `workspace="constitution-walk"`. Reads the stage-A results comment on
+`dkackman/diffusers-workflow#1170` (`gh issue view 1170 --comments`). P = 39. Write N1..N4 for the four segments' frame
+counts as `get_gallery_metadata` reports them. The "previous" assembly keeps N1, N2−39, N3−39, N4 frames per segment,
+with seams at N1, N1+N2−39 and N1+N2+N3−78. The "next" assembly keeps N1−39, N2−39, N3−39, N4, with seams at N1−39,
+N1+N2−78 and N1+N2+N3−117. Both total N1+N2+N3+N4−117.
+1. Inputs: `get_job` and `get_job_workflow` on `ac04f6fd9dcd`, `584181ac4f7f`, `8e765677e0d1` and the seg-4 job the
+   comment names (one of `3486e9c52966`, `150852b2dad5`, `1f8f85b48e38`, `d3d4d2f638db`); `get_gallery_metadata` on each
+   output.
+2. The assemblies: for each job the comment names (each `trim_video`, both `concat_videos`, each `analyze_seams`),
+   `get_job` and `get_job_workflow`; `get_gallery_metadata` on both assembled outputs.
+3. Re-run one of the comment's `analyze_seams` calls exactly (same workflow and arguments, a CPU utility job; validate
+   first and bind its `acknowledged_cost`).
+4. `list_jobs(workspace="constitution-walk")` over the probe's window.
+expected:
+- 1: segments 2, 3 and 4 each show a guide of 39 frames at frame 0 in their workflow. Segment 2's guide is cut from
+  segment 1's output, and segment 3's is `seg02_tail39.mp4`, cut from segment 2's output (the comment says how this was
+  confirmed). The comment names the seg-4 keeper and why. Any mismatch is reported in the comment, not passed over.
+- 2: "previous" is one `concat_videos` over the four untrimmed outputs with `trim_frames: 39` and no `crossfade_ms`
+  override. "next" is `trim_video(start_frame=0, num_frames=Nk−39)` on segments 1–3, then `concat_videos` with
+  `trim_frames: 0` over those three and segment 4 untrimmed. The segment-4 output is the same one in both.
+- Both assemblies have N1+N2+N3+N4−117 frames at the same fps and the same audio duration, within one video frame
+  (1/fps s). The comment states both counts and both durations.
+- Each `analyze_seams` reports exactly three seams, at the frames given above for its assembly, each with `jump_ratio`
+  and `look_ratio`. The comment's table has all six values for each measure, and they agree with the job outputs.
+- 3 reproduces its posted numbers to their printed precision.
+- The comment holds the grabs: for each seam, segment k's last 5 frames beside segment k+1's frames 0–4, and 3 frames
+  either side of the seam in both assemblies.
+- The gate reads right from the table: "met" only if "next" has the lower `jump_ratio` at 2 or more of the 3 seams, and
+  no seam has a "next" `look_ratio` past the assess warn threshold (the comment names the threshold) where "previous" was
+  not past it. Otherwise "not met".
+- 4: no H3 or other GPU-pipeline job was queued for the probe (Q4).
+- #1170 went to Don (`owner:don`) after the comment, whatever the gate said (Q2), with a Decision-for-Don block.
+- If the inputs were missing or mismatched, the comment says so instead, nothing was rendered to replace them, and the
+  assembly checks above don't apply.
+It is a **finding** if an input is other than stated and unreported, the lengths or durations differ, a seam sits at
+the wrong frame, a measure is missing or doesn't reproduce, the grabs are absent, the stated gate contradicts the table,
+GPU time was spent, or #1170 skipped Don. Whether "next" is better is Don's call, not this case's.
+cleanup: none. The probe's outputs are Don's evidence.
+metrics: none.
+
+### C-F683 — `chain.seam_source` takes `"previous"` and `"next"` on an H3 guide chain, and refuses any other value and any other continuity, naming the key
+pending: #1177
+source: tester, spec for #1177 from #1170's plan v1 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. Needs `asset:qa-cast/priya-portrait.jpg`. The stage adds a
+`seam_source` variable to `templates/minimax/chained-segments`. Where a case needs a value the variable can't carry,
+save a copy with the key set in the chain block (`steps[0].pipeline.chain`) as in C-F671. Note the newest job id from
+`list_jobs` first. Base arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`.
+1. `get_workflow("templates/minimax/chained-segments", variables_only=true)`.
+2. Template with base + `"continuity": "guide"` and `seam_source` at `"next"`, then `"previous"`, then omitted.
+3. Template with base + `"continuity": "guide"` and `seam_source` at each of `"neither"`, `""`, `"NEXT"`, `1`, `true`,
+   `null`. Use a saved copy (`c-f683-<n>`) for any value the variable won't pass through.
+4. Template with base + `"continuity": "last_frame"` + `"seam_source": "next"`.
+5. Template with base only, all other defaults (continuity `last_frame`, `seam_source` at its default).
+6. `templates/minimax/chain-video-continuity` (a `last_segment` chain) saved as `c-f683-lastseg` with
+   `"seam_source": "next"` in its chain block. Validate with its required inputs (`get_workflow(..., variables_only=true)`;
+   reuse `qa-cast` assets). Then validate the unedited template with the same arguments as its control.
+7. Template with base + `"continuity": "guide", "seam_source": "next"` and in turn `"segments": 1`, then
+   `"guide_frames": 39`.
+8. `list_jobs`.
+expected:
+- 1: a `seam_source` variable with default `"previous"`.
+- 2: all three `valid: true` with a `plan.estimate`. The three estimates show the same total frame count (the seam source
+  changes no length).
+- 3: each `valid: false`, an error that names `seam_source` and both allowed values, `"previous"` and `"next"`. An error
+  that only says "invalid", or a refusal only as an unknown key, misses the intent. `null` may instead be read as the
+  default and validate clean. Record which happened.
+- 4: `valid: false`, the error naming `seam_source` and saying it needs continuity `guide`.
+- 5: clean. The template's own default must not trip the guide-only rule.
+- 6: the copy `valid: false`, naming `seam_source` and the guide-continuity rule. The control validates clean.
+- 7: `segments: 1` is not refused (there is no seam to move). A no-effect warning is welcome; record which.
+  `guide_frames: 39` validates clean.
+- 8: no job queued.
+It is a **finding** if a 2 or 5 validate is refused, any 3, 4 or 6 copy validates (`null` aside), a refusal fails to
+name the key, a refusal comes only at `run_workflow`, or a job was queued.
+cleanup: `delete_workflow` on every `c-f683-*` copy.
+metrics: none.
+
+### C-F684 — a 3-segment H3 guide chain with `seam_source: "next"` keeps the same length and audio, moves each seam to the new segment's frame 0, and leaves every other frame alone
+pending: #1177
+source: tester, spec for #1177 from #1170's plan v1 (claude-opus-5-5 via anthropic)
+GPU: two 3-segment H3 chains, about 12–18 min each, `workspace="regression-complete"`. Validate each first and bind its
+`acknowledged_cost`. Shared arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "continuity": "guide",
+"guide_frames": 22, "segments": 3, "num_frames": 124, "seed": 42}`. N = 124, P = 22, so both outputs are 328 frames.
+"Match" is C-F673's bar. Shot records are the output's `media.shots`, as `get_job`'s output entry or
+`get_gallery_metadata` reports them.
+- Arm A, today's behaviour: `seam_source` omitted. Spans: seg 1 = 0–123, seg 2 = 124–225, seg 3 = 226–327.
+- Arm B: `"seam_source": "next"`. Spans: seg 1 = 0–101, seg 2 = 102–203, seg 3 = 204–327 (kept `[102, 102, 124]`).
+1. `run_workflow(workflow_path="templates/minimax/chained-segments", arguments=<shared>, wait_seconds=55)`, then
+   `wait_for_job` until done. Do the same for B with `seam_source` added.
+2. `get_job` and `get_job_events` on both; `get_gallery_metadata` on both outputs.
+3. `compare_outputs(names=[A, B], at=["frame:60", "frame:101", "frame:110", "frame:150", "frame:200", "frame:215",
+   "frame:260", "frame:327"], texture_bands=false)`.
+4. `analyze_seams` on each output, over a utility workflow with `video` set to the output reference (validate first).
+   `assess_output` on each.
+5. `get_output_audio` on B over about 1 s around each seam (4.25 s and 8.50 s).
+expected:
+- Both succeed with no error event: 328 frames at 24 fps, audio about 13.67 s. The two audio durations agree within one
+  video frame (1/24 s).
+- A's shots match today's guide chain: starts 0, 124, 226, with 124, 102 and 102 frames. Seams 2 and 3 record
+  `trim_frames: 22`, and none names `seam_source: "next"`.
+- B's shots: starts 0, 102, 204, with 102, 102 and 124 frames. Each seam record names `seam_source: "next"` and a tail trim
+  of 22 on the outgoing segment (any key name), not a head trim of 22. Each shot's audio sample count, where the record
+  carries one, fits its frame count (frames / 24 × sample rate, within one frame's samples), and the counts sum to the
+  track.
+- Frames 60 and 101 (segment 1, before its dropped tail), 150 and 200 (segment 2's frames 22+, rendered the same in both)
+  and 260 and 327 (segment 3's frames 22+) match. The carry is still cut from each segment's full decode, so nothing
+  outside the swapped spans changes.
+- Frames 110 and 215 (B keeps the new segment's frames 0–21 there, A the old tail) are not required to match. Record
+  their PSNR in the run report.
+- `analyze_seams` reports two seams for each: at 124 and 226 for A, at 102 and 204 for B, each with a `jump_ratio`.
+- No click at B's seams: `analyze_seams`' audio measure flags none, `assess_output` raises no seam or click finding, and
+  5 hears no tick or gap at either cut.
+- B's events don't log "trimmed 22 head frame(s)" for segments 2 and 3. If they log the trim, they describe it as the
+  previous segment's tail (any wording).
+It is a **finding** if either run fails, a length or audio duration differs, A's shots differ from today's, B's seams
+sit anywhere but 102 and 204 or its records don't name `seam_source: "next"`, a frame outside the swapped spans differs,
+a seam clicks, or B's log still reports a head trim.
+cleanup: `delete_output(job_id=…)` on both jobs and on each `analyze_seams` job.
+metrics: none.
+
+### C-F685 — with `carry_audio: false`, a `seam_source: "next"` guide chain crossfades its audio at the moved seam with no gap, click or length change
+pending: #1177
+source: tester, spec for #1177 from #1170's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one 2-segment H3 chain, about 8–12 min, `workspace="regression-complete"`. With `carry_audio` on (C-F684), the
+crossfade is forced to 0 and only the declick runs. This case drives the mirror crossfade, which runs only with the
+carry off. Save `templates/minimax/chained-segments` as `c-f685-nocarry` with `"carry_audio": false` in its chain block.
+Arguments: `{"image": "asset:qa-cast/priya-portrait.jpg", "continuity": "guide", "guide_frames": 22, "segments": 2,
+"num_frames": 124, "seed": 42, "seam_source": "next"}`. Validate, bind the cost, run, `wait_for_job` until done.
+1. `get_job`, `get_job_events`, `get_gallery_metadata` on the output.
+2. `analyze_seams` (as in C-F684) and `assess_output` on it; `get_output_audio` over about 1 s around 4.25 s.
+expected:
+- It succeeds: 226 frames at 24 fps, audio about 9.42 s (226/24 s, within one video frame).
+- Shots: starts 0 and 102, with 102 and 124 frames. The seam record names `seam_source: "next"`.
+- One seam at 102 with a `jump_ratio`. No click or dead-air finding at it, and the audio runs through the cut with no
+  silent gap or restart.
+- If the events or the seam record name a crossfade length, record it in the run report.
+It is a **finding** if the run fails, the length or audio duration is off, the seam isn't at 102, or the audio clicks,
+gaps or doubles at the cut. A doubled cut is the old head-trim crossfade applied to a tail cut.
+cleanup: `delete_output(job_id=…)` on the chain and the `analyze_seams` job; `delete_workflow("c-f685-nocarry")`.
+metrics: none.
+
+### C-F686 — the workflows guide and the H3 skill document `seam_source` and the hand-assembled "next" recipe
+pending: #1177
+source: tester, spec for #1177 from #1170's plan v1 (claude-opus-5-5 via anthropic)
+Free: guide and skill reads only.
+1. `get_guide("workflows")` index. Read the chain section that lists guide-continuity chain keys (today the
+   "Chaining with a guide" table) and the section on head trim at guide seams.
+2. The `dw:minimax-h3` skill's `references/chains.md` and its `SKILL.md` chain lines.
+expected:
+- The guide gives `seam_source` with values `"previous"` (default) and `"next"`. It says the key works only with
+  continuity `guide`. It says what `"next"` does: each segment but the last drops its last `guide_frames` frames and
+  their audio, the new segment keeps its whole decode, and frame count and audio length are unchanged. The head-trim
+  text no longer says the guide is always trimmed off the new segment.
+- It says, in substance, that a crashed chain's last spilled segment under `"next"` lacks its last `guide_frames`
+  frames.
+- `chains.md` names the key and gives the hand-assembled recipe: `trim_video` each earlier segment to its first N−P
+  frames, then `concat_videos` with `trim_frames: 0`.
+It is a **finding** if the key is missing from either surface, a rule above is absent, the recipe is missing, or a stated
+rule disagrees with C-F683 or C-F684.
+cleanup: none.
+metrics: none.
+
 ## Performance

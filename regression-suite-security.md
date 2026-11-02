@@ -1292,6 +1292,35 @@ told apart, a size/face/frame message about an out-of-root file, an echoed serve
 cleanup: `delete_output(job_id=...)` for any job (none should exist).
 metrics: none.
 
+### SE-F061 — H3 `latent_anchor` holds the media path gate at validate time
+pending: #1173
+source: tester, spec for #1173 from #1166's plan v2 (claude-opus-5-5 via anthropic)
+#1173 adds `latent_anchor`, an H3 `t2va`/`fl2va` pipeline argument that reads a clip in the forms a
+guide's `video` takes, and so is a new media path the server opens. Carrier, in workspace
+`regression-security`: `templates/minimax/image-to-video` (`get_workflow`), with
+`"latent_anchor": "asset:qa-cast/ep3-shot1-incident.mp4"` added to its step's `pipeline.arguments`,
+saved as `qa-se-f061`; validated with `{"image": "asset:qa-cast/priya-portrait.jpg", "seed": 42}`.
+Probes, as SE-F058's set: P1 `/etc/passwd`, P2 `/nonexistent-dw-probe/x.png`, P3
+`../../../../etc/passwd`, each bare and as `asset:` + the probe; `output:../../../../etc/passwd`,
+`output:/etc/passwd`; `file:///etc/passwd`, `http://127.0.0.1:8765/x.png`. Put each probe:
+- as the carrier's `latent_anchor`, saved as `qa-se-f061-p` and validated;
+- through a variable: the carrier with a `"anchor_clip"` variable (default the fixture clip) and
+  `"latent_anchor": "variable:anchor_clip"`, saved as `qa-se-f061-v`, the probe passed as
+  `arguments={"anchor_clip": <probe>, ...}`.
+For every refused probe, also `run_workflow(..., acknowledged_cost=true, workspace="regression-security")`.
+expected:
+- Every probe is `valid: false` at `latent_anchor` (or the variable that feeds it), with the refusal
+  SE-F014 gives a media argument, or the scheme/host refusal for the URLs.
+- P1 and P2 get the same wording. No message shows a frame count, a resolution, a channel statistic or
+  any contents, all of which would mean the file was opened, and none echoes a resolved server path.
+- `run_workflow` queues no job. The unchanged carrier validates clean.
+It is a **finding** if a probe is refused only at run time. A probe that validates, P1 and P2 being
+told apart, a decode or statistics message about an out-of-root file, an echoed server path, or a
+`127.0.0.1` fetch or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_workflow` on `qa-se-f061`, `qa-se-f061-p`, `qa-se-f061-v`; `delete_output(job_id=...)`
+for any job (none should exist).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must
