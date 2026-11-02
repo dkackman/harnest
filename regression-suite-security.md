@@ -1256,6 +1256,43 @@ that loads any of the three with remote code is a hole: send it to `scripts/file
 cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
 
+### SE-F060 — `stills_to_video.images`, `analyze_face_drift.video`/`reference` and their templates' variables hold the media path gate at validate time
+pending: #1144
+pending: #1146
+source: tester, spec for #1144 and #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+#1144 adds `stills_to_video`, which reads a list of stills (a list argument, so each item is a path),
+and #1146 adds `analyze_face_drift`, which reads a `video` and a `reference` image; #1145's `animatic`
+and #1146's `face-drift-check` templates feed them from variables. Carriers, in workspace
+`regression-security`:
+- S: `{"id": "qa-se-f060s", "steps": [{"name": "s", "task": {"command": "stills_to_video", "arguments":
+  {"images": ["asset:qa-cast/priya-portrait.jpg", "asset:qa-cast/priya-portrait.jpg"], "durations": 1,
+  "fps": 24}}, "result": {"content_type": "video/mp4"}}]}`;
+- F: `{"id": "qa-se-f060f", "steps": [{"name": "f", "task": {"command": "analyze_face_drift",
+  "arguments": {"video": "asset:qa-cast/ep6-shot1-priya.mp4", "reference":
+  "asset:qa-cast/priya-portrait.jpg"}}}]}` (add the `result` content type `get_task` documents).
+Probes, as SE-F058's set: P1 `/etc/passwd`, P2 `/nonexistent-dw-probe/x.png`, P3
+`../../../../etc/passwd`, each bare and as `asset:` + the probe; `output:../../../../etc/passwd`,
+`output:/etc/passwd`; `file:///etc/passwd`, `http://127.0.0.1:8765/x.png`. Put each probe:
+- in S as the **second** item of `images` (the first stays valid, so a gate that checks only item 0
+  is caught), and as a one-item list;
+- in F as `video`, then (with `video` restored) as `reference`;
+- through `animatic`'s board variable(s) and voice/bed variables, and `face-drift-check`'s video and
+  reference variables, as `arguments`.
+For every refused probe, also `run_workflow(..., acknowledged_cost=true, workspace="regression-security")`.
+expected:
+- Every probe is `valid: false` at the argument path (with the list index for `images`, or the
+  template variable that feeds it), with the refusal SE-F014 gives a media argument, or the scheme/host
+  refusal for the URLs.
+- P1 and P2 get the same wording. No message shows an image size, a "sizes differ" verdict, a frame
+  count, a "no face" verdict or any contents, all of which would mean the file was opened, and none
+  echoes a resolved server path.
+- `run_workflow` queues no job. The unchanged carriers validate clean.
+It is a **finding** if a probe is refused only at run time. A probe that validates, P1 and P2 being
+told apart, a size/face/frame message about an out-of-root file, an echoed server path, or a
+`127.0.0.1` fetch or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_output(job_id=...)` for any job (none should exist).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

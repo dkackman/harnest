@@ -285,6 +285,14 @@ smoke's Fixtures lists the asset too.
   speech under 20 s, with a transcript read by `transcribe_audio` at run time, so any short clean
   single-voice clip substitutes. C-F602 slices `ep15-song.mp3` (it must be over 21 s) into 20.0 s and
   21.0 s references and deletes the slices afterwards. Nothing new to keep.
+- C-F629–C-F657 (cinematic controls, #1141) use `asset:qa-1141/…` stills in **this** workspace's assets,
+  made by C-F639's setup when they're missing: `board-1.png`, `board-2.png`, `board-3.png` (three visually
+  distinct 512×512 stills), `board-wide.png` (640×512), `tiny-64.png` (64×64), `big-1024.png` (1024×1024)
+  and `street-960x544.png` (a seeded FLUX 3 Klein still of an empty street with **no person in it**).
+  Geometry is the point, plus "no face" for the street; keep them across runs, never sweep them. They also
+  reuse the shared `priya-portrait.jpg`, `hal-portrait.jpg` (a different person), `ep6-shot1-priya.mp4`,
+  `ep63-shot-ltx-priya.mp4`, `priya-voice.wav` (7.453 s mono), `ep20-score.wav`, `ep21-shot1-receipt.mp4`,
+  `ep21-shot2-verdict.mp4` and `ep25-episode.mp4`.
 
 ## Functional
 
@@ -16713,6 +16721,533 @@ a matched pairing with a phrase under 1/4 of the median gives no disproportion w
 cleanup: `delete_output(job_id=…)` for every job made here; `delete_workflow("qa-1105/cuts-phrases")`
 if this case re-created it; `delete_asset` any copy made into `regression-complete`. Never touch the
 `russian-anthem` workspace's files.
+metrics: none.
+
+### C-F629 — the `cinematography` skill holds a closed six-axis vocabulary compiled per family, the hints rule with its check, no camera brands, and a pointer from each family skill
+pending: #1142
+source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading only. Invoke the `dw:cinematography` skill and read every reference file it points
+at; then invoke `dw:minimax-h3`, `dw:ltx-2-5`, `dw:kandinsky-6` and `dw:flux3-klein`.
+expected:
+- The vocabulary is **closed** (a finite list per axis, not "e.g.") over exactly these six axes: shot size,
+  camera move, lens character, light, era/stock, and genre/tempo. The move axis includes at least static,
+  dolly in, dolly out, truck left, crane up and orbit (the moves stage G measures).
+- Every value of every axis has a compiled sentence for each of H3, LTX-2.5, Kandinsky 6 and FLUX 3
+  Klein. For Klein (stills) a camera move may instead be marked explicitly as not applying, but no cell
+  is blank or "TBD".
+- A named-grade table lists exactly noir, teal-orange, 70s stock, VHS and bleach-bypass. Each row gives
+  an `apply_lut` `palette` (2–16 `#rrggbb` colours, dark to light, as `get_task("apply_lut")` documents)
+  and a `film_grain` setting whose values are inside that task's ranges (`amount` and `chroma` 0–1,
+  `size` ≥ 1).
+- A "presets are hints" rule says a named move is a hint the model may not honour, to describe the
+  move in the caption, and to check the result with `get_output_frames` (Don's ruling on #1141).
+- No camera or lens brand appears anywhere in the skill: ARRI/Alexa, RED, Sony/Venice, Canon,
+  Panavision, Blackmagic, Arriflex, Bolex, Cooke, Zeiss, Leica, Angénieux, Hasselblad. (A film-stock
+  maker named for era/stock, e.g. Kodak, is not a camera brand and is not a finding.)
+- Each of the four family skills carries one line pointing at `cinematography`.
+It is a **finding** if an axis is missing or open-ended, a cell is blank, a grade is missing or its
+values are out of the tasks' ranges, the hints rule or its `get_output_frames` check is missing, a camera
+brand appears, or a family skill lacks the pointer.
+cleanup: none.
+metrics: none.
+
+### C-F630 — each named grade validates and runs as `apply_lut` + `film_grain` on a still and a clip, keeping the clip's frames, rate and sound
+pending: #1142
+source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU, seconds per arm. `workspace="regression-complete"` on every call. For each of the five grades in
+C-F629's table, GRADE(media) is an inline two-step workflow: `apply_lut` with `media` and the row's
+`palette` exactly as the table gives it, then `film_grain` on `previous_result` with the row's settings
+and `seed: 1141`, result `image/png` for a still or `video/mp4` for a clip.
+1. GRADE(`asset:qa-cast/priya-portrait.jpg`) for each grade: `validate_workflow`, then `run_workflow(...,
+   wait_seconds=55)`, then `get_output_image`.
+2. GRADE(`asset:qa-cast/ep6-shot1-priya.mp4`) for noir and VHS only: validate, run, `get_gallery_metadata`.
+expected:
+- Every validate is `valid: true` with no errors and no warnings about `palette` or the grain values.
+- 1: all five complete. Noir is near-monochrome (the palette's chroma is low); the five outputs differ
+  visibly from each other and from the source.
+- 2: both clips keep the source's 124 frames, 24 fps, 960×544 and its 32000 Hz stereo audio stream.
+It is a **finding** if a table row fails validation as written, a run fails, two grades look the same,
+or a graded clip loses frames, rate or sound.
+cleanup: `delete_output(job_id=…)` for every job made here.
+metrics: none.
+
+### C-F631 — following the skill, "a slow dolly-in on a close-up, noir look" for LTX-2.5 gives a caption with LTX's compiled move and shot-size sentences, and the caption and the noir grade validate clean
+pending: #1142
+source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: validate only, `workspace="regression-complete"`. Act as a cold agent: use only what `dw:ltx-2-5`
+and `dw:cinematography` say.
+1. Request: "a woman reading a letter by a window: a slow dolly-in on a close-up, noir look", for
+   LTX-2.5 text-to-video. Compose the caption the skills direct, take the LTX template they name.
+2. `validate_workflow` on that template with the caption as its prompt variable.
+3. `validate_workflow` on a workflow that runs the noir grade on the template's video output: the LTX
+   template composed (or its output `previous_result`) into `apply_lut` with noir's palette, then
+   `film_grain` with noir's settings.
+expected:
+- 1: the caption contains, verbatim or with only the subject's words substituted, the skill's LTX-2.5
+  sentence for **dolly in** (with "slow" carried by the skill's tempo or speed wording if it has one) and
+  its sentence for **close-up**, and is otherwise in LTX's own caption format (the `ltx-2-5` skill's
+  spec). It contains no second, conflicting camera move.
+- 2 and 3: `valid: true`, no errors, no new warnings beyond what the template gives with its default
+  prompt; the grade's `palette` is exactly the table's noir row.
+It is a **finding** if the move or shot-size sentence is missing or isn't LTX's, a conflicting move is in
+the caption, or either validate is not clean.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F632 — the same request for Kandinsky 6 yields exactly one camera sentence, and validates clean
+pending: #1142
+source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: validate only, `workspace="regression-complete"`. As C-F631 step 1, but for Kandinsky 6 text-to-video,
+using `dw:kandinsky-6` and `dw:cinematography`. Then `validate_workflow` on the K6 template the skill names
+with that caption, and on the K6 output through the noir grade.
+expected:
+- The caption has **exactly one** sentence about the camera (count every sentence that describes camera
+  position, framing motion or movement: the dolly-in and the close-up are compiled into one sentence, or
+  the shot size is phrased without camera wording), and it is the skill's K6 sentence for the move.
+- Both validates are clean, as in C-F631.
+It is a **finding** if the caption carries zero or two-plus camera sentences, the sentence isn't the
+skill's K6 one, or a validate isn't clean.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F633 — compiled captions for H3 and FLUX 3 Klein validate clean in their templates, and Klein handles a move the way the table says
+pending: #1142
+source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: validate only, `workspace="regression-complete"`.
+1. Request: "a wide shot, crane up, golden-hour light, 70s stock" of a harbour at dusk. Compose the H3
+   caption per `dw:minimax-h3` + `dw:cinematography`; validate the H3 text-to-video template the skill names
+   with it.
+2. The same request for FLUX 3 Klein text-to-image per `dw:flux3-klein` + `dw:cinematography`; validate the
+   Klein template with it.
+expected:
+- 1: the caption carries the skill's H3 sentences for wide shot, crane up, the light value and 70s stock,
+  inside H3's prompt format; `valid: true`, no errors.
+- 2: the caption carries Klein's sentences for wide shot, the light and 70s stock. For "crane up" it
+  does what Klein's move cell says: its sentence if it has one, nothing if the cell says the move doesn't
+  apply to a still. `valid: true`, no errors.
+- Empty case: a request with no camera or look words for either family gives a caption with no compiled
+  sentence in it (the skill adds nothing nobody asked for).
+It is a **finding** if a named value's sentence is missing, Klein's move handling contradicts its cell,
+a caption gains sentences for values not asked for, or a validate isn't clean.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F634 — asked for a camera move on Music 3, the skill says it doesn't apply
+pending: #1142
+source: tester, spec for #1142 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Request: "a Music 3 track with a slow dolly-in and a noir look". Read what
+`dw:cinematography` (and `dw:minimax-music3`, if it is pointed to) says about it.
+expected: the skill says plainly that camera moves (and the visual axes: shot size, lens, light, grade)
+don't apply to Music 3, which makes audio only. It compiles no sentence for Music 3 and does not suggest
+`apply_lut` on audio. It may suggest genre/tempo wording if its table covers audio; that is not a finding.
+It is a **finding** if the skill gives a Music 3 camera sentence, or is silent on the case.
+cleanup: none.
+metrics: none.
+
+### C-F635 — `script-to-video` documents the five new shot fields, the prompt-library shot document, the fix ladder and its caps, and the H3 lint checklist
+source: tester, spec for #1143 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Invoke `dw:script-to-video` and read its references.
+expected:
+- The shot list's fields include `shot_size`, `move`, `lens`, `light` and `duration`, with `shot_size`,
+  `move`, `lens` and `light` drawn from `cinematography`'s vocabulary (or pointing at it), and `duration`
+  in seconds.
+- Saving: the whole shot list is saved as JSON text at `prompt:<project>/shots`; each shot's compiled
+  caption at `prompt:<project>/shot-NN` (two-digit, from 01); the workflow's arguments reference
+  `prompt:<project>/shot-NN` by name, not the pasted text; a revision re-saves and re-runs only the
+  shots that changed.
+- A fix ladder in this order: regional edit or face repair, then re-prompt, then reseed, then ask the
+  user. Caps: 3 tries per shot, and a per-project GPU-minute cap quoted from `validate_workflow`'s
+  `plan.estimate`.
+- An H3 prompt lint checklist with at least: an overfull beat, a cut with no new information, and a
+  missing `overall_soundscape`.
+It is a **finding** if any field, the naming convention, the ladder's order or either cap, or a lint item
+is missing.
+cleanup: none.
+metrics: none.
+
+### C-F636 — the prompt library stores and returns a shot document and per-shot captions under a project folder, exactly
+source: tester, spec for #1143 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: prompt-library calls only, `workspace="regression-complete"` where a call takes it. SHOTS is a JSON
+text of 3 shots, each with `shot_size`, `move`, `lens`, `light`, `duration` and a caption, in the field
+names C-F635 gives.
+1. `save_prompt` SHOTS as `qa-1141/shots`, and three short captions as `qa-1141/shot-01`, `-02`, `-03`.
+2. `list_prompts`; `get_prompt("qa-1141/shots")`; `get_prompt("qa-1141/shot-02")`.
+3. `validate_workflow` on any text-to-image template with its prompt variable = `prompt:qa-1141/shot-02`.
+expected:
+- 1: each save succeeds.
+- 2: all four names are listed; `get_prompt` on `shots` returns SHOTS byte for byte, and it parses as
+  JSON (the library doesn't reflow or escape it).
+- 3: `valid: true`, with the prompt resolved.
+It is a **finding** if a folder name is refused, the JSON text comes back altered, or the reference
+doesn't resolve.
+cleanup: `delete_prompt` all four (bind any `acknowledged_cost` it asks for).
+metrics: none.
+
+### C-F637 — following `script-to-video` on a 3-shot script saves the shot document and each caption, and every run's arguments reference its shot's prompt
+source: tester, spec for #1143 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+GPU, three short LTX-2.5 shots (the cheapest family the skill allows; quote `plan.estimate` first).
+`workspace="regression-complete"`. Project name `qa-1143`. Act as a cold agent following the skill, with
+LTX-2.5 picked for every shot and `seed: 1143`. SCRIPT:
+"1. Wide: a lighthouse on a cliff at dusk, the camera static. 2. Medium: the keeper climbs the stairs,
+the camera trucking left. 3. Close-up: his hand lights the lamp, a slow dolly in."
+1. Build the shot list, save it and the captions per the skill, validate each shot, run each with
+   `wait_seconds=55` (then `wait_for_job` as needed).
+2. `list_prompts`; `get_prompt("qa-1143/shots")`; `get_job` on each job.
+expected:
+- `list_prompts` shows `qa-1143/shots`, `qa-1143/shot-01`, `qa-1143/shot-02` and `qa-1143/shot-03`.
+- `get_prompt` on `shots` returns JSON with 3 shots, and every shot has all five of `shot_size`, `move`,
+  `lens`, `light`, `duration` (non-empty; `duration` a positive number); the moves are static, truck left
+  and dolly in.
+- Each job's arguments (as `get_job` shows them) carry `prompt:qa-1143/shot-NN` for its own shot, not the
+  caption text, and each job completes.
+It is a **finding** if an entry is missing, a shot lacks a field, a job carries pasted text instead of the
+reference, or a reference points at the wrong shot.
+cleanup: keep the prompts and jobs for C-F638 if it runs next; after it, `delete_prompt` the four entries
+and `delete_output(job_id=…)` every job.
+metrics: none.
+
+### C-F638 — after a one-shot revision, only that shot is re-saved and re-queued
+source: tester, spec for #1143 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+GPU, one LTX-2.5 shot. Needs C-F637's state (run it first). Note the newest job id in `list_jobs` for
+`regression-complete`. Revision request: "make shot 2 a crane up instead". Follow the skill.
+expected:
+- `get_prompt("qa-1143/shots")` now shows shot 2's `move` as crane up; shots 1 and 3 are unchanged.
+  `get_prompt("qa-1143/shot-02")` carries the crane-up sentence; `shot-01` and `shot-03` are byte-identical
+  to before.
+- `list_jobs` shows **exactly one** job after the noted one, whose arguments reference
+  `prompt:qa-1143/shot-02`.
+It is a **finding** if any other shot is re-run, an unchanged prompt is re-written with different text, or
+the revised shot isn't re-run.
+cleanup: as C-F637's.
+metrics: none.
+
+### C-F639 — setup: the `qa-1141/` stills exist with the geometry the cinematic-controls cases need
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU, plus one Klein still on first run. `workspace="regression-complete"` on every call. Run this first; it
+costs nothing when the stills are already there. Run `list_assets(prefix="qa-1141/")`, and for each missing
+name below make it, check it, then `keep_output` it to that name:
+- `board-1.png`, `board-2.png`, `board-3.png`: `resize_center_crop` to 512×512 of, in order,
+  `asset:qa-cast/priya-portrait.jpg`, `asset:qa-cast/hal-portrait.jpg`, and `get_first_frame` of
+  `asset:qa-cast/ep3-shot1-incident.mp4`.
+- `board-wide.png`: `resize_center_crop` of `priya-portrait.jpg` to 640×512.
+- `tiny-64.png`: 64×64. `big-1024.png`: 1024×1024 (same source and task).
+- `street-960x544.png`: the FLUX 3 Klein text-to-image template with prompt "an empty city street at
+  dawn, wet asphalt, shuttered shops, no people", `seed: 1141`, 960×544 (validate first, bind its cost).
+  Check it with `get_output_image`: no person or face anywhere in it. If one is there, re-run with
+  seed 1142, 1143… and note the seed used in the run's `note`.
+expected: `list_assets(prefix="qa-1141/")` lists all seven, each with the stated size.
+It is a **finding** (against the processors, not this feature) if a crop isn't the size asked for.
+cleanup: none. These are fixtures; keep them.
+metrics: none.
+
+### C-F640 — `stills_to_video` holds each still for its own duration, records the cuts in `media.shots`, and has no audio
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. Needs C-F639. `workspace="regression-complete"`. First `get_task("stills_to_video")` and note the
+argument names it documents; the case uses `images`, `durations` and `fps` for them.
+1. `images: ["asset:qa-1141/board-1.png","asset:qa-1141/board-2.png","asset:qa-1141/board-3.png"]`,
+   `durations: [1, 2, 0.5]`, `fps: 24`, result `video/mp4`. Validate, then run with `wait_seconds=55`.
+2. `get_gallery_metadata` on the output; `get_job` for the job's media record;
+   `get_output_frames` at 0.5 s, 2.0 s and 3.25 s.
+expected:
+- 1: `valid: true`; the job completes.
+- 2: 84 frames, 3.5 s, 24 fps, 512×512, **no audio stream**. `media.shots` has 3 shots starting at
+  frames 0, 24 and 72 (0 s, 1 s, 3 s). The frames show board 1, board 2 and board 3 in that order,
+  each one unchanged (no crossfade, no motion).
+- `get_task` documents `durations` as either a list (one per image) or a single number.
+It is a **finding** if a count or boundary is off by even one frame, the shots aren't recorded, an
+audio track appears, or a still is altered.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F641 — `stills_to_video` takes a scalar duration, rounds tiny durations up to a frame, and defaults fps to 24
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. Needs C-F639. `workspace="regression-complete"`. Validate, then run each with `wait_seconds=55`, then
+`get_gallery_metadata`.
+1. The three boards, `durations: 1.5`, `fps` omitted.
+2. `images: ["asset:qa-1141/board-1.png"]`, `durations: 0.01`, `fps: 24`.
+3. `images: ["asset:qa-1141/board-1.png"]` (one still), `durations: [2]`, `fps: 24`.
+expected:
+- 1: 108 frames, 4.5 s, 24 fps; `media.shots` at frames 0, 36 and 72.
+- 2: one frame (0.01 s rounds up, never to zero). If the server instead refuses it, the refusal names
+  `durations` and gives the minimum; that is not a finding, but a 0-frame file is.
+- 3: 48 frames, a single shot.
+It is a **finding** if the scalar isn't applied to every still, fps doesn't default to 24, or any
+run produces an empty or unreadable file.
+cleanup: `delete_output(job_id=…)` for each.
+metrics: none.
+
+### C-F642 — `stills_to_video` refuses mismatched sizes, a wrong number of durations, and non-positive durations, naming the argument
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free unless a refusal fails to happen. Needs C-F639. `workspace="regression-complete"`. Each arm is
+`validate_workflow`; if it says `valid: true`, also `run_workflow(..., wait_seconds=55)` and judge the job.
+`B3` is the three boards.
+1. `images: [board-1.png, board-wide.png]`, `durations: [1, 1]` (512×512 next to 640×512).
+2. `B3` with `durations: [1, 1]`. 3. `B3` with `durations: [1, 1, 1, 1]`.
+4. `B3` with `durations: [1, 0, 1]`. 5. `B3` with `durations: [1, -1, 1]`. 6. `B3` with `durations: 0`.
+7. `images: []`, `durations: []`.
+expected: every arm is refused: at validate by preference, or else the job fails before writing any
+output. The message names the argument at fault (`images` for 1 and 7, `durations` for 2–6) and, for 1,
+both sizes; for 2–3, both counts. No arm leaves an output file.
+It is a **finding** if any arm produces a video (in 1, a silently resized or letterboxed clip is a
+finding), or a message doesn't name the argument.
+cleanup: `delete_output(job_id=…)` for any job an arm queued.
+metrics: none.
+
+### C-F643 — `stills_to_video`'s fps range and 600-second cap hold at their boundaries
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. Needs C-F639. `workspace="regression-complete"`. One still, `asset:qa-1141/tiny-64.png`, so the long
+arms stay small. Validate each; run the accepted ones with `wait_seconds=55` (follow with `wait_for_job`).
+1. `fps: 0`, `durations: 1`. 2. `fps: 121`, `durations: 1`. 3. `fps: -24`, `durations: 1`.
+4. `fps: 120`, `durations: 1`: accepted, 120 frames.
+5. `fps: 1`, `durations: 600`: accepted, 600 frames, 600 s.
+6. `fps: 1`, `durations: 600.5`: refused.
+7. Three copies of `tiny-64.png`, `fps: 1`, `durations: [200, 200, 200.5]` (the cap is on the total).
+expected: 1–3 refused naming `fps` and its range (1–120); 4 and 5 complete with exactly those counts;
+6 and 7 refused naming the 600-second cap (the message gives 600 s and the total asked for).
+It is a **finding** if an out-of-range value runs, a boundary value is refused, or the cap is checked
+per still instead of on the total.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F644 — `stills_to_video`'s 36000-frame cap and 4 GiB byte budget refuse what the 600-second cap lets through
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU and some disk. Needs C-F639. `workspace="regression-complete"`. Don's ruling on #1141 adds both caps on
+top of 600 s; the byte budget is checked at run time. Validate each arm; run the ones validate accepts,
+with `wait_seconds=55` then `wait_for_job`.
+1. `tiny-64.png`, `fps: 120`, `durations: 300`: exactly 36000 frames, accepted, the output has 36000 frames.
+2. `tiny-64.png`, `fps: 120`, `durations: 300.01`: 36002 frames, refused naming the frame cap (36000)
+   even though 300.01 s is under 600 s.
+3. `big-1024.png`, `fps: 24`, `durations: 62.5`: 1500 frames, 1500 × 1024 × 1024 × 3 bytes ≈ 4.39 GiB of
+   frames, over the budget. Refused, at validate or by the job failing before encoding, naming the
+   byte budget (4 GiB). The server must stay healthy: `get_health` after the arm shows the worker idle.
+4. `big-1024.png`, `fps: 24`, `durations: 40`: 960 frames ≈ 2.8 GiB, accepted, 960 frames.
+expected: as stated in each arm. If the budget counts bytes per pixel differently (RGBA, say), arm 3 still
+must be refused (≈ 5.9 GiB) and arm 4 is still under it (≈ 3.75 GiB), so a refusal of 4 is a finding
+either way.
+It is a **finding** if 1 is refused or truncated, 2 or 3 runs to an output, 3 crashes the worker instead
+of refusing, 4 is refused, or a refusal doesn't name its cap.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F645 — a `stills_to_video` clip goes through `concat_videos` and the assemble-and-score template like any other clip
+pending: #1144
+source: tester, spec for #1144 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. Needs C-F639 and C-F640's recipe. `workspace="regression-complete"`.
+1. Make the C-F640 clip (B3, `[1, 2, 0.5]`, 24 fps, 512×512).
+2. `concat_videos` of that clip and itself. Validate, run, `get_gallery_metadata`.
+3. `get_workflow` on the assemble-and-score template (`list_workflows(shape="utility")` names it), then
+   run it with the clip as its video(s) and `asset:qa-cast/ep20-score.wav` as its music, under the
+   argument names `get_workflow` gives.
+expected:
+- 2: 168 frames, 7 s; `media.shots` reports 6 shots (or 3 + 3 at the join).
+- 3: completes; the output's duration is the clip's (or the template's documented rule), with an
+  audio stream carrying the score.
+It is a **finding** if either step refuses the clip as input (a missing audio stream must not block
+concat or scoring) or the result's timing is off.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F646 — the `storyboard` skill gives the board recipe, the coverage set, the hero frame and the board-to-start-frame step
+source: tester, spec for #1145 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Invoke `dw:storyboard` and read its references.
+expected:
+- Boards are drawn on FLUX 3 Klein from a character reference, and the shape is a short set: at most 8
+  boards per scene.
+- The prompt cites the reference image as "image one" (Klein's own reference wording, as `flux3-klein`
+  states it).
+- A coverage set of one moment from six camera positions, named from the `cinematography` shot-size
+  and move vocabulary.
+- A hero frame: how to pick the one board to take forward.
+- Board → start frame: a board becomes the first frame of an H3, LTX-2.5 or Kandinsky 6 shot, naming the
+  image-to-video template for each.
+- An animatic step pointing at the `animatic` template, which times the boards with a scratch voice
+  and a music bed before any video is paid for.
+It is a **finding** if any of these is missing, a template name the skill gives isn't in
+`list_workflows`, or the board limit is absent.
+cleanup: none.
+metrics: none.
+
+### C-F647 — the `animatic` template is in the catalog, built on `stills_to_video`, and its estimate reports unknown for a task-only workflow
+pending: #1145
+source: tester, spec for #1145 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free. Needs C-F639. `workspace="regression-complete"`.
+1. `list_workflows(shape="utility")` (or the shape the template declares; also try a no-filter listing).
+2. `get_workflow("animatic")`.
+3. `validate_workflow` with the three boards, durations `[1, 2, 1.5]`, voice
+   `asset:qa-cast/priya-voice.wav` and bed `asset:qa-cast/ep20-score.wav`, under the names step 2 gives.
+expected:
+- 1: `animatic` is listed with a description that says it times boards with voice and a bed.
+- 2: it has a `stills_to_video` step and audio steps for the voice and the bed; its variables cover
+  the boards, durations, voice and bed.
+- 3: `valid: true`, no errors. `plan.estimate`'s basis is `unknown` with a reason that says
+  **task-only workflow** (Don's ruling on #1141), and `minutes` is null — not a small number.
+It is a **finding** if the template is missing, doesn't use `stills_to_video`, or reports a numeric
+estimate or an unknown with a different reason.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F648 — `animatic` fits the voice to the boards: a longer voice is trimmed, a shorter one padded with silence
+pending: #1145
+source: tester, spec for #1145 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. Needs C-F639. `workspace="regression-complete"`. Arguments as C-F647 step 3. `priya-voice.wav` is
+7.453 s. Validate and bind the cost (`minutes: null`), then run with `wait_seconds=55`.
+1. Trim: durations `[1, 2, 1.5]` (4.5 s, shorter than the voice).
+2. Pad: durations `[3, 3, 3]` (9 s, longer than the voice).
+3. On each output: `get_gallery_metadata`, `get_output_audio`, `get_output_frames` at the midpoint of
+   each board (1: 0.5 s, 2.0 s, 3.75 s; 2: 1.5 s, 4.5 s, 7.5 s); `assess_output` on 2.
+expected:
+- 1: video and audio both 4.5 s (±1 frame); boards 1, 2, 3 at the three midpoints in order.
+- 2: video and audio both 9 s; the voice is audible until ~7.45 s, then only the bed (or silence if the
+  bed is below the voice's level by design); the boards are in order. `assess_output` reports no
+  silence gap or seam before 7.4 s.
+- Neither output's audio is longer or shorter than its video.
+It is a **finding** if the audio runs past the last board, stops before it, a board is shown at the
+wrong time, or the bed is missing.
+cleanup: `delete_output(job_id=…)` for each.
+metrics: none.
+
+### C-F649 — a board from the storyboard flow validates as the start frame of an H3, LTX-2.5 and Kandinsky 6 image-to-video shot
+source: tester, spec for #1145 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: validate only. Needs C-F639. `workspace="regression-complete"`. Follow `dw:storyboard`'s
+board-to-start-frame step for LTX-2.5 with `asset:qa-1141/board-1.png` as the board (512×512) and the
+caption the skill composes. Then do the same for H3 and K6 with the templates the skill names.
+expected: each validate is `valid: true` with no errors. If a family needs a different size, the skill
+says what to do (resize to the family's grid with a named processor) and the case does it; the
+resulting workflow validates.
+It is a **finding** if a validate fails while following the skill exactly, or the skill names a
+template that doesn't take a start image.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F650 — `analyze_face_drift` documents its threshold and sampling, and the `face-drift-check` template plans its weights download
+pending: #1146
+source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free. `workspace="regression-complete"`.
+1. `get_task("analyze_face_drift")`.
+2. `list_workflows(shape="utility")` and `get_workflow("face-drift-check")`.
+3. `validate_workflow("face-drift-check")` with video `asset:qa-cast/ep6-shot1-priya.mp4` and reference
+   `asset:qa-cast/priya-portrait.jpg`.
+expected:
+- 1: arguments `video`, `reference`, `threshold` (default 0.363, range −1 to 1) and `samples_per_shot`
+  (default 8, a positive integer); it says it is a CPU check.
+- 2: the template is listed and runs `analyze_face_drift`.
+- 3: `valid: true`. If the SFace weights aren't cached, the plan lists one download, about 37 MB,
+  pinned to a fixed revision or hash (not "latest"), so the user can acknowledge it.
+It is a **finding** if a default is different, the weights download isn't in the plan when absent, or
+it isn't pinned.
+cleanup: none (validate only).
+metrics: none.
+
+### C-F651 — `analyze_face_drift` reports no drift for the same person across families, and drift on every shot for a different person
+pending: #1146
+source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. `workspace="regression-complete"`. Validate first each time, binding the plan's download if any.
+Setup: PRIYA2 = `concat_videos` of `asset:qa-cast/ep6-shot1-priya.mp4` with itself (two shots).
+1. `face-drift-check` on `ep6-shot1-priya.mp4` (H3) against `priya-portrait.jpg`.
+2. The same on `asset:qa-cast/ep63-shot-ltx-priya.mp4` (LTX-2.5).
+3. On PRIYA2 against `asset:qa-cast/hal-portrait.jpg` (a different person).
+Read each result with `get_output_text` (or `get_job`'s findings).
+expected:
+- The findings use the same answer shape as `assess_output` and `analyze_shots` (a per-shot list with
+  times and a finding kind), with a similarity score per shot.
+- 1 and 2: no `face_drift` finding on any shot.
+- 3: a `face_drift` finding on **every** shot (both), each with its score below 0.363.
+It is a **finding** if the same person is flagged, the different one passes on any shot, or the
+shape differs from the other analysis tools.
+cleanup: `delete_output(job_id=…)` for each job, and PRIYA2's.
+metrics: none.
+
+### C-F652 — a shot with no face is reported `no_face`, not drift, and a faceless reference is refused
+pending: #1146
+source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. Needs C-F639. `workspace="regression-complete"`.
+Setup: ESTAB = `stills_to_video` of `asset:qa-1141/street-960x544.png` for 3 s at 24 fps, then
+`concat_videos` of ESTAB and `asset:qa-cast/ep6-shot1-priya.mp4` (both 960×544).
+1. `face-drift-check` on that concat against `priya-portrait.jpg`.
+2. `face-drift-check` on `ep6-shot1-priya.mp4` with **reference** `asset:qa-1141/street-960x544.png`.
+expected:
+- 1: shot 1 gets `no_face`, and no `face_drift`; shot 2 gets nothing.
+- 2: refused (validate by preference, else a failed job) with a message naming `reference` and saying
+  it holds no face. No output is written.
+It is a **finding** if a faceless shot is called drift, or a faceless reference gives a result.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F653 — `analyze_face_drift`'s threshold and samples_per_shot hold their ranges, and the threshold's ends mean what they say
+pending: #1146
+source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+CPU. `workspace="regression-complete"`. Video `asset:qa-cast/ep6-shot1-priya.mp4`, reference
+`priya-portrait.jpg`. Validate each; run the accepted ones.
+1. `threshold: -1.01`. 2. `threshold: 1.01`. 3. `samples_per_shot: 0`. 4. `samples_per_shot: -1`.
+5. `threshold: 1`. 6. `threshold: -1`. 7. `samples_per_shot: 1`.
+expected: 1–4 refused naming the argument and its range. 5 runs and flags `face_drift` on every shot
+(no real score reaches 1; the documented comparison decides an exact tie). 6 runs and flags nothing.
+7 runs and gives a result.
+It is a **finding** if an out-of-range value runs, or 5 or 6 contradicts the documented comparison.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F654 — the series and script-to-video skills point at the face-drift check
+source: tester, spec for #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Invoke `dw:series-episodes` and `dw:script-to-video`.
+expected: each says where to run `face-drift-check` (after shots with a cast member are made, against
+the character's reference) and what to do on a `face_drift` finding (the script-to-video fix ladder, in
+`script-to-video`'s case).
+It is a **finding** if either skill is silent on the check.
+cleanup: none.
+metrics: none.
+
+### C-F655 — the sitcom multicam section gives the master, the singles and the line-boundary cuts, with tools that exist
+source: tester, spec for #1147 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading plus `list_tasks` and `list_workflows`. Find the sitcom multicam section (in
+`dw:series-episodes`, `dw:script-to-video` or `dw:cinematography`, the plan's skills).
+expected:
+- A wide master held for the whole scene; singles made with the dialogue-short template; cuts placed
+  on line boundaries found with `transcribe_audio` and `plan_cuts`.
+- Every task and template it names is in `list_tasks` / `list_workflows`.
+- Shot sizes and moves are the `cinematography` vocabulary (the master static and wide, singles
+  medium or close-up).
+It is a **finding** if a piece is missing or a name doesn't exist.
+cleanup: none.
+metrics: none.
+
+### C-F656 — a multicam cut built per the sitcom section from existing clips validates clean
+source: tester, spec for #1147 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: validate only (plus a CPU `transcribe_audio` if the section requires a real transcript first).
+`workspace="regression-complete"`. Substitutes for generated shots: master
+`asset:qa-cast/ep25-episode.mp4`, singles `asset:qa-cast/ep21-shot1-receipt.mp4` and
+`asset:qa-cast/ep21-shot2-verdict.mp4`, dialogue `asset:qa-cast/priya-voice.wav`. Follow the section to
+build the cut (transcribe → plan cuts on line boundaries → cut between master and singles over the
+master's sound) and `validate_workflow` it.
+expected: `valid: true`, no errors; the cut's arguments use each clip under the role the section gives
+it; cuts are planned from the transcript, not at fixed times.
+It is a **finding** if following the section exactly gives an invalid workflow, or the section's steps
+can't be expressed with the named tools.
+cleanup: `delete_output(job_id=…)` for any transcribe job.
+metrics: none.
+
+### C-F657 — the `cinematography` skill's camera moves carry a measured honoured/not-honoured verdict per video family, each backed by a job that exists
+pending: #1148
+source: tester, spec for #1148 from #1141's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading plus `get_job`. Invoke `dw:cinematography`.
+expected:
+- For each of the six measured moves (static, dolly in, dolly out, truck left, crane up, orbit) and
+  each video family the trial covered (H3, LTX-2.5, Kandinsky 6), the skill states a measured verdict
+  (honoured, partial or not honoured), not "untested": 18 cells, or as many as the trial ran, with the
+  rest marked plainly as not measured.
+- Every job id the skill (or the trial write-up it cites) gives for a verdict resolves with `get_job` to
+  a completed job of that family whose prompt carries that move's compiled sentence.
+- A move marked not honoured carries advice (describe it differently, or check with
+  `get_output_frames`), per the hints rule in C-F629.
+It is a **finding** if a verdict has no job behind it, a cited job doesn't exist or is another family's,
+or the table still reads as unmeasured after #1148 closes.
+cleanup: none.
 metrics: none.
 
 ## Performance
