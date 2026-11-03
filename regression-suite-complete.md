@@ -17983,7 +17983,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F687 — every H3 pacing-probe job the audit cites exists in `qa-h3-dialogue-pacing`, succeeded, and ran the stated arm on the non-turbo dialogue settings
-pending: #1184
 source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 #1180 stage A probes whether splitting an H3 line into `<d>` segments, with or without a body action between them,
 removes the silent lead-in. Its evidence is `docs/proposals/audits/2026-11-h3-dialogue-pacing-probes.md`. A tester
@@ -18025,7 +18024,6 @@ cleanup: none. The jobs are the feature's evidence.
 metrics: none.
 
 ### C-F688 — every pacing-probe lead, gap, rate, tail and spoken-action reading reproduces from the cited word timestamps
-pending: #1184
 source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 Read-only. For each clip C-F687 accepted, `get_output_text` on its cited `transcribe_audio` output
 (`workspace="qa-h3-dialogue-pacing"`); the reply is `{text, chunks}`, each chunk `{start, end, text}` in seconds, and a
@@ -18054,7 +18052,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F689 — the pacing probe's verdicts follow from its table by the plan's bar, boundaries included
-pending: #1184
 source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 No calls beyond C-F687/C-F688's: apply the plan's bar to the readings C-F688 confirmed. An arm's seed **passes** when
 its lead is under 1.0 s and its delivered rate is at or below 4.5 words/s. The doc must say which rate it judges by (the
@@ -18080,7 +18077,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F690 — mouth-in-silence and action placement match the frames, and the audit lists the A and C job ids for listening
-pending: #1184
 source: tester, spec for #1184 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 Read-only. For each cited clip, `get_output_frames(workspace="qa-h3-dialogue-pacing", at=[0, 0.5, 1.0, ..., 5.0,
 "frame:123"])` on the job's video output. Use C-F688's word timestamps to tell silence from speech.
