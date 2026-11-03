@@ -18120,24 +18120,23 @@ verdict that wasn't confirmed, or if the warning is missing when an action word 
 cleanup: none.
 metrics: none.
 
-### C-F692 — SKILL.md stays under the 12 KiB cap, the plugin version moves, and a landed rule leaves an enhancer idea issue
+### C-F692 — SKILL.md stays under the 12 KiB cap, the plugin version tracks the engine's, and a landed rule leaves an enhancer idea issue
 pending: #1185
 source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 File reads plus `gh` only.
 1. Get the size in bytes of the `dw:minimax-h3` skill's `SKILL.md` as loaded from `develop`. Use any local byte count
    the session's tools allow. If none is allowed, the verification says the cap was not checked by the tester; it
    doesn't pass that point.
-2. Read the dw plugin's version as loaded, and the version the previous release or `develop` before #1185 carried, as
-   the stage hand-off states it.
+2. Read the dw plugin's version from `plugin.json` as loaded, and the engine version (`get_server_info` or the stage hand-off).
 3. If any rule landed (C-F691's first two bullets): `gh issue list --repo dkackman/diffusers-workflow --label idea
    --state all --search "enhancer"` and look for an issue that references #1180 or #1185.
 expected:
 - `SKILL.md` is under 12,288 bytes.
-- The plugin version is higher than before #1185.
+- The plugin version equals the engine version; the stage doesn't bump it (`scripts/release.sh` bumps both, per `plugins/dw/README.md`).
 - If a rule landed, an `idea` issue proposes the enhancer change (split `<d>` segments, or action beats between them, in
   `h3_context_ir`'s output) and references #1180 or #1185. If no rule landed, no such issue is needed. #1180's plan v2
   (Q4) has the feature's close-out file this issue, not stage B: while #1180 is open, its absence is not a finding.
-It is a **finding** if `SKILL.md` is at or over the cap, the version didn't move, or a landed rule has no enhancer
+It is a **finding** if `SKILL.md` is at or over the cap, the plugin version differs from the engine version, or a landed rule has no enhancer
 idea issue once #1180 is closed.
 cleanup: none.
 metrics: none.
