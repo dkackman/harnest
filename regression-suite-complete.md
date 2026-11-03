@@ -18094,7 +18094,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F691 — the minimax-h3 skill's new pacing lines match the stage A record, and no rule lands that the record didn't confirm
-pending: #1185
 source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 #1180 stage B writes the minimax-h3 skill's lines from what stage A found. The tester checks it by reading the plugin
 files (the `dw:minimax-h3` skill's `SKILL.md`, `references/dialogue.md` and `references/prompt-lint.md`, loaded from
@@ -18121,7 +18120,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F692 — SKILL.md stays under the 12 KiB cap, the plugin version tracks the engine's, and a landed rule leaves an enhancer idea issue
-pending: #1185
 source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 File reads plus `gh` only.
 1. Get the size in bytes of the `dw:minimax-h3` skill's `SKILL.md` as loaded from `develop`. Use any local byte count
@@ -18142,7 +18140,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F693 — following the new check-script sentence, an arm C take passes on its `<d>` contents and fails on markup and all
-pending: #1185
 source: tester, spec for #1185 from #1180's plan v2 (claude-opus-5-5 via anthropic)
 Run this only if C-F691 found the check-script sentence landed. Otherwise it passes as not applicable. CPU-only
 utility, about one Whisper load. Use an arm C clip that C-F688 found with no action word heard. Pick its job id from
