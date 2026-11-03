@@ -18135,9 +18135,10 @@ expected:
 - `SKILL.md` is under 12,288 bytes.
 - The plugin version is higher than before #1185.
 - If a rule landed, an `idea` issue proposes the enhancer change (split `<d>` segments, or action beats between them, in
-  `h3_context_ir`'s output) and references #1180 or #1185. If no rule landed, no such issue is needed.
+  `h3_context_ir`'s output) and references #1180 or #1185. If no rule landed, no such issue is needed. #1180's plan v2
+  (Q4) has the feature's close-out file this issue, not stage B: while #1180 is open, its absence is not a finding.
 It is a **finding** if `SKILL.md` is at or over the cap, the version didn't move, or a landed rule has no enhancer
-idea issue.
+idea issue once #1180 is closed.
 cleanup: none.
 metrics: none.
 
