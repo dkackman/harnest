@@ -111,6 +111,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         "Bash(gh issue *)",
         "Bash(date *)",
         "Bash(file *)",
+        "Bash(wc *)",
         "Bash(git log *)",
         "Bash(git status*)",
         "Bash(git diff *)",

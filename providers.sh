@@ -360,7 +360,9 @@ CONSUMER_PERMISSION_FLAGS=(
     "Write(//tmp/**)" "Edit(//tmp/**)"
     "Write(/private/tmp/**)" "Edit(/private/tmp/**)"
     "Write(//private/tmp/**)" "Edit(//private/tmp/**)"
-    "Bash(gh issue *)" "Bash(date *)" "Bash(file *)"
+    # wc: a case that checks a byte cap (a skill's SKILL.md under 12 KiB) has
+    # no other way to measure it - Read, Grep and Glob report no sizes (#182)
+    "Bash(gh issue *)" "Bash(date *)" "Bash(file *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
     "Bash(./scripts/file-advisory.sh *)"
     "Bash(./scripts/perf-check.sh *)"   # a wrapper: the python3 -I spelling was never matched by the allowlist at run time
