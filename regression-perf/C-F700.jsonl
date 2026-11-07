@@ -1,0 +1,1 @@
+{"ts":"2026-11-07T18:39:00Z","level":"complete","case":"C-F700","metric":"latency","condition":"warm","value":3.755,"unit":"s","server":"develop@2240bc17","model":"claude-opus-5-5","provider":"anthropic","ref":"jobs 85c60d6c56fd c356698c4899 b2f3bb33175c","note":"seed row: median of three warm text-to-image runs (3.759, 3.755, 3.746), verified in #1229"}
