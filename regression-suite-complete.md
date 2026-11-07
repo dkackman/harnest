@@ -18244,4 +18244,141 @@ expected:
 cleanup: `delete_output(job_id=<id>)` for every run.
 metrics: none.
 
+### C-F698 — a seeded SD 1.5 image is pixel-identical on a quiet host, while the other card loads a model, and on a fresh worker
+pending: #1238
+source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
+Needs a box with **two** CUDA cards (`get_health.workers` has two entries); on one card, skip and say so. The engine
+places each job on an idle card itself (there is no device argument), so "card A" is wherever the seeded job lands;
+`get_job`'s device field says which. All calls use `workspace="regression-complete"`. S = `templates/text-to-image`
+(SD 1.5, a conv UNet and VAE) with `{"seed": 1229, "prompt": "a red bicycle leaning on a brick wall, overcast light"}`.
+L = `templates/ltx2/text-to-video` with `{"seed": 7}` (a model-loading job, about 2 min). `validate_workflow` each
+with its arguments before every run and bind its `acknowledged_cost`.
+1. Quiet host: `get_health` shows both cards with `current_job: null` and `queued: 0`. `clear_memory()`, then run S
+   (`wait_seconds=55`) → output S1, card A.
+2. Under load: run L with `wait_seconds=0`. Poll `get_health` (not a sleep: one call per turn) until L is the
+   `current_job` of a card, and `get_job_events(L)` shows it still loading (no denoise step yet). Then run S
+   (`wait_seconds=55`) → S2. Confirm S2 ran on the card L is **not** on, and that S2's `started_at`..`finished_at`
+   lies inside L's. If S2 queued behind L instead, or finished before L started loading, repeat this step once; a second
+   miss is a finding about placement, not about this case.
+3. Fresh worker: after L finishes, `clear_memory(device=<S2's card>)`, then `get_health` shows that card `alive:
+   false`. Run S → S3 (it starts a new worker process on that card).
+4. `compare_outputs(names=[S1, S2, S3])`.
+expected:
+- All three jobs succeed, and step 2's overlap and card split hold (otherwise the step did not test load).
+- `compare_outputs` reports mean abs diff 0 (and PSNR infinite or its maximum) for S2 and S3 against S1. Any nonzero
+  difference is the failure this stage exists to remove: same seed, different output, depending on what the other card
+  did or on worker age. File it with the three job ids, their cards and L's job id.
+- If S1 and S3 ran on different cards, they must still match: the setting is per worker, and both workers apply it.
+cleanup: `delete_output(job_id=<id>)` for S1, S2, S3 and L.
+metrics: none.
+
+### C-F699 — each fresh worker reports the PyTorch flags it runs with, once, on its first job
+pending: #1238
+source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
+Plan v1 lets the report be a log line only, if the job event channel can't carry it; the implementer's hand-off on
+#1238 says which. If it says log-only, this case has nothing to check over MCP: record "log-only per #1238" and pass on
+C-F698 alone. Otherwise: all calls use `workspace="regression-complete"`, S is C-F698's S (validate and bind
+`acknowledged_cost` before each run), and the box has two cards (on one, do steps 1-2 only).
+1. `clear_memory()`; `get_health` shows both cards `alive: false`. Run S (`wait_seconds=55`) → J1 on card A.
+2. Run S again → J2. If J2 ran on card A, it is the second job of that worker. Read
+   `get_job_events(J1, kinds=["log"])` and the same for J2 (or with no filter, if the line is narrated under
+   another kind; search for `cudnn`).
+3. Put a job on the other card: run L (C-F698's) with `wait_seconds=0`, and while it occupies one card run S → J3,
+   which lands on the other. If J3 landed on card A, `clear_memory(device=<the other card>)` first and retry so that J3
+   is the first job of a fresh worker on the card A is not.
+expected:
+- J1's events carry one line of the shape `torch: cudnn benchmark=false deterministic=true, tf32=false` (exact
+  wording may differ; the three values must all be there, by name).
+- A job that is not its worker's first (J2 on the same card) carries **no** such line: it is once per process.
+- The first job on the second card's fresh worker (J3) carries its own line, with the same values.
+- The values are read back from `torch.backends` after the pipeline loaded. If any line reports `benchmark=true` or
+  `deterministic=false` or `tf32=true`, something outside dw set it: that is plan Q1's answer and goes on #1238 and
+  #1229 verbatim. It fails this case only together with a C-F698 mismatch; on its own it is a note for the lead.
+cleanup: `delete_output(job_id=<id>)` for J1, J2, J3 and L.
+metrics: none.
+
+### C-F700 — SD 1.5's warm wall time is within 5% of its pre-deploy warm median
+pending: #1238
+source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
+`deterministic: true` limits cuDNN to its deterministic algorithms; this checks the conv UNet/VAE lost no speed. The
+reference is S-P001's warm log, `regression-perf/S-P001.jsonl`: the median of the last five `condition: "warm"` rows
+whose `server` is a `develop@` commit **before** #1238's deploy (on 2026-11-07 that band was 3.46-4.14 s, median about
+3.7 s). All calls use `workspace="regression-complete"`, on a quiet host (`get_health`: nothing running or queued on
+the other card).
+1. Run `templates/text-to-image` with default arguments (S-F003's call) once to make it resident (`wait_seconds=55`).
+2. Run it three more times back to back with nothing in between, and read each job's `started_at`→`finished_at`.
+expected:
+- The median of step 2's three times is within 5% above the reference median. Faster is a pass.
+- Over 5% slower: rerun step 2 once (S-P001's band is ±10% run to run). Still over: file it against #1238, with the
+  six times, the reference rows and the job ids. The plan's fallback is `cudnn_deterministic: false`, which is the
+  lead's call, not this case's.
+cleanup: `delete_output(job_id=<id>)` for all four runs.
+metrics: warm wall time (median of three), logged to `regression-perf/C-F700.jsonl` as `metric: "latency"`,
+`condition: "warm"`, `unit: "s"`; the first session that runs this case after the `pending:` line is removed seeds it.
+
+### C-F701 — LTX-2.5's warm run, and its VAE decode, is within 5% of before the deploy, and two warm runs match
+pending: #1238
+source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
+The LTX VAE decode is a 3D-conv path, where deterministic cuDNN algorithms are most likely to cost time. All calls use
+`workspace="regression-complete"`, on a quiet host. T = `templates/ltx2/text-to-video` with `{"seed": 1229}`,
+otherwise its defaults. `validate_workflow` and bind `acknowledged_cost` before each run.
+Reference: `list_jobs` for this template's succeeded jobs that finished **before** #1238's deploy, with default size
+and frame count (check with `get_job_workflow`), that were warm (their events show no model load, or
+`load_cached: true`). Take the median of their `started_at`→`finished_at` and of the time between the events that open
+and close the decode phase. If none is warm, use the catalog `cost` row (1.8 min on an RTX 3090, as listed on
+2026-11-07) for the total, and record that no decode reference existed.
+1. Run T once (`wait_seconds=55`, then `wait_for_job`) to make it resident.
+2. Run T twice more, nothing in between → V1, V2. Read their total times and decode-phase times from
+   `get_job_events`.
+3. `compare_outputs(names=[V1, V2], at=[0, 1.0, 3.0])`, and `get_gallery_metadata` on both
+   (`include_workflow=false`) for `media.pcm_sha256`.
+expected:
+- The median of V1 and V2's totals is within 5% above the reference; with a decode reference, so is the decode phase.
+  Over 5% → rerun step 2 once, and if it is still over, file it against #1238 with the readings and job ids (the
+  plan's named risk).
+- V1 and V2 are identical: mean abs diff 0 at every `at`, and equal `pcm_sha256` (their `frames`, `sample_rate`,
+  `channels` and `sample_format` agree).
+cleanup: `delete_output(job_id=<id>)` for the three runs.
+metrics: warm total and decode-phase wall time, logged to `regression-perf/C-F701.jsonl` (`metric: "latency"`,
+`condition: "warm"` and `"warm-decode"`, `unit: "s"`); the first session that runs it unpended seeds it.
+
+### C-F702 — the change refuses nothing and moves no cost row
+pending: #1238
+source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
+Free apart from what C-F698-C-F701 already ran. All calls use `workspace="regression-complete"`.
+1. `list_workflows(shape="image")` and `list_workflows(shape="shot")`: read the `cost` of `templates/text-to-image`,
+   `templates/ltx2/text-to-video` and `templates/minimax/video-with-audio`.
+2. `validate_workflow` for each of the three with `{"seed": 1229}`.
+3. Every job C-F698-C-F701 (and C-F703 if run) started: its `get_job` status and `job.warnings`.
+expected:
+- The `cost` rows are as before the stage: `templates/text-to-image` 0.2 min, `templates/ltx2/text-to-video` 1.8 min
+  (cuda) and 6 min (mps), `templates/minimax/video-with-audio` 6.6 min, all on RTX 3090 24 GB for cuda. A row that
+  moved is a finding unless #1238's hand-off names the re-measurement (the plan re-measures none).
+- Each validate is `valid: true` with no errors and no new warnings. `basis` is still `observed` for the first two;
+  `minutes` is within the observed noise of 2026-11-07's readings (0.1 and 2.0).
+- Every job in step 3 succeeded, and none carries a warning about cuDNN, determinism, `allow_tf32` or settings. A
+  template that worked before the deploy and fails now is a regression against #1238.
+cleanup: none.
+metrics: none.
+
+### C-F703 — (optional, budget) a seeded MiniMax H3 clip is identical alone and while the other card loads a model
+pending: #1238
+source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
+H3 is where the two-card drift was first seen (#1199's bench). The plan calls this control "better if the budget
+allows", so a session may skip it and say so; C-F698 is the one that always runs. Two-card box only. All calls use
+`workspace="regression-complete"`. H = `templates/minimax/video-with-audio` with `{"seed": 1229, "num_frames": 124}`,
+otherwise its defaults. `validate_workflow` and bind `acknowledged_cost` before each run; H runs need
+`wait_seconds=1500`.
+1. Quiet host (both cards idle, nothing queued): run H → H1.
+2. Run L (C-F698's LTX job) with `wait_seconds=0`; once it is a card's `current_job` and still loading, run H → H2 on
+   the other card. If H2 queued behind L, repeat once.
+3. `compare_outputs(names=[H1, H2], at=[0, 2.0, 4.0, 5.0])` and `get_gallery_metadata` on both
+   (`include_workflow=false`).
+expected:
+- Both succeed. Mean abs diff 0 at every `at`, and equal `media.pcm_sha256` (with `frames`, `sample_rate`, `channels`
+  and `sample_format` agreeing). A nonzero difference is the drift #1229 was filed for: file it against #1238 with
+  both job ids, their cards and L's.
+cleanup: `delete_output(job_id=<id>)` for H1, H2 and L.
+metrics: none.
+
 ## Performance
