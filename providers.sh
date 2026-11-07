@@ -1801,12 +1801,17 @@ handoff_count() {
 # was parked after two such sessions, harnest#184); a `progress:` comment
 # that cites no new SHA is still no progress. A SHA is a 7-40 character
 # hex word with a digit and a letter, so dates and plain words don't count.
+# Only TICKET_OWNER's comments count (the agents run as that login): the
+# repo is public, and a stranger's marker or `progress:` comment each cycle
+# would otherwise keep an issue from ever parking.
 issue_fingerprint() {
-  gh issue view "$2" --repo "$1" --json state,labels,comments \
-    --jq '.state + "|" + ([.labels[].name] | sort | join(",")) + "|"
-          + ([.comments[].body | select(startswith("<!-- harnest:")) | split("\n")[0]] | join(",")) + "|"
-          + ([.comments[].body | select(startswith("progress:")) | scan("\\b[0-9a-f]{7,40}\\b")
-              | select(test("[0-9]") and test("[a-f]"))] | unique | join(","))' 2>/dev/null || true
+  gh issue view "$2" --repo "$1" --json state,labels,comments 2>/dev/null \
+  | jq -r --arg me "${TICKET_OWNER:-dkackman}" '
+      [.comments[] | select(.author.login == $me) | .body] as $mine
+      | .state + "|" + ([.labels[].name] | sort | join(",")) + "|"
+        + ([$mine[] | select(startswith("<!-- harnest:")) | split("\n")[0]] | join(",")) + "|"
+        + ([$mine[] | select(startswith("progress:")) | scan("\\b[0-9a-f]{7,40}\\b")
+            | select(test("[0-9]") and test("[a-f]"))] | unique | join(","))' 2>/dev/null || true
 }
 
 # note_progress <repo> <n> <fingerprint-before> <tag> <kind>

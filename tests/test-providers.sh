@@ -76,7 +76,7 @@ eq "no filter keeps all" "5 7 9" "$(printf '%s\n' "$rows" | only_issues_filter |
 eq "filter by number or parent" "5 7" "$(printf '%s\n' "$rows" | ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
 
 # --- no-progress ledger
-stub_gh 'echo "OPEN|owner:lead,stage|"'
+stub_gh 'echo "{\"state\":\"OPEN\",\"labels\":[{\"name\":\"stage\"},{\"name\":\"owner:lead\"}],\"comments\":[]}"'
 fp="$(issue_fingerprint o/r 5)"
 NO_PROGRESS_PARK_AFTER=2 note_progress o/r 5 "$fp" t lead:build
 eq "one unchanged session is counted" "1" "$(cut -f3 "$LOGS/progress.tsv")"
@@ -90,10 +90,10 @@ eq "a change resets that kind's count" "0" "$(grep -c ':lead:decompose' "$LOGS/p
 # the fingerprint query itself, over a real-shaped issue: a fix that keeps
 # owner:implementer and pushes a commit per session is progress (harnest#184)
 fp_issue() {  # <progress comment bodies, as a JSON array>
-  printf '{"state":"OPEN","labels":[{"name":"owner:implementer"}],"comments":[{"body":"<!-- harnest:plan v1 -->\\n# plan"},%s]}\n' \
-    "$(printf '%s' "$1" | jq -c '.[] | {body: .}' | paste -sd, -)" > "$T/issue.json"
+  printf '{"state":"OPEN","labels":[{"name":"owner:implementer"}],"comments":[{"author":{"login":"me"},"body":"<!-- harnest:plan v1 -->\\n# plan"},%s]}\n' \
+    "$(printf '%s' "$1" | jq -c '.[] | {author: {login: (if startswith("x:") then "x" else "me" end)}, body: ltrimstr("x:")}' | paste -sd, -)" > "$T/issue.json"
 }
-stub_gh 'while [ $# -gt 0 ]; do [ "$1" = --jq ] && q="$2"; shift; done; jq -r "$q" "'"$T"'/issue.json"'
+stub_gh 'cat "'"$T"'/issue.json"'
 fp_issue '["progress: pushed c4e6f5c2 to develop (2026-11-07, 20261107). Still open: deadbeef, facade."]'
 eq "fingerprint: state, labels, markers, then cited SHAs (no dates or words)" \
   "OPEN|owner:implementer|<!-- harnest:plan v1 -->|c4e6f5c2" "$(issue_fingerprint o/r 6)"
@@ -110,6 +110,8 @@ NO_PROGRESS_PARK_AFTER=2 note_progress o/r 6 "$fp2" t implementer:fix >/dev/null
 has "and two of those still park" "issue edit 6 --repo o/r --remove-label owner:implementer --add-label owner:don" "$(cat "$GH_CALLS")"
 fp_issue '["thanks, see c4e6f5c2"]'
 eq "a SHA outside a progress: comment does not count" "OPEN|owner:implementer|<!-- harnest:plan v1 -->|" "$(issue_fingerprint o/r 6)"
+fp_issue '["x:progress: pushed abc1234", "x:<!-- harnest:decomposed v9 -->"]'
+eq "a stranger's progress: or marker comment does not count (public repo)" "OPEN|owner:implementer|<!-- harnest:plan v1 -->|" "$(issue_fingerprint o/r 6)"
 
 # --- handoff_count: hand-offs since the last reopen, or Don's last hand-back
 stub_gh 'printf "%s\n" labeled labeled reopened labeled'
