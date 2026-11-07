@@ -18803,7 +18803,6 @@ cleanup: `delete_output(job_id=...)` for each of the three jobs.
 metrics: none.
 
 ### C-F724 — every one of the 13 camera moves in the `cinematography` vocabulary carries a `static`/`moving` class, and only `static` is `static`
-pending: #1255
 source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
 Free: reading the plugin only. Invoke `dw:cinematography` (Skill tool) and read
 `references/vocabulary.md` under the base directory it reports, at its `move` section.
@@ -18829,7 +18828,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F725 — every `moving` id carries the H3 `last_frame` + `look_hold`/`carry_pick` warning, says it was measured on the arc only, and `static` does not carry it
-pending: #1255
 source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
 Free: reading the plugin only. Read the `move` section of `dw:cinematography`'s
 `references/vocabulary.md` (as in C-F724), and the `long-form` SKILL.md's *Per chain* section.
@@ -18851,7 +18849,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F726 — the `long-form` skill points at the `class` column in place of the "until #1200" placeholder, and sends a `push-in` or `handheld` shot to `shot: moving`
-pending: #1255
 source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
 Free apart from one `validate_workflow` call. Invoke `dw:long-form` (Skill tool). Read its SKILL.md
 *Per chain: continuity and the shot preset* section and `references/levers.md` under the base directory
@@ -18884,7 +18881,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F727 — the shot document still names move ids from the vocabulary only, with no copied list or copied class
-pending: #1255
 source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
 Free: reading the plugin only. Invoke `dw:script-to-video` (Skill tool) and read
 `references/shot-document.md` under its base directory. Also read the `long-form` SKILL.md's
