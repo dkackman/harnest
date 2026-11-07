@@ -18389,4 +18389,376 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F705 — jobs a killed server held come back as `cancelled` tombstones with a `server restart:` reason
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+The restart set that C-F706-C-F709 and SE-F062 also read. It needs an unclean kill, which no MCP call can cause,
+so it runs in two phases with a hand-off between them. All calls use `workspace="regression-complete"`;
+`validate_workflow` and bind `acknowledged_cost` before every run.
+**Phase A, set up right before the kill.** The jobs have to still be in flight when the process dies. A session that
+queues them and then waits hours for someone to do the kill will find the queue drained and the case not run, so
+whoever does the kill runs A1-A5 (or watches them run) and then kills at once.
+- A1. F: `run_workflow(name="templates/text-to-image", arguments={"seed": 1220}, note="C-F705 F", wait_seconds=55)`,
+  followed by `wait_for_job` until `succeeded`. Record `get_job(F)`'s `finished_at`, `run_dir` and manifest file names.
+- A2. R: `templates/ltx2/text-to-video` with `{"seed": 1220}`, `note="C-F705 R"`, `wait_seconds=0`. Wait until
+  `list_jobs` shows it `running`. On a multi-card box, queue one R per card (`get_health`'s `workers` shows each
+  card's `current_job`), so the next jobs really queue. Record every R.
+- A3. Q1 and Q2: `templates/text-to-image` with `{"seed": 1221}` and `{"seed": 1222}`, notes `C-F705 Q1`/`Q2`,
+  `wait_seconds=0`. Both must be `queued` behind R.
+- A4. X: `templates/text-to-image` with `{"seed": 1223}`, `note="C-F705 X"`, `wait_seconds=0`, then `cancel_job(X)`
+  while it is still queued. Record `get_job(X)`'s `status`, `error` and `finished_at`.
+- A5. `list_jobs(workspace="regression-complete", status="queued,running")`: R `running`, Q1 and Q2 `queued`. Note the
+  time. Post every id and A1/A4/A5's readings on the stage (or verify) issue, because no session state survives.
+- A6. Someone with box access kills `dw.serve` with `kill -9` (SIGKILL, not a service stop, which sends SIGTERM
+  first) and starts it again. A tester hands off for this through the ticket protocol (`owner:don`).
+**Phase B, after the restart (any session).** `get_job` on each R, Q1 and Q2.
+expected:
+- None comes back "Unknown job". Losing one silently is the bug #1220 was filed for.
+- Each is `status: "cancelled"` with `finished_at` set, later than A5's time.
+- Q1 and Q2: `error` starts with `server restart: queued, never started`, and `started_at` is null. `arguments` are
+  still the seeds they were submitted with, and `workspace` is `regression-complete`.
+- Each R: `error` starts with `server restart: running when the server stopped`, and it contains R's `run_dir` as
+  `get_job` reports it (`text-to-video/<run id>`). `started_at` is set.
+cleanup: run after C-F706-C-F709 and SE-F062 have read the set. `delete_output(job_id=<id>)` for F, X, each R, Q1
+and Q2. A never-started job may have no outputs to delete, and that reply is fine.
+metrics: none.
+
+### C-F706 — `list_jobs` lists the tombstones as cancelled and never as live
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+Free. This reads C-F705's restart set after its Phase B.
+1. `list_jobs(workspace="regression-complete", limit=50)`.
+2. `list_jobs(workspace="regression-complete", status="cancelled", limit=50)`, and `list_jobs(status="cancelled",
+   limit=50)` with no workspace.
+3. `list_jobs(workspace="regression-complete", status="queued,running")`.
+expected:
+- Calls 1 and 2 include every R, Q1 and Q2, each `status: "cancelled"`. A 400 or 500 from the filter is a finding.
+- Call 3 contains none of them. A tombstone listed as `queued` or `running` (for example a `historical: true` row
+  still `queued`) is the failure: `wait_for_job` would spin on it.
+- No id is listed twice in any one reply, and `total` is at least the number of entries returned.
+cleanup: none (C-F705's cleanup covers the set).
+metrics: none.
+
+### C-F707 — `wait_for_job` on a tombstone returns at once, as terminal
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+Free. This reads C-F705's restart set after its Phase B. `wait_for_job(job_id=Q1, timeout_seconds=60)`, then the
+same for one R.
+expected:
+- Both return `status: "cancelled"`, with no `still_running: true`, the same `error` that C-F705 read, and
+  `waited_seconds` far below the 60 asked for (under 5). Spinning to the timeout is the failure.
+cleanup: none.
+metrics: none.
+
+### C-F708 — `rerun_job` resubmits a tombstone as a fresh job with `rerun_of` set
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+One text-to-image run, plus one optional LTX run. This reads C-F705's restart set after its Phase B, with
+`workspace="regression-complete"`.
+1. `validate_workflow(name="templates/text-to-image", arguments={"seed": 1221}, workspace="regression-complete")`, and
+   bind its `acknowledged_cost`. Then `rerun_job(job_id=Q1, acknowledged_cost=<bound>)`, followed by
+   `wait_for_job(<new id>, timeout_seconds=55)` until terminal. If the binding is refused as stale, use the object
+   the refusal hands back (C-F014).
+2. Optional, at the cost of one LTX run: the same for one R, after validating `templates/ltx2/text-to-video` with
+   `{"seed": 1220}`.
+3. `get_job` on each new id and on Q1.
+expected:
+- `rerun_job` queues a new id, different from Q1, that finishes `succeeded` with a non-empty manifest.
+- `get_job(<new>)` has `rerun_of` equal to Q1 (to R for step 2), `arguments.seed` 1221, and `workspace`
+  `regression-complete`.
+- Q1 itself is unchanged: still `cancelled`, with the same `server restart:` error and `finished_at`.
+- Step 2, when run: the same, with `rerun_of` equal to R. A tombstone whose run had started reruns like one that
+  never started.
+cleanup: `delete_output(job_id=<id>)` for each new job.
+metrics: none.
+
+### C-F709 — a user's cancel and a finished job pass through the restart unchanged
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+Free apart from one image read. This reads C-F705's restart set after its Phase B. Call `get_job(X)` and
+`get_job(F)`, then `get_output_image` on one of F's manifest files.
+expected:
+- X is `cancelled`, with the `error` and `finished_at` that A4 recorded. Its `error` and its `get_job_events` contain
+  no `server restart` text.
+- F is `succeeded`, with A1's `finished_at`, `run_dir` and manifest file names. The image is still readable.
+- Neither id appears with a `server restart:` error in `list_jobs(workspace="regression-complete",
+  status="cancelled", limit=50)`.
+cleanup: none (C-F705's cleanup covers X and F).
+metrics: none.
+
+### C-F710 — a second restart, a clean one, tombstones only what was in flight and leaves earlier tombstones alone
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+The design writes the record at submit and reconciles at startup, so a clean stop loses nothing either, and a sweep
+must not run twice over the same rows. This runs after C-F705-C-F708, before C-F705's cleanup, with
+`workspace="regression-complete"`. Phase A runs right before the stop, as C-F705 says.
+- A1. `list_jobs(status="cancelled", limit=1)` with no workspace, and record `total` as N0. Record `get_job(Q2)`'s
+  `error` and `finished_at`, and the status of C-F708's rerun job.
+- A2. R2: `templates/ltx2/text-to-video` with `{"seed": 1224}`, `wait_seconds=0`, until it is `running` (one per card,
+  as in C-F705). Then Q3: `templates/text-to-image` with `{"seed": 1225}`, `wait_seconds=0`, still `queued`.
+  Record both ids, as in C-F705 A5.
+- A3. Someone with box access stops `dw.serve` **cleanly** (SIGTERM or the service's own stop) and starts it again.
+- B. `get_job` on Q3, R2, Q2 and C-F708's rerun job, then `list_jobs(status="cancelled", limit=1)` for N1.
+expected:
+- Q3 is `cancelled` with `error` starting `server restart: queued, never started`.
+- R2 is terminal (`cancelled`, or `failed` if the clean shutdown stopped it with its own reason), and never "Unknown
+  job" or `running`.
+- Q2's `error` and `finished_at` are as A1 recorded: not re-swept, and no doubled `server restart: server restart:`.
+- C-F708's rerun job is still `succeeded`. A job that finished after the first restart gets no tombstone.
+- N1 − N0 is exactly the number of R2 and Q3 jobs, so a restart adds a tombstone only for what was in flight.
+cleanup: `delete_output(job_id=<id>)` for each R2 and Q3, then C-F705's cleanup.
+metrics: none.
+
+### C-F711 — with two servers on one `DIFFUSERS_HELPER_ROOT`, killing one leaves the other's jobs alone
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+This needs two `dw.serve` processes sharing one `DIFFUSERS_HELPER_ROOT` (lem's two-server bench setup). On a box
+with one server it can't run, so hand it to lem. S is the server this session's MCP reaches, and T is its sibling.
+T's jobs are queued through T's own client (its UI, REST or MCP) by whoever has it. All S calls use
+`workspace="regression-complete"`. Phase A runs right before the kill.
+- A1. On S: SR (`templates/ltx2/text-to-video`, `{"seed": 1226}`, `wait_seconds=0`) `running`, and SQ
+  (`templates/text-to-image`, `{"seed": 1227}`) `queued` behind it.
+- A2. On T: TR running and TQ queued, the same way. Record all four ids.
+- A3. On S: `get_job(TQ)` and `list_jobs(status="queued,running", limit=50)`.
+- A4. Someone `kill -9`s T and starts T again. S is not touched.
+- B. On S: `get_job` on SR and SQ, then `wait_for_job` on each until terminal. Then `get_job(TR)` and `get_job(TQ)`.
+expected:
+- A3: S does not show T's live jobs. `get_job(TQ)` is "Unknown job", or at least never a `historical: true` row
+  that is `queued` or `running`, and neither TR nor TQ is in S's listing.
+- B: SR and SQ stay live through T's restart and finish `succeeded`, with no `server restart` text anywhere. A
+  sibling's sweep that closed a live server's jobs is the failure.
+- B: once T has restarted, its own sweep has closed TR and TQ. S reads them from the shared history as `cancelled`,
+  with the running and queued `server restart:` reasons of C-F705. Read on T, they are the same.
+cleanup: `delete_output(job_id=<id>)` for SR and SQ on S. T's owner cleans up TR and TQ.
+metrics: none.
+
+#### The chain check's audio floor (C-F712 to C-F717)
+
+The S5 carrier for C-F713 to C-F716 is the workflow mini-ai's bench job `7fbfc3451e90` ran:
+`get_job_workflow("7fbfc3451e90")`'s `workflow`, passed as `inline_workflow`. It is
+`BenchS5LtxAction-mps`, a 3-segment `LTX2ImageToVideoPipeline` chain from `asset:bench/runner.png` at 960x544, 121
+frames per segment. Its variables include `seed`, `check` (default `false`) and `retries` (default `0`), which the
+chain block reads. Its seed-2 render has a near-silent segment 3 (about -89 dBFS) on mini-ai's MPS. That draw is
+deterministic there and not on another box. Where `get_job("7fbfc3451e90")` is "Unknown job", or the job is not
+that workflow at seed 2, C-F714 and C-F715 cannot run: hand them to mini-ai. Every call uses
+`workspace="regression-complete"`. Validate each run first and bind its `acknowledged_cost`. One S5 run costs about
+10 min on mini-ai, and a re-roll adds a segment.
+
+### C-F712 — `check.audio_dbfs_min` validates as a negative floor or null, and refuses anything else by name
+pending: #1246
+source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+Free. Carrier: `get_workflow("templates/ltx2/chained-segments")`, passed inline. Each probe replaces the chain block's
+`check` value (`steps[0].pipeline.chain.check`, which is `"variable:check"` or similar) with the literal below. One
+`validate_workflow(inline_workflow=..., workspace="regression-complete")` call per probe.
+- Accepted: (a) `{"audio_dbfs_min": -70}`; (b) `{"audio_dbfs_min": null}`; (c) `{"audio_dbfs_min": -0.5}` (just
+  under 0); (d) `{"audio_dbfs_min": -120}`; (e) `{"audio_dbfs_min": -60, "jump_ratio_max": 20}`, beside an
+  existing ceiling; (f) `true` and `false`, unchanged.
+- Refused: (g) `{"audio_dbfs_min": 0}`; (h) `{"audio_dbfs_min": 6}`; (i) `{"audio_dbfs_min": true}`;
+  (j) `{"audio_dbfs_min": "loud"}`; (k) `{"audio_dbfs_max": -70}`, a misspelling of the new field.
+- (l) A reference: add a variable `floor` (default `-65`) to the copy's `variables`, and set
+  `{"audio_dbfs_min": "variable:floor"}`. Then validate it again with `arguments={"floor": 3}`.
+expected:
+- (a)-(f) `valid: true`, with no error or warning naming `audio_dbfs_min`.
+- (g)-(j) `valid: false`, each with an error whose path or message names `audio_dbfs_min`. The message for (g)
+  and (h) says the floor must be below 0. A refusal only at `run_workflow` time is a finding.
+- (k) `valid: false`, naming `audio_dbfs_max` as unknown. The check object takes no extra properties.
+- (l) is `valid: true` with the default. With `floor: 3` it is refused naming `audio_dbfs_min`, at validation or at
+  `run_workflow` before anything is queued. A string that is a reference is not a "string that is not a reference".
+cleanup: none (validation only).
+metrics: none.
+
+### C-F713 — a checked chain that generates its audio quotes a worst case that includes segment 1
+pending: #1246
+source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+Free. With `check` on, segment 1 is now checked for audio. The worst case becomes N(1 + `retries`) segment renders
+for a chain that generates its audio, and stays 1 + (N - 1)(1 + `retries`) for one that holds its audio. Each probe
+is `validate_workflow(inline_workflow=<S5 carrier>, arguments=..., workspace="regression-complete")`, reading
+`plan.estimate`:
+- (a) `{"seed": 2, "check": true, "retries": 1}` (3 segments).
+- (b) `{"seed": 2, "check": false, "retries": 1}`.
+- (c) `{"seed": 2, "check": {"jump_ratio_max": 20}, "retries": 1}`: an object that leaves the floor at its default.
+- (d) `{"seed": 2, "check": {"audio_dbfs_min": null}, "retries": 1}`: picture measures on, audio floor off.
+- (e) `{"seed": 2, "check": true, "retries": 2}`.
+- (f) The chain holding its audio: (a)'s arguments on a copy of the carrier whose chain block holds one audio track
+  (C-F717's `match_audio`/`hold_audio` setup; validate only).
+expected:
+- The estimate states the worst case as a number of segment renders, or as minutes that scale with it. Read
+  the render count if it is stated. Otherwise read the ratio of worst-case to curated minutes against N = 3.
+- (a) and (c): 6 renders, not 5.
+- (b): 3. The check is off, so there are no re-rolls.
+- (d): 5. Segment 1 has no measure to fail.
+- (e): 9.
+- (f): 5. The held-audio chain keeps the old formula.
+- The `long-form` skill's quoted formula (`plugins/dw/skills/long-form/SKILL.md`, as loaded) and the guide's
+  `get_guide("workflows", section="Checking each segment")` both give N(1 + `retries`) for an audio-generating
+  checked chain. Neither still says "segment 1 is never checked" without the audio exception.
+cleanup: none (validation only).
+metrics: none.
+
+### C-F714 — the S5 seed-2 control, checked, re-rolls its silent segment 3 and keeps one with sound
+pending: #1246
+source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+About 15-25 min of mini-ai GPU. It needs `7fbfc3451e90` (see the section header). `run_workflow(inline_workflow=<S5
+carrier>, arguments={"seed": 2, "check": true, "retries": 1}, workspace="regression-complete", wait_seconds=55,
+note="C-F714: S5 seed 2 checked, audio floor")`, then `wait_for_job` until it finishes. Then read `get_job`,
+`get_job_events` and `get_output_audio` over 10-15 s of the final mp4.
+expected:
+- `succeeded`.
+- A `chain_check_failed` warning (in `job.warnings` or the events) names segment 3, the measure `audio_dbfs` and a
+  value below -80 (the bench read -87.8 to -89.2). It names the kept attempt.
+- Segment 3's shot record has `attempts: 2`, a `seed` of 2 + 1000003 = 1000005, an `audio_dbfs` above -70, and no
+  `check_failed` (or one that does not include `audio_dbfs`).
+- Segments 1 and 2 have an `audio_dbfs` above -70 and `attempts: 1`. Segment 1 has no picture measures in any
+  record or warning.
+- `get_output_audio` hears sound (wind, surf, the bicycle) across 10-15 s, not silence.
+- There is no `chain_segment_silent` warning: no kept segment is under -70.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F715 — unchecked, the silent segment is warned about and kept; a null floor turns both off
+pending: #1246
+source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+About 20 min of mini-ai GPU, two runs. It needs `7fbfc3451e90` (see the section header).
+- (a) `run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 2}, ...)`. The check is off by default.
+- (b) `run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 2, "check": {"audio_dbfs_min": null},
+  "retries": 1}, ...)`.
+Use `workspace="regression-complete"` and `wait_seconds=55`, then `wait_for_job`. Then read `get_job` and
+`get_job_events` for each.
+expected:
+- (a) `succeeded`, with exactly one `chain_segment_silent` warning (`kind: "chain_segment_silent"`). It names
+  segment 3 and its level, below -80. No warning names segments 1 or 2. There is no `chain_check_failed`, and no
+  re-roll in the events. Each shot has one attempt (or no `attempts` field, as an unchecked chain today), and
+  segment 3's `audio_dbfs` matches the warning's value. The run is bit-identical to `7fbfc3451e90` (the same
+  draw), so `compare_outputs` against that job's mp4, if run, shows no difference.
+- (b) `succeeded`, with no `chain_segment_silent` warning and no `audio_dbfs` in any `chain_check_failed`.
+  Segment 3 is not re-rolled for its audio. It may still re-roll for a picture measure; that is not a failure,
+  provided the event or warning names that picture measure.
+cleanup: `delete_output(job_id=<id>)` for each.
+metrics: none.
+
+### C-F716 — a chain with sound in every segment draws no silence warning, and every shot records its level
+pending: #1246
+source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+About 10 min of mini-ai GPU, or one segment render on any server. Seed 1166 has no dropout in the S5 bench.
+`run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 1166}, workspace="regression-complete",
+wait_seconds=55)`, then `wait_for_job`, then `get_job`. Where the carrier is missing, use
+`templates/ltx2/chained-segments` with `{"seed": 1166}`; then the level bound below is not owed (a different draw),
+only the fields are.
+expected:
+- `succeeded`, with no `chain_segment_silent` warning.
+- All three shot records carry a numeric `audio_dbfs`. On the S5 carrier at seed 1166, each is above -70.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F717 — a chain that holds one audio track gets no audio measure and no silence warning
+pending: #1246
+source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+A short LTX chain whose audio is not generated. Setup:
+1. A silent-ish bed: `run_workflow(workflow_path="templates/text-to-sound-effect", arguments={"seed": 1246,
+   "prompt": "near silence, faint room tone"}, workspace="regression-complete", wait_seconds=55)`. Then
+   `keep_output` its audio as `c-f717-bed.wav` in `regression-complete`. (Any audio works. A near-silent one makes
+   a misfiring floor visible.)
+2. A copy of `templates/ltx2/chained-segments` with its chain block holding that track: `match_audio` or
+   `hold_audio` set to `asset:c-f717-bed.wav`. Use whichever names `get_schema(section="pipelines")` and the
+   guide give for the chain block's held-audio field today. Set `segments: 2`, `num_frames: 49`, `width: 512`,
+   `height: 512`, `seed: 1247`, and `check: true` with `retries: 1`.
+3. Validate (note `plan.estimate`'s worst case), run with `wait_seconds=55`, `wait_for_job`, `get_job`,
+   `get_job_events`.
+expected:
+- `succeeded`.
+- No `chain_segment_silent` warning. No `chain_check_failed` and no re-roll event names `audio_dbfs`.
+- No shot record carries a numeric `audio_dbfs` (absent or null).
+- The estimate's worst case is 1 + (2 - 1)(1 + 1) = 3 renders, not 4.
+cleanup: `delete_output(job_id=<id>)` for both jobs, and `delete_asset("c-f717-bed.wav",
+workspace="regression-complete")`.
+metrics: none.
+
+#### Per-component `torch_dtype` (C-F718 to C-F720)
+
+### C-F718 — `torch_dtype` takes diffusers' per-component dict, and each value is checked by its component's name
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+Free. Carrier: `get_workflow("templates/ltx2/chained-segments")`, passed inline. Each probe sets the step's own
+`steps[0].pipeline.from_pretrained_arguments.torch_dtype` (today `"torch.bfloat16"`) and leaves the
+transformer's and text encoder's own `from_pretrained_arguments` alone. One `validate_workflow(inline_workflow=...,
+workspace="regression-complete")` per probe.
+- Accepted: (a) `{"default": "torch.bfloat16", "vocoder": "torch.float32"}`;
+  (b) `{"default": "torch.bfloat16", "audio_vae": "torch.float32", "vocoder": "torch.float32"}`;
+  (c) `"torch.bfloat16"`, the string form, unchanged; (d) `{"default": "torch.bfloat16"}` alone.
+- Refused: (e) `{"default": "torch.bfloat16", "vocoder": "torch.notatype"}`;
+  (f) `{"vocoder": "torch.notatype"}`, the plan's probe; (g) `{"default": "torch.bfloat16", "vocoder":
+  "{torch.float32}"}`, a `{}`-escaped value; (h) `{"default": "torch.bfloat16", "vocoder": 32}`;
+  (i) `"{torch.bfloat16}"`, the escaped string form, refused as it is today.
+expected:
+- (a)-(d) `valid: true`, with `plan` built and no error naming `torch_dtype`.
+- (e)-(h) `valid: false`. Each error's path or message names `vocoder`, the component whose value is bad, and not
+  only `torch_dtype`.
+- (i) is refused as it is today, so the string form's behavior is unchanged.
+- No probe's reply carries a server filesystem path (`/Users/`, `/private/`, `/home/`).
+cleanup: none (validation only).
+metrics: none.
+
+### C-F719 — an LTX run with a float32 vocoder through the dict form completes, and its job records the dict
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+One short LTX render. Carrier: `templates/ltx2/chained-segments` inline, with C-F718 (a)'s dict at
+`steps[0].pipeline.from_pretrained_arguments.torch_dtype`, and `arguments={"segments": 1, "num_frames": 49,
+"width": 512, "height": 512, "seed": 1247}`. Validate, run with `workspace="regression-complete"` and
+`wait_seconds=55`, `wait_for_job`, then `get_job`, `get_job_events`, `get_job_workflow` and `get_output_audio`.
+expected:
+- `succeeded`, with no error or traceback, and no warning that the dtype was ignored or flattened.
+- `get_job_workflow`'s realized workflow shows the dict, `{"default": "torch.bfloat16", "vocoder":
+  "torch.float32"}`, as given.
+- The events' load lines name the dict or the vocoder's float32. They do not show a single `torch.bfloat16` for the
+  whole pipeline.
+- The output has an audio track that `get_output_audio` can play.
+- Any MPS float16 warning the events carry names only a component that is actually float16. None is, here.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F720 — the decode-precision probe's three jobs carry the dtypes, the levels and the cause the record states
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+Free reads. It needs the probe's jobs on mini-ai. Source: `bench/records/ltx.md` *Audio dropout* > *Cause*, which
+names three job ids. The stage's hand-off comment on #1247 quotes that paragraph and the ids. Read them there, not
+from the repository. For each id, call `get_job` and `get_job_workflow`.
+expected:
+- All three are `succeeded`, run `BenchS5LtxAction-mps` at seed 2 with check off, and their
+  `from_pretrained_arguments.torch_dtype` is as stated:
+  - run 1: `default` bf16 and `vocoder` float32;
+  - run 2: `default` bf16, with `audio_vae` and `vocoder` float32;
+  - run 3: `torch.bfloat16`, or a dict with only `default` bf16.
+- Segment 3's level in each job (the shot record's `audio_dbfs`, or `assess_output`'s per-shot level) is what the
+  paragraph states, within 0.1 dB.
+- Run 3's segment-3 level is within 0.5 dB of -89.2.
+- The stated cause follows the plan's rule:
+  - run 1 above -70 → the vocoder;
+  - run 1 at or under -70 and run 2 above -70 → the audio VAE;
+  - both at or under -70 → the latents, with stage A as the remedy.
+  A cause that does not follow from the three levels by this rule is a finding.
+- The paragraph says the `MPS-only?` question stays open.
+cleanup: none (reads only; the probe's jobs belong to the record).
+metrics: none.
+
+### C-F721 — an LTX chain with `save_segments` and a forced-fail `check` re-rolls its middle and last segments, keeps one attempt each and records it
+source: tester, verified in #1241 (claude-opus-5-5 via anthropic)
+About 5 min of mini-ai GPU. Take an inline copy of `templates/ltx2/chained-segments` (`get_workflow`). It already sets
+`chain.save_segments: true`. Use `width`/`height` 512, `num_frames` 49, `segments` 3 and `seed` 1241, and add
+`"check": {"jump_ratio_max": 0.01}, "retries": 1` to its `chain`. No real seam is that still, so every attempt
+fails. `validate_workflow`, then `run_workflow(..., workspace="regression-complete", wait_seconds=55,
+note="C-F721: forced-fail chain check")` and `wait_for_job` until it finishes. Read `get_job` and
+`get_job_events(kinds=["log","warning"])`.
+expected:
+- `succeeded`, and the step's `timing.segments` is 5 (1 + 2 x 2).
+- Segment 1's shot has `attempts: 1`, no `check_failed`, and no check measure in any log or warning.
+- Segments 2 and 3 each have `attempts: 2` and a `check_failed` that includes `jump_ratio`. Each has exactly one
+  `chain_check_failed` warning naming that segment, its measures and values, `kept_attempt` (1 or 2) and `attempts: 2`.
+  Each has one log line `check failed (...) - re-rolling, attempt 2 of 2 at seed 1001244` (1241 + 1000003).
+- A shot whose kept attempt is 2 records `seed: 1001244`. A shot that kept attempt 1 has no `seed`.
+- The kept attempt is the one with fewer failed measures. On a tie, it is the one with the lower `jump_ratio`. Check
+  this against the two attempts' values in the re-roll log line and the warning.
+- The stitched video is 49 + 47 + 47 = 143 frames, about 5.96 s at 24 fps (`trim_frames` 2 at each seam).
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
 ## Performance

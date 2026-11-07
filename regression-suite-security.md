@@ -1533,6 +1533,24 @@ source: tester, verified in #247 on 2026-09-19 over MCP as model `opus` via
 provider `anthropic` — both names returned `Unknown file: <name as sent>` with
 no server path.
 
+### SE-F062 — a restart tombstone's `error` names the run dir without a server path
+pending: #1245
+source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
+A tombstone's `error` for a job that was running when the server died names
+where its partial outputs are. That is new server-written text about a
+filesystem location, and every client that lists jobs reads it. It must name
+the run dir as `get_job`'s own `run_dir` does (`<workflow>/<run id>`), never as
+a resolved absolute path. Free, and read-only: it reads
+`regression-suite-complete.md` C-F705's restart set after its Phase B. Call
+`get_server_info`, then `get_job`, `wait_for_job(timeout_seconds=5)` and
+`get_job_events` on each R, Q1 and Q2.
+expected: each `error` and each event's text contains no absolute path: no
+segment starting `/Users/`, `/private/`, `/home/`, `/var/`, `/srv/` or
+`/mnt/`, and none of the roots `get_server_info` reports. R's `error`
+contains its relative `run_dir`. The failure is any of these replies carrying
+the server's outputs directory or a home path.
+cleanup: none (read-only; C-F705's cleanup covers the jobs).
+
 ## Destructive scope and limits
 
 Deletes must stay inside what the caller owns, and documented caps must be
@@ -1802,6 +1820,37 @@ expected:
 - It is a **finding** if a control is refused: the rule is over-broad.
 
 cleanup: `delete_output(job_id=…)` for every job that ran.
+
+### SE-F063 — the per-component `torch_dtype` dict keeps the type gate on every value
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
+`from_pretrained_arguments.torch_dtype` now takes diffusers' dict form, e.g. `{"default":
+"torch.bfloat16", "vocoder": "torch.float32"}`, and each value is realized as a type. That is a
+new path into the type realizer, so the SE-F007 and SE-F031 refusals must hold for each dict value
+too. This is free, validation only. Carrier: `get_workflow("templates/text-to-image")`, passed
+inline, with the probe at `steps[0].pipeline.from_pretrained_arguments.torch_dtype` (the SE-F031
+path). Each probe is one `validate_workflow(inline_workflow=..., workspace="regression-security")`.
+- (a) `{"default": "torch.bfloat16", "vae": "builtins.eval"}`;
+- (b) `{"default": "torch.hub.load"}`;
+- (c) `{"default": "torch.bfloat16", "vae": "os.system"}`;
+- (d) `{"default": "torch.bfloat16", "vae": "torch.hub"}`: a module, not a type;
+- (e) `{"default": "torch.bfloat16", "vae": "{builtins.eval}"}`: the `{}` escape;
+- (f) `{"default": "torch.bfloat16", "vae": {"default": "builtins.eval"}}`: a nested dict;
+- (g) `{"builtins.eval": "torch.float32"}`: the hostile name as the key, not the value;
+- Controls: `{"default": "torch.bfloat16", "vae": "torch.float32"}`, and `"torch.bfloat16"`.
+
+expected:
+- (a)-(f) are `valid: false`, refused at validation and naming the probe's component key (`vae`,
+  or `default` for (b)). A refusal that only comes at `run_workflow`, or after a job is queued, is
+  a **finding**. So is any value being imported or called: an `eval`/`os.system` side effect or
+  a load phase event in `get_job_events` for a queued job.
+- (g) is either refused as an unknown component, or validates with no type realized from the key.
+  It is a **finding** if the key reaches the type realizer: an error that shows it was imported,
+  or anything resolved from `builtins`.
+- No reply carries a server path (`/Users/`, `/private/`, `/home/`, `/var/`) or a traceback.
+- It is a **finding** if a control is refused.
+
+cleanup: none (validation only).
 
 ## Performance
 
