@@ -18871,7 +18871,7 @@ expected:
   `last_frame` rule still stands.
 - SKILL.md stays under the 12 KiB cap (12,288 bytes). Over MCP, the check is that the skill loads
   whole. pytest checks the exact size.
-- `validate_workflow(workflow="templates/minimax/chained-segments", arguments={"shot": "moving"},
+- `validate_workflow(name="templates/minimax/chained-segments", arguments={"shot": "moving"},
   workspace="regression-complete")` gives no error about `shot`. The preset the pointer sends a shot to
   still exists. Stop at validate and run nothing.
 It is a **finding** if either file still names #1200 as pending, the pointer doesn't name the
