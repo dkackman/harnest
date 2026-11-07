@@ -75,6 +75,9 @@ against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongsi
   design, decompose or docs/architecture review of an issue a loop has claimed: that runs in
   the claiming loop (`claimed_here`), so the Mac's hand-offs don't sit behind a long lem lead
   session, and Don sends a design to the Mac by labeling the issue `target:mini-ai`.
+  `run-features.sh` re-checks before every session, not once per run: it skips an issue
+  that is no longer ready, an unclaimed one once lem's loop has come up (`shared_here`), and
+  one whose `logs/.lead-session.<n>` lock is held by a live run in either loop (`claim_session`).
 - **Prompts.** The Mac implementer, tester and regression agent each get
   `agents/<role>/target.md` appended to the system prompt (`target_note`).
 - **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):

@@ -12,6 +12,11 @@
 #   LEAD_MODEL=claude-opus-5-5 LEAD_EFFORT=high ./run-features.sh
 #   tail -f logs/loop.log                   # prefixed [lead:#378] / [lead:#378 decompose]
 #
+# Off lem (DW_TARGET=mini-ai) it skips an unclaimed issue while lem's loop is
+# running, as the loop's shared passes do; SHARED_PASSES=1 runs it anyway.
+# Every session first takes logs/.lead-session.<n> (claim_session), so two
+# loops never run the lead on one issue at once.
+#
 # The rest of a feature runs in run-loop.sh, under its lock:
 #   - build sessions (a stage whose blockers are closed);
 #   - close-outs (declined, or every stage closed);
@@ -88,10 +93,56 @@ LEAD_DESIGN_FLAGS=(
   "${LEAD_DESIGN_PERMISSION_FLAGS[@]}"
 )
 
+# The queue is read once per run, and two loops on different servers both run
+# this script, so each session re-checks before it starts. On 2026-11-07
+# lem's loop came up while the Mac's was designing #1200, queued it too, and
+# designed it a second time; the Mac then went on to #1229 with lem's loop live.
+#
+# claim_session <n>: a lead session in flight, across loops, is the mkdir
+# lock logs/.lead-session.<n> holding "<pid> <target>" (logs/ is shared, not
+# per target). Returns 1 while another run's driver holds it; a holder whose
+# driver is gone is stale and taken over.
+LEAD_INFLIGHT=""
+claim_session() {
+  local dir="$LOGS/.lead-session.$1" holder
+  if ! mkdir "$dir" 2>/dev/null; then
+    holder="$(cat "$dir/owner" 2>/dev/null || true)"
+    if { [ -n "$holder" ] && kill -0 "${holder%% *}" 2>/dev/null; } \
+      || { [ -z "$holder" ] && [ -z "$(find "$dir" -maxdepth 0 -mmin +1 2>/dev/null)" ]; }; then
+      echo "$(ts) [lead:#$1] skipping: the ${holder#* } loop's lead session is on it" | tee -a "$LOOP_LOG"
+      return 1
+    fi
+    rm -rf "$dir"; mkdir "$dir" 2>/dev/null || return 1
+  fi
+  echo "$$ ${DW_TARGET:-lem}" > "$dir/owner"
+  LEAD_INFLIGHT="$dir"
+}
+release_session() { [ -z "$LEAD_INFLIGHT" ] || rm -rf "$LEAD_INFLIGHT"; LEAD_INFLIGHT=""; }
+trap 'release_session; driver_exit' EXIT
+
+# shared_here <n>: whether this run may design or decompose #n now. Off lem,
+# an unclaimed issue is lem's loop's once that loop is running (run-loop.sh
+# shared_passes_here, which features_pass only asks at the start of the run;
+# SHARED_PASSES forces it either way). An issue claimed target:<this loop>
+# runs here regardless. False when gh can't read the claim.
+shared_here() {
+  [ "${DW_TARGET:-lem}" != lem ] || return 0
+  case "${SHARED_PASSES:-}" in 1) return 0 ;; 0) ;; *) lem_loop_running || return 0 ;; esac
+  gh issue view "$1" --repo "$TICKET_REPO" --json labels --jq '.labels[].name' 2>/dev/null \
+    | grep -qx "target:$DW_TARGET"
+}
+
 # run_session <n> <kind> <budget> <instructions>
 run_session() {
   local n="$1" kind="$2" budget="$3" instructions="$4" tag prompt_file before plan
   tag="lead:#$n"; [ "$kind" = design ] || tag="lead:#$n $kind"
+  claim_session "$n" || return 0
+  if ! still_ready "$n" "lead:$kind"; then
+    echo "$(ts) [$tag] no longer ready, skipping" | tee -a "$LOOP_LOG"; release_session; return 0
+  fi
+  if ! shared_here "$n"; then
+    echo "$(ts) [$tag] skipping: unclaimed, lem's loop runs it" | tee -a "$LOOP_LOG"; release_session; return 0
+  fi
   prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.$kind.md")" || return 0
   session_flags "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" "$budget" || return 0
   plan="$(plan_text "$n")"
@@ -106,6 +157,7 @@ $([ -n "$plan" ] && printf '\n## The current plan, in full (comment headed <!-- 
 
 $(runtime_note lead "$LEAD_PROVIDER" "$LEAD_MODEL")" \
     "${SESSION_FLAGS[@]}" "${LEAD_DESIGN_FLAGS[@]}"
+  release_session
   audit_issue "$n" lead
   session_ran "$LAST_SESSION" && note_progress "$TICKET_REPO" "$n" "$before" "$tag" "lead:$kind"
   return 0

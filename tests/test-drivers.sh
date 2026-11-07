@@ -436,6 +436,28 @@ board '[{"number": 20, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "o
 eq  "features: exits cleanly" 0 $?
 eq  "features: one design session, for the idea" 1 "$(grep -c 'DESIGN session for issue #20' "$FAKE_CLAUDE_LOG")"
 eq  "features: none for the issue with Don" 0 "$(grep -c '#21' "$FAKE_CLAUDE_LOG")"
+features() { (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" \
+   LEAD_TREE="$T/lead" SESSION_RETRY_PAUSE_SECS=0 "$@" ./run-features.sh) > "$T/features.out" 2>&1; }
+# another loop's lead session in flight on #20 (2026-11-07, #1200): skipped;
+# once its driver is gone the lock is stale and taken over, and released after
+board '[{"number": 20, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
+: > "$FAKE_CLAUDE_LOG"
+mkdir "$T/h/logs/.lead-session.20"; echo "$$ mini-ai" > "$T/h/logs/.lead-session.20/owner"
+features
+eq  "in flight: no second design session" 0 "$(grep -c 'DESIGN session for issue #20' "$FAKE_CLAUDE_LOG")"
+has "in flight: says whose session it is" "[lead:#20] skipping: the mini-ai loop's lead session is on it" "$(cat "$T/h/logs/loop.log")"
+sleep 0 & dead=$!; wait "$dead"
+echo "$dead mini-ai" > "$T/h/logs/.lead-session.20/owner"
+features
+eq  "in flight: a stale lock is taken over" 1 "$(grep -c 'DESIGN session for issue #20' "$FAKE_CLAUDE_LOG")"
+eq  "in flight: released after the session" "" "$(ls -d "$T/h/logs/.lead-session."* 2>/dev/null || true)"
+# the queue is read once: an issue another loop hands to Don meanwhile is skipped
+board '[{"number": 20, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]},
+        {"number": 23, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
+: > "$FAKE_CLAUDE_LOG"
+features FAKE_CLAUDE_DO='for o in 20 23; do case "$*" in *"issue #$o only"*) ;; *) gh issue edit $o --repo o/r --remove-label owner:lead --add-label owner:don ;; esac; done'
+eq  "still ready: one design session, not two" 1 "$(grep -c 'DESIGN session for issue' "$FAKE_CLAUDE_LOG")"
+has "still ready: the other is skipped" "no longer ready, skipping" "$(cat "$T/h/logs/loop.log")"
 
 # --- 6b. run-loop runs the design queue itself (features_pass), unless told not to
 : > "$FAKE_CLAUDE_LOG"
@@ -748,6 +770,18 @@ board '[{"number": 75, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "o
 : > "$FAKE_CLAUDE_LOG"
 mini_loop LEAD_DESIGN_IN_LOOP=1
 eq  "design here: only the claimed idea" "75" "$(grep -o 'DESIGN session for issue #[0-9]*' "$FAKE_CLAUDE_LOG" | tr -dc '0-9\n' | sort -n | tr '\n' ' ' | sed 's/ $//')"
+# run-features on the Mac re-checks per session: lem's loop came up after the
+# run began (#1229, 2026-11-07), so it leaves the unclaimed idea; SHARED_PASSES=1 overrides
+features_mini() { (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r TICKET_OWNER=dkackman DW_TARGET=mini-ai \
+   SOURCE_DIR="$T/src" LEAD_TREE="$T/lead-mini" SESSION_RETRY_PAUSE_SECS=0 "$@" ./run-features.sh) > "$T/features-mini.out" 2>&1; }
+: > "$FAKE_CLAUDE_LOG"
+features_mini
+eq  "features mini-ai: only the claimed idea while lem's loop runs" "75" "$(grep -o 'DESIGN session for issue #[0-9]*' "$FAKE_CLAUDE_LOG" | tr -dc '0-9\n' | sort -n | tr '\n' ' ' | sed 's/ $//')"
+has "features mini-ai: logs the skip" "[lead:#76] skipping: unclaimed, lem's loop runs it" "$(cat "$T/h/logs/loop.mini-ai.log")"
+board '[{"number": 77, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
+: > "$FAKE_CLAUDE_LOG"
+features_mini SHARED_PASSES=1
+eq  "features mini-ai: SHARED_PASSES=1 designs the unclaimed idea" "77" "$(grep -o 'DESIGN session for issue #[0-9]*' "$FAKE_CLAUDE_LOG" | tr -dc '0-9\n' | sort -n | tr '\n' ' ' | sed 's/ $//')"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'

@@ -2425,6 +2425,35 @@ metrics: none.
 source: tester, verified in #922 on 2026-10-15 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 4a79cb35` on `lem` (cuda).
 
+### S-F143 — an `asset:` image in `gather_images` `urls` loads from disk, and `file://` and bare outside paths are still refused
+`gather_images` used to send every `urls` entry to the http fetcher, so an `asset:` reference
+(which resolves to a local path) failed at run time with `URL scheme not allowed:  (empty
+scheme)` even though validate had passed it (#1201). `templates/depth-marigold` takes its input
+through exactly that step. About 10 s on a warm box. Use `workspace=` on every call.
+`asset:qa-cast/hal-portrait.jpg` is the input; any image asset the workspace can reach
+substitutes.
+1. `validate_workflow(name="templates/depth-marigold", arguments={"image_url":
+   "asset:qa-cast/hal-portrait.jpg"})`, then `run_workflow` with the same arguments, its bound
+   `acknowledged_cost` and `wait_seconds=55`.
+2. `validate_workflow` on the same template with `image_url: "file:///etc/hosts"`, then with
+   `image_url: "/etc/hosts"`.
+3. Run the template with `image_url` bound to an audio asset (e.g.
+   `asset:qa-cast/ep11-bed.wav`).
+expected:
+- Call 1: `valid: true`, and the job `succeeded` with one PNG under `final/`
+  (`MarigoldDepth-depth…png`).
+- Call 2: both `valid: false` with the error at `steps[0].task.arguments.urls[0]`. The
+  `file://` one says only http(s) URLs are fetched. The bare path one says it resolves outside
+  every directory the workflow may read.
+- Call 3: the job fails at `load_image` with `Image file extension not allowed: .wav` and no
+  model load.
+It is a **finding** if call 1 fails with `URL scheme not allowed`, or if either call 2 or call 3
+reads the file.
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+source: tester, verified in #1201 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ f25446b4` on `mini-ai` (mps).
+
 ## Performance
 
 ### S-P001 — default image generation latency
