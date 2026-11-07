@@ -18245,7 +18245,6 @@ cleanup: `delete_output(job_id=<id>)` for every run.
 metrics: none.
 
 ### C-F698 — a seeded SD 1.5 image is pixel-identical on a quiet host, while the other card loads a model, and on a fresh worker
-pending: #1238
 source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
 Needs a box with **two** CUDA cards (`get_health.workers` has two entries); on one card, skip and say so. The engine
 places each job on an idle card itself (there is no device argument), so "card A" is wherever the seeded job lands;
@@ -18273,7 +18272,6 @@ cleanup: `delete_output(job_id=<id>)` for S1, S2, S3 and L.
 metrics: none.
 
 ### C-F699 — each fresh worker reports the PyTorch flags it runs with, once, on its first job
-pending: #1238
 source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
 Plan v1 lets the report be a log line only, if the job event channel can't carry it; the implementer's hand-off on
 #1238 says which. If it says log-only, this case has nothing to check over MCP: record "log-only per #1238" and pass on
@@ -18298,7 +18296,6 @@ cleanup: `delete_output(job_id=<id>)` for J1, J2, J3 and L.
 metrics: none.
 
 ### C-F700 — SD 1.5's warm wall time is within 5% of its pre-deploy warm median
-pending: #1238
 source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
 `deterministic: true` limits cuDNN to its deterministic algorithms; this checks the conv UNet/VAE lost no speed. The
 reference is S-P001's warm log, `regression-perf/S-P001.jsonl`: the median of the last five `condition: "warm"` rows
@@ -18317,7 +18314,6 @@ metrics: warm wall time (median of three), logged to `regression-perf/C-F700.jso
 `condition: "warm"`, `unit: "s"`; the first session that runs this case after the `pending:` line is removed seeds it.
 
 ### C-F701 — LTX-2.5's warm run, and its VAE decode, is within 5% of before the deploy, and two warm runs match
-pending: #1238
 source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
 The LTX VAE decode is a 3D-conv path, where deterministic cuDNN algorithms are most likely to cost time. All calls use
 `workspace="regression-complete"`, on a quiet host. T = `templates/ltx2/text-to-video` with `{"seed": 1229}`,
@@ -18343,7 +18339,6 @@ metrics: warm total and decode-phase wall time, logged to `regression-perf/C-F70
 `condition: "warm"` and `"warm-decode"`, `unit: "s"`); the first session that runs it unpended seeds it.
 
 ### C-F702 — the change refuses nothing and moves no cost row
-pending: #1238
 source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
 Free apart from what C-F698-C-F701 already ran. All calls use `workspace="regression-complete"`.
 1. `list_workflows(shape="image")` and `list_workflows(shape="shot")`: read the `cost` of `templates/text-to-image`,
@@ -18362,7 +18357,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F703 — (optional, budget) a seeded MiniMax H3 clip is identical alone and while the other card loads a model
-pending: #1238
 source: tester, spec for #1238 from #1229's plan v1 (claude-opus-5-5 via anthropic)
 H3 is where the two-card drift was first seen (#1199's bench). The plan calls this control "better if the budget
 allows", so a session may skip it and say so; C-F698 is the one that always runs. Two-card box only. All calls use
@@ -18379,6 +18373,20 @@ expected:
   and `sample_format` agreeing). A nonzero difference is the drift #1229 was filed for: file it against #1238 with
   both job ids, their cards and L's.
 cleanup: `delete_output(job_id=<id>)` for H1, H2 and L.
+metrics: none.
+
+### C-F704 — an H3 template's plan carries a host-RAM projection, 69 GB declared for `tier: best` and 51 GB for standard
+source: tester, verified in #1227 (claude-opus-5-5 via anthropic)
+Free: validate only. `validate_workflow(name="templates/minimax/dialogue-short", arguments={"tier": "best"},
+workspace="regression-complete")`, then the same with `{"tier": "standard"}`.
+expected:
+- Both valid, each with a `plan.host_memory` block of `projected_mb`, `basis` and `runs`.
+- While `basis` is `declared` (no observed history for that tier), `projected_mb` is 70656 for `best` and 52224
+  for `standard`. If history exists (`basis` `observed` or `fit`), `projected_mb` is at least the declared figure
+  for that tier (an observed peak above the declaration wins: seen as 73756 `observed` on chained-segments best).
+- On a host with at least about 76 GB total RAM, neither is refused. On a smaller host, `best` is refused at path
+  `host_ram_gb` with an error naming both the need and the host's total.
+cleanup: none.
 metrics: none.
 
 ## Performance
