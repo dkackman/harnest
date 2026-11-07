@@ -8621,4 +8621,36 @@ no log line says it was ignored; or if any of (a)–(c) validates.
 cleanup: `delete_output(job_id=<step 2's job>)`.
 metrics: none.
 
+### M-F306 — `add-sound` over a 30 fps clip keeps the clip's own rate and frame count, and the too-long refusal names the declared ceiling
+source: tester, verified in #1208 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 audio pass (`MiniMaxAI/MiniMax-H3`) through `templates/minimax/add-sound`. Validates are
+free. The fixture takes seconds, and the pass takes about 3.1 min on an RTX 3090.
+Steps:
+1. Fixture: `run_workflow` an inline one-step workflow, task `fit_to_model` with `{"video":
+   "asset:qa-cast/ep357-episode.mp4", "width": 960, "height": 544, "num_frames": 155, "mode": "stretch"}` and
+   `result: {"content_type": "video/mp4", "fps": 30}`. That gives a silent clip at 30 fps with 155 frames (124 once
+   retimed to 24 fps).
+2. `validate_workflow templates/minimax/add-sound` with `source_video` = the fixture's `output:`, a `prompt`
+   containing `<d>The kettle is boiling, come in and sit down.</d>`, and `num_frames` left at its default. Then
+   validate it again with `num_frames: 158`.
+3. `run_workflow` the first set of arguments (bound acknowledgement, `wait_seconds` 55, then `wait_for_job`). Then
+   run `get_gallery_metadata` on the final mp4, and `compare_outputs` it against the fixture at 0, 2.0 and 5.1 seconds.
+4. `validate_workflow` the template with `source_video: "asset:qa-cast/ep368-episode.mp4"` (1413 f) and the default
+   `num_frames`.
+expected:
+- Step 2: the default-`num_frames` validate is `valid: true`. The `num_frames: 158` validate is refused with a message
+  naming the source's 155 frames at 30 fps and "124 once retimed to 24 fps".
+- Step 3: `succeeded`, with no `fps_mismatch` warning in `job.warnings`. The output has `fps` **30.0**, `frame_count`
+  **155** and `duration_seconds` 5.1667, and `audio_stream_seconds` is the same length within one frame. The audio
+  stream exists, because the source had none. PSNR against the fixture is above 35 dB at every point (it measured
+  40-42 dB). That shows the source's picture was kept and not regenerated.
+- Step 4: refused. The message says "renders at most 345 frames" and "trim it to 345 frames or fewer". It does not
+  say "14 seconds".
+- This case asserts rate, count, length, picture fidelity and messages only. It never asserts what the
+  unseeded track says.
+It is a **finding** if the output is written at 24 fps, if its frame count differs from the fixture's, if a 30 fps
+clip whose retimed count matches is refused, or if the over-ceiling refusal omits the 345 limit.
+cleanup: `delete_output(job_id=<step 1's job>)`, `delete_output(job_id=<step 3's job>)`.
+metrics: none.
+
 ## Performance

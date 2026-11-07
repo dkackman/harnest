@@ -2511,6 +2511,34 @@ metrics: none.
 source: tester, verified in #1250 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 6db8d963` on `mini-ai` (mps).
 
+### S-F146 — an omitted voice reference is refused as required, never as a missing `voice.wav`
+The three voice-cloning templates declare `reference_audio` as required with no default. They
+used to default it to `asset:voice.wav`, so an omitted reference failed only because that file
+was missing. Any stray `voice.wav` asset would then have cloned a voice nobody chose (#1253).
+Free: no job is queued.
+1. For each of `templates/narration-long` (`arguments={"text": "A short line to say.",
+   "reference_text": "Some words."}`), `templates/voice-clone` (the same arguments) and
+   `templates/narration-from-takes` (`arguments={"reference_text": "Some words."}`):
+   `validate_workflow(name=<template>, arguments=<args>, workspace="default")`.
+2. `validate_workflow(name="templates/voice-clone", arguments={"text": "Hello there.",
+   "reference_text": "Some words.", "reference_audio": ""})`.
+3. `get_workflow("templates/voice-clone", variables_only=true)`, and
+   `list_workflows(shape="audio")`.
+expected:
+- Step 1: `valid: false` for each template. The error names `reference_audio` and says it is
+  required and has no default. Today's message begins `'reference_audio' is required and has no
+  default`. No error mentions `voice.wav` or an asset that was not found.
+- Step 2: still refused at `arguments.reference_audio` as empty (the #1209 rule).
+- Step 3: the stored `reference_audio` is `null`, with `required: true` under `constraints`.
+  The compact listing shows `required` in the `reference_audio` rule for all three templates.
+It is a **finding** if any template in step 1 validates, or refuses only because an asset is
+missing, because a stray `voice.wav` would then clone that voice. It is also a finding if any of
+the three shows a stored default for `reference_audio`.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #1253 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ ab29dfdb` on `mini-ai` (mps).
+
 ## Performance
 
 ### S-P001 — default image generation latency

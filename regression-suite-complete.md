@@ -18794,4 +18794,162 @@ expected:
 cleanup: `delete_output(job_id=...)` for each of the three jobs.
 metrics: none.
 
+### C-F724 — every one of the 13 camera moves in the `cinematography` vocabulary carries a `static`/`moving` class, and only `static` is `static`
+pending: #1255
+source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
+Free: reading the plugin only. Invoke `dw:cinematography` (Skill tool) and read
+`references/vocabulary.md` under the base directory it reports, at its `move` section.
+expected:
+- The `move` table has exactly these 13 rows, no more and no fewer (the plan adds no ids):
+  `static`, `dolly-in`, `dolly-out`, `truck-left`, `truck-right`, `crane-up`, `crane-down`, `orbit`,
+  `tracking`, `whip-pan`, `push-in`, `handheld`, `crash-zoom`. Each row's id is still its first backticked
+  cell.
+- The table has a `class` column, and every one of the 13 rows has a value in it. The value is exactly
+  `static` or `moving`: not blank, not "?", not a third value such as "half-static".
+- `static` is `static`. The other 12 are `moving`, `push-in` and `handheld` included.
+- The section defines the two classes in prose: `static` means the camera's position and orientation
+  don't change across the take; `moving` is every other id, including the small-but-real motion of
+  `push-in` and `handheld`. The section says the class follows from that definition, not from a
+  measurement.
+- No other vocabulary axis (shot size, lens, lighting and so on) gains a `class` column or new ids.
+- The `cinematography` SKILL.md's measured-move table is unchanged. The seven unmeasured ids
+  (`truck-right`, `crane-down`, `tracking`, `whip-pan`, `push-in`, `handheld`, `crash-zoom`) are still
+  marked unmeasured, so the class column claims no measurement.
+It is a **finding** if any row has no class or another value, a move other than `static` is `static`,
+the row count isn't 13, the definition is missing, or an unmeasured move now reads as measured.
+cleanup: none.
+metrics: none.
+
+### C-F725 — every `moving` id carries the H3 `last_frame` + `look_hold`/`carry_pick` warning, says it was measured on the arc only, and `static` does not carry it
+pending: #1255
+source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
+Free: reading the plugin only. Read the `move` section of `dw:cinematography`'s
+`references/vocabulary.md` (as in C-F724), and the `long-form` SKILL.md's *Per chain* section.
+expected:
+- Every one of the 12 `moving` ids is tied to the rule "H3: never `last_frame` with `look_hold` or
+  `carry_pick`". A per-row note or column, or a single note in the section that names the `moving` class
+  as a whole, all count. A reader starting from any one moving id must be able to reach the rule
+  without guessing.
+- The note says the rule was measured on an arc (the bench's orbit/arc chain) only, and not on a dolly,
+  truck or crane chain.
+- The note names H3. It does not tell LTX-2.5 to avoid `last_frame`, since `last_frame` stays LTX's
+  chain default.
+- `static` is not given that warning.
+- The rule agrees with `long-form` SKILL.md's "Never use `last_frame` with `look_hold` or
+  `carry_pick` on an H3 camera move". Neither text loosens the other.
+It is a **finding** if a moving id can't be traced to the rule, the "arc only" caveat is missing, the
+note bans `last_frame` for LTX, or the two skills disagree.
+cleanup: none.
+metrics: none.
+
+### C-F726 — the `long-form` skill points at the `class` column in place of the "until #1200" placeholder, and sends a `push-in` or `handheld` shot to `shot: moving`
+pending: #1255
+source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
+Free apart from one `validate_workflow` call. Invoke `dw:long-form` (Skill tool). Read its SKILL.md
+*Per chain: continuity and the shot preset* section and `references/levers.md` under the base directory
+it reports. Search both files for `1200`.
+expected:
+- Neither file contains "#1200", "until #1200" or "Until then, treat any move other than `static` as
+  moving", or another placeholder that waits on a classification.
+- In its place, SKILL.md points at the `class` column of `cinematography`'s `references/vocabulary.md`
+  by name: the skill and file, plus the column or section. The pointer says to set `shot` from that
+  class: a `moving` move gets `shot: moving` (and `shot: dialogue` when the subject is speaking, as
+  before), and `static` gets `shot: static` or `static_long`, as before.
+- A reader following the text for a `push-in` shot, and again for a `handheld` shot, reaches
+  `shot: moving`, not `static`. That holds because the column classes them `moving`, and the text cites
+  the column for it, not a list of its own. The text may say why: a moving shot under `static` gets its
+  pose pinned (the freeze), while a near-static shot under `moving` only loses length.
+- `levers.md`'s line about the unbenched dolly, truck and crane shots now points at the same column,
+  not at #1200.
+- Nothing else in the preset rules changes: `shot: static` is still guide + `anchor: segment_1` at
+  0.25, `static_long` still applies past about 30 s and is never for a moving shot, and the
+  `last_frame` rule still stands.
+- SKILL.md stays under the 12 KiB cap (12,288 bytes). Over MCP, the check is that the skill loads
+  whole. pytest checks the exact size.
+- `validate_workflow(workflow="templates/minimax/chained-segments", arguments={"shot": "moving"},
+  workspace="regression-complete")` gives no error about `shot`. The preset the pointer sends a shot to
+  still exists. Stop at validate and run nothing.
+It is a **finding** if either file still names #1200 as pending, the pointer doesn't name the
+vocabulary's column, a `push-in` or `handheld` shot lands on `shot: static`, the long-form text keeps
+its own list of which moves are moving, or `shot: moving` fails validation.
+cleanup: none.
+metrics: none.
+
+### C-F727 — the shot document still names move ids from the vocabulary only, with no copied list or copied class
+pending: #1255
+source: tester, spec for #1255 from #1200's plan v2 (claude-opus-5-5 via anthropic)
+Free: reading the plugin only. Invoke `dw:script-to-video` (Skill tool) and read
+`references/shot-document.md` under its base directory. Also read the `long-form` SKILL.md's
+*Per chain* section.
+expected:
+- `shot-document.md` gives a shot's `move` as an id from `cinematography`'s `references/vocabulary.md`
+  and points there. It does not list the 13 move ids itself, and it does not copy the `static`/`moving`
+  class next to any of them.
+- The `long-form` SKILL.md doesn't hold its own copy of the static/moving list either. Naming `static`
+  as the only static move, or using `push-in`/`handheld` as examples, is fine. A full table or list of
+  move ids with their classes is not.
+It is a **finding** if either file carries a copy of the move list or of its classes. That copy would
+drift from the vocabulary the next time a move changes.
+cleanup: none.
+metrics: none.
+
+### C-F728 — the MiniMax chain template prices `check` + `retries` as 1 + (N - 1)(1 + `retries`) segment renders
+source: tester, verified in #1252 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow(name="templates/minimax/chained-segments", workspace="regression-complete",
+arguments=...)`, one call per probe:
+- (a) no arguments; (b) `{"check": true, "retries": 0}`; (c) `{"check": true, "retries": 1}`;
+  (d) `{"check": true, "retries": 3}`; (e) `{"check": true, "retries": 1, "segments": 2}`;
+  (f) `{"check": false, "retries": 2}`.
+expected:
+- `get_workflow("templates/minimax/chained-segments", variables_only=true)` declares `check` (default `false`)
+  and `retries` (default `0`).
+- (a) to (e) are valid, with a numeric `plan.estimate.minutes`, and their basis is not `unknown`.
+- (a) and (b) carry no `scaled` text. (c)'s `scaled` says 5 renders for 3, (d)'s says 9 renders for 3, and (e)'s
+  says 3 renders for 2. Minutes rise strictly from (b) to (c) to (d).
+- (f) is invalid, with its error at `steps[0].pipeline.chain.retries`, saying retries needs check on.
+It is a **finding** if (c) or (d) quotes the same minutes as (b), or if `basis` is `unknown`: the documented
+worst-case quote can't be seen on a priced chain again (#1252).
+cleanup: none.
+metrics: none.
+
+### C-F729 — `get_gallery_metadata` on an `.otioz` reads back its timeline: clips in order, durations, audio track, members
+source: tester, verified in #1254 (claude-opus-5-5 via anthropic)
+Take any stored joined video whose `get_gallery_metadata` shows `media.shots` (K ≥ 2 shots; a chain's `final` output
+works), and any video without `shots`. In `workspace="regression-complete"`, `validate_workflow` and then
+`run_workflow` (`wait_seconds=55`) two inline one-step workflows. Each is an `export_timeline` task step with `video` set
+to one of those files, `name` set (`"c-f729"` for the joined video, `"c f729 single"` for the other, with spaces), and
+`result.content_type: "application/x-otioz"`. Then `get_gallery_metadata(name=<the .otioz>, include_workflow=false)` on
+each bundle.
+expected:
+- `media.kind` is `"timeline"`, `media.name` is the `name` passed exactly as given (spaces kept), and `otio_version` is
+  set.
+- For the joined video: a `Video` track with `clip_count` K, whose `items` are `Clip`s matching the source's
+  `media.shots` in order (same names, `start_frame` and `frames` = `num_frames`, at the source's fps). Their `frames` add
+  up to the source's `frame_count`, and the track's `seconds` matches its `duration_seconds` to within a frame. If the
+  source has sound, `has_audio_track` is `true` and there is an `Audio` track with the same clips.
+- For the video without shots: one clip per track, covering the whole file.
+- Each clip's `media` is `media/<source basename>`, and `members` lists `content.otio` and that `media/…` file.
+It is a **finding** if `media` is `null`, or holds only file-level numbers: what is inside a bundle can't be checked over MCP
+again (#1254).
+cleanup: `delete_output(job_id=...)` for both jobs.
+metrics: none.
+
+### C-F730 — a `cost` entry's `fixed_minutes` is not multiplied: a long H3 chain quotes fixed + scaled remainder
+source: tester, verified in #1224 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow(name="templates/minimax/chained-segments", workspace="regression-complete",
+arguments=...)`, one call per probe:
+- (a) `{"segments": 7, "num_frames": 345, "num_inference_steps": 12}`;
+- (b) `{"segments": 3, "num_frames": 345, "num_inference_steps": 12}`.
+expected:
+- Both are valid with `plan.estimate.basis` `derived` (unless this box has since observed those exact drivers), and
+  their `scaled` text says how much of the curated figure is fixed, e.g. "scaled from the curated 13.5 min (10 min of
+  it fixed)".
+- The quote equals `fixed + (curated - fixed) x factor`, where the factor is the product of the axes named in
+  `scaled` (steps, frames, segments): 64.5 min for (a) and 33.4 min for (b) while the curated entry is 13.5 / 10.
+- (a) is within 1.3x of the drill job `ab7f54f73b2f` (71.0 min) and (b) is within 1.3x of `8a669d31258e` (28.3 min).
+It is a **finding** if (a) quotes near `curated x factor` (about 210 min): the fixed share is being multiplied again,
+and long chains are over-quoted about 3x (#1224).
+cleanup: none.
+metrics: none.
+
 ## Performance
