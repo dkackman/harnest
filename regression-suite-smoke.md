@@ -2454,6 +2454,63 @@ metrics: none.
 source: tester, verified in #1201 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ f25446b4` on `mini-ai` (mps).
 
+### S-F144 — a `result.file_base_name` an `output:` name can't hold is refused at validate, and an accepted one round-trips
+S-F033 is the reading side, where a name the server wrote can be named back to it. This case
+is the writing side. A `file_base_name` once accepted characters the `output:` grammar
+refuses, such as a space or `#` (#1249). The run succeeded and wrote a file that nothing
+except `delete_output` could reference afterwards. The two sides must follow one rule.
+Cheap: free validate calls plus one `stills_to_video` run of one still, with no model load.
+Any small image asset works for `images`. `asset:uploads/spider-halloween/spider.webp` is the
+one used at verification.
+expected:
+- `validate_workflow` on a one-step `stills_to_video` (`durations: 2`, `fps: 12`) whose
+  `result` is `{"content_type": "video/mp4", "file_base_name": "src a#1"}` → `valid: false`,
+  error path **`steps[0].result.file_base_name`**, and a message naming the character and
+  its position: `' ' (position 3) is not a character this kind of name may contain`.
+- Edges, one validate with three such steps: `"srca#1"` is refused for `'#' (position 4)`,
+  `"-lead"` is refused because it starts with `-`, and `""` is refused as empty. Each error
+  is at its own `steps[N].result.file_base_name`.
+- Through a variable: `file_base_name: "variable:base"` with `arguments: {"base": "bad
+  name"}` is refused at validate with the same per-character message.
+- Round trip: `file_base_name: "shot@a_v1.2"` validates clean, and the run `succeeded`.
+  The file name copied verbatim from `job.manifest`, passed as `output:<name>` in a later
+  `validate_workflow`'s `arguments` for a declared variable, comes back `valid: true` with
+  that variable in `checked_arguments`.
+It is a **finding** if any refused name passes validate, or if the accepted name's file
+can't be referenced.
+cleanup: `delete_output(job_id=…)` for the round-trip run. The validate calls write nothing.
+metrics: none.
+source: tester, verified in #1249 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 6db8d963` on `mini-ai` (mps), round trip = job `b9768b53d145`.
+
+### S-F145 — an object or list sent to a bool-typed variable is refused, not folded to `true`
+The bool counterpart of S-F128 and S-F108. A variable's type comes from its default, and a
+dict sent to a bool-defaulted variable used to become `true` via `bool(dict)`, with no warning
+(#1250). `templates/ltx2/chained-segments`' `look_hold: {"precompensate": true}` validated
+clean and then ran all four corrections. Free: no job is queued. `<img>` is any image this
+workspace can reach (an `asset:` or `output:` still). Verification used
+`output:grey_keyframe/20261107-195328-00ce62a2/grey_keyframe-grey.0-0.0.png`.
+1. `validate_workflow(name="templates/ltx2/chained-segments", arguments={"image": <img>,
+   "look_hold": {"precompensate": true}, "segments": 3, "num_frames": 49, "width": 512,
+   "height": 512, "seed": 1242})`.
+2. The same validate call with `"look_hold": ["precompensate"]`.
+3. `run_workflow(workflow_path="templates/ltx2/chained-segments",` with step 1's arguments,
+   `acknowledged_cost=true)`.
+4. The same validate call with `"look_hold": "off"`.
+expected:
+- Steps 1 and 2: `valid: false`, with an error at `arguments.look_hold` that names the
+  variable, the value and its bool type. Today's message ends `this variable is typed bool by
+  its default and takes true or false, not an object or list`.
+- Step 3: refused before queueing, with the same message. No `job_id`, and no new job in
+  `list_jobs`.
+- Step 4: `valid: true` with a plan. The existing string spellings still coerce.
+It is a **finding** if step 1 or 2 validates, or step 3 queues a job, because an object would
+again run as `true` without a word. It is also a finding if step 4 is refused.
+cleanup: none. Nothing is queued or written.
+metrics: none.
+source: tester, verified in #1250 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 6db8d963` on `mini-ai` (mps).
+
 ## Performance
 
 ### S-P001 — default image generation latency

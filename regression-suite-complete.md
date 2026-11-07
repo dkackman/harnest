@@ -18761,4 +18761,37 @@ expected:
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
+### C-F722 — the narration templates refuse a null or empty voice reference at validate, before anything loads
+source: tester, verified in #1209 (claude-opus-5-5 via anthropic)
+Free (validate only). Call `validate_workflow(workspace="regression-complete")` on `templates/narration-long` with
+`{"text":"A short line to say.","reference_text":"Some words."}` plus `reference_audio`, in turn `null` and `""`.
+Then call it on `templates/narration-from-takes` with `{"takes":["One line."],"reference_text":"Some words."}` plus
+the same two values. Last, call it on `narration-long` with `reference_audio` `asset:qa-cast/priya-voice.wav` and
+`reference_text: null`. For the positive control, run both templates with
+`reference_audio: "asset:qa-cast/priya-voice.wav"` and `reference_text: "Some words."`.
+expected:
+- The four null/empty `reference_audio` calls each return `valid: false`, with an error at
+  `arguments.reference_audio` that says the value must not be empty and that there is no default voice. None of
+  them is `valid: true`, and none is refused only for a missing `voice.wav` asset.
+- `reference_text: null` returns `valid: false` at `arguments.reference_text` ("must not be empty").
+- Both positive controls return `valid: true`. Don't assert on the estimate's value (#1222).
+cleanup: none (validate only).
+metrics: none.
+
+### C-F723 — `export_timeline` refuses a shot list that runs past the end of its video, and accepts one that ends exactly on the last frame
+source: tester, verified in #1211 (claude-opus-5-5 via anthropic)
+Take any stored video of N > 130 frames: a joined piece's `final` output, or an asset. Read N from
+`get_gallery_metadata`'s `frame_count`. In `workspace="regression-complete"`, `validate_workflow` and then `run_workflow`
+(`wait_seconds=55`) three inline one-step workflows. Each is an `export_timeline` task step with `video` set to that file,
+`result.content_type: "application/x-otioz"`, and `shots` set in turn to:
+(a) `[{"name":"a","start_frame":0,"num_frames":124},{"name":"b","start_frame":124,"num_frames":N-124}]`, which ends on frame N;
+(b) the same with `b`'s `num_frames` at N-123, which ends one frame past N;
+(c) `[{"name":"a","start_frame":0,"num_frames":124},{"name":"b","start_frame":N+100,"num_frames":100}]`.
+expected:
+- (a) succeeds, writes one `.otioz`, and has no warnings.
+- (b) and (c) fail. The error names shot `b`, the frame it runs to (N+1 for (b), N+200 for (c)) and the video's N frames,
+  and says the shots must fit inside the video. Neither writes a bundle.
+cleanup: `delete_output(job_id=...)` for each of the three jobs.
+metrics: none.
+
 ## Performance
