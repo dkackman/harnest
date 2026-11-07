@@ -18253,14 +18253,16 @@ places each job on an idle card itself (there is no device argument), so "card A
 L = `templates/ltx2/text-to-video` with `{"seed": 7}` (a model-loading job, about 2 min). `validate_workflow` each
 with its arguments before every run and bind its `acknowledged_cost`.
 1. Quiet host: `get_health` shows both cards with `current_job: null` and `queued: 0`. `clear_memory()`, then run S
-   (`wait_seconds=55`) → output S1, card A.
+   (`wait_seconds=55`) → output S1, card A. If `get_health` showed card A's worker not yet alive before S1 (no job
+   since the server started), S1 is the fresh-worker leg; otherwise record "fresh-worker leg not covered" (only a
+   server restart reaches a fresh worker over MCP; `clear_memory` keeps it alive, per #221 and #1240).
 2. Under load: run L with `wait_seconds=0`. Poll `get_health` (not a sleep: one call per turn) until L is the
    `current_job` of a card, and `get_job_events(L)` shows it still loading (no denoise step yet). Then run S
    (`wait_seconds=55`) → S2. Confirm S2 ran on the card L is **not** on, and that S2's `started_at`..`finished_at`
    lies inside L's. If S2 queued behind L instead, or finished before L started loading, repeat this step once; a second
    miss is a finding about placement, not about this case.
-3. Fresh worker: after L finishes, `clear_memory(device=<S2's card>)`, then `get_health` shows that card `alive:
-   false`. Run S → S3 (it starts a new worker process on that card).
+3. Same-process reload: after L finishes, `clear_memory(device=<S2's card>)` (it drops the pipelines and step cache;
+   the worker stays alive, per #221). Run S → S3 (it reloads the pipeline in the same worker).
 4. `compare_outputs(names=[S1, S2, S3])`.
 expected:
 - All three jobs succeed, and step 2's overlap and card split hold (otherwise the step did not test load).
@@ -18277,14 +18279,18 @@ Plan v1 lets the report be a log line only, if the job event channel can't carry
 #1238 says which. If it says log-only, this case has nothing to check over MCP: record "log-only per #1238" and pass on
 C-F698 alone. Otherwise: all calls use `workspace="regression-complete"`, S is C-F698's S (validate and bind
 `acknowledged_cost` before each run), and the box has two cards (on one, do steps 1-2 only).
-1. `clear_memory()`; `get_health` shows both cards `alive: false`. Run S (`wait_seconds=55`) → J1 on card A.
+1. `get_health`, then run S (`wait_seconds=55`) → J1 on card A. J1 is a fresh worker's first job only if `get_health`
+   showed card A's worker not alive before it (no job since the server started); otherwise record "no fresh worker
+   this session", and J1, J2 and J3 must all carry no line (`clear_memory` keeps the worker alive, per #221 and
+   #1240, so it cannot make one fresh).
 2. Run S again → J2. If J2 ran on card A, it is the second job of that worker. Read
    `get_job_events(J1, kinds=["log"])` and the same for J2 (or with no filter, if the line is narrated under
    another kind; search for `cudnn`).
 3. Put a job on the other card: run L (C-F698's) with `wait_seconds=0`, and while it occupies one card run S → J3,
-   which lands on the other. If J3 landed on card A, `clear_memory(device=<the other card>)` first and retry so that J3
-   is the first job of a fresh worker on the card A is not.
+   which lands on the other. J3 counts as a fresh worker's first job only if `get_health` showed that card's worker not
+   alive before it; otherwise record "second card's fresh worker not reached".
 expected:
+- The expectations for J1 and J3 below apply only when steps 1 and 3 record them as fresh.
 - J1's events carry one line of the shape `torch: cudnn benchmark=false deterministic=true, tf32=false` (exact
   wording may differ; the three values must all be there, by name).
 - A job that is not its worker's first (J2 on the same card) carries **no** such line: it is once per process.
@@ -18324,17 +18330,18 @@ and frame count (check with `get_job_workflow`), that were warm (their events sh
 and close the decode phase. If none is warm, use the catalog `cost` row (1.8 min on an RTX 3090, as listed on
 2026-11-07) for the total, and record that no decode reference existed.
 1. Run T once (`wait_seconds=55`, then `wait_for_job`) to make it resident.
-2. Run T twice more, nothing in between → V1, V2. Read their total times and decode-phase times from
-   `get_job_events`.
-3. `compare_outputs(names=[V1, V2], at=[0, 1.0, 3.0])`, and `get_gallery_metadata` on both
+2. Run T twice more with `{"seed": 1230}` and `{"seed": 1231}`, nothing in between → V1, V2 (new seeds, so the step
+   cache can't serve them; both warm). Read their total times and decode-phase times from `get_job_events`.
+3. `clear_memory()`, then run T with `{"seed": 1230}` → V3 (cold; the step cache was dropped, per #221).
+4. `compare_outputs(names=[V1, V3], at=[0, 1.0, 3.0])`, and `get_gallery_metadata` on both
    (`include_workflow=false`) for `media.pcm_sha256`.
 expected:
 - The median of V1 and V2's totals is within 5% above the reference; with a decode reference, so is the decode phase.
   Over 5% → rerun step 2 once, and if it is still over, file it against #1238 with the readings and job ids (the
   plan's named risk).
-- V1 and V2 are identical: mean abs diff 0 at every `at`, and equal `pcm_sha256` (their `frames`, `sample_rate`,
+- V1 (warm) and V3 (cold) are identical: mean abs diff 0 at every `at`, and equal `pcm_sha256` (their `frames`, `sample_rate`,
   `channels` and `sample_format` agree).
-cleanup: `delete_output(job_id=<id>)` for the three runs.
+cleanup: `delete_output(job_id=<id>)` for the four runs.
 metrics: warm total and decode-phase wall time, logged to `regression-perf/C-F701.jsonl` (`metric: "latency"`,
 `condition: "warm"` and `"warm-decode"`, `unit: "s"`); the first session that runs it unpended seeds it.
 
@@ -18575,7 +18582,7 @@ for a chain that generates its audio, and stays 1 + (N - 1)(1 + `retries`) for o
 is `validate_workflow(inline_workflow=<S5 carrier>, arguments=..., workspace="regression-complete")`, reading
 `plan.estimate`:
 - (a) `{"seed": 2, "check": true, "retries": 1}` (3 segments).
-- (b) `{"seed": 2, "check": false, "retries": 1}`.
+- (b) `{"seed": 2, "check": false, "retries": 1}`: retries with the check off.
 - (c) `{"seed": 2, "check": {"jump_ratio_max": 20}, "retries": 1}`: an object that leaves the floor at its default.
 - (d) `{"seed": 2, "check": {"audio_dbfs_min": null}, "retries": 1}`: picture measures on, audio floor off.
 - (e) `{"seed": 2, "check": true, "retries": 2}`.
@@ -18585,7 +18592,8 @@ expected:
 - The estimate states the worst case as a number of segment renders, or as minutes that scale with it. Read
   the render count if it is stated. Otherwise read the ratio of worst-case to curated minutes against N = 3.
 - (a) and (c): 6 renders, not 5.
-- (b): 3. The check is off, so there are no re-rolls.
+- (b): `valid: false`, with an error at `steps[0].pipeline.chain.retries` saying retries needs check on. With the check
+  off nothing re-rolls, so no estimate is owed.
 - (d): 5. Segment 1 has no measure to fail.
 - (e): 9.
 - (f): 5. The held-audio chain keeps the old formula.
