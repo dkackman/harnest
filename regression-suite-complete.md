@@ -18199,4 +18199,49 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F696 — a braced `*_dtype` argument stays a string through workflow composition
+source: tester, verified in #1228 (claude-opus-5-5 via anthropic)
+Utility tasks only, no model, seconds per run. All calls use `workspace="default"`. Save three probe workflows:
+- `qa-c-f696/child`: variable `weights_dtype` (default `"{bfloat16}"`). Step `pick` is a `get_dict_value` task with
+  `dict: {"weights_dtype": "variable:weights_dtype"}`, `key: "weights_dtype"`, which puts the value under a `*_dtype`
+  key, where the type conversion applies. Step `echo` is `compose_text` with
+  `parts: ["weights_dtype=", "previous_result:pick"]`, `separator: ""`, result `text/plain`.
+- `qa-c-f696/parent`: one `workflow` step, `path: "./child.json"`, `arguments: {"weights_dtype":
+  "variable:weights_dtype"}`, variable default `"{int4}"`, result `text/plain`.
+- `qa-c-f696/grandparent`: the same, wrapping `./parent.json`.
+
+Run each with `run_workflow` and read the text output with `get_output_text`:
+1. Control: `child` with `{"weights_dtype": "int8"}` (no braces).
+2. `parent` with `{"weights_dtype": "{int8}"}`.
+3. `parent` with no arguments (its own braced default).
+4. `grandparent` with `{"weights_dtype": "{int8}"}`.
+expected:
+- Step 1: the job fails with `module diffusers has no attribute int8`, and `job.warnings` says the value needs braces.
+  This shows the probe tells a string from a type; if step 1 succeeds, the case proves nothing.
+- Steps 2 and 4: succeed, text `weights_dtype=int8`.
+- Step 3: succeeds, text `weights_dtype=int4`.
+The regression is steps 2–4 failing like step 1: the escape is lost when a child workflow's variables are set, and a
+template such as `templates/minimax/chained-segments` composed with `weights_dtype: "{int8}"` fails at model load
+after validating clean.
+cleanup: `delete_output(job_id=...)` for each run, and `delete_workflow` for the three probes.
+metrics: none.
+
+### C-F697 — a realized workflow from a `presets` run re-runs with no arguments to the same values; the bundle can't override them
+source: tester, verified in #1234 (claude-opus-5-5 via anthropic)
+A task-only probe, a few seconds per run. W is C-F694's `preset_probe` workflow. All calls use `workspace="default"`.
+1. For each of `{num_inference_steps: 30}` and `{quality: "slow", width: 1600}`: `validate_workflow(workflow=W,
+   arguments=...)` (note its fingerprint), `run_workflow` with its `acknowledged_cost` and `wait_seconds=55`, then
+   `get_job_workflow` → R.
+2. For each R: `validate_workflow(workflow=R, arguments={})`, then `run_workflow(inline_workflow=R, arguments={})`
+   and `get_job_workflow` on that job.
+3. `rerun_job` of the first step-1 job, then `get_job_workflow` on it.
+expected:
+- Every R has `realized: true` and no `presets` key. The first R's variables are steps 30 / 960x544 / int4; the
+  second's are `quality slow`, steps 40 / 1600x720 / none (the argument beats the bundle's 1280).
+- Step 2: each fingerprint equals the step-1 fingerprint for the same run, and each re-run's realized variables
+  equal its R's. The regression is the first re-run going back to steps 4 (the `fast` bundle refilling the values).
+- Step 3: the realized variables are steps 30 / 960x544 / int4.
+cleanup: `delete_output(job_id=<id>)` for every run.
+metrics: none.
+
 ## Performance
