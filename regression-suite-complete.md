@@ -18580,14 +18580,16 @@ source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthrop
 Free. With `check` on, segment 1 is now checked for audio. The worst case becomes N(1 + `retries`) segment renders
 for a chain that generates its audio, and stays 1 + (N - 1)(1 + `retries`) for one that holds its audio. Each probe
 is `validate_workflow(inline_workflow=<S5 carrier>, arguments=..., workspace="regression-complete")`, reading
-`plan.estimate`:
+`plan.estimate`. For (c) and (d), write the check object literally into the carrier's chain block and pass only
+seed and retries as arguments: the carrier's check variable is bool-typed (its default is false).
 - (a) `{"seed": 2, "check": true, "retries": 1}` (3 segments).
 - (b) `{"seed": 2, "check": false, "retries": 1}`: retries with the check off.
 - (c) `{"seed": 2, "check": {"jump_ratio_max": 20}, "retries": 1}`: an object that leaves the floor at its default.
 - (d) `{"seed": 2, "check": {"audio_dbfs_min": null}, "retries": 1}`: picture measures on, audio floor off.
 - (e) `{"seed": 2, "check": true, "retries": 2}`.
-- (f) The chain holding its audio: (a)'s arguments on a copy of the carrier whose chain block holds one audio track
-  (C-F717's `match_audio`/`hold_audio` setup; validate only).
+- (f) The chain holding its audio: `validate_workflow(workflow_path="templates/minimax/chained-segments",
+  arguments={"segments": 3, "check": true, "retries": 1, "image": <its default>}, workspace="regression-complete")`,
+  its default guide continuity carrying audio (validate only).
 expected:
 - The estimate states the worst case as a number of segment renders, or as minutes that scale with it. Read
   the render count if it is stated. Otherwise read the ratio of worst-case to curated minutes against N = 3.
@@ -18661,15 +18663,16 @@ metrics: none.
 ### C-F717 — a chain that holds one audio track gets no audio measure and no silence warning
 pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
-A short LTX chain whose audio is not generated. Setup:
+A short H3 chain whose audio is not generated. H3 only: on a host that doesn't run H3 (mini-ai), skip and say so;
+#1246 can pass on its other cases. Setup:
 1. A silent-ish bed: `run_workflow(workflow_path="templates/text-to-sound-effect", arguments={"seed": 1246,
    "prompt": "near silence, faint room tone"}, workspace="regression-complete", wait_seconds=55)`. Then
    `keep_output` its audio as `c-f717-bed.wav` in `regression-complete`. (Any audio works. A near-silent one makes
    a misfiring floor visible.)
-2. A copy of `templates/ltx2/chained-segments` with its chain block holding that track: `match_audio` or
-   `hold_audio` set to `asset:c-f717-bed.wav`. Use whichever names `get_schema(section="pipelines")` and the
-   guide give for the chain block's held-audio field today. Set `segments: 2`, `num_frames: 49`, `width: 512`,
-   `height: 512`, `seed: 1247`, and `check: true` with `retries: 1`.
+2. A copy of `templates/minimax/chain-matched-to-audio` with `hold_audio: asset:c-f717-bed.wav` (8 s at the bed's
+   default duration, so 2 segments), `seed: 1247`, and `check: true` with `retries: 1` written into its chain block.
+   Held audio is MiniMax-H3 only (`match_audio` or its `hold_audio`, a step `hold_audio`, or a `guide` chain
+   carrying its audio), so this case runs where H3 runs.
 3. Validate (note `plan.estimate`'s worst case), run with `wait_seconds=55`, `wait_for_job`, `get_job`,
    `get_job_events`.
 expected:
@@ -18778,9 +18781,10 @@ the same two values. Last, call it on `narration-long` with `reference_audio` `a
 `reference_text: null`. For the positive control, run both templates with
 `reference_audio: "asset:qa-cast/priya-voice.wav"` and `reference_text: "Some words."`.
 expected:
-- The four null/empty `reference_audio` calls each return `valid: false`, with an error at
-  `arguments.reference_audio` that says the value must not be empty and that there is no default voice. None of
-  them is `valid: true`, and none is refused only for a missing `voice.wav` asset.
+- The four null/empty `reference_audio` calls each return `valid: false` with an error at
+  `arguments.reference_audio`. A `null` value is refused as required with no default. A `""` value is refused as
+  must not be empty. Each error says to give an `asset:` reference of the voice to clone. None of them is
+  `valid: true`, and none is refused only for a missing `voice.wav` asset.
 - `reference_text: null` returns `valid: false` at `arguments.reference_text` ("must not be empty").
 - Both positive controls return `valid: true`. Don't assert on the estimate's value (#1222).
 cleanup: none (validate only).
