@@ -8592,4 +8592,33 @@ It is a **finding** if:
 cleanup: none.
 metrics: none.
 
+### M-F305 — chain `duration_seconds` sets the length: frames and audio trimmed exact, `segments` ignored with a log, and the combinations it can't honour refused
+source: tester, verified in #1204 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 fl2va (`MiniMaxAI/MiniMax-H3` + `lightx2v/Minimax-h3-Turbo`) through
+`templates/minimax/chained-segments`. Validate is free; the one run takes about 5 min on an RTX 3090 (304.8 s).
+Steps:
+1. `validate_workflow` the template with `{"duration_seconds": 10, "segments": 7}`, then with `{"duration_seconds": 30}`,
+   then with `{"segments": 3}` (`duration_seconds` left at its null default).
+2. `run_workflow` the template with `{"duration_seconds": 10, "segments": 3}` (bound acknowledgement, `wait_seconds`
+   1500). Then `get_gallery_metadata` on the final mp4, and `get_job_events(kinds=["log"])`.
+3. `validate_workflow` three inline one-step fl2va chain workflows. Each has `chain: {duration_seconds: 10,
+   segment_argument: "image", fps: 24, frame_snap: {modulus: 17, remainder: 5}}` plus one extra key: (a)
+   `match_audio: true`; (b) `continuity: "guide", guide_frames: 22, guide_backoff: 17`; (c) `continuity:
+   "last_frame", carry_pick: {"sharpest": 6}`. Also validate a control with no extra key.
+expected:
+- Step 1: all three `valid: true`. With `duration_seconds` 10 the estimate is the 3-segment price (13.5 min `catalog`,
+  not scaled to 7: `segments` is overridden). With 30 it is scaled for 7 segments (`derived`, `scaled` naming
+  `segments 7 vs 3`). With a null `duration_seconds` beside the `segments` default, it validates as an ordinary
+  3-segment chain.
+- Step 2: `succeeded`. `frame_count` is **240** (= round(10 × 24)), `fps` 24.0, `duration_seconds` 10.0,
+  `audio_stream_seconds` 10.0, and audio `frames` = 10 × `sample_rate` exactly. `media.shots` sum to 240, and the last
+  shot is shorter than a whole segment. One log line says `'segments' (3) ignored: 'duration_seconds' (10) sets the
+  segment count`.
+- Step 3: the control is `valid: true`. (a), (b) and (c) are each `valid: false` at their chain, and the error names
+  `duration_seconds` and the extra key. Seed-independent: this case asserts length and messages only, never content.
+It is a **finding** if the output is not 240 frames, or the audio is not 10.0 s long; if `segments` silently wins or
+no log line says it was ignored; or if any of (a)–(c) validates.
+cleanup: `delete_output(job_id=<step 2's job>)`.
+metrics: none.
+
 ## Performance

@@ -782,6 +782,17 @@ board '[{"number": 77, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "o
 : > "$FAKE_CLAUDE_LOG"
 features_mini SHARED_PASSES=1
 eq  "features mini-ai: SHARED_PASSES=1 designs the unclaimed idea" "77" "$(grep -o 'DESIGN session for issue #[0-9]*' "$FAKE_CLAUDE_LOG" | tr -dc '0-9\n' | sort -n | tr '\n' ' ' | sed 's/ $//')"
+# a stage Don sent to the Mac (its own target:mini-ai) of a feature lem holds:
+# built here, and the parent keeps lem's claim alone
+mk='"comments": [{"author": {"login": "dkackman"}, "body": "<!-- harnest:plan v1 -->\nplan"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:decomposed v1 -->"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:specced v1 -->"}]'
+board "[{\"number\": 110, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:lead\"}, {\"name\": \"status:plan-approved\"}, {\"name\": \"target:lem\"}], $mk, \"subIssuesSummary\": {\"total\": 2, \"completed\": 0}},
+        {\"number\": 111, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:lead\"}, {\"name\": \"target:mini-ai\"}], \"parent\": {\"number\": 110}},
+        {\"number\": 112, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:lead\"}], \"parent\": {\"number\": 110}}]"
+: > "$FAKE_CLAUDE_LOG"
+mini_loop
+eq  "stage sent here: the Mac builds it" 1 "$(grep -c 'BUILD session for stage #111' "$FAKE_CLAUDE_LOG")"
+eq  "stage sent here: not the feature's other stage" 0 "$(grep -c 'BUILD session for stage #112' "$FAKE_CLAUDE_LOG")"
+eq  "stage sent here: the parent keeps lem's claim alone" "feature,owner:lead,status:plan-approved,target:lem" "$(labels_of 110)"
 rm -rf "$T/h/logs/.driver.lock"
 # tie: lem's claim lands in the same moment; the Mac yields
 board '[{"number": 40, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'

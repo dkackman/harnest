@@ -376,7 +376,9 @@ scripts/sync-fixtures.sh                            # lem's qa-cast media, when 
   (`target:<loop>`), and its stages inherit the claim when they build. The same loop then
   runs the feature's spec, builds, verification and close-out, on its own server, so two
   loops can each have a feature in build (`LEAD_STAGES_PER_CYCLE` is per loop). A feature
-  or stage labeled `backend:cuda` is only ever claimed by lem.
+  or stage labeled `backend:cuda` is only ever claimed by lem. To send one stage elsewhere,
+  label the stage `target:<loop>`: its own claim beats the feature's, so that loop builds
+  and verifies it, and the feature's loop keeps the rest and the close-out.
 - **Not on the Mac:** the tester's standing task (its `qa-bible.md` and series media are
   lem's).
 - **Server-free passes.** Feature design, docs and architecture review and curator review

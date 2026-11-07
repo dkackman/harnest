@@ -681,8 +681,10 @@ lead_pass() {
       continue
     fi
     # A feature is claimed whole (lib/classify.jq): the parent first, so a
-    # stage never builds here while another loop holds its feature.
-    if ! { claim_issue "$parent" && claim_issue "$n"; }; then
+    # stage never builds here while another loop holds its feature. A stage
+    # Don sent here (its own target:<this loop>) builds without the parent.
+    if claimed_here "$n"; then :
+    elif ! { claim_issue "$parent" && claim_issue "$n"; }; then
       echo "[lead:#$n] feature #$parent held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"
       continue
     fi
@@ -1173,7 +1175,8 @@ drain_left() {
   if [ "$shared" = 1 ] && [ -z "$(release_freeze)" ] && [ -n "$(curator_requests)" ]; then echo work; return 0; fi
   mine="$(issue_snapshot | jq -r --arg t "target:$DW_TARGET" '
     (.issues | map({key: (.number | tostring), value: [.labels[].name]}) | from_entries) as $l
-    | .issues[] | select(($l[.number | tostring] + ($l[(.parent.number // 0) | tostring] // [])) | any(. == $t))
+    | .issues[] | ($l[(.parent.number // 0) | tostring] // []) as $pl
+    | select(($l[.number | tostring] | if any(startswith("target:")) then . else . + $pl end) | any(. == $t))
     | .number')" || { echo unknown; return 0; }
   if printf '%s\n' "$rows" | awk -F'\t' -v mine=" $(echo $mine) " '$2 == "wait" && index(mine, " " $1 " ") { f = 1 } END { exit !f }'; then
     echo away; return 0

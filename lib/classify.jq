@@ -189,11 +189,14 @@ def parent_phase:
 # any loop whose server its backend allows; and an unclaimed issue past those
 # to lem, which is where everything handed off before claims existed was
 # deployed. A feature is claimed as a whole: its spec session claims it, and a
-# stage reads its parent's claim as well as its own, so one feature's spec,
-# builds and close-out never split across servers.
+# stage with no claim of its own reads its parent's, so one feature's spec,
+# builds and close-out stay on one server. A stage's own claim wins over its
+# parent's: Don sends one stage to another loop by labeling it target:<loop>
+# (a stage of lem's long-form feature that needs only LTX-2.5 can build and
+# verify on the Mac). Its verified-on:<server> is the verification.
 | ($i | claims) as $own
 | (if $i.parent != null then ($open[($i.parent.number | tostring)] // null) else null end) as $pp
-| (($own + (if $pp != null then ($pp | claims) else [] end)) | unique) as $ec
+| (if ($own | length) > 0 then $own elif $pp != null then ($pp | claims) else [] end) as $ec
 | (($i | backend) as $b | if $b != "" or $pp == null then $b else ($pp | backend) end) as $eb
 | if .queue == "wait" or (.queue | test("^(implementer|tester|lead|reviewer):") | not) then .
   elif (.queue | IN("lead:design", "lead:decompose", "reviewer:docs", "reviewer:arch")) then

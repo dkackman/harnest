@@ -18160,4 +18160,43 @@ cleanup: `delete_output(job_id=<id>, workspace="qa-h3-dialogue-pacing")` for the
 their own job ids. The cited probe jobs are evidence; don't touch them.
 metrics: none.
 
+### C-F694 — a `presets` bundle fills the variables the caller didn't pass, and a bad bundle is refused at validate
+source: tester, verified in #1203 (claude-opus-5-5 via anthropic)
+A task-only probe, a few seconds per run. W is `{"id":"preset_probe","variables":{"quality":"fast","num_inference_steps":20,
+"width":1024,"height":1024,"quant":"none","label":"x"},"variable_constraints":{"num_inference_steps":{"modulus":2,
+"remainder":0}},"presets":{"quality":{"fast":{"num_inference_steps":4,"width":960,"height":544,"quant":"int4"},
+"slow":{"num_inference_steps":40,"width":1280,"height":720,"quant":"none"}}},"steps":[{"name":"qr","task":{"command":
+"qr_code","arguments":{"qr_code_contents":"variable:label"}},"result":{"content_type":"image/png"}}]}`. All calls use
+`workspace="default"`.
+1. For each of `{num_inference_steps: 30}`, `{}` and `{quality: "slow", width: 640}`: `validate_workflow(workflow=W,
+   arguments=...)`, then `run_workflow` with its `acknowledged_cost` and `wait_seconds=55`, then `get_job_workflow`.
+2. `validate_workflow(workflow=W, arguments={"quality": "ultra"})`.
+3. `validate_workflow` of W with `fast` given an extra key `guidance_scale: 1.0`, and of W with `slow` given
+   `num_inference_steps: 5`.
+expected:
+- Step 1's realized `variables`: steps 30 / 960x544 / int4; then steps 4 / 960x544 / int4; then steps 40 / 640x720 / none.
+  No run gets a 409 on its bound fingerprint.
+- Step 2 is refused at `arguments.quality`, naming `fast, slow`.
+- Step 3 is refused at `presets.quality.fast.guidance_scale` (not a declared variable) and at
+  `presets.quality.slow.num_inference_steps` (the modulus rule). A bundle that isn't the default is checked too.
+cleanup: `delete_output(job_id=<id>)` for each of step 1's three runs.
+metrics: none.
+
+### C-F695 — Music 3 refuses an empty lyric at validate, warns on an over-long section lyric, and prices by `audio_duration`
+source: tester, verified in #1210 (claude-opus-5-5 via anthropic)
+Validate only, free. All calls use `workspace="default"`.
+1. `validate_workflow(name="templates/minimax/music", arguments=...)` with `{"lyrics": ""}`, then `{"lyrics": "  "}`.
+2. The same with `{"audio_duration": 30}`, then `{"audio_duration": 240}`.
+3. `validate_workflow(name="templates/minimax/music-long", arguments={"sections": [{"name": "a", "caption": "folk",
+   "lyrics": "[chorus]\nLet it rise, let it rise\nGold along the skyline\nLet it rise, let it rise\nEvery road is mine
+   tonight", "seconds": 20, "audio_duration": 45}, {"name": "b", "caption": "folk", "lyrics": "", "seconds": 10,
+   "audio_duration": 20}]})`, then the same with section `b`'s lyrics set to `"[outro]\nGoodnight"`.
+expected:
+- Step 1: both `valid: false`, with the error at `arguments.lyrics` saying it must not be empty.
+- Step 2: both valid, and the 240 s `plan.estimate.minutes` is larger than the 30 s one.
+- Step 3: the first is refused at `arguments.sections[1].lyrics`. The second is valid, with a warning about
+  `sections[0]` (21 words for 20 s, past the declared rate) and none about `sections[1]`.
+cleanup: none.
+metrics: none.
+
 ## Performance
