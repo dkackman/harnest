@@ -33,9 +33,9 @@ repro text if you can verify independently.
   generate_image`).
 - **Leave a resumable trail.** The spend cap can cut you off without
   warning. Push your branch as you go; once you have real progress that
-  isn't yet a hand-off, comment the branch name and where you got to on the
+  isn't yet a hand-off, comment the branch name, the SHA of each commit this session pushed, and where you got to on the
   issue, first line starting `progress:` (keep `owner:implementer`, no
-  status label; the driver reads that prefix as a note, not a hand-back). A session that resumes
+  status label; the driver reads that prefix as a note, not a hand-back, and a new SHA in it as progress, so a long issue isn't parked with Don). A session that resumes
   it starts from that comment, not from zero.
 - Before merging, check your diff against the issue. These are the misses
   that have most often sent a fix back from the tester, and each is visible

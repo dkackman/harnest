@@ -87,6 +87,29 @@ NO_PROGRESS_PARK_AFTER=2 note_progress o/r 5 "$fp" t lead:build >/dev/null
 has "second unchanged build parks with Don" "issue edit 5 --repo o/r --remove-label owner:lead --add-label owner:don --add-label status:needs-approval" "$(cat "$GH_CALLS")"
 NO_PROGRESS_PARK_AFTER=2 note_progress o/r 5 "OPEN|other|" t lead:decompose
 eq "a change resets that kind's count" "0" "$(grep -c ':lead:decompose' "$LOGS/progress.tsv" || true)"
+# the fingerprint query itself, over a real-shaped issue: a fix that keeps
+# owner:implementer and pushes a commit per session is progress (harnest#184)
+fp_issue() {  # <progress comment bodies, as a JSON array>
+  printf '{"state":"OPEN","labels":[{"name":"owner:implementer"}],"comments":[{"body":"<!-- harnest:plan v1 -->\\n# plan"},%s]}\n' \
+    "$(printf '%s' "$1" | jq -c '.[] | {body: .}' | paste -sd, -)" > "$T/issue.json"
+}
+stub_gh 'while [ $# -gt 0 ]; do [ "$1" = --jq ] && q="$2"; shift; done; jq -r "$q" "'"$T"'/issue.json"'
+fp_issue '["progress: pushed c4e6f5c2 to develop (2026-11-07, 20261107). Still open: deadbeef, facade."]'
+eq "fingerprint: state, labels, markers, then cited SHAs (no dates or words)" \
+  "OPEN|owner:implementer|<!-- harnest:plan v1 -->|c4e6f5c2" "$(issue_fingerprint o/r 6)"
+fp1="$(issue_fingerprint o/r 6)"
+fp_issue '["progress: pushed c4e6f5c2 to develop.", "progress: pushed 82e849fa to develop."]'
+NO_PROGRESS_PARK_AFTER=2 note_progress o/r 6 "$fp1" t implementer:fix
+eq "a session citing a new commit is progress" "0" "$(grep -c '^o/r#6:' "$LOGS/progress.tsv" || true)"
+fp2="$(issue_fingerprint o/r 6)"
+fp_issue '["progress: pushed c4e6f5c2 to develop.", "progress: pushed 82e849fa to develop.", "progress: still open, see 82e849fa."]'
+NO_PROGRESS_PARK_AFTER=2 note_progress o/r 6 "$fp2" t implementer:fix
+eq "a progress comment citing only old commits is not" "1" "$(grep '^o/r#6:' "$LOGS/progress.tsv" | cut -f3)"
+: > "$GH_CALLS"
+NO_PROGRESS_PARK_AFTER=2 note_progress o/r 6 "$fp2" t implementer:fix >/dev/null
+has "and two of those still park" "issue edit 6 --repo o/r --remove-label owner:implementer --add-label owner:don" "$(cat "$GH_CALLS")"
+fp_issue '["thanks, see c4e6f5c2"]'
+eq "a SHA outside a progress: comment does not count" "OPEN|owner:implementer|<!-- harnest:plan v1 -->|" "$(issue_fingerprint o/r 6)"
 
 # --- handoff_count: hand-offs since the last reopen, or Don's last hand-back
 stub_gh 'printf "%s\n" labeled labeled reopened labeled'

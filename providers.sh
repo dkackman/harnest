@@ -1791,14 +1791,22 @@ handoff_count() {
 
 # issue_fingerprint <repo> <n>
 # State, sorted labels, and the first line of each harnest marker comment
-# (a feature's phase markers, including the plan's version), or empty on
-# failure. What "made progress" means to the ledger below: a session that
-# changes none of them left the issue where it found it. Markers count
-# because some lead sessions move a feature on with a marker alone.
+# (a feature's phase markers, including the plan's version), and the
+# commit SHAs cited in `progress:` comments (fix.md's resumable trail), or
+# empty on failure. What "made progress" means to the ledger below: a
+# session that changes none of them left the issue where it found it.
+# Markers count because some lead sessions move a feature on with a marker
+# alone. Cited SHAs count because a fix working down a long list keeps
+# `owner:implementer` on purpose and pushes a commit per session (#1235
+# was parked after two such sessions, harnest#184); a `progress:` comment
+# that cites no new SHA is still no progress. A SHA is a 7-40 character
+# hex word with a digit and a letter, so dates and plain words don't count.
 issue_fingerprint() {
   gh issue view "$2" --repo "$1" --json state,labels,comments \
     --jq '.state + "|" + ([.labels[].name] | sort | join(",")) + "|"
-          + ([.comments[].body | select(startswith("<!-- harnest:")) | split("\n")[0]] | join(","))' 2>/dev/null || true
+          + ([.comments[].body | select(startswith("<!-- harnest:")) | split("\n")[0]] | join(",")) + "|"
+          + ([.comments[].body | select(startswith("progress:")) | scan("\\b[0-9a-f]{7,40}\\b")
+              | select(test("[0-9]") and test("[a-f]"))] | unique | join(","))' 2>/dev/null || true
 }
 
 # note_progress <repo> <n> <fingerprint-before> <tag> <kind>
@@ -1806,9 +1814,9 @@ issue_fingerprint() {
 # labels unchanged would be picked by the same queue next cycle, at full
 # cost, for ever: a budget cut-off every time, an agent that stops, a
 # prompt with no way out. After NO_PROGRESS_PARK_AFTER such sessions in a
-# row, the driver parks the issue with Don instead. A build or fix that
-# leaves a resumable progress comment gets NO_PROGRESS_PARK_AFTER - 1 of
-# those. Counts are per session kind (repo#n:kind), so a design session's
+# row, the driver parks the issue with Don instead. A session that cites a
+# new commit in a `progress:` comment changed the fingerprint, so it is not
+# one of those (issue_fingerprint). Counts are per session kind (repo#n:kind), so a design session's
 # count never carries into a decompose. 0 disables. The ledger is
 # logs/progress.tsv: key, fingerprint, count.
 NO_PROGRESS_PARK_AFTER="${NO_PROGRESS_PARK_AFTER:-2}"
@@ -1835,7 +1843,7 @@ note_progress() {
   [ -z "$owner" ] || [ "$owner" = owner:don ] || swap=(--remove-label "$owner")
   local back="${owner:-the owner it had}"
   if gh issue edit "$n" --repo "$repo" ${swap[@]+"${swap[@]}"} --add-label owner:don --add-label status:needs-approval >/dev/null 2>&1 \
-     && gh issue comment "$n" --repo "$repo" --body "Parked by the loop driver: $count sessions in a row ended without changing this issue's state or labels (NO_PROGRESS_PARK_AFTER=$NO_PROGRESS_PARK_AFTER), so the next cycle would run the same session again. Read the latest session comments, then hand it back with \`$back\` and without \`status:needs-approval\`, or decide it here." >/dev/null 2>&1; then
+     && gh issue comment "$n" --repo "$repo" --body "Parked by the loop driver: $count sessions in a row ended without changing this issue's state or labels or citing a new commit in a \`progress:\` comment (NO_PROGRESS_PARK_AFTER=$NO_PROGRESS_PARK_AFTER), so the next cycle would run the same session again. Read the latest session comments, then hand it back with \`$back\` and without \`status:needs-approval\`, or decide it here." >/dev/null 2>&1; then
     { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp"; mv "$ledger.tmp" "$ledger"
   else
     echo "[$tag] could not park #$n (gh failed)" | tee -a "$LOOP_LOG"

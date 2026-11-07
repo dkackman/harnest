@@ -711,7 +711,7 @@ isn't found until you re-run the script.
 | `EFFORT` | `medium` | `--effort` for every role; override per role with `IMPLEMENTER_`/`TESTER_`/`TRIAGE_`/`REGRESSION_`/`LEAD_`/`CURATOR_EFFORT` and `REVIEWER_EFFORT` (triage and the docs reviewer follow the tester's) |
 | `IMPLEMENTER_BUDGET_USD` / `TESTER_BUDGET_USD` / `TRIAGE_BUDGET_USD` | `8` / `5` (`8` on a non-lem target) / `3` | `--max-budget-usd` per session; `0` = uncapped |
 | `REGRESSION_BUDGET_USD` | `6` | per regression chunk |
-| `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's labels unchanged before the driver parks it with Don; `0` = never |
+| `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's state, labels and markers unchanged and cite no new commit in a `progress:` comment before the driver parks it with Don; `0` = never |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
 | `TESTER_TASK_EVERY` | `4` | run the tester's standing-task session every Nth cycle |
 | `IMPLEMENTER_ESCALATE_AFTER` / `IMPLEMENTER_PARK_AFTER` | `2` / `4` | bounces before escalating to the tester's model / parking with Don; `0` = never |
@@ -896,7 +896,7 @@ raw events.
   anyone but the tester, an issue a session left stranded, and a suite commit that removed
   lines. The audit only logs; it repairs nothing.
 - `logs/progress.tsv`: the no-progress ledger. An issue that sessions leave unchanged
-  `NO_PROGRESS_PARK_AFTER` times in a row is parked with Don instead of re-run.
+  `NO_PROGRESS_PARK_AFTER` times in a row (a `progress:` comment citing a new commit SHA is a change) is parked with Don instead of re-run.
 - After every cycle, the driver prints a status board with one line per open issue:
   number, status, owner and title. The title is marked `[lem]` or `[mini-ai]` with the loop
   that holds the issue (its own claim, else its feature's) and `(parked) ` on a parked issue.

@@ -1126,7 +1126,8 @@ label logic in jq, in four files, which is where the holes come from.
   dw#378's marker was migrated to `decomposed v2`.
 - **No-progress ledger** (`note_progress`, `logs/progress.tsv`). After
   `NO_PROGRESS_PARK_AFTER` (2) sessions in a row that ran and left the issue's state and
-  labels unchanged, the driver parks the issue with Don. Died and rate-limited sessions
+  labels unchanged, the driver parks the issue with Don. A `progress:` comment that cites a new
+  commit SHA counts as a change (harnest#184). Died and rate-limited sessions
   don't count.
 - **The audit** also warns on an issue a session left stranded.
 - **Prompt exits for dead ends:**
