@@ -18552,7 +18552,6 @@ that workflow at seed 2, C-F714 and C-F715 cannot run: hand them to mini-ai. Eve
 10 min on mini-ai, and a re-roll adds a segment.
 
 ### C-F712 — `check.audio_dbfs_min` validates as a negative floor or null, and refuses anything else by name
-pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
 Free. Carrier: `get_workflow("templates/ltx2/chained-segments")`, passed inline. Each probe replaces the chain block's
 `check` value (`steps[0].pipeline.chain.check`, which is `"variable:check"` or similar) with the literal below. One
@@ -18575,7 +18574,6 @@ cleanup: none (validation only).
 metrics: none.
 
 ### C-F713 — a checked chain that generates its audio quotes a worst case that includes segment 1
-pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
 Free. With `check` on, segment 1 is now checked for audio. The worst case becomes N(1 + `retries`) segment renders
 for a chain that generates its audio, and stays 1 + (N - 1)(1 + `retries`) for one that holds its audio. Each probe
@@ -18626,7 +18624,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F715 — unchecked, the silent segment is warned about and kept; a null floor turns both off
-pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
 About 20 min of mini-ai GPU, two runs. It needs `20f7a38662cf` (see the section header).
 - (a) `run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 2}, ...)`. The check is off by default.
@@ -18647,7 +18644,6 @@ cleanup: `delete_output(job_id=<id>)` for each.
 metrics: none.
 
 ### C-F716 — a chain with sound in every segment draws no silence warning, and every shot records its level
-pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
 About 10 min of mini-ai GPU, or one segment render on any server. Seed 1166 has no dropout in the S5 bench.
 `run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 1166}, workspace="regression-complete",
@@ -18981,6 +18977,83 @@ expected:
 It is a **finding** if (a), (c) or (d) is `valid: true`. Each of those shapes fails at run time only after the pipeline has
 loaded (#1259).
 cleanup: none.
+metrics: none.
+
+#### #1221 plan v2: the audio floor's re-roll, the docs caveat and the probe's re-roll answer (C-F732 to C-F734)
+
+C-F732 uses the S5 carrier of "The chain check's audio floor" above (`get_job_workflow("20f7a38662cf")`'s
+`workflow`), with the same hand-to-mini-ai rule and `workspace="regression-complete"`. Plan v2 (Don, 2026-11-08)
+loosened stage A's repro: the re-roll is judged on its mechanics, not on sound coming back. On mini-ai the re-roll
+at seed 1000005 read -88.6 dBFS (job `1deff016d727`), against -88.7 at seed 2.
+
+### C-F732 — the S5 seed-2 control, checked, fails segment 3 on `audio_dbfs`, re-rolls it once at a fresh seed, keeps one attempt and reports it silent
+source: tester, spec for #1246 from #1221's plan v2 (claude-opus-5-5 via anthropic)
+About 15-25 min of mini-ai GPU. Validate first and bind `acknowledged_cost`. `run_workflow(inline_workflow=<S5
+carrier>, arguments={"seed": 2, "check": true, "retries": 1}, workspace="regression-complete", wait_seconds=55,
+note="C-F732: S5 seed 2 checked, audio floor, v2 mechanics")`, then `wait_for_job` until it finishes. Then read
+`get_job` and `get_job_events`.
+expected:
+- `succeeded`. A segment that stays silent after its re-roll is a warning, never a failed job.
+- A `chain_check_failed` warning (in `job.warnings` or the events) names segment 3, the measure `audio_dbfs` and a
+  value below -80. It names the kept attempt.
+- The events show segment 3 re-rolled once. Segment 3's shot record has `attempts: 2` and a `seed` of
+  2 + 1000003 = 1000005, which differs from the step's seed 2.
+- The kept attempt is the one the chain's selection prefers: fewer failed measures first, then the smaller jump.
+  The attempt the warning names as kept is the one whose values the shot record carries. Where the events report
+  both attempts' `audio_dbfs`, the shot's `audio_dbfs` equals one of them within 0.1 dB.
+- Segment 3's shot record carries `check_failed`, and it includes `audio_dbfs`.
+- Exactly one `chain_segment_silent` warning. It names segment 3 and its kept level, which is below -70 and matches
+  the shot's `audio_dbfs` within 0.1 dB.
+- Segments 1 and 2 each have a numeric `audio_dbfs` above -70 and `attempts: 1`. No warning names either of them.
+  Segment 1 has no picture measures in any record or warning.
+- The case does **not** require sound to come back. If segment 3's kept level is above -70, the records must agree
+  with that: no `check_failed` naming `audio_dbfs` and no `chain_segment_silent` for segment 3. On mini-ai, where the
+  draw is deterministic, that would be a change from `1deff016d727` and belongs in the record as a note.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F733 — the guide and the `long-form` skill say an `audio_dbfs` re-roll isn't guaranteed to bring sound back, and the warning reports the segment either way
+source: tester, spec for #1246 from #1221's plan v2 (claude-opus-5-5 via anthropic)
+Free reads. (a) `get_guide("workflows", section="Checking each segment")`. (b) The `dw:long-form` skill as loaded
+(its `SKILL.md`). (c) The skill's `references/run-and-repair.md`, where the skill points at it ("Turn `check` on
+with `retries` to re-roll it", or its successor), read as loaded with the skill.
+expected:
+- (a) Where the section says a failed `audio_dbfs` re-rolls, it also says the re-roll draws fresh noise but isn't
+  guaranteed to bring sound back, and that `chain_segment_silent` reports the segment either way.
+- (b) The skill's text on the audio floor says the same, briefly: setting `retries` for `audio_dbfs` may not fix a
+  silent segment.
+- (c) The reference's re-roll advice carries the same caveat, and says a segment still silent after its re-roll is
+  reported by `chain_segment_silent` and the shot's `check_failed`.
+- None of (a)-(c) still says or implies that a fresh seed fixes a silent segment.
+- `audio_dbfs` is still described as a measure that re-rolls (not warn-only), and the default floor is still -70.
+- A measured example (the S5 repro, its minutes) may appear and is not checked. No assertion here rests on a timing.
+- C-F713's checks on the same section and skill (the N(1 + `retries`) worst case) still hold.
+cleanup: none (reads only).
+metrics: none.
+
+### C-F734 — the probe's *Cause* paragraph answers "does a re-roll bring sound back?" by the plan's rule, citing `1deff016d727`
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v2 (claude-opus-5-5 via anthropic)
+Free reads, beside C-F720. Source: the *Cause* paragraph of `bench/records/ltx.md` *Audio dropout*, as quoted in
+#1247's hand-off comment (not read from the repository). Calls: `get_job("1deff016d727")`, and the three probe
+jobs' levels as C-F720 reads them. Then `gh issue view 1221 --repo dkackman/diffusers-workflow --comments` for the
+hand-off question below.
+expected:
+- The paragraph cites `1deff016d727`. That job's `get_job` is `succeeded`, and its segment 3 has `attempts: 2`,
+  `seed` 1000005 and an `audio_dbfs` within 0.1 dB of the value the paragraph states (about -88.6).
+- The paragraph's cause follows from the three probe levels by plan v2's rule:
+  - run 1 (float32 vocoder) above -70 → the vocoder;
+  - run 1 at or under -70 and run 2 (float32 audio VAE and vocoder) above -70 → the audio VAE;
+  - both at or under -70 → the conditioning (segment 2's last frame plus prompt 3), not the noise draw.
+- The paragraph states whether a re-roll can bring sound back, consistent with that cause:
+  - vocoder or audio VAE → no, the decode is the same for every seed. It names stage C (a float32 component in the
+    LTX templates) as the follow-up that comes to Don as a new plan version.
+  - conditioning → only if some seed escapes the conditioning, and on the repro none did. It says the record does
+    not settle whether `audio_dbfs` stays re-rollable. Then #1221 carries a comment from #1247's hand-off asking
+    Don whether to keep `audio_dbfs` re-rollable or demote it to warn-only.
+- A paragraph with no re-roll answer, or one that contradicts its own cause, is a finding. So is a conditioning
+  cause with no question to Don on #1221.
+cleanup: none (reads only).
 metrics: none.
 
 ## Performance
