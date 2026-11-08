@@ -18603,26 +18603,6 @@ expected:
 cleanup: none (validation only).
 metrics: none.
 
-### C-F714 — the S5 seed-2 control, checked, re-rolls its silent segment 3 and keeps one with sound
-pending: #1246
-source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
-About 15-25 min of mini-ai GPU. It needs `20f7a38662cf` (see the section header). `run_workflow(inline_workflow=<S5
-carrier>, arguments={"seed": 2, "check": true, "retries": 1}, workspace="regression-complete", wait_seconds=55,
-note="C-F714: S5 seed 2 checked, audio floor")`, then `wait_for_job` until it finishes. Then read `get_job`,
-`get_job_events` and `get_output_audio` over 10-15 s of the final mp4.
-expected:
-- `succeeded`.
-- A `chain_check_failed` warning (in `job.warnings` or the events) names segment 3, the measure `audio_dbfs` and a
-  value below -80 (the bench read -87.8 to -89.2; the re-based carrier read -88.7). It names the kept attempt.
-- Segment 3's shot record has `attempts: 2`, a `seed` of 2 + 1000003 = 1000005, an `audio_dbfs` above -70, and no
-  `check_failed` (or one that does not include `audio_dbfs`).
-- Segments 1 and 2 have an `audio_dbfs` above -70 and `attempts: 1`. Segment 1 has no picture measures in any
-  record or warning.
-- `get_output_audio` hears sound (wind, surf, the bicycle) across 10-15 s, not silence.
-- There is no `chain_segment_silent` warning: no kept segment is under -70.
-cleanup: `delete_output(job_id=<id>)`.
-metrics: none.
-
 ### C-F715 — unchecked, the silent segment is warned about and kept; a null floor turns both off
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
 About 20 min of mini-ai GPU, two runs. It needs `20f7a38662cf` (see the section header).
@@ -18741,7 +18721,7 @@ expected:
 - The stated cause follows the plan's rule:
   - run 1 above -70 → the vocoder;
   - run 1 at or under -70 and run 2 above -70 → the audio VAE;
-  - both at or under -70 → the latents, with stage A as the remedy.
+  - both at or under -70 → the conditioning (segment 2's last frame plus prompt 3).
   A cause that does not follow from the three levels by this rule is a finding.
 - The paragraph says the `MPS-only?` question stays open.
 cleanup: none (reads only; the probe's jobs belong to the record).
