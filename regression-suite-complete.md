@@ -18685,48 +18685,6 @@ expected:
 cleanup: none (validation only).
 metrics: none.
 
-### C-F719 — an LTX run with a float32 vocoder through the dict form completes, and its job records the dict
-pending: #1247
-source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
-One short LTX render. Carrier: `templates/ltx2/chained-segments` inline, with C-F718 (a)'s dict at
-`steps[0].pipeline.from_pretrained_arguments.torch_dtype`, and `arguments={"segments": 1, "num_frames": 49,
-"width": 512, "height": 512, "seed": 1247}`. Validate, run with `workspace="regression-complete"` and
-`wait_seconds=55`, `wait_for_job`, then `get_job`, `get_job_events`, `get_job_workflow` and `get_output_audio`.
-expected:
-- `succeeded`, with no error or traceback, and no warning that the dtype was ignored or flattened.
-- `get_job_workflow`'s realized workflow shows the dict, `{"default": "torch.bfloat16", "vocoder":
-  "torch.float32"}`, as given.
-- The events' load lines name the dict or the vocoder's float32. They do not show a single `torch.bfloat16` for the
-  whole pipeline.
-- The output has an audio track that `get_output_audio` can play.
-- Any MPS float16 warning the events carry names only a component that is actually float16. None is, here.
-cleanup: `delete_output(job_id=<id>)`.
-metrics: none.
-
-### C-F720 — the decode-precision probe's three jobs carry the dtypes, the levels and the cause the record states
-pending: #1247
-source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
-Free reads. It needs the probe's jobs on mini-ai. Source: `bench/records/ltx.md` *Audio dropout* > *Cause*, which
-names three job ids. The stage's hand-off comment on #1247 quotes that paragraph and the ids. Read them there, not
-from the repository. For each id, call `get_job` and `get_job_workflow`.
-expected:
-- All three are `succeeded`, run `BenchS5LtxAction-mps` at seed 2 with check off, and their
-  `from_pretrained_arguments.torch_dtype` is as stated:
-  - run 1: `default` bf16 and `vocoder` float32;
-  - run 2: `default` bf16, with `audio_vae` and `vocoder` float32;
-  - run 3: `torch.bfloat16`, or a dict with only `default` bf16.
-- Segment 3's level in each job (the shot record's `audio_dbfs`, or `assess_output`'s per-shot level) is what the
-  paragraph states, within 0.1 dB.
-- Run 3's segment-3 level is within 0.5 dB of -89.2.
-- The stated cause follows the plan's rule:
-  - run 1 above -70 → the vocoder;
-  - run 1 at or under -70 and run 2 above -70 → the audio VAE;
-  - both at or under -70 → the conditioning (segment 2's last frame plus prompt 3).
-  A cause that does not follow from the three levels by this rule is a finding.
-- The paragraph says the `MPS-only?` question stays open.
-cleanup: none (reads only; the probe's jobs belong to the record).
-metrics: none.
-
 ### C-F721 — an LTX chain with `save_segments` and a forced-fail `check` re-rolls its middle and last segments, keeps one attempt each and records it
 source: tester, verified in #1241 (claude-opus-5-5 via anthropic)
 About 5 min of mini-ai GPU. Take an inline copy of `templates/ltx2/chained-segments` (`get_workflow`). It already sets
@@ -19008,31 +18966,6 @@ expected:
 - `audio_dbfs` is still described as a measure that re-rolls (not warn-only), and the default floor is still -70.
 - A measured example (the S5 repro, its minutes) may appear and is not checked. No assertion here rests on a timing.
 - C-F713's checks on the same section and skill (the N(1 + `retries`) worst case) still hold.
-cleanup: none (reads only).
-metrics: none.
-
-### C-F734 — the probe's *Cause* paragraph answers "does a re-roll bring sound back?" by the plan's rule, citing `1deff016d727`
-pending: #1247
-source: tester, spec for #1247 from #1221's plan v2 (claude-opus-5-5 via anthropic)
-Free reads, beside C-F720. Source: the *Cause* paragraph of `bench/records/ltx.md` *Audio dropout*, as quoted in
-#1247's hand-off comment (not read from the repository). Calls: `get_job("1deff016d727")`, and the three probe
-jobs' levels as C-F720 reads them. Then `gh issue view 1221 --repo dkackman/diffusers-workflow --comments` for the
-hand-off question below.
-expected:
-- The paragraph cites `1deff016d727`. That job's `get_job` is `succeeded`, and its segment 3 has `attempts: 2`,
-  `seed` 1000005 and an `audio_dbfs` within 0.1 dB of the value the paragraph states (about -88.6).
-- The paragraph's cause follows from the three probe levels by plan v2's rule:
-  - run 1 (float32 vocoder) above -70 → the vocoder;
-  - run 1 at or under -70 and run 2 (float32 audio VAE and vocoder) above -70 → the audio VAE;
-  - both at or under -70 → the conditioning (segment 2's last frame plus prompt 3), not the noise draw.
-- The paragraph states whether a re-roll can bring sound back, consistent with that cause:
-  - vocoder or audio VAE → no, the decode is the same for every seed. It names stage C (a float32 component in the
-    LTX templates) as the follow-up that comes to Don as a new plan version.
-  - conditioning → only if some seed escapes the conditioning, and on the repro none did. It says the record does
-    not settle whether `audio_dbfs` stays re-rollable. Then #1221 carries a comment from #1247's hand-off asking
-    Don whether to keep `audio_dbfs` re-rollable or demote it to warn-only.
-- A paragraph with no re-roll answer, or one that contradicts its own cause, is a finding. So is a conditioning
-  cause with no question to Don on #1221.
 cleanup: none (reads only).
 metrics: none.
 
