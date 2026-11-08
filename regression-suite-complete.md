@@ -18671,16 +18671,15 @@ transformer's and text encoder's own `from_pretrained_arguments` alone. One `val
 workspace="regression-complete")` per probe.
 - Accepted: (a) `{"default": "torch.bfloat16", "vocoder": "torch.float32"}`;
   (b) `{"default": "torch.bfloat16", "audio_vae": "torch.float32", "vocoder": "torch.float32"}`;
-  (c) `"torch.bfloat16"`, the string form, unchanged; (d) `{"default": "torch.bfloat16"}` alone.
+  (c) `"torch.bfloat16"`, the string form, unchanged; (d) `{"default": "torch.bfloat16"}` alone;
+  (i) `"{torch.bfloat16}"`, the escaped string form, which validated before B1 too.
 - Refused: (e) `{"default": "torch.bfloat16", "vocoder": "torch.notatype"}`;
   (f) `{"vocoder": "torch.notatype"}`, the plan's probe; (g) `{"default": "torch.bfloat16", "vocoder":
-  "{torch.float32}"}`, a `{}`-escaped value; (h) `{"default": "torch.bfloat16", "vocoder": 32}`;
-  (i) `"{torch.bfloat16}"`, the escaped string form, refused as it is today.
+  "{torch.float32}"}`, a `{}`-escaped value; (h) `{"default": "torch.bfloat16", "vocoder": 32}`.
 expected:
-- (a)-(d) `valid: true`, with `plan` built and no error naming `torch_dtype`.
+- (a)-(d) and (i) `valid: true`, with `plan` built and no error naming `torch_dtype`.
 - (e)-(h) `valid: false`. Each error's path or message names `vocoder`, the component whose value is bad, and not
   only `torch_dtype`.
-- (i) is refused as it is today, so the string form's behavior is unchanged.
 - No probe's reply carries a server filesystem path (`/Users/`, `/private/`, `/home/`).
 cleanup: none (validation only).
 metrics: none.
@@ -18995,8 +18994,7 @@ expected:
   scalar type", "Input type ... and weight type ... should be the same"), and no warning says the dtype was ignored or
   flattened.
 - `get_job_workflow`'s realized workflow shows the dict as given, with all three keys and their values.
-- The events' load lines name the dict, or the float32 of `audio_vae` and `vocoder`. They don't show one
-  `torch.bfloat16` for the whole pipeline.
+- No event or warning shows one `torch.bfloat16` for the whole pipeline, or says the dtype was ignored or flattened.
 - The output has an audio track that `get_output_audio` can play.
 - An MPS float16 warning in the events may only name a component that really is float16. No component is float16
   here, so none should appear.
@@ -19013,7 +19011,7 @@ expected:
   no warning naming `torch_dtype`.
 - The job is `succeeded`. `get_job_workflow` shows `torch_dtype` as the string `"torch.bfloat16"`, not turned into a
   dict.
-- The events' load line reports the single dtype as it did before (`torch.bfloat16`), and no new dtype warning appears.
+- The load events are unchanged: no dtype is named and no new dtype warning appears.
 - The output has an audio track.
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
