@@ -19036,4 +19036,136 @@ expected:
 cleanup: none (reads only).
 metrics: none.
 
+#### #1221 plan v3: the both-float32 audio decode, the shared-dtype note and the two-run probe (C-F735 to C-F740)
+
+Plan v3 (Don, 2026-11-08, Q7 and Q8) split stage B. B1 (#1247) is the dict `torch_dtype`. B2 (#1267) is the probe and
+the *Cause* record. diffusers' LTX-2 decode casts the audio latents to the audio VAE's dtype but passes the mel to the
+vocoder with no cast. So LTX-2's `audio_vae` and `vocoder` have to share a dtype, and a vocoder-only float32 dict
+validates (C-F718 (a)) but can't finish a run. The probe now runs twice, with no vocoder-only run, and its cause reads
+"audio decode" or "conditioning". C-F735 supersedes C-F719, C-F739 supersedes C-F720, and C-F740 supersedes C-F734.
+The retirement request is on dkackman/harnest. C-F718 and SE-F063 stand unchanged. The both-float32 dict below is
+`{"default": "torch.bfloat16", "audio_vae": "torch.float32", "vocoder": "torch.float32"}`, which is C-F718 (b).
+The carrier for C-F735 to C-F737 is `get_workflow("templates/ltx2/chained-segments")`, passed inline, with the dtype
+at `steps[0].pipeline.from_pretrained_arguments.torch_dtype` (today `"torch.bfloat16"`). Each case uses
+`workspace="regression-complete"` and binds `acknowledged_cost` from `validate_workflow` before running.
+
+### C-F735 — an LTX run with the audio VAE and vocoder both float32 through the dict form completes, and its job records the dict
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
+One short LTX render. The carrier has the both-float32 dict, and `arguments={"segments": 1, "num_frames": 49, "width":
+512, "height": 512, "seed": 1247}`. `validate_workflow`, then `run_workflow(..., wait_seconds=55, note="C-F735:
+both-fp32 audio decode")`, then `wait_for_job` until it finishes. Then read `get_job`, `get_job_events`,
+`get_job_workflow` and `get_output_audio`.
+expected:
+- `validate_workflow` returns `valid: true`.
+- The job is `succeeded`, with no error or traceback. No dtype-mismatch error appears (`BFloat16`/`Float`, "expected
+  scalar type", "Input type ... and weight type ... should be the same"), and no warning says the dtype was ignored or
+  flattened.
+- `get_job_workflow`'s realized workflow shows the dict as given, with all three keys and their values.
+- The events' load lines name the dict, or the float32 of `audio_vae` and `vocoder`. They don't show one
+  `torch.bfloat16` for the whole pipeline.
+- The output has an audio track that `get_output_audio` can play.
+- An MPS float16 warning in the events may only name a component that really is float16. No component is float16
+  here, so none should appear.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F736 — a plain string `torch_dtype` LTX template still validates and runs as before the dict form
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
+One short LTX render. Use the carrier unchanged (string `"torch.bfloat16"`), with C-F735's `arguments` and
+`note="C-F736: string torch_dtype control"`. Validate, run with `wait_seconds=55`, `wait_for_job`, then read
+`get_job`, `get_job_events` and `get_job_workflow`.
+expected:
+- `validate_workflow` returns `valid: true`. Its `plan.estimate` has the same shape as before B1: no new field and
+  no warning naming `torch_dtype`.
+- The job is `succeeded`. `get_job_workflow` shows `torch_dtype` as the string `"torch.bfloat16"`, not turned into a
+  dict.
+- The events' load line reports the single dtype as it did before (`torch.bfloat16`), and no new dtype warning appears.
+- The output has an audio track.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F737 — a vocoder-only float32 dict on LTX validates, then fails at decode with a dtype error, and the server stays usable
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
+One short LTX render, which fails after denoising. The carrier has `{"default": "torch.bfloat16", "vocoder":
+"torch.float32"}`, with C-F735's `arguments` and `note="C-F737: vocoder-only dict, expected decode failure"`.
+`validate_workflow`, run with `wait_seconds=55`, then `wait_for_job` until it reaches a terminal state. Read `get_job`
+and `get_job_events`. Then call `get_health`, and run the free `validate_workflow` on C-F735's workflow once more.
+expected:
+- `validate_workflow` returns `valid: true`. Plan v3 adds no rule that two chained components must share a dtype, so
+  a refusal here is a change from the plan. Report it, but don't fail the case on it.
+- The job ends `failed`, not hung and not `succeeded`. Its error is diffusers' dtype mismatch (bf16 against float,
+  in whatever wording diffusers uses) and is raised at the audio decode. No silent audio is produced in its place.
+- The error carries no server filesystem path (`/Users/`, `/private/`, `/home/`).
+- Afterwards `get_health` shows the worker idle and usable. The follow-up validate succeeds.
+cleanup: `delete_output(job_id=<id>)` if the job left a directory. Otherwise none.
+metrics: none.
+
+### C-F738 — the acceleration guide's per-component dtype note says LTX-2's audio VAE and vocoder must share a dtype
+pending: #1247
+source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
+Free reads. `list_guides`, then `get_guide("acceleration", section="per-component dtype")`. The section name is
+matched loosely. If that name doesn't resolve, find the heading in `list_guides`'s `acceleration` sections or in the
+guide's index.
+expected:
+- The `acceleration` guide (`ACCELERATION.md`) has a per-component dtype note. It shows the dict form of
+  `from_pretrained_arguments.torch_dtype`, with a `default` key and per-component keys.
+- The note says LTX-2's `audio_vae` and `vocoder` must share a dtype, because the decode doesn't cast the mel
+  between them. It says to load both in float32 together, not the vocoder alone.
+- It doesn't claim that validation catches a mismatched pair. Under plan v3 it doesn't (C-F737).
+- No assertion here rests on a timing.
+cleanup: none (reads only).
+metrics: none.
+
+### C-F739 — the two-run probe's jobs carry the stated dtypes and levels, run B reproduces the control, and the cause follows v3's rule
+pending: #1267
+source: tester, spec for #1267 from #1221's plan v3 (claude-opus-5-5 via anthropic)
+Free reads. It needs the probe's jobs on mini-ai. The source is `bench/records/ltx.md` *Audio dropout* > *Cause*,
+which names two job ids, run A and run B. #1267's hand-off comment quotes that paragraph and the ids. Read them
+there, not from the repository. For each id, call `get_job` and `get_job_workflow`.
+expected:
+- Both jobs are `succeeded`. Both run the S5 seed-2 control (`BenchS5LtxAction-mps`, or the workflow the paragraph
+  names, with the arguments of `7fbfc3451e90`) at seed 2 with check off. Their
+  `from_pretrained_arguments.torch_dtype` values are:
+  - run A: the both-float32 dict, `default` bf16 with `audio_vae` and `vocoder` float32;
+  - run B: `torch.bfloat16`, or a dict whose only key is `default` bf16.
+- Neither job is a vocoder-only or audio-VAE-only load.
+- Segment 3's level in each job matches what the paragraph states within 0.1 dB. The level is the shot record's
+  `audio_dbfs`, or `assess_output`'s per-shot level on the job's output.
+- Run B's segment-3 level is within 0.5 dB of -89.2. If it isn't, the paragraph must say the probe is void, and then
+  it states no cause. A cause stated over a void control is a finding.
+- The stated cause follows v3's rule:
+  - run A's segment 3 above -70 → **the audio decode**;
+  - run A's segment 3 at or under -70 → **the conditioning** (segment 2's last frame plus prompt 3).
+- The paragraph never names the vocoder or the audio VAE alone as the cause. It says the probe doesn't separate them,
+  and gives the reason: the decode doesn't cast the mel to the vocoder's dtype.
+- Run A may fail to fit in memory (a plan v3 risk). Then the paragraph records the failure and names no cause, and
+  #1221 carries a comment from #1267's hand-off bringing it to Don. Run A's job may then be `failed` with an
+  out-of-memory error, and the other checks on run A are skipped.
+- The paragraph says the `MPS-only?` question stays open.
+cleanup: none (reads only; the probe's jobs belong to the record).
+metrics: none.
+
+### C-F740 — the *Cause* paragraph answers "does a re-roll bring sound back?" by v3's rule, citing `1deff016d727`
+pending: #1267
+source: tester, spec for #1267 from #1221's plan v3 (claude-opus-5-5 via anthropic)
+Free reads, alongside C-F739. The source is the same *Cause* paragraph, as quoted in #1267's hand-off comment. Call
+`get_job("1deff016d727")`. Then run `gh issue view 1221 --repo dkackman/diffusers-workflow --comments` for the
+hand-off question below.
+expected:
+- The paragraph cites `1deff016d727`. That job's `get_job` is `succeeded`, and its segment 3 has `attempts: 2`,
+  `seed` 1000005, and an `audio_dbfs` within 0.1 dB of the value the paragraph states (about -88.6).
+- The paragraph says whether a re-roll can bring sound back, and the answer agrees with C-F739's cause:
+  - audio decode → no, because the decode is the same for every seed. It names stage C (the LTX templates load
+    `audio_vae` and `vocoder` both in float32) as the follow-up that comes to Don as plan v4.
+  - conditioning → only if some seed escapes the conditioning, and on the repro none did. It says the record doesn't
+    settle whether `audio_dbfs` stays re-rollable. #1221 then carries a comment from #1267's hand-off asking Don
+    whether to keep `audio_dbfs` re-rollable or demote it to warn-only.
+- Each of these is a finding: a paragraph with no re-roll answer, an answer that contradicts the cause, a
+  conditioning cause with no question to Don on #1221, and a stage C that names only one of the two audio components.
+cleanup: none (reads only).
+metrics: none.
+
 ## Performance
