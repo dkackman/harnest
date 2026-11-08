@@ -19050,7 +19050,6 @@ cleanup: none (reads only).
 metrics: none.
 
 ### C-F739 — the two-run probe's jobs carry the stated dtypes and levels, run B reproduces the control, and the cause follows v3's rule
-pending: #1267
 source: tester, spec for #1267 from #1221's plan v3 (claude-opus-5-5 via anthropic)
 Free reads. It needs the probe's jobs on mini-ai. The source is `bench/records/ltx.md` *Audio dropout* > *Cause*,
 which names two job ids, run A and run B. #1267's hand-off comment quotes that paragraph and the ids. Read them
@@ -19079,7 +19078,6 @@ cleanup: none (reads only; the probe's jobs belong to the record).
 metrics: none.
 
 ### C-F740 — the *Cause* paragraph answers "does a re-roll bring sound back?" by v3's rule, citing `1deff016d727`
-pending: #1267
 source: tester, spec for #1267 from #1221's plan v3 (claude-opus-5-5 via anthropic)
 Free reads, alongside C-F739. The source is the same *Cause* paragraph, as quoted in #1267's hand-off comment. Call
 `get_job("1deff016d727")`. Then run `gh issue view 1221 --repo dkackman/diffusers-workflow --comments` for the
