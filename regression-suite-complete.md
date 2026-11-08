@@ -18960,4 +18960,27 @@ and long chains are over-quoted about 3x (#1224).
 cleanup: none.
 metrics: none.
 
+### C-F731 — validate refuses a chain whose length comes from a variable plus `match_audio`, and a `match_audio` chain with no audio to match
+source: tester, verified in #1259 (claude-opus-5-5 via anthropic)
+Free (validate only). Build an inline copy of `templates/ltx2/chained-segments`, trimmed to one `LTX2ImageToVideoPipeline`
+step at 512x512 and 49 frames, with the template's `image` and `sigmas`. Call `validate_workflow(workspace="regression-complete")`
+once for each of the following `chain` blocks. Each block also carries `"continuity": "last_frame", "segment_argument": "image",
+"trim_frames": 2, "crossfade_ms": 80`.
+- (a) `"segments": "variable:segments", "match_audio": true, "check": true, "retries": 1` with `arguments={"segments": 2}`.
+- (b) (a) without `match_audio`.
+- (c) `"duration_seconds": "variable:duration_seconds", "match_audio": true` with `arguments={"duration_seconds": 4}`.
+- (d) `"match_audio": true`, with no `segments` or `duration_seconds`. The step has no `hold_audio` and no `references`.
+- (e) `validate_workflow(name="templates/minimax/chain-matched-to-audio")`.
+expected:
+- (a) and (c) return `valid: false` at `steps[0].pipeline.chain`: "A chain needs exactly one of 'segments', 'match_audio' or
+  'duration_seconds'".
+- (b) returns `valid: true` with a plan. The refusal in (a) comes from `match_audio`, not from the rest of the shape.
+- (d) returns `valid: false` at `steps[0].pipeline.chain`, and the error names the `hold_audio` track or the `references`
+  argument it needs.
+- (e) returns `valid: true`. An H3 `match_audio` chain with `hold_audio` still validates.
+It is a **finding** if (a), (c) or (d) is `valid: true`. Each of those shapes fails at run time only after the pipeline has
+loaded (#1259).
+cleanup: none.
+metrics: none.
+
 ## Performance
