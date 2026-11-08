@@ -19004,7 +19004,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F736 — a plain string `torch_dtype` LTX template still validates and runs as before the dict form
-pending: #1247
 source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
 One short LTX render. Use the carrier unchanged (string `"torch.bfloat16"`), with C-F735's `arguments` and
 `note="C-F736: string torch_dtype control"`. Validate, run with `wait_seconds=55`, `wait_for_job`, then read
@@ -19020,7 +19019,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F737 — a vocoder-only float32 dict on LTX validates, then fails at decode with a dtype error, and the server stays usable
-pending: #1247
 source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
 One short LTX render, which fails after denoising. The carrier has `{"default": "torch.bfloat16", "vocoder":
 "torch.float32"}`, with C-F735's `arguments` and `note="C-F737: vocoder-only dict, expected decode failure"`.
@@ -19037,7 +19035,6 @@ cleanup: `delete_output(job_id=<id>)` if the job left a directory. Otherwise non
 metrics: none.
 
 ### C-F738 — the acceleration guide's per-component dtype note says LTX-2's audio VAE and vocoder must share a dtype
-pending: #1247
 source: tester, spec for #1247 from #1221's plan v3 (claude-opus-5-5 via anthropic)
 Free reads. `list_guides`, then `get_guide("acceleration", section="per-component dtype")`. The section name is
 matched loosely. If that name doesn't resolve, find the heading in `list_guides`'s `acceleration` sections or in the

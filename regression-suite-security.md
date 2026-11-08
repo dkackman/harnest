@@ -1822,7 +1822,6 @@ expected:
 cleanup: `delete_output(job_id=…)` for every job that ran.
 
 ### SE-F063 — the per-component `torch_dtype` dict keeps the type gate on every value
-pending: #1247
 source: tester, spec for #1247 from #1221's plan v1 (claude-opus-5-5 via anthropic)
 `from_pretrained_arguments.torch_dtype` now takes diffusers' dict form, e.g. `{"default":
 "torch.bfloat16", "vocoder": "torch.float32"}`, and each value is realized as a type. That is a
