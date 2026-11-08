@@ -18541,12 +18541,12 @@ metrics: none.
 
 #### The chain check's audio floor (C-F712 to C-F717)
 
-The S5 carrier for C-F713 to C-F716 is the workflow mini-ai's bench job `7fbfc3451e90` ran:
-`get_job_workflow("7fbfc3451e90")`'s `workflow`, passed as `inline_workflow`. It is
+The S5 carrier for C-F713 to C-F716 is the workflow mini-ai's bench job `20f7a38662cf` ran:
+`get_job_workflow("20f7a38662cf")`'s `workflow`, passed as `inline_workflow`. It is
 `BenchS5LtxAction-mps`, a 3-segment `LTX2ImageToVideoPipeline` chain from `asset:bench/runner.png` at 960x544, 121
 frames per segment. Its variables include `seed`, `check` (default `false`) and `retries` (default `0`), which the
 chain block reads. Its seed-2 render has a near-silent segment 3 (about -89 dBFS) on mini-ai's MPS. That draw is
-deterministic there and not on another box. Where `get_job("7fbfc3451e90")` is "Unknown job", or the job is not
+deterministic there and not on another box. Where `get_job("20f7a38662cf")` is "Unknown job", or the job is not
 that workflow at seed 2, C-F714 and C-F715 cannot run: hand them to mini-ai. Every call uses
 `workspace="regression-complete"`. Validate each run first and bind its `acknowledged_cost`. One S5 run costs about
 10 min on mini-ai, and a re-roll adds a segment.
@@ -18608,14 +18608,14 @@ metrics: none.
 ### C-F714 — the S5 seed-2 control, checked, re-rolls its silent segment 3 and keeps one with sound
 pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
-About 15-25 min of mini-ai GPU. It needs `7fbfc3451e90` (see the section header). `run_workflow(inline_workflow=<S5
+About 15-25 min of mini-ai GPU. It needs `20f7a38662cf` (see the section header). `run_workflow(inline_workflow=<S5
 carrier>, arguments={"seed": 2, "check": true, "retries": 1}, workspace="regression-complete", wait_seconds=55,
 note="C-F714: S5 seed 2 checked, audio floor")`, then `wait_for_job` until it finishes. Then read `get_job`,
 `get_job_events` and `get_output_audio` over 10-15 s of the final mp4.
 expected:
 - `succeeded`.
 - A `chain_check_failed` warning (in `job.warnings` or the events) names segment 3, the measure `audio_dbfs` and a
-  value below -80 (the bench read -87.8 to -89.2). It names the kept attempt.
+  value below -80 (the bench read -87.8 to -89.2; the re-based carrier read -88.7). It names the kept attempt.
 - Segment 3's shot record has `attempts: 2`, a `seed` of 2 + 1000003 = 1000005, an `audio_dbfs` above -70, and no
   `check_failed` (or one that does not include `audio_dbfs`).
 - Segments 1 and 2 have an `audio_dbfs` above -70 and `attempts: 1`. Segment 1 has no picture measures in any
@@ -18628,7 +18628,7 @@ metrics: none.
 ### C-F715 — unchecked, the silent segment is warned about and kept; a null floor turns both off
 pending: #1246
 source: tester, spec for #1246 from #1221's plan v1 (claude-opus-5-5 via anthropic)
-About 20 min of mini-ai GPU, two runs. It needs `7fbfc3451e90` (see the section header).
+About 20 min of mini-ai GPU, two runs. It needs `20f7a38662cf` (see the section header).
 - (a) `run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 2}, ...)`. The check is off by default.
 - (b) `run_workflow(inline_workflow=<S5 carrier>, arguments={"seed": 2, "check": {"audio_dbfs_min": null},
   "retries": 1}, ...)`.
@@ -18638,7 +18638,7 @@ expected:
 - (a) `succeeded`, with exactly one `chain_segment_silent` warning (`kind: "chain_segment_silent"`). It names
   segment 3 and its level, below -80. No warning names segments 1 or 2. There is no `chain_check_failed`, and no
   re-roll in the events. Each shot has one attempt (or no `attempts` field, as an unchecked chain today), and
-  segment 3's `audio_dbfs` matches the warning's value. The run is bit-identical to `7fbfc3451e90` (the same
+  segment 3's `audio_dbfs` matches the warning's value. The run is bit-identical to `20f7a38662cf` (the same
   draw), so `compare_outputs` against that job's mp4, if run, shows no difference.
 - (b) `succeeded`, with no `chain_segment_silent` warning and no `audio_dbfs` in any `chain_check_failed`.
   Segment 3 is not re-rolled for its audio. It may still re-roll for a picture measure; that is not a failure,
