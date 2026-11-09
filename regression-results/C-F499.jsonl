@@ -1,0 +1,1 @@
+{"ts": "2026-11-08T21:26:01Z", "level": "complete", "case": "C-F499", "outcome": "pass", "issue": null, "secs": null, "session": "regression:complete.lem-1.5", "head": "develop @ e7f284e2", "model": "claude-sonnet-5-5", "server": "lem"}

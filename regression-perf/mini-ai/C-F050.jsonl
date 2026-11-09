@@ -1,0 +1,1 @@
+{"date": "2026-11-08", "case": "C-F050", "metric": "latency", "condition": "12-frames", "value": 2.694, "unit": "s", "server": "mini-ai", "commit": "39720f89", "model": "claude-sonnet-5-5", "note": "job started_at->finished_at, job faf2918ae31a"}
