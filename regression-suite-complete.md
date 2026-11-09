@@ -298,6 +298,12 @@ smoke's Fixtures lists the asset too.
   `ep3-shot2-reply.mp4` (colour 124-frame 960×544 shots) and `ep25-episode.mp4` (360 frames), plus C-F454's
   QR fixture workflow for the greyscale stills of C-F667. Any colour shots of the same geometry substitute,
   with the frame indices re-derived. Nothing new to keep.
+- C-F741–C-F756 (the chain check's words measure, #1262) use `asset:qa-1262/article-one.wav` and
+  `asset:qa-1262/article-twenty-one.wav` in **this** workspace's assets. C-F741's setup makes them with
+  `templates/generate-speech` when they're missing. They are short spoken lines, "Article One." and "Article
+  twenty-one.", and what matters is that `transcribe_audio` hears those words, in digits or in words. Keep them
+  across runs and never sweep them. The H3 cases build their chain from `templates/minimax/chained-segments` and
+  keep nothing.
 
 ## Functional
 
@@ -19114,6 +19120,316 @@ expected:
 - Each of these is a finding: a paragraph with no re-roll answer, an answer that contradicts the cause, a
   conditioning cause with no question to Don on #1221, and a stage C that names only one of the two audio components.
 cleanup: none (reads only).
+metrics: none.
+
+#### #1262: the chain check's words measure (C-F741 to C-F756)
+
+Specced from #1262's plan v2 before any code existed. Stage A (#1297) is the measure and the shared number-word
+normaliser, which `templates/check-script` reaches. Stage B (#1298) wires the measure into the H3 chain. Stage C
+(#1299) adds the template variable and the skill docs. Workspace `regression-complete` on every call.
+
+**The dialogue carrier**, used by C-F747 to C-F752. It is H3 only: on a host that doesn't run MiniMax-H3 (mini-ai),
+skip those cases and say so.
+- Take `get_workflow("templates/minimax/chained-segments")` and pass its JSON inline. Let `P` be its default
+  `prompt` variable. If `P` already holds a `<d>`, record the H3 cases as not run and file a harness issue. That is
+  not a pass.
+- Let `D(x)` = `P` + `"\n\nA calm man's voice, off-screen, says: <d>" + x + "</d>"`.
+- The lines are `L1` = "We the people of the United States.", `L2` = "In order to form a more perfect union." and
+  `LX` = "Purple elephants dance quietly on a Tuesday."
+- The base arguments are `{"shot": "dialogue", "segments": 2, "num_frames": 124, "seed": 1262, "check": true,
+  "retries": 1, "prompts": [D(L1), D(L2)]}`. Each case states what it changes.
+- In stage B, `lines` is not a template variable. Write it into the inline copy's `chain` block as `"lines": [...]`.
+  `check` as an object (`{"words_similarity_min": ...}`) is passed through the `check` variable, as in C-F715.
+- Run it with `validate_workflow` first and bind `acknowledged_cost`. Then `run_workflow(..., wait_seconds=55,
+  note="C-F7xx: ...")`, then `wait_for_job` until it finishes, then `get_job` and `get_job_events`.
+- "A shot's words measure" means the `words` entry in the place where that shot's record carries its other check
+  measures (`jump_ratio`, `audio_dbfs`) today. The plan records it in `measures`.
+- The default ceiling: stage A's record sets `WORDS_SIMILARITY_MIN`, provisionally 0.80. If stage A found no clean
+  separation between good and bad takes, Don's gate makes stage B ship the default as `null`. C-F753 reads which
+  one shipped. Where a case says "the default ceiling", use the value C-F753 reads. If it is `null`, the case
+  passes `"check": {"words_similarity_min": 0.8}` explicitly, says so in its record, and expects what it would
+  expect from a non-null default.
+
+### C-F741 — check-script folds a spoken "One" and a written "1" together, so "Article One" reads 1.0 either way
+pending: #1297
+source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Cheap (TTS once, then Whisper on CPU). Setup, only if `asset:qa-1262/article-one.wav` or
+`asset:qa-1262/article-twenty-one.wav` is missing (`list_assets(workspace="regression-complete")`):
+`run_workflow(workflow_path="templates/generate-speech", arguments={"text": "Article One."}, wait_seconds=55)` and
+`keep_output` its wav as `qa-1262/article-one.wav`. Make `qa-1262/article-twenty-one.wav` the same way from
+`"Article twenty-one."`. Then `delete_output(job_id=<id>)` on the TTS jobs.
+1. `transcribe_audio` on the take: `run_workflow` of a one-step inline workflow with that task, or `check-script`'s own
+   `transcript` from step 2. Note whether Whisper wrote "1" or "one". The case doesn't depend on which.
+2. `run_workflow(workflow_path="templates/check-script", arguments={"input_audio": "asset:qa-1262/article-one.wav",
+   "lines": ["Article One."]}, acknowledged_cost=<from validate>, wait_seconds=55)`, then `get_output_text` on its
+   JSON.
+3. The same with `"lines": ["Article 1."]`.
+expected:
+- Both runs succeed. Line 1's similarity is 1.0 in both, and neither has a `line_mismatch` or any other finding.
+- Whichever spelling Whisper used, one of the two runs compares a number word with a digit. Before stage A, that
+  run read under 1.0.
+- If the transcript does not hold "article" followed by "one" or "1", the take is bad. Remake the fixture and record
+  the case as not run. That is not a pass.
+It is a **finding** if either run reads under 1.0 on a correct transcript.
+cleanup: `delete_output(job_id=<id>)` on each check-script and transcription run. Keep the fixtures.
+metrics: none.
+
+### C-F742 — "twenty-one" is split at its hyphen and folded to 21, so all three spellings match
+pending: #1297
+source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Cheap (Whisper on CPU). This is Don's named test (v1 approval). Fixture `asset:qa-1262/article-twenty-one.wav`
+(C-F741's setup). Run `templates/check-script` on it three times, as in C-F741, with `lines` of
+`["Article twenty-one."]`, `["Article 21."]` and `["Article twenty one."]`. Read each JSON's `transcript` and line
+1's similarity.
+expected:
+- All three runs read line 1's similarity as 1.0, with no finding.
+- The transcript, whatever form it takes ("21", "twenty-one" or "twenty one"), holds the number 21. If it holds some
+  other number, the take is bad: record the case as not run.
+It is a **finding** if any spelling reads under 1.0 on a correct transcript. The hyphenated one is the case the
+plan names, and it is the likeliest to miss: folded without a split, "twenty-one" is one word that matches nothing.
+cleanup: `delete_output(job_id=<id>)` on each run.
+metrics: none.
+
+### C-F743 — the normaliser folds spellings, not numbers: a different number still reads under 1.0
+pending: #1297
+source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Cheap (Whisper on CPU). The plan's risk note says the normaliser moves results "upward only". This case is the
+guard that it doesn't move them by matching a wrong number. Run `templates/check-script` as in C-F741:
+- (a) `article-one.wav` with `["Article Two."]`;
+- (b) `article-twenty-one.wav` with `["Article twenty."]`;
+- (c) `article-twenty-one.wav` with `["Article twenty-two."]`;
+- (d) `article-twenty-one.wav` with `["Article 2 1."]`.
+expected:
+- (a), (b) and (c) each read line 1's similarity under 1.0. The number word that differs is the word that doesn't
+  match.
+- (d) reads under 1.0. Two digits written apart are not 21.
+It is a **finding** if any of them reads 1.0. That would mean the fold is matching numbers it shouldn't.
+cleanup: `delete_output(job_id=<id>)` on each run.
+metrics: none.
+
+### C-F744 — a take with no number words keeps its check-script findings once the normaliser changes
+pending: #1297
+source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Cheap. The plan says a take's existing findings are otherwise unchanged. Run C-F503 (both runs) and C-F594 exactly
+as written.
+expected:
+- Each passes against its own `expected:` as written: the same findings, values, `at` fields and `rules_applied`.
+It is a **finding** if either case's findings move. Neither case's line holds a number word, so stage A's change
+should leave both untouched.
+cleanup: as in those cases.
+metrics: none.
+
+### C-F745 — the guide's check-script similarity note says number words are normalised
+pending: #1297
+source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_guide("workflows", section="check-script")`. The match is loose. If it doesn't resolve, try
+`get_guide("tasks", section="Script check")`. Read the paragraph that explains check-script's `similarity`.
+expected:
+- The paragraph says number words and digits compare equal ("One" and "1"), and that a hyphenated compound such as
+  "twenty-one" is split and then folded, so it matches "21".
+- What it says agrees with C-F741 and C-F742.
+It is a **finding** if the note is missing, or if it says something the runs contradict.
+cleanup: none.
+metrics: none.
+
+### C-F746 — validate accepts `words_similarity_min` in (0, 1] or null, and `lines` only at the segment count and only as strings
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Use the dialogue carrier's inline copy with its base arguments, and call `validate_workflow`
+once per probe.
+- `check` as `{"words_similarity_min": v}`:
+  - accepted: (a) 0.8; (b) 1; (c) 0.0001; (d) `null`;
+  - refused: (e) 0; (f) 1.5; (g) `"0.8"`; (h) -0.2.
+- `lines` written into the chain block, with `check: true`:
+  - accepted: (i) `[L1, L2]`;
+  - refused: (j) `[L1]`; (k) `[L1, L2, L2]`; (l) `[]`; (m) `[L1, 123]`; (n) `[L1, null]`.
+- `lines` `[L1, L2]` with `check: false`: (o).
+- `lines` on a length set by `duration_seconds`. Drop `segments` and set `duration_seconds` 10. First validate it
+  without `lines`, and read the segment count N from its plan.
+  - accepted: (p) a `lines` of N strings;
+  - refused: (q) a `lines` of N + 1 strings.
+expected:
+- (a)-(d), (i) and (p) are `valid: true` with a plan.
+- (e)-(h) are `valid: false`, and each error's path or message names `words_similarity_min`.
+- (j)-(l) and (q) are `valid: false`. Each error names `lines` and says its length must equal the segment count, and
+  gives both numbers. `lines` doesn't repeat its last entry the way `prompts` does.
+- (m) and (n) are `valid: false`, and each error names `lines` and the entry that isn't a string.
+- (o) is `valid: true`, with a warning that names `lines` and says nothing reads it while the check is off.
+- No reply carries a server filesystem path.
+It is a **finding** if a refused shape validates. It would fail, or be silently ignored, only after H3 has loaded.
+cleanup: none.
+metrics: none.
+
+### C-F747 — a checked dialogue chain quotes more than the same chain unchecked, and counts segment 1's re-rolls
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Call `validate_workflow` on the dialogue carrier three times, and read each `plan.estimate`:
+- (a) the base arguments, with `check: true` and `retries: 1`;
+- (b) (a) with `check: false`;
+- (c) (a) with `prompts: [P, P]`, so no segment has a line.
+expected:
+- (a)'s quote is higher than (b)'s.
+- Where the estimate gives a worst case in renders: (a) is 2 × (1 + 1) = 4, because segment 1 is words-checked and
+  may re-roll. (c) is 1 + (2 − 1)(1 + 1) = 3, as C-F717's arithmetic gives for a chain with no words to check.
+  (b) is 2.
+- (a)'s per-attempt cost includes a term for the ASR pass. Where the estimate names its terms, one names the words
+  check or transcription.
+It is a **finding** if (a) quotes no more than (b), or if (a)'s worst case leaves out segment 1's re-roll.
+cleanup: none.
+metrics: none.
+
+### C-F748 — a segment whose `lines` entry differs from what it says fails on `words`, re-rolls, and is reported with what was heard
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+About 3 H3 renders at 124 frames. Use the dialogue carrier with its base arguments, with `"lines": [L1, LX]` in the
+chain block and the default ceiling. Segment 2's prompt has it say L2. The script says LX, which shares no word
+with L2, so every seed fails segment 2 on words.
+expected:
+- `succeeded`. A kept words failure is a warning, never a failed job.
+- Segment 1 has `attempts: 1`, and its words measure has a numeric similarity at or above the ceiling.
+- Segment 2 has `attempts: 2`. Its `check_failed` includes `words`. Its kept seed follows the existing re-roll rule
+  (attempt 2 at 1262 + 1000003 = 1001265, as C-F721 shows).
+- Exactly one `chain_check_failed` warning names segment 2. It carries `words` among its measures, plus:
+  - `heard`, a non-empty string (the transcript of the kept attempt's kept span);
+  - `similarity`, a number under the ceiling, which agrees with the shot record;
+  - `findings`, a list (possibly empty) whose entries use check-script's rule names;
+  - `every_attempt_failed: true`;
+  - a note that the cause may be in the carry, and that the fix is `repair-segment` rather than more retries;
+  - `kept_attempt` and `attempts: 2`, as today.
+- Where both attempts failed only on words, the kept attempt is the one with the higher similarity, not the lower
+  `jump_ratio`. Check this against both attempts' values in the events.
+- `heard` does not hold L1's words at its head. The guide's carried speech is trimmed off before the transcription.
+It is a **finding** if segment 2 passes, if it isn't re-rolled, or if the warning is missing `heard`, `similarity`
+or `every_attempt_failed`.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F749 — segment 1 is words-checked too, and re-rolls on words though it has no picture measures
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+About 3 H3 renders. Use the dialogue carrier with its base arguments and `"lines": [LX, L2]`, so segment 1's script
+differs from what it says.
+expected:
+- `succeeded`. Segment 1 has `attempts: 2`, its `check_failed` includes `words`, and one `chain_check_failed` names
+  segment 1 with `heard`, `similarity` and `every_attempt_failed: true`.
+- Segment 1 still has no picture measure (`jump_ratio`, `look_ratio`, `cut_ratio`, `texture_ratio`) in any record or
+  warning. It has no seam to measure.
+- Segment 2 has a numeric words measure. Segment 2 is not failed on words: it says L2, and its line is L2.
+It is a **finding** if segment 1 is not re-rolled. Before stage B, segment 1 was checked for audio only.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F750 — a matching dialogue chain passes, with `words` recorded on every segment, and a prompt repeated past the list keeps its line
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+About 3–6 H3 renders. Use the dialogue carrier with its base arguments, but set `segments` to 3 and give no `lines`.
+The `prompts` list has two entries, so segment 3 reuses `D(L2)`: its line comes from `<d>` extraction, L2 again.
+The seed is pinned at 1262.
+expected:
+- `succeeded`. All three shot records carry a words measure with a numeric similarity. Segment 1's is included.
+- No `chain_check_failed` names `words`, and no re-roll event names `words`.
+- Segment 3's line is L2. Where the record or events name the expected text, it is L2, not null.
+- A segment may still re-roll for a picture measure. That isn't a failure, provided the event names that measure.
+- If a segment does fail words at this seed, read its `heard`. If H3 really misspoke there, the take is the cause,
+  not the server: record the case as not run and file a harness issue to re-pick the seed. If `heard` matches the
+  line and it still failed, that **is** a finding. That would be a false failure, possibly the seam-head rule
+  missing L2's carried tail at the head of segment 3.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F751 — a segment with no `<d>` and no `lines` records `words: null` and is never re-rolled for it
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+About 2–3 H3 renders. Use the dialogue carrier with its base arguments, but set `prompts` to `[D(L1), P]` and give
+no `lines`.
+expected:
+- `succeeded`. Segment 2's words measure is `null`: present and null, or absent where the shot record carries no
+  null measures. Its `check_failed`, if any, doesn't include `words`, and no event or warning names words for
+  segment 2.
+- Segment 1's words measure is numeric.
+It is a **finding** if segment 2 is failed or re-rolled on words. With no line, it would be held to silence.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F752 — `words_similarity_min: null` turns the measure off, even on a chain whose lines are wrong
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+About 2–3 H3 renders. Use C-F748's chain (`"lines": [L1, LX]`), but pass `"check": {"words_similarity_min": null}`.
+expected:
+- `succeeded`. No `chain_check_failed`, re-roll event or `check_failed` names `words`.
+- No shot record carries a numeric words similarity.
+- The other measures still run. Segment 2 carries its picture measures and `audio_dbfs`, as without the field.
+It is a **finding** if segment 2 re-rolls on words.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F753 — the guide's chain-check measures table lists `words`, its ceiling, `lines`, and the new `chain_check_failed` fields
+pending: #1298
+source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Free. Read the workflows guide where it documents the chain check:
+`get_guide("workflows", section="chain check")`. The match is loose. Failing that, read the section that holds
+`chain_check_failed`.
+expected:
+- The measures table has a `words` row. It names `words_similarity_min` and its default: a number from stage A's
+  record, or `null` if Don's separation gate fired. If `null`, it says the measure is off unless a chain sets it.
+- `words` is listed as a re-rolling measure, not warn-only. The row says it covers segment 1, and that a segment
+  with no line records `words: null`.
+- `chain_check_failed` documents `heard`, `similarity`, `findings` and `every_attempt_failed`, and points at
+  `repair-segment` for a carry-caused failure.
+- `lines` is documented as a chain key that must have one string per segment, and that overrides the `<d>` text.
+- Record the default that shipped. The other #1262 cases read it from here.
+It is a **finding** if any of these is missing, or if the documented default disagrees with what validate and C-F748
+show.
+cleanup: none.
+metrics: none.
+
+### C-F754 — `templates/minimax/chained-segments` has a `lines` variable, null by default, that validates like the chain key
+pending: #1299
+source: tester, spec for #1299 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_workflow("templates/minimax/chained-segments", variables_only=true)`. Then `validate_workflow` on the
+template by name, with `{"shot": "dialogue", "segments": 2, "check": true, "prompts": [D(L1), D(L2)]}` (the
+dialogue carrier's `D`) plus, in turn:
+- (a) `"lines": [L1, L2]`;
+- (b) `"lines": [L1]`;
+- (c) (a) with `check: false`;
+- (d) no `lines`.
+expected:
+- `variables` holds `lines` with the default `null`.
+- (a) and (d) are `valid: true`. (b) is `valid: false`, and its error names `lines` and the segment count, as in
+  C-F746. (c) is `valid: true`, with the warning that nothing reads `lines`.
+It is a **finding** if `lines` is missing, has a non-null default, or isn't checked when it is set through the
+template.
+cleanup: none.
+metrics: none.
+
+### C-F755 — the template run with `check: true` and a wrong `lines` entry re-rolls on words, as the chain key does
+pending: #1299
+source: tester, spec for #1299 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+About 3 H3 renders. Run `templates/minimax/chained-segments` by name, not inline, with the dialogue carrier's base
+arguments plus `"lines": [L1, LX]` as a template variable. Validate first.
+expected:
+- C-F748's expected results, point for point: segment 2 is re-rolled on `words` and kept with
+  `every_attempt_failed: true`, and segment 1 passes words.
+It is a **finding** if the template's `lines` doesn't reach the chain. That would show as no words failure on
+segment 2, or segment 2 checked against L2.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F756 — the long-form and minimax-h3 skills teach the words measure and its repair path
+pending: #1299
+source: tester, spec for #1299 from #1262's plan v2 (claude-opus-5-5 via anthropic)
+Free. The server serves no long-form guide (`list_guides`), so read the loaded `dw` plugin skills: `dw:long-form`'s
+*Per seam* section and its `references/run-and-repair.md`, and `dw:minimax-h3`'s dialogue reference.
+expected:
+- *Per seam* lists `words` beside the other measures. It names `words_similarity_min` and the same default as
+  C-F753.
+- `run-and-repair.md` lists the words measure. It says that a `chain_check_failed` with `every_attempt_failed: true`
+  is repaired with `repair-segment`, not with more `retries`.
+- The minimax-h3 dialogue reference says to give each segment prompt one `<d>` line, or to use `lines` when the
+  prompt's wording differs from the script.
+- Nothing in them contradicts C-F753, such as a different default, or `words` described as warn-only.
+It is a **finding** if any of these is missing or contradicts the guide.
+cleanup: none.
 metrics: none.
 
 ## Performance
