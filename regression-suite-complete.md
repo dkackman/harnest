@@ -19133,15 +19133,17 @@ normaliser, which `templates/check-script` reaches. Stage B (#1298) wires the me
 **The dialogue carrier**, used by C-F747 to C-F752. It is H3 only: on a host that doesn't run MiniMax-H3 (mini-ai),
 skip those cases and say so.
 - Take `get_workflow("templates/minimax/chained-segments")` and pass its JSON inline. Let `P` be its default
-  `prompt` variable. If `P` already holds a `<d>`, record the H3 cases as not run and file a harness issue. That is
-  not a pass.
+  `prompt` variable with every `<d>…</d>` span removed (the default holds one), and record the `P` used. If what is
+  left still holds a `<d>`, record the H3 cases as not run and file a harness issue. That is not a pass.
 - Let `D(x)` = `P` + `"\n\nA calm man's voice, off-screen, says: <d>" + x + "</d>"`.
 - The lines are `L1` = "We the people of the United States.", `L2` = "In order to form a more perfect union." and
   `LX` = "Purple elephants dance quietly on a Tuesday."
 - The base arguments are `{"shot": "dialogue", "segments": 2, "num_frames": 124, "seed": 1262, "check": true,
   "retries": 1, "prompts": [D(L1), D(L2)]}`. Each case states what it changes.
 - In stage B, `lines` is not a template variable. Write it into the inline copy's `chain` block as `"lines": [...]`.
-  `check` as an object (`{"words_similarity_min": ...}`) is passed through the `check` variable, as in C-F715.
+  This template's `check` variable is a bool, so a `check` object (`{"words_similarity_min": ...}`) is written into
+  the inline copy's `chain` block as `"check": {...}`, beside `lines`, and not passed as an argument. Where a case
+  says to pass a `check` object, it means this.
 - Run it with `validate_workflow` first and bind `acknowledged_cost`. Then `run_workflow(..., wait_seconds=55,
   note="C-F7xx: ...")`, then `wait_for_job` until it finishes, then `get_job` and `get_job_events`.
 - "A shot's words measure" means the `words` entry in the place where that shot's record carries its other check
@@ -19151,6 +19153,8 @@ skip those cases and say so.
   one shipped. Where a case says "the default ceiling", use the value C-F753 reads. If it is `null`, the case
   passes `"check": {"words_similarity_min": 0.8}` explicitly, says so in its record, and expects what it would
   expect from a non-null default.
+- Amended 2026-11-09 (harnest#199, approved by Don): `P` drops the default prompt's `<d>` span, and a `check` object
+  goes into the inline `chain` block, since the template's `check` variable is a bool. No case's expectations changed.
 
 ### C-F741 — check-script folds a spoken "One" and a written "1" together, so "Article One" reads 1.0 either way
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
