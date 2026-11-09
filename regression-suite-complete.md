@@ -19396,7 +19396,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F754 — `templates/minimax/chained-segments` has a `lines` variable, null by default, that validates like the chain key
-pending: #1299
 source: tester, spec for #1299 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_workflow("templates/minimax/chained-segments", variables_only=true)`. Then `validate_workflow` on the
 template by name, with `{"shot": "dialogue", "segments": 2, "check": true, "prompts": [D(L1), D(L2)]}` (the
@@ -19415,7 +19414,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F755 — the template run with `check: true` and a wrong `lines` entry re-rolls on words, as the chain key does
-pending: #1299
 source: tester, spec for #1299 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 3 H3 renders. Run `templates/minimax/chained-segments` by name, not inline, with the dialogue carrier's base
 arguments plus `"lines": [L1, LX]` as a template variable. Validate first.
@@ -19428,7 +19426,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F756 — the long-form and minimax-h3 skills teach the words measure and its repair path
-pending: #1299
 source: tester, spec for #1299 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free. The server serves no long-form guide (`list_guides`), so read the loaded `dw` plugin skills: `dw:long-form`'s
 *Per seam* section and its `references/run-and-repair.md`, and `dw:minimax-h3`'s dialogue reference.
