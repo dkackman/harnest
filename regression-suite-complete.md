@@ -19311,6 +19311,7 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F749 — segment 1 is words-checked too, and re-rolls on words though it has no picture measures
+pending: #1308
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 3 H3 renders. Use the dialogue carrier with its base arguments and `"lines": [LX, L2]`, so segment 1's script
 differs from what it says.
@@ -19321,10 +19322,14 @@ expected:
   warning. It has no seam to measure.
 - Segment 2 has a numeric words measure. Segment 2 is not failed on words: it says L2, and its line is L2.
 It is a **finding** if segment 1 is not re-rolled. Before stage B, segment 1 was checked for audio only.
+Amended 2026-11-09 (harnest#201, ruled by Don): `pending: #1308`. At seed 1262 segment 2's line opens inside the
+22-frame head trim and loses "In order" (`line_clipped_at_head`, measured in #1300). The seed is not re-picked
+around it: #1308's verify re-runs this case as written and removes the `pending:` line.
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F750 — a matching dialogue chain passes, with `words` recorded on every segment, and a prompt repeated past the list keeps its line
+pending: #1308
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 3–6 H3 renders. Use the dialogue carrier with its base arguments, but set `segments` to 3 and give no `lines`.
 The `prompts` list has two entries, so segment 3 reuses `D(L2)`: its line comes from `<d>` extraction, L2 again.
@@ -19334,10 +19339,16 @@ expected:
 - No `chain_check_failed` names `words`, and no re-roll event names `words`.
 - Segment 3's line is L2. Where the record or events name the expected text, it is L2, not null.
 - A segment may still re-roll for a picture measure. That isn't a failure, provided the event names that measure.
-- If a segment does fail words at this seed, read its `heard`. If H3 really misspoke there, the take is the cause,
-  not the server: record the case as not run and file a harness issue to re-pick the seed. If `heard` matches the
-  line and it still failed, that **is** a finding. That would be a false failure, possibly the seam-head rule
-  missing L2's carried tail at the head of segment 3.
+- If a segment does fail words at this seed, read its `heard` and `findings`. A failure carrying
+  `line_clipped_at_head` is the head-trim defect (#1300, #1308), not the take: it **is** a finding, and the seed is
+  not re-picked around it. If H3 really misspoke there with no such finding, the take is the cause, not the server:
+  record the case as not run and file a harness issue to re-pick the seed. If `heard` matches the line and it still
+  failed, that **is** a finding. That would be a false failure, possibly the seam-head rule missing L2's carried
+  tail at the head of segment 3.
+Amended 2026-11-09 (harnest#201, ruled by Don): `pending: #1308`, and the seed clause above now sends a
+`line_clipped_at_head` failure to #1308 rather than to a seed re-pick. At seed 1262 segments 2 and 3 lose
+"In order" to the 22-frame head trim (measured in #1300). #1308's verify re-runs this case as written and removes
+the `pending:` line.
 cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
