@@ -19238,7 +19238,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F746 — validate accepts `words_similarity_min` in (0, 1] or null, and `lines` only at the segment count and only as strings
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Use the dialogue carrier's inline copy with its base arguments, and call `validate_workflow`
 once per probe.
@@ -19266,7 +19265,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F747 — a checked dialogue chain quotes more than the same chain unchecked, and counts segment 1's re-rolls
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Call `validate_workflow` on the dialogue carrier three times, and read each `plan.estimate`:
 - (a) the base arguments, with `check: true` and `retries: 1`;
@@ -19288,7 +19286,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F748 — a segment whose `lines` entry differs from what it says fails on `words`, re-rolls, and is reported with what was heard
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 3 H3 renders at 124 frames. Use the dialogue carrier with its base arguments, with `"lines": [L1, LX]` in the
 chain block and the default ceiling. Segment 2's prompt has it say L2. The script says LX, which shares no word
@@ -19314,7 +19311,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F749 — segment 1 is words-checked too, and re-rolls on words though it has no picture measures
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 3 H3 renders. Use the dialogue carrier with its base arguments and `"lines": [LX, L2]`, so segment 1's script
 differs from what it says.
@@ -19329,7 +19325,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F750 — a matching dialogue chain passes, with `words` recorded on every segment, and a prompt repeated past the list keeps its line
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 3–6 H3 renders. Use the dialogue carrier with its base arguments, but set `segments` to 3 and give no `lines`.
 The `prompts` list has two entries, so segment 3 reuses `D(L2)`: its line comes from `<d>` extraction, L2 again.
@@ -19347,7 +19342,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F751 — a segment with no `<d>` and no `lines` records `words: null` and is never re-rolled for it
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 2–3 H3 renders. Use the dialogue carrier with its base arguments, but set `prompts` to `[D(L1), P]` and give
 no `lines`.
@@ -19361,7 +19355,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F752 — `words_similarity_min: null` turns the measure off, even on a chain whose lines are wrong
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 About 2–3 H3 renders. Use C-F748's chain (`"lines": [L1, LX]`), but pass `"check": {"words_similarity_min": null}`.
 expected:
@@ -19373,7 +19366,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### C-F753 — the guide's chain-check measures table lists `words`, its ceiling, `lines`, and the new `chain_check_failed` fields
-pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free. Read the workflows guide where it documents the chain check:
 `get_guide("workflows", section="chain check")`. The match is loose. Failing that, read the section that holds
@@ -19438,6 +19430,57 @@ expected:
   prompt's wording differs from the script.
 - Nothing in them contradicts C-F753, such as a different default, or `words` described as warn-only.
 It is a **finding** if any of these is missing or contradicts the guide.
+cleanup: none.
+metrics: none.
+
+### C-F757 — `export_timeline` refuses any `result.content_type` but `application/x-otioz`, at validate and at `run_workflow`
+source: tester, verified in #1302 (claude-opus-5-5 via anthropic)
+Take any stored video. In `workspace="regression-complete"`, build an inline one-step workflow: an `export_timeline` task
+step with `video` set to that file and `result.file_base_name: "cut"`. Vary only `result.content_type`:
+(a) `"application/vnd.pixar.opentimelineio+zip"`; (b) `"video/mp4"`; (c) `"application/x-otioz"`.
+`validate_workflow` each one. Then call `run_workflow` (`wait_seconds=55`) on (a) with `acknowledged_cost: true` and
+no validate first, and on (c) with its validate plan bound.
+expected:
+- (a) and (b) are `valid: false`, with one error at `steps[0].result` that names `application/x-otioz` and the value given.
+- `run_workflow` on (a) is refused before a job is queued, with the same message. No extensionless file is written.
+- (c) is `valid: true`, and its run succeeds and writes exactly one `cut-0.0.otioz`.
+cleanup: `delete_output(job_id=...)` for (c)'s job.
+metrics: none.
+
+### C-F758 — validate warns on every `match_levels` / target pairing the run refuses, and the run agrees
+source: tester, verified in #1271 (claude-opus-5-5 via anthropic)
+Free except one short task-only run. Take any two stored videos of the same frame size. In
+`workspace="regression-complete"`, build an inline one-step `concat_videos` workflow that joins them. Vary only the
+level arguments, all as literals: (a) `match_levels_lufs: -18`, `match_levels` unset; (b) `match_levels: "rms"`,
+`match_levels_lufs: -18`; (c) `match_levels: "lufs"`, `match_levels_dbfs: -20`; (d) `match_levels: "lufs"`,
+`match_levels_lufs: -18`; (e) as (b) but `dissolve_videos` and `match_levels: "peak"`. `validate_workflow` each one.
+Then `run_workflow` (b) with its validate plan bound, `wait_seconds=55`.
+expected:
+- All five are `valid: true`.
+- (a) warns that `match_levels_lufs` has no effect when `match_levels` is unset, and names `"lufs"`.
+- (b) and (e) each warn that the run is refused because `match_levels_lufs` only applies to `"lufs"`, naming their own
+  task.
+- (c) warns that the run is refused because `match_levels_dbfs` does not apply to `"lufs"`.
+- (d) has no warning.
+- (b)'s run fails within seconds, and its `error` carries the same refusal text as its validate warning.
+cleanup: `delete_output(job_id=...)` for (b)'s job.
+metrics: none.
+
+### C-F759 — the `match_levels` pairing warnings read values resolved from `variable:` references
+source: tester, verified in #1303 (claude-opus-5-5 via anthropic)
+Free (validate only). Take any two stored videos. In `workspace="regression-complete"`, build inline one-step
+workflows that join them, with the level arguments given as `variable:` references to declared variables:
+(a) `concat_videos`, variable `meas` default `"lufs"`, `match_levels: "variable:meas"`, `match_levels_lufs: -18`,
+validated with `arguments={"meas": "rms"}`; (b) `concat_videos`, `meas` default `"lufs"` and `tgt` default `-18`,
+`match_levels: "variable:meas"`, `match_levels_dbfs: "variable:tgt"`, no arguments; (c) `dissolve_videos`, `meas`
+default `null`, `match_levels: "variable:meas"`, `match_levels_lufs: -18`, no arguments; (d) as (a) but with no
+arguments. `validate_workflow` each one.
+expected:
+- All four are `valid: true`. (a) reports `checked_arguments: ["meas"]`.
+- (a) warns that the run is refused because `match_levels_lufs` only applies to `"lufs"`, the same text as C-F758 (b).
+- (b) warns that the run is refused because `match_levels_dbfs` does not apply to `"lufs"`.
+- (c) warns that `match_levels_lufs` has no effect when `match_levels` is unset.
+- (d) has no warning.
 cleanup: none.
 metrics: none.
 
