@@ -19502,4 +19502,51 @@ expected:
 cleanup: `delete_output(job_id=...)` for both runs; `delete_workflow` the probe.
 metrics: none.
 
+### C-F761 — a resumed chain quote prices N - k segments from the workflow's history, and k ≥ N is named in `differs`
+source: tester, verified in #1306 (claude-opus-5-5 via anthropic)
+Four short GPU runs, then free validates, all in `workspace="regression-complete"`. Let D be `{"width": 512, "height": 512,
+"num_frames": 25, "seed": 761}`. History: run `templates/ltx2/chained-segments` with D plus `segments: 3`, and again
+with D plus `segments: 2`, so the template has an observed figure at both counts. References: the template doesn't keep
+its segment files, so save the probe from C-F760 (keeps its segments under `final/`, `resume_from:
+"variable:resume_seg"`). Run it once with `segments: 2` (run A, which keeps 2 files) and once with `segments: 3` (run B,
+which keeps 3). Let `refA`/`refB` be `output:<probe>/<run id>/final/<prefix>.0.segment-000.mp4` for each run. Then validate
+`templates/ltx2/chained-segments`, without running:
+1. D + `{"segments": 3}`
+2. D + `{"segments": 3, "resume_from": refA}` (k=2, N=3)
+3. D + `{"segments": 2, "resume_from": refA}` (k=2, N=2)
+4. D + `{"segments": 2, "resume_from": refB}` (k=3, N=2)
+expected:
+- 1 is priced from history: `basis: "observed"` (or a stronger basis), with a number in `minutes`.
+- 2 is `basis: "derived"`, with `minutes` about a third of 1's. Its `scaled` text says `resumed: 2 of 3 segment(s) kept,
+  1 rendered`.
+- 3 and 4 are not scaled. Each has `low_confidence: true`, and `differs` names `resume_from keeps 2 segment(s) and the
+  chain plans 2: nothing is left to render, the run is refused` (for 4: `keeps 3 … plans 2`), not a bare `resume_from`.
+- None of 2-4 is `basis: "unknown"`.
+cleanup: `delete_output(job_id=...)` for all four runs; `delete_workflow` the probe.
+metrics: none.
+
+### C-F762 — a fan-out chain resume that names a finished iteration renders that iteration in full and resumes the partial one
+source: tester, verified in #1307 (claude-opus-5-5 via anthropic)
+Three short GPU runs, all in `workspace="regression-complete"`. Save a probe like C-F760's, but make it a 2-iteration
+fan-out. A `gather_images` step lists the same image URL twice. The LTX-2.5 I2V chained step takes `image:
+"previous_result:<stills step>"`, at 512x512, 25 frames, seeded, with `segments: 2`, `save_segments: true`,
+`keep_segments: true`, `resume_from: "variable:resume_from"` (default `null`) and `result.subfolder: "final"`. Run it
+once with defaults (run A). Its manifest names `<prefix>.0.segment-000/-001.mp4` and `<prefix>.1.segment-000/-001.mp4`
+under `final/`. Delete only `<prefix>.1.segment-001.mp4` with `delete_output`. That leaves iteration 0 finished and
+iteration 1 partial. Then validate and run with `resume_from:
+"output:<probe>/<run A id>/final/<prefix>.0.segment-000.mp4"`, the finished iteration's file (run B). Run it once more
+from a run in which every segment is kept: run B's own `<prefix>.1.segment-000.mp4` (run C).
+expected:
+- Run B validates `valid: true` and succeeds. It is never refused with "nothing is left to render". It warns that `Chain
+  iteration 0 finished in the earlier run, so it rendered all 2 segments in full rather than resuming from output:…`,
+  and that it `Resumed 1 of 2 segments from output:…`. `timing.segments` is 3, and iteration 1's segment 1 is `resumed:
+  true`.
+- Run C succeeds, with one "finished in the earlier run … rendered all 2 segments in full" warning for each iteration
+  and `timing.segments: 4`.
+- Not changed by this: a one-iteration chain whose `resume_from` run kept as many segments as the plan has, or more
+  (C-F760's probe at `segments: 2` resuming from a 3-segment run), still fails at run time with `nothing is left to
+  render`.
+cleanup: `delete_output(job_id=...)` for all three runs; `delete_workflow` the probe.
+metrics: none.
+
 ## Performance
