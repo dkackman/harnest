@@ -19484,4 +19484,22 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F760 — a chain resumes from a kept segment's `output:` reference whatever variable carries it, and validate refuses what the run would
+source: tester, verified in #1304 (claude-opus-5-5 via anthropic)
+Two short GPU runs. In `workspace="regression-complete"`, save a workflow with one chained pipeline step. The cheapest
+is LTX-2.5 I2V at 512x512, 25 frames, seeded. Give it `chain.save_segments: true`, `keep_segments: true`, `segments:
+"variable:segments"` (default 2), `resume_from: "variable:resume_seg"` (default `null`; deliberately not named
+`resume_from`), and `result.subfolder: "final"`. Run it once with defaults. Its manifest names segment files
+`<prefix>.0.segment-000.mp4` and `-001` under `final/`. Then validate with `arguments={"segments": 3, "resume_seg":
+"output:<workflow>/<run id>/final/<prefix>.0.segment-000.mp4"}`, and run that with its validate plan bound. Also
+validate (no run) `resume_seg: "/etc/hosts"` and `resume_seg` set to the same reference with `segment-009`.
+expected:
+- The resume validates `valid: true`, with `checked_arguments` naming `resume_seg`.
+- Its run succeeds and warns `Resumed 2 of 3 segments from output:…`. Shots 1 and 2 are `resumed: true`, and only one
+  segment is rendered (`timing.segments: 1`). It is never refused as given "by a path".
+- The `/etc/hosts` value is `valid: false` at `steps[0].pipeline.chain.resume_from`, refused as a path.
+- The `segment-009` value is `valid: false` at `arguments.resume_seg`, refused as not found.
+cleanup: `delete_output(job_id=...)` for both runs; `delete_workflow` the probe.
+metrics: none.
+
 ## Performance
