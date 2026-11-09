@@ -13314,8 +13314,10 @@ It is a **finding** if:
 - call 4 differs from call 3 or lacks `host_memory`;
 - call 5 reports call 3's figure;
 - J1 shows `waiting_for` or a `queue_wait` event.
-A call 3 `projected_mb` more than 2× P is also a finding: it means a same-key peak was taken while
-another job shared the host (#901). Name the job in the report if `list_jobs` can find it.
+When call 1 had no `host_memory` (J1 is the key's first run), a call 3 `projected_mb` more than 2× P
+is also a finding: it means a same-key peak was taken while another job shared the host (#901).
+Name the job in the report if `list_jobs` can find it. On a key with history, `projected_mb` is the
+all-time max of same-key peaks, cold loads included (#1288), and is not bounded by one run's P.
 cleanup: `delete_output(job_id=J1, acknowledged_cost=true)`, then `delete_workflow("c-f486-t2i",
 acknowledged_cost=true)`.
 metrics: `projected_mb` from call 3, and P.
