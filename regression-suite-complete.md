@@ -18615,7 +18615,7 @@ seed and retries as arguments: the carrier's check variable is bool-typed (its d
 - (c) `{"seed": 2, "check": {"jump_ratio_max": 20}, "retries": 1}`: an object that leaves the floor at its default.
 - (d) `{"seed": 2, "check": {"audio_dbfs_min": null}, "retries": 1}`: picture measures on, audio floor off.
 - (e) `{"seed": 2, "check": true, "retries": 2}`.
-- (f) The chain holding its audio: `validate_workflow(workflow_path="templates/minimax/chained-segments",
+- (f) A guide chain carrying its audio: `validate_workflow(workflow_path="templates/minimax/chained-segments",
   arguments={"segments": 3, "check": true, "retries": 1, "image": <its default>}, workspace="regression-complete")`,
   its default guide continuity carrying audio (validate only).
 expected:
@@ -18626,10 +18626,13 @@ expected:
   off nothing re-rolls, so no estimate is owed.
 - (d): 5. Segment 1 has no measure to fail.
 - (e): 9.
-- (f): 5. The held-audio chain keeps the old formula.
+- (f): 6. A guide chain carrying its audio is level-checked, segment 1 included: the guide holds only the span the
+  head trim drops.
 - The `long-form` skill's quoted formula (`plugins/dw/skills/long-form/SKILL.md`, as loaded) and the guide's
   `get_guide("workflows", section="Checking each segment")` both give N(1 + `retries`) for an audio-generating
   checked chain. Neither still says "segment 1 is never checked" without the audio exception.
+Amended 2026-11-09 (harnest#200, approved by Don): (f) is a guide chain carrying its audio, and expects 6, not 5.
+Don's #1199 ruling (dw bd668eb6) made that chain level-checked.
 cleanup: none (validation only).
 metrics: none.
 
@@ -18677,8 +18680,8 @@ A short H3 chain whose audio is not generated. H3 only: on a host that doesn't r
    a misfiring floor visible.)
 2. A copy of `templates/minimax/chain-matched-to-audio` with `hold_audio: asset:c-f717-bed.wav` (8 s at the bed's
    default duration, so 2 segments), `seed: 1247`, and `check: true` with `retries: 1` written into its chain block.
-   Held audio is MiniMax-H3 only (`match_audio` or its `hold_audio`, a step `hold_audio`, or a `guide` chain
-   carrying its audio), so this case runs where H3 runs.
+   Held audio is MiniMax-H3 only (`match_audio` or its `hold_audio`, or a step `hold_audio`), so this case runs
+   where H3 runs. (A `guide` chain carrying its audio is not held: it is level-checked, per harnest#200.)
 3. Validate (note `plan.estimate`'s worst case), run with `wait_seconds=55`, `wait_for_job`, `get_job`,
    `get_job_events`.
 expected:
@@ -19272,11 +19275,15 @@ Free (validate only). Call `validate_workflow` on the dialogue carrier three tim
 expected:
 - (a)'s quote is higher than (b)'s.
 - Where the estimate gives a worst case in renders: (a) is 2 × (1 + 1) = 4, because segment 1 is words-checked and
-  may re-roll. (c) is 1 + (2 − 1)(1 + 1) = 3, as C-F717's arithmetic gives for a chain with no words to check.
+  may re-roll. (c) is also 2 × (1 + 1) = 4, because a guide chain carrying its audio re-rolls segment 1 on
+  `audio_dbfs`; and (c) names no words-check or transcription term, since no segment has a line.
   (b) is 2.
 - (a)'s per-attempt cost includes a term for the ASR pass. Where the estimate names its terms, one names the words
   check or transcription.
 It is a **finding** if (a) quotes no more than (b), or if (a)'s worst case leaves out segment 1's re-roll.
+Amended 2026-11-09 (harnest#200, approved by Don): (b) uses `retries: 0`, since retries with the check off is
+refused (C-F713 (b)). (c) is 4 with no words term: a guide chain carrying its audio is level-checked, segment 1
+included (Don's #1199 ruling, dw bd668eb6).
 cleanup: none.
 metrics: none.
 
