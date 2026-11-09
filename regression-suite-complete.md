@@ -19153,7 +19153,6 @@ skip those cases and say so.
   expect from a non-null default.
 
 ### C-F741 — check-script folds a spoken "One" and a written "1" together, so "Article One" reads 1.0 either way
-pending: #1297
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Cheap (TTS once, then Whisper on CPU). Setup, only if `asset:qa-1262/article-one.wav` or
 `asset:qa-1262/article-twenty-one.wav` is missing (`list_assets(workspace="regression-complete")`):
@@ -19177,7 +19176,6 @@ cleanup: `delete_output(job_id=<id>)` on each check-script and transcription run
 metrics: none.
 
 ### C-F742 — "twenty-one" is split at its hyphen and folded to 21, so all three spellings match
-pending: #1297
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Cheap (Whisper on CPU). This is Don's named test (v1 approval). Fixture `asset:qa-1262/article-twenty-one.wav`
 (C-F741's setup). Run `templates/check-script` on it three times, as in C-F741, with `lines` of
@@ -19193,7 +19191,6 @@ cleanup: `delete_output(job_id=<id>)` on each run.
 metrics: none.
 
 ### C-F743 — the normaliser folds spellings, not numbers: a different number still reads under 1.0
-pending: #1297
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Cheap (Whisper on CPU). The plan's risk note says the normaliser moves results "upward only". This case is the
 guard that it doesn't move them by matching a wrong number. Run `templates/check-script` as in C-F741:
@@ -19222,7 +19219,6 @@ cleanup: as in those cases.
 metrics: none.
 
 ### C-F745 — the guide's check-script similarity note says number words are normalised
-pending: #1297
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_guide("workflows", section="check-script")`. The match is loose. If it doesn't resolve, try
 `get_guide("tasks", section="Script check")`. Read the paragraph that explains check-script's `similarity`.
