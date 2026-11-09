@@ -19267,7 +19267,7 @@ pending: #1298
 source: tester, spec for #1298 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Call `validate_workflow` on the dialogue carrier three times, and read each `plan.estimate`:
 - (a) the base arguments, with `check: true` and `retries: 1`;
-- (b) (a) with `check: false`;
+- (b) (a) with `check: false` and `retries: 0`;
 - (c) (a) with `prompts: [P, P]`, so no segment has a line.
 expected:
 - (a)'s quote is higher than (b)'s.
