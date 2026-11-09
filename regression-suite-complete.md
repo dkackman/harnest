@@ -656,10 +656,14 @@ expected:
   `match_levels_dbfs`, each defaulting to `null` — null so the task's own per-mode
   default stands rather than the template inventing one.
 - Run it over the three wide-spread shots with `match_levels: "rms"`, the matching
-  `total_frames`, and a score built to exactly that length: the job succeeds with
-  `warnings: []`. The **absence** of the level-spread warning is the assertion that
-  proves the variable reaches the task rather than only being accepted at the door.
-  A declared-but-unbound variable passes the first two checks and fails only this one.
+  `total_frames`, and a score built to exactly that length: the job succeeds and
+  raises no `dissolve_videos` level-spread warning (and no advice to pass
+  `match_levels`). It may carry `match_levels_held` warnings (dw#1248: `rms` holds a
+  shot that would clip to -3.0 dBFS peak, and the ep4/ep6/ep7 shots reach -2.3, -1.8
+  and -2.5 at the target); those do not fail the case. The **absence** of the
+  level-spread warning is the assertion that proves the variable reaches the task
+  rather than only being accepted at the door. A declared-but-unbound variable passes
+  the first two checks and fails only this one.
 Frame arithmetic, worth asserting on the output and worth stating because the
 template's description now carries it: the joined cut is `Σf − (n−1)*d`, which for
 equal shots is `n*f − (n−1)*d`. It holds for **unequal** shots too — 124 + 124 + 248
@@ -669,6 +673,8 @@ equal-shot form.
 It is a **finding** if the argument is refused again, if either variable stops being
 declared or loses its `null` default, or if the run raises the spread warning despite
 `match_levels` being passed.
+Amended 2026-11-08 (harnest#194, approved by Don): `warnings: []` became "no
+level-spread warning", since dw#1248 lowered the `rms` clip-hold ceiling to -3.0 dBFS.
 cleanup: delete both runs' outputs (each sweeps its run directory). Keep the shot
 assets — they are episode fixtures.
 source: tester, model `opus` via provider `anthropic`, verified in #128 on 2026-09-13
@@ -900,15 +906,18 @@ normalizer's target both have four hops to get lost in.
 shared=true)` returns `reference: asset:qa-cast/ep17-score.wav`, and
 `templates/assemble-and-score` run with `shots` = the two 32 kHz C-F001 fixtures,
 `score` = that reference, `sample_rate: 32000`, `fps: 24`, `total_frames: 248`,
-`seam_fade_ms: 80`, `match_levels: "rms"` succeeds with exactly one warning:
-`slice_audio`'s tail-drop (`slice_trimmed_tail`, #342) on the `soundtrack` step,
-the score being 10.83 s against a 10.33 s cut — and in particular **no
+`seam_fade_ms: 80`, `match_levels: "rms"` succeeds with `slice_audio`'s tail-drop
+warning (`slice_trimmed_tail`, #342) on the `soundtrack` step, the score being
+10.83 s against a 10.33 s cut, plus one `concat_videos` `match_levels_held` warning
+for each shot whose peak at the rms target is above -3.0 dBFS (dw#1248; both C-F001
+fixtures are, at -2.7 and -1.5) — and in particular **no
 `slice_past_end`** and no `concat_videos` pad or sample-rate warning — and the film reports 248 frames / `duration_seconds` ≈ 10.334 / `fps: 24.0`
 / `sample_rate: 32000` / `channels: 2` and `peak_dbfs` **below 0** (the template
 normalizes to -3 before the mux; the AAC overshoot on this material is a few
 hundredths of a dB, so -3 has ample headroom — cf. C-F024, where a lossy source
 overshoots by ~0.44 dB).
-It is a **finding** if either job warns beyond that one warning (or #342's
+It is a **finding** if either job warns beyond those warnings — any warning other
+than #342's tail-drop and `match_levels_held` (or #342's
 warning goes quiet), if the bed's duration is not exactly
 260/24, if the score is not 32 kHz mono at -3 dBFS (a rate or a gain dropped
 mid-chain), if `keep_output`'s reference is not resolvable by the stored template
@@ -920,6 +929,9 @@ metrics: `film_peak_dbfs` — the decoded `peak_dbfs` of the muxed film from (2)
 condition `-`. The number is the mux headroom actually delivered against the -3
 the template asked for; drift toward 0 across runs is the regression, and a
 single reading can't show it.
+Amended 2026-11-08 (harnest#195, approved by Don): part (2)'s "exactly one warning"
+now admits `match_levels_held`, since dw#1248 lowered the `rms` clip-hold ceiling to
+-3.0 dBFS.
 cleanup: delete both runs' outputs and the `qa-cast/ep17-score.wav` asset the case
 creates (it is rebuilt by step 1 every run, so it is not a fixture). Keep the three
 input assets — all durable fixtures listed above.
@@ -1302,7 +1314,7 @@ peak −3.002 dBFS, seam second rms −20.1 / peak −4.6) and `ca911ef36454`
 on this material with `audio_bleed_ms: 400`; ep22 is the re-cut the warning
 asked for.
 
-### C-F038 — `templates/dissolve-between-shots` honours `match_levels_dbfs` across three shots: every shot is gained to the lower target, none is clip-held
+### C-F038 — `templates/dissolve-between-shots` honours `match_levels_dbfs` across three shots: every shot is gained to the lower target unless clip-held at -3.0 dBFS
 C-F037 leaves levels out of its assertion because the default −20 dBFS
 `rms` target clip-holds a loud shot (#214). This is the level-match check the
 extra variable makes possible (#215): three dialogue shots that sit 6–8 dB
@@ -1324,20 +1336,30 @@ expected: `validate_workflow` on `templates/dissolve-between-shots` with
 if the third shot's count differs), `score_gain: 0.6`, `world_gain: 1.0` is
 valid; the run succeeds. `get_job_events` carries **three** level-match
 events from the `dissolve_videos` step, one per shot in order, each naming
-the measured rms in dBFS and the gain in dB, with **`held: false` on all
-three** and each gain ≈ (−24 − measured rms) within 0.2 dB — so a shot
+the measured rms in dBFS, the gain in dB and `held`. For a shot with
+`held: false` the gain ≈ (−24 − measured rms) within 0.2 dB — so a shot
 measuring above −24 gets a negative gain and one below gets a positive one.
+A shot whose gained peak would exceed −3.0 dBFS may be `held: true` (dw#1248;
+on the source material that is the first ep21 shot, gain −1.3 instead of
++0.3): its gain is the one that puts its peak at −3.0, its sign need not
+follow the target, and the job carries a `match_levels_held` warning for it
+with `ceiling_dbfs: -3.0`. The other two shots stay `held: false` with their
+gains unchanged.
 The film decodes at 348 frames / 24 fps / 32000 Hz / 2 channels /
 `duration_seconds` 14.5 ± 0.01, `peak_dbfs` strictly below 0; the seam
 `envelope` from `get_gallery_metadata(envelope=true)` has no second more than
 6 dB below its neighbours (no hole at either dissolve). A `slice_past_end`
 warning on the score is expected when the score is shorter than 14.5 s and is
 not a finding.
-It is a **finding** if any event reports `held: true` (there is headroom for
-every gain at −24 on this material), if a gain's sign contradicts its measured
+It is a **finding** if an event reports `held: true` for a shot whose peak at
+the −24 gain stays at or under −3.0 dBFS, or a held shot carries no
+`match_levels_held` warning, if an unheld gain's sign contradicts its measured
 rms against −24, if a gain matches the −20 target instead (the variable is not
 reaching the task), if fewer than three events appear, if the run errors, or
 if the film's frame count, rate or duration is off.
+Amended 2026-11-08 (harnest#196, approved by Don): "`held: false` on all three"
+became "unless clip-held at −3.0", since dw#1248 lowered the `rms` clip-hold
+ceiling from −0.5 to −3.0 dBFS.
 cleanup: delete the run. The ep21 fixtures and the shared ep4 shot are
 durable — keep them.
 source: tester, found while running TESTER_TASK.agent.md (episode 23) on
