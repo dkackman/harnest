@@ -19573,7 +19573,7 @@ expected:
 cleanup: none.
 metrics: none.
 
-### C-F764 — `boundary_slack_seconds` refuses a negative, a string and a boolean at validate, and takes zero, a positive number and null
+### C-F764 — `boundary_slack_seconds` refuses a negative, a non-numeric string and a boolean at validate, and takes zero, a positive number and null
 pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free (validate only). In `workspace="regression-complete"`, `validate_workflow("templates/narration-retime",
@@ -19581,8 +19581,9 @@ arguments={"narration": "asset:qa-cast/priya-voice.wav", "script": "<any one sen
 for V = (a) `-0.1`; (b) `"0.5"` (a string); (c) `"wide"`; (d) `true`; (e) `0`; (f) `0.25`; (g) `null`; and (h) the
 argument left out.
 expected:
-- (a), (b), (c) and (d) are `valid: false`. Each error is at `arguments.boundary_slack_seconds` (or the retime step's
+- (a), (c) and (d) are `valid: false`. Each error is at `arguments.boundary_slack_seconds` (or the retime step's
   `boundary_slack_seconds` argument) and names the key. None of them is caught only at run time.
+- (b) is `valid: true`, the string coerced to 0.5, with no warning about `boundary_slack_seconds`.
 - (e), (f), (g) and (h) are `valid: true`, with no warning about `boundary_slack_seconds`. If the task's own `range`
   says "above zero" rather than "zero or above", (e) is refused naming the key instead, and that is not a finding.
 - (h) validates exactly as the template did before stage 1: same plan, no new warning.

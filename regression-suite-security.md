@@ -1719,9 +1719,9 @@ expected:
 - **The refusal side.** Re-run the SE-F005 probe (`trust_remote_code: true`) and
   the SE-F006 probe (`custom_pipeline: "lpw_stable_diffusion"`). Each job's full
   `get_job_events` contains **no `phase` event at all** — not merely no `loading`
-  one. The events are the three `job_status` transitions, the workspace's own log
-  lines, `run_start`, `workflow_start` and `step_start`, and nothing else. This is
-  stronger than SE-F005's own wording and equally true as of 0.4.0-beta.3.
+  one. The events are the three `job_status` transitions and any `memory` events,
+  and nothing else: no log lines, `run_start`, `workflow_start` or `step_start`,
+  because since #1333 the refusal comes before run setup.
 - **The control, which is the half that matters.** A *legitimate* pipeline job —
   any small real load; `templates/text-to-image` or an inline SD 1.5 step with no
   trust flags — **does** emit `phase: "loading"` with the model named in `detail`,
@@ -1729,15 +1729,17 @@ expected:
   `loading` stops being emitted anywhere, which is the obvious way a
   "move the marker" change regresses and would leave SE-F005/F006/SE-P001 unable
   to detect a late refusal ever again.
-- The refusal's traceback still shows the check reached from `create_step_action`
-  → `check_trusted`, i.e. before the step action is even built. A traceback that
+- The refusal's traceback shows the check reached from the worker's pre-flight
+  (`_prepare_workflow` → `workflow_run.require_trusted_pipelines` →
+  `trust.require_trusted_block`, #1333), i.e. before the run is even set up. A traceback that
   moves back inside `load()`/`load_component` means the pre-flight was lost and
   only the in-load gate is left — still safe, but the evidence is gone again.
 It is a **finding** if a refusal acquires any phase event, if a legitimate load
 stops emitting `loading`, or if the refusal message or its timing band changes
 (SE-P001 owns the number; this case owns the events).
-cleanup: the refusals write no media but do create a run directory. Remove each
-with `delete_output("<workflow id>/<run id>")` — the run-directory form, which is
+cleanup: the refusals write no media and, since #1333, normally no run directory
+(`run_dir: null`). If a refusal's job does report a `run_dir`, remove it with
+`delete_output("<workflow id>/<run id>")` — the run-directory form, which is
 the only thing that reaches a run that failed before writing media (#134). Delete
 the control job's outputs normally.
 source: tester, model `opus` via provider `anthropic`, verified in #137 on
