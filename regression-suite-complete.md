@@ -20406,7 +20406,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F814 — the bf16 bench workflow validates clean and differs from the CP1 control only in the transformer's precision
-pending: #1346
 source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
 Free (validate and reads only). The control is job `d5584b91816d` (workspace `constitution-walk-3`, workflow id
 `BenchNarratedTake`, arguments `{stop_after: 12, shot: "dialogue", seed: 1}`). Its realized workflow, as pinned on
@@ -20439,7 +20438,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F815 — the gate segment ran alone on lem, and its host RAM peak is the figure the bench workflow declares
-pending: #1346
 source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads existing jobs). The stage records a gate job id (in the `narrated.md` section, quoted on #1346).
 - `get_job(<gate job>)`. Then `get_job_events(<gate job>, kinds=["memory"])` for its VRAM readings, and
@@ -20465,7 +20463,6 @@ cleanup: none (the gate job is the stage's evidence).
 metrics: none.
 
 ### C-F816 — the full bf16 arm finished 12 kept segments under the control's arguments
-pending: #1346
 source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads existing jobs). **Skip, as not applicable** if C-F815 found an honest gate stop. In that case the record
 must say no full arm ran, and `list_jobs` must show no 12-segment bf16 job that the record leaves out. A full arm that
@@ -20492,7 +20489,6 @@ cleanup: none (the arm is Don's evidence for Q3; never delete it from this case)
 metrics: none.
 
 ### C-F817 — the narrated.md bf16 record's numbers are the jobs' numbers, and its verdict is one the data allows
-pending: #1346
 source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads existing jobs). The record is the new `bench/records/narrated.md` section. Read it as the stage quotes it
 on #1346, not from a checkout. Then `get_job` on the arm and on `d5584b91816d`.
@@ -20517,7 +20513,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F818 — the face strip for Don exists where the record says, with both arms at the four CP1 times
-pending: #1346
 source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads only). **Not applicable** if the gate stopped the arm. The record names the strip either as an output of
 a job (an `output:` path in some job's manifest) or as a kept asset (`asset:…`).
