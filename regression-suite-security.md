@@ -1851,6 +1851,37 @@ expected:
 
 cleanup: none (validation only).
 
+### SE-F064 — a trust refusal leaves the worker's warm models in place
+A hostile workflow must not be able to change worker state just by being refused.
+In #1333 the worker released the previous workflow's cached models ("Workflow
+changed - releasing cached models...") before the trust gate refused the job. A
+refused submission therefore evicted the warm cache and paid about 1 s for the
+release, which SE-P001 then measured. Run three jobs in order in one workspace:
+1. **Warm:** a legitimate small pipeline job, e.g. inline `StableDiffusionPipeline` on
+   `hf-internal-testing/tiny-stable-diffusion-torch` (2 steps, 64x64, no trust flags).
+   It must succeed.
+2. **Refuse:** the SE-F005 probe (`trust_remote_code: true`), and separately the SE-F006
+   probe (`custom_pipeline: "lpw_stable_diffusion"`).
+3. **Repeat:** job 1, unchanged.
+expected:
+- Each refusal fails with the trust-gate message naming its key. Its full `get_job_events`
+  has no `log` line containing "releasing cached models", and no `phase` event.
+- The repeat succeeds with its pipeline step's `timing.load_cached: true`, and its events have
+  no "releasing cached models" line.
+It is a **finding** if a refusal emits the release line or acquires a phase, or if the repeat
+reports `load_cached: false`. Either means a refused job changed the worker's state. Control:
+if the warm job itself reports `load_cached: false` and the repeat does too, check first that the
+warm job succeeded. A failed warm job (such as the Flax-only `tiny-stable-diffusion-pipe`)
+leaves nothing cached, which proves nothing.
+Scope: pipeline `from_pretrained_arguments` only. #1333's hand-off says a refusal raised later,
+from a task step's remote-code arguments, still releases first. That is not covered here.
+cleanup: `delete_output(job_id=...)` for the warm and repeat jobs. As of #1333 the refusals
+create no run directory (`run_dir: null`).
+source: tester, model `claude-opus-5-5` via provider `anthropic`, verified in #1333 on
+2026-11-13 against develop @ 52c3fd7d on mini-ai (mps), workspace `regression-security`.
+Jobs: warm `55477458b7db`, SE-F005 refusal `cfd3c24ffff4` (0.079 s, 4 events), SE-F006 refusal
+`e1bdbd51e83e`, repeat `d85d7772bea1` (`load_cached: true`).
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model
