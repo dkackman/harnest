@@ -1882,6 +1882,58 @@ source: tester, model `claude-opus-5-5` via provider `anthropic`, verified in #1
 Jobs: warm `55477458b7db`, SE-F005 refusal `cfd3c24ffff4` (0.079 s, 4 events), SE-F006 refusal
 `e1bdbd51e83e`, repeat `d85d7772bea1` (`load_cached: true`).
 
+### SE-F065 — admitting `diffusers.models.` for the LTX2 condition dataclasses admits no other class there
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+Free, **validate only**. The plan: if diffusers 0.43 moved `LTX2VideoCondition` / `LTX2ReferenceCondition` under
+`diffusers.models`, the trust gate admits that prefix "for dataclasses only". This case applies only if the stage B
+comment on #1341 says they moved and the gate was widened; if it says they did not move, record "not applicable"
+and stop. Carrier: a migrated template the comment names (one that builds a condition object, e.g. an LTX
+keyframe or reference template), from `get_workflow`, passed inline. At the placement where the template names the
+condition dataclass, one probe per `validate_workflow` call, replacing that dotted name with:
+- (a) **control**: the new `diffusers.models.…` path of the condition class itself, as the template now has it;
+- (b) a model class under the same prefix: `diffusers.models.AutoencoderKL`;
+- (c) a function: `diffusers.models.attention_dispatch.dispatch_attention_fn`;
+- (d) a module: `diffusers.models`;
+- (e) a private name under the prefix: `diffusers.models._modeling_parallel` (or any `_`-prefixed segment);
+- (f) a walk out of the package through the new prefix: `diffusers.models.torch.hub.load` and
+  `diffusers.models.os.environ`.
+expected:
+- (a) `valid: true` (supply the media the template needs from the complete suite's Fixtures).
+- (b)–(f) each `valid: false` at the probe's own path, with a message that the name is not an allowed dataclass /
+  class. A message naming the trust gate or `--trust-workflows` also passes.
+It is a **finding** if any of (b)–(f) validates `valid: true`: the "dataclasses only" limit is not enforced. It is a
+high-severity finding (file privately with `./scripts/file-advisory.sh`) if any message mentions `repo_or_dir`, an
+environment variable's value, or a `TypeError` about arguments, because the name was resolved and called.
+cleanup: none (validation only).
+
+### SE-F066 — a Pika adapter `weight_name` with a subfolder is held inside the repo
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Stage B puts a subfolder into a LoRA `weight_name` (`fl2va/adapter.safetensors`, `ref2va/adapter.safetensors`) in
+the `Pika-Labs/Pika-H3-Flex` repo. That loosens the bare-filename shape SE-F050 probes, so the new shape has to stay
+inside the repo. Free, **validate only**. `get_workflow("templates/pika-h3/text-to-video")` (full), save it inline,
+and validate it with `{"seed": 42}`, changing only the one `loras[]` entry's `weight_name` (or its model id, for (g))
+per call:
+- control: unchanged (`fl2va/adapter.safetensors`);
+- (a) `../fl2va/adapter.safetensors`;
+- (b) `fl2va/../../../../etc/passwd`;
+- (c) `/etc/passwd`;
+- (d) `fl2va/../../x.safetensors`;
+- (e) `fl2va\..\..\x.safetensors` (backslash);
+- (f) `fl2va/adapter.pt` (not safetensors);
+- (g) model id `Pika-Labs/Pika-H3-Flex/../x`, `weight_name` unchanged.
+Before and after: `list_downloads`.
+expected:
+- The control returns `valid: true`.
+- (a)–(g) each return `valid: false` at the LoRA entry's path, and no new entry appears in `list_downloads`.
+- No message echoes a resolved server path (a cache or models directory, a home directory), the contents of any file,
+  or a token.
+It is a **finding** if any of (a)–(g) validates clean. If a run of such an entry reaches a file outside the repo's
+snapshot, or a message discloses a server path or file contents, that is a hole: file it privately with
+`./scripts/file-advisory.sh`, never as an issue.
+cleanup: none (validation only).
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

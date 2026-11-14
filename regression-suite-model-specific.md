@@ -8653,4 +8653,339 @@ clip whose retimed count matches is refused, or if the over-ceiling refusal omit
 cleanup: `delete_output(job_id=<step 1's job>)`, `delete_output(job_id=<step 3's job>)`.
 metrics: none.
 
+### M-F307 — the #1325 seam-restore probe workflow validates clean: restore arm 6 fl2va + 5 ref2va restores at `refine_strength` 0.3 with held audio over 22-frame tails; control arm the same with no restores
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` segments and `ref2va` restore steps, raw H3 (20 steps, no turbo LoRA), the narrated
+`dialogue` take's still and narration. Free: validates and reads only, no job is run.
+The probe is `bench/workflows/seam-restore.json` in the dw repo, both arms in one file or one workflow plus a variable
+that drops the restores. Find the two arm jobs' ids and their workspace in the record (M-F310 says where).
+Steps:
+1. `validate_workflow(workflow_path="bench/workflows/seam-restore.json")` with the restore arm's arguments as the
+   record states them, and again with the control arm's. If the path doesn't resolve on the server, use
+   `get_job_workflow(<arm job>)` for each arm and `validate_workflow(inline_workflow=<its workflow>,
+   workspace=<the record's>)` instead. Note which route was used: an unresolvable path is not a finding.
+2. Read each validate's `plan.steps` and the workflow definition.
+expected:
+- Both validates are `valid: true` with no errors. Warnings are allowed; list them.
+- **Restore arm.** 6 H3 segment steps, every one `fl2va`, and 5 `ref2va` restore steps (k−1 for k = 6): one after
+  each of segments 1–5, none after segment 6. Each restore step has:
+  - `refine_strength` 0.3 (plan v1 Q3; Don's ruling kept the default);
+  - `source_video` = the last 22 frames of segment k's output (a `trim_video` or equivalent, 22 frames, ending on
+    that output's last frame). 22 is not refused: it is on H3's 17n+5 grid. A refusal of the 22-frame source is a
+    finding against the build, which the plan says stops and reports;
+  - `references` = the take's still (the same `asset:`/reference the segments' `image` uses);
+  - the prompt of segment k+1, not segment k;
+  - `hold_audio` present: segment k+1's narration slice.
+- **Segments, both arms.** Segment 1 has `image` = the still and no `guides`. Segment k ≥ 2 has `image` = the still
+  (as keystone) and one `guides` entry of 22 frames, never 39; `hold_audio` is present on every segment and is
+  segment k's own narration slice.
+- **Guide source.** Restore arm: segment k's guide is restore k−1's output. Control arm: it is the raw 22-frame tail
+  of segment k−1's output.
+- **Control arm.** 6 `fl2va` segments, zero `ref2va` steps and no step with `refine_strength`.
+- **Schedule.** Every segment and restore step: `num_inference_steps` 20, no turbo LoRA entry (absent or
+  `model_name: null`), seed 1 on segment 1 and the seeds the record states thereafter.
+- **Join.** Each arm ends in one join that drops each segment k ≥ 2's 22-frame guide head before concatenating
+  segments 1–6 in order, and keeps the narration.
+- `plan.estimate` is present on both (basis may be `unknown`).
+It is a **finding** if either arm doesn't validate clean, the restore arm has other than 5 `ref2va` restores or one
+after segment 6, a restore lacks `refine_strength`, `hold_audio` or `references`, its strength isn't 0.3, its source
+isn't 22 frames of segment k's tail, its prompt is segment k's own, the control arm has any restore, a guide isn't
+22 frames, or any step uses a turbo LoRA or other than 20 steps.
+cleanup: none (validates only).
+metrics: none.
+
+### M-F308 — both #1325 probe arms finished with one video each, of equal length to the frame, with audio
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3, the two M-F307 arm jobs. Free: reads only. Run on lem (cuda).
+Steps:
+1. `list_jobs(workspace=<the record's>)`; find both arm job ids from the record. If an arm was run as several jobs
+   (one per segment or restore, plus a join), the arm's job is the join; read all of them.
+2. `get_job(<id>, workspace=<the record's>)` for every arm job; `get_gallery_metadata` on each arm's final mp4.
+expected:
+- Every arm job is `succeeded` (the plan's "completed") in `list_jobs` and `get_job`. A re-roll the record marks as
+  a failed attempt may be `failed`; nothing else may be.
+- Each arm's final job lists exactly one video output (one mp4; intermediate files the record names are allowed if
+  they are not a second final take).
+- Both final mp4s have the same `frame_count`, exactly. Same width and height, same `fps` (24), and each has an audio
+  stream whose length is the video's within one frame.
+- Each frame count equals the sum of the 6 segments' `num_frames` minus 5 × 22 (the trimmed guide heads). If it
+  doesn't, the record must state the join's trim and the count must follow from it; a count the record doesn't
+  explain is a finding.
+- The duration is roughly 43 s (plan Q1's 6-segment default); a 12-segment or single-arm run is a finding, since Don's
+  ruling refused both.
+It is a **finding** if an arm is missing or failed, the two lengths differ by any frame, either take has no audio, or
+either has more than one final video.
+cleanup: none. Never delete the arm jobs: the record and Don's viewing verdict cite them.
+metrics: none.
+
+### M-F309 — the two #1325 probe arms differ only in the restore steps and each segment's guide source, with the same seeds
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` and `ref2va`, the M-F308 jobs. Free: reads only.
+Steps:
+1. `get_job_workflow(<id>)` for every job of each arm (the realized workflow: seeds pinned, arguments folded in).
+   If `realized` is false, record "evidence pruned" and skip; that is not a finding.
+2. Diff the restore arm against the control step by step.
+expected:
+- Removing the 5 `ref2va` restore steps (and any `trim_video` that only feeds a restore) from the restore arm, and
+  pointing each segment k ≥ 2's `guides` at the raw tail of segment k−1, gives the control arm: no other step,
+  argument or variable differs.
+- In particular, identical between arms per segment: seed (segment 1 seed 1), prompt, `image`/keystone still,
+  `hold_audio` slice, width, height, `num_frames`, `num_inference_steps`, guide length (22) and LoRA state.
+- The seeds are pinned in both realized workflows (not drawn per run), so the arms are not seed-confounded as the
+  masked-handoff probe (#1322) was.
+- The restore steps' own seeds are stated in the realized workflow.
+It is a **finding** if any segment's seed, prompt, still, audio slice, size or schedule differs between arms, if the
+control arm's guide isn't the raw tail, or if anything outside the restores and guide sources differs.
+cleanup: none.
+metrics: none.
+
+### M-F310 — the #1325 seam-restore record names both jobs, the strength in dw units with its ComfyUI *d*, both arms' tables, wall time per restore pass, and leaves the verdict to Don
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the record of the #1351 MiniMax H3 seam-restore probe. Free: issue reads and job reads.
+The record is a section of `bench/records/narrated.md` in the dw repo, which a tester can't read. Read it as quoted or
+linked in the build's comment on #1351 or the hand-back comment on #1325 (`gh issue view 1325 --repo
+dkackman/diffusers-workflow --comments`); if neither quotes the section's content, that is a finding.
+Steps:
+1. Read the record. Collect the job ids, the workspace, the strength, the shift *s* and *d* it states, and the wall
+   times.
+2. `get_job(<id>, workspace=...)` and `get_job_events(<id>)` for each arm job, to check the wall times.
+expected:
+- The record names both arms' job ids (restore and control), and both take paths.
+- It states the strength as `refine_strength` 0.3 (dw units, σ₀ on the shifted schedule), the scheduler shift *s* it
+  used, and the ComfyUI denoise *d*. *d* satisfies `0.3 = s·d / (1 + (s−1)·d)`, i.e. `d = 0.3 / (0.7·s + 0.3)`, to
+  two decimals.
+- It has a table per arm (or one table with a column per arm) for each measure the plan lists:
+  - the drift split for luma, saturation, face saturation and face sharpness, each as total / seams / in-segment;
+  - face-crop windows of median sharpness, mean saturation and SFace similarity;
+  - the seam peak against the median frame difference;
+  - still-mouth bins.
+- It gives wall time per arm with the restore passes separated: time per restore pass (5 of them) and the total
+  restore share. Each per-restore time agrees with the job's events or step timings within 10% where those are
+  readable; where they aren't, the record says how it was timed.
+- It does not call whether the restore helps on the measures alone: the verdict is asked of Don by eye (`taste`).
+  #1325 is handed to `owner:don` with both take paths once the record lands.
+It is a **finding** if a job id, the dw strength, *s*, *d*, either arm's table or the per-restore wall time is
+missing, *d* doesn't follow from the stated *s*, a cited job doesn't exist or didn't finish `succeeded`, or the
+record declares the restore a success or failure without leaving it to Don's viewing.
+cleanup: none.
+metrics: none.
+
+### M-F311 — the guide documents `turbo_lead_in` as an H3 argument counting evaluations, and the acceleration guide states the `first_block` refusal and a measured compile cost
+pending: #1352
+source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 with the turbo LoRA (`lightx2v/Minimax-h3-Turbo`, adapter name `turbo`). Free: guide and
+issue reads, plus job reads for the compile measurement.
+Steps:
+1. `get_guide("workflows", section="turbo_lead_in")` (matched loosely; if no section resolves, read the H3 arguments
+   section under "Pipeline Configuration", where `guide_noise` lives).
+2. `get_guide("acceleration", section="FirstBlockCache")` and `get_guide("acceleration", section="torch.compile")`
+   (or whichever section the workflows text points at for the compile figure).
+3. Read #1352's hand-off comment for the compile-measurement job ids (`gh issue view 1352 --repo
+   dkackman/diffusers-workflow --comments`). For each id, `get_job(<id>)` and `get_job_events(<id>)`.
+expected:
+- The workflows guide has a passage on `turbo_lead_in` that says all of these:
+  - it is an int ≥ 0, and absent or 0 means no lead-in;
+  - it counts transformer **evaluations**, not `num_inference_steps` (a 5-step turbo schedule is 4 evaluations);
+  - for the first N evaluations of each pipeline call the adapter named `turbo` runs at scale 0, its configured
+    scale applies from evaluation N+1, and other adapters are left alone;
+  - it is a step argument, so in a chain it rides to every segment, segment 1 included;
+  - what it refuses: a non-integer, a negative, N ≥ the evaluation count, a step with no adapter named `turbo`, a
+    non-H3 step, and the `first_block` cache.
+- The acceleration guide says `first_block` is refused alongside `turbo_lead_in`, and gives the `torch.compile`
+  cost of a lead-in as a measured figure: extra seconds (or a percentage) and whether it recompiles per scale value.
+  It does not call that cost "unverified" or "likely".
+- The hand-off names at least two compile jobs, one with `turbo_lead_in: 1` and one without. Each exists and
+  `succeeded`, and each ran H3 with `torch.compile` on (its realized workflow or events show it). The guide's figure
+  is consistent with their wall times, within 10%.
+It is a **finding** if the guide passage is missing, describes the count as steps, omits any refusal above, states no
+compile figure or still says "unverified", or if a cited compile job is missing, failed or wasn't compiled.
+cleanup: none.
+metrics: none.
+
+### M-F312 — `turbo_lead_in` validates clean at 0, 1 and the last legal value on both the 4- and 8-evaluation turbo chains, with an estimate
+pending: #1352
+source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 `fl2va` with the turbo LoRA, through `templates/minimax/chained-segments` (5 steps, 4
+evaluations, adapter `turbo`) and `templates/minimax/chain-video-continuity` (9 steps, 8 evaluations). Free:
+validates only.
+Setup: the plan adds no template variable, so the argument goes on the H3 step itself. `get_workflow` each template,
+and make an inline copy with `turbo_lead_in` added to the H3 step's `arguments` (beside `guide_noise`'s place). If
+the build did add a template variable after all, passing it through `arguments` is equally acceptable; note which
+route was used.
+Steps (workspace `regression-model-specific`, `arguments={"segments": 2, "num_frames": 124, "seed": 42}` on every call):
+1. `chained-segments` copy: validate with `turbo_lead_in` absent, `0`, `1`, `2` and `3`.
+2. `chain-video-continuity` copy: validate with `turbo_lead_in` `0`, `2`, `3` and `7`.
+expected:
+- Every validate is `valid: true` with no error and a `plan.estimate`. No warning names `turbo_lead_in` (a warning
+  that was already there with it absent is fine).
+- The estimates with the argument equal the estimate without it: the lead-in adds no steps.
+It is a **finding** if any of these values is refused, so the legal range is narrower than the plan states (3 is the
+last legal value on 4 evaluations and 7 on 8), or if the estimate moves.
+cleanup: none (validates only).
+metrics: none.
+
+### M-F313 — `turbo_lead_in` refusals at validate and at `run_workflow`: the out-of-range and non-integer values, no `turbo` adapter, a non-H3 step, the `first_block` cache
+pending: #1352
+source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 turbo chains as in M-F312, plus one non-H3 pipeline (LTX-2.5,
+`templates/ltx2/text-to-video`). Free: validates, plus run attempts that must queue nothing.
+Setup: the inline copies of M-F312, with `arguments={"segments": 2, "num_frames": 124, "seed": 42}`.
+Steps (workspace `regression-model-specific`):
+1. `chained-segments` copy (4 evaluations): validate with `turbo_lead_in` `4`, `5`, `-1`, `"1"`, `1.5` and `true`.
+2. `chain-video-continuity` copy (8 evaluations): validate with `turbo_lead_in: 8`.
+3. `chained-segments` copy with `turbo_lead_in: 1` and `lora_adapter_name: "fast"`. Then again with
+   `lora_model_name: null` (no adapter loaded at all).
+4. An inline copy of `templates/ltx2/text-to-video` with `turbo_lead_in: 1` on its pipeline step.
+5. `chained-segments` copy with `turbo_lead_in: 1` and `cache: {"type": "first_block", "threshold": 0.05}`.
+   Then the same cache with `turbo_lead_in` absent, as a control.
+6. `run_workflow` the step 1 copy with `turbo_lead_in: 4`, and the step 3 copy with `"fast"`, each with a bound
+   `acknowledged_cost` from a clean validate of the same copy at `turbo_lead_in: 1`. Then `list_jobs`.
+expected:
+- Steps 1–2: each refused, naming `turbo_lead_in`. `4`, `5` and `8` name the evaluation count (4 or 8) and say no
+  turbo evaluation would be left. `-1` names the lower bound. `"1"`, `1.5` and `true` say an integer is required: a
+  boolean or a string is not coerced.
+- Step 3: both refused, naming `turbo_lead_in` and the missing adapter `turbo`. The error lists the adapter names the
+  step has: `fast` in the first, none in the second.
+- Step 4: refused as an unknown argument on a non-H3 step (or naming H3 as the only pipeline that takes it).
+- Step 5: refused, naming both `turbo_lead_in` and the `first_block` cache. The control's outcome is whatever it is
+  today: if it is refused too, the lead-in refusal must still name `turbo_lead_in`.
+- Step 6: both refused with the same causes as at validate, and `list_jobs` shows no new job.
+It is a **finding** if any of these validates or queues a job, if a refusal doesn't name its cause, or if the
+no-`turbo` refusal doesn't list the adapter names present.
+cleanup: none (no job is queued; if step 6 queued one, `cancel_job` it and `delete_output(job_id=...)`).
+metrics: none.
+
+### M-F314 — `turbo_lead_in: 0` gives the same output as no argument; `1` differs, with one lead-in event per segment saying 1 of 4
+pending: #1352
+source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 `fl2va` chain with the 4-step turbo LoRA (`minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16`,
+adapter `turbo`), through the M-F312 inline copy of `templates/minimax/chained-segments`. Three runs of a 2-segment
+chain, each about 5 min on an RTX 3090. Run on lem (cuda).
+Setup: `arguments={"segments": 2, "num_frames": 124, "seed": 42, "tier": "draft"}` on every run, and
+`num_inference_steps: 5` set explicitly. If the draft tier forces a different step count, the evaluation count M is
+steps − 1, and every "of 4" below reads "of M".
+Steps (workspace `regression-model-specific`, `validate_workflow` first each time and bind its estimate):
+1. Run A: `turbo_lead_in` absent. Run Z: `turbo_lead_in: 0`. Run L: `turbo_lead_in: 1`. Run them in that order,
+   back to back, with `wait_seconds` 55 and then `wait_for_job`.
+2. `get_job_events(<id>)` for each run. Read the log lines.
+3. `compare_outputs` A against Z, and A against L, on the final mp4, at 0.5 s, 2.0 s, 5.0 s and 8.0 s (straddling the
+   seam).
+expected:
+- All three `succeeded`, with the same frame count, size, fps and audio length.
+- A and Z are identical: `compare_outputs` reports identical frames (PSNR infinite, or the tool's identical flag) at
+  every point.
+- A and L differ visibly at every point: PSNR well under the identical mark, not just float noise. The opening frame
+  of segment 1 is included, since segment 1 gets the lead-in too.
+- L's events carry exactly one line per segment (2 in all) reading `turbo lead-in: evaluations 1..1 with adapter
+  'turbo' at 0 of 4` (or the same with the build's exact wording, naming N = 1, the adapter `turbo`, scale 0 and
+  M = 4). A and Z carry no lead-in line.
+It is a **finding** if A and Z differ at all, if L equals A, if L's lead-in line is missing on a segment, appears
+more than once per segment, or states other than 1 of 4, or if A or Z logs a lead-in.
+cleanup: keep run A's job id for M-F315 if it runs next in the same session; otherwise `delete_output(job_id=...)`
+for all three.
+metrics: none.
+
+### M-F315 — after a lead-in run, finished or cancelled, the next run on the same warm worker has its turbo scale back: the configured one, not 1.0
+pending: #1352
+source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F314, on one warm worker. About six 2-segment runs, 25–30 min on an RTX 3090. Run on lem (cuda).
+Setup: the M-F314 arguments. Every run must land on the same worker with the model kept warm: run them back to back
+with nothing else queued, and confirm the worker from each `get_job` (or `get_health`'s `workers`). A run that lands
+on another worker voids its comparison: record "worker changed" and rerun it, which is not a finding.
+Steps (workspace `regression-model-specific`):
+1. B1: baseline (`turbo_lead_in` absent). Run A from M-F314 counts as B1 if it was the run just before.
+2. `turbo_lead_in: 1`, run to the end.
+3. B2: baseline again. `compare_outputs` B1 against B2 at 0.5, 2.0, 5.0 and 8.0 s.
+4. `turbo_lead_in: 2`. Watch `get_job_events` and `cancel_job` it once segment 1's denoise has started and before
+   segment 2 finishes (mid-segment: after at least one denoise progress event of a segment). Confirm it is
+   `cancelled`.
+5. B3: baseline again. `compare_outputs` B1 against B3 at the same points.
+6. Configured scale other than 1: run C1 with `lora_scale: 0.7` and no lead-in, then `lora_scale: 0.7` with
+   `turbo_lead_in: 1`, then C2 with `lora_scale: 0.7` and no lead-in. `compare_outputs` C1 against C2.
+expected:
+- B2 and B3 are identical to B1 at every point. A cancelled lead-in leaves no turbo-at-0 state behind.
+- C2 is identical to C1. The restore puts back the configured 0.7, not 1.0. C1 differs from B1, which shows the
+  0.7 scale took effect at all.
+- Step 4's cancelled job's events show its lead-in line before the cancel.
+It is a **finding** if any later baseline differs from its first baseline on the same worker, since that would mean
+`turbo` stayed at 0 or came back at a different scale.
+cleanup: `delete_output(job_id=...)` for every run, including the cancelled one.
+metrics: none.
+
+### M-F316 — the six #1326 stage B probe jobs exist in `probe-1326`, succeeded, and each ran its arm: 8 segments, seed 42, 960×544, the stated lead-in
+pending: #1353
+source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 turbo chains: `chained-segments` (5 steps, 4 evaluations) and `chain-video-continuity`
+(9 steps, 8 evaluations), with `turbo_lead_in`. Free: reads only. Run on lem (cuda).
+Find the record (arms, job ids, table) on #1326 or #1353 (`gh issue view <n> --repo dkackman/diffusers-workflow
+--comments`).
+Steps:
+1. `list_jobs(workspace="probe-1326")`. For each of the six cited jobs: `get_job`, `get_job_workflow` and
+   `get_job_events` (log kind). Then `get_gallery_metadata` on its final mp4.
+expected:
+- Exactly six arms are cited, each with a job id: on the 4-evaluation chain lead-in 0, 1 and 2, and on the
+  8-evaluation chain 0, 2 and 3. Each job exists in `probe-1326` and is `succeeded`. Re-rolled or failed attempts are
+  allowed only if the record names them as such.
+- Each realized workflow: 8 segments, seed 42, width 960 and height 544, `turbo_lead_in` as the arm states (absent or
+  0 for the 0 arms), the turbo LoRA loaded as adapter `turbo`. No `torch.compile` (the plan runs B without compile),
+  and no template default changed (the 0 arm equals the template's own arguments plus the fixed scene).
+- All three arms of the same chain template have the same prompt or scene, the same input image, the same
+  `num_inference_steps` (5 for one chain, 9 for the other) and the same everything else, except `turbo_lead_in`.
+- Each lead-in arm's events carry one lead-in line per segment (8) with its N and M = 4 or 8. A 0 arm carries none.
+- Each final mp4 is 960×544 and 24 fps, with an audio stream. The arms of one chain have equal frame counts.
+It is a **finding** if an arm is missing, failed or mislabeled, if arms within a chain differ in anything but
+`turbo_lead_in`, if a lead-in line is missing or wrong, or if a seed, size or segment count differs from the plan.
+cleanup: none. Never delete the probe jobs: the record and Don's Q4 verdict cite them.
+metrics: none.
+
+### M-F317 — the stage B table's per-seam numbers reproduce from the probe jobs
+pending: #1353
+source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the M-F316 jobs. A few `analyze_seams` utility runs (CPU-light, seconds to minutes) plus reads. Run on
+lem (cuda).
+Steps:
+1. For each arm, take from the record the per-seam look step and texture drift. The plan names `chain_check`; it is
+   the chain's own `check` report, not a task, so read it where the record says it came from (job events, the
+   output record or `get_job`), and say which.
+2. For each arm, `run_workflow` an inline one-step `analyze_seams` workflow over the arm's final mp4 (an `output:`
+   reference, workspace `probe-1326`), with `wait_seconds` 55. The video carries its shot records. Read the
+   lightness step per cut.
+expected:
+- The table has one row or column per arm (six) and covers all 7 seams of each 8-segment chain, for each of the three
+  measures: look step, texture drift and the `analyze_seams` lightness step.
+- Every number in the table matches the job's own check report (step 1), and step 2's `analyze_seams` output, to the
+  precision the table prints. If #1324's measure was used instead, the record says so, and that measure is the one
+  that reproduces.
+- The record gives the lead's reading but no quality verdict. It leaves detail and motion to Don (Q4).
+It is a **finding** if a seam or an arm is missing from the table, or if any figure doesn't reproduce.
+cleanup: `delete_output(job_id=...)` for each step 2 `analyze_seams` job. Never delete the probe jobs.
+metrics: none.
+
+### M-F318 — the stage B comparison comment shows segments 1, 4 and 8 of each arm with job ids, the parent goes to Don for Q4, and no template or skill changed
+pending: #1353
+source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the M-F316 jobs and the H3 turbo chain templates. Free: issue reads, frame reads, catalog reads.
+Steps:
+1. Read #1326's comments for the comparison comment and its labels (`gh issue view 1326 --repo
+   dkackman/diffusers-workflow --json labels,comments`).
+2. For one cited frame per arm, `get_output_frames` on that arm's job output at the time the comment states.
+3. `get_workflow("templates/minimax/chained-segments", variables_only=true)`, the same for
+   `templates/minimax/chain-video-continuity` and `templates/minimax/chain-matched-and-aligned`. Then read the
+   `minimax-h3` and `long-form` skills for "lead-in" or `turbo_lead_in`.
+expected:
+- The comment shows frames from segments 1, 4 and 8 of every arm (six arms), each labeled with its arm and job id.
+  The frames read in step 2 match what the comment shows (same segment, same moment).
+- Once the record and the comment are posted, #1326 carries `owner:don` with a "Decision for Don" block asking Q4:
+  do the lead-in arms keep segment 1's detail and motion as well as the baseline?
+- No template has a `turbo_lead_in` variable or default, and no skill recommends a lead-in (plan v2 cut both until
+  plan v3).
+It is a **finding** if an arm or segment is missing from the comment, a cited frame doesn't match its job, Q4 isn't
+put to Don, or a template or skill changed in stage B.
+cleanup: none.
+metrics: none.
+
 ## Performance

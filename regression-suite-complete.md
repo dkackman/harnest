@@ -19557,4 +19557,1669 @@ expected:
 cleanup: `delete_output(job_id=...)` for all three runs; `delete_workflow` the probe.
 metrics: none.
 
+### C-F763 — `templates/narration-retime` lists `boundary_slack_seconds` with the task's own default
+pending: #1336
+source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_workflow("templates/narration-retime", variables_only=true)`. Also call `get_task` on the task the template's
+retime step runs (`get_workflow("templates/narration-retime")` names it; today's name is expected to be
+`narration_retime`) and read its `boundary_slack_seconds` parameter.
+expected:
+- `variables` has a `boundary_slack_seconds` key. Its default is a number equal to the task parameter's own default, or
+  `null` meaning "the task's default". It is never a string.
+- The existing variables (`narration`, `script`, `comma_seconds`, `sentence_seconds`, `section_seconds`, `num_frames`,
+  `guide_frames`) are all still there with their old defaults (0.3, 0.6, 1.0, 192, 22), and `script` is still
+  `required: true`.
+- If the template bounds the new variable, `constraints.boundary_slack_seconds` gives a range that admits 0 or above,
+  the same range as the task parameter's `range`.
+cleanup: none.
+metrics: none.
+
+### C-F764 — `boundary_slack_seconds` refuses a negative, a string and a boolean at validate, and takes zero, a positive number and null
+pending: #1336
+source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free (validate only). In `workspace="regression-complete"`, `validate_workflow("templates/narration-retime",
+arguments={"narration": "asset:qa-cast/priya-voice.wav", "script": "<any one sentence>", "boundary_slack_seconds": V})`
+for V = (a) `-0.1`; (b) `"0.5"` (a string); (c) `"wide"`; (d) `true`; (e) `0`; (f) `0.25`; (g) `null`; and (h) the
+argument left out.
+expected:
+- (a), (b), (c) and (d) are `valid: false`. Each error is at `arguments.boundary_slack_seconds` (or the retime step's
+  `boundary_slack_seconds` argument) and names the key. None of them is caught only at run time.
+- (e), (f), (g) and (h) are `valid: true`, with no warning about `boundary_slack_seconds`. If the task's own `range`
+  says "above zero" rather than "zero or above", (e) is refused naming the key instead, and that is not a finding.
+- (h) validates exactly as the template did before stage 1: same plan, no new warning.
+cleanup: none.
+metrics: none.
+
+### C-F765 — a `narration-retime` run with `boundary_slack_seconds` set carries the value to its task step
+pending: #1336
+source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Short GPU runs (the template's observed cold figure is about 0.5 min). In `workspace="regression-complete"`, setup: run a
+one-step `transcribe_audio` workflow on `asset:qa-cast/priya-voice.wav` and take its text as the script S. Then run
+`templates/narration-retime` twice, each validated first with its plan bound and `wait_seconds=55`:
+(a) `{"narration": "asset:qa-cast/priya-voice.wav", "script": S, "boundary_slack_seconds": 0.37}`;
+(b) the same without `boundary_slack_seconds`. Read each job with `get_job` (and `get_job_workflow` if the step
+arguments are only in the realized workflow).
+expected:
+- Both succeed and write a retimed track.
+- (a)'s retime task step carries `boundary_slack_seconds: 0.37` in its resolved arguments. A value that was dropped, or
+  replaced by the default, is a **finding**: the variable is exposed but not passed.
+- (b)'s step carries the default (or no value). It draws no warning that (a) does not.
+cleanup: `delete_output(job_id=...)` for the transcribe run and both retime runs.
+metrics: none.
+
+### C-F766 — the guide, the long-form skill and narrated-take's description state the multi-passage recipe with tools that exist
+pending: #1336
+source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read `get_guide("workflows", section="A narrated long take")`; the loaded `dw:long-form` skill's SKILL.md and its
+`references/run-and-repair.md` (*A narrated take*), `references/levers.md` and `references/audio.md`; and
+`get_workflow("templates/minimax/narrated-take")`'s `description`.
+expected:
+- The guide section and `run-and-repair.md` both state the recipe in this order:
+  - one narration for the whole script, made with `templates/narration-long` from one voice reference, retimed once with
+    `templates/narration-retime`;
+  - passages split at paragraph or section breaks, with a size per preset (about 60 words or 30 s for `dialogue`, about
+    175 words or 85 s for `standing`, or numbers that agree with those);
+  - the retimed track cut at those breaks with `slice_audio`, each slice kept (`keep_output`);
+  - one `templates/minimax/narrated-take` per passage with its own slice, its own script and a different still or angle;
+  - a join with `concat_videos`, the takes as `output:` references, `trim_frames: 0` and `match_levels: "lufs"`.
+- No text says to make or retime a narration per passage, and "the tools named above" no longer stands in for a tool name.
+- SKILL.md carries a one-line pointer to the recipe. If the agent can see the file size, it is under 12 KiB.
+- Where any of the four texts advises raising `boundary_slack_seconds`, the template exposes it (C-F763). If the
+  template does not expose it, none of them advise it.
+- The "not yet run end to end" wording (or the same meaning) is still present: stage 1 keeps it.
+- narrated-take's description either carries the same pointer or reads as it did before. It never contradicts the recipe.
+- Every tool and template these texts name exists (`list_tasks`, `list_workflows`).
+It is a **finding** if any of these is missing or contradicts the guide.
+cleanup: none.
+metrics: none.
+
+### C-F767 — an authored `concat_videos` join of two sound clips as `output:` references, at `trim_frames: 0` and `match_levels: "lufs"`, sums their lengths and evens their loudness
+pending: #1336
+source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Task-only, CPU. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames
+each, 960x544, 32 kHz stereo, about 11 dB apart). All in `workspace="regression-complete"`.
+Setup, for `output:` references: run each fixture through a one-video, one-step `concat_videos` (`videos: [<asset>]`,
+`device: "cpu"`) and take each job's file as `output:<workflow>/<run id>/<file>`. If a one-video join is refused, write
+each clip out through any task-only step that leaves it unchanged, and say which one you used.
+Then build the join: one `concat_videos` step, `videos: [<output A>, <output B>]`, `trim_frames: 0`, `match_levels:
+"lufs"`, `fps: 24`, `device: "cpu"`. `validate_workflow` it, run it with its plan bound (`wait_seconds=55`). Control: the
+same join without `match_levels`, validated and run the same way. Measure each output's halves: `slice_audio` frames
+0-124 and 124-248 at 24 fps (or the envelope from `get_gallery_metadata`), and read `integrated_lufs` on each half
+with `get_gallery_metadata`. Run `assess_output` on the matched join.
+expected:
+- The join validates `valid: true`, with no error on the `output:` references, and runs on CPU.
+- Its output has 248 frames, and `duration_seconds` within one frame (1/24 s) of the sum of the two inputs' durations.
+- It has an audio stream for its full length. The two halves' `integrated_lufs` are within 1.0 LU of each other.
+- `media.shots` records two shots, with the seam at frame 124 as a cut.
+- The control differs: its halves are more than 5 LU apart, and the job carries the level-spread warning that
+  `match_levels` exists to clear.
+- `assess_output` reports no dead air at the seam on the matched join.
+cleanup: `delete_output(job_id=...)` for both setup runs, the join, the control and the slice runs.
+metrics: none.
+
+### C-F768 — a `concat_videos` join of clips with different frame sizes is refused, naming the size mismatch
+pending: #1336
+source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free. In `workspace="regression-complete"`, build C-F767's join step, but with
+`videos: ["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-fit/src-640x480-50f.mp4"]` (960x544 against 640x480; C-F238's
+setup makes the second one if it is missing). `validate_workflow` it. Then `run_workflow` it with
+`acknowledged_cost: true` and no validate first. Repeat the validate with C-F767's setup `output:` reference for the
+first clip in place of the asset, if those outputs still exist.
+expected:
+- Each validate is `valid: false`. The error is on the `videos` argument and names the size mismatch, giving both sizes
+  or naming the clip that differs.
+- The run is refused before a job is queued, or the job fails within seconds with the same mismatch named. No joined
+  file is written.
+cleanup: `delete_output(job_id=...)` for any job that was queued.
+metrics: none.
+
+### C-F769 — the #1311 drill's cited jobs exist and follow the recipe: one narration, one retime, slices, one take per passage, one join
+pending: #1337
+source: tester, spec for #1337 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free. Source: the stage 2 build comment on #1337 (`gh issue view 1337 --comments`). It must name the record
+(`bench/records/drill.md` section), the transcript path, the workspace (`drill-1311-<n>`), and every job id of the drill
+and the piece. `get_job` each one with `workspace=` set to it, and `list_jobs` in that workspace.
+expected:
+- The comment names the record section, the transcript path, the workspace and the job ids. If any of these is missing,
+  the issue goes back as needs-info; the tester cannot read the record file.
+- Every cited job exists in that workspace and succeeded, apart from failures the comment itself names as such.
+- Among them: exactly one narration made for the whole script (`templates/narration-long`, or the path the scorecard
+  says), one `templates/narration-retime` run, the `slice_audio` cuts, one `templates/minimax/narrated-take` per
+  passage (2 or 3), and one `concat_videos` join over those takes.
+- Each take's slice is a different `output:`/`asset:` file from one retimed track. Each take starts from a different
+  still or angle: its image argument differs from every other take's.
+- The scorecard's preset, passage split and quoted cost agree with the jobs' own arguments and the validate quotes.
+cleanup: none (the drill's workspace and outputs are evidence: never delete them).
+metrics: none.
+
+### C-F770 — the #1311 piece is one video as long as its narration, cut at its passages, with sound through every cut
+pending: #1337
+source: tester, spec for #1337 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Mostly free, one short task-only run. Take the piece (the join job's output from C-F769) and the retimed narration track.
+`get_gallery_metadata` on both, and on each take. Run a one-step `analyze_seams` workflow on the piece
+(`device: "cpu"`). Read the soundtrack around each cut with `get_output_audio` or
+`get_gallery_metadata(..., envelope=true)`, using the cut times from the piece's `media.shots`.
+expected:
+- The piece is one video with an audio stream. Its `duration_seconds` is within 0.5 s of the retimed narration's.
+- The takes' durations sum to the piece's within one frame (the join used `trim_frames: 0`).
+- `analyze_seams` reports one seam per passage boundary (1 or 2), and marks each as a cut, not a continuous seam.
+- No stretch of silence (near-silent envelope bins) longer than about 1.5 s lies within 2 s of any cut.
+- The audio is present from the first frame to the last: no silent take.
+Don judges the piece by eye and ear (the three constitution-walk-2 defects, voice and room tone across cuts). This case
+does not stand in for that verdict, and passes or fails on the lines above only.
+cleanup: `delete_output(job_id=...)` for the `analyze_seams` run only. Never delete the piece.
+metrics: none.
+
+### C-F771 — each fix row from the #1311 drill is in the text it names, and any guide text the record quotes matches
+pending: #1338
+source: tester, spec for #1338 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free. Source: the drill's fixes table as quoted on #1337 or #1338 (each row: the guess or wrong turn, its fix, and its
+location). For each row, read its location over MCP (`get_guide` section, `get_workflow` description) or in the loaded
+`dw` plugin skill text.
+expected:
+- Every row's fix is present at the location it names, and says what the row says.
+- Every `get_guide` text the record or the stage comment quotes matches the served text.
+- A row whose fix needs an engine, MCP or syntax change is not claimed as done: it links its own new issue.
+- If the fixes table is not quoted on either issue, the issue goes back as needs-info.
+It is a **finding** if a row is missing, or its location says something else.
+cleanup: none.
+metrics: none.
+
+### C-F772 — "not yet run end to end" is replaced by the measured result, and the guide, long-form and levers agree
+pending: #1338
+source: tester, spec for #1338 from #1311's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read the same texts as C-F766: the guide's *A narrated long take*, the `dw:long-form` SKILL.md,
+`references/run-and-repair.md`, `references/levers.md` and `references/audio.md`, and narrated-take's description.
+expected:
+- None of them still says the multi-passage shape is not yet run, or unrun.
+- In its place, the guide and the long-form text state the drill's measured result (passages, length, preset, and what
+  held or didn't), agreeing with C-F769/C-F770's figures.
+- The guide, `run-and-repair.md` and `levers.md` give the same preset lengths and passage sizes, and the same join
+  (`concat_videos`, `trim_frames: 0`, `match_levels`). None contradicts the others.
+- Stage 1's recipe is still all there (C-F766's list), unless a fix row changed a step on purpose and says so.
+- SKILL.md is still under 12 KiB, if the agent can see the size.
+cleanup: none.
+metrics: none.
+
+### C-F773 — the #1314 S2V Pro probe's build comment names its path, its jobs, its inputs and its numbers, and lem's diffusers matches
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Free. Source: the stage A build comment on #1339 (`gh issue view 1339 --comments`). The tester cannot read
+`bench/records/narrated.md` or `bench/arms/ks2v-pro-4bit.json`, so the comment has to carry what the record says.
+Then `get_server_info` (or `get_diffusers_state`) for the diffusers version lem's server reports, and `get_job` each
+cited job with `workspace=` set to the workspace the comment names.
+expected:
+- The comment says which path was taken: **inside dw** or the **spike-venv fallback** (and for the fallback, which of
+  the two reasons: #1315 stalled or was declined, or the audio input wanted a waveform).
+- It names: the workspace; the arm's job id(s) (gate run, and the full run if one was made, and the group-offload retry
+  if the first job hit OOM); the `asset:` references for the still (keyframes-v2 kf00) and the narration; lem's
+  diffusers version; the quantization backend that loaded (SDNQ or bnb nf4), or that neither did; peak VRAM and minutes
+  per chunk; the face table (SFace at 0.5/15/30/45/60/75/85 s, or up to 20 s if the gate stopped the run, plus
+  saturation, face-crop Laplacian and still-mouth bins, next to the moving-keystone and Lite-distill columns); the H3
+  arms' Laplacian range it gated on; the gate decision; and where the faces contact sheet can be seen.
+- Inside dw: the diffusers version the record states is the one lem's server reports now (0.43.x). A record that
+  says 0.42.x for an inside-dw run is a **finding**: the plan ruled the probe waits for #1315 stage B.
+- Every cited job exists in that workspace and is in a terminal state (succeeded or failed, never queued or running).
+If any named item is missing, the issue goes back as needs-info.
+cleanup: none (the probe's jobs and outputs are evidence: never delete them).
+metrics: none.
+
+### C-F774 — the S2V Pro arm validates clean, or refuses only with a reason the record names, and is the arm the plan describes
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Free (validate only). Inside-dw path only (under the spike-venv fallback this case does not apply; say so and skip).
+Get the arm's JSON with `get_job_workflow` on the gate job from C-F773 (or by name, if the comment says the arm was
+saved as a workflow). `validate_workflow` it in the probe's workspace, with the same arguments the gate job ran with.
+expected:
+- `valid: true`; or `valid: false` with only errors whose reason the record names (C-F773's comment quotes it). An
+  error the record doesn't name is a **finding**.
+- The arm has, in order: a `narration_retime` task step (the step `templates/narration-retime` runs) on the narration;
+  one step on the Kandinsky S2V **Pro** modular pipeline (not Lite, not Lite-distill); and a `pair_audio` step that
+  muxes the narration back onto the S2V step's video.
+- The S2V step's `load_components` give the transformer a 4-bit `quantization_config` (SDNQ, or bnb nf4), put the
+  text/audio encoder under `group_offload`, and turn on `enable_tiling` for the VAE decode.
+- Its image input is the kf00 still, `seed` is 1, the size is 768x512 and the rate 25 fps, as in the Lite spike. A
+  smaller size in any job of the arm (gate, full or OOM retry) is a **finding**: the plan forbids lowering it.
+- The plan's estimate is quoted; if its basis is `unknown`, that is not a finding.
+cleanup: none.
+metrics: none.
+
+### C-F775 — the S2V Pro arm's job ends terminal: a sound video as long as its narration, or a failure with the reason the record quotes
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Free. Inside-dw path only. For each arm job C-F773 names: `get_job` (status, error, outputs, warnings) and
+`get_job_events`; for each video output, `get_gallery_metadata` (`duration_seconds`, `fps`, `frame_count`, size, audio
+stream). Also `get_gallery_metadata` on the retimed narration the job used (the `narration_retime` step's output), or
+on the narration slice the gate run covered.
+expected, for each job, one of:
+- **Succeeded.** It yields a video with an audio stream for its full length, 768x512 at 25 fps. Let N = the number of
+  5 s chunks (the narration's retimed length / 5, rounded up; 4 for the 20 s gate). The video's duration is within
+  N frames (N/25 s) of the narration it covers. Further off is a **finding**.
+- **Failed.** `get_job`'s error (or its last events) carries the reason the record quotes: OOM, a quantization
+  backend refusing the transformer class, the audio input wanting a waveform, or another named cause. The record's
+  reason and the job's must be the same failure, not merely both "failed".
+Also:
+- If the first job failed on OOM, there is exactly one retry job, with the transformer group-offloaded and nothing
+  else changed, and the record states its outcome. No third attempt, and no attempt at a lower size.
+- If the record says the audio input wanted a waveform, the record says the arm moved to the spike venv and names
+  "onboarding needs an `audio` media branch" as a finding; C-F779 then applies to the numbers.
+- The record's peak VRAM and minutes per chunk agree with the job's own reporting (`get_job` timing / events), where
+  the job reports them: minutes per chunk within 10% of the job's run time divided by N.
+cleanup: none (never delete the probe's jobs or outputs).
+metrics: none.
+
+### C-F776 — `face-drift-check` on the S2V Pro output against kf00 matches the record's SFace row within ±0.03
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Short GPU or CPU runs (the template's observed cold figure is under 0.1 min). Applies when an arm job succeeded (C-F775),
+or under the fallback when the record's output is reachable as an `asset:` (C-F779). In the probe's workspace, for each
+time T in the record's SFace row that lies inside the video (0.5, 15, 30, 45, 60, 75, 85 s; up to 20 s for a gated
+run), run `templates/face-drift-check` with `video` = the arm's final video (the `pair_audio` output),
+`reference` = the kf00 `asset:` from C-F773, and the sampling pinned to T: `samples_per_shot: 1` and a `shots`
+argument holding one shot record from frame round(25·T) to round(25·T)+1, in the shape the video's own `media.shots`
+uses. If `analyze_face_drift` refuses a hand-made shot record, cut a one-second clip at T with a task-only step from
+`list_tasks` and measure that with `samples_per_shot: 1`, and say which task you used. Validate each run first with its
+plan bound; `wait_seconds=55`. Read each result with `get_output_text` or `get_job`'s findings.
+expected:
+- Each run succeeds and reports one similarity for the sample.
+- At every T, the measured similarity is within ±0.03 of the record's SFace value at T. A gap larger than 0.03 at any T
+  is a **finding**: the record's numbers aren't true of the output.
+- If the record's row has a time the video doesn't reach, the record says why (the gate stopped it).
+This case verifies the numbers only. Whether the face "holds" is Don's verdict from viewing the take (plan Q3).
+cleanup: `delete_output(job_id=...)` for each `face-drift-check` run (and any clip cut). Never the probe's outputs.
+metrics: none.
+
+### C-F777 — frames from the S2V Pro output at 0.5 s and 85 s (or 20 s) are the frames the contact sheet shows
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Free. Applies when an arm job succeeded, or the fallback output is reachable as an `asset:`. `get_output_frames` on the
+arm's final video at 0.5 s and at 85 s; if the gate stopped the run, at 0.5 s and 20 s. Open the faces contact sheet
+where C-F773's comment says it is (an `asset:`/`output:` image read with `get_output_frames`, or an image on the issue).
+expected:
+- Both frames are returned, show one face, and are the frames the contact sheet's tiles for those times show: same
+  person, framing, pose and colour, as far as one look can tell. A sheet tile that doesn't match the frame at its time
+  is a **finding**.
+- The two frames the case read are consistent with the record's description (e.g. if the record says saturation rose
+  from 71 to 91, the late frame is visibly more saturated, not less).
+If the contact sheet can't be seen over MCP or on the issue, the issue goes back as needs-info.
+cleanup: none.
+metrics: none.
+
+### C-F778 — the S2V Pro record's gate decision follows from its own 20 s numbers, at the thresholds' edges too
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Free. From C-F773's quoted record: at 20 s, the Pro arm's SFace, its saturation rise since 0.5 s, its face-crop
+Laplacian, and the H3 arms' Laplacian range in the same script. `list_jobs` in the probe's workspace.
+expected:
+- The gate passes exactly when all three hold: SFace ≥ 0.88 (0.88 itself passes), saturation risen ≤ 5 (a rise of
+  exactly 5 passes; a fall passes), and the Laplacian inside the H3 range with both ends included.
+- If it passes, the record continued to 86 s: a full-run job exists (inside dw) or the record names the full run's files
+  (fallback), and its face table goes to 85 s.
+- If it fails, the record stopped: no 86 s run exists in the workspace, the face table ends at 20 s, and the record
+  says which threshold failed. A full run after a failed gate, or a stop after a passed one, is a **finding**.
+- If the gate job itself failed (C-F775's failed branch), there are no gate numbers, no full run, and the record says
+  the job's failure is the result.
+- The record's 20 s numbers are the ones C-F776 confirmed at T = 20 s, where the gate run's video reaches 20 s.
+cleanup: none.
+metrics: none.
+
+### C-F779 — under the spike-venv fallback, the S2V Pro record is checked against the files it names, with no generation job
+pending: #1339
+source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
+Free, apart from C-F776's measuring runs. Applies only when C-F773's comment says the spike venv was used (either
+reason). The tester can't read lem's disk, so the files the record names (the output video, the narration, the
+contact sheet) must be uploaded as `asset:`s in a named workspace, or the comment must say which can't be. Read them
+with `list_assets`, `get_gallery_metadata` and `get_output_frames`.
+expected:
+- The comment says which reason sent the arm to the spike venv, and that Don was told which path was taken.
+- If the reason is the audio input, the record names "onboarding needs an `audio` media branch" as a finding for the
+  onboarding plan. If the reason is #1315, it says the onboarding unknowns (modular load, quantizing the class, the
+  audio input on the dw path) stay open.
+- The record's numbers are recorded in the same format as the inside-dw path (C-F773's list).
+- Each named file is reachable as an `asset:`. The video is 768x512 at 25 fps with an audio stream, and its duration is
+  within N frames of the narration it covers (C-F775's rule).
+- C-F776, C-F777 and C-F778 pass against those assets in place of a job's outputs.
+- No S2V generation job is run by the tester, and none appears in the probe's workspace under the fallback.
+If the files aren't reachable over MCP, the issue goes to Don with the record unverifiable over MCP.
+cleanup: `delete_output` for C-F776's measuring runs only. Never delete the uploaded evidence assets.
+metrics: none.
+
+### C-F780 — the #1315 stage A build comment names four baseline jobs, their workspace, arguments and the diffusers they ran on
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+Free. Source: the stage A comments on #1340 (`gh issue view 1340 --comments`), then `get_diffusers_state` and
+`get_server_info` (`runtime.packages.diffusers`) on lem, and `get_job` on each cited job with `workspace=` set.
+The baselines are the reference stage B's parity cases (C-F787) read, so they must outlive every regression sweep:
+the plan names no workspace, so the tester runs them in `probe-1315` (not a `regression-*` workspace) and keeps
+each final output with `keep_output` as `asset:probe-1315/baseline-<name>.<ext>`.
+expected:
+- The record lists exactly four baseline jobs: an H3 clip (`templates/minimax/video-with-audio`), an H3 chain
+  (`templates/minimax/chained-segments`, `segments: 2`), `templates/ltx2/two-stage` and a Kandinsky 6 job
+  (`templates/kandinsky6/text-to-video`). For each: the job id, the workspace, every argument passed (a pinned `seed`
+  among them; C-F781 gives the arguments) and the kept `asset:` name.
+- It states the diffusers version and commit `get_diffusers_state` reported when the four ran, and that no diffusers
+  update ran between the first and the last (`get_diffusers_state.finished_at` is earlier than the first job's start,
+  or null).
+- The plan calls these the **0.42 baselines**. If the version recorded is not 0.42.x (on 2026-11-13 lem reported
+  `0.44.0.dev0`, commit `43e30028`), that is a **finding** unless a later plan version on #1315 says which version the
+  baselines are taken on; the case then checks against that version instead.
+- Every cited job exists in that workspace and is `succeeded`.
+cleanup: none (the baseline jobs, their outputs and the kept assets are stage B's evidence: never delete them).
+metrics: none.
+
+### C-F781 — each stage A baseline is a fresh, seeded generation of the expected shape
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~25 min total on an RTX 3090 (the four templates' `observed` cold figures: H3 clip ~1.5, 2-segment chain ~5-10,
+LTX two-stage ~5.4, K6 ~14 cold). Run by the tester when the stage is verified, in workspace `probe-1315`, each first
+through `validate_workflow(arguments=...)` with its bound `acknowledged_cost`, then `run_workflow(..., wait_seconds=55)`
+(`wait_for_job` on `still_running`). Arguments, all otherwise at the template's defaults:
+- `templates/minimax/video-with-audio`: `seed: 42`.
+- `templates/minimax/chained-segments`: `segments: 2`, `seed: 42`, `image: "asset:qa-cast/priya-portrait.jpg"` (the
+  default `image` is an off-box URL, which a durable baseline must not depend on).
+- `templates/ltx2/two-stage`: `seed: 42`.
+- `templates/kandinsky6/text-to-video`: `seed: 42`.
+Then `get_job` and `get_job_events` on each, and `get_gallery_metadata` on each video output.
+expected:
+- All four `succeeded`. No step is marked `reused` in `get_job` or its events: a baseline served from the step cache is
+  the output of whatever diffusers ran the earlier job, not this one. If one is, rerun it with a change that misses the
+  cache but not the output (ask on #1340 for one if `get_guide` names none) and say so.
+- Shapes: the H3 clip 960x544, 124 frames, 24 fps, with an audio stream; the chain one video of 2 segments, 960x544,
+  with an audio stream, its frame count the template's for 2 segments (`media.shots` holds 2 entries if the chain
+  carries shots); LTX two-stage 768x448 at stage 1, its final output 121 frames at 24 fps (at the upscaled size the
+  template's description states); K6 864x480, 121 frames, 24 fps.
+- `job.warnings` holds nothing that mentions `None`, a deprecated import path or an attention backend leak. The LTX
+  job's upsampler-path deprecation warning, if diffusers emits one on this version, is recorded (C-F788 compares it).
+Each final output is kept with `keep_output` as `asset:probe-1315/baseline-h3-clip.mp4`, `baseline-h3-chain.mp4`,
+`baseline-ltx-two-stage.mp4`, `baseline-k6.mp4`. Check first with `get_gallery_metadata` that the name is free ("Unknown
+asset"); if it is taken, the earlier baseline stands and the run is not repeated.
+cleanup: none. Never delete the baseline jobs or assets.
+metrics: none.
+
+### C-F782 — an H3 MagCache calibration that stops before its last forward still reports its ratios
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~2 min per run. The plan: MiniMax-H3's scheduler makes one fewer forward than `num_inference_steps`, so a
+calibration whose `num_inference_steps` equals the call's never reaches its last step, and dw reads the unfinished
+ratios out of the hook (#927). On 0.43 the hook resets at the end of the call, so stage A moves that read inside the
+call. Workspace `probe-1315`. `templates/minimax/video-with-audio`, `seed: 42`, three runs, validated first (it warns
+`cache_short_schedule`, which is expected and not a finding):
+- (a) **unfinished**: `cache: {"type": "mag", "calibrate": true, "num_inference_steps": 5}` (the template's 5 steps:
+  4 forwards made, 5 expected);
+- (b) **finished control**: `cache: {"type": "mag", "calibrate": true, "num_inference_steps": 4}`;
+- (c) **no cache**: `cache: null` (C-F781's clip, if run this session, serves; do not run it twice).
+expected:
+- (a) and (b) both `succeeded`, and each has exactly one `MagCache calibration (4 steps): [ ... ]` line in
+  `job.warnings` and as a `log` event in `get_job_events`, holding 4 numbers, each finite and positive. A run with no
+  calibration line, or with an empty or all-zero list, is a **finding** (the readout silently stopped).
+- (a) also reports the step-count mismatch warning the acceleration guide describes (cache 5 against 4 forwards).
+- (a)'s and (b)'s ratio lists agree to within 1e-3 each: the same forwards were measured.
+- (c) carries no calibration line.
+cleanup: `delete_output(job_id=...)` for (a) and (b).
+metrics: none.
+
+### C-F783 — the attention backends lem advertises still include the ones its jobs use, and none is warned unavailable
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+Free (validate only). The plan's intent: "`get_server_info` lists the same attention backends as before on lem". On
+2026-11-13 `get_server_info` carried no attention-backend list (its keys: hostname, version, device, runtime,
+directories, workspace, caches, …), so the build comment on #1340 names the MCP field that reports the list. Read it
+there. Then `validate_workflow` `templates/minimax/video-with-audio` with `attention_backend` set to each of
+`native`, `sage_hub`, `flash_hub` and `sparse` in turn.
+expected:
+- The list is reachable over MCP. If no MCP tool reports it, the issue goes back as needs-info: the acceptance can't
+  be checked by the tester.
+- It contains at least `native`, `sage_hub` and `flash_hub` (lem has run `sage_hub` H3 jobs and has the `kernels`
+  package; the acceleration guide's tables cite jobs 94c04976d21d and 593131ca713f). Missing any of these is a
+  **finding**: the availability filter dropped a backend lem can use.
+- If the build comment quotes the list as it was before the filter, the two are equal, or every dropped name is one
+  diffusers' own check reports unavailable and the comment names why (a package below diffusers' minimum).
+- None of the four validations warns `attention_backend_unavailable` on lem (cuda).
+cleanup: none.
+metrics: none.
+
+### C-F784 — a FLUX 3 Klein argument fed by a `previous_result:` that resolves to nothing takes the block default
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~1-2 min per image. The plan's Q1: a modular pipeline's top-level argument whose value is `None` is dropped
+before the call, so `null` keeps meaning "the block's default" on 0.42 and on 0.43 alike. The fixture workflow is
+the build's to name: the stage A comment on #1340 gives a workflow (saved in `probe-1315`, or inline JSON) built from
+`templates/flux3/text-to-image` with one step before the Klein step whose result (or a `.property` of it) is `None`,
+and the Klein step taking one optional argument from it with `previous_result:<step>[.<property>]`. It also names the
+argument and what the block's default for it is. Check the fixture with `get_workflow` (or read the JSON): the
+reference really is a `previous_result:` into a Klein step argument, and that argument isn't required by the block.
+Run, `seed: 7`, validated first:
+- (a) the fixture;
+- (b) the control: the same workflow with that argument **omitted** from the Klein step (and the earlier step left in).
+Then `compare_outputs(names=[<(a) image>, <(b) image>])`.
+expected:
+- (a) `succeeded` with one 1024x1024 image. A failure naming the argument, `None`, `NoneType` or a type check is a
+  **finding**: the `None` reached the block.
+- (a) and (b) are the same image: `compare_outputs` reports mean abs diff 0 (PSNR infinite or its maximum). Any
+  difference is a **finding**: `null` and "omitted" no longer mean the same thing.
+- (a)'s and (b)'s `job.warnings` are the same set.
+Keep (a)'s image as `asset:probe-1315/baseline-klein-none.png` (check the name is free first): C-F795 reruns it on 0.43.
+cleanup: `delete_output(job_id=...)` for (b) only. Keep (a)'s job.
+metrics: none.
+
+### C-F785 — the Klein `previous_result:` fixture with a real value still passes it (the None drop drops only None)
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~1-2 min. The None drop's edge: a value that is falsy but not `None` must reach the block. Using C-F784's
+fixture, change the earlier step (or its `arguments`) so the referenced value is a real, non-default value for that
+argument, as the build comment describes (if the comment names a falsy non-None value the argument accepts, `0`,
+`0.0`, `false` or `""`, use that). Run with `seed: 7`, validated first; `compare_outputs` against C-F784 (a).
+expected:
+- `succeeded`, one image.
+- The image differs from C-F784 (a) (mean abs diff above 0): the value was passed, not dropped. Identical images are
+  a **finding**: the drop removed a value that was not `None`. If the build comment says the argument has no visible
+  effect at that value, the comment names a different argument or value that does, and the case uses that.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F786 — lem and mini-ai report diffusers 0.43.x after the stage B deploy
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+Free. On lem: `get_server_info` (`runtime.packages.diffusers`) and `get_diffusers_state` (`version`, `commit`,
+`status`, `error`). On mini-ai, through the harness's mini-ai dw MCP server, the same two calls; if this session has
+no mini-ai server, say so and the mini-ai half goes back as needs-info.
+expected:
+- On both hosts both calls agree, and the version is `0.43.x` (a release, not `.dev0`), `status: "idle"`, `error`
+  null. A version below 0.43.0 is a **finding**. A version above 0.43.x (lem read `0.44.0.dev0` on 2026-11-13, before
+  the stage started) is a **finding** unless a plan version on #1315 later than v1 says lem stays on a development
+  build; the case then checks that the version is at least 0.43.0 and that the build comment names the commit.
+- mini-ai's `get_server_info.device` is `mps`, lem's `cuda`.
+cleanup: none.
+metrics: none.
+
+### C-F787 — the four stage A baselines, rerun on 0.43, match their baselines or the difference is explained
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~25-40 min on lem (the first runs after the deploy re-quantize: expect cache misses and longer cold times; that
+is not a finding). For each baseline job C-F780 recorded: `rerun_job(job_id=<baseline>)` with **no** `new_seed`
+and no `arguments`, bound to the job's original plan (`validate_workflow` the job's workflow with its arguments first;
+`get_job_workflow` returns it). It runs in the job's original workspace. `wait_seconds` 55, then `wait_for_job`.
+Then `get_job` / `get_job_events` on the rerun, `get_gallery_metadata` on its video, and
+`compare_outputs(names=[<baseline asset:>, <rerun output>], at=[0, <middle frame>, <last frame>])`.
+expected:
+- Each rerun `succeeded`, and no step is marked `reused`. A rerun served from the step cache compares the baseline
+  with itself and proves nothing: that is a **finding** against the step cache (its key does not include the diffusers
+  version), and the case then needs a cache-missing rerun the build comment names.
+- Same shape as its baseline: width, height, `frame_count`, `fps`, `duration_seconds` and audio stream presence equal.
+  A shape change is a **finding** whatever the explanation.
+- **Match**: `compare_outputs` reports mean abs diff 0 at every `at` frame. Otherwise the stage B comment states, for
+  that job, the PSNR / SSIM / mean abs diff the tester can reproduce here (within ±0.5 dB PSNR, ±0.01 SSIM) and a
+  named 0.43 change behind it (attention kernels, cache-hook timing, LoRA alpha handling, a scheduler change, …).
+  "Looks fine" or no named change is a **failure** of the stage.
+- The tester also looks at the three frames of each pair side by side (the grid `compare_outputs` returns): a visible
+  artefact in the rerun that the baseline lacks (tearing, colour shift, a black or noise frame, a different subject)
+  is a **finding** even with an explanation.
+- The H3 clip's and chain's reruns still carry audio for their full length (`get_output_audio` on each: non-silent,
+  same duration as the baseline within one frame).
+cleanup: none (the reruns are stage B's evidence; keep them until #1341 is closed). The baselines are never deleted.
+metrics: none.
+
+### C-F788 — `ltx2/two-stage` names the relocated upsampler and runs with no deprecation warning for it
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+Free, plus C-F787's LTX rerun (no extra GPU). `get_workflow("templates/ltx2/two-stage")` and
+`get_workflow("templates/ltx2/refine-clip")`; `validate_workflow("templates/ltx2/two-stage")` with no arguments;
+`get_job` and `get_job_events` on C-F787's LTX rerun.
+expected:
+- Neither template contains the string `diffusers.pipelines.ltx2.latent_upsampler`. Each names the upsampler's
+  `component_type` under `diffusers.models` (the plan's "public import").
+- `validate_workflow` returns `valid: true` with no error or warning about the upsampler's type.
+- The LTX rerun's `job.warnings` and events hold no deprecation warning naming the upsampler, `latent_upsampler` or
+  "deprecated" with an import path. A deprecation warning about the upsampler is a **finding**.
+- If the stage B comment says the LTX2 condition dataclasses (`LTX2VideoCondition`, `LTX2ReferenceCondition`) also
+  moved, every template it names as migrated contains no `diffusers.pipelines.ltx2` path for them either, and each
+  validates `valid: true` with no arguments beyond the media it needs (pass the `qa-fit/` clips or
+  `priya-portrait.jpg` from Fixtures for a required video or image).
+cleanup: none.
+metrics: none.
+
+### C-F789 — a workflow naming the old LTX2 upsampler path still validates and runs on 0.43
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~5 min. The old path is deprecated for removal in diffusers 1.0, not removed. Take the full JSON of
+`templates/ltx2/two-stage` from `get_workflow`, replace the upsampler's `component_type` with
+`diffusers.pipelines.ltx2.latent_upsampler.LTX2LatentUpsamplerModel`, and pass it inline. `validate_workflow` it
+(no arguments beyond `seed: 42`), then `run_workflow` with the bound cost, `wait_seconds=55`. Then `get_job`,
+`get_job_events`, and `compare_outputs` against C-F787's LTX rerun.
+expected:
+- `valid: true`; no trust-gate or type error for the old path.
+- The run `succeeded` with the same shape as C-F787's LTX rerun.
+- A deprecation warning naming the old path, in `job.warnings` or the events, is allowed and is recorded, not a
+  finding. A failure to import the old path is a **finding**: dw would have broken every saved workflow that names it.
+- The output matches C-F787's LTX rerun (mean abs diff 0): the class is the same, only its import path differs. A
+  difference is a **finding** unless the step cache served one of them (then the case says so and the comparison is
+  void).
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F790 — FLUX 3 Klein and `z-image-sdnq` load and produce an image on 0.43
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~2-4 min each, plus first-run re-quantization. On lem, in `probe-1315`, each validated first:
+- (a) `templates/flux3/text-to-image`, `seed: 7` (modular index naming transformers Qwen3VL classes);
+- (b) `models/z-image-sdnq`, `seed: 42` (its own default is `null`; pin it), a Disty0 SDNQ repo.
+- (c) Also check the H3 path the plan names (`pre_load_modules: ["sdnq"]`, `sdnq.SDNQConfig`): C-F787's H3 reruns are
+  it, so read their events instead of running another H3 job.
+expected:
+- (a) and (b) `succeeded`, each one 1024x1024 image that is not blank (`get_output_image`: a picture, not a flat
+  colour or noise). An error about importing a component library, a class "not allowed" or remote code is a
+  **finding** (diffusers' new component-import restriction refused a load dw relies on).
+- (a)'s events and (b)'s show no trust prompt and no `trust_remote_code` mention.
+- (c): the H3 reruns' events show the SDNQ load with no import refusal.
+cleanup: `delete_output(job_id=...)` for (a) and (b).
+metrics: none.
+
+### C-F791 — a stacked-LoRA case from `docs/LORAS.md` matches its 0.42 output, or the difference is explained
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, one run of the case's size. The plan names no baseline for this case and stage A records none (C-F780 lists
+four jobs). The stage B comment on #1341 therefore names: which `docs/LORAS.md` stacked-LoRA case was used, the
+earlier job id it is compared against and the diffusers version that job ran on (from its own record), and the
+arguments. `get_job` on the earlier job, then `rerun_job` of it (no `new_seed`), bound, `wait_seconds=55`, and
+`compare_outputs(names=[<earlier>, <rerun>])`. `get_guide("loras")` (or the guide that carries `LORAS.md`) for the
+new line.
+expected:
+- The earlier job exists, stacks at least two adapters, and ran on diffusers older than 0.43. One that ran on 0.43 or
+  later compares nothing: the issue goes back as needs-info.
+- The rerun `succeeded`, no step `reused`, same shape.
+- Match is mean abs diff 0; otherwise the comment gives the numbers (reproducible as in C-F787) and names the 0.43
+  LoRA change (Kohya per-module alpha kept, or component-weight broadcast) or another named 0.43 change. No named
+  change is a **failure**.
+- The LoRA guide has a line saying an explicit `alpha` overrides the per-module alphas a Kohya LoRA carries.
+cleanup: `delete_output(job_id=<rerun>)` once #1341 is closed; keep it until then.
+metrics: none.
+
+### C-F792 — a `sage_hub` H3 job completes on lem on 0.43, and whether it reached the Hub is reported
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~2 min. The plan measures this, it does not build it. `templates/minimax/video-with-audio` with
+`attention_backend: "sage_hub"`, `seed: 42`, validated first, in `probe-1315`. `get_job`, `get_job_events`.
+expected:
+- `succeeded`, 960x544, 124 frames, with audio.
+- Validation warned nothing about `sage_hub` being unavailable (the kernel trust setting is in lem's `.env`).
+- The tester's comment on #1341 says whether the events show a Hub fetch (a download, a `kernels` fetch, an HTTP
+  request to `huggingface.co`, a "Fetching" line) for the kernel. The tester can't read the server log; the stage B
+  comment must state what lem's server log showed for the same job. A fetch on a warm cache is **not** a failure of
+  this stage: per the plan it becomes a follow-up issue (prefetch at deploy, or `HF_HUB_OFFLINE` for kernels), which
+  the tester files if the build hasn't.
+- A failure that names the kernel (download refused, trust refused, missing kernel) is a **finding**.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F793 — an H3 `sage_hub` pin does not reach the LTX job that follows it on the same card, on 0.43
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~7 min. Stage B removes dw's attention-backend workaround if 0.43 no longer leaks (Q3); either way the
+acceleration guide's promise ("an H3 `sage_hub` pin cannot reach a Music3 or LTX job that follows") must hold. LTX
+refuses sage outright ("`attn_mask` is not supported for sage attention"), so a leak fails the LTX job. Immediately
+after C-F792's job, on the same card, run `templates/ltx2/two-stage` with `seed: 42`. Check `get_health`'s `workers`
+first and after: both jobs' `device` (from `list_jobs`/`get_job`) must be the same card and its worker the same pid.
+If they landed on different cards, repeat the pair until they share one, or report that the server gave no way to
+place them.
+expected:
+- The LTX job `succeeded`, and its events name no sage backend. A failure mentioning sage or `attn_mask` is a
+  **finding** (the backend leaked), whether or not the workaround was removed.
+- The stage B comment says whether the workaround was removed, and if so, `get_guide("acceleration",
+  section="Attention Backends")` no longer says "dw restores the default after pinning" but still states the
+  no-leak guarantee (as diffusers' behaviour). If it was kept, the text is unchanged.
+cleanup: `delete_output(job_id=...)` for the LTX job (unless it is C-F787's LTX rerun reused for this).
+metrics: none.
+
+### C-F794 — the unfinished H3 MagCache calibration still reports its ratios on 0.43
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~4 min. The break the plan found: 0.43 resets the modular cache hook at the end of every call, so a read after
+the call finds nothing. Repeat C-F782 (a) and (b) on lem after the stage B deploy, same arguments.
+expected:
+- C-F782's expectations, all of them, on 0.43: one `MagCache calibration (4 steps): [ ... ]` line each with 4 finite
+  positive numbers, the mismatch warning on (a), and (a) and (b) within 1e-3 of each other.
+- The ratios are within 1e-2 of C-F782's on 0.42 (the stage A run's record), or the stage B comment names the 0.43
+  change that moved them. A missing line on 0.43 is a **finding**: the very break stage A was built to prevent.
+cleanup: `delete_output(job_id=...)` for both.
+metrics: none.
+
+### C-F795 — on 0.43, a `previous_result:` that resolves to nothing still means the modular block's default
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~2 min. 0.43 keeps an explicit `None` instead of falling back; stage A's drop is what keeps 0.42's meaning.
+`rerun_job` C-F784 (a)'s job (no `new_seed`), bound, then `compare_outputs` against
+`asset:probe-1315/baseline-klein-none.png`; and run C-F784 (b) again (argument omitted), `seed: 7`.
+expected:
+- The rerun `succeeded`, no step `reused` (as C-F787).
+- The rerun equals the fresh (b) run (mean abs diff 0): on 0.43 too, `null` and "omitted" are the same.
+- Against the 0.42 baseline it matches, or the difference equals C-F790 (a)'s explained Klein difference (the stage B
+  comment names one change for both). A rerun that fails on `None` is a **finding**.
+cleanup: `delete_output(job_id=...)` for the rerun and the (b) run.
+metrics: none.
+
+### C-F796 — mini-ai runs a FLUX 3 Klein image on 0.43, and the system test result is recorded
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
+GPU on mini-ai (mps), a few minutes. Through the mini-ai dw MCP server (if this session has none, the case goes back
+as needs-info): `validate_workflow("templates/flux3/text-to-image", arguments={"seed": 7})`, then `run_workflow`
+bound, `wait_seconds=55`. The system test (`python -m dw.test`) is not reachable over MCP: the stage B comment quotes
+its result on mini-ai, and the tester checks only that it is quoted and says it passed.
+expected:
+- The Klein job `succeeded` on device `mps`, one 1024x1024 image that is a picture (`get_output_image`), not a flat or
+  noise frame.
+- No warning in `job.warnings` about an unavailable attention backend or a missing optional package that the same job
+  on lem doesn't also show.
+- The comment quotes `python -m dw.test` passing on mini-ai with diffusers 0.43.x. Missing, it goes back as needs-info.
+cleanup: `delete_output(job_id=...)` on mini-ai.
+metrics: none.
+
+### C-F797 — an H3 template's quote still scales by `num_inference_steps` after step-list pass counting lands
+pending: #1342
+source: tester, spec for #1342 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free, **validate only**, workspace `regression-complete`. Stage A adds a generic pass-count helper. Without a
+`denoising_step_list` on the pipeline, it must leave every existing count alone. Calls:
+- (a) `validate_workflow(name="templates/minimax/reference-to-video", arguments={"seed": 42, "num_inference_steps": 5})`;
+- (b) the same with `num_inference_steps: 13`;
+- (c) the same with `num_inference_steps: 9` (the template's own default);
+- (d) `validate_workflow(name="templates/minimax/first-and-last-frame", arguments={"seed": 42, "num_inference_steps": 9})`
+  (its default is 5).
+Pinned before stage A (lem, 2026-11-13): (a) returned `valid: true`, no warnings,
+`plan.estimate.basis: "derived"`, `minutes: 4.4`, `scaled: "scaled from the curated 7.9 min: steps 5 vs 9"`.
+expected:
+- (a) matches the pinned reply: `basis: "derived"`, a `scaled` string naming `steps 5 vs 9`, and `minutes` equal to
+  the curated minutes × 5/9, rounded to 0.1. A change to the curated figure since then is not a finding, as long as
+  the ratio holds. A `scaled` string that names passes (`4 vs 8`), a step list, or a default other than the template's
+  own is a **finding**: stage A changed the count for a pipeline with no step list.
+- (b) is scaled up by 13/9 from the same curated figure, with `steps 13 vs 9` in `scaled`.
+- (c) is not scaled: no `scaled` key, and `basis` is `observed` or `catalog` as it was before the stage.
+- (d) is scaled by 9/5 from `first-and-last-frame`'s own curated figure.
+- None of the four carries a warning mentioning a step list, a "fixed step-list sampler", or MagCache/TST being
+  unsupported.
+cleanup: none.
+metrics: none.
+
+### C-F798 — a running H3 job still reports `num_inference_steps − 1` denoise steps after stage A
+pending: #1342
+source: tester, spec for #1342 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~10 min on lem, workspace `regression-complete`. Pinned before stage A: the defaults run of
+`templates/minimax/reference-to-video` (`num_inference_steps: 9`), job `b4b5959424d3`, emitted eight
+`pipeline_step` events, `step` 1..8, each with `total_steps: 8` (`get_job_events(job_id="b4b5959424d3",
+after=16)`). Run, each validated first with its cost bound, `wait_seconds=55`:
+- (a) `templates/minimax/reference-to-video`, `{"seed": 42}`;
+- (b) the same with `num_inference_steps: 5`.
+Then `get_job_events` for each, filtered to `pipeline_step` (page with `after` if needed), and `get_job`.
+expected:
+- Both `succeeded`.
+- (a) has exactly eight `pipeline_step` events, `step` 1..8 in order, each with `total_steps: 8`, like the pinned job.
+- (b) has exactly four, `step` 1..4, `total_steps: 4`.
+- Neither job's `job.warnings` or events mention a step list, a fixed-step sampler, or MagCache/TST being unsupported.
+- A `total_steps` of 50 or 49 (a fallback default), or of 9 / 5 (the step count read as the pass count), is a
+  **finding**.
+cleanup: `delete_output(job_id=...)` for both.
+metrics: none.
+
+### C-F799 — a non-H3 pipeline's progress count is unchanged by stage A
+pending: #1342
+source: tester, spec for #1342 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+GPU, ~2 min. Stage A rewires the progress count for every pipeline, not only H3. Before running, find a
+`templates/flux3/text-to-image` job on lem that finished before stage A's deploy (`list_jobs`, filtered by that
+workflow, finished before the stage A build comment's time). Read its `pipeline_step` events' `total_steps` and the
+`num_inference_steps` its workflow ran with (`get_job_workflow`). If no such job is left, record that and use the
+expectation below without the comparison. Then run `templates/flux3/text-to-image` with `{"seed": 7}`, validated
+first, `wait_seconds=55`, and read its `pipeline_step` events.
+expected:
+- `succeeded`, one image.
+- `total_steps` equals the pre-stage job's `total_steps` when both ran with the same `num_inference_steps`, and every
+  `step` from 1 to `total_steps` appears once.
+- No warning mentions a step list or a fixed-step sampler.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F800 — the three `pika-h3/` templates are listed, and carry the plan's fixed shape
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free. `list_workflows(shape="shot")`, then `get_workflow` (full) on each of `templates/pika-h3/text-to-video`,
+`templates/pika-h3/first-and-last-frame` and `templates/pika-h3/reference-to-video`.
+expected:
+- All three are listed, with `has-audio` in their traits; fl2va also has `image-conditioned`, and ref2va has
+  `identity-referenced` (or whatever trait the H3 `minimax/reference-to-video` entry carries for its reference).
+- Each loads a `ModularPipeline` from `Pika-Labs/Pika-H3-Flex`. Its `workflow` field is `t2va`, `fl2va` or `ref2va`.
+- Each has exactly one `loras[]` entry, at scale 1.0 with no alpha. The `weight_name` keeps its subfolder:
+  `fl2va/adapter.safetensors` for t2va and fl2va, `ref2va/adapter.safetensors` for ref2va. A separate `subfolder`
+  plus a bare `adapter.safetensors` is a **finding** (it collides in the catalog key, as the plan notes).
+- No template declares or sets `num_inference_steps`, `guidance_scale`, `negative_prompt`, `scheduler.shift` or
+  `audio_scheduler.shift`, as a variable or as a literal anywhere in its definition. Any one of them is a **finding**.
+- `cache` defaults to null.
+- `constraints.num_frames` is `modulus 17, remainder 5, min_frames 124, max_frames 345, snap "up"`. `width` and
+  `height` have `modulus 32`.
+- `presets` holds a 480p and a 768p 16:9 bucket, the 768p one being 1344x768. The description lists the other
+  aspect-ratio buckets, says the clip is single-clip only (no chains), and says seeds are not comparable with
+  MiniMax-H3's.
+- Each template's `cost` is non-null (stage B measures it on lem).
+cleanup: none.
+metrics: none.
+
+### C-F801 — each `pika-h3/` template validates clean, and its quote is six passes, not a default
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free, **validate only**, workspace `regression-complete`. For each of the three templates,
+`validate_workflow(name=..., arguments={"seed": 42, "width": 1344, "height": 768, "num_frames": 124})`, plus the
+media the template needs (fl2va: `image` = `"asset:qa-1141/street-960x544.png"`; ref2va: two image references,
+`asset:qa-cast/priya-portrait.jpg` and `asset:qa-cast/hal-portrait.jpg`, in whatever variables
+`get_workflow` names). The `qa-1141/` stills are made by C-F639's setup when missing.
+expected:
+- `valid: true`, `errors: []`, and no warning about steps, shift, a missing scheduler or an unknown pipeline config.
+- `plan.estimate.minutes` is non-null and `basis` is not `unknown`. If `basis` is `derived`, its `scaled` string does
+  not name 50, 49 or any `num_inference_steps` default. A quote scaled from a 50-step default (roughly 8x the curated
+  minutes) is a **finding**: stage A's helper is not reached.
+- `downloads_required` names at most the template's one adapter file (`fl2va/adapter.safetensors` or
+  `ref2va/adapter.safetensors`) from `Pika-Labs/Pika-H3-Flex`, plus whatever the base `MiniMaxAI/MiniMax-H3` entries
+  already need, once lem has them. An entry that is the whole `Pika-Labs/Pika-H3-Flex` snapshot, or a second copy of
+  the base transformer or text encoder from the Pika repo, is a **finding** against Q1 (no duplicate base without a
+  re-plan).
+cleanup: none.
+metrics: none.
+
+### C-F802 — the `pika-h3/` bounds: frame count, size, and the arguments the sampler doesn't take
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free, **validate only**. Carrier: `templates/pika-h3/text-to-video` with `{"seed": 42}` plus the one change per
+call below. Repeat the `num_frames` rows on `templates/pika-h3/reference-to-video` (with C-F801's two references).
+- (a) `num_frames: 100`; (b) `123`; (c) `124`; (d) `130`; (e) `345`; (f) `346`; (g) `360`;
+- (h) `width: 1000` (not a multiple of 32); (i) `width: 832, height: 480`; (j) `width: 1344, height: 768`;
+- (k) `num_inference_steps: 8`; (l) `video_shift: 12.0`; (m) `guidance_scale: 4.0`.
+expected:
+- (a), (b) `valid: false` at `arguments.num_frames`, naming the 124 minimum. The plan names (a) explicitly.
+- (c) and (e) `valid: true` with no frame warning.
+- (d) `valid: true` with a warning that 130 becomes 141.
+- (f) and (g) are refused, or behave exactly as `templates/minimax/first-and-last-frame` does for the same value
+  (validate it with the same `num_frames` to compare). A Pika template that accepts a frame count its H3 sibling
+  refuses, or the reverse, is a **finding**.
+- (h) `valid: false` at `arguments.width`, with no snap. (i) and (j) `valid: true`.
+- (k), (l), (m) each `valid: false` as an undeclared argument. A Pika template that accepts a step count, a shift or
+  a guidance scale is a **finding**: the plan's contract is a fixed six-step list with shift 12/3 taken from the
+  adapter.
+cleanup: none.
+metrics: none.
+
+### C-F803 — 768p ref2va with three references warns when it is over the card's VRAM ceiling
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free, **validate only**. `templates/pika-h3/reference-to-video` with `{"seed": 42, "width": 1344, "height": 768,
+"num_frames": 124}` and three image references (`asset:qa-cast/priya-portrait.jpg`, `asset:qa-cast/hal-portrait.jpg`,
+`asset:qa-1141/board-1.png`). Then the same at the 480p preset's size. Read the stage B comment on #1343 for the
+VRAM ceiling it measured for 768p ref2va on lem's 24 GB card.
+expected:
+- If stage B reports that 768p ref2va with three references exceeds the ceiling: the 768p validate is still
+  `valid: true` (validate warns, never refuses), with a warning naming VRAM or the memory ceiling. The 480p validate
+  has no such warning, unless stage B reports 480p over the ceiling too.
+- If stage B reports that it fits: no VRAM warning on either, and the stage B comment gives the measured peak.
+- A stage B comment that gives no ceiling for 768p ref2va sends the case back as needs-info.
+cleanup: none.
+metrics: none.
+
+### C-F804 — Pika t2va completes at 1344x768, 124 frames, with audio, in six counted steps
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+GPU on lem, minutes (the first ever run also downloads the adapter and may build int8 caches; that is not a
+finding). Workspace `regression-complete`. Before the run: `list_downloads`. Then
+`templates/pika-h3/text-to-video` with `{"seed": 42, "width": 1344, "height": 768, "num_frames": 124}`, validated
+first and bound. Use `wait_seconds=1500`, as for H3 video (the house rules). Then `get_job`,
+`get_job_events` (kinds `pipeline_step`, `phase`, `warning`), `get_gallery_metadata` on the video, `get_output_audio`.
+expected:
+- `succeeded`, one mp4: 1344x768, `frame_count` 124, `fps` 24, `duration_seconds` ≈ 5.17, with an audio stream that is
+  not silent for its full length.
+- Exactly six `pipeline_step` events, `step` 1..6, each with `total_steps: 6`. Any other total is a **finding**.
+- `job.warnings` holds nothing about MagCache or TST (cache is off by default), and nothing about an unknown step count.
+- **Disk**: the tester's comment reports how many GB this first run downloaded (`downloads_required` from the
+  validate, `list_downloads` before and after, and the loading phase events), and from which repos. A download of
+  base weights from `Pika-Labs/Pika-H3-Flex` is a **finding** under Q1.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F805 — Pika fl2va completes from a first frame alone and from first + last
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+GPU on lem, two runs, workspace `regression-complete`, each validated first and bound, `wait_seconds=1500`.
+`templates/pika-h3/first-and-last-frame` at `{"seed": 42, "width": 1344, "height": 768, "num_frames": 124}`:
+- (a) first frame only: `image` = `"asset:qa-cast/priya-portrait.jpg"`, last frame unset (null, or omitted, as the
+  template's description says);
+- (b) first + last: `image` = `"asset:qa-cast/priya-portrait.jpg"`, last image = `"asset:qa-cast/hal-portrait.jpg"`.
+Keep both jobs for C-F806.
+expected:
+- Both `succeeded`: 1344x768, 124 frames, 24 fps, audio stream present and not silent.
+- Six `pipeline_step` events each, `total_steps: 6`.
+- (a) validates with no last-image argument. If the template requires a last image, so there is no first-frame-only
+  fl2va, that is a **finding**: the plan names both modes.
+- (b)'s last frame shows the `hal-portrait.jpg` subject, and (a)'s does not have to (`get_output_frames` at the last
+  frame index).
+cleanup: none until C-F806 has read them; then `delete_output(job_id=...)` for both.
+metrics: none.
+
+### C-F806 — a Pika fl2va keyframe at a non-16:9 aspect is centre-cropped, not stretched
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free, reading C-F805's outputs. `priya-portrait.jpg` is a portrait still, not 16:9. Use `get_output_frames` on
+C-F805 (a) and (b) at frame 0 and (b) at its last frame, and `get_output_frames(name="asset:qa-cast/priya-portrait.jpg")`
+(and `hal-portrait.jpg`) for the sources.
+expected:
+- Frame 0 is the source's centre band, full width and cropped top and bottom. The face keeps the source's proportions
+  (not widened), and the part of the head or shoulders that falls outside a 16:9 band of the source is missing.
+- (b)'s last frame shows the same crop of `hal-portrait.jpg`.
+- A frame 0 that shows the whole portrait squashed into 16:9, so the face is visibly wider than in the source, is a
+  **finding** (stretched). So is a frame 0 with letterbox or pillarbox bars (padded, not cropped).
+cleanup: none (C-F805 deletes).
+metrics: none.
+
+### C-F807 — Pika ref2va completes with two image references at 1344x768, in six counted steps
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+GPU on lem, workspace `regression-complete`. `templates/pika-h3/reference-to-video` with
+`{"seed": 42, "width": 1344, "height": 768, "num_frames": 124}`, two image references
+(`asset:qa-cast/priya-portrait.jpg`, `asset:qa-cast/hal-portrait.jpg`, in the variables `get_workflow` names), and a
+prompt that names both subjects, written to the template's own prompt format. Validate first and bind the cost;
+`wait_seconds=1500`. If the stage B comment reports that 768p ref2va does not fit lem's 24 GB card, run at the
+480p preset instead and say so (the plan's fallback). The case then also checks that the 768p limit is stated in the
+template's description.
+expected:
+- `succeeded`, one mp4 at the size run, 124 frames, 24 fps, audio not silent.
+- Six `pipeline_step` events, `total_steps: 6`.
+- `get_output_frames` at three frames: both reference subjects appear in the clip.
+- An OOM at the size the template's 768p preset offers, with no warning from validate (C-F803) and nothing in the
+  description, is a **finding**.
+cleanup: `delete_output(job_id=...)`.
+metrics: none.
+
+### C-F808 — MagCache or TST on a Pika template warns that a fixed step list isn't supported, and doesn't mis-key
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free first, then GPU only if needed. The plan's design: on a step-list pipeline, MagCache calibration and TST's
+step-keyed scheduling warn "not supported on a fixed step-list sampler" instead of keying on a wrong count. Find the
+cache value that turns MagCache on for H3 (`get_workflow("templates/minimax/first-and-last-frame")`'s description, or
+`get_guide("acceleration")`), and the argument that turns TST on. On `templates/pika-h3/first-and-last-frame` at the
+480p preset, 124 frames, `seed: 42`, with C-F805's first frame:
+- (a) `validate_workflow` with that cache value;
+- (b) `validate_workflow` with TST on (skip, and say so, if the Pika template does not expose TST);
+- if neither validate warns, `run_workflow` (a), bound, `wait_seconds=1500`, then `job.warnings` and `get_job_events`.
+expected:
+- A warning that names MagCache (and TST for (b)) as not supported on a fixed step-list sampler, at validate or, if
+  only at run time, in `job.warnings`.
+- If run: `succeeded`, six `pipeline_step` events, and the events show no MagCache calibration line or skip count
+  keyed to more than six steps. A calibration over 49 or 50 steps, or a cache skip pattern applied, is a **finding**.
+cleanup: `delete_output(job_id=...)` for any run.
+metrics: none.
+
+### C-F809 — a Pika job then an H3 job on the same card: the H3 job is unchanged
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+GPU on lem, ~15 min. The plan relies on the step cache keeping the two apart (its key includes the LoRA files and
+the scheduler type), with no in-worker LoRA toggling. On one card (check `get_health` `workers` and each job's
+`device`, as C-F793 does), in order, each validated and bound:
+- (1) `templates/minimax/reference-to-video`, `{"seed": 42}`;
+- (2) C-F804's Pika t2va run (or any `pika-h3/` run at the 480p preset);
+- (3) (1) again, the same arguments, via `rerun_job` of (1) with no `new_seed`.
+Then `compare_outputs(names=[<(1) output>, <(3) output>], at=[0, 60, 123])`, and the events of (2) and (3).
+expected:
+- All three `succeeded`.
+- (3) has eight `pipeline_step` events with `total_steps: 8`, and loads the lightx2v ref2v LoRA (its loading phase
+  names `lightx2v/Minimax-h3-Turbo`). No `Pika-Labs` adapter is named in (3)'s events.
+- (2)'s events name no `lightx2v` adapter.
+- (1) and (3) match (mean abs diff 0). If the step cache served (3) whole (a step marked `reused`), the comparison
+  proves nothing: rerun with a cache-missing change the step cache keys on (e.g. a different `num_frames`, compared
+  against a fresh (1) at that value). A difference is a **finding**: Pika's adapter, scheduler or step list reached
+  the H3 job.
+cleanup: `delete_output(job_id=...)` for all three (keep (2) if it is C-F804's until that case is done).
+metrics: none.
+
+### C-F810 — the stage B bench record on #1316 is complete and reproducible
+pending: #1343
+source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads existing jobs). The bench under Q2 is run once, by the tester verifying stage B: three standard scenes
+as Pika fl2va against `templates/minimax/first-and-last-frame` (lightx2v 4-step), and two as Pika ref2va against
+`templates/minimax/reference-to-video` (8-step). Same prompt, size, frame count and seed within each pair. The
+side-by-sides are posted on #1316. This case checks that record:
+- for each pair, `get_job` on both job ids the comment names, and `get_job_workflow` for their arguments;
+- `assess_output` on both outputs of one pair, chosen by the checker.
+expected:
+- Five pairs: three fl2va, two ref2va (or two pairs, one of each, if Don changed Q2 to the weaker bench). Each pair
+  matches on prompt, width, height, `num_frames` and seed. Both sides `succeeded`.
+- Each pair records the wall time of each side and an `assess_output` result for each side. Note whether each job was
+  cold or warm: a warm H3 side against a cold Pika side is no comparison of wall time.
+- The checker's `assess_output` on the chosen pair reproduces the posted findings (same flags and the same numbers to
+  the precision posted). A mismatch is a **finding** against the bench record.
+cleanup: none (the bench jobs are Don's evidence for Q3; never delete them from this case).
+metrics: none.
+
+### C-F811 — the `minimax-h3` skill's Pika reference and the doc carve-outs say what the plan fixes
+pending: #1344
+source: tester, spec for #1344 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free. Load `dw:minimax-h3` with the `Skill` tool and read its `references/pika-flex.md` (the plugin tree follows
+the skill). Then `get_guide("acceleration")` and `get_guide("workflows")`, grepping their sections for "passes",
+"num_inference_steps" and "Pika".
+expected:
+- SKILL.md has a pointer line to `references/pika-flex.md`.
+- `pika-flex.md` states each of these: Pika H3 Flex is single-clip only (no chained segments, repair, regional edit,
+  face repair or add-sound); pass no `num_inference_steps` and no shift (the adapter fixes shift 12/3); it runs six
+  passes from a fixed step list; the 480p and 768p buckets (1344x768 for 16:9 at 768p); its seeds are not comparable
+  with MiniMax-H3's; when to pick it, worded per Don's Q3 verdict ("pick for single-clip ref2va" on a win, "an option,
+  not the default" otherwise). It names the three `templates/pika-h3/` templates.
+- Wherever the acceleration and workflows guides state lightx2v's "steps = passes + 1" rule, the text now scopes it
+  to lightx2v / `num_inference_steps` and says a step-list pipeline runs len−1 passes (or points at the Pika
+  reference). A guide that still states "steps = passes + 1" as universal, with no carve-out, is a **finding**.
+- No guide or skill text tells a reader to call `download_model` on `Pika-Labs/Pika-H3-Flex`.
+cleanup: none.
+metrics: none.
+
+### C-F812 — a cold driving session asked for a fast single reference clip picks the template Q3 named, with no shift or steps
+pending: #1344
+source: tester, spec for #1344 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free to decide, then validate only. A cold drill: work only from the skill, as a driving session with no knowledge of
+this case would. Load `dw:minimax-h3` (and the references it points to), and follow its routing for the ask
+**"a single 5 s reference-to-video clip of Priya and Hal, fast"** with the references
+`asset:qa-cast/priya-portrait.jpg` and `asset:qa-cast/hal-portrait.jpg`. **Write down the chosen template and the
+full `arguments` before reading the expectations below.** Then `validate_workflow` that choice. Read Don's Q3
+verdict on #1316 (Pika won single-clip ref2va, or not).
+expected:
+- If Q3 says Pika won: the choice is `templates/pika-h3/reference-to-video`. Otherwise it is
+  `templates/minimax/reference-to-video`, and the skill mentions Pika as an option.
+- If the choice is Pika: `arguments` holds no `num_inference_steps`, `video_shift`, `audio_shift`, `guidance_scale`
+  or any scheduler shift, and `num_frames` is 124 (5 s, the 17n+5 floor). The validate is `valid: true`.
+- If the choice is MiniMax-H3: its arguments follow the existing lightx2v ref2v rules the skill states.
+- A choice that contradicts Q3's verdict is a **finding** against the routing text.
+cleanup: none.
+metrics: none.
+
+### C-F813 — a cold driving session asked for a chain, a long take, or a fix to an existing clip does not pick Pika
+pending: #1344
+source: tester, spec for #1344 from #1316's plan v1 (claude-opus-5-5 via anthropic)
+Free to decide. The same cold drill as C-F812, once per ask, with the choice written down before reading on:
+- (a) "a 30 s scene of Priya and Hal arguing, as one continuous chained sequence, fast";
+- (b) "a 20 s single take of Priya walking, from her reference picture, fast" (past Pika's 15 s / 345-frame limit);
+- (c) "repair the middle segment of `asset:qa-cast/ep6-shot1-priya.mp4`" (a repair or regional edit);
+- (d) "a music video of Priya singing, fast" (the plan keeps `music-video` on MiniMax-H3: no Pika tier in the presets).
+Validate each choice (with the media it needs from Fixtures).
+expected:
+- None of (a)–(d) picks a `templates/pika-h3/` template, and none passes a Pika adapter or repo in an inline workflow.
+- (a) and (b) pick a chained H3 template, or the skill's long-form route. (c) picks an H3 repair or edit template.
+  (d) picks the music-video template or route the skill already names.
+- A Pika pick for any of them is a **finding**: Pika is single-clip only (Q4).
+cleanup: none.
+metrics: none.
+
+### C-F814 — the bf16 bench workflow validates clean and differs from the CP1 control only in the transformer's precision
+pending: #1346
+source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
+Free (validate and reads only). The control is job `d5584b91816d` (workspace `constitution-walk-3`, workflow id
+`BenchNarratedTake`, arguments `{stop_after: 12, shot: "dialogue", seed: 1}`). Its realized workflow, as pinned on
+2026-11-13 through `get_job_workflow`, quantizes three components under `take.pipeline.configuration.load_components.quantization_config`:
+`transformer` and `text_encoder` (SDNQ, `weights_dtype: "variable:weights_dtype"`, value `"{int8}"`) and `vae`
+(SDNQ, literal `"{int8}"`). The transformer is group-offloaded `block_level`, `num_blocks_per_group: 2`, and
+`host_ram_gb` is 69.
+- `validate_workflow(workflow_path="bench/workflows/narrated-take-bf16.json", arguments={stop_after: 12, shot: "dialogue", seed: 1}, workspace="constitution-walk-3")`.
+  If the server will not resolve that path, validate the full arm's realized workflow instead
+  (`get_job_workflow(<arm job>).workflow` passed as `workflow=`, same arguments). Record which form was used.
+- `get_job_workflow` on the full arm (or, if the gate stopped the arm, on the gate job) and on `d5584b91816d`. Diff the two.
+expected:
+- `valid: true`, with no errors. A warning is allowed, but the `plan` is non-null and its `host_ram_gb` (or the
+  workflow's own `host_ram_gb`) is **not** the parent's 69 unless the record says the gate measured 69 or less.
+- In the bf16 workflow, `quantization_config` has **no `transformer` key at all**. A `transformer` entry that is
+  still there (with any `weights_dtype`, including bf16) does not count as "removed".
+- `text_encoder` is still SDNQ int8. It may be a literal `"{int8}"` or a variable that resolves to `"{int8}"` in the
+  realized run. If it still reads `variable:weights_dtype`, then `weights_dtype` must resolve to `"{int8}"`, and
+  the transformer must not read it. The plan's correction is that one variable must not change both.
+- `vae` is still SDNQ int8. The transformer's `group_offload` block is unchanged (`block_level`, 2 blocks per group,
+  streams on). `load_components.dtype` is `torch.bfloat16`.
+- Apart from the transformer's quantization entry, `host_ram_gb`, the workflow `id`/`summary`/`description` and the
+  cost text, every step key and variable default matches the control's realized workflow: model, LoRA, chain block,
+  scheduler shifts, check, retries, attention backend.
+- The workflow's description or cost text says what differs from `narrated-take` (the transformer is unquantized bf16,
+  and the text encoder and VAE stay int8).
+- Any other difference, such as a changed `num_inference_steps`, LoRA, `continuity`, `guide_frames` or `check`, is a
+  **finding**, because the arm would no longer isolate precision.
+cleanup: none.
+metrics: none.
+
+### C-F815 — the gate segment ran alone on lem, and its host RAM peak is the figure the bench workflow declares
+pending: #1346
+source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads existing jobs). The stage records a gate job id (in the `narrated.md` section, quoted on #1346).
+- `get_job(<gate job>)`. Then `get_job_events(<gate job>, kinds=["memory"])` for its VRAM readings, and
+  `get_job_events(<gate job>, kinds=["phase_stall","warning","log"])` if it did not succeed.
+- `list_jobs` over the gate's started/finished window, on both cards.
+expected:
+- The gate job exists. Its arguments carry `stop_after: 1` and `seed: 1`, and its workflow is the bf16 bench workflow
+  (C-F814's checks hold on `get_job_workflow` of the gate as well). `device` is a lem card.
+- No other job ran on either card between the gate's `started_at` and `finished_at`. Don's scheduling condition is
+  "nothing else queued on either card". An overlapping job is a **finding** against the measurement, not just the schedule.
+- If the gate `succeeded`, its `host_memory_job_peak_committed_mb` agrees with the record's host RAM peak, after unit
+  conversion (MB/1024 → GB, to the precision the record posts). The bench workflow's `host_ram_gb` is at least that
+  peak in GB. A declared need **below** the measured peak is a **finding**. The record's VRAM peak matches the largest
+  memory event, and its wall time matches `finished_at − started_at` (or the take step's `timing`) to within a minute.
+- If the gate stopped the arm, the record names which of the three reasons it was, and the job agrees:
+  - **admission refused:** the job never started on a card, and its error names host RAM or admission;
+  - **host OOM:** the job `failed` with an out-of-memory/killed error, or the worker died;
+  - **slow:** the segment's denoise ran past 45 min, either from `timing` or from the events (first denoise event
+    to last).
+  A stop reason that the job record does not bear out is a **finding**. A stopped gate is a **pass** when the record
+  is honest about it (Don's Q2 ruling).
+cleanup: none (the gate job is the stage's evidence).
+metrics: none.
+
+### C-F816 — the full bf16 arm finished 12 kept segments under the control's arguments
+pending: #1346
+source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads existing jobs). **Skip, as not applicable** if C-F815 found an honest gate stop. In that case the record
+must say no full arm ran, and `list_jobs` must show no 12-segment bf16 job that the record leaves out. A full arm that
+ran but went unreported is a **finding**.
+- `get_job(<arm job>)` and `get_job(d5584b91816d)`, plus `get_job_workflow` on each.
+- `list_jobs` over the arm's started/finished window, on both cards.
+expected:
+- The arm's `status` is `succeeded`. Its take step's manifest entry has 12 `shots`, each with a `segment_file`, and
+  `timing.segments: 12`.
+- Each shot's `start_frame` and `num_frames` equal the control's (segment 1: 0/192, segments 2–12: 170 each, starting
+  at 192, 362, …, 1892), and `planned_segments` is 43 in both. The same narration must cut into the same segments; a
+  different plan means the inputs differ.
+- Realized variables, compared to the control: `seed` 1, `tier` "best", `shot` "dialogue", `continuity` "guide",
+  `width` 1344, `height` 768, `num_frames` 192, `guide_frames` 22, `num_inference_steps` 20, `video_shift` 12.0,
+  `audio_shift` 3.0, `stop_after` 12, `keep_segments` true, `retries` 1, `check` identical, the same `image`,
+  `narration`, `script`, `scene`, `speaker`, `soundscape` and `prompt_template`, the same LoRA, `attention_backend`
+  "sparse" with the same tau/topk, and `cache` null. "No counters" means `experimental_latent_carry` false, `keystone`
+  "none", and `keystone_slot`, `experimental_capstone` and `anchor_every` null.
+- C-F814's component checks hold on the arm's realized workflow: no transformer quantization config, and the text
+  encoder and VAE at int8.
+- No other job overlapped the arm on either card. The overlap check is the same as in C-F815.
+- Any argument difference beyond the transformer's precision and `host_ram_gb` is a **finding**.
+cleanup: none (the arm is Don's evidence for Q3; never delete it from this case).
+metrics: none.
+
+### C-F817 — the narrated.md bf16 record's numbers are the jobs' numbers, and its verdict is one the data allows
+pending: #1346
+source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads existing jobs). The record is the new `bench/records/narrated.md` section. Read it as the stage quotes it
+on #1346, not from a checkout. Then `get_job` on the arm and on `d5584b91816d`.
+expected:
+- **face_drop:** the record lists `face_drop` per segment for **both** arms. Each value equals that segment's
+  `shots[i].check.face_drop` in the job's manifest, to the precision posted. Segment 1 has no check in the control and
+  may be blank. For orientation, the control reads 0.003, 0.032, 0.043, 0.057, 0.146, 0.114, 0.111, 0.140, 0.148,
+  0.154 and 0.207 for segments 2–12. A control column that does not reproduce these is a **finding**.
+- **Sharpness and saturation:** face-crop sharpness and saturation appear for both arms at the CP1 windows. They are
+  stated as growth from each arm's **own** segment 1 (a ratio or delta against segment 1), not compared as absolute
+  values across arms. An arm-vs-arm comparison of absolute values is a **finding**: different weights give a different
+  segment 1. These scores are not reproducible over MCP, so the check is only that they are present and framed as
+  growth.
+- **Wall time and host RAM:** each arm's wall time matches `finished_at − started_at`, to the minute. The control is
+  233 min. Each arm's host RAM figure matches its `host_memory_job_peak_committed_mb` (the control's is about 67.1 GB).
+- **Verdict:** exactly one line, *precision is* or *is not a burn lever at int8→bf16*, or an explicit "marginal /
+  inconclusive on one seed" that says a second seed would be a new `spend` ask. A verdict that claims more than one
+  arm can show, such as a shipping recommendation or a tier change, is a **finding**: it is out of the stage's scope.
+- **Stopped arm** (per C-F815): the record names the stop reason and the gate job id, and it gives **no** precision
+  verdict, or says the question is unanswered. Burn figures for a bf16 arm that never ran are a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F818 — the face strip for Don exists where the record says, with both arms at the four CP1 times
+pending: #1346
+source: tester, spec for #1346 from #1319's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads only). **Not applicable** if the gate stopped the arm. The record names the strip either as an output of
+a job (an `output:` path in some job's manifest) or as a kept asset (`asset:…`).
+- If it is a job output: `get_job` on that job, and confirm the file is in its manifest. Then `get_output_image` on it,
+  or `get_output_frames` if it is a video.
+- If it is an asset: `get_output_frames(asset:…)`. For a still, there is no direct read, because `get_output_image`
+  refuses `asset:` (#445). Instead, `get_gallery_metadata(asset:…)` confirms it exists, and `assess_output(asset:…)`
+  confirms it can be read.
+expected:
+- The strip resolves. An "Unknown asset", or an output path missing from its job's manifest, is a **finding**.
+- On viewing, it shows the control (int8) and the bf16 arm side by side, at about 0, 40, 60 and 85 s, with both arms
+  labelled or ordered as the record says. If the strip was built from a frame grab of each arm, the job that built it
+  reads frames from `d5584b91816d`'s and the arm's outputs, not from some other run.
+- The tester does **not** judge whether bf16 looks less burnt. That is Don's Q3.
+cleanup: none (the strip is Don's evidence).
+metrics: none.
+
+### C-F819 — #1347's probe record cites every arm the plan lists, each a finished job in the probe workspace
+pending: #1347
+source: tester, spec for #1347 from #1320's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads existing jobs). Stage A ships no code. Don rules on the probe from its record, so the check is that the
+record stands on real, finished jobs.
+1. Read the results comment on dkackman/diffusers-workflow#1347 (or on the parent #1320, wherever the stage A session
+   posted it). Note the probe workspace it names, the takes, and every job id it cites.
+2. `list_jobs(workspace=<probe workspace>)`, then `get_job(job_id=<id>)` on each cited job.
+expected:
+- The record names exactly one **sub-0.05 take** and one **mid-size control** (a #1097 take, about 0.087 of the frame
+  width). The plan's arms appear for each:
+  - sub-0.05 take: shipped `minimax/face-repair` (t2va, `refine_strength` 0.6), ref2va at 0.8, ref2va at 0.9;
+  - mid-size control: ref2va at 0.8 and at 0.9, with t2va 0.6 the **reused** #1097 output (a cited job id, not a rerun).
+  Six arms in all, each citing a job id. An arm left out is acceptable only if the record says which and why (for
+  example, Q1's fallback). An arm with no job and no stated reason is a **finding**.
+- Every **new** arm's job is listed by `list_jobs` in the probe workspace, and `get_job` reports it finished
+  (succeeded). A failed arm is acceptable only if the record says it failed and why.
+- The reused t2va 0.6 control job resolves by `get_job` and is finished. It may live in `probe-1092`, where #1097
+  ran it. If it was moved or copied into the probe workspace instead, either is fine. A cited id that doesn't resolve
+  is a **finding**.
+- If the sub-0.05 take is **synthetic** (plan Q5), its generating job is cited, is in the probe workspace, and is
+  finished. The record calls the take synthetic.
+It is a **finding** if a cited job id doesn't resolve, is still queued or running, or failed without the record saying
+so. This case doesn't judge identity, mouth or popping. That judgement is Don's (Q2).
+cleanup: none. Never delete the probe's outputs or takes.
+metrics: none.
+
+### C-F820 — each #1347 arm ran the arm its note claims: take, mode, strength, seed and gate
+pending: #1347
+source: tester, spec for #1347 from #1320's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads existing jobs). For each **new** arm job C-F819 lists, read `get_job(job_id=…)` for its `note`, and
+`get_job_workflow(job_id=…)` for what actually ran. For orientation, `get_workflow("templates/minimax/face-repair",
+variables_only=true)` today gives `refine_strength` 0.6, `gate_full` 0.2, `gate_zero` 0.3, `video_shift` 6.0, `seed`
+1092, `num_inference_steps` 5 and `crop_size` 512.
+expected:
+- **Note:** every new arm job has a non-empty `note` naming its **take** (sub-0.05 or synthetic, or the #1097 take),
+  its **mode** (t2va or ref2va) and its **strength** (0.6, 0.8 or 0.9). A job with no note, or a note missing any one
+  of the three, is a **finding**.
+- **Note matches the run:** in the job's workflow, the refine step's `refine_strength` equals the strength in the
+  note. The refine is `"workflow": "t2va"` with no `references` for a t2va arm. For a ref2va arm it is `"workflow":
+  "ref2va"`, and `references` resolves to the cast picture: `asset:cast/pat.jpg`, or the cast picture the record names
+  for a Don take with another cast member. A note that disagrees with its run is a **finding**.
+- **Held constant:** every arm has `seed` 1092, `gate_full` 0.2 and `gate_zero` 0.3. Within a take, all arms read
+  the same `source_video`, and the crop → refine → paste chain matches the shipped template's in everything except
+  the refine's `workflow`, `references` and `refine_strength`. Another difference (steps, crop size, shift, LoRA) is
+  a **finding**, unless the record names and justifies it.
+- The sub-0.05 take's t2va 0.6 arm is a new run of `templates/minimax/face-repair` at its defaults, apart from the
+  take.
+cleanup: none.
+metrics: none.
+
+### C-F821 — #1347's sub-0.05 take is what the plan asks for: a face under about 0.05 of the width, at least 124 frames
+pending: #1347
+source: tester, spec for #1347 from #1320's plan v1 (claude-opus-5-5 via anthropic)
+Free. The issue's own premise failed at this point (the #1097 takes are about 0.087), so this case checks the take
+the whole gate rests on.
+1. From the record, take the sub-0.05 take's reference (`asset:` or `output:`) and the face width it reports.
+2. `get_gallery_metadata` on the take, for `frame_count`, `fps`, `duration_seconds` and the frame size.
+3. `get_output_frames` on the take at three times (start, middle, end), to view the face against the frame.
+expected:
+- The record states the take's face width as a fraction of the frame width, and how it was measured (for example,
+  `crop_face_track`'s boxes in the t2va arm's job, or a measurement on frames).
+- The reported width is ≤ 0.05. A value from 0.05 to 0.06 passes only if the record calls it borderline. Above 0.06
+  is a **finding**: the probe tested the wrong regime, which is the gap the plan corrected.
+- The viewed frames agree: one face, small in the frame (roughly 1/20 of the width or less), on all three frames.
+  More than one prominent face is a **finding** (multi-face is a non-goal, so the take is out of scope).
+- `frame_count` ≥ 124. A take under 124 frames is a **finding**: the shipped face-repair window refuses it.
+- A synthetic take is named synthetic in the record, and the record says a synthetic win is weaker evidence (plan
+  Risks). A synthetic take not labelled as such is a **finding**.
+- The mid-size control is a #1097 take. Its reported width is about 0.087, or whatever the #1097 record gives.
+cleanup: none.
+metrics: none.
+
+### C-F822 — #1347's arms are full-frame clips of their take, with its frames, fps and soundtrack
+pending: #1347
+source: tester, spec for #1347 from #1320's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads outputs). Strong ref2va is the arm most likely to restage the face or go wrong at the paste (plan
+Risks). This checks the evidence is shaped like a repair before anyone compares faces.
+For every succeeded arm C-F819 lists (the reused control included), `get_job` for its final output, then
+`get_gallery_metadata` on that output and on the arm's take. Then `assess_output` on each output.
+expected:
+- Each output has the take's frame size, `frame_count` and `fps` (within ±0.01), and has an audio track. A cropped,
+  face-only, shorter or silent output is a **finding**: the arm skipped the paste or dropped the hold.
+- `assess_output` shows no seam, dead-air or level-step finding on an arm that it doesn't also show on the take. A
+  finding only on the ref2va arms is reported as an observation in the record's arm. If it is missing there, it is a
+  **finding**.
+- `job.warnings` and `get_job_events` show no warning on a ref2va arm that the t2va arm on the same take lacks,
+  unless the record quotes it.
+cleanup: none.
+metrics: none.
+
+### C-F823 — #1347's results give each arm its wall time, face SSIM and face-grid verdict, and a gate *proposal* that cites the grids
+pending: #1347
+source: tester, spec for #1347 from #1320's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read the results comment, then `get_job` on each arm C-F819 lists. Resolve each grid the record cites: if it is
+a `compare_outputs` job output, use `get_job` and then `get_output_image`; if it is an asset, use
+`get_gallery_metadata` and then `assess_output` (`get_output_image` refuses `asset:`, #445).
+expected:
+- **Per arm, all three numbers:** wall time, face SSIM against the source, and a face-grid verdict covering identity
+  against the cast picture, mouth/sync, and texture popping. A missing field on any arm is a **finding**.
+- **Wall time:** each arm's figure matches its job's `finished_at − started_at` to the minute. The reused control may
+  quote its #1097 time, if the record says so. The record gives the ref2va-to-t2va time ratio on each take, or enough
+  to compute it (the plan expects about 4x).
+- **SSIM:** the record presents it as "for the record only", not as the gate's basis. SSIM can't be reproduced over
+  MCP, so this checks only presence and framing.
+- **Grids:** every grid the record cites resolves and shows the arms of one take side by side, labelled or ordered
+  as the record says. There is at least one grid for the sub-0.05 take holding all three of its arms. A cited grid
+  that doesn't resolve is a **finding**.
+- **Gate:** exactly one gate call, written as a **proposal** for Don's ruling (Q2): pass, meaning ref2va at 0.8 or
+  0.9 is clearly better than t2va 0.6 on the sub-0.05 face (a recognisable face of the cast member where t2va leaves
+  a smear, no frame distortion, mouth sync as good), or stop. It names the winning strength if it proposes a pass,
+  and cites the grid(s) it rests on by reference. It is a **finding** if:
+  - the gate rests on SSIM alone;
+  - a proposed pass names no strength;
+  - the session treats its own call as the ruling: stage B (`minimax/face-repair-ref`) filed or built before Don
+    rules, or the parent handed on as if the gate were decided;
+  - the gate claims more than the arms can show, such as per-frame strength or a ruling on the narrated take (both
+    non-goals).
+- **No code shipped:** `list_workflows(shape="shot")` has no `face-repair-ref` entry, and
+  `get_workflow("templates/minimax/face-repair", variables_only=true)` still reads `refine_strength` 0.6,
+  `gate_full` 0.2, `gate_zero` 0.3, `seed` 1092, with no `subject` variable. A change to either is a **finding**:
+  stage A has no deploy.
+The tester doesn't make the gate call. The `docs/proposals/` section the stage owes is for a docs reviewer.
+cleanup: none (the grids are Don's evidence).
+metrics: none.
+
+### C-F824 — `crop_face_track` exposes `select` with five values, default `largest`, and the tasks guide documents it and the lost state
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Free and read-only.
+1. `get_task("crop_face_track")`.
+2. `get_guide("tasks")` (the index), then the section that documents `crop_face_track`.
+expected:
+- Step 1 has a parameter `select`, default `"largest"`, whose `choices` are exactly `largest`, `centre`,
+  `left`, `right` and `confident` (in any order). There is no `reference` choice (cut by the plan) and no
+  argument for the pick-up rules (they are constants). Every other parameter is unchanged: `clip`,
+  `crop_size`, `padding`, `gate_full`, `gate_zero`, `min_confidence`, `modulus`, `remainder`, `multiple`,
+  `min_frames`, `max_frames`, `fps`, `detector_repo`, `detector_file`, `device`, with their defaults as
+  before (512, 0.6, 0.06, 0.12, 0.6, 8, 1, 32).
+- Step 2's section names `select` and its five values, says the rule is applied when a track starts
+  (frame 0, each recorded shot start, each content cut), says what a lost track does (strength 0, source
+  pixels kept, no move to another face) and when it is picked up again (near where it was lost, or a lone
+  face in a single-face segment), and names the record's `select` and `lost` keys. Every argument it names
+  exists in step 1.
+It is a **finding** if `select` is missing, has another default or another set of values, if `reference`
+is accepted, or if the guide doesn't document `select` or the lost state.
+cleanup: none.
+metrics: none.
+
+### C-F825 — `select` picks by size and side on a two-person clip, the default is `largest`, and the track stays on the picked face
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+**The select build.** CPU tasks only (confirm each call shape with `get_task` first). C-F826–C-F833
+reuse it; each case puts only the steps it needs into its own workflow, and refers to them by
+`previous_result:`. Panels are 1024×1024 stills, all from `ingredients_grid` with `"width": 1024,
+"height": 1024, "fit": "contain", "background": "white"`:
+- `p_big`: `{"images": ["asset:qa-cast/priya-portrait.jpg"], "gap": 8}` (Priya, filling the panel).
+- `h_small`: `{"images": ["asset:qa-cast/hal-portrait.jpg"], "gap": 256}` (Hal, inset at about half
+  size: `gap` is kept clear of the canvas edge).
+- `p_blur`: `resize_resample` `{"image": "asset:qa-cast/priya-portrait.jpg", "resolution": 64}`, then
+  `ingredients_grid` on it with `"gap": 8` (Priya, same size as `p_big`, visibly degraded).
+- `empty`: `qr_code` `{"qr_code_contents": "dw-select-empty", "width": 1024, "height": 1024}` (no face).
+
+Frames are `ingredients_grid` `{"images": [<panels>], "width": 960, "height": 544, "layout": "rows",
+"fit": "contain", "gap": 8, "background": "white"}`, each turned into a clip by `loop_frames`
+`{"video": "previous_result:<frame>", "num_frames": 48}`:
+- **DUO** = [`p_big`, `h_small`]: big Priya left, small Hal right.
+- **OUD** = [`h_small`, `p_big`]: small Hal left, big Priya right.
+- **TRIO** = [`p_big`, `h_small`, `p_big`]: Hal in the middle.
+- **BLURPAIR** = [`p_blur`, `p_big`]: degraded Priya left, sharp Priya right, same size.
+- **SOLO_L** = [`p_big`, `empty`], **SOLO_R** = [`empty`, `p_big`], **SOLO_H** = [`empty`, `h_small`],
+  **EMPTY2** = [`empty`, `empty`].
+
+Every `crop_face_track` step in these cases passes `"gate_full": 0.5, "gate_zero": 0.6`, so a tracked face
+has strength 1 and only a lost or faceless frame has strength 0, and saves its `track` as JSON (as C-F192
+does). "Left" means a box centre x < 480, "right" x > 480; on TRIO, "middle" means 320 < x < 640. Setup
+checks, not findings: if DUO's `largest` box area is not at least 1.5× its `right` box area, rebuild
+`h_small` with `"gap": 320`; if a positional assertion fails, look at the crops with `get_output_frames` to
+rule out a build fault before calling it.
+
+**This case.** One workflow (`id: "qa-c-f825"`) building DUO and OUD, then `crop_face_track` on each with
+`select` = `largest`, `left`, `right`, and with `select` left out (8 crop steps). Run it
+(`acknowledged_cost` bound from `validate_workflow`, `wait_seconds=55`); read each track with
+`get_output_text`, and `get_job` once.
+expected:
+- All steps succeed, each track with 48 entries.
+- DUO: `largest` → left (Priya), `left` → left, `right` → right (Hal). OUD: `largest` → right (Priya),
+  `left` → left (Hal), `right` → right. Read from `frames[0].box` (or the first entry's box).
+- With `select` left out, every box equals the `largest` step's on the same clip, and the record says
+  `"select": "largest"`. Each other record names its own `select` value.
+- In every track, every frame's box is on the same face as frame 0 (a looped still: boxes vary by a few
+  pixels at most) and every strength is 1. `lost` is empty (`[]`); if the key is absent rather than empty
+  when nothing was lost, note it, and check the guide section from C-F824 allows it.
+- `get_job` shows the record (`select`, `lost`) for the crop steps.
+It is a **finding** if any rule picks the other face, if omitting `select` differs from `largest` or the
+record doesn't say `largest`, if a box moves to the other face mid-clip, or if a range is reported lost
+on a clip where both faces stay.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F826 — `centre` picks the middle face, and on a one-face clip every `select` value tracks the same face
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Build TRIO and SOLO_L per C-F825's select build. One workflow (`id: "qa-c-f826"`):
+- (a) TRIO with `select` = `centre`, `largest`, `left`, `right`.
+- (b) SOLO_L with each of `largest`, `centre`, `left`, `right`, `confident`.
+expected:
+- All steps succeed.
+- (a) `centre` → middle (Hal, though his face is the smallest). `largest` → one of the outer Priyas (left
+  or right, not middle). `left` → the left Priya, `right` → the right Priya.
+- (b) All five tracks give the same box on every frame (within a pixel), strength 1 throughout, an empty
+  `lost`, and each record names its own `select`. One face means the rule can't change anything (the
+  plan's "single-face clips are unaffected").
+It is a **finding** if `centre` picks an outer face, or if any rule gives a different track on the
+one-face clip.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F827 — `confident` picks the higher-scoring face, not the larger or the leftmost
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Build BLURPAIR per C-F825's select build. The two faces are the same size; the degraded one on the left
+scores lower. One workflow (`id: "qa-c-f827"`): `crop_face_track` on BLURPAIR with `select` =
+`confident`, `left` and `right`, each with `"min_confidence": 0.3` so the degraded face is still
+detected.
+expected:
+- All steps succeed.
+- `left` → left (the degraded face). This proves both faces are detected; if it gives the right face,
+  the degraded face wasn't found: rebuild `p_blur` at `"resolution": 128` and rerun (setup, not a finding).
+- `confident` → right (the sharp face), on every frame, and the record says `"select": "confident"`.
+- If the track entries carry a detection score, the picked face's score is the higher of the two.
+It is a **finding** if `confident` picks the degraded face once both are shown to be detected.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F828 — a bad `select` is refused by the free pre-flight, naming the value and the five valid ones
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with `clip:
+"asset:qa-cast/ep3-shot1-incident.mp4"` plus `select` as given. Nothing runs.
+- (a) accepted: `"largest"`, `"centre"`, `"left"`, `"right"`, `"confident"`, and `select` left out.
+- (b) refused: `"biggest"`, `"Largest"` (case), `" left"` (leading space), `""`, `"center"` (US
+  spelling, not a listed value), `"reference"` (the cut mode), `3`, `true`.
+- (c) through a variable: the workflow declares `"variables": {"sel": "biggest"}` and passes `select:
+  "variable:sel"`.
+
+For every refused arm, also call `run_workflow(..., acknowledged_cost=true)`.
+expected:
+- Every (a) arm is `valid: true`, with no warning about `select`.
+- Every (b) arm is `valid: false` at `steps[…].task.arguments.select`, the message naming the bad value
+  and listing all five valid values. `run_workflow` queues no job.
+- (c) is refused at validate the same way. If validate defers it as a reference, the run must fail at the
+  crop step before any detection, with the same message (C-F829's expectation); say which happened.
+It is a **finding** if a (b) value validates, if a refusal comes only at run time for a literal value, if
+a message omits the bad value or the valid list, or if `"reference"` is accepted.
+cleanup: `delete_output(job_id=…)` for any job (none should exist).
+metrics: none.
+
+### C-F829 — a `select` that only resolves at run time is refused by the run-time check, naming it
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+The validate-time check skips deferred references, so the run-time check (`face_track_problems`) must
+catch them. One workflow (`id: "qa-c-f829"`):
+- `sel`: `compose_text` `{"parts": ["big", "gest"], "separator": ""}` (gives `"biggest"` at run time).
+- `crop`: `crop_face_track` `{"clip": "asset:qa-cast/ep3-shot1-incident.mp4", "select":
+  "previous_result:sel"}`.
+A control workflow (`id: "qa-c-f829-ok"`) is the same with `"parts": ["lar", "gest"]`.
+1. `validate_workflow` on both.
+2. Run both (`acknowledged_cost` bound, `wait_seconds=55`), then `get_job`.
+expected:
+- Step 1: both are `valid: true` (the value is deferred); a warning is fine.
+- The bad run **fails** at `crop`, its error naming `biggest` and the five valid values. The control
+  succeeds, and its record says `"select": "largest"`.
+- `get_health` (or any read call) answers after the failure.
+It is a **finding** if the bad run succeeds, falls back silently to a default, or fails with a message
+that doesn't name the value.
+cleanup: `delete_output(job_id=…)` for both jobs.
+metrics: none.
+
+### C-F830 — the subject leaves while another face stays: the track goes lost at strength 0 and never moves to the other face
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Build DUO and SOLO_H per C-F825's select build, then in the same workflow (`id: "qa-c-f830"`):
+- `leave`: `dissolve_videos` `{"videos": ["previous_result:<DUO clip>", "previous_result:<SOLO_H clip>"],
+  "dissolve_frames": 24}` (Priya fades out, Hal stays put).
+- `leave_f`: `video_frames` `{"video": "previous_result:leave"}` (frames only, no recorded shots, so the
+  only reset is one the tracker finds itself).
+- `crop_dflt`: `crop_face_track` on `previous_result:leave_f`, `select` left out (starts on Priya).
+- `crop_hal`: the same with `"select": "right"` (starts on Hal).
+Read both tracks, `get_job`, and `get_job_events` for the crop steps. Let N be the track length.
+expected:
+- Both steps succeed, with N entries each (72 if the dissolve overlaps its 24 frames).
+- `crop_dflt`: frame 0's box is left (Priya). Exactly one `lost` range; its `start` falls inside or just
+  after the dissolve and its `end` is N − 1 (she never returns). Every frame in the range has `box`
+  null (or absent), strength 0 and `state` `"lost"`. **No frame anywhere in the track has a box on the
+  right** (Hal). `resets` holds a `{"frame": <range start>, "reason": "lost"}` entry; the record says
+  `"select": "largest"`. The job's events carry a log line with the lost-frame count, equal to the
+  range's length.
+- `crop_hal`: every frame has Hal's box (right), strength 1, an empty `lost`, and no `lost` reset. The
+  other face leaving doesn't disturb the face being tracked.
+- Setup, not a finding: if either track reports a content-cut reset inside the dissolve, rebuild with
+  `"dissolve_frames": 48` and rerun, and say so.
+It is a **finding** if any frame after the loss carries Hal's box in `crop_dflt`, if a lost frame has
+strength above 0, if `lost` is missing or its range is wrong, or if `crop_hal` loses its face.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F831 — the subject comes back where they left, with another face present: the track picks them up again and only them
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Pick-up rule 1 (near the loss). Build DUO and SOLO_H per C-F825's select build. One workflow (`id:
+"qa-c-f831"`):
+- `back`: `dissolve_videos` `{"videos": [<DUO clip>, <SOLO_H clip>, <DUO clip>], "dissolve_frames": 24}`
+  (Priya fades out, is gone, and fades back in at the same place; Hal is there throughout).
+- `back_f`: `video_frames` on it. `crop`: `crop_face_track` on `previous_result:back_f`, `select` left
+  out.
+expected:
+- The step succeeds. Frame 0's box is left (Priya).
+- Exactly one `lost` range, wholly inside the middle part of the clip: it starts after frame 0 and ends
+  before the last 24 frames (the final DUO stretch, after the second dissolve). After it, boxes are left
+  (Priya again) at strength 1 to the last frame.
+- **No frame has a box on the right** (Hal), before, during or after the loss.
+- `resets` holds the `lost` entry and no content-cut entry (setup rule as in C-F830 if one appears).
+It is a **finding** if Priya isn't picked up again when she returns to her place, if any frame tracks
+Hal, or if more than one lost range is reported.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F832 — on a one-person clip the subject leaves and comes back across the frame, and tracking resumes on them
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Pick-up rule 2 (a lone face in a single-face segment). Build SOLO_L, EMPTY2 and SOLO_R per C-F825's
+select build. One workflow (`id: "qa-c-f832"`):
+- `cross`: `dissolve_videos` `{"videos": [<SOLO_L clip>, <EMPTY2 clip>, <SOLO_R clip>], "dissolve_frames":
+  24}` (Priya fades out on the left; nobody; she fades in on the right, far more than 3 face widths
+  away). No frame ever holds two faces.
+- `cross_f`: `video_frames` on it. `crop`: `crop_face_track` on `previous_result:cross_f`, `select` left
+  out.
+expected:
+- The step succeeds. Frame 0's box is left.
+- Exactly one `lost` range in the middle. After it, boxes are **right** (Priya in her new place), at
+  strength 1, through the last frame; the last 24 frames all have a box.
+- `resets` holds the `lost` entry and no content-cut or shot entry (setup rule as in C-F830). A pick-up
+  that only happened because a cut reset restarted the track doesn't count as passing.
+It is a **finding** if the track stays lost to the end, or picks her up only through a cut reset.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F833 — `select` applies again at every shot start: a lost track ends at the next shot, and each shot gets its own pick
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Build DUO, OUD and SOLO_H per C-F825's select build. One workflow (`id: "qa-c-f833"`):
+- `leave_f`: as C-F830 (DUO dissolving into SOLO_H, through `video_frames`).
+- `two_shot`: `concat_videos` `{"videos": ["previous_result:leave_f", <DUO clip>], "fps": 24}` (a
+  recorded shot starts at `leave_f`'s length, L).
+- `swap`: `concat_videos` `{"videos": [<DUO clip>, <OUD clip>], "fps": 24}` (shots at 0 and 48).
+- `crop_a`: `crop_face_track` on `previous_result:two_shot`, `select` left out.
+- `crop_b`: `crop_face_track` on `previous_result:swap`, `"select": "left"`.
+Confirm the recorded shots with `get_gallery_metadata` on the concat outputs if they are saved, or from
+the `resets` reasons.
+expected:
+- `crop_a`: one `lost` range, whose `end` is L − 1 (the lost state ends at the shot start, not before:
+  Hal alone is never taken). From frame L, boxes are left (Priya, `largest` applied again) at strength 1.
+  `resets` has the `lost` entry and a shot-boundary entry at L.
+- `crop_b`: frames 0–47 are left = Priya (DUO); frames 48 onward are left = **Hal** (OUD). `lost` is
+  empty. The rule is re-applied, not the old face carried over the boundary.
+It is a **finding** if the lost range runs past the shot start or ends before it on Hal, or if the
+second shot of `swap` keeps Priya.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F834 — both face-repair templates carry a `select` variable, default `largest`, and validate with and without it
+pending: #1348
+source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
+Free (validate only). For each of `templates/minimax/face-repair` and `templates/ltx2/face-repair`:
+1. `get_workflow(<name>, variables_only=true)`, then `get_workflow(<name>)` to find the crop step.
+2. `validate_workflow` with `arguments={"source_video": "asset:qa-cast/ep3-shot1-incident.mp4"}`
+   (the baseline).
+3. The same plus `"select"` = each of `"largest"`, `"centre"`, `"left"`, `"right"`, `"confident"`.
+4. The same plus `"select": "biggest"`.
+expected:
+- Step 1: the variables include `select` with default `"largest"`, and the `crop_face_track` step passes
+  `select: "variable:select"`. Every other variable keeps its value (minimax: `gate_full` 0.2, `gate_zero`
+  0.3, `seed` 1092; ltx2: `gate_full` 0.03, `gate_zero` 0.06, `seed` 42).
+- Steps 2 and 3 give the same validity as each other. Any error present is one the baseline also has, and
+  none names `select`. The quote doesn't change with `select`.
+- Step 4 is `valid: false`, naming `biggest` and the five values, at the crop step's `select`.
+It is a **finding** if a template lacks the variable, defaults it to anything but `largest`, doesn't pass
+it to the crop step, or validates `biggest`.
+cleanup: none.
+metrics: none.
+
+### C-F835 — `segment_looks` gives one entry per shot, and seam differences plus in-segment changes add up to the end-to-end change
+pending: #1349
+source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
+#1324 stage A adds an answer-level `segment_looks` list to `analyze_seams`, one entry per shot:
+`{shot, between_frames: [first, last], first: {lightness, contrast, saturation, detail}, last: {…}}`.
+`first` is the mean of the four whole-frame looks over the first 1 s (`round(fps)` frames) of the shot's
+own new frames, after any `overlap_frames` or seam fade; `last` is the mean over the last 1 s before the
+next shot starts (the last 1 s of the take for the final shot). A window is clipped to its segment. It is
+a measure only: no rule reads it. With endpoint windows the parts telescope exactly: per measure,
+Σ(seam differences) + Σ(in-segment changes) = last segment's `last` − first segment's `first`.
+C-F836–C-F839 refer to this case's definitions. CPU only, no model.
+
+**Workflow A** (one inline `run_workflow` in this suite's workspace, id `qa-c-f835`; `validate_workflow`
+first and bind its `acknowledged_cost`; `wait_seconds=55`, then `wait_for_job` if `still_running`). `I` is
+`asset:qa-cast/ep3-shot1-incident.mp4` (124 frames, 24 fps, colourful).
+1. `sat`: `grade` `{"media": I, "saturation": 1.6}`, result `{"content_type": "video/mp4", "save": false}`.
+2. `alt4`: `concat_videos` `{"videos": [I, "previous_result:sat", I, "previous_result:sat"], "fps": 24}`,
+   result `{"content_type": "video/mp4", "subfolder": "final"}`: 496 frames, shots at 0, 124, 248, 372.
+3. `alt4_mem`: `analyze_seams` `{"video": "previous_result:alt4"}`, result `{"content_type":
+   "application/json", "subfolder": "final"}` (the in-memory path).
+
+**Steps:** `assess_output(name=<alt4 file>, probe="analyze_seams")` (use the detail form
+`assess_output` documents if the default leaves out `segment_looks` or the seam records), then
+`get_output_text` on `alt4_mem`. For each measure m and each seam k (between entries k and k+1), write
+d_k = entry[k+1].first.m − entry[k].last.m and s_k = entry[k].last.m − entry[k].first.m.
+
+expected:
+- Job `succeeded`. The file body has `shots_source: "manifest"` and 3 seams, at frames 124, 248, 372.
+- **Shape:** `segment_looks` has exactly 4 entries, in shot order (each `shot` names or indexes the shot
+  at that position in `media.shots`). Each has `first` and `last`, each an object with `lightness`,
+  `contrast`, `saturation`, `detail`, all finite numbers. `between_frames` is two integers, first < last,
+  both inside that shot's `[start_frame, start_frame + num_frames]`.
+- **Telescoping**, for every one of the four measures: Σ d_k + Σ s_k equals entry[3].last.m −
+  entry[0].first.m to rounding (within 0.1 in total).
+- **Direction at the seams:** d_1 and d_3 on saturation are > 0 and d_2 is < 0 (into, out of, into the
+  graded copy), and each has the same sign as that seam's existing `saturation_step`.
+- **Same frames, same numbers:** entries 0 and 2 (both `I` ungraded) agree on every value within 1.0;
+  entries 1 and 3 likewise. Entry 1's `first.saturation` exceeds entry 0's by at least 3.
+- **Existing fields unchanged:** every seam still carries `jump_ratio` and C-F538's six look fields of
+  C-F538's types. No `findings[].rule` and no name in `rules_applied`/`rules_skipped` outside
+  `seam_frame_jump`, `seam_level_step`, `seam_click`, `seam_hole`; nothing names a segment, a look or a
+  split.
+- `alt4_mem` has a 4-entry `segment_looks` whose values agree with the file's within 2.0 (the
+  difference is the mp4 encode), with the same signs of d_k on saturation.
+It is a **finding** if the list's length or order is wrong, a value is missing, null or non-finite, the
+sums don't telescope, a seam difference's sign disagrees with its `saturation_step`, the repeated
+segments disagree, or a new rule or finding appears.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F836 — on an assembled episode with dissolves, segments that open on an overlap are measured after it, and the parts still add up
+pending: #1349
+source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
+`asset:qa-cast/ep53-episode.mp4` is 956 frames at 24 fps, eight manifest shots. Shots 6, 7 and 8 (start
+608, 720, 832) carry `overlap_frames: 12`. `asset:qa-cast/ep54-episode.mp4` is the same picture scored.
+CPU only, no job.
+1. `assess_output(name="asset:qa-cast/ep53-episode.mp4", probe="analyze_seams")` (detail form if needed).
+2. Note the time (`date`), then the same call on `asset:qa-cast/ep54-episode.mp4`; note the time after.
+expected:
+- Step 1: `shots_source: "manifest"`, 7 seams, `segment_looks` with 8 entries in shot order, every value
+  a finite number (C-F835's shape).
+- For shots 6–8, `between_frames[0]` ≥ that shot's `start_frame + 12`: the first window starts after
+  the dissolve, not inside it. For shots 1–5, `between_frames[0]` ≥ that shot's `start_frame`. For every
+  entry but the last, `between_frames[1]` ≤ the next shot's `start_frame`; the last entry's is ≤ 956.
+- C-F835's telescoping holds for all four measures (within 0.1 in total).
+- **Direction:** of the seams whose `saturation_step` has |value| ≥ 3, the sign of d_k on saturation
+  agrees with `saturation_step` at all but at most one (the windows differ, 1 s against 4 frames, so a
+  single seam may disagree; the plan promises "nearly every").
+- Step 2 returns in under 30 s and its `segment_looks` agrees with step 1's entry for entry within 2.0
+  (same picture, re-encoded): the soundtrack doesn't move it.
+It is a **finding** if an overlapped shot's first window starts inside its overlap, a window crosses into
+the next shot, the sums don't telescope, two or more clear seams disagree in sign, or step 2 is slow or
+disagrees.
+cleanup: none.
+metrics: none.
+
+### C-F837 — `segment_looks` is `[]` on a single shot, a still and an audio-only file, and the probe still succeeds
+pending: #1349
+source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
+The plan: media with no picture, or fewer than 2 shots, gets `segment_looks: []`. CPU only, no job.
+1. `assess_output(name="asset:qa-cast/ep3-shot1-incident.mp4", probe="analyze_seams")` (one shot).
+2. `assess_output(name="asset:qa-cast/priya-portrait.jpg", probe="analyze_seams")` (a still).
+3. `assess_output(name="asset:uploads/qa-cast/room-bed.wav", probe="analyze_seams")` (audio only).
+expected:
+- Each call succeeds, with no error, and its body has `segment_looks: []` (present and empty, not null and
+  not left out). If the probe today refuses a still outright, as an input it has never accepted, step 2's
+  refusal must be that same message and never a crash from the new field; say which in the report.
+- Step 1 still has `seams: []`. Step 3 is shotless and seamless as in C-F542 step 1.
+It is a **finding** if any body has a non-empty `segment_looks`, lacks the key where the probe answers,
+or the call errors where it answered before the stage.
+cleanup: none.
+metrics: none.
+
+### C-F838 — a short segment is split in half and kept inside itself; a segment that is all overlap gets nulls; the `shots` argument path gets the field too
+pending: #1349
+source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
+The plan: a window is clipped to its segment, a segment shorter than two windows splits its frames in
+half, and a segment with no new frames gets `first`/`last: null`. CPU only, no model.
+
+**Workflow B** (inline, id `qa-c-f838`, validated first, `wait_seconds=55`). `I` as in C-F835. Confirm
+`trim_video`'s argument names with `get_task("trim_video")` first.
+1. `grey`: `grade` `{"media": I, "saturation": 0}`, `save: false`.
+2. `short`: `trim_video` keeping the first 30 frames of `previous_result:grey` (30 < 2 × 24), `save:
+   false`.
+3. `sandwich`: `concat_videos` `{"videos": [I, "previous_result:short", I], "fps": 24}`, result
+   `{"content_type": "video/mp4", "subfolder": "final"}`: 278 frames, shots at 0, 124, 154.
+4. `arg_null`: `analyze_seams` on `previous_result:sandwich` with `"shots": [{"name": "a",
+   "start_frame": 0, "num_frames": 124}, {"name": "b", "start_frame": 124, "num_frames": 30,
+   "overlap_frames": 30}, {"name": "c", "start_frame": 154, "num_frames": 124}]`.
+5. `arg_one`: `analyze_seams` on `previous_result:sandwich` with one shot `{"name": "all",
+   "start_frame": 0, "num_frames": 278}`.
+6. `arg_two`: `analyze_seams` on `previous_result:sandwich` with `[{"name": "a", "start_frame": 0,
+   "num_frames": 139}, {"name": "b", "start_frame": 139, "num_frames": 139}]`.
+Steps 4–6 have result `{"content_type": "application/json", "subfolder": "final"}`. If the `shots`
+argument refuses `overlap_frames` today, drop step 4 and say so in the report (not a finding against
+this stage).
+
+**Steps:** `assess_output(name=<sandwich file>, probe="analyze_seams")`, then `get_output_text` on
+each of steps 4–6.
+expected:
+- `sandwich`: 3 entries. The middle (grey) entry's `between_frames` lie inside [124, 154]; its `first`
+  and `last` saturation are both ≤ 1.5 (grey: neither window reached into the colourful neighbours);
+  its `first` and `last` are numbers, not null. The outer entries' saturations are clearly above it
+  (at least 3 higher). C-F835's telescoping holds.
+- `arg_null`: `shots_source: "argument"`, 3 entries, and entry b's `first` and `last` are both
+  `null`; a and c carry numbers. No error, and no `NaN`/`Infinity` anywhere.
+- `arg_one`: `segment_looks: []` (fewer than 2 shots).
+- `arg_two`: `shots_source: "argument"`, 2 entries whose `between_frames` respect the argument's
+  boundary at 139 (the first ends ≤ 139, the second starts ≥ 139), not the manifest's 124/154.
+It is a **finding** if the short segment's windows read the neighbours' colour, the all-overlap segment
+gets numbers or errors, a single argument shot gets entries, or the argument shots are ignored for the
+manifest's.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F839 — `segment_looks` adds no surface: same parameters, same probes, documented as a measure
+pending: #1349
+source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
+The plan adds no tool, parameter, route or syntax, and no rule reads the field. Read-only, no job.
+1. `get_task("analyze_seams")`.
+2. `list_tasks` (compact form).
+3. `get_guide("tasks")`: find the `analyze_seams` section in the index, then read it.
+expected:
+- Step 1: the parameters are exactly `video`, `shots`, `device`, as before the stage.
+- Step 2: the assessment probes are those C-F544 lists (plus any another verified issue added); no new
+  probe for segments, looks or a split.
+- Step 3: the entry describes `segment_looks`: one entry per shot, `first`/`last` over 1 s windows after
+  any overlap or fade, `[]` for fewer than 2 shots or no picture, and that it is a measure that no rule
+  or finding reads. No threshold for it is presented as a rule.
+It is a **finding** if a parameter or probe was added, or the guide lacks the field or presents it as a
+rule.
+cleanup: none.
+metrics: none.
+
 ## Performance
