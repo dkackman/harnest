@@ -19558,7 +19558,6 @@ cleanup: `delete_output(job_id=...)` for all three runs; `delete_workflow` the p
 metrics: none.
 
 ### C-F763 — `templates/narration-retime` lists `boundary_slack_seconds` with the task's own default
-pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_workflow("templates/narration-retime", variables_only=true)`. Also call `get_task` on the task the template's
 retime step runs (`get_workflow("templates/narration-retime")` names it; today's name is expected to be
@@ -19591,7 +19590,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F765 — a `narration-retime` run with `boundary_slack_seconds` set carries the value to its task step
-pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Short GPU runs (the template's observed cold figure is about 0.5 min). In `workspace="regression-complete"`, setup: run a
 one-step `transcribe_audio` workflow on `asset:qa-cast/priya-voice.wav` and take its text as the script S. Then run
@@ -19608,7 +19606,6 @@ cleanup: `delete_output(job_id=...)` for the transcribe run and both retime runs
 metrics: none.
 
 ### C-F766 — the guide, the long-form skill and narrated-take's description state the multi-passage recipe with tools that exist
-pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read `get_guide("workflows", section="A narrated long take")`; the loaded `dw:long-form` skill's SKILL.md and its
 `references/run-and-repair.md` (*A narrated take*), `references/levers.md` and `references/audio.md`; and
@@ -19634,7 +19631,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F767 — an authored `concat_videos` join of two sound clips as `output:` references, at `trim_frames: 0` and `match_levels: "lufs"`, sums their lengths and evens their loudness
-pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Task-only, CPU. Fixtures: `asset:qa-cast/ep3-shot1-incident.mp4` and `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames
 each, 960x544, 32 kHz stereo, about 11 dB apart). All in `workspace="regression-complete"`.
@@ -19658,7 +19654,6 @@ cleanup: `delete_output(job_id=...)` for both setup runs, the join, the control 
 metrics: none.
 
 ### C-F768 — a `concat_videos` join of clips with different frame sizes is refused, naming the size mismatch
-pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. In `workspace="regression-complete"`, build C-F767's join step, but with
 `videos: ["asset:qa-cast/ep3-shot1-incident.mp4", "asset:qa-fit/src-640x480-50f.mp4"]` (960x544 against 640x480; C-F238's
