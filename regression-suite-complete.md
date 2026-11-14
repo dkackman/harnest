@@ -20076,7 +20076,6 @@ cleanup: `delete_output(job_id=...)` on mini-ai.
 metrics: none.
 
 ### C-F797 — an H3 template's quote still scales by `num_inference_steps` after step-list pass counting lands
-pending: #1342
 source: tester, spec for #1342 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**, workspace `regression-complete`. Stage A adds a generic pass-count helper. Without a
 `denoising_step_list` on the pipeline, it must leave every existing count alone. Calls:
@@ -20101,7 +20100,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F798 — a running H3 job still reports `num_inference_steps − 1` denoise steps after stage A
-pending: #1342
 source: tester, spec for #1342 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 GPU, ~10 min on lem, workspace `regression-complete`. Pinned before stage A: the defaults run of
 `templates/minimax/reference-to-video` (`num_inference_steps: 9`), job `b4b5959424d3`, emitted eight
@@ -20121,7 +20119,6 @@ cleanup: `delete_output(job_id=...)` for both.
 metrics: none.
 
 ### C-F799 — a non-H3 pipeline's progress count is unchanged by stage A
-pending: #1342
 source: tester, spec for #1342 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 GPU, ~2 min. Stage A rewires the progress count for every pipeline, not only H3. Before running, find a
 `templates/flux3/text-to-image` job on lem that finished before stage A's deploy (`list_jobs`, filtered by that
@@ -20665,7 +20662,6 @@ cleanup: none (the grids are Don's evidence).
 metrics: none.
 
 ### C-F824 — `crop_face_track` exposes `select` with five values, default `largest`, and the tasks guide documents it and the lost state
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Free and read-only.
 1. `get_task("crop_face_track")`.
@@ -20688,7 +20684,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F825 — `select` picks by size and side on a two-person clip, the default is `largest`, and the track stays on the picked face
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 **The select build.** CPU tasks only (confirm each call shape with `get_task` first). C-F826–C-F833
 reuse it; each case puts only the steps it needs into its own workflow, and refers to them by
@@ -20739,7 +20734,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F826 — `centre` picks the middle face, and on a one-face clip every `select` value tracks the same face
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Build TRIO and SOLO_L per C-F825's select build. One workflow (`id: "qa-c-f826"`):
 - (a) TRIO with `select` = `centre`, `largest`, `left`, `right`.
@@ -20757,7 +20751,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F827 — `confident` picks the higher-scoring face, not the larger or the leftmost
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Build BLURPAIR per C-F825's select build. The two faces are the same size; the degraded one on the left
 scores lower. One workflow (`id: "qa-c-f827"`): `crop_face_track` on BLURPAIR with `select` =
@@ -20774,7 +20767,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F828 — a bad `select` is refused by the free pre-flight, naming the value and the five valid ones
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Each arm is `validate_workflow` on an inline one-step workflow: `crop_face_track` with `clip:
 "asset:qa-cast/ep3-shot1-incident.mp4"` plus `select` as given. Nothing runs.
@@ -20797,7 +20789,6 @@ cleanup: `delete_output(job_id=…)` for any job (none should exist).
 metrics: none.
 
 ### C-F829 — a `select` that only resolves at run time is refused by the run-time check, naming it
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 The validate-time check skips deferred references, so the run-time check (`face_track_problems`) must
 catch them. One workflow (`id: "qa-c-f829"`):
@@ -20818,7 +20809,6 @@ cleanup: `delete_output(job_id=…)` for both jobs.
 metrics: none.
 
 ### C-F830 — the subject leaves while another face stays: the track goes lost at strength 0 and never moves to the other face
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Build DUO and SOLO_H per C-F825's select build, then in the same workflow (`id: "qa-c-f830"`):
 - `leave`: `dissolve_videos` `{"videos": ["previous_result:<DUO clip>", "previous_result:<SOLO_H clip>"],
@@ -20846,7 +20836,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F831 — the subject comes back where they left, with another face present: the track picks them up again and only them
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Pick-up rule 1 (near the loss). Build DUO and SOLO_H per C-F825's select build. One workflow (`id:
 "qa-c-f831"`):
@@ -20867,7 +20856,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F832 — on a one-person clip the subject leaves and comes back across the frame, and tracking resumes on them
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Pick-up rule 2 (a lone face in a single-face segment). Build SOLO_L, EMPTY2 and SOLO_R per C-F825's
 select build. One workflow (`id: "qa-c-f832"`):
@@ -20887,7 +20875,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F833 — `select` applies again at every shot start: a lost track ends at the next shot, and each shot gets its own pick
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Build DUO, OUD and SOLO_H per C-F825's select build. One workflow (`id: "qa-c-f833"`):
 - `leave_f`: as C-F830 (DUO dissolving into SOLO_H, through `video_frames`).
@@ -20910,7 +20897,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F834 — both face-repair templates carry a `select` variable, default `largest`, and validate with and without it
-pending: #1348
 source: tester, spec for #1348 from #1321's plan v1 (claude-opus-5-5 via anthropic)
 Free (validate only). For each of `templates/minimax/face-repair` and `templates/ltx2/face-repair`:
 1. `get_workflow(<name>, variables_only=true)`, then `get_workflow(<name>)` to find the crop step.
@@ -20931,7 +20917,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F835 — `segment_looks` gives one entry per shot, and seam differences plus in-segment changes add up to the end-to-end change
-pending: #1349
 source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
 #1324 stage A adds an answer-level `segment_looks` list to `analyze_seams`, one entry per shot:
 `{shot, between_frames: [first, last], first: {lightness, contrast, saturation, detail}, last: {…}}`.
@@ -20981,7 +20966,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F836 — on an assembled episode with dissolves, segments that open on an overlap are measured after it, and the parts still add up
-pending: #1349
 source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
 `asset:qa-cast/ep53-episode.mp4` is 956 frames at 24 fps, eight manifest shots. Shots 6, 7 and 8 (start
 608, 720, 832) carry `overlap_frames: 12`. `asset:qa-cast/ep54-episode.mp4` is the same picture scored.
@@ -21007,7 +20991,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F837 — `segment_looks` is `[]` on a single shot, a still and an audio-only file, and the probe still succeeds
-pending: #1349
 source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
 The plan: media with no picture, or fewer than 2 shots, gets `segment_looks: []`. CPU only, no job.
 1. `assess_output(name="asset:qa-cast/ep3-shot1-incident.mp4", probe="analyze_seams")` (one shot).
@@ -21024,7 +21007,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F838 — a short segment is split in half and kept inside itself; a segment that is all overlap gets nulls; the `shots` argument path gets the field too
-pending: #1349
 source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
 The plan: a window is clipped to its segment, a segment shorter than two windows splits its frames in
 half, and a segment with no new frames gets `first`/`last: null`. CPU only, no model.
@@ -21066,7 +21048,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F839 — `segment_looks` adds no surface: same parameters, same probes, documented as a measure
-pending: #1349
 source: tester, spec for #1349 from #1324's plan v1 (claude-opus-5-5 via anthropic)
 The plan adds no tool, parameter, route or syntax, and no rule reads the field. Read-only, no job.
 1. `get_task("analyze_seams")`.
@@ -21362,6 +21343,27 @@ expected:
 - mini-ai still reports `0.43.0`, no commit. Moving mini-ai off 0.43.0 is a **finding**: it ends on the release the
   floor names.
 cleanup: none.
+metrics: none.
+
+### C-F851 — the free pre-flight refuses a face-track step's `result.content_type` other than `video/mp4`, and `video/mp4` still runs
+source: tester, verified in #1358 (claude-opus-5-5 via anthropic)
+CPU tasks only, workspace `regression-complete`. Pick any image asset with one face in it that the server can
+reach (e.g. `asset:uploads/cast/batman.jpg`). Base workflow: `clip` = `loop_frames` `{"video": {"media_type":
+"image", "location": "<that asset>"}, "num_frames": 9}`; `crop` = `crop_face_track` `{"clip":
+"previous_result:clip", "select": "largest", "gate_full": 0.5, "gate_zero": 0.6}` with a `result` block.
+- (a) `validate_workflow` with `crop`'s `result.content_type` = `"application/json"`, then `"image/png"`.
+- (b) `validate_workflow` with it = `"video/mp4"`, then `run_workflow` that, bound to the plan.
+- (c) `validate_workflow` with (b)'s `crop`, plus a `paste` step: `paste_face_track` `{"clip":
+  "previous_result:clip", "repaired": "previous_result:crop", "track": "previous_result:crop.track"}`, whose
+  `result.content_type` = `"application/json"`.
+expected:
+- (a) both `valid: false`, each with one error at `steps[1].result` naming `crop_face_track`, saying it
+  must be `video/mp4`, and naming the value it was given.
+- (b) `valid: true`. The job succeeds and its `crop` manifest holds a `-crops.mp4` and a `-track.json`.
+- (c) `valid: false` at `steps[2].result`, the same message naming `paste_face_track`.
+It is a **finding** if (a) or (c) validates, since the run would then fail only when saving (#1358: `AudioVideo
+is not JSON serializable`).
+cleanup: `delete_output(job_id=…)` for (b).
 metrics: none.
 
 ## Performance
