@@ -8988,4 +8988,161 @@ put to Don, or a template or skill changed in stage B.
 cleanup: none.
 metrics: none.
 
+### M-F319 — an inline MiniMax-H3 step with a literal `num_frames: 25` is refused at validate on ref2va, t2va and fl2va, at the step's own path
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` modular pipeline (`MiniMaxH3ModularPipeline`), workflows ref2va, t2va, fl2va.
+**Free**: validate only, nothing loads. Workspace `regression-model-specific`. Needs the shared
+`asset:qa-cast/hal-portrait.jpg` and `asset:qa-cast/priya-portrait.jpg`.
+Before #1364 all three workflows below validated `valid: true` with `num_frames: 25` (pinned 2026-11-14 on lem),
+and the run then failed after the model load (#1361, job `445dc323ca8c`). These base workflows are reused by
+M-F320 to M-F326:
+- **W_ref** (#1361's workflow, minus its quantization, which validate doesn't need):
+  `{"id":"spec1364","seed":42,"steps":[{"name":"shot","pipeline":{"configuration":{"component_type":"ModularPipeline","load_components":{"dtype":"torch.bfloat16"}},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":"ref2va"},"arguments":{"prompt":"subject_definitions:\n<Subject 1> is the man in <Picture 1>.\n\nscene: <Subject 1> nods. Static medium shot.","references":[{"reference_type":"diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference","from_file":"asset:qa-cast/hal-portrait.jpg"}],"num_frames":25,"width":960,"height":544,"num_inference_steps":8,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":"video/mp4","fps":24}}]}`
+- **W_t2va**: W_ref with `workflow: "t2va"`, no `references`, and `prompt: "A man sits at a kitchen table and nods. Static medium shot."`.
+- **W_fl2va**: W_ref with `workflow: "fl2va"`, no `references`, `"image": "asset:qa-cast/priya-portrait.jpg"` and
+  `prompt: "The woman turns toward the window. Static medium shot."`.
+Steps: `validate_workflow(workspace="regression-model-specific", workflow=W)` for each of W_ref, W_t2va, W_fl2va.
+expected, for each of the three:
+- `valid: false`, with an error whose `path` is `steps[0].pipeline.arguments.num_frames`, and no other error.
+- The message names the 5–15 s range (`5`/`5.0` and `15`/`15.0` seconds), 24 fps, the rounded count `39`, and the
+  nearest accepted counts `124` and `345`.
+It is a **finding** if any of the three validates clean, if the error is at another path (an `arguments.num_frames`
+path means a variable rule, not this check), or if the message omits the range, the rounded count or the accepted counts.
+cleanup: none (nothing is queued or written).
+metrics: none.
+
+### M-F320 — the H3 `num_frames` check refuses exactly what the pipeline refuses: 107, 346 and 360 out; 108, 120, 124, 130 and 345 in
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va. **Free**: validate only. Workspace `regression-model-specific`.
+The pipeline rounds a count up to the next `17n+5` and accepts 5–15 s at 24 fps, so on today's diffusers 107 (4.46 s)
+and 346 or 360 (both round to 362, 15.08 s) are refused. 108 and 120 round to 124, and 130 to 141; those run.
+The 120..360 in diffusers' own message is the raw range, not the accepted one (plan v1, "Corrections").
+Steps: `validate_workflow(workspace="regression-model-specific", workflow=W_ref)` (W_ref from M-F319) with
+`num_frames` set to each of 107, 346, 360, 108, 120, 124, 130, 345 in turn.
+expected:
+- 107, 346 and 360: `valid: false`, each with exactly one error, at `steps[0].pipeline.arguments.num_frames`. The
+  message gives the count it rounds to (107, 362, 362).
+- 108, 120, 124, 130 and 345: `valid: true`, with no error at all. 130 is not refused for being off the grid (a
+  warning that it becomes 141 is allowed, not required).
+It is a **finding** if an in-range count is refused or an out-of-range one validates clean.
+cleanup: none.
+metrics: none.
+
+### M-F321 — an inline H3 `width` or `height` that isn't a multiple of 32 is refused at its own path; each bad value gets its own error
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va and t2va. **Free**: validate only. Workspace `regression-model-specific`.
+M-F127 covers the templates' declared rule. This case covers inline JSON, which declares none.
+All calls are `validate_workflow(workspace="regression-model-specific", workflow=...)` on W_ref (M-F319) with
+`num_frames: 124` and the sizes below.
+expected:
+- `width: 950, height: 544` → `valid: false`, exactly one error, at `steps[0].pipeline.arguments.width`, naming 32.
+- `width: 960, height: 540` → exactly one error, at `steps[0].pipeline.arguments.height`, naming 32.
+- `width: 950, height: 540` → two errors, one at each path.
+- `width: 950, height: 544, num_frames: 25` → two errors, at `...arguments.width` and `...arguments.num_frames`.
+- `width: 960, height: 544` → `valid: true`, no errors. The same on W_t2va at `num_frames: 124`.
+- W_t2va with `width: 950` → the same single `width` error as on W_ref.
+It is a **finding** if an off-32 size validates clean, if 960×544 is refused, or if one bad value hides another's error.
+cleanup: none.
+metrics: none.
+
+### M-F322 — a catalog H3 template whose rule is declared is refused once, at `arguments.<name>`, never also at `steps[...]`
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/reference-to-video` and `templates/minimax/music-video` (MiniMax-H3).
+**Free**: validate only. Workspace `regression-model-specific`.
+Steps and expected:
+1. `validate_workflow(workspace="regression-model-specific", name="templates/minimax/reference-to-video",
+   arguments={"num_frames": 22})` → `valid: false` with **exactly one** error, at `arguments.num_frames`, whose
+   message still begins `'num_frames' is 22, which this workflow does not accept: must be at least 124. Accepted: 124 to 345`
+   (as pinned on lem 2026-11-14). No error `path` starts with `steps[`.
+2. The same with `arguments={"num_frames": 346}` → exactly one error, at `arguments.num_frames`, none at `steps[`.
+3. `validate_workflow(..., name="templates/minimax/music-video", arguments={"width": 480, "height": 272, "num_inference_steps": 4})`
+   → exactly one error, at `arguments.height`, none at `steps[`.
+4. `validate_workflow(..., name="templates/minimax/reference-to-video")` with no arguments → `valid: true` (M-F123
+   covers every H3 template's defaults).
+It is a **finding** if a template value is refused twice (once by its declared rule, once by the pipeline check) or
+if the declared refusal's path or message changed.
+cleanup: none.
+metrics: none.
+
+### M-F323 — a `for_each` H3 step with one off-range member is refused at the written step's path, naming that member
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, t2va. **Free**: validate only. Workspace `regression-model-specific`.
+Workflow W_each (validated clean on lem 2026-11-14, before #1364):
+`{"id":"spec1364-each","seed":42,"variables":{"shots":[{"name":"long","nf":124},{"name":"short","nf":25}]},"steps":[{"name":"shot","for_each":"variable:shots","pipeline":{"configuration":{"component_type":"ModularPipeline","load_components":{"dtype":"torch.bfloat16"}},"from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3","workflow":"t2va"},"arguments":{"prompt":"A man sits at a kitchen table and nods. Static medium shot.","num_frames":"item:nf","width":960,"height":544,"num_inference_steps":8,"output":["videos","audio","sampling_rate"]}},"result":{"content_type":"video/mp4","fps":24,"file_base_name":"item:name"}}]}`
+Steps: `validate_workflow(workspace="regression-model-specific", workflow=W_each)`; then the same with the second
+entry's `nf` set to 124.
+expected:
+- W_each: `valid: false`, exactly one error, at `steps[0].pipeline.arguments.num_frames` (the written step, not an
+  expanded index such as `steps[1]`). The message identifies the offending member, by its name `short` or its index
+  (`shots[1]` or entry 1), and gives the rounded count 39. The `long` member draws no error.
+- Both entries at 124: `valid: true`.
+It is a **finding** if the list validates clean, if both members are refused, or if the error doesn't say which member.
+cleanup: none.
+metrics: none.
+
+### M-F324 — the check runs after substitution: an unconstrained `variable:` that resolves to an off-range count is refused; an unchecked step stays clean
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` (t2va), and LTX-2.5 (`templates/ltx2/text-to-video`) as the non-H3 control.
+**Free**: validate and get_workflow only. Workspace `regression-model-specific`.
+Only a variable that **declares** a constraint skips this check (plan v1: the declared rule owns that refusal).
+A variable with no constraint is checked on its substituted value. All calls are
+`validate_workflow(workspace="regression-model-specific", ...)`.
+Steps and expected:
+1. W_var = W_t2va (M-F319) with `"variables": {"nf": 25}` and `"num_frames": "variable:nf"` (no `variable_constraints`).
+   → `valid: false`, exactly one error, at `steps[0].pipeline.arguments.num_frames`.
+2. W_var with `"variables": {"nf": 124}` and `arguments={"nf": 25}` → the same single error. With `arguments={"nf": 124}`
+   → `valid: true`.
+3. W_t2va with `num_frames`, `width` and `height` all removed from `arguments` (pipeline defaults) → `valid: true`,
+   and no error or warning mentions `num_frames`, the 17n+5 grid or the 32 rule.
+4. Non-H3 control: `get_workflow("templates/ltx2/text-to-video")`, take its definition, and set the pipeline
+   step's `arguments.num_frames` to the literal `25` (on LTX's 8n+1 grid). Validate it inline → no error at any
+   `...arguments.num_frames` path, and nothing in errors or warnings mentions MiniMax, 24 fps, 5–15 s or 17n+5. If
+   it isn't `valid: true`, the same definition with literal `121` must give the identical error list.
+It is a **finding** if step 1 or 2 validates clean, if step 3 or 4 gains an error from this check.
+cleanup: none.
+metrics: none.
+
+### M-F325 — `run_workflow` of an inline H3 step with `num_frames: 25` is refused before any job exists
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va. **Free**: the refusal happens before queueing. Workspace `regression-model-specific`.
+Steps:
+1. `list_jobs(workspace="regression-model-specific")` and note the newest job id.
+2. `validate_workflow` on W_ref (M-F319) with `num_frames: 124`, and keep its `plan.fingerprint` and `estimate.minutes`.
+3. `run_workflow(workspace="regression-model-specific", inline_workflow=W_ref, acknowledged_cost={"fingerprint":
+   <step 2's>, "minutes": <step 2's>, "downloads": []})`, with W_ref's `num_frames: 25` as written.
+4. `list_jobs(workspace="regression-model-specific")` again.
+expected:
+- Step 3 returns a validation refusal naming `steps[0].pipeline.arguments.num_frames`, with no `job_id`.
+- Step 4's newest job is step 1's: nothing was queued.
+- If step 3 refuses on the cost acknowledgement instead (a fingerprint mismatch) and creates no job, record it as
+  inconclusive rather than a finding, and retry once with `acknowledged_cost` read from that refusal.
+It is a **finding** if a job is created, or if the job reaches a model load.
+cleanup: if a job was created, `cancel_job` it, then `delete_output(job_id=<id>)`.
+metrics: none.
+
+### M-F326 — the `validate_workflow` description and the workflows guide say a bound the pipeline publishes is checked at validate
+pending: #1364
+source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3 (docs only). **Free**: tool schema and guide reads.
+Steps: read the `validate_workflow` tool description from the MCP tool list; `get_guide("workflows",
+section="Authoring a workflow from an agent")`; `get_guide("workflows")` index, then the section listing what
+validate checks.
+expected:
+- The `validate_workflow` description says that a bound the workflow declares **or the pipeline publishes** is an
+  error at validate, in those words or the same sense.
+- The authoring section has a line saying that H3 literal `num_frames`, `width` and `height` are checked against the
+  pipeline's limits, and that `variable_constraints` is still how a template refuses a value before substitution.
+- The validate-checks list names the pipeline-limits check.
+- None of them states a new number the pipeline doesn't (124–345, 17n+5, 32 and 5–15 s at 24 fps are the pipeline's).
+It is a **finding** if any of the three is missing, or the guide says inline H3 values go unchecked.
+cleanup: none.
+metrics: none.
+
 ## Performance
