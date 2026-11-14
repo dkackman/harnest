@@ -3,3 +3,4 @@
 {"ts": "2026-11-01T23:08:34Z", "level": "smoke", "case": "S-F131", "outcome": "pass", "issue": null, "secs": null, "session": "regression:smoke.lem-1.5", "head": "develop @ 15707ef9", "model": "claude-sonnet-5-5", "server": "lem"}
 {"ts": "2026-11-03T02:18:36Z", "level": "smoke", "case": "S-F131", "outcome": "pass", "issue": null, "secs": 18.4, "session": "regression:smoke.lem-1.5", "head": "develop @ ef9a8efb", "model": "claude-sonnet-5-5", "server": "lem"}
 {"ts": "2026-11-09T00:41:26Z", "level": "smoke", "case": "S-F131", "outcome": "pass", "issue": null, "secs": 16.1, "session": "regression:smoke.lem-1.5", "head": "develop @ e7f284e2", "model": "claude-sonnet-5-5", "server": "lem"}
+{"ts": "2026-11-14T01:08:20Z", "level": "smoke", "case": "S-F131", "outcome": "pass", "issue": null, "secs": 19.9, "session": "regression:smoke.lem-2.5", "head": "develop @ 595cee1f", "model": "claude-sonnet-5-5", "server": "lem"}
