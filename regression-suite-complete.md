@@ -19214,7 +19214,6 @@ cleanup: `delete_output(job_id=<id>)` on each run.
 metrics: none.
 
 ### C-F744 — a take with no number words keeps its check-script findings once the normaliser changes
-pending: #1297
 source: tester, spec for #1297 from #1262's plan v2 (claude-opus-5-5 via anthropic)
 Cheap. The plan says a take's existing findings are otherwise unchanged. Run C-F503 (both runs) and C-F594 exactly
 as written.
@@ -19670,7 +19669,7 @@ cleanup: `delete_output(job_id=...)` for any job that was queued.
 metrics: none.
 
 ### C-F769 — the #1311 drill's cited jobs exist and follow the recipe: one narration, one retime, slices, one take per passage, one join
-pending: #1337
+pending: #1362
 source: tester, spec for #1337 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. Source: the stage 2 build comment on #1337 (`gh issue view 1337 --comments`). It must name the record
 (`bench/records/drill.md` section), the transcript path, the workspace (`drill-1311-<n>`), and every job id of the drill
@@ -19689,7 +19688,7 @@ cleanup: none (the drill's workspace and outputs are evidence: never delete them
 metrics: none.
 
 ### C-F770 — the #1311 piece is one video as long as its narration, cut at its passages, with sound through every cut
-pending: #1337
+pending: #1362
 source: tester, spec for #1337 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Mostly free, one short task-only run. Take the piece (the join job's output from C-F769) and the retimed narration track.
 `get_gallery_metadata` on both, and on each take. Run a one-step `analyze_seams` workflow on the piece
@@ -19722,7 +19721,7 @@ cleanup: none.
 metrics: none.
 
 ### C-F772 — "not yet run end to end" is replaced by the measured result, and the guide, long-form and levers agree
-pending: #1338
+pending: #1362
 source: tester, spec for #1338 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read the same texts as C-F766: the guide's *A narrated long take*, the `dw:long-form` SKILL.md,
 `references/run-and-repair.md`, `references/levers.md` and `references/audio.md`, and narrated-take's description.
@@ -21359,6 +21358,157 @@ expected:
 It is a **finding** if (a) or (c) validates, since the run would then fail only when saving (#1358: `AudioVideo
 is not JSON serializable`).
 cleanup: `delete_output(job_id=…)` for (b).
+metrics: none.
+
+### C-F852 — the #1311 drill attempt 1 hand-off states the wrong shape, W1 and W2 with their fix places, and the stale server
+pending: #1337
+source: tester, spec for #1337 from #1311's plan v2 (claude-opus-5-5 via anthropic)
+Free. Source: the stage 2 hand-off comment on #1337 (`gh issue view 1337 --comments`). The tester cannot read
+`bench/records/drill.md`, so the comment must quote what this case checks.
+expected:
+- The comment names the record section (`bench/records/drill.md`, *Cold drill: the Gettysburg Address as passages joined
+  as cuts*), the transcript path (`~/testing/drill-1311-runner/turn-1.jsonl` to `turn-4.jsonl`), the workspace
+  `drill-1311-1`, and all nine job ids. It quotes the scorecard and the W1-W8 table.
+- The quoted record says plainly that the attempt took the wrong shape, with all four parts: seven `dialogue` passages
+  on `templates/minimax/chained-segments`; H3's own voice; no narration track; silence holes over 1.5 s at 5 of the 6
+  cuts. A record that only lists these as wrong turns, and does not call the shape wrong, does not meet this line.
+- It names W1 (the agent missed `narration-retime`) and W2 (it stalled on the missing voice clip) as the root causes.
+  Each has a fix location (a file and section, or a template) that stage 3's text names.
+- It notes that the jobs ran on the stale hand-started `595cee1f` server (`0.20.0-alpha.1`), not on stage 1's code.
+- It does not claim the piece passes C-F769 or C-F770. Those cases belong to stage 4.
+If the comment lacks the record section, the transcript path, the workspace or the job ids, the issue goes back as
+needs-info. If a quoted line above is missing or says something else, that is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F853 — every job the attempt 1 hand-off lists is in `drill-1311-1`, succeeded, and matches the wrong shape the record states
+pending: #1337
+source: tester, spec for #1337 from #1311's plan v2 (claude-opus-5-5 via anthropic)
+Free. Uses the job ids from C-F852's comment. Call `list_jobs(workspace="drill-1311-1")`, then `get_job` on each listed
+id with `workspace="drill-1311-1"`. Run `list_gallery(workspace="drill-1311-1")`, then `get_gallery_metadata` on the
+final cut (`c89a2d8108e5` in the plan).
+expected:
+- `list_jobs` returns every id the comment lists, nine in all, and each is `succeeded`. If the workspace holds a job the
+  comment does not list, the comment must name it and say why (for example a portrait made beforehand). Otherwise it is
+  a **finding**.
+- The final cut is in that workspace's gallery as one video with an audio stream.
+- The jobs support the record's shape claim. They include a `templates/minimax/chained-segments` run of seven
+  passages. None is a `templates/narration-long` or `templates/narration-retime` run, which is what "no narration
+  track" means. The final cut's `media.shots`, or its `shots`/seam listing, shows 7 shots and 6 cuts.
+- If any field in the jobs' `get_job` reply shows the server version or commit, it reads `0.20.0-alpha.1` or
+  `595cee1f`. If nothing over MCP shows it, the comment's statement stands, and the verify comment says so.
+An id that is missing, failed without the comment saying so, or a job whose workflow contradicts the stated shape is a
+**finding**.
+cleanup: none. The workspace and its outputs are evidence: never delete them.
+metrics: none.
+
+### C-F854 — `narration-retime` and `narration-long` list under `shape="audio"`, and their other listing fields are unchanged
+pending: #1338
+source: tester, spec for #1338 from #1311's plan v2 (claude-opus-5-5 via anthropic)
+Free. On 2026-11-14, before stage 3, `list_workflows(shape="audio")` returned nine entries, `templates/narration-long`
+among them (derived, not declared). `templates/narration-retime` was under `shape="utility"` with these fields:
+`summary` "Retimes a narration onto a chain's frame grid by punctuation and checks it against its script.", `traits`
+`["needs-input-media"]`, `cost` null, `kinds` `["application","audio"]`, `variable_names` `boundary_slack_seconds,
+comma_seconds, guide_frames, narration, num_frames, script, section_seconds, sentence_seconds`, `constraints`
+`{"script": "required, non-empty"}`. `templates/narration-long` had `traits` `["composes-workflows","has-audio",
+"needs-input-media"]`, `cost` null, `kinds` `["application","audio"]`, `variable_names` `crossfade_ms, gap_seconds,
+max_seconds, reference_audio, reference_text, seed, text, words_per_second`.
+Steps: `list_workflows(shape="audio")`, `list_workflows(shape="utility")`, `list_workflows(shape="sequence")`,
+`list_workflows()` with no shape, and `get_workflow` on both templates.
+expected:
+- `shape="audio"` includes both templates, each with `shape: "audio"`.
+- `shape="utility"` no longer includes `templates/narration-retime`. Neither template appears under `shape="sequence"`.
+  Each one appears exactly once in the unfiltered listing.
+- Apart from `shape`, each entry's `summary`, `traits`, `cost`, `kinds`, `variable_names` and `constraints` match the
+  values above. A change there that no stage 3 fix row names is a **finding**.
+- Each `get_workflow` definition declares `"shape": "audio"` explicitly.
+- The rest of the audio listing is the nine entries above plus `narration-retime`. A difference is a **finding**
+  unless another merged change explains it, and the verify comment names that change.
+- Both templates still validate with the arguments C-F763/C-F765 use.
+The plan does not promise that `traits="has-audio,needs-input-media"` returns `narration-retime`. Record what that call
+returns, but it does not decide the case.
+cleanup: none.
+metrics: none.
+
+### C-F855 — the #1311 recipe text carries W1-W7 where the plan places them, with tools that exist, and still says "not yet run"
+pending: #1338
+source: tester, spec for #1338 from #1311's plan v2 (claude-opus-5-5 via anthropic)
+Free. Read the same texts as C-F766: `get_guide("workflows", section="A narrated long take")` (or the section the
+guide's index names for it), the loaded `dw:long-form` SKILL.md and its `references/run-and-repair.md`,
+`references/levers.md` and `references/audio.md`, and `get_workflow("templates/minimax/narrated-take")`'s
+`description`. Check each named template with `list_workflows`, and each named tool or probe against its schema.
+expected:
+- **W1.** Recipe step 1 names `get_workflow("templates/narration-retime")` and the `narration-long` template, and says
+  `list_workflows(shape="audio")` returns them (C-F854).
+- **W2.** Step 1 states the make-a-reference step in place: a 5-10 s line made with `templates/generate-speech`, used
+  as the voice reference. A bare pointer to `audio.md` does not meet this line. A missing voice clip is not presented
+  as a reason to stop.
+- **W3.** The recipe's opening says that `templates/minimax/chained-segments` with an invented voice per passage is
+  not this recipe.
+- **W4.** Step 2 says to use `standing` for a monologue to camera, and `dialogue` only for a passage under 30 s.
+- **W5.** Step 3 names a way to make a second angle from the first still: `templates/image-edit`, or the same FLUX
+  portrait seed with changed framing. Any template it names exists.
+- **W6.** long-form *Run and judge* says to validate each passage and sum the `plan.estimate`s. It notes that the H3
+  chain estimate runs high, citing attempt 1 (about 18.3 min quoted against about 7 real, or figures that agree).
+- **W7.** Step 4 says to run `assess_output(probe="analyze_seams")`, `get_output_frames(seams=...)` at the passage cuts
+  and `get_output_audio` across each cut after the join and before calling the piece done. `analyze_seams` is a probe
+  `assess_output` takes, and `seams` is a parameter `get_output_frames` takes.
+- The guide, `run-and-repair.md` and `levers.md` agree on the W1-W7 points they state. None contradicts another.
+- Stage 1's recipe (C-F766's list) is all still there.
+- "not yet run end to end" (or the same meaning) is still present. Stage 3 keeps it, and stage 4 replaces it (C-F772).
+- SKILL.md is still under 12 KiB, if the agent can see the size.
+A missing fix, a fix in a place other than the one named, or a named tool, probe or template that does not exist is a
+**finding**.
+cleanup: none.
+metrics: none.
+
+### C-F856 — attempt 2 ran on deployed develop holding stage 3, in `drill-1311-2`, and its hand-off names what C-F769 and C-F770 read
+pending: #1362
+source: tester, spec for #1362 from #1311's plan v2 (claude-opus-5-5 via anthropic)
+Free. Source: the stage 4 build comment on #1362. Where C-F769 says "the stage 2 build comment on #1337", it means
+this comment for attempt 2. C-F769 and C-F770 are checked against attempt 2's jobs in `drill-1311-2`, never against
+attempt 1's. Steps: `get_health` now; `list_workflows(shape="audio")`; `list_jobs(workspace="drill-1311-2")`, then
+`get_job` on each listed id with that workspace.
+expected:
+- The comment quotes a `get_health` reply taken before the drill started, with `version` `0.21.0-alpha.1` or later,
+  and says which develop commit was deployed. It states that this commit holds stage 3 (#1338).
+- Today's `get_health` reports the same version or a later one. `list_workflows(shape="audio")` includes
+  `templates/narration-retime` (C-F854), which shows that the server holds stage 3. If it does not, the gate did not
+  hold, and that is a **finding**.
+- Every job in `drill-1311-2` was created after the time of that `get_health` reply. A drill job from before the gate is
+  a **finding**.
+- The comment names the record section (a new `bench/records/drill.md` section), the transcript path, the workspace
+  `drill-1311-2`, and every job id. It quotes the scorecard, the wrong-turn table and the defect measures beside attempt
+  1's. It answers both open questions: whether voice and room tone match across cuts, and whether `standing` held on a
+  new seed.
+- The portrait is new: its job or asset is not one from attempt 1's `drill-1311-1`.
+- The ask quoted is attempt 1's, unchanged. Any runner artifact the runner could not prevent (a background `sleep`
+  ending a turn, both cards in use) is named.
+If the comment lacks the `get_health` reply, the record section, the workspace or the job ids, the issue goes back as
+needs-info.
+cleanup: none. The drill's workspace and outputs are evidence: never delete them.
+metrics: none.
+
+### C-F857 — attempt 2 is the last: no third drill, GPU inside Q1, and a second wrong shape ends the feature at the record
+pending: #1362
+source: tester, spec for #1362 from #1311's plan v2 (claude-opus-5-5 via anthropic)
+Free. Call `list_workspaces`, and `list_jobs` in `drill-1311-2`. Take each drill job's run time from `get_job`. Read the
+#1362 build comment and the texts C-F772 reads.
+expected:
+- There is no `drill-1311-3` workspace (or any later one), and `drill-1311-2` holds one drill run, not a retried one. A
+  failed take that was re-run inside the same drill counts as part of it and must be named in the comment.
+- The drill jobs' GPU time adds up to Q1's cap or less (about 4-7 h in the plan). More than 7 h is a **finding** unless
+  a Don ruling on #1311 allows it, and the comment cites that ruling.
+- **If attempt 2 followed the recipe**, C-F769, C-F770 and C-F772 decide the stage, and Don's eye-and-ear verdict is
+  still to come. The hand-off asks Don for that verdict and does not claim it.
+- **If attempt 2 took the wrong shape** (C-F769 fails on the jobs), then:
+  - the record says so as plainly as C-F852 asks of attempt 1;
+  - the guide and long-form text say that a cold Sonnet agent did not follow the recipe in two attempts, and give the
+    reasons, in place of "not yet run end to end";
+  - the issue goes to Don, not to a retry.
+  In that branch the stage does not pass on C-F769/C-F770, and the wording above takes the place of C-F772's
+  measured-result lines.
+cleanup: none.
 metrics: none.
 
 ## Performance
