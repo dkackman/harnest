@@ -15856,8 +15856,8 @@ sits beside it. If the asset is gone, report the case as blocked, not as a findi
 2. The same, with `lines: [{"text": "Rolling pins are unreliable witnesses.", "shot": "breadbin"}]` and again no `shots`.
 expected:
 - In both runs, `shots_source` is `"none"`, `unscripted_speech` appears in `rules_applied` and not in
-  `rules_skipped`, and `findings` holds an `unscripted_speech` warn over the second reading (about 3.0–5.5 s)
-  with `at.repeats_line: true`. In step 2 that finding also carries `at.shot: "breadbin"`.
+  `rules_skipped`, and `findings` holds an `unscripted_speech` warn over the first reading (about 0.4–2.8 s), with the
+  line matched to the second (about 3.0–5.5 s), per #1360, and with `at.repeats_line: true`. In step 2 that finding also carries `at.shot: "breadbin"`.
 It is a **finding** if either run returns `findings: []`, or if `unscripted_speech` is skipped with
 "no shots are known". That is #1117's silent clean verdict: the repeated words appear only in `unmatched`.
 cleanup: `delete_output(job_id=…)` for both jobs.
