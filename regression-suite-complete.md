@@ -21217,4 +21217,284 @@ rule.
 cleanup: none.
 metrics: none.
 
+### C-F840 — before stage A's baselines, lem serves the deployed tree, sits on the diffusers 0.42.0 release, and its worker is new
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+Free. Replaces the version part of C-F780 (v1 took any version as found). Plan v3: the build session deploys,
+checks two preconditions, then reverts lem's diffusers over REST (`POST /api/system/diffusers/update`,
+`{"revert": true}`), which installs exactly the pyproject floor (0.42.0 before stage B). Read the stage A build
+comment on #1340, then on lem: `get_health`, `get_diffusers_state`, and `list_jobs` (all statuses the tool offers,
+`workspace=` each probe workspace the build comment names, or none if it lists across workspaces).
+On 2026-11-14 `get_health` returned `version`, `workers[]` (one per card: `device`, `pid`, `alive`, `current_job`)
+and `attention_backends`; `get_diffusers_state` returned `version`, `commit`, `status`, `error`, `revert`, `before`,
+`started_at`, `finished_at` (lem then: `0.44.0.dev0`, commit `43e30028…`, server `0.20.0-alpha.1`).
+expected:
+- The build comment quotes `get_diffusers_state` before and after the revert, and the `get_health` `version` it saw
+  before moving. That version is the one the stage deployed (`0.21.0-alpha.1` or later, as the comment names). If it
+  shows any other version (e.g. `0.20.0-alpha.1`, the hand-started server of #1334), the move was a silent no-op and
+  the baselines must not run: a **finding**. A comment that says lem was not serving the deployed tree and that it
+  did not move diffusers is correct. The stage then goes to Don, not to baselines.
+- The comment names the `list_jobs` check it made: no running or queued job from #1319, #1320, #1325 or #1326 at the
+  time of the move. A move with one of them in flight is a **finding**.
+- Now: `get_health.version` equals the deployed version. `get_diffusers_state.version` is exactly `0.42.0` and
+  `commit` is null (a release install, not a git build). `status` is `idle`, `error` null, and the last move was a
+  revert (`revert: true`, or the comment's quoted "after" shows it). Any other version, including `0.42.1`, a
+  `.dev0` or one carrying a commit, is a **finding**.
+- Cold worker: each `workers[].pid` the build comment quoted before the move differs from the `pid` of the card's
+  worker after it (or that worker is `alive: false` until the first baseline starts it). The tester records the
+  current pids; C-F842 checks them again. If a job was running at the move (busy workers aren't shut down), the
+  same pid on that card is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F841 — the #1315 stage A record names five baselines: job, workflow, arguments, seed, diffusers version and commit, kept asset
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+Free. Supersedes C-F780 (four baselines, any version). Source: the stage A comments on #1340 (build and the tester's
+own verification record), then `get_job(job_id=..., workspace="probe-1315")` on each cited job and
+`get_gallery_metadata` on each kept asset name. The baselines outlive every regression sweep: they live in workspace
+`probe-1315`, never a `regression-*` one.
+expected:
+- The record lists exactly five baselines, one per row:
+  - `h3-clip`: `templates/minimax/video-with-audio`;
+  - `h3-chain`: `templates/minimax/chained-segments`, `segments: 2`, `image: "asset:qa-cast/priya-portrait.jpg"`
+    (not its off-box default URL);
+  - `ltx-two-stage`: `templates/ltx2/two-stage`;
+  - `k6`: a Kandinsky 6 template (`templates/kandinsky6/text-to-video` unless the record names another);
+  - `stacked-lora`: the stored workflow `stacked-lora` in `probe-1315` (C-F843).
+- Each row gives: the job id, the workflow, every argument passed, the seed (pinned, never null), the diffusers
+  version and commit the job ran on, and the kept asset `asset:probe-1315/baseline-<name>.<ext>`.
+- The version is `0.42.0` with no commit for every row, except a row that failed on 0.42.0 and was taken on HEAD under
+  C-F845. That row says so, links the issue filed for the failure, and gives HEAD's version and commit.
+- Every cited job exists in `probe-1315`, is `succeeded`, and its arguments in `get_job` equal the row's. Every kept
+  asset resolves (`get_gallery_metadata` returns metadata, not "Unknown asset").
+- All five 0.42.0 rows ran between the revert (C-F840) and the return to HEAD (C-F846): no diffusers move between the
+  first and the last.
+cleanup: none. The baseline jobs, outputs and kept assets are stage B's evidence: never delete them.
+metrics: none.
+
+### C-F842 — the four template baselines on 0.42.0 are cold, seeded, complete and the expected shape
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+GPU, ~25 min total on an RTX 3090 (H3 clip ~1.5, 2-segment chain ~5-10, LTX two-stage ~5.4, K6 ~14 cold), plus a
+one-time re-quantization on first use after the version move (longer cold times are expected, not a finding).
+Supersedes C-F781. Run after C-F840 passes, in workspace `probe-1315`, one at a time, with `seed: 42` and the
+arguments C-F841 lists, otherwise the template's defaults. For each:
+1. `validate_workflow(arguments=...)`. Record `plan.cached_steps`; bind `acknowledged_cost`.
+2. `run_workflow(..., wait_seconds=55)` (`wait_for_job` on `still_running`).
+3. `get_job`, `get_job_events`, `get_gallery_metadata` on the video output; `get_health` once before the first.
+expected:
+- Cold proof, all three:
+  - before the first baseline, every card's worker pid differs from the pid quoted before the move (C-F840);
+  - `plan.cached_steps` is 0 immediately before each baseline;
+  - no step is marked `reused` in `get_job` or its events.
+  A cached or `reused` step is a **finding**: that baseline is the output of an earlier diffusers, not 0.42.0.
+- `get_diffusers_state` still reports `0.42.0`, no commit, after the last of the four.
+- All four `succeeded`. A baseline that fails on 0.42.0 is a **finding** against the declared floor and follows C-F845;
+  the others still run.
+- Shapes:
+  - H3 clip: 960x544, 124 frames, 24 fps, with an audio stream;
+  - chain: one video of 2 segments, 960x544, with an audio stream (`media.shots` 2 entries if the chain carries shots);
+  - LTX two-stage: 121 frames at 24 fps, at the upscaled size the template's description states;
+  - K6: 864x480, 121 frames, 24 fps.
+- `job.warnings` holds nothing naming `None`/`NoneType` reaching a block, or an attention backend leak. An
+  upsampler-path deprecation warning on the LTX job, if 0.42.0 emits one, is recorded (C-F788 compares it).
+- Each output is kept with `keep_output` as `asset:probe-1315/baseline-h3-clip.mp4`, `baseline-h3-chain.mp4`,
+  `baseline-ltx-two-stage.mp4` and `baseline-k6.mp4`. First check with `get_gallery_metadata` that the name is free
+  ("Unknown asset"). If it is taken, the earlier baseline stands only if C-F841 shows it ran on 0.42.0. Otherwise,
+  stop and ask on #1340: the name holds the wrong version.
+cleanup: none. Never delete the baseline jobs or assets.
+metrics: none.
+
+### C-F843 — the fifth baseline: `probe-1315/stacked-lora` stacks H3's turbo LoRA with a second LoRA lem already has, both active
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+GPU, ~2 min (one H3 clip). Plan v3's Q-C: the tester authors it during stage A's verification, since no catalog
+template stacks LoRAs. Setup, in workspace `probe-1315`:
+1. `get_workflow("templates/minimax/video-with-audio")` and find its turbo LoRA step. `list_loras` for the H3 base
+   (`model=` the H3 model or workflow name the guide's loras section names). Pick a second LoRA whose `status` is
+   `proven` or `trial` and which needs no download. Check its `get_gallery_metadata`/`list_models` entry is local, or
+   that `validate_workflow` quotes `downloads: []`. Prefer one the listing or its repo marks Kohya-format with
+   text-encoder keys.
+2. Author the workflow: the template's JSON with the second LoRA loaded alongside the turbo LoRA, both active (each
+   with a non-zero weight), and no `alpha` set on either. `save_workflow` it as `stacked-lora` in `probe-1315`.
+3. Before the run, run C-F842's cold proof (`plan.cached_steps` 0). `validate_workflow(arguments={"seed": 42})`, then
+   `run_workflow` bound, `wait_seconds=55`. `get_job`, `get_job_events`.
+4. Control (same session, cached steps allowed): `templates/minimax/video-with-audio`, `seed: 42`, i.e. C-F842's
+   `h3-clip` baseline. Run `compare_outputs(names=[<stacked output>, "asset:probe-1315/baseline-h3-clip.mp4"])`.
+expected:
+- `validate_workflow` is `valid: true`, quotes no download, and warns nothing that says either LoRA is ignored.
+- The run `succeeded` on 0.42.0: 960x544, 124 frames, with audio. No `reused` step. Its events show both adapters
+  loaded and active (two adapter names; neither at weight 0).
+- The output differs from the turbo-only baseline (mean abs diff above 0). An identical output is a **finding**: the
+  second adapter did nothing, so the stack exercises nothing.
+- Kept as `asset:probe-1315/baseline-stacked-lora.mp4`, with C-F841's row filled in. The record also says whether the
+  second LoRA is Kohya-format with text-encoder keys. If lem has none, the record says the Kohya per-module alpha
+  change is unexercised and that the `LORAS.md` line rests on the release notes. That is allowed, not a finding.
+cleanup: none for the baseline. Never delete the stored workflow `stacked-lora` or its job. The control is the h3-clip
+baseline, so nothing extra to delete.
+metrics: none.
+
+### C-F844 — `get_health`'s `attention_backends` on lem keeps `native`, `sage_hub` and `flash_hub` after the availability filter
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+Free. Supersedes C-F783 (which read `get_server_info`). Before the stage, on 2026-11-14 with lem on `0.44.0.dev0`,
+lem's `get_health.attention_backends` was these 26 names, in this order: `native`, `_native_flash`,
+`_native_efficient`, `_native_math`, `_native_cudnn`, `flex`, `sparse`, `_flash_3`, `_flash_3_hub`,
+`_flash_3_varlen_hub`, `_flash_varlen_3`, `_sage_qk_int8_pv_fp16_cuda`, `_sage_qk_int8_pv_fp16_triton`,
+`_sage_qk_int8_pv_fp8_cuda`, `_sage_qk_int8_pv_fp8_cuda_sm90`, `aiter_fa2_hub`, `flash`, `flash_4_hub`,
+`flash_hub`, `flash_varlen`, `flash_varlen_hub`, `sage`, `sage_blackwell_hub`, `sage_hub`, `sage_varlen`,
+`xformers`. Steps, on lem with stage A deployed and on 0.42.0 (C-F840):
+1. `get_health`.
+2. `validate_workflow("templates/minimax/video-with-audio")` with `attention_backend` set to each of `native`,
+   `sage_hub`, `flash_hub` and `sparse` in turn.
+expected:
+- `attention_backends` is present and a list. It contains `native`, `sage_hub` and `flash_hub` (lem has run
+  `sage_hub` H3 jobs and has the `kernels` package). If any is missing, that is a **finding**: the filter dropped a
+  backend lem uses.
+- Every other name that is missing from the list above is one the build comment names, with diffusers' reason
+  (backend unavailable on the version, or a package below diffusers' minimum). A backend this version's enum doesn't
+  have isn't a finding if the comment says so. An unexplained drop is a **finding**.
+- No name appears that wasn't in the list above, unless the comment explains it (a 0.42.0 enum member). A backend is
+  advertised only if diffusers reports it available.
+- None of the four validations warns `attention_backend_unavailable`.
+- The acceleration guide (`get_guide("acceleration")`, its attention-backends section) says the list follows
+  diffusers' own availability check.
+cleanup: none.
+metrics: none.
+
+### C-F845 — a stage A baseline that fails on 0.42.0 is filed, then taken on HEAD and labelled with its version
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+Conditional: runs only if a C-F842 or C-F843 baseline fails on 0.42.0. Plan v3 Q-A: develop is only ever tested
+against HEAD, so a failure on the declared floor is possible, and it is a finding in its own right. Steps:
+1. `get_job` and `get_job_events` on the failed job (keep it; never delete it).
+2. File an issue on the ticket repo (`owner:implementer`, `backend:shared` or `backend:cuda`). Give the workflow,
+   arguments, `diffusers 0.42.0`, and the exact error. Say it means the pyproject floor `>=0.42.0` is false.
+3. After C-F846 returns lem to HEAD, rerun that one baseline under the same arguments, cold. Before it,
+   `plan.cached_steps` must be 0; if it isn't, record it. It is kept under the same asset name.
+expected:
+- The issue exists and #1341's record links it. The failed job's error is quoted.
+- The HEAD baseline `succeeded`, has the shape C-F842 gives for it, and has no `reused` step. C-F841's row names
+  HEAD's version and commit (from `get_diffusers_state` at the time), not 0.42.0.
+- Only failed baselines are retaken. The other rows stay on 0.42.0. A retake of a baseline that succeeded on 0.42.0
+  is a **finding**: it replaces real 0.42 evidence.
+cleanup: none.
+metrics: none.
+
+### C-F846 — after stage A's last case, the tester returns lem to diffusers HEAD with `update_diffusers`, with no probe job in flight
+pending: #1340
+source: tester, spec for #1340 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+GPU-free, but it moves lem's diffusers. Do it only after C-F782, C-F784, C-F785 and C-F840 to C-F844 have run
+(C-F845's retakes come after it). Steps, on lem:
+1. `list_jobs`: no running or queued job at all. A busy worker isn't shut down, so the next job wouldn't import the
+   new version. In particular, no job from probes #1319, #1320, #1325, #1326. If one is in flight, stop: comment that
+   the move is pending, and don't wait in-session.
+2. `get_health` (record the pids) and `get_diffusers_state` (expect `0.42.0`).
+3. `update_diffusers` (MCP; HEAD), with the `acknowledged_cost` the tool asks for. Then `get_diffusers_state` until
+   `status` leaves `running`, within the session's waiting rules. Don't poll in a loop: one `get_diffusers_state` per
+   turn and a comment if it's still running.
+4. `get_diffusers_state` and `get_health`.
+expected:
+- `update_diffusers` is in the tester's MCP tool list. On 2026-11-14 it was not: the tester's deferred-tool list had
+  `get_diffusers_state` but no `update_diffusers`. If it is still missing, the move can't be made over MCP. Hand
+  #1340 to Don with a `record` decision ("move lem to HEAD from the Models page"), which is **not** a stage failure.
+- After the move: `status: idle`, `error` null, `revert: false`, `version` a `.dev0` above 0.43.0 (on 2026-11-13 HEAD
+  gave `0.44.0.dev0`), and `commit` non-null. The tester's #1340 comment records the version and commit.
+- `get_health.version` is unchanged (diffusers moved, not dw). Each worker's pid differs from step 2's, or the worker
+  is `alive: false`: the idle worker was shut down.
+- The record names the step 1 `list_jobs` check.
+cleanup: none.
+metrics: none.
+
+### C-F847 — after stage B's deploy, lem and mini-ai serve the deployed tree on the diffusers 0.43.0 release, with lem's worker new
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+Free. Supersedes C-F786 (0.43.x, any build). The build session deploys to lem and mini-ai, checks v3's preconditions
+on lem, then reverts each host's diffusers over REST, which now installs 0.43.0. Read the stage B build comment on
+#1341, then on each host `get_health`, `get_diffusers_state` and `get_server_info` (`device`). For mini-ai, use the
+harness's mini-ai dw MCP server; if this session has none, the mini-ai half goes to Don as `record`, not needs-info.
+expected:
+- The build comment quotes, per host, `get_diffusers_state` before and after the revert. For lem, it also quotes
+  `get_health.version` before the move, equal to the version stage B deployed, plus the `list_jobs` check showing no
+  job in flight from #1319/#1320/#1325/#1326. Missing either check, or a move while one was in flight, is a **finding**.
+- On both hosts: `get_diffusers_state.version` is exactly `0.43.0`, `commit` null, `status: idle`, `error` null.
+  `0.43.1`, a `.dev0`, a commit, or lem still on HEAD is a **finding**. Equal to the deployed version on both hosts:
+  `get_health.version`.
+- lem's per-card worker pids differ from the pids quoted before the move (or the worker is `alive: false`).
+- `get_server_info.device` is `cuda` on lem and `mps` on mini-ai.
+- C-F844's `attention_backends` check holds on lem on 0.43.0 too: `native`, `sage_hub` and `flash_hub` are present,
+  and any name dropped versus C-F844's list is one the build comment explains.
+cleanup: none.
+metrics: none.
+
+### C-F848 — stage A's five baselines, rerun cold on 0.43.0, match their baselines or the difference names a 0.43 change
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+GPU, ~30-45 min on lem, plus re-quantization on the first runs after the move (longer cold times expected, not a
+finding). Supersedes C-F787 (four baselines; no cold proof) and C-F791 (an unnamed stacked-LoRA job). Where C-F788,
+C-F789, C-F790 or C-F793 say "C-F787's LTX/H3 rerun", it means this case's. Run after C-F847 passes. For each of
+C-F841's five rows, in its order:
+1. `get_job_workflow(job_id=<baseline>)`, then `validate_workflow` it with the baseline's arguments. Record
+   `plan.cached_steps` and bind the cost.
+2. `rerun_job(job_id=<baseline>)` with **no** `new_seed` and no `arguments`, bound. It runs in `probe-1315`.
+   `wait_seconds=55`, then `wait_for_job`.
+3. `get_job`, `get_job_events` and `get_gallery_metadata` on the rerun. Then
+   `compare_outputs(names=["asset:probe-1315/baseline-<name>.mp4", <rerun output>], at=[0, <middle frame>, <last frame>])`.
+`get_health` once before the first rerun.
+expected:
+- Cold proof, all three, as C-F842:
+  - before the first rerun, the pids differ from those quoted before the move;
+  - `plan.cached_steps` is 0 before each rerun;
+  - no `reused` step.
+  A cached rerun compares a baseline with itself, so it is a **finding**, and that row's comparison is void.
+- `get_diffusers_state` reports `0.43.0`, no commit, after the last rerun.
+- Each rerun `succeeded`, with the same shape as its baseline: width, height, `frame_count`, `fps`,
+  `duration_seconds` and whether it has an audio stream. A shape change is a **finding**, whatever the explanation.
+- Match means mean abs diff 0 at every `at` frame. Otherwise the stage B comment gives that row's PSNR, SSIM and mean
+  abs diff, reproduced here within ±0.5 dB PSNR and ±0.01 SSIM, and names a 0.43 change behind it: attention kernels,
+  cache-hook timing, LoRA alpha handling or component-weight broadcast, a scheduler change. For `stacked-lora`, LoRA
+  alpha or broadcast is expected if it differs. "Looks fine", or no named change, fails the stage.
+- A row whose baseline was taken on HEAD (C-F845) is compared all the same, and the comment says it compares 0.43.0
+  with HEAD.
+- The tester looks at each pair's grid: an artefact in the rerun the baseline lacks (tearing, colour shift, a black or
+  noise frame, a different subject) is a **finding**, even with an explanation.
+- The H3 clip, chain and stacked-LoRA reruns carry audio for their full length (`get_output_audio`: non-silent, same
+  duration within one frame).
+cleanup: none. Keep the reruns as stage B's evidence until #1341 is closed, then `delete_output(job_id=<rerun>)`.
+Never delete the baselines.
+metrics: none.
+
+### C-F849 — the LoRA guide says an explicit `alpha` overrides a Kohya LoRA's per-module alphas
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+Free. The doc half of C-F791, kept now that C-F848 carries the stacked-LoRA parity. Steps: `list_guides`, then the
+loras guide's index (`get_guide("loras")`), then the section on multiple LoRAs or `alpha`.
+expected:
+- One line states that setting `alpha` writes that alpha onto every module, overriding the per-module alphas a
+  Kohya-format LoRA carries (which diffusers 0.43 now keeps), and that leaving `alpha` unset keeps them.
+- Nothing in the section says an explicit `alpha` is new, or changes with the upgrade: the plan says its meaning is
+  unchanged.
+cleanup: none.
+metrics: none.
+
+### C-F850 — after stage B's last case, the tester returns lem to HEAD with `update_diffusers`; mini-ai stays on 0.43.0
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v3 (claude-opus-5-5 via anthropic)
+GPU-free; moves lem's diffusers. Plan v3 Q5 was ruled otherwise. Do it only after C-F788 to C-F790, C-F792 to
+C-F796, SE-F065 and C-F847 to C-F849 have run. Steps on lem, as C-F846:
+1. `list_jobs`: no job running or queued, and none from #1319/#1320/#1325/#1326.
+2. `get_health` (pids) and `get_diffusers_state` (expect `0.43.0`).
+3. `update_diffusers` (HEAD), bound.
+4. `get_diffusers_state` and `get_health`.
+Then on mini-ai, `get_diffusers_state` only.
+expected:
+- Lem's expectations are C-F846's, including the hand-to-Don fallback if `update_diffusers` is still not in the
+  tester's tools: `.dev0` above 0.43.0, `commit` non-null, `revert: false`, `status: idle`, new pids. The tester's
+  #1341 comment records the version and commit lem landed on.
+- mini-ai still reports `0.43.0`, no commit. Moving mini-ai off 0.43.0 is a **finding**: it ends on the release the
+  floor names.
+cleanup: none.
+metrics: none.
+
 ## Performance
