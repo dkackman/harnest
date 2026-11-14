@@ -8775,7 +8775,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F311 — the guide documents `turbo_lead_in` as an H3 argument counting evaluations, and the acceleration guide states the `first_block` refusal and a measured compile cost
-pending: #1352
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 with the turbo LoRA (`lightx2v/Minimax-h3-Turbo`, adapter name `turbo`). Free: guide and
 issue reads, plus job reads for the compile measurement.
@@ -8807,7 +8806,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F312 — `turbo_lead_in` validates clean at 0, 1 and the last legal value on both the 4- and 8-evaluation turbo chains, with an estimate
-pending: #1352
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 `fl2va` with the turbo LoRA, through `templates/minimax/chained-segments` (5 steps, 4
 evaluations, adapter `turbo`) and `templates/minimax/chain-video-continuity` (9 steps, 8 evaluations). Free:
@@ -8829,7 +8827,6 @@ cleanup: none (validates only).
 metrics: none.
 
 ### M-F313 — `turbo_lead_in` refusals at validate and at `run_workflow`: the out-of-range and non-integer values, no `turbo` adapter, a non-H3 step, the `first_block` cache
-pending: #1352
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 turbo chains as in M-F312, plus one non-H3 pipeline (LTX-2.5,
 `templates/ltx2/text-to-video`). Free: validates, plus run attempts that must queue nothing.
@@ -8860,7 +8857,6 @@ cleanup: none (no job is queued; if step 6 queued one, `cancel_job` it and `dele
 metrics: none.
 
 ### M-F314 — `turbo_lead_in: 0` gives the same output as no argument; `1` differs, with one lead-in event per segment saying 1 of 4
-pending: #1352
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 `fl2va` chain with the 4-step turbo LoRA (`minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16`,
 adapter `turbo`), through the M-F312 inline copy of `templates/minimax/chained-segments`. Three runs of a 2-segment
@@ -8890,7 +8886,6 @@ for all three.
 metrics: none.
 
 ### M-F315 — after a lead-in run, finished or cancelled, the next run on the same warm worker has its turbo scale back: the configured one, not 1.0
-pending: #1352
 source: tester, spec for #1352 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F314, on one warm worker. About six 2-segment runs, 25–30 min on an RTX 3090. Run on lem (cuda).
 Setup: the M-F314 arguments. Every run must land on the same worker with the model kept warm: run them back to back
