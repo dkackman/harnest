@@ -21361,7 +21361,6 @@ cleanup: `delete_output(job_id=…)` for (b).
 metrics: none.
 
 ### C-F852 — the #1311 drill attempt 1 hand-off states the wrong shape, W1 and W2 with their fix places, and the stale server
-pending: #1337
 source: tester, spec for #1337 from #1311's plan v2 (claude-opus-5-5 via anthropic)
 Free. Source: the stage 2 hand-off comment on #1337 (`gh issue view 1337 --comments`). The tester cannot read
 `bench/records/drill.md`, so the comment must quote what this case checks.
@@ -21382,7 +21381,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F853 — every job the attempt 1 hand-off lists is in `drill-1311-1`, succeeded, and matches the wrong shape the record states
-pending: #1337
 source: tester, spec for #1337 from #1311's plan v2 (claude-opus-5-5 via anthropic)
 Free. Uses the job ids from C-F852's comment. Call `list_jobs(workspace="drill-1311-1")`, then `get_job` on each listed
 id with `workspace="drill-1311-1"`. Run `list_gallery(workspace="drill-1311-1")`, then `get_gallery_metadata` on the
