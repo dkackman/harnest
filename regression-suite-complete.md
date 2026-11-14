@@ -19879,58 +19879,6 @@ If the files aren't reachable over MCP, the issue goes to Don with the record un
 cleanup: `delete_output` for C-F776's measuring runs only. Never delete the uploaded evidence assets.
 metrics: none.
 
-### C-F780 — the #1315 stage A build comment names four baseline jobs, their workspace, arguments and the diffusers they ran on
-pending: #1340
-source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
-Free. Source: the stage A comments on #1340 (`gh issue view 1340 --comments`), then `get_diffusers_state` and
-`get_server_info` (`runtime.packages.diffusers`) on lem, and `get_job` on each cited job with `workspace=` set.
-The baselines are the reference stage B's parity cases (C-F787) read, so they must outlive every regression sweep:
-the plan names no workspace, so the tester runs them in `probe-1315` (not a `regression-*` workspace) and keeps
-each final output with `keep_output` as `asset:probe-1315/baseline-<name>.<ext>`.
-expected:
-- The record lists exactly four baseline jobs: an H3 clip (`templates/minimax/video-with-audio`), an H3 chain
-  (`templates/minimax/chained-segments`, `segments: 2`), `templates/ltx2/two-stage` and a Kandinsky 6 job
-  (`templates/kandinsky6/text-to-video`). For each: the job id, the workspace, every argument passed (a pinned `seed`
-  among them; C-F781 gives the arguments) and the kept `asset:` name.
-- It states the diffusers version and commit `get_diffusers_state` reported when the four ran, and that no diffusers
-  update ran between the first and the last (`get_diffusers_state.finished_at` is earlier than the first job's start,
-  or null).
-- The plan calls these the **0.42 baselines**. If the version recorded is not 0.42.x (on 2026-11-13 lem reported
-  `0.44.0.dev0`, commit `43e30028`), that is a **finding** unless a later plan version on #1315 says which version the
-  baselines are taken on; the case then checks against that version instead.
-- Every cited job exists in that workspace and is `succeeded`.
-cleanup: none (the baseline jobs, their outputs and the kept assets are stage B's evidence: never delete them).
-metrics: none.
-
-### C-F781 — each stage A baseline is a fresh, seeded generation of the expected shape
-pending: #1340
-source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
-GPU, ~25 min total on an RTX 3090 (the four templates' `observed` cold figures: H3 clip ~1.5, 2-segment chain ~5-10,
-LTX two-stage ~5.4, K6 ~14 cold). Run by the tester when the stage is verified, in workspace `probe-1315`, each first
-through `validate_workflow(arguments=...)` with its bound `acknowledged_cost`, then `run_workflow(..., wait_seconds=55)`
-(`wait_for_job` on `still_running`). Arguments, all otherwise at the template's defaults:
-- `templates/minimax/video-with-audio`: `seed: 42`.
-- `templates/minimax/chained-segments`: `segments: 2`, `seed: 42`, `image: "asset:qa-cast/priya-portrait.jpg"` (the
-  default `image` is an off-box URL, which a durable baseline must not depend on).
-- `templates/ltx2/two-stage`: `seed: 42`.
-- `templates/kandinsky6/text-to-video`: `seed: 42`.
-Then `get_job` and `get_job_events` on each, and `get_gallery_metadata` on each video output.
-expected:
-- All four `succeeded`. No step is marked `reused` in `get_job` or its events: a baseline served from the step cache is
-  the output of whatever diffusers ran the earlier job, not this one. If one is, rerun it with a change that misses the
-  cache but not the output (ask on #1340 for one if `get_guide` names none) and say so.
-- Shapes: the H3 clip 960x544, 124 frames, 24 fps, with an audio stream; the chain one video of 2 segments, 960x544,
-  with an audio stream, its frame count the template's for 2 segments (`media.shots` holds 2 entries if the chain
-  carries shots); LTX two-stage 768x448 at stage 1, its final output 121 frames at 24 fps (at the upscaled size the
-  template's description states); K6 864x480, 121 frames, 24 fps.
-- `job.warnings` holds nothing that mentions `None`, a deprecated import path or an attention backend leak. The LTX
-  job's upsampler-path deprecation warning, if diffusers emits one on this version, is recorded (C-F788 compares it).
-Each final output is kept with `keep_output` as `asset:probe-1315/baseline-h3-clip.mp4`, `baseline-h3-chain.mp4`,
-`baseline-ltx-two-stage.mp4`, `baseline-k6.mp4`. Check first with `get_gallery_metadata` that the name is free ("Unknown
-asset"); if it is taken, the earlier baseline stands and the run is not repeated.
-cleanup: none. Never delete the baseline jobs or assets.
-metrics: none.
-
 ### C-F782 — an H3 MagCache calibration that stops before its last forward still reports its ratios
 pending: #1340
 source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
@@ -19942,7 +19890,7 @@ call. Workspace `probe-1315`. `templates/minimax/video-with-audio`, `seed: 42`, 
 - (a) **unfinished**: `cache: {"type": "mag", "calibrate": true, "num_inference_steps": 5}` (the template's 5 steps:
   4 forwards made, 5 expected);
 - (b) **finished control**: `cache: {"type": "mag", "calibrate": true, "num_inference_steps": 4}`;
-- (c) **no cache**: `cache: null` (C-F781's clip, if run this session, serves; do not run it twice).
+- (c) **no cache**: `cache: null` (C-F842's `h3-clip` baseline, if run this session, serves; do not run it twice).
 expected:
 - (a) and (b) both `succeeded`, and each has exactly one `MagCache calibration (4 steps): [ ... ]` line in
   `job.warnings` and as a `log` event in `get_job_events`, holding 4 numbers, each finite and positive. A run with no
@@ -19951,26 +19899,6 @@ expected:
 - (a)'s and (b)'s ratio lists agree to within 1e-3 each: the same forwards were measured.
 - (c) carries no calibration line.
 cleanup: `delete_output(job_id=...)` for (a) and (b).
-metrics: none.
-
-### C-F783 — the attention backends lem advertises still include the ones its jobs use, and none is warned unavailable
-pending: #1340
-source: tester, spec for #1340 from #1315's plan v1 (claude-opus-5-5 via anthropic)
-Free (validate only). The plan's intent: "`get_server_info` lists the same attention backends as before on lem". On
-2026-11-13 `get_server_info` carried no attention-backend list (its keys: hostname, version, device, runtime,
-directories, workspace, caches, …), so the build comment on #1340 names the MCP field that reports the list. Read it
-there. Then `validate_workflow` `templates/minimax/video-with-audio` with `attention_backend` set to each of
-`native`, `sage_hub`, `flash_hub` and `sparse` in turn.
-expected:
-- The list is reachable over MCP. If no MCP tool reports it, the issue goes back as needs-info: the acceptance can't
-  be checked by the tester.
-- It contains at least `native`, `sage_hub` and `flash_hub` (lem has run `sage_hub` H3 jobs and has the `kernels`
-  package; the acceleration guide's tables cite jobs 94c04976d21d and 593131ca713f). Missing any of these is a
-  **finding**: the availability filter dropped a backend lem can use.
-- If the build comment quotes the list as it was before the filter, the two are equal, or every dropped name is one
-  diffusers' own check reports unavailable and the comment names why (a package below diffusers' minimum).
-- None of the four validations warns `attention_backend_unavailable` on lem (cuda).
-cleanup: none.
 metrics: none.
 
 ### C-F784 — a FLUX 3 Klein argument fed by a `previous_result:` that resolves to nothing takes the block default
@@ -20010,48 +19938,6 @@ expected:
   a **finding**: the drop removed a value that was not `None`. If the build comment says the argument has no visible
   effect at that value, the comment names a different argument or value that does, and the case uses that.
 cleanup: `delete_output(job_id=...)`.
-metrics: none.
-
-### C-F786 — lem and mini-ai report diffusers 0.43.x after the stage B deploy
-pending: #1341
-source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
-Free. On lem: `get_server_info` (`runtime.packages.diffusers`) and `get_diffusers_state` (`version`, `commit`,
-`status`, `error`). On mini-ai, through the harness's mini-ai dw MCP server, the same two calls; if this session has
-no mini-ai server, say so and the mini-ai half goes back as needs-info.
-expected:
-- On both hosts both calls agree, and the version is `0.43.x` (a release, not `.dev0`), `status: "idle"`, `error`
-  null. A version below 0.43.0 is a **finding**. A version above 0.43.x (lem read `0.44.0.dev0` on 2026-11-13, before
-  the stage started) is a **finding** unless a plan version on #1315 later than v1 says lem stays on a development
-  build; the case then checks that the version is at least 0.43.0 and that the build comment names the commit.
-- mini-ai's `get_server_info.device` is `mps`, lem's `cuda`.
-cleanup: none.
-metrics: none.
-
-### C-F787 — the four stage A baselines, rerun on 0.43, match their baselines or the difference is explained
-pending: #1341
-source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
-GPU, ~25-40 min on lem (the first runs after the deploy re-quantize: expect cache misses and longer cold times; that
-is not a finding). For each baseline job C-F780 recorded: `rerun_job(job_id=<baseline>)` with **no** `new_seed`
-and no `arguments`, bound to the job's original plan (`validate_workflow` the job's workflow with its arguments first;
-`get_job_workflow` returns it). It runs in the job's original workspace. `wait_seconds` 55, then `wait_for_job`.
-Then `get_job` / `get_job_events` on the rerun, `get_gallery_metadata` on its video, and
-`compare_outputs(names=[<baseline asset:>, <rerun output>], at=[0, <middle frame>, <last frame>])`.
-expected:
-- Each rerun `succeeded`, and no step is marked `reused`. A rerun served from the step cache compares the baseline
-  with itself and proves nothing: that is a **finding** against the step cache (its key does not include the diffusers
-  version), and the case then needs a cache-missing rerun the build comment names.
-- Same shape as its baseline: width, height, `frame_count`, `fps`, `duration_seconds` and audio stream presence equal.
-  A shape change is a **finding** whatever the explanation.
-- **Match**: `compare_outputs` reports mean abs diff 0 at every `at` frame. Otherwise the stage B comment states, for
-  that job, the PSNR / SSIM / mean abs diff the tester can reproduce here (within ±0.5 dB PSNR, ±0.01 SSIM) and a
-  named 0.43 change behind it (attention kernels, cache-hook timing, LoRA alpha handling, a scheduler change, …).
-  "Looks fine" or no named change is a **failure** of the stage.
-- The tester also looks at the three frames of each pair side by side (the grid `compare_outputs` returns): a visible
-  artefact in the rerun that the baseline lacks (tearing, colour shift, a black or noise frame, a different subject)
-  is a **finding** even with an explanation.
-- The H3 clip's and chain's reruns still carry audio for their full length (`get_output_audio` on each: non-silent,
-  same duration as the baseline within one frame).
-cleanup: none (the reruns are stage B's evidence; keep them until #1341 is closed). The baselines are never deleted.
 metrics: none.
 
 ### C-F788 — `ltx2/two-stage` names the relocated upsampler and runs with no deprecation warning for it
@@ -20107,26 +19993,6 @@ expected:
 - (a)'s events and (b)'s show no trust prompt and no `trust_remote_code` mention.
 - (c): the H3 reruns' events show the SDNQ load with no import refusal.
 cleanup: `delete_output(job_id=...)` for (a) and (b).
-metrics: none.
-
-### C-F791 — a stacked-LoRA case from `docs/LORAS.md` matches its 0.42 output, or the difference is explained
-pending: #1341
-source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
-GPU, one run of the case's size. The plan names no baseline for this case and stage A records none (C-F780 lists
-four jobs). The stage B comment on #1341 therefore names: which `docs/LORAS.md` stacked-LoRA case was used, the
-earlier job id it is compared against and the diffusers version that job ran on (from its own record), and the
-arguments. `get_job` on the earlier job, then `rerun_job` of it (no `new_seed`), bound, `wait_seconds=55`, and
-`compare_outputs(names=[<earlier>, <rerun>])`. `get_guide("loras")` (or the guide that carries `LORAS.md`) for the
-new line.
-expected:
-- The earlier job exists, stacks at least two adapters, and ran on diffusers older than 0.43. One that ran on 0.43 or
-  later compares nothing: the issue goes back as needs-info.
-- The rerun `succeeded`, no step `reused`, same shape.
-- Match is mean abs diff 0; otherwise the comment gives the numbers (reproducible as in C-F787) and names the 0.43
-  LoRA change (Kohya per-module alpha kept, or component-weight broadcast) or another named 0.43 change. No named
-  change is a **failure**.
-- The LoRA guide has a line saying an explicit `alpha` overrides the per-module alphas a Kohya LoRA carries.
-cleanup: `delete_output(job_id=<rerun>)` once #1341 is closed; keep it until then.
 metrics: none.
 
 ### C-F792 — a `sage_hub` H3 job completes on lem on 0.43, and whether it reached the Hub is reported
@@ -20185,7 +20051,7 @@ GPU, ~2 min. 0.43 keeps an explicit `None` instead of falling back; stage A's dr
 `rerun_job` C-F784 (a)'s job (no `new_seed`), bound, then `compare_outputs` against
 `asset:probe-1315/baseline-klein-none.png`; and run C-F784 (b) again (argument omitted), `seed: 7`.
 expected:
-- The rerun `succeeded`, no step `reused` (as C-F787).
+- The rerun `succeeded`, no step `reused` (as C-F848).
 - The rerun equals the fresh (b) run (mean abs diff 0): on 0.43 too, `null` and "omitted" are the same.
 - Against the 0.42 baseline it matches, or the difference equals C-F790 (a)'s explained Klein difference (the stage B
   comment names one change for both). A rerun that fails on `None` is a **finding**.
