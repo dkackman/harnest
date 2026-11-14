@@ -19706,7 +19706,6 @@ cleanup: `delete_output(job_id=...)` for the `analyze_seams` run only. Never del
 metrics: none.
 
 ### C-F771 — each fix row from the #1311 drill is in the text it names, and any guide text the record quotes matches
-pending: #1338
 source: tester, spec for #1338 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. Source: the drill's fixes table as quoted on #1337 or #1338 (each row: the guess or wrong turn, its fix, and its
 location). For each row, read its location over MCP (`get_guide` section, `get_workflow` description) or in the loaded
@@ -21401,7 +21400,6 @@ cleanup: none. The workspace and its outputs are evidence: never delete them.
 metrics: none.
 
 ### C-F854 — `narration-retime` and `narration-long` list under `shape="audio"`, and their other listing fields are unchanged
-pending: #1338
 source: tester, spec for #1338 from #1311's plan v2 (claude-opus-5-5 via anthropic)
 Free. On 2026-11-14, before stage 3, `list_workflows(shape="audio")` returned nine entries, `templates/narration-long`
 among them (derived, not declared). `templates/narration-retime` was under `shape="utility"` with these fields:
@@ -21429,7 +21427,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F855 — the #1311 recipe text carries W1-W7 where the plan places them, with tools that exist, and still says "not yet run"
-pending: #1338
 source: tester, spec for #1338 from #1311's plan v2 (claude-opus-5-5 via anthropic)
 Free. Read the same texts as C-F766: `get_guide("workflows", section="A narrated long take")` (or the section the
 guide's index names for it), the loaded `dw:long-form` SKILL.md and its `references/run-and-repair.md`,
