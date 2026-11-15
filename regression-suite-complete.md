@@ -304,6 +304,13 @@ smoke's Fixtures lists the asset too.
   twenty-one.", and what matters is that `transcribe_audio` hears those words, in digits or in words. Keep them
   across runs and never sweep them. The H3 cases build their chain from `templates/minimax/chained-segments` and
   keep nothing.
+- C-F869–C-F898 (performer replacement, #1194: `detect_cuts`, `trim_video` `pad_to`, the `replace-performer`
+  templates, `track_people`) use the shared `asset:qa-cast/` clips `ep6-cold-open.mp4`, `ep3-shot1-incident.mp4`,
+  `ep3-shot2-reply.mp4` (124 frames, 960×544, 24 fps), `ep49-episode.mp4` (372 frames, three 124-frame hard cuts),
+  `ep62-shot2-deflect.mp4` (124 frames) and `ep65-shot-kf-priya-hal.mp4` (121 frames, 960×544, Priya and Hal in one
+  frame), with `priya-portrait.jpg`, `hal-portrait.jpg` and `priya-voice.wav`. The multi-shot and person-free clips
+  are built in each case's setup from those clips with `trim_video`, `concat_videos` (`crossfade_ms: 0`),
+  `video_frames`/`get_first_frame`, `loop_frames` and `qr_code`. Nothing new to keep; every case deletes what it made.
 
 ## Functional
 
@@ -21721,6 +21728,733 @@ expected:
   `rerun_of` is a **finding**: it is the double queue the plan exists to prevent.
 cleanup: `delete_output(job_id=...)` for each of C-F867's new jobs. Then `delete_workspace` the drill workspace with
 its `acknowledged_cost`, once #1371 and #1245 are both closed. Never delete it before then: it is #1245's evidence too.
+metrics: none.
+
+### C-F869 — `detect_cuts` is listed and documented, with `max_frames` defaulting to 345
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. Call `list_tasks`, `get_task("detect_cuts")`, then `get_guide("tasks")` (index form) and the `detect_cuts`
+section it lists.
+expected:
+- `detect_cuts` is in `commands`.
+- `get_task` lists a required `video` and an optional `max_frames` with default 345, described as capped at 345.
+- The tasks guide has a `detect_cuts` section. It names the output fields `fps`, `num_frames` and `cuts`, and each
+  cut's `name`, `start_frame`, `num_frames`, `render_frames` and `detail`, plus the `split` and `too_short` flags.
+  It says `render_frames` is the smallest H3 frame count (17n+5, 124–345) at or above the cut's length.
+- `content_cuts` still behaves for `crop_face_track` (C-F881), so its move is invisible here. A task named
+  `content_cuts` newly appearing or disappearing from `list_tasks` is not a finding by itself.
+cleanup: none.
+metrics: none.
+
+### C-F870 — `detect_cuts` on a two-shot clip returns both cuts, with on-grid `render_frames`
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Setup: the two-shot clip TWO. A utility workflow `qa-c-f870` with steps:
+`a` = `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=100)`;
+`two` = `concat_videos(videos=["previous_result:a", "asset:qa-cast/ep3-shot2-reply.mp4"], trim_frames=0,
+crossfade_ms=0)`; `cuts` = `detect_cuts(video="previous_result:two")`. `validate_workflow`, then `run_workflow` with
+its `acknowledged_cost`, `wait_seconds=55`, `workspace="regression-complete"`. Read the cut list with
+`get_output_text` (or the job's JSON output).
+expected:
+- The JSON has `fps` 24 and `num_frames` 224.
+- `cuts` has exactly two entries, named `cut-1` and `cut-2`. `cut-1` starts at 0 and `cut-2` at 100 (±1). Their
+  `num_frames` sum to 224 and they don't overlap or leave a gap: `cut-2.start_frame` equals `cut-1.num_frames`.
+- `render_frames` is 124 for both. It is ≥ that cut's `num_frames` and on the grid 17n+5 in 124–345.
+- Neither cut carries `split` or `too_short`, and each has a non-empty `detail`.
+- It is a **finding** if a cut is found inside either shot, or if the cut at 100 is missed.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F871 — `render_frames` rounds up to the grid, and an on-grid length keeps its count
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Setup: a three-shot clip of 124, 130 and 141 frames. Make the 130- and 141-frame shots as still holds so no source
+runs out: `get_first_frame` of `ep3-shot1-incident.mp4` → `loop_frames(num_frames=130)`, and `get_first_frame` of
+`ep3-shot2-reply.mp4` → `loop_frames(num_frames=141)`. Then `concat_videos(videos=["asset:qa-cast/ep6-cold-open.mp4",
+<the 130 hold>, <the 141 hold>], trim_frames=0, crossfade_ms=0)` → `detect_cuts`. Workflow `qa-c-f871`.
+expected:
+- Three cuts, starting at 0, 124 and 254 (±1), with `num_frames` summing to 395.
+- `render_frames` is 124 for the 124-frame cut (on grid, kept), 141 for the 130-frame cut (rounded up to the next
+  grid value) and 141 for the 141-frame cut (on grid, kept).
+- A still hold is one shot: a cut inside either hold is a **finding**.
+- If a cut boundary lands ±1 off, `render_frames` must still be the smallest grid value ≥ the reported `num_frames`.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F872 — `detect_cuts` on one-shot clips returns one cut, padded up to 124 when shorter
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+A workflow `qa-c-f872` with two steps: `detect_cuts(video="asset:qa-cast/ep6-cold-open.mp4")` and
+`detect_cuts(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4")`.
+expected:
+- `ep6-cold-open`: one cut, `cut-1`, `start_frame` 0, `num_frames` 124, `render_frames` 124, no `split` and no
+  `too_short`. Top-level `num_frames` is 124.
+- `ep65-shot-kf-priya-hal` (121 frames, off the grid): one cut with `num_frames` 121 and `render_frames` 124, the
+  minimum.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F873 — a cut longer than `max_frames` is split into near-equal flagged pieces
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+A workflow `qa-c-f873` with three `detect_cuts` steps on `asset:qa-cast/ep6-cold-open.mp4` (one 124-frame shot):
+`max_frames` 60, 123 and 124.
+expected:
+- `max_frames` 60: the shot comes back in at least three pieces. Each has `"split": true` and `num_frames` ≤ 60.
+  Their lengths differ by at most 1 and sum to 124. They are contiguous: each starts where the last ended, the
+  first at 0. Each has `render_frames` 124, the grid minimum.
+- `max_frames` 123: two pieces of 62 (or 61 and 63 at most), both `split`.
+- `max_frames` 124: one cut of 124 with no `split` flag. Equal to the cap is not over it.
+- Names stay sequential (`cut-1`, `cut-2`, …) across the pieces.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F874 — a shot over 345 frames splits at the default cap into on-grid pieces, and a 345-frame shot does not
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Setup: still holds of `get_first_frame(ep6-cold-open.mp4)` via `loop_frames` at `num_frames` 345, 346 and 400. A
+workflow `qa-c-f874` runs `detect_cuts` (default `max_frames`) on each.
+expected:
+- 345: one cut of 345, `render_frames` 345, no `split`.
+- 346: two `split` pieces of 173, each with `render_frames` 175.
+- 400: two `split` pieces of 200, each with `render_frames` 209.
+- In every case each piece is ≤ 345, the pieces sum to the shot, and every `render_frames` is on the grid and ≥ its
+  piece. A piece over 345 or a `render_frames` above 345 is a **finding**: that cut can't be rendered.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F875 — `detect_cuts` refuses a `max_frames` above 345 before the run
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow` on a one-step workflow `qa-c-f875`:
+`detect_cuts(video="asset:qa-cast/ep6-cold-open.mp4", max_frames=X)` for X = 346, 1000, 0 and 345.
+expected:
+- 346 and 1000 are refused at validate with a message that names `max_frames` and 345.
+- 0 is refused at validate naming `max_frames`, because a cut can't be split into pieces of zero frames.
+- 345 validates clean.
+- `list_jobs` shows nothing queued by this case.
+cleanup: none.
+metrics: none.
+
+### C-F876 — a cut under 22 frames is flagged `too_short`, and the flag follows the reported length
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Setup: three three-shot clips, `ep6-cold-open` + a short middle shot + `ep3-shot2-reply`, where the middle is
+`trim_video(ep3-shot1-incident.mp4, start_frame=0, num_frames=N)` for N = 10, 21 and 22. Join each with
+`concat_videos(trim_frames=0, crossfade_ms=0)` → `detect_cuts`. Workflow `qa-c-f876`.
+expected:
+- Each clip gives three cuts. The middle cut starts at 124 (±1).
+- N=10: the middle cut has `"too_short": true`. The two 124-frame cuts don't.
+- N=21: the middle cut is flagged. N=22: it is not.
+- If detection puts a boundary ±1 off, the flag must agree with the cut's reported `num_frames`: set exactly when it
+  is < 22. A flag that disagrees with its own `num_frames` is a **finding**.
+- A `too_short` cut still carries `render_frames` 124.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F877 — `detect_cuts` refuses a still or an audio file as `video` at validate
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow` on `detect_cuts(video="asset:qa-cast/priya-portrait.jpg")` and then on
+`detect_cuts(video="asset:qa-cast/priya-voice.wav")`, workflow `qa-c-f877`.
+expected:
+- Both are refused at validate, before any run, with a message naming the `video` argument and saying it needs a video.
+- `list_jobs` shows nothing queued.
+- It is a **finding** if either validates clean and fails only at run time.
+cleanup: none.
+metrics: none.
+
+### C-F878 — `trim_video` `pad_to` holds the last frame and pads the audio with silence
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+A workflow `qa-c-f878` with a step `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0,
+num_frames=110, pad_to=124)`. Run it, then `get_gallery_metadata` on the output.
+expected:
+- The output has 124 frames at 24 fps, 960×544. Its audio stream runs 124/24 s (≈5.167 s), ±1 frame.
+- `compare_outputs(names=[<output>], baseline=<output>, at="frame:109")` against frames 110, 116 and 123 of the same
+  output (or `get_output_frames` at those frames): the held frames equal frame 109. Mean abs diff ≈ 0, or PSNR ≥ 45 dB
+  allowing for re-encode.
+- Frames 0–109 are the source's: `compare_outputs` against `ep6-cold-open.mp4` at `frame:50` and `frame:109` is close
+  (SSIM ≥ 0.95).
+- The audio over the held tail (`get_output_audio`, or `analyze_audio` over the last 14 frames ≈ 0.58 s) is silent,
+  and the first 110 frames' audio is the source's.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F879 — `pad_to` equal to `num_frames` changes nothing, and omitting it is today's trim
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+A workflow `qa-c-f879` with two steps on `ep6-cold-open.mp4`, `start_frame=0, num_frames=110`: one with
+`pad_to=110` and one with no `pad_to`.
+expected:
+- Both outputs have 110 frames and the same audio length (110/24 s).
+- Their `pcm_sha256` (from `get_gallery_metadata`) match, and `compare_outputs` between them at `frame:60` and
+  `frame:109` is identical or near (PSNR ≥ 45 dB).
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F880 — `trim_video` refuses a `pad_to` below `num_frames` or not an integer, and `pad_to` doesn't loosen the span check
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow` on `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=110,
+pad_to=X)` for X = 109, 0, -1, 124.5 and `"124"`, then on `trim_video(..., start_frame=100, num_frames=30,
+pad_to=141)` (a span past the 124-frame source's end). Workflow `qa-c-f880`.
+expected:
+- X = 109, 0, -1, 124.5 and `"124"`: each is refused at validate with a message naming `pad_to`. For 109 the message
+  says it must be at least `num_frames` (110).
+- The past-the-end span is still refused as today, naming the span or `num_frames`. Padding never stretches a trim
+  past the source's end.
+- `list_jobs` shows nothing queued.
+cleanup: none.
+metrics: none.
+
+### C-F881 — `crop_face_track` still resets its track at hard cuts, and agrees with `detect_cuts` on where they are
+pending: #1373
+source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+A workflow `qa-c-f881` with `detect_cuts(video="asset:qa-cast/ep49-episode.mp4")` and `crop_face_track` on the same
+clip, using the arguments C-F825 uses.
+expected:
+- `detect_cuts`: three cuts, starting at 0, 124 and 248 (±1), each 124 frames with `render_frames` 124.
+- `crop_face_track` behaves as C-F825–C-F833 describe for a multi-cut clip: the track restarts at each cut, and any
+  cut or shot boundaries it reports are at the same frames `detect_cuts` gives.
+- Re-run C-F825–C-F833. They pass unchanged. A failure there that passed before #1373 is a **regression**.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F882 — the two performer-replacement templates are listed with their shapes, traits and inputs
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. Call `list_workflows(shape="utility")`, `list_workflows(shape="sequence")`,
+`get_workflow("replace-performer-cuts")` and `get_workflow("replace-performer")`.
+expected:
+- `replace-performer-cuts` is listed under utility. Its steps are `detect_cuts`, then `video_frames` → `segment` per
+  frame with prompt `person` and threshold 0.3. Its outputs are the cut list and one mask video for the whole clip.
+- `replace-performer` is listed under sequence with the traits `needs-input-media`, `identity-referenced` and
+  `has-audio`.
+- `replace-performer` takes `source_video`, `mask_video`, `cuts`, `references`, `prompt`, `seed` and the H3 variables.
+  Its constraints show `cuts` as 1–32 entries and `references` as at most 6. Its per-cut fields (`start_frame`,
+  `num_frames`, `render_frames`, optional `seed`) are documented in the listing's `lists` field or the variable's
+  description.
+- Its steps: `for_each` over `cuts` trims the source and the mask with `pad_to` = `render_frames`, then runs a ref2va
+  regional edit with `source_video` and `hold_audio` set to the trimmed cut, `refine_strength` 1.0, and
+  `mask_grow` (a variable, default 0 or 1). Then `concat_videos` with `trim_frames` = each cut's `num_frames` and
+  `crossfade_ms` 0, then `pair_audio` with the source's track.
+cleanup: none.
+metrics: none.
+
+### C-F883 — both templates validate clean on a two-cut example and quote a cost
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. Let CUTS2 = `[{"name":"cut-1","start_frame":0,"num_frames":124,"render_frames":124},
+{"name":"cut-2","start_frame":124,"num_frames":124,"render_frames":124}]`.
+1. `validate_workflow("replace-performer-cuts", arguments={"video": "asset:qa-cast/ep49-episode.mp4"})`. Use the
+   template's own name for its input variable if it differs.
+2. `validate_workflow("replace-performer", arguments={"source_video": "asset:qa-cast/ep49-episode.mp4",
+   "mask_video": "asset:qa-cast/ep49-episode.mp4", "cuts": CUTS2, "references": ["asset:qa-cast/hal-portrait.jpg"],
+   "prompt": "<a line>", "seed": 7})`. Any same-size video stands in for the mask at validate.
+expected:
+- Both validate clean, with a `plan.estimate` and an `acknowledged_cost` fingerprint.
+- Call 2's estimate scales with the cut count: it is more than one cut's, and plans two H3 renders of 124 frames.
+cleanup: none.
+metrics: none.
+
+### C-F884 — `replace-performer` refuses a bad cut list, mask or reference count at validate, naming the field
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. Start from call 2 of C-F883 (source `ep49-episode.mp4`, 372 frames). Change one thing at a time and
+`validate_workflow` each:
+1. one cut `{"start_frame":300,"num_frames":124,"render_frames":124}`, past the source's end;
+2. `render_frames` 130 (off the grid);
+3. `render_frames` 362 (17n+5 but above 345) on a 345-frame cut;
+4. `render_frames` 107 (17n+5 but below 124) on a 100-frame cut;
+5. `render_frames` 124 on a cut of `num_frames` 141 (below `num_frames`);
+6. `cuts: []`;
+7. 33 entries (each `num_frames` 11, starting at 0, 11, 22, …, so all within the source);
+8. `mask_video` a different size: a 124-frame `qr_code` → `loop_frames` clip made as in C-F895's setup, or any
+   non-960×544 video;
+9. seven `references`.
+expected:
+- Every call is refused at validate, before anything queues. The message names the offending field (`cuts`, the
+  entry's index or name with `start_frame`/`num_frames`/`render_frames`, `mask_video`, `references`) and the limit it broke.
+- 2, 3 and 4 say `render_frames` must be on the H3 grid in 124–345. 5 says it must be at least `num_frames`.
+- 8 names both sizes.
+- `list_jobs(workspace="regression-complete")` shows no job from this case. A queued job for any call is a
+  **finding**: a bad cut there costs a GPU render.
+cleanup: delete C-F895's setup output if it was made here.
+metrics: none.
+
+### C-F885 — `replace-performer` accepts the edges of its limits
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. From C-F883 call 2, `validate_workflow` each:
+1. one cut `{"start_frame":0,"num_frames":345,"render_frames":345}`;
+2. one cut `{"start_frame":248,"num_frames":124,"render_frames":124}`, ending exactly at the source's last frame;
+3. one cut `{"start_frame":0,"num_frames":100,"render_frames":124}`;
+4. 32 entries, each `num_frames` 11, at 0, 11, …, 341, with `render_frames` 124;
+5. six `references`;
+6. one cut carrying its own `"seed": 99`.
+expected:
+- 1, 2, 3, 5 and 6 validate clean.
+- 4 is not refused for its count. If it is refused at all, the message names the cuts' length (too short), not the
+  number of entries. Record which way it went in the run's note.
+cleanup: none.
+metrics: none.
+
+### C-F886 — the prep template returns the cut list and a whole-clip person mask matching the source
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+`validate_workflow` then `run_workflow("replace-performer-cuts")` on `asset:qa-cast/ep49-episode.mp4`, with
+`acknowledged_cost`, `wait_seconds=55` and `wait_for_job` on `still_running`.
+expected:
+- The cut list matches C-F881's `detect_cuts` on the same clip: three cuts at 0, 124 and 248, each 124 frames,
+  `render_frames` 124.
+- One mask video: 372 frames, 24 fps, 960×544 (`get_gallery_metadata`).
+- `get_output_frames` on the mask and on the source at `frame:60`, `frame:180` and `frame:300`: the mask is light
+  over the person and dark elsewhere, in each shot.
+cleanup: keep the job for C-F887 (its outputs are the inputs there), then `delete_output(job_id=…)` after C-F889.
+metrics: none.
+
+### C-F887 — `replace-performer` swaps the person in every cut, keeping length, cuts, background and soundtrack
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Setup: source SRC = `ep49-episode.mp4` trimmed to its first two shots (`trim_video`, `start_frame=0`,
+`num_frames=248`). Run `replace-performer-cuts` on SRC as in C-F886 (two cuts, one mask of 248 frames). First
+confirm with `get_output_frames` on SRC at `frame:60` and `frame:180` that each shot holds one person who is not Hal.
+If not, use `ep62-shot1-accuse.mp4` + `ep62-shot2-deflect.mp4` joined with `concat_videos(crossfade_ms=0)` and
+re-check. `validate_workflow("replace-performer", arguments={"source_video": SRC, "mask_video": <prep mask>,
+"cuts": <prep cut list>, "references": ["asset:qa-cast/hal-portrait.jpg"], "prompt": "<the scene with Hal>",
+"seed": 7})`, then run with its `acknowledged_cost`.
+expected:
+- The output has SRC's frame count (248) and fps (24), at 960×544.
+- Face drift against `hal-portrait.jpg` (the `face-drift-check` template, C-F650, or `assess_output`'s face drift)
+  scores ≥ 0.363 similarity in **every** cut.
+- `assess_output(probe="analyze_shots")` on the output finds the cut at 124 (±1), as SRC's does, and no new cut.
+- Away from the person, the frame holds SRC by eye (`get_output_frames` at `frame:60` and `frame:180` beside SRC's).
+- The soundtrack is SRC's: `get_output_audio` and SRC's sound the same. `pcm_sha256` match, or `compare` levels
+  within 0.5 dB if a resample differs.
+- `get_job_workflow` shows the per-cut seeds 7 and 8 (`seed` + index), since no cut carried its own.
+cleanup: keep the job for C-F889. Delete the setup jobs after C-F889.
+metrics: none.
+
+### C-F888 — a cut's own `seed` overrides `seed` + index
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow` as C-F887, but with `cut-2` carrying `"seed": 99`, then `get_job_workflow` on C-F887's job
+for comparison. If validate's plan shows the resolved per-cut arguments, read them there. Otherwise this case runs
+with C-F889's re-roll, which supplies a cut seed.
+expected:
+- `cut-1` resolves to `seed` 7 (7 + 0) and `cut-2` to 99, not 8.
+cleanup: none.
+metrics: none.
+
+### C-F889 — re-rolling one cut by the skill's procedure changes only that cut
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Follow the "replace a performer" route's re-roll step in the `dw:minimax-h3` skill (or `references/regional-edit.md`)
+exactly as written. Re-roll C-F887's `cut-2` with a new seed (`rerun_job` on one `cuts` entry, then stitch the
+result back into C-F887's output). Use the tools and arguments the skill names, each validated before it runs.
+expected:
+- Every tool, template and argument the procedure names exists (`get_task`/`get_workflow`) and validates as written.
+- The stitched result has 248 frames at 24 fps, with the soundtrack unchanged from C-F887's output.
+- `compare_outputs(names=[stitched], baseline=<C-F887 output>)` at `frame:60` (cut-1) is identical or near
+  (PSNR ≥ 40 dB). At `frame:180` (cut-2) it differs (clearly lower PSNR).
+- The new cut-2 still scores ≥ 0.363 against `hal-portrait.jpg`, and the cut at 124 stays where it was.
+- A step in the skill that doesn't run as written is a **finding** against the skill (file it on the skill).
+cleanup: `delete_output(job_id=…)` for this case's jobs, C-F887's, and the C-F886/C-F887 setup jobs.
+metrics: none.
+
+### C-F890 — the `mask_grow` default is 0 or 1, as the seam bench decided
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_workflow("replace-performer")`, the `dw:minimax-h3` skill's route, and #1374's hand-off comment.
+expected:
+- `mask_grow` is a variable with a default of 0 or 1.
+- The skill or the hand-off states the bench result: `mask_grow` 0 vs 1 on `ep62-shot2-deflect` (S4 `deflect`), two
+  seeds each, recorded in `bench/records/performer-replacement.md`. The default follows the rule: 0 if it removes the
+  couch step with no hard edge, else 1. A default that contradicts the recorded result is a **finding**.
+- The bench jobs may live on another server. Their absence from this server's `list_jobs` is not a finding.
+- The record file and `docs/ATTRIBUTIONS.md` (Directors-Cut, MIT) are checked here only if `list_guides` exposes them.
+  Otherwise they are a `docs-review` item, not this case.
+cleanup: none.
+metrics: none.
+
+### C-F891 — the H3 skill and regional-edit reference teach the replace-a-performer route, in order, with real names
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. Read the `dw:minimax-h3` skill's SKILL.md and its `references/regional-edit.md`.
+expected:
+- Both carry a "replace a performer" route in the order prep (`replace-performer-cuts`) → choose cuts → swap line →
+  run (`replace-performer`) → re-roll one cut.
+- Each template, task and argument the route names exists: `get_workflow` or `get_task` returns it, and the argument
+  names match the listing in C-F882.
+- The route states the limits a user hits: 1–32 cuts, up to 6 references, and `render_frames` on the grid.
+cleanup: none.
+metrics: none.
+
+### C-F892 — `track_people` is listed and documented, and the prep template gains `track`
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_tasks`, `get_task("track_people")`, `get_guide("tasks")` and its `track_people` section, then
+`get_workflow("replace-performer-cuts")`.
+expected:
+- `get_task` lists `video` (required), `prompt` default `"person"`, `max_people` default 4 and `threshold`
+  default 0.3.
+- The tasks guide has a `track_people` section. It says the task returns one mask video per person, named
+  `person-1`, `person-2`, … in order of screen area, plus a numbered contact sheet.
+- `replace-performer-cuts` has a `track` option, and its description says it gives per-person masks.
+cleanup: none.
+metrics: none.
+
+### C-F893 — `track_people` on a two-person clip returns one mask per person and a matching contact sheet
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+First confirm with `get_output_frames("asset:qa-cast/ep65-shot-kf-priya-hal.mp4", at="frame:60")` that two people are
+in frame. Then a workflow `qa-c-f893` with `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4")`. Run it.
+expected:
+- Exactly two mask videos, `person-1` and `person-2`. Not four: `max_people` caps the count, it doesn't pad it.
+- Each mask has 121 frames, 24 fps and 960×544, the source's numbers (`get_gallery_metadata`).
+- `get_output_frames` on each mask and on the source at `frame:0`, `frame:60` and `frame:120`: each mask is light
+  over one person and dark over the other, and the two never mark the same person.
+- `person-1` covers the larger area of the two.
+- The contact sheet (`get_output_image`) shows the numbers 1 and 2 on the people that `person-1` and `person-2`
+  mark.
+cleanup: keep for C-F894 and C-F898, then `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F894 — `max_people` 1 returns only the largest person, and 0 is refused
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Run `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", max_people=1)`, workflow `qa-c-f894`. Then
+`validate_workflow` with `max_people=0`.
+expected:
+- Exactly one mask, `person-1`, with 121 frames. It marks the same person as C-F893's `person-1`:
+  `compare_outputs` against it at `frame:60` is near-identical (SSIM ≥ 0.9).
+- `max_people=0` is refused at validate naming `max_people`. Nothing queues.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F895 — `track_people` on a clip with no person fails with "no person found"
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Setup: a person-free clip. A workflow `qa-c-f895` with a `qr_code` step (as C-F454's QR fixture) →
+`loop_frames(video=previous_result:<qr step>, num_frames=124)` → `track_people(video=previous_result:<loop>)`.
+expected:
+- The job fails, or the `track_people` step errors, with a message that says "no person found".
+- It is a **finding** if it returns an empty or all-dark mask as success, or if the error is an opaque traceback.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F896 — `track_people` masks span the whole of a multi-cut clip
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+`track_people(video="asset:qa-cast/ep49-episode.mp4")`, workflow `qa-c-f896`.
+expected:
+- At least one mask. Every mask has 372 frames at 24 fps, 960×544.
+- `person-1` is light over a person at `frame:60`, `frame:180` and `frame:300` wherever that shot shows one, and
+  dark where the shot shows nobody. No mask is cut short at a hard cut.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F897 — the prep template's `track` option returns per-person masks and leaves the cut list unchanged
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+Run `replace-performer-cuts` on `asset:qa-cast/ep65-shot-kf-priya-hal.mp4` twice, once with `track` on and once off.
+Validate each first.
+expected:
+- Both give the same cut list: one cut, 121 frames, `render_frames` 124.
+- With `track` off: one whole-clip mask covering both people.
+- With `track` on: `person-1` and `person-2` masks (and the contact sheet), matching C-F893's.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F898 — `replace-performer` with one person's mask changes only that person
+pending: #1375
+source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
+From C-F893, find from the contact sheet who `person-2` is, and take as REF the portrait of the *other* cast
+member: `priya-portrait.jpg` if `person-2` is Hal, `hal-portrait.jpg` if Priya. Run `replace-performer` with
+`source_video` = `ep65-shot-kf-priya-hal.mp4`, `mask_video` = C-F893's `person-2` only, `cuts` = C-F897's cut list,
+`references` = [REF] and `seed` 7. Then run `crop_face_track` with `select` left and with `select` right (whichever
+side each person is on) on both the output and the source.
+expected:
+- The output has 121 frames at 24 fps, with the source's soundtrack.
+- The unreplaced person's crop on the output matches the source's crop: SSIM ≥ 0.8 at `frame:60`, and face drift
+  against the source crop stays near the source's own baseline, with no `face_drift` finding.
+- The replaced person's crop scores ≥ 0.363 similarity against REF.
+- It is a **finding** if the unreplaced person changes identity, or if the replaced one doesn't.
+cleanup: `delete_output(job_id=…)` for this case's jobs, then for C-F893's and C-F897's.
+metrics: none.
+
+### C-F899 — the #1260 H3 move record gives all 13 moves a verdict on seeds 42 and 7, each with its own job id
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: issue reading plus `get_diffusers_state`. The audit doc (`docs/proposals/audits/2026-11-move-seeds.md`) is
+source, so read its H3 table where the stage's build hand-off on #1379 quotes it (`gh issue view 1379 --comments`).
+expected:
+- The record has 13 H3 rows, one per move id in `cinematography`'s `references/vocabulary.md` (`static`, `dolly-in`,
+  `dolly-out`, `truck-left`, `truck-right`, `crane-up`, `crane-down`, `orbit`, `tracking`, `whip-pan`, `push-in`,
+  `handheld`, `crash-zoom`), each with a seed-42 cell and a seed-7 cell: 26 cells, none blank or "n/a".
+- Each cell is a verdict (`honoured`, `partial` or `ignored`), a job id and a one-line frame note.
+- The six seed-42 cells of the measured moves cite #1148's H3 jobs and no new job: static `8261c82d7308`,
+  dolly-in `8d6786c0b6a2`, dolly-out `db5271519874`, truck-left `5cf0b0af6608`, crane-up `a9644e35f0fb`,
+  orbit `28d0f4b327e8`. Every other cell (20) cites a job not in that list, and no job id appears in two cells.
+- The record states the subject, shot size `wide`, the template, that only `prompt` and `seed` were passed, the
+  walking-man subject for `tracking` and `handheld` only, and each filled placeholder.
+- It quotes `get_diffusers_state` as it was when the stage ran. Compare with a `get_diffusers_state` call today:
+  a difference is fine if the record's quote is a real state (a version and commit), not a placeholder.
+- Docs review (not over MCP): the doc's H3 table holds the same 26 ids as the hand-off.
+It is a **finding** if a move or seed has no cell, a cell has no job id, a reused cell isn't #1148's job, a new
+cell reuses an id, or the hand-off doesn't carry the table, so the tester can't check it.
+cleanup: none. Never delete a cited job's output: the record depends on it.
+metrics: none.
+
+### C-F900 — every job the #1260 H3 record cites is a succeeded H3 template run with that cell's seed and move sentence
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: `get_job` on each of the 26 job ids C-F899 lists, plus any rerun ids (C-F902). Read each move's sentence from
+`dw:cinematography`'s `references/compile-h3.md` move table (the one in force at the stage's commit; a sentence a
+rerun replaced is checked against the phrasing the record quotes for that run).
+expected:
+- `status` is `succeeded` and `workflow_name` is `templates/minimax/video-with-audio`.
+- `arguments` holds `prompt` and `seed` and nothing else (the template's defaults), and `arguments.seed` is the
+  cell's seed: 42 or 7. A seed-42 cell holding a seed-7 job, or the reverse, is a finding.
+- `arguments.prompt` contains that move's compile sentence word for word, with only the placeholders filled, and
+  no other move's sentence. The fillings are the plan's:
+  - `push-in`: toward the box's glass door.
+  - `whip-pan`: pans **left** (never right), revealing or landing on the stone fountain.
+  - `crash-zoom`: on the box.
+  - `crane-down`: down to the box's level.
+  - `tracking` and `handheld`: the subject is a man in a dark coat walking across the square past the box.
+- Every other move's prompt describes the telephone box in lower case (no "RED " in capitals), in a wide shot,
+  in the format #1148's job `8261c82d7308` shows (`integrated_multimodal_description: [Shot 1] …`, then
+  `overall_soundscape:`). Only the move sentence, and for the two walker moves the subject, differ from that job.
+- The manifest has one `final` video per job.
+It is a **finding** if a cited job is missing, failed, another template's, carries an extra argument, has the
+wrong seed, or its prompt lacks the sentence or carries a filling the plan didn't name.
+cleanup: none.
+metrics: none.
+
+### C-F901 — spot-checked H3 frames show what the #1260 record's frame notes say
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads outputs only). Pick at least five cells from C-F899: both seeds of `whip-pan`, both of `crash-zoom`,
+and one cell the record grades `partial` or `ignored` (or, if none is, a `tracking` cell). Don't re-grade all 26.
+For each, `get_output_frames` on the job's output: `count=12`, and frame 0 against the last frame. For `whip-pan`
+and `crash-zoom`, also `count=24`, the plan's denser pull.
+expected:
+- What the frames show matches the cell's frame note and verdict, under `move-trial.md`'s definitions as the
+  `cinematography` skill restates them. *Honoured*: the move landed in the named direction at a visible size.
+  *Partial*: motion of the right kind, but too small or mixed with another move. *Ignored*: no motion of that kind.
+  - `whip-pan` honoured: a fast pan **left** with motion blur that lands on the fountain.
+  - `crash-zoom` honoured: a sudden, large tightening on the box.
+  - `tracking` honoured: the walker keeps his place in frame while the square slides behind him.
+  - `handheld` honoured: visible small sway or jitter on top of the follow.
+- The record's 24-frame pulls exist for `whip-pan` and `crash-zoom` (the note cites them).
+It is a **finding** if a spot-checked cell's frames contradict its verdict, e.g. `honoured` where the last frame
+equals frame 0, or a whip-pan to the right graded honoured.
+cleanup: none.
+metrics: none.
+
+### C-F902 — an H3 move ignored on both seeds gets one rerun at seed 42, recorded with both phrasings, and nothing else does
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: the record from C-F899, `get_job` on each rerun, and `compile-h3.md`.
+expected:
+- A rerun exists for a move exactly when both of its H3 cells are `ignored`. A move with one `ignored` and one
+  `honoured` or `partial` cell gets no rerun. Zero reruns is correct if no move is ignored on both seeds.
+- There are at most 4 H3 reruns, one per move at most.
+- Each rerun row cites its own job id, not a cell's. `get_job` gives a succeeded
+  `templates/minimax/video-with-audio` job with `arguments.seed` 42, and an `arguments.prompt` that contains the
+  revised phrasing and not the original sentence. The row quotes both phrasings and both verdicts.
+- If the rerun is `honoured` or `partial`, the revised phrasing replaces that move's sentence in
+  `compile-h3.md`. If it is `ignored` too, the original sentence stays and the move's cell reads
+  `ignored, ignored: hint only, rarely honoured`.
+- A move that ends hint-only is still a row in `references/vocabulary.md`'s `move` table, and that table still has
+  13 rows (C-F724).
+It is a **finding** if a rerun is run for a move that wasn't ignored twice, a fifth rerun runs, a rerun shares a
+cell's job or seed 7, or a sentence changes in `compile-h3.md` without a rerun that earned it.
+cleanup: none.
+metrics: none.
+
+### C-F903 — `compile-h3.md`'s move table carries two verdicts per move, seed 42 first, matching the #1260 record
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Read `references/compile-h3.md`'s move table under `dw:cinematography`'s base directory.
+expected:
+- The last column's header is `measured (#1148, #1260)` (it was `measured (#1148)`).
+- The table still has the same 13 rows, ids as C-F899 lists, in the same order.
+- Every cell has the form `<seed 42>, <seed 7>`, each a word from `honoured`, `partial`, `ignored`, with an optional
+  `: hint only, rarely honoured` after `ignored, ignored`. No cell reads `not measured`, a single verdict, or
+  `honoured` alone. The first word is the record's seed-42 verdict and the second its seed-7 verdict, for all 13.
+- Each move sentence is the same as before the stage, unless C-F902 says a rerun replaced it.
+It is a **finding** if a cell disagrees with the record, reverses the seed order, or still reads `not measured`.
+cleanup: none.
+metrics: none.
+
+### C-F904 — the #1260 measurement leaves every Kandinsky 6 cell as #1148 measured it
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Read `references/compile-kandinsky-6.md`'s move table, and the `kandinsky-6` column of the
+`cinematography` SKILL.md move table.
+expected:
+- The K6 compile table's measured column reads: static `honoured`, dolly-in `honoured`, dolly-out `honoured`,
+  truck-left `partial`, crane-up `partial`, orbit `partial`, and `not measured` for truck-right, crane-down, tracking,
+  whip-pan, push-in, handheld and crash-zoom. Its move sentences are unchanged.
+- SKILL.md's `kandinsky-6` column agrees: the same six words for the six moves, and `not measured` (or no claim)
+  for the other seven. No K6 cell holds a second seed's verdict.
+It is a **finding** if any K6 cell gained a verdict or changed one: the plan's non-goals exclude Kandinsky 6.
+cleanup: none.
+metrics: none.
+
+### C-F905 — the #1260 H3 stage stayed inside its budget, and no H3 job overlapped another
+pending: #1379
+source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: `get_job` on every new H3 job the record cites: the 20 non-reused cells and the reruns. Read #1351's state
+with `gh issue view 1351 --json state,stateReason,closedAt,labels`.
+expected:
+- At most 24 new H3 jobs (20 cells plus at most 4 reruns).
+- Summed `finished_at − started_at` over them is at most 45 minutes. The record states a GPU total, and it is
+  within a minute of that sum.
+- Each job's `acknowledged_cost.downloads` is `[]` (no downloads).
+- No two of these jobs' `[started_at, finished_at]` spans overlap, even on different `device`s: H3 never runs
+  alongside H3. Two jobs with the same `device` running back to back is fine.
+- The earliest `started_at` is after #1351's `closedAt`, or #1351 was declined or parked and the record says the
+  block was lifted for that reason.
+- The record says the stage read #1340's revert window before queueing, and what it found.
+It is a **finding** if the total passes 45 minutes and the stage didn't stop and ask, two H3 spans overlap, a job
+downloaded something, or the stage ran while #1351 was open.
+cleanup: none.
+metrics: none.
+
+### C-F906 — the #1260 LTX-2.5 move record gives all 13 moves a verdict on seeds 42 and 7, each with its own job id
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: issue reading. Read the LTX table where the stage's build hand-off on #1380 quotes it.
+expected:
+- As C-F899, for LTX-2.5: 13 rows, 26 cells, each a verdict, a job id and a one-line frame note.
+- The six seed-42 cells of the measured moves cite #1148's LTX jobs and no new job: static `417ce2c24c44`,
+  dolly-in `9223e8eb9161`, dolly-out `0602c1400c3e`, truck-left `6d46ed86d897`, crane-up `7dda520e6667`,
+  orbit `5134c962d4aa`. The other 20 cells cite jobs not in that list, not among C-F899's H3 ids, and none twice.
+- The record states the viewpoint "a front-facing angle", the walking-man subject for `tracking` and `handheld`,
+  each filled placeholder, and a `get_diffusers_state` quote from when the stage ran.
+- Docs review (not over MCP): the doc's LTX section holds the same 26 ids, in the same doc as the H3 table.
+It is a **finding** if a cell has no job id, a reused cell isn't #1148's job, or the hand-off lacks the table.
+cleanup: none. Never delete a cited job's output.
+metrics: none.
+
+### C-F907 — every job the #1260 LTX record cites is a succeeded LTX template run with that cell's seed and move sentence
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: `get_job` on each of C-F906's 26 ids and any LTX rerun. Read each sentence from
+`references/compile-ltx-2.5.md`'s move table.
+expected:
+- `status` is `succeeded`, `workflow_name` is `templates/ltx2/text-to-video`, `arguments` holds only `prompt` and
+  `seed`, and `arguments.seed` is the cell's seed (42 or 7).
+- `arguments.prompt` contains that move's compile sentence word for word, with `<viewpoint>` filled as
+  "a front-facing angle" and the other placeholders as the plan fills them:
+  - `push-in`: toward the box's glass door, until its black handset fills the frame.
+  - `whip-pan`: whip-pans **left** in a blur, landing on the stone fountain.
+  - `crash-zoom`: on the box, until its glass panes fill the frame.
+  - `truck-right`: the reveal is the lamp post and the shopfronts to the right.
+  - `crane-down`: the reveal is the shopfronts.
+  - `tracking` and `handheld`: the walking man in a dark coat crossing the square past the box.
+- Every other move's prompt describes the telephone box in lower case in a wide shot, in the format of #1148's
+  job `417ce2c24c44`; only the camera sentence, and for the two walker moves the subject, differ.
+It is a **finding** under the same conditions as C-F900, or if a prompt drops the viewpoint.
+cleanup: none.
+metrics: none.
+
+### C-F908 — spot-checked LTX frames show what the #1260 record's frame notes say
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads outputs only). As C-F901, on the LTX cells of C-F906: both seeds of `whip-pan` and `crash-zoom` at
+`count=12` and `count=24`, plus one `partial` or `ignored` cell (or a `handheld` cell if none is), frame 0 against
+the last frame each time.
+expected:
+- The frames match each spot-checked cell's note and verdict, under the definitions C-F901 lists.
+It is a **finding** if a spot-checked cell's frames contradict its verdict.
+cleanup: none.
+metrics: none.
+
+### C-F909 — an LTX move ignored on both seeds gets one rerun at seed 42, and a move still ignored reads hint-only
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: as C-F902, on the LTX record and `compile-ltx-2.5.md`, with `templates/ltx2/text-to-video` as the workflow.
+expected:
+- Everything C-F902 expects, for LTX: a rerun only for a move ignored on both LTX seeds, at most 4, seed 42, its own
+  job, both phrasings and verdicts quoted.
+- A revised LTX phrasing that lands still carries `<viewpoint>`.
+- A move ignored on both seeds and on its rerun reads `ignored, ignored: hint only, rarely honoured` in
+  `compile-ltx-2.5.md`. In the SKILL.md table it reads as hint-only too, and it is still in the vocabulary.
+It is a **finding** under C-F902's conditions, or if a landed LTX revision dropped `<viewpoint>`.
+cleanup: none.
+metrics: none.
+
+### C-F910 — `compile-ltx-2.5.md`'s move table carries two verdicts per move, matching the record, and every row keeps `<viewpoint>`
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: plugin reading of `references/compile-ltx-2.5.md`'s move table.
+expected:
+- As C-F903, for LTX: header `measured (#1148, #1260)`, the same 13 rows in order, every cell
+  `<seed 42>, <seed 7>` and matching the LTX record, none `not measured`.
+- Every one of the 13 sentences still contains `<viewpoint>`.
+- `compile-h3.md`'s cells still match C-F899's record (stage B didn't disturb them).
+It is a **finding** if a cell disagrees with the record, a row lost `<viewpoint>`, or the row count isn't 13.
+cleanup: none.
+metrics: none.
+
+### C-F911 — the #1260 LTX stage stayed inside its budget, ran after stage A, and the feature stayed inside 1.5 GPU-hours
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: `get_job` on every new LTX job the record cites (20 cells plus reruns), and C-F905's H3 sums.
+expected:
+- At most 24 new LTX jobs. Their summed `finished_at − started_at` is at most 45 minutes, and the record's stated
+  total is within a minute of it. Every `acknowledged_cost.downloads` is `[]`.
+- LTX jobs may overlap each other on two cards; that is allowed.
+- The earliest LTX `started_at` is after the last stage A H3 job's `finished_at` (stage B was blocked by #1379).
+- Both stages together: at most 48 new jobs and at most 90 GPU-minutes.
+- The record says the stage read #1340's revert window before queueing.
+It is a **finding** if a cap is passed without the stage stopping to ask, a job downloaded, or LTX started before
+stage A was done.
+cleanup: none.
+metrics: none.
+
+### C-F912 — the `cinematography` SKILL.md move table lists all 13 moves, and its H3 and LTX words agree with the compile tables
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: plugin reading. Invoke `dw:cinematography` and read its move table, plus both compile tables.
+expected:
+- The table has 13 move rows, the vocabulary's ids, with `minimax-h3`, `ltx-2.5` and `kandinsky-6` columns.
+- For each move, the H3 and LTX words agree with that move's cell in `compile-h3.md` and `compile-ltx-2.5.md`.
+  "Agree" means the same two verdicts, or, if the table was cut to one word per family for the 12 KiB cap:
+  - the same word as the compile cell, when its two seeds agree;
+  - when they disagree, a word no stronger than the weaker seed (or "varies"), and the prose names the move as
+    varying by seed.
+  A hint-only move reads hint-only.
+- The K6 column is as C-F904 says.
+It is a **finding** if a move is missing, a word claims more than its compile cell, or the table still has 6 rows.
+cleanup: none.
+metrics: none.
+
+### C-F913 — the `cinematography` skill's prose says two seeds and 13 moves, still says "a hint, not a promise", and cites the new audit
+pending: #1380
+source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
+Free: plugin reading of the `cinematography` SKILL.md.
+expected:
+- The "A hint, not a promise" section still says every value is a hint, not a promise.
+- It no longer says the moves were measured on one seed, or that seven moves (or "the other seven moves") are not
+  measured. It says what was measured: 13 moves on H3 and LTX-2.5, seeds 42 and 7. It says two seeds are two
+  samples, not a rate, and that `flux3-klein` (a still) and Kandinsky 6's seven are not measured.
+- The definitions of *honoured*, *partial* and *ignored* remain, and *ignored* still maps to "hint only, rarely
+  honoured". The sentence "none did in this trial" is gone or made true of the new record.
+- Where a seed-7 verdict contradicts seed 42, the prose says the move varies by seed.
+- The check-after-run steps (`get_output_frames`, first against last frame) remain.
+- The Sources names `docs/proposals/audits/2026-11-move-seeds.md` alongside `move-trial.md`.
+- Docs review (not over MCP): the `tests/test_plugin_skills.py` cinematography tests pass (whip-pan has no
+  "right", every LTX row has `<viewpoint>`, 13 rows, the SKILL size cap), and `docs/RELEASING.md` no longer
+  says "six named moves".
+It is a **finding** if the skill still claims one seed or seven unmeasured moves, drops the hint rule, or
+doesn't cite the new doc.
+cleanup: none.
 metrics: none.
 
 ## Performance

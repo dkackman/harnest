@@ -246,6 +246,17 @@ fixture) when nothing uses it anymore.
      workflows.
   The 24 fps controls are the shared originals: `asset:qa-cast/ep6-shot1-priya.mp4` (124 frames) and
   `asset:qa-cast/ep13-episode.mp4` (282 frames, 44.1 kHz).
+- `asset:qa-1230/chain-26s.mp4` in `regression-model-specific`, for the #1230 windowed-refine cases
+  (M-F345–M-F365): an H3 guide chain about 26 s long (over the 15 s a single `source_video` may be), 960×544,
+  24 fps, with its own generated soundtrack and visible seams. Keep it across runs, never sweep it. A case
+  that needs it and finds it missing (`get_gallery_metadata(path="asset:qa-1230/chain-26s.mp4")` says
+  "Unknown asset") makes it first:
+  1. `validate_workflow(workflow_path="templates/minimax/chained-segments", workspace="regression-model-specific",
+     arguments={"image": "asset:qa-cast/priya-portrait.jpg", "seed": 1230, "duration_seconds": 26})` and bind
+     its `acknowledged_cost` (about 6 segments, roughly 10–12 GPU-min on lem; quote the estimate).
+  2. `run_workflow(...)` with the same arguments, `wait_seconds=1500`, then `wait_for_job` until done.
+  3. `get_gallery_metadata` on the job's video: 24 fps, `duration_seconds` 26 ± 0.1, `frame_count` about 624,
+     an audio stream. Then `keep_output` it as `qa-1230/chain-26s.mp4` and `delete_output(job_id=<id>)`.
 
 ## Functional
 
@@ -9312,6 +9323,357 @@ expected:
 - The `variable:` version: the same 120-frame refusal as (72, 120). The variable is resolved, not skipped.
 It is a **finding** if an off-grid trim validates clean (the run then refuses it at `restore01` after the source
 segment has rendered, about 15 min on lem, as job `dd3e9db5f675` did), or if the on-grid trim is refused.
+cleanup: none.
+metrics: none.
+
+### M-F345 — `refine_windows` validates clean without the experimental flag: `{}`, the explicit defaults, and a `variable:`-bound value
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` refine between `encode_h3_latents` and `decode_h3_latents`. **Free**: validate only.
+Workspace `regression-model-specific`; needs the `qa-1230/chain-26s.mp4` fixture (make it first if missing). The
+server is lem as it normally runs, with no `DW_EXPERIMENTAL_REFINE_WINDOWS` set (a refusal naming that flag below
+means it is still gated).
+Workflow W_win (inline, used by M-F345–M-F360), four steps in order:
+1. `encode`: `encode_h3_latents(source="asset:qa-1230/chain-26s.mp4")`.
+2. `refine`: an H3 pipeline step whose `pipeline` (configuration, `from_pretrained_arguments`, LoRA, scheduler) is
+   copied from the `base` step of `get_guide("workflows", section="Promoting an H3 take to 768p in latent space")`,
+   with arguments `prompt` "a woman speaking to camera in a softly lit room", `width` 960, `height` 544,
+   `latents: "previous_result:encode.latents"`, `num_frames: "previous_result:encode.num_frames"`,
+   `refine_strength` 0.3, `refine_windows` RW, `hold_audio: "asset:qa-1230/chain-26s.mp4"`, the guide's step count,
+   seed 1230, and `output` `["videos","audio","sampling_rate","latents"]`.
+3. `decode`: `decode_h3_latents(latents="previous_result:refine.latents", num_frames="previous_result:encode.source_frames")`.
+4. `final`: `pair_audio(video="previous_result:decode", audio="asset:qa-1230/chain-26s.mp4", fit="video")`, result `video/mp4`.
+Steps: `validate_workflow(workspace="regression-model-specific", inline_workflow=W_win)` with RW = (a) `{}`;
+(b) `{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`; (c) `"variable:windows"` with
+`variables: {"windows": {"frames": 42, "overlap": 12}}`; (d) `{"frames": 21, "overlap": 4}` (other legal values).
+expected:
+- All four: `valid: true`, with no error and no warning naming `DW_EXPERIMENTAL_REFINE_WINDOWS`, "experimental" or
+  `refine_windows`; `plan` present with an `estimate`.
+It is a **finding** if any of them is refused, or if the refusal names the experimental flag (the stage's whole point
+is that the argument is out of the flag).
+cleanup: none.
+metrics: none.
+
+### M-F346 — the workflows guide documents `refine_windows` as a supported argument with its defaults and "not a burn fix"
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: read the guide.
+Steps: `get_guide("workflows")` (the index), find the section on refining a long take in time windows, and read it with
+`get_guide("workflows", section=<its name>)`.
+expected:
+- The section exists, and neither its title nor its text calls it experimental or tells the reader to set
+  `DW_EXPERIMENTAL_REFINE_WINDOWS`.
+- It names the argument `refine_windows` (not `experimental_refine_windows`) and states the defaults: `frames` 42,
+  `overlap` 12, `blend` pyramid, `positions` rebased.
+- It says the pass smooths seams and is not a burn fix (those words or plainly the same claim).
+- It still gives the encode → refine → decode → `pair_audio` recipe and says a `source_video` over 15 s is refused in
+  favour of `encode_h3_latents`.
+It is a **finding** if the section is still the "Experimental" one, names the flag, or omits the defaults or the
+not-a-burn-fix line.
+cleanup: none.
+metrics: none.
+
+### M-F347 — `refine_windows` without `refine_strength` is refused at validate, naming `refine_windows`
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345 with RW `{}` and the `refine_strength` argument removed;
+`validate_workflow(workspace="regression-model-specific", inline_workflow=...)`. Then once more with
+`refine_strength: null` in place of removing it.
+expected:
+- Both: `valid: false`, an error at `steps[1].pipeline.arguments.refine_windows` (or whose message names
+  `refine_windows`) saying it needs `refine_strength`.
+It is a **finding** if either validates clean, or the refusal only surfaces at run time.
+cleanup: none.
+metrics: none.
+
+### M-F348 — `refine_windows` with `refine_tiles` is refused at validate, naming both
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345 with RW `{}` and a `refine_tiles` argument added to `refine` (use the form
+`get_schema`/`get_pipeline_signature` documents for it; any legal value). `validate_workflow` it. Then remove
+`refine_windows` and validate again (the control).
+expected:
+- With both: `valid: false`, an error naming `refine_windows` and `refine_tiles` as not usable together.
+- The control (tiles alone): no error naming `refine_windows`.
+It is a **finding** if the pair validates clean.
+cleanup: none.
+metrics: none.
+
+### M-F349 — `refine_windows` with a conditioning input (`image`, `keyframes`, `guides`, `last_image`, `references`, `latent_anchor`) is refused at validate
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345 with RW `{}`, and in turn one of these added to `refine` (each a separate
+`validate_workflow` call; values in the shape `get_schema`/`get_pipeline_signature` documents, any media from the
+Fixtures section, e.g. `asset:qa-cast/priya-portrait.jpg` for an image):
+`image`, `keyframes`, `guides`, `last_image`, `references`, `latent_anchor`. Change the step's
+`from_pretrained_arguments.workflow` to the one that takes the argument (`fl2va` for `image`/`last_image`, `ref2va`
+for `references`) where `t2va` refuses it on its own.
+expected:
+- Each: `valid: false`, an error naming `refine_windows` and the added argument (a window has no place to put a
+  whole-take condition). The refusal is about the pair, not merely that `t2va` doesn't take the argument.
+It is a **finding** if any of the six validates clean beside `refine_windows`.
+cleanup: none.
+metrics: none.
+
+### M-F350 — `refine_windows` refuses an `overlap` at or above `frames`, and the boundaries of the rule
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 42, "overlap": 42}`; (b)
+`{"frames": 42, "overlap": 50}`; (c) `{"frames": 42, "overlap": 41}`; (d) `{"overlap": 42}` (against the default
+`frames` 42); (e) `{"frames": 42, "overlap": 0}`; (f) `{"frames": 0}`; (g) `{"frames": 42, "overlap": -1}`;
+(h) `{"frames": "42"}` (a string that is not a `variable:` reference).
+expected:
+- (a), (b), (d): `valid: false`, an error naming `refine_windows` and saying `overlap` must be less than `frames`.
+- (c): no error about `overlap` vs `frames` (it may be refused for another stated rule, e.g. the positions grid in
+  M-F352; then the message names that rule, not the overlap one).
+- (f), (g), (h): `valid: false`, each naming `refine_windows` and the offending key.
+- (e): either clean or refused with a message naming `overlap`; record which.
+It is a **finding** if (a), (b) or (d) validates clean, or (c) is refused for the overlap rule.
+cleanup: none.
+metrics: none.
+
+### M-F351 — `refine_windows` refuses an unknown key and a non-object value, naming it
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 42, "windw": 8}`; (b)
+`{"blend": "linear-ish"}` (a value outside the `blend` choices `get_schema` lists); (c) `{"positions": "absolute-ish"}`;
+(d) `42`; (e) `"yes"`; (f) `[42, 12]`.
+expected:
+- Each: `valid: false`, an error naming `refine_windows`; (a) names the key `windw`; (b) and (c) name the key and
+  the allowed values.
+- `null` and `false` are not in this case: whatever the schema says they mean (off, most likely) is fine.
+It is a **finding** if an unknown key is accepted silently, or any of (b)–(f) validates clean.
+cleanup: none.
+metrics: none.
+
+### M-F352 — `positions: "rebased"` refuses an off-grid `frames` (40) and accepts the default 42
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 40, "positions": "rebased"}`; (b)
+`{"frames": 42, "positions": "rebased"}`; (c) `{"frames": 40}` (rebased by default); (d) `{"frames": 40,
+"positions": <the other value get_schema lists>}`.
+expected:
+- (a) and (c): `valid: false`, an error naming `refine_windows`, `frames` 40 and the grid it must sit on, ideally
+  naming the nearest legal values.
+- (b): clean.
+- (d): no grid refusal (record the result; the grid belongs to rebased positions).
+It is a **finding** if (a) or (c) validates clean (the off-grid rebase renders at the wrong positions), or (b) is
+refused.
+cleanup: none.
+metrics: none.
+
+### M-F353 — a windowed refine fed a `source_video` over 15 s is refused at validate, pointing at `encode_h3_latents`
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: a two-step workflow: `refine` as in W_win (M-F345) but with `source_video: "asset:qa-1230/chain-26s.mp4"` in
+place of `latents`/`num_frames` (and `num_frames` 624 if the step needs one), RW `{}`; then `final` `pair_audio` as in
+W_win reading `previous_result:refine`. `validate_workflow` it.
+expected:
+- `valid: false`, an error at `refine` naming the 15 s ceiling and `encode_h3_latents` as the route for a longer take.
+It is a **finding** if it validates clean, or the refusal says nothing about `encode_h3_latents`.
+cleanup: none.
+metrics: none.
+
+### M-F354 — the old name `experimental_refine_windows` is refused, and the refusal names `refine_windows`
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
+Steps: W_win from M-F345 with `refine_windows` replaced by `experimental_refine_windows: {"frames": 42, "overlap": 12}`;
+`validate_workflow` it. Then with both arguments present.
+expected:
+- Both: `valid: false`, an error naming `experimental_refine_windows` and telling the caller to use `refine_windows`.
+It is a **finding** if the old name validates clean (two names for one thing), or is refused without naming the new one.
+cleanup: none.
+metrics: none.
+
+### M-F355 — the other scratch spikes stay behind `DW_EXPERIMENTAL_REFINE_WINDOWS` after the windowed refine leaves it
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` guide chains. **Free**: validate only.
+Steps: `validate_workflow(workflow_path="templates/minimax/chained-segments", workspace="regression-model-specific",
+arguments=...)` with the template's defaults plus, in turn (a separate call each; where the template exposes no
+variable for it, copy the template with `get_workflow` and add the key to the step's `chain` inline):
+(a) `experimental_capstone: {"enter_below_sigma": 0.5}`; (b) `experimental_latent_carry: true`;
+(c) `keystone: "segment_1"` with `keystone_slot: "latent"`; (d) `keystone: "segment_1"` with `anchor_every: 2`;
+(e) the SelfLift spike, under whatever argument name `get_schema` gives it (search the `pipelines` and `steps`
+sections for "SelfLift"/"selflift"; if no such argument exists any more, record that and skip (e)).
+expected:
+- Each: `valid: false`, an error naming the argument and `DW_EXPERIMENTAL_REFINE_WINDOWS`.
+- The `get_schema("pipelines")` descriptions of these keys still say they are refused unless that flag is set.
+It is a **finding** if any of them validates clean on a server without the flag: promoting one argument must not
+ungate the rest.
+cleanup: none.
+metrics: none.
+
+### M-F356 — a windowed refine over the ≈26 s chain completes: the source's length and its own soundtrack
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **GPU**: about 15–18 min on lem (the plan quotes 36–40
+GPU-min per minute of take); quote `plan.estimate`.
+Steps: W_win from M-F345 with RW `{}`; `validate_workflow`, bind `acknowledged_cost`, then
+`run_workflow(workspace="regression-model-specific", inline_workflow=W_win, note="M-F356 windowed refine 26 s",
+wait_seconds=1500, acknowledged_cost=...)`, `wait_for_job` until done. Then `get_job`, `get_gallery_metadata` on the
+`final` video and on the fixture, `get_job_events`.
+expected:
+- The job completes with no error; no warning naming "experimental" or the flag.
+- `final`: 960×544, 24 fps, `frame_count` equal to the fixture's (within 1) and `duration_seconds` within 0.05 s of it;
+  an audio stream of the same length.
+- The audio is the source's own track: `get_output_audio` on the `final` output and on the fixture sound alike (same
+  speech at the same times); a `compare_outputs` of the two, if it compares audio, finds them equal within re-encode.
+- `get_output_frames` at a few times across the take shows a coherent picture (no black, no frozen window, no window
+  that jumps back in time).
+It is a **finding** if the run fails, the length differs, or the soundtrack is generated rather than the source's.
+cleanup: `delete_output(job_id=<id>)` (the fixture stays).
+metrics: none.
+
+### M-F357 — a windowed refine over a take shorter than one window returns that take, full length, with its audio
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **GPU**: a few minutes; quote `plan.estimate`.
+Steps: W_win from M-F345 with RW `{}`, changed so that it starts with two steps:
+`clip`: `trim_video(video="asset:qa-1230/chain-26s.mp4", start_frame=0, num_frames=124)` and
+`aud`: `slice_audio(audio="asset:qa-1230/chain-26s.mp4", start_frame=0, num_frames=124, fps=24)` (argument names as
+`get_task` gives them); `encode` reads `previous_result:clip`, and `refine`'s `hold_audio` and `final`'s `audio`
+read `previous_result:aud`. 124 frames is 32 latent frames, under the default window of 42. Validate, run with
+`wait_seconds=1500` (note "M-F357 sub-window take").
+expected:
+- `valid: true` at validate (a short take is not refused for being shorter than a window).
+- The job completes; `final` has 124 frames (±1) at 24 fps with the cut's audio.
+It is a **finding** if a take shorter than one window is refused, crashes, or comes back padded or cut short.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### M-F358 — an ordinary H3 template is untouched by the promotion: same cost row, no windowing in its job
+pending: #1376
+source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `templates/minimax/video-with-audio`. **GPU**: one default clip; quote
+`plan.estimate`.
+Steps: `list_workflows(shape="shot")` and note the template's catalog cost row. `validate_workflow` it at its
+defaults with `seed: 1230`, then `run_workflow(..., workspace="regression-model-specific", note="M-F358 parity",
+wait_seconds=1500)`. `get_job`, `get_job_events`.
+expected:
+- `plan.estimate` equals the catalog row; the job's wall time is within ±15% of that row (warm or cold as the row
+  says).
+- No job event or warning mentions windows, `refine_windows` or encode/decode of latents; the job's outputs are the
+  template's usual ones (a video with its own generated audio).
+- If a `regression-perf/` series exists for this template at seed 1230, the new time sits in its band.
+It is a **finding** if the template's cost moves past the noise, or its job runs any windowed path.
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### M-F359 — a windowed refine that does not ask for `videos` decodes once, saves the time, and gives the same take
+pending: #1377
+source: tester, spec for #1377 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **GPU**: two runs of M-F356, about 30–36 min together; quote
+both estimates.
+Steps: run W_win from M-F345 (RW `{}`, seed 1230) twice in `regression-model-specific`, one after the other:
+arm V with `refine`'s `output` `["videos","audio","sampling_rate","latents"]` (note "M-F359 with videos") and arm L
+with `["audio","sampling_rate","latents"]` (note "M-F359 latents only"). For each: `get_job`, `get_job_events`.
+Then `compare_outputs` (or `assess_output` on both) between the two `final` videos.
+expected:
+- Arm L's events show one VAE decode for the take (in `decode`), none in `refine`; arm V's show `refine` decoding
+  too. `refine` in arm L lists no video output; arm V's does.
+- Arm L's wall time is lower than arm V's by about 1.5 min (at least 1 min).
+- The two `final` videos are the same take: same frame count, and frames equal within re-encode noise.
+- Both `final`s carry the source's soundtrack, as in M-F356.
+It is a **finding** if arm L still decodes inside `refine`, saves no time, or its take differs from arm V's.
+cleanup: `delete_output(job_id=<id>)` for both jobs.
+metrics: none.
+
+### M-F360 — a non-windowed H3 refine still returns its video
+pending: #1377
+source: tester, spec for #1377 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` refine over a `source_video`. **GPU**: a few minutes; quote `plan.estimate`.
+Steps: one step: `refine` as in W_win (M-F345) but with `source_video: "asset:qa-cast/ep6-shot1-priya.mp4"`,
+`num_frames` 124, `hold_audio` the same asset, no `latents` and no `refine_windows`, `output`
+`["videos","audio","sampling_rate"]`. Validate, run (note "M-F360 plain refine"), `get_job`.
+expected:
+- The job completes and `refine` returns a 124-frame video with audio, as before the stage.
+It is a **finding** if skipping the decode leaks into the plain refine (no video, or an error).
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### M-F361 — `templates/minimax/h3-seam-pass` is in the shot catalog with its traits, cost and claims
+pending: #1378
+source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: catalog read.
+Steps: `list_workflows(shape="shot")` (summary form); `get_workflow("templates/minimax/h3-seam-pass")`.
+expected:
+- The catalog lists `templates/minimax/h3-seam-pass` with the `needs-input-media` trait, a summary and a cost.
+- Its description says about 36–40 GPU-min per minute of take, about 16 GiB peak, and that it smooths seams and is not
+  a burn fix.
+- Its one required variable is the source take (`source`); everything else has a default.
+It is a **finding** if it is missing from the shot catalog, lacks the trait or the cost, or drops the not-a-burn-fix line.
+cleanup: none.
+metrics: none.
+
+### M-F362 — `h3-seam-pass` validates clean with only `source`, and quotes the flat cost row
+pending: #1378
+source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: validate only.
+Steps: `validate_workflow(workflow_path="templates/minimax/h3-seam-pass", workspace="regression-model-specific",
+arguments={"source": "asset:qa-1230/chain-26s.mp4"})`. Then with no arguments at all.
+expected:
+- With `source`: `valid: true`, no error, and `plan.estimate` equal to the template's catalog cost row (M-F361).
+- With nothing: refused (or a warning that a run would fail) naming `source` as required.
+It is a **finding** if `source` alone does not validate, or the estimate differs from the catalog row.
+cleanup: none.
+metrics: none.
+
+### M-F363 — `h3-seam-pass` refuses a source that is not a video at validate
+pending: #1378
+source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: validate only.
+Steps: `validate_workflow` as in M-F362 with `source` = (a) `asset:qa-cast/priya-portrait.jpg` (a still); (b) an audio
+file from the Fixtures section (e.g. `asset:bench/constitution-narration-retimed.wav`, copied with
+`copy_to_workspace` if the workspace lacks it, or any `.wav` the file names in this workspace); (c)
+`asset:qa-1230/no-such-take.mp4`.
+expected:
+- (a), (b): `valid: false`, an error naming `source` and saying it must be a video.
+- (c): `valid: false`, naming the missing asset.
+It is a **finding** if any of them validates clean and would fail only once the GPU is spent.
+cleanup: none.
+metrics: none.
+
+### M-F364 — `h3-seam-pass` over the ≈26 s chain: same length, the source's soundtrack, seams no worse
+pending: #1378
+source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **GPU**: about 15–18 min; quote
+`plan.estimate`.
+Steps: validate as in M-F362, then `run_workflow(..., arguments={"source": "asset:qa-1230/chain-26s.mp4"},
+note="M-F364 seam pass 26 s", wait_seconds=1500)`, `wait_for_job` until done. `get_gallery_metadata` on the output and
+the fixture. Run `analyze_seams` (the task, in a one-step task workflow; arguments per `get_task("analyze_seams")`) on
+the fixture and on the output; the fixture's seams are where its chain segments join (every ~102 frames after the
+first 124, or as `analyze_seams` finds them on the fixture).
+expected:
+- The job completes; the output is 960×544, 24 fps, with the fixture's frame count (±1) and duration (±0.05 s), and an
+  audio stream that is the fixture's own track (as in M-F356).
+- At each of the fixture's seams, the output's picture jump is no larger than the fixture's (allow 5% noise), and the
+  output shows no new jump between seams larger than the fixture's largest.
+It is a **finding** if the length or soundtrack changes, or the seams come out worse than the source's.
+cleanup: `delete_output(job_id=<id>)` for the run and the `analyze_seams` jobs; `delete_workflow` any task workflow saved.
+metrics: none.
+
+### M-F365 — the long-form skill names `h3-seam-pass`, when it pays, and that it is not a burn fix
+pending: #1378
+source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, the `dw:long-form` plugin skill. **Free**: read the skill.
+Steps: invoke the `dw:long-form` skill and read its playbook and its references (`levers.md`, `quality-and-speed.md`,
+or whatever files it points at for chain finishing).
+expected:
+- A line names `templates/minimax/h3-seam-pass` as the seam pass for a finished long take.
+- It says when the cost is worth it (the 36–40 GPU-min per minute of take, against visible seams) and that it smooths
+  seams but is not a burn fix.
+- Nothing in the skill still calls the windowed refine experimental or tells the reader to set
+  `DW_EXPERIMENTAL_REFINE_WINDOWS`.
+It is a **finding** if the template is missing from the skill, or the skill promises it fixes burn.
 cleanup: none.
 metrics: none.
 
