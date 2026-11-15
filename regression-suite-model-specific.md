@@ -8981,7 +8981,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F319 — an inline MiniMax-H3 step with a literal `num_frames: 25` is refused at validate on ref2va, t2va and fl2va, at the step's own path
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` modular pipeline (`MiniMaxH3ModularPipeline`), workflows ref2va, t2va, fl2va.
 **Free**: validate only, nothing loads. Workspace `regression-model-specific`. Needs the shared
@@ -9005,7 +9004,6 @@ cleanup: none (nothing is queued or written).
 metrics: none.
 
 ### M-F320 — the H3 `num_frames` check refuses exactly what the pipeline refuses: 107, 346 and 360 out; 108, 120, 124, 130 and 345 in
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va. **Free**: validate only. Workspace `regression-model-specific`.
 The pipeline rounds a count up to the next `17n+5` and accepts 5–15 s at 24 fps, so on today's diffusers 107 (4.46 s)
@@ -9023,7 +9021,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F321 — an inline H3 `width` or `height` that isn't a multiple of 32 is refused at its own path; each bad value gets its own error
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va and t2va. **Free**: validate only. Workspace `regression-model-specific`.
 M-F127 covers the templates' declared rule. This case covers inline JSON, which declares none.
@@ -9041,7 +9038,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F322 — a catalog H3 template whose rule is declared is refused once, at `arguments.<name>`, never also at `steps[...]`
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/reference-to-video` and `templates/minimax/music-video` (MiniMax-H3).
 **Free**: validate only. Workspace `regression-model-specific`.
@@ -9061,7 +9057,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F323 — a `for_each` H3 step with one off-range member is refused at the written step's path, naming that member
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, t2va. **Free**: validate only. Workspace `regression-model-specific`.
 Workflow W_each (validated clean on lem 2026-11-14, before #1364):
@@ -9078,7 +9073,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F324 — the check runs after substitution: an unconstrained `variable:` that resolves to an off-range count is refused; an unchecked step stays clean
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` (t2va), and LTX-2.5 (`templates/ltx2/text-to-video`) as the non-H3 control.
 **Free**: validate and get_workflow only. Workspace `regression-model-specific`.
@@ -9101,7 +9095,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F325 — `run_workflow` of an inline H3 step with `num_frames: 25` is refused before any job exists
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, ref2va. **Free**: the refusal happens before queueing. Workspace `regression-model-specific`.
 Steps:
@@ -9120,7 +9113,6 @@ cleanup: if a job was created, `cancel_job` it, then `delete_output(job_id=<id>)
 metrics: none.
 
 ### M-F326 — the `validate_workflow` description and the workflows guide say a bound the pipeline publishes is checked at validate
-pending: #1364
 source: tester, spec for #1364 from #1361's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 (docs only). **Free**: tool schema and guide reads.
 Steps: read the `validate_workflow` tool description from the MCP tool list; `get_guide("workflows",
