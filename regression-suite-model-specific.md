@@ -8912,7 +8912,6 @@ cleanup: `delete_output(job_id=...)` for every run, including the cancelled one.
 metrics: none.
 
 ### M-F316 — the six #1326 stage B probe jobs exist in `probe-1326`, succeeded, and each ran its arm: 8 segments, seed 42, 960×544, the stated lead-in
-pending: #1353
 source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3 turbo chains: `chained-segments` (5 steps, 4 evaluations) and `chain-video-continuity`
 (9 steps, 8 evaluations), with `turbo_lead_in`. Free: reads only. Run on lem (cuda).
@@ -8938,7 +8937,6 @@ cleanup: none. Never delete the probe jobs: the record and Don's Q4 verdict cite
 metrics: none.
 
 ### M-F317 — the stage B table's per-seam numbers reproduce from the probe jobs
-pending: #1353
 source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the M-F316 jobs. A few `analyze_seams` utility runs (CPU-light, seconds to minutes) plus reads. Run on
 lem (cuda).
@@ -8961,7 +8959,6 @@ cleanup: `delete_output(job_id=...)` for each step 2 `analyze_seams` job. Never 
 metrics: none.
 
 ### M-F318 — the stage B comparison comment shows segments 1, 4 and 8 of each arm with job ids, the parent goes to Don for Q4, and no template or skill changed
-pending: #1353
 source: tester, spec for #1353 from #1326's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the M-F316 jobs and the H3 turbo chain templates. Free: issue reads, frame reads, catalog reads.
 Steps:

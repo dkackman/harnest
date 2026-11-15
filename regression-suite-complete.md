@@ -19573,7 +19573,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F764 — `boundary_slack_seconds` refuses a negative, a non-numeric string and a boolean at validate, and takes zero, a positive number and null
-pending: #1336
 source: tester, spec for #1336 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free (validate only). In `workspace="regression-complete"`, `validate_workflow("templates/narration-retime",
 arguments={"narration": "asset:qa-cast/priya-voice.wav", "script": "<any one sentence>", "boundary_slack_seconds": V})`
