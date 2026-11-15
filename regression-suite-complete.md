@@ -21627,8 +21627,9 @@ expected:
   - that members rerun in their own workspaces, oldest first;
   - that a member already rerun is skipped.
   It does not call this an automatic resume, or say the server resumes at startup.
-- The tool count is still 65 (no new tool), unless another merged change explains the difference and the verify
-  comment names it.
+- No tool was added: the client lists no `dw` tool name beyond the count the guide states (C-F466 pins 65). A
+  target that lists fewer tools than the guide states is a **finding** to file on the ticket repo with the missing
+  names, not a failure of this case.
 cleanup: none.
 metrics: none.
 
@@ -21884,18 +21885,18 @@ metrics: none.
 
 ### C-F880 — `trim_video` refuses a `pad_to` below `num_frames` or not an integer, and `pad_to` doesn't loosen the span check
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Free. `validate_workflow` on `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=110,
-pad_to=X)` for X = 109, 0, -1, 124.5, `"x"` and `"124"`, then on `trim_video(..., start_frame=100, num_frames=30,
+Free except the span part. `validate_workflow` on `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=110,
+pad_to=X)` for X = 109, 0, -1, 124.5, `"x"` and `"124"`, then validate and run `trim_video(..., start_frame=100, num_frames=30,
 pad_to=141)` (a span past the 124-frame source's end). Workflow `qa-c-f880`.
 expected:
 - X = 109, 0, -1, 124.5 and `"x"`: each is refused at validate with a message naming `pad_to`. For 109 the message
   says it must be at least `num_frames` (110).
 - X = `"124"` (a numeric string) validates clean, read as 124 the same as `pad_to=124` (#692 coercion; Don's ruling
   on #1373).
-- The past-the-end span is still refused as today, naming the span or `num_frames`. Padding never stretches a trim
+- The past-the-end span is still refused as today, at validate or at run time (the job fails), naming the span or `num_frames`. Padding never stretches a trim
   past the source's end.
-- `list_jobs` shows nothing queued.
-cleanup: none.
+- The `pad_to` value checks queue nothing in `list_jobs`.
+cleanup: `delete_output(job_id=…)` for the span run's failed job, if one was queued.
 metrics: none.
 
 ### C-F881 — `crop_face_track` still resets its track at hard cuts, and agrees with `detect_cuts` on where they are
