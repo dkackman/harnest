@@ -9327,7 +9327,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F345 — `refine_windows` validates clean without the experimental flag: `{}`, the explicit defaults, and a `variable:`-bound value
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` refine between `encode_h3_latents` and `decode_h3_latents`. **Free**: validate only.
 Workspace `regression-model-specific`; needs the `qa-1230/chain-26s.mp4` fixture (make it first if missing). The
@@ -9355,7 +9354,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F346 — the workflows guide documents `refine_windows` as a supported argument with its defaults and "not a burn fix"
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: read the guide.
 Steps: `get_guide("workflows")` (the index), find the section on refining a long take in time windows, and read it with
@@ -9374,7 +9372,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F347 — `refine_windows` without `refine_strength` is refused at validate, naming `refine_windows`
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345 with RW `{}` and the `refine_strength` argument removed;
@@ -9388,7 +9385,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F348 — `refine_windows` with `refine_tiles` is refused at validate, naming both
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345 with RW `{}` and a `refine_tiles` argument added to `refine` (use the form
@@ -9402,7 +9398,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F349 — `refine_windows` with a conditioning input (`image`, `keyframes`, `guides`, `last_image`, `references`, `latent_anchor`) is refused at validate
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345 with RW `{}`, and in turn one of these added to `refine` (each a separate
@@ -9419,7 +9414,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F350 — `refine_windows` refuses an `overlap` at or above `frames`, and the boundaries of the rule
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 42, "overlap": 42}`; (b)
@@ -9437,7 +9431,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F351 — `refine_windows` refuses an unknown key and a non-object value, naming it
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 42, "windw": 8}`; (b)
@@ -9452,7 +9445,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F352 — `positions: "rebased"` refuses an off-grid `frames` (40) and accepts the default 42
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345, `validate_workflow` with RW = (a) `{"frames": 40, "positions": "rebased"}`; (b)
@@ -9469,7 +9461,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F353 — a windowed refine fed a `source_video` over 15 s is refused at validate, pointing at `encode_h3_latents`
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: a two-step workflow: `refine` as in W_win (M-F345) but with `source_video: "asset:qa-1230/chain-26s.mp4"` in
@@ -9482,7 +9473,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F354 — the old name `experimental_refine_windows` is refused, and the refusal names `refine_windows`
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free**: validate only.
 Steps: W_win from M-F345 with `refine_windows` replaced by `experimental_refine_windows: {"frames": 42, "overlap": 12}`;
@@ -9494,7 +9484,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F355 — the other scratch spikes stay behind `DW_EXPERIMENTAL_REFINE_WINDOWS` after the windowed refine leaves it
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` guide chains. **Free**: validate only.
 Steps: `validate_workflow(workflow_path="templates/minimax/chained-segments", workspace="regression-model-specific",
@@ -9513,7 +9502,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F356 — a windowed refine over the ≈26 s chain completes: the source's length and its own soundtrack
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **GPU**: about 15–18 min on lem (the plan quotes 36–40
 GPU-min per minute of take); quote `plan.estimate`.
@@ -9534,7 +9522,6 @@ cleanup: `delete_output(job_id=<id>)` (the fixture stays).
 metrics: none.
 
 ### M-F357 — a windowed refine over a take shorter than one window returns that take, full length, with its audio
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **GPU**: a few minutes; quote `plan.estimate`.
 Steps: W_win from M-F345 with RW `{}`, changed so that it starts with two steps:
@@ -9551,7 +9538,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### M-F358 — an ordinary H3 template is untouched by the promotion: same cost row, no windowing in its job
-pending: #1376
 source: tester, spec for #1376 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `templates/minimax/video-with-audio`. **GPU**: one default clip; quote
 `plan.estimate`.
@@ -9674,6 +9660,327 @@ expected:
 - Nothing in the skill still calls the windowed refine experimental or tells the reader to set
   `DW_EXPERIMENTAL_REFINE_WINDOWS`.
 It is a **finding** if the template is missing from the skill, or the skill promises it fixes burn.
+cleanup: none.
+metrics: none.
+
+### M-F366 — the #1325 v6 seam-restore workflow validates clean: 6 fl2va segments, 5 ref2va restores over 124-frame windows, guide = restore frames 102–123, key = restore frame 102, `release_pipeline: true` on all 11 pipeline steps
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F336 (plan v5: the same window, without `release_pipeline`; its early job `782ceef4f82e` was OOM-killed).
+Model/pipeline: MiniMax H3 `fl2va` segments and `ref2va` restores, raw H3 (int8, sparse attention, no turbo, 20
+steps, shifts 12/3), the narrated `dialogue` take's still and narration. Free: validates and reads only.
+The restore arm is `bench/workflows/seam-restore.json` in the dw repo, saved to workspace `bench` with `save_workflow`.
+It is built against control job `aed61997052a` (workspace `bench`, workflow `bench/seam-restore-control`,
+`arguments {"seed": 1}`), whose steps are `audNN`, `segNN`, `tailNN`, `keyNN` and `take`. The plan names the restore
+steps `rtailsrcNN`, `raudNN`, `restoreNN` and `rtailNN`. Other names are fine if the record maps them.
+Steps:
+1. `list_workflows(workspace="bench")` and find the saved restore workflow (expected name `bench/seam-restore`).
+   `get_workflow` on it.
+2. `validate_workflow(workspace="bench", workflow_path=<that name>, arguments={"seed": 1})`. If the saved name doesn't
+   resolve, take `get_job_workflow(<the v6 full or early job's id from the record>)` and validate it inline in
+   `bench`. Note which route you used. An unresolvable name is not a finding.
+expected:
+- `valid: true`, no errors. Warnings are allowed (the control carries `vram_projection_inherited`); list them.
+  `plan.estimate` is present (its basis may be `unknown`).
+- Exactly 6 H3 segment steps, all `fl2va`, and exactly 5 `ref2va` restore steps, one per seam k = 1..5. **No restore
+  follows segment 6**, and nothing consumes a restore of segment 6.
+- **`release_pipeline: true` on every pipeline step**: all 6 segments and all 5 restores, 11 steps. A pipeline step
+  with the key absent or `false` is a finding. Utility steps (`trim_video`, audio slices, `concat_videos`) may carry it
+  or not. No step uses `pipeline_reference`.
+- Each restore k:
+  - `num_frames` **124**. Its `source_video` (`rtailsrc k`, a `trim_video` with a literal `num_frames`) is **124**
+    frames: on H3's 17n+5 grid (17·7+5) and at least the 120-frame minimum. Do the 17n+5 arithmetic on the literal
+    yourself. `validate_workflow` passing is not enough to show the grid. 120, 107 and 22 are each a finding;
+  - `source_video` = segment k's output frames **68–191**, ending on its last frame (segments are 192 frames);
+  - `hold_audio` = a 124-frame narration slice from frame 170·(k−1)+68 to frame 170·k+22: k=1 → 68–191, k=2 →
+    238–361, k=3 → 408–531, k=4 → 578–701, k=5 → 748–871. In samples at 48 kHz (2000 a frame), k=1 starts at 136000
+    and runs 248000;
+  - `refine_strength` 0.3;
+  - `references` = the take's still, the one segment 1's `image` uses;
+  - the prompt is segment **k+1's**, not segment k's;
+  - seed **1000+k** (1001..1005);
+  - `num_inference_steps` 20, no turbo LoRA (absent or `model_name: null`), and the segments' quantization,
+    attention and shifts (12/3).
+- `rtail k` = restore k's frames **102–123** (22 frames, ending on its last frame). It is segment k+1's `guides`
+  video at frame 0, 22 frames, never 39.
+- `key k` = restore k's frame **102** (frame 0 of `rtail k`), and it is segment k+1's `image`. Segment 1's `image` is
+  the still, and segment 1 has no `guides`.
+- Every segment's prompt, seed, audio slice (`audNN`), size, `num_frames` 192 and schedule are the control's.
+- One join (`take`, `concat_videos`) over seg01–seg06 in order: trim 22 on segments 2–6, crossfade 80 ms, narration
+  kept.
+It is a **finding** if any of these holds:
+- the workflow doesn't validate clean;
+- a segment or restore step lacks `release_pipeline: true`;
+- there are other than 5 restores, or one follows segment 6;
+- a restore or its source isn't 124 frames, or the source isn't segment k's frames 68–191;
+- an audio slice is off its 170·(k−1)+68 start or isn't 124 frames;
+- a strength isn't 0.3;
+- a restore's prompt is segment k's own, or its seed isn't 1000+k;
+- a guide isn't restore frames 102–123, or a key isn't restore frame 102;
+- any step uses turbo or other than 20 steps.
+cleanup: none (validates only).
+metrics: none.
+
+### M-F367 — the #1325 v6 early workflow is the restore workflow cut after seg02's join, with `release_pipeline: true` on its 3 pipeline steps, and validates clean
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F337.
+Model/pipeline: as M-F366. Free: validates and reads only.
+Setup: M-F366's restore workflow definition (step 1 there).
+Steps:
+1. `list_workflows(workspace="bench")`, find the early workflow (`bench/workflows/seam-restore-early.json`, expected
+   saved name `bench/seam-restore-early`), and `get_workflow` on it.
+2. `validate_workflow(workspace="bench", workflow_path=<that name>, arguments={"seed": 1})`. If the name doesn't
+   resolve, validate `get_job_workflow(<the v6 early job>)` inline, as in M-F366.
+3. Diff its steps against the restore workflow's, step by step.
+expected:
+- `valid: true`, no errors, and `plan.estimate` present. The workflow declares a `seed` variable.
+- Its steps are the restore workflow's, identical in every argument, from the first step through seg02:
+  - aud01, seg01;
+  - `rtailsrc01` (seg01 frames 68–191, 124 frames) and `raud01` (frames 68–191);
+  - `restore01` (`num_frames` 124, seed 1001, seg02's prompt, strength 0.3);
+  - `rtail01` (restore frames 102–123) and key02 (restore frame 102);
+  - aud02, seg02.
+  Then one join over seg01 and seg02 only, with the same trim 22 and crossfade 80 ms.
+- Exactly 3 pipeline steps (seg01, `restore01`, seg02), each with `release_pipeline: true`.
+- No seg03, no `restore02`, and no step that consumes seg02's tail. The plan stops at seg02 to gate on it.
+It is a **finding** if any of these holds:
+- it doesn't validate clean;
+- any of its 3 pipeline steps lacks `release_pipeline: true`;
+- any shared step differs from the restore workflow's (seed, prompt, window, strength, audio slice, guide or key
+  source, `release_pipeline`);
+- `restore01` or its source is off 124 frames;
+- it runs past seg02's join.
+cleanup: none.
+metrics: none.
+
+### M-F368 — the #1325 v6 early job ran on the control's diffusers: `get_diffusers_state` was quoted before it, `0.44.0.dev0` @ `43e30028`
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F338.
+Model/pipeline: MiniMax H3 on lem (cuda). Free: issue reads and job reads.
+The **v6 early job** is the job of the early workflow created after `782ceef4f82e`, with `release_pipeline` in its
+realized workflow. It is neither v3's refused `dd3e9db5f675` nor v5's OOM-killed `782ceef4f82e`.
+Steps:
+1. Read the record as quoted on #1325 (`gh issue view 1325 --repo dkackman/diffusers-workflow --comments`) and the
+   build's comments on #1351. Find the `get_diffusers_state` quote and when it was taken.
+2. `get_job(<v6 early job>)`; note `created_at`. If `get_job` or `get_job_events` reports a diffusers version or
+   commit, note it.
+3. `get_diffusers_state()` now, for context only. It may have moved since; the check is about the state before the
+   early job.
+expected:
+- The record quotes a `get_diffusers_state` result naming version `0.44.0.dev0` and commit `43e30028` (a longer hash
+  that starts with it is fine). The quote was taken before the v6 early job's `created_at`, by its comment's timestamp
+  or the record's.
+- A quote taken only before `dd3e9db5f675` or `782ceef4f82e` doesn't count on its own. It counts only if nothing
+  changed diffusers between it and the v6 early job; a fresh quote is the clean form.
+- Any diffusers version the job or its events report matches the quote.
+- If the quote shows a different version or commit, **no v6 early job exists** (`list_jobs(workspace="bench")` shows
+  no early or full restore job created after `782ceef4f82e`), and #1351 has a stop-and-report comment.
+It is a **finding** if the quote is missing, was taken after the early job started, or doesn't match while a job ran
+anyway, or if the job's own reported diffusers differs from it.
+cleanup: none.
+metrics: none.
+
+### M-F369 — the #1325 v6 early job: one 362-frame take with audio, a 124-frame restore01, every pipeline step loaded fresh, a host-memory peak recorded, alone on lem; a second OOM kill stops the probe
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F339.
+Model/pipeline: MiniMax H3 `fl2va` + `ref2va`, the v6 early job (see M-F368). Free: reads only. Run on lem (cuda).
+Steps:
+1. `get_job(<v6 early job>)` and `get_job_events(<v6 early job>)`.
+2. `get_gallery_metadata` on its `final` mp4.
+3. `list_jobs(workspace="bench")`, then `list_jobs` in each workspace `list_workspaces` lists. Compare every MiniMax
+   H3 job's `started_at`–`finished_at` against the v6 early job's (and the full job's, if it exists; M-F371).
+4. For context: `get_job(dd3e9db5f675)` should read `failed` with the off-grid refusal in `restore01`, and
+   `get_job(782ceef4f82e)` should read `failed` (killed in `restore01`'s decode).
+expected:
+- `status: succeeded`, workspace `bench`, `arguments` with `seed` 1.
+- The manifest has seg01 and seg02 segment files and exactly one `final` video. Its shots: seg01 at start 0, 192
+  frames; seg02 at start 192, 170 frames, `crossfade_ms` 80.
+- `get_gallery_metadata`: `frame_count` **362** (192 + 170), `fps` 24, the control's width and height, and an audio
+  stream within one frame of the video's length (about 15.08 s).
+- The manifest has a `restore01` entry with `timing`. Its file, if it saves one, is **124** frames, never 120, 107 or
+  22. No 17n+5 refusal or padding warning appears in `job.warnings` or the events.
+- **The release took effect.** `restore01` and seg02 each show `load_cached: false` in their manifest `timing` (or
+  the events show a fresh load for each), and the events show seg01's and `restore01`'s pipelines released after
+  their steps (a `pipeline_released` event, or what the server reports in its place). A `load_cached: true` on a step
+  after a released one is a finding.
+- The events' memory readings, if they report host memory, peak well under lem's 128 GB. The plan expects about one
+  pipeline's worth, near the control's 71.1 GB. The record's host-memory peak for this job (M-F373) agrees with them.
+- No other H3 job ran on lem while the early or full job ran, on either card.
+- No job of `bench/seam-restore-control` was created after `aed61997052a`: the control was reused, not re-run.
+- **If instead the v6 early job was OOM-killed** (`failed` with a kill or OOM in its events), the plan's stop rule
+  applies. That is a probe outcome, not a finding by itself. In that case:
+  - no other early or full restore job was created after it;
+  - #1351 has a stop-and-report comment;
+  - the record names the kill with its memory peak and step.
+  If its events show a pipeline step loaded with `load_cached: true` after a `release_pipeline` step (the key not
+  freeing the pipeline), file that against dw (`owner:implementer`, `backend:cuda`).
+It is a **finding** if any of these holds:
+- the early job failed for any reason other than an OOM kill handled by the stop rule;
+- its take isn't 362 frames, or it has no audio;
+- `restore01` is off 124 frames, or a grid refusal or pad warning appears;
+- a pipeline step after the first was served from cache;
+- any H3 job overlaps it;
+- a second control job exists;
+- a job was queued after a second OOM kill.
+cleanup: none. Never delete the probe jobs, `dd3e9db5f675` or `782ceef4f82e`: the record and Don's viewing cite them.
+metrics: none.
+
+### M-F370 — the #1325 v6 gate: both arms' seg02 numbers are recorded, the outcome follows the approved thresholds, and the full job exists only if the gate passed
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F340.
+Model/pipeline: the v6 early job (M-F368) and control `aed61997052a`. Free: issue and job reads.
+Skip with a note if M-F369 found the v6 early job OOM-killed (the probe stopped before the gate).
+Steps:
+1. From the record on #1325, read these for **both arms**:
+   - seg02's face-sharpness rise, split into seam and in-segment parts (seg01's last 22 frames against seg02; the
+     control's seg02 is take frames 192–361);
+   - the same split for saturation;
+   - seam 1's score (frame-difference peak over the median in-segment frame difference).
+   Then read which way the record says the gate went.
+2. Apply the rule yourself. Let R_r and R_c be the restore and control rises (seam + in-segment), and S_r and S_c
+   the seam-1 scores. The gate **passes** iff R_r < R_c **and** S_r ≤ 1.5·S_c; otherwise it **stops**. At the
+   boundaries, R_r = R_c stops ("not below"), and S_r of exactly 1.5·S_c passes (only "above 1.5×" stops). If the
+   record says it read a boundary the other way, judge by its stated reading and note it.
+3. `list_jobs(workspace="bench")` and look for a job of the full restore workflow (`bench/seam-restore`) created after
+   the v6 early job.
+expected:
+- Every number in step 1 is present for both arms. Each rise's seam and in-segment parts add up to its total within
+  the record's rounding.
+- The restore arm's numbers come from the v6 early job, not `dd3e9db5f675` or `782ceef4f82e` (neither has a seg02).
+- The record's stated outcome equals step 2's.
+- **Pass:** a full job exists, created after the v6 early job's `finished_at`, and M-F371 applies.
+- **Stop:** no full job exists after the v6 early job, and the record says the gate fired, with the numbers that
+  fired it.
+It is a **finding** if any of these holds:
+- a gate number is missing for either arm;
+- the stated outcome contradicts the rule;
+- a full job exists after a stop, or was created before the early job finished;
+- a pass has no full job and no reason.
+cleanup: none.
+metrics: none.
+
+### M-F371 — if the #1325 v6 gate passed, the full restore job: exactly 1042 frames with audio at 24 fps, five 124-frame restores, 11 fresh pipeline loads, and seg01–seg02 repeating the early job step for step
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F341.
+Model/pipeline: MiniMax H3, the v6 full job. Free: reads only. Run on lem (cuda).
+Skip with a note if M-F370 found the gate stopped the run, or M-F369 found the probe stopped (no full job).
+Steps:
+1. `get_job(<full job>)` and `get_job_events(<full job>)`. `get_gallery_metadata` on its `final` mp4 and on control
+   `aed61997052a`'s
+   (`bench/seam-restore-control/20261114-181113-99c25c22/final/SeamRestoreControl-take.22-0.0.mp4`).
+2. `get_job_workflow` for the full job and the v6 early job.
+expected:
+- `status: succeeded`, workspace `bench`, `seed` 1. One `final` video, with the control's shots: seg01 at 0 (192),
+  then seg02–seg06 at 192, 362, 532, 702, 872 (170 each, `crossfade_ms` 80).
+- `frame_count` **1042**, exactly the control's. The width, height and `fps` 24 are the control's, and an audio stream
+  is within one frame of the video's length.
+- The manifest has `restore01`..`restore05` entries, each with `timing`, and none after seg06. Each restore, and its
+  source, is 124 frames.
+- Every one of the 11 pipeline steps after the first shows a fresh load (`load_cached: false` or a load event), and
+  the events show releases between them, as in M-F369. The events' host-memory readings, if reported, stay well under
+  128 GB.
+- The full job's realized steps through seg02 equal the v6 early job's, argument for argument and seed for seed,
+  `release_pipeline` included. Frame-identical output is not required: the plan promises the same construction.
+- It didn't overlap another H3 job (M-F369's check).
+- **If the full job was OOM-killed** (the probe's second kill), the stop rule applies, as in M-F369: no later restore
+  job exists, and the record and a #1351 stop report name it. That is a probe outcome, not a finding by itself.
+It is a **finding** if any of these holds:
+- the full job failed other than by an OOM kill handled by the stop rule;
+- its count isn't 1042, or differs from the control's;
+- it has no audio, or its shots differ from the control's;
+- a restore is missing, off 124 frames, or follows seg06;
+- a pipeline step after the first was served from cache;
+- its first two segments' steps differ from the early job's.
+cleanup: none.
+metrics: none.
+
+### M-F372 — the #1325 v6 restore job(s) differ from control `aed61997052a` only in the restore steps, each segment's guide and key source, and the `release_pipeline` key
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F342.
+Model/pipeline: MiniMax H3 `fl2va` and `ref2va`. Free: reads only.
+Steps:
+1. `get_job_workflow` for `aed61997052a`, for the v6 early job, and for the full job if it exists. If `realized` is
+   false for any, note "evidence pruned" and skip that pair; that isn't a finding.
+2. Normalize each restore workflow:
+   - strip `rtailsrcNN`, `raudNN`, `restoreNN` and `rtailNN`, and anything that only feeds them;
+   - remove the `release_pipeline` key from every step;
+   - point each segment k+1's `guides` and `image` back at the control's `tailNN` and `keyNN`.
+   Diff the result against the control. For the early job, diff against the control's steps through seg02 plus a join
+   of seg01–seg02.
+expected:
+- After normalizing, nothing differs. Per segment, these are the control's: seed, prompt, still, `audNN` slice,
+  width, height, `num_frames` 192, `num_inference_steps` 20, shifts, quantization, attention, LoRA state and guide
+  length 22. So are the join's trim and crossfade.
+- The only differences are:
+  - the four restore step kinds;
+  - the source of each segment k+1's guide (restore k's frames 102–123 instead of segment k's raw frames 170–191) and
+    key (restore frame 102);
+  - `release_pipeline`, which is `true` on every segment and restore step and absent or `false` in the control.
+- Seeds are pinned in every realized workflow.
+It is a **finding** if any segment's seed, prompt, still, audio slice, size or schedule differs, or if anything outside
+those three kinds of change differs. A key other than `release_pipeline` added to a segment step counts.
+cleanup: none.
+metrics: none.
+
+### M-F373 — the #1325 v6 record, quoted on #1325: job ids and take paths (`dd3e9db5f675` and `782ceef4f82e` named apart), window, diffusers state, 0.3 / s = 12 / d = 0.0345, gate numbers, both arms' tables with the seam-jump tables, wall time per restore pass and per load, host-memory peaks, verdict left to Don
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
+Supersedes M-F343.
+Model/pipeline: the #1351 probe record. Free: issue reads and job reads.
+The record is a section of `bench/records/narrated.md` in the dw repo, which a tester can't read. The hand-off
+comment on #1325 must quote it (`gh issue view 1325 --repo dkackman/diffusers-workflow --comments`). A link without
+a quote is a finding.
+Steps:
+1. Read the quoted record.
+2. `get_job` and `get_job_events` for each probe job it cites, to check status, wall times and memory.
+expected:
+- **Jobs and takes.** It names the control `aed61997052a`, the v6 early job and the full job, each with its take
+  path. If there is no full job, it says the gate stopped the run, or that a second OOM kill stopped the probe. Every
+  cited arm job exists in `bench` and is `succeeded` (or, under the stop rule, is the named killed job).
+- **Failed jobs, named apart.** It names both of these as **not** arm jobs, and none of their numbers feed a table
+  or the gate:
+  - `dd3e9db5f675`: v3's 120-frame early job, refused in `restore01` off the 17n+5 grid;
+  - `782ceef4f82e`: v5's early job, OOM-killed in `restore01`'s VAE decode at a **124 151.9 MB** host peak (about
+    124.2 GB), with its timing (seg01 done; `restore01` denoised, then killed about 41 s into decode).
+- **Window.** It states the 124-frame restore window: segment k's frames 68–191, guide = restore frames 102–123, key
+  = restore frame 102.
+- **Memory fix.** It states that every segment and restore step carries `release_pipeline: true`.
+- **Diffusers.** It quotes the pre-run `get_diffusers_state`: `0.44.0.dev0` @ `43e30028` (M-F368).
+- **Strength.** `refine_strength` 0.3, shift *s* = 12, ComfyUI *d* = 0.0345 (0.3 / (12 − 11·0.3) = 0.03448).
+- **Gate.** Both arms' gate numbers and the outcome (M-F370).
+- **Tables, both arms**, over every seam the restore arm reached (5 after a pass, 1 after a stop):
+  - the drift split for luma, saturation, face saturation and face sharpness, each as total / seams / in-segment;
+  - face-crop windows: median sharpness, mean saturation, SFace similarity;
+  - the seam peak against the median frame difference;
+  - still-mouth bins.
+- **Seam-jump tables.** Per seam, in both arms:
+  - the jump at the join: the frame difference from (seg k, frame 191) to (seg k+1, frame 22), as a ratio to the
+    median in-segment frame difference;
+  - the step in detail: face-crop median sharpness and mean saturation over seg k's last 6 output frames against
+    seg k+1's first 6 kept frames.
+  For the restore arm only, how far the redraw moved: `rtail k` against seg k's frames 170–191, as mean absolute
+  difference, face-sharpness change and SFace similarity. The control's seams are labeled as the baseline.
+- **Wall time.** Each restore pass's time, and the time of **each pipeline load** shown separately, with the restore
+  total and the load total per job. Each figure agrees within 10% with that step's manifest `timing` or its events.
+- **Host memory.** Each restore-arm job's host-memory peak. Where the events report memory, the peak agrees with
+  them within 5%.
+- **Verdict.** It doesn't call whether the restore helps on the measures; the one ruling it states is the gate's.
+  #1325 goes to `owner:don` with both take paths for the viewing (`taste`). After a gate stop or a second OOM kill,
+  #1325 is headed for `wontfix` with the record as the reason, per Don's 2026-11-15 ruling.
+It is a **finding** if any of these holds:
+- a job id, a take path, the diffusers quote, 0.3, *s*, *d*, or the gate numbers is missing;
+- any table for either arm, or the seam-jump or redraw tables, is missing;
+- the per-restore or per-load wall time, or any arm job's host-memory peak, is missing;
+- `dd3e9db5f675` or `782ceef4f82e` is unnamed or counted as an arm job;
+- *d* doesn't follow from *s*;
+- a cited arm job doesn't exist or didn't succeed (outside the stop rule);
+- the record declares a verdict beyond the gate.
 cleanup: none.
 metrics: none.
 

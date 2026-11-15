@@ -21731,7 +21731,6 @@ its `acknowledged_cost`, once #1371 and #1245 are both closed. Never delete it b
 metrics: none.
 
 ### C-F869 — `detect_cuts` is listed and documented, with `max_frames` defaulting to 345
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. Call `list_tasks`, `get_task("detect_cuts")`, then `get_guide("tasks")` (index form) and the `detect_cuts`
 section it lists.
@@ -21747,7 +21746,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F870 — `detect_cuts` on a two-shot clip returns both cuts, with on-grid `render_frames`
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: the two-shot clip TWO. A utility workflow `qa-c-f870` with steps:
 `a` = `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=100)`;
@@ -21766,7 +21764,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F871 — `render_frames` rounds up to the grid, and an on-grid length keeps its count
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: a three-shot clip of 124, 130 and 141 frames. Make the 130- and 141-frame shots as still holds so no source
 runs out: `get_first_frame` of `ep3-shot1-incident.mp4` → `loop_frames(num_frames=130)`, and `get_first_frame` of
@@ -21782,7 +21779,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F872 — `detect_cuts` on one-shot clips returns one cut, padded up to 124 when shorter
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 A workflow `qa-c-f872` with two steps: `detect_cuts(video="asset:qa-cast/ep6-cold-open.mp4")` and
 `detect_cuts(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4")`.
@@ -21795,7 +21791,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F873 — a cut longer than `max_frames` is split into near-equal flagged pieces
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 A workflow `qa-c-f873` with three `detect_cuts` steps on `asset:qa-cast/ep6-cold-open.mp4` (one 124-frame shot):
 `max_frames` 60, 123 and 124.
@@ -21810,7 +21805,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F874 — a shot over 345 frames splits at the default cap into on-grid pieces, and a 345-frame shot does not
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: still holds of `get_first_frame(ep6-cold-open.mp4)` via `loop_frames` at `num_frames` 345, 346 and 400. A
 workflow `qa-c-f874` runs `detect_cuts` (default `max_frames`) on each.
@@ -21824,7 +21818,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F875 — `detect_cuts` refuses a `max_frames` above 345 before the run
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` on a one-step workflow `qa-c-f875`:
 `detect_cuts(video="asset:qa-cast/ep6-cold-open.mp4", max_frames=X)` for X = 346, 1000, 0 and 345.
@@ -21837,7 +21830,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F876 — a cut under 22 frames is flagged `too_short`, and the flag follows the reported length
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: three three-shot clips, `ep6-cold-open` + a short middle shot + `ep3-shot2-reply`, where the middle is
 `trim_video(ep3-shot1-incident.mp4, start_frame=0, num_frames=N)` for N = 10, 21 and 22. Join each with
@@ -21853,7 +21845,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F877 — `detect_cuts` refuses a still or an audio file as `video` at validate
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` on `detect_cuts(video="asset:qa-cast/priya-portrait.jpg")` and then on
 `detect_cuts(video="asset:qa-cast/priya-voice.wav")`, workflow `qa-c-f877`.
@@ -21865,7 +21856,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F878 — `trim_video` `pad_to` holds the last frame and pads the audio with silence
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 A workflow `qa-c-f878` with a step `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0,
 num_frames=110, pad_to=124)`. Run it, then `get_gallery_metadata` on the output.
@@ -21882,7 +21872,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F879 — `pad_to` equal to `num_frames` changes nothing, and omitting it is today's trim
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 A workflow `qa-c-f879` with two steps on `ep6-cold-open.mp4`, `start_frame=0, num_frames=110`: one with
 `pad_to=110` and one with no `pad_to`.
@@ -21894,7 +21883,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F880 — `trim_video` refuses a `pad_to` below `num_frames` or not an integer, and `pad_to` doesn't loosen the span check
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` on `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=110,
 pad_to=X)` for X = 109, 0, -1, 124.5 and `"124"`, then on `trim_video(..., start_frame=100, num_frames=30,
@@ -21909,7 +21897,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F881 — `crop_face_track` still resets its track at hard cuts, and agrees with `detect_cuts` on where they are
-pending: #1373
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 A workflow `qa-c-f881` with `detect_cuts(video="asset:qa-cast/ep49-episode.mp4")` and `crop_face_track` on the same
 clip, using the arguments C-F825 uses.
