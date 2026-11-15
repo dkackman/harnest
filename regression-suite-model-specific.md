@@ -8945,8 +8945,9 @@ Steps:
    the chain's own `check` report, not a task, so read it where the record says it came from (job events, the
    output record or `get_job`), and say which.
 2. For each arm, `run_workflow` an inline one-step `analyze_seams` workflow over the arm's final mp4 (an `output:`
-   reference, workspace `probe-1326`), with `wait_seconds` 55. The video carries its shot records. Read the
-   lightness step per cut.
+   reference, workspace `probe-1326`), with `wait_seconds` 55. Give the step `"result": {"content_type":
+   "application/json"}`. The video carries its shot records. Read the lightness step per cut from the job's JSON
+   output file with `get_output_text`.
 expected:
 - The table has one row or column per arm (six) and covers all 7 seams of each 8-segment chain, for each of the three
   measures: look step, texture drift and the `analyze_seams` lightness step.
