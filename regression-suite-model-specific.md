@@ -9345,7 +9345,7 @@ Workflow W_win (inline, used by M-F345–M-F360), four steps in order:
 4. `final`: `pair_audio(video="previous_result:decode", audio="asset:qa-1230/chain-26s.mp4", fit="video")`, result `video/mp4`.
 Steps: `validate_workflow(workspace="regression-model-specific", inline_workflow=W_win)` with RW = (a) `{}`;
 (b) `{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`; (c) `"variable:windows"` with
-`variables: {"windows": {"frames": 42, "overlap": 12}}`; (d) `{"frames": 21, "overlap": 4}` (other legal values).
+`variables: {"windows": {"frames": 42, "overlap": 12}}`; (d) `{"frames": 22, "overlap": 7}` (other legal values).
 expected:
 - All four: `valid: true`, with no error and no warning naming `DW_EXPERIMENTAL_REFINE_WINDOWS`, "experimental" or
   `refine_windows`; `plan` present with an `estimate`.
