@@ -21522,7 +21522,6 @@ cleanup: `delete_output(job_id=...)` for each of the three runs; keep the two as
 metrics: none.
 
 ### C-F859 — a restart-batch rerun named by a job that is not a restart tombstone is refused, and queues nothing
-pending: #1370
 source: tester, spec for #1370 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Stage A builds the REST route `POST /api/jobs/{job_id}/rerun-restart-batch`, and a tester can reach it only
 over MCP, through stage B's `rerun_job(job_id=..., restart_batch=true)`, which passes through to that route. So this
@@ -21547,7 +21546,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F860 — a restart-batch rerun of an unknown job id is a not-found refusal, and queues nothing
-pending: #1370
 source: tester, spec for #1370 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Runs through stage B's parameter, as C-F859 does. Record the queued and running jobs as in C-F859. Call
 `rerun_job(job_id="000000000000", restart_batch=true)` and `rerun_job(job_id="no-such-job", restart_batch=true)`,
@@ -21562,7 +21560,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F861 — a bound acknowledgement on a restart batch is refused, because one plan cannot bind N
-pending: #1370
 source: tester, spec for #1370 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. This case needs a real tombstone: T, one of the job ids the #1371 drill hand-off records (see C-F864). Run it
 **before** C-F867, which consumes the batch. Take a fingerprint from any free `validate_workflow` of
@@ -21582,7 +21579,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F862 — `rerun_job(restart_batch=true)` refuses `new_seed` and `arguments` before sending anything, and the single rerun is unchanged
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Use S, a succeeded job as in C-F859. Using a succeeded job keeps the case safe: if a refusal leaked through,
 the server would also refuse it as not a tombstone. That is why the message is what this case checks. Record the
@@ -21607,7 +21603,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F863 — `rerun_job`'s schema carries `restart_batch`, its description points at an "After a restart" guide section, and the tool count is unchanged
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Read `rerun_job`'s tool schema and description, and count the `dw` tools the client lists. Before stage B
 there were 65. Call `list_guides`, then `get_guide(<guide>, section=<the section>)` for the section the description
@@ -21631,7 +21626,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F864 — the #1371 drill hand-off records a real unclean death, and its jobs are now `server restart:` tombstones
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Source: the stage B hand-off comment on #1371. Read it with `gh issue view 1371 --comments`. The tester can't
 see the kill itself, so the comment has to state what this case checks. C-F861 and C-F865 to C-F868 use these
@@ -21653,7 +21647,6 @@ cleanup: none until C-F868 is done. The drill workspace is evidence until then.
 metrics: none.
 
 ### C-F865 — without `acknowledged_cost`, a restart batch named by any one tombstone previews the whole restart, oldest first, and queues nothing
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Uses C-F864's tombstones, sorted by their `created_at` from `get_job`: T1 is the oldest and Tr is the one that
 was running. Record the queued and running jobs as in C-F859. Call:
@@ -21677,7 +21670,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F866 — a restart batch never takes in a tombstone from another restart, or a job that is not a tombstone
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. The plan's member rule: same `server_instance` and a `server restart:` error. Over MCP, the visible part of
 that rule is that the preview from C-F865 holds no job that isn't a tombstone. Steps: for each id in C-F865's
@@ -21692,7 +21684,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F867 — with `acknowledged_cost=true`, the restart batch queues every tombstone in `created_at` order, each in its own workspace with `rerun_of`
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Spends GPU time: 3-4 small text-to-image runs, the cost the C-F865 preview quotes. Run C-F861 first. Call
 `rerun_job(job_id=T1, restart_batch=true, acknowledged_cost=true)`, then `list_jobs(workspace=<the drill
@@ -21714,7 +21705,6 @@ cleanup: none until C-F868 is done. Then `delete_output(job_id=...)` for each ne
 metrics: none.
 
 ### C-F868 — repeating the restart batch queues nothing, and lists each member as "already rerun as" its new job
-pending: #1371
 source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
 Free. Run it after C-F867. Record the queued and running jobs as in C-F859. Call:
 1. `rerun_job(job_id=T1, restart_batch=true, acknowledged_cost=true)`;

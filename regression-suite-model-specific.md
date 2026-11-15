@@ -9258,4 +9258,283 @@ reads `load_cached: true` after an upsample ran.
 cleanup: `delete_output(job_id=...)` for every run.
 metrics: none.
 
+### M-F336 — the #1325 v5 seam-restore workflow validates clean: 6 fl2va segments, 5 ref2va restores over 124-frame windows (segment k's frames 68–191), guide = restore frames 102–123, key = restore frame 102
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F327 (plan v3's 120-frame window, refused at run time in job `dd3e9db5f675`).
+Model/pipeline: MiniMax H3 `fl2va` segments and `ref2va` restores, raw H3 (int8, sparse attention, no turbo, 20
+steps, shifts 12/3), the narrated `dialogue` take's still and narration. Free: validates and reads only.
+The restore arm is `bench/workflows/seam-restore.json` in the dw repo, saved to workspace `bench` with `save_workflow`.
+The control it is built against is job `aed61997052a` (workspace `bench`, workflow `bench/seam-restore-control`,
+`arguments {"seed": 1}`), whose steps are `audNN`, `segNN`, `tailNN`, `keyNN` and `take`. The restore steps are named
+`rtailsrcNN`, `raudNN`, `restoreNN` and `rtailNN` in the plan; other names are fine if the record maps them.
+Steps:
+1. `list_workflows(workspace="bench")` and find the saved restore workflow (expected name `bench/seam-restore`).
+   `get_workflow` on it.
+2. `validate_workflow(workspace="bench", workflow_path=<that name>, arguments={"seed": 1})`. If the saved name doesn't
+   resolve, use `get_job_workflow(<the full or early job's id from the record>)` and validate that inline in
+   `bench`. Note which route was used; an unresolvable name is not a finding.
+expected:
+- `valid: true`, no errors. Warnings are allowed (the control carries a `vram_projection_inherited` warning); list them.
+  `plan.estimate` is present (basis may be `unknown`).
+- Exactly 6 H3 segment steps, all `fl2va`, and exactly 5 `ref2va` restore steps, one per seam k = 1..5. **No restore
+  follows segment 6**, and nothing consumes a restore of segment 6.
+- Each restore k:
+  - `num_frames` **124**, and its `source_video` (`rtailsrc k`, a `trim_video` whose `num_frames` is a literal) is
+    **124** frames: on H3's 17n+5 grid (17·7+5) and at least the 120-frame minimum. 120 (off-grid, v3's refused
+    window), 107 (below the minimum) and 22 (v1's) are each a finding. Do the 17n+5 arithmetic yourself on the
+    literal; `validate_workflow` passing is not enough here (#1372);
+  - `source_video` = segment k's output frames **68–191** (124 frames, ending on its last frame; segments are 192);
+  - `hold_audio` = a 124-frame narration slice starting at frame 170·(k−1)+68 and ending at 170·k+22 of the take's
+    narration: k=1 → 68–191, k=2 → 238–361, k=3 → 408–531, k=4 → 578–701, k=5 → 748–871 (at 48 kHz, 2000 samples a
+    frame, if the slice is stated in samples: k=1 starts at sample 136000 and runs 248000 samples). Its last 22 frames
+    line up with segment k+1's head;
+  - `refine_strength` 0.3;
+  - `references` = the take's still, the same reference segment 1's `image` uses;
+  - the prompt is segment **k+1's**, not segment k's;
+  - seed **1000+k** (1001..1005);
+  - `num_inference_steps` 20, no turbo LoRA (absent or `model_name: null`), the same quantization and attention
+    settings and shifts (12/3) as the segments.
+- `rtail k` = restore k's frames **102–123** (22 frames, ending on its last frame: the restored copy of segment k's
+  frames 170–191), and it is segment k+1's `guides` video at frame 0, 22 frames, never 39.
+- `key k` = restore k's frame **102** (frame 0 of `rtail k`), and it is segment k+1's `image`. Segment 1's `image` is
+  the still and it has no `guides`.
+- Every segment's prompt, seed, audio slice (`audNN`), size, `num_frames` 192 and schedule are the control's.
+- One join (`take`, `concat_videos`) over seg01–seg06 in order, trim 22 on segments 2–6, crossfade 80 ms, narration kept.
+It is a **finding** if the workflow doesn't validate clean, has other than 5 restores or one after segment 6, a restore
+or its source isn't 124 frames or its source isn't segment k's frames 68–191, an audio slice is off its 170·(k−1)+68
+start or isn't 124 frames, a strength isn't 0.3, a restore's prompt is segment k's own or its seed isn't 1000+k, a
+guide isn't restore frames 102–123, a key isn't restore frame 102, or any step uses turbo or other than 20 steps.
+cleanup: none (validates only).
+metrics: none.
+
+### M-F337 — the #1325 v5 early workflow is the restore workflow cut after seg02's join: same steps and seeds, 124-frame restore01, nothing after, validates clean
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F328.
+Model/pipeline: as M-F336. Free: validates and reads only.
+Setup: M-F336's restore workflow definition (step 1 there).
+Steps:
+1. `list_workflows(workspace="bench")`, find the early workflow (`bench/workflows/seam-restore-early.json`, expected
+   saved name `bench/seam-restore-early`); `get_workflow` on it.
+2. `validate_workflow(workspace="bench", workflow_path=<that name>, arguments={"seed": 1})`, with the same fallback to
+   `get_job_workflow(<early job>)` as M-F336.
+3. Diff its steps against the restore workflow's, step by step.
+expected:
+- `valid: true`, no errors; `plan.estimate` present. The workflow declares a `seed` variable (the bench glob test needs
+  it).
+- Its steps are the restore workflow's, identical in every argument, from the first step up to and including seg02:
+  aud01, seg01, `rtailsrc01` (seg01 frames 68–191, 124 frames), `raud01` (frames 68–191), `restore01` (`num_frames`
+  124, seed 1001, seg02's prompt, strength 0.3), `rtail01` (restore frames 102–123), key02 (restore frame 102), aud02,
+  seg02. Then one join over seg01 and seg02 only, with the same trim 22 and crossfade 80 ms.
+- No seg03, no `restore02`, and no step that consumes seg02's tail. A restore after seg02 is a finding: the plan stops
+  at seg02 to gate on it.
+It is a **finding** if it doesn't validate clean, any shared step differs from the restore workflow's (seed, prompt,
+window, strength, audio slice, guide or key source), `restore01` or its source is off 124 frames, or it runs past
+seg02's join.
+cleanup: none.
+metrics: none.
+
+### M-F338 — the #1325 v5 early job ran on the control's diffusers: `get_diffusers_state` was quoted before it, `0.44.0.dev0` @ `43e30028`
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F329.
+Model/pipeline: MiniMax H3 on lem (cuda). Free: issue reads and job reads.
+The early job here is the v5 (124-frame) one from the record, **not** v3's refused `dd3e9db5f675`.
+Steps:
+1. Read the record as quoted on #1325 (`gh issue view 1325 --repo dkackman/diffusers-workflow --comments`) and the
+   build's comments on #1351. Find the `get_diffusers_state` quote and when it was taken.
+2. `get_job(<early job>)`; note `created_at`. If `get_job` or `get_job_events(<early job>)` reports a diffusers
+   version or commit, note it.
+3. `get_diffusers_state()` now, for context only: it may have moved since (#1340 waits for this probe, but the
+   check is about the state before the early job).
+expected:
+- The record quotes a `get_diffusers_state` result naming version `0.44.0.dev0` and commit `43e30028` (a longer hash
+  starting with it is fine), taken before the v5 early job's `created_at`, from a comment's timestamp or the record's.
+  A quote taken only before v3's `dd3e9db5f675` doesn't count unless it also precedes the v5 early job with no
+  diffusers change between (a later quote is the clean form).
+- Any diffusers version the job or its events report matches it.
+- If the quote shows a different version or commit, **no v5 early job exists** (`list_jobs(workspace="bench")` shows
+  no job of the early or full restore workflow created after `dd3e9db5f675`), and #1351 has a stop-and-report comment.
+It is a **finding** if the quote is missing, it was taken after the early job started, it doesn't match and a job ran
+anyway, or the job's own reported diffusers differs from it.
+cleanup: none.
+metrics: none.
+
+### M-F339 — the #1325 v5 early job succeeded with one 362-frame take with audio and a 124-frame restore01, ran alone on lem, and no control re-run exists
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F330.
+Model/pipeline: MiniMax H3 `fl2va` + `ref2va`, the early job. Free: reads only. Run on lem (cuda).
+Steps:
+1. `get_job(<early job>)` (id from the record; not `dd3e9db5f675`).
+2. `get_gallery_metadata` on its `final` mp4.
+3. `list_jobs(workspace="bench")`, then `list_jobs` in each other workspace `list_workspaces` lists, and compare every
+   MiniMax H3 job's `started_at`–`finished_at` against the early job's (and, if it exists, the full job's; M-F341).
+4. `get_job(dd3e9db5f675)`, for context: it should read `failed` with the off-grid refusal in `restore01`.
+expected:
+- `status: succeeded`, workspace `bench`, `arguments` with `seed` 1.
+- The manifest has seg01 and seg02 segment files and exactly one `final` video. Its shots: seg01 at start 0, 192 frames;
+  seg02 at start 192, 170 frames, `crossfade_ms` 80.
+- `get_gallery_metadata`: `frame_count` **362** (192 + 170), `fps` 24, the control's width and height, and an audio
+  stream whose length is the video's within one frame (about 15.08 s).
+- The manifest has a `restore01` entry with `timing`; its file (if it saves one) is **124** frames — never 120, 107 or
+  22. No 17n+5 refusal or padding warning in `job.warnings` or `get_job_events(<early job>)`.
+- No other H3 job ran on lem while the early or full job ran, on either card. (Two H3 jobs don't fit in host RAM.)
+- No job of `bench/seam-restore-control` was created after `aed61997052a`: the control was reused, not re-run.
+It is a **finding** if the early job failed, its take isn't 362 frames, it has no audio, `restore01` is off 124
+frames, a grid refusal or pad warning appears, any H3 job overlaps it, or a second control job exists.
+cleanup: none. Never delete the probe jobs (or `dd3e9db5f675`): the record and Don's viewing cite them.
+metrics: none.
+
+### M-F340 — the #1325 v5 gate: both arms' seg02 numbers are recorded and the outcome follows the approved thresholds, with the full job existing only if the gate passed
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F331.
+Model/pipeline: the v5 early job and control `aed61997052a`. Free: issue and job reads.
+Steps:
+1. From the record on #1325, read for **both arms**: seg02's face-sharpness rise split into seam and in-segment parts
+   (seg01's last 22 frames against seg02; control seg02 = take frames 192–361), the same for saturation, and seam 1's
+   score (frame-difference peak over the median in-segment frame difference). Read which way the record says the gate
+   went.
+2. Apply the rule yourself. Let R_r and R_c be the restore and control rises (seam + in-segment), and S_r and S_c the
+   seam-1 scores. **Pass** iff R_r < R_c **and** S_r ≤ 1.5·S_c. Otherwise **stop**. On the boundaries: R_r = R_c
+   stops ("not below"); S_r exactly 1.5·S_c passes (only "above 1.5×" stops). If the record states it read a boundary
+   the other way, judge by its stated reading and note it.
+3. `list_jobs(workspace="bench")`: look for a job of the full restore workflow (`bench/seam-restore`).
+expected:
+- Every number in step 1 is present for both arms, and each rise's seam and in-segment parts add up to its total
+  within the record's rounding. The restore arm's numbers come from the v5 early job, not `dd3e9db5f675` (which has
+  no seg02).
+- The record's stated outcome equals step 2's.
+- **Pass:** a full job exists, created after the early job's `finished_at`, and M-F341 applies.
+  **Stop:** no full job exists, and the record says the gate fired and gives the numbers that fired it.
+It is a **finding** if a gate number is missing for either arm, the stated outcome contradicts the rule, a full job
+exists after a stop, a full job was created before the early job finished, or a pass has no full job and no reason.
+cleanup: none.
+metrics: none.
+
+### M-F341 — if the #1325 v5 gate passed, the full restore job succeeded with exactly 1042 frames and audio at 24 fps, five 124-frame restores, and repeats the early job's first two segments step for step
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F332.
+Model/pipeline: MiniMax H3, the full job. Free: reads only. Run on lem (cuda).
+Skip with a note if M-F340 found the gate stopped the run (no full job).
+Steps:
+1. `get_job(<full job>)`; `get_gallery_metadata` on its `final` mp4 and on control `aed61997052a`'s
+   (`bench/seam-restore-control/20261114-181113-99c25c22/final/SeamRestoreControl-take.22-0.0.mp4`).
+2. `get_job_workflow` for the full job and the early job.
+expected:
+- `status: succeeded`, workspace `bench`, `seed` 1. One `final` video. Its shots match the control's: seg01 at 0
+  (192), then seg02–seg06 at 192, 362, 532, 702, 872 (170 each, `crossfade_ms` 80).
+- `frame_count` **1042**, exactly the control's; same width, height and `fps` 24 as the control; an audio stream
+  within one frame of the video's length.
+- The manifest has `restore01`..`restore05` entries, each with `timing`, none after seg06, and each restore (and its
+  source) is 124 frames.
+- The full job's realized steps up to seg02 equal the early job's (M-F337), argument for argument and seed for seed.
+  Frame-identical output is not required: the plan promises the same construction.
+- It didn't overlap another H3 job (M-F339's check).
+It is a **finding** if the full job failed, its count isn't 1042 or differs from the control's, it has no audio, its
+shots differ from the control's, a restore is missing, off 124 frames or follows seg06, or its first two segments'
+steps differ from the early job's.
+cleanup: none.
+metrics: none.
+
+### M-F342 — the #1325 v5 restore job(s) differ from control `aed61997052a` only in the restore steps and each segment's guide and key source
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F333.
+Model/pipeline: MiniMax H3 `fl2va` and `ref2va`. Free: reads only.
+Steps:
+1. `get_job_workflow` for `aed61997052a` and for the v5 early job, and for the full job if it exists. If `realized` is
+   false for any, note "evidence pruned" and skip that pair; it isn't a finding.
+2. From each restore workflow, strip `rtailsrcNN`, `raudNN`, `restoreNN` and `rtailNN` (and anything that only feeds
+   them), and point each segment k+1's `guides` and `image` back at the control's `tailNN` and `keyNN`. Diff that
+   against the control. For the early job, diff against the control's steps through seg02 plus a join of seg01–seg02.
+expected:
+- After stripping, nothing differs: per segment, the seed, prompt, still, `audNN` slice, width, height, `num_frames`
+  192, `num_inference_steps` 20, shifts, quantization, attention, LoRA state and guide length 22 are the control's,
+  and so is the join's trim and crossfade.
+- The only differences are the four restore step kinds and the source of each segment k+1's guide (restore k's frames
+  102–123 instead of segment k's raw frames 170–191) and key (restore frame 102).
+- Seeds are pinned in all realized workflows.
+It is a **finding** if any segment's seed, prompt, still, audio slice, size or schedule differs, or anything outside the
+restore steps and guide/key sources differs.
+cleanup: none.
+metrics: none.
+
+### M-F343 — the #1325 v5 record, quoted on #1325: job ids and take paths (v3's refused `dd3e9db5f675` named apart), diffusers state, 0.3 / s = 12 / d = 0.0345, gate numbers, both arms' tables with the seam-jump tables, wall time per restore pass, verdict left to Don
+pending: #1351
+source: tester, spec for #1351 from #1325's plan v5 (claude-opus-5-5 via anthropic)
+Supersedes M-F334.
+Model/pipeline: the #1351 probe record. Free: issue reads and job reads.
+The record is a section of `bench/records/narrated.md` in the dw repo, which a tester can't read. It must be quoted in
+the hand-off comment on #1325 (`gh issue view 1325 --repo dkackman/diffusers-workflow --comments`). If it is only
+linked and not quoted, that is a finding.
+Steps:
+1. Read the quoted record.
+2. `get_job` and `get_job_events` for each probe job it cites, to check status and the wall times.
+expected:
+- **Jobs and takes.** It names the control `aed61997052a`, the v5 early job, and the full job (or says the gate
+  stopped the run), each with its take path. Every cited arm job exists in `bench` and is `succeeded`.
+- **v3's refused job.** It names `dd3e9db5f675` (v3's 120-frame early job, refused in `restore01` off the 17n+5 grid)
+  as **not** one of the arm's jobs; none of its numbers feed a table or the gate.
+- **Window.** It states the 124-frame restore window: segment k's frames 68–191, guide = restore frames 102–123, key =
+  restore frame 102.
+- **Diffusers.** It quotes the pre-run `get_diffusers_state`: `0.44.0.dev0` @ `43e30028` (M-F338).
+- **Strength.** `refine_strength` 0.3, shift *s* = 12, ComfyUI *d* = 0.0345 (0.3 / (12 − 11·0.3) = 0.03448).
+- **Gate.** Both arms' gate numbers and the outcome (M-F340).
+- **Tables, both arms**, over every seam the restore arm reached (5 after a pass, 1 after a stop):
+  - the drift split for luma, saturation, face saturation and face sharpness, each as total / seams / in-segment;
+  - face-crop windows: median sharpness, mean saturation, SFace similarity;
+  - the seam peak against the median frame difference;
+  - still-mouth bins.
+- **Seam-jump tables.** Per seam, in both arms:
+  - the jump at the join: the frame difference from (seg k, frame 191) to (seg k+1, frame 22), as a ratio to the
+    median in-segment frame difference;
+  - the step in detail: face-crop median sharpness and mean saturation over seg k's last 6 output frames against
+    seg k+1's first 6 kept frames.
+  For the restore arm only, how far the redraw moved: `rtail k` against seg k's frames 170–191, as mean absolute
+  difference, face-sharpness change and SFace similarity. The control's seams are labeled as the baseline.
+- **Wall time.** Each restore pass's time, with its transformer swap (`transformer` ↔ `transformer_ref`) shown
+  separately, and the restore total per job. Each agrees within 10% with that restore step's manifest `timing` or its
+  events.
+- **Verdict.** It doesn't call whether the restore helps on the measures. The one ruling it states is the gate's.
+  #1325 goes to `owner:don` with both take paths for the viewing (`taste`).
+It is a **finding** if a job id, take path, the diffusers quote, 0.3, *s*, *d*, the gate numbers, any table for
+either arm, the seam-jump or redraw tables, or the per-restore wall time is missing; if `dd3e9db5f675` is unnamed or
+counted as an arm job; if *d* doesn't follow from *s*; if a cited arm job doesn't exist or didn't succeed; or if the
+record declares a verdict beyond the gate.
+cleanup: none.
+metrics: none.
+
+### M-F344 — an H3 ref2va refine whose `source_video` is a `trim_video` off the 17n+5 grid is refused at validate, with the run-time message; an on-grid trim validates clean
+source: tester, verified in #1372 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3`, `fl2va` source segment and `ref2va` refine. **Free**: validate only.
+Workspace `bench` (it holds `bench/constitution-speaker.jpg` and `bench/constitution-narration-retimed.wav`).
+Workflow W_trim (inline, `seed: 1`, steps in order; each pipeline step's `configuration` is just
+`{"component_type": "ModularPipeline"}`, prompt any short text, 1344×768, 20 steps, output
+`["videos","audio","sampling_rate"]`):
+1. `aud01`: `slice_audio` of the narration, start 0, 192 frames, fps 24.
+2. `seg01`: H3 `fl2va`, `num_frames` 192, `image` the speaker still, `hold_audio: previous_result:aud01`.
+3. `rtailsrc01`: `trim_video` of `previous_result:seg01`, `start_frame` S, `num_frames` N.
+4. `raud01`: `slice_audio` of the narration, start S, N frames, fps 24.
+5. `restore01`: H3 `ref2va`, `references` = one `MiniMaxH3ImageReference` from the still,
+   `source_video: previous_result:rtailsrc01`, `refine_strength` 0.3, `hold_audio: previous_result:raud01`,
+   `num_frames` N.
+Steps: `validate_workflow(workspace="bench", inline_workflow=W_trim)` with (S, N) = (72, 120), (69, 123), (68, 124),
+and once with (72, `variable:tail_frames`) where `variables: {"tail_frames": 120}` and every N above reads it.
+expected:
+- (72, 120): `valid: false`, an error at `steps[4].pipeline.arguments.source_video` reading "source_video has 120
+  frames, off the 17n + 5 grid the step renders on: the pipeline would render 124 and pad the source, drifting the
+  mask - trim the clip to 107 frames or pad it to 124".
+- (69, 123): the same refusal at the same path, naming 123 frames, 124 and 107.
+- (68, 124): `valid: true`, with no error at all and no warning that mentions the grid (VRAM projection warnings are
+  allowed). `plan` is present.
+- The `variable:` version: the same 120-frame refusal as (72, 120). The variable is resolved, not skipped.
+It is a **finding** if an off-grid trim validates clean (the run then refuses it at `restore01` after the source
+segment has rendered, about 15 min on lem, as job `dd3e9db5f675` did), or if the on-grid trim is refused.
+cleanup: none.
+metrics: none.
+
 ## Performance
