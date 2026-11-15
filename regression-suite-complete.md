@@ -21885,11 +21885,13 @@ metrics: none.
 ### C-F880 — `trim_video` refuses a `pad_to` below `num_frames` or not an integer, and `pad_to` doesn't loosen the span check
 source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` on `trim_video(video="asset:qa-cast/ep6-cold-open.mp4", start_frame=0, num_frames=110,
-pad_to=X)` for X = 109, 0, -1, 124.5 and `"124"`, then on `trim_video(..., start_frame=100, num_frames=30,
+pad_to=X)` for X = 109, 0, -1, 124.5, `"x"` and `"124"`, then on `trim_video(..., start_frame=100, num_frames=30,
 pad_to=141)` (a span past the 124-frame source's end). Workflow `qa-c-f880`.
 expected:
-- X = 109, 0, -1, 124.5 and `"124"`: each is refused at validate with a message naming `pad_to`. For 109 the message
+- X = 109, 0, -1, 124.5 and `"x"`: each is refused at validate with a message naming `pad_to`. For 109 the message
   says it must be at least `num_frames` (110).
+- X = `"124"` (a numeric string) validates clean, read as 124 the same as `pad_to=124` (#692 coercion; Don's ruling
+  on #1373).
 - The past-the-end span is still refused as today, naming the span or `num_frames`. Padding never stretches a trim
   past the source's end.
 - `list_jobs` shows nothing queued.
