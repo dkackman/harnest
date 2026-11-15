@@ -19669,7 +19669,6 @@ cleanup: `delete_output(job_id=...)` for any job that was queued.
 metrics: none.
 
 ### C-F769 — the #1311 drill's cited jobs exist and follow the recipe: one narration, one retime, slices, one take per passage, one join
-pending: #1362
 source: tester, spec for #1337 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. Source: the stage 2 build comment on #1337 (`gh issue view 1337 --comments`). It must name the record
 (`bench/records/drill.md` section), the transcript path, the workspace (`drill-1311-<n>`), and every job id of the drill
@@ -19688,7 +19687,6 @@ cleanup: none (the drill's workspace and outputs are evidence: never delete them
 metrics: none.
 
 ### C-F770 — the #1311 piece is one video as long as its narration, cut at its passages, with sound through every cut
-pending: #1362
 source: tester, spec for #1337 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Mostly free, one short task-only run. Take the piece (the join job's output from C-F769) and the retimed narration track.
 `get_gallery_metadata` on both, and on each take. Run a one-step `analyze_seams` workflow on the piece
@@ -19720,7 +19718,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F772 — "not yet run end to end" is replaced by the measured result, and the guide, long-form and levers agree
-pending: #1362
 source: tester, spec for #1338 from #1311's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read the same texts as C-F766: the guide's *A narrated long take*, the `dw:long-form` SKILL.md,
 `references/run-and-repair.md`, `references/levers.md` and `references/audio.md`, and narrated-take's description.
@@ -21458,7 +21455,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F856 — attempt 2 ran on deployed develop holding stage 3, in `drill-1311-2`, and its hand-off names what C-F769 and C-F770 read
-pending: #1362
 source: tester, spec for #1362 from #1311's plan v2 (claude-opus-5-5 via anthropic)
 Free. Source: the stage 4 build comment on #1362. Where C-F769 says "the stage 2 build comment on #1337", it means
 this comment for attempt 2. C-F769 and C-F770 are checked against attempt 2's jobs in `drill-1311-2`, never against
@@ -21485,7 +21481,6 @@ cleanup: none. The drill's workspace and outputs are evidence: never delete them
 metrics: none.
 
 ### C-F857 — attempt 2 is the last: no third drill, GPU inside Q1, and a second wrong shape ends the feature at the record
-pending: #1362
 source: tester, spec for #1362 from #1311's plan v2 (claude-opus-5-5 via anthropic)
 Free. Call `list_workspaces`, and `list_jobs` in `drill-1311-2`. Take each drill job's run time from `get_job`. Read the
 #1362 build comment and the texts C-F772 reads.
