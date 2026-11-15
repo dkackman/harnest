@@ -9231,4 +9231,31 @@ a cited job doesn't exist or didn't succeed; or if the record declares a verdict
 cleanup: none.
 metrics: none.
 
+### M-F335 — a second FLUX 3 Klein upsample job on a warm 24 GB card frees the previous job's Klein before the upsampler loads, and succeeds
+source: tester, verified in #1265 (claude-opus-5-5 via anthropic)
+Model/pipeline: FLUX 3 Image Klein (`black-forest-labs/flux-3-image-klein`) with its prompt upsampler
+(`black-forest-labs/flux-3-image-klein-pup`), via `templates/flux3/upsample-then-generate` and
+`templates/flux3/image-edit`. The two don't fit one 24 GB card together. Run on lem (cuda, RTX 3090 24 GB). About 4 min.
+Setup: run alone, with nothing else queued. Back-to-back jobs must land on the same card: confirm each job's `device`
+from its `get_job`. A pair that lands on two cards voids the comparison. Rerun the second job (another seed) until it
+lands on a card the first job warmed. That is not a finding.
+Steps (workspace `regression-model-specific`):
+1. `upsample-then-generate` with `request: "a red fox in fresh snow at dawn"`, `seed: 21`. Note its card.
+2. Straight after, on the same card: `upsample-then-generate` with `request: "a lighthouse on a cliff at dusk, gulls
+   overhead"`, `seed: 22`. The request must differ, because identical arguments are served by the step cache and
+   skip the path.
+3. Once a card is warm from an `image-edit` run at its defaults with `seed: 13`, run `image-edit` with `seed: 14` on
+   that card.
+4. `get_job_events(kinds=["pipeline_released"])` on each second job, plus its unfiltered first ~15 events.
+expected:
+- Every job succeeds. No CUDA OOM loading `flux-3-image-klein-pup`.
+- Each second job's first `memory` event shows the prior Klein resident (about 19 GB allocated). Next comes a
+  `pipeline_released` event with `step: upsample`, `reason: task_models_need_room`, and `gpu_memory_allocated_mb` near
+  0. It comes before the upsample `phase task` event.
+- The second job's Klein step (`text_to_image` / `edit`) has `load_cached: false` in its manifest `timing`.
+It is a **finding** if the second job OOMs, if no `pipeline_released` precedes the upsample task, or if Klein
+reads `load_cached: true` after an upsample ran.
+cleanup: `delete_output(job_id=...)` for every run.
+metrics: none.
+
 ## Performance

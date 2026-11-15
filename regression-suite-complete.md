@@ -21521,4 +21521,216 @@ expected:
 cleanup: `delete_output(job_id=...)` for each of the three runs; keep the two assets.
 metrics: none.
 
+### C-F859 — a restart-batch rerun named by a job that is not a restart tombstone is refused, and queues nothing
+pending: #1370
+source: tester, spec for #1370 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Stage A builds the REST route `POST /api/jobs/{job_id}/rerun-restart-batch`, and a tester can reach it only
+over MCP, through stage B's `rerun_job(job_id=..., restart_batch=true)`, which passes through to that route. So this
+case runs once #1371 is deployed too. Pick three ids, none of them a tombstone:
+- S: a `succeeded` job, from `list_jobs(status="succeeded", workspace="regression-complete", limit=1)`;
+- U: a *user*-cancelled job, from `list_jobs(status="cancelled", workspace="regression-complete")`. Confirm with
+  `get_job` that its `error` is empty or does not start with `server restart:`. A queued job cancelled by hand is
+  the closest thing to a tombstone, so it is the input most likely to slip through;
+- F: a `failed` job from `list_jobs(status="failed", limit=1)`, if any exists. Skip F if none does, and say so.
+Before the calls, record `list_jobs(status="queued,running", limit=50)`'s `total` and ids. For each id, call
+`rerun_job(job_id=<id>, restart_batch=true)` with no `acknowledged_cost`, then again with `acknowledged_cost=true`.
+expected:
+- All six calls (four if F is skipped) are refused. Each refusal names the id and says it is "not a restart
+  tombstone", or words with the same meaning. A refusal that is only a generic error or a 400 with no reason does
+  not meet this line.
+- No call answers a preview (`would_queue`) or a `queued` list.
+- Afterwards, `list_jobs(status="queued,running", limit=50)` holds the same ids as before, apart from jobs other
+  sessions started (each with a `note` that is not this case's). `list_jobs(limit=20)` shows no new job whose
+  `rerun_of` is S, U or F.
+A refusal of U that is accepted, or any job queued, is a **finding**: the batch would rerun what a user cancelled.
+cleanup: none.
+metrics: none.
+
+### C-F860 — a restart-batch rerun of an unknown job id is a not-found refusal, and queues nothing
+pending: #1370
+source: tester, spec for #1370 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Runs through stage B's parameter, as C-F859 does. Record the queued and running jobs as in C-F859. Call
+`rerun_job(job_id="000000000000", restart_batch=true)` and `rerun_job(job_id="no-such-job", restart_batch=true)`,
+each with no `acknowledged_cost` and again with `acknowledged_cost=true`.
+expected:
+- All four calls are refused as not found: an unknown or missing job, the 404 the plan names. A "not a restart
+  tombstone" message here is a **finding**, because it does not tell a missing job from a real one.
+- No reply holds `would_queue`, `queued` or a `server_instance`.
+- The refusal does not echo a server path (`/Users/…`, `/private/…`, `/home/…`) or SQL text.
+- Nothing new is queued (the same `list_jobs` check as C-F859).
+cleanup: none.
+metrics: none.
+
+### C-F861 — a bound acknowledgement on a restart batch is refused, because one plan cannot bind N
+pending: #1370
+source: tester, spec for #1370 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. This case needs a real tombstone: T, one of the job ids the #1371 drill hand-off records (see C-F864). Run it
+**before** C-F867, which consumes the batch. Take a fingerprint from any free `validate_workflow` of
+`templates/text-to-image` in `regression-complete`, and build `B = {"fingerprint": <it>, "minutes": 1,
+"downloads": []}`. Record the queued and running jobs as in C-F859. Call:
+1. `rerun_job(job_id=T, restart_batch=true, acknowledged_cost=B)`;
+2. `rerun_job(job_id=S, restart_batch=true, acknowledged_cost=B)`, with S a succeeded job as in C-F859.
+expected:
+- Call 1 is refused. The message says that a bound acknowledgement cannot cover a batch, or that the batch takes
+  `acknowledged_cost=true`. It does not answer a preview or a `queued` list. Whether the client or the server refuses
+  is not checked.
+- Call 2 is refused, either as not a tombstone or as a bound acknowledgement. It queues nothing.
+- Nothing new is queued after either call. Above all, no rerun of any of the drill's tombstones exists yet:
+  `list_jobs(workspace=<the drill workspace>)` holds no job whose `rerun_of` is a drill id.
+A bound acknowledgement that queues anything is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F862 — `rerun_job(restart_batch=true)` refuses `new_seed` and `arguments` before sending anything, and the single rerun is unchanged
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Use S, a succeeded job as in C-F859. Using a succeeded job keeps the case safe: if a refusal leaked through,
+the server would also refuse it as not a tombstone. That is why the message is what this case checks. Record the
+queued and running jobs as in C-F859. Call:
+1. `rerun_job(job_id=S, restart_batch=true, new_seed=true)`;
+2. `rerun_job(job_id=S, restart_batch=true, new_seed=true, acknowledged_cost=true)`;
+3. `rerun_job(job_id=S, restart_batch=true, arguments={"prompt": "x"})`;
+4. `rerun_job(job_id=S, restart_batch=true, arguments={"prompt": "x"}, acknowledged_cost=true)`;
+5. `rerun_job(job_id=S, restart_batch=true, arguments={})`, the empty override;
+6. `rerun_job(job_id=S)`, the single rerun with no acknowledgement, as it was before stage B.
+expected:
+- Calls 1-4 are refused, and the message names `restart_batch` together with `new_seed` or `arguments`. Its reason
+  is that one override can't apply to every member of the batch. It is not "not a restart tombstone", which would
+  mean the request reached the server.
+- Call 5 is either refused the same way or treated as no override. If it is treated as no override, it then gets
+  C-F859's "not a restart tombstone" refusal. Either outcome passes; the verify comment records which. It queues
+  nothing.
+- Call 6 is refused on the client side for its missing `acknowledged_cost`, as before stage B. It does not answer a
+  preview: only the batch form previews.
+- Nothing new is queued after any call.
+cleanup: none.
+metrics: none.
+
+### C-F863 — `rerun_job`'s schema carries `restart_batch`, its description points at an "After a restart" guide section, and the tool count is unchanged
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Read `rerun_job`'s tool schema and description, and count the `dw` tools the client lists. Before stage B
+there were 65. Call `list_guides`, then `get_guide(<guide>, section=<the section>)` for the section the description
+points at.
+expected:
+- `rerun_job` takes `restart_batch`, a boolean that defaults to `false`. `job_id`, `acknowledged_cost`, `new_seed`
+  and `arguments` are unchanged.
+- Whatever the description says about the batch is at most two sentences. It names a guide section, and that
+  section exists in `list_guides`' headings under the name the description gives. A pointer to a section that
+  doesn't exist is a **finding**.
+- The section says:
+  - that a batch is named by any one of its tombstones;
+  - that a tombstone is a `cancelled` job whose `error` starts with `server restart:`;
+  - that the call without `acknowledged_cost` previews and queues nothing;
+  - that members rerun in their own workspaces, oldest first;
+  - that a member already rerun is skipped.
+  It does not call this an automatic resume, or say the server resumes at startup.
+- The tool count is still 65 (no new tool), unless another merged change explains the difference and the verify
+  comment names it.
+cleanup: none.
+metrics: none.
+
+### C-F864 — the #1371 drill hand-off records a real unclean death, and its jobs are now `server restart:` tombstones
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Source: the stage B hand-off comment on #1371. Read it with `gh issue view 1371 --comments`. The tester can't
+see the kill itself, so the comment has to state what this case checks. C-F861 and C-F865 to C-F868 use these
+tombstones. Run the cases in id order: C-F867 consumes the batch, and a later regression run without a fresh drill
+skips C-F861 and C-F865-C-F868, giving that as the reason. Steps: `get_health`; `list_jobs(workspace=<the drill
+workspace>)`; `get_job` on each id the comment lists, with that workspace.
+expected:
+- The comment names a scratch workspace and lists 3 or 4 job ids. One of them was running at the kill and the rest
+  were queued. Each has a `note`. It quotes `get_health` before and after the kill, and the after reply shows a
+  new server: a new start time or instance, or whatever field the server exposes for it. It says that `kill -9` was
+  sent to `dw.serve`, and who sent it (the session, or Don if the session couldn't signal the daemon). It doesn't
+  mention sudo.
+- Every listed job is `cancelled`, with an `error` starting `server restart:`. Its `note` is unchanged. The one
+  that was running has a `started_at`, and the queued ones have none.
+- The drill workspace holds no other job, unless the comment names that job and says why it is there.
+If the comment lacks the workspace or the ids, the issue goes back as needs-info. A listed job that isn't a
+tombstone is a **finding** against #1245's sweep, filed separately with a reference to #1245.
+cleanup: none until C-F868 is done. The drill workspace is evidence until then.
+metrics: none.
+
+### C-F865 — without `acknowledged_cost`, a restart batch named by any one tombstone previews the whole restart, oldest first, and queues nothing
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Uses C-F864's tombstones, sorted by their `created_at` from `get_job`: T1 is the oldest and Tr is the one that
+was running. Record the queued and running jobs as in C-F859. Call:
+1. `rerun_job(job_id=T1, restart_batch=true)`;
+2. `rerun_job(job_id=Tr, restart_batch=true)`;
+3. `rerun_job(job_id=<the newest tombstone>, restart_batch=true, acknowledged_cost=false)`.
+expected:
+- Each call answers a preview and queues nothing: `queued` is empty, and `would_queue` lists every drill tombstone
+  exactly once. Each entry carries `id`, `workflow`, `workspace` (the drill workspace) and an `estimate`. `skipped`
+  is empty.
+- `would_queue` is in ascending `created_at` order. The ids match `get_job`'s timestamps, not the order the ids
+  were listed in.
+- All three calls list the same set in the same order. Naming the running member (call 2) or the newest one (call
+  3) changes nothing.
+- If the server's own tombstones from the same death include jobs outside the drill workspace (another session's),
+  they appear too, each with its own workspace. The verify comment names them. They are members, not a
+  **finding**.
+- Nothing new is queued: the `list_jobs` check from C-F859, plus no job whose `rerun_of` is a drill id.
+- The preview reply stays readable in one tool result. It is not truncated for 3-4 members.
+cleanup: none.
+metrics: none.
+
+### C-F866 — a restart batch never takes in a tombstone from another restart, or a job that is not a tombstone
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. The plan's member rule: same `server_instance` and a `server restart:` error. Over MCP, the visible part of
+that rule is that the preview from C-F865 holds no job that isn't a tombstone. Steps: for each id in C-F865's
+`would_queue` that is not one of the drill's, call `get_job`. Also check that the user-cancelled job U from C-F859,
+and any job created in the drill workspace after the kill, are absent from `would_queue`.
+expected:
+- Every `would_queue` member is `cancelled`, with an `error` starting `server restart:`. Its `finished_at` is within
+  a minute of the drill's restart, as C-F864's `get_health` time shows it. A member finished at another time
+  belongs to a different restart, and that is a **finding**.
+- U, and any job queued after the restart (on the live server), never appear.
+cleanup: none.
+metrics: none.
+
+### C-F867 — with `acknowledged_cost=true`, the restart batch queues every tombstone in `created_at` order, each in its own workspace with `rerun_of`
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Spends GPU time: 3-4 small text-to-image runs, the cost the C-F865 preview quotes. Run C-F861 first. Call
+`rerun_job(job_id=T1, restart_batch=true, acknowledged_cost=true)`, then `list_jobs(workspace=<the drill
+workspace>)`, then `get_job` on each queued id. Then `wait_for_job` on each, with `wait_seconds=55`, until all
+finish.
+expected:
+- The reply carries `server_instance` (a non-empty string) and `queued`, one entry per drill tombstone. Each entry
+  has `id` (a new job), `rerun_of` (the tombstone it replaces), `workflow` and `workspace`. `skipped` is empty.
+- `queued` lists the `rerun_of` values in the same order as C-F865's `would_queue`, ascending `created_at`. The new
+  jobs' own `created_at` values ascend in that order too. Start order isn't checked, since dispatch may reorder
+  (the plan's non-goal).
+- Each new job's `get_job` shows `rerun_of` set to its tombstone, the tombstone's `workflow`, and the tombstone's
+  workspace (the drill workspace), whatever this session's pinned workspace is. Pin `regression-complete` with
+  `use_workspace` before the call, so a rerun that followed the pin shows.
+- The tombstones are unchanged: still `cancelled`, with the same `server restart:` error.
+- Each new job finishes `succeeded`. One that fails for a reason unrelated to the rerun path is noted, not a finding
+  here.
+cleanup: none until C-F868 is done. Then `delete_output(job_id=...)` for each new job.
+metrics: none.
+
+### C-F868 — repeating the restart batch queues nothing, and lists each member as "already rerun as" its new job
+pending: #1371
+source: tester, spec for #1371 from #1266's plan v2 (claude-opus-5-5 via anthropic)
+Free. Run it after C-F867. Record the queued and running jobs as in C-F859. Call:
+1. `rerun_job(job_id=T1, restart_batch=true, acknowledged_cost=true)`;
+2. `rerun_job(job_id=<another tombstone>, restart_batch=true, acknowledged_cost=true)`;
+3. `rerun_job(job_id=T1, restart_batch=true)`, the preview;
+4. `rerun_job(job_id=<one of C-F867's new jobs>, restart_batch=true)`.
+expected:
+- Calls 1 and 2 queue nothing. `queued` is empty, and `skipped` holds every drill tombstone. Each reason is
+  "already rerun as <id>", with `<id>` the new job that C-F867 queued for that tombstone.
+- Call 3 lists the same members under `skipped`, with the same reasons, and `would_queue` is empty. The preview
+  doesn't offer to queue what is already rerun.
+- Call 4 is refused as not a restart tombstone, as in C-F859, because a rerun is not a tombstone.
+- After all four calls, the drill workspace holds exactly one rerun per tombstone. A second job with the same
+  `rerun_of` is a **finding**: it is the double queue the plan exists to prevent.
+cleanup: `delete_output(job_id=...)` for each of C-F867's new jobs. Then `delete_workspace` the drill workspace with
+its `acknowledged_cost`, once #1371 and #1245 are both closed. Never delete it before then: it is #1245's evidence too.
+metrics: none.
+
 ## Performance
