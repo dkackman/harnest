@@ -21500,4 +21500,25 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F858 — a clip-held `match_levels` join that leaves shots more than 3 dB apart says so and names a target that clears it
+source: tester, verified in dw#1368 (claude-opus-5-5 via anthropic)
+Two kept H3 shots, `asset:qa-cast/ep388-garlicpress.mp4` (hot: it clips at any rms target above about -30 dBFS) and
+`asset:qa-cast/ep388-nutcracker.mp4`. Run three task-only workflows, each a single step
+`concat_videos(videos=[garlicpress, nutcracker], trim_frames=0, fps=24, audio_bleed_ms=0, seam_fade_ms=150,
+match_levels="rms", match_levels_dbfs=T)` (`video/mp4`, `final`), with T = -24, then the target the T=-24 warning
+suggests, then -27.2. Validate each first and bind its acknowledgement. Run `assess_output` on each cut.
+expected:
+- T=-24: `job.warnings` has a `match_levels_held` line for each shot, plus one line saying match_levels left the
+  shots about 4.6 dB apart (it gives the range, about -30.1 to -25.6), that the level step at the cut remains, and
+  that you can pass a lower `match_levels_dbfs` (about -30) or `match_levels: "lufs"` with a limiter. `assess_output`
+  flags `seam_level_step` at seam 1 with a value within 0.2 dB of the spread the warning gives.
+- At the suggested target: no spread line, at most a held line under 0.5 dB short, and `assess_output` has no
+  `seam_level_step`.
+- T=-27.2 (step about 2.9 dB, under the 3.0 threshold): no spread line, and `analyze_seams` has no `seam_level_step`
+  finding. The join warning and the assessor fire on the same side of the threshold.
+- The regression is: the spread line missing at T=-24, a suggested target that still draws `seam_level_step`, or the
+  join warning and `seam_level_step` disagreeing about one cut.
+cleanup: `delete_output(job_id=...)` for each of the three runs; keep the two assets.
+metrics: none.
+
 ## Performance
