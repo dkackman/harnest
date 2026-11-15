@@ -21771,7 +21771,7 @@ source: tester, spec for #1373 from #1194's plan v2 (claude-opus-5-5 via anthrop
 Setup: a three-shot clip of 124, 130 and 141 frames. Make the 130- and 141-frame shots as still holds so no source
 runs out: `get_first_frame` of `ep3-shot1-incident.mp4` → `loop_frames(num_frames=130)`, and `get_first_frame` of
 `ep3-shot2-reply.mp4` → `loop_frames(num_frames=141)`. Then `concat_videos(videos=["asset:qa-cast/ep6-cold-open.mp4",
-<the 130 hold>, <the 141 hold>], trim_frames=0, crossfade_ms=0)` → `detect_cuts`. Workflow `qa-c-f871`.
+<the 130 hold>, <the 141 hold>], trim_frames=0, crossfade_ms=0, fps=24)` → `detect_cuts`. Workflow `qa-c-f871`.
 expected:
 - Three cuts, starting at 0, 124 and 254 (±1), with `num_frames` summing to 395.
 - `render_frames` is 124 for the 124-frame cut (on grid, kept), 141 for the 130-frame cut (rounded up to the next
