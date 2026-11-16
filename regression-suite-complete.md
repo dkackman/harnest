@@ -21939,8 +21939,9 @@ Free. Let CUTS2 = `[{"name":"cut-1","start_frame":0,"num_frames":124,"render_fra
 1. `validate_workflow("replace-performer-cuts", arguments={"video": "asset:qa-cast/ep49-episode.mp4"})`. Use the
    template's own name for its input variable if it differs.
 2. `validate_workflow("replace-performer", arguments={"source_video": "asset:qa-cast/ep49-episode.mp4",
-   "mask_video": "asset:qa-cast/ep49-episode.mp4", "cuts": CUTS2, "references": ["asset:qa-cast/hal-portrait.jpg"],
-   "prompt": "<a line>", "seed": 7})`. Any same-size video stands in for the mask at validate.
+   "mask_video": "asset:qa-cast/ep49-episode.mp4", "cuts": CUTS2,
+   "references": [{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference",
+   "from_file": "asset:qa-cast/hal-portrait.jpg"}], "prompt": "<a line>", "seed": 7})`. Any same-size video stands in for the mask at validate.
 expected:
 - Both validate clean, with a `plan.estimate` and an `acknowledged_cost` fingerprint.
 - Call 2's estimate scales with the cut count: it is more than one cut's, and plans two H3 renders of 124 frames.
@@ -22006,13 +22007,16 @@ Setup: source SRC = `ep49-episode.mp4` trimmed to its first two shots (`trim_vid
 `num_frames=248`). Run `replace-performer-cuts` on SRC as in C-F886 (two cuts, one mask of 248 frames). First
 confirm with `get_output_frames` on SRC at `frame:60` and `frame:180` that each shot holds one person who is not Hal.
 If not, use `ep62-shot1-accuse.mp4` + `ep62-shot2-deflect.mp4` joined with `concat_videos(crossfade_ms=0)` and
-re-check. `validate_workflow("replace-performer", arguments={"source_video": SRC, "mask_video": <prep mask>,
+re-check. On the ep62 pair (whose bald man is Hal) use a portrait that is not the source's performer, such as
+`asset:bench/t26-stranger.jpg` copied into the workspace, in place of `hal-portrait.jpg` here and in the drift
+bullet below. `validate_workflow("replace-performer", arguments={"source_video": SRC, "mask_video": <prep mask>,
 "cuts": <prep cut list, each cut carrying its own `prompt` naming that cut's pose, action and framing, as the
-`dw:minimax-h3` skill's "Replace a performer" route says>, "references": ["asset:qa-cast/hal-portrait.jpg"],
+`dw:minimax-h3` skill's "Replace a performer" route says>, "references": [{"reference_type":
+"diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": "asset:qa-cast/hal-portrait.jpg"}],
 "prompt": "<the scene with Hal>", "seed": 7})`, then run with its `acknowledged_cost`.
 expected:
 - The output has SRC's frame count (248) and fps (24), at 960×544.
-- Face drift against `hal-portrait.jpg` (the `face-drift-check` template, C-F650, or `assess_output`'s face drift)
+- Face drift against the reference portrait (the `face-drift-check` template, C-F650, or `assess_output`'s face drift)
   scores ≥ 0.363 similarity in **every** cut.
 - `assess_output(probe="analyze_shots")` on the output finds the cut at 124 (±1), as SRC's does, and no new cut.
 - Away from the person, the frame holds SRC by eye (`get_output_frames` at `frame:60` and `frame:180` beside SRC's).
@@ -22042,7 +22046,7 @@ expected:
 - The stitched result has 248 frames at 24 fps, with the soundtrack unchanged from C-F887's output.
 - `compare_outputs(names=[stitched], baseline=<C-F887 output>)` at `frame:60` (cut-1) is identical or near
   (PSNR ≥ 40 dB). At `frame:180` (cut-2) it differs (clearly lower PSNR).
-- The new cut-2 still scores ≥ 0.363 against `hal-portrait.jpg`, and the cut at 124 stays where it was.
+- The new cut-2 still scores ≥ 0.363 against C-F887's reference portrait, and the cut at 124 stays where it was.
 - A step in the skill that doesn't run as written is a **finding** against the skill (file it on the skill).
 cleanup: `delete_output(job_id=…)` for this case's jobs, C-F887's, and the C-F886/C-F887 setup jobs.
 metrics: none.
@@ -22466,7 +22470,7 @@ metrics: none.
 source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
 Free. The v3 counterpart of C-F884 item 9. Start from call 2 of C-F883 and change only `references`, then
 `validate_workflow` each:
-1. 10 image references (`asset:qa-cast/hal-portrait.jpg` repeated is acceptable; if validate refuses a repeat as a
+1. 10 image references (the typed reference from C-F883 call 2, repeated, is acceptable; if validate refuses a repeat as a
    duplicate rather than for the count, use 10 distinct images from `list_assets(workspace=...)`);
 2. 9 image references, built the same way;
 3. 7 image references (above v2's dropped limit of 6).
