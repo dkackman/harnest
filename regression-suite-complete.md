@@ -22515,4 +22515,357 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F918 — the #1384 reference A/B probe left one succeeded, noted job per arm in `bench`, differing only in reference or temperature
+pending: #1386
+source: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free: reads only. `list_jobs(workspace="bench")`, then `get_job` and `get_job_workflow` (both with
+`workspace="bench"`) on every job whose note names the probe (narration reference A/B, arm synthetic / human /
+sampling). The plan lets the build add a second seed per arm when one seed can't be called; then there are two jobs per
+arm and every check below applies per seed.
+expected:
+- At least three succeeded jobs, one per arm, each `note` naming its arm: **synthetic** (the drill's TTS-made
+  reference), **human** (the LibriVox reference) and **sampling** (synthetic reference, raised temperature). An arm
+  with no succeeded job, or a probe job with no arm in its note, is a **finding**.
+- Each job runs Audio8 (`generate_speech` with `model_name` `Edge0/Audio8-TTS-Realistic-0.6b`), the model
+  `templates/voice-clone` uses.
+- Across the arms of one seed, the resolved `get_job_workflow` shows the same `seed` and the same `text`, byte for
+  byte. A different seed or text between arms is a **finding**.
+- The arms differ only where the plan says:
+  - synthetic against human: only `reference_audio` and its `reference_text`. Human's `reference_audio` is
+    `asset:bench/narrator-human.wav`, and the synthetic arm's is a copy of the drill's voice-ref in `bench`.
+  - synthetic against sampling: the same `reference_audio` and `reference_text`; sampling alone carries
+    `generate_kwargs` with a numeric `temperature`, and nothing else in `generate_kwargs`, unless the
+    record (docs review) says why.
+  - Any other differing argument (model, a sampling key on arms 1 or 2, an extra step) is a **finding**.
+- Docs review (not over MCP): `bench/records/audio.md` gives each arm's job id, duration, words/s, LUFS and ECAPA
+  similarity to its own reference; states the effective default temperature as read from the model's generation
+  config, and that arm 3's value is above it; names the LibriVox reader and source URL; leaves the verdict
+  *pending Don*. A unit test checks the bench file validates and that its arms differ only in reference or sampling.
+- The verdict is Don's ear ([taste], Q3): the tester never calls arm 2 or arm 3 better. Hand the verdict to Don.
+cleanup: none (the jobs are the probe's record).
+metrics: none.
+
+### C-F919 — `asset:bench/narrator-human.wav` is a 5-10 s public-domain LibriVox read whose note names the reader and https source
+pending: #1386
+source: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_assets(workspace="bench", prefix="narrator-human")`, `get_gallery_metadata("asset:bench/narrator-human.wav",
+workspace="bench")`, then `get_output_audio` on the human arm's job output (C-F918) and, for the clip itself, on the
+asset if `get_output_audio` takes `asset:` (if it refuses an `asset:` name, the job's output and the arm's
+`reference_text` are what is checked).
+expected:
+- The asset exists in `bench` as audio, named `narrator-human.wav`. Missing is a **finding**.
+- Its duration is inside 5-10 s, both ends included (5.00 and 10.00 pass; 4.9 or 10.1 is a **finding**). A clip
+  over the template's 20 s ceiling is a **finding** regardless.
+- Its note names a reader (a person's name, not "LibriVox" alone) and a source URL that starts with `https://` and
+  is on LibriVox or the archive.org copy LibriVox hosts its recordings on. A missing reader, a missing URL, or an
+  `http://` URL is a **finding**.
+- The human arm's `reference_text` (from `get_job_workflow`) matches what is said in the clip: transcribe or listen
+  per "The loop", step 6, of `get_guide("workflows", section="Authoring a workflow from an agent")`. A transcript
+  that differs from the clip by more than a word or two of the clip's own edges is a **finding** (a mismatched
+  reference text corrupts the clone).
+cleanup: none (the asset is the probe's fixture).
+metrics: none.
+
+### C-F920 — each #1384 probe arm produced one audio output of the passage, in one take
+pending: #1386
+source: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free. For each job of C-F918: `get_job(workspace="bench")` for its outputs and `job.warnings`, `get_job_events` for
+any take-splitting or truncation event, then `get_output_audio(<the output>, workspace="bench")`, transcribed per
+"The loop", step 6, of `get_guide("workflows", section="Authoring a workflow from an agent")`.
+expected:
+- Each job has exactly one audio output (a wav). None or more than one is a **finding**.
+- `get_output_audio` returns it whole or in parts per `get_gallery_metadata`'s envelope; a refusal for an output of
+  a succeeded job is a **finding**.
+- The passage `text` is 111 words or fewer (one `split_takes` take); more is a **finding**, because the probe
+  then spans a join, which the plan rules out of scope.
+- Each output's transcript matches the passage `text`: no dropped, repeated or invented sentence. A word or two of
+  ASR disagreement on a proper noun is not a finding; a missing or repeated clause is.
+- No `job.warnings` entry or event says the text was split, truncated or exceeded the context.
+- The three outputs' durations are each plausible for the passage (between 100 and 220 words a minute). One far
+  outside that range (a stall or a sped read) is a **finding** to report, not a verdict on affect.
+cleanup: none.
+metrics: none.
+
+### C-F921 — a missing or empty voice-clone reference is still refused at validate after the #1384 probe
+pending: #1386
+source: tester, spec for #1386 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only, in workspace `regression-complete`. On `templates/voice-clone`, with `text` the
+template default and `seed` 1:
+1. no `reference_audio` argument at all;
+2. `reference_audio` = `""`;
+3. `reference_audio` = `null`.
+If `list_workflows` lists the probe's bench workflow (`narration-reference-ab`), repeat 1 and 2 on it, with the
+reference variable it declares.
+expected:
+- Each is refused at validate, before anything queues, and the message names `reference_audio` (today's reason:
+  "give an asset: reference of the voice to clone (at most 20 s) together with its reference_text").
+- The same holds for the bench workflow if it is listed. A bench workflow that silently falls back to a default
+  voice when the reference is missing is a **finding**.
+- `get_workflow("templates/voice-clone")` still declares `reference_audio` with `required: true` and
+  `min_length: 1`.
+- `list_jobs(workspace="regression-complete")` shows no job from this case.
+cleanup: none.
+metrics: none.
+
+### C-F922 — the guide's *A narrated long take* says the reference sets the delivery, asks for a real read, and calls a TTS reference scratch-only
+pending: #1387
+source: tester, spec for #1387 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_guide("workflows", section="A narrated long take")`, recipe step 1.
+expected:
+- It says the reference sets the delivery: the clone copies the reference's pace and affect (or words to that
+  effect). Missing is a **finding**.
+- It tells the agent to ask the user for a read of 5-10 s, delivered the way the piece should sound, by a speaker
+  who consents (or whose owner has agreed). Each of the three (ask, the length, the consent) missing is a
+  **finding**.
+- It says to ask once (Q2): with still no read, a `templates/generate-speech` line is a *scratch reference*, fine
+  for timing, the piece will sound flat, and the hand-back to the user must say so. The scratch framing or the
+  hand-back duty missing is a **finding**.
+- `templates/generate-speech` is still named there, but only as the scratch fallback.
+- The old sentence "With no voice clip from the user, make the reference first: a 5-10 s line from
+  `templates/generate-speech`" is gone, or reframed so it is no longer the default path. Still read as the default
+  is a **finding**.
+- The rest of the recipe (one narration for the whole script, retime once, passages, join) is unchanged.
+cleanup: none.
+metrics: none.
+
+### C-F923 — nowhere in the guides is a TTS-made reference still the default for a voice clone
+pending: #1387
+source: tester, spec for #1387 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_guides`, then `get_guide(<name>)` for each guide's index, and `get_guide(<name>, section=...)` for every
+section whose heading names narration, voice clone, speech, Audio8, TTS, a reference voice, an animatic or a long
+take (in `workflows` at least: *A narrated long take* and any voice-clone or narration-long section; in `tasks`, the
+`generate_speech` entry).
+expected:
+- No section tells the agent to make the clone's reference with `templates/generate-speech` or any TTS as the
+  default when the user has no clip. A sentence that does, outside a scratch-only framing, is a **finding**, naming
+  guide, section and the sentence.
+- Where a section mentions a synthetic reference, it calls it scratch (timing only, flat delivery), consistent with
+  C-F922.
+- A guide section that still names an `asset:voice.wav` default reference is a **finding** (the templates require
+  the reference, C-F921).
+cleanup: none.
+metrics: none.
+
+### C-F924 — the `dw` skills carry the reference rule and keep TTS references scratch-only; template descriptions unchanged
+pending: #1387
+source: tester, spec for #1387 from #1384's plan v2 (claude-opus-5-5 via anthropic)
+Free: plugin reading (the skills are consumer surface) plus two `get_workflow` calls. Read the `dw:long-form` skill's
+`references/audio.md`, `references/run-and-repair.md` and `references/levers.md`, and the `dw:storyboard` skill's
+`references/animatic.md`.
+expected:
+- `audio.md` says the reference sets the delivery (the clone copies its pace and affect), asks the user once for a
+  5-10 s read by a consenting speaker delivered the way the piece should sound, and frames a
+  `templates/generate-speech` line as a scratch reference whose flat delivery the hand-back must name. Any of the
+  three missing is a **finding**.
+- `run-and-repair.md` and `levers.md` no longer say "No voice from the user? Make one" or otherwise present a TTS
+  reference as the default; where they still name `templates/generate-speech`, it is scratch-only. Either still
+  presenting TTS as the default is a **finding**.
+- `animatic.md` still calls a TTS voice a scratch voice for timing and points to the reference rule (one sentence
+  is enough). No pointer is a **finding**.
+- `long-form/SKILL.md` does not contradict the rule (it need not state it: the plan puts the text in `references/`).
+- `get_workflow("templates/voice-clone")` and `get_workflow("templates/narration-long")` descriptions are unchanged
+  by this stage: still the consent sentence and the 5-10 s guidance on voice-clone. The plan holds template
+  descriptions fixed for the catalog budget; a changed description is a note for the docs reviewer, not a failure,
+  unless it now recommends a TTS reference, which is a **finding**.
+- Docs review (not over MCP): `narrated-passages-complete.md` step 1 carries the rule, the stale `asset:voice.wav`
+  default at `audio8-voice-clone-complete.md:155-157` is fixed, and a new test pins "the reference sets the
+  delivery" in `audio.md` and the guide.
+cleanup: none.
+metrics: none.
+
+### C-F925 — the #1385 cut probe's jobs all completed in `bench`, and the #1311 keeper in `drill-1311-2` is untouched
+pending: #1388
+source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free: reads only. Take the probe's job ids from stage #1388's hand-off comment (it quotes the record's job list; the
+record itself is `bench/records/narrated.md`, a docs-review item, C-F930). Then `list_jobs(workspace="bench")` and
+`get_job(<id>, workspace="bench")` on every id. Then `list_jobs(workspace="drill-1311-2")`,
+`get_job("48c68b1e1c72", workspace="drill-1311-2")`, `get_job("50b48953037f", workspace="drill-1311-2")` and
+`get_gallery_metadata("asset:gettysburg/gettysburg-address.mp4", workspace="drill-1311-2")`.
+expected:
+- Every job the record names is found in `bench` and is completed (succeeded). One missing, failed, cancelled or
+  still running is a **finding**, naming the id.
+- `bench` holds the keeper's two passages (A from `48c68b1e1c72`, B from `50b48953037f`) as copies: B's job or an
+  asset copied from it is what arms S and L read their arguments from (C-F927).
+- The keeper is unchanged in `drill-1311-2`: both passage jobs still listed there and succeeded, and the keeper asset
+  still resolves (`get_gallery_metadata(..., include_workflow=false)`) as it read on 2026-11-16: job `86e43a45af77`,
+  `frame_count` 2558, `duration_seconds` 106.583, 1344x768 at 24 fps, `media.pcm_sha256` starting `11fb9b806756`, and
+  the `hard_cut` shot at `start_frame` 984 (41.0 s). A passage job moved out of `drill-1311-2` (by `move_job`), a deleted output, or a keeper whose
+  duration or frame count changed is a **finding** (the plan's "workspace copies" risk).
+- Every probe job carries a `note` naming its arm (C, J, S or L) or its role (for example "J chunk 2", "S still",
+  "L edit"). A probe job with no note is a **finding**: the record and the jobs must be joinable without the source.
+cleanup: none (the jobs are the probe's record).
+metrics: none.
+
+### C-F926 — each #1385 arm is a 16 s cut clip, A's last 8 s then B's first 8 s, cut at the time the record states
+pending: #1388
+source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free: reads only, workspace `bench`. For each arm's clip (C, J, S, and L unless C-F928 finds L's gate skipped it):
+`get_gallery_metadata` on the clip, then `get_output_frames` at four times: 0.5 s, the stated cut minus one frame
+(1/24 s), the stated cut, and 15.5 s; then `get_output_audio` across the cut (6-10 s). `assess_output` on each clip
+with `probe="analyze_seams"` as a free cross-check of where the seam sits.
+expected:
+- Each clip is 16 s: `duration_seconds` within one frame of 16.00 (15.96-16.04 at 24 fps), `fps` 24, and `frame_count`
+  384 ±1. A clip of 15 s or 17 s (a trim off by a second) is a **finding**.
+- All arms' clips share one frame size, the keeper's (1344x768 at tier `best`, as B's job states). A size that differs
+  between arms is a **finding**: Don views them like for like.
+- The cut is at the time the record states (nominally 8.0 s). The frame one before it shows passage A's face and
+  framing, and the frame at it shows B's, on a different still or angle. The cut found one frame or more away from the
+  stated time is a **finding**.
+- The A half is the same in every arm: the frames at 0.5 s and at the cut minus one frame look the same in C, J, S and
+  L (only B's side is changed by the arms). An A half that differs between arms is a **finding**.
+- C, S and L carry the narration across the cut: the same words either side of it as the keeper at 41.0 s, with no
+  hole over 1.5 s. A clip whose speech is cut off or misplaced at the cut is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F927 — #1385 arms S and L each rendered exactly one segment, with B's arguments in all but `image`
+pending: #1388
+source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free: reads only. `get_job_workflow("50b48953037f", workspace="drill-1311-2")` (or its copy in `bench`), then
+`get_job_workflow` and `get_job` (workspace `bench`) on arm S's render job and arm L's (if it ran, C-F928).
+expected:
+- Each render job is `templates/minimax/narrated-take` with `stop_after` 1, and its output holds exactly one
+  segment: one segment file, and a final video of one segment's length (`num_frames` 192 at 24 fps, about 8 s; well
+  under 2 x 192 frames). `stop_after` null or 2, or a second segment file, is a **finding** (Q1 bought one segment
+  per arm).
+- Against B's job, each render matches in `seed`, `narration` (the same slice reference, or a copy of it that the
+  record names), `script`, `shot` (`standing`) and `tier`, and also in `scene`, `speaker`, `soundscape`,
+  `prompt_template`, `num_frames`, `guide_frames`, `check` and `retries` (the plan: "every other argument" is B's).
+- The only difference is `image`: S's is the output of S's `sharpen` job, L's is the output of L's
+  `templates/image-edit` job (C-F928). An `image` equal to B's own still (`gettysburg/speaker-angle-b.jpg`) is a
+  **finding** (the arm would be a re-roll of C, not a still-side change), and so is any second differing argument.
+- `keyframes` is null on both (B's preset, `standing`, has none).
+cleanup: none.
+metrics: none.
+
+### C-F928 — #1385 arm S's still is a `sharpen` of B's angle; arm L's is an edit of a late A frame, rendered or skipped by its gate
+pending: #1388
+source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free: reads only, workspace `bench`. `get_job_workflow` on S's still job, on L's frame job and L's edit job, and on
+`7a326418cd63` (the edit that made B's angle, in whichever workspace `get_job` finds it; `drill-1311-2` first). The
+gate measure is read from stage #1388's hand-off comment (the record, C-F930, is docs review).
+expected:
+- **S.** One job runs `sharpen` on `asset:gettysburg/speaker-angle-b.jpg` (or its `bench` copy) with an `amount`
+  above 0 (0 is identity, so an S at 0 is C re-rolled: a **finding**). Its output is the `image` of S's render
+  (C-F927). The record gives the amount and the face-sharpness match to A's last 1 s it was chosen for.
+- **L, the frame.** One job takes a frame of passage A (`get_frame` or the task the catalog offers for one frame) at a
+  time inside A's last 2 s (from A's duration minus 2 s to its end). A frame from earlier in A is a **finding**.
+- **L, the edit.** One `templates/image-edit` job takes that frame as its image, with the same edit prompt and the
+  same `seed` as `7a326418cd63`'s, byte for byte. A changed prompt or seed is a **finding**.
+- **L, the gate.** The record states the edited still's face sharpness against A's last 1 s, as a percentage.
+  - More than 30% below: no L render job exists, and the record says it was skipped and why (FLUX re-smoothed).
+  - 30% below or less (exactly 30% included): the L render job exists (C-F927). A render after a failed gate, or a
+    skip after a passed one, is a **finding**.
+  - No stated gate measure at all is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F929 — #1385 arm J is B's head in 3-4 stepped `sharpen` chunks, rejoined at `trim_frames: 0`, with B's audio intact or stated silent
+pending: #1388
+source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free: reads only, workspace `bench`. `get_job_workflow` on every J job (the chunk jobs and the rejoin), then on J's
+clip `get_gallery_metadata`, `get_output_frames` at each chunk boundary, `get_output_audio` over 8-16 s, and the same
+`get_output_audio` window on C's clip for comparison.
+expected:
+- Every step in every J job is `trim_video`, `sharpen` or `concat_videos`, and nothing else. Any other task or a
+  pipeline step (a re-render, a `resize_*`, a filter) is a **finding**.
+- B's head is cut into 3 or 4 chunks. 2 chunks or 5 or more is a **finding** (the plan names 3-4).
+- The chunks abut: in B's time, each chunk starts where the one before it ends, with no gap or overlapping frame, and
+  together with the unsharpened rest they make up B's first 8 s at the same `frame_count` as C's B half. A dropped or
+  repeated frame at a chunk boundary is a **finding**.
+- The `sharpen` amounts step down in time order: the first chunk has the largest, and each later one is strictly
+  smaller (the last may be 0 or the unsharpened remainder). Equal or rising amounts are a **finding**. The `radius`
+  and `threshold` are the same across chunks unless the record says why.
+- The rejoin is `concat_videos` with `trim_frames: 0`. Any other value is a **finding** (frames lost at each step).
+- **Audio.** Either J's B half carries the same speech as C's B half (same words, at the same times within a frame,
+  no hole or click at a chunk boundary), or J has no audio track and the record says J is shown silent. Audio that is
+  present but altered (shifted, gapped, clicking at chunk joins) is a **finding**.
+- The record states that the first chunk's face sharpness is within ±15% of A's last 1 s, with both figures. Outside
+  ±15%, or no figure, is a **finding** (docs review reads the record; the hand-off comment quotes it).
+cleanup: none.
+metrics: none.
+
+### C-F930 — the #1385 probe record is in `bench/records/narrated.md` with every job, each arm's cut-step, the limit, the drill correction, and no ruling
+pending: #1388
+source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Docs review for the record (it has no MCP surface); over MCP, the tester's part is that each figure the hand-off
+comment quotes from it belongs to a job C-F925 found.
+expected:
+- A new section in `bench/records/narrated.md` on `develop` lists every job id and output path of the probe.
+- Step 1's keeper measure: the face-sharpness step at the cut (A's last 1 s against B's first 1 s) and the time B
+  first reaches A's end level, or the statement that it never does.
+- Per arm (C, J, S, L): the face-sharpness step at the cut and the SFace similarity across it; for S and L, whether
+  B's opening holds the added detail through its 8 s or H3 smooths it back. An arm with no cut-step figure is a
+  **finding** (L skipped by its gate gives the gate measure instead, C-F928).
+- The limit, stated: S and L show only B's first segment, and whether a sharper start etches B's end is not measured.
+- The corrected drill line: `bench/records/drill.md`'s "Resets at the cut: none" no longer stands unqualified.
+- No ruling on the arms. The record leaves the pick to Don (Q2); a record that names a winner is a **finding**.
+  The tester never calls an arm better either: stage #1388 passing hands the parent to Don for the viewing verdict.
+cleanup: none.
+metrics: none.
+
+### C-F931 — the guide's *A narrated long take* states the cut's detail reset, the remedy Don picked (or "accept it"), and names the #1385 record
+pending: #1389
+source: tester, spec for #1389 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("workflows", section="A narrated long take")`. Find which arm Don picked from his verdict comment on
+#1385 (Q2: C or none, J, S or L) and check the branch for that pick.
+expected:
+- Every branch: the section says the face's detail resets at a passage cut (B opens softer than A ends), and names the
+  stage A record (`bench/records/narrated.md`, its #1385 section). Either missing is a **finding**.
+- **S or L:** recipe step 3 says how B's still is made: for S, `sharpen` on the still at the amount that matches A's
+  late face (the amount rule); for L, a late frame of A edited with `templates/image-edit`. It also says only the
+  opening segment was measured, so judge B's last segment for etching. Missing the limit is a **finding**.
+- **J:** recipe step 4 gains the stepped head-sharpen join: B's head cut with `trim_video` into chunks, `sharpen` at
+  stepped-down amounts, rejoined with `concat_videos` at `trim_frames: 0`.
+- **None (or C):** step 4 says the reset is real and the cut opens B softer than A ends, suggests a wider B angle so
+  the face is smaller across the cut, and says to judge the cut with `get_output_frames`, not `detail_ratio`.
+- A remedy text for a branch Don did not pick (for example the sharpen-still rule after a "none" verdict) is a
+  **finding**.
+- The section does not say or imply a cut is free at the seam.
+- The rest of the recipe stands: steps 2-4 still give `standing`/`dialogue` passage lengths, `slice_audio`, a
+  different still or angle per passage, the one-step `concat_videos` join with `trim_frames: 0` and
+  `match_levels: "lufs"`, and the post-join `assess_output(probe="analyze_seams")`, `get_output_frames(seams=...)`
+  and `get_output_audio` checks. Step 1 is #1387's (C-F922) and is not judged here.
+cleanup: none.
+metrics: none.
+
+### C-F932 — `templates/minimax/narrated-take`'s description is unchanged by #1385, and no task gained a parameter
+pending: #1389
+source: tester, spec for #1389 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_workflow("templates/minimax/narrated-take")`, `get_task("sharpen")`, `get_task("concat_videos")`,
+`get_task("trim_video")`, `list_tasks`.
+expected:
+- The description starts "A long H3 take of one speaker held to a retimed narration, a segment per line, probed then
+  continued.", still contains "one take per passage with its own still or angle, joined by a concat_videos step at
+  trim_frames 0 and match_levels lufs (the workflow guide's A narrated long take)", and ends "No cost row: the figure
+  above is wall time at one tier, not a calibrated row." It says nothing about a detail reset, `sharpen` or a
+  late-frame still. Any of these changed is a **finding** (the plan keeps it fixed for `COMPACT_BUDGET`).
+- No new tool, argument or task (plan: "No new tool, argument or concept"): `sharpen` still takes exactly `media`,
+  `amount`, `radius`, `threshold`, `device`; `concat_videos` gains no picture-matching or sharpening parameter (its
+  parameters as of 2026-11-16: `videos`, `trim_frames`, `crossfade_ms`, `audio_bleed_ms`, `audio_bleed_gain_db`,
+  `seam_fade_ms`, `fps`, `match_levels`, `match_levels_dbfs`, `match_levels_lufs`, `sample_rate`,
+  `continuous_joins`, `device`). A new `sharpen` ramp or `concat_videos` picture option is a **finding**: the plan
+  cut them to a plan v2. (A parameter added by another, named issue is not this stage's finding; check its history.)
+cleanup: none.
+metrics: none.
+
+### C-F933 — the `dw:long-form` skill no longer calls a cut free, and carries Don's pick in `run-and-repair.md` and `levers.md`
+pending: #1389
+source: tester, spec for #1389 from #1385's plan v1 (claude-opus-5-5 via anthropic)
+Free: plugin reading (the skills are consumer surface; they load from `develop`). Read the `dw:long-form` skill's
+`SKILL.md`, `references/run-and-repair.md` and `references/levers.md`. Don's pick from his Q2 verdict on #1385.
+expected:
+- `SKILL.md` no longer says a cut "costs nothing at the seam" (or any wording that a cut between passages is free);
+  it gives the measured cost (the face-detail step at the cut) instead. Still saying a cut is free is a **finding**.
+- `run-and-repair.md` carries the remedy for the pick: step 3 (how B's still is made, and the "judge B's last
+  segment" limit) for S or L; step 4 (the stepped head-sharpen join) for J; step 4 (the reset is real, a wider B
+  angle, judge with `get_output_frames` not `detail_ratio`) for none. The remedy missing, or in the other step, or for
+  a branch Don did not pick, is a **finding**.
+- `levers.md` has one row for the cut's detail reset, naming the remedy (or "accept it") and the record.
+- The skill and the guide (C-F931) agree on the remedy. Text that disagrees between them is a **finding**.
+- Docs review (not over MCP): the pinned strings in `tests/test_plugin_skills.py:1918-2009` and their order are
+  unchanged, and any new pin sits on the new line.
+cleanup: none.
+metrics: none.
+
 ## Performance
