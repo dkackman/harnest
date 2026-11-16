@@ -22172,7 +22172,6 @@ cleanup: `delete_output(job_id=…)` for this case's jobs, then for C-F893's and
 metrics: none.
 
 ### C-F899 — the #1260 H3 move record gives all 13 moves a verdict on seeds 42 and 7, each with its own job id
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: issue reading plus `get_diffusers_state`. The audit doc (`docs/proposals/audits/2026-11-move-seeds.md`) is
 source, so read its H3 table where the stage's build hand-off on #1379 quotes it (`gh issue view 1379 --comments`).
@@ -22195,7 +22194,6 @@ cleanup: none. Never delete a cited job's output: the record depends on it.
 metrics: none.
 
 ### C-F900 — every job the #1260 H3 record cites is a succeeded H3 template run with that cell's seed and move sentence
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: `get_job` on each of the 26 job ids C-F899 lists, plus any rerun ids (C-F902). Read each move's sentence from
 `dw:cinematography`'s `references/compile-h3.md` move table (the one in force at the stage's commit; a sentence a
@@ -22221,7 +22219,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F901 — spot-checked H3 frames show what the #1260 record's frame notes say
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads outputs only). Pick at least five cells from C-F899: both seeds of `whip-pan`, both of `crash-zoom`,
 and one cell the record grades `partial` or `ignored` (or, if none is, a `tracking` cell). Don't re-grade all 26.
@@ -22242,7 +22239,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F902 — an H3 move ignored on both seeds gets one rerun at seed 42, recorded with both phrasings, and nothing else does
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: the record from C-F899, `get_job` on each rerun, and `compile-h3.md`.
 expected:
@@ -22263,7 +22259,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F903 — `compile-h3.md`'s move table carries two verdicts per move, seed 42 first, matching the #1260 record
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: plugin reading. Read `references/compile-h3.md`'s move table under `dw:cinematography`'s base directory.
 expected:
@@ -22278,7 +22273,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F904 — the #1260 measurement leaves every Kandinsky 6 cell as #1148 measured it
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: plugin reading. Read `references/compile-kandinsky-6.md`'s move table, and the `kandinsky-6` column of the
 `cinematography` SKILL.md move table.
@@ -22293,7 +22287,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F905 — the #1260 H3 stage stayed inside its budget, and no H3 job overlapped another
-pending: #1379
 source: tester, spec for #1379 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: `get_job` on every new H3 job the record cites: the 20 non-reused cells and the reruns. Read #1351's state
 with `gh issue view 1351 --json state,stateReason,closedAt,labels`.
@@ -22865,6 +22858,145 @@ expected:
 - The skill and the guide (C-F931) agree on the remedy. Text that disagrees between them is a **finding**.
 - Docs review (not over MCP): the pinned strings in `tests/test_plugin_skills.py:1918-2009` and their order are
   unchanged, and any new pin sits on the new line.
+cleanup: none.
+metrics: none.
+
+### C-F934 — the #1382 eroded-mask arms are two succeeded, noted jobs in `bench`, differing from the g0 arms only in `mask_video`
+pending: #1390
+source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
+Free: reads only. `list_jobs(workspace="bench")`, then `get_job` and `get_job_workflow` (both `workspace="bench"`) on
+every job whose note names `t16-swap-e16-s1194` or `t16-swap-e16-s2002`, and on #1374's `t16-swap-g0-s1194` and
+`t16-swap-g0-s2002` jobs (their ids are in #1374's record hand-off; find them by note in `bench` if they moved there).
+Plan v2 Q1 allows one retry at 24 px when 16 px changes no cells: then the arms are `t16-swap-e24-*` over
+`asset:bench/t16/deflect-mask-e24.mp4`, and every check below applies to them, with the stage's hand-off saying why.
+If the stage instead reports that neither 16 nor 24 px changed any cell and ran no arms, this case is checked by
+C-F936's `regenerated_cells` bullet alone, and having no e-arm job is then not a finding.
+expected:
+- Exactly one succeeded job per seed (1194 and 2002), each `note` naming its arm id. A missing, failed or cancelled
+  arm, or a second unexplained e16 job per seed, is a **finding** (one H3 job at a time; a re-run must be named in
+  the record).
+- Each resolved workflow shows `mask_grow` 0, `mask_video` `asset:bench/t16/deflect-mask-e16.mp4` and `source_video`
+  `asset:bench/t16/deflect-cut.mp4` set explicitly. A `source_video` or `mask_video` that is an `output:` reference
+  (the gone bench server's default) is a **finding**.
+- Each e16 job's `seed` is its arm's seed, and against the g0 job of the same seed every other argument is
+  identical (prompt, references, `cuts`, size, steps, shifts, LoRA, attention, dtype). Any difference other than
+  `mask_video` is a **finding**: the arm would no longer isolate the erosion.
+- Each ran `templates/minimax/replace-performer` (or the same steps the g0 arms ran), not an engine-side erode: no
+  step beyond what the g0 job has.
+cleanup: none (the jobs are the bench record).
+metrics: none.
+
+### C-F935 — `asset:bench/t16/deflect-mask-e16.mp4` is the original mask, binary, same shape, with a visibly thinner silhouette
+pending: #1390
+source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_assets(workspace="bench", prefix="bench/t16/")`; `get_gallery_metadata` with `include_workflow=false`
+on `asset:bench/t16/deflect-mask-e16.mp4` and on `asset:bench/t16/deflect-mask.mp4` (both `workspace="bench"`);
+then `get_output_frames` on each at `frame:0`, `frame:62` and `frame:123`. On 2026-11-16 `deflect-mask.mp4` read
+124 frames, 24 fps, 960x544, 5.166667 s; `deflect-cut.mp4` was beside it. (With the Q1 24 px retry, read
+`deflect-mask-e24.mp4` here as well; the e16 asset still exists, since it is what showed no cell change.)
+expected:
+- The e16 asset is listed in `bench` as video. Missing is a **finding**.
+- Its `frame_count`, `fps`, `width` and `height` equal the original's (124, 24, 960x544). Any difference is a
+  **finding** (the script owes the same size, frame count and fps).
+- `deflect-mask.mp4` and `deflect-cut.mp4` are still present and unchanged in those numbers: the erode wrote a new
+  file and did not overwrite the original. A changed or missing original is a **finding**.
+- At every sampled frame the e16 mask is light over the person and dark elsewhere, with the light region inside the
+  original's and visibly thinner around shoulders and head (about 16 px per side at 960 wide). Light pixels outside
+  the original's silhouette (growth rather than erosion) are a **finding**.
+- The e16 mask is not empty at any sampled frame: a person 16 px could erase entirely is not this cut. An all-dark
+  frame is a **finding**.
+- It reads as binary (pure light and pure dark, no grey ramp at the edge, no blur). A soft edge is a **finding**
+  (the plan owes a 0/255 mask).
+cleanup: none (the asset is the bench input).
+metrics: none.
+
+### C-F936 — the e16 arms regenerate fewer cells than g0, and change nothing away from the person
+pending: #1390
+source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
+Free: reads only. `get_job_events(workspace="bench")` on each e16 job of C-F934 and on the g0 job of the same seed,
+reading the ref2va step's `regenerated_cells` (or the event that reports the regenerated cell count). Then
+`get_gallery_metadata(include_workflow=false)` on each e16 output and each g0 output, and `compare_outputs` with
+the e16 output against `asset:bench/t16/deflect-cut.mp4` at `frame:0` and `frame:62` if it takes a region,
+else by eye on `get_output_frames`.
+expected:
+- Each e16 job reports a `regenerated_cells` count, and it is **smaller** than the g0 job's at the same seed. Equal
+  counts with the arms run anyway at 16 px are a **finding** (the plan's risk: the stage was to stop, or retry once
+  at 24 px). If the count is not in the events at all, the record (docs review) must carry it; then this bullet is
+  a docs-review item and its absence over MCP is noted, not a finding.
+- If the stage stopped because 16 (and 24) px changed no cell, the e-mask's events or the record say so, and there
+  are no e-arm jobs: that outcome passes this case with no arm checks.
+- Each e16 output has the g0 output's `frame_count`, `fps`, width and height (and so the cut's), with audio present
+  as g0's is. A different length or size is a **finding**.
+- Away from the person (the left third of the frame and the floor), the e16 output holds the source by eye at
+  frames 0 and 62. A redrawn region far from the silhouette is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F937 — the e16 frames bear out the record's verdict on the couch step and on a ghost of the old silhouette
+pending: #1390
+source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
+Free: reads only. For each seed, `get_output_frames` (`workspace="bench"`) at `frame:0` and `frame:62` on the e16
+output, the g0 output, the g1 output (#1374's `mask_grow` 1 arm at that seed) and `asset:bench/t16/deflect-cut.mp4`.
+Look at the shoulder crop `[560, 200, 400, 260]` (x, y, w, h: x 560-960, y 200-460); if `get_output_frames` takes
+a crop or region, pass it, else read that region of the full frame. The record's verdict and crops are quoted in
+#1390's hand-off (the record, `bench/records/performer-replacement.md` section "The seam: an eroded mask (#1382)",
+is a docs-review item).
+expected:
+- The couch back beside the right shoulder: what the tester sees at both frames and both seeds (step gone, or still
+  a raised cushion/corner as g0 showed) agrees with the record's verdict. A record saying "gone" where a step is
+  visible, or the reverse, is a **finding**.
+- The ghost test (Don's): no shoulder or head outline of the source performer, and no edge of the old jacket, kept
+  inside or along the new person in the e16 frames. A ghost the record does not report is a **finding**; a ghost
+  the record reports and counts against erosion is not.
+- No hard edge visible by eye at the silhouette in e16 that g1 does not have; a hard edge here must match the
+  record's `step` reading (C-F938).
+- The record's one-line conclusion follows the rule: "erosion works" only if the step is gone at both seeds, no hard
+  edge, and no ghost; otherwise keep `mask_grow` 1. If it proposes the engine erode, a new issue for it exists
+  (`gh issue list --search "erode"`), and the template is unchanged (C-F939). A conclusion that contradicts the rule
+  is a **finding**. The tester never rules on taste beyond the rule.
+cleanup: none.
+metrics: none.
+
+### C-F938 — the #1382 seam table keeps #1374's g0/g1 numbers and its `step` meaning
+pending: #1390
+source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
+Mostly docs review: the seam numbers come from `bench/seam_bands.py`, run offline. Over MCP: the job ids the six-arm
+seam table names (g1, g0 and e16 at seeds 1194 and 2002, quoted in #1390's hand-off) each resolve with
+`get_job(<id>, workspace="bench")` (or the workspace the hand-off names) and are succeeded.
+expected:
+- Six rows: g1, g0 and e16 at both seeds. Fewer is a **finding**.
+- The g0 and g1 `step` values equal #1374's: g0 9.81 (s1194) / 11.29 (s2002), g1 4.37 / 4.45, to the two decimals
+  recorded. A changed g0/g1 number is a **finding**: `--inner` must leave `step` (band 1 minus band 2) as it was.
+- Every row carries bands -1 and -2 (from `--inner 2`), band 0, and bands 1 and 2, measured with the **original**
+  `deflect-mask.mp4` on all six arms. A row measured with the eroded mask is a **finding**.
+- The e16 rows satisfy the rule or the record says they don't: `step` no larger than g1's at each seed, and the
+  -1 to 1 jump no larger than g1's band 1-2 step.
+- The record's job/run/wall table lists both e16 jobs, and the `regenerated_cells` for g0 against e16 agrees with
+  C-F936.
+- Docs review (not over MCP): `tests/test_bench_erode_mask.py` (a square shrinks by N per side; frame count and fps
+  kept; N = 0 is the identity) and `tests/test_bench_seam_bands.py` (`--inner` bands partition the inside by
+  distance; no `--inner` leaves `measure` byte-for-byte unchanged) exist and pass; the two arms are in
+  `bench/arms/t16-performer-replacement.json` and pass `tests/test_bench_workflows.py`.
+cleanup: none.
+metrics: none.
+
+### C-F939 — after #1382 the engine still refuses a negative `mask_grow`, keeps the default 1, and has no erode task
+pending: #1390
+source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_workflow("templates/minimax/replace-performer", variables_only=true)`; `list_tasks()` (summary form);
+then `validate_workflow("templates/minimax/replace-performer", workspace="bench", arguments=...)` with
+`source_video` `asset:bench/t16/deflect-cut.mp4`, `mask_video` `asset:bench/t16/deflect-mask.mp4`, one cut
+`{"name": "cut-1", "start_frame": 0, "num_frames": 124, "render_frames": 124}`, and in turn `mask_grow`:
+1. -1; 2. -16 (a pixel count, as someone reading "erode by 16 px" might pass); 3. 0; 4. 1; 5. 1.5.
+expected:
+- `mask_grow` defaults to 1 (it read 1 on 2026-11-16). Any other default is a **finding**: the plan changes no default.
+- 1 and 2 are refused at validate with "mask_grow is a whole number of patch cells, 0 or more" (or wording naming
+  `mask_grow` and "0 or more"), and nothing queues. Accepted is a **finding** (the plan has no negative `mask_grow`).
+- 3 and 4 are not refused for `mask_grow` (0 is the boundary and stays legal).
+- 5 is refused naming `mask_grow` as a whole number. Accepted and silently rounded is a **finding**.
+- `list_tasks` lists no erode, dilate or morphology task, and `list_workflows` no new mask template: the plan adds
+  none. A new one is a **finding** against scope.
+- `list_jobs(workspace="bench")` shows no job from this case.
 cleanup: none.
 metrics: none.
 
