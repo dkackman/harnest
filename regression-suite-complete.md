@@ -22294,7 +22294,8 @@ expected:
 - At most 24 new H3 jobs (20 cells plus at most 4 reruns).
 - Summed `finished_at − started_at` over them is at most 45 minutes. The record states a GPU total, and it is
   within a minute of that sum.
-- Each job's `acknowledged_cost.downloads` is `[]` (no downloads).
+- No job downloaded anything: `get_job_events` shows no download phase, and the model and LoRA loads are cached. A
+  non-empty `acknowledged_cost.downloads` alone is not a finding, but the record must report it accurately.
 - No two of these jobs' `[started_at, finished_at]` spans overlap, even on different `device`s: H3 never runs
   alongside H3. Two jobs with the same `device` running back to back is fine.
 - The earliest `started_at` is after #1351's `closedAt`, or #1351 was declined or parked and the record says the
@@ -22388,7 +22389,8 @@ source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthrop
 Free: `get_job` on every new LTX job the record cites (20 cells plus reruns), and C-F905's H3 sums.
 expected:
 - At most 24 new LTX jobs. Their summed `finished_at − started_at` is at most 45 minutes, and the record's stated
-  total is within a minute of it. Every `acknowledged_cost.downloads` is `[]`.
+  total is within a minute of it. No job downloaded anything, checked as C-F905 checks it: `get_job_events` shows no
+  download phase, and a non-empty `acknowledged_cost.downloads` alone is not a finding.
 - LTX jobs may overlap each other on two cards; that is allowed.
 - The earliest LTX `started_at` is after the last stage A H3 job's `finished_at` (stage B was blocked by #1379).
 - Both stages together: at most 48 new jobs and at most 90 GPU-minutes.
