@@ -9305,7 +9305,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### M-F359 — a windowed refine that does not ask for `videos` decodes once, saves the time, and gives the same take
-pending: #1377
 source: tester, spec for #1377 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **GPU**: two runs of M-F356, about 30–36 min together; quote
 both estimates.
@@ -9324,7 +9323,6 @@ cleanup: `delete_output(job_id=<id>)` for both jobs.
 metrics: none.
 
 ### M-F360 — a non-windowed H3 refine still returns its video
-pending: #1377
 source: tester, spec for #1377 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` refine over a `source_video`. **GPU**: a few minutes; quote `plan.estimate`.
 Steps: one step: `refine` as in W_win (M-F345) but with `source_video: "asset:qa-cast/ep6-shot1-priya.mp4"`,
