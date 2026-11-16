@@ -21922,13 +21922,14 @@ expected:
 - `replace-performer` is listed under sequence with the traits `needs-input-media`, `identity-referenced` and
   `has-audio`.
 - `replace-performer` takes `source_video`, `mask_video`, `cuts`, `references`, `prompt`, `seed` and the H3 variables.
-  Its constraints show `cuts` as 1–32 entries and `references` as at most 6. Its per-cut fields (`start_frame`,
+  Its constraints and description are as C-F914 states (plan v3 Design 7: no count constraint is restated for `cuts`
+  or `references`). Its per-cut fields (`start_frame`,
   `num_frames`, `render_frames`, optional `seed`) are documented in the listing's `lists` field or the variable's
   description.
 - Its steps: `for_each` over `cuts` trims the source and the mask with `pad_to` = `render_frames`, then runs a ref2va
   regional edit with `source_video` and `hold_audio` set to the trimmed cut, `refine_strength` 1.0, and
-  `mask_grow` (a variable, default 0 or 1). Then `concat_videos` with `trim_frames` = each cut's `num_frames` and
-  `crossfade_ms` 0, then `pair_audio` with the source's track.
+  `mask_grow` (a variable, default 0 or 1), then a `trim_video` back to the cut's `num_frames`. Then `concat_videos`
+  with `trim_frames` 0 and `crossfade_ms` 0, then `pair_audio` with the source's track (plan v3; C-F914).
 cleanup: none.
 metrics: none.
 
@@ -21962,7 +21963,7 @@ Free. Start from call 2 of C-F883 (source `ep49-episode.mp4`, 372 frames). Chang
 7. 33 entries (each `num_frames` 11, starting at 0, 11, 22, …, so all within the source);
 8. `mask_video` a different size: a 124-frame `qr_code` → `loop_frames` clip made as in C-F895's setup, or any
    non-960×544 video;
-9. seven `references`.
+9. (the reference count moved to C-F915: under plan v3 Q7 the limit is the ref2va class's, so 7 is accepted.)
 expected:
 - Every call is refused at validate, before anything queues. The message names the offending field (`cuts`, the
   entry's index or name with `start_frame`/`num_frames`/`render_frames`, `mask_video`, `references`) and the limit it broke.
@@ -22022,18 +22023,18 @@ expected:
 - Away from the person, the frame holds SRC by eye (`get_output_frames` at `frame:60` and `frame:180` beside SRC's).
 - The soundtrack is SRC's: `get_output_audio` and SRC's sound the same. `pcm_sha256` match, or `compare` levels
   within 0.5 dB if a resample differs.
-- `get_job_workflow` shows the per-cut seeds 7 and 8 (`seed` + index), since no cut carried its own.
+- `get_job_workflow` shows both cuts at the workflow `seed` 7, since no cut carried its own (plan v3 Q6; C-F916).
 cleanup: keep the job for C-F889. Delete the setup jobs after C-F889.
 metrics: none.
 
-### C-F888 — a cut's own `seed` overrides `seed` + index
+### C-F888 — a cut's own `seed` overrides the workflow `seed`
 pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` as C-F887, but with `cut-2` carrying `"seed": 99`, then `get_job_workflow` on C-F887's job
 for comparison. If validate's plan shows the resolved per-cut arguments, read them there. Otherwise this case runs
 with C-F889's re-roll, which supplies a cut seed.
 expected:
-- `cut-1` resolves to `seed` 7 (7 + 0) and `cut-2` to 99, not 8.
+- `cut-1` resolves to `seed` 7 (the workflow `seed`, plan v3 Q6) and `cut-2` to 99, not 7.
 cleanup: none.
 metrics: none.
 
@@ -22077,7 +22078,8 @@ expected:
   run (`replace-performer`) → re-roll one cut.
 - Each template, task and argument the route names exists: `get_workflow` or `get_task` returns it, and the argument
   names match the listing in C-F882.
-- The route states the limits a user hits: 1–32 cuts, up to 6 references, and `render_frames` on the grid.
+- The route states the limits a user hits, as C-F917 lists them (plan v3): 1–32 cuts, `render_frames` on the grid,
+  9 images and 12 files, and the workflow-seed fallback.
 cleanup: none.
 metrics: none.
 
