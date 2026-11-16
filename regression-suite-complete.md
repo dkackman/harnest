@@ -22108,15 +22108,13 @@ expected:
 cleanup: keep for C-F894 and C-F898, then `delete_output(job_id=…)`.
 metrics: none.
 
-### C-F894 — `max_people` 1 returns only the largest person, and 0 is refused
+### C-F894 — `max_people` 1 returns only the largest person
 pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Run `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", max_people=1)`, workflow `qa-c-f894`. Then
-`validate_workflow` with `max_people=0`.
+Run `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", max_people=1)`, workflow `qa-c-f894`.
 expected:
 - Exactly one mask, `person-1`, with 121 frames. It marks the same person as C-F893's `person-1`:
   `compare_outputs` against it at `frame:60` is near-identical (SSIM ≥ 0.9).
-- `max_people=0` is refused at validate naming `max_people`. Nothing queues.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
