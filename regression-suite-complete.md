@@ -22007,8 +22007,9 @@ Setup: source SRC = `ep49-episode.mp4` trimmed to its first two shots (`trim_vid
 confirm with `get_output_frames` on SRC at `frame:60` and `frame:180` that each shot holds one person who is not Hal.
 If not, use `ep62-shot1-accuse.mp4` + `ep62-shot2-deflect.mp4` joined with `concat_videos(crossfade_ms=0)` and
 re-check. `validate_workflow("replace-performer", arguments={"source_video": SRC, "mask_video": <prep mask>,
-"cuts": <prep cut list>, "references": ["asset:qa-cast/hal-portrait.jpg"], "prompt": "<the scene with Hal>",
-"seed": 7})`, then run with its `acknowledged_cost`.
+"cuts": <prep cut list, each cut carrying its own `prompt` naming that cut's pose, action and framing, as the
+`dw:minimax-h3` skill's "Replace a performer" route says>, "references": ["asset:qa-cast/hal-portrait.jpg"],
+"prompt": "<the scene with Hal>", "seed": 7})`, then run with its `acknowledged_cost`.
 expected:
 - The output has SRC's frame count (248) and fps (24), at 960×544.
 - Face drift against `hal-portrait.jpg` (the `face-drift-check` template, C-F650, or `assess_output`'s face drift)
