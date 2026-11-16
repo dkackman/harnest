@@ -10238,4 +10238,182 @@ escape: file it privately with `./scripts/file-advisory.sh`, not as an issue.
 cleanup: none.
 metrics: none.
 
+### M-F396 — the #1400 face-once probe's two arms are inline copies of `generated-subject-reference` that differ only in the draw prompt, the draw size and `subject_definitions`
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: Z-Image Turbo draw + MiniMax H3 `ref2va` (`templates/minimax/generated-subject-reference`). Workspace
+`probe-1400` on lem. **Free**: job reads and validate only.
+**The probe, shared by M-F396–M-F402.** Four jobs in `probe-1400`, arm **P** (portrait, today) and arm **S** (face-once
+sheet) on the same two seeds. As of the spec, the template's `draw_subject` step is Z-Image at **768x768** from
+`prompt:zimage/deep_sea_diver_portrait`, feeding `reference_to_video_audio` (ref2va, one `MiniMaxH3ImageReference`
+`from_previous_result: draw_subject`) at defaults `width 960`, `height 544`, `num_frames 124`, `num_inference_steps 9`, turbo
+LoRA `lightx2v/Minimax-h3-Turbo`. A job that draws separately and references the draw by `output:` is also acceptable, if
+its H3 call is otherwise the template's.
+Steps:
+1. `list_jobs(workspace="probe-1400")`; pick the four H3 jobs by their `note`s.
+2. `get_job_workflow` on each.
+3. `validate_workflow(workspace="probe-1400", inline_workflow=<each>)`.
+expected:
+- Exactly four H3 jobs (failed retries are allowed if the audit names them). Each has a `note` naming its arm (P or S, or
+  "portrait"/"sheet") and its seed. Two are P and two are S, and the two seed values are **the same pair** in both arms.
+- P's draw is **768x768** and S's draw is **1344x768**. Both draw prompts carry **the same** subject description, and
+  it names no headwear (no helmet, hat, hood or headscarf: Q2's bare-headed subject, not the template's diver).
+  S's draw prompt asks for the issue's layout: a 16:9 ivory sheet, one head-only close-up (no shoulders or clothing) in
+  the left two of six columns, and four neck-down views (front, 90° profile, back, relaxed standing) in the right four.
+- The H3 steps of all four jobs are equal (template defaults as above, the same `prompt` body) **except** for the seed
+  and S's `subject_definitions`. S's `subject_definitions` calls <Picture 1> a reference sheet, says its left panel is the
+  face and its right panels are the body and clothes, and says the sheet's layout, background and panels are not reused.
+- Both arms keep the template's `release_pipeline: true` on the draw.
+- Each validate: `valid: true`, no error.
+It is a **finding** if an arm's workflows differ from the other's in anything else (a step count, schedule, LoRA, size or
+frame count, or prompt text outside `subject_definitions`), the seeds don't pair, a subject wears headwear, or a
+workflow no longer validates. The audit may name a difference the plan allowed; a difference the audit doesn't name is a
+finding.
+cleanup: none. Never delete the probe jobs; the audit cites them.
+metrics: none.
+
+### M-F397 — the #1400 probe checked `downloads_required` before any job, and ran one H3 job at a time
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe (M-F396). **Free**: issue reads, job reads, validate.
+Steps:
+1. `gh issue view 1400 --repo dkackman/diffusers-workflow --comments` and the same for 1406: find the comment that
+   reports `validate_workflow`'s `plan.downloads_required` for each probe workflow.
+2. `list_jobs(workspace="probe-1400")`: each job's `created_at`, `started_at`, `finished_at`.
+3. `validate_workflow` on one P and one S workflow now (M-F396 step 3 suffices): read `plan.downloads_required`.
+expected:
+- The downloads comment exists, is timestamped **before** the first `probe-1400` job's `created_at`, and states the list
+  for both workflows (P and S), each `[]`.
+- **Stop branch (Don's ruling):** if that comment found a non-empty list, it names the download and **no** job exists in
+  `probe-1400` (and no probe job elsewhere). That is a probe outcome, not a finding; skip M-F398–M-F401 with a note.
+- Step 3: `downloads_required` is `[]` for both now.
+- No two H3 jobs in `probe-1400` overlap: each one's `started_at` is at or after the previous one's `finished_at`.
+It is a **finding** if a probe job ran before the downloads comment, after a non-empty list was reported, or alongside
+another probe H3 job.
+cleanup: none.
+metrics: none.
+
+### M-F398 — the #1400 probe's jobs: four succeeded H3 clips at the template's shape, a 768x768 portrait and a face-once 1344x768 sheet per seed
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe (M-F396). **Free**: reads only.
+Skip with a note if M-F397 found the stop branch.
+Steps:
+1. `get_job` on each of the four probe jobs: the draw (intermediate) and the clip (final) outputs.
+2. `get_output_image` on each draw.
+3. `get_gallery_metadata` on each clip.
+expected:
+- All four jobs `succeeded`, each with one draw image and one `video/mp4` clip.
+- The draws: P's are 768x768, one bare-headed person; S's are 1344x768.
+- Each S draw is **face-once**: exactly one visible face (in the head panel), and the body views show no face (neck
+  down, or a back view). An S draw with a second face, or no face, is not a finding here: the plan records it as a
+  loss for S (M-F401), and the audit must say so.
+- Each clip: 960x544, 24 fps, 124 frames (about 5.17 s), with an audio stream.
+It is a **finding** if a job failed and the audit doesn't name it as a retry with the replacement, a clip's shape differs
+from the template's defaults, or a draw size is not the arm's.
+cleanup: none.
+metrics: none.
+
+### M-F399 — the #1400 face drift: one `analyze_face_drift` per clip against its own arm's draw, and the audit's median and minimum SFace match it
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `analyze_face_drift` task (SFace cosine similarity; `video`, `reference` required, `threshold` default
+0.363, `samples_per_shot` default 8; the largest face in `reference` is used). Workspace `probe-1400`. **Cheap**: reads,
+plus one CPU re-measure per clip (price it with `validate_workflow` first; if its plan shows a GPU model load or a
+download, skip the re-measure and note it).
+Skip with a note if M-F397 found the stop branch.
+Steps:
+1. Find each clip's face-drift result: an `analyze_face_drift` step in the probe job, or a separate job (`list_jobs`,
+   `get_job`, `get_job_workflow`).
+2. Read the audit as quoted on #1406 or #1400 (`docs/proposals/audits/2026-11-face-once-sheet.md` in the dw repo;
+   never read from the checkout).
+3. Re-measure: `run_workflow(workspace="probe-1400", note="M-F399 re-measure <arm> seed <n>", wait_seconds=55,
+   inline_workflow=...)`, with one `analyze_face_drift` step, `video` = the clip's `output:` reference, `reference` =
+   **the same job's draw** `output:` reference, and the `samples_per_shot` and `threshold` the original used.
+expected:
+- Exactly one face-drift result per clip (four), each with `reference` set to **that clip's own job's draw** (P's
+  portrait for a P clip, S's sheet for an S clip, same seed). A reference from the other arm, the other seed, or the
+  template's default portrait is a finding.
+- Each S result measured the sheet's head panel as the largest face. If `analyze_face_drift` refused an S sheet for
+  having no face, the audit records that clip as a loss for S, with no number.
+- The audit gives, per clip, the job id, the median and the minimum SFace, and each equals the result's own values
+  (to the precision the audit prints; at least 2 decimals).
+- The re-measure matches the original within 0.01 on median and minimum.
+It is a **finding** if a clip lacks a result or has two that disagree, a reference is not the clip's own draw, an
+audit number differs from its result, or a re-measure disagrees by more than 0.01.
+cleanup: `delete_output(job_id=...)` on each re-measure job this case made. Never delete the probe jobs.
+metrics: none.
+
+### M-F400 — the #1400 leak verdicts match each clip's first frames
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe's H3 clips (M-F398). **Free**: reads, plus `assess_output` (free).
+Skip with a note if M-F397 found the stop branch.
+Steps:
+1. `get_output_frames` on each clip's first frames (frames 0 to about 12; one call per clip).
+2. `assess_output` on each clip.
+3. Read the audit's per-clip leak verdict.
+expected:
+- The audit gives a leak verdict for **all four** clips, P included.
+- A clip counts as **leaked** when its first frames show the sheet's layout: panels or column divisions, the ivory sheet
+  background, or more than one figure of the subject. A clip that opens on the single subject in a scene is not leaked.
+- Each verdict agrees with what the first frames show. Where `assess_output` flags a cut or a composition change near the
+  start, the verdict accounts for it.
+It is a **finding** if a verdict is missing, or calls an S clip clean when its first frames show panels, the ivory
+ground or a repeated figure (or calls a clean clip leaked).
+cleanup: none.
+metrics: none.
+
+### M-F401 — the #1400 audit's outcome follows mechanically from the fixed criterion, with its known limits named
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe (M-F396–M-F400). **Free**: issue reads.
+Skip with a note if M-F397 found the stop branch (then the audit, if any, says the probe did not run and calls no
+outcome).
+The criterion (plan v2, Q3 ruled as written): **S wins** only if, on **both** seeds, S's median SFace is **at least
+0.05** above P's for that seed, **and no** S clip is leaked (M-F400). Anything else is **"no gain"**.
+Steps: read the audit (as quoted on #1406 or #1400); compute the outcome from M-F399's medians and M-F400's verdicts.
+expected:
+- The audit states one outcome, "S wins" or "no gain", and it equals the computed one. Check the edges:
+  - a margin of exactly 0.05 on a seed meets that seed's condition;
+  - a win on one seed and not the other is "no gain";
+  - margins met on both seeds with one leaked S clip is "no gain";
+  - an S draw that isn't face-once (M-F398) or an S sheet with no face found (M-F399) is a loss for S on that seed, so
+    "no gain", with no re-drawn or re-prompted S job counted;
+  - S's medians below P's are "no gain", not a loss for P.
+- The audit adds no criterion after the run (no mean, minimum, third seed, threshold or different margin used to decide),
+  and it doesn't reverse the outcome by argument. Minimums may be reported; they don't decide.
+- It names its known limits: each arm draws a different person (so it measures each clip's hold on its own reference,
+  not a common identity), and #1193's numbers swung more than 0.1 between seeds.
+- It recommends nothing as adopted: stage B goes back to Don (Q1 "no"), whatever the outcome.
+It is a **finding** if the stated outcome differs from the computed one, a post-run criterion decides it, a limit is
+missing, or the audit treats S as adopted.
+cleanup: none.
+metrics: none.
+
+### M-F402 — the #1400 probe changes only docs: one "Probed and not a rule" bullet in the minimax-h3 skill, and the template and prompts as they were
+pending: #1406
+source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/generated-subject-reference`, the `dw:minimax-h3` skill. **Free**: catalog reads.
+Steps:
+1. Load the `dw:minimax-h3` skill (loaded from `develop`) and read its `references/per-character.md`, as it ships with the
+   skill.
+2. `get_workflow("templates/minimax/generated-subject-reference")`.
+3. `list_prompts` and search for a cast-sheet prompt (e.g. `zimage/*cast_sheet*`).
+4. Read #1406's hand-off for the `tests/test_plugin_skills.py` run.
+expected:
+- `per-character.md`, under its "Probed and not a rule" heading, has **exactly one** bullet about the #1400 probe. It
+  names the face-once sheet against the portrait, gives the outcome M-F401 checked (the same words, "S wins" or
+  "no gain", or the plain meaning), and points at the audit or #1400. No other bullet or section names the probe, and
+  nothing in the skill states the sheet as a rule.
+- Step 2: the template is unchanged from the spec: `draw_subject` 768x768 from `prompt:zimage/deep_sea_diver_portrait`,
+  and the brass-helmet diver in `subject_definitions` (stage B is not approved).
+- Step 3: no cast-sheet prompt is stored in the library.
+- The hand-off quotes a passing `tests/test_plugin_skills.py` run. The tester cannot run it; if it isn't quoted, ask on
+  #1406 rather than counting it a pass.
+It is a **finding** if the bullet is missing, appears twice, or states a rule; if the template or the stored prompts
+changed; or if the skill's cast steps (`dw:script-to-video` step 3, `dw:series-episodes` step 0) now name a sheet.
+cleanup: none.
+metrics: none.
+
 ## Performance
