@@ -10028,4 +10028,214 @@ It is a **finding** if (a)–(c) list the cached file, or if (d) reports `[]` fo
 cleanup: none.
 metrics: none.
 
+### M-F388 — the #1317 H3-Image probe's four bench workflows validate clean, with the plan's recipe, one-based `<Picture N>` references, and a Klein control that differs only in model
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageModularPipeline`, diffusers ≥ 0.43),
+FLUX 3 Klein (`templates/flux3/multi-reference`), MiniMax H3 `templates/minimax/image-to-video`. Workspace `bench` on lem
+(cuda). **Free**: validates and reads only.
+The probe's workflows are `bench/workflows/h3-image-t2i.json`, `h3-image-edit3.json`, `klein-edit3.json` and
+`h3-image-to-h3.json` in the dw repo, saved to workspace `bench` (expected names `bench/h3-image-t2i` and so on). Other
+names are fine if #1345's hand-off maps them.
+Steps:
+1. `list_workflows(workspace="bench")` (or the hand-off's names) and `get_workflow` on each of the four.
+2. `validate_workflow(workspace="bench", workflow_path=<each>)` at its stored defaults. If a name doesn't resolve, validate
+   `get_job_workflow(<that workflow's probe job>)` inline in `bench` and note the route. An unresolvable name is not a finding.
+expected:
+- All four: `valid: true`, no errors. Warnings are allowed; list them. `plan.estimate` is present (its basis may be `unknown`).
+- `h3-image-t2i`: one MiniMax-H3-Image step, `width` and `height` **2048**, a pinned `seed`. Its transformer and text
+  encoder are SDNQ-quantized with group offload and `remove_modules: lm_head` (the `minimax/image-to-video` recipe), and
+  `load_components` points `text_encoder` at **`MiniMaxAI/MiniMax-H3`**, not at the H3-Image repo. It passes no
+  `num_inference_steps`, `guidance_scale` or `negative_prompt` (the pipeline is six fixed steps, guidance-distilled).
+- `h3-image-edit3`: the same recipe at 2048x2048, `image` a list of **exactly 3** references, and a prompt that names
+  `<Picture 1>`, `<Picture 2>` and `<Picture 3>` (one-based). `<Picture 1>` is a cast portrait. A `<Picture 0>`, a
+  `<Picture 4>`, or Klein's `<ref_image_N>` in this prompt is a finding.
+- `klein-edit3`: `templates/flux3/multi-reference` (composed, or run with its `images` variable) over the **same 3 files in
+  the same order** and the same edit intent, in Klein's own reference syntax, with a pinned `seed`.
+- `h3-image-to-h3`: two arms, the H3-Image edit still and the Klein still, each followed by `minimax/image-to-video` at
+  **544p, int4** (the h3-quality TV path). Each still's pipeline step carries `release_pipeline: true` (or the still is
+  released before the H3 step loads). The two H3 steps share prompt, seed, size, `num_frames` and schedule; only the
+  `image` differs.
+- No step loads `MiniMaxAI/MiniMax-H3-Image-PE` or `diffusers/minimax-h3-image-pe-blocks`, none sets
+  `trust_remote_code`, and none loads `PrunaAI/P-H3-Image` (Q3, Q6).
+It is a **finding** if any workflow fails to validate, the text encoder isn't redirected to `MiniMaxAI/MiniMax-H3`, a
+reference count or `<Picture N>` index is off, the Klein control uses different files or order, the two video arms
+differ in anything but `image`, or a PE or P-H3 load appears.
+cleanup: none (validates only; the saved workflows are the bench record).
+metrics: none.
+
+### M-F389 — the #1317 probe checked its download before any GPU run: the run fetches about 65 GB, not the 190 GB repo, or it stopped and reported
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image, workspace `bench` on lem (cuda). **Free**: issue reads, job reads, validate.
+Steps:
+1. `gh issue view 1345 --repo dkackman/diffusers-workflow --comments` and `gh issue view 1317 --repo
+   dkackman/diffusers-workflow --comments`: find the first-action comment (the repo's `modular_model_index.json`, its
+   file list, the planned download, and whether `dw`'s H3 block inserts touch the H3-Image graph).
+2. `list_jobs(workspace="bench")`: find the first MiniMax-H3-Image job and its `created_at`.
+3. `get_job_events` on that job, and `list_downloads()`.
+4. `validate_workflow(workspace="bench", workflow_path=<M-F388's t2i>)`: read `plan.downloads_required` (now likely `[]`;
+   that is fine after the first run).
+expected:
+- The first-action comment exists and is timestamped **before** the first H3-Image job's `created_at`. It quotes a
+  planned download for the transformer and VAE of roughly 65 GB (anything under ~100 GB passes), states that the text
+  encoder comes from `MiniMaxAI/MiniMax-H3`, and says whether the H3 inserts match the H3-Image graph (they should not).
+- The first job's events (or the record's "bytes downloaded" figure) show what was fetched: no file from the H3-Image
+  repo's `text_encoder/` folder, and a total well under 190 GB. `list_downloads` shows no whole-repo `download_model` of
+  `MiniMaxAI/MiniMax-H3-Image`.
+- **Stop branch** (Q1 default): if the comment found the run would fetch the whole repo, or that the encoder override is
+  not honoured, then **no** H3-Image job exists in any workspace, and the comment gives the measured size. That is a
+  probe outcome, not a finding.
+It is a **finding** if an H3-Image job ran before the first-action comment, if the run fetched the H3-Image text encoder
+or the whole repo, or if a job ran after a stop.
+cleanup: none.
+metrics: none.
+
+### M-F390 — the #1317 t2i run: completed at 2048x2048 and coherent, or an OOM recorded with its recipe; cold and warm times, peak VRAM and bytes downloaded
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image t2i (M-F388), workspace `bench` on lem (one 24 GB card). **Free**: reads only.
+Skip with a note if M-F389 found the stop branch.
+Steps:
+1. `list_jobs(workspace="bench")`: the t2i jobs, cold (first) and warm (a second run of the same workflow and seed).
+2. `get_job` and `get_job_events` on each.
+3. If completed: `get_output_image` on the cold job's image.
+4. Read the record as quoted on #1345 or #1317.
+expected:
+- Each t2i job is `succeeded`, or `failed` with an out-of-memory error in its events. Nothing else (a load error, a
+  missing class, a refused argument) counts as a result.
+- **Completed:** the image is **2048x2048**, one picture, recognisably the prompt's subject with no tiling seams, banding
+  or noise field. A warm run exists. The record gives cold and warm wall time, each within 10% of the job's own
+  `started_at`–`finished_at` (or manifest timing), and warm is below cold.
+- The record gives peak VRAM from `get_memory` (in GB, under 24) and bytes downloaded on the first run.
+- **OOM:** the record names the recipe that failed (quantizer and bits, offload mode, which step OOMed) and the VRAM
+  reading at failure. The stage still closes with that finding (plan v1: an OOM is a result).
+It is a **finding** if a job failed for any reason other than OOM, the image isn't 2048x2048 or is incoherent, a number
+is missing from the record, or a time disagrees with the job by more than 10%.
+cleanup: none. Never delete the probe jobs; the record cites them.
+metrics: none.
+
+### M-F391 — the #1317 small-area run: 1024x1024 rendered at its own size, cheaper than the 4 MP default, with time and look recorded
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image t2i with `min_generation_area` lowered, workspace `bench` on lem. **Free**: reads only.
+Skip with a note if M-F389 found the stop branch, or M-F390 found the 4 MP run OOMed and the record says the small run
+was not tried (the record must say which).
+Steps: `get_job_workflow` and `get_job` on the small-area job; `get_output_image` on its image and on M-F390's;
+read the record.
+expected:
+- The job's realized workflow is the t2i's with `width`/`height` **1024** and `min_generation_area` set at or below
+  1024x1024 (the plan writes `1024`; any value ≤ 1,048,576 meets it), same prompt and seed. Nothing else differs.
+- `succeeded` (or OOM, recorded as in M-F390); the image is **1024x1024**.
+- Its warm wall time is clearly below the 4 MP warm run (by at least 25%). The default path renders a small request on a
+  4 MP canvas and resizes back, so a time within 25% of the 4 MP run means the override wasn't honoured; the record must
+  then say so.
+- The record gives its time beside the 4 MP run's and a one-line look comparison (detail, coherence) against it.
+It is a **finding** if the argument isn't in the realized workflow, the output isn't 1024x1024, the time is missing, or
+the record claims a native small render while the time is within 25% of the 4 MP run.
+cleanup: none.
+metrics: none.
+
+### M-F392 — the #1317 three-reference edit: H3-Image and Klein arms over the same references, the `<Picture 1>` face held, side-by-sides posted
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image edit3 and FLUX 3 Klein `templates/flux3/multi-reference` (M-F388), workspace `bench` on
+lem. **Free**: reads, plus `compare_outputs` (no GPU run).
+Skip the H3-Image arm with a note if M-F389 found the stop branch; the Klein arm is still owed.
+Steps:
+1. `get_job`, `get_job_events` and `get_job_workflow` on the H3-Image edit job and the Klein control job.
+2. `get_output_image` on both stills and on the `<Picture 1>` portrait.
+3. `compare_outputs` between each still and the `<Picture 1>` portrait.
+4. Read #1317's comments for the side-by-side post.
+expected:
+- Both jobs ran with the same 3 files in the same order and pinned seeds. The H3-Image job is `succeeded` (a
+  2048x2048 still) or OOM recorded with its recipe and VRAM, as in M-F390. Its record row has cold time, peak VRAM and
+  bytes downloaded.
+- The Klein job is `succeeded`, one still.
+- In the H3-Image still, the person is recognisably the `<Picture 1>` portrait (face shape, hair, age), and the other two
+  references show up in the scene. A face that has aged, swapped, or merged with another reference's is recorded as such.
+- The record gives both arms' `compare_outputs` numbers against the portrait, and they match this case's step 3 within
+  0.02 (or the tool's stated rounding).
+- #1317 carries a comment with the two stills side by side (or links to both), plus the portrait.
+It is a **finding** if the arms used different references or order, an arm failed for a reason other than OOM, a
+`compare_outputs` number disagrees, or the side-by-side post is missing.
+cleanup: delete nothing; `compare_outputs` writes no job.
+metrics: none.
+
+### M-F393 — the #1317 into-video arm: both stills through the same 544p int4 H3 chain, SFace scored for both against the same portrait, frame grabs posted
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `h3-image-to-h3` (M-F388): MiniMax-H3-Image and Klein stills into `minimax/image-to-video` at 544p,
+int4; SFace face-check via the bench `t26-face-check` route. Workspace `bench` on lem. **Free**: reads, plus at most
+one face-check re-run per arm (CPU/SFace; price it with `validate_workflow` first).
+Skip the H3-Image arm with a note if M-F389 found the stop branch, or if the H3-Image edit OOMed (M-F392); then the record
+says the into-video comparison did not run, and the Klein arm alone is not owed.
+Steps:
+1. `get_job`, `get_job_events` and `get_job_workflow` on each arm's video job (one job with both arms, or two).
+2. `get_gallery_metadata` on each clip.
+3. Read the record's SFace numbers and the face-check jobs it cites; `get_job` on them.
+4. Re-run the face-check workflow on each clip against the same portrait, in `bench`, with a `note` naming M-F393.
+expected:
+- Each arm's H3 clip is `succeeded`, 544p (the template's 544-row canvas), with the template's fps, frame count and an
+  audio stream. Both clips have the same frame count and duration.
+- The events show the still's pipeline released before the H3 pipeline loaded (a release event, or the H3 step with
+  `load_cached: false` and the still's memory freed). No OOM in the H3 step.
+- Both arms were scored against **the same** portrait, the `<Picture 1>` file. The record gives one SFace number per
+  arm (mean similarity, or drift, named as which) with the face-check job ids.
+- The re-run matches the record within 0.02 per arm.
+- #1317 carries frame grabs of both clips (e.g. first, middle and last frame per arm) beside the stills.
+- The record calls no verdict on onboarding: Q2 is Don's.
+It is a **finding** if the arms' H3 calls differ in anything but the still, a clip lacks audio or the 544p canvas, the
+release didn't happen, the arms used different portraits, a re-run disagrees beyond 0.02, or the grabs are missing.
+cleanup: `delete_output(job_id=...)` on the face-check re-runs this case made. Never delete the probe jobs.
+metrics: none.
+
+### M-F394 — the #1317 record: one row per H3-Image run with every owed number, the method, the inserts check, and no onboarding verdict
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the #1345 probe (M-F388–M-F393). **Free**: issue reads and job reads.
+The record is `bench/records/h3-image.md` in the dw repo; the tester reads it **as quoted on #1345 or #1317**, never from
+the checkout.
+Steps: read the quote; `list_jobs(workspace="bench")` for every MiniMax-H3-Image job; compare.
+expected:
+- Every H3-Image job in `bench` has a row: job id, workflow, size (and `min_generation_area` where set), outcome
+  (completed or OOM), cold time, warm time where a warm run exists, peak VRAM from `get_memory`, bytes downloaded on the
+  first run. No job is missing and no row lacks a job.
+- The method states the recipe (quantizer and bits for transformer and text encoder, offload mode, `modules_to_not_convert`
+  as re-read from the H3-Image transformer) and the text-encoder redirect.
+- It states the result of the first-action checks (M-F389): the measured download and whether `dw`'s H3 inserts touched
+  the H3-Image graph.
+- An OOM row names the failing recipe and the step.
+- It gives the SFace numbers for both video arms (M-F393) and the `compare_outputs` numbers for both stills (M-F392).
+- It leaves "holds a face better" and onboarding to Don (Q2): no recommendation phrased as a decision, and #1317 goes to
+  Don or the lead for the verdict, not to onboarding.
+- It names nothing out of scope as run: no PE, no P-H3-Image arm, no bf16 or two-card run.
+It is a **finding** if a run lacks a row or a row lacks an owed number, the method or inserts check is missing, or the
+record decides onboarding.
+cleanup: none.
+metrics: none.
+
+### M-F395 — the #1317 probe adds no catalog surface, leaves H3 video's templates as they were, and the H3-Image prompt enhancer stays refused
+pending: #1345
+source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image, MiniMax H3 `templates/minimax/image-to-video`. Workspace `default` and `bench`.
+**Free**: catalog reads and validate only.
+Steps:
+1. `list_workflows(shape="image")`, `list_workflows(shape="image-edit")` and `list_workflows(include_models=true)`.
+2. `validate_workflow("templates/minimax/image-to-video", workspace="default")` at its defaults.
+3. In `bench`, `validate_workflow` an inline one-step workflow that loads the H3-Image prompt enhancer: the modular blocks
+   `diffusers/minimax-h3-image-pe-blocks` with `trust_remote_code: true` (confirm the field name for a modular pipeline's
+   remote code against `get_guide("workflows", section="Authoring a workflow from an agent")` or `get_schema` first).
+expected:
+- No catalog entry names MiniMax-H3-Image or P-H3-Image: no `templates/minimax-h3-image/...`, no `models/` entry. The
+  probe is bench-only; a template here belongs to an unapproved onboarding stage.
+- Step 2: `valid: true`, no new error, and `plan.downloads_required` names nothing from `MiniMaxAI/MiniMax-H3-Image`.
+- Step 3: refused before anything loads, naming remote code or trust (or the untrusted repo). It does not validate clean
+  and queues nothing.
+It is a **finding** if an H3-Image catalog entry appears before an onboarding plan is approved, H3 video's template
+starts failing or pulling H3-Image files, or the PE validates clean. A PE that validates clean is also a boundary
+escape: file it privately with `./scripts/file-advisory.sh`, not as an issue.
+cleanup: none.
+metrics: none.
+
 ## Performance
