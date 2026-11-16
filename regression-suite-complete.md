@@ -21912,7 +21912,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F882 — the two performer-replacement templates are listed with their shapes, traits and inputs
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. Call `list_workflows(shape="utility")`, `list_workflows(shape="sequence")`,
 `get_workflow("replace-performer-cuts")` and `get_workflow("replace-performer")`.
@@ -21934,7 +21933,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F883 — both templates validate clean on a two-cut example and quote a cost
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. Let CUTS2 = `[{"name":"cut-1","start_frame":0,"num_frames":124,"render_frames":124},
 {"name":"cut-2","start_frame":124,"num_frames":124,"render_frames":124}]`.
@@ -21950,7 +21948,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F884 — `replace-performer` refuses a bad cut list, mask or reference count at validate, naming the field
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. Start from call 2 of C-F883 (source `ep49-episode.mp4`, 372 frames). Change one thing at a time and
 `validate_workflow` each:
@@ -21975,7 +21972,6 @@ cleanup: delete C-F895's setup output if it was made here.
 metrics: none.
 
 ### C-F885 — `replace-performer` accepts the edges of its limits
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. From C-F883 call 2, `validate_workflow` each:
 1. one cut `{"start_frame":0,"num_frames":345,"render_frames":345}`;
@@ -21992,7 +21988,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F886 — the prep template returns the cut list and a whole-clip person mask matching the source
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 `validate_workflow` then `run_workflow("replace-performer-cuts")` on `asset:qa-cast/ep49-episode.mp4`, with
 `acknowledged_cost`, `wait_seconds=55` and `wait_for_job` on `still_running`.
@@ -22006,7 +22001,6 @@ cleanup: keep the job for C-F887 (its outputs are the inputs there), then `delet
 metrics: none.
 
 ### C-F887 — `replace-performer` swaps the person in every cut, keeping length, cuts, background and soundtrack
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: source SRC = `ep49-episode.mp4` trimmed to its first two shots (`trim_video`, `start_frame=0`,
 `num_frames=248`). Run `replace-performer-cuts` on SRC as in C-F886 (two cuts, one mask of 248 frames). First
@@ -22028,7 +22022,6 @@ cleanup: keep the job for C-F889. Delete the setup jobs after C-F889.
 metrics: none.
 
 ### C-F888 — a cut's own `seed` overrides the workflow `seed`
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` as C-F887, but with `cut-2` carrying `"seed": 99`, then `get_job_workflow` on C-F887's job
 for comparison. If validate's plan shows the resolved per-cut arguments, read them there. Otherwise this case runs
@@ -22039,7 +22032,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F889 — re-rolling one cut by the skill's procedure changes only that cut
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Follow the "replace a performer" route's re-roll step in the `dw:minimax-h3` skill (or `references/regional-edit.md`)
 exactly as written. Re-roll C-F887's `cut-2` with a new seed (`rerun_job` on one `cuts` entry, then stitch the
@@ -22055,7 +22047,6 @@ cleanup: `delete_output(job_id=…)` for this case's jobs, C-F887's, and the C-F
 metrics: none.
 
 ### C-F890 — the `mask_grow` default is 0 or 1, as the seam bench decided
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_workflow("replace-performer")`, the `dw:minimax-h3` skill's route, and #1374's hand-off comment.
 expected:
@@ -22070,7 +22061,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F891 — the H3 skill and regional-edit reference teach the replace-a-performer route, in order, with real names
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. Read the `dw:minimax-h3` skill's SKILL.md and its `references/regional-edit.md`.
 expected:
@@ -22450,7 +22440,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F914 — `replace-performer` declares its frame and size constraints, states its limits in words, and wires the v3 per-cut steps
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
 Free. The v3 counterpart of C-F882 (where the two disagree, this case holds: plan v3 dropped the 6-reference limit
 and `seed` + index). Call `list_workflows(shape="utility")`, `list_workflows(shape="sequence")`,
@@ -22473,7 +22462,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F915 — `replace-performer` refuses more references than the ref2va class allows at validate, and accepts up to the limit
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
 Free. The v3 counterpart of C-F884 item 9. Start from call 2 of C-F883 and change only `references`, then
 `validate_workflow` each:
@@ -22493,7 +22481,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F916 — an unseeded cut renders with the workflow `seed`, and a seeded cut with its own
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
 The v3 counterpart of the seed bullet in C-F887 and of C-F888. Uses C-F887's job (no cut carries a seed) and
 C-F889's re-roll job (one cut carries a new seed). `get_job_workflow` on each, reading the per-cut ref2va step's
@@ -22507,7 +22494,6 @@ cleanup: none (the jobs belong to C-F887 and C-F889).
 metrics: none.
 
 ### C-F917 — the H3 skill and regional-edit reference state the replace-a-performer limits as plan v3 sets them
-pending: #1374
 source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
 Free. The v3 counterpart of C-F891's limits bullet. Read the `dw:minimax-h3` skill's SKILL.md and its
 `references/regional-edit.md`.
