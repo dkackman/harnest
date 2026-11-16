@@ -1936,6 +1936,37 @@ snapshot, or a message discloses a server path or file contents, that is a hole:
 `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none (validation only).
 
+### SE-F067 — the relocated LTX2 upsampler's `component_type` holds the trust gate: no walk out of `diffusers.models.`
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
+Free, **validate only**. Stage B moves the upsampler's `component_type` to a `diffusers.models.` path. The plan says
+the top-level `diffusers` allowlist already admits that prefix, so the trust gate doesn't change, and a name that
+walks out of the package or names a private member is still refused. Carrier: the full JSON of
+`templates/ltx2/two-stage` from `get_workflow`, passed inline to `validate_workflow(workflow=<it>,
+workspace="probe-1315")` with no arguments. One probe per call, each replacing only
+`steps[1].pipeline.latent_upsampler.configuration.component_type`:
+- control: the template's own new `diffusers.models.…LTX2LatentUpsamplerModel` path, unchanged;
+- (a) an empty segment: `diffusers.models..LTX2LatentUpsamplerModel`;
+- (b) a private segment: `diffusers.models._modeling_parallel.LTX2LatentUpsamplerModel`;
+- (c) a private final name: `diffusers.models._LTX2LatentUpsamplerModel`;
+- (d) a walk out through a re-exported module: `diffusers.models.torch.hub.load`;
+- (e) the same through `os`: `diffusers.models.os.system`;
+- (f) a trailing dot: `diffusers.models.`;
+- (g) outside the package altogether: `builtins.eval`.
+Before and after: `list_downloads` and `list_jobs(workspace="probe-1315")`.
+expected:
+- The control returns `valid: true`.
+- (a)–(g) each return `valid: false` with an error at the probe's path (or a trust-gate refusal naming that
+  `component_type`). A message naming the trust gate or `--trust-workflows` passes too.
+- No new download and no job appear.
+- No message holds a resolved server path (`/Users/…`, `/private/…`, `/home/…`, a cache or models directory), an
+  environment variable's value, or a `TypeError` about arguments. Any of those would mean the name was resolved and
+  called.
+Any of (a)–(g) validating clean is a **finding**. A message showing a call or a disclosure is a hole: file it
+privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none (validation only). If `probe-1315` didn't exist, validate in `default` instead. Validating creates
+nothing.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

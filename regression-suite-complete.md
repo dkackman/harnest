@@ -22659,7 +22659,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F925 — the #1385 cut probe's jobs all completed in `bench`, and the #1311 keeper in `drill-1311-2` is untouched
-pending: #1388
 source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free: reads only. Take the probe's job ids from stage #1388's hand-off comment (it quotes the record's job list; the
 record itself is `bench/records/narrated.md`, a docs-review item, C-F930). Then `list_jobs(workspace="bench")` and
@@ -22682,7 +22681,6 @@ cleanup: none (the jobs are the probe's record).
 metrics: none.
 
 ### C-F926 — each #1385 arm is a 16 s cut clip, A's last 8 s then B's first 8 s, cut at the time the record states
-pending: #1388
 source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free: reads only, workspace `bench`. For each arm's clip (C, J, S, and L unless C-F928 finds L's gate skipped it):
 `get_gallery_metadata` on the clip, then `get_output_frames` at four times: 0.5 s, the stated cut minus one frame
@@ -22704,7 +22702,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F927 — #1385 arms S and L each rendered exactly one segment, with B's arguments in all but `image`
-pending: #1388
 source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free: reads only. `get_job_workflow("50b48953037f", workspace="drill-1311-2")` (or its copy in `bench`), then
 `get_job_workflow` and `get_job` (workspace `bench`) on arm S's render job and arm L's (if it ran, C-F928).
@@ -22724,7 +22721,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F928 — #1385 arm S's still is a `sharpen` of B's angle; arm L's is an edit of a late A frame, rendered or skipped by its gate
-pending: #1388
 source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free: reads only, workspace `bench`. `get_job_workflow` on S's still job, on L's frame job and L's edit job, and on
 `7a326418cd63` (the edit that made B's angle, in whichever workspace `get_job` finds it; `drill-1311-2` first). The
@@ -22746,7 +22742,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F929 — #1385 arm J is B's head in 3-4 stepped `sharpen` chunks, rejoined at `trim_frames: 0`, with B's audio intact or stated silent
-pending: #1388
 source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free: reads only, workspace `bench`. `get_job_workflow` on every J job (the chunk jobs and the rejoin), then on J's
 clip `get_gallery_metadata`, `get_output_frames` at each chunk boundary, `get_output_audio` over 8-16 s, and the same
@@ -22771,7 +22766,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F930 — the #1385 probe record is in `bench/records/narrated.md` with every job, each arm's cut-step, the limit, the drill correction, and no ruling
-pending: #1388
 source: tester, spec for #1388 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Docs review for the record (it has no MCP surface); over MCP, the tester's part is that each figure the hand-off
 comment quotes from it belongs to a job C-F925 found.
@@ -22989,6 +22983,105 @@ expected:
 - `list_tasks` lists no erode, dilate or morphology task, and `list_workflows` no new mask template: the plan adds
   none. A new one is a **finding** against scope.
 - `list_jobs(workspace="bench")` shows no job from this case.
+cleanup: none.
+metrics: none.
+
+### C-F940 — after the floor bump's deploy, the server answers on diffusers HEAD (≥0.43.0), and no case moves it
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
+Free. Plan v5 moves no host's diffusers: every host stays on git HEAD, unpinned. Run this case **first and last** in
+the session that verifies #1341, with every other #1341 case in between. Each time: `get_health`, then
+`get_diffusers_state`.
+expected:
+- `get_health` is `status: ok` and its version (and commit, if it reports one) is the deployed develop commit the
+  #1341 build or deploy comment names. An older commit means the fix isn't deployed: stop and say so, don't verify.
+- `get_diffusers_state`: `status: idle`, `error: null`, `requested_commit: null`, `revert: false`, and a `version`
+  ≥ 0.43.0. A dev version (it read `0.44.0.dev0` on mini-ai at commit `1dabc292…` on 2026-11-16) is expected. A
+  version below 0.43.0 is a **finding**: develop's declared floor is now 0.43.0 and the host doesn't meet it. Exactly
+  `0.43.0` (the release, not a dev build) is a **finding** too: the plan says no host is pinned.
+- The first and last readings have the same `version` and `commit`. A change means something moved the host's
+  diffusers during the verification, which the plan rules out. That is a **finding**, and the other cases' results
+  don't count.
+cleanup: none.
+metrics: none.
+
+### C-F941 — `ltx2/two-stage` and `ltx2/refine-clip` name the LTX2 upsampler under `diffusers.models.`, and both validate
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
+Free. The free half of C-F788, without its GPU rerun. Calls: `get_workflow("templates/ltx2/two-stage")` and
+`get_workflow("templates/ltx2/refine-clip")` (full form). In two-stage the upsampler is at
+`steps[1].pipeline.latent_upsampler.configuration.component_type` (the `upscale` step). In refine-clip, find the
+`latent_upsampler` block. Then `validate_workflow(name="templates/ltx2/two-stage", workspace="default")` with no
+arguments, and `validate_workflow(name="templates/ltx2/refine-clip", workspace="default", arguments={"source_video":
+"asset:<a .mp4 from list_assets(workspace=\"default\")>"})`. Before #1341 the upsampler's type read
+`diffusers.pipelines.ltx2.latent_upsampler.LTX2LatentUpsamplerModel`, and the stock `source_video` default
+`asset:clip.mp4` didn't exist on mini-ai.
+expected:
+- In each template the latent upsampler's `component_type` begins `diffusers.models.` and ends
+  `LTX2LatentUpsamplerModel`. The plan doesn't pin the submodule between them, and any submodule is fine.
+- Neither template's JSON holds the string `diffusers.pipelines.ltx2.latent_upsampler` anywhere. One left behind,
+  even in a description, is a **finding**: the plan moves both.
+- Nothing else in either template changed type for this stage. The `constant:diffusers.pipelines.ltx2.utils.…`
+  sigma and negative-prompt references aren't component types and stay as they were.
+- two-stage: `valid: true`, `errors: []`, and no warning that names the upsampler, `latent_upsampler` or a
+  deprecation.
+- refine-clip: `valid: true` with the same warning rule. If the server has no video asset at all, the only error
+  allowed is the missing asset at `variables.source_video`. Any error at the upsampler's path is a **finding**.
+- If the #1341 build comment says the LTX2 condition dataclasses moved as well, SE-F065 covers them. This case
+  doesn't.
+cleanup: none.
+metrics: none.
+
+### C-F942 — a saved workflow that still names the old `diffusers.pipelines.ltx2.latent_upsampler` path validates
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
+Free, **validate only**. The free form of C-F789. diffusers deprecates the old path for removal in 1.0 and hasn't
+removed it, so a user's saved workflow that names it must not break. Setup:
+`create_workspace("probe-1315")` if `list_workspaces` lacks it. Take the full JSON of `templates/ltx2/two-stage`
+from `get_workflow`, set `steps[1].pipeline.latent_upsampler.configuration.component_type` to
+`diffusers.pipelines.ltx2.latent_upsampler.LTX2LatentUpsamplerModel`, and leave everything else alone.
+`validate_workflow(workflow=<it>, workspace="probe-1315")` with no arguments, then
+`save_workflow(name="old-upsampler-path", workflow=<it>, workspace="probe-1315")`, then
+`validate_workflow(name="old-upsampler-path", workspace="probe-1315")`. Last, a control: the same edit with the
+`component_type` set to the bare `LTX2LatentUpsamplerModel`, validated inline.
+expected:
+- Both validations of the old path return `valid: true` and `errors: []`. A deprecation **warning** that names the
+  old path is allowed and gets recorded, not counted as a finding. A trust-gate refusal, an import error, or "not
+  found" for the old path is a **finding**: every saved workflow naming the old path would break before diffusers
+  1.0.
+- The saved copy's validation agrees with the inline one.
+- The control is recorded as found, whatever it is. The plan doesn't promise the bare name either way, so neither
+  answer is a finding.
+- `list_jobs(workspace="probe-1315")` shows no job from this case.
+cleanup: `delete_workflow(name="old-upsampler-path", workspace="probe-1315")`. If this session created
+`probe-1315` and it now holds nothing else, `delete_workspace` it with the cost it asks for.
+metrics: none.
+
+### C-F943 — the #1341 build comment shows the floor at `diffusers>=0.43.0`, proven by the unit suite on HEAD and on 0.43.0
+pending: #1341
+source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
+Free, no MCP call. The floor has no readout over MCP (plan v5's acceptance intent 7), so the evidence is the
+build comment on #1341 (`gh issue view 1341 --repo dkackman/diffusers-workflow --comments`). Never read the source to
+settle it. Check that the comment states each of the following:
+- `pyproject.toml`'s diffusers requirement is `diffusers>=0.43.0`, and `dw/server/updater.py`'s
+  `FALLBACK_RELEASE_FLOOR` is `"0.43.0"`. The comment either quotes the diff for both or names the commit and quotes
+  the changed lines.
+- No other dependency floor moved. If `refresh_dep_floors.py` would have moved others, the comment says it kept
+  only the diffusers change.
+- `RELEASING.md`'s `## Unreleased` gains a line saying the floor is now `diffusers>=0.43.0` and that the revert
+  installs 0.43.0.
+- `docs/DEPENDENCIES.md` is not edited: it states no diffusers number (plan v5's correction).
+- Two unit-suite summary lines are quoted, each with the exact diffusers version it ran on: one on the normal venv
+  (HEAD, a `.dev` version ≥0.43.0) and one in a scratch venv on exactly `0.43.0`, CPU only.
+- The HEAD run has no new failures. The 0.43.0 run passes, or any test that failed there was fixed to pass on both
+  versions and is named. At most two such tests. More than two means the build should have stopped for a re-plan
+  (Don's ruling), and a build that went on anyway is a **finding**.
+- The scratch venv was outside the repo and was deleted.
+- Whether `LTX2VideoCondition` / `LTX2ReferenceCondition` moved in 0.43.0. Either answer is fine, but it must be
+  stated: it decides whether SE-F065 applies.
+expected: every point above is in the comment. Each one missing is a bounce asking for it, not a pass on trust. The
+floor line is one more thing Don approves (plan v5). The verify comment hands it to him in the
+**Decision for Don** block, as a `record`, with the two summary lines quoted.
 cleanup: none.
 metrics: none.
 
