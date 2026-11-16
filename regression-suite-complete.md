@@ -22317,7 +22317,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F931 — the guide's *A narrated long take* states the cut's detail reset, the remedy Don picked (or "accept it"), and names the #1385 record
-pending: #1389
 source: tester, spec for #1389 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_guide("workflows", section="A narrated long take")`. Find which arm Don picked from his verdict comment on
 #1385 (Q2: C or none, J, S or L) and check the branch for that pick.
@@ -22342,7 +22341,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F932 — `templates/minimax/narrated-take`'s description is unchanged by #1385, and no task gained a parameter
-pending: #1389
 source: tester, spec for #1389 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_workflow("templates/minimax/narrated-take")`, `get_task("sharpen")`, `get_task("concat_videos")`,
 `get_task("trim_video")`, `list_tasks`.
@@ -22362,7 +22360,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F933 — the `dw:long-form` skill no longer calls a cut free, and carries Don's pick in `run-and-repair.md` and `levers.md`
-pending: #1389
 source: tester, spec for #1389 from #1385's plan v1 (claude-opus-5-5 via anthropic)
 Free: plugin reading (the skills are consumer surface; they load from `develop`). Read the `dw:long-form` skill's
 `SKILL.md`, `references/run-and-repair.md` and `references/levers.md`. Don's pick from his Q2 verdict on #1385.
