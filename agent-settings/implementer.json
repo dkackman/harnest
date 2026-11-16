@@ -32,6 +32,9 @@
     ]
   },
   "permissions": {
+    "allow": [
+      "Bash(gh issue edit * --repo dkackman/diffusers-workflow --remove-label status:plan-approved)"
+    ],
     "deny": [
       "Read(~/.config/harnest/**)",
       "Write(~/.config/harnest/**)",

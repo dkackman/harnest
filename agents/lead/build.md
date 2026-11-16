@@ -107,8 +107,9 @@ Sometimes building a stage shows the approved plan doesn't hold:
 
 Then don't bend the code to fit the words. Stop, in this order:
 1. Push what you have to the branch, if anything is worth keeping.
-2. **Withdraw the approval first:** `gh issue edit <parent> --remove-label
-   status:plan-approved`. That stops every stage from building. Do it
+2. **Withdraw the approval first:** `gh issue edit <parent> --repo
+   dkackman/diffusers-workflow --remove-label status:plan-approved`, alone on
+   its line (that exact form is allowlisted). That stops every stage from building. Do it
    before touching the plan: a new plan version with the old approval
    still on would be decomposed as if Don had approved it.
 3. Comment on the stage what broke the plan.
