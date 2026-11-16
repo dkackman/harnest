@@ -9414,7 +9414,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F366 — the #1325 v6 seam-restore workflow validates clean: 6 fl2va segments, 5 ref2va restores over 124-frame windows, guide = restore frames 102–123, key = restore frame 102, `release_pipeline: true` on all 11 pipeline steps
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F336 (plan v5: the same window, without `release_pipeline`; its early job `782ceef4f82e` was OOM-killed).
 Model/pipeline: MiniMax H3 `fl2va` segments and `ref2va` restores, raw H3 (int8, sparse attention, no turbo, 20
@@ -9472,7 +9471,6 @@ cleanup: none (validates only).
 metrics: none.
 
 ### M-F367 — the #1325 v6 early workflow is the restore workflow cut after seg02's join, with `release_pipeline: true` on its 3 pipeline steps, and validates clean
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F337.
 Model/pipeline: as M-F366. Free: validates and reads only.
@@ -9505,7 +9503,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F368 — the #1325 v6 early job ran on the control's diffusers: `get_diffusers_state` was quoted before it, `0.44.0.dev0` @ `43e30028`
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F338.
 Model/pipeline: MiniMax H3 on lem (cuda). Free: issue reads and job reads.
@@ -9533,7 +9530,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F369 — the #1325 v6 early job: one 362-frame take with audio, a 124-frame restore01, every pipeline step loaded fresh, a host-memory peak recorded, alone on lem; a second OOM kill stops the probe
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F339.
 Model/pipeline: MiniMax H3 `fl2va` + `ref2va`, the v6 early job (see M-F368). Free: reads only. Run on lem (cuda).
@@ -9579,7 +9575,6 @@ cleanup: none. Never delete the probe jobs, `dd3e9db5f675` or `782ceef4f82e`: th
 metrics: none.
 
 ### M-F370 — the #1325 v6 gate: both arms' seg02 numbers are recorded, the outcome follows the approved thresholds, and the full job exists only if the gate passed
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F340.
 Model/pipeline: the v6 early job (M-F368) and control `aed61997052a`. Free: issue and job reads.
@@ -9614,7 +9609,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F371 — if the #1325 v6 gate passed, the full restore job: exactly 1042 frames with audio at 24 fps, five 124-frame restores, 11 fresh pipeline loads, and seg01–seg02 repeating the early job step for step
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F341.
 Model/pipeline: MiniMax H3, the v6 full job. Free: reads only. Run on lem (cuda).
@@ -9650,7 +9644,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F372 — the #1325 v6 restore job(s) differ from control `aed61997052a` only in the restore steps, each segment's guide and key source, and the `release_pipeline` key
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F342.
 Model/pipeline: MiniMax H3 `fl2va` and `ref2va`. Free: reads only.
@@ -9679,7 +9672,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F373 — the #1325 v6 record, quoted on #1325: job ids and take paths (`dd3e9db5f675` and `782ceef4f82e` named apart), window, diffusers state, 0.3 / s = 12 / d = 0.0345, gate numbers, both arms' tables with the seam-jump tables, wall time per restore pass and per load, host-memory peaks, verdict left to Don
-pending: #1351
 source: tester, spec for #1351 from #1325's plan v6 (claude-opus-5-5 via anthropic)
 Supersedes M-F343.
 Model/pipeline: the #1351 probe record. Free: issue reads and job reads.
