@@ -22307,7 +22307,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F906 — the #1260 LTX-2.5 move record gives all 13 moves a verdict on seeds 42 and 7, each with its own job id
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: issue reading. Read the LTX table where the stage's build hand-off on #1380 quotes it.
 expected:
@@ -22323,7 +22322,6 @@ cleanup: none. Never delete a cited job's output.
 metrics: none.
 
 ### C-F907 — every job the #1260 LTX record cites is a succeeded LTX template run with that cell's seed and move sentence
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: `get_job` on each of C-F906's 26 ids and any LTX rerun. Read each sentence from
 `references/compile-ltx-2.5.md`'s move table.
@@ -22345,7 +22343,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F908 — spot-checked LTX frames show what the #1260 record's frame notes say
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads outputs only). As C-F901, on the LTX cells of C-F906: both seeds of `whip-pan` and `crash-zoom` at
 `count=12` and `count=24`, plus one `partial` or `ignored` cell (or a `handheld` cell if none is), frame 0 against
@@ -22357,7 +22354,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F909 — an LTX move ignored on both seeds gets one rerun at seed 42, and a move still ignored reads hint-only
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: as C-F902, on the LTX record and `compile-ltx-2.5.md`, with `templates/ltx2/text-to-video` as the workflow.
 expected:
@@ -22371,7 +22367,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F910 — `compile-ltx-2.5.md`'s move table carries two verdicts per move, matching the record, and every row keeps `<viewpoint>`
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: plugin reading of `references/compile-ltx-2.5.md`'s move table.
 expected:
@@ -22384,7 +22379,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F911 — the #1260 LTX stage stayed inside its budget, ran after stage A, and the feature stayed inside 1.5 GPU-hours
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: `get_job` on every new LTX job the record cites (20 cells plus reruns), and C-F905's H3 sums.
 expected:
@@ -22401,7 +22395,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F912 — the `cinematography` SKILL.md move table lists all 13 moves, and its H3 and LTX words agree with the compile tables
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: plugin reading. Invoke `dw:cinematography` and read its move table, plus both compile tables.
 expected:
@@ -22418,7 +22411,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F913 — the `cinematography` skill's prose says two seeds and 13 moves, still says "a hint, not a promise", and cites the new audit
-pending: #1380
 source: tester, spec for #1380 from #1260's plan v2 (claude-opus-5-5 via anthropic)
 Free: plugin reading of the `cinematography` SKILL.md.
 expected:

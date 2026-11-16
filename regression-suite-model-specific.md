@@ -9719,4 +9719,313 @@ It is a **finding** if any of these holds:
 cleanup: none.
 metrics: none.
 
+### M-F374 — `experimental_keystone_attention` is refused on a server without `DW_EXPERIMENTAL_REFINE_WINDOWS`, and W_KA without it validates clean
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free** once the guide exists (validate only; the setup is a CPU
+trim of a few seconds).
+**Setup G (the guide clip), shared by M-F374–M-F380.** `run_workflow(workspace="regression-model-specific",
+note="M-F374 setup: 22-frame KA guide", wait_seconds=55, inline_workflow=...)` with one task step `trim` running
+`trim_video` on `asset:qa-cast/ep6-shot1-priya.mp4` (shared `common/assets`, 124 frames, 24 fps, 960x544, with
+audio; see `regression-suite-complete.md` Fixtures) at `start_frame: 102`, `num_frames: 22`, `fps: 24`, with a
+`video/mp4` result. `get_job` gives its output; GUIDE is that file as an `output:` reference. Any short H3-sized
+clip of 22 frames substitutes.
+**W_KA (the probe workflow), shared by M-F374–M-F380.** `get_workflow("templates/minimax/first-and-last-frame")`
+and inline it with: workflow `seed: 1391`; variables `width: 960`, `height: 544`, `num_frames: 124`,
+`num_inference_steps: 5` (the template's turbo LoRA kept), `attention_backend` set to a **dense** value (`null`; if
+validate refuses `null`, the non-sparse value `get_schema("pipelines")` names), since the template's `sparse` is
+one of the refusals; in the step's `arguments`, `last_image` removed, `image` set to
+`asset:qa-cast/priya-portrait.jpg` (shared, read-only), `guides: [{"video": GUIDE, "frame": 0}]`, and, where a case
+says so, `experimental_keystone_attention: KA`. That is the plan's probe shape: the `image` keyframe rows are the
+keystone, the `guides` rows the carried frames.
+Steps (on lem as it normally runs, without the flag):
+1. `validate_workflow(workspace="regression-model-specific", inline_workflow=W_KA)` with no KA.
+2. The same with `KA = {}`, and again with `KA = {"balance": 20, "blocks": "31-33,36-44,47"}`.
+3. `get_schema("pipelines")`: search for `experimental_keystone_attention`.
+expected:
+- Step 1: `valid: true`, with no finding about keystone attention (the base probe is a legal fl2va call).
+- Step 2, both calls: `valid: false`, a finding naming `experimental_keystone_attention` and
+  `DW_EXPERIMENTAL_REFINE_WINDOWS`.
+- Step 3: the key is absent from the schema, or present only with a description saying it is refused unless that
+  flag is set (the plan adds no schema).
+It is a **finding** if the argument validates clean on a flag-off server, or if the refusal does not name the flag.
+If step 2 is `valid: true`, this server has the flag set: record that, skip this case, and run M-F375–M-F380.
+cleanup: `delete_output(job_id=<setup G job>)` after the last of M-F374–M-F380 that runs this pass.
+metrics: none.
+
+### M-F375 — with the flag on, `experimental_keystone_attention: {}` validates clean and the plan shows its defaults; boundary values are accepted
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free**: validate only.
+**Flag-on cases (M-F375–M-F380)** need lem serving with `DW_EXPERIMENTAL_REFINE_WINDOWS=1`. Tell by M-F374 step 2:
+if it is refused naming the flag, the server is flag-off, and these cases are recorded **not run (server
+flag-off)**, never as a pass.
+Steps: setup G and W_KA from M-F374. `validate_workflow(workspace="regression-model-specific",
+inline_workflow=W_KA)` once per KA:
+(a) `{}`; (b) `{"balance": 20, "blocks": "31-33,36-44,47"}`; (c) `{"balance": 1}`; (d) `{"balance": 0.5}`;
+(e) `{"blocks": "0"}`; (f) `{"blocks": "49"}`; (g) `{"blocks": "0-49"}`; (h) `{"blocks": "47,31-33"}` (out of order,
+no overlap); (i) `{"balance": 20}` alone and `{"blocks": "40"}` alone.
+expected:
+- Every call: `valid: true`, no error, and no warning naming the argument as unknown or ignored.
+- (a): the validate reply's plan (the step's resolved arguments or the experimental note it carries) shows
+  `balance` 20 and `blocks` `31-33,36-44,47` (as the string, or as the 13 indices 31, 32, 33, 36–44, 47). A plan
+  that shows `{}` with no defaults is a **finding**: the plan owes the defaults.
+- (b) shows the same values as (a).
+- (e)–(g): 0 and 49 are in range on H3's 50 blocks (0..N-1, N read off the transformer); `0-49` is all 50.
+It is a **finding** if any of these is refused: (c) is the identity and (d) a weaker keystone, both legal
+(`balance` > 0 and finite); (e)–(h) are well-formed in-range lists.
+cleanup: none (setup G's output is cleaned by M-F374).
+metrics: none.
+
+### M-F376 — with the flag on, a bad `balance` or `blocks` is a named finding at validate
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free**: validate only. Flag-on (see M-F375).
+Steps: W_KA from M-F374; `validate_workflow(workspace="regression-model-specific", inline_workflow=W_KA)` once per KA:
+balance — (a) `{"balance": 0}`; (b) `{"balance": -1}`; (c) `{"balance": "20"}` (a string); (d) `{"balance": 1e400}`
+(JSON overflow to infinity; if the call layer refuses to send it, record that and skip (d));
+blocks — (e) `{"blocks": "31-50"}`; (f) `{"blocks": "50"}`; (g) `{"blocks": "-1"}`; (h) `{"blocks": "a-b"}`;
+(i) `{"blocks": ""}`; (j) `{"blocks": "31,31"}`; (k) `{"blocks": "31-33,33"}` (an overlap); (l) `{"blocks": "33-31"}`
+(a reversed range, which lists no block); (m) `{"blocks": "31,,33"}`; (n) `{"blocks": 31}` (a number, not the
+string).
+expected:
+- Every call: `valid: false`, with a finding naming `experimental_keystone_attention` and the field (`balance` or
+  `blocks`). A blocks finding names the bad token or says what is wrong (out of range with the 0–49 bound,
+  malformed, empty, or duplicate).
+- (e)–(g) name the range, read from the model's 50 blocks.
+- The refusal comes from validate, before any weights load: no job is queued.
+It is a **finding** if any call validates clean, or if a refusal is a generic schema error that names neither the
+argument nor the field.
+cleanup: none.
+metrics: none.
+
+### M-F377 — with the flag on, `experimental_keystone_attention` is refused off H3 fl2va, without a keystone or carried guide, and beside TST, sparse attention or a capstone
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` (and one LTX-2.5 step). **Free**: validate only. Flag-on (see M-F375).
+Steps: `validate_workflow(workspace="regression-model-specific", ...)` with `KA = {}` in each of:
+(a) **not fl2va**: `templates/minimax/image-to-video` inlined with the key added to its pipeline step's arguments
+(and a dense `attention_backend`), plus `guides: [{"video": GUIDE, "frame": 0}]`;
+(b) **not H3**: `templates/ltx2/image-to-video` inlined with the key added to its step's arguments;
+(c) **no guides**: W_KA with `guides` removed; (d) W_KA with `guides: []`;
+(e) **no image**: W_KA with `image` removed (keep `guides`);
+(f) **with TST**: W_KA plus `experimental_tst` in the same call's arguments, at the value `get_schema("pipelines")`
+documents as its minimal form (if no such key exists any more, record that and skip (f));
+(g) **with sparse attention**: W_KA with `attention_backend: "sparse"` (the template's own default);
+(h) **with a capstone**: `templates/minimax/chained-segments` inlined, its H3 step's `chain` given
+`experimental_capstone: {"enter_below_sigma": 0.5}` (as in M-F355), and the key added to that step's arguments;
+(i) **with gated guide rows**: the same chain with `keystone: "segment_1"`, `keystone_slot: {"frame": 51}` and its
+`enter_below_sigma` gate (the form `get_guide("workflows", section="guides")` documents), and the key on the step.
+expected:
+- Every call: `valid: false`, with a finding naming `experimental_keystone_attention` and what it can't run with
+  or without: (a) fl2va, (b) H3, (c)/(d) the guides (nothing carried to re-split), (e) the `image` (no keystone),
+  (f) `experimental_tst`, (g) sparse attention, (h) the capstone, (i) the gated rows.
+- Removing only the conflicting piece from (f), (g) and (h) (TST dropped, `attention_backend` dense, capstone
+  dropped) leaves that call free of any keystone-attention finding. For (h) the chain may still be refused for the
+  other reasons the plan leaves open (the key on a chain step); if so, quote the finding.
+It is a **finding** if any of (a)–(i) validates clean, or is refused only at run time.
+cleanup: none.
+metrics: none.
+
+### M-F378 — with the flag on, a one-segment, one-guide fl2va run with `experimental_keystone_attention: {}` completes with an output and no error event
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`, turbo LoRA, 5 steps, 124 frames at 960x544. **GPU**: a few minutes
+on lem (quote `plan.estimate`). Flag-on (see M-F375).
+Steps: setup G and W_KA from M-F374 with `KA = {}`. `validate_workflow`, bind `acknowledged_cost`, then
+`run_workflow(workspace="regression-model-specific", inline_workflow=W_KA, note="M-F378 KA default seed 1391",
+wait_seconds=55, acknowledged_cost=...)`, then `wait_for_job` until done. Then `get_job`, `get_job_events`, and
+`get_gallery_metadata` on the video.
+expected:
+- The job succeeds with one `video/mp4` output: 960x544, 24 fps, 124 frames (within 1), with an audio stream.
+- No error event. `job.warnings` and the events hold nothing naming keystone attention as skipped, ignored or
+  falling back.
+- The events or the job say which attention op the selected blocks ran (cuDNN or native flash): **record which**
+  (M-F379 needs it). If nothing says, record "not reported"; that is a note, not a finding.
+- Keep the job id for M-F379 and M-F380.
+It is a **finding** if the run fails, writes no video, or reports an error event.
+cleanup: kept until M-F380 has run, then `delete_output(job_id=<this job>)`.
+metrics: none.
+
+### M-F379 — with the flag on, `balance: 1` gives the same take as no argument at the same seed
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: two runs as M-F378. Flag-on (see M-F375).
+Steps: W_KA from M-F374 run twice, each validated and acknowledged as in M-F378:
+(a) no KA, `note="M-F379 baseline seed 1391"`; (b) `KA = {"balance": 1}`, `note="M-F379 KA balance 1 seed 1391"`.
+Then `compare_outputs` on the two videos (or `assess_output` on each plus `get_output_frames` at `frame:0`,
+`frame:62`, `frame:123` of both), and `get_job_events` on (b).
+expected:
+- Both succeed, with the same frame count, size and fps.
+- With b = 1 the re-split is the identity (pK' = pK), so (b) equals (a): **bit-identical** video frames if the
+  selected blocks ran the default backend's own op; otherwise **within float tolerance**: no frame differs by eye
+  and `compare_outputs` reports a near-zero difference (a per-pixel mean absolute difference under 1 on 0–255, or
+  the tool's own "same" verdict). Record which applies, and the op M-F378 named.
+- (a)'s events hold no keystone-attention line at all (no argument, no processor installed).
+It is a **finding** if (b) differs visibly from (a), or if (a) shows any trace of the processor.
+cleanup: `delete_output(job_id=...)` on (b); keep (a) for M-F380, then delete it.
+metrics: none.
+
+### M-F380 — with the flag on, `balance: 20` gives a visibly different take from no argument at the same seed
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: none beyond M-F378 and M-F379(a). Flag-on (see M-F375).
+Steps: `compare_outputs` on M-F378's video (`KA = {}`, balance 20 on the default 13 blocks) against M-F379(a)'s
+(no argument, same seed 1391), and `get_output_frames` on both at `frame:0`, `frame:62` and `frame:123`.
+expected:
+- The two takes differ visibly in at least one sampled frame (the subject's look, the framing or the background
+  pulled toward the keystone still), and `compare_outputs` reports a non-trivial difference, well above
+  M-F379's (b)-vs-(a) reading.
+- Frames 0–21 (under the guide) may stay close in both: the guide rows are held, never denoised. The change is
+  expected in the frames the guide leaves free.
+It is a **finding** if the takes are bit-identical or indistinguishable by eye in every sampled frame: the processor
+would then not be acting on the selected blocks.
+cleanup: `delete_output(job_id=...)` on M-F378's job and M-F379(a)'s, then setup G's (M-F374).
+metrics: none.
+
+### M-F381 — the workflows guide carries one experimental line for `experimental_keystone_attention`
+pending: #1393
+source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` docs. **Free**: reads only.
+Steps: `get_guide("workflows", section="experimental_keystone_attention")` (the section match is loose; if it does
+not resolve, try `section="guides"` and the guide's experimental section from its index). `list_guides`: if an
+attributions guide is listed, `get_guide` it and search for "Keystone Attention".
+expected:
+- The guide names `experimental_keystone_attention` as **experimental**, refused unless
+  `DW_EXPERIMENTAL_REFINE_WINDOWS=1`, an H3 `fl2va` call argument with `balance` (default 20) and `blocks`
+  (default `31-33,36-44,47`), and that it needs an `image` and `guides` and is refused beside TST, sparse
+  attention, a capstone or gated guide rows.
+- It states block numbering as an assumption (diffusers' 0–49 taken as ComfyUI's), or the bench record does
+  (M-F386); one of the two must.
+- No template description and no MCP tool description names the key (the plan moves no surface).
+- If an attributions guide is served: it credits roycho87's NerdNotes tests 19–20, geiru_context_suite's Keystone
+  Attention (concepts only) and ckinpdx's Carry Attention. If it is not served over MCP, record that; checking it
+  is docs review, not this case.
+It is a **finding** if the line is missing, presents the key as stable, or gives different defaults than M-F375
+found.
+cleanup: none.
+metrics: none.
+
+### M-F382 — the #1391 bench: both arms' workflows differ only as the plan says, and an existing keystone-`first` run was reported before the control ran
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda), bench workspace. **Free**: issue reads and job reads.
+The **arm jobs** are the `bench` jobs the stage's hand-off on #1394 names: the keystone-only control
+(`keystone-attention-control`) and the attention arm (`keystone-attention`), early (seg01–02) and, if the gate
+passed, full. Find them by note in `list_jobs(workspace="bench")` if the hand-off doesn't give ids.
+Steps: `get_job_workflow(workspace="bench")` on each arm job and on the no-keystone control `aed61997052a`;
+`gh issue view 1394 --repo dkackman/diffusers-workflow --comments`.
+expected:
+- Keystone control vs `aed61997052a`: the only difference is each later segment's `image`, which is segment 1's
+  frame 0 in the keystone control (the carried tail's first frame in `aed61997052a`). Each segment's guide is
+  still the carried tail. Same prompts, seeds, size, steps, LoRA, attention backend and segment count.
+- Attention arm vs keystone control: the only difference is `experimental_keystone_attention` at its defaults
+  (`{}` or `{"balance": 20, "blocks": "31-33,36-44,47"}`) on each fl2va segment call. Segment 1 may carry it too;
+  either way the record says which.
+- An early job is its arm's full workflow cut after seg02, nothing else changed.
+- The record (in `bench/records/narrated.md`, quoted on #1394 or #1391) states both diffs in words.
+- Before the keystone control's first job was created, #1394 has a comment saying whether a keystone-`first` run
+  already existed on the same chain, build and seed (and, if one did, that it was reused or why it was re-run).
+It is a **finding** if any other argument differs, if the record omits a diff, or if the existing-run comment is
+missing or postdates the control job's `created_at`.
+cleanup: none (the jobs are the bench record).
+metrics: none.
+
+### M-F383 — the #1391 bench jobs completed on the control's build, one H3 job at a time, after #1385 and #1382
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
+Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job (M-F382); `get_diffusers_state()`;
+`list_jobs(workspace="bench")` and the job lists of the workspaces #1385's and #1382's records name, around the
+arm jobs' times; `gh issue view 1385` and `gh issue view 1382` (`--repo dkackman/diffusers-workflow`) for their
+close times.
+expected:
+- Every arm job is `completed` (succeeded), not failed or cancelled. A re-run is named in the record with its
+  reason.
+- The record quotes `get_diffusers_state` as `0.44.0.dev0` @ `43e30028` (a longer hash starting with it is fine),
+  taken before the first arm job, matching `aed61997052a`'s build; any version a job reports matches it. Today's
+  `get_diffusers_state` is context only.
+- No arm job's run overlaps another H3 job on lem (its `started_at`–`finished_at` against every other H3 job's),
+  and none started before #1385 and #1382 were closed (or the driver released B from them).
+It is a **finding** if any arm job failed without a named re-run, if the build differs from the control's, or if
+two H3 jobs overlapped.
+cleanup: none.
+metrics: none.
+
+### M-F384 — the #1391 gate: both arms' seg02 numbers are recorded, and full jobs exist only if the attention arm passed
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
+Steps: read the record's gate section; `list_jobs(workspace="bench")` for full arm jobs; `get_job` on each early job.
+expected:
+- The record gives, for both early arms, seg02's face-sharpness rise (against seg01) and the seam score at the
+  seg01/02 seam, with the job ids they came from.
+- The gate passes only if the attention arm's seg02 face-sharpness rise is **no worse** than the keystone
+  control's **and** its seam score is **under 1.5x** the keystone control's (the record names that base; a
+  different base is quoted and must match the plan's wording).
+- Gate passed: two full arm jobs exist (control and attention), each created after both early jobs finished.
+  Gate failed: no full arm job exists, and #1394/#1391 say the gate stopped the bench with the numbers.
+It is a **finding** if a number is missing, if the stated outcome doesn't follow from the numbers, or if full jobs
+exist after a failed gate (or are missing after a passed one with no reason given).
+cleanup: none.
+metrics: none.
+
+### M-F385 — the #1391 record's numbers match the jobs and a re-measure of the takes
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads and CPU assessment only (`assess_output` is free; any
+`analyze_*` task run must be priced and is CPU).
+Steps: for the takes the record measures (the full jobs, or the early ones after a gate stop) and for
+`aed61997052a`'s take: `get_job` (`workspace="bench"`) for the output paths and frame counts;
+`get_gallery_metadata` on each take; `assess_output` on each; `analyze_seams` (and `analyze_face_drift` for SFace)
+over each take at the seam frames the record names, through `run_workflow` in `bench` with a `note` naming
+M-F385.
+expected:
+- The record has three columns (no-keystone control `aed61997052a`, keystone control, attention arm) for luma,
+  saturation, face saturation and face sharpness, each as total, seams and in-segment; a seam table; SFace drift;
+  and in-segment motion (mean absolute frame delta, or the frame-difference median, named as which).
+- Each take's frame count, duration and fps in the record match `get_gallery_metadata`.
+- The re-measured seam jumps and SFace drift agree with the record within 5% (or 0.02 absolute where the value is
+  under 0.4); luma and saturation within 1 unit on the record's scale.
+- The `aed61997052a` column matches the existing #1325 control numbers in `bench/records/narrated.md` (-0.5 luma,
+  +8.8 saturation, +105 face sharpness as the plan quotes), since the control is reused, not re-run.
+It is a **finding** if a measure or column is missing, a frame count disagrees, or a re-measure falls outside the
+tolerance.
+cleanup: `delete_output(job_id=...)` on each analysis job this case ran.
+metrics: none.
+
+### M-F386 — the #1391 record states the block-numbering assumption, the attention op's wall-clock cost, the take paths for Don, and no verdict
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
+Steps: read the record as quoted on #1394 or #1391; `get_job` on the arm jobs for their timings.
+expected:
+- It states that diffusers' H3 block indices 0–49 are taken as ComfyUI's, as an assumption (Q3), not a checked
+  fact.
+- It states the wall-clock cost of the LSE-returning op on the 13 blocks: the attention arm's time against the
+  keystone control's, per segment or per job, agreeing with `get_job` timings within 10%.
+- It names the op the selected blocks ran (cuDNN or native flash).
+- It ends with the takes' output paths for Don's viewing, and calls no verdict on the measures beyond the gate:
+  the issue goes to Don (`owner:don`) for the viewing.
+- It says the result transfers to `keystone_slot` `first` and `last` only, and that no moving-shot arm ran.
+It is a **finding** if any item is missing, or if the record rules on the feature itself.
+cleanup: none.
+metrics: none.
+
+### M-F387 — a cached H3 turbo LoRA file named through `variable:lora_weight_name` is no download; an uncached file in the same repo is one
+source: tester, verified in #1392 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 templates with the `lightx2v/Minimax-h3-Turbo` LoRA, on lem (cuda). **Free**: validate only.
+Steps:
+(a) `validate_workflow("templates/minimax/video-with-audio", arguments={"prompt": "A lighthouse on a cliff at dusk, waves crashing below.", "seed": 42}, workspace="default")`.
+(b) The same call plus `"lora_weight_name": "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors"` (the template's default, passed explicitly).
+(c) `validate_workflow("templates/minimax/image-to-video", workspace="default")` with the stored defaults.
+(d) The call from (a) plus `"lora_weight_name": "minimax_h3_fl2v_turbo_8step_v1.2_768p_bf16.safetensors"`, a file in the same repo that this box has not cached.
+expected:
+- (a), (b), (c): `plan.downloads_required` is `[]`, because the template's 4-step v1.2 file is cached. That holds even when the file sits only under a snapshot that `refs/main` doesn't name, the layout #1392 hit.
+- (d): `downloads_required` holds exactly one entry, `repo: "lightx2v/Minimax-h3-Turbo"` with `filename` set to the 8-step name and a non-null `gb`. The check is per file: the cached sibling doesn't hide the uncached file, and the entry doesn't fall back to the whole repo.
+- Before (d), confirm the 8-step v1.2 file is still uncached: no job on this box has loaded it (`list_downloads` and the H3 jobs' `get_job_events`). If one has, use another `Minimax-h3-Turbo` file name that is not cached. A cached name makes (d) pass with `[]` and proves nothing.
+It is a **finding** if (a)–(c) list the cached file, or if (d) reports `[]` for a file that is not cached.
+cleanup: none.
+metrics: none.
+
 ## Performance
