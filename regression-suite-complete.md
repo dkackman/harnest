@@ -22447,4 +22447,79 @@ doesn't cite the new doc.
 cleanup: none.
 metrics: none.
 
+### C-F914 — `replace-performer` declares its frame and size constraints, states its limits in words, and wires the v3 per-cut steps
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
+Free. The v3 counterpart of C-F882 (where the two disagree, this case holds: plan v3 dropped the 6-reference limit
+and `seed` + index). Call `list_workflows(shape="utility")`, `list_workflows(shape="sequence")`,
+`get_workflow("templates/minimax/replace-performer-cuts")` and `get_workflow("templates/minimax/replace-performer")`.
+expected:
+- `replace-performer-cuts` is listed under utility, and `replace-performer` under sequence with the traits
+  `needs-input-media`, `identity-referenced` and `has-audio`.
+- `replace-performer`'s variable constraints declare `render_frames` (17n+5 inside 124–345), `width` and `height`.
+  `cuts` and `references` need **not** carry a count constraint (Design 7: `for_each` and the ref2va class own those).
+  A `references` constraint of at most 6 is a **finding**.
+- Its description states, in words: 1–32 cuts; the reference limits of 9 images and 12 files; and that a cut with no
+  `seed` of its own renders with the workflow `seed`. Each of the three missing is a **finding**. "`seed` + index" or
+  "6 references" anywhere in the description is a **finding**.
+- Its steps, per cut inside `for_each` over `cuts`: `trim_video` on the source and on the mask with
+  `pad_to` = the entry's `render_frames`; a ref2va regional edit with `source_video` and `hold_audio` the trimmed cut,
+  `mask_video` the trimmed mask, `refine_strength` 1.0, `mask_grow` (a variable, default 0 or 1), and `seed`
+  `{"item": "seed", "default": "variable:seed"}`; then a `trim_video` back to the entry's `num_frames`. After the
+  loop: `concat_videos` with `trim_frames` 0 and `crossfade_ms` 0, then `pair_audio` with the source's track.
+cleanup: none.
+metrics: none.
+
+### C-F915 — `replace-performer` refuses more references than the ref2va class allows at validate, and accepts up to the limit
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
+Free. The v3 counterpart of C-F884 item 9. Start from call 2 of C-F883 and change only `references`, then
+`validate_workflow` each:
+1. 10 image references (`asset:qa-cast/hal-portrait.jpg` repeated is acceptable; if validate refuses a repeat as a
+   duplicate rather than for the count, use 10 distinct images from `list_assets(workspace=...)`);
+2. 9 image references, built the same way;
+3. 7 image references (above v2's dropped limit of 6).
+expected:
+- 1 is refused at validate, before anything queues. The message names `references` (or the reference images) and the
+  limit of 9.
+- 2 and 3 are not refused for the reference count. A refusal of 3 for exceeding 6 is a **finding** (the v2 limit
+  plan v3 dropped).
+- `list_jobs(workspace="regression-complete")` shows no job from this case.
+- The 12-file limit is not probed here: the plan names it but not which inputs count as files. Probe it only if the
+  template's description says which inputs count.
+cleanup: none.
+metrics: none.
+
+### C-F916 — an unseeded cut renders with the workflow `seed`, and a seeded cut with its own
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
+The v3 counterpart of the seed bullet in C-F887 and of C-F888. Uses C-F887's job (no cut carries a seed) and
+C-F889's re-roll job (one cut carries a new seed). `get_job_workflow` on each, reading the per-cut ref2va step's
+resolved `seed`. If `validate_workflow`'s plan already shows resolved per-cut arguments, the same checks may be read
+free from a validate of C-F887's arguments with and without `cut-2` carrying `"seed": 99`.
+expected:
+- C-F887's job (workflow `seed` 7, no cut seeds): both `cut-1` and `cut-2` resolve to `seed` 7. A `cut-2` at 8
+  (`seed` + index) is a **finding**: plan v3 has no seed arithmetic.
+- With `cut-2` carrying its own seed (99, or C-F889's new seed): `cut-1` resolves to 7 and `cut-2` to its own seed.
+cleanup: none (the jobs belong to C-F887 and C-F889).
+metrics: none.
+
+### C-F917 — the H3 skill and regional-edit reference state the replace-a-performer limits as plan v3 sets them
+pending: #1374
+source: tester, spec for #1374 from #1194's plan v3 (claude-opus-5-5 via anthropic)
+Free. The v3 counterpart of C-F891's limits bullet. Read the `dw:minimax-h3` skill's SKILL.md and its
+`references/regional-edit.md`.
+expected:
+- **Each** of the two files states, in its replace-a-performer route:
+  - 1–32 cuts;
+  - each cut's `render_frames` on the 17n+5 grid inside 124–345 and at least that cut's `num_frames`;
+  - the reference limits: 9 images and 12 files;
+  - that a cut with no `seed` of its own renders with the workflow `seed`;
+  - re-rolling one cut by giving only that cut a new `seed`, through `rerun_job` arguments.
+- A limit missing from either file is a **finding**. "Up to 6 references" or "`seed` + index" in either file is a
+  **finding**.
+- The numbers agree with `get_workflow("templates/minimax/replace-performer")`'s description (C-F914).
+cleanup: none.
+metrics: none.
+
 ## Performance
