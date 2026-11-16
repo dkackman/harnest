@@ -56,8 +56,12 @@ hand-off gate):
 every role:
   - no adding `status:plan-approved`: approving a feature plan is Don's
     alone (roadmap R11), so no agent can approve the plan it wrote
-  - no adding `release` or `release-blocker`: a freeze, and what moves
-    during one, are Don's (roadmap R14)
+  - no adding or removing `release` or `release-blocker`: a freeze, and
+    what moves during one, are Don's (roadmap R14)
+  - removing `status:plan-approved` only in the plain form, `gh issue edit
+    <n> [--repo R] --remove-label status:plan-approved` and nothing else:
+    implementer.json allowlists that withdrawal past the classifier, and
+    its wildcard must not carry other edits with it
   - no adding `arch-approved` (edit or create): it waives a freeze's
     new-surface refusal, a ratchet rise, and an architecture review's
     blocking finding, all Don's calls
@@ -785,6 +789,33 @@ def flag_values(words, *names):
     if any(n.endswith("label") or n == "-l" for n in names):  # GitHub labels are case-insensitive
         vals = [v.lower() for v in vals]
     return [v.strip() for v in vals]
+
+
+def plain_withdrawal(words):
+    """gh issue edit <one issue> [--repo R] --remove-label status:plan-approved, nothing more."""
+    rest = words[3:]
+    opts = {}
+    args = []
+    i = 0
+    while i < len(rest):
+        w = rest[i]
+        if w.startswith("--") and "=" in w:
+            k, v = w.split("=", 1)
+        elif w in ("--repo", "-R", "--remove-label") and i + 1 < len(rest):
+            k, v = w, rest[i + 1]
+            i += 1
+        elif w.startswith("-"):
+            return False
+        else:
+            args.append(w)
+            i += 1
+            continue
+        k = "--repo" if k == "-R" else k
+        if k not in ("--repo", "--remove-label") or k in opts:
+            return False
+        opts[k] = v
+        i += 1
+    return len(args) == 1 and opts.get("--remove-label", "").strip().lower() == "status:plan-approved"
 
 
 def is_gh_issue(words, sub):
@@ -2774,6 +2805,19 @@ def main():
                 "release and release-blocker are Don's to add: a freeze, and what may move during "
                 "one, are his calls (R14)."
             )
+        if is_gh_issue(words, "edit"):
+            removed_all = flag_values(words, "--remove-label")
+            if {"release", "release-blocker"} & set(removed_all):
+                deny(
+                    "release and release-blocker are Don's to remove: a freeze, and what may move during "
+                    "one, are his calls (R14)."
+                )
+            if "status:plan-approved" in removed_all and not plain_withdrawal(words):
+                deny(
+                    "withdraw an approval alone, in the plain form: `gh issue edit <n> --repo "
+                    "dkackman/diffusers-workflow --remove-label status:plan-approved` on its own line, "
+                    "with no other flag or issue; make any other edit in a separate command."
+                )
         if is_gh_issue(words, "create") and {"status:verified", "status:fixed-pending-verify"} & set(added):
             deny(
                 "an issue is never filed already verified or already handed off: create it without a "
