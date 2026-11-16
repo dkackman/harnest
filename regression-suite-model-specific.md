@@ -9335,7 +9335,6 @@ cleanup: `delete_output(job_id=<id>)`.
 metrics: none.
 
 ### M-F361 — `templates/minimax/h3-seam-pass` is in the shot catalog with its traits, cost and claims
-pending: #1378
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: catalog read.
 Steps: `list_workflows(shape="shot")` (summary form); `get_workflow("templates/minimax/h3-seam-pass")`.
@@ -9349,7 +9348,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F362 — `h3-seam-pass` validates clean with only `source`, and quotes the flat cost row
-pending: #1378
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: validate only.
 Steps: `validate_workflow(workflow_path="templates/minimax/h3-seam-pass", workspace="regression-model-specific",
@@ -9362,7 +9360,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F363 — `h3-seam-pass` refuses a source that is not a video at validate
-pending: #1378
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **Free**: validate only.
 Steps: `validate_workflow` as in M-F362 with `source` = (a) `asset:qa-cast/priya-portrait.jpg` (a still); (b) an audio
@@ -9377,7 +9374,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F364 — `h3-seam-pass` over the ≈26 s chain: same length, the source's soundtrack, seams no worse
-pending: #1378
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, `templates/minimax/h3-seam-pass`. **GPU**: about 15–18 min; quote
 `plan.estimate`.
@@ -9396,7 +9392,6 @@ cleanup: `delete_output(job_id=<id>)` for the run and the `analyze_seams` jobs; 
 metrics: none.
 
 ### M-F365 — the long-form skill names `h3-seam-pass`, when it pays, and that it is not a burn fix
-pending: #1378
 source: tester, spec for #1378 from #1230's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3`, the `dw:long-form` plugin skill. **Free**: read the skill.
 Steps: invoke the `dw:long-form` skill and read its playbook and its references (`levers.md`, `quality-and-speed.md`,
