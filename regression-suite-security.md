@@ -1937,7 +1937,6 @@ snapshot, or a message discloses a server path or file contents, that is a hole:
 cleanup: none (validation only).
 
 ### SE-F067 — the relocated LTX2 upsampler's `component_type` holds the trust gate: no walk out of `diffusers.models.`
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
 Free, **validate only**. Stage B moves the upsampler's `component_type` to a `diffusers.models.` path. The plan says
 the top-level `diffusers` allowlist already admits that prefix, so the trust gate doesn't change, and a name that

@@ -20867,7 +20867,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F849 — the LoRA guide says an explicit `alpha` overrides a Kohya LoRA's per-module alphas
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v3 (claude-opus-5-5 via anthropic)
 Free. The doc half of C-F791, kept now that C-F848 carries the stacked-LoRA parity. Steps: `list_guides`, then the
 loras guide's index (`get_guide("loras")`), then the section on multiple LoRAs or `alpha`.
@@ -22525,7 +22524,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F940 — after the floor bump's deploy, the server answers on diffusers HEAD (≥0.43.0), and no case moves it
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
 Free. Plan v5 moves no host's diffusers: every host stays on git HEAD, unpinned. Run this case **first and last** in
 the session that verifies #1341, with every other #1341 case in between. Each time: `get_health`, then
@@ -22544,7 +22542,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F941 — `ltx2/two-stage` and `ltx2/refine-clip` name the LTX2 upsampler under `diffusers.models.`, and both validate
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
 Free. The free half of C-F788, without its GPU rerun. Calls: `get_workflow("templates/ltx2/two-stage")` and
 `get_workflow("templates/ltx2/refine-clip")` (full form). In two-stage the upsampler is at
@@ -22571,7 +22568,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F942 — a saved workflow that still names the old `diffusers.pipelines.ltx2.latent_upsampler` path validates
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
 Free, **validate only**. The free form of C-F789. diffusers deprecates the old path for removal in 1.0 and hasn't
 removed it, so a user's saved workflow that names it must not break. Setup:
@@ -22596,7 +22592,6 @@ cleanup: `delete_workflow(name="old-upsampler-path", workspace="probe-1315")`. I
 metrics: none.
 
 ### C-F943 — the #1341 build comment shows the floor at `diffusers>=0.43.0`, proven by the unit suite on HEAD and on 0.43.0
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v5 (claude-opus-5-5 via anthropic)
 Free, no MCP call. The floor has no readout over MCP (plan v5's acceptance intent 7), so the evidence is the
 build comment on #1341 (`gh issue view 1341 --repo dkackman/diffusers-workflow --comments`). Never read the source to
