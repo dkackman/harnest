@@ -2539,6 +2539,42 @@ metrics: none.
 source: tester, verified in #1253 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ ab29dfdb` on `mini-ai` (mps).
 
+### S-F147 — an H3 video reference shorter than the encoder's minimum is refused at validate
+An H3 `MiniMaxH3VideoReference` must run a minimum number of frames, which comes from
+diffusers' encoder. Validation used to pass a shorter one, so it failed only at run time, after
+the chain's earlier steps had spent their GPU time (#1422). Free apart from one short
+utility job. `<vid>` is a video asset at 24 fps with at least 113 frames.
+Verification used `asset:qa-cast/priya-hal-two-shot.mp4` (121 frames) and the image
+`asset:uploads/cast/loki.jpg` as `<img>`. `<H3>` is a `pipeline` step with
+`from_pretrained_arguments={"model_name": "MiniMaxAI/MiniMax-H3", "workflow": "ref2va"}`,
+`configuration={"component_type": "ModularPipeline"}`, `num_frames` 124, 960x544, 9 steps,
+`output: ["videos","audio","sampling_rate"]`, and
+`references: [{MiniMaxH3ImageReference, from_file: <img>}, <video ref>]`.
+1. Inline workflow: step `window` =
+   `trim_video(video=<vid>, start_frame=100, num_frames="variable:num_window")`, then `<H3>` with
+   `<video ref>` = `{MiniMaxH3VideoReference, from_previous_result: "window", audio: null}`.
+   `validate_workflow` it with `arguments={"num_window": 5}`, then `12`, then `13`.
+2. The same workflow with literal `num_frames: 5, pad_to: 13` in the trim step.
+3. Run a task-only workflow, `trim_video(video=<vid>, start_frame=100, num_frames=5)`, which
+   writes `<short>`. Then validate a single `<H3>` step with `<video ref>` =
+   `{MiniMaxH3VideoReference, from_file: "output:<short>"}`, and again with `from_file: <vid>`.
+expected:
+- Step 1: `5` and `12` give `valid: false` at `steps[1].pipeline.arguments.references[1]`. The
+  message is the encoder's own and gives the minimum. Today's reads `...must run at least 13
+  frames at 24 fps (0.54 seconds), got 5 frames at 24 fps.` The value just below the minimum is
+  refused. The minimum itself (`13` today) gives `valid: true` with no reference-length error.
+- Step 2: `valid: true`, because `pad_to` lengthens the window to the minimum.
+- Step 3: the `output:<short>` reference gives `valid: false` at
+  `steps[0].pipeline.arguments.references[1]` with the same message, `got 5 frames`. `<vid>` gives
+  `valid: true`.
+It is a **finding** if a window below the minimum validates, because it then fails only after
+queueing. It is also a finding if the minimum itself, or a `pad_to` window, is refused. If the
+encoder's minimum ever changes, take the new lengths from its message, not from this text.
+cleanup: `delete_output(job_id=<step 3's job>)`.
+metrics: none.
+source: tester, verified in #1422 on 2026-11-17 over MCP as model `claude-opus-5-5` via provider
+`anthropic` against `develop @ 7c2c39c9` on `mini-ai` (mps).
+
 ## Performance
 
 ### S-P001 — default image generation latency
