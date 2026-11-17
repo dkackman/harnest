@@ -22452,7 +22452,7 @@ metrics: none.
 ### C-F937 — the e16 frames bear out the record's verdict on the couch step and on a ghost of the old silhouette
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Free: reads only. For each seed, `get_output_frames` (`workspace="bench"`) at `frame:0` and `frame:62` on the e16
-output, the g0 output, the g1 output (#1374's `mask_grow` 1 arm at that seed) and `asset:bench/t16/deflect-cut.mp4`.
+output, the g0 output and `asset:bench/t16/deflect-cut.mp4`; also the g1 output (#1374's `mask_grow` 1 arm at that seed) only if `list_jobs(workspace="bench")` lists it (#1374's g1 jobs ran on the retired bench server), else record the g1 frames as unobservable.
 Look at the shoulder crop `[560, 200, 400, 260]` (x, y, w, h: x 560-960, y 200-460); if `get_output_frames` takes
 a crop or region, pass it, else read that region of the full frame. The record's verdict and crops are quoted in
 #1390's hand-off (the record, `bench/records/performer-replacement.md` section "The seam: an eroded mask (#1382)",
@@ -22464,7 +22464,7 @@ expected:
 - The ghost test (Don's): no shoulder or head outline of the source performer, and no edge of the old jacket, kept
   inside or along the new person in the e16 frames. A ghost the record does not report is a **finding**; a ghost
   the record reports and counts against erosion is not.
-- No hard edge visible by eye at the silhouette in e16 that g1 does not have; a hard edge here must match the
+- No hard edge visible by eye at the silhouette in e16 that g1 does not have (when g1 is listed; otherwise judge against g0 and the source); a hard edge here must match the
   record's `step` reading (C-F938).
 - The record's one-line conclusion follows the rule: "erosion works" only if the step is gone at both seeds, no hard
   edge, and no ghost; otherwise keep `mask_grow` 1. If it proposes the engine erode, a new issue for it exists
@@ -22475,9 +22475,9 @@ metrics: none.
 
 ### C-F938 — the #1382 seam table keeps #1374's g0/g1 numbers and its `step` meaning
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
-Mostly docs review: the seam numbers come from `bench/seam_bands.py`, run offline. Over MCP: the job ids the six-arm
-seam table names (g1, g0 and e16 at seeds 1194 and 2002, quoted in #1390's hand-off) each resolve with
-`get_job(<id>, workspace="bench")` (or the workspace the hand-off names) and are succeeded.
+Mostly docs review: the seam numbers come from `bench/seam_bands.py`, run offline. Over MCP: the g0 and e16 job ids the six-arm
+seam table names (at seeds 1194 and 2002, quoted in #1390's hand-off) each resolve with
+`get_job(<id>, workspace="bench")` (or the workspace the hand-off names) and are succeeded. The g1 ids (#1374's `t16-swap-r100-*`, run on the retired bench server) are checked the same way only if `list_jobs(workspace="bench")` lists them; otherwise the g1 rows are docs review.
 expected:
 - Six rows: g1, g0 and e16 at both seeds. Fewer is a **finding**.
 - The g0 and g1 `step` values equal #1374's: g0 9.81 (s1194) / 11.29 (s2002), g1 4.37 / 4.45, to the two decimals
