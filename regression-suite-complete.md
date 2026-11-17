@@ -23291,7 +23291,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F979 — the #1411 bench record holds both arms at seed 1194 with every metric and job id, and a gate verdict
-pending: #1414
 source: tester, spec for #1414 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only), on lem (CUDA). The record is the #1411 section of `bench/records/performer-replacement.md`; read it
 as quoted in the stage's build comment on #1414, since the tester cannot read `bench/`. For each job id it gives:
@@ -23321,7 +23320,6 @@ cleanup: none (the bench's jobs are its record; never delete them).
 metrics: none.
 
 ### C-F980 — the #1411 bench's numbers and frames agree with its jobs' outputs
-pending: #1414
 source: tester, spec for #1414 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). For both arms in C-F979's record: `get_gallery_metadata` on the output video; `assess_output` on it;
 `get_output_frames` on the output and on the source shot at `frame:0`, the middle frame and the last frame;
