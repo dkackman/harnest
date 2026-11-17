@@ -1320,6 +1320,33 @@ cleanup: `delete_workflow` on `qa-se-f061`, `qa-se-f061-p`, `qa-se-f061-v`; `del
 for any job (none should exist).
 metrics: none.
 
+### SE-F068 — a ref2va guide's `video` holds the media path gate at validate time
+pending: #1413
+source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+#1413 lets a ref2va step take one guide, a new route by which the server opens a clip on a references
+step. Carrier, in workspace `regression-security`: `templates/minimax/reference-to-video` (`get_workflow`),
+with `"guides": [{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}]` added to its step's
+`pipeline.arguments`, saved as `qa-se-f068`; validated with `{"subject": "asset:qa-cast/priya-portrait.jpg",
+"voice": "asset:qa-cast/priya-voice.wav", "seed": 42}`. Probes: SE-F061's set. Put each probe:
+- as the carrier's guide `video`, saved as `qa-se-f068-p` and validated;
+- through a variable: the carrier with a `"guide_clip"` variable (default the fixture clip) and
+  `"video": "variable:guide_clip"`, saved as `qa-se-f068-v`, the probe passed as
+  `arguments={"guide_clip": <probe>, ...}`.
+For every refused probe, also `run_workflow(..., acknowledged_cost=true, workspace="regression-security")`.
+expected:
+- Every probe is `valid: false` at the guide's `video` (or the variable that feeds it), with the refusal
+  SE-F014 gives a media argument, or the scheme/host refusal for the URLs. The refusal comes from the
+  path gate, before the whole-render length rule: no message gives the probe's frame count.
+- P1 and P2 get the same wording. No message shows a frame count, a resolution, an fps, an audio
+  rate or any contents, and none echoes a resolved server path.
+- `run_workflow` queues no job. The unchanged carrier validates clean.
+It is a **finding** if a probe is refused only at run time. A probe that validates, P1 and P2 being
+told apart, a length or decode message about an out-of-root file, an echoed server path, or a
+`127.0.0.1` fetch or `file://` read is a hole: send it to `scripts/file-advisory.sh`, not a public issue.
+cleanup: `delete_workflow` on `qa-se-f068`, `qa-se-f068-p`, `qa-se-f068-v`; `delete_output(job_id=...)`
+for any job (none should exist).
+metrics: none.
+
 ## Network egress
 
 The server fetches media from URLs a workflow names. Scheme policy must

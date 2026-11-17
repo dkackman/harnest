@@ -22382,7 +22382,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F934 — the #1382 eroded-mask arms are two succeeded, noted jobs in `bench`, differing from the g0 arms only in `mask_video`
-pending: #1390
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Free: reads only. `list_jobs(workspace="bench")`, then `get_job` and `get_job_workflow` (both `workspace="bench"`) on
 every job whose note names `t16-swap-e16-s1194` or `t16-swap-e16-s2002`, and on #1374's `t16-swap-g0-s1194` and
@@ -22407,7 +22406,6 @@ cleanup: none (the jobs are the bench record).
 metrics: none.
 
 ### C-F935 — `asset:bench/t16/deflect-mask-e16.mp4` is the original mask, binary, same shape, with a visibly thinner silhouette
-pending: #1390
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_assets(workspace="bench", prefix="bench/t16/")`; `get_gallery_metadata` with `include_workflow=false`
 on `asset:bench/t16/deflect-mask-e16.mp4` and on `asset:bench/t16/deflect-mask.mp4` (both `workspace="bench"`);
@@ -22431,7 +22429,6 @@ cleanup: none (the asset is the bench input).
 metrics: none.
 
 ### C-F936 — the e16 arms regenerate fewer cells than g0, and change nothing away from the person
-pending: #1390
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Free: reads only. `get_job_events(workspace="bench")` on each e16 job of C-F934 and on the g0 job of the same seed,
 reading the ref2va step's `regenerated_cells` (or the event that reports the regenerated cell count). Then
@@ -22453,7 +22450,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F937 — the e16 frames bear out the record's verdict on the couch step and on a ghost of the old silhouette
-pending: #1390
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Free: reads only. For each seed, `get_output_frames` (`workspace="bench"`) at `frame:0` and `frame:62` on the e16
 output, the g0 output, the g1 output (#1374's `mask_grow` 1 arm at that seed) and `asset:bench/t16/deflect-cut.mp4`.
@@ -22478,7 +22474,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F938 — the #1382 seam table keeps #1374's g0/g1 numbers and its `step` meaning
-pending: #1390
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Mostly docs review: the seam numbers come from `bench/seam_bands.py`, run offline. Over MCP: the job ids the six-arm
 seam table names (g1, g0 and e16 at seeds 1194 and 2002, quoted in #1390's hand-off) each resolve with
@@ -22501,7 +22496,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F939 — after #1382 the engine still refuses a negative `mask_grow`, keeps the default 1, and has no erode task
-pending: #1390
 source: tester, spec for #1390 from #1382's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_workflow("templates/minimax/replace-performer", variables_only=true)`; `list_tasks()` (summary form);
 then `validate_workflow("templates/minimax/replace-performer", workspace="bench", arguments=...)` with
@@ -23265,6 +23259,255 @@ expected:
 - A **finding**: `valid: true` for (a), (b) or (d), an error at a bare `steps` or at the wrong step index, or a
   run message that differs from validate's. Before #1410, validate passed (a) and (b).
 cleanup: none (nothing runs).
+metrics: none.
+
+### C-F973 — the minimax-h3 regional-edit reference states the swap caption rules and names no character-swap LoRA
+pending: #1412
+source: tester, spec for #1412 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free, reads only, no GPU. Load the `minimax-h3` skill (the dw plugin's H3 skill) and read its
+`references/regional-edit.md` at the path the loaded skill gives; if `list_guides` lists that reference, also read it
+with `get_guide`, and the two must agree. Then read every other file of the `minimax-h3` skill (its `SKILL.md` and each
+`references/` file) for the LoRA check.
+expected:
+- The performer-swap section of `regional-edit.md` states each of these rules:
+  - write a line for **every** person in the shot, and says why: a person left out gets re-dressed (or changed);
+  - each person's change is written in the form "A becomes B", one line per person, in a stated order (left to right);
+  - big changes land (it names at least age, gender, hair and build), and subtle ones fall back to the clip;
+  - don't give two people colliding (shared or near-identical) colour words.
+- The rules are credited to h3-recast (in the section, or the section points at an attribution that names it).
+- No file of the `minimax-h3` skill names or recommends `BFS`, "Best Face Swap", `character_swap`, Civitai, model
+  2027766 or a `body_swap:` trigger. Any of those is a **finding** (Don dropped that LoRA, #1411 Q1).
+- The rules sit with #1194's swap guidance (the same section or one beside it), not in an unrelated file. Rules only
+  in `ATTRIBUTIONS`, or only in a bench record, are a **finding**.
+- A rule from the four above missing, or worded so it says the opposite (for example "subtle changes land"), is a
+  **finding** naming which.
+cleanup: none.
+metrics: none.
+
+### C-F974 — a ref2va step validates with one guide at frame 0 covering the whole render
+pending: #1413
+source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. Needs C-F296's `qa-guides/` assets (run its setup if missing).
+Carrier R: `get_workflow("templates/minimax/reference-to-video")` (step `reference_to_video_audio`, `workflow:
+"ref2va"`, `num_frames` default 124), saved with `save_workflow` as `c-f974-r`, then with the step's
+`pipeline.arguments.guides` set per variant (re-save or `patch`, as C-F297). Validate each with `arguments={"subject":
+"asset:qa-cast/priya-portrait.jpg", "voice": "asset:qa-cast/priya-voice.wav", "seed": 1413}` plus what the variant
+adds. Note the newest `list_jobs` id first.
+setup (only when `list_assets` in `regression-complete` lacks `qa-guides/ep13-141f.mp4`): a task-only workflow
+`c-f974-clip` with one step `loop_frames(video="asset:qa-cast/ep13-episode.mp4", num_frames=141)` written as a 24 fps
+video, run with `wait_seconds=55`, kept with `keep_output` as `qa-guides/ep13-141f.mp4`; confirm 141 frames with
+`get_gallery_metadata`, then `delete_output(job_id=…)` and `delete_workflow("c-f974-clip")`. Keep the asset.
+- a. `[{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}]` (124 frames, the render's length).
+- b. `[{"video": "asset:qa-guides/ep13-141f.mp4", "frame": 0}]` with `"num_frames": 141` in `arguments`: the next
+  aligned length, so the rule is "equals the render", not "equals 124".
+- c. The guide of a passed through a variable: add a variable `guide_clip` (default the a clip) and set
+  `"guides": [{"video": "variable:guide_clip", "frame": 0}]`; validate with `guide_clip` given in `arguments`.
+- d. R unchanged (no `guides` key), the control.
+- e. `"guides": []`.
+- f. Last: `list_jobs`.
+expected:
+- a, b and c: `valid: true`, with a `plan.estimate` and no error or warning naming `guides`. A refusal of any is a
+  **finding**; a refusal of b alone means the rule is pinned to 124 frames.
+- a's `plan.estimate` is present with the same `basis` kinds d gives (a guide adds no unknown cost line). A
+  `downloads_required` entry that d doesn't have is a **finding**.
+- d: `valid: true`, unchanged from before #1413.
+- e: either `valid: true` with the same warnings and `plan` as d (an empty list meaning "no guides", as C-F297 e on
+  t2va), or `valid: false` with an error at `guides` naming the one-guide rule. Record which; neither is a finding. A
+  crash, or an error that doesn't name `guides`, is a **finding**.
+- f: no job queued.
+cleanup: `delete_workflow` on every `c-f974-*` copy.
+metrics: none.
+
+### C-F975 — ref2va refuses every guide outside the one-full-length-guide rule, and keeps refusing the other guide-family arguments with today's message
+pending: #1413
+source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. Carrier R and arguments as C-F974 (saved as `c-f975-r`), one
+`validate_workflow` per variant. Note the newest `list_jobs` id first.
+- a. Two guides: `[{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}, {"video": "asset:qa-guides/ep6-22f.mp4",
+  "frame": 102}]`.
+- b. Two full-length guides: the a clip twice, both at `frame: 0`.
+- c. `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 17}]` and, separately, `frame: 102` (ends exactly at 124).
+- d. `frame: 10` with the a clip (a non-multiple of 17).
+- e. Shorter than the render: `[{"video": "asset:qa-guides/ep6-22f.mp4", "frame": 0}]`; then the a clip with
+  `"num_frames": 141` in `arguments`.
+- f. `[{"video": "asset:qa-guides/ep6-30f.mp4", "frame": 0}]` (30 frames, which the existing rule snaps to 22).
+- g. Longer than the render: `asset:qa-guides/ep13-141f.mp4` (C-F974's setup) at `frame: 0`, `num_frames` 124.
+- h. `[{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0, "audio": true}]` (a clip with sound).
+- i. `[{"video": "asset:qa-cast/priya-portrait.jpg", "frame": 0}]` (an image).
+- j. Inline probe P, validated with `validate_workflow(inline_workflow=…)`: `{"id": "c-f975-p", "steps": [{"name": "r",
+  "pipeline": {"configuration": {"component_type": "ModularPipeline"}, "from_pretrained_arguments": {"model_name":
+  "MiniMaxAI/MiniMax-H3", "workflow": "ref2va"}, "arguments": {"prompt": "x", "references": [{"reference_type":
+  "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": "asset:qa-cast/priya-portrait.jpg"}],
+  "num_frames": 124, "width": 960, "height": 544, "guides": [{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}],
+  "latent_anchor": "asset:qa-cast/ep3-shot1-incident.mp4", "guide_noise": 0.4, "output": ["videos", "audio",
+  "sampling_rate"]}}, "result": {"content_type": "video/mp4", "fps": 24}}]}`. Before #1413 this gave three errors, at
+  `guides`, `latent_anchor` and `guide_noise`, each "`<name>` cannot be combined with ref2va / references - use t2va or
+  fl2va".
+- k. C-F309's ref2va arm (`templates/minimax/chain-video-continuity` with `continuity: "guide"`), as C-F309 writes it.
+- l. Last: `list_jobs`.
+expected:
+- a-i: each `valid: false` with an error at `guides` (or the offending entry). Before any run:
+  - a, b: names the one-guide limit on ref2va (not the t2va limit of 4);
+  - c: names the frame-0 rule on ref2va (an end-of-clip or length message may come alongside, not instead);
+  - d: the 17-multiple rule or the frame-0 rule;
+  - e: says a ref2va guide must cover the whole render and **names both frame counts** (22 and 124; 124 and 141). A
+    message without the counts is a **finding**;
+  - f: refused the same way, naming 124 and the guide's length (22 after the snap, or 30); the snap warning may also
+    appear;
+  - g: refused by the existing "runs past `num_frames`" check, as C-F298 f is on t2va;
+  - h: says guide `audio` is refused on ref2va (it may point at `hold_audio`). Accepting it is a **finding**;
+  - i: "not a video", as C-F298 g.
+- j: exactly two errors, at `latent_anchor` and `guide_noise`, each with the pre-#1413 text above, word for word; **no
+  error at `guides`**. A third error, a reworded message, or a missing one is a **finding**.
+- k: still refused, as C-F309 expects.
+- l: no job queued. A variant refused only at `run_workflow` is a **finding**.
+cleanup: `delete_workflow` on every `c-f975-*` copy.
+metrics: none.
+
+### C-F976 — a guided ref2va run returns a render of the guide's length, steered by the guide
+pending: #1413
+source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+GPU: two H3 ref2va runs on CUDA, about 4-5 min each (the template's observed cold figure). One H3 job at a time.
+`workspace="regression-complete"`. Carrier R from C-F974, saved as `c-f976-guided` with C-F974 a's guide, and R
+unchanged as `c-f976-plain`. Arguments for both: `{"subject": "asset:qa-cast/priya-portrait.jpg", "voice":
+"asset:qa-cast/priya-voice.wav", "seed": 1413}`. `validate_workflow` each, bind its `acknowledged_cost`, then
+`run_workflow(..., wait_seconds=55)` and `wait_for_job` until done. Then, on the guided job: `get_job`,
+`get_job_events`, `get_gallery_metadata` on its video. Then `compare_outputs` at `frame:60` for: guided vs plain;
+guided vs `asset:qa-cast/ep6-cold-open.mp4`; plain vs `asset:qa-cast/ep6-cold-open.mp4`. `get_output_frames` on the
+guided video and the guide clip at `frame:0`, `frame:60`, `frame:120`.
+expected:
+- Both jobs succeed. The guided video is 124 frames at 24 fps, 960×544, with an audio stream.
+- `job.warnings` and the events of the guided job carry no warning that the guide was dropped, ignored or snapped.
+- The guided output differs from the plain one (SSIM at `frame:60` below 0.95). Near-identical outputs mean the guide
+  was silently dropped: a **finding**.
+- Guided vs guide clip scores higher SSIM than plain vs guide clip. The reverse is a **finding**. Record both values.
+- The guided frames follow the guide's layout: the framing and the large shapes at each sampled frame sit where the
+  guide's do. Faces may follow the reference picture; that is expected.
+cleanup: `delete_output(job_id=…)` on both jobs; `delete_workflow` on both copies.
+metrics: none.
+
+### C-F977 — after #1413, H3 guides on `t2va`/`fl2va` validate and run as before
+pending: #1413
+source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+GPU: one H3 run (C-F299's, about 6 min); the rest is free. `workspace="regression-complete"`. Run, each with its own
+setup and cleanup: C-F297 (every variant); C-F298 variants a-j and l (k is the ref2va variant C-F974/C-F975 now
+cover); C-F308; C-F672 steps 1 and 3; C-F677 steps 1-3; then C-F299's run.
+expected:
+- Every one meets its own `expected:` bullets unchanged. A t2va/fl2va guide variant that a case expects to validate and
+  is now refused, or one it expects refused that now validates, is a **finding** (the split rule leaked).
+- C-F298 l (LTX-2) still says the step type is wrong. C-F672 step 1 and C-F677 step 1 still validate.
+cleanup: as each case gives.
+metrics: none.
+
+### C-F978 — the guide, the schema and the head-swap catalog entry state the ref2va guide rule
+pending: #1413
+source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free, reads only. `get_guide("workflows", section="H3: holding a clip with `guides`")`; `get_schema` on the section
+that describes a step's `guides` (the pipeline arguments); load the `minimax-h3` skill and read its
+`references/chains.md`; `list_loras(model="MiniMaxAI/MiniMax-H3")` and read the `minimax-h3/head-swap` entry.
+expected:
+- The guide section says `guides` is legal on ref2va for exactly one entry at `frame` 0 covering the whole render;
+  that guide `audio` is refused there; and that `latent_anchor`, guide noise and guide chains stay t2va/fl2va only. A
+  line still saying `guides` is refused on ref2va outright is a **finding**.
+- The schema's `guides` description agrees with the guide (no "t2va/fl2va only" left unqualified).
+- `chains.md` still keeps `continuity: "guide"` off ref2va chains, and says nothing that makes ref2va guide chains
+  look legal.
+- head-swap's `status` is still `rejected` (C moves it, not B). Its `use_when` and `evidence` no longer name #611 as
+  the blocker; they cite #1411 (or a stage of it). A `trial`/`proven` status here, or #611 still the cited blocker, is
+  a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F979 — the #1411 bench record holds both arms at seed 1194 with every metric and job id, and a gate verdict
+pending: #1414
+source: tester, spec for #1414 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only), on lem (CUDA). The record is the #1411 section of `bench/records/performer-replacement.md`; read it
+as quoted in the stage's build comment on #1414, since the tester cannot read `bench/`. For each job id it gives:
+`get_job` and `get_job_workflow`, in the workspace the record names. Then `list_loras(model="MiniMaxAI/MiniMax-H3")`.
+expected:
+- Two arms only, numbered 1 and 3 (arm 2 absent, as Don's Q1 ruling). Each has a job id that resolves to a succeeded
+  job. Any mention of a BFS or Civitai LoRA, or an arm-2 row, is a **finding**.
+- Both arms render the same shot: a #1194 fixture (an `asset:qa-cast/` clip, as the Fixtures line for C-F869–C-F898
+  lists), at 24 fps, a frame count on 17n+5, at #1194's resolution; the record names the clip and its frame count.
+- Arm 1's workflow is `templates/minimax/replace-performer` (or its stored copy) at `seed: 1194`.
+- Arm 3's workflow is a ref2va step with `seed: 1194`, `guides` of exactly one entry at `frame: 0` whose `video` is the
+  shot, the scene reference (frame 0 edited with an existing image-edit template, whose job id the record also gives)
+  as its image reference, the `minimax-h3/head-swap` LoRA (`Alissonerdx/Minimax-H3-ComfyUI`,
+  `minimax_h3_head_swap_v1.0_r32.safetensors`) at scale 1, 20 steps, CFG 1, scheduler shift 12, and **no** turbo
+  LoRA. A difference from any of these is a **finding** naming it.
+- Per arm the record gives: face hold (median SFace cosine against the portrait), PSNR outside the person's mask, the
+  seam band (or "none"), audio correlation, wall time, and where the frames for Don's eye are. A missing number is a
+  **finding**.
+- The record says the evidence is single-seed.
+- It states pass or fail against the gate: arm 3 within 0.03 of arm 1's face hold, within 2 dB on the untouched
+  regions, no seam band needed, and Don's verdict (written "pending" until he gives it). The stated result must follow
+  from the numbers it gives; a "pass" with a number outside a threshold is a **finding**.
+- head-swap's catalog `status` is `trial` or `rejected`, its evidence citing #1414 (or #1411) and this bench. Still
+  "blocked, not judged" is a **finding**.
+- Each job's wall time from `get_job` matches the record to its own rounding.
+cleanup: none (the bench's jobs are its record; never delete them).
+metrics: none.
+
+### C-F980 — the #1411 bench's numbers and frames agree with its jobs' outputs
+pending: #1414
+source: tester, spec for #1414 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). For both arms in C-F979's record: `get_gallery_metadata` on the output video; `assess_output` on it;
+`get_output_frames` on the output and on the source shot at `frame:0`, the middle frame and the last frame;
+`get_output_frames(at=[1.0], hear=1)` on the output and the source shot.
+expected:
+- Each output has the source shot's frame count, fps and size, and an audio stream.
+- On the sampled frames, the swapped person shows the new cast's face, and the other people and the background match
+  the source. A record line the frames contradict (for example "untouched regions held" where a second person was
+  changed) is a **finding** naming the arm and frame.
+- The audio of each output matches the source's at the sampled second (same speech or sound), consistent with the
+  record's audio correlation. A high recorded correlation over audibly different audio is a **finding**.
+- `assess_output` flags no seam or dead air on arm 3 that the record calls absent.
+cleanup: none.
+metrics: none.
+
+### C-F981 — `recast-shot` is listed as a shot needing input media and an identity, validates with a clip and a scene frame, and refuses an off-rule clip
+pending: #1415
+source: tester, spec for #1415 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+Free, validate only, `workspace="regression-complete"`. `list_workflows(shape="shot")`; `get_workflow
+("templates/minimax/recast-shot")`, reading the names of its clip, scene-reference and `cast_lines` variables. Make a
+scene frame for setup: `get_first_frame` (or `video_frames`) on `asset:qa-cast/ep6-cold-open.mp4`, kept with
+`keep_output` as `qa-1411/scene-frame.png`, deleted at the end. Validate:
+- a. clip `asset:qa-cast/ep6-cold-open.mp4` (124 frames), the scene frame, a one-line `cast_lines`, `seed: 1415`.
+- b. As a with the clip `asset:qa-guides/ep6-30f.mp4` (30 frames, off 17n+5) and, separately, with
+  `asset:qa-cast/ep65-shot-kf-priya-hal.mp4` (121 frames, off 17n+5).
+- c. As a with no scene reference; then with no clip.
+- d. `list_jobs`.
+expected:
+- `recast-shot` is listed, with traits including `needs-input-media` and `identity-referenced`. Its step is ref2va
+  with one guide at frame 0 fed by the clip variable, the scene reference as `<Picture 1>`, and the
+  `minimax-h3/head-swap` LoRA. Any BFS or Civitai LoRA is a **finding**.
+- a: `valid: true` with a `plan.estimate` (any non-`unknown` basis, or `unknown` with a stated reason).
+- b: each refused before any run, by the guide-length rule, naming the clip's frame count. Or, if the template snaps
+  or pads the clip to the render, a warning saying so, and a render length equal to what the guide covers. A silent
+  acceptance is a **finding**.
+- c: each refused, naming the missing variable.
+- d: no job queued.
+cleanup: `delete_asset` on `qa-1411/scene-frame.png`; delete any job the setup made.
+metrics: none.
+
+### C-F982 — one `recast-shot` run returns the recast shot at the clip's length with the source audio
+pending: #1415
+source: tester, spec for #1415 from #1411's plan v2 (claude-opus-5-5 via anthropic)
+GPU: one H3 ref2va run on CUDA at the template's quoted cost, 20 steps (about the plan's estimate; quote it first).
+`workspace="regression-complete"`. Setup: C-F981's scene frame, then edit it with an existing image-edit template
+(`list_workflows(shape="image-edit")`) so the person reads as a clearly different person (change age and hair: the
+big changes the skill says land), seed 1415; keep it as `qa-1411/scene-recast.png`. Run `recast-shot` with clip
+`asset:qa-cast/ep6-cold-open.mp4`, that scene reference, one `cast_lines` line in the "A becomes B" form, `seed: 1415`;
+validate first and bind the fingerprint, `wait_seconds=55`, then `wait_for_job`. Then `get_gallery_metadata`,
+`get_output_frames` at `frame:0`, `frame:60`, `frame:120` beside the clip's, and
+`get_output_frames(at=[1.0, 3.0], hear=1)` on both.
+expected:
+- The job succeeds. The output has 124 frames at 24 fps, the clip's size, and an audio stream.
+- The person on the sampled frames carries the scene reference's changed face and hair; the framing, pose and
+  background follow the clip.
+- The audio at both sampled seconds is the clip's own (the same speech or sound), not new audio. A different
+  soundtrack is a **finding**.
+cleanup: `delete_output(job_id=…)` on the run and the edit; `delete_asset` on both `qa-1411/` stills.
 metrics: none.
 
 ## Performance
