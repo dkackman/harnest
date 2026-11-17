@@ -21691,12 +21691,12 @@ metrics: none.
 ### C-F897 — the prep template's `track` option returns per-person masks and leaves the cut list unchanged
 pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Run `replace-performer-cuts` on `asset:qa-cast/priya-hal-two-shot.mp4` twice, once with `track` on and once off.
+Run `replace-performer-cuts` on `asset:qa-cast/priya-hal-two-shot.mp4` twice, once with `track: 2` and once with `track: 0`.
 Validate each first.
 expected:
 - Both give the same cut list: one cut, 121 frames, `render_frames` 124.
-- With `track` off: one whole-clip mask covering both people.
-- With `track` on: `person-1` and `person-2` masks (and the contact sheet), matching C-F893's.
+- `track: 0`: one whole-clip mask covering both people.
+- `track: 2`: `person-1` and `person-2` masks (and the contact sheet), matching C-F893's.
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
