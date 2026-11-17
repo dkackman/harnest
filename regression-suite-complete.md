@@ -23262,7 +23262,6 @@ cleanup: none (nothing runs).
 metrics: none.
 
 ### C-F973 — the minimax-h3 regional-edit reference states the swap caption rules and names no character-swap LoRA
-pending: #1412
 source: tester, spec for #1412 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 Free, reads only, no GPU. Load the `minimax-h3` skill (the dw plugin's H3 skill) and read its
 `references/regional-edit.md` at the path the loaded skill gives; if `list_guides` lists that reference, also read it
