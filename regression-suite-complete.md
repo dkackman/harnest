@@ -20149,7 +20149,6 @@ cleanup: none (the bench jobs are Don's evidence for Q3; never delete them from 
 metrics: none.
 
 ### C-F811 — the `minimax-h3` skill's Pika reference and the doc carve-outs say what the plan fixes
-pending: #1344
 source: tester, spec for #1344 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free. Load `dw:minimax-h3` with the `Skill` tool and read its `references/pika-flex.md` (the plugin tree follows
 the skill). Then `get_guide("acceleration")` and `get_guide("workflows")`, grepping their sections for "passes",
@@ -20169,7 +20168,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F812 — a cold driving session asked for a fast single reference clip picks the template Q3 named, with no shift or steps
-pending: #1344
 source: tester, spec for #1344 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free to decide, then validate only. A cold drill: work only from the skill, as a driving session with no knowledge of
 this case would. Load `dw:minimax-h3` (and the references it points to), and follow its routing for the ask
@@ -20188,7 +20186,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F813 — a cold driving session asked for a chain, a long take, or a fix to an existing clip does not pick Pika
-pending: #1344
 source: tester, spec for #1344 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free to decide. The same cold drill as C-F812, once per ask, with the choice written down before reading on:
 - (a) "a 30 s scene of Priya and Hal arguing, as one continuous chained sequence, fast";
