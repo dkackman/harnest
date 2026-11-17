@@ -10430,4 +10430,292 @@ warm worker.
 cleanup: `delete_output(job_id=...)` for all three jobs.
 metrics: none.
 
+### M-F404 — MiniMax-H3-Image lists as two catalog templates: `text-to-image` under `image`, `multi-reference` under `image-edit` with `needs-input-media`, both costed, with no step, guidance, negative or area variable
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, diffusers ≥ 0.43), templates
+`templates/minimax-h3-image/text-to-image` and `templates/minimax-h3-image/multi-reference`. lem (cuda), workspace
+`default`. **Free**: catalog reads only.
+Steps:
+1. `list_workflows(shape="image")`, `list_workflows(shape="image-edit")`,
+   `list_workflows(shape="image-edit", traits="needs-input-media")`.
+2. `list_workflows(include_models=true)`.
+expected:
+- `shape="image"` lists `templates/minimax-h3-image/text-to-image` and not `…/multi-reference`. `shape="image-edit"`
+  lists `templates/minimax-h3-image/multi-reference` (also under the `needs-input-media` filter) and not
+  `…/text-to-image`. The edit's `traits` include `needs-input-media`. The folder is `minimax-h3-image/`, not under `minimax/`.
+- Both entries carry a non-null `cost` with an entry `device: cuda`, `vram_gb: 24` and a positive `minutes` (the plan
+  gives t2i ~2.0, a measured figure, one decimal). A `null` cost, or one on a device other than cuda, fails.
+- `variable_names`: t2i includes `prompt`, `width`, `height`, `seed`, `weights_dtype`; the edit includes `images`, `prompt`
+  and `seed`. **Neither** includes `num_inference_steps`, `guidance_scale`, `negative_prompt` or `min_generation_area`.
+- Where the entry has `constraints`, `width` and `height` show a multiple-of-32 rule.
+- Step 2 includes a `models/minimax-h3-image` entry (the plan's `workflows/models/minimax-h3-image.json`).
+- No `P-H3-Image` or `MiniMax-H3-Image-PE` entry exists anywhere in the catalog.
+It is a **finding** if either template is missing or under the other shape, the edit lacks `needs-input-media`, a cost is
+missing or not cuda/24, a forbidden variable is exposed, or the models entry is missing.
+cleanup: none.
+metrics: none.
+
+### M-F405 — each MiniMax-H3-Image template's text states the 64 GB warm floor and the ~120 GB cold first run, names the `<Picture N>` convention, and names no prompt enhancer
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image, both `templates/minimax-h3-image/` templates. lem, workspace `default`. **Free**: reads.
+Steps: `get_workflow` on `templates/minimax-h3-image/text-to-image` and on `templates/minimax-h3-image/multi-reference`.
+expected:
+- Each description names a **64 GB** host-RAM floor (warm runs) **and** that a cold first run on a host without the
+  quantized cache needs **about 120 GB** of host RAM (Don's Q1 addition). Either number missing from either template fails.
+- Each definition declares `host_ram_gb: 64` and a `cost` (as M-F404). The edit declares `"shape": "image-edit"` and
+  `"traits"` containing `"needs-input-media"`.
+- The text encoder is loaded from **`MiniMaxAI/MiniMax-H3`** (cache sharing with H3 video), not from the H3-Image repo.
+  `weights_dtype` defaults to `int8`. Default `width`/`height` are **2048**. The t2i carries recommended sizes as
+  `presets` that include 2048x2048 and stay within the vendor's 5472x3072.
+- The edit's description says references are named one-based **`<Picture 1>`, `<Picture 2>`…** in the prompt, and that
+  Klein's are zero-based `<ref_image_0>`. Its `images` variable is a list.
+- Neither description nor definition names `MiniMax-H3-Image-PE`, `trust_remote_code`, `custom_pipeline` or
+  `P-H3-Image`, except as an explicit "no PE" statement. Neither sets `num_inference_steps`, `guidance_scale`,
+  `negative_prompt` or `min_generation_area` as a variable, and no step passes the first three at all (the pipeline
+  is six fixed steps, guidance-distilled; rule 2 keeps `min_generation_area` at the pipeline's default).
+- The text says the family is CUDA-only.
+It is a **finding** if a description lacks the 64 GB or ~120 GB figure, the encoder isn't from `MiniMaxAI/MiniMax-H3`,
+the `<Picture N>` convention is missing or zero-based, or a PE / remote-code key appears.
+cleanup: none.
+metrics: none.
+
+### M-F406 — both MiniMax-H3-Image templates validate clean on lem: no download, the 64 GB host declaration in the plan, no step/guidance/remote-code warning
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image, both templates. lem (cuda, RTX 3090s, the 64 GiB H3-Image cache and H3's encoder
+already present). Workspace `bench` (it holds `asset:parhelion/kf-open.png`; `asset:cast/estela.jpg` and
+`asset:cast/aurelio.jpg` are in the shared `common/assets`). **Free**: validate only. Never on any host but lem (rule 3).
+Steps:
+1. `validate_workflow(name="templates/minimax-h3-image/text-to-image", workspace="bench")` at defaults.
+2. `validate_workflow(name="templates/minimax-h3-image/multi-reference", workspace="bench")` at defaults.
+3. Step 2 again with `arguments={"images": ["asset:cast/estela.jpg", "asset:cast/aurelio.jpg",
+   "asset:parhelion/kf-open.png"], "prompt": "<M-F408's prompt>", "seed": 1317}`.
+4. Step 2 again with a list of one: `images: ["asset:cast/estela.jpg"]` and a prompt naming only `<Picture 1>`.
+expected:
+- All four: `valid: true`, `errors: []`.
+- `plan.downloads_required` is **`[]`** in every one. Any entry (above all one from `MiniMaxAI/MiniMax-H3-Image` or its
+  `text_encoder/`) fails, and no run may follow it.
+- `plan.host_memory` is present with basis `declared` (or the observed figure where runs exist) and `projected_mb` at
+  least **65,536** (64 GB); for `declared` it is 64 GB plus at most the server's ~10% margin (≤ ~72,100).
+- `plan.estimate` is present with a positive `minutes` (basis `catalog` from the template's `cost`, or `observed`).
+- No warning mentions `num_inference_steps`, steps, `guidance_scale`, guidance, `negative_prompt` or
+  `trust_remote_code`. A no-seed warning must not appear (both templates declare `seed`). List any other warning.
+- Step 4 (a single-image edit) is clean: one template covers a list of one.
+It is a **finding** if any validates invalid, any shows a download on lem, `host_memory` is missing or below 64 GB, or
+a step/guidance/remote-code warning appears. The small-host refusal itself is not shown here (rule 3: it would need
+another host); its unit test is outside the tester's fence.
+cleanup: none.
+metrics: none.
+
+### M-F407 — MiniMax-H3-Image validate refuses an off-grid size and the variables the pipeline doesn't take, and accepts the grid's edges
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image, both templates. lem, workspace `bench`. **Free**: validate only; nothing is queued.
+Steps (each a separate `validate_workflow(name=..., workspace="bench", arguments=...)`; the edit also gets M-F406 step
+3's `images`/`prompt`):
+1. t2i `width: 2050`; t2i `height: 2050`; t2i `width: 2047`; edit `width: 2050`.
+2. t2i `width: 2080, height: 2048`; t2i `width: 5472, height: 3072` (the vendor's largest recommended size).
+3. On **each** template, separately: `num_inference_steps: 8`; `negative_prompt: "blurry"`; `guidance_scale: 4.0`;
+   `min_generation_area: 1048576`.
+4. Edit with `images: []`.
+expected:
+- Step 1: each `valid: false` with an error at `arguments.width` (or `arguments.height`) naming the multiple-of-32 rule.
+  It is refused at validate, before any load. A *warning* that the value rounds to 2048/2080 does not meet the plan
+  (it promises a refusal).
+- Step 2: both `valid: true` with no size error (2080 and 5472/3072 are on the 32 grid).
+- Step 3: each `valid: false` with an error at `arguments.<name>` saying the workflow declares no such variable. All
+  eight (four names × two templates) are refused.
+- Step 4: not clean. Either an error or a warning at `arguments.images` that the list is empty. The plan's list is 1..N, so
+  an empty list must not validate silently. (The plan builds no upper-bound or `<Picture N>` numbering check, so a
+  long list or a mis-numbered prompt isn't tested here.)
+It is a **finding** if an off-grid size validates clean, an on-grid size is refused, any forbidden variable is
+accepted, or an empty `images` passes with no message.
+cleanup: none.
+metrics: none.
+
+### M-F408 — a MiniMax-H3-Image text-to-image at defaults completes on lem at 2048x2048, coherent, within 10% of its catalog cost, with no download and no H3 video insert engaged
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax-h3-image/text-to-image` (MiniMax-H3-Image, int8, offloaded). lem only, one 24 GB card,
+quantized cache present (warm in the cache sense: no cold quantize). Workspace `bench`. About 2–3 GPU-minutes.
+Steps:
+1. `validate_workflow` as M-F406 step 1 with `arguments={"prompt": "A studio portrait of a woman in her thirties with
+   short dark curly hair and a green wool coat, soft window light from the left, plain grey backdrop, looking at the
+   camera, photographic, sharp focus.", "seed": 1317}`. Bind its `acknowledged_cost`. Stop if `downloads_required`
+   isn't `[]`.
+2. `run_workflow(name="templates/minimax-h3-image/text-to-image", workspace="bench", arguments=<same>,
+   acknowledged_cost=<bound>, note="M-F408", wait_seconds=55)`, then `wait_for_job` until done.
+3. `get_job`, `get_job_events`, `get_output_image`.
+expected:
+- `succeeded`, one image, **2048x2048**: the described woman, coherent, with no tiling seams, banding or noise field.
+- Wall time (`started_at`–`finished_at`) is within **10%** of the template's `cost.minutes`. If the worker had to load the
+  pipeline, that load is part of the measured cost; the 10% bar is against the cost as the template states it.
+- No download event. No event or warning naming `trust_remote_code`, steps or guidance.
+- No H3 video insert engages: no event from hold, mask, anchor, guides, windows, sparse attention or TST (the
+  insert/class pin the plan adds keeps them off; here it's observable as their absence).
+- No out-of-memory error. If `get_memory` is read right after, the card's peak is under 24 GB.
+It is a **finding** if the job fails, the image is the wrong size or incoherent, the time misses by more than 10%, a
+download happens, or an H3 insert event appears.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: wall minutes → `regression-perf/M-F408.jsonl` (seed it on the first passing run).
+
+### M-F409 — a MiniMax-H3-Image three-reference edit completes on lem, keeps the `<Picture 1>` face, and is within 10% of its catalog cost
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax-h3-image/multi-reference` (MiniMax-H3-Image edit, int8). lem only, workspace `bench`.
+References (plan v3): `asset:cast/estela.jpg` (`<Picture 1>`, shared `common/assets`), `asset:cast/aurelio.jpg`
+(`<Picture 2>`, shared) and `asset:parhelion/kf-open.png` (`<Picture 3>`, in `bench`). About 3–4 GPU-minutes.
+Steps:
+1. `validate_workflow` with `arguments={"images": ["asset:cast/estela.jpg", "asset:cast/aurelio.jpg",
+   "asset:parhelion/kf-open.png"], "prompt": "The woman from <Picture 1> and the man from <Picture 2> stand side by side
+   in the setting of <Picture 3>, both facing the camera, waist-up, with the lighting and colour grade of <Picture 3>.
+   Keep the woman's face, hair and age exactly as in <Picture 1> and the man's as in <Picture 2>.", "seed": 1317}`.
+   Bind `acknowledged_cost`; stop if `downloads_required` isn't `[]`.
+2. `run_workflow` the same with `note="M-F409"`, `wait_seconds=55`, then `wait_for_job`.
+3. `get_job`, `get_job_events`, `get_output_image` on the still, and `get_output_frames` (or `get_output_image` via a
+   job output) on the `cast/estela.jpg` reference for comparison.
+expected:
+- `succeeded`, one still at the template's default size (2048x2048).
+- The woman is recognisably `cast/estela.jpg` (face shape, hair, apparent age); the man is recognisably
+  `cast/aurelio.jpg`; the setting reads as `kf-open.png`. An aged, swapped or merged face fails.
+- Wall time within **10%** of the edit template's `cost.minutes`.
+- No download event, no H3 video insert event, no OOM (as M-F408).
+It is a **finding** if the job fails, a reference is lost or the `<Picture 1>` face changes, the time misses by more
+than 10%, or a download happens.
+cleanup: `delete_output(job_id=<the job>)`.
+metrics: wall minutes → `regression-perf/M-F409.jsonl` (seed it on the first passing run).
+
+### M-F410 — adding MiniMax-H3-Image leaves Klein's and H3 video's templates as they were, and B adds no skill
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: FLUX 3 Klein (`templates/flux3/*`), MiniMax H3 `templates/minimax/image-to-video`. lem, workspace
+`default`. **Free**: catalog reads and validate.
+Steps:
+1. `list_workflows()` (all shapes) and keep every `templates/flux3/` name; `validate_workflow(name=<each>,
+   workspace="default")` at defaults.
+2. `list_workflows(shape="shot")` (or the shape `image-to-video` lists under today) and
+   `validate_workflow(name="templates/minimax/image-to-video", workspace="default")` at defaults.
+3. While #1425 is still open: the loaded `dw` plugin skills.
+expected:
+- Every `templates/flux3/` template is still listed with the same shape and traits, and validates `valid: true` with no
+  new error. `templates/flux3/multi-reference` and `image-edit` are still `image-edit` + `composes-workflows` +
+  `needs-input-media`.
+- `templates/minimax/image-to-video` validates `valid: true`, `downloads_required: []`, and its listing is unchanged.
+  Nothing in its plan names `MiniMaxAI/MiniMax-H3-Image`.
+- Step 3: no `dw:minimax-h3-image` skill yet, and the `minimax-h3`, `storyboard` and `cinematography` skill descriptions
+  still name FLUX 3 Klein for stills (rule 5: Klein stays the default until C ships). Skip this bullet once #1425 has merged.
+It is a **finding** if a Klein or H3 video template's listing or validation changes, or a skill routes to H3-Image
+before #1425.
+cleanup: none.
+metrics: none.
+
+### M-F411 — the `dw:minimax-h3-image` skill exists and carries the trigger, the host check, the hard rules, the vendor prompt pointer and the two-job route into H3 video
+pending: #1425
+source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax-H3-Image skill in the `dw` plugin (loaded from `develop`), plus the catalog it names. **Free**:
+skill reads and catalog reads.
+Steps:
+1. The loaded skill list: read `dw:minimax-h3-image`'s description. Invoke the skill (`Skill`) and read its text.
+2. `list_workflows(shape="image")`, `list_workflows(shape="image-edit")` and `list_workflows(shape="shot")`; check every
+   template name the skill cites resolves.
+expected:
+- The description triggers on a cast still or keyframe that will feed MiniMax-H3 video, and on a multi-reference edit
+  at high resolution. It does **not** claim plain stills or storyboards.
+- The text says: call `get_server_info` first; use H3-Image only on CUDA with ≥ ~70 GB host RAM (the gate refuses
+  below); fall back to FLUX 3 Klein otherwise.
+- The hard rules: 64 GB host RAM warm, ~120 GB on a cold first run (117 GB measured); 1024 is no faster than 2048, so
+  don't lower the size to save time; CUDA-only; no prompt enhancer.
+- Numbers: 6 fixed steps (no step count, guidance or negative prompt to set), the 32 size grid, one-based `<Picture N>`.
+- The prompt pointer: MiniMax's own guidance, long complete descriptions used verbatim, no PE.
+- The route: two jobs. Make the still, look at it, then run `templates/minimax/image-to-video` (or
+  `templates/minimax/first-and-last-frame`) with `image: output:<still>`. No chained template is offered.
+- Failure modes: the ~38-minute first run, and host RAM. It warns not to run H3-Image beside another host-heavy job.
+- Every template the skill names is listed in step 2.
+It is a **finding** if the skill is missing, its trigger covers plain stills or storyboards, a hard rule or the host
+check is missing, a number contradicts M-F404–M-F407, or it names a template that doesn't resolve.
+cleanup: none.
+metrics: none.
+
+### M-F412 — routing text: H3 keyframes and cast stills for H3 go to H3-Image on a qualifying host, board sheets and everything else stay on Klein
+pending: #1425
+source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw` plugin skills `minimax-h3`, `storyboard`, `cinematography`, `long-form`, `flux3-klein`, and the
+workflows guide. **Free**: skill reads and guide reads.
+Steps:
+1. Invoke `dw:minimax-h3`, `dw:storyboard`, `dw:cinematography`, `dw:flux3-klein` and read each; read `dw:long-form`'s
+   references where it names a still for an H3 clip.
+2. `list_guides`, then `get_guide("workflows", section=<the portrait-route section>)`.
+expected:
+- `minimax-h3`: a keyframe or cast source for an H3 clip comes from H3-Image when the host qualifies (CUDA, ≥ ~70 GB host
+  RAM), Klein otherwise.
+- `storyboard`: cast stills that will become H3 keyframes go to H3-Image; board sheets stay on Klein.
+- `cinematography`: its description and text no longer say "FLUX 3 Klein stills only". It lists a MiniMax-H3-Image
+  compile row, and the compile reference for it has shot-size and camera-move tables.
+- `flux3-klein`: its description still covers a plain still, an edit and multi-reference with no H3 video in it
+  (unchanged trigger).
+- `long-form`: only lines naming a still for an H3 clip mention H3-Image. LTX-2.5 and Kandinsky keyframes still name Klein.
+- The workflows guide's portrait route names the H3-Image alternative for a still that feeds H3 video.
+It is a **finding** if any skill routes boards, LTX-2.5 or Kandinsky keyframes, or plain stills to H3-Image, drops the
+host condition, or leaves the old "Klein stills only" sentence.
+cleanup: none.
+metrics: none.
+
+### M-F413 — cold drill: "a portrait still of a new character, then a 5-second MiniMax-H3 clip of her turning to camera" routes the still to H3-Image, quotes cost and host floor, looks, then runs H3 i2v with `output:`
+pending: #1425
+source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax-h3-image/text-to-image` → `templates/minimax/image-to-video`. lem only (rule 3), the
+drill's own workspace. About 10 GPU-minutes, run by the drill session. The tester reads the drill transcript and the
+access-log lines as posted on #1425; it never reaches the box for them.
+Steps:
+1. Read the drill transcript and access-log excerpt on #1425 (the hand-off names the drill's workspace and job ids).
+2. `list_jobs(workspace=<drill workspace>)`; `get_job_workflow` on the still job and the video job; `get_job` on both.
+3. `get_output_image` on the still; `get_gallery_metadata` on the clip.
+expected:
+- The session was fresh (no earlier turns) and given exactly the prompt above, with the plugin loaded.
+- Its first dw calls include `get_server_info` (host check) before it picks a family.
+- The still job runs `templates/minimax-h3-image/text-to-image` (not Klein). Before `run_workflow`, the transcript shows a
+  `validate_workflow` and a reply to the user quoting the cost **and** the 64 GB host-RAM floor (the ~120 GB cold note
+  too, or a statement that the cache is warm).
+- After the still finishes and **before** the video job is queued, the session calls `get_output_image` on it (access
+  log order, or `created_at` versus the call's time).
+- The video job runs `templates/minimax/image-to-video` with `image` an `output:` reference to the still job's file. The
+  clip is `succeeded`, about 5 s (`duration_seconds` 4.5–5.5), with audio.
+- Neither job downloads anything. Every job ran on lem.
+It is a **finding** if the still goes to Klein, the cost or host floor isn't quoted before the run, the video is queued
+before the still was looked at, the video's `image` isn't an `output:` of the still, or anything ran or downloaded off lem.
+cleanup: the drill's jobs are the record; leave them until #1425 closes, then `delete_output(job_id=...)` on both.
+metrics: none.
+
+### M-F414 — cold drill control: the same character asked as "a storyboard of six boards" stays on FLUX 3 Klein
+pending: #1425
+source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `storyboard` route on FLUX 3 Klein. lem only. Read as in M-F413.
+Steps: as M-F413 steps 1–2, for the control drill (a fresh session, same character, asking for a storyboard of six boards).
+expected:
+- Every image job the session ran is a `templates/flux3/` template (or a Klein inline workflow); none runs
+  `templates/minimax-h3-image/…`.
+- Six boards come out (one image-set of six, or six stills).
+- If the session made a cast still that it says will become an H3 keyframe, that one still may go to H3-Image. The board
+  sheets themselves may not.
+It is a **finding** if a board sheet runs on H3-Image, or the control wasn't run in a fresh session.
+cleanup: as M-F413.
+metrics: none.
+
+### M-F415 — a plain stills request with no H3 video in it still routes to FLUX 3 Klein
+pending: #1425
+source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
+Model/pipeline: `flux3-klein` and `minimax-h3-image` skill triggers. **Free** for the static read; a drill if one was run.
+Steps:
+1. Compare the loaded descriptions of `dw:flux3-klein` and `dw:minimax-h3-image`.
+2. If #1425's hand-off includes a plain-stills drill (e.g. "a picture of a red fox in snow"), read it as in M-F413.
+expected:
+- Step 1: a request for a still with no H3 video and no high-resolution multi-reference edit matches `flux3-klein`'s
+  description and not `minimax-h3-image`'s.
+- Step 2 (when run): the session loads `dw:flux3-klein` and runs a `templates/flux3/` template; no H3-Image job.
+It is a **finding** if `minimax-h3-image`'s trigger covers plain stills, or a plain-stills drill runs on H3-Image.
+cleanup: as M-F413 if a drill ran; else none.
+metrics: none.
+
 ## Performance

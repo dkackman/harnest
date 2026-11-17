@@ -22776,7 +22776,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F956 — the #1399 bench's arms are in `probe-1399`, finished, noted, on their own partition, one H3 job at a time
-pending: #1403
 source: tester, spec for #1403 from #1399's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). The bench's record is the `## #1399 turbo version vs burn` section the stage writes; read it as
 quoted in the stage's build comment on #1403 (the tester cannot read `bench/records/`). Arms: A1 =
@@ -22808,7 +22807,6 @@ cleanup: none (the bench's jobs are its record; never delete them).
 metrics: none.
 
 ### C-F957 — the #1399 record's job ids, times, steps and diffusers state agree with the server, and its reading keeps to its controls
-pending: #1403
 source: tester, spec for #1403 from #1399's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). Read the record as in C-F956. For every job id it names (A1, B1, C if run, and the controls
 `5fa5a09b083f`, `fecc614dc513`): `get_job(job_id)` in the workspace the record gives. Then `get_diffusers_state()`.
@@ -22836,7 +22834,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F958 — the #1399 record's detail and seam numbers reproduce from the job's own output
-pending: #1403
 source: tester, spec for #1403 from #1399's plan v2 (claude-opus-5-5 via anthropic)
 Free (CPU analysis on existing outputs; validate any tool that asks for `acknowledged_cost` first and bind it).
 Pick B1 (or A1 if B1 is absent) from the record. Workspace `probe-1399`.
@@ -22855,7 +22852,6 @@ cleanup: none (analysis writes nothing to keep; if a tool did write a file, `del
 metrics: none.
 
 ### C-F959 — a turbo file the #1399 bench promotes is a `trial` catalog LoRA on its own partition, and only then
-pending: #1403
 source: tester, spec for #1403 from #1399's plan v2 (claude-opus-5-5 via anthropic)
 Free, workspace `regression-complete`. `list_loras` (filtered to MiniMax H3 if it filters), and read the record's
 reading (C-F957) for which file, if any, met the bar.
@@ -22877,7 +22873,6 @@ cleanup: none (validates only).
 metrics: none.
 
 ### C-F960 — the #1399 bench changed no partition rule: ref2v v1.1 on `chained-segments` is still refused, and both new files validate on their own chain
-pending: #1403
 source: tester, spec for #1403 from #1399's plan v2 (claude-opus-5-5 via anthropic)
 Free, **validate only**, workspace `regression-complete`, whether or not any catalog entry was added. LoRA repo
 `lora_model_name: "lightx2v/Minimax-h3-Turbo"`, seed 42, other required arguments filled from Fixtures
@@ -23554,7 +23549,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F989 — the #1418 face encode floor record's job ids resolve, and each arm reads the form the record says
-pending: #1420
 source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). Read the stage A build comment on #1420 and what it quotes from `bench/records/face-encode-floor.md`
 (+ `.json`): per clip, the four arms FM/RP, FM/RJ, FF/RP and FF/RJ with their job ids, and the workspace they ran in.
@@ -23577,7 +23571,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F990 — a file-form arm of the #1418 floor record re-measures to the recorded median and min
-pending: #1420
 source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 CPU, no GPU model. Pick one FF/RP arm and one FF/RJ arm from C-F989's record (any clip). For each, take its exact
 `video` and `reference` arguments from `get_job_workflow`, and run a one-step inline workflow
@@ -23595,7 +23588,6 @@ cleanup: `delete_output(job_id=…)` for each re-measure job.
 metrics: none.
 
 ### C-F991 — the #1418 floor is the maximum of the tabulated per-pair deltas, with both trigger lines stated
-pending: #1420
 source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 Free (arithmetic on the record as quoted in the #1420 build comment, cross-checked against `get_output_text` on any
 two arms' jobs).
@@ -23618,7 +23610,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F992 — the #1418 floor counts only arm pairs that sampled the same frames; a faceless arm is excluded, not scored 0
-pending: #1420
 source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). For every arm job in C-F989's record, read `get_output_text` (or `get_job`) for
 `frames_sampled`, `shots_source` and `num_frames` (or the field the task reports for the frame count).
@@ -23636,7 +23627,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F993 — the #1418 repeat runs give a 0.000 gap or the gap is folded into the floor, and the floor is called a lower bound
-pending: #1420
 source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). From the record as quoted on #1420: the 2 repeat runs (same input, a fresh inline workflow id),
 their job ids and their originals. `get_job_workflow` on each repeat and its original; `get_output_text` on both.
@@ -23657,7 +23647,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F994 — `analyze_face_drift` on in-memory frames and an in-memory picture reports `scored_from` frames/picture, no mixed note
-pending: #1421
 source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 CPU. `workspace="regression-complete"`. One inline workflow, three steps:
 1. `video_frames` on `asset:qa-cast/ep63-shot-ltx-priya.mp4` (Priya, LTX-2.5).
@@ -23678,7 +23667,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F995 — `analyze_face_drift` on stored files reports `scored_from` file/file, for `output:` and `asset:` alike
-pending: #1421
 source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 CPU. `workspace="regression-complete"`. Needs a saved mp4 from a dw job: use C-F994's `video_frames` job output
 (run C-F994 first and delete after), or run a one-step `trim_video` of `asset:qa-cast/ep63-shot-ltx-priya.mp4`
@@ -23693,7 +23681,6 @@ cleanup: `delete_output(job_id=…)` for each job, and the setup job's.
 metrics: none.
 
 ### C-F996 — a mixed-form `analyze_face_drift` pair reports each half and a note quoting the #1418 floor, in both directions
-pending: #1421
 source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 CPU. `workspace="regression-complete"`. Needs #1420's record (C-F991) for the floor value. Validate and run each:
 1. Frames vs file: steps `video_frames` on `asset:qa-cast/ep63-shot-ltx-priya.mp4`, then `analyze_face_drift` with
@@ -23711,7 +23698,6 @@ cleanup: `delete_output(job_id=…)` for each job.
 metrics: none.
 
 ### C-F997 — `scored_from` is additive: same measurements on the same input, the old keys unchanged, refusals unchanged
-pending: #1421
 source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 CPU. `workspace="regression-complete"`. Validate each; run the accepted ones.
 1. Run C-F995 arm 2 (`asset:` clip vs `asset:` reference) twice.
@@ -23736,7 +23722,6 @@ cleanup: `delete_output(job_id=…)` for each job, the `qr_code` setup job's inc
 metrics: none.
 
 ### C-F998 — the docs carry `scored_from`, the #1418 floor, and the `face_drop` base's form on fresh vs resumed chains
-pending: #1421
 source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_guides`, then `get_guide` on the tasks doc, section `analyze_face_drift`; `get_guide("workflows", …)` on
 the section holding the chain check's `face_drop` / `face_drop_max` row; `get_workflow("face-drift-check")`;
