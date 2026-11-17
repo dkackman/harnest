@@ -10717,4 +10717,18 @@ It is a **finding** if `minimax-h3-image`'s trigger covers plain stills, or a pl
 cleanup: as M-F413 if a drill ran; else none.
 metrics: none.
 
+### M-F416 — an H3 ref2va copy with a `guides` clip is quoted for the guide
+source: tester, verified in #1426 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` (`templates/minimax/reference-to-video`, whose `cost` entry declares `guide_factor`). lem (cuda). **Free**: validate only.
+Steps (workspace `default`, `arguments: {"seed": 42}`). Use an inline copy of `templates/minimax/reference-to-video` at its defaults (960×544, 124 frames, 9 steps):
+1. `validate_workflow` with `steps[0].pipeline.arguments.guides: [{"video": "asset:qa-cast/ep6-cold-open.mp4", "frame": 0}]`.
+2. `validate_workflow` on the same copy with no `guides`, or with `guides: [{"video": null, "frame": 0}]`.
+expected:
+- Step 1's `plan.estimate.minutes` is at least 1.8× step 2's.
+- Step 1's `estimate.scaled` names the guides (`guides on 1 of 1 pipeline steps vs 0 of 1`).
+- Step 2 has no guide text in `scaled`. A null-`video` entry is not counted as a guide.
+It is a **finding** if a guided copy is quoted at the unguided figure. Before #1426 it was quoted at 4.2 min and ran 11.4 min.
+cleanup: none.
+metrics: none.
+
 ## Performance
