@@ -1936,7 +1936,6 @@ environment variable's value, or a `TypeError` about arguments, because the name
 cleanup: none (validation only).
 
 ### SE-F066 — a Pika adapter `weight_name` with a subfolder is held inside the repo
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Stage B puts a subfolder into a LoRA `weight_name` (`fl2va/adapter.safetensors`, `ref2va/adapter.safetensors`) in
 the `Pika-Labs/Pika-H3-Flex` repo. That loosens the bare-filename shape SE-F050 probes, so the new shape has to stay

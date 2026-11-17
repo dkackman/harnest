@@ -19943,7 +19943,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F800 — the three `pika-h3/` templates are listed, and carry the plan's fixed shape
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free. `list_workflows(shape="shot")`, then `get_workflow` (full) on each of `templates/pika-h3/text-to-video`,
 `templates/pika-h3/first-and-last-frame` and `templates/pika-h3/reference-to-video`.
@@ -19967,7 +19966,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F801 — each `pika-h3/` template validates clean, and its quote is six passes, not a default
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**, workspace `regression-complete`. For each of the three templates,
 `validate_workflow(name=..., arguments={"seed": 42, "width": 1344, "height": 768, "num_frames": 124})`, plus the
@@ -19988,7 +19986,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F802 — the `pika-h3/` bounds: frame count, size, and the arguments the sampler doesn't take
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**. Carrier: `templates/pika-h3/text-to-video` with `{"seed": 42}` plus the one change per
 call below. Repeat the `num_frames` rows on `templates/pika-h3/reference-to-video` (with C-F801's two references).
@@ -20011,7 +20008,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F803 — 768p ref2va with three references warns when it is over the card's VRAM ceiling
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**. `templates/pika-h3/reference-to-video` with `{"seed": 42, "width": 1344, "height": 768,
 "num_frames": 124}` and three image references (`asset:qa-cast/priya-portrait.jpg`, `asset:qa-cast/hal-portrait.jpg`,
@@ -20028,7 +20024,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F804 — Pika t2va completes at 1344x768, 124 frames, with audio, in six counted steps
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 GPU on lem, minutes (the first ever run also downloads the adapter and may build int8 caches; that is not a
 finding). Workspace `regression-complete`. Before the run: `list_downloads`. Then
@@ -20047,7 +20042,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F805 — Pika fl2va completes from a first frame alone and from first + last
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 GPU on lem, two runs, workspace `regression-complete`, each validated first and bound, `wait_seconds=1500`.
 `templates/pika-h3/first-and-last-frame` at `{"seed": 42, "width": 1344, "height": 768, "num_frames": 124}`:
@@ -20066,7 +20060,6 @@ cleanup: none until C-F806 has read them; then `delete_output(job_id=...)` for b
 metrics: none.
 
 ### C-F806 — a Pika fl2va keyframe at a non-16:9 aspect is centre-cropped, not stretched
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free, reading C-F805's outputs. `priya-portrait.jpg` is a portrait still, not 16:9. Use `get_output_frames` on
 C-F805 (a) and (b) at frame 0 and (b) at its last frame, and `get_output_frames(name="asset:qa-cast/priya-portrait.jpg")`
@@ -20081,7 +20074,6 @@ cleanup: none (C-F805 deletes).
 metrics: none.
 
 ### C-F807 — Pika ref2va completes with two image references at 1344x768, in six counted steps
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 GPU on lem, workspace `regression-complete`. `templates/pika-h3/reference-to-video` with
 `{"seed": 42, "width": 1344, "height": 768, "num_frames": 124}`, two image references
@@ -20100,7 +20092,6 @@ cleanup: `delete_output(job_id=...)`.
 metrics: none.
 
 ### C-F808 — MagCache or TST on a Pika template warns that a fixed step list isn't supported, and doesn't mis-key
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free first, then GPU only if needed. The plan's design: on a step-list pipeline, MagCache calibration and TST's
 step-keyed scheduling warn "not supported on a fixed step-list sampler" instead of keying on a wrong count. Find the
@@ -20119,7 +20110,6 @@ cleanup: `delete_output(job_id=...)` for any run.
 metrics: none.
 
 ### C-F809 — a Pika job then an H3 job on the same card: the H3 job is unchanged
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 GPU on lem, ~15 min. The plan relies on the step cache keeping the two apart (its key includes the LoRA files and
 the scheduler type), with no in-worker LoRA toggling. On one card (check `get_health` `workers` and each job's
@@ -20141,7 +20131,6 @@ cleanup: `delete_output(job_id=...)` for all three (keep (2) if it is C-F804's u
 metrics: none.
 
 ### C-F810 — the stage B bench record on #1316 is complete and reproducible
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v1 (claude-opus-5-5 via anthropic)
 Free (reads existing jobs). The bench under Q2 is run once, by the tester verifying stage B: three standard scenes
 as Pika fl2va against `templates/minimax/first-and-last-frame` (lightx2v 4-step), and two as Pika ref2va against
@@ -22612,7 +22601,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F944 — each `pika-h3/` template takes its five weight components from `MiniMaxAI/MiniMax-H3`, keeps Pika's small parts, and states the six-step list
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_workflow` (full) on `templates/pika-h3/text-to-video`, `templates/pika-h3/first-and-last-frame` and
 `templates/pika-h3/reference-to-video`, and on `templates/minimax/reference-to-video` for comparison. Then one
@@ -22643,7 +22631,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F945 — the `pika-h3/` download plan lists only the adapter and Pika's small files, never a Pika base shard
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v2 (claude-opus-5-5 via anthropic)
 Free, **validate only**, workspace `regression-complete`. For each of the three Pika templates,
 `validate_workflow` with C-F801's arguments (seed 42, 1344x768, 124 frames, plus the media). Then the 480p preset
@@ -22669,7 +22656,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F946 — Pika's first runs downloaded at most about 10 GB, and lem's cache holds no Pika copy of the base
-pending: #1343
 source: tester, spec for #1343 from #1316's plan v2 (claude-opus-5-5 via anthropic)
 Free in itself (`list_models` and `list_downloads`), but read it around the first GPU runs of C-F804, C-F805 and
 C-F807. Baseline on 2026-11-16: `list_models` had no `Pika-Labs/Pika-H3-Flex` entry. It showed
