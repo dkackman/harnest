@@ -20018,9 +20018,10 @@ Free, **validate only**. `templates/pika-h3/reference-to-video` with `{"seed": 4
 `asset:qa-1141/board-1.png`). Then the same at the 480p preset's size. Read the stage B comment on #1343 for the
 VRAM ceiling it measured for 768p ref2va on lem's 24 GB card.
 expected:
-- If stage B reports that 768p ref2va with three references exceeds the ceiling: the 768p validate is still
-  `valid: true` (validate warns, never refuses), with a warning naming VRAM or the memory ceiling. The 480p validate
-  has no such warning, unless stage B reports 480p over the ceiling too.
+- If stage B reports that 768p ref2va with three image references exceeds the card's capacity: the 768p validate is
+  `valid: false` at `arguments`, naming the projected VRAM and the card's ceiling (the #900 card-capacity gate). The
+  template description states the 768p three-image limit and points at 480p. The 480p validate is `valid: true` with
+  no VRAM warning, unless stage B reports 480p over the ceiling too.
 - If stage B reports that it fits: no VRAM warning on either, and the stage B comment gives the measured peak.
 - A stage B comment that gives no ceiling for 768p ref2va sends the case back as needs-info.
 cleanup: none.
