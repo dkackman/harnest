@@ -23229,4 +23229,23 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F971 — `release_pipeline` on a `workflow:` step frees the composed child's weights before the next step
+source: tester, verified in #1408 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Run `clear_memory` on the card first: a warm pipeline from an earlier job can leave
+too little room for Klein to load. Validate, then run this inline workflow:
+1. `klein`: a `workflow:` step with `path: "templates/flux3/text-to-image"`, arguments `prompt: "a red bicycle"`,
+   `width: 512`, `height: 512`, `seed: 1`, and `"release_pipeline": true` on the step.
+2. `sd`: a pipeline step, `StableDiffusionPipeline`, `stable-diffusion-v1-5/stable-diffusion-v1-5`,
+   `torch_dtype: "torch.float32"`, `safety_checker: null`, `prompt: "an apple"`, `num_inference_steps: 10`.
+Then `get_job_events(job_id, kinds=["pipeline_released"])`.
+expected:
+- The job succeeds.
+- One `pipeline_released` event for step `klein`. Its `gpu_memory_allocated_before_mb` is in the gigabytes (≈19,216
+  on a 3090) and its `gpu_memory_allocated_mb` is under 100. Before #1408 nothing was released and the next step
+  started at ≈19,216 MB.
+- `sd`'s manifest `timing.load_cached` is `false`.
+- A **finding**: no `pipeline_released` event for `klein`, or one that leaves gigabytes allocated.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
 ## Performance

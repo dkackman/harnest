@@ -10416,4 +10416,31 @@ changed; or if the skill's cast steps (`dw:script-to-video` step 3, `dw:series-e
 cleanup: none.
 metrics: none.
 
+### M-F403 — a second int8 Pika H3 job on the other card releases the first card's warm idle worker instead of OOMing the host
+source: tester, verified in #1407 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/pika-h3/text-to-video` then `templates/pika-h3/first-and-last-frame`, both at the default int8
+(each validates with `host_memory.projected_mb` ~70656, declared). Needs a two-card CUDA box with a host about as big as
+lem's (128 GB), where one warm H3 worker plus a second H3 load does not fit. About 10 GPU-minutes.
+Steps:
+1. Start with both cards idle and no job queued (`get_health`). Run `text-to-video` with `num_frames: 124` and wait for it.
+   Then `get_memory`: the card it ran on holds a warm worker (host RSS tens of GB), and host `available_mb` is below the
+   ~69 GB the next job declares. If it isn't, the box can't show the case: say so and stop rather than counting a pass.
+2. `validate_workflow` for `first-and-last-frame` (`num_frames: 124`, `image`/`last_image`: two `cast/` stills). It is
+   priced for the other card. Run it and wait.
+3. `get_job_events(kinds=["queue_wait"])` on the second job; `get_memory(device=<first card>)`.
+4. With the second card now warm, run a light job (`templates/upscale-spandrel` on a `cast/` still). Read its
+   `queue_wait` events and `get_memory(device=<second card>)`.
+expected:
+- Step 2's job **succeeds on the other card**, with no host OOM, worker death or memory error.
+- Step 3: two `queue_wait` events with `reason: host_ram`. The first says it is releasing the warm idle worker on the
+  first card (naming the card and the GB held). The second says the warm models on that card were released. The first
+  card's worker afterward holds about 1 GB RSS and `run_count` 0. The job starts within seconds of being queued (no
+  deadlock waiting on an idle worker).
+- Step 4: the light job has **no** `queue_wait` event, and the second card still holds its warm worker (RSS unchanged,
+  `run_count` ≥ 1). A job that fits must not drop a warm worker.
+It is a **finding** if step 2 OOMs or never starts, if the release happens without its events, or if step 4 releases the
+warm worker.
+cleanup: `delete_output(job_id=...)` for all three jobs.
+metrics: none.
+
 ## Performance
