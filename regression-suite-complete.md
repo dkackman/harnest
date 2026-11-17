@@ -22843,9 +22843,12 @@ Pick B1 (or A1 if B1 is absent) from the record. Workspace `probe-1399`.
 expected:
 - The record states a tolerance for reproduced numbers. None stated is a **finding** (the case cannot be judged
   without it; still report the readings).
-- Each seam's lightness step and mean |L| from 1 match the record's per-seam figures within that tolerance.
-- The detail / texture growth from 2 matches the record's `segment_looks.detail` (or texture figure) for that arm
-  within that tolerance.
+- Each seam's lightness step and mean |L| from 1 match the per-seam figures the record's hand-off comment on the
+  stage issue quotes, within that tolerance.
+- The detail / texture growth from 2 matches the `segment_looks.detail` (or texture figure) the hand-off quotes for
+  that arm within that tolerance.
+- A per-seam or detail figure the hand-off does not quote is a **finding** (the tester cannot read `bench/records/`;
+  still report the reading).
 - A number outside tolerance is a **finding** naming the seam or figure, the record's value and the reproduced one.
 - A tool refusing the job's output (an unknown output, a missing segment the record measured) is a **finding**:
   the record must rest on outputs that still exist.
@@ -22894,6 +22897,8 @@ expected:
 - 4 and 5 are `valid: true` with no error: the bench's own arms must still validate.
 - 6 matches the record: valid if C ran; refused, with the refusal the record quotes, if the record says C stopped
   at validate. A disagreement is a **finding**.
+- If the record says C was not run (as #1403's record, accepted by Don on 2026-11-17, does), 6 is skipped and the
+  report says so. The record giving no reason C was not run is a **finding**.
 cleanup: none (nothing runs).
 metrics: none.
 
