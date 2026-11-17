@@ -23170,7 +23170,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F974 — a ref2va step validates with one guide at frame 0 covering the whole render
-pending: #1413
 source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 Free, validate only, `workspace="regression-complete"`. Needs C-F296's `qa-guides/` assets (run its setup if missing).
 Carrier R: `get_workflow("templates/minimax/reference-to-video")` (step `reference_to_video_audio`, `workflow:
@@ -23204,7 +23203,6 @@ cleanup: `delete_workflow` on every `c-f974-*` copy.
 metrics: none.
 
 ### C-F975 — ref2va refuses every guide outside the one-full-length-guide rule, and keeps refusing the other guide-family arguments with today's message
-pending: #1413
 source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 Free, validate only, `workspace="regression-complete"`. Carrier R and arguments as C-F974 (saved as `c-f975-r`), one
 `validate_workflow` per variant. Note the newest `list_jobs` id first.
@@ -23250,7 +23248,6 @@ cleanup: `delete_workflow` on every `c-f975-*` copy.
 metrics: none.
 
 ### C-F976 — a guided ref2va run returns a render of the guide's length, steered by the guide
-pending: #1413
 source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 GPU: two H3 ref2va runs on CUDA, about 4-5 min each (the template's observed cold figure). One H3 job at a time.
 `workspace="regression-complete"`. Carrier R from C-F974, saved as `c-f976-guided` with C-F974 a's guide, and R
@@ -23272,7 +23269,6 @@ cleanup: `delete_output(job_id=…)` on both jobs; `delete_workflow` on both cop
 metrics: none.
 
 ### C-F977 — after #1413, H3 guides on `t2va`/`fl2va` validate and run as before
-pending: #1413
 source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 GPU: one H3 run (C-F299's, about 6 min); the rest is free. `workspace="regression-complete"`. Run, each with its own
 setup and cleanup: C-F297 (every variant); C-F298 variants a-j and l (k is the ref2va variant C-F974/C-F975 now
@@ -23285,7 +23281,6 @@ cleanup: as each case gives.
 metrics: none.
 
 ### C-F978 — the guide, the schema and the head-swap catalog entry state the ref2va guide rule
-pending: #1413
 source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 Free, reads only. `get_guide("workflows", section="H3: holding a clip with `guides`")`; `get_schema` on the section
 that describes a step's `guides` (the pipeline arguments); load the `minimax-h3` skill and read its

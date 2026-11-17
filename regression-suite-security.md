@@ -1321,7 +1321,6 @@ for any job (none should exist).
 metrics: none.
 
 ### SE-F068 — a ref2va guide's `video` holds the media path gate at validate time
-pending: #1413
 source: tester, spec for #1413 from #1411's plan v2 (claude-opus-5-5 via anthropic)
 #1413 lets a ref2va step take one guide, a new route by which the server opens a clip on a references
 step. Carrier, in workspace `regression-security`: `templates/minimax/reference-to-video` (`get_workflow`),
