@@ -23509,4 +23509,141 @@ expected:
 cleanup: `delete_output(job_id=…)` on the run and the edit; `delete_asset` on both `qa-1411/` stills.
 metrics: none.
 
+### C-F983 — the #1398 v2 probe's arms are in `probe-1398`, noted: six at 1344x768 succeeded, B1 failed out of memory, three at 960x544 ran
+pending: #1401
+source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthropic)
+Free: reads only. `list_jobs(workspace="probe-1398")`, then `get_job(workspace="probe-1398")` on every job whose
+note names a probe arm, and on job `e6ecb7df55ec`. Never run, rerun or delete anything in `probe-1398`: its jobs are
+the probe's record. (Replaces v1's C-F947 for this stage.)
+expected:
+- **At 1344x768**, one succeeded job per arm: **E** (establishing wide), **A** (medium on the character, silent),
+  **A′** (A with a spoken line), **B0** (reverse angle, portrait only), **B2** (B0 + a window of E) and **S2** (B with
+  a different line + A′'s last frames). Each `note` names its arm.
+- **B1 at 1344x768** is job `e6ecb7df55ec`, status failed, and its error is CUDA out of memory (the text names
+  memory, e.g. `CUDA out of memory` / `OutOfMemoryError`). A succeeded B1 at 1344x768, or a B1 failure for any
+  other reason, is a **finding**. No S1 at 1344x768 was run: the plan records it as the same shape, not retried. A
+  1344x768 S1 or a second 1344x768 B1 attempt with no note saying why is a **finding**.
+- **At 960x544**, one job each for **B0s** (control), **B1s** (B0s + A's whole clip) and **S1s** (the speech B +
+  A′'s whole clip), each noted with its arm. Each either succeeded or failed with an out-of-memory error; a
+  failure for any other reason is a **finding**. If one failed out of memory, no job for that arm ran at a size
+  below 960x544 (the plan: "don't go smaller"); one that did is a **finding**.
+- An arm with no job, or two jobs claiming one arm with no note saying which one the record uses, is a
+  **finding**. Any other failed or cancelled job in the workspace is allowed only when its note says what it was
+  (the recorded 5-frame refusal, a retry); an unexplained one is a **finding** to report, not a case failure.
+- No probe arm ran outside `probe-1398` (`list_jobs` on `bench` and `default` show no job whose note names a
+  #1398 arm). One that did is a **finding**.
+cleanup: none (the jobs are the probe's record).
+metrics: none.
+
+### C-F984 — B1s and S1s reference A's and A′'s own whole 1344x768 clip, untrimmed, on ref2va, within the limits
+pending: #1401
+source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_job_workflow(workspace="probe-1398")` on B0, B0s, B1s, S1s and on `e6ecb7df55ec` (B1), plus `get_job`
+on A and A′ for their output file names (job ids from C-F983). Runs whether B1s/S1s succeeded or failed out of
+memory: the workflow is the point. (Replaces v1's C-F948.)
+expected:
+- B1s's resolved workflow carries exactly one `MiniMaxH3VideoReference`, whose `from_file` is `output:` of a file
+  of **A's** job (the name matches an output `get_job` lists for A: the existing 1344x768 clip, not a re-render or
+  a downscaled copy), with `audio: null`. S1s's is the same against **A′'s** job. B1 (`e6ecb7df55ec`) references
+  the same file of A as B1s. A reference to another job's output, or to an `asset:` copy the record doesn't
+  explain, is a **finding**.
+- Neither B1s nor S1s trims or resizes the reference: no `trim_video` (or resize) step feeds it. A step that does
+  is a **finding**: the whole clip is what these arms test.
+- B0 and B0s carry no video reference; their only reference is the cast portrait. A video reference on either is
+  a **finding** (they are the no-memory controls).
+- Every B and S arm (B0, B2, S2, B0s, B1s, S1s) runs the ref2va path and carries no `guides`, anchor or latent
+  carry. One that does is a **finding**.
+- Each arm's references stay within today's limits (at most 3 videos, at most 12 files): B1s and S1s hold one
+  portrait and one video, B2 and S2 one portrait and one window.
+cleanup: none.
+metrics: none.
+
+### C-F985 — B2 and S2 feed a 22-frame `trim_video` window on the 17 grid (E from 51, A′ from 102), and the 5-frame refusal is quoted
+pending: #1401
+source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_job_workflow(workspace="probe-1398")` on B2 and S2; `get_gallery_metadata` on E's and A′'s video
+outputs for `frame_count`; `get_task("trim_video")` for today's shape (`video`, `start_frame`, `num_frames`,
+optional `fps` and `pad_to`; a span past the clip's end is refused, not shortened). Then the refusal check below,
+validate only. (Replaces v1's C-F949.)
+expected:
+- **B2.** A `trim_video` step whose `video` is E's output (`output:` of E's job, or E's step if built in one
+  workflow), `start_frame` a multiple of 17 within 17 frames of E's `frame_count / 2` (the plan names 51 for a
+  124-frame E), `num_frames: 22`, no `pad_to`. The reference is fed from it by `from_previous_result`, not from a
+  saved file.
+- **S2.** A `trim_video` step on A′'s output with `num_frames: 22` and `start_frame` = A′'s `frame_count − 22`
+  (102 for 124 frames, which is also on the 17 grid): the window ends on A′'s last frame, the frames before the
+  cut. A window that stops short of A′'s end, or one off the 17 grid, is a **finding**.
+- For either: a `start_frame` off the 17 grid, a `num_frames` other than 22, or a `pad_to` that lengthens the window
+  is a **finding**. Each window reference has `audio: null` unless the record says why.
+- **The refusal.** The stage's build comment on #1401 (or the record it quotes) gives the 5-frame refusal verbatim
+  (the plan: dw needs at least 13 frames). Reproduce it: take S2's resolved workflow from `get_job_workflow`,
+  change only its `trim_video` `num_frames` to 5 and `start_frame` to A′'s `frame_count − 5`, and
+  `validate_workflow(workspace="probe-1398", workflow=…)`. It is refused, and the refusal's text matches the quoted
+  one (paths and job ids aside). Validation passing, or a refusal the quote doesn't match, is a **finding**. Don't
+  run it.
+cleanup: none (nothing is saved or run).
+metrics: none.
+
+### C-F986 — each size's arms differ only in their reference, and the record compares an arm only with its own size's control
+pending: #1401
+source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_job_workflow(workspace="probe-1398")` on E, A, A′, B0, B2, S2, B0s, B1s and S1s (and `e6ecb7df55ec`);
+`get_gallery_metadata` on each succeeded arm's video output. Read the stage A record's comparisons (the build
+comment on #1401 and what it quotes). (Replaces v1's C-F950.)
+expected:
+- **1344x768: B0, B2 and B1 (`e6ecb7df55ec`)** share `seed`, the B `prompt` (byte for byte, apart from a
+  `<Video N>` mention the reference syntax requires), `width`/`height` 1344x768, `num_frames` 124, the turbo
+  setting and the one cast portrait. They differ only in the video reference and its `trim_video` step.
+- **960x544: B0s and B1s** share `seed`, the same B prompt as B0 (same rule), turbo, portrait and `num_frames`,
+  at 960x544, and differ only in the reference. **S1s** has that seed, size, frame count, turbo and portrait, and
+  S2's speech prompt (same rule).
+- **S2 and S1s** carry a spoken line that differs from A′'s. The same line on both sides of the cut is a
+  **finding**: the lip-copy test needs new lines. **A′** differs from **A** only by its spoken line (and audio
+  settings speech needs); A carries none.
+- Any other difference inside a size group (a seed, a step count, a LoRA, a portrait) is a **finding**: the probe
+  then measures it, not memory.
+- Every succeeded arm's output is the size it asked for, with `frame_count` equal to its `num_frames`. A 960x544
+  arm whose output is 1344x768, or the reverse, is a **finding**.
+- The place markers (a red lamp, a bookshelf, a window, a green coat on the character) are named in E's, A's and
+  every B prompt where the shot shows them. One missing from E's prompt is a **finding**.
+- The record measures B1s's hold and cost against **B0s** only and B2's against **B0** only. A whole-clip arm
+  scored against B0 (the 1344x768 control), or a window arm against B0s, is a **finding**. The S1s-vs-S2 mouth read
+  crosses sizes by the plan's design; the record should say so (its absence is a note, not a finding).
+cleanup: none.
+metrics: none.
+
+### C-F987 — the #1398 v2 record: job ids resolve, per-arm marker reads, the mouth read, the replay read, wall times, caveats
+pending: #1401
+source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthropic)
+Free. Read the stage A build comment on #1401 and what it quotes from `bench/records/visual-memory-cut.md`.
+`get_job(workspace="probe-1398")` on every job id it quotes, for status and wall time; `get_output_frames` (12
+frames) on B0, B2 and each succeeded 960x544 arm; for the replay check, `get_output_frames` on S2's first 1.5 s and
+on A′'s last 1 s, and `assess_output` on S2 (free) for any cut it reports inside the clip. (Replaces v1's C-F951.)
+expected:
+- Every job id quoted resolves in `probe-1398` to the arm the record says, `e6ecb7df55ec` included as B1's
+  out-of-memory failure. An id that doesn't resolve, or resolves to another arm, is a **finding**.
+- Per arm (B0, B2, S2, B0s, and B1s and S1s if they succeeded), the record states for each place marker (lamp,
+  shelf, window, coat) whether it holds, and names the framing (whether a whole-clip reference pulled B back to
+  A's angle). A marker or arm with no read is a **finding**.
+- It states whether S1s visibly copies A′'s mouth motion against S2. If S1s failed out of memory, it says the
+  copy is untested here and the rule rests on the source's claim. No statement either way is a **finding**.
+- **Replay.** For each reference arm (B2, S2, B1s, S1s that succeeded) it states whether the clip opens on a
+  replay of its reference before turning to the prompt. For S2 it says yes (about 1 s of A′'s last frames, then a
+  cut inside the clip). The tester's check: S2's opening frames look like A′'s closing frames, and a change of
+  shot follows within about 1.5 s (`assess_output` naming a cut there corroborates it). S2's opening plainly not
+  being A′'s frames, while the record says it is, is a **finding**.
+- **If any 960x544 arm ran out of memory**, the record quotes the error verbatim and states the finding "a
+  whole-clip reference does not fit a 24 GB card with this offload". Neither is a **finding**.
+- Wall times: each arm's, with B2's multiple over B0 (the plan's preliminary 1.35x per pass) and B1s's over B0s,
+  against the 3.4x claim in `minimax-h3/SKILL.md`. They agree with `get_job`'s timings within a few seconds; a
+  quoted time `get_job` contradicts, or a multiple taken against the other size's control, is a **finding**.
+- It is marked preliminary until Don views the arms (Q3), and says it is one scene and one seed.
+- The tester's own frame look is a sanity check only: a read the frames plainly contradict (a red lamp read as held
+  where none is visible) is a **finding**; a judgment call is Don's.
+- Docs review (not over MCP): the `cut_windows.py pair` numbers (face step, SFace) for A→B0, A→B2, A→B0s, A→B1s,
+  A′→S1s and A′→S2 match a rerun of the script on those outputs. The tester cannot rerun it; hand it to a docs
+  reviewer.
+cleanup: none.
+metrics: none.
+
 ## Performance
