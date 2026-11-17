@@ -10115,7 +10115,7 @@ is missing from the record, or a time disagrees with the job by more than 10%.
 cleanup: none. Never delete the probe jobs; the record cites them.
 metrics: none.
 
-### M-F391 — the #1317 small-area run: 1024x1024 rendered at its own size, cheaper than the 4 MP default, with time and look recorded
+### M-F391 — the #1317 small-area run: 1024x1024 rendered at its own size, with time and look recorded beside the 4 MP default
 pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image t2i with `min_generation_area` lowered, workspace `bench` on lem. **Free**: reads only.
@@ -10127,12 +10127,12 @@ expected:
 - The job's realized workflow is the t2i's with `width`/`height` **1024** and `min_generation_area` set at or below
   1024x1024 (the plan writes `1024`; any value ≤ 1,048,576 meets it), same prompt and seed. Nothing else differs.
 - `succeeded` (or OOM, recorded as in M-F390); the image is **1024x1024**.
-- Its warm wall time is clearly below the 4 MP warm run (by at least 25%). The default path renders a small request on a
-  4 MP canvas and resizes back, so a time within 25% of the 4 MP run means the override wasn't honoured; the record must
-  then say so.
+- The override is honoured: the image is a native 1024x1024 render, not the 4 MP canvas resized back. The default path
+  renders a small request on a 4 MP canvas, so with the same prompt and seed a resize-back looks like M-F390's image
+  shrunk; a native render has its own composition. Plan v1 sets no speed bar: either run may be the faster.
 - The record gives its time beside the 4 MP run's and a one-line look comparison (detail, coherence) against it.
-It is a **finding** if the argument isn't in the realized workflow, the output isn't 1024x1024, the time is missing, or
-the record claims a native small render while the time is within 25% of the 4 MP run.
+It is a **finding** if the argument isn't in the realized workflow, the output isn't 1024x1024 or is M-F390's image
+resized, or the time is missing.
 cleanup: none.
 metrics: none.
 
