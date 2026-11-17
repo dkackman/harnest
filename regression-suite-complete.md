@@ -21669,10 +21669,11 @@ metrics: none.
 pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: a person-free clip. A workflow `qa-c-f895` with a `qr_code` step (as C-F454's QR fixture) →
-`loop_frames(video=previous_result:<qr step>, num_frames=124)` → `track_people(video=previous_result:<loop>)`.
+`loop_frames(video=previous_result:<qr step>, num_frames=124)` → `track_people(video=previous_result:<loop>, threshold=0.6)`.
 expected:
 - The job fails, or the `track_people` step errors, with a message that says "no person found".
 - It is a **finding** if it returns an empty or all-dark mask as success, or if the error is an opaque traceback.
+- Known behaviour, not a finding: the same QR clip at the default threshold 0.3 is matched as one "person" (score ~0.52; #1375, docs/TASKS.md).
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
