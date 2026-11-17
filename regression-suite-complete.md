@@ -23248,4 +23248,30 @@ expected:
 cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
+### C-F972 — `validate_workflow` refuses a remote-code `from_pretrained_arguments` key with the run's own message
+source: tester, verified in #1410 (claude-opus-5-5 via anthropic)
+Validate-only, free. Run it only where `get_server_info` reports `trust_workflows: false`; a trusted server accepts
+these keys by design, so skip the case there. Workspace `regression-complete`. Validate each inline workflow below.
+The run-side refusal is SE-F005/SE-F006; this case checks that validate agrees with it.
+a. `{"id":"p","steps":[{"name":"pe","pipeline":{"configuration":{"component_type":"ModularPipeline"},
+   "from_pretrained_arguments":{"model_name":"MiniMaxAI/MiniMax-H3-Image","trust_remote_code":true},
+   "arguments":{"prompt":"x"}}}]}`
+b. As (a) with `"custom_pipeline":"lpw_stable_diffusion"` in place of `trust_remote_code`.
+c. As (a) with `"trust_remote_code": false`.
+d. Step 0 a `gather_inputs` task (`inputs: ["x"]`), step 1 a pipeline step whose `from_pretrained_arguments` has no
+   remote-code key, with a `text_encoder` component block whose own `from_pretrained_arguments` set
+   `trust_remote_code: true`.
+Then `run_workflow` (a) with `acknowledged_cost=true`, since validate returns no plan for it.
+expected:
+- (a) `valid: false`, with an error at `steps[0].pipeline` naming `'trust_remote_code'` and `--trust-workflows`.
+- (b) `valid: false` at `steps[0].pipeline`, naming `'custom_pipeline'` and `--trust-workflows`.
+- (c) no trust-gate error (`valid: true` apart from the model's download line in `plan`).
+- (d) an error at `steps[1].pipeline` that names `text_encoder` and `'trust_remote_code'`. Other errors on the
+  component, such as a component_type refusal, may appear alongside it.
+- The `run_workflow` refusal for (a) carries the same message text as validate's (a), and no job is queued.
+- A **finding**: `valid: true` for (a), (b) or (d), an error at a bare `steps` or at the wrong step index, or a
+  run message that differs from validate's. Before #1410, validate passed (a) and (b).
+cleanup: none (nothing runs).
+metrics: none.
+
 ## Performance
