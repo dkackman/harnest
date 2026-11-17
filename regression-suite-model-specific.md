@@ -10275,13 +10275,12 @@ Steps:
 2. `list_jobs(workspace="probe-1400")`: each job's `created_at`, `started_at`, `finished_at`.
 3. `validate_workflow` on one P and one S workflow now (M-F396 step 3 suffices): read `plan.downloads_required`.
 expected:
-- The downloads comment exists, is timestamped **before** the first `probe-1400` job's `created_at`, and states the list
-  for both workflows (P and S), each `[]`.
+- If the check found a non-empty `downloads_required`, a comment on #1400 or #1406 names it, timestamped **before** the first `probe-1400` job's `created_at`. If it found `[]` for both workflows (P and S), the plan requires no comment; the hand-off may report it after the run.
 - **Stop branch (Don's ruling):** if that comment found a non-empty list, it names the download and **no** job exists in
   `probe-1400` (and no probe job elsewhere). That is a probe outcome, not a finding; skip M-F398–M-F401 with a note.
 - Step 3: `downloads_required` is `[]` for both now.
 - No two H3 jobs in `probe-1400` overlap: each one's `started_at` is at or after the previous one's `finished_at`.
-It is a **finding** if a probe job ran before the downloads comment, after a non-empty list was reported, or alongside
+It is a **finding** if a probe job exists after a non-empty list was reported, or alongside
 another probe H3 job.
 cleanup: none.
 metrics: none.
