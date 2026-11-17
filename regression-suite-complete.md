@@ -19960,7 +19960,7 @@ expected:
 - `constraints.num_frames` is `modulus 17, remainder 5, min_frames 124, max_frames 345, snap "up"`. `width` and
   `height` have `modulus 32`.
 - `presets` holds a 480p and a 768p 16:9 bucket, the 768p one being 1344x768. The description lists the other
-  aspect-ratio buckets, says the clip is single-clip only (no chains), and says seeds are not comparable with
+  aspect-ratio buckets and says seeds are not comparable with
   MiniMax-H3's.
 - Each template's `cost` is non-null (stage B measures it on lem).
 cleanup: none.
@@ -19996,7 +19996,8 @@ call below. Repeat the `num_frames` rows on `templates/pika-h3/reference-to-vide
 - (h) `width: 1000` (not a multiple of 32); (i) `width: 832, height: 480`; (j) `width: 1344, height: 768`;
 - (k) `num_inference_steps: 8`; (l) `video_shift: 12.0`; (m) `guidance_scale: 4.0`.
 expected:
-- (a), (b) `valid: false` at `arguments.num_frames`, naming the 124 minimum. The plan names (a) explicitly.
+- (a) `valid: false` at `arguments.num_frames`, naming the 124 minimum. The plan names (a) explicitly.
+- (b) `valid: true` with a warning that 123 becomes 124.
 - (c) and (e) `valid: true` with no frame warning.
 - (d) `valid: true` with a warning that 130 becomes 141.
 - (f) and (g) are refused, or behave exactly as `templates/minimax/first-and-last-frame` does for the same value
