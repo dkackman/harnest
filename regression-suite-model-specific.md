@@ -10055,8 +10055,7 @@ expected:
   **544p, int4** (the h3-quality TV path). Each still's pipeline step carries `release_pipeline: true` (or the still is
   released before the H3 step loads). The two H3 steps share prompt, seed, size, `num_frames` and schedule; only the
   `image` differs.
-- No step loads `MiniMaxAI/MiniMax-H3-Image-PE` or `diffusers/minimax-h3-image-pe-blocks`, none sets
-  `trust_remote_code`, and none loads `PrunaAI/P-H3-Image` (Q3, Q6).
+- No step loads `MiniMaxAI/MiniMax-H3-Image-PE`, none sets `trust_remote_code` or `custom_pipeline`, and none loads `PrunaAI/P-H3-Image` (Q3, Q6).
 It is a **finding** if any workflow fails to validate, the text encoder isn't redirected to `MiniMaxAI/MiniMax-H3`, a
 reference count or `<Picture N>` index is off, the Klein control uses different files or order, the two video arms
 differ in anything but `image`, or a PE or P-H3 load appears.
