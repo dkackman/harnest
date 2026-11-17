@@ -10464,8 +10464,7 @@ Steps: `get_workflow` on `templates/minimax-h3-image/text-to-image` and on `temp
 expected:
 - Each description names a **64 GB** host-RAM floor (warm runs) **and** that a cold first run on a host without the
   quantized cache needs **about 120 GB** of host RAM (Don's Q1 addition). Either number missing from either template fails.
-- Each definition declares `host_ram_gb: 64` and a `cost` (as M-F404). The edit declares `"shape": "image-edit"` and
-  `"traits"` containing `"needs-input-media"`.
+- Each definition declares `host_ram_gb: 64` and a `cost` (as M-F404). `list_workflows(shape="image-edit")` lists the edit template with traits including `needs-input-media` (derived; the definition need not declare them).
 - The text encoder is loaded from **`MiniMaxAI/MiniMax-H3`** (cache sharing with H3 video), not from the H3-Image repo.
   `weights_dtype` defaults to `int8`. Default `width`/`height` are **2048**. The t2i carries recommended sizes as
   `presets` that include 2048x2048 and stay within the vendor's 5472x3072.
