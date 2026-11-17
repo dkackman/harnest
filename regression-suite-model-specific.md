@@ -10029,7 +10029,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F388 — the #1317 H3-Image probe's four bench workflows validate clean, with the plan's recipe, one-based `<Picture N>` references, and a Klein control that differs only in model
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, modular `MiniMaxH3ImageModularPipeline`, diffusers ≥ 0.43),
 FLUX 3 Klein (`templates/flux3/multi-reference`), MiniMax H3 `templates/minimax/image-to-video`. Workspace `bench` on lem
@@ -10065,7 +10064,6 @@ cleanup: none (validates only; the saved workflows are the bench record).
 metrics: none.
 
 ### M-F389 — the #1317 probe checked its download before any GPU run: the run fetches about 65 GB, not the 190 GB repo, or it stopped and reported
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image, workspace `bench` on lem (cuda). **Free**: issue reads, job reads, validate.
 Steps:
@@ -10092,7 +10090,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F390 — the #1317 t2i run: completed at 2048x2048 and coherent, or an OOM recorded with its recipe; cold and warm times, peak VRAM and bytes downloaded
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image t2i (M-F388), workspace `bench` on lem (one 24 GB card). **Free**: reads only.
 Skip with a note if M-F389 found the stop branch.
@@ -10116,7 +10113,6 @@ cleanup: none. Never delete the probe jobs; the record cites them.
 metrics: none.
 
 ### M-F391 — the #1317 small-area run: 1024x1024 rendered at its own size, with time and look recorded beside the 4 MP default
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image t2i with `min_generation_area` lowered, workspace `bench` on lem. **Free**: reads only.
 Skip with a note if M-F389 found the stop branch, or M-F390 found the 4 MP run OOMed and the record says the small run
@@ -10137,7 +10133,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F392 — the #1317 three-reference edit: H3-Image and Klein arms over the same references, the `<Picture 1>` face held, side-by-sides posted
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image edit3 and FLUX 3 Klein `templates/flux3/multi-reference` (M-F388), workspace `bench` on
 lem. **Free**: reads, plus `compare_outputs` (no GPU run).
@@ -10163,7 +10158,6 @@ cleanup: delete nothing; `compare_outputs` writes no job.
 metrics: none.
 
 ### M-F393 — the #1317 into-video arm: both stills through the same 544p int4 H3 chain, SFace scored for both against the same portrait, frame grabs posted
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `h3-image-to-h3` (M-F388): MiniMax-H3-Image and Klein stills into `minimax/image-to-video` at 544p,
 int4; SFace face-check via the bench `t26-face-check` route. Workspace `bench` on lem. **Free**: reads, plus at most
@@ -10191,7 +10185,6 @@ cleanup: `delete_output(job_id=...)` on the face-check re-runs this case made. N
 metrics: none.
 
 ### M-F394 — the #1317 record: one row per H3-Image run with every owed number, the method, the inserts check, and no onboarding verdict
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the #1345 probe (M-F388–M-F393). **Free**: issue reads and job reads.
 The record is `bench/records/h3-image.md` in the dw repo; the tester reads it **as quoted on #1345 or #1317**, never from
@@ -10216,7 +10209,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F395 — the #1317 probe adds no catalog surface, leaves H3 video's templates as they were, and the H3-Image prompt enhancer stays refused
-pending: #1345
 source: tester, spec for #1345 from #1317's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image, MiniMax H3 `templates/minimax/image-to-video`. Workspace `default` and `bench`.
 **Free**: catalog reads and validate only.

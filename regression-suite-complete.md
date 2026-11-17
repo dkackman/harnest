@@ -21618,7 +21618,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F892 — `track_people` is listed and documented, and the prep template gains `track`
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_tasks`, `get_task("track_people")`, `get_guide("tasks")` and its `track_people` section, then
 `get_workflow("replace-performer-cuts")`.
@@ -21632,7 +21631,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F893 — `track_people` on a two-person clip returns one mask per person and a matching contact sheet
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup, only if `asset:qa-cast/priya-hal-two-shot.mp4` is missing (`list_assets`): a FLUX 3 Klein still of Priya and
 Hal side by side, both fully in frame, with `priya-portrait.jpg` and `hal-portrait.jpg` as references; then an LTX-2.5
@@ -21656,7 +21654,6 @@ cleanup: keep for C-F894 and C-F898, then `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F894 — `max_people` 1 returns only the largest person
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Run `track_people(video="asset:qa-cast/priya-hal-two-shot.mp4", max_people=1)`, workflow `qa-c-f894`.
 expected:
@@ -21666,7 +21663,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F895 — `track_people` on a clip with no person fails with "no person found"
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Setup: a person-free clip. A workflow `qa-c-f895` with a `qr_code` step (as C-F454's QR fixture) →
 `loop_frames(video=previous_result:<qr step>, num_frames=124)` → `track_people(video=previous_result:<loop>, threshold=0.6)`.
@@ -21678,7 +21674,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F896 — `track_people` masks span the whole of a multi-cut clip
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 `track_people(video="asset:qa-cast/ep49-episode.mp4")`, workflow `qa-c-f896`.
 expected:
@@ -21689,7 +21684,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F897 — the prep template's `track` option returns per-person masks and leaves the cut list unchanged
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 Run `replace-performer-cuts` on `asset:qa-cast/priya-hal-two-shot.mp4` twice, once with `track: 2` and once with `track: 0`.
 Validate each first.
@@ -21701,7 +21695,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F898 — `replace-performer` with one person's mask changes only that person
-pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 From C-F893, find from the contact sheet who `person-2` is, and take as REF the portrait of the *other* cast
 member: `priya-portrait.jpg` if `person-2` is Hal, `hal-portrait.jpg` if Priya. Run `replace-performer` with
