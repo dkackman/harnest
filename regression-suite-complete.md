@@ -23049,7 +23049,7 @@ metrics: none.
 pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Needs no new download. Validate each first.
-1. `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4")`, workflow `qa-c-f968-default`.
+1. `track_people(video="asset:qa-cast/priya-hal-two-shot.mp4")`, workflow `qa-c-f968-default`.
 2. The same with `backend="grounding-dino"`, workflow `qa-c-f968-explicit`.
 3. `track_people(video="asset:qa-cast/ep49-episode.mp4")`, workflow `qa-c-f968-cuts`.
 expected:
