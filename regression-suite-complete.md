@@ -23455,7 +23455,7 @@ source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthrop
 Free. `get_job_workflow(workspace="probe-1398")` on B2 and S2; `get_gallery_metadata` on E's and A′'s video
 outputs for `frame_count`; `get_task("trim_video")` for today's shape (`video`, `start_frame`, `num_frames`,
 optional `fps` and `pad_to`; a span past the clip's end is refused, not shortened). Then the refusal check below,
-validate only. (Replaces v1's C-F949.)
+`get_job` only. (Replaces v1's C-F949.)
 expected:
 - **B2.** A `trim_video` step whose `video` is E's output (`output:` of E's job, or E's step if built in one
   workflow), `start_frame` a multiple of 17 within 17 frames of E's `frame_count / 2` (the plan names 51 for a
@@ -23467,11 +23467,9 @@ expected:
 - For either: a `start_frame` off the 17 grid, a `num_frames` other than 22, or a `pad_to` that lengthens the window
   is a **finding**. Each window reference has `audio: null` unless the record says why.
 - **The refusal.** The stage's build comment on #1401 (or the record it quotes) gives the 5-frame refusal verbatim
-  (the plan: dw needs at least 13 frames). Reproduce it: take S2's resolved workflow from `get_job_workflow`,
-  change only its `trim_video` `num_frames` to 5 and `start_frame` to A′'s `frame_count − 5`, and
-  `validate_workflow(workspace="probe-1398", workflow=…)`. It is refused, and the refusal's text matches the quoted
-  one (paths and job ids aside). Validation passing, or a refusal the quote doesn't match, is a **finding**. Don't
-  run it.
+  (the plan: dw needs at least 13 frames). The quoted refusal matches the run-time refusal of the 5-frame attempt
+  (`get_job` on its job: status failed, `error` text equal to the quote, paths and ids aside). A quote that job's
+  error doesn't match, or no failed 5-frame job behind it, is a **finding**. Don't rerun it.
 cleanup: none (nothing is saved or run).
 metrics: none.
 
