@@ -23537,4 +23537,224 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F988 — replace-performer's estimate scales with each cut's render_frames, not its source num_frames
+source: tester, verified in #1419 (claude-opus-5-5 via anthropic)
+Free. Four `validate_workflow(name="templates/minimax/replace-performer")` calls with no run. Each passes
+`source_video` and `mask_video` = one video asset on the server at least 372 frames long (the same asset in
+both), and `references` = one `MiniMaxH3ImageReference` from any image asset. The `cuts` lists are:
+(a) 32 cuts, `num_frames` 11, `render_frames` 124, `start_frame` 0, 11, 22, …;
+(b) 3 cuts, `num_frames` 124, `render_frames` 124, `start_frame` 0, 124, 248;
+(c) 3 cuts, `num_frames` 11, `render_frames` 124;
+(d) 3 cuts as in (b) but `render_frames` 345.
+expected:
+- All four are `valid: true` with a `plan.estimate.minutes`.
+- (a) quotes well above (b): more than 5x. The bug quoted (a) *below* (b).
+- (c) quotes the same as (b): source `num_frames` doesn't drive the estimate.
+- (d) quotes above (b), and its `estimate.scaled` note names `render_frames` (3 x 345 = 1035) "over cuts", not
+  `num_frames` or "frames".
+cleanup: none.
+metrics: none.
+
+### C-F989 — the #1418 face encode floor record's job ids resolve, and each arm reads the form the record says
+pending: #1420
+source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). Read the stage A build comment on #1420 and what it quotes from `bench/records/face-encode-floor.md`
+(+ `.json`): per clip, the four arms FM/RP, FM/RJ, FF/RP and FF/RJ with their job ids, and the workspace they ran in.
+For every job id quoted: `get_job(job_id, workspace=<that workspace>)` and `get_job_workflow(job_id, workspace=…)`.
+expected:
+- Every quoted job id resolves, `status` complete, and ran `analyze_face_drift` with `samples_per_shot: 16` and the
+  default threshold (0.363, or the argument omitted). An id that doesn't resolve, failed, or used other settings
+  than the record states is a **finding**.
+- **Video form.** FM/* arms take `video` from `previous_result:` of a `video_frames` step over the clip; FF/* arms
+  take it as `output:` of that same `video_frames` job's saved mp4 (or of the FM job's saved video, as the record
+  names it). An FF arm whose `video` is the original `asset:` clip rather than dw's saved re-encode, or an FM arm
+  that reads a file, is a **finding**.
+- **Reference form.** */RP arms use a png reference; */RJ arms use the same face saved as jpg by a dw step (that
+  step's result `content_type: image/jpeg`, readable from its job). The RP and RJ references of one clip derive
+  from the same source picture. A mismatch is a **finding**.
+- Within one clip, all four arms use the same reference face and the same clip.
+- At least 4 distinct face clips are scored, and the record names each (`asset:` reference). Fewer is a
+  **finding** unless the record states why and Don accepted it on #1420.
+cleanup: none.
+metrics: none.
+
+### C-F990 — a file-form arm of the #1418 floor record re-measures to the recorded median and min
+pending: #1420
+source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+CPU, no GPU model. Pick one FF/RP arm and one FF/RJ arm from C-F989's record (any clip). For each, take its exact
+`video` and `reference` arguments from `get_job_workflow`, and run a one-step inline workflow
+`analyze_face_drift` with them, `samples_per_shot: 16`, default threshold, in the record's workspace.
+`validate_workflow` first and bind its `acknowledged_cost` (it may list the YuNet/SFace weights download).
+`run_workflow(..., wait_seconds=55)`, then `wait_for_job` if `still_running`. Read the result with `get_output_text`
+or `get_job`.
+expected:
+- Each run's per-shot median and min similarity equal the record's values for that arm, to every digit the record
+  prints. Its `shots_source` and `frames_sampled` equal the record's for that arm. Any difference is a **finding**:
+  the task is deterministic on the same files, which the floor depends on.
+- The output `output:` references still resolve (the record's jobs weren't swept). A swept output is a **finding**
+  against the record, not the task.
+cleanup: `delete_output(job_id=…)` for each re-measure job.
+metrics: none.
+
+### C-F991 — the #1418 floor is the maximum of the tabulated per-pair deltas, with both trigger lines stated
+pending: #1420
+source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+Free (arithmetic on the record as quoted in the #1420 build comment, cross-checked against `get_output_text` on any
+two arms' jobs).
+expected:
+- The record tabulates, per clip, Δmedian and Δmin for at least these pairs: FM/RP vs FF/RP (video-encode
+  share), FM/RP vs FM/RJ (reference-encode share), FM/RP vs FF/RJ (the #1400 combination). Each Δ is the
+  absolute difference of the two arms' printed values; a Δ that doesn't equal its arms' difference is a
+  **finding**.
+- The stated **face encode floor for medians** is the maximum Δmedian over the clips and pairs included, and the
+  floor for minimums is the maximum Δmin. The record says which pair(s) the floor is taken over. A floor below
+  any included Δ, or not traceable to one table cell, is a **finding**.
+- The two arms' values spot-checked with `get_output_text` match the table.
+- The record states whether the median floor is ≥ 0.02 (the chain `face_drop` follow-up trigger) and whether it is
+  ≥ 0.03 (the option (b) trigger), each a plain yes/no consistent with the number. A missing or contradicted
+  trigger line is a **finding**.
+- If the median floor is ≥ 0.02, #1420's close-out (or #1418) links a filed follow-up issue for the chain
+  `face_drop` base across a resume. A ≥ 0.02 floor with no such issue is a **finding**; a < 0.02 floor with none
+  is correct.
+cleanup: none.
+metrics: none.
+
+### C-F992 — the #1418 floor counts only arm pairs that sampled the same frames; a faceless arm is excluded, not scored 0
+pending: #1420
+source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). For every arm job in C-F989's record, read `get_output_text` (or `get_job`) for
+`frames_sampled`, `shots_source` and `num_frames` (or the field the task reports for the frame count).
+expected:
+- **Frame identity.** Every arm pair counted in the floor has equal `frames_sampled` (the same indexes), equal
+  `shots_source`, and equal frame count. A pair that differs in any of them is listed in the record **apart**, as a
+  frame-selection difference (the plan's source 4), and is not folded into the floor. A differing pair inside the
+  floor's maximum is a **finding**; so is a differing pair the record says is equal.
+- **No face.** A clip where any arm found no face (a `no_face` finding, or no measurement for a shot) is excluded
+  from the floor and named in the record with the arm that lost the face. A clip scored as similarity 0 in the
+  table, or silently dropped, is a **finding**.
+- If source 4 is found to dominate the gap, the record says so and names the follow-up (a `resolve_shots` fix as
+  its own issue), per the plan's risks.
+cleanup: none.
+metrics: none.
+
+### C-F993 — the #1418 repeat runs give a 0.000 gap or the gap is folded into the floor, and the floor is called a lower bound
+pending: #1420
+source: tester, spec for #1420 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+Free (reads only). From the record as quoted on #1420: the 2 repeat runs (same input, a fresh inline workflow id),
+their job ids and their originals. `get_job_workflow` on each repeat and its original; `get_output_text` on both.
+expected:
+- Each repeat's workflow differs from its original only in the workflow id (same `video`, `reference`,
+  `samples_per_shot`, threshold). A repeat that changed an input is a **finding**.
+- Each repeat's per-shot median and min equal its original's (a Δ of 0.000), **or** the record states the nonzero
+  repeat gap and the floor includes it. A nonzero repeat gap the record omits or doesn't fold in is a **finding**.
+- The record says, in one place, that the floor is a **lower bound** from re-encoding dw's own decoded frames (a
+  second encode generation), and names what would give the upper bound: an H3 (or other generated) clip scored in
+  memory against its first encode, on lem. Missing either half is a **finding**.
+- If the floor reads smaller than #1400's 0.045 min gap, the record says so without claiming #1400's number is
+  wrong.
+- `bench/README.md` gains one line, quoted in the build comment: a face-score margin must clear this floor, and
+  in-job scores are compared only with in-job scores. Docs review (not over MCP): the line is in `bench/README.md`
+  and cites the record; hand that to a docs reviewer.
+cleanup: none.
+metrics: none.
+
+### C-F994 — `analyze_face_drift` on in-memory frames and an in-memory picture reports `scored_from` frames/picture, no mixed note
+pending: #1421
+source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+CPU. `workspace="regression-complete"`. One inline workflow, three steps:
+1. `video_frames` on `asset:qa-cast/ep63-shot-ltx-priya.mp4` (Priya, LTX-2.5).
+2. An image step that passes the picture through in memory: `strip_exif` on `asset:qa-cast/priya-portrait.jpg`
+   (confirm its step shape with `get_guide("workflows", section=…)` on image processors).
+3. `analyze_face_drift` with `video: "previous_result:<step 1>"`, `reference: "previous_result:<step 2>"`,
+   defaults otherwise.
+`validate_workflow`, bind `acknowledged_cost`, `run_workflow(..., wait_seconds=55)`, `wait_for_job` if needed. Read
+step 3's result with `get_output_text` (or `get_job`).
+expected:
+- The result has a top-level `scored_from` equal to `{"video": "frames", "reference": "picture"}` (or the renamed
+  key and values the #1421 build comment and `docs/TASKS.md` state, Q3; then check that mapping instead).
+- `notes` carries **no** mixed-forms line.
+- `measurements`, `findings`, `rules_applied` and `shots_source` are present as before; no `face_drift` finding
+  on the same-person clip.
+It is a **finding** if `scored_from` is missing, either half says `file`, or a same-form pair gets the note.
+cleanup: `delete_output(job_id=…)`.
+metrics: none.
+
+### C-F995 — `analyze_face_drift` on stored files reports `scored_from` file/file, for `output:` and `asset:` alike
+pending: #1421
+source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+CPU. `workspace="regression-complete"`. Needs a saved mp4 from a dw job: use C-F994's `video_frames` job output
+(run C-F994 first and delete after), or run a one-step `trim_video` of `asset:qa-cast/ep63-shot-ltx-priya.mp4`
+(first 48 frames) as setup. Validate and run each:
+1. `analyze_face_drift` with `video: "output:<that job's mp4>"`, `reference: "asset:qa-cast/priya-portrait.jpg"`.
+2. `analyze_face_drift` with `video: "asset:qa-cast/ep63-shot-ltx-priya.mp4"`, the same `asset:` reference.
+expected:
+- Both: `scored_from` = `{"video": "file", "reference": "file"}`, and `notes` has no mixed-forms line.
+- 1: an `output:` video counts as a file even though a dw step wrote it. It is a **finding** if `output:` or
+  `asset:` reads `frames`, or an `asset:` image reads `picture`.
+cleanup: `delete_output(job_id=…)` for each job, and the setup job's.
+metrics: none.
+
+### C-F996 — a mixed-form `analyze_face_drift` pair reports each half and a note quoting the #1418 floor, in both directions
+pending: #1421
+source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+CPU. `workspace="regression-complete"`. Needs #1420's record (C-F991) for the floor value. Validate and run each:
+1. Frames vs file: steps `video_frames` on `asset:qa-cast/ep63-shot-ltx-priya.mp4`, then `analyze_face_drift` with
+   `video: "previous_result:<that step>"`, `reference: "asset:qa-cast/priya-portrait.jpg"`.
+2. File vs picture: steps `strip_exif` on `asset:qa-cast/priya-portrait.jpg`, then `analyze_face_drift` with
+   `video: "asset:qa-cast/ep63-shot-ltx-priya.mp4"`, `reference: "previous_result:<that step>"`.
+expected:
+- 1: `scored_from` = `{"video": "frames", "reference": "file"}`. 2: `{"video": "file", "reference": "picture"}`.
+- Both: `notes` gains exactly one mixed-forms line saying a score of mixed forms is comparable only with another
+  of the same forms, and quoting stage A's face encode floor: the number equals the record's floor (median, and
+  min if quoted) to the record's precision, or cites the record by name. A note missing in either direction, a
+  number that doesn't match the record, or a second copy of the line is a **finding**.
+- Neither run's `measurements` or `findings` changes because of the note (no new finding kind).
+cleanup: `delete_output(job_id=…)` for each job.
+metrics: none.
+
+### C-F997 — `scored_from` is additive: same measurements on the same input, the old keys unchanged, refusals unchanged
+pending: #1421
+source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+CPU. `workspace="regression-complete"`. Validate each; run the accepted ones.
+1. Run C-F995 arm 2 (`asset:` clip vs `asset:` reference) twice.
+2. If `list_jobs` in `regression-complete` (or any workspace this server holds) has an `analyze_face_drift` job from
+   before #1421 deployed on `asset:qa-cast/ep63-shot-ltx-priya.mp4` and `priya-portrait.jpg` with the same
+   arguments, compare against it; else note that no pre-deploy baseline exists and rely on 1.
+3. Refusal, no reference: an `analyze_face_drift` step with `video` and no `reference`.
+4. Refusal, faceless reference, file form: setup a one-step `qr_code` job (any text); `analyze_face_drift` on the
+   clip with `reference: "output:<that qr image>"`.
+5. Refusal, faceless reference, in-memory form: a `qr_code` step, then `analyze_face_drift` with
+   `reference: "previous_result:<qr step>"`.
+expected:
+- 1: both runs give identical `measurements`, `findings`, `rules_applied` and `shots_source`. The top-level keys are
+  exactly the pre-#1421 set (`measurements`, `findings`, `rules_applied`, `shots_source`, `notes`) plus
+  `scored_from`; any other key added or removed is a **finding**.
+- 2: if a baseline exists, its `measurements`, `findings`, `rules_applied` and `shots_source` equal today's.
+- 3: refused before running (validate) naming `reference` as required, as before.
+- 4 and 5: refused (validate by preference, else a failed job) with the existing message naming `reference` and
+  saying it holds no face; no output written. A faceless reference that produces a result, or a refusal that
+  differs between the file and in-memory forms, is a **finding**.
+cleanup: `delete_output(job_id=…)` for each job, the `qr_code` setup job's included.
+metrics: none.
+
+### C-F998 — the docs carry `scored_from`, the #1418 floor, and the `face_drop` base's form on fresh vs resumed chains
+pending: #1421
+source: tester, spec for #1421 from #1418's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_guides`, then `get_guide` on the tasks doc, section `analyze_face_drift`; `get_guide("workflows", …)` on
+the section holding the chain check's `face_drop` / `face_drop_max` row; `get_workflow("face-drift-check")`;
+`get_task("analyze_face_drift")`.
+expected:
+- The tasks guide's `analyze_face_drift` section names the `scored_from` key, its two halves and their values, says
+  what counts as `file` (stored path, `asset:`, `output:`, a saved-segment chain result) vs in-memory, and states
+  stage A's face encode floor with the record (`bench/records/face-encode-floor.md`) cited. The floor quoted equals
+  C-F991's. A missing key, a missing floor, or a number differing from the record is a **finding**.
+- The workflows guide's `face_drop` row says the base is read from in-memory frames on a fresh chain and from the
+  kept file on a resume. Silence on it is a **finding**.
+- The `face-drift-check` template's description, if it states the output shape, includes `scored_from`; if it
+  states no shape, no change is owed.
+- `get_task`'s parameters are unchanged from today's (`video`, `reference`, `shots`, `threshold` default 0.363,
+  `samples_per_shot` default 8 range 1 to 64, `device`): the feature adds no argument.
+cleanup: none.
+metrics: none.
+
 ## Performance
