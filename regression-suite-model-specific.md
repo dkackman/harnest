@@ -10140,7 +10140,7 @@ Skip the H3-Image arm with a note if M-F389 found the stop branch; the Klein arm
 Steps:
 1. `get_job`, `get_job_events` and `get_job_workflow` on the H3-Image edit job and the Klein control job.
 2. `get_output_image` on both stills and on the `<Picture 1>` portrait.
-3. `compare_outputs` between each still and the `<Picture 1>` portrait.
+3. `compare_outputs` between the two arms' stills, and between each still and the portrait, for every pair of the same size.
 4. Read #1317's comments for the side-by-side post.
 expected:
 - Both jobs ran with the same 3 files in the same order and pinned seeds. The H3-Image job is `succeeded` (a
@@ -10149,11 +10149,13 @@ expected:
 - The Klein job is `succeeded`, one still.
 - In the H3-Image still, the person is recognisably the `<Picture 1>` portrait (face shape, hair, age), and the other two
   references show up in the scene. A face that has aged, swapped, or merged with another reference's is recorded as such.
-- The record gives both arms' `compare_outputs` numbers against the portrait, and they match this case's step 3 within
-  0.02 (or the tool's stated rounding).
+- The record gives `compare_outputs` numbers for each same-size pair and matches step 3 within 0.02 (or the tool's stated
+  rounding). For any pair that differs in size, it says "not measurable" with the tool's message. Identity is judged by
+  eye here and by SFace in M-F393.
 - #1317 carries a comment with the two stills side by side (or links to both), plus the portrait.
 It is a **finding** if the arms used different references or order, an arm failed for a reason other than OOM, a
-`compare_outputs` number disagrees, or the side-by-side post is missing.
+given `compare_outputs` number disagrees, or a pair is neither scored nor marked not measurable, or the side-by-side post
+is missing.
 cleanup: delete nothing; `compare_outputs` writes no job.
 metrics: none.
 
@@ -10199,7 +10201,7 @@ expected:
 - It states the result of the first-action checks (M-F389): the measured download and whether `dw`'s H3 inserts touched
   the H3-Image graph.
 - An OOM row names the failing recipe and the step.
-- It gives the SFace numbers for both video arms (M-F393) and the `compare_outputs` numbers for both stills (M-F392).
+- It gives the SFace numbers for both video arms (M-F393) and the stills' `compare_outputs` numbers, or why each pair wasn't measurable (M-F392).
 - It leaves "holds a face better" and onboarding to Don (Q2): no recommendation phrased as a decision, and #1317 goes to
   Don or the lead for the verdict, not to onboarding.
 - It names nothing out of scope as run: no PE, no P-H3-Image arm, no bf16 or two-card run.
@@ -10215,15 +10217,17 @@ Model/pipeline: MiniMax-H3-Image, MiniMax H3 `templates/minimax/image-to-video`.
 Steps:
 1. `list_workflows(shape="image")`, `list_workflows(shape="image-edit")` and `list_workflows(include_models=true)`.
 2. `validate_workflow("templates/minimax/image-to-video", workspace="default")` at its defaults.
-3. In `bench`, `validate_workflow` an inline one-step workflow that loads the H3-Image prompt enhancer: the modular blocks
-   `diffusers/minimax-h3-image-pe-blocks` with `trust_remote_code: true` (confirm the field name for a modular pipeline's
-   remote code against `get_guide("workflows", section="Authoring a workflow from an agent")` or `get_schema` first).
+3. (pending: dkackman/diffusers-workflow#1410; validate gains this check there, and until then the step is not counted.)
+   In `bench`, `validate_workflow` (validate only, **never `run_workflow`**) an inline one-step workflow whose pipeline
+   step has `from_pretrained_arguments: {"model_name": "MiniMaxAI/MiniMax-H3-Image", "trust_remote_code": true}`, plus a
+   second variant with `custom_pipeline`.
 expected:
 - No catalog entry names MiniMax-H3-Image or P-H3-Image: no `templates/minimax-h3-image/...`, no `models/` entry. The
   probe is bench-only; a template here belongs to an unapproved onboarding stage.
 - Step 2: `valid: true`, no new error, and `plan.downloads_required` names nothing from `MiniMaxAI/MiniMax-H3-Image`.
-- Step 3: refused before anything loads, naming remote code or trust (or the untrusted repo). It does not validate clean
-  and queues nothing.
+- Step 3: both variants return an error naming the remote-code key and `--trust-workflows`. Neither validates clean,
+  and neither queues anything. A refusal that the repo isn't found doesn't test the gate: re-check the id rather than
+  count it as a pass.
 It is a **finding** if an H3-Image catalog entry appears before an onboarding plan is approved, H3 video's template
 starts failing or pulling H3-Image files, or the PE validates clean. A PE that validates clean is also a boundary
 escape: file it privately with `./scripts/file-advisory.sh`, not as an issue.
