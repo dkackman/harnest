@@ -10235,7 +10235,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F396 — the #1400 face-once probe's two arms are inline copies of `generated-subject-reference` that differ only in the draw prompt, the draw size and `subject_definitions`
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: Z-Image Turbo draw + MiniMax H3 `ref2va` (`templates/minimax/generated-subject-reference`). Workspace
 `probe-1400` on lem. **Free**: job reads and validate only.
@@ -10269,7 +10268,6 @@ cleanup: none. Never delete the probe jobs; the audit cites them.
 metrics: none.
 
 ### M-F397 — the #1400 probe checked `downloads_required` before any job, and ran one H3 job at a time
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe (M-F396). **Free**: issue reads, job reads, validate.
 Steps:
@@ -10290,7 +10288,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F398 — the #1400 probe's jobs: four succeeded H3 clips at the template's shape, a 768x768 portrait and a face-once 1344x768 sheet per seed
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe (M-F396). **Free**: reads only.
 Skip with a note if M-F397 found the stop branch.
@@ -10311,7 +10308,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F399 — the #1400 face drift: one `analyze_face_drift` per clip against its own arm's draw, and the audit's median and minimum SFace match it
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `analyze_face_drift` task (SFace cosine similarity; `video`, `reference` required, `threshold` default
 0.363, `samples_per_shot` default 8; the largest face in `reference` is used). Workspace `probe-1400`. **Cheap**: reads,
@@ -10341,7 +10337,6 @@ cleanup: `delete_output(job_id=...)` on each re-measure job this case made. Neve
 metrics: none.
 
 ### M-F400 — the #1400 leak verdicts match each clip's first frames
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe's H3 clips (M-F398). **Free**: reads, plus `assess_output` (free).
 Skip with a note if M-F397 found the stop branch.
@@ -10361,7 +10356,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F401 — the #1400 audit's outcome follows mechanically from the fixed criterion, with its known limits named
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe (M-F396–M-F400). **Free**: issue reads.
 Skip with a note if M-F397 found the stop branch (then the audit, if any, says the probe did not run and calls no
@@ -10388,7 +10382,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F402 — the #1400 probe changes only docs: one "Probed and not a rule" bullet in the minimax-h3 skill, and the template and prompts as they were
-pending: #1406
 source: tester, spec for #1406 from #1400's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/generated-subject-reference`, the `dw:minimax-h3` skill. **Free**: catalog reads.
 Steps:
