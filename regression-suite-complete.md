@@ -308,7 +308,9 @@ smoke's Fixtures lists the asset too.
   templates, `track_people`) use the shared `asset:qa-cast/` clips `ep6-cold-open.mp4`, `ep3-shot1-incident.mp4`,
   `ep3-shot2-reply.mp4` (124 frames, 960×544, 24 fps), `ep49-episode.mp4` (372 frames, three 124-frame hard cuts),
   `ep62-shot2-deflect.mp4` (124 frames) and `ep65-shot-kf-priya-hal.mp4` (121 frames, 960×544, Priya and Hal in one
-  frame), with `priya-portrait.jpg`, `hal-portrait.jpg` and `priya-voice.wav`. The multi-shot and person-free clips
+  frame), with `priya-portrait.jpg`, `hal-portrait.jpg` and `priya-voice.wav`. C-F893, C-F894, C-F897 and C-F898 use
+  `priya-hal-two-shot.mp4` (target 121 frames, 24 fps, 960×544; Priya and Hal both in frame from frame 0, no cut or
+  dissolve), which C-F893's setup makes and keeps when it's missing. The multi-shot and person-free clips
   are built in each case's setup from those clips with `trim_video`, `concat_videos` (`crossfade_ms: 0`),
   `video_frames`/`get_first_frame`, `loop_frames` and `qr_code`. Nothing new to keep; every case deletes what it made.
 
@@ -21632,13 +21634,21 @@ metrics: none.
 ### C-F893 — `track_people` on a two-person clip returns one mask per person and a matching contact sheet
 pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-First confirm with `get_output_frames("asset:qa-cast/ep65-shot-kf-priya-hal.mp4", at="frame:60")` that two people are
-in frame. Then a workflow `qa-c-f893` with `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4")`. Run it.
+Setup, only if `asset:qa-cast/priya-hal-two-shot.mp4` is missing (`list_assets`): a FLUX 3 Klein still of Priya and
+Hal side by side, both fully in frame, with `priya-portrait.jpg` and `hal-portrait.jpg` as references; then an LTX-2.5
+image-to-video run from that still, one continuous shot with no cut or dissolve and both people in frame throughout,
+targeting 121 frames, 24 fps, 960×544. No H3. `get_output_frames` at `frame:0` and the last frame must show both
+people; only then `keep_output` it as `qa-cast/priya-hal-two-shot.mp4`, then `delete_output(job_id=<id>)` on the
+build jobs. A failed check is a setup failure, not a finding against `track_people`. If the kept clip's frames, fps
+or size differ from the target, report them on #1375 so the curator updates the counts below.
+First confirm with `get_output_frames("asset:qa-cast/priya-hal-two-shot.mp4", at="frame:0")` that two people are
+in frame. Then a workflow `qa-c-f893` with `track_people(video="asset:qa-cast/priya-hal-two-shot.mp4")`. Run it.
 expected:
 - Exactly two mask videos, `person-1` and `person-2`. Not four: `max_people` caps the count, it doesn't pad it.
 - Each mask has 121 frames, 24 fps and 960×544, the source's numbers (`get_gallery_metadata`).
 - `get_output_frames` on each mask and on the source at `frame:0`, `frame:60` and `frame:120`: each mask is light
   over one person and dark over the other, and the two never mark the same person.
+- A person who enters after a cut's first frame gets no mask (plan v3 stage C; TASKS.md).
 - `person-1` covers the larger area of the two.
 - The contact sheet (`get_output_image`) shows the numbers 1 and 2 on the people that `person-1` and `person-2`
   mark.
@@ -21648,7 +21658,7 @@ metrics: none.
 ### C-F894 — `max_people` 1 returns only the largest person
 pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Run `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", max_people=1)`, workflow `qa-c-f894`.
+Run `track_people(video="asset:qa-cast/priya-hal-two-shot.mp4", max_people=1)`, workflow `qa-c-f894`.
 expected:
 - Exactly one mask, `person-1`, with 121 frames. It marks the same person as C-F893's `person-1`:
   `compare_outputs` against it at `frame:60` is near-identical (SSIM ≥ 0.9).
@@ -21680,7 +21690,7 @@ metrics: none.
 ### C-F897 — the prep template's `track` option returns per-person masks and leaves the cut list unchanged
 pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
-Run `replace-performer-cuts` on `asset:qa-cast/ep65-shot-kf-priya-hal.mp4` twice, once with `track` on and once off.
+Run `replace-performer-cuts` on `asset:qa-cast/priya-hal-two-shot.mp4` twice, once with `track` on and once off.
 Validate each first.
 expected:
 - Both give the same cut list: one cut, 121 frames, `render_frames` 124.
@@ -21694,7 +21704,7 @@ pending: #1375
 source: tester, spec for #1375 from #1194's plan v2 (claude-opus-5-5 via anthropic)
 From C-F893, find from the contact sheet who `person-2` is, and take as REF the portrait of the *other* cast
 member: `priya-portrait.jpg` if `person-2` is Hal, `hal-portrait.jpg` if Priya. Run `replace-performer` with
-`source_video` = `ep65-shot-kf-priya-hal.mp4`, `mask_video` = C-F893's `person-2` only, `cuts` = C-F897's cut list,
+`source_video` = `priya-hal-two-shot.mp4`, `mask_video` = C-F893's `person-2` only, `cuts` = C-F897's cut list,
 `references` = [REF] and `seed` 7. Then run `crop_face_track` with `select` left and with `select` right (whichever
 side each person is on) on both the output and the source.
 expected:
