@@ -10526,15 +10526,15 @@ expected:
 - Step 2: both `valid: true` with no size error (2080 and 5472/3072 are on the 32 grid).
 - Step 3: each `valid: false` with an error at `arguments.<name>` saying the workflow declares no such variable. All
   eight (four names × two templates) are refused.
-- Step 4: not clean. Either an error or a warning at `arguments.images` that the list is empty. The plan's list is 1..N, so
-  an empty list must not validate silently. (The plan builds no upper-bound or `<Picture N>` numbering check, so a
-  long list or a mis-numbered prompt isn't tested here.)
+- Step 4: `valid: false`, with an error at `arguments.images` carrying the template's reason (plan v5 Q6; M-F417 covers
+  it in full). A warning alone does not meet the plan. (The plan builds no upper-bound or `<Picture N>` numbering check,
+  so a long list or a mis-numbered prompt isn't tested here.)
 It is a **finding** if an off-grid size validates clean, an on-grid size is refused, any forbidden variable is
-accepted, or an empty `images` passes with no message.
+accepted, or an empty `images` is not refused at `arguments.images`.
 cleanup: none.
 metrics: none.
 
-### M-F408 — a MiniMax-H3-Image text-to-image at defaults completes on lem at 2048x2048, coherent, within 10% of its catalog cost, with no download and no H3 video insert engaged
+### M-F408 — a MiniMax-H3-Image text-to-image at defaults completes on lem at 2048x2048, coherent, within its catalog cost as M-F420 judges it, with no download and no H3 video insert engaged
 pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax-h3-image/text-to-image` (MiniMax-H3-Image, int8, offloaded). lem only, one 24 GB card,
@@ -10549,18 +10549,18 @@ Steps:
 3. `get_job`, `get_job_events`, `get_output_image`.
 expected:
 - `succeeded`, one image, **2048x2048**: the described woman, coherent, with no tiling seams, banding or noise field.
-- Wall time (`started_at`–`finished_at`) is within **10%** of the template's `cost.minutes`. If the worker had to load the
-  pipeline, that load is part of the measured cost; the 10% bar is against the cost as the template states it.
+- Timing as M-F420 (plan v5 Q7): record the card it ran on; a cached run is no more than 10% over `cost.minutes` (a
+  faster run passes), and a run that loads is reported with and without its load and isn't held to the cost.
 - No download event. No event or warning naming `trust_remote_code`, steps or guidance.
 - No H3 video insert engages: no event from hold, mask, anchor, guides, windows, sparse attention or TST (the
   insert/class pin the plan adds keeps them off; here it's observable as their absence).
 - No out-of-memory error. If `get_memory` is read right after, the card's peak is under 24 GB.
-It is a **finding** if the job fails, the image is the wrong size or incoherent, the time misses by more than 10%, a
+It is a **finding** if the job fails, the image is the wrong size or incoherent, the timing fails M-F420's rule, a
 download happens, or an H3 insert event appears.
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: wall minutes → `regression-perf/M-F408.jsonl` (seed it on the first passing run).
 
-### M-F409 — a MiniMax-H3-Image three-reference edit completes on lem, keeps the `<Picture 1>` face, and is within 10% of its catalog cost
+### M-F409 — a MiniMax-H3-Image three-reference edit completes on lem, keeps the `<Picture 1>` face, and is within its catalog cost as M-F420 judges it
 pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax-h3-image/multi-reference` (MiniMax-H3-Image edit, int8). lem only, workspace `bench`.
@@ -10579,10 +10579,10 @@ expected:
 - `succeeded`, one still at the template's default size (2048x2048).
 - The woman is recognisably `cast/estela.jpg` (face shape, hair, apparent age); the man is recognisably
   `cast/aurelio.jpg`; the setting reads as `kf-open.png`. An aged, swapped or merged face fails.
-- Wall time within **10%** of the edit template's `cost.minutes`.
+- Timing as M-F420 (plan v5 Q7), against the edit template's `cost.minutes`.
 - No download event, no H3 video insert event, no OOM (as M-F408).
-It is a **finding** if the job fails, a reference is lost or the `<Picture 1>` face changes, the time misses by more
-than 10%, or a download happens.
+It is a **finding** if the job fails, a reference is lost or the `<Picture 1>` face changes, the timing fails M-F420's
+rule, or a download happens.
 cleanup: `delete_output(job_id=<the job>)`.
 metrics: wall minutes → `regression-perf/M-F409.jsonl` (seed it on the first passing run).
 
