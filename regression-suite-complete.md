@@ -22997,7 +22997,7 @@ metrics: none.
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`, after the download hold lifts. Setup as C-F895: a `qr_code` step (as C-F454's QR
 fixture) → `loop_frames(video=previous_result:<qr step>, num_frames=124)` → `track_people(video=previous_result:<loop>,
-backend="sam3")`, workflow `qa-c-f966`. Then the same workflow with no `backend`, `qa-c-f966-dino`.
+backend="sam3")`, workflow `qa-c-f966`. Then the same workflow with no `backend` and `threshold=0.6` (as C-F895), `qa-c-f966-dino`.
 expected:
 - The sam3 job fails, or its `track_people` step errors, with a message that says no person was found **and names
   `sam3`**. An empty or all-dark mask returned as success, an opaque traceback, or a message that doesn't name the
