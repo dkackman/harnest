@@ -9800,7 +9800,7 @@ metrics: none.
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` (and one LTX-2.5 step). **Free**: validate only. Flag-on (see M-F375).
 Steps: `validate_workflow(workspace="regression-model-specific", ...)` with `KA = {}` in each of:
-(a) **not fl2va**: `templates/minimax/image-to-video` inlined with the key added to its pipeline step's arguments
+(a) **not fl2va**: `templates/minimax/image-to-video` inlined with its step's `from_pretrained_arguments.workflow` set to `"t2va"` (not its own `"fl2va"`) and the key added to its pipeline step's arguments
 (and a dense `attention_backend`), plus `guides: [{"video": GUIDE, "frame": 0}]`;
 (b) **not H3**: `templates/ltx2/image-to-video` inlined with the key added to its step's arguments;
 (c) **no guides**: W_KA with `guides` removed; (d) W_KA with `guides: []`;
