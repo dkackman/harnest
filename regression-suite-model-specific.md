@@ -9898,36 +9898,11 @@ found.
 cleanup: none.
 metrics: none.
 
-### M-F382 — the #1391 bench: both arms' workflows differ only as the plan says, and an existing keystone-`first` run was reported before the control ran
-pending: #1394
-source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda), bench workspace. **Free**: issue reads and job reads.
-The **arm jobs** are the `bench` jobs the stage's hand-off on #1394 names: the keystone-only control
-(`keystone-attention-control`) and the attention arm (`keystone-attention`), early (seg01–02) and, if the gate
-passed, full. Find them by note in `list_jobs(workspace="bench")` if the hand-off doesn't give ids.
-Steps: `get_job_workflow(workspace="bench")` on each arm job and on the no-keystone control `aed61997052a`;
-`gh issue view 1394 --repo dkackman/diffusers-workflow --comments`.
-expected:
-- Keystone control vs `aed61997052a`: the only difference is each later segment's `image`, which is segment 1's
-  frame 0 in the keystone control (the carried tail's first frame in `aed61997052a`). Each segment's guide is
-  still the carried tail. Same prompts, seeds, size, steps, LoRA, attention backend and segment count.
-- Attention arm vs keystone control: the only difference is `experimental_keystone_attention` at its defaults
-  (`{}` or `{"balance": 20, "blocks": "31-33,36-44,47"}`) on each fl2va segment call. Segment 1 may carry it too;
-  either way the record says which.
-- An early job is its arm's full workflow cut after seg02, nothing else changed.
-- The record (in `bench/records/narrated.md`, quoted on #1394 or #1391) states both diffs in words.
-- Before the keystone control's first job was created, #1394 has a comment saying whether a keystone-`first` run
-  already existed on the same chain, build and seed (and, if one did, that it was reused or why it was re-run).
-It is a **finding** if any other argument differs, if the record omits a diff, or if the existing-run comment is
-missing or postdates the control job's `created_at`.
-cleanup: none (the jobs are the bench record).
-metrics: none.
-
 ### M-F383 — the #1391 bench jobs completed on the control's build, one H3 job at a time, after #1385 and #1382
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
-Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job (M-F382); `get_diffusers_state()`;
+Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job (M-F425); `get_diffusers_state()`;
 `list_jobs(workspace="bench")` and the job lists of the workspaces #1385's and #1382's records name, around the
 arm jobs' times; `gh issue view 1385` and `gh issue view 1382` (`--repo dkackman/diffusers-workflow`) for their
 close times.
@@ -9984,24 +9959,6 @@ expected:
 It is a **finding** if a measure or column is missing, a frame count disagrees, or a re-measure falls outside the
 tolerance.
 cleanup: `delete_output(job_id=...)` on each analysis job this case ran.
-metrics: none.
-
-### M-F386 — the #1391 record states the block-numbering assumption, the attention op's wall-clock cost, the take paths for Don, and no verdict
-pending: #1394
-source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
-Steps: read the record as quoted on #1394 or #1391; `get_job` on the arm jobs for their timings.
-expected:
-- It states that diffusers' H3 block indices 0–49 are taken as ComfyUI's, as an assumption (Q3), not a checked
-  fact.
-- It states the wall-clock cost of the LSE-returning op on the 13 blocks: the attention arm's time against the
-  keystone control's, per segment or per job, agreeing with `get_job` timings within 10%.
-- It names the op the selected blocks ran (cuDNN or native flash).
-- It ends with the takes' output paths for Don's viewing, and calls no verdict on the measures beyond the gate:
-  the issue goes to Don (`owner:don`) for the viewing.
-- It says the result transfers to `keystone_slot` `first` and `last` only, and that no moving-shot arm ran.
-It is a **finding** if any item is missing, or if the record rules on the feature itself.
-cleanup: none.
 metrics: none.
 
 ### M-F387 — a cached H3 turbo LoRA file named through `variable:lora_weight_name` is no download; an uncached file in the same repo is one
