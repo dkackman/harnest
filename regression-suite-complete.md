@@ -22730,14 +22730,13 @@ window (start 51 or 68, the length it gives), feeding a `MiniMaxH3VideoReference
 recipe gives. Where the recipe leaves a key unstated that the workflow needs, look it up in
 `get_guide("workflows")`, and record it. Then:
 1. `validate_workflow` it.
-2. The speech variant the rule allows: the same, with the window at the clip's last 5 frames (`start_frame: 119`,
-   `num_frames: 5`).
+2. The speech variant the rule allows: the same, with the window at the clip's last 22 frames (`start_frame: 102`,
+   `num_frames: 22`).
 3. The whole-clip form: no trim step, the reference `from_file: asset:qa-cast/ep6-shot1-priya.mp4`, `audio: null`.
 4. Form 1 with the reference also given `start_frame: 51` (and no trim step): the key the plan says references lack.
 expected:
 - 1, 2 and 3 are `valid: true` with no error, and no warning that names the reference, its length or the window.
-  A refusal is a **finding** against the guidance (or against stage A's fallback, if the recipe gives 5 frames and
-  stage A recorded that 5 is refused).
+  A refusal is a **finding** against the guidance.
 - A key the recipe left unstated that a fresh agent could not have guessed is a **finding** against the guidance,
   even when the validate passes: the intent is that the guidance alone suffices.
 - 4 is refused, naming the unknown field (`start_frame`) on the reference. A pass is a **finding**: either the
