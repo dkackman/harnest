@@ -19741,7 +19741,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F773 — the #1314 S2V Pro probe's build comment names its path, its jobs, its inputs and its numbers, and lem's diffusers matches
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Free. Source: the stage A build comment on #1339 (`gh issue view 1339 --comments`). The tester cannot read
 `bench/records/narrated.md` or `bench/arms/ks2v-pro-4bit.json`, so the comment has to carry what the record says.
@@ -19764,7 +19763,6 @@ cleanup: none (the probe's jobs and outputs are evidence: never delete them).
 metrics: none.
 
 ### C-F774 — the S2V Pro arm validates clean, or refuses only with a reason the record names, and is the arm the plan describes
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Free (validate only). Inside-dw path only (under the spike-venv fallback this case does not apply; say so and skip).
 Get the arm's JSON with `get_job_workflow` on the gate job from C-F773 (or by name, if the comment says the arm was
@@ -19784,7 +19782,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F775 — the S2V Pro arm's job ends terminal: a sound video as long as its narration, or a failure with the reason the record quotes
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Free. Inside-dw path only. For each arm job C-F773 names: `get_job` (status, error, outputs, warnings) and
 `get_job_events`; for each video output, `get_gallery_metadata` (`duration_seconds`, `fps`, `frame_count`, size, audio
@@ -19808,7 +19805,6 @@ cleanup: none (never delete the probe's jobs or outputs).
 metrics: none.
 
 ### C-F776 — `face-drift-check` on the S2V Pro output against kf00 matches the record's SFace row within ±0.03
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Short GPU or CPU runs (the template's observed cold figure is under 0.1 min). Applies when an arm job succeeded (C-F775),
 or under the fallback when the record's output is reachable as an `asset:` (C-F779). In the probe's workspace, for each
@@ -19829,7 +19825,6 @@ cleanup: `delete_output(job_id=...)` for each `face-drift-check` run (and any cl
 metrics: none.
 
 ### C-F777 — frames from the S2V Pro output at 0.5 s and 85 s (or 20 s) are the frames the contact sheet shows
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Free. Applies when an arm job succeeded, or the fallback output is reachable as an `asset:`. `get_output_frames` on the
 arm's final video at 0.5 s and at 85 s; if the gate stopped the run, at 0.5 s and 20 s. Open the faces contact sheet
@@ -19845,7 +19840,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F778 — the S2V Pro record's gate decision follows from its own 20 s numbers, at the thresholds' edges too
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Free. From C-F773's quoted record: at 20 s, the Pro arm's SFace, its saturation rise since 0.5 s, its face-crop
 Laplacian, and the H3 arms' Laplacian range in the same script. `list_jobs` in the probe's workspace.
@@ -19863,7 +19857,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F779 — under the spike-venv fallback, the S2V Pro record is checked against the files it names, with no generation job
-pending: #1339
 source: tester, spec for #1339 from #1314's plan v2 (claude-opus-5-5 via anthropic)
 Free, apart from C-F776's measuring runs. Applies only when C-F773's comment says the spike venv was used (either
 reason). The tester can't read lem's disk, so the files the record names (the output video, the narration, the
