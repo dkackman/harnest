@@ -22886,7 +22886,6 @@ cleanup: none (nothing runs).
 metrics: none.
 
 ### C-F961 — `track_people` lists `backend` (default `grounding-dino`) and `sam3_model_name`, and the tasks guide documents the sam3 arm
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_task("track_people")`, then `get_guide("tasks")` and its `track_people` section.
 expected:
@@ -22906,7 +22905,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F962 — validate quotes only `facebook/sam3`, gated, for `backend: "sam3"`, today's two repos without it, and refuses `bogus`
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Free, **validate only**, workspace `regression-complete`. A one-step workflow `qa-c-f962` with
 `{"name": "track", "task": {"command": "track_people", "arguments": {"video":
@@ -22934,7 +22932,6 @@ cleanup: none (nothing runs).
 metrics: none.
 
 ### C-F963 — `backend: "sam3"` masks a person who enters after frame 0, with `first_frame` > 0, numbered after the first-frame people
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Runs only after Don lifts the `facebook/sam3` download hold (#1397); its first run
 downloads the weights, which is slow for that reason alone.
@@ -22964,7 +22961,6 @@ cleanup: keep A's job for C-F964, then `delete_output(job_id=…)` on both.
 metrics: none.
 
 ### C-F964 — the sam3 arm keeps two people apart: no pixel in two masks
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Uses C-F963's run A (run it first if its job is gone). `get_output_frames` on every mask and on the source at
 `frame:0`, `frame:30`, `frame:60`, `frame:90` and `frame:120`.
@@ -22981,7 +22977,6 @@ cleanup: `delete_output(job_id=…)` on C-F963's jobs, if C-F963 didn't already.
 metrics: none.
 
 ### C-F965 — `max_people` on the sam3 arm caps by first-frame area, then entry order; 0 loads nothing
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`, after the download hold lifts. Validate each first.
 1. `track_people(video="asset:qa-cast/ep65-shot-kf-priya-hal.mp4", backend="sam3", max_people=1)`, workflow
@@ -23000,7 +22995,6 @@ cleanup: `delete_output(job_id=…)` on all three.
 metrics: none.
 
 ### C-F966 — the sam3 arm on a person-free clip fails with "no person found", naming the backend
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`, after the download hold lifts. Setup as C-F895: a `qr_code` step (as C-F454's QR
 fixture) → `loop_frames(video=previous_result:<qr step>, num_frames=124)` → `track_people(video=previous_result:<loop>,
@@ -23015,7 +23009,6 @@ cleanup: `delete_output(job_id=…)` on both.
 metrics: none.
 
 ### C-F967 — sam3 masks span every cut of a multi-cut clip, restarting at each cut
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`, after the download hold lifts. `track_people(video="asset:qa-cast/ep49-episode.mp4",
 backend="sam3")`, workflow `qa-c-f967`. Validate first.
@@ -23030,7 +23023,6 @@ cleanup: `delete_output(job_id=…)`.
 metrics: none.
 
 ### C-F968 — after #1404 the default backend's `track_people` is unchanged, and it loads no SAM 3
-pending: #1404
 source: tester, spec for #1404 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Needs no new download. Validate each first.
 1. `track_people(video="asset:qa-cast/priya-hal-two-shot.mp4")`, workflow `qa-c-f968-default`.
