@@ -22732,8 +22732,12 @@ recipe gives. Where the recipe leaves a key unstated that the workflow needs, lo
 3. The whole-clip form: no trim step, the reference `from_file: asset:qa-cast/ep6-shot1-priya.mp4`, `audio: null`.
 4. Form 1 with the reference also given `start_frame: 51` (and no trim step): the key the plan says references lack.
 expected:
-- 1, 2 and 3 are `valid: true` with no error, and no warning that names the reference, its length or the window.
-  A refusal is a **finding** against the guidance.
+- 1 and 2 are `valid: true` with no error, and no warning that names the reference, its length or the window,
+  except the estimate's cost-basis line pricing the reference (e.g. "video reference 22 of 124 frames"), which is
+  informational (#1429).
+- 3 is `valid: true` with no error, and a VRAM warning that names the video reference's frame count (124) and
+  projects above the card (#1429: the whole clip at 1344x768 OOM'd in job `e6ecb7df55ec`).
+  A refusal of 1, 2 or 3 is a **finding** against the guidance.
 - A key the recipe left unstated that a fresh agent could not have guessed is a **finding** against the guidance,
   even when the validate passes: the intent is that the guidance alone suffices.
 - 4 is refused, naming the unknown field (`start_frame`) on the reference. A pass is a **finding**: either the
