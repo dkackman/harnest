@@ -9720,7 +9720,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F374 — `experimental_keystone_attention` is refused on a server without `DW_EXPERIMENTAL_REFINE_WINDOWS`, and W_KA without it validates clean
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free** once the guide exists (validate only; the setup is a CPU
 trim of a few seconds).
@@ -9754,7 +9753,6 @@ cleanup: `delete_output(job_id=<setup G job>)` after the last of M-F374–M-F380
 metrics: none.
 
 ### M-F375 — with the flag on, `experimental_keystone_attention: {}` validates clean and the plan shows its defaults; boundary values are accepted
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free**: validate only.
 **Flag-on cases (M-F375–M-F380)** need lem serving with `DW_EXPERIMENTAL_REFINE_WINDOWS=1`. Tell by M-F374 step 2:
@@ -9778,7 +9776,6 @@ cleanup: none (setup G's output is cleaned by M-F374).
 metrics: none.
 
 ### M-F376 — with the flag on, a bad `balance` or `blocks` is a named finding at validate
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **Free**: validate only. Flag-on (see M-F375).
 Steps: W_KA from M-F374; `validate_workflow(workspace="regression-model-specific", inline_workflow=W_KA)` once per KA:
@@ -9800,7 +9797,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F377 — with the flag on, `experimental_keystone_attention` is refused off H3 fl2va, without a keystone or carried guide, and beside TST, sparse attention or a capstone
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` (and one LTX-2.5 step). **Free**: validate only. Flag-on (see M-F375).
 Steps: `validate_workflow(workspace="regression-model-specific", ...)` with `KA = {}` in each of:
@@ -9828,7 +9824,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F378 — with the flag on, a one-segment, one-guide fl2va run with `experimental_keystone_attention: {}` completes with an output and no error event
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`, turbo LoRA, 5 steps, 124 frames at 960x544. **GPU**: a few minutes
 on lem (quote `plan.estimate`). Flag-on (see M-F375).
@@ -9848,7 +9843,6 @@ cleanup: kept until M-F380 has run, then `delete_output(job_id=<this job>)`.
 metrics: none.
 
 ### M-F379 — with the flag on, `balance: 1` gives the same take as no argument at the same seed
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: two runs as M-F378. Flag-on (see M-F375).
 Steps: W_KA from M-F374 run twice, each validated and acknowledged as in M-F378:
@@ -9867,7 +9861,6 @@ cleanup: `delete_output(job_id=...)` on (b); keep (a) for M-F380, then delete it
 metrics: none.
 
 ### M-F380 — with the flag on, `balance: 20` gives a visibly different take from no argument at the same seed
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: none beyond M-F378 and M-F379(a). Flag-on (see M-F375).
 Steps: `compare_outputs` on M-F378's video (`KA = {}`, balance 20 on the default 13 blocks) against M-F379(a)'s
@@ -9884,7 +9877,6 @@ cleanup: `delete_output(job_id=...)` on M-F378's job and M-F379(a)'s, then setup
 metrics: none.
 
 ### M-F381 — the workflows guide carries one experimental line for `experimental_keystone_attention`
-pending: #1393
 source: tester, spec for #1393 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` docs. **Free**: reads only.
 Steps: `get_guide("workflows", section="experimental_keystone_attention")` (the section match is loose; if it does
