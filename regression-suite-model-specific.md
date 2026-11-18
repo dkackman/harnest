@@ -10837,4 +10837,121 @@ It is a **finding** if the slower-card note or its reason is missing, or a figur
 cleanup: none.
 metrics: none.
 
+### M-F423 — the #1391 numbering check: three one-segment runs on a brightened keystone differ only in `blocks`, and the record states whether our indices match ComfyUI's
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va on lem (cuda), bench workspace. **Free**: issue reads, job reads, validate; any
+re-measure task run is CPU and priced first.
+The **step 1 jobs** are the ones #1394's hand-off names for the numbering check (else find them by note in
+`list_jobs(workspace="bench")`): a no-argument run, a `blocks: "0-29"` run and a `blocks: "30-39"` run, each
+rendering segment 2 only, plus the normal-keystone segment 2 render the record measures them against.
+Steps: `get_job_workflow(workspace="bench")` and `get_job(workspace="bench")` on each step 1 job;
+`validate_workflow` on the step 1 probe workflow the hand-off names, `workspace="bench"`, with the flag-on
+arguments it ran with; `gh issue view 1394 --repo dkackman/diffusers-workflow --comments` for the record.
+expected:
+- The three runs share segment 1, seed, prompt, size, steps, LoRA and dense attention on the segment 2 transformer
+  (`attention_backend` null or absent, no `sparse_tau`/`sparse_topk`). Their `image` is the brightened keystone:
+  segment 1's frame 0 brightened ×1.3 (the record says how it was made; it is still a copy of the scene, not a
+  flat or black/white frame). The only difference between them is `experimental_keystone_attention`: absent on
+  the first, `{"balance": 20, "blocks": "0-29"}` and `{"balance": 20, "blocks": "30-39"}` on the others.
+- The baseline render differs from the no-argument run only in `image` (the normal keystone, segment 1's frame 0).
+- Every step 1 job is `completed`. The probe workflow validates clean with no refusal finding.
+- The record gives each run's mean brightness of segment 2's new frames as a % against the baseline, with job ids,
+  and roycho87's reference figures (+4.4% / +4.1% / +13.8%).
+- It states the numbering result in words. "Match" needs `0-29` near no-argument and `30-39` clearly above both;
+  any other pattern is "no match". The stated result follows from the numbers given.
+- "No match": no step 2 or arm job was created after it, and #1394 has a stop-and-report comment with the numbers.
+It is a **finding** if any other argument differs, a number or job id is missing, the stated result contradicts
+the numbers, or any later job exists after "no match".
+cleanup: none (the jobs are the bench record).
+metrics: none.
+
+### M-F424 — the #1391 face-sharpness sweep: five one-segment runs on a sharpened keystone, one per 10-block group, and the arms' blocks follow from it
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 fl2va on lem (cuda), bench workspace. **Free**: issue reads, job reads, validate.
+The **step 2 jobs** are the five #1394's hand-off names for the sweep (else find them by note in
+`list_jobs(workspace="bench")`).
+Steps: `get_job_workflow(workspace="bench")` and `get_job(workspace="bench")` on each; `validate_workflow` on the
+step 2 probe workflow, `workspace="bench"`; `get_job_workflow` on one attention arm job (M-F425); the record on
+#1394.
+expected:
+- Exactly five runs, all created after the step 1 result was "match" (M-F423). Each renders segment 2 only from
+  the same segment 1, seed and dense attention as step 1. `image` is the sharpened keystone (segment 1's frame 0
+  sharpened, as in #1385's S still; the record says how) and is still a copy of the scene.
+- The five differ only in `blocks`: `"0-9"`, `"10-19"`, `"20-29"`, `"30-39"`, `"40-49"`, each at `balance` 20.
+- Every job is `completed`; the probe workflow validates clean.
+- The record gives each group's segment 2 face sharpness (from `bench/face_windows.py`) and saturation, with job
+  ids and the baseline they are compared against.
+- It names the blocks the arms used and why. Either the groups that clearly lift face sharpness (the record says
+  what "clearly" meant), or, if none did, `31-33,36-44,47` with the record saying no group lifted it.
+- The attention arm's `blocks` string equals the blocks the record names.
+It is a **finding** if a group is missing or doubled, another argument differs, a number is missing, or the arms'
+blocks don't follow from the stated rule.
+cleanup: none.
+metrics: none.
+
+### M-F425 — the #1391 arm pair runs dense and differs only in the argument; the record calls `aed61997052a` a two-difference reference
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda), bench workspace. **Free**: reads only.
+The **arm jobs** are `keystone-attention-control` and `keystone-attention`: early (seg01–02) and, if the gate
+passed, full (M-F384 judges the gate).
+Steps: `get_job_workflow(workspace="bench")` on each arm job and on `aed61997052a`; the record on #1394 or #1391.
+expected:
+- Every segment's transformer in both arms is dense: `attention_backend` null or absent, and no `sparse_tau` or
+  `sparse_topk`. `aed61997052a` is sparse (`attention_backend: "sparse"`, `sparse_tau` 0.5, `sparse_topk` 0.15).
+- Keystone control vs `aed61997052a`: only each later segment's `image` (segment 1's frame 0 instead of the
+  carried tail's first frame) and the attention backend differ. The guide is still the carried tail. Prompts,
+  seeds, size, steps, LoRA and segment count are the same.
+- Attention arm vs keystone control: the only difference is `experimental_keystone_attention` with `balance` 20 and
+  `blocks` as step 2 chose (M-F424) on each fl2va segment call. The record says whether segment 1 carries it.
+- An early job is its arm's full workflow cut after seg02, with nothing else changed.
+- The record states both diffs in words. It labels the `aed61997052a` column a reference with two changes (image
+  and sparse→dense), not a one-variable control.
+It is a **finding** if any other argument differs, any arm segment is sparse, or the record omits a diff or the
+reference label.
+cleanup: none.
+metrics: none.
+
+### M-F426 — every #1391 stage B job (steps 1–2 and the arms) completed on the control's build, one H3 job at a time, in step order
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
+Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every job in M-F423–M-F425; `get_diffusers_state()`;
+`list_jobs` across the workspaces that held H3 jobs in the stage's time window.
+expected:
+- Every job is `completed`. A re-run is named in the record with its reason.
+- The record quotes `get_diffusers_state` as `0.44.0.dev0` @ `43e30028` (a longer hash starting with it is fine),
+  taken before the first stage B job. Today's state is context only.
+- No stage B job's `started_at`–`finished_at` overlaps another H3 job on lem.
+- Order: every step 1 job finished before the first step 2 job was created, and every step 2 job finished before
+  the first gate job was created.
+It is a **finding** if a job failed without a named re-run, the build differs, two H3 jobs overlapped, or a step
+started before the one it depends on finished.
+cleanup: none.
+metrics: none.
+
+### M-F427 — the #1391 record states the checked numbering, the blocks and why, the LSE cost against the dense control, the dense-vs-sparse risk, the attributions, the take paths, and no verdict
+pending: #1394
+source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
+Steps: read the record as quoted on #1394 or #1391; `get_job(workspace="bench")` on both arms' jobs for timings.
+expected:
+- It states the numbering result from step 1 as checked on lem, not as an assumption (Q3 tested by Q6).
+- It gives the steps 1 and 2 per-run numbers, or points to where they are on #1394, and the blocks the arms used.
+- It gives the LSE op's wall-clock cost: the attention arm against the **dense** keystone control, per segment or
+  per job, within 10% of the `get_job` timings. It names the op the selected blocks ran (cuDNN or native flash).
+- It states that a positive result is a dense-attention result while the shipped templates run sparse, and that a
+  sparse processor would be a new stage proposed then.
+- It says the result transfers to `keystone_slot` `first` and `last` only, and that no moving-shot arm ran.
+- It credits roycho87's #1391 comment (issuecomment-6922271175) and NerdNotes test 19 (CC BY-SA 4.0) for the
+  block-finding method. The matching `docs/ATTRIBUTIONS.md` line is docs review, not this case.
+- It ends with the takes' output paths for Don's viewing and calls no verdict beyond the gate. The issue goes to
+  Don (`owner:don`) for the viewing.
+It is a **finding** if any item is missing, the cost is measured against the sparse column, or the record rules on
+the feature.
+cleanup: none.
+metrics: none.
+
 ## Performance
