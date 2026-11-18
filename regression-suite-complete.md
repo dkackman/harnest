@@ -22677,7 +22677,6 @@ cleanup: `delete_output(job_id=...)` for any comparison H3 job.
 metrics: none.
 
 ### C-F952 — `cuts.md` has a "visual memory at a cut" section whose numbers match stage A, with the lip-copy rule
-pending: #1402
 source: tester, spec for #1402 from #1398's plan v1 (claude-opus-5-5 via anthropic)
 Free. Load the `dw:minimax-h3` skill (as loaded from `develop`) and read `SKILL.md` and `references/cuts.md`. Have
 stage A's record numbers to hand (C-F951: the build comment on #1401).
@@ -22703,7 +22702,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F953 — `joins.md`'s "A's tail as a video reference" option carries the speech rule and points at `cuts.md`
-pending: #1402
 source: tester, spec for #1402 from #1398's plan v1 (claude-opus-5-5 via anthropic)
 Free. Load the `dw:script-to-video` skill (as loaded from `develop`) and read `references/joins.md`; read the
 `dw:minimax-h3` skill's `references/cuts.md` (C-F952) and `SKILL.md`.
@@ -22720,7 +22718,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F954 — a window reference authored from the guidance alone validates clean; a start-frame key on the reference does not
-pending: #1402
 source: tester, spec for #1402 from #1398's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**, workspace `regression-complete`. Skip the window checks if C-F952 found the "nothing held"
 branch (no recipe), and say so. Using only `cuts.md`'s recipe (no other template, guide or suite case), author a
