@@ -1,0 +1,1 @@
+{"ts":"2026-11-18T01:57:58Z","level":"model-specific","case":"M-F408","metric":"latency","condition":"cold","value":123.3,"unit":"s","server":null,"model":"claude-opus-5-5","provider":"anthropic","ref":"job 1acfef7e6603","note":"cuda:1; load not cached (load_s 47.2), 76.1 s without load; develop @ 057b4347"}

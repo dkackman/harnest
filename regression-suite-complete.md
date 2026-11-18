@@ -23713,4 +23713,52 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F999 — validate refuses a Pika ref2va audio reference outside the pipeline's 2-15 s bound, at the reference's path
+source: tester, verified in #1427 (claude-opus-5-5 via anthropic)
+Validate-only, free. Workspace `regression-complete`. Fixture: `asset:qa-cast/ep68-score.mp3` (about 24 s; check its
+`duration_seconds` with `get_gallery_metadata` first, and stop if it is under 17 s). Let STEP be a minimal Pika ref2va
+step: `configuration: {"component_type": "ModularPipeline", "load_components": {"dtype": "torch.bfloat16",
+"pretrained_model_name_or_path": {transformer, transformer_ref, text_encoder, vae, audio_vae: "MiniMaxAI/MiniMax-H3"}}}`,
+`from_pretrained_arguments: {"model_name": "Pika-Labs/Pika-H3-Flex", "workflow": "ref2va"}`, and arguments `prompt`,
+`num_frames: 124`, `width: 832`, `height: 480`, `output: ["videos","audio","sampling_rate"]`, with `references` =
+an image reference (`PikaH3FlexImageReference`, `from_file: "asset:cast/luz.jpg"`) followed by the one audio reference
+(`diffusers.modular_pipelines.pika_h3_flex.PikaH3FlexAudioReference`) each sub-case names. A step named `clip` is a
+`slice_audio` of the fixture from `start_seconds: 0`, and the audio reference reads it as `"from_previous_result": "clip"`.
+a. Audio `from_file` is the fixture itself (a literal asset over 15 s).
+b. `clip` has `duration_seconds: 1.41`.
+c. `clip` has `duration_seconds: 11`.
+d. `clip` has `duration_seconds: 16`.
+e. `clip` has `duration_seconds: 16, end_snap_seconds: 1` (a snap only shortens, so only the minimum applies).
+f. `clip` has `start_seconds: 20, duration_seconds: 10, past_end: "stop"` (keeps the source's last ~4 s).
+g. `templates/minimax/reference-to-video` by name with `subject: "asset:cast/luz.jpg"`, `voice: "asset:qa-cast/ep68-score.mp3"`.
+expected:
+- (a), (b), (d): `valid: false`, one error at the audio reference's own path (`steps[N].pipeline.arguments.references[1]`),
+  reading "Every audio reference must run 2 to 15 seconds on pika-h3-flex, got one of <seconds> seconds", where the
+  seconds are the fixture's duration, 1.41 and 16.00.
+- (c), (e), (f): no audio-duration error.
+- (g): no audio-duration error. MiniMax-H3's own class declares no duration bound.
+- A **finding**: any of (a), (b) or (d) passing validate, an error at a bare `steps` or the image reference's path,
+  or a duration error on (c), (e), (f) or (g). Before #1427, validate passed (a), (b) and (d), and the run failed.
+cleanup: none (nothing runs).
+metrics: none.
+
+### C-F1000 — the Pika audio-reference duration bound holds when the slice is read as `from_file: "previous_result:<step>"`
+source: tester, verified in #1431 (claude-opus-5-5 via anthropic)
+Validate-only, free. Same STEP and `clip` step as C-F999, with the same fixture check, except that the audio reference
+reads the slice as `"from_file": "previous_result:clip"` and not as `from_previous_result`.
+a. `clip` has `duration_seconds: 1.41`.
+b. `clip` has `duration_seconds: 16`.
+c. `clip` has `duration_seconds: 5`.
+d. As (a), but the audio reference is `"from_file": "variable:voice"` with a declared variable `voice` defaulting to
+   `"previous_result:clip"`.
+expected:
+- (a), (d): `valid: false`, one error at `steps[N].pipeline.arguments.references[1]` reading "Every audio reference must
+  run 2 to 15 seconds on pika-h3-flex, got one of 1.41 seconds". (b): the same error with 16.00 seconds. Each is identical
+  to the error C-F999 (b)/(d) gives for the `from_previous_result` spelling.
+- (c): no audio-duration error.
+- A **finding**: (a), (b) or (d) passing validate, or a different error or path than the `from_previous_result` spelling
+  gets. Before #1431, (a) validated clean.
+cleanup: none (nothing runs).
+metrics: none.
+
 ## Performance
