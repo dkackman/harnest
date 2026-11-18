@@ -23753,4 +23753,25 @@ expected:
 cleanup: none (nothing runs).
 metrics: none.
 
+### C-F1001 — an inline workflow whose memory key differs from its catalog template inherits the template's host-RAM peak
+source: tester, verified in #1436 (claude-opus-5-5 via anthropic)
+Validate-only, free. Needs at least one successful run of `templates/flux3/text-to-image` on this server. If there is
+none, the case is blocked, not failed: say so.
+a. `validate_workflow(name="templates/flux3/text-to-image", workspace=<ws>)`. Note `plan.host_memory` (call it P).
+b. `validate_workflow(inline_workflow=<a copy of that template's definition (get_workflow) with a new id, the prompt as a
+   literal string, every setting otherwise the same>)`.
+c. As (b), but the configuration adds `"offload": "model"` and drops the `components` per-device placement. It declares no
+   `host_ram_gb`.
+d. As (c), plus a top-level `"host_ram_gb": 30`.
+expected:
+- (a): `host_memory.basis: "observed"`, `runs` ≥ 1.
+- (b): `host_memory` equal to P (`basis: "observed"`). It has the same memory key as the template.
+- (c): `host_memory.basis: "inherited"`, `projected_mb` equal to P's, and `runs` equal to P's. The cost estimate is
+  `inherited` too, with `differs` containing `offload`.
+- (d): `host_memory = {projected_mb: 30720, basis: "declared", runs: 0}`. A declared workflow doesn't inherit.
+- A **finding**: (c) with no `host_memory` key, or with a basis other than `inherited`. Before #1436, an inline workflow
+  with a different memory key got no figure, so the host-RAM wait (#1407) never held it.
+cleanup: none (nothing runs).
+metrics: none.
+
 ## Performance
