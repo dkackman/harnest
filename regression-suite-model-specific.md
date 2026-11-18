@@ -10596,7 +10596,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F411 — the `dw:minimax-h3-image` skill exists and carries the trigger, the host check, the hard rules, the vendor prompt pointer and the two-job route into H3 video
-pending: #1425
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image skill in the `dw` plugin (loaded from `develop`), plus the catalog it names. **Free**:
 skill reads and catalog reads.
@@ -10623,7 +10622,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F412 — routing text: H3 keyframes and cast stills for H3 go to H3-Image on a qualifying host, board sheets and everything else stay on Klein
-pending: #1425
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw` plugin skills `minimax-h3`, `storyboard`, `cinematography`, `long-form`, `flux3-klein`, and the
 workflows guide. **Free**: skill reads and guide reads.
@@ -10647,7 +10645,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F413 — cold drill: "a portrait still of a new character, then a 5-second MiniMax-H3 clip of her turning to camera" routes the still to H3-Image, quotes cost and host floor, looks, then runs H3 i2v with `output:`
-pending: #1425
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax-h3-image/text-to-image` → `templates/minimax/image-to-video`. lem only (rule 3), the
 drill's own workspace. About 10 GPU-minutes, run by the drill session. The tester reads the drill transcript and the
@@ -10673,7 +10670,6 @@ cleanup: the drill's jobs are the record; leave them until #1425 closes, then `d
 metrics: none.
 
 ### M-F414 — cold drill control: the same character asked as "a storyboard of six boards" stays on FLUX 3 Klein
-pending: #1425
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `storyboard` route on FLUX 3 Klein. lem only. Read as in M-F413.
 Steps: as M-F413 steps 1–2, for the control drill (a fresh session, same character, asking for a storyboard of six boards).
@@ -10688,7 +10684,6 @@ cleanup: as M-F413.
 metrics: none.
 
 ### M-F415 — a plain stills request with no H3 video in it still routes to FLUX 3 Klein
-pending: #1425
 source: tester, spec for #1425 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `flux3-klein` and `minimax-h3-image` skill triggers. **Free** for the static read; a drill if one was run.
 Steps:
@@ -10829,7 +10824,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F422 — the `dw:minimax-h3-image` skill quotes the cost as priced on the slower card, and says why
-pending: #1425
 source: tester, spec for #1425 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3-image` skill (plugin loaded from `develop`). **Free**: skill read and catalog read.
 Steps: invoke `dw:minimax-h3-image` and read where it quotes cost; `list_workflows(shape="image")` and
