@@ -10431,7 +10431,6 @@ cleanup: `delete_output(job_id=...)` for all three jobs.
 metrics: none.
 
 ### M-F404 — MiniMax-H3-Image lists as two catalog templates: `text-to-image` under `image`, `multi-reference` under `image-edit` with `needs-input-media`, both costed, with no step, guidance, negative or area variable
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image (`MiniMaxAI/MiniMax-H3-Image`, diffusers ≥ 0.43), templates
 `templates/minimax-h3-image/text-to-image` and `templates/minimax-h3-image/multi-reference`. lem (cuda), workspace
@@ -10457,7 +10456,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F405 — each MiniMax-H3-Image template's text states the 64 GB warm floor and the ~120 GB cold first run, names the `<Picture N>` convention, and names no prompt enhancer
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image, both `templates/minimax-h3-image/` templates. lem, workspace `default`. **Free**: reads.
 Steps: `get_workflow` on `templates/minimax-h3-image/text-to-image` and on `templates/minimax-h3-image/multi-reference`.
@@ -10481,7 +10479,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F406 — both MiniMax-H3-Image templates validate clean on lem: no download, the 64 GB host declaration in the plan, no step/guidance/remote-code warning
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image, both templates. lem (cuda, RTX 3090s, the 64 GiB H3-Image cache and H3's encoder
 already present). Workspace `bench` (it holds `asset:parhelion/kf-open.png`; `asset:cast/estela.jpg` and
@@ -10509,7 +10506,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F407 — MiniMax-H3-Image validate refuses an off-grid size and the variables the pipeline doesn't take, and accepts the grid's edges
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax-H3-Image, both templates. lem, workspace `bench`. **Free**: validate only; nothing is queued.
 Steps (each a separate `validate_workflow(name=..., workspace="bench", arguments=...)`; the edit also gets M-F406 step
@@ -10535,7 +10531,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F408 — a MiniMax-H3-Image text-to-image at defaults completes on lem at 2048x2048, coherent, within its catalog cost as M-F420 judges it, with no download and no H3 video insert engaged
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax-h3-image/text-to-image` (MiniMax-H3-Image, int8, offloaded). lem only, one 24 GB card,
 quantized cache present (warm in the cache sense: no cold quantize). Workspace `bench`. About 2–3 GPU-minutes.
@@ -10561,7 +10556,6 @@ cleanup: `delete_output(job_id=<the job>)`.
 metrics: wall minutes → `regression-perf/M-F408.jsonl` (seed it on the first passing run).
 
 ### M-F409 — a MiniMax-H3-Image three-reference edit completes on lem, keeps the `<Picture 1>` face, and is within its catalog cost as M-F420 judges it
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax-h3-image/multi-reference` (MiniMax-H3-Image edit, int8). lem only, workspace `bench`.
 References (plan v3): `asset:cast/estela.jpg` (`<Picture 1>`, shared `common/assets`), `asset:cast/aurelio.jpg`
@@ -10587,7 +10581,6 @@ cleanup: `delete_output(job_id=<the job>)`.
 metrics: wall minutes → `regression-perf/M-F409.jsonl` (seed it on the first passing run).
 
 ### M-F410 — adding MiniMax-H3-Image leaves Klein's and H3 video's templates as they were, and B adds no skill
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v3 (claude-opus-5-5 via anthropic)
 Model/pipeline: FLUX 3 Klein (`templates/flux3/*`), MiniMax H3 `templates/minimax/image-to-video`. lem, workspace
 `default`. **Free**: catalog reads and validate.
@@ -10732,7 +10725,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F417 — an empty or null `images` list on the MiniMax-H3-Image edit is refused at validate and at run, at `arguments.images` with the template's reason; a list of one still passes
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax-h3-image/multi-reference` (Q6: `min_length` counts a list's entries). lem, workspace
 `bench`. **Free**: catalog reads, validate, and a `run_workflow` that must be refused before anything queues. Before #1424's
@@ -10761,7 +10753,6 @@ cleanup: none (cancel any job step 5 wrongly queued, then `delete_output(job_id=
 metrics: none.
 
 ### M-F418 — widening `min_length` to lists leaves every string `min_length` as it was, and leaves lists that declare none unjudged
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 Model/pipeline: the engine's generic `variable_constraints` (no model). Templates `templates/minimax/music` (`lyrics`:
 "non-empty"), `templates/voice-clone` (`reference_audio`: "required, non-empty"), `templates/narration-from-takes`
@@ -10790,7 +10781,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F419 — the workflows guide and the schema describe `min_length` as judging a string's characters or a list's entries
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 Model/pipeline: docs only (`docs/WORKFLOW_GUIDE.md`, `dw/workflow_schema.json`). **Free**: reads.
 Steps: `get_schema(section="variables")` and find `min_length`'s description (follow `elsewhere` if it sits in another
@@ -10806,7 +10796,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F420 — MiniMax-H3-Image cost is priced on lem's slower card: a cached run on either card comes in no more than 10% over `cost.minutes`, and a run that loads is reported with and without its load
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 Model/pipeline: both `templates/minimax-h3-image/` templates. lem only (rule 3), workspace `bench`. Uses the runs of M-F408
 and M-F409 (no extra GPU time). This is the plan v5 (Q7) timing rule; it takes the place of the "within 10%" bullets in
@@ -10830,7 +10819,6 @@ cleanup: none (M-F408/M-F409 clean up their own jobs; read them before deleting)
 metrics: wall minutes and device → `regression-perf/M-F420.jsonl` (seed it on the first passing run, one line per template).
 
 ### M-F421 — the recipes guide's MiniMax-H3-Image section states the card gap and its cause
-pending: #1424
 source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
 Model/pipeline: docs (`docs/RECIPES_24GB.md`). **Free**: reads. The plan also puts this in the family README and in
 `bench/records/h3-image.md`; neither is served over MCP, so they are outside this case (a `docs-review` matter).
