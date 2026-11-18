@@ -10731,4 +10731,136 @@ It is a **finding** if a guided copy is quoted at the unguided figure. Before #1
 cleanup: none.
 metrics: none.
 
+### M-F417 — an empty or null `images` list on the MiniMax-H3-Image edit is refused at validate and at run, at `arguments.images` with the template's reason; a list of one still passes
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax-h3-image/multi-reference` (Q6: `min_length` counts a list's entries). lem, workspace
+`bench`. **Free**: catalog reads, validate, and a `run_workflow` that must be refused before anything queues. Before #1424's
+rework, `list_workflows` showed this template's `constraints` as width/height only, with nothing on `images`.
+Steps:
+1. `get_workflow(name="templates/minimax-h3-image/multi-reference", variables_only=true)`; `list_workflows(shape="image-edit",
+   traits="needs-input-media")` and read the edit's `constraints`.
+2. `validate_workflow(name=<edit>, workspace="bench", arguments={"images": [], "prompt": "The woman from <Picture 1>, waist-up,
+   facing the camera.", "seed": 1317})`.
+3. Step 2 with `images: null`.
+4. Step 2 with `images: ["asset:cast/estela.jpg"]` (the boundary: exactly the minimum).
+5. `run_workflow(name=<edit>, workspace="bench", arguments=<step 2's>, acknowledged_cost=<step 4's acknowledged_cost>,
+   note="M-F417 must refuse")` — no `wait_seconds`.
+expected:
+- Step 1: `constraints` names `images` with a list-length rule (a phrase such as "a non-empty list", or `min_length: 1` with a
+  `reason`), in both `get_workflow` and the `list_workflows` entry. The width/height `32*n+0` rules are still there.
+- Steps 2 and 3: `valid: false`, an error whose path is `arguments.images`, carrying the template's reason (the text says the
+  edit needs at least one reference / `<Picture 1>`, or words to that effect). A warning alone, or an error at another path
+  only (a later step, a pipeline argument), does not meet Q6. Null counts as empty.
+- Step 4: `valid: true`, no error or warning on `images`.
+- Step 5: refused with the same `arguments.images` error and **no job id**; `list_jobs(workspace="bench")` shows no job noted
+  "M-F417 must refuse". If a job was queued, `cancel_job` it at once: that is a finding.
+It is a **finding** if an empty or null list validates, is refused at the wrong path or without the reason, a list of one is
+refused, or the run queues.
+cleanup: none (cancel any job step 5 wrongly queued, then `delete_output(job_id=...)`).
+metrics: none.
+
+### M-F418 — widening `min_length` to lists leaves every string `min_length` as it was, and leaves lists that declare none unjudged
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
+Model/pipeline: the engine's generic `variable_constraints` (no model). Templates `templates/minimax/music` (`lyrics`:
+"non-empty"), `templates/voice-clone` (`reference_audio`: "required, non-empty"), `templates/narration-from-takes`
+(`reference_text`: "non-empty"), and two list variables with no `min_length` of their own: `templates/flux3/multi-reference`
+`images` and `templates/minimax/music-long` `sections`. lem, workspace `regression-complete`. **Free**: catalog reads and
+validate; nothing is run.
+Steps:
+1. `list_workflows(shape="audio")` and `list_workflows(shape="image-edit")`; read the five templates' `constraints`.
+2. `validate_workflow(name="templates/minimax/music", workspace="regression-complete", arguments={"lyrics": ""})`, then
+   with `lyrics: "[Verse]\nla la la"`.
+3. `validate_workflow(name="templates/voice-clone", ...)` with `reference_audio: ""`.
+4. `validate_workflow(name="templates/narration-from-takes", ...)` with `reference_text: ""` and `reference_audio` an
+   `asset:` audio file from `list_assets(kind="audio")`, so only `reference_text` is at fault.
+5. `validate_workflow(name="templates/flux3/multi-reference", workspace="regression-complete", arguments={"images": []})`.
+expected:
+- Step 1: the string phrases read as they do today: music `lyrics` "non-empty", voice-clone and narration
+  `reference_audio` "required, non-empty", narration `reference_text` "non-empty". None now reads as a list rule. The
+  `sections` list-level and flux3 `images` entries gain no list-length phrase (neither declares `min_length`).
+- Step 2: the empty `lyrics` is refused at `arguments.lyrics` as before; the non-empty one has no `lyrics` error.
+- Steps 3 and 4: each refused at its variable's path as before (C-F921's voice-clone wording still holds).
+- Step 5: whatever it returns, no error comes from a list-length rule on `images` (no "non-empty list" / `min_length`
+  message at `arguments.images`). Another existing refusal of the empty list is not this case's concern; note it.
+It is a **finding** if a string `min_length` stops refusing an empty string, starts refusing a non-empty one, its catalog
+phrase changes to a list phrase, or a list that declares no `min_length` is newly refused by one.
+cleanup: none.
+metrics: none.
+
+### M-F419 — the workflows guide and the schema describe `min_length` as judging a string's characters or a list's entries
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
+Model/pipeline: docs only (`docs/WORKFLOW_GUIDE.md`, `dw/workflow_schema.json`). **Free**: reads.
+Steps: `get_schema(section="variables")` and find `min_length`'s description (follow `elsewhere` if it sits in another
+section); `get_guide("workflows", section="Authoring a workflow from an agent")` and, if `min_length` isn't there, the
+section the guide's index puts variable constraints in.
+expected:
+- The schema's `min_length` description says it applies to a string (its length) **and** a list (its number of entries),
+  and that a null counts as empty for a list.
+- The guide's `min_length` text says the same, in words a workflow author can act on (e.g. "`min_length: 1` on a list
+  refuses an empty list").
+It is a **finding** if either still describes `min_length` as strings-only, or they contradict each other.
+cleanup: none.
+metrics: none.
+
+### M-F420 — MiniMax-H3-Image cost is priced on lem's slower card: a cached run on either card comes in no more than 10% over `cost.minutes`, and a run that loads is reported with and without its load
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
+Model/pipeline: both `templates/minimax-h3-image/` templates. lem only (rule 3), workspace `bench`. Uses the runs of M-F408
+and M-F409 (no extra GPU time). This is the plan v5 (Q7) timing rule; it takes the place of the "within 10%" bullets in
+M-F408/M-F409 while those stand as written. Before the rework the edit's `cost.minutes` was 1.3 against an observed 2.74.
+Steps:
+1. `list_workflows(shape="image")` and `list_workflows(shape="image-edit")`: read each template's cuda `cost.minutes`.
+2. For the M-F408 and M-F409 jobs: `get_job` (`started_at`, `finished_at`, the device/worker it ran on) and
+   `get_job_events` (the load event: cached or loading, and its duration).
+expected:
+- Step 1: the edit's `cost.minutes` is the re-measured warm cuda:0 figure, about **2.4** (one decimal; anything from 2.0 to
+  3.0 is read as re-priced; still 1.3 is a finding). The t2i's stays **2.0** unless the rework re-measured it higher.
+- Step 2, per job, with the device it ran on recorded:
+  - a run whose load event reports the models cached: wall time is **at most 1.10 × `cost.minutes`**. A faster run —
+    including a cuda:1 run near half the price — passes.
+  - a run that had to load: report wall time with and without the load (wall minus the load event's duration). It isn't
+    held to the cost; it is a finding only if the without-load figure is more than 10% over.
+- The cost's text (the template description or the recipes guide, M-F421) attributes the price to the slower card.
+It is a **finding** if a cached run is more than 10% over its `cost.minutes`, the edit is still priced at the old figure,
+or the job events don't say whether the models were cached (then the Q7 rule can't be applied: report it).
+cleanup: none (M-F408/M-F409 clean up their own jobs; read them before deleting).
+metrics: wall minutes and device → `regression-perf/M-F420.jsonl` (seed it on the first passing run, one line per template).
+
+### M-F421 — the recipes guide's MiniMax-H3-Image section states the card gap and its cause
+pending: #1424
+source: tester, spec for #1424 from #1317's plan v5 (claude-opus-5-5 via anthropic)
+Model/pipeline: docs (`docs/RECIPES_24GB.md`). **Free**: reads. The plan also puts this in the family README and in
+`bench/records/h3-image.md`; neither is served over MCP, so they are outside this case (a `docs-review` matter).
+Steps: `get_guide("recipes", section="MiniMax-H3-Image")`; `get_workflow` on both `templates/minimax-h3-image/` templates.
+expected:
+- The guide section says the cost is priced on the slower of lem's two 3090s, that it sits on a PCIe **x4** link while the
+  other is on **x16**, that this offload is bus-bound (weights stream from host RAM every pass), and that an x16 card runs
+  it in about half the time.
+- It says a change to that card's link means re-measuring the price, or words to that effect.
+- The section's other facts still hold: 64 GB host RAM warm, ~120 GB (117 GB measured) on a cold first run, 1024 no faster
+  than 2048, CUDA-only.
+- If either template's description carries a cost note, it doesn't contradict the guide.
+It is a **finding** if the card gap, its x4/x16 cause or the bus-bound reason is missing, or the section contradicts the
+templates' `cost`.
+cleanup: none.
+metrics: none.
+
+### M-F422 — the `dw:minimax-h3-image` skill quotes the cost as priced on the slower card, and says why
+pending: #1425
+source: tester, spec for #1425 from #1317's plan v5 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3-image` skill (plugin loaded from `develop`). **Free**: skill read and catalog read.
+Steps: invoke `dw:minimax-h3-image` and read where it quotes cost; `list_workflows(shape="image")` and
+`list_workflows(shape="image-edit")` for the two templates' `cost.minutes`.
+expected:
+- The skill tells the agent to quote the catalog cost (or `observed_minutes`, saying which) and says that cost is priced on
+  the slower card, with the one-line reason: the offload is bus-bound, so a card on an x16 link runs it in about half the time.
+- Any minutes figure the skill states matches the catalog's `cost.minutes` (no stale 1.3 for the edit).
+- It doesn't tell the agent to pick a card (MCP can't choose one) or promise the faster time.
+It is a **finding** if the slower-card note or its reason is missing, or a figure contradicts the catalog.
+cleanup: none.
+metrics: none.
+
 ## Performance
