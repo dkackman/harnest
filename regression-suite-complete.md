@@ -23039,7 +23039,6 @@ cleanup: `delete_output(job_id=…)` on all three.
 metrics: none.
 
 ### C-F969 — the #1397 bench record holds the 12-cell table with a job id in every cell, and ends in a one-line recommendation
-pending: #1405
 source: tester, spec for #1405 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). The record is the #1397 section the stage writes in `bench/records/performer-replacement.md`. Read
 it as quoted in the stage's build comment on #1405, since the tester cannot read `bench/`. The bench runs on both
@@ -23065,7 +23064,6 @@ cleanup: none (the bench's jobs are its record; never delete them).
 metrics: none.
 
 ### C-F970 — each of the #1397 bench's verdicts reads true against its job's contact sheet and mask frames
-pending: #1405
 source: tester, spec for #1405 from #1397's plan v2 (claude-opus-5-5 via anthropic)
 Free (reads only). For each of this server's cells in C-F969's table that succeeded: `get_output_image` on the job's
 contact sheet, then `get_output_frames` on each mask and on the source fixture at `frame:0`, the middle frame and
