@@ -1560,7 +1560,6 @@ provider `anthropic` — both names returned `Unknown file: <name as sent>` with
 no server path.
 
 ### SE-F062 — a restart tombstone's `error` names the run dir without a server path
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 A tombstone's `error` for a job that was running when the server died names
 where its partial outputs are. That is new server-written text about a

@@ -18446,7 +18446,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F705 — jobs a killed server held come back as `cancelled` tombstones with a `server restart:` reason
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 The restart set that C-F706-C-F709 and SE-F062 also read. It needs an unclean kill, which no MCP call can cause,
 so it runs in two phases with a hand-off between them. All calls use `workspace="regression-complete"`;
@@ -18480,7 +18479,6 @@ and Q2. A never-started job may have no outputs to delete, and that reply is fin
 metrics: none.
 
 ### C-F706 — `list_jobs` lists the tombstones as cancelled and never as live
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 Free. This reads C-F705's restart set after its Phase B.
 1. `list_jobs(workspace="regression-complete", limit=50)`.
@@ -18496,7 +18494,6 @@ cleanup: none (C-F705's cleanup covers the set).
 metrics: none.
 
 ### C-F707 — `wait_for_job` on a tombstone returns at once, as terminal
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 Free. This reads C-F705's restart set after its Phase B. `wait_for_job(job_id=Q1, timeout_seconds=60)`, then the
 same for one R.
@@ -18507,7 +18504,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F708 — `rerun_job` resubmits a tombstone as a fresh job with `rerun_of` set
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 One text-to-image run, plus one optional LTX run. This reads C-F705's restart set after its Phase B, with
 `workspace="regression-complete"`.
@@ -18529,7 +18525,6 @@ cleanup: `delete_output(job_id=<id>)` for each new job.
 metrics: none.
 
 ### C-F709 — a user's cancel and a finished job pass through the restart unchanged
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 Free apart from one image read. This reads C-F705's restart set after its Phase B. Call `get_job(X)` and
 `get_job(F)`, then `get_output_image` on one of F's manifest files.
@@ -18543,7 +18538,6 @@ cleanup: none (C-F705's cleanup covers X and F).
 metrics: none.
 
 ### C-F710 — a second restart, a clean one, tombstones only what was in flight and leaves earlier tombstones alone
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 The design writes the record at submit and reconciles at startup, so a clean stop loses nothing either, and a sweep
 must not run twice over the same rows. This runs after C-F705-C-F708, before C-F705's cleanup, with
