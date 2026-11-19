@@ -181,7 +181,7 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   the run's own, is in the step's result and in `shots`, for `Read`); `mock
   {url_glob, set, status, once}`, `stub {url_glob, json, status, method}`, `abort
   {url_glob}` and `unmock {url_glob}`; `record {url_glob}` and `recorded {url_glob}`;
-  `dup_ids`; `window_flag {name}`. Locators are visible text and role only (`exact`,
+  `dup_ids`; `window_flag {name}`; `fetch {path, method}`. Locators are visible text and role only (`exact`,
   `nth` disambiguate); a CSS or XPath key is refused.
 - `mock` is the cases' "build it from a real answer": it fetches the real response,
   sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
@@ -205,6 +205,12 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   letters, digits or `_` (`__APP_READY`), when it is a boolean, number, string of at most
   200 chars, null or undefined; anything else fails the step. It reads one property,
   never an expression.
+- `fetch {path, method}` (`GET` default, or `HEAD`) reads one path on the server directly
+  (`/api/...` and `/openapi.json` only; anything else is refused): use it for a JSON or
+  OpenAPI read, to see every field the answer carries. It returns `status`, `content_type`,
+  `body` (parsed JSON, else text; at most 256 KB, `truncated` past that; `timed_out` when
+  the body was still coming at 30 s) and, on a 3xx, `location` (never followed). It is
+  sent by the runner, not the page: `mock`, `stub` and `abort` do not apply to it.
 - The runner signs the page in with the session's own token; never put a token in a spec.
 - It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
   first failure), `page_errors`, `console_errors`, `shots`, and `blocked` (`METHOD url`

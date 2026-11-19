@@ -193,6 +193,11 @@ or `npm` is refused). The spec is `{"steps": [{"step": "<kind>", ...}]}` with th
   real Run click queues a GPU job); with `method: "GET"`, any page-data GET (`status` 404, 500).
 - `abort {url_glob}`: a matching GET fails as a network error.
 - `dup_ids`: the DOM ids used more than once. `window_flag {name}`: a primitive `window.__name`.
+- `fetch {path, method}` (`GET` or `HEAD`): a direct read of one server path (`/api/...` and
+  `/openapi.json` only) for a JSON or OpenAPI check; `status`, `content_type`, `body` (parsed
+  JSON, else text, at most 256 KB; `timed_out` when still coming at 30 s), a 3xx's `location`
+  (never followed). Sent by the runner, not the
+  page: `mock`, `stub` and `abort` do not apply to it.
 
 The runner prints one JSON document with each step's `ok` and `result` or `error`, and stops
 at the first failure. A step error from a missing element is a case result; a refused or invalid spec is
