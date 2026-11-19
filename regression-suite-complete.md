@@ -25043,7 +25043,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F1068 — the jobs list shows a failed or cancelled row's reason on its own muted line, titled with the full text
-pending: #1473
 source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, Playwright as in C-F1028 (found by visible text and role; a mock is built from
 the real answer with `route.fetch()`). Open the jobs list for all workspaces (the page served at the UI root's jobs
@@ -25069,7 +25068,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1069 — the restart banner counts each batch's tombstones with no rerun row in view, newest batch first, and never previews on its own
-pending: #1473
 source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1068, with every request to `**/api/jobs/*/rerun-restart-batch` recorded. Open the jobs
 list for all workspaces with `**/api/jobs**` (the list GET only) mocked from the real answer, in turn:
@@ -25099,7 +25097,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1070 — clicking Rerun… previews once with `{}`; the dialog lists estimates, a total and skips; Cancel sends nothing, Confirm sends `{acknowledged_cost: true}`
-pending: #1473
 source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job: every batch request here is fulfilled by a mock and never reaches the server. Web UI as in C-F1069,
 using load 2's list mock. Take an `estimate` object from `validate_workflow(workflow="templates/text-to-image",
@@ -25129,7 +25126,6 @@ cleanup: none (nothing reached the server's batch route).
 metrics: none.
 
 ### C-F1071 — an empty preview says nothing is left, offers only Close, and hides that batch's banner for the session
-pending: #1473
 source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1069, using load 2's list mock (four `drill-1371` tombstones shown unrerun), **without**
 mocking the batch route. The preview reaches the real server, which today (mini-ai, 2026-11-19) answers
@@ -25149,7 +25145,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1072 — the batch the banner drives, over MCP: preview holds only small non-H3 jobs, a confirm queues each once, a second preview skips them all
-pending: #1473
 source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 This case is the route the stage B banner calls, read before and after a confirmed batch, as the plan's acceptance
 asks. On mini-ai today the batch is already fully rerun (C-F1065, C-F1071), so step 3 may queue nothing; that is the
