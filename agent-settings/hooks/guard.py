@@ -136,12 +136,15 @@ consumer (tester, regression):
     commit the driver checked it out at (HARNEST_SESSION_BASE, a full 40-hex
     sha; without one the edit is refused), never the tree's own HEAD, and
     the rules below that name the harness root cover it too
-every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
-even over ssh, in a NAME=value, a git alias or -c value, or gh/git output piped to a shell),
-nor scripts/testbed.sh update|start|restart|stop; the driver deploys develop between GPU
-sessions, because a session's own MCP connection keeps the old server from exiting (#446,
-2026-09-26). Only a message's inline text (git commit/tag -m, gh issue|pr --body/--title,
-gh api -f body=) may name deploy.sh (deploy_text_words)
+every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh` in
+command position, after a shell, exec, source, ., env, nohup, command or sudo, in a sh -c / eval
+string, anywhere in an ssh remote command, in a NAME=value, a git alias or -c value, or text
+piped to a shell), nor scripts/testbed.sh update|start|restart|stop, nor restarting dw-serve by
+another name (systemctl restart|start|stop dw-serve, launchctl kickstart|bootout dw, kill/pkill
+dw.serve); the driver deploys develop between GPU sessions, because a session's own MCP
+connection keeps the old server from exiting (#446, 2026-09-26). Reading, editing, diffing,
+staging, grepping and `bash -n <path>` of deploy.sh are allowed (runs_deploy); only a message's
+inline text (deploy_text_words) may name it in a gh command
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -2762,40 +2765,263 @@ def deploy_text_words(words):
 
 
 def names_deploy(words):
-    """True when a word runs dw's deploy.sh, or testbed.sh with a verb that changes the server,
-    as a word of its own or inside one (ssh host "cd x && ./scripts/deploy.sh", sh -c '...')."""
-    toks = []
-    for w in words:
-        parts = re.split(r"[\s;&|()'\"=!#]+", w)
-        toks.extend(parts if len(parts) > 1 else [w])
+    """True when a word names dw's deploy.sh, or testbed.sh with a verb that changes the server,
+    as a word of its own or inside one (ssh host "cd x && ./scripts/deploy.sh", sh -c '...').
+    A mention, not a run: runs_deploy decides where a mention runs it."""
+    toks = deploy_tokens(words)
     for j, t in enumerate(toks):
         base = os.path.basename(t)
         if base == "deploy.sh":
             return True
-        if base == "testbed.sh":
-            nxt = [x for x in toks[j + 1 : j + 4] if x]
-            if len(nxt) > 1 and nxt[1] in TESTBED_STATE_VERBS:
-                return True
+        if testbed_state(toks, j):
+            return True
     return False
+
+
+def deploy_tokens(words):
+    toks = []
+    for w in words:
+        parts = re.split(r"[\s;&|()'\"=!#`$<>{}]+", w)
+        toks.extend(parts if len(parts) > 1 else [w])
+    return toks
+
+
+def testbed_state(toks, j):
+    """testbed.sh at toks[j], followed by a target and a verb that changes the server."""
+    if os.path.basename(toks[j]) != "testbed.sh":
+        return False
+    nxt = [x for x in toks[j + 1 : j + 4] if x]
+    return len(nxt) > 1 and nxt[1] in TESTBED_STATE_VERBS
+
+
+# the same server-state change as deploy.sh, by another name (R17): every role, local or over ssh
+SYSTEMCTL_VERBS = ("restart", "start", "stop", "try-restart", "reload-or-restart", "kill", "condrestart")
+LAUNCHCTL_VERBS = ("kickstart", "bootout", "kill", "stop", "unload", "remove")
+KILLERS = ("kill", "pkill", "killall")
+DW_SERVE = re.compile(r"dw[._-]serve")
+DW_LABEL = re.compile(r"(?:^|[./_-])dw(?:$|[./_-])")
+
+
+def server_state_change(toks):
+    """systemctl restart|start|stop ... dw-serve, launchctl kickstart|bootout ... dw, or
+    kill|pkill|killall with dw.serve named on the same line."""
+    names = [os.path.basename(t).lower() for t in toks]
+    for j, n in enumerate(names):
+        rest = toks[j + 1 :]
+        if n == "systemctl" and any(t in SYSTEMCTL_VERBS for t in rest) and any(DW_SERVE.search(t) for t in rest):
+            return True
+        if n == "launchctl" and any(t in LAUNCHCTL_VERBS for t in rest) and any(DW_LABEL.search(t) for t in rest):
+            return True
+        if n in KILLERS and any(DW_SERVE.search(t) for t in toks):
+            return True
+    return False
+
+
+DEPLOY_SHELLS = ("bash", "sh", "zsh", "dash", "ksh")
+# commands that only read, list, compare or edit a file named on their line: a plain path
+# argument naming deploy.sh is data to them (sed is checked for its e command)
+DEPLOY_READERS = frozenset(
+    (
+        "cat",
+        "less",
+        "more",
+        "head",
+        "tail",
+        "grep",
+        "egrep",
+        "fgrep",
+        "rg",
+        "sed",
+        "wc",
+        "diff",
+        "cmp",
+        "shellcheck",
+        "file",
+        "stat",
+        "ls",
+        "nl",
+        "od",
+        "xxd",
+        "hexdump",
+        "md5",
+        "md5sum",
+        "shasum",
+        "sha1sum",
+        "sha256sum",
+        "cut",
+        "sort",
+        "uniq",
+        "tr",
+        "comm",
+        "touch",
+        "rm",
+        "readlink",
+        "realpath",
+        "basename",
+        "dirname",
+        "echo",
+        "printf",
+        "test",
+        "[",
+    )
+)
+# git subcommands that read, stage or commit a path; any other (submodule foreach, config,
+# bisect run, rebase --exec, difftool) may run what it names
+GIT_PATH_SUBS = frozenset(
+    (
+        "add",
+        "diff",
+        "log",
+        "show",
+        "blame",
+        "annotate",
+        "grep",
+        "status",
+        "checkout",
+        "restore",
+        "rm",
+        "mv",
+        "commit",
+        "stash",
+        "ls-files",
+        "ls-tree",
+        "cat-file",
+        "reset",
+        "shortlog",
+    )
+)
+GIT_VALUE_OPTS = ("-c", "-C", "--git-dir", "--work-tree", "--namespace", "--config-env")
+SED_EXEC = re.compile(r"(?:^|[\s;{}!0-9$,/])e(?:$|[\s;}])|/[gpIiMmw0-9]*e")
+DEPLOY_PATH = re.compile(r"[\w./~@+:,-]+")
+
+
+def plain_deploy_path(w):
+    """w is a path to deploy.sh and nothing else: an argument a reader reads, not a script."""
+    return not w.startswith("-") and bool(DEPLOY_PATH.fullmatch(w)) and os.path.basename(w) == "deploy.sh"
+
+
+def stdin_runner(words):
+    """This command runs what reaches it on stdin or from a file it reads lines of: a shell with
+    no script, source of stdin, eval, xargs. Then a mention of deploy.sh anywhere on the line runs."""
+    if not words:
+        return False
+    name = os.path.basename(words[0])
+    if name in ("eval", "xargs", "parallel"):
+        return True
+    if name in DEPLOY_SHELLS + ("source", "."):
+        i = 1
+        while i < len(words) and words[i][:1] in ("-", "+") and len(words[i]) > 1:
+            if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", words[i]):
+                return False
+            if re.fullmatch(r"-[A-Za-z]*s[A-Za-z]*", words[i]):
+                return True
+            i += 1
+        return i >= len(words) or words[i] in ("<", "<<", "<<<", "-") or words[i].startswith(("/dev/", "<"))
+    return False
+
+
+def runs_deploy(raw, depth=0):
+    """True when this simple command (its raw words) executes deploy.sh or a testbed state verb:
+    in command position, as a shell's or source's script, inside a sh -c / su -c / eval string,
+    anywhere in an ssh remote command, in a leading NAME=value, a git -c value or alias, or as an
+    argument to any command that is not a reader. Reading, diffing, staging, grepping or a
+    syntax check (exactly `bash -n <path>`) is not a run."""
+    if depth > 6:
+        return names_deploy(raw)
+    words = command_words(raw)
+    pre = raw[: len(raw) - len(words)] if words and raw[-len(words) :] == words else raw
+    if names_deploy(pre):  # GIT_SSH_COMMAND='ssh lem .../deploy.sh', D=scripts/deploy.sh
+        return True
+    if not words:
+        return False
+    name = os.path.basename(words[0])
+    toks = deploy_tokens(deploy_text_words(words))
+    if any(testbed_state(toks, j) for j in range(len(toks))):
+        return True
+    if name == "deploy.sh":
+        return True
+    if name in ("gh", "ssh", "scp", "rsync", "sudo", "doas", "su", "watch"):
+        # ssh: the remote command is a shell line, so a mention anywhere is a run
+        return names_deploy(deploy_text_words(words)[1:]) or (
+            name in ("su", "watch", "ssh") and runs_deploy_text(" ".join(words[1:]), depth + 1)
+        )
+    if name == "git":
+        words = deploy_text_words(words)
+        i = 1
+        while i < len(words) and words[i].startswith("-"):
+            w = words[i]
+            if w in GIT_VALUE_OPTS and i + 1 < len(words):
+                if names_deploy([words[i + 1]]):
+                    return True
+                i += 2
+                continue
+            if names_deploy([w]):
+                return True
+            i += 1
+        sub = words[i] if i < len(words) else ""
+        args = words[i + 1 :]
+        if sub in GIT_PATH_SUBS:
+            return any(names_deploy([w]) and not plain_deploy_path(w) for w in args)
+        return names_deploy(args)
+    if name in DEPLOY_SHELLS:
+        if len(words) == 3 and words[1] == "-n" and plain_deploy_path(words[2]):
+            return False  # a syntax check reads the script and runs none of it
+        i = 1
+        while i < len(words) and words[i][:1] in ("-", "+") and len(words[i]) > 1:
+            if re.fullmatch(r"-[A-Za-z]*c[A-Za-z]*", words[i]):
+                return (i + 1 < len(words) and runs_deploy_text(words[i + 1], depth + 1)) or names_deploy(
+                    words[i + 2 :]
+                )
+            i += 1
+        return names_deploy(words[1:])
+    if name in ("source", "."):
+        return names_deploy(words[1:])
+    if name == "eval":
+        return runs_deploy_text(" ".join(words[1:]), depth + 1)
+    if name in DEPLOY_READERS:
+        if name == "sed" and names_deploy(words):
+            j = 1
+            while j < len(words):
+                w = words[j]
+                if w in ("-f", "--file") or w.startswith("--file="):
+                    return True
+                if w in ("-e", "--expression") and j + 1 < len(words):
+                    if SED_EXEC.search(words[j + 1]):
+                        return True
+                    j += 2
+                    continue
+                if not w.startswith("-"):
+                    if "-e" not in words and "--expression" not in words and SED_EXEC.search(w):
+                        return True
+                    break
+                j += 1
+        return any(names_deploy([w]) and not plain_deploy_path(w) for w in words[1:])
+    return names_deploy(words)
+
+
+def runs_deploy_text(text, depth=0):
+    """runs_deploy over each simple command of a shell line, plus the line-wide cases: a mention
+    anywhere when something on the line runs its stdin, and a dw server-state change."""
+    segs = segments(text)
+    words_all = [w for g in segs for w in deploy_text_words(command_words(g))]
+    if server_state_change(deploy_tokens(words_all)):
+        return True
+    if any(stdin_runner(command_words(g)) for g in segs) and names_deploy(words_all):
+        return True
+    return any(runs_deploy(g, depth) for g in segs)
 
 
 def deploy_rule(raw, words, server, text):
     """No session deploys dw (R17): the driver deploys develop between GPU sessions, on every
-    server, so a session's own MCP connection never holds the old server open. That covers
-    deploy.sh and testbed.sh update|start|restart|stop, run directly, over ssh, by a shell, in a
-    leading NAME=value (GIT_SSH_COMMAND), a git alias or -c value, or a gh/git output piped to a
-    shell. Only a message's inline text (deploy_text_words) may name deploy.sh."""
-    pre = raw[: len(raw) - len(words)] if words and raw[-len(words) :] == words else raw
-    piped = any(
-        os.path.basename(command_words(g)[0] if command_words(g) else "")
-        in SCRIPT_RUNNERS + ("eval", "source", "xargs")
-        for g in segments(text)
-    )
-    hit = names_deploy(pre) or names_deploy(deploy_text_words(words)) or (piped and names_deploy(words))
-    if hit:
+    server, so a session's own MCP connection never holds the old server open. Refused for every
+    role: running deploy.sh or testbed.sh update|start|restart|stop (runs_deploy), and restarting,
+    stopping or killing dw's server by another name (server_state_change). Reading, editing,
+    diffing, staging, grepping or `bash -n` of deploy.sh is not a run and is allowed."""
+    if runs_deploy(raw) or runs_deploy_text(text):  # the line too: a bare D=.../deploy.sh segment
         deny(
             "no session deploys dw%s: the driver deploys develop between GPU sessions "
-            "(deploy.sh and testbed.sh update/start/restart/stop are its). "
+            "(running deploy.sh, testbed.sh update/start/restart/stop, or restarting dw-serve by "
+            "any means are its; reading or editing deploy.sh is fine). "
             "Merge to develop, push, and hand off naming the deploy path (server or plugin)."
             % (" (the %s server too)" % server if server else "")
         )
