@@ -57,6 +57,20 @@
 //   screenshot  {name}  -> <os.tmpdir()>/dw-ui-shots-XXXXXX/<name>.png, name
 //               [A-Za-z0-9_-]{1,64}; the dir is this run's own (mkdtemp, 0700),
 //               the file is created new (O_EXCL, O_NOFOLLOW, 0600)
+//   fetch       {path, method?: GET | HEAD (default GET)}  -> {status, content_type,
+//               body, truncated, bytes, location?, json_error?}: a direct read of one
+//               path on the base origin (starts with /, not //, no backslash or
+//               control char; resolved, it must land on the base origin), for a JSON
+//               or OpenAPI answer the page never shows. Sent from this process, not
+//               the page: mocks, stubs and aborts do not apply to it, and it neither
+//               needs nor changes the page. GET or HEAD only, no body, no headers of
+//               the spec's; the session's token goes as Authorization: Bearer. A 3xx
+//               is never followed: its status comes back with location (path and
+//               query when on the base origin, else "<off-origin>"). At most 256 KB
+//               of the body is read (bytes; truncated when there was more). body is
+//               parsed JSON when the content type is application/json or +json and
+//               the read was whole, else UTF-8 text (with json_error when JSON did
+//               not parse); null for HEAD. The step cap aborts it.
 //
 // The base origin is DW_URL's scheme, host and port (its /mcp path dropped).
 // DW_URL is required (exit 2 when unset or not http(s)); a spec "base" must
@@ -117,6 +131,9 @@ const TOKEN_KEY = "dw-api-token";
 // exactly a POST_ALLOWED or STUB_ONLY path, then nothing or a query.
 const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/(?:cancel|rerun|rerun-restart-batch))(?:\?.*)?$/;
 const FLAG_NAME = /^__[A-Za-z0-9_]{1,40}$/;
+// fetch: the most of a body it reads, and the content types it parses as JSON.
+const MAX_FETCH = 262144;
+const JSON_TYPE = /^application\/(?:[A-Za-z0-9.!#$&^_-]+\+)?json\s*(?:;|$)/i;
 
 // Every form of the token that must never be printed (set once it is read).
 const SCRUB = [];
@@ -222,6 +239,7 @@ const SHAPES = {
   screenshot: { name: "name" },
   dup_ids: {},
   window_flag: { name: "flag" },
+  fetch: { path: "origin_path", method: "read_method" },
 };
 
 function pathSegments(dotted) {
@@ -262,6 +280,17 @@ function checkValue(kind, v, where) {
       return;
     case "method":
       if (v !== "GET" && v !== "POST") invalid(where + " must be GET or POST");
+      return;
+    case "read_method":
+      if (!READ_METHODS.has(v)) invalid(where + " must be GET or HEAD (fetch only reads)");
+      return;
+    case "origin_path":
+      // A path on the base origin, nothing that could name another: no scheme (it starts
+      // with /), no //host, no backslash (a URL parser reads it as /), no control char.
+      if (!str(2000)) invalid(where + " must be a path of at most 2000 chars");
+      if (!v.startsWith("/") || v.startsWith("//")) invalid(where + " must be a path on the server, starting with one / (no scheme, no //host): " + short(v, 200));
+      if (v.includes("\\")) invalid(where + " must not hold a backslash");
+      if (/[\u0000-\u001f\u007f]/.test(v)) invalid(where + " must not hold a control character");
       return;
     case "flag":
       if (typeof v !== "string" || !FLAG_NAME.test(v)) invalid(where + " must be a window property named __ then letters, digits, _ (at most 40): a flag name, not an expression");
@@ -351,6 +380,9 @@ function validate(spec) {
         break;
       case "window_flag":
         need(has("name"), "needs name");
+        break;
+      case "fetch":
+        need(has("path"), "needs path");
         break;
       case "abort":
       case "unmock":
@@ -843,6 +875,8 @@ async function main() {
         out.shots.push(file);
         return { path: file };
       }
+      case "fetch":
+        return await fetchPath(s, base, token);
     }
   };
 
@@ -868,6 +902,84 @@ async function main() {
   }
   clearTimeout(runTimer);
   return finish();
+}
+
+// The fetch step: one GET or HEAD of a base-origin path from this process (never the page,
+// so no mock, stub or abort sees it), redirects not followed, at most MAX_FETCH bytes read.
+// The output is scrubbed of the token at emit, as everything is.
+async function fetchPath(s, base, token) {
+  const url = new URL(s.path, base + "/");
+  if (url.origin !== base) throw new Error("refused: " + url.href + " is not on " + base);
+  const method = s.method || "GET";
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), STEP_MS);
+  try {
+    let resp;
+    try {
+      resp = await fetch(url.href, {
+        method,
+        redirect: "manual",
+        headers: token !== null ? { Authorization: "Bearer " + token } : {},
+        signal: ctl.signal,
+      });
+    } catch (e) {
+      if (ctl.signal.aborted) throw new Error("fetch " + url.pathname + ": no answer in 30 s");
+      throw new Error("fetch " + url.pathname + " failed: " + short((e.cause && e.cause.message) || e.message, 300));
+    }
+    const type = resp.headers.get("content-type") || "";
+    const result = { status: resp.status, content_type: short(type, 200) };
+    if (resp.status >= 300 && resp.status < 400) {
+      const loc = resp.headers.get("location");
+      let where = null;
+      if (loc !== null) {
+        try {
+          const to = new URL(loc, url);
+          where = to.origin === base ? scrub(to.pathname + to.search) : "<off-origin>";
+        } catch {
+          where = "<off-origin>";
+        }
+      }
+      result.location = where;
+    }
+    if (method === "HEAD" || !resp.body) {
+      if (resp.body) await resp.body.cancel().catch(() => {});
+      return { ...result, body: null, truncated: false, bytes: 0 };
+    }
+    const reader = resp.body.getReader();
+    const chunks = [];
+    let bytes = 0;
+    let truncated = false;
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (bytes + value.length > MAX_FETCH) {
+          chunks.push(value.subarray(0, MAX_FETCH - bytes));
+          bytes = MAX_FETCH;
+          truncated = true;
+          break;
+        }
+        chunks.push(value);
+        bytes += value.length;
+      }
+    } catch (e) {
+      if (ctl.signal.aborted) throw new Error("fetch " + url.pathname + ": the body did not end in 30 s");
+      throw new Error("fetch " + url.pathname + ": reading the body failed: " + short(e.message, 300));
+    }
+    if (truncated) await reader.cancel().catch(() => {});
+    const text = new TextDecoder("utf-8").decode(Buffer.concat(chunks));
+    Object.assign(result, { truncated, bytes });
+    if (!truncated && JSON_TYPE.test(type)) {
+      try {
+        return { ...result, body: JSON.parse(text) };
+      } catch (e) {
+        return { ...result, body: text, json_error: short(e.message, 300) };
+      }
+    }
+    return { ...result, body: text };
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 // The bearer token for base: the session's MCP config (HARNEST_MCP_CONFIG, written by the

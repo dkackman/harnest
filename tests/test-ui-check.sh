@@ -558,6 +558,79 @@ eq "a missing config: run without one" "auth: 401" "$(j '.steps[2].result.snippe
 run '{"token": "x", "steps": []}'
 eq "a token in the spec is an invalid spec" 2 "$rc"
 
+# --- fetch: a direct GET or HEAD of one base-origin path, from the runner, never the page
+r0="$(grep -c 'from=redirect' "$T/srv.out")"
+run '{"steps": [
+  {"step": "fetch", "path": "/api/fetch/json?x=1"},
+  {"step": "fetch", "path": "/api/fetch/json", "method": "HEAD"},
+  {"step": "fetch", "path": "/api/fetch/big"},
+  {"step": "fetch", "path": "/plain.txt"},
+  {"step": "fetch", "path": "/api/fetch/bad-json"},
+  {"step": "fetch", "path": "/api/fetch/problem"},
+  {"step": "fetch", "path": "/api/fetch/redirect"},
+  {"step": "fetch", "path": "/api/fetch/redirect-off"},
+  {"step": "stub", "url_glob": "**/api/fetch/json", "method": "GET", "json": {"stubbed": true}},
+  {"step": "abort", "url_glob": "**/plain.txt"},
+  {"step": "fetch", "path": "/api/fetch/json"},
+  {"step": "fetch", "path": "/plain.txt", "method": "GET"}
+]}'
+eq "fetch spec ok" true "$(j .ok)"
+eq "fetch: the status" 200 "$(j '.steps[0].result.status')"
+eq "fetch: the content type" application/json "$(j '.steps[0].result.content_type')"
+eq "fetch: a JSON body is parsed" lora-a "$(j '.steps[0].result.body.items[0].name')"
+eq "keeping its types" 16 "$(j '.steps[0].result.body.items[0].rank | tostring')"
+eq "the query is sent" "/api/fetch/json?x=1" "$(j '.steps[0].result.body.query')"
+eq "a whole read is not truncated" false "$(j '.steps[0].result.truncated')"
+ok "and counts its bytes" test "$(j '.steps[0].result.bytes')" -gt 10
+eq "HEAD: the status" 200 "$(j '.steps[1].result.status')"
+eq "HEAD: body null" null "$(j '.steps[1].result.body')"
+eq "HEAD: no bytes" 0 "$(j '.steps[1].result.bytes')"
+eq "a body over 256 KB is truncated" true "$(j '.steps[2].result.truncated')"
+eq "read to 262144 bytes" 262144 "$(j '.steps[2].result.bytes')"
+eq "a truncated JSON body is text" string "$(j '.steps[2].result.body | type')"
+eq "cut to the cap" 262144 "$(j '.steps[2].result.body | length')"
+eq "a non-JSON body is text" "plain text, not a page" "$(j '.steps[3].result.body' | head -1)"
+has "with its content type" text/plain "$(j '.steps[3].result.content_type')"
+eq "JSON that does not parse is text" '{"items": [1, 2' "$(j '.steps[4].result.body')"
+ok "with json_error" test -n "$(j '.steps[4].result.json_error // empty')"
+eq "an error status comes back as is" 404 "$(j '.steps[5].result.status')"
+eq "a +json type is parsed" "no such lora" "$(j '.steps[5].result.body.detail')"
+eq "a redirect is returned, not followed" 302 "$(j '.steps[6].result.status')"
+eq "with its same-origin location as a path" "/api/fetch/json?from=redirect" "$(j '.steps[6].result.location')"
+eq "and the target was never requested" "$r0" "$(grep -c 'from=redirect' "$T/srv.out")"
+eq "an off-origin location is not named" "<off-origin>" "$(j '.steps[7].result.location')"
+fails "nor is its host anywhere in that step" grep -q localhost <<< "$(j '.steps[7]')"
+eq "a GET stub does not apply to fetch" lora-a "$(j '.steps[10].result.body.items[0].name')"
+eq "nor does an abort" 200 "$(j '.steps[11].result.status')"
+for p in '//localhost:'$port'/' 'http://localhost:'$port'/' 'https://127.0.0.1:'$port'/' 'api/fetch/json' '/\\\\localhost' '/api\\\\x' '/a\u0001b' '/a\u007fb' '' 'file:///etc/hosts'; do
+  run '{"steps": [{"step": "fetch", "path": "'"$p"'"}]}'
+  eq "fetch path $p is an invalid spec" 2 "$rc"
+done
+for m in POST DELETE PUT get '"x"' 1 null; do
+  case "$m" in '"'*|1|null) mv="$m" ;; *) mv="\"$m\"" ;; esac
+  run '{"steps": [{"step": "fetch", "path": "/api/fetch/json", "method": '"$mv"'}]}'
+  eq "fetch method $m is an invalid spec" 2 "$rc"
+done
+run '{"steps": [{"step": "fetch", "path": "/api/fetch/json", "headers": {"X": "1"}}]}'
+eq "fetch takes no headers" 2 "$rc"
+run '{"steps": [{"step": "fetch", "path": "/api/fetch/json", "body": "x"}]}'
+eq "fetch takes no body" 2 "$rc"
+run '{"steps": [{"step": "fetch"}]}'
+eq "fetch needs path" 2 "$rc"
+run '{"steps": [{"step": "fetch", "path": 5}]}'
+eq "a fetch path that is not a string is an invalid spec" 2 "$rc"
+# the token: sent as the bearer header, scrubbed even when the server echoes it back
+fspec='{"steps": [{"step": "fetch", "path": "/api/fetch/echo"}, {"step": "fetch", "path": "/api/fetch/json"}, {"step": "fetch", "path": "/api/fetch/redirect"}]}'
+cfg "http://127.0.0.1:$aport/mcp" "$tok"
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/mcp.json" run "$fspec"
+eq "fetch with a token ok" true "$(j .ok)"
+eq "the token is sent as a bearer header, and scrubbed in the echo" "Bearer <token>" "$(j '.steps[0].result.body.you_sent')"
+eq "the API lets it in" 200 "$(j '.steps[1].result.status')"
+fails "the token is nowhere in the fetch output" grep -q "$tok" <<< "$out"
+fails "nor in its stderr" grep -q "$tok" "$T/err"
+DW_URL="http://127.0.0.1:$aport/mcp" run "$fspec"
+eq "without a config, fetch sends no token: 401" 401 "$(j '.steps[0].result.status')"
+
 # --- the spec path: /tmp/dw-ui-*.json, a regular file, no symlink
 printf '{"steps": []}\n' > "$T/elsewhere.json"
 node "$runner" "$T/elsewhere.json" >/dev/null 2>&1; eq "a spec outside /tmp/dw-ui-* exits 2" 2 $?

@@ -57,7 +57,8 @@ Seventeen files:
 - `test-ui-check.sh`: `tools/ui-check/ui-check.mjs` against a fixture page on 127.0.0.1:
   steps, mocks built from the real answer (and a status), stubs (POST on write routes only, GET
   anywhere on the origin), abort, the rerun route allowed and restart-batch blocked, inspect's
-  attributes, dup_ids, window_flag, request recording, the origin lock,
+  attributes, dup_ids, window_flag, request recording, the origin lock, fetch (JSON, HEAD,
+  the 256 KB cap, redirects not followed, path and method refusals, the token scrubbed from an echo),
   bearer-token injection from an MCP config (and its scrubbing) against an auth-requiring server, a
   backtracking regex ended by the step cap, SIGTERM leaving no Chromium, locator and spec-path refusals.
   Skipped when `tools/ui-check/node_modules` is missing.
