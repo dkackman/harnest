@@ -97,6 +97,9 @@ const RUN_MS = 300000;
 // rerun one (the MCP tools validate_workflow, run_workflow, cancel_job and rerun_job,
 // all the tester's). Not /rerun-restart-batch, /export, /move.
 const POST_ALLOWED = [/^\/api\/validate$/, /^\/api\/jobs$/, /^\/api\/jobs\/[^/]+\/(?:cancel|rerun)$/];
+// Routes a page may send only to a stub: the request is fulfilled without being fetched, so it
+// never reaches the server (a real restart batch re-queues many jobs). Not in POST_ALLOWED.
+const STUB_ONLY = [/^\/api\/jobs\/[^/]+\/rerun-restart-batch$/];
 const READ_METHODS = new Set(["GET", "HEAD"]);
 const SPEC_PATH = /^\/tmp\/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json$/;
 const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
@@ -108,8 +111,8 @@ const MAX_CONFIG = 64 * 1024;
 // dw's UI keeps its bearer token here (ui/src/lib/storage.ts prefixes "dw-" and stores JSON).
 const TOKEN_KEY = "dw-api-token";
 // A POST stub's glob, each {a,b} alternative: any origin (** or one literal), then
-// exactly a POST_ALLOWED path, then nothing or a query.
-const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/(?:cancel|rerun))(?:\?.*)?$/;
+// exactly a POST_ALLOWED or STUB_ONLY path, then nothing or a query.
+const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/(?:cancel|rerun|rerun-restart-batch))(?:\?.*)?$/;
 const FLAG_NAME = /^__[A-Za-z0-9_]{1,40}$/;
 
 // Every form of the token that must never be printed (set once it is read).
@@ -336,7 +339,7 @@ function validate(spec) {
         need(
           stubMethod(s) !== "POST" || writeGlob(s.url_glob),
           "a POST stub answers only the write routes a page may send (POST /api/validate, /api/jobs, " +
-            "/api/jobs/<id>/cancel, /api/jobs/<id>/rerun): its url_glob must name only those, such as " +
+            "/api/jobs/<id>/cancel, /api/jobs/<id>/rerun, /api/jobs/<id>/rerun-restart-batch): its url_glob must name only those, such as " +
             "**/api/jobs?** or **/api/jobs/*/cancel",
         );
         break;
@@ -581,6 +584,10 @@ async function main() {
     if (m !== "POST") return true;
     return !POST_ALLOWED.some((re) => re.test(new URL(u).pathname));
   };
+  // What a stub may answer: same-origin, and a read, a POST_ALLOWED write or a STUB_ONLY one.
+  const stubbable = (req) =>
+    !denied(req) || (!offOrigin(req.url()) && req.method().toUpperCase() === "POST" &&
+      STUB_ONLY.some((re) => re.test(new URL(req.url()).pathname)));
   const block = (route) => {
     const req = route.request();
     out.blocked.push(short(req.method().toUpperCase() + " " + req.url(), 300));
@@ -693,7 +700,7 @@ async function main() {
           const req = route.request();
           const m = req.method().toUpperCase();
           const mine = method === "POST" ? m === "POST" : READ_METHODS.has(m);
-          if (!mine || denied(req)) return route.fallback();
+          if (!mine || !stubbable(req)) return route.fallback();
           entry.hits++;
           return route.fulfill({ status: s.status ?? 200, json: s.json });
         };

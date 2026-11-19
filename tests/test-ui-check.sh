@@ -258,12 +258,14 @@ eq "unmock counts the stub's hits" 1 "$(j '.steps[9].result.hits')"
 eq "the stubbed POST never reached the server (one POST there, after unmock)" $((c0 + 1)) "$(grep -c 'POST /api/jobs?sizes=false' "$T/srv.out")"
 run '{"steps": [{"step": "stub", "url_glob": "{**/api/validate,**/api/jobs/*/cancel}", "json": null}]}'
 eq "a stub on {validate, cancel} is valid" 0 "$rc"
-for g in '**' '**/api/**' '**/api/models' '**/api/jobs**' '**/api/jobs*' '**/api/jobs/*/rerun-restart-batch' '**/api/jobs/*/rerun*' '{**/api/jobs,**/api/models}' '**/api/jobs/**/cancel'; do
+for g in '**' '**/api/**' '**/api/models' '**/api/jobs**' '**/api/jobs*' '**/api/jobs/*/rerun*' '**/api/jobs/*/rerun-restart-batch*' '{**/api/jobs/*/rerun-restart-batch,**/api/models}' '{**/api/jobs,**/api/models}' '**/api/jobs/**/cancel'; do
   run '{"steps": [{"step": "stub", "url_glob": "'"$g"'", "json": {}, "method": "POST"}]}'
   eq "a POST stub on $g (not only a POST_ALLOWED route) is an invalid spec" 2 "$rc"
 done
 run '{"steps": [{"step": "stub", "url_glob": "{**/api/jobs/*/rerun,**/api/jobs/j-1/rerun?x=1}", "json": {}}]}'
 eq "a stub on /api/jobs/<id>/rerun is valid" 0 "$rc"
+run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs/*/rerun-restart-batch", "json": {}, "method": "POST"}]}'
+eq "a stub on /rerun-restart-batch is valid" 0 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status": 99}]}'
 eq "a stub status outside 100-599 is an invalid spec" 2 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status": 600}]}'
@@ -292,6 +294,25 @@ eq "and is not blocked" "" "$(j '[.blocked[] | select(test("/rerun$"))] | join("
 has "a rerun-restart-batch POST is aborted and reported" "POST http://127.0.0.1:$port/api/jobs/j-7/rerun-restart-batch" "$(j '.blocked | join(" ")')"
 eq "a stub answers a rerun POST" true "$(j '.steps[8].ok')"
 eq "and the stubbed rerun is recorded with its body" true "$(j '.steps[9].result.requests[0].body.new_seed')"
+
+# --- /rerun-restart-batch is stub-only: a stub answers it, a real POST or a mock is blocked
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "record", "url_glob": "**/api/jobs/*/rerun-restart-batch"},
+  {"step": "stub", "url_glob": "**/api/jobs/*/rerun-restart-batch", "json": {"queued": 3}, "status": 202},
+  {"step": "click", "role": "button", "name": "Restart batch"},
+  {"step": "wait_text", "text": "rerun: rb answered 202"},
+  {"step": "recorded", "url_glob": "**/api/jobs/*/rerun-restart-batch"},
+  {"step": "unmock", "url_glob": "**/api/jobs/*/rerun-restart-batch"},
+  {"step": "mock", "url_glob": "**/api/jobs/*/rerun-restart-batch", "set": {"a": 1}},
+  {"step": "click", "role": "button", "name": "Restart batch"},
+  {"step": "wait_text", "text": "rerun: rb failed"}
+]}'
+eq "restart-batch stub spec ok" true "$(j .ok)"
+eq "a stub answers the restart-batch POST" true "$(j '.steps[4].ok')"
+eq "and records its body" true "$(j '.steps[5].result.requests[0].body.new_seed')"
+eq "only the mocked POST is reported blocked (the stubbed one never was)" 1 "$(j '[.blocked[] | select(test("rerun-restart-batch"))] | length')"
+has "a mocked (fetching) restart-batch POST is blocked and reported" "POST http://127.0.0.1:$port/api/jobs/j-7/rerun-restart-batch" "$(j '.blocked | join(" ")')"
 
 # --- inspect: the element's attributes, handlers as <handler>, values and count capped
 run '{"steps": [
