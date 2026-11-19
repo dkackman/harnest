@@ -268,6 +268,14 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
   capped at ~12 KB by `agents/tester/standing-task.md`, not a journal; per-cycle narrative belongs on the issues.
 
+`scripts/gpu-busy.py [--days 14] [--log logs/loop.log] [--repo OWNER/REPO] [--json]` is the R17
+baseline meter: per day, `gpu_slot_busy_pct` (tester plus regression session seconds over
+wall seconds), `standing_task_interval_secs` (mean gap between `tester:task` headers),
+`closes` (dw issues closed `completed`, via `gh issue list`, only when `--repo` is given) and
+`cost`; window totals add `cost_per_close`. The log has no dates, so it applies the dashboard's
+rollover rule (a time earlier than the previous header's means the next day) anchored on the
+log's mtime. Pre-scheduler numbers: `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`.
+
 Planned evolution of the harness itself (replay benchmark, hooks, feature specs, suite
 curation, retro loop, SDK port) is tracked in `HARNESS-ROADMAP.md`. Read it before a
 structural change to the drivers or role prompts.

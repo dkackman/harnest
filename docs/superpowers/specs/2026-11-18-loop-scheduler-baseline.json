@@ -1,0 +1,97 @@
+{
+  "anchor": "2026-11-18",
+  "days": {
+    "2026-11-05": {
+      "gpu_slot_busy_pct": 6.0,
+      "standing_task_interval_secs": 1026,
+      "closes": 0,
+      "cost": 15.29
+    },
+    "2026-11-06": {
+      "gpu_slot_busy_pct": 3.9,
+      "standing_task_interval_secs": 6543,
+      "closes": 0,
+      "cost": 53.98
+    },
+    "2026-11-07": {
+      "gpu_slot_busy_pct": 36.2,
+      "standing_task_interval_secs": 3536,
+      "closes": 51,
+      "cost": 251.78
+    },
+    "2026-11-08": {
+      "gpu_slot_busy_pct": 3.4,
+      "standing_task_interval_secs": 840,
+      "closes": 9,
+      "cost": 4.61
+    },
+    "2026-11-09": {
+      "gpu_slot_busy_pct": 24.8,
+      "standing_task_interval_secs": 2784,
+      "closes": 27,
+      "cost": 152.29
+    },
+    "2026-11-10": {
+      "gpu_slot_busy_pct": 22.7,
+      "standing_task_interval_secs": 5703,
+      "closes": 0,
+      "cost": 145.34
+    },
+    "2026-11-11": {
+      "gpu_slot_busy_pct": 22.2,
+      "standing_task_interval_secs": 8980,
+      "closes": 0,
+      "cost": 75.96
+    },
+    "2026-11-12": {
+      "gpu_slot_busy_pct": 13.4,
+      "standing_task_interval_secs": 11477,
+      "closes": 1,
+      "cost": 64.85
+    },
+    "2026-11-13": {
+      "gpu_slot_busy_pct": 16.4,
+      "standing_task_interval_secs": 32314,
+      "closes": 0,
+      "cost": 107.73
+    },
+    "2026-11-14": {
+      "gpu_slot_busy_pct": 15.9,
+      "standing_task_interval_secs": 5350,
+      "closes": 31,
+      "cost": 129.08
+    },
+    "2026-11-15": {
+      "gpu_slot_busy_pct": 30.3,
+      "standing_task_interval_secs": 7503,
+      "closes": 25,
+      "cost": 115.78
+    },
+    "2026-11-16": {
+      "gpu_slot_busy_pct": 16.9,
+      "standing_task_interval_secs": 9091,
+      "closes": 18,
+      "cost": 124.98
+    },
+    "2026-11-17": {
+      "gpu_slot_busy_pct": 26.9,
+      "standing_task_interval_secs": 7910,
+      "closes": 28,
+      "cost": 131.21
+    },
+    "2026-11-18": {
+      "gpu_slot_busy_pct": 7.7,
+      "standing_task_interval_secs": 4951,
+      "closes": 22,
+      "cost": 51.31
+    }
+  },
+  "totals": {
+    "days": 14,
+    "cost": 1424.19,
+    "closes": 212,
+    "cost_per_close": 6.7179,
+    "gpu_slot_busy_pct": 17.6,
+    "standing_task_interval_secs": 7715
+  }
+}
