@@ -1835,6 +1835,11 @@ What.
   tree and logs; the tester's sessions get no read access to the dw source tree.
 - Then the guard's deploy rule (`runs_deploy`) goes back to being a mistake fence, not the boundary.
 
+**Evidence (2026-11-19):** each round of tightening the guard's deploy rule turned up new bypasses. A narrowed
+reader list (e09ab6d) still let through file writers with no redirect (`dd`, `cp`, `install`, `sponge`), git
+`-c`/`GIT_EXTERNAL_DIFF`/`--textconv` turning a "read" subcommand into execution, and runners missing from
+the deny regex. These are logged here rather than chased one by one: name matching can't be the boundary.
+
 ## dw UI stabilization Phase 4: the UI's metrics ratchet (2026-10-02)
 
 `lib/arch_ratchet.py`'s `check_ui` ratchets dw's UI the way `check` ratchets the engine: both
