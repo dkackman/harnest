@@ -143,8 +143,9 @@ piped to a shell), nor scripts/testbed.sh update|start|restart|stop, nor restart
 another name (systemctl restart|start|stop dw-serve, launchctl kickstart|bootout dw, kill/pkill
 dw.serve); the driver deploys develop between GPU sessions, because a session's own MCP
 connection keeps the old server from exiting (#446, 2026-09-26). Reading, editing, diffing,
-staging, grepping and `bash -n <path>` of deploy.sh are allowed (runs_deploy); only a message's
-inline text (deploy_text_words) may name it in a gh command
+staging, grepping and `bash -n <path>` of deploy.sh are allowed (runs_deploy, DEPLOY_READERS), but
+not with a redirect, a tee, or a shell or interpreter elsewhere on the line (deploy_line_runs);
+only a message's inline text (deploy_text_words) may name it in a gh command
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -2818,86 +2819,109 @@ def server_state_change(toks):
 
 
 DEPLOY_SHELLS = ("bash", "sh", "zsh", "dash", "ksh")
-# commands that only read, list, compare or edit a file named on their line: a plain path
-# argument naming deploy.sh is data to them (sed is checked for its e command)
-DEPLOY_READERS = frozenset(
-    (
-        "cat",
-        "less",
-        "more",
-        "head",
-        "tail",
-        "grep",
-        "egrep",
-        "fgrep",
-        "rg",
-        "sed",
-        "wc",
-        "diff",
-        "cmp",
-        "shellcheck",
-        "file",
-        "stat",
-        "ls",
-        "nl",
-        "od",
-        "xxd",
-        "hexdump",
-        "md5",
-        "md5sum",
-        "shasum",
-        "sha1sum",
-        "sha256sum",
-        "cut",
-        "sort",
-        "uniq",
-        "tr",
-        "comm",
-        "touch",
-        "rm",
-        "readlink",
-        "realpath",
-        "basename",
-        "dirname",
-        "echo",
-        "printf",
-        "test",
-        "[",
-    )
-)
+# commands that only print or count a file named on their line: a plain path argument naming
+# deploy.sh is data to them. Nothing else is (sed e, sort --compress-program, rg --pre, awk
+# system() all run what they read); grep is checked for -r/-R and --pre, git (DEPLOY_GIT_SUBS)
+# and `bash|sh|zsh -n <path>` are their own branches
+DEPLOY_READERS = frozenset(("cat", "head", "tail", "wc", "grep", "shellcheck"))
 # git subcommands that read, stage or commit a path; any other (submodule foreach, config,
-# bisect run, rebase --exec, difftool) may run what it names
-GIT_PATH_SUBS = frozenset(
-    (
-        "add",
-        "diff",
-        "log",
-        "show",
-        "blame",
-        "annotate",
-        "grep",
-        "status",
-        "checkout",
-        "restore",
-        "rm",
-        "mv",
-        "commit",
-        "stash",
-        "ls-files",
-        "ls-tree",
-        "cat-file",
-        "reset",
-        "shortlog",
-    )
+# bisect run, rebase --exec, difftool, checkout) may run or write what it names
+DEPLOY_GIT_SUBS = frozenset(("add", "diff", "log", "show", "commit", "status", "blame"))
+DEPLOY_SYNTAX_SHELLS = ("bash", "sh", "zsh")
+GREP_RUNS = re.compile(
+    r"-[A-Za-z0-9]*[rR][A-Za-z0-9]*|--(?:recursive|dereference-recursive|pre|pre-glob)(?:=.*)?|--directories=recurse|-d|--directories"
 )
+# on a line that names deploy.sh, a segment whose command is one of these may run what the
+# line printed, piped or wrote (deploy_line_runs): refused whatever its flags
+DEPLOY_LINE_RUNNERS = re.compile(
+    r"(?:bash|sh|zsh|dash|ksh|fish|python[\d.]*|node|perl|ruby|php|lua|osascript|xargs|parallel|source|\.|eval|tee)"
+)
+WRAPPER_VALUE_OPTS = {
+    "sudo": ("-u", "-g", "-h", "-C", "-D", "-p", "-r", "-t", "-U", "-T"),
+    "doas": ("-u", "-C"),
+}
+SSH_VALUE_OPTS = tuple("-" + c for c in "BbcDEeFIiJLlmOoPpQRSWw")
 GIT_VALUE_OPTS = ("-c", "-C", "--git-dir", "--work-tree", "--namespace", "--config-env")
-SED_EXEC = re.compile(r"(?:^|[\s;{}!0-9$,/])e(?:$|[\s;}])|/[gpIiMmw0-9]*e")
 DEPLOY_PATH = re.compile(r"[\w./~@+:,-]+")
 
 
 def plain_deploy_path(w):
     """w is a path to deploy.sh and nothing else: an argument a reader reads, not a script."""
     return not w.startswith("-") and bool(DEPLOY_PATH.fullmatch(w)) and os.path.basename(w) == "deploy.sh"
+
+
+def plain_deploy_args(args, valueless=()):
+    """Every argument naming deploy.sh is a plain path a reader reads: not an option's value
+    (the word after a -x/--opt word, bar --, a -20 count, or a flag in valueless whose value
+    deploy_text_words already took), and not inside --opt=.../deploy.sh."""
+    for k, w in enumerate(args):
+        if not names_deploy([w]):
+            continue
+        if not plain_deploy_path(w):
+            return False
+        prev = args[k - 1] if k else ""
+        if prev.startswith("-") and len(prev) > 1 and prev != "--" and not re.fullmatch(r"-\d+", prev):
+            if prev not in valueless:
+                return False
+    return True
+
+
+def output_redirect(words):
+    """A segment's words hold an output redirect (>, >>, &>, >|, 2>, <>); a >&N duplication of
+    one descriptor onto another writes no file."""
+    for k, w in enumerate(words):
+        if w and ">" in w and set(w) <= set("<>&|"):
+            nxt = words[k + 1] if k + 1 < len(words) else ""
+            if w == ">&" and (nxt.isdigit() or nxt == "-"):
+                continue
+            return True
+    return False
+
+
+def unwrapped_command(words, depth=0):
+    """The command a segment runs once sudo/doas/env/nice/timeout/nohup/command/exec/busybox and
+    `ssh <host>` are stripped: a list of candidate command words (an ssh remote line may hold
+    several)."""
+    words = command_words(words)
+    if not words or depth > 6:
+        return [os.path.basename(words[0]).lower()] if words else []
+    name = os.path.basename(words[0]).lower()
+    if name in WRAPPER_VALUE_OPTS:
+        i = 1
+        while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
+            i += 2 if words[i] in WRAPPER_VALUE_OPTS[name] else 1
+            if words[i - 1] == "--":
+                break
+        return unwrapped_command(words[i:], depth + 1)
+    if name == "busybox":
+        return unwrapped_command(words[1:], depth + 1)
+    if name == "ssh":
+        i = 1
+        while i < len(words) and words[i].startswith("-") and len(words[i]) > 1:
+            i += 2 if words[i] in SSH_VALUE_OPTS else 1
+        rest = " ".join(words[i + 1 :])
+        out = []
+        for g in segments(rest):
+            out += unwrapped_command(g, depth + 1)
+        return out
+    return [name]
+
+
+def deploy_line_runs(segs):
+    """A line that names deploy.sh (outside a message's text) runs it when any of its segments
+    writes a file (an output redirect: cat deploy.sh > d.sh; bash d.sh) or when a segment other
+    than the one naming it is a shell, an interpreter, xargs, parallel, source, ., eval or tee
+    (cat deploy.sh | bash, echo deploy.sh | xargs bash), whatever their flags."""
+    named = [names_deploy(deploy_text_words(command_words(g))) for g in segs]
+    if not any(named):
+        return False
+    if any(output_redirect(g) for g in segs):
+        return True
+    for k, g in enumerate(segs):
+        others_name = any(n for j, n in enumerate(named) if j != k)
+        if others_name and any(DEPLOY_LINE_RUNNERS.fullmatch(c) for c in unwrapped_command(g)):
+            return True
+    return False
 
 
 def stdin_runner(words):
@@ -2960,11 +2984,11 @@ def runs_deploy(raw, depth=0):
             i += 1
         sub = words[i] if i < len(words) else ""
         args = words[i + 1 :]
-        if sub in GIT_PATH_SUBS:
-            return any(names_deploy([w]) and not plain_deploy_path(w) for w in args)
+        if sub in DEPLOY_GIT_SUBS:
+            return not plain_deploy_args(args, GIT_TEXT_FLAGS)
         return names_deploy(args)
     if name in DEPLOY_SHELLS:
-        if len(words) == 3 and words[1] == "-n" and plain_deploy_path(words[2]):
+        if name in DEPLOY_SYNTAX_SHELLS and len(words) == 3 and words[1] == "-n" and plain_deploy_path(words[2]):
             return False  # a syntax check reads the script and runs none of it
         i = 1
         while i < len(words) and words[i][:1] in ("-", "+") and len(words[i]) > 1:
@@ -2979,23 +3003,9 @@ def runs_deploy(raw, depth=0):
     if name == "eval":
         return runs_deploy_text(" ".join(words[1:]), depth + 1)
     if name in DEPLOY_READERS:
-        if name == "sed" and names_deploy(words):
-            j = 1
-            while j < len(words):
-                w = words[j]
-                if w in ("-f", "--file") or w.startswith("--file="):
-                    return True
-                if w in ("-e", "--expression") and j + 1 < len(words):
-                    if SED_EXEC.search(words[j + 1]):
-                        return True
-                    j += 2
-                    continue
-                if not w.startswith("-"):
-                    if "-e" not in words and "--expression" not in words and SED_EXEC.search(w):
-                        return True
-                    break
-                j += 1
-        return any(names_deploy([w]) and not plain_deploy_path(w) for w in words[1:])
+        if name == "grep" and names_deploy(words) and any(GREP_RUNS.fullmatch(w) for w in words[1:]):
+            return True
+        return not plain_deploy_args(words[1:])
     return names_deploy(words)
 
 
@@ -3008,6 +3018,8 @@ def runs_deploy_text(text, depth=0):
         return True
     if any(stdin_runner(command_words(g)) for g in segs) and names_deploy(words_all):
         return True
+    if deploy_line_runs(segs):
+        return True
     return any(runs_deploy(g, depth) for g in segs)
 
 
@@ -3016,7 +3028,8 @@ def deploy_rule(raw, words, server, text):
     server, so a session's own MCP connection never holds the old server open. Refused for every
     role: running deploy.sh or testbed.sh update|start|restart|stop (runs_deploy), and restarting,
     stopping or killing dw's server by another name (server_state_change). Reading, editing,
-    diffing, staging, grepping or `bash -n` of deploy.sh is not a run and is allowed."""
+    diffing, staging, grepping or `bash -n` of deploy.sh through DEPLOY_READERS is not a run and
+    is allowed, unless the line writes a file or pipes to a runner (deploy_line_runs)."""
     if runs_deploy(raw) or runs_deploy_text(text):  # the line too: a bare D=.../deploy.sh segment
         deny(
             "no session deploys dw%s: the driver deploys develop between GPU sessions "
