@@ -10941,24 +10941,28 @@ It is a **finding** if any arm runs the template's plain scheduler, any other ar
 cleanup: none (the jobs are the bench record).
 metrics: none.
 
-### M-F429 — the #1438 flag is proven to reach the scheduler: the blend-only refusal, the load log line, lem's diffusers build, and each checkpoint's `euler_update_form`
+### M-F429 — the #1438 flag is proven to reach the scheduler: the blend-only refusal, a flag-only reload and the realized scheduler block, lem's diffusers build, and each checkpoint's `euler_update_form`
 pending: #1459
 source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 video and MiniMax-H3-Image on lem (cuda), workspace `bench`. **Free**: reads only.
 Steps: `get_job(workspace="bench")` and `get_job_events(workspace="bench")` on the fail-fast job the record names and on
-one flagged arm (V1); `get_job_workflow` on the fail-fast job; `get_diffusers_state()`; the record as quoted on #1459/#1438.
+one flagged arm (V1); `get_job_workflow` on the fail-fast job and on V1; `get_diffusers_state()`; the record as quoted on #1459/#1438.
 expected:
 - A fail-fast job exists whose scheduler `from_config_args` has `stochastic_sampling` `true` and `euler_update_form`
   `"velocity"`. Its status is `failed`, and its error (in `get_job` or `get_job_events`) names the requirement that
   stochastic sampling needs the `"blend"` form. A fail-fast job that `completed`, or failed for another reason (OOM, a
   missing file), is a finding: it does not prove the key reached `__init__`.
-- V1's events (or job log) show `Loading scheduler: MiniMaxH3Scheduler` (or the record's quoted equivalent line).
+- The flag reached the scheduler, shown by all three together (the `Loading scheduler` line is only in lem's
+  journal, not in `get_job_events`; dkackman/diffusers-workflow#1487 would forward it): the fail-fast job above is
+  refused at construction; V1 `get_job` reports `load_cached: false` after a run that changed only the flag; and
+  `get_job_workflow` on V1 shows `scheduler` with `configuration.scheduler_type` `MiniMaxH3Scheduler` and
+  `from_config_args` carrying `stochastic_sampling` and `euler_update_form`.
 - The record quotes a `get_diffusers_state` taken before the first arm, and says the build's `MiniMaxH3Scheduler` has
   the flag. Every arm ran on that one build (today's state is context only).
 - The record states each checkpoint's `euler_update_form` (H3 video, H3-Image) as read on lem, and what each arm had to
   change. The arm split follows from it: V0b exists **iff** the video checkpoint is `"velocity"`; where H3-Image is
   `"velocity"` and I2 ran, I1 (blend only) ran too.
-It is a **finding** if the refusal is missing or for the wrong reason, the load line is absent, the build is not
+It is a **finding** if the refusal is missing or for the wrong reason, the flag-only run is `load_cached: true` or its realized scheduler block lacks the flag, the build is not
 quoted, or the arm split contradicts the stated forms.
 cleanup: none.
 metrics: none.
