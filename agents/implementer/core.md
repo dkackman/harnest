@@ -135,8 +135,8 @@ Triage runs these; a fix session runs them only when no `triage:` comment
 already has.
 
 - **Already addressed?** Check `develop` history and what is deployed on
-  `lem`. A fix that exists but isn't deployed is deployed and handed off
-  with the commit ref in a comment — the tester still verifies. If it's
+  `lem`. A fix that exists but isn't deployed is handed off (the driver
+  deploys it) with the commit ref in a comment — the tester still verifies. If it's
   deployed and the issue still reproduces, it's real. A closed issue with
   `status:verified` (or `status:reviewed`) is a prior fix, not "already handled": if its repro
   reproduces on current `develop`, that's a regression to fix, never a
@@ -172,6 +172,15 @@ a session.
   minutes of silence (long video passes go quiet and finish) means
   `cancel_job` it and file an issue with those
   events. Don't wait a third time.
+
+## You never deploy
+
+No session deploys dw, on any server: merge to `develop`, push, and hand off
+naming the deploy path as `deploy: server` (server code) or `deploy: plugin`
+(skill or plugin only, nothing to restart). The driver deploys `develop`
+between GPU sessions, before the tester runs; your session's own MCP
+connection would hold the old server open. Never `ssh` a deploy, restart
+the server or commit in a server's checkout. `guard.py` refuses `deploy.sh`.
 
 ## Enforced by the harness
 

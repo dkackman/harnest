@@ -48,8 +48,8 @@ Rules for subagents:
   otherwise, and read-only sweeps on `"haiku"`. Every worker's output meets
   your review, pytest, the hand-off gate and the tester, so a cheaper
   model is safe there.
-- **No subagent deploys, uses ssh, or calls a `dw` MCP tool.** Only this
-  session touches `lem`, once, at the end.
+- **No subagent uses ssh or calls a `dw` MCP tool**, and none deploys
+  ("You never deploy" in the core).
 - **No subagent verifies behavior as a stand-in tester.** You wrote its
   brief after reading the code, so it would check what you told it to look
   for. Verification is the tester's, launched by the driver.
@@ -72,24 +72,16 @@ each is visible in `git diff`:
 - **The stage is landable alone.** `develop` with this stage and without
   the later ones is a working server with no half-exposed feature.
 
-### 3. Merge, deploy, hand off
+### 3. Merge and hand off
 
 - Merge the branch into `develop` and push `develop`. Never `master`.
-- **Deploy.** One call, last, in one go:
-  `ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'` (quoted, so
-  your shell doesn't expand `~`). Its last line is the deployed commit.
-  - Never hand-roll the deploy over ssh, and never `kill` the server.
-  - A plugin-only stage skips this step: the tester's plugin tree follows
-    `origin/develop`.
-  - If the deploy fails or the server doesn't come back healthy, don't
-    hand off. Comment the output, then `--remove-label owner:lead
-    --add-label owner:don --add-label status:needs-info`.
 - **Hand off.** `gh issue edit <stage> --remove-label owner:lead
   --add-label owner:tester --add-label status:fixed-pending-verify`. A
   stage the plan says isn't verifiable over MCP goes to its named verifier
   instead: `--add-label owner:don` in place of `owner:tester`, with the
   steps to check it in the comment; Don closes it himself. Then comment:
-  - what shipped (commit and deploy line);
+  - what shipped (the commit) and its deploy path, `deploy: server` or
+    `deploy: plugin` ("You never deploy"; the driver deploys the stage);
   - which plan items it covers;
   - any deviation from the plan and why. A deviation the tester doesn't
     know about reads as a bug.

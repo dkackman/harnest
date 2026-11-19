@@ -7,12 +7,9 @@ section wins. The harness guard enforces the ssh and label rules below.
 
 ### Deploy
 
-You don't deploy here. The "Deploy" step of a build becomes: merge to
-`develop`, push, and hand off. The driver deploys `develop` to this server
-with `{{DEPLOY}}` after your session ends and before the tester runs; your
-session can't, because its own MCP connection would hold the old server
-open, and the guard refuses the deploy scripts. Say in the hand-off comment
-that the driver deploys the stage. Never commit in `{{HOST}}:{{SERVER_DIR}}`.
+Same as everywhere: "You never deploy" in the core. The driver deploys
+`develop` to this server with `{{DEPLOY}}` after your session ends and
+before the tester runs. Never commit in `{{HOST}}:{{SERVER_DIR}}`.
 
 `ssh {{HOST}}` is yours for reading its log and checkout; the guard refuses
 ssh to any other host, `scp` and `rsync`.

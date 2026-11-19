@@ -126,6 +126,9 @@ consumer (tester, regression):
     `regression-suite-*.md` may not drop or change a line the last commit
     holds, bar a `pending:` line. Lines added since the commit (this
     session's own new case) stay editable
+every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
+even over ssh); the driver deploys develop between GPU sessions, because a session's own
+MCP connection keeps the old server from exiting (#446, 2026-09-26)
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -135,9 +138,6 @@ somewhere other than lem:
 implementer on a server other than lem (HARNEST_TARGET, set by run-loop.sh):
   - `ssh` only to its own test bed (HARNEST_TARGET_HOST), to read its log
     and checkout; no `scp` or `rsync`; lem is off limits
-  - no running dw's deploy script (`deploy.sh`, even over ssh): the driver
-    deploys between sessions, because the session's own MCP connection
-    keeps the old server from exiting (#446, 2026-09-26)
 consumer on a server other than lem (HARNEST_TARGET and HARNEST_ROLE, set
 by run-loop.sh and run-regression.sh; harnest#15). Also runs on Edit and
 Write:
@@ -2610,6 +2610,24 @@ def consumer_root_rule(text):
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
 
 
+def deploy_rule(words, server):
+    """No session deploys dw (R17): the driver deploys develop between GPU sessions, on every
+    server, so a session's own MCP connection never holds the old server open. A `gh`/`git`
+    command is exempt: `deploy.sh` there is text in a comment or message, not a command."""
+    lead = 0  # env assignments before the command (FOO=1 ssh ...)
+    while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
+        lead += 1
+    cmdw = words[lead:]
+    if not cmdw or os.path.basename(cmdw[0]) in ("gh", "git"):
+        return
+    if any(os.path.basename(w) == "deploy.sh" or w.endswith("/deploy.sh") or "deploy.sh " in w for w in cmdw):
+        deny(
+            "no session deploys dw%s: the driver deploys develop between GPU sessions. "
+            "Merge to develop, push, and hand off naming the deploy path (server or plugin)."
+            % (" (the %s server too)" % server if server else "")
+        )
+
+
 ROLES = ("implementer", "lead", "consumer", "curator", "reviewer")
 
 
@@ -2700,6 +2718,7 @@ def main():
             implementer_api_rule(words)
         if role in ("implementer", "lead"):
             wrapper_rule(words)
+        deploy_rule(words, server)
         if role == "implementer" and server:
             lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
             while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
@@ -2713,11 +2732,6 @@ def main():
                 deny(
                     "this loop runs against the %s server: ssh only to its host (%s), to read; no "
                     "scp or rsync; lem is off limits." % (server, own_host() or "unknown")
-                )
-            if any(os.path.basename(w) == "deploy.sh" or w.endswith("/deploy.sh") or "deploy.sh " in w for w in cmdw):
-                deny(
-                    "on the %s server the driver deploys develop after your session: your own "
-                    "MCP connection would hold the old server open. Merge, push and hand off." % server
                 )
         if (
             role == "consumer"

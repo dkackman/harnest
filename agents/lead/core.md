@@ -131,6 +131,13 @@ and search the source with `Read`, `Grep` and `Glob`, stage text with
 `Write` to `/tmp/` and post it with `--body-file`, and filter `gh` output
 with its own `--jq`.
 
+## You never deploy
+
+No session deploys dw, on any server: merge to `develop`, push, and hand
+off. The driver deploys `develop` between GPU sessions, before the tester
+runs. Never `ssh` a deploy, restart the server or commit in a server's
+checkout. `guard.py` refuses `deploy.sh`.
+
 ## Enforced by the harness
 
 A hook refuses:

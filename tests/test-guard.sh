@@ -271,7 +271,7 @@ irow 2 'ssh -o BatchMode=yes lem "tail ~/dw-serve.log"'
 irow 2 'scp mini-ai:dw-serve.log /tmp/'
 irow 2 'cd ~/src/dkackman/dw-mps-serve && ./scripts/deploy.sh develop'
 irow 2 'bash scripts/deploy.sh develop'
-row 0 implementer "" $none 'ssh lem "~/diffusers-workflow/scripts/deploy.sh develop"'
+row 2 implementer "" $none 'ssh lem "~/diffusers-workflow/scripts/deploy.sh develop"'
 irow 0 'gh issue edit 5 --remove-label target:mini-ai --add-label target:lem'
 irow 2 'gh issue edit 5 --add-label target:mini-ai'
 # on lem nobody adds a claim or a verified-on label
@@ -493,7 +493,14 @@ row 2 implementer "" $none 'sudo bash -c "gh issue edit 5 --add-label status:ver
 row 2 implementer "" $none 'su -c "gh issue close 5"'
 row 2 implementer "" $none 'watch "gh issue close 5 --reason completed"'
 row 2 implementer "" $none 'ssh lem "gh issue edit 5 --add-label status:verified"'
-row 0 implementer "" $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+# R17: the driver deploys between GPU sessions, on lem too; no agent session does
+row 2 implementer "" $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+row 2 lead build $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+row 2 implementer "" $none 'bash scripts/deploy.sh develop'
+row 2 lead build $none 'cd ~/src/dkackman/diffusers-workflow && ./scripts/deploy.sh develop'
+row 2 consumer verify "$mcp_transcript" "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+row 0 implementer "" $none 'git commit --allow-empty -m "the driver runs deploy.sh develop"'
+row 0 implementer "" $none 'ssh lem uptime'
 # a body file is read before gh runs: it must be the only command, relative paths resolve against the hook's cwd
 cp "$T/plain.md" "$T/p3.md"
 row 2 implementer "" $none "cp $T/marker.md $T/p3.md; gh issue comment 5 --body-file $T/p3.md"

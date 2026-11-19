@@ -9,14 +9,11 @@ enforces the ssh and label rules below.
 
 ### Deploy
 
-You don't deploy here. Every "deploy to lem" step in your instructions
-becomes: merge to `develop`, push, and hand off. The driver deploys
+Same as everywhere: "You never deploy" in the core. The driver deploys
 `develop` to this server after your session ends and before the tester
-runs, with `{{DEPLOY}}`. Your session can't do it itself: its own MCP
-connection to the server stays open, and the old server won't exit while
-it does. The guard refuses the deploy scripts. "Plugin or skill: merge and
-push" is unchanged, and so is "merge to `develop`": lem's loop deploys the
-same branch. Never commit in `{{HOST}}:{{SERVER_DIR}}`; it is only deployed.
+runs, with `{{DEPLOY}}`. "Plugin or skill: merge and push" is unchanged,
+and so is "merge to `develop`": lem's loop deploys the same branch. Never
+commit in `{{HOST}}:{{SERVER_DIR}}`; it is only deployed.
 
 Check your fix with the source checkout's tests before you hand off, as
 everywhere (MCP reproduces the bug; it never confirms your fix). Here the
