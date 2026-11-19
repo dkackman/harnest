@@ -9887,8 +9887,7 @@ expected:
   `DW_EXPERIMENTAL_REFINE_WINDOWS=1`, an H3 `fl2va` call argument with `balance` (default 20) and `blocks`
   (default `31-33,36-44,47`), and that it needs an `image` and `guides` and is refused beside TST, sparse
   attention, a capstone or gated guide rows.
-- It states block numbering as an assumption (diffusers' 0–49 taken as ComfyUI's), or the bench record does
-  (M-F386); one of the two must.
+- It states block numbering as an assumption (diffusers' 0–49 taken as ComfyUI's), or the #1391 bench record states the numbering result checked on lem (M-F427); one of the two must.
 - No template description and no MCP tool description names the key (the plan moves no surface).
 - If an attributions guide is served: it credits roycho87's NerdNotes tests 19–20, geiru_context_suite's Keystone
   Attention (concepts only) and ckinpdx's Carry Attention. If it is not served over MCP, record that; checking it
@@ -9898,7 +9897,7 @@ found.
 cleanup: none.
 metrics: none.
 
-### M-F383 — the #1391 bench jobs completed on the control's build, one H3 job at a time, after #1385 and #1382
+### M-F383 — the #1391 bench jobs completed on one quoted build, one H3 job at a time, after #1385 and #1382
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
@@ -9909,13 +9908,12 @@ close times.
 expected:
 - Every arm job is `completed` (succeeded), not failed or cancelled. A re-run is named in the record with its
   reason.
-- The record quotes `get_diffusers_state` as `0.44.0.dev0` @ `43e30028` (a longer hash starting with it is fine),
-  taken before the first arm job, matching `aed61997052a`'s build; any version a job reports matches it. Today's
-  `get_diffusers_state` is context only.
+- The record quotes the `get_diffusers_state` the runs used, taken before the first arm job, and every arm job ran
+  on that one build; any version a job reports matches it. Today's `get_diffusers_state` is context only.
 - No arm job's run overlaps another H3 job on lem (its `started_at`–`finished_at` against every other H3 job's),
   and none started before #1385 and #1382 were closed (or the driver released B from them).
-It is a **finding** if any arm job failed without a named re-run, if the build differs from the control's, or if
-two H3 jobs overlapped.
+It is a **finding** if any arm job failed without a named re-run, if the arm jobs did not all run on the one quoted
+build, or if two H3 jobs overlapped.
 cleanup: none.
 metrics: none.
 
@@ -10848,7 +10846,7 @@ blocks don't follow from the stated rule.
 cleanup: none.
 metrics: none.
 
-### M-F425 — the #1391 arm pair runs dense and differs only in the argument; the record calls `aed61997052a` a two-difference reference
+### M-F425 — the #1391 arm pair runs dense and differs only in the argument; the record calls `aed61997052a` a three-difference reference (`image`, backend, diffusers build)
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda), bench workspace. **Free**: reads only.
@@ -10859,19 +10857,19 @@ expected:
 - Every segment's transformer in both arms is dense: `attention_backend` null or absent, and no `sparse_tau` or
   `sparse_topk`. `aed61997052a` is sparse (`attention_backend: "sparse"`, `sparse_tau` 0.5, `sparse_topk` 0.15).
 - Keystone control vs `aed61997052a`: only each later segment's `image` (segment 1's frame 0 instead of the
-  carried tail's first frame) and the attention backend differ. The guide is still the carried tail. Prompts,
+  carried tail's first frame), the attention backend and the diffusers build differ. The guide is still the carried tail. Prompts,
   seeds, size, steps, LoRA and segment count are the same.
 - Attention arm vs keystone control: the only difference is `experimental_keystone_attention` with `balance` 20 and
   `blocks` as step 2 chose (M-F424) on each fl2va segment call. The record says whether segment 1 carries it.
 - An early job is its arm's full workflow cut after seg02, with nothing else changed.
-- The record states both diffs in words. It labels the `aed61997052a` column a reference with two changes (image
-  and sparse→dense), not a one-variable control.
+- The record states both diffs in words. It labels the `aed61997052a` column a reference with three changes (image,
+  sparse→dense and the diffusers build), not a one-variable control.
 It is a **finding** if any other argument differs, any arm segment is sparse, or the record omits a diff or the
 reference label.
 cleanup: none.
 metrics: none.
 
-### M-F426 — every #1391 stage B job (steps 1–2 and the arms) completed on the control's build, one H3 job at a time, in step order
+### M-F426 — every #1391 stage B job (steps 1–2 and the arms) completed on one quoted build, one H3 job at a time, in step order
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
@@ -10879,8 +10877,8 @@ Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every job in M-F4
 `list_jobs` across the workspaces that held H3 jobs in the stage's time window.
 expected:
 - Every job is `completed`. A re-run is named in the record with its reason.
-- The record quotes `get_diffusers_state` as `0.44.0.dev0` @ `43e30028` (a longer hash starting with it is fine),
-  taken before the first stage B job. Today's state is context only.
+- The record quotes the `get_diffusers_state` the runs used, taken before the first stage B job, and every stage B
+  job ran on that one build. Today's state is context only.
 - No stage B job's `started_at`–`finished_at` overlaps another H3 job on lem.
 - Order: every step 1 job finished before the first step 2 job was created, and every step 2 job finished before
   the first gate job was created.
