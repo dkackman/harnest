@@ -637,7 +637,9 @@ class RespawnTest(unittest.TestCase):
         self.assertEqual([i.queue for i in lp.offer()], ["lead:design"])
 
     def end(self, lp, item, session):
-        rec = loop.Running(item, "lem", "s1", mock.MagicMock(returncode=0), time.time(), lp.logs / ".ls", lp.logs / ".o")
+        rec = loop.Running(
+            item, "lem", "s1", mock.MagicMock(returncode=0), time.time(), lp.logs / ".ls", lp.logs / ".o"
+        )
         (lp.logs / ".ls").write_text("usage: turns=1\n" if session else "")
         lp.running["s1"] = rec
         lp.sched.finished = lambda *a: None
@@ -663,3 +665,54 @@ class RespawnTest(unittest.TestCase):
         self.assertNotIn(item.key, lp.backoff)
         lp.last_finish[item.key] = time.monotonic() - lp.poll - 1
         self.assertEqual([i.key for i in lp.offer()], [item.key])
+
+
+class ClosedTotalTest(unittest.TestCase):
+    """totals.closed counts only issues closed as completed (stateReason)."""
+
+    def status(self, *ns):
+        return "\n".join(f"#{n} status:x owner:tester t{n}" for n in ns)
+
+    def test_only_completed_closes_count(self):
+        lp = mk()
+        lp.apply_hk({"servers": {}, "curator": None, "status": self.status(1, 2, 3, 4)})
+        reasons = {2: "COMPLETED", 3: "NOT_PLANNED", 4: "DUPLICATE"}
+        asked = []
+
+        def fake(n, env):
+            asked.append(n)
+            return reasons[n]
+
+        lp.close_reason_of = fake
+        left = lp.read_close_reasons(set(lp.seen), {1})
+        self.assertEqual(sorted(asked), [2, 3, 4])
+        lp.apply_hk({"servers": {}, "curator": None, "status": self.status(1), "closed_reasons": left})
+        self.assertEqual(lp.state._totals["closed"], 1)
+        # each left issue is asked once
+        asked.clear()
+        self.assertEqual(lp.read_close_reasons(set(lp.seen), {1}), {})
+        self.assertEqual(asked, [])
+
+    def test_a_failed_read_is_asked_again(self):
+        lp = mk()
+        lp.apply_hk({"servers": {}, "curator": None, "status": self.status(1, 2)})
+        lp.close_reason_of = lambda n, env: None
+        self.assertEqual(lp.read_close_reasons(set(lp.seen), {1}), {})
+        lp.close_reason_of = lambda n, env: "COMPLETED"
+        self.assertEqual(lp.read_close_reasons(set(lp.seen), {1}), {2: "COMPLETED"})
+
+    def test_close_reason_of_reads_gh(self):
+        lp = mk()
+        with mock.patch.object(
+            loop.subprocess,
+            "run",
+            return_value=mock.MagicMock(returncode=0, stdout='{"state": "CLOSED", "stateReason": "COMPLETED"}'),
+        ) as run:
+            self.assertEqual(lp.close_reason_of(7, {}), "COMPLETED")
+        self.assertIn("stateReason", " ".join(run.call_args[0][0]))
+        with mock.patch.object(
+            loop.subprocess,
+            "run",
+            return_value=mock.MagicMock(returncode=0, stdout='{"state": "OPEN", "stateReason": ""}'),
+        ):
+            self.assertIsNone(lp.close_reason_of(7, {}))  # not closed (past the board's window): not counted

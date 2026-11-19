@@ -125,6 +125,9 @@ ISSUELESS_COOLDOWN = 900
 # each time in a row up to the cap, instead of respawning every poll.
 EMPTY_BACKOFF = 300
 EMPTY_BACKOFF_MAX = 1800
+# totals.closed counts issues closed as completed: a left issue's stateReason
+# is read once (gh issue view), at most this many a poll.
+CLOSE_READS_MAX = 20
 # What a land of a session with no land note (its item failed) is committed as.
 NO_NOTE = ("unknown (a loop item that left no land note)", "noreply@localhost")
 
@@ -387,6 +390,7 @@ class Loop:
         self.stop_signal = None
         self.last_finish = {}  # key -> time it ended
         self.backoff = {}  # key -> (time it ended, secs): it ran no session
+        self.close_reasons = {}  # issue that left the open board -> its stateReason
         self.lead_design = (os.environ.get("LEAD_DESIGN_IN_LOOP") or "1") == "1"
         self.done_keys = set()  # --once: keys that ran
         self.task_last = time.time()
@@ -662,6 +666,9 @@ class Loop:
                 if srv is lead:
                     res["curator"] = r.pop("curator", None)
                     res["status"] = None if unreadable else "\n".join(status)
+                    if res["status"] is not None:
+                        open_now = {row[0] for row in board.status_rows(res["status"])}
+                        res["closed_reasons"] = self.read_close_reasons(set(self.seen), open_now, self.board_env(srv))
             r["deployed"] = None if srv.deploying else deploy.deployed_head(srv.server)
             if srv.gate.parked and not srv.deploying:
                 # a deploy failed twice: gpu:S stays held until S passes a preflight
@@ -672,6 +679,36 @@ class Loop:
                     r["preflight"] = str(e) or "failed"
             res["servers"][srv.name] = r
         return res
+
+    def close_reason_of(self, n, env):
+        """#n's stateReason (COMPLETED, NOT_PLANNED, DUPLICATE...) when it is
+        closed; None when it is open or gh fails (asked again next poll)."""
+        repo = os.environ.get("TICKET_REPO") or "dkackman/diffusers-workflow"
+        try:
+            p = subprocess.run(
+                ["gh", "issue", "view", str(n), "--repo", repo, "--json", "state,stateReason"],
+                env=env,
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            v = json.loads(p.stdout) if p.returncode == 0 else {}
+        except (OSError, subprocess.TimeoutExpired, ValueError):
+            return None
+        if not isinstance(v, dict) or v.get("state") != "CLOSED":
+            return None
+        return v.get("stateReason") or "UNKNOWN"
+
+    def read_close_reasons(self, seen, open_now, env=None):
+        """The stateReason of each issue seen open that has left the board
+        and is not read yet (at most CLOSE_READS_MAX)."""
+        out = {}
+        for n in sorted(seen - open_now - set(self.close_reasons))[:CLOSE_READS_MAX]:
+            why = self.close_reason_of(n, env)
+            if why is not None:
+                out[n] = why
+        return out
 
     def start_hk(self):
         self.hk_busy = True
@@ -742,7 +779,9 @@ class Loop:
             for r in rows:
                 self.seen.add(r[0])
             self.state.board(rows, True)
-            self.state.closed(len(self.seen - {r[0] for r in rows}))
+            self.close_reasons.update(res.get("closed_reasons") or {})
+            left = self.seen - {r[0] for r in rows}
+            self.state.closed(sum(1 for n in left if self.close_reasons.get(n) == "COMPLETED"))
 
     def print_board(self, rows):
         srv = self.primary_srv()
