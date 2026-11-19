@@ -1120,6 +1120,7 @@ item tester-task
 eq  "item: tester-task is one TASK session" "1 0" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'CLOSURES session' "$FAKE_CLAUDE_LOG")"
 has "item: and points the tester at the bible in the harness root" "$(cd "$T/h" && pwd)/qa-bible.md" "$(cat "$FAKE_CLAUDE_LOG.argv")"
 has "item: which the allowlist lets it write" "Write(/$(cd "$T/h" && pwd)/qa-bible.md)" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+has "item: and gives it the UI runner's exact command line" "node $(cd "$T/h" && pwd)/tools/ui-check/ui-check.mjs /tmp/dw-ui-<case>.json" "$(cat "$FAKE_CLAUDE_LOG.argv")"
 rm -f "$T/h/logs/closures-seen"; : > "$FAKE_CLAUDE_LOG"
 item tester-closures
 eq  "item: tester-closures is one CLOSURES session" "0 1" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'CLOSURES session' "$FAKE_CLAUDE_LOG")"

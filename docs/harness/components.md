@@ -303,8 +303,11 @@ on `playwright-core` (pinned in `tools/ui-check/package.json`; `node_modules` is
 run `cd tools/ui-check && npm install --no-audit --no-fund` once per checkout, which uses the
 Chromium builds already in `~/Library/Caches/ms-playwright`). The tester writes no code: it
 writes a JSON spec of steps to `/tmp/dw-ui-<case>.json` and runs `node
-$HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`; the step kinds and the output are in the
-file's header and `agents/tester/core.md` ("Web UI cases"). Locators are visible text and
+$HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`, the exact line its runtime note
+(`runtime_note`, for the tester and the regression agent) spells with the absolute root; the
+step kinds and the output are in the file's header and `agents/tester/core.md` ("Web UI
+cases"). `record`/`recorded` capture the requests matching a glob (mocked or not) for the
+cases that check what the page sent. Locators are visible text and
 role only. The run is locked to the server's origin (`DW_URL` without its path; a spec
 `base` must match it): any other request or WebSocket is aborted and listed in `blocked`, a
 main-frame navigation elsewhere (file:, data:) goes back to `about:blank`, and downloads,

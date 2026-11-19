@@ -80,15 +80,19 @@ def runtime_note(role, provider, model, secondary=False):
         if is_anthropic_model(model)
         else ""
     )
-    return "\n".join(
-        [
-            f"Runtime: you are the {role} agent, running as model '{model}' via the '{provider}'",
-            "provider. Whenever you record something durable that rests on your own",
-            f"judgment — {examples} —",
-            "name that model and provider in it, so a later reader can tell which model",
-            f"produced it.{id_hint}",
+    lines = [
+        f"Runtime: you are the {role} agent, running as model '{model}' via the '{provider}'",
+        "provider. Whenever you record something durable that rests on your own",
+        f"judgment — {examples} —",
+        "name that model and provider in it, so a later reader can tell which model",
+        f"produced it.{id_hint}",
+    ]
+    if role in ("tester", "regression"):  # the roles allowed the web UI runner get its command verbatim
+        lines += [
+            'The web UI runner ("Web UI cases" in your role prompt) is, exactly:',
+            f"node {REPO}/tools/ui-check/ui-check.mjs /tmp/dw-ui-<case>.json",
         ]
-    )
+    return "\n".join(lines)
 
 
 def target_note(role, values, agents=AGENTS):

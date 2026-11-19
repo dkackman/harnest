@@ -18,6 +18,11 @@
 //               route.fetch() the real request, parse its JSON, set each path
 //               (a.b, a.0.b and a[0].b; any JSON value), route.fulfill({json})
 //   unmock      {url_glob}
+//   record      {url_glob}   from this step on, note every same-origin request
+//               the glob matches, mocked or not (a mock on the same glob is fine)
+//   recorded    {url_glob}   -> {count, requests: [{method, url (path+query),
+//               body (parsed JSON, else text cut to 4 KB, else null), timestamp
+//               (epoch ms)}], dropped}; at most 200 kept per glob
 //   wait_text   {text | regex, flags?, timeout_ms?}   timeout_ms <= 30000
 //   expect_text {text | regex, flags?}  -> {found, snippet, count}; does not wait
 //   inspect     {text | regex, flags?, exact?, nth?}  -> tag, role, classes,
@@ -49,6 +54,8 @@ const RUN_MS = 300000;
 const SHOTS = "/tmp/dw-ui-shots";
 const SPEC_PATH = /^\/tmp\/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json$/;
 const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
+const MAX_RECORDED = 200;
+const MAX_BODY = 4096;
 const LOCATOR_KEYS = ["selector", "css", "xpath", "locator", "id", "testid", "data-testid"];
 
 function emit(doc, code) {
@@ -128,6 +135,8 @@ const SHAPES = {
   press: { key: "key" },
   mock: { url_glob: "glob", set: "set", once: "boolean" },
   unmock: { url_glob: "glob" },
+  record: { url_glob: "glob" },
+  recorded: { url_glob: "glob" },
   wait_text: { text: "text", regex: "regex", flags: "flags", timeout_ms: "timeout" },
   expect_text: { text: "text", regex: "regex", flags: "flags" },
   inspect: { text: "text", regex: "regex", flags: "flags", exact: "boolean", nth: "index" },
@@ -236,6 +245,8 @@ function validate(spec) {
         need(has("url_glob") && has("set"), "needs url_glob and set");
         break;
       case "unmock":
+      case "record":
+      case "recorded":
         need(has("url_glob"), "needs url_glob");
         break;
       case "wait_text":
@@ -261,6 +272,39 @@ function setPath(doc, dotted, value) {
     cur = cur[k];
   }
   cur[segs[segs.length - 1]] = value;
+}
+
+// Playwright's URL glob as a RegExp over the whole URL: ** any characters, * any but /,
+// {a,b} alternatives, everything else literal (? included, as Playwright reads it)
+function globRegExp(glob) {
+  let re = "";
+  let inGroup = false;
+  for (let i = 0; i < glob.length; i++) {
+    const c = glob[i];
+    if (c === "*" && glob[i + 1] === "*") {
+      re += ".*";
+      i++;
+    } else if (c === "*") re += "[^/]*";
+    else if (c === "{" && !inGroup) {
+      re += "(?:";
+      inGroup = true;
+    } else if (c === "}" && inGroup) {
+      re += ")";
+      inGroup = false;
+    } else if (c === "," && inGroup) re += "|";
+    else re += c.replace(/[\\^$.|?+()[\]{}\/]/g, "\\$&");
+  }
+  return new RegExp("^" + re + "$");
+}
+
+function bodyOf(req) {
+  const text = req.postData();
+  if (text == null) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return text.length > MAX_BODY ? text.slice(0, MAX_BODY) : text;
+  }
 }
 
 function short(s, n = 1000) {
@@ -376,6 +420,21 @@ async function main() {
   });
 
   const mocks = new Map(); // url_glob -> [{handler, hits}]
+  // The request event sees every request, a mocked one included, whichever route answers it.
+  const records = new Map(); // url_glob -> {re, requests, dropped}
+  context.on("request", (req) => {
+    const u = req.url();
+    if (!records.size || offOrigin(u)) return;
+    for (const r of records.values()) {
+      if (!r.re.test(u)) continue;
+      if (r.requests.length >= MAX_RECORDED) {
+        r.dropped++;
+        continue;
+      }
+      const url = new URL(u);
+      r.requests.push({ method: req.method(), url: url.pathname + url.search, body: bodyOf(req), timestamp: Date.now() });
+    }
+  });
   const run = async (s) => {
     switch (s.step) {
       case "goto": {
@@ -430,6 +489,14 @@ async function main() {
           hits: entries.reduce((a, e) => a + e.hits, 0),
           errors: entries.flatMap((e) => e.errors),
         };
+      }
+      case "record":
+        if (!records.has(s.url_glob)) records.set(s.url_glob, { re: globRegExp(s.url_glob), requests: [], dropped: 0 });
+        return { url_glob: s.url_glob, recording: true };
+      case "recorded": {
+        const r = records.get(s.url_glob);
+        if (!r) throw new Error("no record step for " + s.url_glob + " ran before this one");
+        return { url_glob: s.url_glob, count: r.requests.length, requests: r.requests, dropped: r.dropped };
       }
       case "wait_text":
         await page

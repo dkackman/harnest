@@ -626,6 +626,12 @@ runtime_note() {
     "judgment — $examples —" \
     "name that model and provider in it, so a later reader can tell which model" \
     "produced it.$id_hint"
+  # the two roles allowed the web UI runner get its one allowed command line verbatim
+  case "$role" in
+    tester|regression) printf '%s\n' \
+      "The web UI runner (\"Web UI cases\" in your role prompt) is, exactly:" \
+      "node $HARNEST_ROOT/tools/ui-check/ui-check.mjs /tmp/dw-ui-<case>.json" ;;
+  esac
 }
 
 # resolved_model <log-name> <fallback>

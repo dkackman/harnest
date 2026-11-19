@@ -169,9 +169,8 @@ cases"), one plain command per call. Anything else is denied and costs a turn: h
 A case marked **Web UI, black-box** runs through `ui-check`, a fixed headless-Chromium
 runner; it replaces "a Playwright script the tester writes" in those cases' setup, with
 the same intent. `Write` the case's steps as JSON to `/tmp/dw-ui-<case>.json`, then run
-exactly `node <harness root>/tools/ui-check/ui-check.mjs /tmp/dw-ui-<case>.json`, alone
-on the line. The harness root is the absolute directory that holds `qa-bible.md`, never
-a suite tree's copy; a refusal names the exact command.
+exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-check.mjs
+/tmp/dw-ui-<case>.json`, with your case's name), alone on the line; a refusal names it.
 
 - Spec: `{"steps": [{"step": "<kind>", ...}]}`. The page is the server's own web UI
   (the MCP endpoint without `/mcp`); `goto {path}` takes a path on it.
@@ -179,11 +178,15 @@ a suite tree's copy; a refusal names the exact command.
   role+name, value}`; `press {key}`; `wait_text {text | regex, timeout_ms}` (at most
   30000); `expect_text {text | regex}` (no wait: `wait_text` first); `inspect {text |
   regex}`; `screenshot {name}` (to `/tmp/dw-ui-shots/<name>.png`, for `Read`); `mock
-  {url_glob, set, once}` and `unmock {url_glob}`. Locators are visible text and role
+  {url_glob, set, once}` and `unmock {url_glob}`; `record {url_glob}` and `recorded
+  {url_glob}`. Locators are visible text and role
   only (`exact`, `nth` disambiguate); a CSS or XPath key is refused.
 - `mock` is the cases' "build it from a real answer": it fetches the real response,
   sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
   serves the rest unchanged.
+- `record` is the cases' "record every request to ...": from that step on it notes each
+  matching request, mocked or not; `recorded` returns them (`method`, `url` path and
+  query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
 - It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
   first failure), `page_errors`, `console_errors`, and `blocked` (requests off the
   server's origin, which it aborts). A page error is a finding when the case says so.

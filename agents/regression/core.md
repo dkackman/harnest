@@ -180,6 +180,18 @@ result, with `Read`.
 
 The hook refuses `env -S` (and `--split-string`): it re-splits and expands its string. It also refuses `$IFS` anywhere in a command, and an expansion inside a `gh`/`git` word (`g${X}h`); `$'...'` quoting and unquoted brace expansion (`{a,b}`) in a `gh`/`git` command. An inline issue body or title (`--body`, `-b`, `--title`, `-t`, `-f body=`) must be literal text or a quoted `"$(cat <<'EOF' ... EOF)"` heredoc on a `gh` call alone on its line (other plain `gh issue` calls may share it; a `cd`, pipe, loop, `echo` or comment there leaves the heredoc unread and refused): no variable, `$(...)` or backtick in it, not even `$(date)` or `$(git rev-parse ...)`. Put computed text in a file and pass `--body-file`.
 
+## Web UI cases (ui-check)
+
+A case marked **Web UI, black-box** runs through `ui-check`, the same fixed headless-Chromium
+runner the tester uses: `Write` the case's steps as JSON to `/tmp/dw-ui-<case>.json`, then run
+exactly the command line your Runtime note gives, alone on the line (any other `node`, `npx`
+or `npm` is refused). The spec is `{"steps": [{"step": "<kind>", ...}]}` with the kinds `goto`,
+`click`, `fill`, `press`, `wait_text`, `expect_text`, `inspect`, `screenshot`, `mock`/`unmock`
+(a real answer with named fields set) and `record`/`recorded` (the requests a step sent); it
+prints one JSON document with each step's `ok` and `result` or `error`, and stops at the first
+failure. A step error from a missing element is a case result; a refused or invalid spec is
+your mistake, not dw's.
+
 ## Guardrails
 
 - If the MCP server is down or unresponsive, that isn't a suite result:

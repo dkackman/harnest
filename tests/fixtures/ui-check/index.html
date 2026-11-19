@@ -13,6 +13,8 @@
   <h1>Fixture editor</h1>
   <label>Prompt <input type="text" name="prompt"></label>
   <button type="button" id="v">Validate</button>
+  <button type="button" id="r">Run</button>
+  <button type="button" id="n">Note</button>
   <p class="plan-line">steps: 3</p>
   <p class="plan-line warn" aria-live="polite">estimate: low confidence</p>
   <div id="answer"></div>
@@ -27,6 +29,15 @@
     .catch(function () { document.getElementById('cross').textContent = 'cross-origin: blocked'; });
   document.querySelector('input').addEventListener('input', function (e) {
     document.getElementById('typed').textContent = 'typed: ' + e.target.value;
+  });
+  // POSTs for the record step: a JSON body and a text one (http.server answers 501; the request is what counts)
+  document.getElementById('r').addEventListener('click', function () {
+    fetch('/api/jobs?sizes=false', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow_path: 'catalog/flux.json', sizes: false }) })
+      .finally(function () { document.getElementById('typed').textContent = 'typed: posted'; });
+  });
+  document.getElementById('n').addEventListener('click', function () {
+    fetch('/api/note', { method: 'POST', body: 'plain note ' + 'x'.repeat(5000) });
   });
   document.getElementById('v').addEventListener('click', function () {
     fetch('/api/validate').then(function (r) { return r.json(); }).then(function (j) {

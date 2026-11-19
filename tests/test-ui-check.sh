@@ -113,6 +113,44 @@ eq "mock once answers one request, then the real one" true "$(j .ok)"
 run '{"steps": [{"step": "mock", "url_glob": "**/x", "set": {"__proto__.polluted": 1}}]}'
 eq "a prototype key in a dotted path is an invalid spec" 2 "$rc"
 
+# --- record / recorded: every matching request from that point, mocked or not
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "valid: true"},
+  {"step": "record", "url_glob": "**/api/validate"},
+  {"step": "record", "url_glob": "**/api/jobs**"},
+  {"step": "record", "url_glob": "**/api/note"},
+  {"step": "mock", "url_glob": "**/api/validate", "once": true, "set": {"plan.estimate.basis": "unknown"}},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "basis: unknown"},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "basis: observed"},
+  {"step": "click", "role": "button", "name": "Run"},
+  {"step": "wait_text", "text": "typed: posted"},
+  {"step": "click", "role": "button", "name": "Note"},
+  {"step": "wait_text", "text": "valid: true"},
+  {"step": "recorded", "url_glob": "**/api/validate"},
+  {"step": "recorded", "url_glob": "**/api/jobs**"},
+  {"step": "recorded", "url_glob": "**/api/note"}
+]}'
+eq "record spec ok" true "$(j .ok)"
+eq "record starts at its step (the earlier request is not in it), and sees mocked and real requests" 2 "$(j '.steps[15].result.count')"
+eq "a recorded request has its method" GET "$(j '.steps[15].result.requests[0].method')"
+eq "and its path" /api/validate "$(j '.steps[15].result.requests[0].url')"
+ok "and a timestamp" test "$(j '.steps[15].result.requests[0].timestamp | type')" = number
+eq "a POST is recorded" POST "$(j '.steps[16].result.requests[0].method')"
+eq "with its query" "/api/jobs?sizes=false" "$(j '.steps[16].result.requests[0].url')"
+eq "a JSON body is parsed" catalog/flux.json "$(j '.steps[16].result.requests[0].body.workflow_path')"
+eq "keeping its types" false "$(j '.steps[16].result.requests[0].body.sizes')"
+eq "a text body is text" string "$(j '.steps[17].result.requests[0].body | type')"
+has "starting with what was sent" "plain note xxx" "$(j '.steps[17].result.requests[0].body')"
+ok "cut to 4 KB" test "$(j '.steps[17].result.requests[0].body | length')" -le 4200
+run '{"steps": [{"step": "recorded", "url_glob": "**/never"}]}'
+eq "recorded without a record step fails the step" false "$(j '.steps[0].ok')"
+run '{"steps": [{"step": "record", "url_glob": "**/x", "limit": 5}]}'
+eq "record takes url_glob only" 2 "$rc"
+
 # --- locators are visible text and role only
 run '{"steps": [{"step": "click", "selector": "#v"}]}'
 eq "a CSS selector is an invalid spec" 2 "$rc"
