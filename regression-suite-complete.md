@@ -24183,4 +24183,161 @@ and the server-surface check above still decides this case.
 cleanup: none.
 metrics: none.
 
+### C-F1019 — every `list_models` row carries `last_job_use` (epoch seconds or `null`) beside an unchanged `last_accessed`
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Free. `list_models` (no arguments). Pick one repo no dw job names: a stub repo that is not a model dw runs (on mini-ai
+`Jundot/Qwen3.8-27B-oQ4e-mtp`, 2376 bytes; elsewhere any cached repo no catalog template or job in `list_jobs` names).
+expected:
+- **Every** row has the key `last_job_use`. A row without it is a **finding**: the plan sets it on every row, including
+  as `null` (the route uses `response_model_exclude_unset`, so a row that drops the key is the bug the plan names).
+- Each value is either `null` or a number of epoch seconds no later than now, and not earlier than 2026-11-19 (nothing
+  before the stage shipped is backfilled). A string, an ISO date, `0` or a negative is a **finding**.
+- Every row still has `last_accessed` (the atime) as a number, as it did before #1461; the two fields are separate keys,
+  and `last_accessed` is not replaced by or copied from `last_job_use`.
+- The repo no job names reads `last_job_use: null`.
+- No row has a `repo_id` that is not a Hub id (no leading `/`, no `http`, no `variable:` prefix): the index adds no rows,
+  it only fills a field on scanned ones.
+- The reply's other top-level keys (`cache_dir`, `size_on_disk`, `repos`, `disk_free`, `disk_total`) are still present.
+cleanup: none.
+metrics: none.
+
+### C-F1020 — a `templates/text-to-image` run stamps `stable-diffusion-v1-5/stable-diffusion-v1-5` with its start time, and nothing it doesn't name
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Before the run, read `list_models` and note every row's `last_job_use`.
+`validate_workflow(name="templates/text-to-image", arguments={"prompt": "an apple", "seed": 1}, workspace="regression-complete")`,
+then `run_workflow` with the same arguments and the bound `acknowledged_cost`, `wait_seconds=55` (follow with
+`wait_for_job` on `still_running`). Read the job's start time from `get_job` (convert an ISO time to epoch seconds),
+then `list_models` again.
+expected:
+- The job succeeds, as it did before #1461.
+- `stable-diffusion-v1-5/stable-diffusion-v1-5`'s `last_job_use` is a number within 60 s of the job's start time, and
+  not before it was submitted. It is the start time, not the finish: on a run longer than a minute, a value
+  matching the finish rather than the start is a **finding**.
+- Every other row's `last_job_use` is exactly what it was before the run (still `null`, or the same number), unless
+  another job ran on the server meanwhile (check `list_jobs`; the case is void, not failed, if one did).
+- A second run with `seed: 2` moves the SD 1.5 stamp forward to that job's start; the older value is replaced, not
+  kept beside it.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for both jobs.
+metrics: none.
+
+### C-F1021 — `templates/transcribe-audio` stamps the repo its `variable:model_name` resolves to, by default and by argument
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. `templates/transcribe-audio` takes `model_name` through a variable, default
+`openai/whisper-base`, and `input_audio` (default: a short Hub-hosted speech clip). Before each run read `list_models`.
+1. Run it with default arguments (validate first, bind `acknowledged_cost`, `wait_seconds=55`).
+2. Run it with `arguments={"model_name": "openai/whisper-base"}` given explicitly.
+expected:
+- Both jobs succeed. After each, `openai/whisper-base`'s `last_job_use` is within 60 s of that job's start time.
+- The stamp follows the **resolved** repo: a `whisper-base` row still `null`, or unchanged, after run 1 (where the
+  repo arrives only through the variable's default) is a **finding**: it means the walk read the raw definition.
+- No other Whisper row (`openai/whisper-large-v3-turbo`, `mlx-community/whisper-large-v3-turbo`) changes, and no row
+  named `variable:model_name` or anything else with a `variable:` prefix exists.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for both jobs.
+metrics: none.
+
+### C-F1022 — `validate_workflow`, a refused submission and a job cancelled while queued stamp nothing
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. The probe repo is a cached one these steps would name, other than
+`openai/whisper-base`: `openai/whisper-large-v3-turbo` (any small cached Whisper repo substitutes). Read its
+`last_job_use` from `list_models` before each step, and again after it.
+1. `validate_workflow(name="templates/transcribe-audio", arguments={"model_name": "openai/whisper-large-v3-turbo"}, workspace="regression-complete")`.
+2. `run_workflow` on the same with **no** `acknowledged_cost`, or with a stale fingerprint (a refused submission).
+3. Queue a job that holds the worker (`templates/text-to-image`, `seed: 1`, no wait), then at once queue
+   `templates/transcribe-audio` with `model_name: "openai/whisper-large-v3-turbo"` and the bound `acknowledged_cost`, and
+   `cancel_job` it while `get_job` still says it is queued. Let the first job finish (`wait_for_job`).
+expected:
+- After each of the three, the probe repo's `last_job_use` is exactly its value before (`null` stays `null`).
+- The cancelled job's final state is cancelled, and `get_job_events` shows it never reached a run start. If it did
+  start before the cancel landed, the step is void (re-run it), not failed.
+- The holding job stamps SD 1.5 as C-F1020 says, so the stamping path is live in the same session: a probe that stays
+  `null` only because nothing stamps at all is not a pass.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for the holding job; the cancelled job has no
+run directory.
+metrics: none.
+
+### C-F1023 — a job that starts and then fails still stamps its repos
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Make a `templates/transcribe-audio` job (repo `openai/whisper-base`) that passes
+validation and admission and then fails at run time: `input_audio` set to an image, e.g. `output:<png>` from a
+`templates/text-to-image` run in this workspace, or any input that validates and fails to decode. What counts is a job
+whose `get_job_events` show a run start and whose final state is failed. If validate or `run_workflow` refuses the input,
+pick another; a refused submission is C-F1022's case, not this one. Read `openai/whisper-base`'s `last_job_use` before.
+expected:
+- The job ends failed, with its error, as it would without #1461 (the stamp never changes an outcome).
+- `openai/whisper-base`'s `last_job_use` is within 60 s of the failed job's start time, newer than before.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for each job that wrote a run directory.
+metrics: none.
+
+### C-F1024 — a local-path `model_name` adds no row and no key, and the job's outcome is what it was without the index
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Workspace `regression-complete`. Note `list_models`' repo ids and every `last_job_use`. Validate and, if validate
+accepts it, run `templates/transcribe-audio` with `model_name` set to an absolute path that names no model, e.g.
+`/nonexistent/whisper-local` (never a real model directory, and never mini-ai's prequantized H3 path).
+expected:
+- Validate and the run answer as they would for a bad local path without #1461: a refusal or a failed job naming the
+  path, never a server error, a hang or an error that mentions the model-use index or `model-use.json`.
+- `list_models` afterwards has the same repo ids as before, none starting with `/`, and every `last_job_use` is
+  unchanged (the job named no Hub repo).
+- No reply in this case discloses a server path beyond the one the case passed in (`/Users/…`, `/private/…`, the settings
+  dir). One that does goes to `./scripts/file-advisory.sh`, not an issue.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` if the job wrote a run directory.
+metrics: none.
+
+### C-F1025 — `last_job_use` survives a server restart
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Free; needs a restart between two reads. The restart is the managed one the deploy path does (a deploy restarts
+`dw.serve`), never a `kill -9`, and the tester does not cause it. Read `list_models` and note the SD 1.5 and
+`openai/whisper-base` `last_job_use` values set by C-F1020/C-F1021 (or any job's stamps), with the job ids behind them.
+After a restart, read them again. Evidence of a restart between the reads: a deploy comment on #1461 (or any later
+issue) dated between them, or a `get_health` `version` that changed. In a session with no restart between its reads
+(the usual case for a stage verify, which runs after the deploy), use stamps of jobs from **before** the latest deploy:
+any `list_jobs` job started before that deploy's comment.
+expected:
+- Each stamp is still present after the restart, and equals or is newer than the start time of the latest job before the
+  restart that named that repo. A stamp that reverts to `null` or to an older value across a restart is a **finding**.
+- `last_accessed` is unaffected by the restart (it is still the atime).
+If no restart can be shown to lie between a stamp and the read, the case is not run that pass, and the report says so.
+cleanup: none.
+metrics: none.
+
+### C-F1026 — a job with a LoRA stamps the LoRA's repo as well as its base
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Find a cached LoRA repo (a `list_models` row) whose base this server can run at verification size, using `list_loras`
+for that base. SD 1.5 had none on mini-ai on 2026-11-19 (`list_loras(model="stable-diffusion-v1-5/stable-diffusion-v1-5")`
+returned `loras: []`), and its cached Z-Image-Turbo LoRAs sit on a 33 GB base. If none qualifies, the case is **not
+exercised** on that server: the report says so, the #1461 unit test covers it, and nothing is downloaded to make one.
+Otherwise run the smallest workflow for that base with the LoRA, through its `lora` field or the template's argument for
+it, in `regression-complete`, validating first and binding `acknowledged_cost`.
+expected:
+- The job succeeds. Both the base repo's and the LoRA repo's `last_job_use` are within 60 s of the job's start.
+- The same run with no LoRA, if run, stamps only the base: the LoRA repo's value stays as it was.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for each job.
+metrics: none.
+
+### C-F1027 — deleting a Hub model forgets its record: a re-download alone reads `null`, and the next job stamps it
+pending: #1461
+source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
+Uses `openai/whisper-base` (295 MB on mini-ai), never a large model. Needs an MCP tool that deletes a Hub model repo
+with `acknowledged_cost`. None was exposed on 2026-11-19 (`download_model` exists, no delete). If the server still has
+none, the case is **not exercised over MCP**: the report says so, and the #1461 unit test (delete forgets) covers it.
+Otherwise: confirm the repo has a stamp (C-F1021), delete it with `acknowledged_cost`, then
+`download_model(repo_id="openai/whisper-base", acknowledged_cost=true)` and poll `list_downloads` until it is done.
+Read `list_models`, run `templates/transcribe-audio` with default arguments, and read it again.
+expected:
+- After the delete, `list_models` has no `openai/whisper-base` row.
+- After the download alone, the row is back with `last_job_use: null`: the old stamp is not inherited. A pre-delete
+  value is a **finding**.
+- After the run, the row's `last_job_use` is within 60 s of that job's start.
+cleanup: `delete_output(job_id=<id>, workspace="regression-complete")`. Leave `openai/whisper-base` cached: other cases
+use it.
+metrics: none.
+
 ## Performance
