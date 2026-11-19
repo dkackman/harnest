@@ -192,7 +192,7 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
 - `stub` answers with your JSON (and `status`, default 200) and never sends the request;
   `record` still sees it. `method` `POST` (the default when the glob names only those
-  routes): a POST to validate, submit a run, cancel or rerun one (its glob may name only
+  routes): a POST to validate, submit a run, cancel or rerun one, or a rerun-restart-batch (stub-only: a real one is blocked) (its glob may name only
   those, e.g. `**/api/jobs?**`, `**/api/jobs/*/rerun`). A real Run or rerun click queues a
   GPU job: stub it to check the request body; if a case needs a real run, use the cheapest
   workflow and cancel it. `method` `GET` (the default on any other glob): a GET on any
