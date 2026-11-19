@@ -25625,7 +25625,6 @@ cleanup: the last stage A case run in a session: `delete_output(job_id=<id>, wor
 metrics: none.
 
 ### C-F1095 — the Event log section is collapsed by default, on live and finished jobs alike, and makes no request until opened
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. **Web UI, black-box**, Playwright as in C-F1028 (by visible text and role; mocks built from the
 real answer with `route.fetch()`). Register `page.on("pageerror")`, `page.on("console")` and a `page.on("request")`
@@ -25649,7 +25648,6 @@ cleanup: none here (C-F1101 cleans up).
 metrics: none.
 
 ### C-F1096 — a finished job's log lists the same events as `get_job_events`, in `seq` order, under the server's trimming note
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1095, routes not mocked. Over MCP, read F's whole log: `get_job_events(job_id=F,
 after=-1, limit=1000)`, then again with `after=<last_seq>` while the reply says more remain. Keep the `seq` list S, each
@@ -25669,7 +25667,6 @@ cleanup: none here (C-F1101).
 metrics: none.
 
 ### C-F1097 — a running job's log grows on Refresh from the last `seq`, and its live flow view and step chips behave as before
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 One small image job (L, setup in C-F1095). Web UI as in C-F1095, every `**/event-log**` request logged with its query.
 Queue L and open its page at once. Record the step chips' text and the flow view. Open the Event log, note the last
@@ -25689,7 +25686,6 @@ cleanup: none here (C-F1101).
 metrics: none.
 
 ### C-F1098 — the kinds filter is built from the kinds present and shows only the chosen kind
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1095. Open F's Event log. Let K be the set of `kind` values among its rows
 (from C-F1096's MCP read). Read the filter's choices. Choose one kind k with several rows (`memory` or `step`, say),
@@ -25706,7 +25702,6 @@ cleanup: none here (C-F1101).
 metrics: none.
 
 ### C-F1099 — an unknown job's page says it has no event log, and doesn't error
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1095. Confirm over MCP that `get_job_events(job_id="00000000-0000-4000-8000-000000000000")`
 reports the job unknown. Open the job page for that id (the UI's job URL with the id swapped in) and open its Event
@@ -25722,7 +25717,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1100 — the log pages on while `truncated` is true, and stops at 5,000 events with the cap message
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1095, on F's page, every `**/api/jobs/<F>/event-log**` request fulfilled by a mock built
 from the real first answer: keep its fields, replace `events` with 500 synthetic events copying a real event's fields,
@@ -25745,7 +25739,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1101 — the Event log reads in both themes, and the job page around it is laid out as before
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1095. Open F's Event log with its real answer (note shown if F has one), and once
 with C-F1100 arm (b)'s mock (cap message shown). Take a full-page screenshot of each in the light theme and in the

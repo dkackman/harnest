@@ -2107,7 +2107,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none here (C-F1094 cleans up the setup).
 
 ### SE-F075 — event messages, kinds, payloads and the note render as text in the job page's Event log
-pending: #1478
 source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1095 (finished job F). A job's
 events carry log lines the job itself wrote, so a workflow's own text reaches this panel. Register
