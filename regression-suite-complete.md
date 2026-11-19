@@ -23785,7 +23785,6 @@ cleanup: none (nothing runs).
 metrics: none.
 
 ### C-F1002 — `analyze_shots` gives every shot a `high_share` in [0, 1] and a `noise_floor_dbfs` at or below its `rms_dbfs`, and keeps every existing key
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Workspace `regression-complete`. Three shared fixtures with audio:
 1. `assess_output(name="asset:qa-cast/ep49-episode.mp4", probe="analyze_shots", workspace="regression-complete")`.
@@ -23819,7 +23818,6 @@ metrics: `high_share` and `noise_floor_dbfs` for each ep49 shot (conditions `ep4
 `ep49-shot3`). Seed `regression-perf/C-F1002.jsonl` with the first reading after #1464 verifies.
 
 ### C-F1003 — `high_share` follows the high band: a low-passed voice reads lower and a high-passed one higher, and gain alone doesn't move it
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 The plan's unit tests use pure tones, which no tool makes. This case gets the same direction from real speech
 with `filter_audio`, which runs a single biquad at 12 dB per octave. CPU only, one inline `run_workflow` with
@@ -23844,7 +23842,6 @@ cleanup: `delete_output(job_id=<the run>)`.
 metrics: `H(lp)`, `H(fixture)` and `H(hp)` (conditions `lp1500`, `orig` and `hp5000`).
 
 ### C-F1004 — `noise_floor_dbfs` reads the quiet windows: it tracks a whole-track gain dB for dB, and drops when one stretch is ducked
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 The plan defines the floor as the 10th percentile of the shot's 50 ms RMS windows. A whole-track gain moves every
 window equally. Ducking a stretch longer than 10% of the track puts the percentile inside the ducked windows.
@@ -23870,7 +23867,6 @@ cleanup: `delete_output(job_id=<the run>)`.
 metrics: `F(fixture)` and `F(duck)` (conditions `orig` and `duck-30`).
 
 ### C-F1005 — `noise_floor_dbfs` is `null` on a shot under 0.5 s and a number from 0.5 s up, and the answer still succeeds
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 The plan: "`null` when the shot has fewer than 10 windows (under 0.5 s)." Exactly 0.5 s is 10 windows, so it is
 measured. This uses the task form, which takes `shots=`. Each arm is one CPU `run_workflow` with a single
@@ -23902,7 +23898,6 @@ cleanup: `delete_output(job_id=...)` for each run.
 metrics: none.
 
 ### C-F1006 — an all-silent shot reports the silence value for both figures, never a crash or `NaN`
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 The plan says the floor is "-inf-safe: an all-silent shot reports the same value `rms_dbfs` gives for silence,
 never a crash", and that `high_share` is `null` where the balance is `null`, "an all-zero window". Setup is
@@ -23932,7 +23927,6 @@ cleanup: `delete_output(job_id=...)` for the mux and the probe runs.
 metrics: none.
 
 ### C-F1007 — a video with no audio still answers `has_audio: false` with no shots, and audio-less inputs gain no error from the new fields
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, except C-F238's setup if its clip is missing.
 1. `assess_output(name="asset:qa-fit/src-640x480-50f-silent.mp4", probe="analyze_shots", workspace="regression-complete")`.
@@ -23949,7 +23943,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1008 — `detail=true` carries `high_share` and `noise_floor_dbfs` inside its `analyze_shots` body, equal to the probe form
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job.
 1. `assess_output(name="asset:qa-cast/ep49-episode.mp4", detail=true, workspace="regression-complete")`.
@@ -23963,7 +23956,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1009 — #1464 adds no surface: seams and sync answers are unchanged, no new rule or finding code, no new probe or argument, and the docs name the fields
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 The plan's non-goals: no new rule, probe, MCP parameter, REST route or syntax, and `analyze_seams`,
 `analyze_sync_drift`, `assessment_rules` and the `assess_output` docstring unchanged. Free, no job:
@@ -24001,7 +23993,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1010 — on the bench's generated-dialogue guide chain, all six segments carry both figures, deterministically
-pending: #1464
 source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
 The plan's intent 6 asks for a table of the S3 and S1 per-segment figures, posted on #1442 as a record. That table
 is the #1464 verify session's job, not this case's: this file holds no results. This case keeps the durable
