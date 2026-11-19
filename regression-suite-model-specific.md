@@ -9898,7 +9898,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F383 — the #1391 bench jobs completed on one quoted build, one H3 job at a time, after #1385 and #1382
-pending: #1394
 source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
 Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job (M-F425); `get_diffusers_state()`;
@@ -9918,7 +9917,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F384 — the #1391 gate: both arms' seg02 numbers are recorded, and full jobs exist only if the attention arm passed
-pending: #1394
 source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
 Steps: read the record's gate section; `list_jobs(workspace="bench")` for full arm jobs; `get_job` on each early job.
@@ -10793,7 +10791,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F423 — the #1391 numbering check: three one-segment runs on a brightened keystone differ only in `blocks`, and the record states whether our indices match ComfyUI's
-pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 fl2va on lem (cuda), bench workspace. **Free**: issue reads, job reads, validate; any
 re-measure task run is CPU and priced first.
@@ -10870,7 +10867,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F426 — every #1391 stage B job (steps 1–2 and the arms) completed on one quoted build, one H3 job at a time, in step order
-pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
 Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every job in M-F423–M-F425; `get_diffusers_state()`;
