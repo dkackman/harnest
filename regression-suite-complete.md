@@ -25273,7 +25273,6 @@ cleanup: `delete_asset(qa-1451/chain-take.mp4)`; otherwise as C-F1073.
 metrics: none.
 
 ### C-F1079 — a finished chained job's page shows one row per segment with a thumbnail, attempts and each measure against its ceiling
-pending: #1475
 source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free past the setup. **Web UI, black-box**, Playwright as in C-F1028: found by visible text and role, mocks built
 from a real answer with `route.fetch()`. Register `page.on("pageerror")` and `page.on("console")`. Setup as in C-F1073
@@ -25298,7 +25297,6 @@ cleanup: none (as C-F1073).
 metrics: none.
 
 ### C-F1080 — a `stop_after` take shows "k of N planned", and a failed segment's mark agrees with `check_failed`
-pending: #1475
 source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1079. Setup as in C-F1073 (P, J2). Open P's page, then J2's.
 expected:
@@ -25316,7 +25314,6 @@ cleanup: none (as C-F1073).
 metrics: none.
 
 ### C-F1081 — an unchecked chain shows rows without measure cells; a non-chained step shows no table; a pre-stage-A job reads "not recorded"
-pending: #1475
 source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1079. Setup as in C-F1073 (J1, J3).
 1. Open J3's page.
@@ -25337,7 +25334,6 @@ cleanup: none (as C-F1073).
 metrics: none.
 
 ### C-F1082 — the table renders any measure by name, warn for a warn-only overshoot, re-roll seeds, and copied and repaired rows
-pending: #1475
 source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1079. Setup as in C-F1073 (J1). Mock `**/api/jobs/<J1>` from its real answer, with the
 chain step's three shots changed:
