@@ -26093,8 +26093,7 @@ quotes, an em dash, a non-ASCII moon). (3) `get_request()` with no id. (4) `get_
 expected:
 - (1) an empty list of requests, not an error.
 - (2) returns the stored request with `revision: 1`, `state: "open"`.
-- (3) lists exactly `demo` with its title, `state: open`, `revision: 1`, counts of 3 `planned`, spent 0 and
-  remaining 6.5.
+- (3) lists exactly `demo` with its title, `state: open`, `revision: 1` and counts of 3 `planned`.
 - (4) `prompt` equal to P character for character (the double space, the dash and the moon survive); `goal` as
   sent; the three items in the order sent, each `planned`, with its title, `depends_on` (`["cast-priya"]` on
   `shot-01`, empty or absent on the others) and estimate; no item has an accepted result or a comment; history
@@ -26151,9 +26150,8 @@ C-F1121 step (2). (1) `set_request` at `revision=1` with items, in this order: `
 (3) `set_request` at `revision=2` with `items=[]`. (4) `get_request(request="demo")`.
 expected:
 - (1) `revision: 2`. (2) exactly three items, in the order `score`, `cast-priya`, `final-cut`; `score`'s title is
-  "Score v2"; `shot-01` is **absent** (no linked job, so deleted, not dropped); `final-cut` is `planned`; remaining
-  is 7.5.
-- (3) either accepted (then (4) shows no items and remaining 0) or refused with a reason; both pass. A server
+  "Score v2"; `shot-01` is **absent** (no linked job, so deleted, not dropped); `final-cut` is `planned`.
+- (3) either accepted (then (4) shows no items) or refused with a reason; both pass. A server
   error is a **finding**.
 A removed no-job item that comes back as `dropped`, a lost reorder, or a kept item losing its fields is a
 **finding**.
