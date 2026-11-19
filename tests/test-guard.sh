@@ -643,6 +643,54 @@ for tg in lem mini-ai; do
   done
 done
 drow 0 lem implementer "" 'ssh lem uptime'
+# reading, editing, diffing, staging, grepping and a syntax check of deploy.sh are not a run
+erow() {  # erow <expect> <role> <tool> <path>
+  jq -n --arg t "$3" --arg p "$4" '{tool_name: $t, tool_input: {file_path: $p, content: "x", old_string: "a", new_string: "b"}, cwd: "/tmp"}' \
+    | python3 "$guard" "$2" >/dev/null 2>&1
+  eq "$2 $3 $4" "$1" $?
+}
+for rk in implementer: lead:build; do
+  r="${rk%%:*}" k="${rk#*:}"
+  for c in 'git add scripts/deploy.sh' 'git diff develop -- scripts/deploy.sh' 'grep -n x scripts/deploy.sh' \
+    'cat scripts/deploy.sh' 'sed -n 1,40p scripts/deploy.sh' 'bash -n scripts/deploy.sh' 'shellcheck scripts/deploy.sh' \
+    'git commit -m "deploy: guard reads" scripts/deploy.sh' 'git log -p -- scripts/deploy.sh' 'head -20 ~/src/dw/scripts/deploy.sh' \
+    'pgrep -f dw.serve' 'ps aux | grep dw.serve' 'ssh lem systemctl status dw-serve' 'ssh lem tail ~/dw-serve.log'; do
+    row 0 $r "$k" $none "$c"
+  done
+  erow 0 $r Edit /x/diffusers-workflow/scripts/deploy.sh
+  erow 0 $r Write /x/diffusers-workflow/scripts/deploy.sh
+  # running it, by any route, is refused
+  for c in 'scripts/deploy.sh' './scripts/deploy.sh develop' '/x/dw/scripts/deploy.sh develop' \
+    'bash scripts/deploy.sh' 'sh scripts/deploy.sh' 'zsh scripts/deploy.sh' 'bash -x scripts/deploy.sh' \
+    'bash -n -x scripts/deploy.sh' 'bash -n scripts/deploy.sh; scripts/deploy.sh' 'bash -n scripts/deploy.sh develop' \
+    'exec scripts/deploy.sh' 'source scripts/deploy.sh' '. scripts/deploy.sh' 'env scripts/deploy.sh' \
+    'env -i PATH=/bin scripts/deploy.sh' 'nohup scripts/deploy.sh &' 'command scripts/deploy.sh' 'time scripts/deploy.sh' \
+    'sudo scripts/deploy.sh' "sh -c 'cd /x && ./scripts/deploy.sh develop'" "bash -c 'scripts/deploy.sh'" \
+    "bash -lc 'true; scripts/deploy.sh'" "su -c 'scripts/deploy.sh' don" "watch 'scripts/deploy.sh'" "eval 'scripts/deploy.sh'" \
+    'cat scripts/deploy.sh | bash' 'cat scripts/deploy.sh | sh -s develop' 'bash < scripts/deploy.sh' 'bash <(cat scripts/deploy.sh)' \
+    'echo scripts/deploy.sh | xargs bash' 'find scripts -name deploy.sh -exec {} \;' "awk 'BEGIN{system(\"scripts/deploy.sh\")}'" \
+    "sed -n 'e' scripts/deploy.sh" "sed -e 1e scripts/deploy.sh" "D=scripts/deploy.sh; bash \$D" \
+    'ssh lem cat ~/diffusers-workflow/scripts/deploy.sh' "ssh lem 'grep -n x ~/diffusers-workflow/scripts/deploy.sh'" \
+    "git -c alias.d='!scripts/deploy.sh' d" "git config alias.d '!scripts/deploy.sh'" 'git bisect run scripts/deploy.sh' \
+    "git rebase --exec 'scripts/deploy.sh' develop" "git grep --open-files-in-pager=scripts/deploy.sh x" \
+    'cp scripts/deploy.sh /tmp/d.sh' 'python3 scripts/deploy.sh' 'perl -e "system q(scripts/deploy.sh)"'; do
+    row 2 $r "$k" $none "$c"
+  done
+done
+# restarting dw's server by another name is the same server-state change: every role, local or over ssh
+for r in implementer lead consumer curator reviewer; do
+  for c in 'systemctl restart dw-serve' 'systemctl --user stop dw-serve.service' 'sudo systemctl start dw-serve' \
+    "ssh lem 'sudo systemctl restart dw-serve'" 'ssh lem systemctl --user restart dw-serve' \
+    'launchctl kickstart -k gui/501/com.dkackman.dw' 'launchctl bootout gui/501/com.dkackman.dw-serve' \
+    "ssh mini-ai 'launchctl kickstart -k gui/501/com.dkackman.dw'" 'pkill -f dw.serve' 'killall -f dw.serve' \
+    'kill $(pgrep -f dw.serve)' "ssh lem 'pkill -f dw.serve'" "ssh lem pkill -TERM -f 'python -m dw.serve'" \
+    "bash -c 'pkill -f dw.serve'"; do
+    row 2 $r "" $none "$c"
+  done
+  row 0 $r "" $none 'pgrep -f dw.serve'
+  row 0 $r "" $none 'launchctl list'
+  row 0 $r "" $none 'git commit -m "the driver runs systemctl restart dw-serve, not a session"'
+done
 drow 0 mini-ai implementer "" 'ssh mini-ai uptime'
 # a body file is read before gh runs: it must be the only command, relative paths resolve against the hook's cwd
 cp "$T/plain.md" "$T/p3.md"

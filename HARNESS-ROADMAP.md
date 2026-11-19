@@ -27,6 +27,7 @@ rather than in a separate log.
 | R15 | Escalation lanes: ask Don only what Don decides | built 2026-11-01 (batch lane, `parked` state, pending cases follow the plan, curator dedupe); measure two weeks, then decide on silence-as-consent | R9, R11 |
 | R16 | Hardening round 2: the 2026-10-23 review (guard, drivers, fleet, regression cost, prompts) | done 2026-10-25: tasks 1–34 of `docs/superpowers/plans/2026-10-23-harness-hardening.md` landed; task 35 (measure) only partly done | R12, R8 |
 | R17 | Loop scheduler: one event-loop driver for both servers, concurrent sessions by resource (`gpu:S`, `free`, `suite`, trees), driver-owned deploys, per-session suite worktrees, `logs/loop/state.json` and a dashboard loop card | phase 1 built on branch `r17-loop-scheduler` (`harness/drivers/loop.py`; bash item runner `lib/run-item.sh`); cutover on lem pending. Baseline, 14 days of the bash loop (`scripts/gpu-busy.py`, `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`): lem GPU slot 18.4% busy, $6.50 per closed dw issue ($1,443 over 222 closes), a standing task every 5,327 s on average. Target: the slot busy share up, cost per close not up. Phase 1b and 2 below | R8, R13, R16 |
+| R18 | Agent sessions run as a separate OS user (`harnest-agent`) with a restricted ssh key and no read access to source for the tester | proposed (Don, 2026-11-19) | R17 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1809,6 +1810,30 @@ guard refusing deploys from implementer and lead.
 regression as the lowest-priority `gpu:S` items in idle slots (a ready verify preempts at a
 batch boundary). Decide with the first weeks of `state.json` GPU-busy figures; mini-ai stays
 one slot, and no H3 work goes to it.
+
+## R18 — Agent sessions as a separate OS user (`harnest-agent`)
+
+Status: proposed (Don, 2026-11-19).
+
+**Agent sessions run as a separate OS user (`harnest-agent`) with a restricted ssh key and no
+read access to source for the tester.**
+
+Why. The guard is name matching: three reviews found bypasses (quote splitting, redirects,
+renames, aliases), and each fix only moves the fence. Agents run as Don's macOS user and could
+use his unrestricted ssh key, so nothing below the guard stops a session from deploying, and
+nothing stops the tester from reading source but its prompt and the guard. The only real
+boundary for "agents never deploy" and "the tester never reads source" is the OS.
+
+What.
+- A separate macOS user, `harnest-agent`, that every `claude -p` session runs as; the driver
+  stays Don's user.
+- A restricted ssh key for that user, with a forced-command wrapper in `authorized_keys` on lem
+  and mini-ai that refuses `deploy.sh`, `testbed.sh` state verbs and any `dw-serve`
+  restart/stop/kill, and allows the reads sessions need (logs, checkout state).
+- The driver keeps its own key for deploys (`deploy_target`), never readable by the agent user.
+- Worktrees, plugin trees and log permissions moved so the agent user can write its own session
+  tree and logs; the tester's sessions get no read access to the dw source tree.
+- Then the guard's deploy rule (`runs_deploy`) goes back to being a mistake fence, not the boundary.
 
 ## dw UI stabilization Phase 4: the UI's metrics ratchet (2026-10-02)
 
