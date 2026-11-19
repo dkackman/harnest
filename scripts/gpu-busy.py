@@ -71,22 +71,37 @@ def cost_per_close(cost, closes):
     return round(cost / closes, 4) if closes else None
 
 
-def per_day(sessions, closes, day_secs=86400):
-    """{date: metrics}; closes is {date: n}."""
+def task_gaps(sessions):
+    """Gaps between consecutive tester:task headers, within each day."""
+    by_day = {}
+    for s in sessions:
+        if s["label"].startswith("tester:task"):
+            by_day.setdefault(s["date"], []).append(s["secs"])
+    return [b - a for t in by_day.values() for a, b in zip(t, t[1:], strict=False)]
+
+
+def per_day(sessions, closes, day_secs=None):
+    """{date: metrics}; closes is {date: n}. The denominator is 86400, except
+    the last (partial) day, which has run only from its first header to the end
+    of its last session; day_secs overrides it for every day."""
     days = {}
     for s in sessions:
-        d = days.setdefault(s["date"], {"busy": 0, "cost": 0.0, "task": []})
+        d = days.setdefault(s["date"], {"busy": 0, "cost": 0.0, "task": [], "first": s["secs"], "end": 0})
+        d["first"] = min(d["first"], s["secs"])
+        d["end"] = max(d["end"], s["secs"] + s["duration"])
         if s["role"] in GPU_ROLES:
             d["busy"] += s["duration"]
         d["cost"] += s["cost"]
         if s["label"].startswith("tester:task"):
             d["task"].append(s["secs"])
     out = {}
+    last = max(days) if days else None
     for date, d in days.items():
+        denom = day_secs or (max(d["end"] - d["first"], 1) if date == last else 86400)
         t = d["task"]
         gaps = [b - a for a, b in zip(t, t[1:], strict=False)]
         out[date] = {
-            "gpu_slot_busy_pct": round(100.0 * d["busy"] / day_secs, 1),
+            "gpu_slot_busy_pct": round(100.0 * d["busy"] / denom, 1),
             "standing_task_interval_secs": round(sum(gaps) / len(gaps)) if gaps else None,
             "closes": closes.get(date, 0),
             "cost": round(d["cost"], 2),
@@ -137,16 +152,16 @@ def main(argv=None):
     closes = fetch_closes(a.repo, since.isoformat()) if a.repo else {}
     days = per_day(sessions, closes)
     cost = round(sum(d["cost"] for d in days.values()), 2)
-    n = sum(d["closes"] for d in days.values())
+    n = sum(c for date, c in closes.items() if date >= since)  # every close in the window, sessions or not
+    gaps = task_gaps(sessions)
     busy = [d["gpu_slot_busy_pct"] for d in days.values()]
-    gaps = [d["standing_task_interval_secs"] for d in days.values() if d["standing_task_interval_secs"]]
     totals = {
         "days": len(days),
         "cost": cost,
         "closes": n,
         "cost_per_close": cost_per_close(cost, n),
         "gpu_slot_busy_pct": round(sum(busy) / len(busy), 1) if busy else None,
-        "standing_task_interval_secs": round(sum(gaps) / len(gaps)) if gaps else None,
+        "standing_task_interval_secs": round(sum(gaps) / len(gaps)) if gaps else None,  # pooled over every gap
     }
     res = {"anchor": anchor.isoformat(), "days": {k.isoformat(): v for k, v in sorted(days.items())}, "totals": totals}
     if a.json:
