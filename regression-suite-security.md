@@ -2047,7 +2047,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none (leave the editor without saving).
 
 ### SE-F072 — override names and values, and promotion titles, render as text on the job page and in the rerun modal
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing queued. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1053 and C-F1056
 (jobs O and R1 of `rerun-size-1471`; mocks built from a real answer; every rerun POST aborted). #1471 renders

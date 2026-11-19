@@ -24779,7 +24779,6 @@ cleanup: discard the edit; never save the template.
 metrics: none.
 
 ### C-F1053 — a rerun with one changed variable records `rerun_of` and exactly that override, and keeps every other argument and the drawn seed
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 **Setup shared by C-F1053–C-F1063 and SE-F072.** Workspace `regression-complete`. Fixture workflow
 `rerun-size-1471` (see Fixtures): if `get_workflow(name="rerun-size-1471")` doesn't answer, `save_workflow` it in
@@ -24801,7 +24800,6 @@ cleanup: keep O and R1 for C-F1054–C-F1063 in the same run; the last case run 
 metrics: none.
 
 ### C-F1054 — a promotion rerun applies the other bundle and records only the selector
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1053 (job O). `validate_workflow(workflow_path="rerun-size-1471", arguments={"size": "medium"})`, then
 `rerun_job(job_id=O, arguments={"size": "medium"}, acknowledged_cost=<bound>)` → job R2; wait.
@@ -24817,7 +24815,6 @@ cleanup: as C-F1053; delete E and E2 too.
 metrics: none.
 
 ### C-F1055 — a refused rerun queues nothing: a bad preset value, an undeclared variable, a seed with `new_seed`
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup as in C-F1053 (job O). `list_jobs(workspace="regression-complete")` before and after. Call
 `rerun_job(job_id=O, …)` three times: `arguments={"size": "huge"}`; `arguments={"not_a_variable": 1}`;
@@ -24831,7 +24828,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1056 — "Run again" and "New seed" in the web UI send what they always did and leave no `overrides`
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Two tiny jobs. **Web UI, black-box**, Playwright as in C-F1028 (found by visible text and role; mocks built from a
 real answer with `route.fetch()`), and this group's own rule: the rerun request is the POST to
@@ -24848,7 +24844,6 @@ cleanup: delete both jobs.
 metrics: none.
 
 ### C-F1057 — "Run again with changes…" lists every declared variable with the run's value as its placeholder, and can't queue an unchanged form
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1056, the rerun POST recorded and **aborted**. On job O's page press **Run again with
 changes…**.
@@ -24866,7 +24861,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1058 — the form sends only what changed, by trimmed text, a number typed equal to the run's value included
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Web UI as in C-F1057, one tiny job in the last step. On job O's modal:
 1. Type `4` into `num_inference_steps` and `256` into `width` (both O's values). Queue state?
@@ -24883,7 +24877,6 @@ cleanup: delete the new job.
 metrics: none.
 
 ### C-F1059 — the seed field: blank keeps the drawn seed, a typed seed is an override
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1057 (POST recorded and aborted). On job O's modal: type `a red pear` into `prompt`
 only, press Queue; reopen, type `a red pear` and `12345` into `seed`, press Queue.
@@ -24896,7 +24889,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1060 — a value the server refuses shows its message in the modal, which stays open, and queues nothing
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1056, POST **continued** (the real server answers). `list_jobs(workspace=
 "regression-complete")` before and after. On job O's modal type `huge` into `size` and press Queue. Then change it to
@@ -24911,7 +24903,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1061 — promotion buttons: one per other bundle value, titled, queued on click with no confirm
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1056 (POST recorded and aborted). `page.on("dialog")` registered. Open job O's page
 (`size` small); then the same page with `**/api/workflows/rerun-size-1471` mocked from the real answer, three ways
@@ -24932,7 +24923,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1062 — a job whose workflow can't be fetched by name keeps the form and shows no promotions
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1056 (POST aborted). Open job O's page with `**/api/workflows/rerun-size-1471`
 fulfilled as a 404 (`{"detail": "not found"}`), then as a 500, then aborted (network failure); and once a job of
@@ -24947,7 +24937,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1063 — the overrides chip: `changed: …` beside "rerun of", titled with each value, absent with no overrides
-pending: #1471
 source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
 Free, no new job. Web UI as in C-F1056. Open the pages of R1 and R2 (C-F1053, C-F1054) and O; then R1's page with
 `**/api/jobs/<R1>` mocked from the real answer three ways: `overrides` = `{"prompt": "a green pear", "width": 320}`;
