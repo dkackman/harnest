@@ -2187,7 +2187,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none.
 
 ### SE-F079 — a request id or item key never becomes a path
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="sef079-req")`; pass `workspace="sef079-req"` on every call. Each a
 `set_request(revision=0, title="t", goal="g", why="probe", items=[{"key":"ok","title":"t"}])` with `request` set to:

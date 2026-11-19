@@ -26080,7 +26080,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1121 — `set_request` creates a request, and `get_request` lists it and returns the prompt verbatim
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1121-req")`; pass `workspace="cf1121-req"` on every call below.
 (1) Before anything: `get_request(workspace=...)` with no id. (2) `set_request(request="demo", revision=0,
@@ -26105,7 +26104,6 @@ cleanup: `delete_workspace(name="cf1121-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1122 — a revision is read-then-write: a goal change bumps it and keeps both goals, a stale write is refused
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1122-req")`, `workspace=` on every call; create `demo` as in
 C-F1121 step (2) (goal G1 = "A three-shot short about a cat"). (1) `set_request` with the same title and items,
@@ -26125,7 +26123,6 @@ cleanup: `delete_workspace(name="cf1122-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1123 — the prompt is write-once
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1123-req")`, `workspace=` on every call; create `demo` as in
 C-F1121 step (2) with prompt P. (1) `set_request` at `revision=1` with everything the same but
@@ -26142,7 +26139,6 @@ cleanup: `delete_workspace(name="cf1123-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1124 — items match by key: removing one with no jobs deletes it, the new order and new items stick
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1124-req")`, `workspace=` on every call; create `demo` as in
 C-F1121 step (2). (1) `set_request` at `revision=1` with items, in this order: `score` (title now "Score v2"),
@@ -26159,7 +26155,6 @@ cleanup: `delete_workspace(name="cf1124-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1125 — `depends_on` names keys in the same request, with no self-reference and no cycle
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1125-req")`, `workspace=` on every call; create `demo` as in
 C-F1121 step (2). Then, each a `set_request` at `revision=1` with the items of C-F1121 changed as stated:
@@ -26176,7 +26171,6 @@ cleanup: `delete_workspace(name="cf1125-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1126 — request ids and item keys match `^[a-z0-9][a-z0-9-]{0,63}$`
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1126-req")`, `workspace=` on every call. Each is a create
 (`revision=0`, title, goal, why, one item unless stated). As the request id: `A`, `Demo`, `cat_1`, `a.b`, `-lead`,
@@ -26193,7 +26187,6 @@ cleanup: `delete_workspace(name="cf1126-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1127 — every text is capped and carries no control characters
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1127-req")`, `workspace=` on every call. Base call: a create of
 `t-<n>` (a fresh id each time) as in C-F1121 step (2). Vary one field per call:
@@ -26210,7 +26203,6 @@ cleanup: `delete_workspace(name="cf1127-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1128 — item counts, estimates, stored arguments and unknown fields are refused strictly
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1128-req")`, `workspace=` on every call; `list_jobs` once to note
 the job count. Each a create of a fresh id (`n-<n>`) as in C-F1121 step (2), varied:
@@ -26233,7 +26225,6 @@ cleanup: `delete_workspace(name="cf1128-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1129 — a request's `state` moves between `open`, `done` and `abandoned`, and nothing else
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Setup: `create_workspace(name="cf1129-req")`, `workspace=` on every call; create `demo` as in
 C-F1121 step (2). (1) `set_request` at `revision=1`, same plan, `state="done"`, `why="wrapped"`. (2) At
@@ -26245,7 +26236,6 @@ cleanup: `delete_workspace(name="cf1129-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1130 — a workspace holding a request deletes cleanly, and its ledger goes with it
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. (1) `create_workspace(name="cf1130-req")`; create `demo` in it as in C-F1121 step (2)
 (`workspace="cf1130-req"`). (2) `delete_workspace(name="cf1130-req")` without acknowledgement (the preview).
@@ -26261,7 +26251,6 @@ cleanup: `delete_workspace(name="cf1130-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1131 — the Requests guide section documents the item fields, the key rule and the caps
-pending: #1481
 source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, read-only. `get_guide("workspaces", section="Requests")`; then the tool list (the client's own) or
 `get_guide` index for the stated tool count.
