@@ -24407,8 +24407,8 @@ Free, no job. Web UI, setup as in C-F1028. Mock the editor's validate answer fro
 `inherited_from`, `priced_for`, `tempered`; no `downloads_required` entry has `access_blocked` or `not_found`.
 Use basis `observed`, `minutes: 0.2`, and one ordinary download entry.
 expected: the plan shows its steps line, a `~0.2 min` figure with its basis, and the download line with no tag. No
-line says `host RAM`, `low confidence`, `withheld`, `inherited`, `blended`, `gated` or `not found`, and no line is
-styled as a warning. (Exact-text equality with the old lines is `plan.test.ts`'s job; this is the black-box half.)
+line says `host RAM`, `low confidence`, `withheld`, `inherited`, `blended`, `gated` or `not found`, and no line other than the download line is
+styled as a warning (the download line's `warn` tone predates #1467). (Exact-text equality with the old lines is `plan.test.ts`'s job; this is the black-box half.)
 Any new tag or warning tone appearing here is a **finding**.
 cleanup: none.
 metrics: none.
