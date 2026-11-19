@@ -55,7 +55,9 @@ Seventeen files:
 - `test-sync.sh`: `scripts/sync-fixtures.sh` with fake curl, rsync and ssh.
 - `test-testbed.sh`: `scripts/testbed.sh` with fake ssh and curl.
 - `test-ui-check.sh`: `tools/ui-check/ui-check.mjs` against a fixture page on 127.0.0.1:
-  steps, mocks built from the real answer, request recording, the origin lock, locator and spec-path refusals.
+  steps, mocks built from the real answer, stubs (write routes only), request recording, the origin lock,
+  bearer-token injection from an MCP config (and its scrubbing) against an auth-requiring server, a
+  backtracking regex ended by the step cap, SIGTERM leaving no Chromium, locator and spec-path refusals.
   Skipped when `tools/ui-check/node_modules` is missing.
 - `test-ui-ratchet.sh`: the UI's architecture ratchet (`check_ui`) on fixture repos.
 

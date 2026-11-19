@@ -433,8 +433,9 @@ run_agent() {
       || SESSION_ENV+=(HARNEST_SESSION_TREE="$HARNEST_SESSION_TREE" HARNEST_SESSION_BASE="$HARNEST_SESSION_BASE") ;;
   esac
   # The tester's web UI runner (tools/ui-check) takes its origin from DW_URL and
-  # refuses to run without it; resolve_target sets it here unexported.
-  [ "$role" != tester ] || SESSION_ENV+=(DW_URL="$DW_URL")
+  # refuses to run without it; resolve_target sets it here unexported. It reads
+  # the UI's bearer token from the session's MCP config, named by path only.
+  [ "$role" != tester ] || SESSION_ENV+=(DW_URL="$DW_URL" HARNEST_MCP_CONFIG="$MCP_CONFIG_PATH")
   SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX$PROMPT_TAG" "$dir" "$prompt_file" \
     "$prompt
 

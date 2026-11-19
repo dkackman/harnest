@@ -254,9 +254,12 @@ class Regression:
         self.cases_per_session = int(self.cases_per_session)
         skip = os.environ.get("TARGET_SKIP_CASES")
         self.skip_cases = skip.split() if skip is not None else list(self.server.regression_skip_cases)
+        mcp_path = session.mcp_config(self.mcp_name, self.url, self.token)
+        # ui-check reads the UI's bearer token from this file (the path, never the token).
+        self.session_env["HARNEST_MCP_CONFIG"] = mcp_path
         self.flags = [
             "--mcp-config",
-            session.mcp_config(self.mcp_name, self.url, self.token),
+            mcp_path,
             "--strict-mcp-config",
             "--plugin-dir",
             str(plugin_dir),

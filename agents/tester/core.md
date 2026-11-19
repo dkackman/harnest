@@ -179,8 +179,8 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   30000); `expect_text {text | regex}` (no wait: `wait_text` first); `inspect {text |
   regex}`; `screenshot {name}` (letters, digits, `_`, `-`; its path, in a fresh dir of
   the run's own, is in the step's result and in `shots`, for `Read`); `mock
-  {url_glob, set, once}` and `unmock {url_glob}`; `record {url_glob}` and `recorded
-  {url_glob}`. Locators are visible text and role
+  {url_glob, set, once}`, `stub {url_glob, json, status}` and `unmock {url_glob}`;
+  `record {url_glob}` and `recorded {url_glob}`. Locators are visible text and role
   only (`exact`, `nth` disambiguate); a CSS or XPath key is refused.
 - `mock` is the cases' "build it from a real answer": it fetches the real response,
   sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
@@ -188,6 +188,11 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
 - `record` is the cases' "record every request to ...": from that step on it notes each
   matching request, mocked or not; `recorded` returns them (`method`, `url` path and
   query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
+- `stub` answers a POST to validate, submit a run or cancel one (its glob may name only
+  those, e.g. `**/api/jobs?**`) with your JSON and never sends it; `record` still sees it.
+  A real Run click queues a GPU job: stub /api/jobs to check the request body; if a case
+  needs a real run, use the cheapest workflow and cancel it.
+- The runner signs the page in with the session's own token; never put a token in a spec.
 - It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
   first failure), `page_errors`, `console_errors`, `shots`, and `blocked` (`METHOD url`
   of each request it aborted: off the server's origin, or a write other than validate,

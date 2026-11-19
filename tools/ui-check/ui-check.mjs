@@ -10,21 +10,28 @@
 // selector read from the UI source.
 //
 // Spec: {"base": optional, "steps": [{"step": "<kind>", ...}, ...]}
-//   goto        {path}                          a path on the base origin only
+//   goto        {path}                          a path on the base origin only, and
+//               a text/html page (any other content type fails the step)
 //   click       {role, name?} | {text}          [exact?, nth?]
 //   fill        {label | placeholder | role+name?, value}  [exact?, nth?]
 //   press       {key}
 //   mock        {url_glob, set: {"dotted.path": value, ...}, once?}
 //               route.fetch() the real request, parse its JSON, set each path
 //               (a.b, a.0.b and a[0].b; any JSON value), route.fulfill({json})
-//   unmock      {url_glob}
+//   stub        {url_glob, json, status?}   answer a POST to a POST_ALLOWED route
+//               with this JSON (status 200-599, default 200) and never send it; the
+//               glob may name only those routes (refused otherwise), and a GET or HEAD
+//               on it gets the real answer. A real Run click queues a GPU job: stub it.
+//   unmock      {url_glob}   removes the mocks and stubs on that glob
 //   record      {url_glob}   from this step on, note every same-origin request
 //               the glob matches, mocked or not (a mock on the same glob is fine)
 //   recorded    {url_glob}   -> {count, requests: [{method, url (path+query),
 //               body (parsed JSON, else text cut to 4 KB, else null), timestamp
 //               (epoch ms)}], dropped}; at most 200 kept per glob
 //   wait_text   {text | regex, flags?, timeout_ms?}   timeout_ms <= 30000
-//   expect_text {text | regex, flags?}  -> {found, snippet, count}; does not wait
+//   expect_text {text | regex, flags?}  -> {found, snippet, count}; does not wait.
+//               The match runs in the page, so a regex that never ends hangs the
+//               page, not this process: the step cap still ends the run.
 //   inspect     {text | regex, flags?, exact?, nth?}  -> tag, role, classes,
 //               color, background_color, font_weight, aria, text, and the same
 //               for the closest ancestor with a class
@@ -44,12 +51,22 @@
 // "blocked" as "METHOD url", so the UI is no side door past the tester's MCP
 // denylist; a mock cannot fetch them either. No downloads, no permissions, no
 // service workers, no popups. Each step is capped at 30 s, the whole run at
-// 300 s, and the run stops at the first step that fails.
+// 300 s, and the run stops at the first step that fails. SIGTERM (SIGINT,
+// SIGHUP) closes the browser and prints the partial result.
 //
-// Output: one JSON document on stdout, {ok, base, steps: [{i, step, ok,
-// result | error}], page_errors, console_errors, blocked, shots}. Exit 0,
-// unless DW_URL or the spec is invalid or its path is not a regular file
-// /tmp/dw-ui-*.json of at most 256 KB (exit 2, with {ok: false, error}).
+// Auth: dw's UI sends the bearer token it keeps in localStorage ("dw-api-token",
+// JSON; dw ui/src/lib/token.ts). The runner puts it there before any page script
+// runs, from the session's MCP config file (the driver's, named by the
+// HARNEST_MCP_CONFIG path; the server entry whose url is on the base origin, its
+// "Authorization: Bearer <token>" header). Never from the spec. No file or no
+// token: the run goes without one (a server with no token). The token is
+// replaced by "<token>" everywhere in the output (page text, errors, requests).
+//
+// Output: one JSON document on stdout, {ok, base, token, steps: [{i, step, ok,
+// result | error}], page_errors, console_errors, blocked, shots}; token is
+// whether one was injected. Exit 0, unless DW_URL or the spec is invalid or
+// its path is not a regular file /tmp/dw-ui-*.json of at most 256 KB owned by
+// this user (exit 2, with {ok: false, error}).
 
 import fs from "node:fs";
 import os from "node:os";
@@ -69,16 +86,38 @@ const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const MAX_RECORDED = 200;
 const MAX_BODY = 4096;
 const LOCATOR_KEYS = ["selector", "css", "xpath", "locator", "id", "testid", "data-testid"];
+const MAX_ALTERNATIVES = 32;
+const MAX_CONFIG = 64 * 1024;
+// dw's UI keeps its bearer token here (ui/src/lib/storage.ts prefixes "dw-" and stores JSON).
+const TOKEN_KEY = "dw-api-token";
+// A stub's glob, each {a,b} alternative: any origin (** or one literal), then exactly a
+// POST_ALLOWED path, then nothing or a query.
+const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/cancel)(?:\?.*)?$/;
 
+// Every form of the token that must never be printed (set once it is read).
+const SCRUB = [];
+function scrub(text) {
+  for (const t of SCRUB) text = text.split(t).join("<token>");
+  return text;
+}
+
+// One JSON document per run, whatever ends it first (the steps, the run cap, a signal).
+let emitted = false;
 function emit(doc, code) {
-  process.stdout.write(JSON.stringify(doc) + "\n", () => process.exit(code));
+  if (emitted) return;
+  emitted = true;
+  process.stdout.write(scrub(JSON.stringify(doc)) + "\n", () => process.exit(code));
 }
 
 function invalid(msg) {
-  process.stderr.write("ui-check: " + msg + "\n");
+  process.stderr.write(scrub("ui-check: " + msg) + "\n");
   emit({ ok: false, error: msg }, 2);
   throw new Exit();
 }
+
+// Replaced by main() once a browser may be up; before that a signal just ends the run.
+let onSignal = (sig) => emit({ ok: false, error: "terminated (" + sig + ")" }, 0);
+for (const sig of ["SIGTERM", "SIGINT", "SIGHUP"]) process.on(sig, () => onSignal(sig));
 
 class Exit extends Error {}
 
@@ -99,12 +138,14 @@ function readSpec(argv) {
   if (real !== path.join(fs.realpathSync("/tmp"), path.basename(p))) invalid("the spec resolves outside /tmp: " + real);
   let fd;
   try {
-    fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW);
+    // O_NONBLOCK: a FIFO swapped in after the lstat cannot hang the open.
+    fd = fs.openSync(p, fs.constants.O_RDONLY | fs.constants.O_NOFOLLOW | fs.constants.O_NONBLOCK);
   } catch (e) {
     invalid("cannot open the spec: " + e.message);
   }
   const fst = fs.fstatSync(fd);
   if (!fst.isFile()) invalid("the spec is not a regular file");
+  if (fst.uid !== process.getuid()) invalid("the spec is not this user's file: write it yourself");
   if (fst.size > MAX_SPEC) invalid("the spec is over 256 KB");
   const text = fs.readFileSync(fd, "utf8");
   fs.closeSync(fd);
@@ -146,6 +187,7 @@ const SHAPES = {
   fill: { label: "text", placeholder: "text", role: "role", name: "text", value: "string", exact: "boolean", nth: "index" },
   press: { key: "key" },
   mock: { url_glob: "glob", set: "set", once: "boolean" },
+  stub: { url_glob: "glob", json: "json", status: "status" },
   unmock: { url_glob: "glob" },
   record: { url_glob: "glob" },
   recorded: { url_glob: "glob" },
@@ -184,6 +226,12 @@ function checkValue(kind, v, where) {
       return;
     case "glob":
       if (!str(500)) invalid(where + " must be a URL glob such as **/api/validate**");
+      if (!globAlternatives(v)) invalid(where + " has more than " + MAX_ALTERNATIVES + " {a,b} alternatives");
+      return;
+    case "json":
+      return; // any JSON value: the spec is parsed JSON
+    case "status":
+      if (!Number.isInteger(v) || v < 200 || v > 599) invalid(where + " must be an HTTP status from 200 to 599");
       return;
     case "boolean":
       if (typeof v !== "boolean") invalid(where + " must be true or false");
@@ -256,6 +304,14 @@ function validate(spec) {
       case "mock":
         need(has("url_glob") && has("set"), "needs url_glob and set");
         break;
+      case "stub":
+        need(has("url_glob") && has("json"), "needs url_glob and json");
+        need(
+          globAlternatives(s.url_glob).every((a) => STUB_GLOB.test(a)),
+          "a stub answers only the write routes a page may send (POST /api/validate, /api/jobs, " +
+            "/api/jobs/<id>/cancel): its url_glob must name only those, such as **/api/jobs?** or **/api/jobs/*/cancel",
+        );
+        break;
       case "unmock":
       case "record":
       case "recorded":
@@ -286,27 +342,62 @@ function setPath(doc, dotted, value) {
   cur[segs[segs.length - 1]] = value;
 }
 
-// Playwright's URL glob as a RegExp over the whole URL: ** any characters, * any but /,
-// {a,b} alternatives, everything else literal (? included, as Playwright reads it)
-function globRegExp(glob) {
-  let re = "";
-  let inGroup = false;
-  for (let i = 0; i < glob.length; i++) {
-    const c = glob[i];
-    if (c === "*" && glob[i + 1] === "*") {
-      re += ".*";
-      i++;
-    } else if (c === "*") re += "[^/]*";
-    else if (c === "{" && !inGroup) {
-      re += "(?:";
-      inGroup = true;
-    } else if (c === "}" && inGroup) {
-      re += ")";
-      inGroup = false;
-    } else if (c === "," && inGroup) re += "|";
-    else re += c.replace(/[\\^$.|?+()[\]{}\/]/g, "\\$&");
+// Playwright's URL glob: ** any characters, * any but /, {a,b} alternatives (not nested),
+// everything else literal (? included, as Playwright reads it). Matched here, never as a
+// RegExp (the tester's glob must not backtrack): {a,b} expanded, then each alternative by a
+// table over (glob tokens x URL characters), linear in each. mock, stub and record share it.
+function globAlternatives(glob) {
+  let alts = [""];
+  let i = 0;
+  while (i < glob.length) {
+    const open = glob.indexOf("{", i);
+    const close = open < 0 ? -1 : glob.indexOf("}", open);
+    if (open < 0 || close < 0) {
+      alts = alts.map((a) => a + glob.slice(i));
+      break;
+    }
+    const opts = glob.slice(open + 1, close).split(",");
+    const head = glob.slice(i, open);
+    alts = alts.flatMap((a) => opts.map((o) => a + head + o));
+    if (alts.length > MAX_ALTERNATIVES) return null;
+    i = close + 1;
   }
-  return new RegExp("^" + re + "$");
+  return alts;
+}
+
+function globTokens(alt) {
+  const t = [];
+  for (let i = 0; i < alt.length; i++) {
+    if (alt[i] === "*" && alt[i + 1] === "*") {
+      t.push("**");
+      i++;
+    } else t.push(alt[i] === "*" ? "*" : { c: alt[i] });
+  }
+  return t;
+}
+
+function tokensMatch(toks, s) {
+  // row[j]: the tokens so far match s.slice(0, j)
+  let row = new Array(s.length + 1).fill(false);
+  row[0] = true;
+  for (const tok of toks) {
+    const next = new Array(s.length + 1).fill(false);
+    for (let j = 0; j <= s.length; j++) {
+      if (tok === "**" || tok === "*") {
+        next[j] = row[j] || (j > 0 && next[j - 1] && (tok === "**" || s[j - 1] !== "/"));
+      } else next[j] = j > 0 && row[j - 1] && s[j - 1] === tok.c;
+    }
+    row = next;
+  }
+  return row[s.length];
+}
+
+function globMatcher(glob) {
+  const toks = globAlternatives(glob).map(globTokens);
+  return (u) => {
+    const href = typeof u === "string" ? u : u.href;
+    return toks.some((t) => tokensMatch(t, href));
+  };
 }
 
 function bodyOf(req) {
@@ -365,15 +456,26 @@ async function main() {
   const spec = readSpec(argv);
   validate(spec);
   const base = baseOf(spec);
-  const out = { ok: false, base, steps: [], page_errors: [], console_errors: [], blocked: [], shots: [] };
+  const token = tokenFor(base);
+  const out = { ok: false, base, token: token !== null, steps: [], page_errors: [], console_errors: [], blocked: [], shots: [] };
   let shotDir = null; // this run's own, made at the first screenshot
   let browser;
+  let current = null; // the step running now, for a result cut short
+  let finishing = false;
   const finish = async (extra) => {
+    if (finishing) return;
+    finishing = true;
     Object.assign(out, extra || {});
     if (browser) await Promise.race([browser.close().catch(() => {}), new Promise((r) => setTimeout(r, 5000))]);
     emit(out, 0);
   };
-  const runTimer = setTimeout(() => finish({ ok: false, error: "the run exceeded 300 s" }), RUN_MS);
+  const cut = (error) => {
+    if (current) out.steps.push({ i: current.i, step: current.step, ok: false, error });
+    current = null;
+    return finish({ ok: false, error });
+  };
+  onSignal = (sig) => cut("terminated (" + sig + ")");
+  const runTimer = setTimeout(() => cut("the run exceeded 300 s"), RUN_MS);
 
   let chromium;
   try {
@@ -382,11 +484,24 @@ async function main() {
     return finish({ error: "playwright-core is not installed: cd tools/ui-check && npm install --no-audit --no-fund (" + short(e.message, 200) + ")" });
   }
   try {
-    browser = await chromium.launch({ headless: true });
+    // The signals are this file's (onSignal): it closes the browser and prints what it has.
+    browser = await chromium.launch({ headless: true, handleSIGINT: false, handleSIGTERM: false, handleSIGHUP: false });
   } catch (e) {
     return finish({ error: "cannot start headless Chromium: " + short(e.message, 500) });
   }
+  if (finishing) return browser.close().catch(() => {});
   const context = await browser.newContext({ acceptDownloads: false, permissions: [], serviceWorkers: "block" });
+  if (token !== null) {
+    // Before any page script, on the base origin only: dw's UI reads it at module load.
+    await context.addInitScript(
+      ({ key, value, origin }) => {
+        try {
+          if (location.origin === origin) localStorage.setItem(key, value);
+        } catch {}
+      },
+      { key: TOKEN_KEY, value: JSON.stringify(token), origin: base },
+    );
+  }
   context.setDefaultTimeout(DEFAULT_MS);
   context.setDefaultNavigationTimeout(STEP_MS);
   const offOrigin = (u) => {
@@ -440,14 +555,20 @@ async function main() {
     page.goto("about:blank").catch(() => {});
   });
 
-  const mocks = new Map(); // url_glob -> [{handler, hits}]
+  const mocks = new Map(); // url_glob -> [{match, handler, hits}], mocks and stubs
+  const addRoute = async (glob, entry, opts) => {
+    entry.match = globMatcher(glob);
+    await context.route(entry.match, entry.handler, opts || {});
+    if (!mocks.has(glob)) mocks.set(glob, []);
+    mocks.get(glob).push(entry);
+  };
   // The request event sees every request, a mocked one included, whichever route answers it.
-  const records = new Map(); // url_glob -> {re, requests, dropped}
+  const records = new Map(); // url_glob -> {match, requests, dropped}
   context.on("request", (req) => {
     const u = req.url();
     if (!records.size || offOrigin(u)) return;
     for (const r of records.values()) {
-      if (!r.re.test(u)) continue;
+      if (!r.match(u)) continue;
       if (r.requests.length >= MAX_RECORDED) {
         r.dropped++;
         continue;
@@ -462,6 +583,11 @@ async function main() {
         const url = new URL(s.path, base + "/");
         if (url.origin !== base) throw new Error("refused: " + url.href + " is not on " + base);
         const resp = await page.goto(url.href, { waitUntil: "load", timeout: STEP_MS });
+        const type = resp ? resp.headers()["content-type"] || "" : "text/html";
+        if (!/^text\/html\s*(;|$)/i.test(type)) {
+          await page.goto("about:blank").catch(() => {});
+          throw new Error("refused: " + url.pathname + " is " + (type || "no content type") + ", not a text/html page; goto loads UI pages only");
+        }
         return { url: page.url(), status: resp ? resp.status() : null };
       }
       case "click":
@@ -495,14 +621,25 @@ async function main() {
           for (const [k, v] of Object.entries(s.set)) setPath(doc, k, v);
           return route.fulfill({ response: resp, json: doc });
         };
-        await context.route(s.url_glob, entry.handler, s.once ? { times: 1 } : {});
-        if (!mocks.has(s.url_glob)) mocks.set(s.url_glob, []);
-        mocks.get(s.url_glob).push(entry);
+        await addRoute(s.url_glob, entry, s.once ? { times: 1 } : {});
         return { url_glob: s.url_glob, set: Object.keys(s.set), once: s.once === true };
+      }
+      case "stub": {
+        // Answers a POST to a POST_ALLOWED route and never sends it; anything else on the
+        // glob (a GET, a path the leading ** let in) goes on to the real route and the lock.
+        const entry = { hits: 0, errors: [] };
+        entry.handler = (route) => {
+          const req = route.request();
+          if (req.method().toUpperCase() !== "POST" || denied(req)) return route.fallback();
+          entry.hits++;
+          return route.fulfill({ status: s.status || 200, json: s.json });
+        };
+        await addRoute(s.url_glob, entry);
+        return { url_glob: s.url_glob, status: s.status || 200 };
       }
       case "unmock": {
         const entries = mocks.get(s.url_glob) || [];
-        for (const e of entries) await context.unroute(s.url_glob, e.handler);
+        for (const e of entries) await context.unroute(e.match, e.handler);
         mocks.delete(s.url_glob);
         return {
           url_glob: s.url_glob,
@@ -512,7 +649,7 @@ async function main() {
         };
       }
       case "record":
-        if (!records.has(s.url_glob)) records.set(s.url_glob, { re: globRegExp(s.url_glob), requests: [], dropped: 0 });
+        if (!records.has(s.url_glob)) records.set(s.url_glob, { match: globMatcher(s.url_glob), requests: [], dropped: 0 });
         return { url_glob: s.url_glob, recording: true };
       case "recorded": {
         const r = records.get(s.url_glob);
@@ -525,28 +662,37 @@ async function main() {
           .first()
           .waitFor({ state: "visible", timeout: s.timeout_ms || DEFAULT_MS });
         return { found: true };
-      case "expect_text": {
-        const body = await page.evaluate(() => (document.body ? document.body.innerText : ""));
-        const lines = body.split("\n");
-        let count = 0;
-        let snippet = null;
-        for (const line of lines) {
-          const hit = s.regex !== undefined ? new RegExp(s.regex, s.flags || "").test(line) : line.includes(s.text);
-          if (hit) {
-            count++;
-            if (snippet === null) snippet = short(line.trim(), 300);
-          }
-        }
-        if (!count && s.regex !== undefined && new RegExp(s.regex, s.flags || "").test(body)) {
-          count = 1;
-          snippet = short(new RegExp(s.regex, s.flags || "").exec(body)[0], 300);
-        }
-        if (!count && s.text !== undefined && body.includes(s.text)) {
-          count = 1;
-          snippet = short(s.text, 300);
-        }
-        return { found: count > 0, count, snippet };
-      }
+      case "expect_text":
+        // In the page, never here: a regex that backtracks forever hangs the page's
+        // thread, and this process's timers (the step cap, a signal) still fire.
+        return await page.evaluate(
+          ({ text, src, flags, max }) => {
+            const cut = (t) => (t.length > max ? t.slice(0, max) + "..." : t);
+            const re = src === null ? null : new RegExp(src, flags);
+            const body = document.body ? document.body.innerText : "";
+            let count = 0;
+            let snippet = null;
+            for (const line of body.split("\n")) {
+              if (re ? re.test(line) : line.includes(text)) {
+                count++;
+                if (snippet === null) snippet = cut(line.trim());
+              }
+            }
+            if (!count && re) {
+              const m = re.exec(body);
+              if (m) {
+                count = 1;
+                snippet = cut(m[0]);
+              }
+            }
+            if (!count && !re && body.includes(text)) {
+              count = 1;
+              snippet = cut(text);
+            }
+            return { found: count > 0, count, snippet };
+          },
+          { text: s.text ?? null, src: s.regex ?? null, flags: s.flags || "", max: 300 },
+        );
       case "inspect": {
         const loc = locate(page, s);
         const matches = await loc.count();
@@ -582,6 +728,8 @@ async function main() {
 
   out.ok = true;
   for (const [i, s] of spec.steps.entries()) {
+    if (finishing) return;
+    current = { i, step: s.step };
     let timer;
     const cap = new Promise((_, rej) => {
       timer = setTimeout(() => rej(new Error("step took over 30 s")), STEP_MS + 1000);
@@ -595,10 +743,46 @@ async function main() {
       break;
     } finally {
       clearTimeout(timer);
+      current = null;
     }
   }
   clearTimeout(runTimer);
   return finish();
+}
+
+// The bearer token for base: the session's MCP config (HARNEST_MCP_CONFIG, written by the
+// driver), the server entry on the base origin, its "Authorization: Bearer <token>". null
+// when there is none; any problem reading it is the same as none.
+function tokenFor(base) {
+  const file = process.env.HARNEST_MCP_CONFIG || "";
+  if (!file) return null;
+  let doc;
+  try {
+    const fd = fs.openSync(file, fs.constants.O_RDONLY | fs.constants.O_NONBLOCK);
+    try {
+      const st = fs.fstatSync(fd);
+      if (!st.isFile() || st.size > MAX_CONFIG) return null;
+      doc = JSON.parse(fs.readFileSync(fd, "utf8"));
+    } finally {
+      fs.closeSync(fd);
+    }
+  } catch {
+    return null;
+  }
+  for (const srv of Object.values((doc && doc.mcpServers) || {})) {
+    let origin;
+    try {
+      origin = new URL(srv.url).origin;
+    } catch {
+      continue;
+    }
+    const m = /^Bearer (\S+)$/.exec(String((srv.headers || {}).Authorization || ""));
+    if (origin !== base || !m) continue;
+    const t = m[1];
+    SCRUB.push(t, JSON.stringify(t).slice(1, -1), encodeURIComponent(t));
+    return t;
+  }
+  return null;
 }
 
 main().catch((e) => {

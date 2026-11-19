@@ -12,18 +12,24 @@ if ! command -v node >/dev/null || [ ! -f "$HARNEST/tools/ui-check/node_modules/
 fi
 
 specs="/tmp/dw-ui-test-$$"
-trap 'rm -rf "$T"; rm -f "$specs"-*.json /tmp/dw-ui-link-$$.json; [ -n "${srv:-}" ] && kill "$srv" 2>/dev/null' EXIT
+trap 'rm -rf "$T"; rm -f "$specs"-*.json /tmp/dw-ui-link-$$.json; for p in ${srv:-} ${asrv:-}; do kill "$p" 2>/dev/null; done' EXIT
 
-python3 -u -m http.server 0 --bind 127.0.0.1 --directory "$HARNEST/tests/fixtures/ui-check" > "$T/srv.out" 2>&1 &
+# serve <out> [token]: starts the fixture server (tests/fixtures/ui-check-server.py) in the
+# background; $! is its pid and the port it printed lands in $port
+serve() {
+  python3 -u "$HARNEST/tests/fixtures/ui-check-server.py" "$HARNEST/tests/fixtures/ui-check" ${2:+"$2"} > "$1" 2>&1 &
+  port=""
+  for _ in $(seq 1 50); do
+    port="$(sed -nE 's/.*port ([0-9]+).*/\1/p' "$1" | head -1)"
+    [ -n "$port" ] && break
+    python3 -c 'import time; time.sleep(0.1)'
+  done
+  [ -n "$port" ] || { echo "  FAIL: fixture server did not start"; cat "$1"; exit 1; }
+}
+serve "$T/srv.out"
 srv=$!
-port=""
-for _ in $(seq 1 50); do
-  port="$(sed -nE 's/.*port ([0-9]+).*/\1/p' "$T/srv.out" | head -1)"
-  [ -n "$port" ] && break
-  python3 -c 'import time; time.sleep(0.1)'
-done
-[ -n "$port" ] || { echo "  FAIL: fixture server did not start"; cat "$T/srv.out"; exit 1; }
 export DW_URL="http://127.0.0.1:$port/mcp"
+unset HARNEST_MCP_CONFIG
 
 n=0
 # run <spec-json>: writes the spec to /tmp/dw-ui-test-<pid>-<n>.json, runs it; $out and $rc hold the result
@@ -226,6 +232,115 @@ run '{"steps": [{"step": "goto", "path": "/"}, {"step": "click", "role": "button
 eq "a missing element fails its step" false "$(j '.steps[1].ok')"
 eq "and the run" false "$(j .ok)"
 has "the failed step says why" "No such button" "$(j '.steps[1].error')"
+
+# --- stub: answers a write route without sending it; the request is still recorded
+c0="$(grep -c 'POST /api/jobs?sizes=false' "$T/srv.out")"
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "record", "url_glob": "**/api/jobs?**"},
+  {"step": "stub", "url_glob": "**/api/jobs?**", "json": {"id": "j-1"}, "status": 201},
+  {"step": "click", "role": "button", "name": "Run"},
+  {"step": "wait_text", "text": "run: answered 201"},
+  {"step": "recorded", "url_glob": "**/api/jobs?**"},
+  {"step": "stub", "url_glob": "**/api/validate", "json": {"valid": false}},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "basis: observed"},
+  {"step": "unmock", "url_glob": "**/api/jobs?**"},
+  {"step": "click", "role": "button", "name": "Run"},
+  {"step": "wait_text", "text": "run: answered 501"}
+]}'
+eq "stub spec ok" true "$(j .ok)"
+eq "a stubbed POST is answered with the stub (status kept)" true "$(j '.steps[4].ok')"
+eq "and still recorded, with its body" catalog/flux.json "$(j '.steps[5].result.requests[0].body.workflow_path')"
+eq "a stub answers writes only: a GET on its route gets the real answer" true "$(j '.steps[8].ok')"
+eq "unmock removes a stub: the next POST reaches the server" true "$(j '.steps[11].ok')"
+eq "unmock counts the stub's hits" 1 "$(j '.steps[9].result.hits')"
+eq "the stubbed POST never reached the server (one POST there, after unmock)" $((c0 + 1)) "$(grep -c 'POST /api/jobs?sizes=false' "$T/srv.out")"
+run '{"steps": [{"step": "stub", "url_glob": "{**/api/validate,**/api/jobs/*/cancel}", "json": null}]}'
+eq "a stub on {validate, cancel} is valid" 0 "$rc"
+for g in '**' '**/api/**' '**/api/models' '**/api/jobs**' '**/api/jobs*' '**/api/jobs/*/rerun' '{**/api/jobs,**/api/models}' '**/api/jobs/**/cancel'; do
+  run '{"steps": [{"step": "stub", "url_glob": "'"$g"'", "json": {}}]}'
+  eq "a stub on $g (not only a POST_ALLOWED route) is an invalid spec" 2 "$rc"
+done
+run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status": 99}]}'
+eq "a stub status outside 200-599 is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs"}]}'
+eq "a stub without json is an invalid spec" 2 "$rc"
+
+# --- goto loads pages only
+run '{"steps": [{"step": "goto", "path": "/plain.txt"}, {"step": "expect_text", "text": "plain text"}]}'
+eq "goto to a document that is not text/html fails its step" false "$(j '.steps[0].ok')"
+has "saying why" "text/html" "$(j '.steps[0].error')"
+
+# --- a catastrophic regex runs in the page: the step cap still ends it
+start="$(date +%s)"
+run '{"steps": [{"step": "goto", "path": "/"}, {"step": "expect_text", "regex": "^(a+)+$"}]}'
+took=$(( $(date +%s) - start ))
+ok "a backtracking regex ends within the step cap ($took s)" test "$took" -le 45
+eq "its step fails" false "$(j '.steps[1].ok')"
+has "on the cap" "over 30 s" "$(j '.steps[1].error')"
+eq "exit 0" 0 "$rc"
+eq "one JSON document" 1 "$(jq -s length <<< "$out")"
+
+# --- SIGTERM: the browser is closed and a partial result printed
+n=$((n + 1))
+printf '%s\n' '{"steps": [{"step": "goto", "path": "/"}, {"step": "expect_text", "regex": "^(a+)+$"}]}' > "$specs-$n.json"
+node "$runner" "$specs-$n.json" > "$T/term.out" 2>"$T/term.err" &
+np=$!
+# descendants <pid>: every process under it
+descendants() { local c; for c in $(pgrep -P "$1"); do echo "$c"; descendants "$c"; done; }
+kids=""
+for _ in $(seq 1 100); do
+  kids="$(descendants "$np" | tr '\n' ' ')"
+  [ "$(echo $kids | wc -w)" -ge 3 ] && break
+  python3 -c 'import time; time.sleep(0.1)'
+done
+python3 -c 'import time; time.sleep(3)'
+kids="$(descendants "$np" | tr '\n' ' ')"
+ok "the run has a browser to close" test -n "$kids"
+start="$(date +%s)"
+kill -TERM "$np"
+wait "$np"; trc=$?
+took=$(( $(date +%s) - start ))
+ok "SIGTERM ends the run promptly ($took s)" test "$took" -le 10
+eq "with exit 0" 0 "$trc"
+out="$(cat "$T/term.out")"
+eq "one JSON document" 1 "$(jq -s length <<< "$out")"
+eq "a partial result, not ok" false "$(j .ok)"
+has "saying it was terminated" "SIGTERM" "$(j .error)"
+eq "the step done before it is in the result" true "$(j '.steps[0].ok')"
+python3 -c 'import time; time.sleep(1)'
+left=""
+for k in $kids; do kill -0 "$k" 2>/dev/null && left="$left $k"; done
+eq "no Chromium process of the run is left" "" "$left"
+
+# --- the bearer token: from the session's MCP config, into localStorage, never printed
+tok="tok-sekret-$$"
+serve "$T/asrv.out" "$tok"
+asrv=$!
+aport="$port"
+cfg() { printf '{"mcpServers": {"dw": {"type": "http", "url": "%s", "headers": {"Authorization": "Bearer %s"}}}}\n' "$1" "$2" > "$T/mcp.json"; }
+authspec='{"steps": [{"step": "goto", "path": "/"}, {"step": "wait_text", "regex": "auth: \\d+"}, {"step": "expect_text", "regex": "^auth: "}, {"step": "expect_text", "text": "token: "}]}'
+cfg "http://127.0.0.1:$aport/mcp" "$tok"
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/mcp.json" run "$authspec"
+eq "token run ok" true "$(j .ok)"
+eq "with the token injected, the page's API call is let in" "auth: 200" "$(j '.steps[2].result.snippet')"
+fails "the token is nowhere in stdout" grep -q "$tok" <<< "$out"
+fails "nor in stderr" grep -q "$tok" "$T/err"
+eq "the page text that shows it is scrubbed" "token: <token>" "$(j '.steps[3].result.snippet')"
+has "and so is a console error naming it" "the token is <token>" "$(j '.console_errors | join(" ")')"
+DW_URL="http://127.0.0.1:$aport/mcp" run "$authspec"
+eq "without a config, no token: the API answers 401" "auth: 401" "$(j '.steps[2].result.snippet')"
+cfg "http://127.0.0.1:$aport/mcp" ""
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/mcp.json" run "$authspec"
+eq "an empty token in the config: run without one" "auth: 401" "$(j '.steps[2].result.snippet')"
+cfg "http://localhost:$aport/mcp" "$tok"
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/mcp.json" run "$authspec"
+eq "a config for another origin gives no token" "auth: 401" "$(j '.steps[2].result.snippet')"
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/no-such.json" run "$authspec"
+eq "a missing config: run without one" "auth: 401" "$(j '.steps[2].result.snippet')"
+run '{"token": "x", "steps": []}'
+eq "a token in the spec is an invalid spec" 2 "$rc"
 
 # --- the spec path: /tmp/dw-ui-*.json, a regular file, no symlink
 printf '{"steps": []}\n' > "$T/elsewhere.json"

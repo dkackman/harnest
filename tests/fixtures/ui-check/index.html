@@ -25,8 +25,20 @@
   <p id="typed">typed: none</p>
   <p id="run">run: none</p>
   <p id="admin">admin: none</p>
+  <p id="auth">auth: pending</p>
+  <p id="tok">token: none</p>
+  <p id="long">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!</p>
 </main>
 <script>
+  // The bearer token the way dw's UI keeps it (ui/src/lib/token.ts, storage.ts): localStorage
+  // "dw-api-token", JSON. The runner puts it there; the page shows it, so the test can see it scrubbed.
+  var tok = '';
+  try { tok = JSON.parse(localStorage.getItem('dw-api-token') || '""'); } catch (e) {}
+  document.getElementById('tok').textContent = 'token: ' + (tok || 'none');
+  if (tok) console.error('the token is ' + tok);
+  fetch('/api/validate', { headers: tok ? { Authorization: 'Bearer ' + tok } : {} })
+    .then(function (r) { document.getElementById('auth').textContent = 'auth: ' + r.status; },
+          function () { document.getElementById('auth').textContent = 'auth: failed'; });
   // A request to another origin (same server, other host name): the runner must abort it.
   var other = location.protocol + '//localhost:' + location.port + '/api/validate';
   fetch(other, { mode: 'no-cors' })

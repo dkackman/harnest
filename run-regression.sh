@@ -241,6 +241,8 @@ workspace_for_suite_file() {
 # checkout so skill fixes are covered without a reinstall. The permission
 # allowlist (providers.sh) is the same fence the tester runs behind.
 MCP_CONFIG_PATH="$(mcp_config_file "$DW_URL" "$DW_TOKEN")" || { echo "[regression] cannot write the mcp config under $LOGS" >&2; exit 1; }
+# ui-check reads the UI's bearer token from this file (the path, never the token).
+SESSION_ENV+=(HARNEST_MCP_CONFIG="$MCP_CONFIG_PATH")
 REGRESSION_FLAGS=(
   --mcp-config "$MCP_CONFIG_PATH"
   --strict-mcp-config

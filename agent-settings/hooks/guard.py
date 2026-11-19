@@ -2662,8 +2662,9 @@ def consumer_node_rule(cmd, segs):
     node/npx/npm word on a consumer line, outside a gh or git command's text, is refused."""
     hit = False
     for seg in segs:
+        # A segment with no command word (x=node; $x -e 1) is scanned too: its assignment is the node.
         words = command_words(seg)
-        if not words or os.path.basename(words[0]) in ("gh", "git"):
+        if words and os.path.basename(words[0]) in ("gh", "git"):
             continue
         if any(
             os.path.basename(w) in NODE_WORDS or w.endswith("ui-check.mjs") or re.search(NODE_IN_WORD, w) for w in seg

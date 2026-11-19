@@ -158,7 +158,7 @@ for impl in bash py; do
   before_head="$(git -C "$T/h" rev-parse HEAD)"
   : > "$FAKE_CLAUDE_LOG"
   reg "$impl" mini.out PLUGIN_TREE="$T/plugin-mini" DW_TARGET=mini-ai CASES_PER_SESSION=0 \
-      FAKE_CLAUDE_DO='printf "%s" "$2" > "$FAKE_PROMPT"; printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}" > "$FAKE_PROMPT.target"; echo "${DW_URL:-unset}" > "$FAKE_PROMPT.url"' \
+      FAKE_CLAUDE_DO='printf "%s" "$2" > "$FAKE_PROMPT"; printf "%s\n" "$@" > "$FAKE_PROMPT.args"; echo "${HARNEST_TARGET:-unset}" > "$FAKE_PROMPT.target"; echo "${DW_URL:-unset}" > "$FAKE_PROMPT.url"; echo "${HARNEST_MCP_CONFIG:-unset}" > "$FAKE_PROMPT.mcp"' \
       FAKE_PROMPT="$T/$impl/mini-prompt" -- smoke regression-suite-tiny.md
   eq  "$impl mini-ai: runs while lem's lock is held" 0 $?
   eq  "$impl mini-ai: one whole-level session" 1 "$(calls)"
@@ -169,6 +169,7 @@ for impl in bash py; do
   has "$impl mini-ai: system prompt forbids suite edits" "The suite files. Every case in them runs on lem" "$sysprompt"
   eq  "$impl mini-ai: the guard is told the target" "mini-ai" "$(cat "$T/$impl/mini-prompt.target")"
   eq  "$impl mini-ai: the session carries DW_URL for ui-check, though the caller set none" "http://mini-ai:8765/mcp" "$(cat "$T/$impl/mini-prompt.url")"
+  has "$impl mini-ai: and the path of its mcp config (ui-check's token)" "/logs/.mcp." "$(cat "$T/$impl/mini-prompt.mcp")"
   has "$impl mini-ai: skip and differ counts are logged" "case(s) skipped" "$(cat "$T/$impl/mini.out")"
   eq  "$impl mini-ai: no suite commit, only its own results" "regression-results/mini-ai/S-F001.jsonl regression-results/mini-ai/S-F002.jsonl" \
       "$(git -C "$T/h" diff --name-only "$before_head" HEAD | tr '\n' ' ' | sed 's/ $//')"

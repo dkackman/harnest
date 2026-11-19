@@ -187,7 +187,9 @@ runner the tester uses: `Write` the case's steps as JSON to `/tmp/dw-ui-<case>.j
 exactly the command line your Runtime note gives, alone on the line (any other `node`, `npx`
 or `npm` is refused). The spec is `{"steps": [{"step": "<kind>", ...}]}` with the kinds `goto`,
 `click`, `fill`, `press`, `wait_text`, `expect_text`, `inspect`, `screenshot`, `mock`/`unmock`
-(a real answer with named fields set) and `record`/`recorded` (the requests a step sent); it
+(a real answer with named fields set), `stub {url_glob, json}` (answers a validate, run or
+cancel POST without sending it: a real Run click queues a GPU job) and `record`/`recorded`
+(the requests a step sent); it
 prints one JSON document with each step's `ok` and `result` or `error`, and stops at the first
 failure. A step error from a missing element is a case result; a refused or invalid spec is
 your mistake, not dw's.

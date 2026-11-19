@@ -320,19 +320,34 @@ $HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`, the exact line its runtime no
 (`runtime_note`, for the tester and the regression agent) spells with the absolute root; the
 step kinds and the output are in the file's header and `agents/tester/core.md` ("Web UI
 cases"). `record`/`recorded` capture the requests matching a glob (mocked or not) for the
-cases that check what the page sent. Locators are visible text and
+cases that check what the page sent; `stub {url_glob, json, status}` answers a POST to one of
+the allowed write routes below without sending it (its glob is refused at validation unless
+every `{a,b}` alternative names only those paths, and a GET on it gets the real answer), so a
+Run click need not queue a GPU job. Globs are matched by the runner's own linear matcher
+(also handed to Playwright's routes as a predicate), and `expect_text`'s regex runs in the
+page, so a tester's backtracking pattern hangs the page, not the runner: the step cap, the run
+cap and SIGTERM (which closes the browser and prints the partial result; one JSON document
+per run, whichever ends it) still fire. Auth: dw's UI sends the bearer token it keeps in
+localStorage `dw-api-token` (JSON; dw `ui/src/lib/token.ts`, `storage.ts`); the runner sets it
+with `addInitScript` before any page script, from the session's MCP config file, whose path
+the driver passes as `HARNEST_MCP_CONFIG` to tester and regression sessions (`run_agent`,
+`run-regression.sh`, `harness/drivers/regression.py`; the entry on the base origin, its
+`Authorization: Bearer` header). Never from the spec; no file or no token runs without one;
+the token is replaced by `<token>` everywhere in the output. Screenshots are not scrubbed (a
+settings page that shows the token would show it). Locators are visible text and
 role only. The run is locked to the server's origin (`DW_URL` without its path, required:
 exit 2 without it, and a spec `base` must match it; the tester's and the regression agent's
 sessions carry `DW_URL` in their environment, `run_agent` and `run-regression.sh`): any other
 request or WebSocket is aborted and listed in `blocked`, a main-frame navigation elsewhere
 (file:, data:) goes back to `about:blank`, and downloads, permissions, service workers and
-popups are off. On the origin only GET and HEAD pass, plus POST to `/api/validate`,
+popups are off; `goto` fails a document that is not `text/html`. On the origin only GET and HEAD pass, plus POST to `/api/validate`,
 `/api/jobs` and `/api/jobs/<id>/cancel`; every DELETE, PUT, PATCH and other POST (the REST
 routes behind `delete_model` and `update_diffusers`, which the tester's MCP session denies,
 cache clears, saves) is aborted and listed in `blocked`, and a `mock` cannot fetch one.
 Screenshots go to a fresh `mkdtemp` dir per run under the OS temp dir (0700), each file
 created new (O_EXCL, O_NOFOLLOW, 0600) and listed in `shots`. 30 s per step, 300 s per run. The spec must
-be a regular file `/tmp/dw-ui-*.json` of at most 256 KB, else exit 2; otherwise it exits 0
+be a regular file `/tmp/dw-ui-*.json` of at most 256 KB owned by the running user (opened
+O_NOFOLLOW, O_NONBLOCK), else exit 2; otherwise it exits 0
 with one JSON document on stdout. The consumer allowlist names exactly that `node` form and
 `guard.py` holds it to it (no other node/npx/npm, no write under `tools/ui-check`).
 `tests/test-ui-check.sh` drives it against a fixture page and skips when `node_modules` is
