@@ -4,7 +4,11 @@ on 127.0.0.1 (a random port, printed as "port N"). With a token argument, every
 started with an API token does. POST and the other writes answer 501 once past it.
 /api/fetch/* are built here, for the fetch step: json, problem (+json), bad-json,
 big (a JSON body over 256 KB), echo (the Authorization header it got, as JSON),
-redirect (302 to /api/fetch/json?from=redirect) and redirect-off (302 to localhost).
+redirect (302 to /api/fetch/json?from=redirect), redirect-off (302 to localhost),
+plain (text), deep (JSON nested past JSON.stringify), drip (a body that never ends),
+stream (a chunked body with no end in sight), and, with a token, cut-token (the token
+where the 256 KB cap cuts it) and leaky (the token in Location and the content type).
+/openapi.json is built too.
 
     python3 -u ui-check-server.py <dir> [token]
 """
@@ -13,6 +17,7 @@ import functools
 import http.server
 import json
 import sys
+import time
 
 TOKEN = sys.argv[2] if len(sys.argv) > 2 else ""
 
@@ -37,9 +42,41 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if self.command != "HEAD":
             self.wfile.write(data)
 
+    def chunked(self, ctype, pieces):
+        # HTTP/1.1 chunked framing for this one response; the connection closes after it.
+        self.protocol_version = "HTTP/1.1"
+        self.close_connection = True
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Transfer-Encoding", "chunked")
+        self.end_headers()
+        try:
+            for piece in pieces:
+                self.wfile.write(b"%x\r\n%s\r\n" % (len(piece), piece))
+                self.wfile.flush()
+            self.wfile.write(b"0\r\n\r\n")
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+
     def fetch_route(self):
         route = self.path.split("?")[0]
-        if route == "/api/fetch/json":
+        cap = 262144
+        if route == "/openapi.json":
+            self.answer(200, "application/json", json.dumps({"openapi": "3.1.0", "paths": {}}))
+        elif route == "/api/fetch/plain":
+            self.answer(200, "text/plain; charset=utf-8", "plain text, not a page\n")
+        elif route == "/api/fetch/deep":
+            self.answer(200, "application/json", "[" * 120000 + "]" * 120000)
+        elif route == "/api/fetch/drip":
+            self.chunked("text/plain", (time.sleep(0.5) or b"tick\n" for _ in range(90)))
+        elif route == "/api/fetch/stream":
+            self.chunked("text/plain", (b"s" * 65536 for _ in range(128)))
+        elif route == "/api/fetch/cut-token" and TOKEN:
+            self.answer(200, "text/plain", "x" * (cap - (len(TOKEN) - 1)) + TOKEN + "tail")
+        elif route == "/api/fetch/leaky" and TOKEN:
+            pad = "a" * (200 - len("text/plain; p=") - (len(TOKEN) - 2))
+            self.answer(302, "text/plain; p=" + pad + TOKEN, "moved", "/api/fetch/json?t=" + TOKEN)
+        elif route == "/api/fetch/json":
             items = [{"name": "lora-a", "rank": 16, "tags": ["x"]}]
             self.answer(200, "application/json", json.dumps({"items": items, "query": self.path}))
         elif route == "/api/fetch/problem":

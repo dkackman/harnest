@@ -343,10 +343,17 @@ expression; objects, functions and strings over 200 chars fail the step). `fetch
 method}` is a direct GET or HEAD of one base-origin path from the runner's own process (not
 the page, so mocks, stubs and aborts do not apply), for the JSON and OpenAPI reads a page
 never shows (harnest#262): the path must start with one `/` (no scheme, `//host`, backslash
-or control char) and resolve onto the base origin, the session's token goes as the bearer
-header, a 3xx is returned with its `location` (a path, or `<off-origin>`) and never followed,
-and at most 256 KB of the body is read (`truncated` past that; parsed when JSON and whole).
-It reads any same-origin path, as the page itself may: there is no read denylist. Globs are matched by the runner's own linear matcher
+or control char), resolve onto the base origin and be `/api/...` or exactly `/openapi.json`,
+checked at validation and again on the resolved pathname (no dot segment, even
+percent-encoded), so the UI's bundle, which is dw source, stays out of the source-blind
+tester's reach. The session's token goes as the bearer header, a 3xx is returned with its
+`location` (a path, or `<off-origin>`) and never followed, and at most 256 KB of the body is
+read (`truncated` past that; parsed when JSON and whole, text with `json_error` when it does
+not parse or is too deeply nested to print). A body still coming when the 30 s step timer
+fires (an event stream) returns what was read, `truncated` and `timed_out`. Text is scrubbed
+of the token before any cut, and a cut's trailing token prefix is scrubbed too. This is more
+than the page can do (`goto` refuses non-HTML and carries no bearer token), hence the path
+allowlist. Globs are matched by the runner's own linear matcher
 (also handed to Playwright's routes as a predicate), and `expect_text`'s regex runs in the
 page, so a tester's backtracking pattern hangs the page, not the runner: the step cap, the run
 cap and SIGTERM (which closes the browser and prints the partial result; one JSON document

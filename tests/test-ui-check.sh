@@ -564,15 +564,19 @@ run '{"steps": [
   {"step": "fetch", "path": "/api/fetch/json?x=1"},
   {"step": "fetch", "path": "/api/fetch/json", "method": "HEAD"},
   {"step": "fetch", "path": "/api/fetch/big"},
-  {"step": "fetch", "path": "/plain.txt"},
+  {"step": "fetch", "path": "/api/fetch/plain"},
   {"step": "fetch", "path": "/api/fetch/bad-json"},
   {"step": "fetch", "path": "/api/fetch/problem"},
   {"step": "fetch", "path": "/api/fetch/redirect"},
   {"step": "fetch", "path": "/api/fetch/redirect-off"},
   {"step": "stub", "url_glob": "**/api/fetch/json", "method": "GET", "json": {"stubbed": true}},
-  {"step": "abort", "url_glob": "**/plain.txt"},
+  {"step": "abort", "url_glob": "**/api/fetch/plain"},
   {"step": "fetch", "path": "/api/fetch/json"},
-  {"step": "fetch", "path": "/plain.txt", "method": "GET"}
+  {"step": "fetch", "path": "/api/fetch/plain", "method": "GET"},
+  {"step": "fetch", "path": "/openapi.json"},
+  {"step": "fetch", "path": "/api/fetch/deep"},
+  {"step": "fetch", "path": "/api/fetch/stream"},
+  {"step": "fetch", "path": "/api/%2F%2Flocalhost:'"$port"'/x"}
 ]}'
 eq "fetch spec ok" true "$(j .ok)"
 eq "fetch: the status" 200 "$(j '.steps[0].result.status')"
@@ -602,6 +606,36 @@ eq "an off-origin location is not named" "<off-origin>" "$(j '.steps[7].result.l
 fails "nor is its host anywhere in that step" grep -q localhost <<< "$(j '.steps[7]')"
 eq "a GET stub does not apply to fetch" lora-a "$(j '.steps[10].result.body.items[0].name')"
 eq "nor does an abort" 200 "$(j '.steps[11].result.status')"
+eq "/openapi.json is read" 3.1.0 "$(j '.steps[12].result.body.openapi')"
+eq "JSON too deep to print is text" string "$(j '.steps[13].result.body | type')"
+eq "with json_error too deeply nested" "too deeply nested" "$(j '.steps[13].result.json_error')"
+eq "a chunked body with no end stops at the cap" 262144 "$(j '.steps[14].result.bytes')"
+eq "and is truncated" true "$(j '.steps[14].result.truncated')"
+eq "an encoded //host stays on the base origin" 404 "$(j '.steps[15].result.status')"
+# fetch is the runner, not the page: record and the lock never see it
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "record", "url_glob": "**/api/fetch/**"},
+  {"step": "fetch", "path": "/api/fetch/json"},
+  {"step": "recorded", "url_glob": "**/api/fetch/**"}
+]}'
+eq "a fetch is never in recorded" 0 "$(j '.steps[3].result.count')"
+fails "nor in blocked" grep -q fetch <<< "$(j '.blocked | tostring')"
+# an endless body: what was read comes back when the step timer fires (about 30 s)
+run '{"steps": [{"step": "fetch", "path": "/api/fetch/drip"}]}'
+eq "a body that never ends is not a failure" true "$(j '.steps[0].ok')"
+eq "it is timed_out" true "$(j '.steps[0].result.timed_out')"
+eq "and truncated" true "$(j '.steps[0].result.truncated')"
+has "with what was read" tick "$(j '.steps[0].result.body')"
+# fetch reads /api/... and /openapi.json only: never the UI bundle (dw source)
+for p in / /index.html /assets/x.js /outputs/x /plain.txt /apix /openapi.json/x /api /api/../assets/x.js /api/%2e%2e/assets/x.js /api/%2E%2E/assets/x.js /api/%2e%2e%2fassets/x.js /api/x/%2e%2e/%2e%2e/assets/x.js '/api/x%5c..%5cy'; do
+  run '{"steps": [{"step": "fetch", "path": "'"$p"'"}]}'
+  eq "fetch path $p is refused" 2 "$rc"
+done
+run '{"steps": [{"step": "fetch", "path": "/assets/x.js"}]}'
+has "a refusal says what fetch reads" "/api/... or /openapi.json" "$(j .error)"
+run '{"steps": [{"step": "fetch", "path": "/api/%2e%2e/assets/x.js"}]}'
+has "an encoded dot segment is named as such" "/api/... or /openapi.json" "$(j .error)"
 for p in '//localhost:'$port'/' 'http://localhost:'$port'/' 'https://127.0.0.1:'$port'/' 'api/fetch/json' '/\\\\localhost' '/api\\\\x' '/a\u0001b' '/a\u007fb' '' 'file:///etc/hosts'; do
   run '{"steps": [{"step": "fetch", "path": "'"$p"'"}]}'
   eq "fetch path $p is an invalid spec" 2 "$rc"
@@ -628,6 +662,16 @@ eq "the token is sent as a bearer header, and scrubbed in the echo" "Bearer <tok
 eq "the API lets it in" 200 "$(j '.steps[1].result.status')"
 fails "the token is nowhere in the fetch output" grep -q "$tok" <<< "$out"
 fails "nor in its stderr" grep -q "$tok" "$T/err"
+# a cut through the token at the cap, the token in Location and in a cut content type
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/mcp.json" run '{"steps": [{"step": "fetch", "path": "/api/fetch/cut-token"}, {"step": "fetch", "path": "/api/fetch/leaky"}]}'
+eq "cut and leaky ok" true "$(j .ok)"
+eq "the cap cuts the token" true "$(j '.steps[0].result.truncated')"
+has "its prefix is scrubbed" "<token>" "$(j '.steps[0].result.body' | tail -c 20)"
+fails "no 8-char prefix of the token survives the cut" grep -qF "${tok:0:8}" <<< "$out"
+eq "a 3xx with the token in Location" 302 "$(j '.steps[1].result.status')"
+eq "has it scrubbed" "/api/fetch/json?t=<token>" "$(j '.steps[1].result.location')"
+has "the content type is scrubbed before its cut" "<token>" "$(j '.steps[1].result.content_type')"
+fails "no 8-char prefix of the token in the content type" grep -qF "${tok:0:8}" <<< "$(j '.steps[1].result.content_type')"
 DW_URL="http://127.0.0.1:$aport/mcp" run "$fspec"
 eq "without a config, fetch sends no token: 401" 401 "$(j '.steps[0].result.status')"
 
