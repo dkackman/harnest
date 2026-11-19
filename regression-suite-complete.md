@@ -24426,7 +24426,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1033 — the run page shows a plan on load, before anything is pressed
-pending: #1468
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1028, routes **not** mocked; record every request to `/api/validate` and
 `/api/jobs` (or whatever the page posts a submit to). Before and after: `list_jobs(workspace=<the UI's workspace>)`.
@@ -24444,7 +24443,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1034 — a refused variable value shows its error under that field, and clears when fixed
-pending: #1468
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1033, routes not mocked. On `templates/text-to-image`'s run page:
 1. Type `abc` into `num_images_per_prompt`, then stop typing. (A wrong type is the refusal used: an out-of-range
@@ -24467,7 +24465,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1035 — a finding that names no form variable goes in the general list; one that names a variable goes under it
-pending: #1468
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1028, validate route mocked on the run page of `templates/text-to-image`
 (variables `prompt`, `num_images_per_prompt`, `seed`). One answer, `valid: false`, with `errors`:
@@ -24493,7 +24490,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1036 — Run stays enabled while validate is pending or refuses, and a refused Run still toasts
-pending: #1468
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job queued. Web UI, setup as in C-F1033. `list_jobs(workspace=<the UI's workspace>)` before and after.
 1. Mock the validate route to hold its answer for 5 s; load the run page of `templates/text-to-image` and check Run
@@ -24509,7 +24505,6 @@ cleanup: if a job did queue, `cancel_job` it and `delete_output(job_id=…)`, th
 metrics: none.
 
 ### C-F1037 — typing fast sends one validate per pause, the sized call waits for 3 s idle, and a stale answer is dropped
-pending: #1468
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1028, on the run page of `templates/text-to-image`. Record each validate
 request's time, body and `sizes` query value. After the load-time calls settle:

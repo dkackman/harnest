@@ -1992,7 +1992,6 @@ cleanup: none (validation only). If `probe-1315` didn't exist, validate in `defa
 nothing.
 
 ### SE-F069 — validate findings and plan text on the run page and in the editor render as text, never as markup
-pending: #1468
 source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1028 (headless Chromium, the
 validate route mocked from a real answer). #1468 puts server-supplied strings (errors, warnings, plan download names)
