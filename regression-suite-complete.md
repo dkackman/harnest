@@ -24548,7 +24548,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1038 — the run page states a grid rule and its reason under each field it binds, and nothing under the rest
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box.** Setup shared by C-F1038–C-F1052, SE-F070 and SE-F071: a headless Chromium
 Playwright script as in C-F1028 (found by visible text and role, never by selectors read from the UI source). Where a
@@ -24570,7 +24569,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1039 — a ranged, gridded, snapped variable shows its range, its grid and the rounding line
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. Open the run page of `templates/pika-h3/text-to-video`. Its definition
 declared `num_frames: {modulus: 17, remainder: 5, min_frames: 124, max_frames: 345, snap: "up", reason: …}` and
@@ -24586,7 +24584,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1040 — a `min_length` rule reads as a list rule on a list and as a string rule on a list entry's text
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038.
 1. Open the run page of `templates/minimax-h3-image/multi-reference`. `images` (a list default) declared
@@ -24608,7 +24605,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1041 — a list-entry rule shows under the list's own field, prefixed with the entry field
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. Read the full `get_workflow(name="templates/minimax/dialogue-short")`
 and note its `variable_constraints` keys: one names the `num_frames` field of `shots` entries (`shots[].num_frames`
@@ -24626,7 +24622,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1042 — a workflow with no declared rules shows no hint lines
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. Confirm `get_workflow(name="templates/text-to-image")` has no
 `variable_constraints`. Open its run page; then mock its definition with `variable_constraints: {}` (empty object) and
@@ -24638,7 +24633,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1043 — every declared rule key has its label, an unknown key falls back to `key: value`, and odd shapes don't break the form
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. Run page of `templates/text-to-image` (variables `prompt`,
 `num_images_per_prompt`, `seed`), its definition mocked with `variable_constraints`:
@@ -24663,7 +24657,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1044 — the editor's define mode shows the same rule lines, read-only, from the live definition
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI, setup as in C-F1038. Open `templates/minimax-h3-image/text-to-image` in the
 editor, in the mode that edits the variables' declared values (define mode).

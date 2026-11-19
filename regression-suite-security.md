@@ -2015,7 +2015,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none.
 
 ### SE-F070 — declared rule text (reason, unknown key, value) renders as text on the run page and in the editor
-pending: #1469
 source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1038 (the
 workflow-definition route mocked from a real answer). #1469 puts definition-supplied strings under fields. Register
