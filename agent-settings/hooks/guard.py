@@ -121,11 +121,14 @@ consumer (tester, regression):
     interpreter would run whatever it wrote to the cwd or sys.path first
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
-    suite files, perf history, the bible and /tmp, never scripts/)
+    suite files, perf history, the bible and /tmp, never scripts/). The
+    same for HARNEST_SESSION_TREE, the session's own harnest worktree (R17)
   - suite cases are add-only (harnest#176): an Edit/Write to a
     `regression-suite-*.md` may not drop or change a line the last commit
     holds, bar a `pending:` line. Lines added since the commit (this
-    session's own new case) stay editable
+    session's own new case) stay editable. A suite file in the session's
+    worktree (HARNEST_SESSION_TREE) is held to that worktree's last commit,
+    and the rules below that name the harness root cover it too
 every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
 even over ssh, in a NAME=value, a git alias or -c value, or gh/git output piped to a shell),
 nor scripts/testbed.sh update|start|restart|stop; the driver deploys develop between GPU
@@ -2221,11 +2224,28 @@ def claim_rule(words, target):
     )
 
 
+def session_tree():
+    """The session's own harnest worktree (R17 "Suite edits"; HARNEST_SESSION_TREE, set by the
+    driver, absolute): a detached checkout of main that the tester or curator edits the suite
+    files in. "" when the session has none."""
+    tree = os.environ.get("HARNEST_SESSION_TREE", "")
+    return os.path.realpath(tree) if os.path.isabs(tree) else ""
+
+
+def harness_root_of(full, roots):
+    """The first of <roots> (realpaths) that holds <full>, or ""."""
+    for root in roots:
+        if root and os.path.commonpath([root, full]) == root:
+            return root
+    return ""
+
+
 def target_file_rule(path, cwd, target, role):
-    """Refuse a write to lem's suite or perf files from a non-lem session."""
-    root = os.path.realpath(os.environ.get("HARNEST_ROOT", ""))
+    """Refuse a write to lem's suite or perf files from a non-lem session, in the main
+    checkout or the session's own worktree."""
     full = os.path.realpath(os.path.join(cwd, path))
-    if not root or os.path.commonpath([root, full]) != root:
+    root = harness_root_of(full, [os.path.realpath(os.environ.get("HARNEST_ROOT", "")), session_tree()])
+    if not root:
         return
     parts = os.path.relpath(full, root).split(os.sep)
     if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md") and role != "tester":
@@ -2243,13 +2263,14 @@ def target_file_rule(path, cwd, target, role):
 
 
 def suite_add_only_rule(tool, tool_input, cwd):
-    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`."""
-    root = os.path.realpath(
+    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`.
+    A suite file in the session's own worktree is held to the commit that worktree has out."""
+    main_root = os.path.realpath(
         os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     )
     full = os.path.realpath(os.path.join(cwd, tool_input.get("file_path", "")))
-    name = os.path.basename(full)
-    if os.path.dirname(full) != root or not (name.startswith("regression-suite-") and name.endswith(".md")):
+    name, root = os.path.basename(full), os.path.dirname(full)
+    if root not in (main_root, session_tree()) or not (name.startswith("regression-suite-") and name.endswith(".md")):
         return
     try:
         committed = subprocess.run(
@@ -2595,19 +2616,21 @@ def consumer_root_rule(text):
     """HARNEST_ROOT is the driver's: the harness scripts resolve through it, so a
     consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
     mention of the name (an assignment, export, unset, env -u, read) is refused; only its
-    expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed."""
+    expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed. HARNEST_SESSION_TREE (the session's
+    own worktree, R17) is the driver's the same way: the add-only rule reads it."""
     literal, tainted, sublit, _ = var_sets(text)
-    if (
-        "HARNEST_ROOT" in literal
-        or "HARNEST_ROOT" in tainted
-        or "HARNEST_ROOT" in sublit
-        or re.search(r"(?<![\w${])HARNEST_ROOT\b", text)
-        or re.search(r"\$\{HARNEST_ROOT[^}]*=", text)
-    ):
-        deny(
-            "HARNEST_ROOT is set by the driver; a consumer does not assign, export or unset it. "
-            "Run the perf check as: ./scripts/perf-check.sh ..."
-        )
+    for var in ("HARNEST_ROOT", "HARNEST_SESSION_TREE"):
+        if (
+            var in literal
+            or var in tainted
+            or var in sublit
+            or re.search(r"(?<![\w${])%s\b" % var, text)
+            or re.search(r"\$\{%s[^}]*=" % var, text)
+        ):
+            deny(
+                "%s is set by the driver; a consumer does not assign, export or unset it. "
+                "Run the perf check as: ./scripts/perf-check.sh ..." % var
+            )
 
 
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")

@@ -221,6 +221,39 @@ srow 0 consumer "fix this session'\''s own case" '{"old_string": "expected: draf
 srow 2 consumer "rewrite a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
 srow 2 consumer "Write that drops a committed case" '{"content": "### C-F002 — new this session\nexpected: draft.\ncleanup: none.\n"}'
 srow 0 curator "curator rewrites a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
+# R17: the session's own harnest worktree (HARNEST_SESSION_TREE) is held to the same rule,
+# against the worktree's own last commit; HARNEST_ROOT stays the main checkout
+stree="$T/stree"
+git -C "$sroot" worktree add -q --detach "$stree" HEAD
+printf '\n### C-F004 — new in the tree\nexpected: draft.\ncleanup: none.\n' >> "$stree/regression-suite-complete.md"
+# wrow <expect> <label> <tool_input json, file_path added>
+wrow() {
+  jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" --argjson i "$3" '{tool_name: ($i.content | if . then "Write" else "Edit" end), tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+  eq "suite add-only in the session tree: $2" "$1" $?
+}
+wrow 0 "append a case" '{"old_string": "expected: draft.\ncleanup: none.\n", "new_string": "expected: draft.\ncleanup: none.\n\n### C-F005 — x\ncleanup: none.\n"}'
+wrow 0 "remove a pending line" '{"old_string": "pending: #12\n", "new_string": ""}'
+wrow 2 "drop a committed line" '{"old_string": "expected: it works.\n", "new_string": ""}'
+wrow 2 "Write that drops a committed case" '{"content": "### C-F004 — new in the tree\nexpected: draft.\ncleanup: none.\n"}'
+# without HARNEST_SESSION_TREE the tree is no harness root: the rule does not reach it
+jq -n --arg p "$stree/regression-suite-complete.md" '{tool_name: "Edit", tool_input: {file_path: $p, old_string: "expected: it works.\n", new_string: ""}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" python3 "$guard" consumer >/dev/null 2>&1
+eq "suite add-only: an unnamed tree is not checked" 0 $?
+# a non-lem regression run may not edit the suite in its session tree either
+jq -n --arg p "$stree/regression-suite-complete.md" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_TARGET=mini-ai HARNEST_ROLE=regression python3 "$guard" consumer >/dev/null 2>&1
+eq "consumer(regression)@mini-ai: Edit the session tree's suite" 2 $?
+jq -n --arg p "$stree/regression-perf/S-P001.jsonl" '{tool_name: "Write", tool_input: {file_path: $p}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_TARGET=mini-ai HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+eq "consumer(tester)@mini-ai: Write lem's perf history in the session tree" 2 $?
+# HARNEST_SESSION_TREE is the driver's too: no assigning, exporting, unsetting or defaulting it
+row 2 consumer "" $none 'HARNEST_SESSION_TREE=/tmp/x; echo hi'
+row 2 consumer "" $none 'export HARNEST_SESSION_TREE=/tmp/x'
+row 2 consumer "" $none 'unset HARNEST_SESSION_TREE'
+row 2 consumer "" $none 'env -u HARNEST_SESSION_TREE ls'
+row 2 consumer "" $none 'echo "${HARNEST_SESSION_TREE:=/tmp/x}"'
+row 0 consumer "" $none 'cat "$HARNEST_SESSION_TREE"/regression-suite-smoke.md'
 # trow <expect> <command>: gh on the mini-ai target
 trow() {
   jq -n --arg c "$2" --arg t "${3:-/nonexistent}" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: $t, cwd: "/tmp"}' \
