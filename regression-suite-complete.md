@@ -24333,7 +24333,6 @@ use it.
 metrics: none.
 
 ### C-F1028 — the editor's plan shows host RAM, a low-confidence figure, a withheld figure, and a gated and a missing repo
-pending: #1467
 source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box.** Setup shared by C-F1028–C-F1037 and SE-F069: a headless Chromium Playwright
 script the tester writes under `/tmp`, pointed at the server's own web UI (the MCP endpoint's host and port with the
@@ -24362,7 +24361,6 @@ cleanup: none (nothing is saved; leave the editor without saving the workflow).
 metrics: none.
 
 ### C-F1029 — the editor shows the plan *and* the error when the answer is invalid but carries a plan
-pending: #1467
 source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1028. Open `templates/text-to-image` in the editor and validate it with the
 answer mocked to the not_found shape: `valid: false`, `errors: [{"path": "model_name", "message": "repo org-b/missing-
@@ -24379,7 +24377,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1030 — the other estimate qualifiers and host-RAM bases read as the plan says
-pending: #1467
 source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1028; editor on `templates/text-to-image`. One mocked answer per arm, each
 changing only the named fields of the real plan:
@@ -24404,7 +24401,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1031 — a plan with none of the new fields renders as it did before #1467
-pending: #1467
 source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1028. Mock the editor's validate answer from the real one with every field
 #1467 reads removed: `host_memory`, and from `estimate` `low_confidence`, `withheld`, `unpriced_reason`,
@@ -24418,7 +24414,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1032 — the editor's plan for a real validate answer matches what `validate_workflow` says
-pending: #1467
 source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, no mock. `validate_workflow(workflow_path="templates/text-to-image", workspace="regression-complete")`,
 and note `plan.host_memory` and `plan.estimate` (`basis`, `minutes`, `low_confidence`, `priced_for`). Then open the same
