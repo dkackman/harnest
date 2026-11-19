@@ -170,7 +170,9 @@ fi
 RESULTS_DIR="$REPO/regression-results${TARGET_SUFFIX:+/$DW_TARGET}"
 # guard.py reads it: on another target, lem's suite and perf files are off
 # limits and a new issue goes to owner:don + target:<target>.
-SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_REPO="$TICKET_REPO")
+# DW_URL: the web UI runner (tools/ui-check) takes its origin from it, and
+# resolve_target sets it here unexported.
+SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_REPO="$TICKET_REPO" DW_URL="$DW_URL")
 
 # Never alongside run-loop.sh on the same target: an implementer deploy
 # restarts the server mid-case, and both drivers keep per-session state

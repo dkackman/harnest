@@ -308,10 +308,17 @@ $HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`, the exact line its runtime no
 step kinds and the output are in the file's header and `agents/tester/core.md` ("Web UI
 cases"). `record`/`recorded` capture the requests matching a glob (mocked or not) for the
 cases that check what the page sent. Locators are visible text and
-role only. The run is locked to the server's origin (`DW_URL` without its path; a spec
-`base` must match it): any other request or WebSocket is aborted and listed in `blocked`, a
-main-frame navigation elsewhere (file:, data:) goes back to `about:blank`, and downloads,
-permissions, service workers and popups are off. 30 s per step, 300 s per run. The spec must
+role only. The run is locked to the server's origin (`DW_URL` without its path, required:
+exit 2 without it, and a spec `base` must match it; the tester's and the regression agent's
+sessions carry `DW_URL` in their environment, `run_agent` and `run-regression.sh`): any other
+request or WebSocket is aborted and listed in `blocked`, a main-frame navigation elsewhere
+(file:, data:) goes back to `about:blank`, and downloads, permissions, service workers and
+popups are off. On the origin only GET and HEAD pass, plus POST to `/api/validate`,
+`/api/jobs` and `/api/jobs/<id>/cancel`; every DELETE, PUT, PATCH and other POST (the REST
+routes behind `delete_model` and `update_diffusers`, which the tester's MCP session denies,
+cache clears, saves) is aborted and listed in `blocked`, and a `mock` cannot fetch one.
+Screenshots go to a fresh `mkdtemp` dir per run under the OS temp dir (0700), each file
+created new (O_EXCL, O_NOFOLLOW, 0600) and listed in `shots`. 30 s per step, 300 s per run. The spec must
 be a regular file `/tmp/dw-ui-*.json` of at most 256 KB, else exit 2; otherwise it exits 0
 with one JSON document on stdout. The consumer allowlist names exactly that `node` form and
 `guard.py` holds it to it (no other node/npx/npm, no write under `tools/ui-check`).

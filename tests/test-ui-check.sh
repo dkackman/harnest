@@ -63,9 +63,30 @@ eq "inspect: font weight" 700 "$(j '.steps[5].result.font_weight')"
 eq "inspect: aria attributes" polite "$(j '.steps[5].result.aria["aria-live"]')"
 eq "inspect: the closest ancestor with a class" plan "$(j '.steps[5].result.ancestor.classes | join(" ")')"
 eq "click and wait_text see the real answer" true "$(j '.steps[9].ok')"
-eq "screenshot lands in /tmp/dw-ui-shots" "/tmp/dw-ui-shots/test-$$.png" "$(j '.steps[10].result.path')"
-ok "the screenshot is a file" test -s "/tmp/dw-ui-shots/test-$$.png"
-rm -f "/tmp/dw-ui-shots/test-$$.png"
+shot="$(j '.steps[10].result.path')"
+shotdir="$(dirname "$shot")"
+tmpdir="$(node -e 'process.stdout.write(require("os").tmpdir())')"
+has "screenshot lands in a fresh private dir under the temp dir" "$tmpdir/dw-ui-shots-" "$shotdir/"
+eq "named for the step" "test-$$.png" "$(basename "$shot")"
+ok "the screenshot is a file" test -s "$shot"
+fails "and not a symlink" test -L "$shot"
+eq "the shot dir is 0700" 700 "$(stat -f %Lp "$shotdir")"
+eq "the shot is 0600" 600 "$(stat -f %Lp "$shot")"
+eq "the output lists the shots" "$shot" "$(j '.shots | join(" ")')"
+[ -n "$shotdir" ] && case "$shotdir" in "$tmpdir"/dw-ui-shots-*) rm -rf "$shotdir" ;; esac
+run '{"steps": [{"step": "screenshot", "name": "a"}, {"step": "screenshot", "name": "b"}]}'
+eq "two shots in one run" 2 "$(j '.shots | length')"
+eq "share one run dir" 1 "$(j '[.shots[] | split("/")[:-1] | join("/")] | unique | length')"
+d1="$(j '.shots[0]' | xargs dirname)"
+run '{"steps": [{"step": "screenshot", "name": "a"}]}'
+d2="$(j '.shots[0]' | xargs dirname)"
+fails "each run gets its own dir" test "$d1" = "$d2"
+for d in "$d1" "$d2"; do case "$d" in "$tmpdir"/dw-ui-shots-*) rm -rf "$d" ;; esac; done
+run '{"steps": [{"step": "screenshot", "name": "a"}, {"step": "screenshot", "name": "a"}]}'
+eq "a name taken in this run fails its step (never overwrites)" false "$(j '.steps[1].ok')"
+d1="$(j '.shots[0]' | xargs dirname)"; case "$d1" in "$tmpdir"/dw-ui-shots-*) rm -rf "$d1" ;; esac
+run '{"steps": [{"step": "goto", "path": "/"}]}'
+eq "a run with no screenshot lists none" 0 "$(j '.shots | length')"
 
 # --- the origin lock: the fixture's fetch to localhost:<port> is aborted
 has "another origin is blocked" "http://localhost:$port/api/validate" "$(j '.blocked | join(" ")')"
@@ -80,6 +101,39 @@ run '{"steps": [{"step": "goto", "path": "data:text/html,hi"}]}'
 eq "data: navigation is refused" false "$(j '.steps[0].ok')"
 run '{"base": "http://localhost:'$port'", "steps": [{"step": "goto", "path": "/"}]}'
 eq "a base other than DW_URL's origin is an invalid spec" 2 "$rc"
+run '{"base": "http://127.0.0.1:'$port'/", "steps": [{"step": "goto", "path": "/"}]}'
+eq "a base on DW_URL's origin is accepted" true "$(j .ok)"
+DW_URL='' run '{"base": "http://127.0.0.1:'$port'", "steps": [{"step": "goto", "path": "/"}]}'
+eq "no DW_URL: a spec base alone is refused (fail closed)" 2 "$rc"
+DW_URL='not a url' run '{"steps": [{"step": "goto", "path": "/"}]}'
+eq "a DW_URL that is not a URL exits 2" 2 "$rc"
+DW_URL='file:///etc/hosts' run '{"steps": [{"step": "goto", "path": "/"}]}'
+eq "a DW_URL that is not http(s) exits 2" 2 "$rc"
+
+# --- no side door past the MCP denylist: DELETE, and every write route but validate and a run, are aborted
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "click", "role": "button", "name": "Delete model"},
+  {"step": "wait_text", "text": "admin: d failed"},
+  {"step": "mock", "url_glob": "**/api/system/diffusers/update", "set": {"ok": true}},
+  {"step": "click", "role": "button", "name": "Update diffusers"},
+  {"step": "wait_text", "text": "admin: u failed"},
+  {"step": "unmock", "url_glob": "**/api/system/diffusers/update"},
+  {"step": "click", "role": "button", "name": "Save workflow"},
+  {"step": "wait_text", "text": "admin: s failed"},
+  {"step": "click", "role": "button", "name": "Run"},
+  {"step": "wait_text", "text": "run: answered 501"},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "valid: true"}
+]}'
+eq "denied-route spec ok" true "$(j .ok)"
+has "a DELETE (delete_model) is aborted and reported" "DELETE http://127.0.0.1:$port/api/models?repo=org/x" "$(j '.blocked | join(" ")')"
+has "a POST to update_diffusers is aborted and reported" "POST http://127.0.0.1:$port/api/system/diffusers/update" "$(j '.blocked | join(" ")')"
+eq "a mock on a denied route never reaches the server" 0 "$(j '.steps[6].result.hits')"
+has "a PUT (workflow save) is aborted and reported" "PUT http://127.0.0.1:$port/api/workflows/mine" "$(j '.blocked | join(" ")')"
+eq "the allowed POST to /api/jobs reaches the server" true "$(j '.steps[10].ok')"
+eq "and is not in blocked" "" "$(j '[.blocked[] | select(test("/api/jobs"))] | join(" ")')"
+eq "nor is GET /api/validate" "" "$(j '[.blocked[] | select(test("127.0.0.1:'$port'/api/validate"))] | join(" ")')"
 
 # --- mock: the real answer with named fields overwritten, the rest kept
 run '{"steps": [
@@ -120,7 +174,7 @@ run '{"steps": [
   {"step": "wait_text", "text": "valid: true"},
   {"step": "record", "url_glob": "**/api/validate"},
   {"step": "record", "url_glob": "**/api/jobs**"},
-  {"step": "record", "url_glob": "**/api/note"},
+  {"step": "record", "url_glob": "**/api/validate?note=1"},
   {"step": "mock", "url_glob": "**/api/validate", "once": true, "set": {"plan.estimate.basis": "unknown"}},
   {"step": "click", "role": "button", "name": "Validate"},
   {"step": "wait_text", "text": "basis: unknown"},
@@ -132,7 +186,7 @@ run '{"steps": [
   {"step": "wait_text", "text": "valid: true"},
   {"step": "recorded", "url_glob": "**/api/validate"},
   {"step": "recorded", "url_glob": "**/api/jobs**"},
-  {"step": "recorded", "url_glob": "**/api/note"}
+  {"step": "recorded", "url_glob": "**/api/validate?note=1"}
 ]}'
 eq "record spec ok" true "$(j .ok)"
 eq "record starts at its step (the earlier request is not in it), and sees mocked and real requests" 2 "$(j '.steps[15].result.count')"
@@ -164,6 +218,10 @@ run '{"steps": [{"step": "wait_text", "text": "x", "timeout_ms": 60000}]}'
 eq "a wait over 30 s is an invalid spec" 2 "$rc"
 run '{"steps": [{"step": "screenshot", "name": "../etc/x"}]}'
 eq "a screenshot name with a slash is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "screenshot", "name": "a.png"}]}'
+eq "a screenshot name with a dot is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "screenshot", "name": "'"$(printf 'a%.0s' $(seq 1 65))"'"}]}'
+eq "a screenshot name over 64 chars is an invalid spec" 2 "$rc"
 run '{"steps": [{"step": "goto", "path": "/"}, {"step": "click", "role": "button", "name": "No such button"}]}'
 eq "a missing element fails its step" false "$(j '.steps[1].ok')"
 eq "and the run" false "$(j .ok)"

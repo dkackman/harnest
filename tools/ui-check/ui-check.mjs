@@ -28,22 +28,31 @@
 //   inspect     {text | regex, flags?, exact?, nth?}  -> tag, role, classes,
 //               color, background_color, font_weight, aria, text, and the same
 //               for the closest ancestor with a class
-//   screenshot  {name}  -> /tmp/dw-ui-shots/<name>.png
+//   screenshot  {name}  -> <os.tmpdir()>/dw-ui-shots-XXXXXX/<name>.png, name
+//               [A-Za-z0-9_-]{1,64}; the dir is this run's own (mkdtemp, 0700),
+//               the file is created new (O_EXCL, O_NOFOLLOW, 0600)
 //
-// The base origin is DW_URL's scheme, host and port (its /mcp path dropped);
-// a spec "base" must name the same origin, and is needed only without DW_URL.
-// Every request to another origin is aborted (listed in "blocked"), as is any
-// WebSocket there; a main-frame navigation off the origin (file:, data:) goes
-// back to about:blank. No downloads, no permissions, no service workers, no
-// popups. Each step is capped at 30 s, the whole run at 300 s, and the run
-// stops at the first step that fails.
+// The base origin is DW_URL's scheme, host and port (its /mcp path dropped).
+// DW_URL is required (exit 2 when unset or not http(s)); a spec "base" must
+// name the same origin. Every request to another origin is aborted (listed in
+// "blocked"), as is any WebSocket there; a main-frame navigation off the
+// origin (file:, data:) goes back to about:blank. On the origin, only GET and
+// HEAD go anywhere; a write goes only to POST_ALLOWED (validate, submit a run,
+// cancel one): DELETE, PUT, PATCH and every other POST (delete_model's
+// DELETE /api/models, update_diffusers' POST /api/system/diffusers/update,
+// cache clears, workflow and prompt saves...) are aborted and listed in
+// "blocked" as "METHOD url", so the UI is no side door past the tester's MCP
+// denylist; a mock cannot fetch them either. No downloads, no permissions, no
+// service workers, no popups. Each step is capped at 30 s, the whole run at
+// 300 s, and the run stops at the first step that fails.
 //
 // Output: one JSON document on stdout, {ok, base, steps: [{i, step, ok,
-// result | error}], page_errors, console_errors, blocked}. Exit 0, unless the
-// spec is invalid or its path is not a regular file /tmp/dw-ui-*.json of at
-// most 256 KB (exit 2, with {ok: false, error}).
+// result | error}], page_errors, console_errors, blocked, shots}. Exit 0,
+// unless DW_URL or the spec is invalid or its path is not a regular file
+// /tmp/dw-ui-*.json of at most 256 KB (exit 2, with {ok: false, error}).
 
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 
 const MAX_SPEC = 256 * 1024;
@@ -51,7 +60,10 @@ const MAX_STEPS = 200;
 const STEP_MS = 30000;
 const DEFAULT_MS = 15000;
 const RUN_MS = 300000;
-const SHOTS = "/tmp/dw-ui-shots";
+// The only same-origin writes a page may send: validate, submit a run, cancel one
+// (the MCP tools validate_workflow, run_workflow and cancel_job, all the tester's).
+const POST_ALLOWED = [/^\/api\/validate$/, /^\/api\/jobs$/, /^\/api\/jobs\/[^/]+\/cancel$/];
+const READ_METHODS = new Set(["GET", "HEAD"]);
 const SPEC_PATH = /^\/tmp\/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json$/;
 const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
 const MAX_RECORDED = 200;
@@ -114,16 +126,16 @@ function originOf(u, what) {
   return url.origin;
 }
 
+// Fail closed: the origin comes from DW_URL, never from the spec alone.
 function baseOf(spec) {
   const dw = process.env.DW_URL || "";
-  const fromEnv = dw ? originOf(dw, "DW_URL") : "";
+  if (!dw) invalid("DW_URL is unset: the runner needs the server's endpoint in its environment");
+  const fromEnv = originOf(dw, "DW_URL");
   if (spec.base !== undefined) {
     if (typeof spec.base !== "string") invalid("base must be a string");
     const fromSpec = originOf(spec.base, "base");
-    if (fromEnv && fromSpec !== fromEnv) invalid("base " + fromSpec + " is not this server's origin " + fromEnv + " (DW_URL)");
-    return fromSpec;
+    if (fromSpec !== fromEnv) invalid("base " + fromSpec + " is not this server's origin " + fromEnv + " (DW_URL)");
   }
-  if (!fromEnv) invalid("no base: DW_URL is unset and the spec names no base");
   return fromEnv;
 }
 
@@ -194,7 +206,7 @@ function checkValue(kind, v, where) {
       }
       return;
     case "name":
-      if (typeof v !== "string" || !/^[A-Za-z0-9_-][A-Za-z0-9._-]{0,63}$/.test(v)) invalid(where + " must be letters, digits, . _ - (at most 64)");
+      if (typeof v !== "string" || !/^[A-Za-z0-9_-]{1,64}$/.test(v)) invalid(where + " must be letters, digits, _ - (at most 64)");
       return;
     case "set":
       if (!v || typeof v !== "object" || Array.isArray(v) || !Object.keys(v).length) invalid(where + " must be an object of dotted paths to values");
@@ -353,7 +365,8 @@ async function main() {
   const spec = readSpec(argv);
   validate(spec);
   const base = baseOf(spec);
-  const out = { ok: false, base, steps: [], page_errors: [], console_errors: [], blocked: [] };
+  const out = { ok: false, base, steps: [], page_errors: [], console_errors: [], blocked: [], shots: [] };
+  let shotDir = null; // this run's own, made at the first screenshot
   let browser;
   const finish = async (extra) => {
     Object.assign(out, extra || {});
@@ -386,19 +399,27 @@ async function main() {
       return true;
     }
   };
+  // A request the run must not send: off the origin, or a same-origin write other
+  // than POST_ALLOWED (DELETE, PUT, PATCH, a destructive POST).
+  const denied = (req) => {
+    const u = req.url();
+    if (offOrigin(u)) return true;
+    const m = req.method().toUpperCase();
+    if (READ_METHODS.has(m)) return false;
+    if (m !== "POST") return true;
+    return !POST_ALLOWED.some((re) => re.test(new URL(u).pathname));
+  };
+  const block = (route) => {
+    const req = route.request();
+    out.blocked.push(short(req.method().toUpperCase() + " " + req.url(), 300));
+    return route.abort("blockedbyclient");
+  };
   // The lock is the first route, so it runs last: a mock registered later falls back to it
-  // for a URL off the origin.
-  await context.route("**/*", (route) => {
-    const u = route.request().url();
-    if (offOrigin(u)) {
-      out.blocked.push(short(u, 300));
-      return route.abort("blockedbyclient");
-    }
-    return route.fallback();
-  });
+  // for a request it must not send.
+  await context.route("**/*", (route) => (denied(route.request()) ? block(route) : route.fallback()));
   await context.routeWebSocket(/.*/, (ws) => {
     if (offOrigin(ws.url())) {
-      out.blocked.push(short(ws.url(), 300));
+      out.blocked.push(short("WEBSOCKET " + ws.url(), 300));
       return ws.close();
     }
     ws.connectToServer();
@@ -415,7 +436,7 @@ async function main() {
   page.on("framenavigated", (frame) => {
     const u = frame.url();
     if (frame !== page.mainFrame() || u === "about:blank" || !offOrigin(u)) return;
-    out.blocked.push(short(u, 300));
+    out.blocked.push(short("NAVIGATE " + u, 300));
     page.goto("about:blank").catch(() => {});
   });
 
@@ -455,7 +476,7 @@ async function main() {
       case "mock": {
         const entry = { hits: 0, errors: [] };
         entry.handler = async (route) => {
-          if (offOrigin(route.request().url())) return route.fallback();
+          if (denied(route.request())) return route.fallback();
           entry.hits++;
           let resp;
           try {
@@ -535,19 +556,25 @@ async function main() {
         return { matches, ...info };
       }
       case "screenshot": {
+        // A private dir per run (mkdtemp is 0700 and new), and the file created new
+        // in it: nothing another user planted in the temp dir is followed or written.
+        const png = await page.screenshot({ fullPage: true, timeout: STEP_MS });
+        if (!shotDir) shotDir = fs.mkdtempSync(path.join(os.tmpdir(), "dw-ui-shots-"));
+        const file = path.join(shotDir, s.name + ".png");
+        const { O_WRONLY, O_CREAT, O_EXCL, O_NOFOLLOW } = fs.constants;
+        let fd;
         try {
-          if (fs.lstatSync(SHOTS).isSymbolicLink()) throw new Error(SHOTS + " is a symlink");
+          fd = fs.openSync(file, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW, 0o600);
         } catch (e) {
-          if (e.code !== "ENOENT") throw e;
-          fs.mkdirSync(SHOTS, { mode: 0o700 });
+          if (e.code === "EEXIST") throw new Error("a screenshot named " + s.name + " was already taken in this run");
+          throw e;
         }
-        const file = path.join(SHOTS, s.name + ".png");
         try {
-          if (!fs.lstatSync(file).isFile()) throw new Error(file + " is not a regular file");
-        } catch (e) {
-          if (e.code !== "ENOENT") throw e;
+          fs.writeSync(fd, png);
+        } finally {
+          fs.closeSync(fd);
         }
-        await page.screenshot({ path: file, fullPage: true, timeout: STEP_MS });
+        out.shots.push(file);
         return { path: file };
       }
     }

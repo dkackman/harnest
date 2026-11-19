@@ -15,11 +15,16 @@
   <button type="button" id="v">Validate</button>
   <button type="button" id="r">Run</button>
   <button type="button" id="n">Note</button>
+  <button type="button" id="d">Delete model</button>
+  <button type="button" id="u">Update diffusers</button>
+  <button type="button" id="s">Save workflow</button>
   <p class="plan-line">steps: 3</p>
   <p class="plan-line warn" aria-live="polite">estimate: low confidence</p>
   <div id="answer"></div>
   <p id="cross">cross-origin: pending</p>
   <p id="typed">typed: none</p>
+  <p id="run">run: none</p>
+  <p id="admin">admin: none</p>
 </main>
 <script>
   // A request to another origin (same server, other host name): the runner must abort it.
@@ -34,10 +39,23 @@
   document.getElementById('r').addEventListener('click', function () {
     fetch('/api/jobs?sizes=false', { method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ workflow_path: 'catalog/flux.json', sizes: false }) })
+      .then(function (r) { document.getElementById('run').textContent = 'run: answered ' + r.status; },
+            function () { document.getElementById('run').textContent = 'run: failed'; })
       .finally(function () { document.getElementById('typed').textContent = 'typed: posted'; });
   });
+  // Destructive admin routes (delete_model, update_diffusers, a workflow save): the runner must abort each.
+  function admin(id, method, url) {
+    document.getElementById(id).addEventListener('click', function () {
+      fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: method === 'DELETE' ? undefined : '{}' })
+        .then(function (r) { document.getElementById('admin').textContent = 'admin: ' + id + ' answered ' + r.status; },
+              function () { document.getElementById('admin').textContent = 'admin: ' + id + ' failed'; });
+    });
+  }
+  admin('d', 'DELETE', '/api/models?repo=org/x');
+  admin('u', 'POST', '/api/system/diffusers/update');
+  admin('s', 'PUT', '/api/workflows/mine');
   document.getElementById('n').addEventListener('click', function () {
-    fetch('/api/note', { method: 'POST', body: 'plain note ' + 'x'.repeat(5000) });
+    fetch('/api/validate?note=1', { method: 'POST', body: 'plain note ' + 'x'.repeat(5000) });
   });
   document.getElementById('v').addEventListener('click', function () {
     fetch('/api/validate').then(function (r) { return r.json(); }).then(function (j) {

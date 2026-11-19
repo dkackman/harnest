@@ -216,11 +216,13 @@ class Regression:
         self.results_dir = results.results_dir(
             REPO / self.profile.get("suite.results_dir", "regression-results"), self.server
         )
-        # guard.py reads these.
+        # guard.py reads the HARNEST_ ones; the web UI runner (tools/ui-check)
+        # takes its origin from DW_URL.
         self.session_env = {
             "HARNEST_TARGET": self.target,
             "HARNEST_ROLE": "regression",
             "HARNEST_TICKET_REPO": self.ticket_repo,
+            "DW_URL": self.url,
         }
         lock.acquire(str(self.logs / f".driver.lock{sfx}"), "run-regression", self.log.say)
         self.last = self.logs / f".last-session.{self.logname}"

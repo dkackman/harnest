@@ -432,6 +432,9 @@ run_agent() {
     [ -z "${HARNEST_SESSION_TREE:-}" ] \
       || SESSION_ENV+=(HARNEST_SESSION_TREE="$HARNEST_SESSION_TREE" HARNEST_SESSION_BASE="$HARNEST_SESSION_BASE") ;;
   esac
+  # The tester's web UI runner (tools/ui-check) takes its origin from DW_URL and
+  # refuses to run without it; resolve_target sets it here unexported.
+  [ "$role" != tester ] || SESSION_ENV+=(DW_URL="$DW_URL")
   SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX$PROMPT_TAG" "$dir" "$prompt_file" \
     "$prompt
 

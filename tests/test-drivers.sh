@@ -86,6 +86,12 @@ eq  "hand-off: fix then verify in one cycle" 2 "$(grep -c 'claude -p' "$FAKE_CLA
 eq  "hand-off: closed as verified" "CLOSED" "$(jq -r '.["o/r"][0].state' "$T/board.json")"
 eq  "hand-off: no audit warnings" "" "$(grep '\[audit\]' "$T/loop.out" || true)"
 has "mcp config: handed to claude as a file in logs" "--mcp-config $T/h/logs/.mcp." "$(cat "$FAKE_CLAUDE_LOG.argv")"
+# ui-check reads DW_URL (fail closed without it): the tester session carries the
+# target's endpoint even when the caller set no DW_URL (resolve_target filled it in)
+: > "$FAKE_CLAUDE_LOG"
+board '[{"number": 4, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]}]'
+( unset DW_URL; FAKE_CLAUDE_DO='case "$*" in *"VERIFY session"*) echo "${DW_URL:-unset}" > "$T/verify.url" ;; esac' T="$T" loop 1 )
+eq  "plain loop: the tester session carries DW_URL" "http://lem:8765/mcp" "$(cat "$T/verify.url" 2>/dev/null)"
 fails "mcp config: no token in argv" grep -q "$DW_TOKEN" "$FAKE_CLAUDE_LOG.argv"
 has "lem loop: makes sure its claim label exists" "gh label create target:lem --repo o/r" "$(cat "$T/gh-calls")"
 has "lem loop: and the backend labels its prompts file with" "gh label create backend:shared --repo o/r" "$(cat "$T/gh-calls")"
@@ -1095,6 +1101,10 @@ item tester 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
   FAKE_CLAUDE_DO='pwd -P > "$T/item.cwd"; echo "${HARNEST_SESSION_TREE:-unset} ${HARNEST_SESSION_BASE:-unset}" > "$T/item.env"' T="$T"
 eq  "item: a suite tree is the tester's cwd" "$streal" "$(cat "$T/item.cwd")"
 eq  "item: and the guard is told the tree and its base" "$streal $sbase" "$(cat "$T/item.env")"
+# item mode: the scheduler hands DW_URL to run-item.sh (loop.py env_for); the tester session keeps it
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"
+item tester 2 -- DW_URL=http://lem:8765/mcp FAKE_CLAUDE_DO='echo "${DW_URL:-unset}" > "$T/item.url"' T="$T"
+eq  "item: the tester session carries DW_URL" "http://lem:8765/mcp" "$(cat "$T/item.url" 2>/dev/null)"
 # a code session never gets them, even when the environment holds them
 board '[{"number": 20, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
 item implementer 20 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \

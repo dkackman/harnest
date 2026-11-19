@@ -177,7 +177,8 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
 - Kinds: `goto {path}`; `click {role, name}` or `{text}`; `fill {label | placeholder |
   role+name, value}`; `press {key}`; `wait_text {text | regex, timeout_ms}` (at most
   30000); `expect_text {text | regex}` (no wait: `wait_text` first); `inspect {text |
-  regex}`; `screenshot {name}` (to `/tmp/dw-ui-shots/<name>.png`, for `Read`); `mock
+  regex}`; `screenshot {name}` (letters, digits, `_`, `-`; its path, in a fresh dir of
+  the run's own, is in the step's result and in `shots`, for `Read`); `mock
   {url_glob, set, once}` and `unmock {url_glob}`; `record {url_glob}` and `recorded
   {url_glob}`. Locators are visible text and role
   only (`exact`, `nth` disambiguate); a CSS or XPath key is refused.
@@ -188,8 +189,10 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   matching request, mocked or not; `recorded` returns them (`method`, `url` path and
   query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
 - It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
-  first failure), `page_errors`, `console_errors`, and `blocked` (requests off the
-  server's origin, which it aborts). A page error is a finding when the case says so.
+  first failure), `page_errors`, `console_errors`, `shots`, and `blocked` (`METHOD url`
+  of each request it aborted: off the server's origin, or a write other than validate,
+  submitting a run or cancelling one, so a delete, a diffusers update or a save in the UI
+  never reaches dw). A page error is a finding when the case says so.
 - Judge styling from `inspect`: the element's tag, classes, computed `color`,
   `background_color`, `font_weight` and `aria-*`, and its closest classed ancestor. A
   line "styled as a warning" differs from the plain lines around it there; inspect both.
