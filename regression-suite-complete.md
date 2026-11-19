@@ -25305,7 +25305,8 @@ expected:
 - J1, a complete take, shows either no planned header or `3 of 3 planned`. Never a count that differs from the rows.
 - J2, row 2: the `jump_ratio` cell is marked **fail** against ceiling 0.01. The `words` cell shows the similarity
   against 0.5 as a minimum bound, distinguishable from a maximum: an arrow, `≥` or `min` all pass. Its mark agrees with
-  `shot.words.passed`. There is no `cut_ratio` cell. Every measure named in `check_failed` is marked fail or warn, and
+  `shot.words.passed`. A `cut_ratio` cell, if present, reads with no ceiling (or a dash, as in C-F1079) and is not
+  marked fail or warn. Every measure named in `check_failed` is marked fail or warn, and
   no other cell is.
 - J2, row 1 has no seam cells and no `words` cell.
 A wrong planned count, a pass mark on a measure in `check_failed`, or a `min` bound shown as a ceiling is a
