@@ -652,7 +652,9 @@ erow() {  # erow <expect> <role> <tool> <path>
 for rk in implementer: lead:build; do
   r="${rk%%:*}" k="${rk#*:}"
   for c in 'git add scripts/deploy.sh' 'git diff develop -- scripts/deploy.sh' 'grep -n x scripts/deploy.sh' \
-    'cat scripts/deploy.sh' 'sed -n 1,40p scripts/deploy.sh' 'bash -n scripts/deploy.sh' 'shellcheck scripts/deploy.sh' \
+    'cat scripts/deploy.sh' 'bash -n scripts/deploy.sh' 'sh -n scripts/deploy.sh' 'zsh -n scripts/deploy.sh' \
+    'shellcheck scripts/deploy.sh' 'git status scripts/deploy.sh' 'git blame scripts/deploy.sh' 'git show HEAD:scripts/deploy.sh' \
+    'wc scripts/deploy.sh' 'tail -n 5 scripts/deploy.sh' 'grep -n x scripts/deploy.sh 2>&1 | head -5' 'cat scripts/deploy.sh | grep -n x' \
     'git commit -m "deploy: guard reads" scripts/deploy.sh' 'git log -p -- scripts/deploy.sh' 'head -20 ~/src/dw/scripts/deploy.sh' \
     'pgrep -f dw.serve' 'ps aux | grep dw.serve' 'ssh lem systemctl status dw-serve' 'ssh lem tail ~/dw-serve.log'; do
     row 0 $r "$k" $none "$c"
@@ -673,7 +675,20 @@ for rk in implementer: lead:build; do
     'ssh lem cat ~/diffusers-workflow/scripts/deploy.sh' "ssh lem 'grep -n x ~/diffusers-workflow/scripts/deploy.sh'" \
     "git -c alias.d='!scripts/deploy.sh' d" "git config alias.d '!scripts/deploy.sh'" 'git bisect run scripts/deploy.sh' \
     "git rebase --exec 'scripts/deploy.sh' develop" "git grep --open-files-in-pager=scripts/deploy.sh x" \
-    'cp scripts/deploy.sh /tmp/d.sh' 'python3 scripts/deploy.sh' 'perl -e "system q(scripts/deploy.sh)"'; do
+    'cp scripts/deploy.sh /tmp/d.sh' 'python3 scripts/deploy.sh' 'perl -e "system q(scripts/deploy.sh)"' \
+    'sed -n 1,40p scripts/deploy.sh' 'sed -n 1e scripts/deploy.sh' "sed 's/x/y/e' scripts/deploy.sh" 'awk 1 scripts/deploy.sh' \
+    'rg --pre bash x scripts/deploy.sh' 'rg -n x scripts/deploy.sh' 'sort --compress-program=bash scripts/deploy.sh' \
+    'echo scripts/deploy.sh' 'printf %s scripts/deploy.sh' 'egrep x scripts/deploy.sh' 'git checkout scripts/deploy.sh' \
+    'grep -r x scripts/deploy.sh' 'grep -rn x scripts/deploy.sh' 'grep -R x scripts/deploy.sh' 'grep --recursive x scripts/deploy.sh' \
+    'grep --pre=bash x scripts/deploy.sh' 'grep --pre bash x scripts/deploy.sh' 'grep -f scripts/deploy.sh x' \
+    'wc --files0-from=scripts/deploy.sh' 'git diff --output scripts/deploy.sh' 'git add -f scripts/deploy.sh' \
+    'cat scripts/deploy.sh > /tmp/d.sh; bash /tmp/d.sh' 'cat scripts/deploy.sh > /tmp/d.sh' 'cat scripts/deploy.sh >> /tmp/d.sh' \
+    'cat scripts/deploy.sh &> /tmp/d.sh' 'cat scripts/deploy.sh >| /tmp/d.sh' 'head scripts/deploy.sh 2> /tmp/d.sh' \
+    'cat scripts/deploy.sh <> /tmp/d.sh' 'cat scripts/deploy.sh | cat > /tmp/d.sh' 'printf x > scripts/deploy.sh' \
+    'cat scripts/deploy.sh | tee /tmp/d.sh' 'tail -f scripts/deploy.sh | tee -a /tmp/d.sh' 'cat scripts/deploy.sh | perl' \
+    'cat scripts/deploy.sh; python3 /tmp/x.py' 'cat scripts/deploy.sh; sudo -u don fish /tmp/x' 'cat scripts/deploy.sh && ssh lem bash -s' \
+    'grep -n x scripts/deploy.sh | env node' 'head scripts/deploy.sh; busybox sh /tmp/x' 'git show HEAD:scripts/deploy.sh | osascript' \
+    'bash -n scripts/deploy.sh; bash -n /tmp/x.sh' 'cat scripts/deploy.sh; nice -n 5 ruby /tmp/x.rb' 'cat scripts/deploy.sh | timeout 5 lua'; do
     row 2 $r "$k" $none "$c"
   done
 done
