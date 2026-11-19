@@ -2037,11 +2037,11 @@ source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthrop
 Free, no job, nothing saved. Web UI, setup as in SE-F070. On `templates/pika-h3/text-to-video`, mock `presets` to
 `{"resolution": {"<img src=x onerror=\"window.__pwn1=1\">": {"width": "<script>window.__pwn2=1</script>"},
 "480p": {"<svg onload=\"window.__pwn3=1\">": 1, "height": "\"><img src=\"http://example.invalid/leak.png\">"}}}` and
-`variables.resolution` to `"{{7*7}}"` (shows as a non-preset current value). Load the run page; pick each option in
+`variables.resolution` to `"{{7*7}}"` (the declared default, so it shows as the default option). Load the run page; pick each option in
 turn; then open the editor's define mode with the same mock.
 expected:
 - Every bundle name shows literally as an option label (and in the editor's bundle list), the hostile variable name
-  literally in the `sets …` line, each bundle value literally as a placeholder, and `{{7*7}} (not a preset)`, not `49`.
+  literally in the `sets …` line, each bundle value literally as a placeholder, and the default option as `default ({{7*7}})`, not `49`.
 - `window.__pwn1`…`__pwn3` are undefined; no dialog; no injected element; no request to `example.invalid`.
 Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none (leave the editor without saving).
