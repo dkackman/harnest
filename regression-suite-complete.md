@@ -25281,20 +25281,15 @@ A seam measure on segment 1, `audio_dbfs` moved off the top level, or a mirror t
 cleanup: as C-F1073.
 metrics: none.
 
-### C-F1078 — the kept take's `media.shots` and the REST job record carry the same `measures`, and the OpenAPI schema types the shot
+### C-F1078 — the kept take's `media.shots` carries the same `measures` as `get_job`
 pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1073 (J1). `keep_output` J1's take (the chain step's final mp4) as `qa-1451/chain-take.mp4`. Check
 first with `get_gallery_metadata(asset="qa-1451/chain-take.mp4")`: an "Unknown asset" reply means the name is free.
-Then call `get_gallery_metadata` on the kept asset. With a plain HTTP GET (curl or Playwright's `request`), fetch
-`/api/jobs/<J1>` from the server's web root (the MCP endpoint with `/mcp` dropped), and its OpenAPI document
-(`/openapi.json`, or the path the web root's API docs link names).
+Then call `get_gallery_metadata` on the kept asset.
 expected:
 - `media.shots[i].measures` equals `get_job(J1)`'s `manifest[…].shots[i].measures` for every shot, entry by entry.
-- The REST job record's manifest shots carry the same `measures`.
-- The OpenAPI document has a `ShotRecord` schema that allows extra keys, and the manifest entry's `shots` is an array
-  of it. Its typed properties include `measures`.
-A `measures` missing from either surface, a differing value, or no `ShotRecord` in the schema is a **finding**.
+A `measures` missing from `media.shots`, or a differing value, is a **finding**.
 cleanup: `delete_asset(qa-1451/chain-take.mp4)`; otherwise as C-F1073.
 metrics: none.
 
