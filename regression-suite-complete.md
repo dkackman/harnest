@@ -24348,8 +24348,8 @@ and two `downloads_required` entries: `org-a/gated-repo` with `access_blocked: t
 `not_found: true`. Then a second mocked answer sets `plan.estimate` to basis `unknown`, `minutes: null`,
 `withheld: true`, `inherited_from: "templates/some-source"`.
 expected:
-- First answer: the plan shows a line reading `host RAM ~N GB (observed)`, with N the projected need in GB (15 or
-  16 for 15648 MB; either rounding passes). The figure line carries the words `low confidence` and is styled as a
+- First answer: the plan shows a line reading `host RAM ~N GB (observed)`, with N the projected need in GB
+  (`projected_mb / 1024` to one decimal, 15.3 for 15648 MB; a whole 15 or 16 also passes). The figure line carries the words `low confidence` and is styled as a
   warning, not as the plain lines around it. The download lines read `org-a/gated-repo (gated: this box's token can't
   reach it)` and `org-b/missing-repo (not found)`, both styled as warnings.
 - Second answer: the figure reads `no figure - withheld (not priced from templates/some-source)` (a `-` or an en/em
