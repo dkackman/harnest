@@ -26584,4 +26584,25 @@ the set once before calling it a finding.
 cleanup: none (read-only).
 metrics: none.
 
+### C-F1142 — a queued row in the jobs list names its hold, and a row without one is unchanged
+source: tester, verified in #1450 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. The workspace needs at least four jobs in its list. `record`
+`**/api/jobs**`, then `mock` `**/api/jobs?**`, setting `jobs.N.status` to `"queued"` and `jobs.N.started_at` /
+`jobs.N.finished_at` to `null` on rows 0–3, and `jobs.N.waiting_for` to these values:
+- row 0: `"waiting for host RAM: needs 40 GB, 12 GB free"`
+- row 1: `"queued behind 1 running job(s) on every card"`
+- row 2: `"something unusual"`
+- row 3: left unset
+
+`goto` `/#/ws/<ws>/jobs`, `wait_text` `waiting`, then `inspect` each of `host RAM`, `cards busy` and `held`, and
+the row-3 job id.
+expected:
+- Row 0 carries `· host RAM`, row 1 `· cards busy`, and row 2 `· held`, each placed after its `waiting <age>` text.
+  Each suffix is a muted span, styled like the age text beside it.
+- Row 3 is queued with no `waiting_for`. It shows `waiting <age>` and no `·` suffix.
+- No page error.
+A missing suffix, a suffix on row 3, or the raw `waiting_for` sentence in place of the short label is a **finding**.
+cleanup: none (nothing is queued).
+metrics: none.
+
 ## Performance
