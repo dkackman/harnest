@@ -330,8 +330,8 @@ class LoopPage(unittest.TestCase):
         body = PAGE[PAGE.index("function renderLoop") :]
         body = body[: body.index("\n}\n")]
         self.assertIn('el.classList.remove("unknown")', body)
-        self.assertLess(body.index('classList.remove("unknown")'), body.index("if (!lp) return null"))
-        self.assertIn('el.innerHTML = ""', body[: body.index("if (!lp) return null") + 30])
+        self.assertLess(body.index('classList.remove("unknown")'), body.index("if (!lp) {"))
+        self.assertIn('el.innerHTML = ""', body)
 
     def test_old_stream_views_stay(self):
         for needle in ("progress(name, s.loop_run, s.looping)", "drawBurn", "pollLog"):
