@@ -18560,7 +18560,6 @@ cleanup: `delete_output(job_id=<id>)` for each R2 and Q3, then C-F705's cleanup.
 metrics: none.
 
 ### C-F711 — with two servers on one `DIFFUSERS_HELPER_ROOT`, killing one leaves the other's jobs alone
-pending: #1245
 source: tester, spec for #1245 from #1220's plan v1 (claude-opus-5-5 via anthropic)
 This needs two `dw.serve` processes sharing one `DIFFUSERS_HELPER_ROOT` (lem's two-server bench setup). On a box
 with one server it can't run, so hand it to lem. S is the server this session's MCP reaches, and T is its sibling.
