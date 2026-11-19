@@ -186,12 +186,16 @@ A case marked **Web UI, black-box** runs through `ui-check`, the same fixed head
 runner the tester uses: `Write` the case's steps as JSON to `/tmp/dw-ui-<case>.json`, then run
 exactly the command line your Runtime note gives, alone on the line (any other `node`, `npx`
 or `npm` is refused). The spec is `{"steps": [{"step": "<kind>", ...}]}` with the kinds `goto`,
-`click`, `fill`, `press`, `wait_text`, `expect_text`, `inspect`, `screenshot`, `mock`/`unmock`
-(a real answer with named fields set), `stub {url_glob, json}` (answers a validate, run or
-cancel POST without sending it: a real Run click queues a GPU job) and `record`/`recorded`
-(the requests a step sent); it
-prints one JSON document with each step's `ok` and `result` or `error`, and stops at the first
-failure. A step error from a missing element is a case result; a refused or invalid spec is
+`click`, `fill`, `press`, `wait_text`, `expect_text`, `inspect` (with the element's
+`attributes`), `screenshot`, `record`/`recorded` (the requests a step sent), and:
+- `mock`/`unmock`: a real answer with named fields set, or its `status` replaced.
+- `stub {url_glob, json}`: answers a validate, run, cancel or rerun POST without sending it (a
+  real Run click queues a GPU job); with `method: "GET"`, any page-data GET (`status` 404, 500).
+- `abort {url_glob}`: a matching GET fails as a network error.
+- `dup_ids`: the DOM ids used more than once. `window_flag {name}`: a primitive `window.__name`.
+
+The runner prints one JSON document with each step's `ok` and `result` or `error`, and stops
+at the first failure. A step error from a missing element is a case result; a refused or invalid spec is
 your mistake, not dw's.
 
 ## Guardrails

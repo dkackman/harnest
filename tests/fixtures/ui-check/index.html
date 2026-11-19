@@ -18,6 +18,9 @@
   <button type="button" id="d">Delete model</button>
   <button type="button" id="u">Update diffusers</button>
   <button type="button" id="s">Save workflow</button>
+  <button type="button" id="rr">Again</button>
+  <button type="button" id="rb">Restart batch</button>
+  <button type="button" id="ld">Load</button>
   <p class="plan-line">steps: 3</p>
   <p class="plan-line warn" aria-live="polite">estimate: low confidence</p>
   <div id="answer"></div>
@@ -27,6 +30,10 @@
   <p id="admin">admin: none</p>
   <p id="auth">auth: pending</p>
   <p id="tok">token: none</p>
+  <p id="rerun">rerun: none</p>
+  <p id="load">load: none</p>
+  <nav class="links" data-area="nav" title="Site links"><a id="doc-link" href="/docs?x=1" title="Open the docs" data-kind="doc" aria-label="Docs" onclick="return false;">Docs link</a></nav>
+  <i id="twice">dup one</i><i id="twice">dup two</i><b id="thrice">t1</b><b id="thrice">t2</b><b id="thrice">t3</b>
   <p id="long">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!</p>
 </main>
 <script>
@@ -36,6 +43,7 @@
   try { tok = JSON.parse(localStorage.getItem('dw-api-token') || '""'); } catch (e) {}
   document.getElementById('tok').textContent = 'token: ' + (tok || 'none');
   if (tok) console.error('the token is ' + tok);
+  if (tok) { document.getElementById('tok').setAttribute('data-token', tok); window.__token = tok; }
   fetch('/api/validate', { headers: tok ? { Authorization: 'Bearer ' + tok } : {} })
     .then(function (r) { document.getElementById('auth').textContent = 'auth: ' + r.status; },
           function () { document.getElementById('auth').textContent = 'auth: failed'; });
@@ -66,6 +74,40 @@
   admin('d', 'DELETE', '/api/models?repo=org/x');
   admin('u', 'POST', '/api/system/diffusers/update');
   admin('s', 'PUT', '/api/workflows/mine');
+  // Window flags for window_flag: primitives, and values it must refuse.
+  window.__APP_READY = true;
+  window.__count = 3;
+  window.__label = 'ready';
+  window.__nothing = null;
+  window.__obj = { a: 1 };
+  window.__fn = function () { return 1; };
+  window.__long = 'y'.repeat(300);
+  // An element with more attributes than inspect reports, one value over 500 chars.
+  var many = document.createElement('span');
+  many.textContent = 'Many attributes';
+  many.setAttribute('title', 'z'.repeat(600));
+  for (var k = 0; k < 50; k++) many.setAttribute('data-a' + k, String(k));
+  document.querySelector('main').appendChild(many);
+  // POST /api/jobs/<id>/rerun (allowed, as rerun_job is) and /rerun-restart-batch (not).
+  function post(id, url, out) {
+    document.getElementById(id).addEventListener('click', function () {
+      fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{"new_seed": true}' })
+        .then(function (r) { document.getElementById(out).textContent = out + ': ' + id + ' answered ' + r.status; },
+              function () { document.getElementById(out).textContent = out + ': ' + id + ' failed'; });
+    });
+  }
+  post('rr', '/api/jobs/j-7/rerun', 'rerun');
+  post('rb', '/api/jobs/j-7/rerun-restart-batch', 'rerun');
+  // A page-data GET: shows the status and a field, or that the fetch failed.
+  document.getElementById('ld').addEventListener('click', function () {
+    fetch('/api/validate').then(function (r) {
+      return r.text().then(function (t) {
+        var j = {};
+        try { j = JSON.parse(t); } catch (e) {}
+        document.getElementById('load').textContent = 'load: ' + r.status + ' ' + (j.detail || (j.plan && j.plan.estimate ? j.plan.estimate.basis : '-'));
+      });
+    }, function () { document.getElementById('load').textContent = 'load: failed'; });
+  });
   document.getElementById('n').addEventListener('click', function () {
     fetch('/api/validate?note=1', { method: 'POST', body: 'plain note ' + 'x'.repeat(5000) });
   });

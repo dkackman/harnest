@@ -258,14 +258,149 @@ eq "unmock counts the stub's hits" 1 "$(j '.steps[9].result.hits')"
 eq "the stubbed POST never reached the server (one POST there, after unmock)" $((c0 + 1)) "$(grep -c 'POST /api/jobs?sizes=false' "$T/srv.out")"
 run '{"steps": [{"step": "stub", "url_glob": "{**/api/validate,**/api/jobs/*/cancel}", "json": null}]}'
 eq "a stub on {validate, cancel} is valid" 0 "$rc"
-for g in '**' '**/api/**' '**/api/models' '**/api/jobs**' '**/api/jobs*' '**/api/jobs/*/rerun' '{**/api/jobs,**/api/models}' '**/api/jobs/**/cancel'; do
-  run '{"steps": [{"step": "stub", "url_glob": "'"$g"'", "json": {}}]}'
-  eq "a stub on $g (not only a POST_ALLOWED route) is an invalid spec" 2 "$rc"
+for g in '**' '**/api/**' '**/api/models' '**/api/jobs**' '**/api/jobs*' '**/api/jobs/*/rerun-restart-batch' '**/api/jobs/*/rerun*' '{**/api/jobs,**/api/models}' '**/api/jobs/**/cancel'; do
+  run '{"steps": [{"step": "stub", "url_glob": "'"$g"'", "json": {}, "method": "POST"}]}'
+  eq "a POST stub on $g (not only a POST_ALLOWED route) is an invalid spec" 2 "$rc"
 done
+run '{"steps": [{"step": "stub", "url_glob": "{**/api/jobs/*/rerun,**/api/jobs/j-1/rerun?x=1}", "json": {}}]}'
+eq "a stub on /api/jobs/<id>/rerun is valid" 0 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status": 99}]}'
-eq "a stub status outside 200-599 is an invalid spec" 2 "$rc"
+eq "a stub status outside 100-599 is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "status": 600}]}'
+eq "a stub status of 600 is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs", "json": {}, "method": "DELETE"}]}'
+eq "a stub method other than GET or POST is an invalid spec" 2 "$rc"
 run '{"steps": [{"step": "stub", "url_glob": "**/api/jobs"}]}'
 eq "a stub without json is an invalid spec" 2 "$rc"
+
+# --- POST /api/jobs/<id>/rerun is allowed (rerun_job); /rerun-restart-batch is not
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "click", "role": "button", "name": "Again"},
+  {"step": "wait_text", "text": "rerun: rr answered 501"},
+  {"step": "click", "role": "button", "name": "Restart batch"},
+  {"step": "wait_text", "text": "rerun: rb failed"},
+  {"step": "record", "url_glob": "**/api/jobs/*/rerun"},
+  {"step": "stub", "url_glob": "**/api/jobs/*/rerun", "json": {"id": "j-8"}, "status": 201},
+  {"step": "click", "role": "button", "name": "Again"},
+  {"step": "wait_text", "text": "rerun: rr answered 201"},
+  {"step": "recorded", "url_glob": "**/api/jobs/*/rerun"}
+]}'
+eq "rerun spec ok" true "$(j .ok)"
+eq "a rerun POST reaches the server" true "$(j '.steps[2].ok')"
+eq "and is not blocked" "" "$(j '[.blocked[] | select(test("/rerun$"))] | join(" ")')"
+has "a rerun-restart-batch POST is aborted and reported" "POST http://127.0.0.1:$port/api/jobs/j-7/rerun-restart-batch" "$(j '.blocked | join(" ")')"
+eq "a stub answers a rerun POST" true "$(j '.steps[8].ok')"
+eq "and the stubbed rerun is recorded with its body" true "$(j '.steps[9].result.requests[0].body.new_seed')"
+
+# --- inspect: the element's attributes, handlers as <handler>, values and count capped
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "inspect", "text": "Docs link"},
+  {"step": "inspect", "text": "Many attributes"}
+]}'
+eq "attributes spec ok" true "$(j .ok)"
+eq "inspect: id attribute" doc-link "$(j '.steps[1].result.attributes.id')"
+eq "inspect: title attribute" "Open the docs" "$(j '.steps[1].result.attributes.title')"
+eq "inspect: href attribute" "/docs?x=1" "$(j '.steps[1].result.attributes.href')"
+eq "inspect: aria attribute" Docs "$(j '.steps[1].result.attributes["aria-label"]')"
+eq "inspect: data attribute" doc "$(j '.steps[1].result.attributes["data-kind"]')"
+eq "inspect: an on* handler is present, its body not reported" "<handler>" "$(j '.steps[1].result.attributes.onclick')"
+fails "the handler body is nowhere in the output" grep -q "return false" <<< "$out"
+eq "inspect: the ancestor's attributes" nav "$(j '.steps[1].result.ancestor.attributes["data-area"]')"
+eq "and its title" "Site links" "$(j '.steps[1].result.ancestor.attributes.title')"
+eq "at most 40 attributes" 40 "$(j '.steps[2].result.attributes | length')"
+eq "the rest counted" 11 "$(j '.steps[2].result.attributes_dropped')"
+eq "a value cut to 500 chars" 500 "$(j '.steps[2].result.attributes.title | length')"
+
+# --- mock/stub status on a GET, stub on any same-origin GET, abort a GET
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "stub", "url_glob": "**/api/validate", "method": "GET", "json": {"detail": "nope"}, "status": 404},
+  {"step": "click", "role": "button", "name": "Load"},
+  {"step": "wait_text", "text": "load: 404 nope"},
+  {"step": "unmock", "url_glob": "**/api/validate"},
+  {"step": "mock", "url_glob": "**/api/validate", "status": 500},
+  {"step": "click", "role": "button", "name": "Load"},
+  {"step": "wait_text", "text": "load: 500 observed"},
+  {"step": "unmock", "url_glob": "**/api/validate"},
+  {"step": "mock", "url_glob": "**/api/validate", "status": 503, "set": {"plan.estimate.basis": "guess"}},
+  {"step": "click", "role": "button", "name": "Load"},
+  {"step": "wait_text", "text": "load: 503 guess"},
+  {"step": "unmock", "url_glob": "**/api/validate"},
+  {"step": "abort", "url_glob": "{**/api/validate,**/api/jobs/*/rerun}"},
+  {"step": "click", "role": "button", "name": "Load"},
+  {"step": "wait_text", "text": "load: failed"},
+  {"step": "click", "role": "button", "name": "Again"},
+  {"step": "wait_text", "text": "rerun: rr answered 501"},
+  {"step": "unmock", "url_glob": "{**/api/validate,**/api/jobs/*/rerun}"},
+  {"step": "click", "role": "button", "name": "Load"},
+  {"step": "wait_text", "text": "load: 200 observed"},
+  {"step": "stub", "url_glob": "**/api/no-such-thing", "json": {"items": []}},
+  {"step": "stub", "url_glob": "**/api/models", "json": {}, "status": 200}
+]}'
+eq "GET status spec ok" true "$(j .ok)"
+eq "a GET stub answers with its status and JSON" true "$(j '.steps[3].ok')"
+eq "a mock sets the status of the real answer" true "$(j '.steps[7].ok')"
+eq "and fields with it" true "$(j '.steps[11].ok')"
+eq "abort fails a GET as a network error" true "$(j '.steps[15].ok')"
+eq "abort leaves a POST on its glob alone" true "$(j '.steps[17].ok')"
+eq "unmock counts the abort's hits (the GET only)" 1 "$(j '.steps[18].result.hits')"
+eq "unmock removes an abort" true "$(j '.steps[20].ok')"
+eq "a GET stub on any same-origin path is valid (defaults to GET off the write routes)" GET "$(j '.steps[22].result.method')"
+s0="$(grep -c 'GET /api/validate' "$T/srv.out")"
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "wait_text", "regex": "auth: \\d+"},
+  {"step": "stub", "url_glob": "**/api/validate", "method": "GET", "json": {"detail": "stubbed"}},
+  {"step": "click", "role": "button", "name": "Load"},
+  {"step": "wait_text", "text": "load: 200 stubbed"},
+  {"step": "stub", "url_glob": "**/api/jobs/*/rerun", "method": "GET", "json": {"id": "never"}},
+  {"step": "click", "role": "button", "name": "Again"},
+  {"step": "wait_text", "text": "rerun: rr answered 501"}
+]}'
+eq "GET stub run ok" true "$(j .ok)"
+eq "a GET stub never fetches (one GET there: the page load)" $((s0 + 1)) "$(grep -c 'GET /api/validate' "$T/srv.out")"
+eq "a GET stub does not answer a POST on its glob (it reached the server)" true "$(j '.steps[7].ok')"
+run '{"steps": [{"step": "mock", "url_glob": "**/x"}]}'
+eq "a mock needs set or status" 2 "$rc"
+run '{"steps": [{"step": "mock", "url_glob": "**/x", "status": 99}]}'
+eq "a mock status outside 100-599 is an invalid spec" 2 "$rc"
+run '{"steps": [{"step": "abort", "url_glob": "**/x", "once": true}]}'
+eq "abort takes url_glob only" 2 "$rc"
+
+# --- dup_ids: DOM ids that occur more than once
+run '{"steps": [{"step": "goto", "path": "/"}, {"step": "dup_ids"}]}'
+eq "dup_ids spec ok" true "$(j .ok)"
+eq "dup_ids lists each repeated id once" "thrice twice" "$(j '.steps[1].result.ids | sort | join(" ")')"
+eq "with its count" 3 "$(j '.steps[1].result.counts.thrice')"
+run '{"steps": [{"step": "dup_ids", "id": "x"}]}'
+eq "dup_ids takes no keys" 2 "$rc"
+
+# --- window_flag: a __name on window, primitives only
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "window_flag", "name": "__APP_READY"},
+  {"step": "window_flag", "name": "__count"},
+  {"step": "window_flag", "name": "__label"},
+  {"step": "window_flag", "name": "__nothing"},
+  {"step": "window_flag", "name": "__never_set"}
+]}'
+eq "window_flag spec ok" true "$(j .ok)"
+eq "a boolean flag" true "$(j '.steps[1].result.value')"
+eq "a number flag" 3 "$(j '.steps[2].result.value')"
+eq "a string flag" ready "$(j '.steps[3].result.value')"
+eq "a null flag" null "$(j '.steps[4].result.type')"
+eq "an unset flag is undefined" undefined "$(j '.steps[5].result.type')"
+for f in __obj __fn __long; do
+  run '{"steps": [{"step": "goto", "path": "/"}, {"step": "window_flag", "name": "'"$f"'"}]}'
+  eq "window_flag $f (not a primitive, or a string over 200) fails its step" false "$(j '.steps[1].ok')"
+  has "saying why" "window_flag" "$(j '.steps[1].error')"
+done
+for f in 'APP_READY' '__a.b' '__' 'document.cookie' '__a()' "__$(printf 'a%.0s' $(seq 1 41))"; do
+  run '{"steps": [{"step": "window_flag", "name": "'"$f"'"}]}'
+  eq "window_flag name $f is an invalid spec" 2 "$rc"
+done
 
 # --- goto loads pages only
 run '{"steps": [{"step": "goto", "path": "/plain.txt"}, {"step": "expect_text", "text": "plain text"}]}'
@@ -329,6 +464,10 @@ fails "the token is nowhere in stdout" grep -q "$tok" <<< "$out"
 fails "nor in stderr" grep -q "$tok" "$T/err"
 eq "the page text that shows it is scrubbed" "token: <token>" "$(j '.steps[3].result.snippet')"
 has "and so is a console error naming it" "the token is <token>" "$(j '.console_errors | join(" ")')"
+DW_URL="http://127.0.0.1:$aport/mcp" HARNEST_MCP_CONFIG="$T/mcp.json" run '{"steps": [{"step": "goto", "path": "/"}, {"step": "inspect", "regex": "^token: "}, {"step": "window_flag", "name": "__token"}]}'
+eq "an attribute holding the token is scrubbed" "<token>" "$(j '.steps[1].result.attributes["data-token"]')"
+eq "so is a window flag holding it" "<token>" "$(j '.steps[2].result.value')"
+fails "the token is nowhere in that output" grep -q "$tok" <<< "$out"
 DW_URL="http://127.0.0.1:$aport/mcp" run "$authspec"
 eq "without a config, no token: the API answers 401" "auth: 401" "$(j '.steps[2].result.snippet')"
 cfg "http://127.0.0.1:$aport/mcp" ""

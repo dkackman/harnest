@@ -15,14 +15,22 @@
 //   click       {role, name?} | {text}          [exact?, nth?]
 //   fill        {label | placeholder | role+name?, value}  [exact?, nth?]
 //   press       {key}
-//   mock        {url_glob, set: {"dotted.path": value, ...}, once?}
+//   mock        {url_glob, set?: {"dotted.path": value, ...}, status?, once?}
 //               route.fetch() the real request, parse its JSON, set each path
-//               (a.b, a.0.b and a[0].b; any JSON value), route.fulfill({json})
-//   stub        {url_glob, json, status?}   answer a POST to a POST_ALLOWED route
-//               with this JSON (status 200-599, default 200) and never send it; the
-//               glob may name only those routes (refused otherwise), and a GET or HEAD
-//               on it gets the real answer. A real Run click queues a GPU job: stub it.
-//   unmock      {url_glob}   removes the mocks and stubs on that glob
+//               (a.b, a.0.b and a[0].b; any JSON value), route.fulfill({json}),
+//               with status (100-599) in place of the real one when given; at
+//               least one of set and status
+//   stub        {url_glob, json, status?, method?}   answer with this JSON (status
+//               100-599, default 200) and never send the request. method POST: a
+//               POST to a POST_ALLOWED route; the glob may name only those routes
+//               (refused otherwise), and a GET or HEAD on it gets the real answer.
+//               A real Run click queues a GPU job: stub it. method GET: a GET or
+//               HEAD on any same-origin path (a read changes nothing on the server),
+//               to play a 404 or 500 page-data load; a POST on it goes on. Default:
+//               POST when the glob names only POST_ALLOWED routes, else GET.
+//   abort       {url_glob}   fail a matching same-origin GET or HEAD as a network
+//               error (anything else on the glob goes on)
+//   unmock      {url_glob}   removes the mocks, stubs and aborts on that glob
 //   record      {url_glob}   from this step on, note every same-origin request
 //               the glob matches, mocked or not (a mock on the same glob is fine)
 //   recorded    {url_glob}   -> {count, requests: [{method, url (path+query),
@@ -33,8 +41,16 @@
 //               The match runs in the page, so a regex that never ends hangs the
 //               page, not this process: the step cap still ends the run.
 //   inspect     {text | regex, flags?, exact?, nth?}  -> tag, role, classes,
-//               color, background_color, font_weight, aria, text, and the same
-//               for the closest ancestor with a class
+//               color, background_color, font_weight, aria, attributes (name ->
+//               value, at most 40, each value cut to 500 chars, the rest counted in
+//               attributes_dropped; an on* handler's value is "<handler>", never
+//               its body), text, and the same for the closest ancestor with a class
+//   dup_ids     {}  -> {ids, counts}: the DOM ids used more than once in the page
+//               (at most 200 listed), counts id -> occurrences
+//   window_flag {name}  -> {name, type, value}: window[name], for a name
+//               ^__[A-Za-z0-9_]{1,40}$ only, and only a primitive (boolean, number,
+//               string of at most 200 chars, null, undefined); anything else fails
+//               the step. A property read, never an expression.
 //   screenshot  {name}  -> <os.tmpdir()>/dw-ui-shots-XXXXXX/<name>.png, name
 //               [A-Za-z0-9_-]{1,64}; the dir is this run's own (mkdtemp, 0700),
 //               the file is created new (O_EXCL, O_NOFOLLOW, 0600)
@@ -77,9 +93,10 @@ const MAX_STEPS = 200;
 const STEP_MS = 30000;
 const DEFAULT_MS = 15000;
 const RUN_MS = 300000;
-// The only same-origin writes a page may send: validate, submit a run, cancel one
-// (the MCP tools validate_workflow, run_workflow and cancel_job, all the tester's).
-const POST_ALLOWED = [/^\/api\/validate$/, /^\/api\/jobs$/, /^\/api\/jobs\/[^/]+\/cancel$/];
+// The only same-origin writes a page may send: validate, submit a run, cancel one,
+// rerun one (the MCP tools validate_workflow, run_workflow, cancel_job and rerun_job,
+// all the tester's). Not /rerun-restart-batch, /export, /move.
+const POST_ALLOWED = [/^\/api\/validate$/, /^\/api\/jobs$/, /^\/api\/jobs\/[^/]+\/(?:cancel|rerun)$/];
 const READ_METHODS = new Set(["GET", "HEAD"]);
 const SPEC_PATH = /^\/tmp\/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json$/;
 const BAD_KEYS = new Set(["__proto__", "prototype", "constructor"]);
@@ -90,9 +107,10 @@ const MAX_ALTERNATIVES = 32;
 const MAX_CONFIG = 64 * 1024;
 // dw's UI keeps its bearer token here (ui/src/lib/storage.ts prefixes "dw-" and stores JSON).
 const TOKEN_KEY = "dw-api-token";
-// A stub's glob, each {a,b} alternative: any origin (** or one literal), then exactly a
-// POST_ALLOWED path, then nothing or a query.
-const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/cancel)(?:\?.*)?$/;
+// A POST stub's glob, each {a,b} alternative: any origin (** or one literal), then
+// exactly a POST_ALLOWED path, then nothing or a query.
+const STUB_GLOB = /^(?:\*\*|https?:\/\/[^/*?{},]+)\/api\/(?:validate|jobs|jobs\/(?:\*|[A-Za-z0-9_-]+)\/(?:cancel|rerun))(?:\?.*)?$/;
+const FLAG_NAME = /^__[A-Za-z0-9_]{1,40}$/;
 
 // Every form of the token that must never be printed (set once it is read).
 const SCRUB = [];
@@ -186,8 +204,9 @@ const SHAPES = {
   click: { role: "role", name: "text", text: "text", exact: "boolean", nth: "index" },
   fill: { label: "text", placeholder: "text", role: "role", name: "text", value: "string", exact: "boolean", nth: "index" },
   press: { key: "key" },
-  mock: { url_glob: "glob", set: "set", once: "boolean" },
-  stub: { url_glob: "glob", json: "json", status: "status" },
+  mock: { url_glob: "glob", set: "set", status: "status", once: "boolean" },
+  stub: { url_glob: "glob", json: "json", status: "status", method: "method" },
+  abort: { url_glob: "glob" },
   unmock: { url_glob: "glob" },
   record: { url_glob: "glob" },
   recorded: { url_glob: "glob" },
@@ -195,6 +214,8 @@ const SHAPES = {
   expect_text: { text: "text", regex: "regex", flags: "flags" },
   inspect: { text: "text", regex: "regex", flags: "flags", exact: "boolean", nth: "index" },
   screenshot: { name: "name" },
+  dup_ids: {},
+  window_flag: { name: "flag" },
 };
 
 function pathSegments(dotted) {
@@ -231,7 +252,13 @@ function checkValue(kind, v, where) {
     case "json":
       return; // any JSON value: the spec is parsed JSON
     case "status":
-      if (!Number.isInteger(v) || v < 200 || v > 599) invalid(where + " must be an HTTP status from 200 to 599");
+      if (!Number.isInteger(v) || v < 100 || v > 599) invalid(where + " must be an HTTP status from 100 to 599");
+      return;
+    case "method":
+      if (v !== "GET" && v !== "POST") invalid(where + " must be GET or POST");
+      return;
+    case "flag":
+      if (typeof v !== "string" || !FLAG_NAME.test(v)) invalid(where + " must be a window property named __ then letters, digits, _ (at most 40): a flag name, not an expression");
       return;
     case "boolean":
       if (typeof v !== "boolean") invalid(where + " must be true or false");
@@ -302,16 +329,21 @@ function validate(spec) {
         need(has("key"), "needs key");
         break;
       case "mock":
-        need(has("url_glob") && has("set"), "needs url_glob and set");
+        need(has("url_glob") && (has("set") || has("status")), "needs url_glob and set or status (or both)");
         break;
       case "stub":
         need(has("url_glob") && has("json"), "needs url_glob and json");
         need(
-          globAlternatives(s.url_glob).every((a) => STUB_GLOB.test(a)),
-          "a stub answers only the write routes a page may send (POST /api/validate, /api/jobs, " +
-            "/api/jobs/<id>/cancel): its url_glob must name only those, such as **/api/jobs?** or **/api/jobs/*/cancel",
+          stubMethod(s) !== "POST" || writeGlob(s.url_glob),
+          "a POST stub answers only the write routes a page may send (POST /api/validate, /api/jobs, " +
+            "/api/jobs/<id>/cancel, /api/jobs/<id>/rerun): its url_glob must name only those, such as " +
+            "**/api/jobs?** or **/api/jobs/*/cancel",
         );
         break;
+      case "window_flag":
+        need(has("name"), "needs name");
+        break;
+      case "abort":
       case "unmock":
       case "record":
       case "recorded":
@@ -328,6 +360,16 @@ function validate(spec) {
         break;
     }
   });
+}
+
+// A glob every {a,b} alternative of which names a POST_ALLOWED route.
+function writeGlob(glob) {
+  return globAlternatives(glob).every((a) => STUB_GLOB.test(a));
+}
+
+// What a stub answers: its method, else POST on a write-route glob, else GET.
+function stubMethod(s) {
+  return s.method || (writeGlob(s.url_glob) ? "POST" : "GET");
 }
 
 // --- the run ---------------------------------------------------------------
@@ -429,11 +471,24 @@ function locate(page, s) {
   return s.nth !== undefined ? loc.nth(s.nth) : loc;
 }
 
+// Runs in the page (serialized): no outer names, the limits are literals.
 function describe(el) {
   const d = (e) => {
     const cs = getComputedStyle(e);
     const aria = {};
     for (const a of e.attributes) if (a.name.startsWith("aria-")) aria[a.name] = a.value;
+    // Every attribute (title, id, href, data-*...), at most 40, values cut to 500; an
+    // on* handler is reported present, never its code.
+    const attributes = {};
+    let dropped = 0;
+    for (const a of e.attributes) {
+      if (Object.keys(attributes).length >= 40) {
+        dropped++;
+        continue;
+      }
+      const value = /^on/i.test(a.name) ? "<handler>" : a.value.slice(0, 500);
+      Object.defineProperty(attributes, a.name, { value, enumerable: true, configurable: true, writable: true });
+    }
     return {
       tag: e.tagName.toLowerCase(),
       role: e.getAttribute("role"),
@@ -442,6 +497,8 @@ function describe(el) {
       background_color: cs.backgroundColor,
       font_weight: cs.fontWeight,
       aria,
+      attributes,
+      attributes_dropped: dropped,
       text: (e.textContent || "").slice(0, 500),
     };
   };
@@ -601,6 +658,7 @@ async function main() {
         return { pressed: s.key };
       case "mock": {
         const entry = { hits: 0, errors: [] };
+        const status = s.status !== undefined ? { status: s.status } : {};
         entry.handler = async (route) => {
           if (denied(route.request())) return route.fallback();
           entry.hits++;
@@ -615,27 +673,44 @@ async function main() {
           try {
             doc = JSON.parse(await resp.text());
           } catch (e) {
-            entry.errors.push("the real answer is not JSON: " + short(e.message, 200));
-            return route.fulfill({ response: resp });
+            if (s.set) entry.errors.push("the real answer is not JSON: " + short(e.message, 200));
+            return route.fulfill({ response: resp, ...status });
           }
-          for (const [k, v] of Object.entries(s.set)) setPath(doc, k, v);
-          return route.fulfill({ response: resp, json: doc });
+          for (const [k, v] of Object.entries(s.set || {})) setPath(doc, k, v);
+          return route.fulfill({ response: resp, json: doc, ...status });
         };
         await addRoute(s.url_glob, entry, s.once ? { times: 1 } : {});
-        return { url_glob: s.url_glob, set: Object.keys(s.set), once: s.once === true };
+        return { url_glob: s.url_glob, set: Object.keys(s.set || {}), status: s.status ?? null, once: s.once === true };
       }
       case "stub": {
-        // Answers a POST to a POST_ALLOWED route and never sends it; anything else on the
-        // glob (a GET, a path the leading ** let in) goes on to the real route and the lock.
+        // POST: answers a POST to a POST_ALLOWED route and never sends it; anything else
+        // on the glob (a GET, a path the leading ** let in) goes on to the real route and
+        // the lock. GET: answers a same-origin GET or HEAD (a read: nothing changes on the
+        // server either way); a write on the glob goes on.
+        const method = stubMethod(s);
         const entry = { hits: 0, errors: [] };
         entry.handler = (route) => {
           const req = route.request();
-          if (req.method().toUpperCase() !== "POST" || denied(req)) return route.fallback();
+          const m = req.method().toUpperCase();
+          const mine = method === "POST" ? m === "POST" : READ_METHODS.has(m);
+          if (!mine || denied(req)) return route.fallback();
           entry.hits++;
-          return route.fulfill({ status: s.status || 200, json: s.json });
+          return route.fulfill({ status: s.status ?? 200, json: s.json });
         };
         await addRoute(s.url_glob, entry);
-        return { url_glob: s.url_glob, status: s.status || 200 };
+        return { url_glob: s.url_glob, method, status: s.status ?? 200 };
+      }
+      case "abort": {
+        // A network failure on a same-origin read; a write on the glob goes on.
+        const entry = { hits: 0, errors: [] };
+        entry.handler = (route) => {
+          const req = route.request();
+          if (!READ_METHODS.has(req.method().toUpperCase()) || denied(req)) return route.fallback();
+          entry.hits++;
+          return route.abort("failed");
+        };
+        await addRoute(s.url_glob, entry);
+        return { url_glob: s.url_glob, aborting: true };
       }
       case "unmock": {
         const entries = mocks.get(s.url_glob) || [];
@@ -700,6 +775,33 @@ async function main() {
         await first.waitFor({ state: "attached" });
         const info = await first.evaluate(describe);
         return { matches, ...info };
+      }
+      case "dup_ids":
+        return await page.evaluate(() => {
+          const seen = new Map();
+          for (const e of document.querySelectorAll("[id]")) seen.set(e.id, (seen.get(e.id) || 0) + 1);
+          const ids = [];
+          const counts = {};
+          for (const [id, n] of seen) {
+            if (n < 2 || ids.length >= 200) continue;
+            const key = id.slice(0, 200);
+            ids.push(key);
+            Object.defineProperty(counts, key, { value: n, enumerable: true, configurable: true, writable: true });
+          }
+          return { ids, counts };
+        });
+      case "window_flag": {
+        // One property read of a name checked up front, never an expression; only a
+        // primitive comes back.
+        const r = await page.evaluate((name) => {
+          const v = window[name];
+          const type = v === null ? "null" : typeof v;
+          if (type === "string" && v.length > 200) return { error: "a string of " + v.length + " chars (at most 200)" };
+          if (!["boolean", "number", "string", "null", "undefined"].includes(type)) return { error: "a " + type + ", not a primitive" };
+          return { type, value: type === "undefined" ? null : v };
+        }, s.name);
+        if (r.error) throw new Error("window_flag " + s.name + " is " + r.error);
+        return { name: s.name, type: r.type, value: r.value };
       }
       case "screenshot": {
         // A private dir per run (mkdtemp is 0700 and new), and the file created new

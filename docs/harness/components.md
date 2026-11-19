@@ -328,10 +328,18 @@ $HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`, the exact line its runtime no
 (`runtime_note`, for the tester and the regression agent) spells with the absolute root; the
 step kinds and the output are in the file's header and `agents/tester/core.md` ("Web UI
 cases"). `record`/`recorded` capture the requests matching a glob (mocked or not) for the
-cases that check what the page sent; `stub {url_glob, json, status}` answers a POST to one of
-the allowed write routes below without sending it (its glob is refused at validation unless
-every `{a,b}` alternative names only those paths, and a GET on it gets the real answer), so a
-Run click need not queue a GPU job. Globs are matched by the runner's own linear matcher
+cases that check what the page sent; `stub {url_glob, json, status, method}` answers without
+sending: as a POST stub, a POST to one of the allowed write routes below (its glob is refused
+at validation unless every `{a,b}` alternative names only those paths, and a GET on it gets
+the real answer), so a Run click need not queue a GPU job; as a GET stub (the default on any
+other glob), a GET or HEAD on any same-origin path, which changes nothing on the server, to
+play a 404 or 500 page-data load. `mock` takes `status` too (the real answer's, replaced),
+and `abort {url_glob}` fails same-origin GETs as a network error; neither reaches a write the
+lock refuses. `inspect` reports the element's attributes (at most 40, values cut to 500, an
+`on*` handler as `"<handler>"`, never its code), `dup_ids` the DOM ids used more than once,
+and `window_flag {name}` one primitive `window.__name` (the name checked against
+`^__[A-Za-z0-9_]{1,40}$` at validation, read as a property in the page, never evaluated as an
+expression; objects, functions and strings over 200 chars fail the step). Globs are matched by the runner's own linear matcher
 (also handed to Playwright's routes as a predicate), and `expect_text`'s regex runs in the
 page, so a tester's backtracking pattern hangs the page, not the runner: the step cap, the run
 cap and SIGTERM (which closes the browser and prints the partial result; one JSON document
@@ -349,7 +357,8 @@ sessions carry `DW_URL` in their environment, `run_agent` and `run-regression.sh
 request or WebSocket is aborted and listed in `blocked`, a main-frame navigation elsewhere
 (file:, data:) goes back to `about:blank`, and downloads, permissions, service workers and
 popups are off; `goto` fails a document that is not `text/html`. On the origin only GET and HEAD pass, plus POST to `/api/validate`,
-`/api/jobs` and `/api/jobs/<id>/cancel`; every DELETE, PUT, PATCH and other POST (the REST
+`/api/jobs`, `/api/jobs/<id>/cancel` and `/api/jobs/<id>/rerun` (the tester's `rerun_job`;
+not `/rerun-restart-batch`); every DELETE, PUT, PATCH and other POST (the REST
 routes behind `delete_model` and `update_diffusers`, which the tester's MCP session denies,
 cache clears, saves) is aborted and listed in `blocked`, and a `mock` cannot fetch one.
 Screenshots go to a fresh `mkdtemp` dir per run under the OS temp dir (0700), each file

@@ -179,27 +179,40 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   30000); `expect_text {text | regex}` (no wait: `wait_text` first); `inspect {text |
   regex}`; `screenshot {name}` (letters, digits, `_`, `-`; its path, in a fresh dir of
   the run's own, is in the step's result and in `shots`, for `Read`); `mock
-  {url_glob, set, once}`, `stub {url_glob, json, status}` and `unmock {url_glob}`;
-  `record {url_glob}` and `recorded {url_glob}`. Locators are visible text and role
-  only (`exact`, `nth` disambiguate); a CSS or XPath key is refused.
+  {url_glob, set, status, once}`, `stub {url_glob, json, status, method}`, `abort
+  {url_glob}` and `unmock {url_glob}`; `record {url_glob}` and `recorded {url_glob}`;
+  `dup_ids`; `window_flag {name}`. Locators are visible text and role only (`exact`,
+  `nth` disambiguate); a CSS or XPath key is refused.
 - `mock` is the cases' "build it from a real answer": it fetches the real response,
   sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
-  serves the rest unchanged.
+  serves the rest unchanged; `status` (100-599) replaces the real status, to play a 404
+  or 500 page-data load built from the real answer.
 - `record` is the cases' "record every request to ...": from that step on it notes each
   matching request, mocked or not; `recorded` returns them (`method`, `url` path and
   query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
-- `stub` answers a POST to validate, submit a run or cancel one (its glob may name only
-  those, e.g. `**/api/jobs?**`) with your JSON and never sends it; `record` still sees it.
-  A real Run click queues a GPU job: stub /api/jobs to check the request body; if a case
-  needs a real run, use the cheapest workflow and cancel it.
+- `stub` answers with your JSON (and `status`, default 200) and never sends the request;
+  `record` still sees it. `method` `POST` (the default when the glob names only those
+  routes): a POST to validate, submit a run, cancel or rerun one (its glob may name only
+  those, e.g. `**/api/jobs?**`, `**/api/jobs/*/rerun`). A real Run or rerun click queues a
+  GPU job: stub it to check the request body; if a case needs a real run, use the cheapest
+  workflow and cancel it. `method` `GET` (the default on any other glob): a GET on any
+  path of the server, e.g. a 404 or 500 for the page's data.
+- `abort {url_glob}` fails matching GETs as a network error (the server unreachable).
+- `dup_ids` returns `ids`, the DOM ids used more than once on the page, with `counts`.
+- `window_flag {name}` returns `window[name]` (`type`, `value`) for a name `__` + up to 40
+  letters, digits or `_` (`__APP_READY`), when it is a boolean, number, string of at most
+  200 chars, null or undefined; anything else fails the step. It reads one property,
+  never an expression.
 - The runner signs the page in with the session's own token; never put a token in a spec.
 - It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
   first failure), `page_errors`, `console_errors`, `shots`, and `blocked` (`METHOD url`
   of each request it aborted: off the server's origin, or a write other than validate,
-  submitting a run or cancelling one, so a delete, a diffusers update or a save in the UI
-  never reaches dw). A page error is a finding when the case says so.
+  submitting, cancelling or rerunning a run, so a delete, a diffusers update or a save in
+  the UI never reaches dw). A page error is a finding when the case says so.
 - Judge styling from `inspect`: the element's tag, classes, computed `color`,
-  `background_color`, `font_weight` and `aria-*`, and its closest classed ancestor. A
+  `background_color`, `font_weight`, `aria-*` and `attributes` (`title`, `id`, `href`,
+  `data-*`...; at most 40, values cut to 500 chars, an `on*` handler shown as
+  `"<handler>"`), and its closest classed ancestor. A
   line "styled as a warning" differs from the plain lines around it there; inspect both.
 
 ## Enforced by the harness
