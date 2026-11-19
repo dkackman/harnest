@@ -853,10 +853,10 @@ def loop_state(path=None, now=None):
         health = "stopped"
     elif not alive:
         health = "gone"
+    elif status == "stopping":  # before fresh: a stopping loop is never "live", whatever its heartbeat
+        health = "stopping"
     elif fresh:
         health = "live"
-    elif status == "stopping":
-        health = "stopping"
     else:
         health = "stalled"
     d["live"] = health == "live"

@@ -129,6 +129,7 @@ header button.on { border-color: var(--ok); color: var(--ok); }
 #loop.card { padding-bottom: 10px; }
 #loop.stalled { border-color: var(--warn); }
 #loop.gone { border-color: var(--bad); }
+#loop.unknown > :not(.lbanner:first-child) { opacity: .45; }
 #loop h2 .state { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; }
 #loop .state.ok { color: var(--ok); } #loop .state.warn { color: var(--warn); } #loop .state.bad { color: var(--bad); }
 .lbanner { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; font-size: 13px;
@@ -239,14 +240,28 @@ function sinceClock(hms, now) {
 }
 
 // ---- state -------------------------------------------------------------
+// a failed poll says which half failed, and the loop card stops claiming to be current
+function stateUnknown(msg) {
+  $("hsummary").textContent = msg;
+  $("hdot").className = "dot bad";
+  const el = $("loop");
+  if (!el.hidden && !el.classList.contains("unknown")) {
+    el.classList.add("unknown");
+    el.insertAdjacentHTML("afterbegin", '<p class="lbanner bad">state unknown: what follows is the last good read</p>');
+  }
+}
 async function pollState() {
+  let st;
   try {
-    const r = await fetch("/api/state"); const st = await r.json();
+    const r = await fetch("/api/state"); st = await r.json();
+  } catch (e) {
+    return stateUnknown("dashboard server unreachable");
+  }
+  try {
     render(st);
     $("stamp").textContent = new Date(st.now * 1000).toLocaleTimeString([], { hour12: false });
   } catch (e) {
-    $("hsummary").textContent = "dashboard server unreachable";
-    $("hdot").className = "dot bad";
+    stateUnknown(`dashboard render error: ${e && e.message || e}`);
   }
 }
 
@@ -480,7 +495,7 @@ function render(st) {
 // One card for the whole loop: each server's slots, deploy line, queues and GPU
 // busy, then the shared slots and the totals. "Running" is only ever what
 // serve.py's loop.health says: live, stopping, stalled, gone or stopped.
-const hhmm = (t) => new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+const hhmm = (t) => !t ? "never" : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
 const shortSha = (h) => h ? String(h).slice(0, 7) : "–";
 const issueLink = (lp, n) => `<a href="https://github.com/${esc(lp.repo)}/issues/${+n}" target="_blank" rel="noopener">#${+n}</a>`;
 const BLOCKS = "▁▂▃▄▅▆▇█";
@@ -596,6 +611,8 @@ const landing = (lp, st) => (p) => `<span class="${p.result === "conflict" ? "lb
 
 function renderLoop(st0) {
   const el = $("loop"), lp = st0.loop;
+  // status "stopping" is never shown as running, whatever health an older serve.py computed
+  if (lp && lp.status === "stopping" && lp.health === "live") lp.health = "stopping";
   // a stalled loop's clocks stop at its last heartbeat: elapsed times are as of then, not growing against a dead driver
   const st = lp && (lp.health === "stalled" || lp.health === "gone") ? { ...st0, now: lp.heartbeat } : st0;
   burns.loop && delete burns.loop;

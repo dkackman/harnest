@@ -225,6 +225,11 @@ class LoopCard(unittest.TestCase):
         lp = self.loop(self.put("stopping", pid=DEAD_PID, heartbeat_age=900))
         self.assertEqual(("gone", True), (lp["health"], lp["stalled"]))
 
+    def test_stopping_with_fresh_heartbeat_is_stopping(self):
+        # the last heartbeat before SIGTERM is still fresh: stopping, never green live
+        lp = self.loop(self.put("stopping", heartbeat_age=5))
+        self.assertEqual(("stopping", False, False), (lp["health"], lp["stalled"], lp["live"]))
+
     def test_rate_limited_is_live(self):
         lp = self.loop(self.put("rate-limited", heartbeat_age=3))
         self.assertEqual(("live", "paused-rate-limit"), (lp["health"], lp["status"]))
@@ -306,6 +311,17 @@ class LoopPage(unittest.TestCase):
             "heartbeat",
             "per close",
             "paused-rate-limit",
+        ):
+            self.assertIn(needle, PAGE, needle)
+
+    def test_errors_are_honest(self):
+        # a fetch failure and a render error are told apart; the card goes not-current
+        for needle in (
+            '"dashboard server unreachable"',
+            "dashboard render error: ",
+            "state unknown",
+            'lp.status === "stopping" && lp.health === "live"',
+            '!t ? "never"',
         ):
             self.assertIn(needle, PAGE, needle)
 
