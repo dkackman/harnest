@@ -616,8 +616,9 @@ function renderLoop(st0) {
   // a stalled loop's clocks stop at its last heartbeat: elapsed times are as of then, not growing against a dead driver
   const st = lp && (lp.health === "stalled" || lp.health === "gone") ? { ...st0, now: lp.heartbeat } : st0;
   burns.loop && delete burns.loop;
+  el.classList.remove("unknown"); // a good read ends the "state unknown" mark and its banner (innerHTML is rebuilt below)
   el.hidden = !lp;
-  if (!lp) return null;
+  if (!lp) { el.innerHTML = ""; return null; }
   const lh = loopHeader(lp);
   const stalled = lp.health === "stalled" || lp.health === "gone";
   const failedDeploys = Object.entries(lp.servers).filter(([, v]) => v.deploy && v.deploy.state === "failed").map(([k]) => k);

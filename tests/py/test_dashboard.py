@@ -325,6 +325,14 @@ class LoopPage(unittest.TestCase):
         ):
             self.assertIn(needle, PAGE, needle)
 
+    def test_recovery_clears_the_unknown_mark(self):
+        # a good render takes the "unknown" class and its banner off the card, also when the loop is gone
+        body = PAGE[PAGE.index("function renderLoop") :]
+        body = body[: body.index("\n}\n")]
+        self.assertIn('el.classList.remove("unknown")', body)
+        self.assertLess(body.index('classList.remove("unknown")'), body.index("if (!lp) return null"))
+        self.assertIn('el.innerHTML = ""', body[: body.index("if (!lp) return null") + 30])
+
     def test_old_stream_views_stay(self):
         for needle in ("progress(name, s.loop_run, s.looping)", "drawBurn", "pollLog"):
             self.assertIn(needle, PAGE)
