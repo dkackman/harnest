@@ -11434,4 +11434,22 @@ It is a **finding** if a hybrid catalog entry or template change lands, or a smh
 cleanup: none.
 metrics: none.
 
+### M-F448 — with the flag on, `balance: 20` keeps frame 0 (under the keyframe and guide) close to the no-key take's frame 0
+source: tester, verified in #1494 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `fl2va`. **GPU**: none beyond M-F378 and M-F379(a); run it beside M-F380, on
+the same two videos. Flag-on (see M-F375).
+Steps: `compare_outputs` with M-F379(a)'s video (no argument, seed 1391) as the baseline and M-F378's (`KA = {}`,
+balance 20 on the default blocks) as the second, `at=["frame:0", "frame:1"]`; and `get_output_frames` on M-F378's
+video at `frame:0`.
+expected:
+- M-F378's frame 0 shows the same subject and setting as the guide's first frame and M-F379(a)'s frame 0. With
+  `image` set to the guide's first frame, both should show the guide's woman in the office.
+- At `frame:0`, `compare_outputs` reads a close match: PSNR above 30 dB and SSIM above 0.9. #1494's fixed build read
+  PSNR 39.9, SSIM 0.984 and MAD 1.7. The broken build read PSNR 8.25 and MAD 76.6.
+- Frame 1 is not a crossfade or ghost of a second scene.
+It is a **finding** if frame 0 shows a scene that is in none of the image, the guide and the prompt (#1494 showed a
+man in a yellow vest in a sitcom living room), or if frame 1 is a double exposure.
+cleanup: as M-F380.
+metrics: none.
+
 ## Performance
