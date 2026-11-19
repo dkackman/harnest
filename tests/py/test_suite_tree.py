@@ -22,41 +22,58 @@ class Tree(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.h = str(Path(tmp.name) / "harnest")
+        self.tmp = os.path.realpath(tmp.name)
+        self.h = str(Path(self.tmp) / "harnest")
         os.makedirs(self.h)
         g(self.h, "init", "-q", "-b", "main")
         g(self.h, "config", "user.name", "t")
         g(self.h, "config", "user.email", "t@t")
-        Path(self.h, ".gitignore").write_text(".worktrees/\nlogs/\n")
+        Path(self.h, ".gitignore").write_text("logs/\n")
         Path(self.h, "regression-suite-complete.md").write_text(SUITE)
         g(self.h, "add", "-A")
         g(self.h, "commit", "-qm", "init")
         self.said = []
         self.lock = threading.Lock()
 
-    def land(self, tree, msg="tester: add case"):
+    def land(self, tree, msg="tester: add case", **kw):
         return suite_tree.land(
-            self.h, tree, msg, "Claude Opus 5.5", "noreply@anthropic.com", self.said.append, self.lock
+            self.h, tree, msg, "Claude Opus 5.5", "noreply@anthropic.com", self.said.append, self.lock, **kw
         )
+
+    def append(self, tree, text="\n### C-F003 — third\ncleanup: none.\n"):
+        with open(os.path.join(tree.path, "regression-suite-complete.md"), "a") as f:
+            f.write(text)
+
+    def warned(self, *needles):
+        return any(s.startswith("[audit] WARNING") and all(n in s for n in needles) for s in self.said)
 
     def main_suite(self):
         return g(self.h, "show", "main:regression-suite-complete.md")
 
     def edit(self, tree, old, new):
-        p = Path(tree, "regression-suite-complete.md")
+        p = Path(tree.path, "regression-suite-complete.md")
         p.write_text(p.read_text().replace(old, new, 1))
 
-    def test_make_is_a_detached_checkout_of_main(self):
+    def test_make_is_a_detached_checkout_of_main_outside_the_root(self):
         tree = suite_tree.make(self.h, "s1")
-        self.assertEqual(os.path.join(self.h, ".worktrees", "s1"), tree)
-        self.assertEqual(g(self.h, "rev-parse", "main"), g(tree, "rev-parse", "HEAD"))
+        self.assertEqual(os.path.join(self.tmp, ".harnest-worktrees", "harnest", "s1"), tree.path)
+        self.assertEqual(g(self.h, "rev-parse", "main"), tree.base)
+        self.assertEqual(tree.base, g(tree.path, "rev-parse", "HEAD"))
         self.assertEqual(
-            "", subprocess.run(["git", "-C", tree, "symbolic-ref", "-q", "HEAD"], capture_output=True, text=True).stdout
+            "",
+            subprocess.run(
+                ["git", "-C", tree.path, "symbolic-ref", "-q", "HEAD"], capture_output=True, text=True
+            ).stdout,
         )
+
+    def test_make_base_dir(self):
+        d = os.path.join(self.tmp, "elsewhere")
+        tree = suite_tree.make(self.h, "s1", base_dir=d)
+        self.assertEqual(os.path.join(d, "s1"), tree.path)
 
     def test_land_clean(self):
         tree = suite_tree.make(self.h, "s1")
-        with open(os.path.join(tree, "regression-suite-complete.md"), "a") as f:
+        with open(os.path.join(tree.path, "regression-suite-complete.md"), "a") as f:
             f.write("\n### C-F003 — third\nexpected: three.\ncleanup: none.\n")
         self.assertEqual("landed", self.land(tree))
         self.assertIn("### C-F003 — third", self.main_suite())
@@ -80,7 +97,7 @@ class Tree(unittest.TestCase):
             "expected: one.\ncleanup: none.\n",
             "expected: one.\ncleanup: none.\n\n### C-F010 — from a\ncleanup: none.\n",
         )
-        with open(os.path.join(b, "regression-suite-complete.md"), "a") as f:
+        with open(os.path.join(b.path, "regression-suite-complete.md"), "a") as f:
             f.write("\n### C-F020 — from b\ncleanup: none.\n")
         self.assertEqual("landed", self.land(a))
         self.assertEqual("landed", self.land(b))
@@ -103,11 +120,11 @@ class Tree(unittest.TestCase):
         self.assertNotIn("from b", self.main_suite())
         self.assertTrue(any(s.startswith("[audit] WARNING") and "suite-conflict/b" in s for s in self.said), self.said)
         # the tree is not left mid-rebase
-        self.assertFalse(os.path.exists(g(b, "rev-parse", "--git-path", "rebase-merge")))
+        self.assertFalse(os.path.exists(g(b.path, "rev-parse", "--git-path", "rebase-merge")))
 
     def test_land_dirty_primary_is_a_conflict(self):
         tree = suite_tree.make(self.h, "s1")
-        with open(os.path.join(tree, "regression-suite-complete.md"), "a") as f:
+        with open(os.path.join(tree.path, "regression-suite-complete.md"), "a") as f:
             f.write("\n### C-F003 — third\ncleanup: none.\n")
         Path(self.h, "regression-suite-complete.md").write_text(SUITE + "hand edit\n")
         before = g(self.h, "rev-parse", "main")
@@ -118,7 +135,7 @@ class Tree(unittest.TestCase):
 
     def test_land_retries_when_main_moves_under_it(self):
         tree = suite_tree.make(self.h, "s1")
-        with open(os.path.join(tree, "regression-suite-complete.md"), "a") as f:
+        with open(os.path.join(tree.path, "regression-suite-complete.md"), "a") as f:
             f.write("\n### C-F003 — third\ncleanup: none.\n")
         real, calls = suite_tree._fast_forward, []
 
@@ -151,7 +168,7 @@ class Tree(unittest.TestCase):
 
     def test_land_holds_the_lock(self):
         tree = suite_tree.make(self.h, "s1")
-        with open(os.path.join(tree, "regression-suite-complete.md"), "a") as f:
+        with open(os.path.join(tree.path, "regression-suite-complete.md"), "a") as f:
             f.write("\n### C-F003 — third\ncleanup: none.\n")
         seen = []
 
@@ -167,20 +184,144 @@ class Tree(unittest.TestCase):
 
     def test_remove(self):
         tree = suite_tree.make(self.h, "s1")
-        Path(tree, "regression-suite-complete.md").write_text("dirty\n")
-        suite_tree.remove(self.h, tree)
-        self.assertFalse(os.path.exists(tree))
-        self.assertNotIn(tree, g(self.h, "worktree", "list"))
+        Path(tree.path, "regression-suite-complete.md").write_text("dirty\n")
+        suite_tree.remove(self.h, tree.path)
+        self.assertFalse(os.path.exists(tree.path))
+        self.assertNotIn(tree.path, g(self.h, "worktree", "list"))
 
-    def test_make_replaces_a_stale_tree(self):
+    def test_make_strands_a_stale_tree(self):
         tree = suite_tree.make(self.h, "s1")
-        Path(tree, "regression-suite-complete.md").write_text("stale\n")
+        Path(tree.path, "regression-suite-complete.md").write_text("stale\n")
         with open(os.path.join(self.h, "regression-suite-complete.md"), "a") as f:
             f.write("\n### C-F009 — newer\n")
         g(self.h, "commit", "-qam", "newer")
+        tree = suite_tree.make(self.h, "s1", say=self.said.append)
+        self.assertEqual(g(self.h, "rev-parse", "main"), g(tree.path, "rev-parse", "HEAD"))
+        self.assertIn("C-F009", Path(tree.path, "regression-suite-complete.md").read_text())
+        # the stale tree's edit is kept, not dropped
+        self.assertEqual("stale", g(self.h, "show", "suite-stranded/s1:regression-suite-complete.md"))
+        self.assertTrue(self.warned("suite-stranded/s1"), self.said)
+
+    # --- fix round 1: never land session commits, strand rather than drop
+
+    def test_session_commit_is_stranded_not_landed(self):
         tree = suite_tree.make(self.h, "s1")
-        self.assertEqual(g(self.h, "rev-parse", "main"), g(tree, "rev-parse", "HEAD"))
-        self.assertIn("C-F009", Path(tree, "regression-suite-complete.md").read_text())
+        Path(tree.path, "evil.sh").write_text("rm -rf /\n")
+        g(tree.path, "add", "evil.sh")
+        g(tree.path, "commit", "-qm", "sneak")
+        self.append(tree)
+        head = g(tree.path, "rev-parse", "HEAD")
+        before = g(self.h, "rev-parse", "main")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+        self.assertEqual(head, g(self.h, "rev-parse", "suite-stranded/s1~1"))
+        self.assertIn("C-F003", g(self.h, "show", "suite-stranded/s1:regression-suite-complete.md"))
+        self.assertTrue(self.warned("suite-stranded/s1"), self.said)
+
+    def test_session_commit_on_a_plain_path_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        g(tree.path, "commit", "-qam", "session committed its own case")
+        head = g(tree.path, "rev-parse", "HEAD")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(head, g(self.h, "rev-parse", "suite-stranded/s1"))
+        self.assertNotIn("C-F003", self.main_suite())
+
+    def test_leftovers_outside_paths_are_stranded_suite_change_lands(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        Path(tree.path, "scripts").mkdir()
+        Path(tree.path, "scripts", "x.sh").write_text("echo hi\n")
+        Path(tree.path, ".gitignore").write_text("logs/\nextra/\n")  # tracked file changed too
+        self.assertEqual("stranded", self.land(tree))
+        self.assertIn("C-F003", self.main_suite())  # the suite paths landed
+        self.assertNotIn("scripts", g(self.h, "ls-tree", "--name-only", "main"))
+        self.assertEqual("logs/", g(self.h, "show", "main:.gitignore"))
+        self.assertEqual("echo hi", g(self.h, "show", "suite-stranded/s1:scripts/x.sh"))
+        self.assertIn("extra/", g(self.h, "show", "suite-stranded/s1:.gitignore"))
+        self.assertTrue(self.warned("suite-stranded/s1"), self.said)
+
+    def test_staged_file_outside_paths_is_not_in_the_landing_commit(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        Path(tree.path, "other.txt").write_text("x\n")
+        g(tree.path, "add", "other.txt")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertNotIn("other.txt", g(self.h, "ls-tree", "--name-only", "main"))
+        self.assertEqual("x", g(self.h, "show", "suite-stranded/s1:other.txt"))
+
+    def test_only_leftovers_is_stranded_and_main_untouched(self):
+        tree = suite_tree.make(self.h, "s1")
+        Path(tree.path, "other.txt").write_text("x\n")
+        before = g(self.h, "rev-parse", "main")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+        self.assertEqual("x", g(self.h, "show", "suite-stranded/s1:other.txt"))
+
+    def test_landing_commit_touching_more_than_paths_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        real = suite_tree.suite.commit_changes
+
+        def sloppy(repo, logs, paths, msg, name, email, say, **kw):
+            Path(repo, "extra.txt").write_text("x\n")
+            g(repo, "add", "-A")
+            g(repo, "commit", "-qm", msg)
+
+        before = g(self.h, "rev-parse", "main")
+        with mock.patch.object(suite_tree.suite, "commit_changes", sloppy):
+            self.assertEqual("stranded", self.land(tree))
+        self.assertIs(real, suite_tree.suite.commit_changes)
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+        self.assertEqual("x", g(self.h, "show", "suite-stranded/s1:extra.txt"))
+
+    def test_stranded_branches_never_overwrite(self):
+        g(self.h, "branch", "suite-stranded/s1", "main")
+        first = g(self.h, "rev-parse", "suite-stranded/s1")
+        tree = suite_tree.make(self.h, "s1")
+        Path(tree.path, "other.txt").write_text("x\n")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(first, g(self.h, "rev-parse", "suite-stranded/s1"))
+        self.assertEqual("x", g(self.h, "show", "suite-stranded/s1-2:other.txt"))
+
+    def test_conflict_branches_never_overwrite(self):
+        g(self.h, "branch", "suite-conflict/b", "main")
+        a, b = suite_tree.make(self.h, "a"), suite_tree.make(self.h, "b")
+        self.edit(a, "### C-F002 — second\n", "### C-F002 — second\nnote: from a\n")
+        self.edit(b, "### C-F002 — second\n", "### C-F002 — second\nnote: from b\n")
+        self.assertEqual("landed", self.land(a))
+        self.assertEqual("conflict", self.land(b))
+        self.assertEqual(g(self.h, "rev-parse", "main~1"), g(self.h, "rev-parse", "suite-conflict/b"))
+        self.assertIn("note: from b", g(self.h, "show", "suite-conflict/b-2:regression-suite-complete.md"))
+
+    def test_curator_removal_is_logged_not_warned(self):
+        for kw, msg in (({"kind": "curator:review"}, "suite: apply #5"), ({}, "curator: apply #5")):
+            self.said.clear()
+            tree = suite_tree.make(self.h, "c" + str(len(msg)) + str(len(kw)))
+            self.edit(tree, "expected: two.\n", "")
+            self.assertEqual("landed", self.land(tree, msg=msg, **kw))
+            self.assertFalse(self.warned(), self.said)
+            self.assertTrue(
+                any(
+                    s.startswith("[audit] curator removed lines from regression-suite-complete.md(-1) in ")
+                    and s.endswith("(an approved suite change)")
+                    for s in self.said
+                ),
+                self.said,
+            )
+            g(self.h, "reset", "-q", "--hard", "main~1")
+
+    def test_tester_removal_still_warns_with_a_kind(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.edit(tree, "expected: two.\n", "")
+        self.assertEqual("landed", self.land(tree, kind="verify"))
+        self.assertTrue(self.warned("removed lines from regression-suite-complete.md"), self.said)
+
+    def test_land_needs_the_base(self):
+        tree = suite_tree.make(self.h, "s1")
+        with self.assertRaises(ValueError):
+            self.land(tree.path)
+        self.assertEqual("clean", self.land(tree.path, base=tree.base))
 
 
 if __name__ == "__main__":

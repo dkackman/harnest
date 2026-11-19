@@ -222,7 +222,7 @@ srow 2 consumer "rewrite a committed expectation" '{"old_string": "expected: it 
 srow 2 consumer "Write that drops a committed case" '{"content": "### C-F002 — new this session\nexpected: draft.\ncleanup: none.\n"}'
 srow 0 curator "curator rewrites a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
 # R17: the session's own harnest worktree (HARNEST_SESSION_TREE) is held to the same rule,
-# against the worktree's own last commit; HARNEST_ROOT stays the main checkout
+# against HARNEST_SESSION_BASE (else main), not the tree HEAD; HARNEST_ROOT stays the main checkout
 stree="$T/stree"
 git -C "$sroot" worktree add -q --detach "$stree" HEAD
 printf '\n### C-F004 — new in the tree\nexpected: draft.\ncleanup: none.\n' >> "$stree/regression-suite-complete.md"
@@ -247,6 +247,53 @@ eq "consumer(regression)@mini-ai: Edit the session tree's suite" 2 $?
 jq -n --arg p "$stree/regression-perf/S-P001.jsonl" '{tool_name: "Write", tool_input: {file_path: $p}, cwd: "/tmp"}' \
   | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_TARGET=mini-ai HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
 eq "consumer(tester)@mini-ai: Write lem's perf history in the session tree" 2 $?
+# fix round 1: the real layout. HARNEST_ROOT is a harnest checkout and the session tree is
+# made by suite_tree.make(), outside it (<dirname>/.harnest-worktrees/<basename>/<id>)
+hroot="$T/hl/harnest"; mkdir -p "$hroot/regression-perf/mini-ai"
+printf '### C-F001 — a case\nexpected: it works.\ncleanup: none.\n' > "$hroot/regression-suite-complete.md"
+git -C "$hroot" init -q -b main && git -C "$hroot" add -A && git -C "$hroot" -c user.name=t -c user.email=t@t commit -qm base
+read -r htree hbase <<<"$(cd "$HARNEST" && python3 -c 'import sys; from harness import suite_tree; t = suite_tree.make(sys.argv[1], "sess1"); print(t.path, t.base)' "$hroot")"
+[ -n "$htree" ] && [ -d "$htree" ] || { echo "  FAIL: suite_tree.make gave no tree"; exit 1; }
+eq "suite tree is made outside HARNEST_ROOT" "$(cd "$T/hl" && pwd -P)/.harnest-worktrees/harnest/sess1" "$htree"
+# lrow <expect> <label> <role> <tool> <path in the tree> [tool_input json]
+lrow() {
+  jq -n --arg t "$4" --arg p "$htree/$5" --arg d "$htree" --argjson i "${6:-"{}"}" '{tool_name: $t, tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | HARNEST_ROOT="$hroot" HARNEST_SESSION_TREE="$htree" HARNEST_SESSION_BASE="$hbase" HARNEST_TARGET=mini-ai HARNEST_ROLE="$3" python3 "$guard" consumer >/dev/null 2>&1
+  eq "session tree (real layout): $2" "$1" $?
+}
+lrow 2 "regression@mini-ai Edits the tree's suite" regression Edit regression-suite-complete.md
+lrow 2 "tester@mini-ai Writes lem's perf in the tree" tester Write regression-perf/S-P001.jsonl
+lrow 0 "tester@mini-ai Writes its own server's perf in the tree" tester Write regression-perf/mini-ai/S-P001.jsonl
+lrow 2 "regression@mini-ai Edits lem's results in the tree" regression Edit regression-results/S-F001.jsonl
+# a tree nested inside HARNEST_ROOT (the old layout) is judged against the tree, not the root
+ntree="$hroot/.worktrees/n1"; git -C "$hroot" worktree add -q --detach "$ntree" main
+jq -n --arg p "$ntree/regression-suite-complete.md" --arg d "$ntree" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: $d}' \
+  | HARNEST_ROOT="$hroot" HARNEST_SESSION_TREE="$ntree" HARNEST_TARGET=mini-ai HARNEST_ROLE=regression python3 "$guard" consumer >/dev/null 2>&1
+eq "nested session tree: regression@mini-ai Edit of its suite" 2 $?
+git -C "$hroot" worktree remove --force "$ntree"
+# the add-only baseline is the driver-set HARNEST_SESSION_BASE, not the tree's HEAD: a session
+# that commits a removal in its tree has not moved the baseline
+git -C "$htree" -c user.name=t -c user.email=t@t rm -q --cached regression-suite-complete.md >/dev/null
+printf '### C-F001 — a case\ncleanup: none.\n' > "$htree/regression-suite-complete.md"
+git -C "$htree" add regression-suite-complete.md && git -C "$htree" -c user.name=t -c user.email=t@t commit -qm "drop expected"
+bwrite='{"content": "### C-F001 — a case\ncleanup: none.\n\n### C-F002 — new\ncleanup: none.\n"}'
+# brow <expect> <label> [HARNEST_SESSION_BASE value; "-" leaves it unset]
+brow() {
+  local -a e=(HARNEST_ROOT="$hroot" HARNEST_SESSION_TREE="$htree" HARNEST_ROLE=tester)
+  [ "$3" = - ] || e+=(HARNEST_SESSION_BASE="$3")
+  jq -n --arg p "$htree/regression-suite-complete.md" --arg d "$htree" --argjson i "$bwrite" '{tool_name: "Write", tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | env "${e[@]}" python3 "$guard" consumer >/dev/null 2>&1
+  eq "suite add-only baseline: $2" "$1" $?
+}
+brow 2 "HARNEST_SESSION_BASE holds the line the tree's own commit dropped" "$hbase"
+brow 2 "no HARNEST_SESSION_BASE: main holds it" -
+# HARNEST_SESSION_BASE is the driver's too
+row 2 consumer "" $none 'HARNEST_SESSION_BASE=HEAD; echo hi'
+row 2 consumer "" $none 'export HARNEST_SESSION_BASE=HEAD'
+row 2 consumer "" $none 'unset HARNEST_SESSION_BASE'
+row 2 consumer "" $none 'env -u HARNEST_SESSION_BASE ls'
+row 2 consumer "" $none 'echo "${HARNEST_SESSION_BASE:=HEAD}"'
+row 0 consumer "" $none 'echo "$HARNEST_SESSION_BASE"'
 # HARNEST_SESSION_TREE is the driver's too: no assigning, exporting, unsetting or defaulting it
 row 2 consumer "" $none 'HARNEST_SESSION_TREE=/tmp/x; echo hi'
 row 2 consumer "" $none 'export HARNEST_SESSION_TREE=/tmp/x'

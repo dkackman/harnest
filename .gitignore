@@ -4,5 +4,3 @@ qa-bible.md
 __pycache__/
 # secrets (DW_TOKEN_*); .env.example is the template
 .env
-# per-session harnest worktrees (harness/suite_tree.py, R17)
-.worktrees/

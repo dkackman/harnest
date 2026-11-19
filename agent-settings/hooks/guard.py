@@ -122,13 +122,16 @@ consumer (tester, regression):
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
     suite files, perf history, the bible and /tmp, never scripts/). The
-    same for HARNEST_SESSION_TREE, the session's own harnest worktree (R17)
+    same for HARNEST_SESSION_TREE, the session's own harnest worktree (R17),
+    and HARNEST_SESSION_BASE, its add-only baseline
   - suite cases are add-only (harnest#176): an Edit/Write to a
     `regression-suite-*.md` may not drop or change a line the last commit
     holds, bar a `pending:` line. Lines added since the commit (this
     session's own new case) stay editable. A suite file in the session's
-    worktree (HARNEST_SESSION_TREE) is held to that worktree's last commit,
-    and the rules below that name the harness root cover it too
+    worktree (HARNEST_SESSION_TREE, outside HARNEST_ROOT) is held to the
+    commit the driver checked it out at (HARNEST_SESSION_BASE, else main),
+    never the tree's own HEAD, and the rules below that name the harness
+    root cover it too
 every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
 even over ssh, in a NAME=value, a git alias or -c value, or gh/git output piped to a shell),
 nor scripts/testbed.sh update|start|restart|stop; the driver deploys develop between GPU
@@ -2232,12 +2235,18 @@ def session_tree():
     return os.path.realpath(tree) if os.path.isabs(tree) else ""
 
 
+def session_base():
+    """The add-only baseline for the session's worktree: HARNEST_SESSION_BASE, the main sha the
+    driver checked the tree out at (never the tree's own HEAD, which a session could move);
+    `main` when the driver set none."""
+    return os.environ.get("HARNEST_SESSION_BASE", "") or "main"
+
+
 def harness_root_of(full, roots):
-    """The first of <roots> (realpaths) that holds <full>, or ""."""
-    for root in roots:
-        if root and os.path.commonpath([root, full]) == root:
-            return root
-    return ""
+    """The innermost of <roots> (realpaths) that holds <full>, or "": a session tree is judged
+    as a root of its own even if it sat inside HARNEST_ROOT."""
+    held = [r for r in roots if r and os.path.commonpath([r, full]) == r]
+    return max(held, key=len) if held else ""
 
 
 def target_file_rule(path, cwd, target, role):
@@ -2270,11 +2279,13 @@ def suite_add_only_rule(tool, tool_input, cwd):
     )
     full = os.path.realpath(os.path.join(cwd, tool_input.get("file_path", "")))
     name, root = os.path.basename(full), os.path.dirname(full)
-    if root not in (main_root, session_tree()) or not (name.startswith("regression-suite-") and name.endswith(".md")):
+    tree = session_tree()
+    if root not in (main_root, tree) or not (name.startswith("regression-suite-") and name.endswith(".md")):
         return
+    rev = session_base() if tree and root == tree else "HEAD"
     try:
         committed = subprocess.run(
-            ["git", "-C", root, "show", "HEAD:" + name], capture_output=True, text=True, timeout=10
+            ["git", "-C", root, "show", rev + ":" + name], capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):
         return
@@ -2617,9 +2628,10 @@ def consumer_root_rule(text):
     consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
     mention of the name (an assignment, export, unset, env -u, read) is refused; only its
     expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed. HARNEST_SESSION_TREE (the session's
-    own worktree, R17) is the driver's the same way: the add-only rule reads it."""
+    own worktree, R17) and HARNEST_SESSION_BASE (its add-only baseline) are the driver's the
+    same way: the add-only rule reads them."""
     literal, tainted, sublit, _ = var_sets(text)
-    for var in ("HARNEST_ROOT", "HARNEST_SESSION_TREE"):
+    for var in ("HARNEST_ROOT", "HARNEST_SESSION_TREE", "HARNEST_SESSION_BASE"):
         if (
             var in literal
             or var in tainted
