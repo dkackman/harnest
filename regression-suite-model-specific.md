@@ -11246,7 +11246,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F441 — the #1441 hybrid probe workflow validates clean with the graft as `transformer_ref`, needs no download, and its stock twin validates clean too; or the record names the direct-diffusers fallback and why
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA on lem (cuda): `bench/workflows/probe-1441-hybrid-ref.json`, a copy of
 `templates/minimax/reference-to-video` whose `pretrained_model_name_or_path` overrides `transformer_ref` with a local
@@ -11282,7 +11281,6 @@ cleanup: none. Never delete a probe job.
 metrics: none.
 
 ### M-F442 — the #1441 hybrid run and the stock ref2va baseline are both in `list_jobs`, completed, and differ only in `transformer_ref`'s source: same pinned seed, references, prompt and settings
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: as M-F441. **Free**: job reads only.
 Steps:
@@ -11312,7 +11310,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F443 — both #1441 renders are real video with sound at the template's shape, and the hybrid is not noise, black or frozen
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the two renders of M-F442. **Free**: reads and `assess_output` on existing outputs; nothing queued.
 Steps:
@@ -11334,7 +11331,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F444 — the #1441 record gives SFace per reference for both runs, a re-score reproduces one within 0.01, and the floor call follows Don's rule (hybrid within 0.02 of stock, or better)
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `analyze_face_drift` (YuNet + SFace cosine; `video`, `reference` required; `samples_per_shot`
 default 8; `threshold` default 0.363), as #1317 stage A scored with it. Workspace as M-F441. **Cheap**: reads, plus one
@@ -11364,7 +11360,6 @@ cleanup: `delete_output(job_id=...)` on the re-score job this case made. Never d
 metrics: none.
 
 ### M-F445 — the #1441 record states the disk check, the graft's tensor report, the job ids, the wall time, the render path and a verdict line left for Don
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe (M-F441–M-F444). **Free**: issue reads and `get_job` only.
 Steps: the record as quoted on #1463/#1441; `get_job` on both renders for start/finish times.
@@ -11389,7 +11384,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F446 — an FL2V LoRA on the hybrid step is still refused at validate by the partition rule, and the ref2va turbo is still clean there
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the hybrid workflow from `get_job_workflow(<hybrid job>)` (M-F441); if the stage took the fallback and
 no hybrid dw workflow exists, a copy of `templates/minimax/reference-to-video` with the record's local `transformer_ref`
@@ -11422,7 +11416,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F447 — the #1441 probe adds no catalog surface: no hybrid entry in `list_workflows(include_models=true)`, `reference-to-video` as it was, and no smhfacct download
-pending: #1463
 source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: the catalog and `templates/minimax/reference-to-video`. **Free**: catalog reads only.
 Steps:
