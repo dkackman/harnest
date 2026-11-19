@@ -2,6 +2,9 @@
 run-regression.sh and harness.drivers.regression write it."""
 
 import importlib.util
+import json
+import os
+import sys
 import tempfile
 import unittest
 from pathlib import Path
@@ -159,6 +162,156 @@ class StreamIndexLock(unittest.TestCase):
                 t.join()
             self.assertEqual(150, len(idx.sessions))
             self.assertEqual(log.stat().st_size, idx.offset)
+
+
+FIXTURES = HERE / "tests" / "fixtures" / "loop-state"
+PAGE = (HERE / "dashboard" / "index.html").read_text()
+DEAD_PID = 2**22 + 12345  # above the default pid_max on macOS and Linux
+
+
+class LoopCard(unittest.TestCase):
+    """The loop card's server half: state.json (written by harness.loop_state,
+    see tests/fixtures/loop-state/generate.py) plus liveness."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.path = Path(self.tmp.name, "state.json")
+
+    def put(self, name, pid=None, heartbeat_age=None, now=None):
+        """Copy a fixture with a pid and a heartbeat `heartbeat_age` s before `now`."""
+        d = json.loads((FIXTURES / f"{name}.json").read_text())
+        now = now or 2_000_000_000.0
+        d["pid"] = pid if pid is not None else os.getpid()
+        if heartbeat_age is not None:
+            d["heartbeat"] = now - heartbeat_age
+        self.path.write_text(json.dumps(d))
+        return now
+
+    def loop(self, now):
+        return serve.loop_state(self.path, now)
+
+    def test_loop_live(self):
+        now = self.put("running", heartbeat_age=10)
+        lp = self.loop(now)
+        self.assertEqual((True, False, "live"), (lp["live"], lp["stalled"], lp["health"]))
+        self.assertEqual(("running", os.getpid()), (lp["status"], lp["pid"]))
+
+    def test_loop_live_edge_is_twice_poll_secs(self):
+        self.assertTrue(self.loop(self.put("running", heartbeat_age=120))["live"])  # poll_secs 60
+        self.assertFalse(self.loop(self.put("running", heartbeat_age=121))["live"])
+
+    def test_loop_stalled_old_heartbeat(self):
+        now = self.put("stalled", heartbeat_age=600)
+        lp = self.loop(now)
+        self.assertEqual((False, True, "stalled"), (lp["live"], lp["stalled"], lp["health"]))
+        self.assertEqual(now - 600, lp["heartbeat"], "the page says stalled since this time")
+
+    def test_loop_stalled_dead_pid(self):
+        now = self.put("running", pid=DEAD_PID, heartbeat_age=5)  # fresh heartbeat, nobody home
+        lp = self.loop(now)
+        self.assertEqual((False, True, "gone"), (lp["live"], lp["stalled"], lp["health"]))
+
+    def test_stopped_is_neither_live_nor_stalled(self):
+        for pid in (os.getpid(), DEAD_PID):
+            lp = self.loop(self.put("stopped", pid=pid, heartbeat_age=86400))
+            self.assertEqual((False, False, "stopped"), (lp["live"], lp["stalled"], lp["health"]), pid)
+
+    def test_stopping_with_old_heartbeat_is_stopping_not_stalled(self):
+        # SIGTERM wait_deploys: the heartbeat stops while the driver drains
+        lp = self.loop(self.put("stopping", heartbeat_age=900))
+        self.assertEqual(("stopping", False, False), (lp["health"], lp["stalled"], lp["live"]))
+        # a dead pid mid-stop is a dead driver
+        lp = self.loop(self.put("stopping", pid=DEAD_PID, heartbeat_age=900))
+        self.assertEqual(("gone", True), (lp["health"], lp["stalled"]))
+
+    def test_rate_limited_is_live(self):
+        lp = self.loop(self.put("rate-limited", heartbeat_age=3))
+        self.assertEqual(("live", "paused-rate-limit"), (lp["health"], lp["status"]))
+
+    def test_loop_failed_deploy_passthrough(self):
+        lp = self.loop(self.put("failed", heartbeat_age=3))
+        self.assertEqual("failed", lp["servers"]["lem"]["deploy"]["state"])
+        self.assertEqual([1452], lp["servers"]["lem"]["deploy"]["waiting"])
+        self.assertEqual("stranded", lp["suite"]["problems"][0]["result"])
+
+    def test_released_server_passthrough(self):
+        lp = self.loop(self.put("deploying", heartbeat_age=3))
+        self.assertTrue(lp["servers"]["mini-ai"]["released"])
+        self.assertEqual("draining", lp["servers"]["lem"]["deploy"]["state"])
+
+    def test_no_state_file(self):
+        self.assertIsNone(serve.loop_state(self.path, 1.0))
+
+    def test_unreadable_state_file_is_none(self):
+        for junk in ("{not json", "[]", ""):
+            self.path.write_text(junk)
+            self.assertIsNone(serve.loop_state(self.path, 1.0), junk)
+
+    def test_state_carries_loop_and_keeps_old_streams(self):
+        old = serve.LOOP_STATE
+        serve.LOOP_STATE = self.path
+        try:
+            self.assertIsNone(serve.state()["loop"])
+            self.put("running", heartbeat_age=0, now=serve.time.time())
+            st = serve.state()
+        finally:
+            serve.LOOP_STATE = old
+        self.assertTrue(st["loop"]["live"])
+        for k in ("drivers", "streams", "attention", "release"):
+            self.assertIn(k, st)
+        self.assertIn("loop_run", st["streams"]["lem"])
+        self.assertIn("looping", st["streams"]["lem"])
+
+    def test_fixtures_have_the_producers_shape(self):
+        """A snapshot from LoopState today has the keys the committed files have."""
+        spec = importlib.util.spec_from_file_location("gen", FIXTURES / "generate.py")
+        gen = importlib.util.module_from_spec(spec)
+        sys.path.insert(0, str(HERE))
+        try:
+            spec.loader.exec_module(gen)
+        finally:
+            sys.path.remove(str(HERE))
+        st, clock = gen.build("shape")
+        gen.running(st, clock)
+        fresh = st.snapshot()
+        files = sorted(FIXTURES.glob("*.json"))
+        self.assertGreaterEqual(len(files), 6)
+        for f in files:
+            d = json.loads(f.read_text())
+            self.assertEqual(sorted(fresh), sorted(d), f.name)
+            for name, srv in d["servers"].items():
+                want = set(fresh["servers"][name]) | ({"released"} if srv.get("released") else set())
+                self.assertEqual(want, set(srv), f"{f.name} {name}")
+
+
+class LoopPage(unittest.TestCase):
+    """What can be checked without a browser: the page reads the new fields."""
+
+    def test_page_reads_the_loop_fields(self):
+        for needle in (
+            "st.loop",
+            "stalled since",
+            "cost_so_far",
+            "slot_busy",
+            "worker_busy",
+            "series",
+            "waiting",
+            "deploy",
+            "queues",
+            "problems",
+            "released",
+            "history",
+            "totals",
+            "heartbeat",
+            "per close",
+            "paused-rate-limit",
+        ):
+            self.assertIn(needle, PAGE, needle)
+
+    def test_old_stream_views_stay(self):
+        for needle in ("progress(name, s.loop_run, s.looping)", "drawBurn", "pollLog"):
+            self.assertIn(needle, PAGE)
 
 
 if __name__ == "__main__":
