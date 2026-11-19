@@ -187,6 +187,8 @@ exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-
   sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
   serves the rest unchanged; `status` (100-599) replaces the real status, to play a 404
   or 500 page-data load built from the real answer.
+- `delay_ms` (integer 0-10000) on `mock` or `stub` holds the answer that long (a `mock` after the real fetch);
+  the step returns at once, so a stale answer can land after a newer one: click twice, then `wait_text`.
 - `record` is the cases' "record every request to ...": from that step on it notes each
   matching request, mocked or not; `recorded` returns them (`method`, `url` path and
   query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).

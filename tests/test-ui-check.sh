@@ -470,6 +470,62 @@ left=""
 for k in $kids; do kill -0 "$k" 2>/dev/null && left="$left $k"; done
 eq "no Chromium process of the run is left" "" "$left"
 
+# --- delay_ms on mock and stub: the answer is held, so a stale one can arrive after a newer one
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "mock", "url_glob": "**/api/validate", "once": true, "delay_ms": 2000, "set": {"plan.estimate.basis": "stale-mock"}},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "basis: observed"},
+  {"step": "expect_text", "text": "basis: stale-mock"},
+  {"step": "wait_text", "text": "basis: stale-mock", "timeout_ms": 8000},
+  {"step": "expect_text", "text": "basis: observed"}
+]}'
+eq "delayed mock spec ok" true "$(j .ok)"
+eq "the second (undelayed) answer shows first" false "$(j '.steps[5].result.found')"
+eq "the delayed first answer lands last" false "$(j '.steps[7].result.found')"
+eq "the result says the delay" 2000 "$(j '.steps[1].result.delay_ms')"
+run '{"steps": [
+  {"step": "goto", "path": "/"},
+  {"step": "stub", "url_glob": "**/api/validate", "method": "GET", "delay_ms": 2000, "json": {"valid": "stale-stub"}},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "unmock", "url_glob": "**/api/validate"},
+  {"step": "click", "role": "button", "name": "Validate"},
+  {"step": "wait_text", "text": "valid: true"},
+  {"step": "expect_text", "text": "valid: stale-stub"},
+  {"step": "wait_text", "text": "valid: stale-stub", "timeout_ms": 8000},
+  {"step": "expect_text", "text": "valid: true"}
+]}'
+eq "delayed stub spec ok" true "$(j .ok)"
+eq "stub: the later undelayed answer shows first" false "$(j '.steps[6].result.found')"
+eq "stub: the delayed answer lands last" false "$(j '.steps[8].result.found')"
+for bad in -1 10001 1.5 '"5"' true null; do
+  run '{"steps": [{"step": "stub", "url_glob": "**/api/validate", "json": {}, "delay_ms": '"$bad"'}]}'
+  eq "stub delay_ms $bad is an invalid spec" 2 "$rc"
+  run '{"steps": [{"step": "mock", "url_glob": "**/x", "status": 500, "delay_ms": '"$bad"'}]}'
+  eq "mock delay_ms $bad is an invalid spec" 2 "$rc"
+done
+run '{"steps": [{"step": "mock", "url_glob": "**/x", "status": 500, "delay_ms": 10000}, {"step": "stub", "url_glob": "**/y", "json": {}, "delay_ms": 0}]}'
+eq "delay_ms 0 and 10000 are accepted" true "$(j .ok)"
+run '{"steps": [{"step": "abort", "url_glob": "**/x", "delay_ms": 5}]}'
+eq "delay_ms on another step is refused" 2 "$rc"
+
+# --- SIGTERM while a delayed route is pending
+n=$((n + 1))
+printf '%s\n' '{"steps": [{"step": "goto", "path": "/"}, {"step": "stub", "url_glob": "**/api/validate", "method": "GET", "delay_ms": 10000, "json": {"valid": 1}}, {"step": "click", "role": "button", "name": "Validate"}, {"step": "wait_text", "text": "never shown", "timeout_ms": 30000}]}' > "$specs-$n.json"
+node "$runner" "$specs-$n.json" > "$T/dterm.out" 2>"$T/dterm.err" &
+dp=$!
+python3 -c 'import time; time.sleep(4)'
+start="$(date +%s)"
+kill -TERM "$dp"
+wait "$dp"; drc=$?
+took=$(( $(date +%s) - start ))
+ok "SIGTERM during a delayed route ends the run promptly ($took s)" test "$took" -le 5
+eq "with exit 0" 0 "$drc"
+out="$(cat "$T/dterm.out")"
+has "saying it was terminated" "SIGTERM" "$(j .error)"
+eq "the delayed stub step itself was done" true "$(j '.steps[1].ok')"
+
 # --- the bearer token: from the session's MCP config, into localStorage, never printed
 tok="tok-sekret-$$"
 serve "$T/asrv.out" "$tok"
