@@ -41,6 +41,13 @@ class NeedsTest(unittest.TestCase):
     def test_key(self):
         self.assertEqual(it("tester:verify", 5).key, ("tester:verify", 5))
 
+    def test_issueless_items_are_one_per_server(self):
+        a, b = it("tester:closures", None, "lem"), it("tester:closures", None, "mini-ai")
+        self.assertNotEqual(a.key, b.key)
+        s, _ = mk()
+        s.offer([a, b])
+        self.assertEqual(len(s.next_dispatches()), 2)
+
 
 class SchedulerTest(unittest.TestCase):
     def test_code_item_runs_while_gpu_busy(self):

@@ -63,9 +63,8 @@ def run_deploy(server, say, branch="develop", logs=None):
     return ok, deployed_head(server)
 
 
-def health(url, token):
-    """ "<device> on <hostname>" from the server's /api/health, or None when
-    nothing answers ok."""
+def health_json(url, token):
+    """The server's /api/health as a dict when it answers ok, else None."""
     base = url.rstrip("/")
     if base.endswith("/mcp"):
         base = base[:-4]
@@ -86,6 +85,15 @@ def health(url, token):
     except ValueError:
         return None
     if not isinstance(h, dict) or h.get("status") != "ok":
+        return None
+    return h
+
+
+def health(url, token):
+    """ "<device> on <hostname>" from the server's /api/health, or None when
+    nothing answers ok."""
+    h = health_json(url, token)
+    if h is None:
         return None
 
     def s(v):

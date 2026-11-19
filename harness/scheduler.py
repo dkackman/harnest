@@ -47,6 +47,9 @@ class Item:
 
     @property
     def key(self) -> tuple:
+        # An item with no issue (closures, the standing task) is one per server.
+        if self.issue is None:
+            return (self.queue, None, self.server)
         return (self.queue, self.issue)
 
 

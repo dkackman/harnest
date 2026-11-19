@@ -56,6 +56,8 @@ plugin_subdir = "plugins/dw"
 #                 not: presence alone would let a partial H3 cache through
 #   clone_suffix  appended to the agents' clones (default "-<name>" off the
 #                 primary); "" shares the primary's
+#   loop_gpu_slots  loop sessions that may run jobs on it at once (R17's
+#                 harness.drivers.loop; default 1)
 [[servers]]
 name = "lem"
 host = "lem"
@@ -64,6 +66,7 @@ backend = "cuda"
 port = 8765
 token_env = "DW_TOKEN_LEM"
 lanes = 2
+loop_gpu_slots = 1
 speed = 1.0
 downloads = true
 max_model_gb = 0
@@ -81,6 +84,7 @@ backend = "mps"
 port = 8765
 token_env = "DW_TOKEN_MINI_AI"
 lanes = 1
+loop_gpu_slots = 1
 speed = 0.35
 downloads = false
 max_model_gb = 0
