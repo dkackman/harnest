@@ -38,6 +38,31 @@ def deploy_cmd(server, branch="develop"):
     return f"ssh -o ConnectTimeout=8 -o BatchMode=yes {server.host} '{server.dir}/scripts/deploy.sh {branch}'"
 
 
+def run_deploy(server, say, branch="develop", logs=None):
+    """deploy_target: run the deploy line, say its last 3 output lines, and
+    return (ok, deployed_head). logs, if given, gets .deploy.out."""
+    try:
+        p = subprocess.run(
+            ["bash", "-c", deploy_cmd(server, branch)],
+            stdin=subprocess.DEVNULL,
+            capture_output=True,
+            text=True,
+            timeout=1800,
+        )
+        out, ok = p.stdout + p.stderr, p.returncode == 0
+    except (OSError, subprocess.TimeoutExpired) as e:
+        out, ok = f"deploy did not run: {e}", False
+    if logs:
+        try:
+            with open(os.path.join(logs, ".deploy.out"), "w") as f:
+                f.write(out)
+        except OSError:
+            pass
+    for line in out.rstrip("\n").splitlines()[-3:]:
+        say(f"[loop:deploy] {line}")
+    return ok, deployed_head(server)
+
+
 def health(url, token):
     """ "<device> on <hostname>" from the server's /api/health, or None when
     nothing answers ok."""
