@@ -26605,4 +26605,26 @@ A missing suffix, a suffix on row 3, or the raw `waiting_for` sentence in place 
 cleanup: none (nothing is queued).
 metrics: none.
 
+### C-F1143 — the Models page's "last used" cell shows the dw job date plain, the disk date muted with "(disk)", and "—" for neither
+source: tester, verified in #1462 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. Needs at least two repos in `list_models`. Note which
+repos have a non-null `last_job_use`.
+1. `goto` `/`, `click` link `Models`, `wait_text` one repo id, then `inspect` the "last used" cell of one repo with
+   `last_job_use` set and of one with it null.
+2. `mock` `**/api/models`, setting `repos.0.last_accessed` and `repos.0.last_job_use` to `null`, and
+   `repos.1.last_job_use` to `1767268800` (2026-01-01 12:00 UTC; leave its `last_accessed` alone). Reload the page
+   as in step 1, then `inspect` `—` (exact) and `Jan 1` (exact).
+expected:
+- A repo with `last_job_use` set shows that day (e.g. `Nov 19`) with no "(disk)" suffix, in the table's plain text
+  colour and not muted.
+- A repo with `last_job_use: null` and `last_accessed` set shows its `last_accessed` day followed by ` (disk)`, muted:
+  a `muted` class and a lighter computed colour than the plain cell.
+- Mocked `repos.0` shows `—`. Mocked `repos.1` shows `Jan 1` plain with no "(disk)", so `last_job_use` wins over
+  `last_accessed`.
+- No page error.
+A "(disk)" suffix on a dw-used row, a plain unmarked atime date, or the atime date in place of `last_job_use` is a
+**finding**. The tooltips (`title`) aren't visible to `inspect`, so they aren't checked here.
+cleanup: none (read-only).
+metrics: none.
+
 ## Performance
