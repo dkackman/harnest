@@ -114,6 +114,24 @@ eq "a SHA outside a progress: comment does not count" "OPEN|owner:implementer|<!
 fp_issue '["x:progress: pushed abc1234", "x:<!-- harnest:decomposed v9 -->"]'
 eq "a stranger's progress: or marker comment does not count (public repo)" "OPEN|owner:implementer|<!-- harnest:plan v1 -->|" "$(issue_fingerprint o/r 6)"
 
+# concurrent items (R17) note progress at once: every key survives, and no
+# temp file or lock is left behind
+race_lost=0
+for round in 1 2 3 4 5 6; do
+  rl="$T/race$round"; mkdir -p "$rl"
+  for k in 1 2 3 4 5 6 7 8; do
+    ( issue_fingerprint() { printf 'OPEN|x|'; }; LOGS="$rl" NO_PROGRESS_PARK_AFTER=9 note_progress o/r "$k" "OPEN|x|" t race ) &
+  done
+  wait
+  [ "$(cut -f1 "$rl/progress.tsv" 2>/dev/null | sort -u | wc -l | tr -d ' ')" = 8 ] || race_lost=$((race_lost + 1))
+done
+eq "concurrent note_progress: every key survives, every round" 0 "$race_lost"
+eq "concurrent note_progress: no temp file or lock left" "" "$(find "$T"/race[0-9] \( -name '*.tmp*' -o -name '*.lock' \) -print)"
+# a stale lock (its pid is gone) is taken over, not waited on forever
+rl="$T/race-stale"; mkdir -p "$rl/progress.tsv.lock"; echo 999999 > "$rl/progress.tsv.lock/pid"
+( issue_fingerprint() { printf 'OPEN|x|'; }; LOGS="$rl" NO_PROGRESS_PARK_AFTER=9 note_progress o/r 1 "OPEN|x|" t race )
+eq "note_progress takes over a stale ledger lock" "o/r#1:race" "$(cut -f1 "$rl/progress.tsv")"
+
 # --- handoff_count: hand-offs since the last reopen, or Don's last hand-back
 stub_gh 'printf "%s\n" labeled labeled reopened labeled'
 eq "hand-offs since the last reopen" "1" "$(handoff_count 5)"

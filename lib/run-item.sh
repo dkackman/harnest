@@ -39,6 +39,12 @@ case "${1:-}" in
   park-external|unpark|consolidation|labels) ;;
   *) echo "usage: run-item.sh <implementer|triage|lead|features|tester|tester-task|tester-closures|reviewer-arch|reviewer-docs|curator|park|park-external|unpark|consolidation|labels> [<issue>]" >&2; exit 1 ;;
 esac
+case "$1" in
+  tester|curator|implementer|lead|reviewer-arch|reviewer-docs|park)
+    [ -n "${2:-}" ] || { echo "run-item.sh: $1 is a per-issue pass and needs an <issue>" >&2; exit 1; } ;;
+esac
+[ -n "${HARNEST_LAST_SESSION:-}" ] \
+  || { echo "run-item.sh: HARNEST_LAST_SESSION is not set; each item needs its own last-session file (logs/.last-session.item.<slot>)" >&2; exit 1; }
 case "${2:-}" in ''|*[!0-9]*) [ -z "${2:-}" ] || { echo "run-item.sh: <issue> must be a number, got '$2'" >&2; exit 1; } ;; esac
 
 item_pass="$1" item_issue="${2:-}" item_reason="${3:-}"
@@ -53,7 +59,7 @@ set --
 # shellcheck source=../run-loop.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/run-loop.sh"
 # shellcheck disable=SC2034  # cycle is read by run-loop.sh (run_agent)
-case "$item_pass" in park|park-external|consolidation|labels) cycle=item ;; *) item_init ;; esac
+case "$item_pass" in park|park-external|consolidation|labels) cycle=item; : > "$LAST_SESSION" ;; *) item_init ;; esac
 
 item_fail() { echo "[item] $item_pass${item_issue:+ #$item_issue} failed (driver error)" | tee -a "$LOOP_LOG" >&2; exit 1; }
 case "$item_pass" in
@@ -62,7 +68,7 @@ case "$item_pass" in
   features) features_pass || item_fail ;;
   tester|tester-task|tester-closures)
     tester_pass || item_fail
-    co_author_for "$TESTER_PROVIDER" "$(resolved_model tester "$TESTER_MODEL")"
+    co_author_for "$TESTER_PROVIDER" "$(resolved_model "tester$TARGET_SUFFIX$PROMPT_TAG" "$TESTER_MODEL")"
     item_what="$item_pass"; [ -z "$item_issue" ] || item_what="#$item_issue"
     item_land_note "regression: tester added case ($item_what)" ;;
   reviewer-arch) reviewer_pass arch || item_fail ;;

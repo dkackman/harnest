@@ -31,7 +31,7 @@ cat > "$T/bin/claude" <<'EOS'
 echo "claude $*" | cut -c1-200 >> "$FAKE_CLAUDE_LOG"
 echo "claude $*" >> "$FAKE_CLAUDE_LOG.argv"
 [ -z "${FAKE_CLAUDE_DO:-}" ] || eval "$FAKE_CLAUDE_DO" >/dev/null
-echo '{"type":"system","subtype":"init","model":"claude-fake"}'
+echo "{\"type\":\"system\",\"subtype\":\"init\",\"model\":\"${FAKE_CLAUDE_MODEL:-claude-fake}\"}"
 [ -z "${FAKE_CLAUDE_SAY:-}" ] || jq -cn --arg t "$(eval "$FAKE_CLAUDE_SAY")" '{type: "assistant", message: {content: [{type: "text", text: $t}]}}'
 # FAKE_CLAUDE_REJECT: "always", or a marker file: rejected by the rate limit until it exists
 if [ "${FAKE_CLAUDE_REJECT:-}" = always ] || { [ -n "${FAKE_CLAUDE_REJECT:-}" ] && [ ! -e "$FAKE_CLAUDE_REJECT" ] && touch "$FAKE_CLAUDE_REJECT"; }; then
@@ -1048,7 +1048,7 @@ item() { # item <pass> [<issue> [<reason>]] [-- VAR=value...]: one item, bounded
   (cd "$T/h" && exec env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
      SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" SESSION_RETRY_PAUSE_SECS=0 \
      HARNEST_LAST_SESSION=logs/.last-session.item.s1 DEPLOYED_HEAD="develop @ ${sha:0:9}" \
-     ${envs[@]+"${envs[@]}"} lib/run-item.sh "${args[@]}") > "$T/item.out" 2>&1 &
+     ${envs[@]+"${envs[@]}"} lib/run-item.sh "${args[@]}") > "${ITEM_OUT:-$T/item.out}" 2>&1 &
   local pid=$! i
   for i in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
   if kill -0 "$pid" 2>/dev/null; then killtree "$pid"; wait "$pid" 2>/dev/null; echo "item timed out" >> "$T/item.out"; return 124; fi
@@ -1153,6 +1153,49 @@ item unpark; rc=$?
 eq  "item: unpark runs" 0 "$rc"
 item consolidation; rc=$?
 eq  "item: consolidation runs" 0 "$rc"
+# two tester items at once on different slots: each has its own session log,
+# and each land note names the model its own session ran on
+board "$handoffs"; rm -f "$T/h/logs/"tester*.jsonl "$T/h/logs/.last-session.item.s"[12]*
+ITEM_OUT="$T/item-s1.out" item tester 2 -- HARNEST_LAST_SESSION=logs/.last-session.item.s1 FAKE_CLAUDE_MODEL=claude-alpha \
+  FAKE_CLAUDE_SAY='for i in $(seq 1 300); do grep -qs claude-beta "$T/h/logs/"tester*.jsonl && break; sleep 0.1; done; sleep 0.3; echo a' T="$T" &
+s1pid=$!
+item tester 3 -- HARNEST_LAST_SESSION=logs/.last-session.item.s2 FAKE_CLAUDE_MODEL=claude-beta
+wait "$s1pid"
+ok  "item: slot s1 has its own session jsonl" grep -q claude-alpha "$T/h/logs/tester.item.s1.jsonl"
+ok  "item: slot s2 has its own session jsonl" grep -q claude-beta "$T/h/logs/tester.item.s2.jsonl"
+fails "item: and they do not mix" grep -q claude-beta "$T/h/logs/tester.item.s1.jsonl"
+fails "item: no shared tester.jsonl" test -e "$T/h/logs/tester.jsonl"
+has "item: s1's land note names its own model" "claude-alpha" "$(jq -r .name "$T/h/logs/.last-session.item.s1.land" 2>/dev/null)"
+has "item: s2's land note names its own model" "claude-beta" "$(jq -r .name "$T/h/logs/.last-session.item.s2.land" 2>/dev/null)"
+# an item that runs no session leaves its last-session file empty, not the last item's
+board "$handoffs"; item tester 2
+ok  "item: (a session item fills the slot's file)" test -s "$T/h/logs/.last-session.item.s1"
+item tester 9
+eq  "item: a nothing-ready item on the same slot leaves it empty" 0 "$(wc -c < "$T/h/logs/.last-session.item.s1" | tr -d ' ')"
+# item mode needs its own last-session file, and a per-issue pass needs its issue
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"
+item tester 2 -- HARNEST_LAST_SESSION=; rc=$?
+eq  "item: no HARNEST_LAST_SESSION is refused" "1 0" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "item: and says so" "HARNEST_LAST_SESSION" "$(cat "$T/item.out")"
+for p in tester curator implementer lead reviewer-arch reviewer-docs park; do
+  item "$p"; rc=$?
+  eq  "item: $p without an issue is refused" 1 "$rc"
+done
+eq  "item: and none ran a session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+# a features item: its session goes to the item's last-session file and logs
+board '[{"number": 22, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
+: > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/lead.item.s3.jsonl" "$T/h/logs/.last-session.item.s3"
+item features 22 -- HARNEST_LAST_SESSION=logs/.last-session.item.s3 SHARED_PASSES=1
+eq  "item: features designs #22" 1 "$(grep -c 'DESIGN session for issue #22' "$FAKE_CLAUDE_LOG")"
+ok  "item: features writes the item's last-session file" grep -q '^usage: ' "$T/h/logs/.last-session.item.s3"
+ok  "item: and the item's own lead jsonl" test -s "$T/h/logs/lead.item.s3.jsonl"
+ok  "item: and the item's own prompt file" test -e "$T/h/logs/.prompt.lead.design.item.s3.md"
+# outside item mode TESTER_PART and HARNEST_LAST_SESSION from the env are ignored
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"; rm -f "$T/h/logs/.last-session.loop" "$T/h/logs/.last-session.stray"
+TESTER_PART=task HARNEST_LAST_SESSION=logs/.last-session.stray loop 1
+eq  "loop: TESTER_PART from the env is ignored (verifies ran)" 2 "$(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
+ok  "loop: HARNEST_LAST_SESSION from the env is ignored" test -e "$T/h/logs/.last-session.loop"
+fails "loop: and the stray file is not written" test -e "$T/h/logs/.last-session.stray"
 
 for f in loop features reg curate retro; do cp "$T/$f.out" "/tmp/claude-501/last-$f.out" 2>/dev/null; done
 finish

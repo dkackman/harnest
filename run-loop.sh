@@ -287,7 +287,11 @@ export SUITE_EDITS=1
 # An item's own last-session file (logs/.last-session.item.<slot>, relative
 # to this checkout), which its driver reads; prompt files take the same tag,
 # so two items at once never write each other's.
-LAST_SESSION="${HARNEST_LAST_SESSION:-$LOGS/.last-session.loop$TARGET_SUFFIX}"
+# Outside item mode HARNEST_LAST_SESSION is ignored. The tag also names the
+# item's session logs (logs/<role><sfx><tag>.log and .jsonl, run_agent), so
+# resolved_model reads this item's session and no other.
+LAST_SESSION="$LOGS/.last-session.loop$TARGET_SUFFIX"
+[ "$HARNEST_ITEM" != 1 ] || LAST_SESSION="${HARNEST_LAST_SESSION:?item mode needs HARNEST_LAST_SESSION}"
 case "$LAST_SESSION" in /*) ;; *) LAST_SESSION="$REPO/$LAST_SESSION" ;; esac
 PROMPT_TAG=""
 if [ "$HARNEST_ITEM" = 1 ]; then
@@ -428,7 +432,7 @@ run_agent() {
     [ -z "${HARNEST_SESSION_TREE:-}" ] \
       || SESSION_ENV+=(HARNEST_SESSION_TREE="$HARNEST_SESSION_TREE" HARNEST_SESSION_BASE="$HARNEST_SESSION_BASE") ;;
   esac
-  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX" "$dir" "$prompt_file" \
+  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX$PROMPT_TAG" "$dir" "$prompt_file" \
     "$prompt
 
 $(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
@@ -690,7 +694,7 @@ features_pass() {
     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO" \
     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN" \
     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS" \
-    ONLY_ISSUES="$only" run_child_driver "$REPO/run-features.sh"
+    ONLY_ISSUES="$only" HARNEST_LAST_SESSION="$LAST_SESSION" run_child_driver "$REPO/run-features.sh"
 }
 
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).
@@ -798,7 +802,8 @@ $(plan_text "$n")" \
 # TESTER_PART picks which of it runs: all (the loop: everything, the task on
 # its cadence), or for an item (lib/run-item.sh) issues (the per-issue
 # sessions), task (the standing task, now) or closures (the closures session).
-TESTER_PART="${TESTER_PART:-all}"
+# Outside item mode it is always all, whatever the environment says.
+TESTER_PART="$([ "$HARNEST_ITEM" = 1 ] && printf '%s' "${TESTER_PART:-all}" || printf all)"
 tester_pass() {
   local n
   case "$TESTER_PART" in all|issues) ;; task|closures) tester_rest; return ;; *) echo "TESTER_PART must be all, issues, task or closures, got '$TESTER_PART'" >&2; return 1 ;; esac
@@ -1031,7 +1036,7 @@ The request as of $(ts):
 
 $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
       "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$CURATOR_REVIEW_TOOLS" "${CURATOR_REVIEW_PERMISSION_FLAGS[@]}"
-    co_author_for "$CURATOR_PROVIDER" "$(resolved_model curator "$CURATOR_MODEL")"
+    co_author_for "$CURATOR_PROVIDER" "$(resolved_model "curator${PROMPT_TAG:+$TARGET_SUFFIX$PROMPT_TAG}" "$CURATOR_MODEL")"
     # Only a request the ruling closed as completed was applied: its
     # removals are the approved route and are logged, not warned. Any other
     # outcome (denied, escalated, unreadable) that still changed the suite
@@ -1411,6 +1416,7 @@ item_init() {
     *) if dw_frozen; then DW_FROZEN=1; else DW_FROZEN=0; fi ;;
   esac
   rm -f "$LAST_SESSION.land"
+  : > "$LAST_SESSION"   # an item that runs no session leaves it empty, not the slot's last session
 }
 
 # item_land_note <msg> [kind]
