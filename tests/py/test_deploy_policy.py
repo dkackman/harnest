@@ -1,8 +1,10 @@
 """harness/deploy_policy.py: when the scheduler deploys, and run_deploy."""
 
+import os
 import pathlib
 import subprocess
 import tempfile
+import time
 import unittest
 from types import SimpleNamespace
 from unittest import mock
@@ -163,12 +165,17 @@ class Policy(unittest.TestCase):
 
         def fake_run(argv, **kw):
             calls.append(argv)
-            if argv[:2] == ["bash", "-c"] and "deploy.sh" in argv[2]:
-                return subprocess.CompletedProcess(argv, 0, stdout="a\nb\nc\nd\n", stderr="")
             return subprocess.CompletedProcess(argv, 0, stdout="develop @ abc1234\n", stderr="")
 
+        def fake_proc(argv, timeout=None):
+            calls.append(argv)
+            return 0, "a\nb\nc\nd\n"
+
         said = []
-        with mock.patch.object(deploy.subprocess, "run", fake_run):
+        with (
+            mock.patch.object(deploy.subprocess, "run", fake_run),
+            mock.patch.object(deploy, "_deploy_proc", fake_proc),
+        ):
             ok, head = deploy.run_deploy(server, said.append)
         g.succeeded()
         deploys = [c for c in calls if "deploy.sh" in " ".join(c)]
@@ -178,6 +185,43 @@ class Policy(unittest.TestCase):
         self.assertEqual(head, "develop @ abc1234")
         self.assertEqual([s for s in said], ["[loop:deploy] b", "[loop:deploy] c", "[loop:deploy] d"])
         self.assertFalse(g.wanted([], {}, True))
+
+
+class DeploySessionTest(unittest.TestCase):
+    def test_the_deploy_runs_in_a_session_of_its_own(self):
+        seen = {}
+        real = subprocess.Popen
+
+        def spy(argv, **kw):
+            seen.update(kw)
+            return real(
+                ["bash", "-c", "echo sid=$(ps -o sess= -p $$ 2>/dev/null); echo pgid=$(ps -o pgid= -p $$)"], **kw
+            )
+
+        with mock.patch.object(deploy.subprocess, "Popen", spy):
+            rc, out = deploy._deploy_proc(["bash", "-c", "true"])
+        self.assertTrue(seen.get("start_new_session"))
+        self.assertEqual(rc, 0)
+        pgid = int(out.split("pgid=")[1].split()[0])
+        self.assertNotEqual(pgid, os.getpgrp())  # a Ctrl-C to the driver's group misses it
+
+    def test_a_timeout_kills_the_group(self):
+        t = time.monotonic()
+        with self.assertRaises(subprocess.TimeoutExpired):
+            deploy._deploy_proc(["bash", "-c", "sleep 30 & wait"], timeout=1)
+        self.assertLess(time.monotonic() - t, 10)
+
+    def test_each_server_has_its_own_out_file(self):
+        logs = tempfile.mkdtemp()
+        for name, sfx in (("lem", ""), ("mini-ai", ".mini-ai")):
+            server = SimpleNamespace(host=name, dir="~/dw", local=False, name=name, suffix=sfx)
+            with (
+                mock.patch.object(deploy, "_deploy_proc", return_value=(0, f"deployed {name}\n")),
+                mock.patch.object(deploy, "deployed_head", return_value="develop @ abc"),
+            ):
+                deploy.run_deploy(server, lambda s: None, logs=logs)
+        self.assertEqual(pathlib.Path(logs, ".deploy.out").read_text(), "deployed lem\n")
+        self.assertEqual(pathlib.Path(logs, ".deploy.mini-ai.out").read_text(), "deployed mini-ai\n")
 
 
 if __name__ == "__main__":

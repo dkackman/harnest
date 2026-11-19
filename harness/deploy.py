@@ -4,8 +4,10 @@ A port of providers.sh's deployed_head, target_health, target_preflight
 and deploy_cmd.
 """
 
+import contextlib
 import json
 import os
+import signal
 import subprocess
 
 from .profile import short_host
@@ -38,23 +40,45 @@ def deploy_cmd(server, branch="develop"):
     return f"ssh -o ConnectTimeout=8 -o BatchMode=yes {server.host} '{server.dir}/scripts/deploy.sh {branch}'"
 
 
-def run_deploy(server, say, branch="develop", logs=None):
-    """deploy_target: run the deploy line, say its last 3 output lines, and
-    return (ok, deployed_head). logs, if given, gets .deploy.out."""
+DEPLOY_TIMEOUT = 1800
+
+
+def _deploy_proc(argv, timeout=DEPLOY_TIMEOUT):
+    """<argv> in a session of its own, so a Ctrl-C or SIGHUP to the driver's
+    terminal never reaches a deploy mid-restart; past <timeout> its whole
+    group is killed. Returns (rc, output)."""
+    p = subprocess.Popen(
+        argv,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+        errors="replace",
+        start_new_session=True,
+    )
     try:
-        p = subprocess.run(
-            ["bash", "-c", deploy_cmd(server, branch)],
-            stdin=subprocess.DEVNULL,
-            capture_output=True,
-            text=True,
-            timeout=1800,
-        )
-        out, ok = p.stdout + p.stderr, p.returncode == 0
+        out, _ = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(p.pid, signal.SIGKILL)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            p.communicate(timeout=5)
+        raise
+    return p.returncode, out or ""
+
+
+def run_deploy(server, say, branch="develop", logs=None):
+    """deploy_target: run the deploy line in a session of its own, say its
+    last 3 output lines, and return (ok, deployed_head). logs, if given,
+    gets .deploy<sfx>.out (the server's suffix: one file per server)."""
+    try:
+        rc, out = _deploy_proc(["bash", "-c", deploy_cmd(server, branch)])
+        ok = rc == 0
     except (OSError, subprocess.TimeoutExpired) as e:
         out, ok = f"deploy did not run: {e}", False
     if logs:
         try:
-            with open(os.path.join(logs, ".deploy.out"), "w") as f:
+            with open(os.path.join(logs, f".deploy{getattr(server, 'suffix', '')}.out"), "w") as f:
                 f.write(out)
         except OSError:
             pass
