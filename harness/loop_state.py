@@ -17,6 +17,7 @@ import time
 from harness.scheduler import needs
 
 SERIES_MAX = 720  # 6 h of samples at 30 s
+SUITE_MAX = 50  # suite landings kept for Don
 PARKED = "(parked) "  # status_board's mark on a parked issue's title
 AGENT_OWNERS = frozenset({"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"})
 # "stopped" is the last word of a driver that exited cleanly; the dashboard
@@ -70,6 +71,7 @@ class LoopState:
         self._totals = {"sessions": 0, "cost": 0, "closed": 0}
         self._gpu = {}
         self._gpu_last = {}  # server -> (t, slot_busy, worker_busy)
+        self._suite = []  # landings that left work on a branch for Don
 
     # -- sessions ---------------------------------------------------------
     def session_started(self, item, server, label, model, log):
@@ -123,6 +125,13 @@ class LoopState:
             raise ValueError(f"loop status {s!r} not in {STATUSES}")
         with self._lock:
             self._status = s
+
+    def suite_problem(self, p):
+        """A suite landing that did not land cleanly (suite_tree.land's
+        "conflict" or "stranded"): {at, label, issue, server, result, branch}."""
+        with self._lock:
+            self._suite.append(dict(p))
+            del self._suite[:-SUITE_MAX]
 
     def closed(self, n):
         with self._lock:
@@ -225,6 +234,7 @@ class LoopState:
                 "board": {"rows": copy.deepcopy(self._rows), "history": copy.deepcopy(self._history)},
                 "totals": dict(self._totals),
                 "gpu": copy.deepcopy(self._gpu),
+                "suite": {"problems": copy.deepcopy(self._suite)},
             }
 
     def write(self):

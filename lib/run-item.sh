@@ -21,6 +21,8 @@
 #   park-external    park_external_issues
 #   unpark           unpark_pass
 #   consolidation    consolidation_pass
+#   housekeeping     park-external, unpark and consolidation, in one go (the
+#                    scheduler's once-a-poll housekeeping)
 #   labels           the claim and backend labels the loop makes at startup
 #
 # Environment, from the scheduler: DW_TARGET, ONLY_ISSUES (set from <issue>
@@ -36,8 +38,8 @@
 case "${1:-}" in
   implementer|triage|lead|features|tester|tester-task|tester-closures|reviewer-arch|reviewer-docs|curator) ;;
   park) [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: run-item.sh park <issue> <reason>" >&2; exit 1; } ;;
-  park-external|unpark|consolidation|labels) ;;
-  *) echo "usage: run-item.sh <implementer|triage|lead|features|tester|tester-task|tester-closures|reviewer-arch|reviewer-docs|curator|park|park-external|unpark|consolidation|labels> [<issue>]" >&2; exit 1 ;;
+  park-external|unpark|consolidation|housekeeping|labels) ;;
+  *) echo "usage: run-item.sh <implementer|triage|lead|features|tester|tester-task|tester-closures|reviewer-arch|reviewer-docs|curator|park|park-external|unpark|consolidation|housekeeping|labels> [<issue>]" >&2; exit 1 ;;
 esac
 case "$1" in
   tester|curator|implementer|lead|reviewer-arch|reviewer-docs|park)
@@ -59,8 +61,11 @@ set --
 # shellcheck source=../run-loop.sh
 . "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/run-loop.sh"
 # shellcheck disable=SC2034  # cycle is read by run-loop.sh (run_agent)
-case "$item_pass" in park|park-external|consolidation|labels) cycle=item; : > "$LAST_SESSION" ;; *) item_init ;; esac
+case "$item_pass" in park|park-external|consolidation|housekeeping|labels) cycle=item; : > "$LAST_SESSION" ;; *) item_init ;; esac
 
+# unpark_pass reads DW_FROZEN: HARNEST_DW_FROZEN from the driver, else dw_frozen
+# (without it a pass with no session would see 0, and unpark mid-freeze).
+item_frozen() { case "${HARNEST_DW_FROZEN:-}" in 0|1) DW_FROZEN="$HARNEST_DW_FROZEN" ;; *) if dw_frozen; then DW_FROZEN=1; else DW_FROZEN=0; fi ;; esac; }
 item_fail() { echo "[item] $item_pass${item_issue:+ #$item_issue} failed (driver error)" | tee -a "$LOOP_LOG" >&2; exit 1; }
 case "$item_pass" in
   implementer|triage) implementer_pass || item_fail ;;
@@ -76,8 +81,15 @@ case "$item_pass" in
   curator) curator_pass || item_fail ;;
   park) park_issue "$item_issue" "$item_reason" || item_fail ;;
   park-external) park_external_issues || item_fail ;;
-  unpark) unpark_pass || item_fail ;;
+  unpark) item_frozen; unpark_pass || item_fail ;;
   consolidation) consolidation_pass || item_fail ;;
+  housekeeping)
+    item_frozen
+    hk_rc=0
+    park_external_issues || hk_rc=1
+    unpark_pass || hk_rc=1
+    consolidation_pass || hk_rc=1
+    [ "$hk_rc" = 0 ] || item_fail ;;
   labels) ensure_loop_labels ;;
 esac
 exit 0

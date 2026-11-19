@@ -16,18 +16,26 @@
 #   board.sh curator <target>   curator_requests, one number per line
 #   board.sh freeze <target>    release_freeze: "#<n> <title>", UNKNOWN, or nothing
 #   board.sh frozen <target>    dw_frozen as 1 or 0
+#   board.sh hk <target> [lead] the driver's once-a-poll reads in one go, a
+#                               line each, tab-separated: "frozen 0|1",
+#                               "freeze <release_freeze>", "closures <n>...";
+#                               with lead also "curator <n>..." and a
+#                               "status <line>" per status_board line (or
+#                               "status-unreadable")
 #
 # Exit 1 when the board can't be read (rows and status), or on a bad call.
 # The plain rows need providers.sh only; the other queries source
 # run-loop.sh in item mode (no lock, no deploy, no session), the way
 # lib/run-item.sh does, because their rules live there.
 
+lead=""
 case $# in
   1) query=rows target="$1" ;;
   2) query="$1" target="$2" ;;
-  *) echo "usage: board.sh [status|drain|closures|curator|freeze|frozen] <target>" >&2; exit 1 ;;
+  3) query="$1" target="$2" lead="$3"; [ "$query $lead" = "hk lead" ] || { echo "board.sh: only hk takes a third argument (lead)" >&2; exit 1; } ;;
+  *) echo "usage: board.sh [status|drain|closures|curator|freeze|frozen|hk] <target> [lead]" >&2; exit 1 ;;
 esac
-case "$query" in rows|status|drain|closures|curator|freeze|frozen) ;; *) echo "board.sh: unknown query '$query'" >&2; exit 1 ;; esac
+case "$query" in rows|status|drain|closures|curator|freeze|frozen|hk) ;; *) echo "board.sh: unknown query '$query'" >&2; exit 1 ;; esac
 [ -n "$target" ] || { echo "board.sh: no target" >&2; exit 1; }
 export DW_TARGET="$target"
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -75,5 +83,16 @@ case "$query" in
   curator) curator_requests || true ;;
   freeze) release_freeze ;;
   frozen) echo "$DW_FROZEN" ;;
+  hk)
+    printf 'frozen\t%s\n' "$DW_FROZEN"
+    printf 'freeze\t%s\n' "$(release_freeze)"
+    printf 'closures\t%s\n' "$(pending_closures | tr '\n' ' ')"
+    if [ -n "$lead" ]; then
+      printf 'curator\t%s\n' "$(curator_requests | tr '\n' ' ')"
+      out="$(status_board)"
+      if [ -n "$out" ]; then printf '%s\n' "$out" | sed 's/^/status\t/'
+      elif gh issue list --repo "$TICKET_REPO" --state open --limit 1 --json number >/dev/null 2>&1; then :
+      else echo status-unreadable; fi
+    fi ;;
 esac
 exit 0

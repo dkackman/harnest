@@ -77,9 +77,9 @@ def snapshot(target: str, env=None) -> list[Row] | None:
     return parse(p.stdout)
 
 
-def query(what: str, target: str, env=None) -> str | None:
-    """`board.sh <what> <target>`'s output, or None when it failed."""
-    p = _run([what, target], env)
+def query(what: str, target: str, env=None, *extra) -> str | None:
+    """`board.sh <what> <target> [extra]`'s output, or None when it failed."""
+    p = _run([what, target, *extra], env)
     if p is None or p.returncode != 0:
         return None
     return p.stdout

@@ -176,6 +176,14 @@ class LoopStateTests(unittest.TestCase):
         self.assertEqual(d["heartbeat"], 1000.0)
         self.assertEqual(d["started"], 1000.0)
 
+    def test_suite_problems(self):
+        self.assertEqual(self.read()["suite"], {"problems": []})
+        self.st.suite_problem({"label": "tester:#4", "result": "conflict", "branch": "suite-conflict/item-s1"})
+        self.assertEqual(self.read()["suite"]["problems"][0]["branch"], "suite-conflict/item-s1")
+        for i in range(60):
+            self.st.suite_problem({"label": str(i), "result": "stranded"})
+        self.assertEqual(len(self.read()["suite"]["problems"]), ls.SUITE_MAX)
+
     def test_stopped_status(self):
         self.st.status("stopped")
         self.assertEqual(self.read()["status"], "stopped")

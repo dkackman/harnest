@@ -33,6 +33,12 @@ Seventeen files:
   and the board snapshot cache.
 - `test-python.sh`: the `harness/` unit tests in `tests/py/` (stdlib `unittest`: contract,
   dashboard, fleet, parity, perf check, rank, results, suite).
+- `test-loop-py.sh`: the R17 loop driver (`harness/drivers/loop.py`) end to end, each
+  scenario in its own world in parallel: `lib/board.sh`; a design beside a verify; one gpu
+  slot; deploys batched, after the running gpu session, retried then parked; plugin-only and
+  deployed fixes with no deploy; a GitHub outage; a stale lock; stop-after-cycle for one
+  server; SIGTERM; a rate-limit pause; the standing task's gate; suite trees landing, a
+  suite conflict kept on a branch; the curator; the nightly regression; `DRAIN=1`; `--only`.
 - `test-ratchet.sh`: the architecture ratchet (`lib/arch_ratchet.py`, the guard's
   `arch_gate`) on fixture repos with a stand-in `arch_metrics.py`.
 - `test-regression-py.sh`: the Python regression driver against `run-regression.sh`, same

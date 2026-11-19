@@ -191,6 +191,15 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
     by themselves.
   - **Approval** (`status:plan-approved`) is Don's alone: `guard.py` refuses it from
     every role.
+- `harness/drivers/loop.py` (R17) — `python3 -m harness.drivers.loop [--servers lem,mini-ai]
+  [--only QUEUE,...] [--once]`: the event-loop scheduler that replaces `run-loop.sh`'s
+  cycle. It reads each server's board through `lib/board.sh` (classify rows plus the claim
+  holder; `hk`, `drain` and the other queries source `run-loop.sh` in item mode), makes
+  work items (`harness/board.py`), and starts what `harness/scheduler.py` allows as
+  `lib/run-item.sh` children (`Runner`, the phase-1b seam), GPU sessions beside server-free
+  ones. It holds each server's `.driver.lock<sfx>` as `run-loop`, owns every deploy
+  (`harness/deploy_policy.py`), runs the nightly regression under its lock, lands suite
+  trees, pauses on a rate limit and writes `logs/loop/state.json`.
 - `lib/run-item.sh <pass> [<issue>]` (R17) — one pass of `run-loop.sh` for one issue, as a
   child of the Python scheduler: it sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
   the lock, the startup deploy, `check_target_on_develop`, the plugin-tree refresh, every
