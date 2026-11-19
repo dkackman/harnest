@@ -271,6 +271,60 @@ class FailedDeployTest(unittest.TestCase):
         self.assertIn("deploy", srv.holds)
         self.assertEqual(srv.gate.state, "failed")
 
+    def false_failure(self, heads, preflights, develop="def5678", **env):
+        """_deploy with a deploy.sh that exits non-zero; heads and preflights
+        are what each re-read returns (a preflight item that is an exception
+        is raised). Returns (event, log text)."""
+        lp = mk(**env)
+        srv = lp.srv["lem"]
+        srv.develop = develop
+        with (
+            mock.patch.object(loop.deploy, "run_deploy", return_value=(False, heads[0])),
+            mock.patch.object(loop.deploy, "deployed_head", side_effect=heads[1:] + [heads[-1]] * 50),
+            mock.patch.object(loop.deploy, "preflight", side_effect=preflights + [preflights[-1]] * 50),
+            mock.patch.object(loop, "DEPLOY_VERIFY_POLL_SECS", 0.01),
+        ):
+            lp._deploy(srv)
+        log = Path(srv.log.path)
+        return lp, srv, lp.q.get_nowait(), log.read_text() if log.exists() else ""
+
+    def test_a_false_failure_on_a_healthy_server_at_develop_counts_as_deployed(self):
+        lp, srv, ev, said = self.false_failure(
+            ["develop @ def5678", "develop @ def5678"], ["cuda on lem"], DEPLOY_VERIFY_SECS=1
+        )
+        self.assertTrue(ev[2])
+        self.assertEqual(ev[3], "develop @ def5678")
+        self.assertIn("deploy.sh reported failure but lem is healthy at def5678: counting it deployed", said)
+        lp.hold(srv, "deploy")
+        srv.gate.set_state("deploying")
+        srv.waiting = [4]
+        lp.item_pass = lambda *a, **k: self.fail("parked after a false failure")
+        lp.deployed(*ev[1:])
+        self.assertNotIn("deploy", srv.holds)
+        self.assertEqual(srv.gate.state, "idle")
+        self.assertEqual(srv.deployed, "develop @ def5678")
+
+    def test_a_false_failure_waits_for_the_server_to_come_back(self):
+        down = loop.deploy.PreflightError("no dw server answering")
+        _, _, ev, _ = self.false_failure(
+            ["unknown", "unknown", "develop @ def5678"], [down, "cuda on lem"], DEPLOY_VERIFY_SECS=5
+        )
+        self.assertTrue(ev[2])
+
+    def test_a_failure_with_the_server_down_stays_a_failure(self):
+        down = loop.deploy.PreflightError("no dw server answering")
+        _, _, ev, said = self.false_failure(["develop @ def5678"], [down], DEPLOY_VERIFY_SECS=1)
+        self.assertFalse(ev[2])
+        self.assertNotIn("counting it deployed", said)
+
+    def test_a_failure_at_another_head_stays_a_failure(self):
+        _, _, ev, _ = self.false_failure(["develop @ abc1234"], ["cuda on lem"], DEPLOY_VERIFY_SECS=1)
+        self.assertFalse(ev[2])
+
+    def test_no_verify_window_keeps_the_failure(self):
+        _, _, ev, _ = self.false_failure(["develop @ def5678"], ["cuda on lem"], DEPLOY_VERIFY_SECS=0)
+        self.assertFalse(ev[2])
+
     def test_the_hk_head_is_not_adopted_while_the_deploy_failed(self):
         lp = mk()
         srv = self.failing(lp)

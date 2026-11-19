@@ -114,6 +114,10 @@ STALL_INTERVALS = 3
 # How long a deploy in flight at SIGTERM is waited for: run_deploy's own
 # timeout (1800 s) plus its head read and the preflight.
 DEPLOY_WAIT_SECS = 1800 + 120
+# After deploy.sh reports a failure, how often the server's health and head
+# are read again (for up to DEPLOY_VERIFY_SECS): deploy.sh's own health loop
+# can race a systemd restart and fail a deploy that came up fine.
+DEPLOY_VERIFY_POLL_SECS = 5
 # One closures-seen ledger per server: never both at once (task-5 report).
 CLOSURE_KINDS = frozenset({"tester:closures", "tester:task"})
 # A per-issue item that ended waits this long before it may run again (its
@@ -368,6 +372,7 @@ class Loop:
         self.poll = max(1, knob("LOOP_POLL_SECS", 60))
         self.health_secs = max(1, knob("LOOP_HEALTH_SECS", 30))
         self.retry_secs = knob("DEPLOY_RETRY_SECS", 300)
+        self.verify_secs = knob("DEPLOY_VERIFY_SECS", 90)
         self.task_gap = knob("TESTER_TASK_GAP_SECS", 5400)
         self.max_sessions = knob("MAX_SESSIONS", 0)
         self.sleep_max = knob("SLEEP_MAX_SECS", 1800)
@@ -1235,8 +1240,11 @@ class Loop:
 
     def _deploy(self, srv):
         t0 = time.time()
+        target = srv.develop  # the develop sha this deploy is for
         try:
             ok, head = deploy.run_deploy(srv.server, srv.log.say, self.branch(), str(self.logs))
+            if not ok:
+                ok, head = self._healthy_anyway(srv, target, head)
             if ok and not head_sha(head):
                 # what it runs can't be told: not a success (and adopting
                 # "unknown" would only ask for the same deploy again)
@@ -1252,6 +1260,34 @@ class Loop:
             srv.log.say(f"[loop:deploy] deploy raised {e!r}")
             ok, head = False, "unknown"
         self.q.put(("deploy", srv, ok, head, time.time() - t0))
+
+    def _healthy_anyway(self, srv, target, head):
+        """deploy.sh failed: for up to DEPLOY_VERIFY_SECS, every
+        DEPLOY_VERIFY_POLL_SECS, see whether the server passes its preflight
+        at the develop sha the deploy was for (deploy.sh's health loop can
+        race the restart). (True, head) if so, else (False, head) as it was."""
+        if not self.verify_secs or not target:
+            return False, head
+        deadline = time.monotonic() + self.verify_secs
+        while True:
+            try:
+                deploy.preflight(srv.server, srv.url, srv.token)
+                up = True
+            except deploy.PreflightError:
+                up = False
+            if up:
+                now = deploy.deployed_head(srv.server)
+                sha = head_sha(now)
+                if sha and (sha.startswith(target) or target.startswith(sha)):
+                    srv.log.say(
+                        f"[loop:deploy] deploy.sh reported failure but {srv.name} is healthy at {sha}: "
+                        "counting it deployed"
+                    )
+                    return True, now
+            left = deadline - time.monotonic()
+            if left <= 0:
+                return False, head
+            time.sleep(min(DEPLOY_VERIFY_POLL_SECS, left))
 
     def deployed(self, srv, ok, head, secs):
         srv.deploying = False
@@ -1592,9 +1628,9 @@ class Loop:
             if srv.deploying and t is not None and t.is_alive():
                 srv.log.say(
                     f"[loop] {ts()} waiting for the deploy to {srv.name} to finish before exiting "
-                    f"(at most {DEPLOY_WAIT_SECS}s); its lock stays held"
+                    f"(at most {DEPLOY_WAIT_SECS + self.verify_secs}s); its lock stays held"
                 )
-                t.join(timeout=DEPLOY_WAIT_SECS)
+                t.join(timeout=DEPLOY_WAIT_SECS + self.verify_secs)
                 srv.log.say(
                     f"[loop] {ts()} the deploy to {srv.name} "
                     + ("is still running; exiting anyway" if t.is_alive() else "finished")

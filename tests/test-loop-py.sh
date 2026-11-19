@@ -34,6 +34,7 @@ world() {
   # ssh: the deployed head is $T/<server>-head; deploy.sh is recorded (with
   # the time) and moves it to develop, or fails while $T/deploy-fails exists
   # ($T/deploy-moves-fails: moves it, takes /api/health down, then fails;
+  # $T/deploy-false-fails: moves it, health stays up, and fails anyway;
   # $T/deploy-sleep: takes that many seconds first; a success records its end)
   cat > "$T/bin/ssh" <<EOS
 #!/usr/bin/env bash
@@ -45,6 +46,7 @@ case "\$*" in
     [ ! -e "$T/deploy-fails" ] || { echo "deploy: health check timed out"; exit 1; }
     git -C "$T/src" fetch -q origin develop; git -C "$T/src" rev-parse --short origin/develop > "$T/\$srv-head"
     [ ! -e "$T/deploy-moves-fails" ] || { touch "$T/health-down"; echo "deploy: health check timed out"; exit 1; }
+    [ ! -e "$T/deploy-false-fails" ] || { echo "dw.serve exited during startup"; exit 1; }
     echo "\$(python3 -c 'import time; print(time.time())') \$srv deploy.sh ended" >> "$T/deploy-ends"
     echo "deployed develop" ;;
   *) echo "develop @ \$(cat "$T/\$srv-head" 2>/dev/null || echo 0000000)" ;;
@@ -262,15 +264,32 @@ s_deploy_fails() {
   touch "$T/deploy-fails" "$T/health-down"
   commit dw/core.py "fix three (#31)" >/dev/null
   board "[$(issue 31 owner:tester status:fixed-pending-verify)]"
-  run DEPLOY_RETRY_SECS=1 -- --once
+  run DEPLOY_RETRY_SECS=1 DEPLOY_VERIFY_SECS=1 -- --once
   eq  "failed deploy: exits cleanly" 0 $?
   eq  "failed deploy: tried, then once more" 2 "$(grep -c 'lem deploy.sh' "$T/deploys")"
   eq  "failed deploy: parked with Don" "owner:don,status:fixed-pending-verify,status:needs-approval" "$(labels_of 31)"
   has "failed deploy: an environment reason" "Kind:** environment" "$(jq -r '.["o/r"][0].comments[-1].body' "$T/board.json")"
+  fails "failed deploy: not counted deployed" grep -q "counting it deployed" "$T/h/logs/loop.log"
   eq  "failed deploy: no session ran" 0 "$(grep -c '^start' "$FAKE_CLAUDE_LOG")"
   eq  "failed deploy: state.json says failed" "failed false" "$(state '"\(.servers.lem.deploy.state) \(.servers.lem.deploy.last.ok)"')"
 }
 scenario deploy-fails s_deploy_fails
+
+# --- C1. deploy.sh exits 1 although lem came up at develop (its health loop
+# raced the restart): counted deployed - no retry, no park, the verify runs
+s_deploy_false_fails() {
+  touch "$T/deploy-false-fails"
+  commit dw/core.py "fix five (#33)" >/dev/null
+  board "[$(issue 33 owner:tester status:fixed-pending-verify)]"
+  run DEPLOY_RETRY_SECS=1 DEPLOY_VERIFY_SECS=5 FAKE_CLAUDE_DO="$close_it" -- --once
+  eq  "false deploy failure: exits cleanly" 0 $?
+  eq  "  deployed once, no retry" 1 "$(grep -c 'lem deploy.sh' "$T/deploys")"
+  has "  said it counts it deployed" "deploy.sh reported failure but lem is healthy at $(git -C "$T/src" rev-parse --short origin/develop): counting it deployed" "$(cat "$T/h/logs/loop.log")"
+  fails "  not parked" grep -q "failed twice" "$T/h/logs/loop.log"
+  eq  "  the verify ran" verify "$(awk '$1 == "start" { print $3 }' "$FAKE_CLAUDE_LOG")"
+  eq  "  state.json: the deploy is ok" "true idle" "$(state '"\(.servers.lem.deploy.last.ok) \(.servers.lem.deploy.state)"')"
+}
+scenario deploy-false-fails s_deploy_false_fails
 
 # --- C2. a deploy that moves lem's head and then fails (lem stops answering):
 # gpu:lem stays held through the retry window and the retry, and after the
@@ -281,7 +300,7 @@ s_deploy_moves() {
   commit dw/core.py "fix four (#91)" >/dev/null
   board "[$(issue 91 owner:tester status:fixed-pending-verify),
           {\"number\": 95, \"state\": \"CLOSED\", \"stateReason\": \"NOT_PLANNED\", \"labels\": [{\"name\": \"owner:tester\"}, {\"name\": \"wontfix\"}]}]"
-  drv_start LOOP_POLL_SECS=1 DEPLOY_RETRY_SECS=2 MAX_SESSIONS=1 --
+  drv_start LOOP_POLL_SECS=1 DEPLOY_RETRY_SECS=2 DEPLOY_VERIFY_SECS=1 MAX_SESSIONS=1 --
   until_ 30 grep -q 'failed twice' "$T/h/logs/loop.log"
   until_ 20 grep -q 'lem still fails its preflight' "$T/h/logs/loop.log"   # a housekeeping pass has checked it
   sleep 2
