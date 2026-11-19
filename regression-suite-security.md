@@ -2127,7 +2127,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none.
 
 ### SE-F076 — driver names, driver values, the basis and the device name render as text in the card tooltip and on the run page
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, nothing queued. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1102 (listing mock
 on the path `/api/workflows` exactly, built from the real answer). A workflow's own JSON supplies `cost_drivers` keys

@@ -25761,7 +25761,6 @@ by C-F1095's setup; `delete_workspace("qa-1452")` if it is empty and this setup 
 metrics: none.
 
 ### C-F1102 — the `text-to-image` card's cost tooltip names its basis, its device and the driver value it was measured at
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, Playwright as in C-F1028 (found by visible text and role, never by selectors read
 from the UI source). Setup shared by C-F1102–C-F1108 and SE-F076: the **live card** is read with a plain HTTP GET of
@@ -25786,7 +25785,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1103 — a preset template's tooltip follows the card's bundle-applied values, in the card's order
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, no job page opened past the catalog. Web UI, setup as in C-F1102. Read the live card for
 `templates/pika-h3/text-to-video` and the raw definition (`get_workflow("templates/pika-h3/text-to-video",
@@ -25809,7 +25807,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1104 — driver values are formatted by kind: a list as its entry count, `null` as "unset", an object as `{…}`, a long value cut at 40
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1102.
 1. Live: find any card whose `cost_drivers` holds a list value. If one exists, read its tooltip.
@@ -25831,7 +25828,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1105 — a card with a cost and no drivers has no `at` clause; a card with no cost has no cost line
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1102.
 1. Live: find one card with a non-null `cost` and no `cost_drivers` (the key absent, or `{}`), and one with
@@ -25850,7 +25846,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1106 — the run page shows the curated figure above the observed text, and nothing when the cost is null or the card is missing
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job: pages are only opened, and Run is never pressed. Web UI, setup as in C-F1102.
 1. Open the run page for `templates/text-to-image`.
@@ -25874,7 +25869,6 @@ cleanup: none (nothing is queued or saved).
 metrics: none.
 
 ### C-F1107 — a basis other than `curated` prints raw, on the card and on the run page
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1102. Confirm the live listing's `cost_basis` is `"curated"` (if it isn't, note
 the value: the plan said it is a constant). Then mock the listing's top-level `cost_basis` to `"bench-2026"` and read
@@ -25890,7 +25884,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1108 — every card's caption is unchanged, and its tooltip gains only the curated line
-pending: #1479
 source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1102. Open the catalog page with no mock, and for every card with a non-null
 `cost` in the live listing read the caption and the tooltip.
