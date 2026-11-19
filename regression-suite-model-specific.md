@@ -9933,25 +9933,21 @@ exist after a failed gate (or are missing after a passed one with no reason give
 cleanup: none.
 metrics: none.
 
-### M-F385 — the #1391 record's numbers match the jobs and a re-measure of the takes
+### M-F385 — the #1391 record's numbers match the gate jobs and a re-measure of the gate takes
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads and CPU assessment only (`assess_output` is free; any
 `analyze_*` task run must be priced and is CPU).
-Steps: for the takes the record measures (the full jobs, or the early ones after a gate stop) and for
-`aed61997052a`'s take: `get_job` (`workspace="bench"`) for the output paths and frame counts;
+Steps: for the two gate takes (`2817a04202ae` control, `29923da18475` attention; no full arm ran): `get_job` (`workspace="bench"`) for the output paths and frame counts;
 `get_gallery_metadata` on each take; `assess_output` on each; `analyze_seams` (and `analyze_face_drift` for SFace)
 over each take at the seam frames the record names, through `run_workflow` in `bench` with a `note` naming
 M-F385.
 expected:
-- The record has three columns (no-keystone control `aed61997052a`, keystone control, attention arm) for luma,
-  saturation, face saturation and face sharpness, each as total, seams and in-segment; a seam table; SFace drift;
-  and in-segment motion (mean absolute frame delta, or the frame-difference median, named as which).
+- The record has two columns (keystone control, attention arm) for seg01-02: the seg02 face-sharpness rise as seam
+  + in-segment, the seam-1 `jump_ratio`, SFace drift at seg02's end, and the luma seam step.
 - Each take's frame count, duration and fps in the record match `get_gallery_metadata`.
 - The re-measured seam jumps and SFace drift agree with the record within 5% (or 0.02 absolute where the value is
   under 0.4); luma and saturation within 1 unit on the record's scale.
-- The `aed61997052a` column matches the existing #1325 control numbers in `bench/records/narrated.md` (-0.5 luma,
-  +8.8 saturation, +105 face sharpness as the plan quotes), since the control is reused, not re-run.
 It is a **finding** if a measure or column is missing, a frame count disagrees, or a re-measure falls outside the
 tolerance.
 cleanup: `delete_output(job_id=...)` on each analysis job this case ran.
@@ -10818,51 +10814,21 @@ the numbers, or any later job exists after "no match".
 cleanup: none (the jobs are the bench record).
 metrics: none.
 
-### M-F424 — the #1391 face-sharpness sweep: five one-segment runs on a sharpened keystone, one per 10-block group, and the arms' blocks follow from it
-pending: #1394
-source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
-Model/pipeline: MiniMax H3 fl2va on lem (cuda), bench workspace. **Free**: issue reads, job reads, validate.
-The **step 2 jobs** are the five #1394's hand-off names for the sweep (else find them by note in
-`list_jobs(workspace="bench")`).
-Steps: `get_job_workflow(workspace="bench")` and `get_job(workspace="bench")` on each; `validate_workflow` on the
-step 2 probe workflow, `workspace="bench"`; `get_job_workflow` on one attention arm job (M-F425); the record on
-#1394.
-expected:
-- Exactly five runs, all created after the step 1 result was "match" (M-F423). Each renders segment 2 only from
-  the same segment 1, seed and dense attention as step 1. `image` is the sharpened keystone (segment 1's frame 0
-  sharpened, as in #1385's S still; the record says how) and is still a copy of the scene.
-- The five differ only in `blocks`: `"0-9"`, `"10-19"`, `"20-29"`, `"30-39"`, `"40-49"`, each at `balance` 20.
-- Every job is `completed`; the probe workflow validates clean.
-- The record gives each group's segment 2 face sharpness (from `bench/face_windows.py`) and saturation, with job
-  ids and the baseline they are compared against.
-- It names the blocks the arms used and why. Either the groups that clearly lift face sharpness (the record says
-  what "clearly" meant), or, if none did, `31-33,36-44,47` with the record saying no group lifted it.
-- The attention arm's `blocks` string equals the blocks the record names.
-It is a **finding** if a group is missing or doubled, another argument differs, a number is missing, or the arms'
-blocks don't follow from the stated rule.
-cleanup: none.
-metrics: none.
-
-### M-F425 — the #1391 arm pair runs dense and differs only in the argument; the record calls `aed61997052a` a three-difference reference (`image`, backend, diffusers build)
+### M-F425 — the #1391 arm pair runs dense and differs only in the argument
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda), bench workspace. **Free**: reads only.
-The **arm jobs** are `keystone-attention-control` and `keystone-attention`: early (seg01–02) and, if the gate
-passed, full (M-F384 judges the gate).
-Steps: `get_job_workflow(workspace="bench")` on each arm job and on `aed61997052a`; the record on #1394 or #1391.
+The **arm jobs** are `keystone-attention-control` and `keystone-attention`: the early (seg01–02) gate jobs; the
+gate failed and no full arm ran (M-F384).
+Steps: `get_job_workflow(workspace="bench")` on each arm job; the record on #1394 or #1391.
 expected:
 - Every segment's transformer in both arms is dense: `attention_backend` null or absent, and no `sparse_tau` or
-  `sparse_topk`. `aed61997052a` is sparse (`attention_backend: "sparse"`, `sparse_tau` 0.5, `sparse_topk` 0.15).
-- Keystone control vs `aed61997052a`: only each later segment's `image` (segment 1's frame 0 instead of the
-  carried tail's first frame), the attention backend and the diffusers build differ. The guide is still the carried tail. Prompts,
-  seeds, size, steps, LoRA and segment count are the same.
+  `sparse_topk`.
 - Attention arm vs keystone control: the only difference is `experimental_keystone_attention` with `balance` 20 and
-  `blocks` as step 2 chose (M-F424) on each fl2va segment call. The record says whether segment 1 carries it.
+  `blocks` `"31-33,36-44,47"` (no step 2, per Don's 2026-11-19 ruling) on seg02. The record says whether segment 1 carries it.
 - An early job is its arm's full workflow cut after seg02, with nothing else changed.
-- The record states both diffs in words. It labels the `aed61997052a` column a reference with three changes (image,
-  sparse→dense and the diffusers build), not a one-variable control.
-It is a **finding** if any other argument differs, any arm segment is sparse, or the record omits a diff or the
-reference label.
+- The record states the arm diff in words.
+It is a **finding** if any other argument differs, any arm segment is sparse, or the record omits the diff.
 cleanup: none.
 metrics: none.
 
@@ -10883,14 +10849,14 @@ started before the one it depends on finished.
 cleanup: none.
 metrics: none.
 
-### M-F427 — the #1391 record states the checked numbering, the blocks and why, the LSE cost against the dense control, the dense-vs-sparse risk, the attributions, the take paths, and no verdict
+### M-F427 — the #1391 record states the checked numbering, the blocks and why, the LSE cost against the dense control, the dense-vs-sparse risk, the attributions, the gate takes' paths, and the gate verdict
 pending: #1394
 source: tester, spec for #1394 from #1391's plan v4 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 on lem (cuda). **Free**: reads only.
 Steps: read the record as quoted on #1394 or #1391; `get_job(workspace="bench")` on both arms' jobs for timings.
 expected:
 - It states the numbering result from step 1 as checked on lem, not as an assumption (Q3 tested by Q6).
-- It gives the steps 1 and 2 per-run numbers, or points to where they are on #1394, and the blocks the arms used.
+- It gives step 1's per-run numbers, or points to where they are on #1394, and the blocks the gate arms used (roycho87's `31-33,36-44,47`; step 2 was not run, per Don's 2026-11-19 ruling).
 - It gives the LSE op's wall-clock cost: the attention arm against the **dense** keystone control, per segment or
   per job, within 10% of the `get_job` timings. It names the op the selected blocks ran (cuDNN or native flash).
 - It states that a positive result is a dense-attention result while the shipped templates run sparse, and that a
@@ -10898,10 +10864,9 @@ expected:
 - It says the result transfers to `keystone_slot` `first` and `last` only, and that no moving-shot arm ran.
 - It credits roycho87's #1391 comment (issuecomment-6922271175) and NerdNotes test 19 (CC BY-SA 4.0) for the
   block-finding method. The matching `docs/ATTRIBUTIONS.md` line is docs review, not this case.
-- It ends with the takes' output paths for Don's viewing and calls no verdict beyond the gate. The issue goes to
-  Don (`owner:don`) for the viewing.
-It is a **finding** if any item is missing, the cost is measured against the sparse column, or the record rules on
-the feature.
+- It gives the two gate takes' output paths and states the gate verdict, "gate failed", as Don ruled on 2026-11-19.
+It is a **finding** if any item is missing, the cost is measured against the sparse column, or the verdict is
+missing or differs from Don's.
 cleanup: none.
 metrics: none.
 
