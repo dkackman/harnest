@@ -10910,7 +10910,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F428 — the #1438 arms rebuild `MiniMaxH3Scheduler` through `configuration` + `from_config_args`, differ only in the flag (and the form where needed), and leave `audio_scheduler` shift-only
-pending: #1459
 source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 video (`templates/minimax/video-with-audio`, lightx2v 4-step turbo LoRA; chained-segments)
 and MiniMax-H3-Image t2i, on lem (cuda), workspace `bench`. **Free**: issue reads, job reads, validate.
@@ -10965,7 +10964,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F430 — no #1438 arm is `reused`, the conditional arms fire only on their conditions, and the stage stays within its 60-minute GPU cap
-pending: #1459
 source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 video and MiniMax-H3-Image on lem (cuda), workspace `bench`. **Free**: reads only.
 Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job and the fail-fast job; the record.
@@ -10986,7 +10984,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F431 — the #1438 record's frames, crops and texture-band numbers reproduce over MCP
-pending: #1459
 source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 video and MiniMax-H3-Image outputs on lem, workspace `bench`. **Free**: `compare_outputs`,
 `get_output_frames`, `get_output_image` and `assess_output` on existing outputs; nothing is queued.
@@ -11011,7 +11008,6 @@ cleanup: none (no output is kept or deleted).
 metrics: none.
 
 ### M-F432 — the #1438 record states the seeding result, and each arm's verdict (adopt / keep as option / drop) is consistent with it and with the bands
-pending: #1459
 source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 video and MiniMax-H3-Image, lem, workspace `bench`. **Free**: reads, plus the
 `compare_outputs` calls M-F431 already made.
@@ -11036,7 +11032,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F433 — the #1438 bench leaves the engine and templates unchanged: both H3 templates validate at defaults and neither has gained `from_config_args`
-pending: #1459
 source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `templates/minimax/video-with-audio` (MiniMax H3) and `templates/minimax-h3-image/text-to-image`
 (MiniMax-H3-Image), lem. **Free**: validate and workflow reads only; nothing is queued.

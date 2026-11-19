@@ -313,6 +313,16 @@ smoke's Fixtures lists the asset too.
   dissolve), which C-F893's setup makes and keeps when it's missing. The multi-shot and person-free clips
   are built in each case's setup from those clips with `trim_video`, `concat_videos` (`crossfade_ms: 0`),
   `video_frames`/`get_first_frame`, `loop_frames` and `qr_code`. Nothing new to keep; every case deletes what it made.
+- C-F1053–C-F1063 and SE-F072 (rerun with changes, #1471) use the workflow `rerun-size-1471` saved in **this**
+  workspace: SD 1.5 text-to-image at 256 px, 4 steps, with a `size` preset selector (`small`/`medium`). C-F1053's
+  setup writes it out in full and saves it when it's missing. Keep it across runs. What matters is that it isn't H3,
+  has a `presets` selector with two values, and draws its seed (`seed: null`). The jobs are made per run and deleted.
+- C-F1073–C-F1087 and SE-F073 (chain segment measures, table and actions, #1451) use the workflow `chain-1451` saved in
+  **this** workspace: `templates/ltx2/chained-segments` at 256², 25 frames, 3 segments, seed 1451, with `check`
+  (default `{"jump_ratio_max": 6.5}`), `retries`, `stop_after` and `keep_segments` as variables. C-F1073's setup
+  describes it in full and saves it when it's missing. Keep it across runs. What matters is that it is an LTX chain
+  (not H3), keeps its segments, overrides one ceiling, and declares both `stop_after` and `resume_from`. Its jobs
+  (J1, P, J2, J3 and C-F1086's continuation) are made per run and deleted.
 
 ## Functional
 
@@ -24543,6 +24553,994 @@ expected:
 - No `sizes=true` request ever goes out while keys are being typed less than 3 s apart.
 A validate per keystroke, a sized call before 3 s idle, or a stale answer on screen is a **finding**. Timings are
 the UI's own timers, so allow ±300 ms; a slow server answer doesn't move when a request is *sent*.
+cleanup: none.
+metrics: none.
+
+### C-F1038 — the run page states a grid rule and its reason under each field it binds, and nothing under the rest
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box.** Setup shared by C-F1038–C-F1052, SE-F070 and SE-F071: a headless Chromium
+Playwright script as in C-F1028 (found by visible text and role, never by selectors read from the UI source). Where a
+case mocks a definition, it routes the request the run page or editor makes for the workflow
+(`**/api/workflows/<name>`, not the `/variables` route), `route.fetch()`es the real answer, overwrites only the named
+parts of its definition and `route.fulfill({json})`s it. Every expected number is read at run time from
+`get_workflow(name=<workflow>)` (full form, not `variables_only`, which renames list-entry keys), never from this text;
+the values quoted below are what that returned on mini-ai on 2026-11-19.
+Open the run page of `templates/minimax-h3-image/text-to-image` (do not press Run).
+expected:
+- Under `width`, and under `height`, a muted line reads `32 * n + 0` (the declaration's `modulus` and `remainder`)
+  followed by that variable's declared `reason` text (it begins `MiniMax-H3-Image's canvas is a multiple of 32`), whole,
+  wrapped rather than cut off.
+- No line under `width` or `height` says `rounds up` (neither declares `snap`).
+- `prompt`, `size`, `weights_dtype` and `seed` carry no rule line.
+A missing rule or reason, a number that isn't the declaration's, a rounding line, a hint under an unconstrained
+variable, or a page error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1039 — a ranged, gridded, snapped variable shows its range, its grid and the rounding line
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. Open the run page of `templates/pika-h3/text-to-video`. Its definition
+declared `num_frames: {modulus: 17, remainder: 5, min_frames: 124, max_frames: 345, snap: "up", reason: …}` and
+`width`/`height` `{modulus: 32, remainder: 0, reason: …}` on 2026-11-19.
+expected:
+- Under `num_frames`: the range `124 to 345`, the grid `17 * n + 5`, the line `an off-grid value rounds up`, and the
+  declared reason (it begins `the video VAE encodes 17 * n + 5 frames`).
+- Under `width` and `height`: `32 * n + 0` and their reason, and no rounding line.
+- The hint lines don't change what the field holds: each field stays empty with its placeholder, as before #1469.
+A bound shown as `min_frames`/`max_frames` raw keys, a rounding line on a variable without `snap`, or the range
+missing is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1040 — a `min_length` rule reads as a list rule on a list and as a string rule on a list entry's text
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038.
+1. Open the run page of `templates/minimax-h3-image/multi-reference`. `images` (a list default) declared
+   `min_length: 1` on 2026-11-19 (`list_workflows` showed it as `non-empty`).
+2. Open the run page of `templates/minimax/music-long`. Its `lyrics` rule is a list-entry key on `sections` (a string
+   field of each entry), declaring `min_length: 1`, `max_words_per_second: 0.73`, `seconds_from: "seconds"`; its
+   `audio_duration` entry key declares `max_frames: 300`. (Note: the plan named music-long `lyrics` as a plain
+   variable; it is a list-entry key, so this also exercises C-F1041's prefix.)
+expected:
+- Step 1: under `images`, `a non-empty list` (not `string`) and the declared reason.
+- Step 2: under `sections`, a line `each entry's lyrics: a non-empty string …` (string, not list), a line for the
+  rate reading `about 0.73 words a second of seconds (a warning)` (the declared numbers and field name; wording
+  around them may differ, but the rate, the `seconds` name and the fact it only warns must all be there), and a line
+  `each entry's audio_duration: 300 or less`. Each with its reason.
+- No hint lands under a field named `lyrics` or `audio_duration` (the form has none), and nothing is lost.
+A list rule worded as a string or the reverse, the rate shown without saying it only warns, or a list-entry rule
+dropped is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1041 — a list-entry rule shows under the list's own field, prefixed with the entry field
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. Read the full `get_workflow(name="templates/minimax/dialogue-short")`
+and note its `variable_constraints` keys: one names the `num_frames` field of `shots` entries (`shots[].num_frames`
+in the plan; `variables_only` shows it flattened to `num_frames`), and `width`/`height` are plain variables. Open its
+run page.
+expected:
+- Under `shots`: `each entry's num_frames:` followed by that rule (its range, its grid `17 * n + 5`, `an off-grid value
+  rounds up`) and its reason.
+- No hint shows under any other field for that key, and the page has no field named `shots[].num_frames` or
+  `num_frames`.
+- `width` and `height` show their own grid rules as in C-F1038.
+- The preset selector `tier` is unaffected by this stage (a text field before #1470, a dropdown after).
+A list-entry rule missing, shown as a stray field, or shown without the `each entry's` prefix is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1042 — a workflow with no declared rules shows no hint lines
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. Confirm `get_workflow(name="templates/text-to-image")` has no
+`variable_constraints`. Open its run page; then mock its definition with `variable_constraints: {}` (empty object) and
+reload.
+expected: both times, no rule line under any field, the form looks as it did before #1469 (the same fields, the same
+placeholders, the `required` marks unchanged), and no page error. A stray empty hint row, `undefined`, `{}` or
+`[object Object]` on screen is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1043 — every declared rule key has its label, an unknown key falls back to `key: value`, and odd shapes don't break the form
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. Run page of `templates/text-to-image` (variables `prompt`,
+`num_images_per_prompt`, `seed`), its definition mocked with `variable_constraints`:
+- `num_images_per_prompt`: `{min_frames: 1, max_frames: 4, reason: "R-range"}`
+- `seed`: `{min_frames: 0, reason: "R-lo"}`
+- `prompt`: `{min_length: 12, reason: "R-chars"}`
+- and, one load each (a second and third mock), `seed`: `{max_frames: 99}` (no reason) and `seed`:
+  `{modulus: 8, remainder: 3, snap: "up", future_rule: 7, reason: "R-grid"}`;
+- a fourth load adds `not_a_variable: {min_frames: 2, reason: "R-orphan"}` and `prompt: {required: true}`, with
+  `prompt`'s declared default set to `null`.
+Then `get_schema` and read the variable-constraint properties the schema declares; for any key not used above
+(besides `reason`, `required`, `seconds_from`), add a load whose `seed` rule uses it with a plausible value.
+expected:
+- `1 to 4` + `R-range`; `0 or more` + `R-lo` (a `0` bound is shown, not dropped as falsy); `at least 12 characters` +
+  `R-chars`; `99 or less` with no reason text and no empty `—`/`:` stub; `8 * n + 3` + `an off-grid value rounds up`
+  + `future_rule: 7` + `R-grid`.
+- The fourth load: `prompt` shows the existing `required` mark only once, with no second rule line duplicating it; the
+  orphan rule shows nowhere and breaks nothing.
+- Every schema-declared key produces readable text (its label, or at worst `key: value`); none is silently dropped.
+A key dropped, a bound of `0` missing, a raw key name where a label is promised, or a page error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1044 — the editor's define mode shows the same rule lines, read-only, from the live definition
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI, setup as in C-F1038. Open `templates/minimax-h3-image/text-to-image` in the
+editor, in the mode that edits the variables' declared values (define mode).
+1. Read the lines under `width` and `height`.
+2. Try to click into, select-and-type over, and Tab onto those lines.
+3. If the editor lets the definition's JSON or `variable_constraints` be edited in place, change `width`'s `modulus`
+   from 32 to 64 without saving, and look again.
+expected:
+- Step 1: the same `32 * n + 0` and reason as C-F1038 shows on the run page.
+- Step 2: the lines are plain text, not inputs: typing changes nothing in them and the definition is unchanged.
+- Step 3: the line under `width` now reads `64 * n + 0`; `height` still reads 32. If the editor has no way to edit
+  constraints in place, the report says so and step 3 passes as not exercised.
+- Leaving the editor without saving leaves `get_workflow` on that template unchanged.
+An editable hint, lines that differ from the run page's, or a stale hint after a live edit is a **finding**.
+cleanup: discard the edit; never save the template.
+metrics: none.
+
+### C-F1045 — a preset selector is a dropdown of exactly its bundle names, after a "default" option
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. For each of `templates/pika-h3/text-to-video` (selector `resolution`,
+declared `480p`, bundles `480p`, `768p` on 2026-11-19) and `templates/minimax-h3-image/text-to-image` (selector `size`,
+declared `2048`, ten bundles on 2026-11-19: `2048`, `1:1`, `4:3`, `3:4`, `3:2`, `2:3`, `16:9`, `9:16`, `21:9`,
+`9:21`), read `presets.<selector>`'s keys from `get_workflow` and open the run page.
+expected:
+- The selector is a dropdown (role `combobox`/`listbox`, not a text box). Its first option reads
+  `default (<declared value>)` and is selected on load; then one option per bundle name, every key of
+  `presets.<selector>` and no other, each exactly once. (The plan said six for H3-Image; the count to check is the
+  definition's, ten today.)
+- Under it, one line reads `sets <a>, <b>`: here `width, height`.
+- Any other variable is unaffected; `attention_backend` on pika-h3 is still the dropdown it was.
+A bundle missing or extra, no default option, the selector still a free-text box, or `sets` naming a variable no
+bundle sets is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1046 — placeholders follow the chosen bundle; a variable no bundle sets keeps its declared default
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038, on `templates/minimax-h3-image/text-to-image`, its `presets.size` read from
+`get_workflow`. Then the same on `templates/pika-h3/text-to-video`.
+1. Load with the default option selected; read the `width` and `height` placeholders.
+2. Pick `16:9` (pika: `768p`); read them. Pick `9:21`; read them. Pick the default option again; read them.
+3. Read the `seed` and `prompt` placeholders (pika: `num_frames`) after each pick.
+expected:
+- Step 1: the declared selector value's bundle values (`2048`/`2048`; pika `832`/`480`).
+- Step 2: each pick shows that bundle's values (`5472`/`3072`, then `2688`/`6272`; pika `1344`/`768`), and the
+  default pick restores step 1's.
+- Step 3: placeholders of variables no bundle sets never move (pika `num_frames` stays `124`).
+- The fields themselves stay empty throughout: a picked bundle fills placeholders, not values.
+A placeholder showing the declared variable default where the plan says the bundle's (mock pika's declared `width` to
+`111` to tell them apart: with the default option it must still show `832`), a stale placeholder after a pick, or a
+value written into a field is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1047 — a typed value wins over the bundle, survives a bundle change, and clearing it brings the placeholder back
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038, on `templates/pika-h3/text-to-video`.
+1. Type `1024` into `width`. 2. Pick `768p`. 3. Pick the default option. 4. Clear `width`.
+expected:
+- Steps 1–3: `width` shows `1024` throughout; picking a bundle never overwrites or clears it. `height`'s placeholder
+  still follows the bundle (`768`, then `480`).
+- Step 4: `width`'s placeholder is back and is the currently chosen bundle's value (`832`).
+A typed value replaced by a pick, or no placeholder after clearing, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1048 — Run sends the selector and typed values only, never the bundle's values
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, **no job**. Web UI, setup as in C-F1038, on `templates/pika-h3/text-to-video`. Route the page's submit request
+(the POST that queues a job) to record its body and then `route.abort()` it, so nothing queues.
+`list_jobs(workspace=<the UI's workspace>)` before and after.
+1. Pick `768p`, type nothing else, press Run.
+2. Reload; pick `768p`, type `1024` into `width`, press Run.
+3. Reload; leave the default option, press Run.
+expected:
+- Step 1: the body's `arguments` holds `resolution: "768p"` and no `width` or `height` key.
+- Step 2: `resolution: "768p"` and `width` (as `1024` or `"1024"`), and no `height` key.
+- Step 3: no `resolution` key (the default option keeps "use the workflow default"), and no `width`/`height`.
+- No new job in `list_jobs`.
+A bundle value copied into `arguments`, a `resolution` sent for the default option, or a job queued is a **finding**.
+cleanup: if a job did queue, `cancel_job` it and `delete_output(job_id=…)`, then report the finding.
+metrics: none.
+
+### C-F1049 — a selector value that isn't a bundle shows as "(not a preset)" and is sent unchanged
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1048 (submit recorded and aborted). On `templates/pika-h3/text-to-video`, give
+`resolution` the value `1080p` (not a bundle) the way the plan names: through the run page's URL if it accepts
+variable values there, else through the rerun entry point on any finished job of this workflow's page if the UI
+offers one (no rerun is *sent*). If the UI offers neither, the report says so and the case passes as not exercised,
+with the reason. Then press Run.
+expected:
+- The dropdown shows `1080p (not a preset)` selected, alongside the default and bundle options.
+- The recorded body's `arguments.resolution` is exactly `1080p`, unchanged.
+- `validate_workflow(workflow_path="templates/pika-h3/text-to-video", arguments={"resolution": "1080p"},
+  workspace="regression-complete")` refuses it at `arguments.resolution` naming the allowed values: the server is
+  still the one that says no.
+The value dropped, rewritten to a bundle or to `''`, or shown as a blank option is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1050 — a selector holding a reference or a non-string stays a text field
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. Run page of `templates/pika-h3/text-to-video`, the definition mocked three
+ways, one load each: `variables.resolution` = `"variable:width"`; = `480` (a number) with `presets.resolution` keys
+unchanged; = `null`.
+expected:
+- The reference and the number: `resolution` is a text field, as before #1470, and the page has no script error.
+- `null`: either a dropdown with the default option reading `default (…)` without `null`/`undefined`, or a text field;
+  either passes, provided nothing on screen reads `null`/`undefined` and nothing breaks.
+- Placeholders of `width`/`height` are never `undefined`/`NaN`.
+A dropdown offered for a reference selector or a page error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1051 — a selector whose bundles set different variables lists their union
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1038. Read the full `get_workflow(name="templates/minimax/dialogue-short")`
+`presets.tier` and compute the union of the variable names its bundles set. Open its run page; then mock `presets` so
+one `tier` bundle sets a variable the others don't (add `audio_bleed_ms: 900` to one bundle only) and reload.
+expected:
+- `tier` is a dropdown of exactly `presets.tier`'s keys after the default option.
+- The `sets …` line names exactly the union, each once, both before and after the mock (the mocked extra appears).
+- Picking each bundle moves only the placeholders of the variables that bundle sets; with the mock, `audio_bleed_ms`'s
+  placeholder is `900` only while that bundle is chosen and the declared `1800` otherwise.
+A variable missing from or duplicated in `sets`, or a placeholder from a bundle not chosen, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1052 — in the editor a selector stays editable text, with its bundle names and its "sets …" line
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, nothing saved. Web UI, setup as in C-F1038. Open `templates/pika-h3/text-to-video` in the editor's define mode.
+expected:
+- `resolution` is a text field holding the declared `480p`, and it accepts typing (type `999p`, see it held; this
+  is an author writing a new default before its bundle, and must not be refused or reset).
+- Beside or under it: the bundle names `480p` and `768p`, and `sets width, height`. Both read-only.
+- After typing `999p` the page has no script error and the bundle list is unchanged.
+A dropdown in define mode, a selector that won't take free text, or missing bundle names is a **finding**.
+cleanup: discard the edit; never save the template.
+metrics: none.
+
+### C-F1053 — a rerun with one changed variable records `rerun_of` and exactly that override, and keeps every other argument and the drawn seed
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+**Setup shared by C-F1053–C-F1063 and SE-F072.** Workspace `regression-complete`. Fixture workflow
+`rerun-size-1471` (see Fixtures): if `get_workflow(name="rerun-size-1471")` doesn't answer, `save_workflow` it in
+`regression-complete` as `templates/text-to-image`'s definition with these changes: `variables` =
+`{"prompt": "a pear on a table", "size": "small", "width": 256, "height": 256, "num_inference_steps": 4, "seed": null}`;
+`presets` = `{"size": {"small": {"width": 256, "height": 256}, "medium": {"width": 384, "height": 384}}}`; the step's
+`arguments` take `width`, `height` and `num_inference_steps` as `variable:` references. It is not H3 (the ruling bars
+every H3/minimax job on mini-ai, even one cancelled at once). `validate_workflow` it clean (no findings), then run it
+once with no arguments (`acknowledged_cost` bound from validate's plan): the **original** job O. Record O's
+`get_job` `arguments` and the seed it drew (wherever `get_job` reports it: `arguments.seed` or the job's seed field).
+Case: `validate_workflow(workflow_path="rerun-size-1471", arguments={"prompt": "a green pear"})`, then
+`rerun_job(job_id=O, arguments={"prompt": "a green pear"}, acknowledged_cost=<bound>)` → job R1; wait for it.
+expected:
+- `get_job(R1)`: `rerun_of` = O; `overrides` = exactly `{"prompt": "a green pear"}` (one key).
+- R1's `arguments` equal O's except `prompt`; R1's seed equals O's drawn seed (not null, not a fresh draw).
+- R1 succeeds with one 256x256 image (`size` small unchanged).
+Any extra key in `overrides`, a changed seed, or another argument differing from O's is a **finding**.
+cleanup: keep O and R1 for C-F1054–C-F1063 in the same run; the last case run deletes them (`delete_output(job_id=…)`).
+metrics: none.
+
+### C-F1054 — a promotion rerun applies the other bundle and records only the selector
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Setup as in C-F1053 (job O). `validate_workflow(workflow_path="rerun-size-1471", arguments={"size": "medium"})`, then
+`rerun_job(job_id=O, arguments={"size": "medium"}, acknowledged_cost=<bound>)` → job R2; wait.
+expected:
+- `get_job(R2)`: `rerun_of` = O; `overrides` = exactly `{"size": "medium"}` — no `width`/`height` copied in from the
+  bundle.
+- R2's image is 384x384 (the bundle applied); its seed equals O's.
+- Explicit beats bundle (the case the plan's explicit-argument note describes): run the fixture once more with
+  `arguments={"width": 320}` → job E (320x256), then `rerun_job(job_id=E, arguments={"size": "medium"})` → E2: E2's
+  `overrides` = `{"size": "medium"}` only and its image is 320x384 (the explicit width kept).
+A bundle value in `overrides` or the wrong size is a **finding**.
+cleanup: as C-F1053; delete E and E2 too.
+metrics: none.
+
+### C-F1055 — a refused rerun queues nothing: a bad preset value, an undeclared variable, a seed with `new_seed`
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup as in C-F1053 (job O). `list_jobs(workspace="regression-complete")` before and after. Call
+`rerun_job(job_id=O, …)` three times: `arguments={"size": "huge"}`; `arguments={"not_a_variable": 1}`;
+`arguments={"seed": 7}, new_seed=true` (bound `acknowledged_cost` each time, so a refusal is not a cost refusal).
+expected:
+- Each is refused with a message: the first names the allowed values `small` and `medium`; the second names
+  `not_a_variable`; the third says a seed override and `new_seed` can't go together.
+- `list_jobs` shows no new job.
+A queued job, or a refusal without the allowed values, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1056 — "Run again" and "New seed" in the web UI send what they always did and leave no `overrides`
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Two tiny jobs. **Web UI, black-box**, Playwright as in C-F1028 (found by visible text and role; mocks built from a
+real answer with `route.fetch()`), and this group's own rule: the rerun request is the POST to
+`**/api/jobs/<id>/rerun`; record its body with `page.route` and `route.continue()` unless the case says abort. Open
+job O's page (setup as in C-F1053). Press **Run again**; back on O's page, press **New seed**.
+expected:
+- The two bodies are `{"new_seed": false}` and `{"new_seed": true}`, with no `arguments` key and no
+  `acknowledged_cost` key in either.
+- Each navigates to its new job's page; `get_job` on each: `rerun_of` = O, `overrides` absent (or null), and no
+  `changed:` chip on its page. The Run-again job's seed equals O's.
+- A **Run again with changes…** button sits beside Run again.
+An `arguments` key (even `{}`), an `overrides` value on either job, or a missing button is a **finding**.
+cleanup: delete both jobs.
+metrics: none.
+
+### C-F1057 — "Run again with changes…" lists every declared variable with the run's value as its placeholder, and can't queue an unchanged form
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1056, the rerun POST recorded and **aborted**. On job O's page press **Run again with
+changes…**.
+expected:
+- A modal opens with one field per declared variable of `rerun-size-1471`: `prompt`, `size`, `width`, `height`,
+  `num_inference_steps`, `seed` — `seed` included, though O's arguments may not name it.
+- Every field is empty, and its placeholder is O's value (`a pear on a table`, `small`, `256`, `256`, `4`, O's drawn
+  seed or a blank-means-keep hint for it). None reads `undefined`, `null` or `NaN`.
+- **Queue** is disabled (or, pressed, says `nothing changed` and sends nothing). Typing spaces only into `prompt`, and
+  typing then erasing, leave it so.
+- No two elements in the document share an `id` (the modal's fields don't clash with the page's).
+- Closing the modal sends nothing; no rerun POST was made.
+A field missing, a value pre-typed rather than a placeholder, or a POST is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1058 — the form sends only what changed, by trimmed text, a number typed equal to the run's value included
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Web UI as in C-F1057, one tiny job in the last step. On job O's modal:
+1. Type `4` into `num_inference_steps` and `256` into `width` (both O's values). Queue state?
+2. Also type ` small ` into `size` and `a pear on a table ` into `prompt` (O's values with spaces). Queue state?
+3. Also type `5` into `num_inference_steps`. Press Queue with the POST aborted, then reopen and repeat with it
+   continued.
+expected:
+- Steps 1 and 2: Queue stays disabled / `nothing changed`; no POST.
+- Step 3: the body's `arguments` is exactly `{"num_inference_steps": 5}` (or `"5"`), with no other key, no
+  `new_seed: true` and no `acknowledged_cost`. With the POST continued, the browser lands on the new job's page,
+  whose `get_job` has `rerun_of` = O and `overrides` naming only `num_inference_steps`.
+An unchanged key in the body, or a queue from an unchanged form, is a **finding**.
+cleanup: delete the new job.
+metrics: none.
+
+### C-F1059 — the seed field: blank keeps the drawn seed, a typed seed is an override
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1057 (POST recorded and aborted). On job O's modal: type `a red pear` into `prompt`
+only, press Queue; reopen, type `a red pear` and `12345` into `seed`, press Queue.
+expected:
+- First body: `arguments` has `prompt` and no `seed` key, and `new_seed` is not `true`.
+- Second body: `arguments` has `prompt` and `seed` (as `12345` or `"12345"`), and `new_seed` is not `true` (that
+  pair is a server refusal, C-F1055).
+- Nothing in the form sends a null seed (the non-goal: drawing a fresh seed stays the New seed button).
+cleanup: none.
+metrics: none.
+
+### C-F1060 — a value the server refuses shows its message in the modal, which stays open, and queues nothing
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1056, POST **continued** (the real server answers). `list_jobs(workspace=
+"regression-complete")` before and after. On job O's modal type `huge` into `size` and press Queue. Then change it to
+`medium` without closing, and press Queue with the POST aborted this time.
+expected:
+- The first press: the modal stays open, still holding `huge`, and shows the server's message, which names `small`
+  and `medium`. The page doesn't navigate; no script error.
+- `list_jobs` shows no new job.
+- The second press sends `{"size": "medium"}` alone: the modal recovered from the refusal.
+A swallowed error, a closed modal, a navigation, or a job queued is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1061 — promotion buttons: one per other bundle value, titled, queued on click with no confirm
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1056 (POST recorded and aborted). `page.on("dialog")` registered. Open job O's page
+(`size` small); then the same page with `**/api/workflows/rerun-size-1471` mocked from the real answer, three ways
+in turn: `presets.size` gains a third value `large: {width: 512, height: 512}`; `presets` gains a selector `quality`
+(`{lo: {num_inference_steps: 2}, hi: {num_inference_steps: 8}}`) that isn't a declared variable; `presets.size` holds
+only `small`. Then mock `**/api/jobs/<O>` from the real answer with `arguments.width = 320` added.
+expected:
+- Real page: exactly one promotion button, `size: medium` (none for `small`, O's own value). Its title names the change
+  (`size` → `medium`) and says the value comes from the workflow file as it is now.
+- Clicking it posts at once, no dialog and no modal, a body whose `arguments` is exactly `{"size": "medium"}`.
+- Mock 1: buttons `size: medium` and `size: large`, no more. Mock 2: no `quality` button. Mock 3: no promotion buttons,
+  and the page otherwise unchanged.
+- Job mock (explicit `width`): the `size: medium` title adds that `width` stays as set explicitly (`width=320` or
+  similar); `height` isn't named. The click's body is still exactly `{"size": "medium"}` (nothing cleared).
+A button for the current value or a non-variable selector, a confirm, a missing title clause, or extra body keys is
+a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1062 — a job whose workflow can't be fetched by name keeps the form and shows no promotions
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1056 (POST aborted). Open job O's page with `**/api/workflows/rerun-size-1471`
+fulfilled as a 404 (`{"detail": "not found"}`), then as a 500, then aborted (network failure); and once a job of
+`templates/text-to-image` (no `presets`) if one is in `list_jobs(workspace="regression-complete")`, else that
+workflow's answer mocked onto O's.
+expected:
+- Every load: no promotion buttons; the header's Run again, New seed and **Run again with changes…** are present;
+  the modal opens and lists the declared variables (they come from the job's own definition, not the fetched
+  workflow); no script error and no error banner about the workflow.
+A missing form, a broken page, or a promotion button is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1063 — the overrides chip: `changed: …` beside "rerun of", titled with each value, absent with no overrides
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no new job. Web UI as in C-F1056. Open the pages of R1 and R2 (C-F1053, C-F1054) and O; then R1's page with
+`**/api/jobs/<R1>` mocked from the real answer three ways: `overrides` = `{"prompt": "a green pear", "width": 320}`;
+`overrides` = `{}`; `overrides` removed. Then the jobs list.
+expected:
+- R1: beside the "rerun of <O>" link, a chip reading `changed: prompt`, titled `prompt = a green pear`. R2: `changed:
+  size`, titled `size = medium`.
+- O (no `rerun_of`): no chip. Mock 1: `changed: prompt, width`, its title listing both `name = value` pairs.
+  Mocks 2 and 3: no chip and no bare `changed:` text.
+- The jobs list renders as before: each rerun row keeps its one rerun chip (its title begins `a rerun of`); naming
+  overrides there is out of scope (cut, Q1) and neither a pass nor a finding.
+A chip on a job without overrides, an unlisted or extra name, or an empty chip is a **finding**.
+cleanup: last case of the group run: `delete_output(job_id=…)` O, R1 and R2.
+metrics: none.
+
+### C-F1064 — a failed job's list row carries `reason`, the first line of its error, clipped at 160 with `…`
+pending: #1472
+source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, read-only. `list_jobs(status="failed", limit=50)` with no workspace, so every job on the server is listed. For
+each row, `get_job(job_id=…)` and take its `error` (a long sweep may stop after 20 rows, once the two edge rows below
+are found or all 50 are checked). Name the edge rows while sweeping: **M**, a row whose `error` holds a newline (a
+traceback or a multi-line message), and **L**, a row whose `error`'s first line is over 160 characters.
+expected:
+- Every failed row whose `get_job` `error` is non-null carries `reason`: a non-empty string with no `\n` or `\r`.
+  It equals the error's first line exactly when that line is at most 160 characters. When the line is longer
+  (row L), `reason` is its first 160 characters followed by `…` (161 characters in all). Trailing whitespace may be
+  trimmed; any other difference is a finding.
+- Row M's `reason` is only the first line, with nothing from the second line onward.
+- A failed row whose `error` is null carries no `reason` key: the key is absent, not null and not `""`.
+- No row carries `restart_batch`, since a failed job is never a tombstone.
+- `get_job` on M and L still returns the full `error`, multi-line and unclipped (detail unchanged).
+- If no M or no L turns up in 50 rows, that edge is reported as **not exercised**, which is neither a pass nor a
+  finding.
+A `reason` over 161 characters, holding a newline, differing from the error's first line, or null or empty is a
+**finding**. So is one missing where `error` is set, or a clipped `get_job` `error`.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F1065 — restart tombstones carry `reason` `server restart: …` and one shared `restart_batch`, the route's `server_instance`
+pending: #1472
+source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, read-only: the batch preview has no `acknowledged_cost`. Fixture: workspace `drill-1371` on mini-ai holds four
+tombstones from one kill -9: `8d8cc7ba497f`, `31531e28c813`, `34c47920676f` and `6196d06350c5`. Their errors read
+`server restart: running when the server stopped, before it opened a run` (the first) and `server restart: …` (the
+rest). Each also has a succeeded rerun row (`rerun_of` names it). On another server, use any `list_jobs(status=
+"cancelled", limit=200)` rows whose `get_job` `error` starts `server restart:`. With none, the case is skipped and is
+not a finding.
+1. `list_jobs(workspace="drill-1371", status="cancelled")`.
+2. `rerun_job(job_id="34c47920676f", restart_batch=true)` with no `acknowledged_cost` (preview).
+3. `list_jobs(workspace="drill-1371")` (every status) and `get_job(job_id="8d8cc7ba497f")`.
+expected:
+- Step 1: each of the four rows carries `reason` starting `server restart:`, equal to the first line of its
+  `get_job` `error` (C-F1064's rule). `8d8cc7ba497f`'s reads `server restart: running when the server stopped, before
+  it opened a run`.
+- Each also carries `restart_batch`, a non-empty string, the same on all four.
+- Step 2: the reply's `server_instance` (today `02d5551a664f4c5295c52364779943b1`) equals that `restart_batch`.
+  `queued` is empty: a preview queues nothing.
+- Step 3: the four succeeded rerun rows carry neither `reason` nor `restart_batch`. `get_job` still returns the full
+  `error` and `traceback: null`, unchanged.
+A tombstone without `restart_batch`, two values within one batch, a value differing from `server_instance`, a
+`reason` not starting `server restart:`, or either field on a succeeded row is a **finding**.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F1066 — a job cancelled while queued carries neither field, and queued and running rows carry neither
+pending: #1472
+source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Two tiny jobs, in workspace `regression-complete`. Validate `templates/text-to-image` with `arguments={"prompt": "a
+blue cup", "seed": 1472}` and bind its `acknowledged_cost`. Then queue it twice with no wait: **A** (note `C-F1066
+running`), then at once **B** (note `C-F1066 queued`, `seed` 1473). The engine runs one job per GPU, so B waits.
+1. While A is running and B queued: `list_jobs(workspace="regression-complete", status="queued,running")`.
+2. `cancel_job(B)` while B is still queued, then at once `cancel_job(A)` while it is running. Straight after,
+   `list_jobs(workspace="regression-complete", limit=5)`.
+3. `wait_for_job(A)`. Then `list_jobs(workspace="regression-complete", limit=5)`, with `get_job` on A and B.
+expected:
+- Step 1: neither the running row nor the queued row carries `reason` or `restart_batch`. The listing doesn't error.
+- Step 2: the listing doesn't error. If A's row is caught still `running` after its cancel, it carries
+  `cancel_requested: true` and no `reason`. If A has already finished, that check is not exercised and is not a
+  finding.
+- Step 3: B is `cancelled` with `get_job` `error: null`. B's row carries neither `reason` nor `restart_batch` (both
+  absent, not null). A's row follows C-F1064's rule against its own `get_job` `error`: absent when that is null,
+  otherwise its first line. A carries no `restart_batch`, since a user cancel is not a tombstone.
+- If A finished `succeeded` before the cancel landed, A carries neither field.
+A field on a queued, running or user-cancelled row (other than A's `reason` matching a set `error`), an error from
+`list_jobs` while a cancel is pending, or `restart_batch` on A or B is a **finding**.
+cleanup: `delete_output(job_id=…)` for A if it wrote a run directory; B has none.
+metrics: none.
+
+### C-F1067 — `list_jobs` documents the two fields, and the whole list keeps them where they belong
+pending: #1472
+source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, read-only. Read the `list_jobs` tool's description from the tool schema. Then `list_jobs(limit=200)` with no
+workspace, and `list_jobs(status="failed,cancelled", limit=200)`.
+expected:
+- The description says that failed and cancelled rows carry `reason`, the first line of the error, and that a
+  restart tombstone carries `restart_batch`, for `rerun_job(restart_batch=true)`. Different wording passes if it
+  names both fields, says what each is, and names that call.
+- Both listings succeed. In them, `reason` appears only on `failed` or `cancelled` rows. `restart_batch` appears only
+  on `cancelled` rows whose `reason` starts `server restart:`. For up to three such rows, a `rerun_job(job_id=…,
+  restart_batch=true)` preview (no `acknowledged_cost`) reports a `server_instance` equal to that row's
+  `restart_batch`.
+- Neither field is ever null or `""`, and no `reason` is over 161 characters or holds a newline.
+- The fields from before are still present on every row (`id`, `status`, `workspace`, `device`, `acknowledged`, and
+  the rest).
+A missing description clause, a field on a row of the wrong status, a null or empty field, or a listing error is a
+**finding**.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F1068 — the jobs list shows a failed or cancelled row's reason on its own muted line, titled with the full text
+pending: #1473
+source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, Playwright as in C-F1028 (found by visible text and role; a mock is built from
+the real answer with `route.fetch()`). Open the jobs list for all workspaces (the page served at the UI root's jobs
+view). Read the rows of `8d8cc7ba497f` (a tombstone, C-F1065), one failed row from C-F1064 (its `reason` known from
+`list_jobs`), and one succeeded row. Then reload twice with `**/api/jobs**` mocked from the real answer:
+- mock 1 gives the failed row a `reason` of 160 `x` characters plus `…`;
+- mock 2 removes `reason` from it.
+Run each read under `colorScheme: "light"` and again under `"dark"`.
+expected:
+- The failed row shows its `reason` text under the workflow name, in an element of its own, not the workflow name's
+  element and not the status chip. The element's `title` is the full `reason`.
+- The tombstone row's line reads `server restart` and then the rest of its reason (e.g. `server restart: running
+  when the server stopped…`). Its status chip still reads `cancelled`.
+- The succeeded row has no reason line and no empty placeholder text.
+- Mock 1: the line stays one line: its rendered height is no more than the row's other single text lines plus 2 px.
+  Its overflow is ellipsized by CSS, and `title` holds all 161 characters.
+- Mock 2: no reason line, and no `undefined`, `null` or empty muted line.
+- In both themes the line's text-to-background contrast, computed from the element's computed `color` and its
+  effective background, is at least 4.5:1 (WCAG AA for body text).
+A reason inside the workflow-name element, a missing or truncated `title`, a wrapped line, placeholder text on a row
+without a reason, or contrast under 4.5:1 in either theme is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1069 — the restart banner counts each batch's tombstones with no rerun row in view, newest batch first, and never previews on its own
+pending: #1473
+source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1068, with every request to `**/api/jobs/*/rerun-restart-batch` recorded. Open the jobs
+list for all workspaces with `**/api/jobs**` (the list GET only) mocked from the real answer, in turn:
+1. **Real:** no mock. On mini-ai each `drill-1371` tombstone has a rerun row in view.
+2. **None rerun:** remove the four rerun rows whose `rerun_of` names a `drill-1371` tombstone.
+3. **One left:** remove only the rerun row of `6196d06350c5`.
+4. **Two batches:** mock 2, plus two cloned tombstone rows. They get new ids, `restart_batch: "b2-1473"`, and a
+   `created_at` newer than every other row.
+5. **No tombstones:** remove every row carrying `restart_batch`.
+6. **Filtered:** mock 2 again, with the page's status filter set to show only failed jobs (any filter that hides
+   cancelled rows).
+Stay at least 10 s on each load, so the page's poll fires.
+expected:
+- Load 1: no restart banner (every tombstone in view has a rerun row). On a server with no tombstones, this load is
+  trivially bannerless.
+- Load 2: one banner reading `4 jobs were cancelled by a server restart` (`4 jobs … server restart` in other wording
+  passes), with a **Rerun…** button.
+- Load 3: one banner, `1 job …` (or `1 jobs …`; the count is what's checked).
+- Load 4: two banners, the `b2-1473` batch's (`2 jobs …`) above the `drill-1371` batch's (`4 jobs …`).
+- Load 5: no banner.
+- Load 6: no banner.
+- Across all six loads and their polls, **zero** requests to `rerun-restart-batch`: the poll never previews, and
+  neither does showing a banner.
+A banner on load 1, 5 or 6, a wrong count, merged or misordered batches, or any request to the batch route without a
+click is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1070 — clicking Rerun… previews once with `{}`; the dialog lists estimates, a total and skips; Cancel sends nothing, Confirm sends `{acknowledged_cost: true}`
+pending: #1473
+source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job: every batch request here is fulfilled by a mock and never reaches the server. Web UI as in C-F1069,
+using load 2's list mock. Take an `estimate` object from `validate_workflow(workflow="templates/text-to-image",
+arguments={"prompt": "a red lighthouse at dusk"})`'s `plan.estimate` (call it E). Mock `**/api/jobs/*/rerun-restart-
+batch`, recording each request's URL and body, to fulfill:
+- with no `acknowledged_cost` in the body: `{"server_instance": <the batch's restart_batch>, "queued": [],
+  "would_queue": [{"id": "31531e28c813", "workflow": "text-to-image", "workspace": "drill-1371", "estimate": E},
+  {"id": "6196d06350c5", "workflow": "text-to-image", "workspace": "drill-1371", "estimate": E}], "skipped": [{"id":
+  "8d8cc7ba497f", "reason": "already rerun as 99450be8fc18"}]}`;
+- with `acknowledged_cost: true`: the same, with `would_queue` moved into `queued`, each entry given `rerun_of` set to
+  its id and a new `id`.
+Click **Rerun…**, then **Cancel**. Click **Rerun…** again, then confirm.
+expected:
+- The first click makes exactly one request: a POST to `/api/jobs/<id>/rerun-restart-batch`, where `<id>` is one of
+  that batch's tombstone ids and the body is `{}` (no `acknowledged_cost` key).
+- A dialog opens and lists both `would_queue` jobs, each with its estimate in words (E's minutes, as the editor's
+  plan words them: e.g. `~0.2 min`, never `[object Object]`, `undefined` or `NaN`). It shows a total, the sum of the
+  two, and lists the skipped `8d8cc7ba497f` with `already rerun as 99450be8fc18`.
+- **Cancel** closes it and sends nothing more; the request count stays 1.
+- Confirming sends exactly one more POST, its body exactly `{"acknowledged_cost": true}` (no `new_seed`, no
+  `arguments`).
+- Then a notification reads `Queued 2` (count in other wording passes) and mentions the one skipped.
+- No request carries a workspace header other than what the page always sends.
+A preview body that isn't `{}`, a second preview request on one click, a request after Cancel, a confirm body with
+other keys, an unformatted estimate, or a missing total or skip is a **finding**.
+cleanup: none (nothing reached the server's batch route).
+metrics: none.
+
+### C-F1071 — an empty preview says nothing is left, offers only Close, and hides that batch's banner for the session
+pending: #1473
+source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1069, using load 2's list mock (four `drill-1371` tombstones shown unrerun), **without**
+mocking the batch route. The preview reaches the real server, which today (mini-ai, 2026-11-19) answers
+`would_queue: []` with all four `skipped: already rerun as <id>`. On another server, mock the preview answer with
+`would_queue: []` and four such `skipped` entries instead. Record every batch-route request. Click **Rerun…**, read
+the dialog, close it, then stay 10 s (poll). Then reload the page with the same mock.
+expected:
+- One request, body `{}`. The dialog says nothing is left to rerun (wording free) and lists the four skipped with
+  their `already rerun as` reasons.
+- Its only action is **Close**: no confirm or queue button, enabled or disabled.
+- After Close, the `drill-1371` banner is gone, and stays gone through the poll; no second request is made.
+- After the reload, the banner shows again (the hide lives in memory, not storage).
+- `list_jobs(workspace="drill-1371")` still reports `total` 8 afterwards; nothing was queued.
+A confirm action on an empty preview, the banner surviving Close, the banner still hidden after a reload, or any job
+queued is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1072 — the batch the banner drives, over MCP: preview holds only small non-H3 jobs, a confirm queues each once, a second preview skips them all
+pending: #1473
+source: tester, spec for #1473 from #1449's plan v2 (claude-opus-5-5 via anthropic)
+This case is the route the stage B banner calls, read before and after a confirmed batch, as the plan's acceptance
+asks. On mini-ai today the batch is already fully rerun (C-F1065, C-F1071), so step 3 may queue nothing; that is the
+expected outcome there, not a skip.
+1. `list_jobs(workspace="drill-1371")`, and note `total`.
+2. `rerun_job(job_id="34c47920676f", restart_batch=true)` with no `acknowledged_cost` (preview).
+3. If `would_queue` is non-empty **and** every entry's workflow is a small image template (`text-to-image` or
+   similar; nothing H3-family, nothing video), repeat the call with `acknowledged_cost=true`. If any entry is
+   H3-family or video, **stop**: verify from the preview alone. If `would_queue` is empty, skip the confirm.
+4. If step 3 confirmed: `wait_for_job` on each queued id (`wait_seconds=55`). Then repeat step 2 and step 1.
+expected:
+- Step 2: every listed tombstone appears in exactly one of `would_queue` or `skipped`. Each `skipped` reason is
+  non-empty (`already rerun as <id>` for one with a rerun row). Each `would_queue` entry carries an `estimate`.
+- Step 3 (confirmed): `queued` holds one job per step-2 `would_queue` entry, each `rerun_of` its tombstone, and no
+  others.
+- Step 4: the second preview's `would_queue` is empty, and every tombstone is `skipped: already rerun as <id>`, where
+  `<id>` is a step-3 queued id or an earlier rerun. `total` grew by exactly the number queued.
+- Unconfirmed (empty preview): `total` is unchanged.
+A confirm that queues a job twice or one missing from the preview, a non-empty second `would_queue`, or a confirm
+made over an H3 or video entry is a **finding**.
+cleanup: `delete_output(job_id=…)` for each job step 3 queued.
+metrics: none.
+
+### C-F1073 — a checked chain's shots carry `measures`: one entry per computed measure, each with value, ceiling, bound, warn_only and failed
+pending: #1474
+source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+**Setup shared by C-F1073–C-F1087 and SE-F073.** Workspace `regression-complete`; pass `workspace=` on
+every call. Fixture workflow `chain-1451` (see Fixtures): if `get_workflow(name="chain-1451")` doesn't answer,
+`save_workflow` it as `templates/ltx2/chained-segments`'s definition with these changes. Variables: `width` 256,
+`height` 256, `num_frames` 25, `segments` 3, `seed` 1451, and four new ones: `check` =
+`{"jump_ratio_max": 6.5}`, `retries` 0, `stop_after` null, `keep_segments` true. In the step's `chain`, set
+`"check": "variable:check"`, `"retries": "variable:retries"`, `"stop_after": "variable:stop_after"` and
+`"keep_segments": "variable:keep_segments"`, keeping `save_segments: true` and `resume_from: "variable:resume_from"`.
+Everything else stays as the template has it: LTX-2.5, its default image and prompt, no H3. `validate_workflow` each
+run below with its `arguments` and bind `acknowledged_cost` from the plan. Then run, each with a `note` naming the
+job:
+- **J1**: no arguments (check on, 3 segments, complete).
+- **P**: `arguments={"stop_after": 2}` (a probe: 2 of 3 planned segments).
+- **J2**: an inline workflow, `chain-1451`'s definition with `segments` 2, `check` =
+  `{"jump_ratio_max": 0.01, "cut_ratio_max": null, "words_similarity_min": 0.5}` and the chain given
+  `"lines": ["", "Hello there, my friend."]`. A jump ceiling of 0.01 fails every seam, so with `retries` 0 segment 2
+  records `check_failed` deterministically. Pass the definition as `run_workflow`'s inline workflow, or save it as
+  `chain-1451-j2` and delete that workflow at cleanup.
+- **J3**: `arguments={"check": false, "segments": 2}` (unchecked).
+Wait for each (`wait_seconds=55`, then `wait_for_job` while `still_running`). Each must succeed; a failed setup run
+is a finding against the chain, not a skip.
+Case: `get_job(J1)`, and read `manifest[<the chain step>].shots`.
+expected:
+- Three shots. Shots 2 and 3 each carry `measures`, an object keyed by measure name, holding at least `jump_ratio`,
+  `look_ratio`, `texture_ratio`, `cut_ratio` and `audio_dbfs`. `face_drop` is there when the shot's `check.face_drop`
+  is a number, and is absent or carries a numeric `value` when that is null.
+- Every entry has exactly the keys `value` (a number), `ceiling` (a number or `null`), `bound` (`"max"` or `"min"`),
+  `warn_only` (a boolean) and `failed` (a boolean).
+- Ceilings and bounds: `look_ratio` 5.5 max, `texture_ratio` 2 max, `cut_ratio` 3.5 max, `audio_dbfs` -70 min,
+  `face_drop` `null` max (no `face_drop_max` set, and none is invented). `warn_only` is true for `texture_ratio` and
+  `face_drop`, false for the rest.
+- `failed` agrees with the value: true exactly when a `max` value is above its ceiling or a `min` value is below it,
+  with a `null` ceiling never failed. On a shot with no `check_failed`, every non-warn-only `failed` is false. For
+  `texture_ratio`, `failed` is true when the value is above 2 or below 0.5.
+- `face_drop` reads the same in `measures` and in the shot's `check.face_drop`.
+A missing entry, an extra or missing key on an entry, a non-numeric `value`, a ceiling that isn't the one in force,
+or a `failed` that disagrees with its value and bound is a **finding**.
+cleanup: keep J1, P, J2 and J3 for C-F1074–C-F1087 and SE-F073 in the same run. The last of those cases
+that runs deletes them, and the continuation job C-F1086 makes, with `delete_output(job_id=…)`, plus any asset
+C-F1078 kept and the `chain-1451-j2` workflow if it was saved. Keep the `chain-1451` workflow.
+metrics: none.
+
+### C-F1074 — an overridden ceiling shows the override, a skipped measure has no entry, and `words` is a `min` entry beside the full `shot.words`
+pending: #1474
+source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Setup as in C-F1073 (J1, J2). Read `get_job` shots for both.
+expected:
+- J1, shots 2 and 3: `measures.jump_ratio.ceiling` is **6.5** (the fixture's override), not the default 4.
+- J2, shot 2: `measures.jump_ratio.ceiling` is 0.01 and `failed` is true. There is **no** `cut_ratio` entry, because
+  `cut_ratio_max: null` skips the measure. An entry with `ceiling: null` passes too if its `value` is a number, but a
+  `cut_ratio` entry with a value invented for a skipped measure is a finding.
+- J2, shot 2: `measures.words` has `value` equal to `shot.words.similarity`, `ceiling` 0.5, `bound` `"min"` and
+  `warn_only` false. Its `failed` is true exactly when `shot.words.passed` is false. `shot.words` still carries its full
+  record (`similarity`, `heard`, `findings`, `passed`, …), unchanged by `measures`.
+- J2, shot 1 has an empty line, so `shot.words` is null and there is no `measures.words` entry.
+A default ceiling where the override was given, an entry for a skipped measure, a `words` entry that disagrees with
+`shot.words`, or `shot.words` losing a key is a **finding**.
+cleanup: as C-F1073.
+metrics: none.
+
+### C-F1075 — `failed` agrees with `check_failed`, and the `chain_check_failed` warning keeps its text and fields
+pending: #1474
+source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Setup as in C-F1073 (J1, J2). Read `get_job(J2)`'s shots and `warnings` (also `get_job_events`), and J1's.
+expected:
+- J2, shot 2: `check_failed` is present and lists `jump_ratio`, plus `words` when that failed. The measure names in
+  `check_failed` are exactly the `measures` entries with `failed: true` that are not warn-only, plus any warn-only
+  entry with `failed: true`. Every entry with `failed: true` is named in `check_failed`, and no name there has
+  `failed: false`.
+- J2 carries one `chain_check_failed` warning for segment 2, in the same form as before stage A: its `kind`, its
+  message naming the measures, their values and the kept attempt, and its fields, with `values.jump_ratio` equal to
+  `measures.jump_ratio.value`. When `words` failed, it also carries `heard`, `similarity` and `findings`. The warning
+  gains no `measures` or `ceiling` field the plan didn't add.
+- J2, shot 2: `attempts` is 1 (`retries` 0).
+- J1: every shot with no `check_failed` has every non-warn-only `failed` false, and J1 has no `chain_check_failed`
+  warning naming such a shot.
+A `failed` without its name in `check_failed` (or the reverse), a changed warning shape, or a value in the warning
+that differs from `measures` is a **finding**.
+cleanup: as C-F1073.
+metrics: none.
+
+### C-F1076 — an unchecked chain gets no `measures`, and its shots are otherwise unchanged
+pending: #1474
+source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Setup as in C-F1073 (J1, J3). Read both jobs' chain-step shots.
+expected:
+- J3: no shot has a `measures` key.
+- Every key a J3 shot carries is a key J1's matching shot also carries. A checked chain records more keys, never
+  fewer. J3 adds no key that names a measure, such as `jump_ratio` or `ceiling`.
+- J3's shots carry no `attempts`, `check` or `check_failed` (it was unchecked), as before stage A.
+A `measures` key, even `{}` or `null`, on an unchecked shot is a **finding**.
+cleanup: as C-F1073.
+metrics: none.
+
+### C-F1077 — segment 1 carries only what it measured, and `audio_dbfs` stays top-level and is mirrored as a `min` entry
+pending: #1474
+source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Setup as in C-F1073 (J1, J2). Read J1's and J2's shot 1 and shot 2.
+expected:
+- J1, shot 1: `measures` holds `audio_dbfs` (when the shot's top-level `audio_dbfs` is present) and nothing else:
+  no `jump_ratio`, `look_ratio`, `texture_ratio`, `cut_ratio` or `face_drop`, because segment 1 has no seam. If the
+  shot has no top-level `audio_dbfs`, then `measures` is `{}` or absent.
+- J2, shot 1: also no seam entries, and no `words` entry (empty line).
+- On every shot with a top-level `audio_dbfs`: it is still there, a number at 0.1 dB, and equal to
+  `measures.audio_dbfs.value`. The entry has `ceiling` -70, `bound` `"min"` and `warn_only` false.
+- The shot keys from before stage A (`attempts`, `seed` where re-rolled, `check`, `words`, `check_failed`,
+  `audio_dbfs`, `segment_file`, `start_frame`, `planned_segments` where recorded) keep their names, types and values.
+A seam measure on segment 1, `audio_dbfs` moved off the top level, or a mirror that differs from it is a **finding**.
+cleanup: as C-F1073.
+metrics: none.
+
+### C-F1078 — the kept take's `media.shots` and the REST job record carry the same `measures`, and the OpenAPI schema types the shot
+pending: #1474
+source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Setup as in C-F1073 (J1). `keep_output` J1's take (the chain step's final mp4) as `qa-1451/chain-take.mp4`. Check
+first with `get_gallery_metadata(asset="qa-1451/chain-take.mp4")`: an "Unknown asset" reply means the name is free.
+Then call `get_gallery_metadata` on the kept asset. With a plain HTTP GET (curl or Playwright's `request`), fetch
+`/api/jobs/<J1>` from the server's web root (the MCP endpoint with `/mcp` dropped), and its OpenAPI document
+(`/openapi.json`, or the path the web root's API docs link names).
+expected:
+- `media.shots[i].measures` equals `get_job(J1)`'s `manifest[…].shots[i].measures` for every shot, entry by entry.
+- The REST job record's manifest shots carry the same `measures`.
+- The OpenAPI document has a `ShotRecord` schema that allows extra keys, and the manifest entry's `shots` is an array
+  of it. Its typed properties include `measures`.
+A `measures` missing from either surface, a differing value, or no `ShotRecord` in the schema is a **finding**.
+cleanup: `delete_asset(qa-1451/chain-take.mp4)`; otherwise as C-F1073.
+metrics: none.
+
+### C-F1079 — a finished chained job's page shows one row per segment with a thumbnail, attempts and each measure against its ceiling
+pending: #1475
+source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free past the setup. **Web UI, black-box**, Playwright as in C-F1028: found by visible text and role, mocks built
+from a real answer with `route.fetch()`. Register `page.on("pageerror")` and `page.on("console")`. Setup as in C-F1073
+(J1). Open J1's job page in the light theme and then in the dark theme, and take a full-page screenshot of each. Read
+both screenshots.
+expected:
+- Under the chain step is a segment table with exactly 3 rows, in segment order 1, 2, 3.
+- Each row has a thumbnail: an image or video element whose source is J1's `segment_file` for that row (or J1's take
+  seeked to `start_frame / fps`, a `#t=` fragment), served from J1's own outputs. It loads with a 200 response, not a
+  broken image.
+- Each row shows attempts as `1 of 1` (`retries` 0). Other wording of n of m passes.
+- Rows 2 and 3 have one cell per `measures` entry. Each cell names the measure and shows its value against its ceiling
+  (`jump_ratio` against 6.5). Its pass/warn/fail mark agrees with the entry's `failed` and `warn_only`: pass when not
+  failed, warn when failed and warn-only, fail otherwise. Row 1 shows only its `audio_dbfs` cell, if it has one.
+- No cell reads `undefined`, `null`, `NaN` or `[object Object]`. A `null` ceiling shows as no ceiling or a dash.
+- In both screenshots, all of the table's text and its marks are legible against their background (WCAG AA as read by
+  eye), and pass, warn and fail don't rely on colour alone, or are distinct in both themes.
+- There is no page error and no console error.
+A missing or extra row, a broken thumbnail, a mark that disagrees with `failed`, an unreadable theme, or a page error
+is a **finding**.
+cleanup: none (as C-F1073).
+metrics: none.
+
+### C-F1080 — a `stop_after` take shows "k of N planned", and a failed segment's mark agrees with `check_failed`
+pending: #1475
+source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1079. Setup as in C-F1073 (P, J2). Open P's page, then J2's.
+expected:
+- P: 2 rows and a header reading `2 of 3 planned`. Other wording passes if it gives both numbers. Each row has a
+  thumbnail from its `segment_file`.
+- J1, a complete take, shows either no planned header or `3 of 3 planned`. Never a count that differs from the rows.
+- J2, row 2: the `jump_ratio` cell is marked **fail** against ceiling 0.01. The `words` cell shows the similarity
+  against 0.5 as a minimum bound, distinguishable from a maximum: an arrow, `≥` or `min` all pass. Its mark agrees with
+  `shot.words.passed`. There is no `cut_ratio` cell. Every measure named in `check_failed` is marked fail or warn, and
+  no other cell is.
+- J2, row 1 has no seam cells and no `words` cell.
+A wrong planned count, a pass mark on a measure in `check_failed`, or a `min` bound shown as a ceiling is a
+**finding**.
+cleanup: none (as C-F1073).
+metrics: none.
+
+### C-F1081 — an unchecked chain shows rows without measure cells; a non-chained step shows no table; a pre-stage-A job reads "not recorded"
+pending: #1475
+source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1079. Setup as in C-F1073 (J1, J3).
+1. Open J3's page.
+2. Open the page of any succeeded non-chained job on the server (`list_jobs`; for example, a `templates/text-to-image`
+   job). If there is none, mock J1's `**/api/jobs/<J1>` with the chain step's shots removed from the manifest entry.
+3. A pre-stage-A chain job. Use a real one if mini-ai has it: a succeeded `templates/ltx2/chained-segments` job that
+   finished before #1474 deployed, from `list_jobs`, checking with `get_job` that its shots lack `measures` and carry
+   `attempts`. Otherwise mock J1's job answer with `measures` deleted from every shot, keeping `attempts`. Open its
+   page.
+expected:
+- 1: two rows with thumbnails and no measure cells. There is no error text and nothing reads `undefined` or `NaN`. A
+  per-row note such as "not checked" or "not recorded" passes.
+- 2: no segment table at all, and the page is otherwise as before.
+- 3: one row per shot, with thumbnail and attempts, and its measure cells read `not recorded`.
+- There is no page error on any of the three.
+A page error, a table on a non-chained step, or a pre-stage-A row with no attempts or thumbnail is a **finding**.
+cleanup: none (as C-F1073).
+metrics: none.
+
+### C-F1082 — the table renders any measure by name, warn for a warn-only overshoot, re-roll seeds, and copied and repaired rows
+pending: #1475
+source: tester, spec for #1475 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1079. Setup as in C-F1073 (J1). Mock `**/api/jobs/<J1>` from its real answer, with the
+chain step's three shots changed:
+- Shot 1: `resumed: true`.
+- Shot 2: `attempts` 2, `seed` 2001454, and `measures` with:
+  - `texture_ratio` `{value: 2.4, ceiling: 2, bound: "max", warn_only: true, failed: true}`;
+  - `look_ratio` `{value: 1.2, ceiling: 5.5, bound: "max", warn_only: false, failed: false}`;
+  - `audio_dbfs` `{value: -80.0, ceiling: -70, bound: "min", warn_only: false, failed: true}`;
+  - `audio_drift` `{value: 0.31, ceiling: 0.5, bound: "max", warn_only: false, failed: false}`, a name the UI has
+    never seen;
+  - `face_drop` `{value: 0.02, ceiling: null, bound: "max", warn_only: true, failed: false}`.
+  Shot 2 also gets `check_failed: ["audio_dbfs", "texture_ratio"]`.
+- Shot 3: marked repaired the way `templates/minimax/repair-segment` records it (a shot named `… (repaired)`; if the
+  stage B hand-off names another field, use that).
+Set `retries` 1 in the job's arguments in the mock, so attempts out of 2.
+expected:
+- Row 1 is marked as copied from an earlier run (wording free).
+- Row 2 shows attempts `2 of 2` and the kept seed 2001454.
+- Row 2's marks: texture **warn**, look **pass**, audio_dbfs **fail** (shown against its floor as a minimum), and
+  `audio_drift` rendered by its own name as `0.31` against `0.5`, pass. `face_drop` shows `0.02` with no ceiling, pass.
+- Row 3 is marked as repaired.
+- No cell reads `undefined`, `null`, `NaN` or `[object Object]`, and there is no page error.
+A dropped unknown measure, warn shown as fail or pass, a lost copied or repaired mark, or a missing seed is a
+**finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1083 — Repair is disabled on an LTX take with "no repair-segment template for this model family"
+pending: #1476
+source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1079, logging every request. Setup as in C-F1073 (J1, an LTX-2.5 take whose
+rows all have a `segment_file`). Open J1's page. Hover or focus each row's **Repair** action, then click it.
+expected:
+- Every row has a Repair action, and on every row it is disabled.
+- Rows 2 and 3 give the reason `no repair-segment template for this model family`, as visible text or the title the
+  hover shows. Row 1 gives that reason or the segment-1 reason from C-F1085.
+- Clicking does nothing: no navigation, and no request to a job, run or rerun route.
+An enabled Repair on an LTX take, a missing reason, or any navigation is a **finding**.
+cleanup: none (as C-F1073).
+metrics: none.
+
+### C-F1084 — on a mocked H3 take, Repair opens `repair-segment` with exactly `chain_take` and `segment` pre-filled, and submits nothing
+pending: #1476
+source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1079. Log every request, and **abort** any POST to a job, run, rerun or validate-and-run
+route. Setup as in C-F1073 (J1). Mock `**/api/jobs/<J1>` from its real answer so the chain step reads as H3 family,
+by the rule the stage C hand-off names (for example, its workflow `templates/minimax/chained-segments` and its
+pipeline H3's). Keep its run directory, take file and three shots with `segment_file`s. Mock any workflow fetch the
+page makes for it to match. Open the page and click **Repair** on row 2.
+expected:
+- The page navigates to the workflow page for `templates/minimax/repair-segment`.
+- Its `chain_take` field holds `output:<J1's run>/<J1's take file>`, with the run directory and file name as the mocked
+  manifest gives them, and its `segment` field holds `2`.
+- Every other field is at its default: empty, or its placeholder.
+- No job POST was made, aborted or otherwise. The form waits for Run.
+- Reloading the page (a hard reload) leaves the form at its defaults or still filled. Either passes, without a page
+  error.
+- Repeat from J1's page with row 3: `segment` holds `3`.
+A field missing or wrong, an extra pre-filled field, a submission before Run, or a page error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1085 — Repair is disabled with its reason on segment 1, on a repaired take, and on a run without kept segments
+pending: #1476
+source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1084 (J1 mocked as H3, job POSTs aborted). Variants of the mock:
+- (a) As C-F1084: read row 1.
+- (b) Shot 2 marked `(repaired)` as in C-F1082: read row 2.
+- (c) Every shot's `segment_file` removed, as a run without `keep_segments`: read rows 2 and 3.
+expected:
+- (a) Row 1 is disabled with `segment 1 cannot be repaired - re-render with a new seed`. An en or em dash passes for
+  the hyphen. Rows 2 and 3 are enabled.
+- (b) Row 2 is disabled with `a repaired take has no segment files`.
+- (c) Rows 2 and 3 are disabled with `this run did not keep its segments`.
+- Clicking a disabled action navigates nowhere and sends nothing.
+An enabled action in any of these, or a missing or wrong reason, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1086 — Continue the chain on the `stop_after` probe queues a real rerun that resumes from the last kept segment and clears `stop_after`
+pending: #1476
+source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+One LTX-2.5 segment of GPU time. Web UI as in C-F1079. Record the body of every POST to `**/api/jobs/<P>/rerun` with
+`page.route` and `route.continue()`. Setup as in C-F1073 (P: 2 of 3 segments, both with `segment_file`, and
+`chain-1451` declares `stop_after` and `resume_from`). Open P's page. Press **Continue the chain**, then cancel at the
+confirm-and-estimate step. Press it again and confirm. Wait for the new job C (`wait_for_job`, `wait_seconds=55`).
+expected:
+- One **Continue the chain** action, above the table, not on each row.
+- The first press shows the existing confirm with an estimate, the same flow as Run again. Cancel sends no rerun POST.
+- The confirmed press sends one POST. Its `arguments` are exactly `{"resume_from": "output:<P's run>/<shot 2's
+  segment_file>", "stop_after": null}`.
+- `get_job(C)`: `rerun_of` is P, `arguments.resume_from` is that reference, and `stop_after` is null. C succeeds.
+- C's chain manifest has 3 shots: shots 1 and 2 carry `resumed: true`, and shot 3 doesn't. Shot 3 carries `measures`
+  (C-F1073's shape). On C's page the table shows 3 rows, with rows 1 and 2 marked as copied.
+A body with another key or value, a resume reference to any file but the last kept segment, `stop_after` not
+cleared, a refused or failed rerun, or wrong `resumed` marks is a **finding**.
+cleanup: delete C with the rest (C-F1073).
+metrics: none.
+
+### C-F1087 — Continue is absent on a complete take, on a workflow missing either variable, and when a row has no segment file
+pending: #1476
+source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1079, aborting any rerun POST. Setup as in C-F1073 (J1, P).
+- (a) J1's page, a complete take.
+- (b) P's page, with every workflow or job answer the page reads for P's variables mocked so `stop_after` isn't a
+  declared variable (the chain's `stop_after` is a literal 2).
+- (c) The same, with `resume_from` not declared instead.
+- (d) P's page, with shot 1's `segment_file` removed from its job answer.
+- (e) P's page, with the real answers unmocked, as a control.
+expected:
+- (a)–(d): no **Continue the chain** action is shown, enabled or disabled. The table still renders.
+- (e): Continue is shown.
+- No rerun POST in any of them.
+Continue shown in (a)–(d), or absent in (e), is a **finding**.
 cleanup: none.
 metrics: none.
 

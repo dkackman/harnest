@@ -2014,6 +2014,83 @@ expected:
 Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none.
 
+### SE-F070 — declared rule text (reason, unknown key, value) renders as text on the run page and in the editor
+pending: #1469
+source: tester, spec for #1469 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1038 (the
+workflow-definition route mocked from a real answer). #1469 puts definition-supplied strings under fields. Register
+`page.on("dialog")`, `page.on("console")` and a `page.on("request")` log before loading. On
+`templates/text-to-image`, mock `variable_constraints`:
+- `prompt`: `{min_length: 1, reason: "<img src=x onerror=\"window.__pwn1=1\">"}`
+- `seed`: `{"<svg onload=\"window.__pwn2=1\">": "<script>window.__pwn3=1</script>", reason: "{{7*7}} ${7*7}"}` (an
+  unknown key and value, shown through the `key: value` fallback)
+- `num_images_per_prompt`: `{min_frames: 1, reason: "<a href=\"javascript:window.__pwn4=1\">x</a> <img
+  src=\"http://example.invalid/leak.png\">"}`
+Load the run page, then open the editor's define mode on the same workflow with the same mock.
+expected:
+- On both pages each string appears **literally** as visible text, and `{{7*7}} ${7*7}` is not `49`.
+- `window.__pwn1`…`__pwn4` are undefined; no dialog opened; no `<img>`, `<svg>`, `<script>` or `<a href="javascript:…">`
+  element exists in the hint lines; no request went to `example.invalid`.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none (leave the editor without saving).
+
+### SE-F071 — bundle names and bundle values render as text in the dropdown, placeholders and "sets …" line
+pending: #1470
+source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI, setup as in SE-F070. On `templates/pika-h3/text-to-video`, mock `presets` to
+`{"resolution": {"<img src=x onerror=\"window.__pwn1=1\">": {"width": "<script>window.__pwn2=1</script>"},
+"480p": {"<svg onload=\"window.__pwn3=1\">": 1, "height": "\"><img src=\"http://example.invalid/leak.png\">"}}}` and
+`variables.resolution` to `"{{7*7}}"` (shows as a non-preset current value). Load the run page; pick each option in
+turn; then open the editor's define mode with the same mock.
+expected:
+- Every bundle name shows literally as an option label (and in the editor's bundle list), the hostile variable name
+  literally in the `sets …` line, each bundle value literally as a placeholder, and `{{7*7}} (not a preset)`, not `49`.
+- `window.__pwn1`…`__pwn3` are undefined; no dialog; no injected element; no request to `example.invalid`.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none (leave the editor without saving).
+
+### SE-F072 — override names and values, and promotion titles, render as text on the job page and in the rerun modal
+pending: #1471
+source: tester, spec for #1471 from #1448's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing queued. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1053 and C-F1056
+(jobs O and R1 of `rerun-size-1471`; mocks built from a real answer; every rerun POST aborted). #1471 renders
+job-supplied strings in a chip, its title, modal placeholders and promotion titles. Register `page.on("dialog")`,
+`page.on("console")` and a `page.on("request")` log before loading.
+- R1's page, `**/api/jobs/<R1>` mocked: `overrides` = `{"<img src=x onerror=\"window.__pwn1=1\">": "<script>window.__pwn2=1</script>",
+  "prompt": "\"><img src=\"http://example.invalid/leak.png\"> {{7*7}} ${7*7}"}`.
+- O's page, `**/api/jobs/<O>` mocked: `arguments.prompt` = `"<svg onload=\"window.__pwn3=1\">"`; open **Run again with
+  changes…**.
+- O's page, `**/api/workflows/rerun-size-1471` mocked: `presets.size` gains a value
+  `"<a href=\"javascript:window.__pwn4=1\">x</a>": {"width": 384}`; hover its promotion button.
+expected:
+- Each string appears **literally** as visible text (chip, title, placeholder, button label/title); `{{7*7}} ${7*7}`
+  is not `49`.
+- `window.__pwn1`…`__pwn4` are undefined; no dialog opened; no injected `<img>`, `<svg>`, `<script>` or
+  `<a href="javascript:…">` element; no request went to `example.invalid`.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
+### SE-F073 — segment-table measure names, values, file names and reasons render as text, and Repair carries no script into the form
+pending: #1475
+source: tester, spec for #1475 and #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing queued. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1073 and C-F1079
+(job J1 of `chain-1451`; mocks built from a real answer; every POST to a job, run or rerun route aborted). Stage B
+renders measure names it has never seen, and stage C writes a shot's file name into a form. Register
+`page.on("dialog")`, `page.on("console")` and a `page.on("request")` log before loading.
+- J1's page, `**/api/jobs/<J1>` mocked. Shot 2's `measures` gains
+  `"<img src=x onerror=\"window.__pwn1=1\">": {"value": "<script>window.__pwn2=1</script>", "ceiling": "{{7*7}} ${7*7}", "bound": "max", "warn_only": false, "failed": false}`.
+  Shot 3's `segment_file` becomes `"\"><img src=\"http://example.invalid/leak.png\">.mp4"`.
+- The same mock, with the chain step read as H3 family as in C-F1084. Click **Repair** on row 3, then read the
+  `repair-segment` form.
+expected:
+- Each string appears **literally** as visible text, or not at all: `{{7*7}} ${7*7}` is not `49`. Row 3's thumbnail
+  fails to load, or loads nothing, without a page error. The Repair form's `chain_take` holds the string as text in
+  an input value.
+- `window.__pwn1` and `__pwn2` are undefined. No dialog opened. No injected `<img>` or `<script>` element. No request
+  went to `example.invalid`.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model
