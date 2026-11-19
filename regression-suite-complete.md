@@ -26533,4 +26533,26 @@ A warning missing while an error is present (#1500), or an error line left over 
 cleanup: none (leave the editor without saving).
 metrics: none.
 
+### C-F1146 — deleting a workspace keeps its jobs' `request`/`item` strings in history, and a same-named new workspace inherits no request
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v3 (claude-opus-5-5 via anthropic)
+Cost: one `templates/text-to-image` run. Setup: C-F1132's setup in `cf1146-req`; run J1 on `demo/cat`
+(`wait_seconds=55`, then `wait_for_job` if still running) and note its id. (1) `delete_workspace(name="cf1146-req",
+acknowledged_cost=true)`. (2) `get_job(J1)`, and `list_jobs` (no workspace filter, or the filter the reply of (1)
+names for deleted workspaces) for J1's row. (3) `create_workspace(name="cf1146-req")` again; `get_request()` and
+`get_request(request="demo")` with `workspace="cf1146-req"`. (4) `validate_workflow` and
+`run_workflow("templates/text-to-image", arguments={"prompt":"a cat","seed":1}, request="demo/cat",
+acknowledged_cost=…, workspace="cf1146-req")`; `list_jobs(workspace="cf1146-req")`.
+expected:
+- (1) succeeds: a ledger, and jobs linked to it, never block a workspace delete.
+- (2) J1 is still in history, its workspace shown as `cf1146-req (deleted)` (or the server's own deleted-workspace
+  wording), and it still carries `request: "demo"` and `item: "cat"` as plain strings. Reading it raises no error.
+- (3) the new workspace lists no requests; `get_request(request="demo")` is refused as unknown (with a reason), not
+  rebuilt from J1's history row.
+- (4) refused `unknown_request` before anything queues; `list_jobs` in the new workspace shows no job.
+A delete refused because of the ledger, a history row that lost its link strings, or a request resurrected in the
+new same-named workspace is a **finding**.
+cleanup: `delete_workspace(name="cf1146-req", acknowledged_cost=true)`.
+metrics: none.
+
 ## Performance
