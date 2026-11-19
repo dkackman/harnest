@@ -73,6 +73,7 @@ def needs(item: Item, server: str | None) -> frozenset:
 class Pool:
     def __init__(self, servers: dict, free_slots: int):
         self.cap = {"free": free_slots}
+        self._reserve = free_slots >= 2
         for name, slots in servers.items():
             self.cap["gpu:" + name] = slots
             self.cap["src:" + name] = 1
@@ -104,7 +105,7 @@ class Pool:
                     return False
             if avail < units:
                 return False
-            if res == "free" and item.queue not in GPU_FEEDERS and avail < 2:
+            if self._reserve and res == "free" and item.queue not in GPU_FEEDERS and avail < 2:
                 return False
         return True
 
@@ -183,8 +184,8 @@ class Scheduler:
 
     def finished(self, item: Item, server: str | None, ok: bool) -> None:
         if item.key in self._running:
-            del self._running[item.key]
-            self.pool.release(item, server)
+            held, recorded = self._running.pop(item.key)
+            self.pool.release(held, recorded)
         self._spent.add(item.key)
 
     def hold(self, server: str, reason: str) -> None:

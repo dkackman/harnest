@@ -66,11 +66,35 @@ class SchedulerTest(unittest.TestCase):
         first = s.next_dispatches()
         self.assertEqual(first[0][0], a)
 
-    def test_priority_order_one_free_unit(self):
+    def test_reserve_blocks_non_feeder_at_one_free_unit(self):
         s, _ = mk(free=1)
         d, a = it("lead:design", 1), it("reviewer:arch", 2, None, candidates=("lem",))
         s.offer([d, a])
         self.assertEqual([i for i, _ in s.next_dispatches()], [a])
+
+    def test_single_free_slot_does_not_starve_non_feeders(self):
+        s, _ = mk(free=1)
+        d = it("lead:design", 1)
+        s.offer([d])
+        self.assertEqual(s.next_dispatches(), [(d, "lem")])
+
+    def test_finished_releases_recorded_server(self):
+        s, pool = mk()
+        t = it("tester:task", 1, None, candidates=("lem",))
+        s.offer([t])
+        self.assertEqual(s.next_dispatches(), [(t, "lem")])
+        s.finished(t, "mini-ai", True)
+        self.assertTrue(s.gpu_idle("lem"))
+
+    def test_reserve_under_feeder_load(self):
+        s, _ = mk(free=3)
+        f1, f2 = it("implementer:fix", 1, "lem"), it("implementer:fix", 2, "mini-ai")
+        d = it("lead:design", 3, "lem")
+        s.offer([f1, f2, d])
+        self.assertEqual([i for i, _ in s.next_dispatches()], [f1, f2])
+        s.finished(f1, "lem", True)
+        s.offer([d])
+        self.assertEqual([i for i, _ in s.next_dispatches()], [d])
 
     def test_reserved_free_slot(self):
         s, _ = mk(free=3)
