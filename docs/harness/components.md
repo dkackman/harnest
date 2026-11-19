@@ -205,6 +205,19 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   GPU testers load `PLUGIN_TREE`, refreshed before each one (a failed refresh waits a wake);
   spec/handoff testers load `<PLUGIN_TREE>-free`, reviewers `<PLUGIN_TREE>-review`. Every git
   call it makes is bounded (120 s); a SIGTERM during a deploy waits for the deploy, lock held.
+- The loop driver's modules (R17, all in `harness/`, stdlib only; the driver is `drivers/loop.py`):
+  `scheduler.py` (pure: resources `gpu:S`, `free`, `suite`, `leadtree:S`, `src:S`, priority, the
+  reserved free slot for `reviewer:arch`, the gpu hold; no I/O, tested on a fake clock),
+  `board.py` (board rows from `lib/board.sh` to work items, claim routing),
+  `deploy_policy.py` (is a verify runnable on the deployed head; when to deploy, one deploy per burst),
+  `deploy.py` (`run_deploy`, `preflight`, `/api/health`), `loop_state.py` (`logs/loop/state.json`,
+  rendered to a temp name and renamed; statuses running/draining/stopping/paused-rate-limit/stopped),
+  `suite_tree.py` (per-session suite worktrees under `<parent>/.harnest-worktrees/<harnest>/<id>`:
+  `make`, `land` the working-tree diff of the suite paths onto a fresh `main`, `remove`; a conflict
+  is kept on a `suite-conflict/*` or `suite-stranded/*` branch and logged `[audit] WARNING`),
+  `lock.py` (the per-server driver lock, shared protocol with `providers.sh`), `gitops.py` (git with
+  a timeout, in its own process group). The guard reads the session tree and base from
+  `HARNEST_SESSION_TREE` / `HARNEST_SESSION_BASE` (driver-set; add-only is checked against that sha).
 - `lib/run-item.sh <pass> [<issue>]` (R17) — one pass of `run-loop.sh` for one issue, as a
   child of the Python scheduler: it sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
   the lock, the startup deploy, `check_target_on_develop`, the plugin-tree refresh, every

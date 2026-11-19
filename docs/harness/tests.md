@@ -32,7 +32,8 @@ Seventeen files:
   no-progress ledger, `handoff_count`, `park_external_issues`, the driver lock, suite commits
   and the board snapshot cache.
 - `test-python.sh`: the `harness/` unit tests in `tests/py/` (stdlib `unittest`: contract,
-  dashboard, fleet, parity, perf check, rank, results, suite).
+  dashboard, fleet, parity, perf check, rank, results, suite; R17: scheduler, board,
+  loop, loop state, deploy policy, lock, gpu-busy).
 - `test-loop-py.sh`: the R17 loop driver (`harness/drivers/loop.py`) end to end, each
   scenario in its own world in parallel: `lib/board.sh`; a design beside a verify; one gpu
   slot; deploys batched, after the running gpu session, retried then parked, the gpu slot held

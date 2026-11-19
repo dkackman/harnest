@@ -353,7 +353,7 @@ class Loop:
         self.poll = max(1, knob("LOOP_POLL_SECS", 60))
         self.health_secs = max(1, knob("LOOP_HEALTH_SECS", 30))
         self.retry_secs = knob("DEPLOY_RETRY_SECS", 300)
-        self.task_gap = knob("TESTER_TASK_GAP_SECS", 8100)
+        self.task_gap = knob("TESTER_TASK_GAP_SECS", 5400)
         self.max_sessions = knob("MAX_SESSIONS", 0)
         self.sleep_max = knob("SLEEP_MAX_SECS", 1800)
         self.session_kill = knob("SESSION_KILL_SECS", 10)

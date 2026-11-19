@@ -15,6 +15,34 @@ TESTER_EFFORT=high REGRESSION_EFFORT=high ./run-loop.sh   # per-role --effort (d
 ./measure-base-ctx.sh lean --setting-sources project,local --tools "Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,TodoWrite"   # turn-1 context of a flag set
 ```
 
+## The R17 loop driver (replaces `run-loop.sh`)
+
+```sh
+python3 -m harness.drivers.loop                       # one process, every server with `loop = true` (lem, mini-ai)
+python3 -m harness.drivers.loop --servers lem         # lem only (the cutover: mini-ai joins when it has work)
+python3 -m harness.drivers.loop --servers lem --once  # each ready item once, then exit: a check without risk
+python3 -m harness.drivers.loop --only tester:verify,lead:design   # filter queues; ONLY_ISSUES filters issues
+MAX_SESSIONS=5 python3 -m harness.drivers.loop        # stop dispatching after 5 sessions, exit once they end
+DRAIN=1 python3 -m harness.drivers.loop               # exit once quiet and only deferred issues are left, on every server
+touch logs/stop-after-cycle                           # lem: hold it, let its items, deploy and regression finish, release its lock
+touch logs/stop-after-cycle.mini-ai                   # the same for mini-ai; the driver keeps running the others
+kill -TERM <pid>                                      # everything: sessions are TERMed, KILLed past CHILD_DRIVER_KILL_SECS
+tail -f logs/loop.log                                 # `[loop] start/end <label>`, `[loop:deploy]`, `[nightly]`, plus each item's stream
+jq . logs/loop/state.json                             # slots, deploy state, board, totals, heartbeat
+```
+
+One process runs both servers: it takes `.driver.lock` / `.driver.lock.mini-ai` (owner name
+`run-loop`, so the bash passes and `lem_loop_running` see it), keeps server-free sessions
+(`LOOP_FREE_SLOTS`) and one GPU session per server going at once, and owns every deploy and the nightly
+regression. A stop flag is per server: its items finish, the server's lock is released, the flag is
+consumed, shared work moves to the next server, and the driver exits when none is left. `DRAIN=1` exits when
+nothing runs and every server's `drain_left` is `done`; `MAX_SESSIONS` stops dispatching and exits when quiet.
+`TESTER_TASK_EVERY` and `MAX_CYCLES` are `run-loop.sh` only. Dashboard: the loop card reads
+`logs/loop/state.json` (per server: deployed head, deploy state, GPU and card busy, running sessions;
+a heartbeat gone quiet shows stalled; a driver mid-stop shows stopping). Stop the bash loop first on a
+server; do not edit `run-loop.sh`/`providers.sh` while it runs. After a merge to a checkout run
+`cd tools/ui-check && npm install --no-audit --no-fund` once (the tester's web-UI runner).
+
 Which roles may run a weak model is a design decision, not a config detail: the tester's
 independence is the whole point, and a weak tester degrades that silently by rubber-stamping, so
 vary the implementer (its mistakes show up in its patches) and keep the tester on a strong model.

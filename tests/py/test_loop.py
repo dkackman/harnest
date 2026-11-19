@@ -186,7 +186,7 @@ class HelpersTest(unittest.TestCase):
         lp = loop.Loop(["--servers", "lem"])
         self.assertEqual(
             (lp.free_slots, lp.poll, lp.health_secs, lp.retry_secs, lp.task_gap, lp.max_sessions),
-            (3, 60, 30, 300, 8100, 0),
+            (3, 60, 30, 300, 5400, 0),
         )
 
     def test_suite_paths(self):

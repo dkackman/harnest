@@ -17,7 +17,7 @@ stub `ssh`/`claude`), takes about a minute, and runs the real drivers end to end
 
 | Topic | File |
 |---|---|
-| Every driver, `providers.sh`, role-prompt assembly, regression suites, lead, release, bench, curator/retro/digest, `harness/`, `contract/`, logs | [docs/harness/components.md](docs/harness/components.md) |
+| Every driver (the live loop is `harness/drivers/loop.py`; `run-loop.sh` is the retiring bash loop), `providers.sh`, role-prompt assembly, regression suites, lead, release, bench, curator/retro/digest, `harness/`, `contract/`, logs | [docs/harness/components.md](docs/harness/components.md) |
 | Running the loop, the second server (`mini-ai`), driver lock, audit, MCP/plugin wiring | [docs/harness/running.md](docs/harness/running.md) |
 | What each `tests/test-*.sh` covers | [docs/harness/tests.md](docs/harness/tests.md) |
 | Per-role permissions, `guard.py`, the hand-off gate, deploy paths, bounce escalation | [docs/harness/permissions.md](docs/harness/permissions.md) |
