@@ -26053,7 +26053,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1118 — with no literal partition each entry shows its `workflow` constraint; a literal partition is passed to the fetch
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, no H3 run (catalog read and UI only), nothing saved. Web UI as in C-F1113. (a) Set the step's base to
 `MiniMaxAI/MiniMax-H3` with no partition (`from_pretrained_arguments.workflow` unset). (b) Set the partition to
