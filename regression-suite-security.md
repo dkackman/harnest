@@ -2034,7 +2034,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none (leave the editor without saving).
 
 ### SE-F071 — bundle names and bundle values render as text in the dropdown, placeholders and "sets …" line
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI, setup as in SE-F070. On `templates/pika-h3/text-to-video`, mock `presets` to
 `{"resolution": {"<img src=x onerror=\"window.__pwn1=1\">": {"width": "<script>window.__pwn2=1</script>"},

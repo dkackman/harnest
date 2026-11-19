@@ -24661,7 +24661,6 @@ cleanup: discard the edit; never save the template.
 metrics: none.
 
 ### C-F1045 — a preset selector is a dropdown of exactly its bundle names, after a "default" option
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. For each of `templates/pika-h3/text-to-video` (selector `resolution`,
 declared `480p`, bundles `480p`, `768p` on 2026-11-19) and `templates/minimax-h3-image/text-to-image` (selector `size`,
@@ -24680,7 +24679,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1046 — placeholders follow the chosen bundle; a variable no bundle sets keeps its declared default
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038, on `templates/minimax-h3-image/text-to-image`, its `presets.size` read from
 `get_workflow`. Then the same on `templates/pika-h3/text-to-video`.
@@ -24700,7 +24698,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1047 — a typed value wins over the bundle, survives a bundle change, and clearing it brings the placeholder back
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038, on `templates/pika-h3/text-to-video`.
 1. Type `1024` into `width`. 2. Pick `768p`. 3. Pick the default option. 4. Clear `width`.
@@ -24713,7 +24710,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1048 — Run sends the selector and typed values only, never the bundle's values
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, **no job**. Web UI, setup as in C-F1038, on `templates/pika-h3/text-to-video`. Route the page's submit request
 (the POST that queues a job) to record its body and then `route.abort()` it, so nothing queues.
@@ -24731,7 +24727,6 @@ cleanup: if a job did queue, `cancel_job` it and `delete_output(job_id=…)`, th
 metrics: none.
 
 ### C-F1049 — a selector value that isn't a bundle shows as "(not a preset)" and is sent unchanged
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1048 (submit recorded and aborted). On `templates/pika-h3/text-to-video`, give
 `resolution` the value `1080p` (not a bundle) the way the plan names: through the run page's URL if it accepts
@@ -24749,7 +24744,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1050 — a selector holding a reference or a non-string stays a text field
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. Run page of `templates/pika-h3/text-to-video`, the definition mocked three
 ways, one load each: `variables.resolution` = `"variable:width"`; = `480` (a number) with `presets.resolution` keys
@@ -24764,7 +24758,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1051 — a selector whose bundles set different variables lists their union
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI, setup as in C-F1038. Read the full `get_workflow(name="templates/minimax/dialogue-short")`
 `presets.tier` and compute the union of the variable names its bundles set. Open its run page; then mock `presets` so
@@ -24779,7 +24772,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1052 — in the editor a selector stays editable text, with its bundle names and its "sets …" line
-pending: #1470
 source: tester, spec for #1470 from #1447's plan v1 (claude-opus-5-5 via anthropic)
 Free, nothing saved. Web UI, setup as in C-F1038. Open `templates/pika-h3/text-to-video` in the editor's define mode.
 expected:
