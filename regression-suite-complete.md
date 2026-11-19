@@ -25482,7 +25482,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1088 — the gallery detail shows an output's metadata findings without a click, warn rows first, each with its time
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 CPU tasks only, no model job unless A0 below has to be made. **Web UI, black-box**, Playwright as in C-F1028: found
 by visible text and role, never by selectors read from the UI source; a mock is built from the real answer with
@@ -25518,7 +25517,6 @@ cleanup: none here (C-F1094 cleans up the shared setup).
 metrics: none.
 
 ### C-F1089 — Assess on a video and on an audio lists the same findings, in the same order, as `assess_output`, and names what didn't apply
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1088, routes **not** mocked, every request to `**/assess**` logged with its URL,
 method and status. First, over MCP: `assess_output(name=V1, workspace="qa-1452")` and `assess_output(name=A1,
@@ -25541,7 +25539,6 @@ cleanup: none here (C-F1094).
 metrics: none.
 
 ### C-F1090 — Assess is disabled on an image, with the server's reason as its title
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1088. Select I1 in the gallery detail. Read the Assess button's state and its
 title (the `title` attribute, or the tooltip shown on hover). Click it anyway (`force: true`). Then select V1 and A1.
@@ -25556,7 +25553,6 @@ cleanup: none here (C-F1094).
 metrics: none.
 
 ### C-F1091 — while Assess runs the button reads "Assessing…" and is disabled, and a second click sends nothing
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1088. Route `**/api/gallery/*/assess**` through a handler that waits 3 s, then
 gets the real answer with `route.fetch()` and fulfils with it. Select V1, press **Assess**, and within the 3 s read the
@@ -25571,7 +25567,6 @@ cleanup: none here (C-F1094).
 metrics: none.
 
 ### C-F1092 — an assess error shows the server's detail inline, keeps the earlier list, and leaves the page usable
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1088. Get a real refusal's text first: `assess_output` over MCP on a name that
 can't be assessed, such as `qa-1452`'s I1 or a non-media output (any JSON output, e.g. a `templates/split-takes`
@@ -25595,7 +25590,6 @@ cleanup: none here (C-F1094).
 metrics: none.
 
 ### C-F1093 — an assessed result is held per output name: switching away and back shows it again with no second request
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1088, routes not mocked, every request to `**/assess**` counted. Select A1 and
 press **Assess** (count 1). Select V1; select A1; select V1; select A1. Then press **Assess** on V1 (count 2), select
@@ -25612,7 +25606,6 @@ cleanup: none here (C-F1094).
 metrics: none.
 
 ### C-F1094 — the Findings section and severity badges are legible in both themes, warn and info told apart
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1088. Select A1 with the metadata answer mocked to two findings, one `warn` and
 one `info` (any `says`), and assess V1 with the real answer. Take a full-page screenshot of each in the light theme

@@ -2088,7 +2088,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none.
 
 ### SE-F074 — finding text, rule names and not-applicable reasons render as text in the gallery detail
-pending: #1477
 source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
 Free past the setup. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1088 (workspace `qa-1452`,
 outputs V1 and A1; mocks built from a real answer). The new Findings section renders strings the server derives from
