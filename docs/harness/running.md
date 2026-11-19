@@ -15,6 +15,49 @@ TESTER_EFFORT=high REGRESSION_EFFORT=high ./run-loop.sh   # per-role --effort (d
 ./measure-base-ctx.sh lean --setting-sources project,local --tools "Bash,Read,Edit,Write,Glob,Grep,ToolSearch,Skill,TodoWrite"   # turn-1 context of a flag set
 ```
 
+## The R17 loop driver (replaces `run-loop.sh`)
+
+```sh
+python3 -m harness.drivers.loop                       # one process, every server with `loop = true` (lem, mini-ai)
+python3 -m harness.drivers.loop --servers lem         # lem only (the cutover: mini-ai joins when it has work)
+python3 -m harness.drivers.loop --servers lem --once  # each ready item once, then exit: a check without risk
+python3 -m harness.drivers.loop --only tester:verify,lead:design   # filter queues; ONLY_ISSUES filters issues
+MAX_SESSIONS=5 python3 -m harness.drivers.loop        # stop dispatching after 5 sessions, exit once they end
+DRAIN=1 python3 -m harness.drivers.loop               # exit once quiet and only deferred issues are left, on every server
+touch logs/stop-after-cycle                           # lem: hold it, let its items, deploy and regression finish, release its lock
+touch logs/stop-after-cycle.mini-ai                   # the same for mini-ai; the driver keeps running the others
+kill -TERM <pid>                                      # everything: sessions are TERMed, KILLed past CHILD_DRIVER_KILL_SECS
+tail -f logs/loop.log                                 # `[loop] start/end <label>`, `[loop:deploy]`, `[nightly]`, plus each item's stream
+jq . logs/loop/state.json                             # slots, deploy state, board, totals, heartbeat
+```
+
+One process runs both servers: it takes `.driver.lock` / `.driver.lock.mini-ai` (owner name
+`run-loop`, so the bash passes and `lem_loop_running` see it), keeps server-free sessions
+(`LOOP_FREE_SLOTS`) and one GPU session per server going at once, and owns every deploy and the nightly
+regression. A stop flag is per server: its items finish, the server's lock is released, the flag is
+consumed, shared work moves to the next server, and the driver exits when none is left. `DRAIN=1` exits when
+nothing runs and every server's `drain_left` is `done`; `MAX_SESSIONS` stops dispatching and exits when quiet.
+`TESTER_TASK_EVERY` and `MAX_CYCLES` are `run-loop.sh` only. Dashboard: the loop card reads
+`logs/loop/state.json` (per server: deployed head, deploy state, GPU and card busy, running sessions;
+a heartbeat gone quiet shows stalled; a driver mid-stop shows stopping). Stop the bash loop first on a
+server; do not edit `run-loop.sh`/`providers.sh` while it runs. After a merge to a checkout run
+`cd tools/ui-check && npm install --no-audit --no-fund` once (the tester's web-UI runner).
+
+Stopping it: `kill -TERM`, `SIGINT` and `SIGHUP` are handled alike (items TERMed, then KILLed past
+`CHILD_DRIVER_KILL_SECS`; a deploy in flight is waited for, lock held). Every item and every
+deploy runs in a session of its own, so a Ctrl-C (or a closed terminal) reaches only the driver:
+since the final-review fix wave that is as safe as `kill -TERM`, even mid-deploy. Never `kill -9`
+the driver if you can help it: its items, which run in their own sessions, outlive it. After one,
+run `pgrep -fl lib/run-item.sh` (and `pgrep -fl 'claude -p'`) and `kill -TERM` what is left before
+restarting, or the new driver's items run beside the orphans. Each server's last deploy output
+is `logs/.deploy<sfx>.out` (`.deploy.out` for lem, `.deploy.mini-ai.out`).
+
+`totals.closed` in `state.json` (the loop card's "closed", and its cost per close) counts the
+issues this run saw open that have since closed as completed: the driver reads each left issue's
+`stateReason` once (`gh issue view`, at most 20 a poll). Issues closed `not planned` or as
+duplicates do not count; one that closed while the driver was down and never showed open to it
+is not seen at all. The board history's `closed` line still counts every issue that left.
+
 Which roles may run a weak model is a design decision, not a config detail: the tester's
 independence is the whole point, and a weak tester degrades that silently by rubber-stamping, so
 vary the implementer (its mistakes show up in its patches) and keep the tester on a strong model.
@@ -86,8 +129,10 @@ against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongsi
   `agents/<role>/target.md` appended to the system prompt (`target_note`).
 - **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):
   - for the Mac implementer, ssh only to its own test bed (`HARNEST_TARGET_HOST`), no
-    scp/rsync, and no `deploy.sh` (the driver deploys between sessions: the session's own
-    MCP connection holds the old server open);
+    scp/rsync;
+  - for every role on every target, lem included (R17), no `deploy.sh` and no
+    `scripts/testbed.sh update|start|restart|stop` (the driver deploys between sessions: the
+    session's own MCP connection holds the old server open);
   - no suite edit from a Mac regression run, though the Mac tester may add a case for a
     shared fix;
   - no write to lem's perf history;

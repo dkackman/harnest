@@ -80,7 +80,17 @@ resolve_model_env "$LEAD_PROVIDER" "$LEAD_MODEL" || exit 1
 # Validate the effort and fallback now, not three minutes in.
 session_flags "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" 0 || exit 1
 
+# In item mode (lib/run-item.sh features, R17) the session goes to the
+# item's own last-session file, and its prompt file and session logs take
+# the tag from it, so two features items at once never share them.
+# Outside item mode HARNEST_LAST_SESSION is ignored.
 LAST_SESSION="$LOGS/.last-session.features"
+ITEM_TAG=""
+if [ "${HARNEST_ITEM:-}" = 1 ] && [ -n "${HARNEST_LAST_SESSION:-}" ]; then
+  LAST_SESSION="$HARNEST_LAST_SESSION"
+  case "$LAST_SESSION" in /*) ;; *) LAST_SESSION="$REPO/$LAST_SESSION" ;; esac
+  ITEM_TAG="${LAST_SESSION##*/}"; ITEM_TAG=".${ITEM_TAG#.last-session.}"
+fi
 ts() { date '+%H:%M:%S'; }
 
 driver_traps   # no lock here; the EXIT trap removes the --mcp-config file, TERM stops a session
@@ -143,11 +153,11 @@ run_session() {
   if ! shared_here "$n"; then
     echo "$(ts) [$tag] skipping: unclaimed, lem's loop runs it" | tee -a "$LOOP_LOG"; release_session; return 0
   fi
-  prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.$kind.md")" || return 0
+  prompt_file="$(role_prompt lead "$kind" "$LOGS/.prompt.lead.$kind$ITEM_TAG.md")" || return 0
   session_flags "$LEAD_PROVIDER" "$LEAD_MODEL" "$LEAD_EFFORT" "$budget" || return 0
   plan="$(plan_text "$n")"
   before="$(issue_fingerprint "$TICKET_REPO" "$n")"
-  run_claude_session "$tag" lead "$LEAD_TREE" "$prompt_file" \
+  run_claude_session "$tag" "lead$ITEM_TAG" "$LEAD_TREE" "$prompt_file" \
     "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. The repo owner is @$TICKET_OWNER. $instructions Your working directory is a detached worktree of the diffusers-workflow source at origin/develop ($(git -C "$LEAD_TREE" rev-parse --short HEAD)); read it, never edit it. Then stop.
 
 The issue as of $(ts) — start from this rather than fetching it; gh is for acting on it and for anything newer:

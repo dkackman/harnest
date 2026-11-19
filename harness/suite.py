@@ -145,12 +145,15 @@ def _shrunk(repo, paths):
     return "".join(f"{k}(-{n}) " for k, n in counts.items())
 
 
-def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
+def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep, kind=""):
     """Commits pending changes under <paths> with <msg> and a Co-Authored-By
     trailer; a no-op when nothing is dirty. Serialized with every other
     driver's suite commit by logs/.suite-commit.lock (git refuses a second
     writer). Removed lines are committed but warned about: suites only grow
-    and perf history is append-only unless a human approved the change."""
+    and perf history is append-only unless a human approved the change. A
+    curator review applying an approved request (<msg> "curator:..." or
+    <kind> "curator:review", as providers.sh commit_suite_changes_locked) is
+    that route: its removals are logged for the record, not warned about."""
     if not name or not email:
         raise ValueError(
             "run: commit_suite_changes: no co-author name/email — call co_author_for <provider> <model> first"
@@ -191,6 +194,9 @@ def commit_changes(repo, logs, paths, msg, name, email, say, sleep=time.sleep):
         say(msg)
         if shrunk:
             head = git("-C", repo, "rev-parse", "--short", "HEAD").stdout.strip()
+            if msg.startswith("curator:") or kind == "curator:review":
+                say(f"[audit] curator removed lines from {shrunk}in {head} (an approved suite change)")
+                return
             say(
                 f"[audit] WARNING: {head} removed lines from {shrunk}- cases and readings are add-only "
                 "unless a human approved the change; review it"

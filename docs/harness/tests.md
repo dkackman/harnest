@@ -18,7 +18,7 @@ Seventeen files:
   qualifiers the drivers use, and stamps comments with `FAKE_GH_AUTHOR` and the time) and a
   throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
   fix-then-verify in one cycle, an outside filing, the closures window, withheld comments,
-  the curator's audited removals, the spec race, and `DRAIN=1` with the idle backoff (and waiting out a claimed feature's stage at another loop).
+  the curator's audited removals, the spec race, `DRAIN=1` with the idle backoff (and waiting out a claimed feature's stage at another loop), and item mode (`lib/run-item.sh`: one session for one issue, no lock, no deploy, no suite commit, the suite tree as the tester's cwd, the task and closures split, `park`, the queue as part of the item: a feature parent's spec item runs no stage verify).
 - `test-fleet.sh`: a whole regression fleet run (`harness/drivers/fleet.py`) against three
   `tests/fake-mcp.py` servers.
 - `test-guard.sh`: `guard.py` as a table (role, session kind, command, allowed or refused).
@@ -32,7 +32,16 @@ Seventeen files:
   no-progress ledger, `handoff_count`, `park_external_issues`, the driver lock, suite commits
   and the board snapshot cache.
 - `test-python.sh`: the `harness/` unit tests in `tests/py/` (stdlib `unittest`: contract,
-  dashboard, fleet, parity, perf check, rank, results, suite).
+  dashboard, fleet, parity, perf check, rank, results, suite; R17: scheduler, board,
+  loop, loop state, deploy policy, lock, gpu-busy).
+- `test-loop-py.sh`: the R17 loop driver (`harness/drivers/loop.py`) end to end, each
+  scenario in its own world in parallel: `lib/board.sh`; a design beside a verify; one gpu
+  slot; deploys batched, after the running gpu session, retried then parked, the gpu slot held
+  through a failed deploy until the server answers again; SIGTERM mid-deploy; a verify beside a
+  spec gets a fresh plugin tree; plugin-only and
+  deployed fixes with no deploy; a GitHub outage; a stale lock; stop-after-cycle for one
+  server; SIGTERM; a rate-limit pause; the standing task's gate; suite trees landing, a
+  suite conflict kept on a branch; the curator; the nightly regression; `DRAIN=1`; `--only`.
 - `test-ratchet.sh`: the architecture ratchet (`lib/arch_ratchet.py`, the guard's
   `arch_gate`) on fixture repos with a stand-in `arch_metrics.py`.
 - `test-regression-py.sh`: the Python regression driver against `run-regression.sh`, same
@@ -45,6 +54,11 @@ Seventeen files:
   `scripts/install-schedules.sh` under a throwaway `HOME`.
 - `test-sync.sh`: `scripts/sync-fixtures.sh` with fake curl, rsync and ssh.
 - `test-testbed.sh`: `scripts/testbed.sh` with fake ssh and curl.
+- `test-ui-check.sh`: `tools/ui-check/ui-check.mjs` against a fixture page on 127.0.0.1:
+  steps, mocks built from the real answer, stubs (write routes only), request recording, the origin lock,
+  bearer-token injection from an MCP config (and its scrubbing) against an auth-requiring server, a
+  backtracking regex ended by the step cap, SIGTERM leaving no Chromium, locator and spec-path refusals.
+  Skipped when `tools/ui-check/node_modules` is missing.
 - `test-ui-ratchet.sh`: the UI's architecture ratchet (`check_ui`) on fixture repos.
 
 Two bash 3.2 traps the suite has already caught: an apostrophe in a comment inside `<( )`

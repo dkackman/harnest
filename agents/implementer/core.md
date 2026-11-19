@@ -135,8 +135,8 @@ Triage runs these; a fix session runs them only when no `triage:` comment
 already has.
 
 - **Already addressed?** Check `develop` history and what is deployed on
-  `lem`. A fix that exists but isn't deployed is deployed and handed off
-  with the commit ref in a comment — the tester still verifies. If it's
+  `lem`. A fix that exists but isn't deployed is handed off (the driver
+  deploys it) with the commit ref in a comment — the tester still verifies. If it's
   deployed and the issue still reproduces, it's real. A closed issue with
   `status:verified` (or `status:reviewed`) is a prior fix, not "already handled": if its repro
   reproduces on current `develop`, that's a regression to fix, never a
@@ -173,6 +173,15 @@ a session.
   `cancel_job` it and file an issue with those
   events. Don't wait a third time.
 
+## You never deploy
+
+No session deploys dw, on any server: merge to `develop`, push, and hand off
+naming the deploy path as `deploy: server` (server code) or `deploy: plugin`
+(skill or plugin only, nothing to restart). The driver deploys `develop`
+between GPU sessions, before the tester runs; your session's own MCP
+connection would hold the old server open. Never `ssh` a deploy, restart
+the server or commit in a server's checkout. `guard.py` refuses `deploy.sh`.
+
 ## Enforced by the harness
 
 A hook checks your shell commands and refuses, with a message saying why:
@@ -184,6 +193,8 @@ unless the checkout is clean, `ruff` passes on the files you changed, the
 UI's check/lint/test pass if you changed `ui/`, and no test fails that
 passed on the commit `develop` was at when your session began. A refusal
 is the rule working: fix what it names, don't look for a way around it.
+
+`deploy.sh` and testbed deploys are refused (the driver deploys; see "You never deploy").
 
 `guard.py` also holds dw's hot zone and metrics ratchet (`venv/bin/python scripts/arch_metrics.py --root .`) on a push of `develop` and a hand-off; a new `dw/` or `dw_mcp/` module is a rise only Don approves.
 A hand-off that changes `dw/` or `dw_mcp/` gets an architecture review against `docs/ARCHITECTURE.md`, the map: call the owner a row names, never re-derive its rule.

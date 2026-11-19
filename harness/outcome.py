@@ -84,6 +84,12 @@ def rejected_until(path):
     return int(m.group(1)) if m else None
 
 
+def rejected_until_line(line):
+    """resets_epoch on one rendered rate-limit line, or None (0 is none)."""
+    m = re.search(r"resets_epoch=([0-9]+)", line or "")
+    return int(m.group(1)) or None if m else None
+
+
 def rejected(path):
     """True when the log holds a rejected rate limit (session_ran's check)."""
     return "rate-limit: status=rejected" in (_read(path) or "")

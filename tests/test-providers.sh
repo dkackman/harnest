@@ -67,13 +67,19 @@ has "consumer flags allow the perf-check wrapper" '"Bash(./scripts/perf-check.sh
 fails "consumer flags: no perf-check.py spelling" grep -qF 'perf-check.py' <<< "$cflags"
 fails "consumer flags: no bare Write" grep -qF '"Write" ' <<< "$cflags"
 fails "consumer flags: no bare Edit" grep -qF '"Edit" ' <<< "$cflags"
-eq "consumer flags: Write/Edit on nothing else" 14 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | grep -vF '~/.config/harnest/' | wc -l | tr -d ' ')"
+has "consumer flags allow Write/Edit on the bible by its absolute path" "\"Write(/$HARNEST/qa-bible.md)\" \"Edit(/$HARNEST/qa-bible.md)\"" "$cflags"
+has "consumer flags allow the UI runner, exactly (Task 8b)" "\"Bash(node $HARNEST/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)\"" "$cflags"
+has "consumer flags allow Write on the UI runner's spec" '"Write(//tmp/dw-ui-*.json)"' "$cflags"
+eq "consumer flags: no other node, npx or npm" 1 "$(grep -oE '"Bash\((node|npx|npm)[^"]*"' <<< "$cflags" | wc -l | tr -d ' ')"
+eq "consumer flags: Write/Edit on nothing else" 17 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | grep -vF '~/.config/harnest/' | wc -l | tr -d ' ')"
 has "consumer flags: the release key is denied" '"Read(~/.config/harnest/**)" "Write(~/.config/harnest/**)" "Edit(~/.config/harnest/**)"' "$cflags"
 
 # --- ONLY_ISSUES
 rows=$'5\tq\t-\tr\n7\tq\t12\tr\n9\tq\t-\tr'
 eq "no filter keeps all" "5 7 9" "$(printf '%s\n' "$rows" | only_issues_filter | cut -f1 | xargs)"
 eq "filter by number or parent" "5 7" "$(printf '%s\n' "$rows" | ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
+eq "item mode: the filter is exact (no parent widening)" "5" "$(printf '%s\n' "$rows" | HARNEST_ITEM=1 HARNEST_ITEM_QUEUE=q ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
+eq "a queue without item mode still widens" "5 7" "$(printf '%s\n' "$rows" | HARNEST_ITEM_QUEUE=q ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
 
 # --- no-progress ledger
 stub_gh 'echo "{\"state\":\"OPEN\",\"labels\":[{\"name\":\"stage\"},{\"name\":\"owner:lead\"}],\"comments\":[]}"'
@@ -112,6 +118,24 @@ fp_issue '["thanks, see c4e6f5c2"]'
 eq "a SHA outside a progress: comment does not count" "OPEN|owner:implementer|<!-- harnest:plan v1 -->|" "$(issue_fingerprint o/r 6)"
 fp_issue '["x:progress: pushed abc1234", "x:<!-- harnest:decomposed v9 -->"]'
 eq "a stranger's progress: or marker comment does not count (public repo)" "OPEN|owner:implementer|<!-- harnest:plan v1 -->|" "$(issue_fingerprint o/r 6)"
+
+# concurrent items (R17) note progress at once: every key survives, and no
+# temp file or lock is left behind
+race_lost=0
+for round in 1 2 3 4 5 6; do
+  rl="$T/race$round"; mkdir -p "$rl"
+  for k in 1 2 3 4 5 6 7 8; do
+    ( issue_fingerprint() { printf 'OPEN|x|'; }; LOGS="$rl" NO_PROGRESS_PARK_AFTER=9 note_progress o/r "$k" "OPEN|x|" t race ) &
+  done
+  wait
+  [ "$(cut -f1 "$rl/progress.tsv" 2>/dev/null | sort -u | wc -l | tr -d ' ')" = 8 ] || race_lost=$((race_lost + 1))
+done
+eq "concurrent note_progress: every key survives, every round" 0 "$race_lost"
+eq "concurrent note_progress: no temp file or lock left" "" "$(find "$T"/race[0-9] \( -name '*.tmp*' -o -name '*.lock' \) -print)"
+# a stale lock (its pid is gone) is taken over, not waited on forever
+rl="$T/race-stale"; mkdir -p "$rl/progress.tsv.lock"; echo 999999 > "$rl/progress.tsv.lock/pid"
+( issue_fingerprint() { printf 'OPEN|x|'; }; LOGS="$rl" NO_PROGRESS_PARK_AFTER=9 note_progress o/r 1 "OPEN|x|" t race )
+eq "note_progress takes over a stale ledger lock" "o/r#1:race" "$(cut -f1 "$rl/progress.tsv")"
 
 # --- handoff_count: hand-offs since the last reopen, or Don's last hand-back
 stub_gh 'printf "%s\n" labeled labeled reopened labeled'
@@ -280,6 +304,10 @@ eq  "but leaves suite files to lem's loop while it runs (it may be mid-edit)" "r
 rm -rf "$LOGS/.driver.lock"
 has "lem's regression runtime note lists suite edits" "a suite-file edit" "$(tgt lem 'runtime_note regression anthropic sonnet')"
 eq  "a mini-ai one does not" "" "$(tgt mini-ai 'runtime_note regression anthropic sonnet' | grep 'suite-file' || true)"
+uicmd="node $HARNEST/tools/ui-check/ui-check.mjs /tmp/dw-ui-<case>.json"
+has "the tester's runtime note gives the UI runner's exact command line" "$uicmd" "$(tgt lem 'runtime_note tester anthropic claude-opus-5-5')"
+has "so does the regression agent's" "$uicmd" "$(tgt mini-ai 'runtime_note regression anthropic sonnet')"
+eq  "no other role's does" "" "$(tgt lem 'runtime_note lead anthropic claude-opus-5-5' | grep 'ui-check' || true)"
 eq  "no target note for lem" "" "$(tgt lem 'target_note regression "cuda on lem"')"
 note="$(tgt mini-ai 'target_note regression "mps on mini-ai.lan"')"
 has "the note moves perf history" "regression-perf/mini-ai/<case>.jsonl" "$note"

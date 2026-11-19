@@ -26,6 +26,7 @@ rather than in a separate log.
 | R14 | Releases: freeze, gates, whole-diff review, a private channel for security findings | built; 0.5.0 cut end to end with `run-release.sh` (2026-09-27); its five-item plan built; gate and waiver markers are HMAC-signed since 2026-10-25 (harnest#140); nightly regression cadence is Don's call | R12 |
 | R15 | Escalation lanes: ask Don only what Don decides | built 2026-11-01 (batch lane, `parked` state, pending cases follow the plan, curator dedupe); measure two weeks, then decide on silence-as-consent | R9, R11 |
 | R16 | Hardening round 2: the 2026-10-23 review (guard, drivers, fleet, regression cost, prompts) | done 2026-10-25: tasks 1–34 of `docs/superpowers/plans/2026-10-23-harness-hardening.md` landed; task 35 (measure) only partly done | R12, R8 |
+| R17 | Loop scheduler: one event-loop driver for both servers, concurrent sessions by resource (`gpu:S`, `free`, `suite`, trees), driver-owned deploys, per-session suite worktrees, `logs/loop/state.json` and a dashboard loop card | phase 1 built on branch `r17-loop-scheduler` (`harness/drivers/loop.py`; bash item runner `lib/run-item.sh`); cutover on lem pending. Baseline, 14 days of the bash loop (`scripts/gpu-busy.py`, `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`): lem GPU slot 18.4% busy, $6.50 per closed dw issue ($1,443 over 222 closes), a standing task every 5,327 s on average. Target: the slot busy share up, cost per close not up. Phase 1b and 2 below | R8, R13, R16 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -54,7 +55,11 @@ line between framework and target first, and port along it.
 - **Measure before and after.** Every item that claims to save cost or improve quality names
   the number that shows it: `usage:` lines, bounce counts, R1 scores, `measure-base-ctx.sh`.
 - **`lem` runs one job at a time and all work goes through it.** Parallelism is only worth
-  adding where it doesn't queue up behind a deploy or a GPU job.
+  adding where it doesn't queue up behind a deploy or a GPU job. *Amended by R17:* sessions
+  that need no GPU (design, spec, review, curator, code) run beside the one GPU session,
+  and phase 2 gives lem two GPU slots; what stays serial is one deploy at a time per server
+  (the driver owns it, and no GPU session runs through it) and one session per resource
+  (`suite`, `src:S`, `leadtree:S`).
 
 ## Baseline (2026-09-22)
 
@@ -1776,6 +1781,34 @@ moved, weekly (`lib/consolidation.py`). PR merges into `develop` stay refused wh
   none of it touches `lem`. Deploys and verification stay serial.
 - **Letting the retro agent apply its own proposals.** Rejected on principle; see
   "Principles every item must keep".
+
+## R17 — Loop scheduler: follow-ups
+
+Spec: `docs/superpowers/specs/2026-11-18-loop-scheduler-design.md`; plan `docs/superpowers/plans/2026-11-18-loop-scheduler.md`.
+
+**Phase 1a (built).** The Python driver schedules; each item still runs as a bash pass
+(`lib/run-item.sh`, which sources `run-loop.sh` in item mode). One GPU slot per server,
+server-free sessions beside it, per-session suite worktrees, driver-owned deploys with the
+guard refusing deploys from implementer and lead.
+
+**Phase 1b (next).**
+- Port the item passes from bash to Python behind `Runner.start` (the seam), then retire
+  `run-loop.sh` and the `tests/test-drivers.sh` scenarios that cover it.
+- `run-features.sh` becomes a thin wrapper over the driver (`--only lead:design,lead:decompose`).
+  Today `--only` still takes each server's lock, so the wrapper cannot run beside the loop.
+- Guard deploy name-matching evasions (`>` adjacency, quote-split names, globs, alias tricks,
+  piped exempt text): enforce at the deploy site instead (a driver-only key or forced command
+  on lem), so the guard stays a mistake fence.
+- UI-code verification gap: the tester cannot see UI code and the docs reviewer does not review
+  it, so UI-only fixes (#1450, #1453, #1462, #1467, #1468) wait on Don's close. `tools/ui-check`
+  (a fixed, origin-locked runner) is the first step; the cases that need more writes than
+  `/api/validate`, `/api/jobs` and cancel must add them to its `POST_ALLOWED` on purpose.
+- Live `cost_so_far` for running sessions; the standing-task clock surviving a restart.
+
+**Phase 2: two GPU slots on lem.** `loop_gpu_slots = 2`, a plugin tree per GPU slot, and
+regression as the lowest-priority `gpu:S` items in idle slots (a ready verify preempts at a
+batch boundary). Decide with the first weeks of `state.json` GPU-busy figures; mini-ai stays
+one slot, and no H3 work goes to it.
 
 ## dw UI stabilization Phase 4: the UI's metrics ratchet (2026-10-02)
 

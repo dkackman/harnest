@@ -170,7 +170,9 @@ fi
 RESULTS_DIR="$REPO/regression-results${TARGET_SUFFIX:+/$DW_TARGET}"
 # guard.py reads it: on another target, lem's suite and perf files are off
 # limits and a new issue goes to owner:don + target:<target>.
-SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_REPO="$TICKET_REPO")
+# DW_URL: the web UI runner (tools/ui-check) takes its origin from it, and
+# resolve_target sets it here unexported.
+SESSION_ENV=(HARNEST_TARGET="$DW_TARGET" HARNEST_ROLE=regression HARNEST_TICKET_REPO="$TICKET_REPO" DW_URL="$DW_URL")
 
 # Never alongside run-loop.sh on the same target: an implementer deploy
 # restarts the server mid-case, and both drivers keep per-session state
@@ -239,6 +241,8 @@ workspace_for_suite_file() {
 # checkout so skill fixes are covered without a reinstall. The permission
 # allowlist (providers.sh) is the same fence the tester runs behind.
 MCP_CONFIG_PATH="$(mcp_config_file "$DW_URL" "$DW_TOKEN")" || { echo "[regression] cannot write the mcp config under $LOGS" >&2; exit 1; }
+# ui-check reads the UI's bearer token from this file (the path, never the token).
+SESSION_ENV+=(HARNEST_MCP_CONFIG="$MCP_CONFIG_PATH")
 REGRESSION_FLAGS=(
   --mcp-config "$MCP_CONFIG_PATH"
   --strict-mcp-config

@@ -80,6 +80,9 @@ CONSUMER_WRITABLE = (
     "regression-suite-*.md",
     "regression-perf/**",
     "qa-bible.md",
+    # git-ignored, so only in the harness checkout: a tester in a suite tree
+    # writes it by its absolute path (`//` + the path)
+    f"/{REPO}/qa-bible.md",
     "/tmp/**",
     "//tmp/**",
     "/private/tmp/**",
@@ -108,6 +111,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         "Glob",
         "Grep",
         *[f"{tool}({path})" for path in CONSUMER_WRITABLE for tool in ("Write", "Edit")],
+        "Write(//tmp/dw-ui-*.json)",
         "Bash(gh issue *)",
         "Bash(date *)",
         "Bash(file *)",
@@ -118,6 +122,7 @@ def consumer_permission_flags(mcp_name="dw", deny=("delete_model", "update_diffu
         "Bash(git show *)",
         "Bash(./scripts/file-advisory.sh *)",
         "Bash(./scripts/perf-check.sh *)",
+        f"Bash(node {REPO}/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)",
         "--disallowedTools",
         *[f"mcp__{mcp_name}__{t}" for t in deny],
         *RELEASE_KEY_RULES,

@@ -156,13 +156,51 @@ don't manufacture busywork or re-test things already closed as verified.
 
 ## Your shell
 
-It allows `gh issue …`, `date`, `file` and read-only `git`, one plain
-command per call. Anything else is denied and costs a turn: heredocs,
+It allows `gh issue …`, `date`, `file`, read-only `git` and the UI runner ("Web UI
+cases"), one plain command per call. Anything else is denied and costs a turn: heredocs,
 `cat >`/`>>`, `printf >>`, `for` loops, pipes into `python3` or `wc`,
 `cd … &&` chains. So stage a comment or issue body with `Write` to
 `/tmp/<n>-<what>.md` and post it with `gh issue comment <n> --body-file
 <path>`. Read any file, including a saved tool result, with `Read`. Filter
 `gh` output with its own `--jq`.
+
+## Web UI cases (ui-check)
+
+A case marked **Web UI, black-box** runs through `ui-check`, a fixed headless-Chromium
+runner; it replaces "a Playwright script the tester writes" in those cases' setup, with
+the same intent. `Write` the case's steps as JSON to `/tmp/dw-ui-<case>.json`, then run
+exactly the command line your Runtime note gives (`node <abs>/tools/ui-check/ui-check.mjs
+/tmp/dw-ui-<case>.json`, with your case's name), alone on the line; a refusal names it.
+
+- Spec: `{"steps": [{"step": "<kind>", ...}]}`. The page is the server's own web UI
+  (the MCP endpoint without `/mcp`); `goto {path}` takes a path on it.
+- Kinds: `goto {path}`; `click {role, name}` or `{text}`; `fill {label | placeholder |
+  role+name, value}`; `press {key}`; `wait_text {text | regex, timeout_ms}` (at most
+  30000); `expect_text {text | regex}` (no wait: `wait_text` first); `inspect {text |
+  regex}`; `screenshot {name}` (letters, digits, `_`, `-`; its path, in a fresh dir of
+  the run's own, is in the step's result and in `shots`, for `Read`); `mock
+  {url_glob, set, once}`, `stub {url_glob, json, status}` and `unmock {url_glob}`;
+  `record {url_glob}` and `recorded {url_glob}`. Locators are visible text and role
+  only (`exact`, `nth` disambiguate); a CSS or XPath key is refused.
+- `mock` is the cases' "build it from a real answer": it fetches the real response,
+  sets each `"dotted.path"` in `set` (`a.0.b`, `a[0]`; any JSON value, `null` too) and
+  serves the rest unchanged.
+- `record` is the cases' "record every request to ...": from that step on it notes each
+  matching request, mocked or not; `recorded` returns them (`method`, `url` path and
+  query, `body` parsed when JSON, else text cut to 4 KB, `timestamp`; at most 200).
+- `stub` answers a POST to validate, submit a run or cancel one (its glob may name only
+  those, e.g. `**/api/jobs?**`) with your JSON and never sends it; `record` still sees it.
+  A real Run click queues a GPU job: stub /api/jobs to check the request body; if a case
+  needs a real run, use the cheapest workflow and cancel it.
+- The runner signs the page in with the session's own token; never put a token in a spec.
+- It prints one JSON document: per step `ok` and `result` or `error` (it stops at the
+  first failure), `page_errors`, `console_errors`, `shots`, and `blocked` (`METHOD url`
+  of each request it aborted: off the server's origin, or a write other than validate,
+  submitting a run or cancelling one, so a delete, a diffusers update or a save in the UI
+  never reaches dw). A page error is a finding when the case says so.
+- Judge styling from `inspect`: the element's tag, classes, computed `color`,
+  `background_color`, `font_weight` and `aria-*`, and its closest classed ancestor. A
+  line "styled as a warning" differs from the plain lines around it there; inspect both.
 
 ## Enforced by the harness
 
@@ -173,6 +211,9 @@ doesn't make a verification.
 
 The hook also refuses adding `release` or `release-blocker`: a release freeze, and what
 moves during one, are Don's.
+
+It also refuses any `node`, `npx` or `npm` but the runner's one form ("Web UI cases"),
+and any `Edit`/`Write` under `tools/ui-check`.
 
 It also refuses an `Edit`/`Write` to a suite file that removes or changes a committed
 line other than a `pending:` line ("The regression suites").

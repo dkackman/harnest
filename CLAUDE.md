@@ -11,13 +11,13 @@ regression coverage, the `regression-suite-*.md` files. There is no build step.
 
 **`tests/run.sh` is the test suite: run it before committing any change to a driver,
 `providers.sh`, `lib/classify.jq` or the guard.** It is offline (fake `gh` over a JSON board,
-stub `ssh`/`claude`), takes about a minute, and runs the real drivers end to end.
+stub `ssh`/`claude`), takes several minutes, and runs the real drivers end to end.
 
 ## Where things are
 
 | Topic | File |
 |---|---|
-| Every driver, `providers.sh`, role-prompt assembly, regression suites, lead, release, bench, curator/retro/digest, `harness/`, `contract/`, logs | [docs/harness/components.md](docs/harness/components.md) |
+| Every driver (the live loop is `harness/drivers/loop.py`; `run-loop.sh` is the retiring bash loop), `providers.sh`, role-prompt assembly, regression suites, lead, release, bench, curator/retro/digest, `harness/`, `contract/`, logs | [docs/harness/components.md](docs/harness/components.md) |
 | Running the loop, the second server (`mini-ai`), driver lock, audit, MCP/plugin wiring | [docs/harness/running.md](docs/harness/running.md) |
 | What each `tests/test-*.sh` covers | [docs/harness/tests.md](docs/harness/tests.md) |
 | Per-role permissions, `guard.py`, the hand-off gate, deploy paths, bounce escalation | [docs/harness/permissions.md](docs/harness/permissions.md) |

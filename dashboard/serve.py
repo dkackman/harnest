@@ -65,6 +65,7 @@ AGENT_OWNERS = {"owner:implementer", "owner:tester", "owner:reviewer", "owner:le
 
 # The two combined streams, one per server target
 STREAMS = {"lem": "loop.log", "mac": "loop.mini-ai.log", "minid": "loop.minid.log"}  # mac: the mini-ai test bed
+LOOP_STATE = LOGS / "loop" / "state.json"  # harness.drivers.loop's view of itself (R17)
 LOCKS = {"lem": ".driver.lock", "mac": ".driver.lock.mini-ai", "minid": ".driver.lock.minid"}
 # a driver run against any target but lem ("local" is the field the page reads)
 OTHER_TARGET = re.compile(r"DW_TARGET=(?!lem\b)\S")
@@ -811,6 +812,61 @@ def _loop_run(run):
     }
 
 
+def _pid_alive(pid):
+    if not isinstance(pid, int) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True  # alive, another user's
+    except OSError:
+        return False
+    return True
+
+
+def loop_state(path=None, now=None):
+    """logs/loop/state.json plus what the file cannot say about itself:
+
+    - live: the pid is alive and the heartbeat is no older than 2 x poll_secs
+    - stalled: the pid is alive with an old heartbeat (and the status is not
+      "stopping"), or the pid is gone without a clean "stopped"
+    - health: live | stopping | stalled | gone | stopped, the one word the page shows
+
+    "stopping" (SIGTERM, waiting out deploys) stops the heartbeat on purpose, so
+    an alive driver in it is stopping, not stalled. None when there is no file or
+    it is unreadable: the page then falls back to the old per-stream views."""
+    d = _read_json(Path(path or LOOP_STATE))
+    if not isinstance(d, dict):
+        return None
+    now = time.time() if now is None else now
+    alive = _pid_alive(d.get("pid"))
+    try:
+        poll = float(d.get("poll_secs") or 60)
+        age = now - float(d.get("heartbeat") or 0)
+    except (TypeError, ValueError):
+        poll, age = 60.0, float("inf")
+    fresh = age <= 2 * poll
+    status = d.get("status")
+    if status == "stopped":
+        health = "stopped"
+    elif not alive:
+        health = "gone"
+    elif status == "stopping":  # before fresh: a stopping loop is never "live", whatever its heartbeat
+        health = "stopping"
+    elif fresh:
+        health = "live"
+    else:
+        health = "stalled"
+    d["live"] = health == "live"
+    d["stalled"] = health in ("stalled", "gone")
+    d["health"] = health
+    d["age"] = round(age, 1) if age != float("inf") else None
+    d["repo"] = TICKET_REPO
+    return d
+
+
 def state():
     procs, claude = processes()
     streams = {}
@@ -846,6 +902,7 @@ def state():
         "drivers": procs,
         "claude_sessions": claude,
         "streams": streams,
+        "loop": loop_state(),
         "stop_flags": flags,
         "release": release(),
         "attention": ATTENTION.snapshot(),

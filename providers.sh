@@ -356,16 +356,28 @@ CONSUMER_PERMISSION_FLAGS=(
     "Write(regression-suite-*.md)" "Edit(regression-suite-*.md)"
     "Write(regression-perf/**)" "Edit(regression-perf/**)"
     "Write(qa-bible.md)" "Edit(qa-bible.md)"
+    # the bible is git-ignored and lives only in the harness checkout: a
+    # tester whose cwd is a suite tree (run-loop.sh item mode) writes it
+    # there, by its absolute path (`//` + the path)
+    "Write(/$HARNEST_ROOT/qa-bible.md)" "Edit(/$HARNEST_ROOT/qa-bible.md)"
     "Write(/tmp/**)" "Edit(/tmp/**)"
     "Write(//tmp/**)" "Edit(//tmp/**)"
     "Write(/private/tmp/**)" "Edit(/private/tmp/**)"
     "Write(//private/tmp/**)" "Edit(//private/tmp/**)"
+    # the UI runner's spec (Task 8b): covered by //tmp/** today, named so the
+    # runner's one input stays writable if /tmp is ever narrowed
+    "Write(//tmp/dw-ui-*.json)"
     # wc: a case that checks a byte cap (a skill's SKILL.md under 12 KiB) has
     # no other way to measure it - Read, Grep and Glob report no sizes (#182)
     "Bash(gh issue *)" "Bash(date *)" "Bash(file *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
     "Bash(./scripts/file-advisory.sh *)"
     "Bash(./scripts/perf-check.sh *)"   # a wrapper: the python3 -I spelling was never matched by the allowlist at run time
+    # dw's web UI, black-box (Task 8b): the fixed, origin-locked Playwright
+    # runner, on a JSON spec of steps the tester writes. No other node, npx or
+    # npm; guard.py holds the line to exactly this form and the spec to a
+    # regular file in /tmp
+    "Bash(node $HARNEST_ROOT/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)"
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers" "${RELEASE_KEY_RULES[@]}"
 )
@@ -614,6 +626,12 @@ runtime_note() {
     "judgment — $examples —" \
     "name that model and provider in it, so a later reader can tell which model" \
     "produced it.$id_hint"
+  # the two roles allowed the web UI runner get its one allowed command line verbatim
+  case "$role" in
+    tester|regression) printf '%s\n' \
+      "The web UI runner (\"Web UI cases\" in your role prompt) is, exactly:" \
+      "node $HARNEST_ROOT/tools/ui-check/ui-check.mjs /tmp/dw-ui-<case>.json" ;;
+  esac
 }
 
 # resolved_model <log-name> <fallback>
@@ -1735,20 +1753,37 @@ ratchet_deps_current() {
 # only_issues_filter
 # stdin: lines whose first field is an issue number and whose optional
 # third field is its parent. Keeps the lines ONLY_ISSUES names (the issue
-# or its parent), or all of them when it is unset.
+# or its parent), or all of them when it is unset. For a scheduler item
+# (HARNEST_ITEM=1 with HARNEST_ITEM_QUEUE, set by lib/run-item.sh) the match
+# is exact: an item for a feature parent never takes its stages along.
 only_issues_filter() {
   if [ -z "${ONLY_ISSUES:-}" ]; then cat; return 0; fi
-  awk -F'\t' -v only="$ONLY_ISSUES" 'BEGIN { n = split(only, a, /[ ,]+/); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
-    ($1 in want) || ($3 in want)'
+  local exact=0
+  [ "${HARNEST_ITEM:-}" = 1 ] && [ -n "${HARNEST_ITEM_QUEUE:-}" ] && exact=1
+  awk -F'\t' -v only="$ONLY_ISSUES" -v exact="$exact" 'BEGIN { n = split(only, a, /[ ,]+/); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
+    ($1 in want) || (exact == 0 && ($3 in want))'
+}
+
+# item_queue_allows <queue>
+# Outside a scheduler item, every queue. In one (HARNEST_ITEM_QUEUE, set by
+# lib/run-item.sh), only the item's queue, so a pass runs that branch alone;
+# an implementer:fix item also takes the issue's stranded row, which its
+# triage unstrands (harness/board.py hands a stranded issue out as a fix).
+item_queue_allows() {
+  [ "${HARNEST_ITEM:-}" = 1 ] && [ -n "${HARNEST_ITEM_QUEUE:-}" ] || return 0
+  [ "$1" = "$HARNEST_ITEM_QUEUE" ] && return 0
+  [ "$HARNEST_ITEM_QUEUE" = implementer:fix ] && [ "$1" = stranded ]
 }
 
 # queue_issues <queue>
 # The issues waiting in one queue of lib/classify.jq, ascending, one per
 # line: number, parent (or -), reason, tab-separated, after ONLY_ISSUES.
+# In a scheduler item, empty for any queue but the item's (item_queue_allows).
 # Prints nothing, and logs, when the snapshot fails, so a gh blip skips a
 # queue for one pass rather than stopping the driver.
 queue_issues() {
   local rows
+  item_queue_allows "$1" || return 0
   if ! rows="$(classify_issues)"; then
     echo "[loop] could not read the issue board for queue $1; skipping it this pass" | tee -a "$LOOP_LOG" >&2
     return 0
@@ -1825,6 +1860,32 @@ issue_fingerprint() {
 # count never carries into a decompose. 0 disables. The ledger is
 # logs/progress.tsv: key, fingerprint, count.
 NO_PROGRESS_PARK_AFTER="${NO_PROGRESS_PARK_AFTER:-2}"
+# ledger_lock <ledger> / ledger_unlock <ledger>
+# Concurrent items (R17) note progress at once, so every rewrite of the
+# ledger holds <ledger>.lock (mkdir, atomic) and writes a per-process temp
+# file. A lock whose pid is gone, or with no pid older than two minutes, is
+# taken over by renaming it aside, as acquire_driver_lock does. Gives up
+# (returns 1) after about 30s.
+ledger_lock() {
+  local lock="$1.lock" pid aside tries=0
+  while ! mkdir "$lock" 2>/dev/null; do
+    pid="$(cat "$lock/pid" 2>/dev/null || true)"
+    if { [ -n "$pid" ] && ! kill -0 "$pid" 2>/dev/null; } \
+       || { [ -z "$pid" ] && [ -n "$(find "$lock" -maxdepth 0 -mmin +2 2>/dev/null)" ]; }; then
+      aside="$lock.stale.$$"
+      if mv "$lock" "$aside" 2>/dev/null; then
+        if [ "$(cat "$aside/pid" 2>/dev/null || true)" = "$pid" ]; then rm -rf "$aside"
+        else mv "$aside" "$lock" 2>/dev/null || rm -rf "$aside"; fi
+      fi
+      continue
+    fi
+    tries=$((tries + 1))
+    [ "$tries" -lt 300 ] || return 1
+    sleep 0.1
+  done
+  echo "$$" > "$lock/pid"
+}
+ledger_unlock() { rm -rf "$1.lock"; }
 note_progress() {
   local repo="$1" n="$2" before="$3" tag="$4" kind="${5:-any}" after key ledger="$LOGS/progress$TARGET_SUFFIX.tsv" count=0 owner
   [ "$NO_PROGRESS_PARK_AFTER" -gt 0 ] 2>/dev/null || return 0
@@ -1832,14 +1893,19 @@ note_progress() {
   after="$(issue_fingerprint "$repo" "$n")"
   [ -n "$after" ] || return 0
   key="$repo#$n:$kind"
+  ledger_lock "$ledger" || { echo "[$tag] could not lock $ledger; #$n's count is not updated" | tee -a "$LOOP_LOG"; return 0; }
   touch "$ledger"
   if [ "$after" = "$before" ]; then
     count="$(awk -F'\t' -v k="$key" -v f="$after" '$1 == k && $2 == f { print $3 }' "$ledger" | tail -n 1)"
     count=$(( ${count:-0} + 1 ))
   fi
-  { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp"
-  [ "$count" -eq 0 ] || printf '%s\t%s\t%s\n' "$key" "$after" "$count" >> "$ledger.tmp"
-  mv "$ledger.tmp" "$ledger"
+  { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp.$$"
+  [ "$count" -eq 0 ] || printf '%s\t%s\t%s\n' "$key" "$after" "$count" >> "$ledger.tmp.$$"
+  if ! mv "$ledger.tmp.$$" "$ledger"; then
+    rm -f "$ledger.tmp.$$"; ledger_unlock "$ledger"
+    echo "[$tag] could not rewrite $ledger; #$n's count is not updated" | tee -a "$LOOP_LOG"; return 0
+  fi
+  ledger_unlock "$ledger"
   [ "$count" -ge "$NO_PROGRESS_PARK_AFTER" ] || return 0
   case "$after" in OPEN\|*) ;; *) return 0 ;; esac
   echo "[$tag] $count sessions in a row left #$n unchanged; parking it with owner:don" | tee -a "$LOOP_LOG"
@@ -1849,7 +1915,11 @@ note_progress() {
   local back="${owner:-the owner it had}"
   if gh issue edit "$n" --repo "$repo" ${swap[@]+"${swap[@]}"} --add-label owner:don --add-label status:needs-approval >/dev/null 2>&1 \
      && gh issue comment "$n" --repo "$repo" --body "Parked by the loop driver: $count sessions in a row ended without changing this issue's state or labels or citing a new commit in a \`progress:\` comment (NO_PROGRESS_PARK_AFTER=$NO_PROGRESS_PARK_AFTER), so the next cycle would run the same session again. Read the latest session comments, then hand it back with \`$back\` and without \`status:needs-approval\`, or decide it here." >/dev/null 2>&1; then
-    { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp"; mv "$ledger.tmp" "$ledger"
+    if ledger_lock "$ledger"; then
+      { grep -v "^$key	" "$ledger" || true; } > "$ledger.tmp.$$"
+      mv "$ledger.tmp.$$" "$ledger" || rm -f "$ledger.tmp.$$"
+      ledger_unlock "$ledger"
+    fi
   else
     echo "[$tag] could not park #$n (gh failed)" | tee -a "$LOOP_LOG"
   fi

@@ -116,6 +116,26 @@ REGRESSION_NIGHTLY_LEVEL="${REGRESSION_NIGHTLY_LEVEL:-all}"   # run-regression.s
 # An issue the filter excludes is skipped silently rather than parked, and a
 # queue of one skips triage by construction. Unset is the normal full run.
 ONLY_ISSUES="${ONLY_ISSUES:-}"
+# Item mode (R17): 1 when lib/run-item.sh sources this file to run one pass
+# for one issue as a child of the Python scheduler (harness/drivers/loop.py).
+# That driver holds the lock and owns every deploy and suite landing, so an
+# item takes no lock, never deploys, never commits a suite change (it leaves
+# a land note instead, item_land_note) and never runs main.
+HARNEST_ITEM="${HARNEST_ITEM:-}"
+# The session's own harnest worktree for suite edits (harness/suite_tree.py)
+# and the main sha it was made at, set by that driver for a tester or curator
+# item only. Not exported: run_agent hands them to a tester or curator session
+# alone (the guard's add-only baseline), never to a code session or a child
+# driver. Outside item mode they are ignored.
+if [ "$HARNEST_ITEM" = 1 ] && [ -n "${HARNEST_SESSION_TREE:-}" ]; then
+  case "$HARNEST_SESSION_TREE" in /*) ;; *) echo "HARNEST_SESSION_TREE must be an absolute path, got '$HARNEST_SESSION_TREE'" >&2; exit 1 ;; esac
+  [ -d "$HARNEST_SESSION_TREE" ] || { echo "HARNEST_SESSION_TREE is not a directory: $HARNEST_SESSION_TREE" >&2; exit 1; }
+  [[ "${HARNEST_SESSION_BASE:-}" =~ ^[0-9a-f]{40}$ ]] \
+    || { echo "HARNEST_SESSION_TREE is set but HARNEST_SESSION_BASE is not a 40-hex sha ('${HARNEST_SESSION_BASE:-}'): the guard would refuse every suite edit" >&2; exit 1; }
+  export -n HARNEST_SESSION_TREE HARNEST_SESSION_BASE
+else
+  unset HARNEST_SESSION_TREE HARNEST_SESSION_BASE
+fi
 PROVIDER="${PROVIDER:-anthropic}"  # where the models live: anthropic|ollama|gateway
 # One model knob per role, no shared default: which role may run a weak model
 # is a design decision, not a config detail. The tester defaults to opus —
@@ -229,14 +249,27 @@ resolve_token || exit 1
 # The claim and backend labels (harnest#15) must exist before anything adds
 # them: gh refuses a label the repo doesn't have, which would fail every
 # claim and every filing. Idempotent.
-for l in $(printf 'target:%s ' $TARGETS) backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
-  gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
-done
+ensure_loop_labels() {
+  local l
+  for l in $(printf 'target:%s ' $TARGETS) backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
+    gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
+  done
+}
+# An item runs under the Python driver's lock and after its preflight; it
+# only installs the traps that stop its session on a TERM. (Its labels are
+# the driver's to make once, with run-item.sh labels.)
+if [ "$HARNEST_ITEM" = 1 ]; then
+  driver_traps
+  TARGET_HEALTH=""
+  [ "$DW_TARGET" = lem ] || TARGET_HEALTH="$(target_health)" || TARGET_HEALTH=""
+else
+ensure_loop_labels
 # The lock before anything that touches the server: the Mac loop's startup
 # deploy below restarts the test bed, which must not happen under a
 # regression run (or another loop) that holds it.
 acquire_driver_lock run-loop
-if [ "$DW_TARGET" != lem ]; then
+fi
+if [ "$HARNEST_ITEM" != 1 ] && [ "$DW_TARGET" != lem ]; then
   # Nothing answering is a test bed left stopped (or a failed deploy):
   # deploy develop there. Then refuse to run against nothing, or against
   # another host behind a tunnel.
@@ -251,9 +284,23 @@ SERVER_NAME="$(server_name)"
 # (agents/tester/target.md); suite_commit_paths then commits suite files.
 export SUITE_EDITS=1
 
+# An item's own last-session file (logs/.last-session.item.<slot>, relative
+# to this checkout), which its driver reads; prompt files take the same tag,
+# so two items at once never write each other's.
+# Outside item mode HARNEST_LAST_SESSION is ignored. The tag also names the
+# item's session logs (logs/<role><sfx><tag>.log and .jsonl, run_agent), so
+# resolved_model reads this item's session and no other.
 LAST_SESSION="$LOGS/.last-session.loop$TARGET_SUFFIX"
-refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
-  || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
+[ "$HARNEST_ITEM" != 1 ] || LAST_SESSION="${HARNEST_LAST_SESSION:?item mode needs HARNEST_LAST_SESSION}"
+case "$LAST_SESSION" in /*) ;; *) LAST_SESSION="$REPO/$LAST_SESSION" ;; esac
+PROMPT_TAG=""
+if [ "$HARNEST_ITEM" = 1 ]; then
+  PROMPT_TAG="${LAST_SESSION##*/}"; PROMPT_TAG=".${PROMPT_TAG#.last-session.}"
+else
+  # An item's plugin tree is refreshed by its driver, never by two items at once.
+  refresh_plugin_tree "$SOURCE_DIR" "$PLUGIN_TREE" >/dev/null \
+    || { echo "could not create/refresh the plugin worktree $PLUGIN_TREE from $SOURCE_DIR" >&2; exit 1; }
+fi
 [ -d "$PLUGIN_DIR" ] || { echo "dw plugin source not found: $PLUGIN_DIR" >&2; exit 1; }
 
 # Per-role effort (--effort). Defaults to EFFORT (providers.sh, `medium` -
@@ -352,7 +399,7 @@ run_agent() {
   local prompt_file
   if ! resolve_model_env "$provider" "$model" \
      || ! session_flags "$provider" "$model" "$effort" "$budget" \
-     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role$TARGET_SUFFIX.$kind.md")"; then
+     || ! prompt_file="$(role_prompt "$role" "$kind" "$LOGS/.prompt.$role$TARGET_SUFFIX.$kind$PROMPT_TAG.md")"; then
     echo "[$label] session failed, continuing" | tee -a "$LOOP_LOG"
     return 0
   fi
@@ -379,7 +426,17 @@ run_agent() {
   # freeze check on a push of develop; empty for triage, task and the like.
   local -a SESSION_ENV=(HARNEST_SESSION_KIND="$kind" HARNEST_TARGET="$DW_TARGET" HARNEST_TARGET_HOST="$TARGET_HOST" HARNEST_ROLE="$role"
                         HARNEST_TICKET_REPO="$TICKET_REPO" HARNEST_ISSUE="$([ "$issue_repo" = "$TICKET_REPO" ] && printf '%s' "$issue_n")")
-  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX" "$dir" "$prompt_file" \
+  # A suite writer in item mode edits its own tree; the guard holds the suite
+  # files there to the base the tree was made at (guard.py session_tree).
+  case "$role" in tester|curator)
+    [ -z "${HARNEST_SESSION_TREE:-}" ] \
+      || SESSION_ENV+=(HARNEST_SESSION_TREE="$HARNEST_SESSION_TREE" HARNEST_SESSION_BASE="$HARNEST_SESSION_BASE") ;;
+  esac
+  # The tester's web UI runner (tools/ui-check) takes its origin from DW_URL and
+  # refuses to run without it; resolve_target sets it here unexported. It reads
+  # the UI's bearer token from the session's MCP config, named by path only.
+  [ "$role" != tester ] || SESSION_ENV+=(DW_URL="$DW_URL" HARNEST_MCP_CONFIG="$MCP_CONFIG_PATH")
+  SESSION_HEADER="cycle $cycle: $label" run_claude_session "$label" "$role$TARGET_SUFFIX$PROMPT_TAG" "$dir" "$prompt_file" \
     "$prompt
 
 $(runtime_note "$role" "$provider" "$model")" "${SESSION_FLAGS[@]}" "$@"
@@ -641,7 +698,7 @@ features_pass() {
     PROVIDER="$PROVIDER" SOURCE_DIR="$SOURCE_DIR" LEAD_TREE="$LEAD_TREE" DW_TARGET="$DW_TARGET" TICKET_REPO="$TICKET_REPO" \
     TICKET_OWNER="$TICKET_OWNER" DW_URL="$DW_URL" DW_TOKEN="$DW_TOKEN" \
     FALLBACK_MODEL="$FALLBACK_MODEL" AUTOCOMPACT_TOKENS="$AUTOCOMPACT_TOKENS" \
-    ONLY_ISSUES="$only" run_child_driver "$REPO/run-features.sh"
+    ONLY_ISSUES="$only" HARNEST_LAST_SESSION="$LAST_SESSION" run_child_driver "$REPO/run-features.sh"
 }
 
 # lead_pass — the feature lead's build and close-out sessions (roadmap R11).
@@ -746,8 +803,14 @@ $(plan_text "$n")" \
 # make itself), one session per issue bounced back with status:needs-info
 # (a question the implementer asked), then (every TESTER_TASK_EVERY cycles)
 # one session for closure responses and the standing task.
+# TESTER_PART picks which of it runs: all (the loop: everything, the task on
+# its cadence), or for an item (lib/run-item.sh) issues (the per-issue
+# sessions), task (the standing task, now) or closures (the closures session).
+# Outside item mode it is always all, whatever the environment says.
+TESTER_PART="$([ "$HARNEST_ITEM" = 1 ] && printf '%s' "${TESTER_PART:-all}" || printf all)"
 tester_pass() {
   local n
+  case "$TESTER_PART" in all|issues) ;; task|closures) tester_rest; return ;; *) echo "TESTER_PART must be all, issues, task or closures, got '$TESTER_PART'" >&2; return 1 ;; esac
   # A feature parent waiting on acceptance cases (roadmap R11 phase 3): the
   # approved plan in full plus the stage list, never any code.
   while IFS= read -r n; do
@@ -757,7 +820,7 @@ tester_pass() {
     # The spec session is where a feature gets claimed (lib/classify.jq).
     claim_issue "$n" \
       || { echo "[tester:#$n] feature held by another loop (or gh failed); skipping" | tee -a "$LOOP_LOG"; continue; }
-    run_agent tester "#$n" "$TESTER_SPEC_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" spec \
+    run_agent tester "#$n" "$TESTER_SPEC_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" spec \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a SPEC session for feature #$n only - write its stages' acceptance cases from the approved plan. Do not verify anything and do not work the standing task. Then stop.
 
 The feature issue as of $(ts):
@@ -778,7 +841,7 @@ $(plan_text "$n")" \
     [ -n "$n" ] || continue
     still_ready "$n" tester:verify \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" verify \
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" verify \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a VERIFY session for issue #$n only. Do not work the standing task. Then stop.
 
 $SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
@@ -799,7 +862,7 @@ $(issue_context "$n")" \
     [ -n "$n" ] || continue
     still_ready "$n" tester:handoff \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" handoff \
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" handoff \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a HANDOFF session for issue #$n only - not a verify, nothing to run over MCP. Do not work the standing task. Then stop.
 
 $SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
@@ -817,8 +880,8 @@ $(issue_context "$n")" \
     [ -n "$n" ] || continue
     still_ready "$n" tester:answer \
       || { echo "[tester:#$n] no longer ready, skipping" | tee -a "$LOOP_LOG"; continue; }
-    run_agent tester "#$n" "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" answer \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is an ANSWER session for issue #$n only - the implementer asked a question via status:needs-info. Do not work the standing task. Then stop.
+    run_agent tester "#$n" "$TESTER_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" answer \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is an ANSWER session for issue #$n only - the implementer asked a question via status:needs-info. Do not work the standing task. The bible, if you need it, is \`$HARNEST_ROOT/qa-bible.md\` (an absolute path; it is not in your working directory). Then stop.
 
 $SERVER_NAME is running: $DEPLOYED_HEAD (as of $(ts)).
 
@@ -827,7 +890,12 @@ The issue as of $(ts) — start from this rather than fetching it; gh is for act
 $(issue_context "$n")" \
       "${TESTER_FLAGS[@]}"
   done < <(queue_issues tester:answer | cut -f1)
+  [ "$TESTER_PART" = issues ] || tester_rest
+}
 
+# tester_rest: the closures and standing-task half of tester_pass.
+tester_rest() {
+  local n
   # Closure responses (step 3) ride in the task session when one runs this
   # cycle; on the other cycles a pending closure gets a short session of its
   # own, so raising TESTER_TASK_EVERY slows discovery but not the reopen
@@ -835,24 +903,32 @@ $(issue_context "$n")" \
   local -a closures=()
   while IFS= read -r n; do [ -n "$n" ] && closures+=("$n"); done < <(pending_closures)
 
-  local clist="none pending" freeze
+  local clist="none pending" freeze task_due=0
   [ "${#closures[@]}" -eq 0 ] || clist="$(printf '#%s ' "${closures[@]}")"
+  # The loop runs the task every TESTER_TASK_EVERY cycles; a task item is due
+  # now (its driver keeps the cadence) and a closures item never runs it.
+  case "$TESTER_PART" in
+    task) task_due=1 ;;
+    all) [ $((cycle % TESTER_TASK_EVERY)) -ne 0 ] || task_due=1 ;;
+  esac
   # A release freeze holds discovery too: the standing task files new issues,
   # and nothing but release-blockers moves until the release ships (R14)
   freeze="$(release_freeze)"
-  if [ -n "$freeze" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+  if [ -n "$freeze" ] && [ "$task_due" = 1 ]; then
     freeze_hold_line "$freeze" tester:task | tee -a "$LOOP_LOG"
   fi
   # The standing task's memory (qa-bible.md) and its series' media are
   # lem's, so another server's loop never runs it; closures still do.
   local task_here=1
-  if [ -n "$TARGET_SUFFIX" ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
+  if [ -n "$TARGET_SUFFIX" ] && [ "$task_due" = 1 ]; then
     echo "[tester:task] standing task: lem only (its bible and fixtures are lem's)" | tee -a "$LOOP_LOG"
     task_here=0
   fi
-  if [ -z "$freeze" ] && [ "$task_here" = 1 ] && [ $((cycle % TESTER_TASK_EVERY)) -eq 0 ]; then
-    run_agent tester task "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
-      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop." \
+  if [ -z "$freeze" ] && [ "$task_here" = 1 ] && [ "$task_due" = 1 ]; then
+    run_agent tester task "$TESTER_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
+      "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop.
+
+Your bible is \`$HARNEST_ROOT/qa-bible.md\`: read and save it at that absolute path, not in your working directory, which may be a temporary suite tree that a bible kept there would not outlive." \
       "${TESTER_FLAGS[@]}"
     # Only when the session ran to its end: a closure has one chance at a
     # reopen, and a died or cut-off session may not have reached it.
@@ -860,18 +936,18 @@ $(issue_context "$n")" \
     # The bible is read whole every task session: past its cap
     # (agents/tester/standing-task.md) it costs every later one
     local bible_bytes
-    if [ -f "$REPO/qa-bible.md" ] && bible_bytes="$(wc -c < "$REPO/qa-bible.md" | tr -d ' ')" && [ "$bible_bytes" -gt 12288 ]; then
+    if [ -f "$HARNEST_ROOT/qa-bible.md" ] && bible_bytes="$(wc -c < "$HARNEST_ROOT/qa-bible.md" | tr -d ' ')" && [ "$bible_bytes" -gt 12288 ]; then
       echo "[audit] WARNING: qa-bible.md is $bible_bytes bytes, over its 12 KB (12288) cap" | tee -a "$LOOP_LOG"
     fi
-  elif [ "${#closures[@]}" -gt 0 ]; then
+  elif [ "$TESTER_PART" != task ] && [ "${#closures[@]}" -gt 0 ]; then
     local list
     list="$(printf '#%s ' "${closures[@]}")"
-    run_agent tester closures "$TESTER_BUDGET_USD" "$REPO" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" closures \
+    run_agent tester closures "$TESTER_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" closures \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a CLOSURES session for ${list}only - each was closed wontfix or duplicate with owner:tester; accept, or reopen once with materially new evidence. Do not work the standing task and do not verify anything. Then stop." \
       "${TESTER_FLAGS[@]}"
     [ "$SESSION_OK" = 1 ] && mark_closures_seen "${closures[@]}"
-    echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
-  elif [ -z "$freeze" ] && [ "$task_here" = 1 ]; then
+    [ "$TESTER_PART" != all ] || echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
+  elif [ "$TESTER_PART" = all ] && [ -z "$freeze" ] && [ "$task_here" = 1 ]; then
     echo "[tester:task] skipped this cycle (TESTER_TASK_EVERY=$TESTER_TASK_EVERY)" | tee -a "$LOOP_LOG"
   fi
 }
@@ -952,18 +1028,19 @@ curator_pass() {
   # tests (R14; settled after the 0.5.0 cut). Requests wait for the cut.
   freeze="$(release_freeze)"
   if [ -n "$freeze" ]; then freeze_hold_line "$freeze" curator | tee -a "$LOOP_LOG"; return 0; fi
-  consolidation_pass
+  # An item's driver runs consolidation once per poll (run-item.sh consolidation).
+  [ "$HARNEST_ITEM" = 1 ] || consolidation_pass
   local -a reqs=()
   while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(curator_requests)
   for n in ${reqs[@]+"${reqs[@]}"}; do
-    run_agent curator "harnest#$n" "$CURATOR_REVIEW_BUDGET_USD" "$REPO" "$CURATOR_PROVIDER" "$CURATOR_MODEL" "$CURATOR_EFFORT" review \
+    run_agent curator "harnest#$n" "$CURATOR_REVIEW_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$CURATOR_PROVIDER" "$CURATOR_MODEL" "$CURATOR_EFFORT" review \
       "This is a REVIEW session for suite-change request #$n on $HARNESS_REPO (this repo) only: your role instructions for it are in your system prompt. Case history lives on the ticket repo, $TICKET_REPO. Then stop.
 
 The request as of $(ts):
 
 $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
       "${MCP_FLAGS[@]}" "${ISOLATION_FLAGS[@]}" --tools "$CURATOR_REVIEW_TOOLS" "${CURATOR_REVIEW_PERMISSION_FLAGS[@]}"
-    co_author_for "$CURATOR_PROVIDER" "$(resolved_model curator "$CURATOR_MODEL")"
+    co_author_for "$CURATOR_PROVIDER" "$(resolved_model "curator${PROMPT_TAG:+$TARGET_SUFFIX$PROMPT_TAG}" "$CURATOR_MODEL")"
     # Only a request the ruling closed as completed was applied: its
     # removals are the approved route and are logged, not warned. Any other
     # outcome (denied, escalated, unreadable) that still changed the suite
@@ -971,8 +1048,12 @@ $(TICKET_REPO="$HARNESS_REPO" issue_context "$n")" \
     local verdict subj="suite: curator session on $HARNESS_REPO#$n" kind=""
     verdict="$(gh issue view "$n" --repo "$HARNESS_REPO" --json state,stateReason --jq '.state + " " + .stateReason' 2>/dev/null || true)"
     [ "$verdict" = "CLOSED COMPLETED" ] && { subj="curator: applied $HARNESS_REPO#$n"; kind=curator:review; }
-    commit_suite_changes "$subj" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" "$kind" \
-      || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
+    if [ "$HARNEST_ITEM" = 1 ]; then
+      item_land_note "$subj" "$kind"
+    else
+      commit_suite_changes "$subj" "$CO_AUTHOR" "$CO_AUTHOR_EMAIL" "$kind" \
+        || echo "[curator] suite commit failed, continuing" | tee -a "$LOOP_LOG"
+    fi
   done
 }
 
@@ -1326,4 +1407,51 @@ while true; do
 done
 }
 
-main "$@"; exit
+# --- item mode (lib/run-item.sh)
+
+# item_init: what main sets per cycle, for one item. DEPLOYED_HEAD and
+# HARNEST_DW_FROZEN (0 or 1) come from the driver, which reads them once per
+# poll; each is asked of the server or of develop only when it is not set.
+item_init() {
+  cycle=item
+  DEPLOYED_HEAD="${DEPLOYED_HEAD:-$(deployed_head)}"
+  case "${HARNEST_DW_FROZEN:-}" in
+    0|1) DW_FROZEN="$HARNEST_DW_FROZEN" ;;
+    *) if dw_frozen; then DW_FROZEN=1; else DW_FROZEN=0; fi ;;
+  esac
+  rm -f "$LAST_SESSION.land"
+  : > "$LAST_SESSION"   # an item that runs no session leaves it empty, not the slot's last session
+}
+
+# item_land_note <msg> [kind]
+# Instead of a suite commit: what the driver passes suite_tree.land for this
+# item's session, as JSON in <last-session>.land: the commit message, the
+# session kind (curator:review logs an approved removal) and the co-author
+# (co_author_for, set by the caller).
+item_land_note() {
+  jq -n --arg msg "$1" --arg kind "${2:-}" --arg name "$CO_AUTHOR" --arg email "$CO_AUTHOR_EMAIL" \
+    '{msg: $msg, kind: $kind, name: $name, email: $email}' > "$LAST_SESSION.land"
+}
+
+# park_issue <n> <reason>
+# Parks #n with Don for an environment problem the driver hit (run-item.sh
+# park; the scheduler's second failed deploy): its owner becomes owner:don,
+# plus status:needs-approval, its other labels stay, and a comment says why
+# and how to hand it back. Returns 1 when gh fails.
+park_issue() {
+  local n="$1" reason="$2" owner back
+  owner="$(gh issue view "$n" --repo "$TICKET_REPO" --json labels --jq '[.labels[].name | select(startswith("owner:"))] | first // ""' 2>/dev/null)" || return 1
+  local -a swap=()
+  [ -z "$owner" ] || [ "$owner" = owner:don ] || swap=(--remove-label "$owner")
+  back="${owner:-the owner it had}"
+  echo "[loop:#$n] parking with owner:don: $reason" | tee -a "$LOOP_LOG"
+  gh issue edit "$n" --repo "$TICKET_REPO" ${swap[@]+"${swap[@]}"} --add-label owner:don --add-label status:needs-approval >/dev/null \
+    && gh issue comment "$n" --repo "$TICKET_REPO" --body "Parked by the loop driver: $reason.
+
+**Decision for Don:** fix what the driver hit, then hand this back with \`$back\` and without \`status:needs-approval\`.
+**Kind:** environment   **Default:** it waits here   **If otherwise:** close it   **Reversible:** yes" >/dev/null \
+    || { echo "[loop:#$n] could not park (gh failed)" | tee -a "$LOOP_LOG"; snapshot_invalidate; return 1; }
+  snapshot_invalidate
+}
+
+[ "$HARNEST_ITEM" = 1 ] || { main "$@"; exit; }

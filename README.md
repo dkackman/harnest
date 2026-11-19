@@ -660,6 +660,25 @@ touch logs/stop-after-cycle          # finish the current cycle, then exit (a re
 tail -f logs/loop.log                           # watch from another terminal
 ```
 
+**The R17 loop driver** replaces that bash loop with one Python process that runs both servers
+and several sessions at once (a verify on lem's GPU beside a design, a spec and a curator run):
+
+```sh
+python3 -m harness.drivers.loop                        # lem and mini-ai (every server with `loop = true`)
+python3 -m harness.drivers.loop --servers lem          # lem only
+python3 -m harness.drivers.loop --servers lem --once   # run what is ready once, then exit
+MAX_SESSIONS=5 DRAIN=1 python3 -m harness.drivers.loop # stop after 5 sessions; or exit once only deferred issues are left
+touch logs/stop-after-cycle  logs/stop-after-cycle.mini-ai   # stop one server (lem / mini-ai): its items finish, its lock is released
+kill -TERM <pid>                                       # stop everything (sessions are killed within the bounds below)
+jq . logs/loop/state.json                              # what the dashboard's loop card reads
+```
+
+Stop the bash loop first (`kill -TERM`; it releases `logs/.driver.lock`): the two never run one
+server together. A Python lem driver beside a bash mini-ai loop is safe. The role knobs below
+are read as before; `TESTER_TASK_EVERY` and `MAX_CYCLES` are not (`TESTER_TASK_GAP_SECS` and
+`MAX_SESSIONS` replace them). Tester and curator sessions edit the suites in their own worktree
+under `<parent of this checkout>/.harnest-worktrees/<this directory's name>/`, so none waits on another.
+
 The loop stops at a cycle boundary with `touch logs/stop-after-cycle`, or immediately with
 `kill -TERM <pid>`, which also stops a nested features or nightly regression run (the loop
 waits `SESSION_KILL_SECS`, default 10, for its `claude -p` to act on the TERM, and
@@ -672,6 +691,8 @@ either bound it KILLs what's left).
 - The agents' own clone at `SOURCE_DIR`: run `git clone -b develop
   https://github.com/dkackman/diffusers-workflow.git ~/src/dkackman/dw-agent`, then
   `bash ./install.sh` inside it. This is not your working checkout.
+- For the tester's web-UI cases: `cd tools/ui-check && npm install --no-audit --no-fund`
+  (`playwright-core`, pinned; see docs/harness/components.md, `ui-check`).
 - On `lem`: the dw repo's `scripts/deploy.sh`, with the server running under the
   `dw-serve` systemd user unit. The script falls back to a `screen` session if the unit
   isn't installed.
@@ -713,11 +734,24 @@ isn't found until you re-run the script.
 | `REGRESSION_BUDGET_USD` | `6` | per regression chunk |
 | `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's state, labels and markers unchanged and cite no new commit in a `progress:` comment before the driver parks it with Don; `0` = never |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
-| `TESTER_TASK_EVERY` | `4` | run the tester's standing-task session every Nth cycle |
+| `TESTER_TASK_EVERY` | `4` | `run-loop.sh` only: run the tester's standing-task session every Nth cycle (the R17 driver uses `TESTER_TASK_GAP_SECS`) |
 | `IMPLEMENTER_ESCALATE_AFTER` / `IMPLEMENTER_PARK_AFTER` | `2` / `4` | bounces before escalating to the tester's model / parking with Don; `0` = never |
 | `DEPLOY_ON_MISMATCH` | `1` | redeploy `develop` if `lem` is on anything else before the tester pass; `0` = warn only |
 | `IMPLEMENTER_CLAIM_MAX` | `10` | most issues one implementer pass claims; the rest stay unclaimed for another loop; `0` = no cap |
 | `ONLY_ISSUES` | unset | restrict a cycle to these issue numbers |
+| `HARNEST_ITEM` | unset | `1`: `run-loop.sh` is sourced by `lib/run-item.sh <pass> <queue> <issue>` (or an issue-less pass) to run one pass for one issue as the R17 scheduler's child: no lock, no deploy, no suite commit (a `<last-session>.land` note instead), no cycle loop. Set by `run-item.sh`, not by hand |
+| `HARNEST_ITEM_QUEUE` | unset | item mode only: the item's queue (`tester:verify`, `lead:build`, ...), set by `run-item.sh` from its `<queue>` argument. `queue_issues` gives nothing for any other queue, and `only_issues_filter` matches the issue exactly (no parent widening), so an item runs that one branch for that one issue. Not set by hand |
+| `HARNEST_LAST_SESSION` | `logs/.last-session.loop` | item mode only (ignored otherwise; `run-item.sh` refuses to run without it): the session's last-session file (`logs/.last-session.item.<slot>`, relative to the checkout), emptied when the item starts. Its prompt files and session logs (`logs/<role><sfx>.item.<slot>.log`/`.jsonl`) take the same tag, and so does `run-features.sh` in a `features` item |
+| `DEPLOYED_HEAD` / `HARNEST_DW_FROZEN` | asked of the server / of develop | item mode: what the server runs and whether dw's freeze is on (`0`/`1`), as the scheduler last read them |
+| `HARNEST_SESSION_TREE` / `HARNEST_SESSION_BASE` | unset | item mode, a tester or curator item only: the session's own suite worktree (`harness/suite_tree.py`, absolute) and the 40-hex `main` sha it was made at. The session runs there and the guard holds its suite files to that base; a code session is never told. Ignored outside item mode |
+| `TESTER_PART` | `all` | which part of `tester_pass` runs: `all` (the loop), `issues`, `task` (the standing task, now) or `closures`; `run-item.sh` sets it. Read in item mode only; the loop always runs `all` |
+| `LOOP_FREE_SLOTS` | `3` | R17 loop driver (`python3 -m harness.drivers.loop`): server-free sessions (code, review, design, spec, curator) at once on this Mac; one is kept for `reviewer:arch`, `implementer:fix` and `lead:build` while there are 2 or more |
+| `LOOP_POLL_SECS` | `60` | R17 loop driver: how often it reads the board and runs its housekeeping when nothing wakes it (a session's end, a deploy's end, a rate limit); `logs/loop/state.json` is rewritten at least this often. While nothing runs and only your decisions are left it backs off, doubling up to `SLEEP_MAX_SECS` |
+| `LOOP_HEALTH_SECS` | `30` | R17 loop driver: how often it samples each server's `/api/health` for the card-busy figure in `state.json` |
+| `DEPLOY_RETRY_SECS` | `300` | R17 loop driver: after a failed deploy, how long before it tries once more; a second failure parks the waiting verifies and answers with you (`environment`). From the first failure the server's gpu slot stays held (nothing verifies against a head that can't be told) until a deploy succeeds or, after the park, the server passes its preflight again |
+| `TESTER_TASK_GAP_SECS` | `5400` | R17 loop driver: least time between two standing-task sessions (the 14-day baseline mean, 5327 s, pooled, rounded up to 15 min); the task also needs lem's gpu slot free and nothing queued for lem |
+| `MAX_SESSIONS` | `0` | R17 loop driver: stop starting sessions after this many, then exit once they end; `0` = unlimited (it replaces `MAX_CYCLES`) |
+| `--servers` / `--only` / `--once` | every loop server / every queue / off | the R17 loop driver's flags: `--servers lem,mini-ai` picks servers; `--only <queue>[,<queue>]` limits the queues, `--once` runs each ready item once. With more than one server, `SOURCE_DIR`, `PLUGIN_TREE` and `LEAD_TREE` name lem's and the others take their clone suffix (`-mini-ai`), and `DW_URL` is ignored |
 | `CASES_PER_SESSION` | 3 or 8 | `run-regression.sh` only; see above |
 | `REGRESSION_CASES` | empty (every case) | `run-regression.sh` only: the case IDs to run, each with the cases its `setup:`/`cleanup:` lines tie it to; the level's prerequisite is not run, and an ID in none of the run's suite files is refused; see above |
 | `FALLBACK_MODEL` | unset | `--fallback-model`; must be servable by the role's provider |
@@ -725,7 +759,7 @@ isn't found until you re-run the script.
 | `SNAPSHOT_TTL_SECS` | `20` | how long one driver process tree reuses its board snapshot (four `gh issue list` calls) across queues and passes; dropped after every session and every label edit the driver makes, and never used for the re-check right before a session; `0` reads the board fresh every time (`run-release.sh` always does) |
 | `RATE_LIMIT_FALLBACK_SECS` | `300` | how long a rejected rate limit sleeps when the event names no reset time (never zero, which would spin) |
 | `CO_AUTHOR` / `CO_AUTHOR_EMAIL` | derived | override the commit trailer on suite edits |
-| `SLEEP_SECS` / `MAX_CYCLES` | `120` / `0` | pause after an idle cycle; `0` = run forever |
+| `SLEEP_SECS` / `MAX_CYCLES` | `120` / `0` | pause after an idle cycle; `0` = run forever. `MAX_CYCLES` is `run-loop.sh` only (the R17 driver has `MAX_SESSIONS`) |
 | `SLEEP_MAX_SECS` | `1800` | while only issues waiting on your decision are left, each idle sleep doubles up to this; the loop still looks at the board every `SLEEP_SECS` and wakes on a change |
 | `DRAIN` | `0` | `1`: exit at the first cycle boundary where only deferred issues (`parked`, or parked by dw's freeze) are left; issues waiting on you keep it going, under the backoff, as does a feature this loop claimed while its stage is at another loop's tester. The standing task still runs |
 | `REGRESSION_NIGHTLY_AT` | empty (off) | an hour, 0-23: once a day, at the first cycle boundary at or after it, the loop runs `run-regression.sh` under its own lock (log `logs/nightly-regression.log`), so drift reaches the loop before a freeze. Held during a freeze. About $68 and 5.5 h at 0.5.0's suite size |
@@ -738,7 +772,7 @@ isn't found until you re-run the script.
 | `REVIEWER_MODEL` / `REVIEWER_PROVIDER` | the tester's | the docs reviewer: verifies `docs-review` fixes (README, non-guide docs) the tester can't observe |
 | `REVIEWER_BUDGET_USD` | `2` | per docs review session |
 | `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
-| `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run |
+| `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run. The R17 loop (`harness/drivers/loop.py`) honours it too: at `0` it offers no `lead:design` or `lead:decompose` item |
 | `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` (`-<target>` on another target) | `run-features.sh`: the lead's detached worktree at `origin/develop` |
 | `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | `1800000` | how long a headless session waits for a background subagent before it is killed (Claude Code's default is 600 s) |
 
@@ -958,6 +992,7 @@ regression-suite-{smoke,complete,model-specific,security}.md
 regression-perf/                    append-only per-case metric history (JSONL)
 HARNESS-ROADMAP.md                  planned evolution of the harness
 CLAUDE.md                           notes for Claude Code sessions working on this repo
+tools/ui-check/                     the tester's fixed web-UI runner (ui-check.mjs, playwright-core)
 qa-bible.md                         tester's memory across cycles (gitignored)
 logs/                               session output (gitignored)
 ```

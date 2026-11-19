@@ -33,7 +33,7 @@ header .spacer { flex: 1; }
 header .stamp { color: var(--muted); font-size: 12px; font-family: var(--mono); }
 main { padding: 16px 20px; display: grid; gap: 16px; max-width: 1500px; margin: 0 auto; }
 .row > * { min-width: 0; }
-.row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+.row { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(420px, 100%), 1fr)); }
 .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 14px 16px; min-width: 0; }
 .card h2 { margin: 0 0 10px; font-size: 13px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted);
   display: flex; align-items: center; gap: 8px; }
@@ -125,6 +125,41 @@ header button.on { border-color: var(--ok); color: var(--ok); }
 .prog summary { cursor: pointer; color: var(--muted); }
 .prog ul { margin: 4px 0; padding-left: 18px; max-height: 220px; overflow: auto; }
 .prog li { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* the R17 loop card: one box per server, slots as rows */
+#loop.card { padding-bottom: 10px; }
+#loop.stalled { border-color: var(--warn); }
+#loop.gone { border-color: var(--bad); }
+#loop.unknown > :not(.lbanner:first-child) { opacity: .45; }
+#loop h2 .state { text-transform: none; letter-spacing: 0; font-size: 13px; font-weight: 600; }
+#loop .state.ok { color: var(--ok); } #loop .state.warn { color: var(--warn); } #loop .state.bad { color: var(--bad); }
+.lbanner { margin: 0 0 10px; padding: 6px 10px; border-radius: 6px; font-size: 13px;
+  border: 1px solid var(--warn); color: var(--warn); background: color-mix(in srgb, var(--warn) 10%, transparent); }
+.lbanner.bad { border-color: var(--bad); color: var(--bad); background: color-mix(in srgb, var(--bad) 10%, transparent); }
+.lservers { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(min(400px, 100%), 1fr)); margin-bottom: 12px; }
+.lsrv { border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0; }
+.lsrv.released { opacity: .5; }
+.lsrv h3, .lshared h3 { margin: 0 0 6px; font-size: 13px; font-family: var(--mono); font-weight: 600;
+  display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+.lsrv h3 .tag, .lbadge { font-size: 11.5px; font-weight: 500; border: 1px solid var(--line); border-radius: 999px;
+  padding: 0 7px; color: var(--muted); font-family: var(--mono); }
+.lbadge.warn { border-color: var(--warn); color: var(--warn); } .lbadge.bad { border-color: var(--bad); color: var(--bad); }
+.lbadge.ok { border-color: var(--ok); color: var(--ok); }
+.lgrid { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 3px 12px; font-size: 13px; }
+.lgrid > .k { color: var(--muted); font-family: var(--mono); font-size: 12px; }
+.lgrid > .v { min-width: 0; overflow-wrap: anywhere; }
+.lslot { display: flex; flex-wrap: wrap; gap: 0 10px; align-items: baseline; }
+.lslot .who { flex: 1 1 12ch; min-width: 0; overflow-wrap: anywhere; }
+.lslot .num { font-variant-numeric: tabular-nums; color: var(--muted); }
+.lslot .m { color: var(--muted); font-size: 12px; }
+.spark { font-family: var(--mono); color: var(--accent); white-space: nowrap; }
+.spark.w { color: var(--ok); }
+.lbusy { color: var(--ok); }
+.lbad { color: var(--bad); } .lwarn { color: var(--warn); }
+.lshared { border-top: 1px solid var(--line); padding-top: 8px; margin-bottom: 8px; }
+.ltotals { display: flex; flex-wrap: wrap; gap: 2px 16px; font-size: 13px; color: var(--muted); }
+.ltotals b { color: var(--ink); font-weight: 600; }
+.lsrv a, .lshared a { color: var(--accent); text-decoration: none; }
+@media (max-width: 600px) { header { flex-wrap: wrap; padding: 10px 16px; } #hsummary { order: 9; flex: 1 0 100%; } }
 #events time { color: var(--muted); font-family: var(--mono); font-size: 12px; margin-right: 6px; }
 </style>
 </head>
@@ -150,6 +185,8 @@ header button.on { border-color: var(--ok); color: var(--ok); }
       <span id="events-latest"></span><span class="link" id="events-clear">clear</span></summary>
     <div id="events"></div>
   </details>
+
+  <section class="card" id="loop" hidden></section>
 
   <div class="row" id="targets"></div>
 
@@ -203,14 +240,28 @@ function sinceClock(hms, now) {
 }
 
 // ---- state -------------------------------------------------------------
+// a failed poll says which half failed, and the loop card stops claiming to be current
+function stateUnknown(msg) {
+  $("hsummary").textContent = msg;
+  $("hdot").className = "dot bad";
+  const el = $("loop");
+  if (!el.hidden && !el.classList.contains("unknown")) {
+    el.classList.add("unknown");
+    el.insertAdjacentHTML("afterbegin", '<p class="lbanner bad">state unknown: what follows is the last good read</p>');
+  }
+}
 async function pollState() {
+  let st;
   try {
-    const r = await fetch("/api/state"); const st = await r.json();
+    const r = await fetch("/api/state"); st = await r.json();
+  } catch (e) {
+    return stateUnknown("dashboard server unreachable");
+  }
+  try {
     render(st);
     $("stamp").textContent = new Date(st.now * 1000).toLocaleTimeString([], { hour12: false });
   } catch (e) {
-    $("hsummary").textContent = "dashboard server unreachable";
-    $("hdot").className = "dot bad";
+    stateUnknown(`dashboard render error: ${e && e.message || e}`);
   }
 }
 
@@ -222,6 +273,7 @@ function events(st) {
   const cur = {
     drivers: new Map(st.drivers.map((d) => [d.pid, `${d.name || `run-${d.driver}.sh`} ${d.args}`.trim()])),
     gates: st.release ? st.release.lines : [],
+    loop: st.loop ? { health: st.loop.health, deploys: Object.fromEntries(Object.entries(st.loop.servers).map(([n, v]) => [n, v.deploy.state])) } : null,
     attn: st.attention && st.attention.fetched ? new Set(st.attention.items.filter(live).map(attnKey)) : null,
   };
   const out = [];
@@ -230,6 +282,14 @@ function events(st) {
       if (!cur.drivers.has(pid)) out.push({ text: `${name} finished (pid ${pid})`, cls: "" });
     for (const [pid, name] of cur.drivers)
       if (!prev.drivers.has(pid)) out.push({ text: `${name} started (pid ${pid})`, cls: "" });
+    if (prev.loop && cur.loop) {
+      if (prev.loop.health !== cur.loop.health) {
+        const bad = cur.loop.health === "stalled" || cur.loop.health === "gone";
+        out.push({ text: `loop ${bad ? "STALLED (" + cur.loop.health + ")" : cur.loop.health}`, cls: bad ? "fail" : "" });
+      }
+      for (const [n, ds] of Object.entries(cur.loop.deploys))
+        if (ds === "failed" && prev.loop.deploys[n] !== "failed") out.push({ text: `deploy failed on ${n}; the GPU is held`, cls: "fail" });
+    }
     const seen = new Set(prev.gates);
     for (const l of cur.gates)
       if (!seen.has(l) && /: (pass|fail|accepted)\b| (pass|fail) on /.test(l))
@@ -406,10 +466,12 @@ function render(st) {
           <td class="num"><b>$${total.toFixed(2)}</b></td></tr>
       </table></div>
     </section>`;
-  }).join("") : '<section class="card"><p class="empty">no loop or regression run holds a target</p></section>');
+  }).join("") : st.loop ? "" : '<section class="card"><p class="empty">no loop or regression run holds a target</p></section>');
+  const lh = renderLoop(st);
   document.querySelectorAll(".burn").forEach(drawBurn);
   const runs = Object.values(st.streams).filter((s) => s.loop_run);
-  $("hcost").textContent = runs.length ? `· $${runs.reduce((a, s) => a + s.loop_run.cost, 0).toFixed(2)} this run` : "";
+  $("hcost").textContent = st.loop ? `· $${(st.loop.totals.cost || 0).toFixed(2)} this run`
+    : runs.length ? `· $${runs.reduce((a, s) => a + s.loop_run.cost, 0).toFixed(2)} this run` : "";
 
   // release
   const rel = st.release;
@@ -422,6 +484,188 @@ function render(st) {
 
   $("hdot").className = "dot " + (anyLive ? "ok" : d.length ? "warn" : "");
   $("hsummary").textContent = anyLive ? summary.join("  ·  ") : d.length ? "drivers running, no session live" : "idle";
+  if (lh) { // the new loop speaks for itself: live, stopping, stalled or gone is its own state, never the old log's guess
+    $("hdot").className = "dot " + lh.cls;
+    $("hsummary").textContent = lh.text;
+  }
+}
+
+
+// ---- the R17 loop card: logs/loop/state.json, via /api/state "loop" -------
+// One card for the whole loop: each server's slots, deploy line, queues and GPU
+// busy, then the shared slots and the totals. "Running" is only ever what
+// serve.py's loop.health says: live, stopping, stalled, gone or stopped.
+const hhmm = (t) => !t ? "never" : new Date(t * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", hour12: false });
+const shortSha = (h) => h ? String(h).slice(0, 7) : "–";
+const issueLink = (lp, n) => `<a href="https://github.com/${esc(lp.repo)}/issues/${+n}" target="_blank" rel="noopener">#${+n}</a>`;
+const BLOCKS = "▁▂▃▄▅▆▇█";
+// the series as `bins` blocks, each the mean of its samples (null samples left out); "·" where a bin has none
+function spark(series, key, bins = 24) {
+  if (!series.length) return "";
+  let out = "";
+  for (let b = 0; b < bins; b++) {
+    const part = series.slice(Math.floor(b * series.length / bins), Math.floor((b + 1) * series.length / bins))
+      .map((x) => x[key]).filter((v) => v != null);
+    out += part.length ? BLOCKS[Math.min(7, Math.floor(part.reduce((a, v) => a + v, 0) / part.length * 8))] : "·";
+  }
+  return out;
+}
+const sessionKey = (x) => `${x.label}|${x.started}`;
+const slotSessions = (lp) => { // each running session once, however many resources it holds
+  const seen = new Map();
+  const add = (slot) => { if (slot.session && !seen.has(sessionKey(slot.session))) seen.set(sessionKey(slot.session), slot.session); };
+  for (const v of Object.values(lp.servers)) (v.slots || []).forEach(add);
+  (lp.shared.slots || []).forEach(add);
+  return [...seen.values()];
+};
+
+function loopHeader(lp) { // the header dot and sentence; null when the loop has stopped cleanly (the old views speak)
+  const n = slotSessions(lp).length, since = hhmm(lp.heartbeat);
+  switch (lp.health) {
+    case "live": {
+      const failed = Object.entries(lp.servers).filter(([, v]) => v.deploy && v.deploy.state === "failed").map(([k]) => k);
+      if (failed.length) return { cls: "bad", text: `loop: deploy FAILED on ${failed.join(", ")}: the GPU is held` +
+        (n ? ` · ${n} session${n === 1 ? "" : "s"} running` : "") };
+      const paused = lp.status === "paused-rate-limit", drain = lp.status === "draining";
+      return { cls: paused ? "warn" : "ok", text: (n ? `loop: ${n} session${n === 1 ? "" : "s"} running` : "loop: live, no session running") +
+        (paused ? " · paused (rate limit)" : drain ? " · draining" : "") };
+    }
+    case "stopping": return { cls: "warn", text: `loop stopping: waiting out deploys (${n} session${n === 1 ? "" : "s"} left)` };
+    case "stalled": return { cls: "warn", text: `loop stalled since ${since}` };
+    case "gone": return { cls: "bad", text: `loop stalled (driver gone) since ${since}` };
+    default: return null;
+  }
+}
+
+function slotRows(lp, st, srv, freeKeys) {
+  const groups = new Map(), rows = [];
+  for (const sl of srv.slots || []) {
+    if (!sl.session) { rows.push({ res: [sl.resource.split(":")[0]], idle: true }); continue; }
+    const k = sessionKey(sl.session);
+    if (!groups.has(k)) { groups.set(k, { res: [], s: sl.session }); rows.push(groups.get(k)); }
+    groups.get(k).res.push(sl.resource.split(":")[0]);
+  }
+  // an idle gpu/src row stays only when no session holds that resource
+  const held = new Set(rows.filter((r) => !r.idle).flatMap((r) => r.res));
+  return rows.filter((r) => !r.idle || !held.has(r.res[0])).map((r) => {
+    if (r.idle) return `<div class="lslot"><span class="m">${esc(r.res[0])}</span> <span class="who muted">○ idle</span></div>`;
+    return sessionRow(st, r.s, r.res.concat(freeKeys.has(sessionKey(r.s)) ? ["free"] : []));
+  }).join("");
+}
+function sessionRow(st, x, res) {
+  const sub = x.kind && x.kind.includes(":") ? x.kind.split(":")[1] : "";
+  const what = sub && !String(x.label).includes(sub) ? ` ${sub}` : "";
+  return `<div class="lslot"><span class="m">${esc(res.join("+"))}</span>
+    <span class="who"><span class="lbusy">●</span> ${esc(x.label)}${esc(what)} <span class="m">${esc((x.model || "").replace(/^claude-/, ""))}</span></span>
+    <span class="num">${ago(st.now - x.started)}</span>${x.cost_so_far != null ? `<span class="num">$${(+x.cost_so_far).toFixed(2)}</span>` : ""}</div>`;
+}
+
+function deployLine(lp, st, srv) {
+  const d = srv.deploy || {}, last = d.last;
+  const cls = d.state === "failed" ? "bad" : d.state && d.state !== "idle" ? "warn" : "";
+  const differs = srv.deployed && srv.develop && srv.deployed !== srv.develop;
+  let h = `<span class="lbadge ${cls}">${esc(d.state || "–")}</span> running <b class="mono">${esc(shortSha(srv.deployed))}</b>
+    · develop <b class="mono">${esc(shortSha(srv.develop))}</b>${differs ? ' <span class="muted">(not deployed)</span>' : ""}`;
+  if ((d.waiting || []).length) h += ` · waiting: ${d.waiting.map((n) => issueLink(lp, n)).join(" ")}`;
+  if (d.state === "failed") h += ` <span class="lbad">· deploy failed: the GPU stays held until a deploy succeeds</span>`;
+  if (last) h += `<br><span class="m muted">last ${last.ok ? "ok" : "<b class='lbad'>failed</b>"} ${esc(shortSha(last.head))} · ${last.secs != null ? ago(last.secs) : "–"} · ${ago(st.now - last.at)} ago</span>`;
+  return h;
+}
+
+function gpuLine(g) {
+  if (!g || !g.wall) return '<span class="muted">no samples yet</span>';
+  const pct = (v) => Math.round(100 * v / g.wall);
+  const series = g.series || [];
+  const hasCard = g.worker_busy != null && series.some((x) => x.worker != null);
+  const span = series.length > 1 ? series[series.length - 1].t - series[0].t : 0;
+  let h = `slot <b>${pct(g.slot_busy)}%</b>${hasCard ? ` · card <b>${pct(g.worker_busy)}%</b>` : ""}`;
+  h += `<br><span class="spark" title="slot held by a session">${spark(series, "slot")}</span>`;
+  if (hasCard) h += ` <span class="spark w" title="dw worker running a job">${spark(series, "worker")}</span>`;
+  h += ` <span class="m muted">(this run, ${ago(span)})</span>`;
+  return h;
+}
+
+function serverCard(lp, st, name, srv, freeKeys) {
+  if (srv.released)
+    return `<div class="lsrv released"><h3>${esc(name)} <span class="tag">released</span></h3>
+      <div class="m muted">no longer driven by this loop</div></div>`;
+  const qs = Object.entries(srv.queues || {});
+  const queues = qs.length ? qs.map(([k, v]) => `<span title="${esc((v || []).map((n) => n == null ? "task" : "#" + n).join(" "))}"
+    class="${(v || []).length ? "" : "muted"}">${esc(k.replace(/^[a-z]+:/, ""))} <b>${(v || []).length}</b></span>`).join(" · ") : '<span class="muted">empty</span>';
+  const ws = srv.workers || [];
+  const workers = ws.length ? ws.map((w) => `${esc(w.device)} ${w.busy ? "<b>busy</b>" : "idle"}`).join(" · ") : "";
+  const probs = ((lp.suite || {}).problems || []).filter((p) => p.server === name);
+  return `<div class="lsrv"><h3>${esc(name)}</h3>
+    <div class="lgrid">
+      <div class="k">slots</div><div class="v">${slotRows(lp, st, srv, freeKeys)}</div>
+      <div class="k">deploy</div><div class="v">${deployLine(lp, st, srv)}</div>
+      <div class="k">queues</div><div class="v">${queues}</div>
+      <div class="k">GPU busy</div><div class="v">${gpuLine((lp.gpu || {})[name])}</div>
+      ${workers ? `<div class="k">cards</div><div class="v">${workers}</div>` : ""}
+      ${probs.length ? `<div class="k lwarn">landing</div><div class="v">${probs.map(landing(lp, st)).join("<br>")}</div>` : ""}
+    </div></div>`;
+}
+const landing = (lp, st) => (p) => `<span class="${p.result === "conflict" ? "lbad" : "lwarn"}"><b>${esc(p.result)}</b></span>
+  ${p.issue != null ? issueLink(lp, p.issue) : ""} <span class="mono">${esc(p.branch || "")}</span>
+  <span class="m muted">${esc(p.label || "")} · ${ago(st.now - p.at)} ago</span>`;
+
+function renderLoop(st0) {
+  const el = $("loop"), lp = st0.loop;
+  // status "stopping" is never shown as running, whatever health an older serve.py computed
+  if (lp && lp.status === "stopping" && lp.health === "live") lp.health = "stopping";
+  // a stalled loop's clocks stop at its last heartbeat: elapsed times are as of then, not growing against a dead driver
+  const st = lp && (lp.health === "stalled" || lp.health === "gone") ? { ...st0, now: lp.heartbeat } : st0;
+  burns.loop && delete burns.loop;
+  el.classList.remove("unknown"); // a good read ends the "state unknown" mark and its banner (innerHTML is rebuilt below)
+  el.hidden = !lp;
+  if (!lp) { el.innerHTML = ""; return null; }
+  const lh = loopHeader(lp);
+  const stalled = lp.health === "stalled" || lp.health === "gone";
+  const failedDeploys = Object.entries(lp.servers).filter(([, v]) => v.deploy && v.deploy.state === "failed").map(([k]) => k);
+  const label = { live: failedDeploys.length ? `${lp.status} · deploy failed on ${failedDeploys.join(", ")}` : lp.status === "paused-rate-limit" ? "paused (rate limit)" : lp.status, stopping: "stopping",
+    stalled: `stalled since ${hhmm(lp.heartbeat)}`, gone: `stalled (driver gone) since ${hhmm(lp.heartbeat)}`, stopped: "stopped" }[lp.health];
+  const cls = { live: failedDeploys.length ? "bad" : lp.status === "paused-rate-limit" ? "warn" : "ok", stopping: "warn", stalled: "warn", gone: "bad", stopped: "" }[lp.health];
+  el.className = "card" + (stalled ? " " + lp.health : "");
+  const freeKeys = new Set((lp.shared.slots || []).filter((x) => x.session).map((x) => sessionKey(x.session)));
+  const shown = new Set(Object.values(lp.servers).flatMap((v) => (v.slots || []).filter((x) => x.session).map((x) => sessionKey(x.session))));
+  const sharedOnly = (lp.shared.slots || []).filter((x) => x.session && !shown.has(sessionKey(x.session)));
+  const alsoAbove = freeKeys.size - sharedOnly.length;
+  const t = lp.totals || {}, perClose = t.closed ? "$" + (t.cost / t.closed).toFixed(2) : "—";
+  const history = (lp.board || {}).history || [];
+  const strayProbs = ((lp.suite || {}).problems || []).filter((p) => !lp.servers[p.server]);
+  const banner = stalled ? `<p class="lbanner ${lp.health === "gone" ? "bad" : ""}"><b>${esc(label)}.</b>
+      ${lp.health === "gone" ? `pid ${+lp.pid} is not running` : `pid ${+lp.pid} is alive but has not written state for ${ago(lp.age)}`}.
+      The sessions below were last seen at ${hhmm(lp.heartbeat)}; they may not still be running.</p>`
+    : lp.health === "stopping" ? `<p class="lbanner">Stopping: no new sessions; waiting for deploys to finish. The heartbeat is paused until it exits.</p>`
+    : lp.status === "paused-rate-limit" && lp.health === "live" ? `<p class="lbanner">Paused: the account hit its rate limit; sessions resume when it clears.</p>`
+    : lp.status === "draining" && lp.health === "live" ? `<p class="lbanner" style="color:var(--muted);border-color:var(--line);background:none">Draining: no new sessions start; running ones finish.</p>` : "";
+  el.innerHTML = `<h2><span class="dot ${cls}"></span>loop <span class="state ${cls}">${esc(label)}</span>
+      <span class="spacer" style="flex:1"></span>
+      <span class="muted mono" style="text-transform:none;letter-spacing:0">pid ${+lp.pid} · up ${ago(st0.now - lp.started)} · heartbeat ${lp.age == null ? "never" : ago(lp.age) + " ago"}</span></h2>
+    ${banner}
+    ${lp.board_readable === false ? '<p class="lbanner">The ticket board could not be read; queues and the chart show the last good read.</p>' : ""}
+    <div class="lservers">${Object.entries(lp.servers).map(([n, v]) => serverCard(lp, st, n, v, freeKeys)).join("")}</div>
+    <div class="lshared"><h3>shared</h3><div class="lgrid">
+      <div class="k">free</div><div class="v">${sharedOnly.length ? sharedOnly.map((x) => sessionRow(st, x.session, ["free"])).join("")
+        : '<span class="muted">○ no session of its own</span>'}${alsoAbove > 0 ? ` <span class="m muted">(${alsoAbove} more shown above as +free)</span>` : ""}</div>
+      ${strayProbs.length ? `<div class="k lwarn">landing</div><div class="v">${strayProbs.map(landing(lp, st)).join("<br>")}</div>` : ""}
+    </div></div>
+    <div class="ltotals"><span><b>${t.sessions || 0}</b> sessions</span><span><b>$${(t.cost || 0).toFixed(2)}</b> spent</span>
+      <span><b>${t.closed || 0}</b> closed</span><span title="cost / closed issues this run"><b>${perClose}</b> per close</span>
+      <span><b>${((lp.board || {}).rows || []).length}</b> open on the board</span></div>
+    ${loopChart(lp, history)}`;
+  return lh;
+}
+
+function loopChart(lp, history) {
+  if (!history.length) return "";
+  const pts = history.map((h, i) => ({ ...h, cycle: i + 1, time: new Date(h.time * 1000).toLocaleTimeString([], { hour12: false }) }));
+  const last = pts[pts.length - 1];
+  burns.loop = { start: pts[0].time, cycle: pts.length, points: pts, repo: lp.repo, unit: "board" };
+  return `<div class="prog" style="margin:10px 0 0"><div class="legend">${seriesOf(burns.loop).slice().reverse().map((x) =>
+      `<span><i style="background:var(${x.css})"></i>${x.label} <b>${last[x.key] || 0}</b></span>`).join("")}
+      <span>· <b>${last.arrived}</b> arrived</span></div>
+    <div class="burn" data-stream="loop" role="img" aria-label="${esc(`${pts.length} boards: ${last.closed} closed, ${last.agents} with agents, ${last.don} waiting on you`)}"></div></div>`;
 }
 
 // ---- loop progress: the board after each cycle, as a burn-up ----------
@@ -497,14 +741,14 @@ function drawBurn(el) {
       svg += `<path fill="var(${s.css})" d="M${x},${y1 + h}V${y1 + r}${r ? `Q${x},${y1} ${x + r},${y1}` : ""}H${x + bw - r}${r ? `Q${x + bw},${y1} ${x + bw},${y1 + r}` : ""}V${y1 + h}Z"/>`;
     });
   });
-  const lbl = (p) => `c${p.cycle} ${p.time.slice(0, 5)}`;
+  const lbl = (p) => lr.unit ? p.time.slice(0, 5) : `c${p.cycle} ${p.time.slice(0, 5)}`;
   svg += `<text x="${L}" y="${H - 3}">${lbl(pts[0])}</text>`;
   if (pts.length > 1) svg += `<text x="${W - R}" y="${H - 3}" text-anchor="end">${lbl(pts[pts.length - 1])}</text>`;
   pts.forEach((_, i) => svg += `<rect data-i="${i}" x="${L + i * slot}" y="0" width="${slot}" height="${H}" fill="transparent"/>`);
   el.innerHTML = `<svg width="${W}" height="${H}">${svg}</svg>`;
   if (hov != null && pts[hov]) {
     const p = pts[hov];
-    el.insertAdjacentHTML("beforeend", `<div class="tip"><b>cycle ${p.cycle} · ${esc(p.time)}</b>
+    el.insertAdjacentHTML("beforeend", `<div class="tip"><b>${lr.unit ? esc(p.time) : `cycle ${p.cycle} · ${esc(p.time)}`}</b>
       ${series.slice().reverse().map((x) => `<div><span><i style="background:var(${x.css})"></i>${x.label}</span><b>${p[x.key] || 0}</b></div>`).join("")}
       <div class="muted"><span>arrived since ${esc(lr.start)}</span><span>${p.arrived}</span></div></div>`);
     const tip = el.lastElementChild, cx = L + (hov + .5) * slot;
@@ -512,17 +756,17 @@ function drawBurn(el) {
   }
 }
 
-$("targets").addEventListener("mousemove", (e) => {
+document.addEventListener("mousemove", (e) => {
   const hit = e.target.closest(".burn [data-i]"); if (!hit) return;
   const el = hit.closest(".burn"), i = +hit.dataset.i;
   if (burnHover[el.dataset.stream] !== i) { burnHover[el.dataset.stream] = i; drawBurn(el); }
 });
-$("targets").addEventListener("mouseout", (e) => {
+document.addEventListener("mouseout", (e) => {
   const el = e.target.closest(".burn");
   if (el && !el.contains(e.relatedTarget)) { delete burnHover[el.dataset.stream]; drawBurn(el); }
 });
 // <details> don't bubble toggle; the redraw every poll keeps the open ones open
-$("targets").addEventListener("toggle", (e) => {
+document.addEventListener("toggle", (e) => {
   const k = e.target.dataset && e.target.dataset.list; if (!k) return;
   e.target.open ? openLists.add(k) : openLists.delete(k);
 }, true);

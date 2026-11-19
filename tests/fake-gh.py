@@ -44,6 +44,12 @@ if os.environ.get("FAKE_GH_FAIL_MATCH"):
         sys.exit(1)
 
 path = os.environ["FAKE_GH_BOARD"]
+# One call at a time over the board, as GitHub serializes edits: concurrent
+# drivers' sessions (R17) would otherwise lose each other's writes. Held to exit.
+import fcntl  # noqa: E402
+
+_board_lock = open(path + ".lock", "w")
+fcntl.flock(_board_lock, fcntl.LOCK_EX)
 if os.environ.get("FAKE_GH_FAIL_AFTER"):
     cf = path + ".count"
     n = (int(open(cf).read()) if os.path.exists(cf) else 0) + 1

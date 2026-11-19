@@ -1,0 +1,5 @@
+=== 23:50:00 cycle 1: tester:#10 (anthropic/claude-opus-5-5) ===
+[tester:#10] some output
+[tester:#10] usage: turns=5 duration=100s cost=$1.50 ctx_peak=1k in=1 cache_read=1k cache_write=1k out=1k
+=== 00:10:00 cycle 2: regression run (opus) ===
+[regression:smoke] usage: turns=5 duration=60s cost=$0.50 ctx_peak=1k in=1 cache_read=1k cache_write=1k out=1k

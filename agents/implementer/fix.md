@@ -5,7 +5,7 @@ Your prompt names the issue and carries its text; the driver confirmed it
 still had `owner:implementer` and no `status:*` label just before starting
 you. The latest `triage:` comment governs (an older one is superseded). If
 it says `batch with #NN ...`, this session
-works all of those together: one branch, one deploy, a hand-off comment on
+works all of those together: one branch, one hand-off, a comment on
 each — resuming from any progress comment an earlier session on the batch
 left. Don't pull an unlisted issue in because it looks related; that's what
 triage is for, and the other issue's own session is about to start.
@@ -17,7 +17,7 @@ labels"). Then run "Checks before any fix" above, unless a `triage:` comment
 already did — then trust it; the latest `triage:` comment governs. A
 `triage:` comment older than a bounce, a reopen, or a hand-back from Don or
 the tester is superseded: run the Checks yourself. `triage: already fixed in <commit> on develop, needs deploy`
-means deploy and hand off without re-fixing. If a check ends in a
+means hand off without re-fixing (the driver deploys). If a check ends in a
 disposition other than a fix, make it and stop.
 
 ### Reproduce
@@ -56,10 +56,10 @@ repro text if you can verify independently.
     code as committed; if something is only partly done, say so.
 - When the fix is committed and its tests pass, merge the branch into
   `develop` (fast-forward or merge commit) and push `develop`. Do this
-  *before* deploying, not "once verified": your session ends before the
+  *before* handing off, not "once verified": your session ends before the
   tester runs, and `lem` can only be on one commit — a cycle hands off
-  several fixes, so a branch deployed on its own is wiped out by the next
-  session's deploy. A verify that fails comes back as a fix-forward on
+  several fixes, and the driver deploys `develop`, so a fix left on its
+  branch never reaches the tester. A verify that fails comes back as a fix-forward on
   `develop`. Never merge to `master`.
 - Fixes to the `dw` plugin (skills, metadata under `plugins/dw/`) ship the
   same way — merge to `develop` and push — but need no server restart: the
@@ -71,34 +71,13 @@ repro text if you can verify independently.
 
 ### Deploy
 
-One call, after pushing `develop`, done last and in one go — a session that
-dies between stopping the server and restarting it leaves the tester with
-"MCP unreachable":
+You don't: "You never deploy" in the core applies. The driver deploys
+`develop` after your session, so there is no health to confirm either.
 
-    ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'
-
-Quote it — unquoted, your local shell expands `~` to your Mac home before
-ssh sends it. Always deploy `develop`, never your branch. The script
-fetches, fast-forwards, reinstalls only if `pyproject.toml` changed, waits
-for any running job, restarts the server (systemd unit if installed, else
-its `screen` session) and polls health; its last line is the deployed
-commit. Don't hand-roll any of that over ssh — no `git pull`, `pgrep`,
-`kill`, `screen`, or `sleep` loops — and never `kill -9` the server. The log
-is `journalctl --user -u dw-serve` (unit) or `~/dw-serve.log` (screen).
-Don't restart the server except to deploy, and confirm it is healthy before
-you exit: the tester runs right after you.
-
-Confirm health only (the script's last line, or `get_health`): never re-run
-the repro over MCP to confirm your own fix. Check the fix with the source
-checkout's tests; MCP is for reproducing the bug, and confirming the fix
-over it is the tester's job. A check you run yourself shares your blind
-spots, and the tester's independent one is the point.
-
-If ssh fails, or the script fails or the server doesn't come back healthy,
-don't force it and don't hand off: put the script's output in a comment,
-add `status:needs-info`, and swap `owner:implementer` for `owner:don`. No
-session picks up an `owner:implementer` issue that carries a status label,
-so leaving it with you strands it. A plugin-only fix skips this step.
+Never re-run the repro over MCP to confirm your own fix. Check the fix with
+the source checkout's tests; MCP is for reproducing the bug, and confirming
+the fix over it is the tester's job. A check you run yourself shares your
+blind spots, and the tester's independent one is the point.
 
 ### Hand off
 
@@ -106,7 +85,8 @@ so leaving it with you strands it. A plugin-only fix skips this step.
   owner:tester --add-label status:fixed-pending-verify`
 - `gh issue comment <n>` describing what a consumer now observes: the tool,
   the input, the response before the fix and the response now. Then the
-  commit hash and how it shipped (deploy or plugin-only, timestamp).
+  commit hash and the deploy path it needs: `deploy: server` or
+  `deploy: plugin` (plugin-only).
   Describe behaviour, not code: the tester designs its own check from the
   issue's `expected:`, and a call you suggest is one input to it, not the
   test. In a batch, comment on each issue exactly what shipped for *it*, so

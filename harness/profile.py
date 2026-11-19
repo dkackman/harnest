@@ -45,6 +45,7 @@ class Server:
     heavy: bool = True
     deny_models: tuple = ()
     clone_suffix_: object = None
+    loop_gpu_slots: int = 1  # R17: loop sessions that may run jobs on it at once
 
     @property
     def suffix(self):
@@ -133,12 +134,15 @@ def load(target=None, path=None):
                     heavy=bool(s.get("heavy", True)),
                     deny_models=tuple(s.get("deny_models", ())),
                     clone_suffix_=s.get("clone_suffix"),
+                    loop_gpu_slots=int(s.get("loop_gpu_slots", 1)),
                 )
             )
         except (KeyError, TypeError, ValueError) as e:
             raise ProfileError(f"profile {path}: server {i}: {e}") from e
         if servers[-1].transport not in ("ssh", "local"):
             raise ProfileError(f"profile {path}: server {servers[-1].name}: transport must be ssh or local")
+        if servers[-1].loop_gpu_slots < 1:
+            raise ProfileError(f"profile {path}: server {servers[-1].name}: loop_gpu_slots must be at least 1")
         if servers[-1].lanes < 1:
             raise ProfileError(f"profile {path}: server {servers[-1].name}: lanes must be at least 1")
     if not servers:

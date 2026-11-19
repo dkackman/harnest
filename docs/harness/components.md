@@ -191,6 +191,48 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
     by themselves.
   - **Approval** (`status:plan-approved`) is Don's alone: `guard.py` refuses it from
     every role.
+- `harness/drivers/loop.py` (R17) — `python3 -m harness.drivers.loop [--servers lem,mini-ai]
+  [--only QUEUE,...] [--once]`: the event-loop scheduler that replaces `run-loop.sh`'s
+  cycle. It reads each server's board through `lib/board.sh` (classify rows plus the claim
+  holder; `hk`, `drain` and the other queries source `run-loop.sh` in item mode), makes
+  work items (`harness/board.py`), and starts what `harness/scheduler.py` allows as
+  `lib/run-item.sh` children (`Runner`, the phase-1b seam), GPU sessions beside server-free
+  ones. It holds each server's `.driver.lock<sfx>` as `run-loop`, owns every deploy
+  (`harness/deploy_policy.py`; a failed deploy keeps `gpu:S` held until a deploy succeeds or,
+  after the park, S passes its preflight), runs the nightly regression under its lock, lands
+  suite trees, backs off an item that ran no session (an empty last-session file: 5 min,
+  doubling to 30, cleared when one runs), pauses on a rate limit and writes `logs/loop/state.json` (the heartbeat stops
+  touching it when the main loop hasn't woken for 3 intervals, so a hang shows as stalled).
+  GPU testers load `PLUGIN_TREE`, refreshed before each one (a failed refresh waits a wake);
+  spec/handoff testers load `<PLUGIN_TREE>-free`; each reviewer item gets a tree of its own,
+  `<PLUGIN_TREE>-review-<slot>`, made at origin/develop before it starts (a failed refresh
+  waits a wake) and removed when it ends, so overlapping reviews never share one. Every git
+  call it makes is bounded (120 s); a SIGTERM during a deploy waits for the deploy, lock held.
+- The loop driver's modules (R17, all in `harness/`, stdlib only; the driver is `drivers/loop.py`):
+  `scheduler.py` (pure: resources `gpu:S`, `free`, `suite`, `leadtree:S`, `src:S`, priority, the
+  reserved free slot for `reviewer:arch`, the gpu hold; no I/O, tested on a fake clock),
+  `board.py` (board rows from `lib/board.sh` to work items, claim routing),
+  `deploy_policy.py` (is a verify runnable on the deployed head; when to deploy, one deploy per burst),
+  `deploy.py` (`run_deploy`, `preflight`, `/api/health`), `loop_state.py` (`logs/loop/state.json`,
+  rendered to a temp name and renamed; statuses running/draining/stopping/paused-rate-limit/stopped),
+  `suite_tree.py` (per-session suite worktrees under `<parent>/.harnest-worktrees/<harnest>/<id>`:
+  `make`, `land` the working-tree diff of the suite paths onto a fresh `main`, `remove`; a conflict
+  is kept on a `suite-conflict/*` or `suite-stranded/*` branch and logged `[audit] WARNING`; when
+  that branch cannot be made, `land` returns `error` and the driver keeps the tree, and `make` moves
+  a stale tree it cannot strand to `<id>.kept-<time>`),
+  `lock.py` (the per-server driver lock, shared protocol with `providers.sh`), `gitops.py` (git with
+  a timeout, in its own process group). The guard reads the session tree and base from
+  `HARNEST_SESSION_TREE` / `HARNEST_SESSION_BASE` (driver-set; add-only is checked against that sha).
+- `lib/run-item.sh <pass> <queue> <issue>` (R17; issue-less passes take `<pass>` alone, `park`
+  `<issue> <reason>`) — one pass of `run-loop.sh` for one issue, as a child of the Python
+  scheduler. The queue is part of the item: the pass runs only that queue's branch, for exactly
+  that issue (`HARNEST_ITEM_QUEUE`; no parent-to-stage widening, so a feature parent's spec item
+  never runs a stage's verify outside the deploy drain). It sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
+  the lock, the startup deploy, `check_target_on_develop`, the plugin-tree refresh, every
+  suite commit and `main`. A tester or curator item runs in `HARNEST_SESSION_TREE` (its own
+  suite worktree, `harness/suite_tree.py`) and leaves `<last-session>.land` for the
+  scheduler's `land()`; `park <issue> <reason>` parks with Don for the scheduler (a deploy
+  that failed twice). The pass list and environment are in its header.
 - `run-release.sh` / `lib/release.sh` / `agents/release/` (R14) — cuts a release in stages
   Don runs: `freeze`, `check`, `review`, `notes`, `gates`, `accept`, `status`, `cut`. It
   records each gate as a marker comment on the release issue, keyed to the full
@@ -267,6 +309,57 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   also keeps `qa-bible.md` here (gitignored) as its memory across
   cycles — a snapshot (cast, assets, workspaces, episode ledger, current house rules, next step)
   capped at ~12 KB by `agents/tester/standing-task.md`, not a journal; per-cycle narrative belongs on the issues.
+
+`scripts/gpu-busy.py [--days 14] [--log logs/loop.log] [--repo OWNER/REPO] [--json]` is the R17
+baseline meter: per day, `gpu_slot_busy_pct` (tester plus regression session seconds over
+wall seconds), `standing_task_interval_secs` (mean gap between `tester:task` headers),
+`closes` (dw issues closed `completed`, via `gh issue list`, only when `--repo` is given) and
+`cost`; window totals add `cost_per_close`. The log has no dates, so it applies the dashboard's
+rollover rule (a time earlier than the previous header's means the next day) anchored on the
+log's mtime. Pre-scheduler numbers: `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`.
+
+`tools/ui-check/ui-check.mjs` (Task 8b, R17) is the tester's one way into dw's web UI, for
+the suite's **Web UI, black-box** cases (C-F1028 on). It is a fixed headless-Chromium runner
+on `playwright-core` (pinned in `tools/ui-check/package.json`; `node_modules` is gitignored, so
+run `cd tools/ui-check && npm install --no-audit --no-fund` once per checkout, which uses the
+Chromium builds already in `~/Library/Caches/ms-playwright`). The tester writes no code: it
+writes a JSON spec of steps to `/tmp/dw-ui-<case>.json` and runs `node
+$HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`, the exact line its runtime note
+(`runtime_note`, for the tester and the regression agent) spells with the absolute root; the
+step kinds and the output are in the file's header and `agents/tester/core.md` ("Web UI
+cases"). `record`/`recorded` capture the requests matching a glob (mocked or not) for the
+cases that check what the page sent; `stub {url_glob, json, status}` answers a POST to one of
+the allowed write routes below without sending it (its glob is refused at validation unless
+every `{a,b}` alternative names only those paths, and a GET on it gets the real answer), so a
+Run click need not queue a GPU job. Globs are matched by the runner's own linear matcher
+(also handed to Playwright's routes as a predicate), and `expect_text`'s regex runs in the
+page, so a tester's backtracking pattern hangs the page, not the runner: the step cap, the run
+cap and SIGTERM (which closes the browser and prints the partial result; one JSON document
+per run, whichever ends it) still fire. Auth: dw's UI sends the bearer token it keeps in
+localStorage `dw-api-token` (JSON; dw `ui/src/lib/token.ts`, `storage.ts`); the runner sets it
+with `addInitScript` before any page script, from the session's MCP config file, whose path
+the driver passes as `HARNEST_MCP_CONFIG` to tester and regression sessions (`run_agent`,
+`run-regression.sh`, `harness/drivers/regression.py`; the entry on the base origin, its
+`Authorization: Bearer` header). Never from the spec; no file or no token runs without one;
+the token is replaced by `<token>` everywhere in the output. Screenshots are not scrubbed (a
+settings page that shows the token would show it). Locators are visible text and
+role only. The run is locked to the server's origin (`DW_URL` without its path, required:
+exit 2 without it, and a spec `base` must match it; the tester's and the regression agent's
+sessions carry `DW_URL` in their environment, `run_agent` and `run-regression.sh`): any other
+request or WebSocket is aborted and listed in `blocked`, a main-frame navigation elsewhere
+(file:, data:) goes back to `about:blank`, and downloads, permissions, service workers and
+popups are off; `goto` fails a document that is not `text/html`. On the origin only GET and HEAD pass, plus POST to `/api/validate`,
+`/api/jobs` and `/api/jobs/<id>/cancel`; every DELETE, PUT, PATCH and other POST (the REST
+routes behind `delete_model` and `update_diffusers`, which the tester's MCP session denies,
+cache clears, saves) is aborted and listed in `blocked`, and a `mock` cannot fetch one.
+Screenshots go to a fresh `mkdtemp` dir per run under the OS temp dir (0700), each file
+created new (O_EXCL, O_NOFOLLOW, 0600) and listed in `shots`. 30 s per step, 300 s per run. The spec must
+be a regular file `/tmp/dw-ui-*.json` of at most 256 KB owned by the running user (opened
+O_NOFOLLOW, O_NONBLOCK), else exit 2; otherwise it exits 0
+with one JSON document on stdout. The consumer allowlist names exactly that `node` form and
+`guard.py` holds it to it (no other node/npx/npm, no write under `tools/ui-check`).
+`tests/test-ui-check.sh` drives it against a fixture page and skips when `node_modules` is
+missing.
 
 Planned evolution of the harness itself (replay benchmark, hooks, feature specs, suite
 curation, retro loop, SDK port) is tracked in `HARNESS-ROADMAP.md`. Read it before a

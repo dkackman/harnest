@@ -221,6 +221,114 @@ srow 0 consumer "fix this session'\''s own case" '{"old_string": "expected: draf
 srow 2 consumer "rewrite a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
 srow 2 consumer "Write that drops a committed case" '{"content": "### C-F002 — new this session\nexpected: draft.\ncleanup: none.\n"}'
 srow 0 curator "curator rewrites a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
+# R17: the session's own harnest worktree (HARNEST_SESSION_TREE) is held to the same rule,
+# against HARNEST_SESSION_BASE (required), not the tree HEAD; HARNEST_ROOT stays the main checkout
+stree="$T/stree"
+git -C "$sroot" worktree add -q --detach "$stree" HEAD
+printf '\n### C-F004 — new in the tree\nexpected: draft.\ncleanup: none.\n' >> "$stree/regression-suite-complete.md"
+# wrow <expect> <label> <tool_input json, file_path added>
+wrow() {
+  jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" --argjson i "$3" '{tool_name: ($i.content | if . then "Write" else "Edit" end), tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_SESSION_BASE="$sbase" HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+  eq "suite add-only in the session tree: $2" "$1" $?
+}
+sbase=$(git -C "$sroot" rev-parse HEAD)
+wrow 0 "append a case" '{"old_string": "expected: draft.\ncleanup: none.\n", "new_string": "expected: draft.\ncleanup: none.\n\n### C-F005 — x\ncleanup: none.\n"}'
+wrow 0 "remove a pending line" '{"old_string": "pending: #12\n", "new_string": ""}'
+wrow 2 "drop a committed line" '{"old_string": "expected: it works.\n", "new_string": ""}'
+wrow 2 "Write that drops a committed case" '{"content": "### C-F004 — new in the tree\nexpected: draft.\ncleanup: none.\n"}'
+# without HARNEST_SESSION_TREE the tree is no harness root: the rule does not reach it
+jq -n --arg p "$stree/regression-suite-complete.md" '{tool_name: "Edit", tool_input: {file_path: $p, old_string: "expected: it works.\n", new_string: ""}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" python3 "$guard" consumer >/dev/null 2>&1
+eq "suite add-only: an unnamed tree is not checked" 0 $?
+# a non-lem regression run may not edit the suite in its session tree either
+jq -n --arg p "$stree/regression-suite-complete.md" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_TARGET=mini-ai HARNEST_ROLE=regression python3 "$guard" consumer >/dev/null 2>&1
+eq "consumer(regression)@mini-ai: Edit the session tree's suite" 2 $?
+jq -n --arg p "$stree/regression-perf/S-P001.jsonl" '{tool_name: "Write", tool_input: {file_path: $p}, cwd: "/tmp"}' \
+  | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_TARGET=mini-ai HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+eq "consumer(tester)@mini-ai: Write lem's perf history in the session tree" 2 $?
+# fix round 1: the real layout. HARNEST_ROOT is a harnest checkout and the session tree is
+# made by suite_tree.make(), outside it (<dirname>/.harnest-worktrees/<basename>/<id>)
+hroot="$T/hl/harnest"; mkdir -p "$hroot/regression-perf/mini-ai"
+printf '### C-F001 — a case\nexpected: it works.\ncleanup: none.\n' > "$hroot/regression-suite-complete.md"
+git -C "$hroot" init -q -b main && git -C "$hroot" add -A && git -C "$hroot" -c user.name=t -c user.email=t@t commit -qm base
+read -r htree hbase <<<"$(cd "$HARNEST" && python3 -c 'import sys; from harness import suite_tree; t = suite_tree.make(sys.argv[1], "sess1"); print(t.path, t.base)' "$hroot")"
+[ -n "$htree" ] && [ -d "$htree" ] || { echo "  FAIL: suite_tree.make gave no tree"; exit 1; }
+eq "suite tree is made outside HARNEST_ROOT" "$(cd "$T/hl" && pwd -P)/.harnest-worktrees/harnest/sess1" "$htree"
+# lrow <expect> <label> <role> <tool> <path in the tree> [tool_input json]
+lrow() {
+  jq -n --arg t "$4" --arg p "$htree/$5" --arg d "$htree" --argjson i "${6:-"{}"}" '{tool_name: $t, tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | HARNEST_ROOT="$hroot" HARNEST_SESSION_TREE="$htree" HARNEST_SESSION_BASE="$hbase" HARNEST_TARGET=mini-ai HARNEST_ROLE="$3" python3 "$guard" consumer >/dev/null 2>&1
+  eq "session tree (real layout): $2" "$1" $?
+}
+lrow 2 "regression@mini-ai Edits the tree's suite" regression Edit regression-suite-complete.md
+lrow 2 "tester@mini-ai Writes lem's perf in the tree" tester Write regression-perf/S-P001.jsonl
+lrow 0 "tester@mini-ai Writes its own server's perf in the tree" tester Write regression-perf/mini-ai/S-P001.jsonl
+lrow 2 "regression@mini-ai Edits lem's results in the tree" regression Edit regression-results/S-F001.jsonl
+# a tree nested inside HARNEST_ROOT (the old layout) is judged against the tree, not the root
+ntree="$hroot/.worktrees/n1"; git -C "$hroot" worktree add -q --detach "$ntree" main
+jq -n --arg p "$ntree/regression-suite-complete.md" --arg d "$ntree" '{tool_name: "Edit", tool_input: {file_path: $p}, cwd: $d}' \
+  | HARNEST_ROOT="$hroot" HARNEST_SESSION_TREE="$ntree" HARNEST_TARGET=mini-ai HARNEST_ROLE=regression python3 "$guard" consumer >/dev/null 2>&1
+eq "nested session tree: regression@mini-ai Edit of its suite" 2 $?
+git -C "$hroot" worktree remove --force "$ntree"
+# the add-only baseline is the driver-set HARNEST_SESSION_BASE, not the tree's HEAD: a session
+# that commits a removal in its tree has not moved the baseline
+git -C "$htree" -c user.name=t -c user.email=t@t rm -q --cached regression-suite-complete.md >/dev/null
+printf '### C-F001 — a case\ncleanup: none.\n' > "$htree/regression-suite-complete.md"
+git -C "$htree" add regression-suite-complete.md && git -C "$htree" -c user.name=t -c user.email=t@t commit -qm "drop expected"
+bwrite='{"content": "### C-F001 — a case\ncleanup: none.\n\n### C-F002 — new\ncleanup: none.\n"}'
+# brow <expect> <label> [HARNEST_SESSION_BASE value; "-" leaves it unset]
+brow() {
+  local -a e=(HARNEST_ROOT="$hroot" HARNEST_SESSION_TREE="$htree" HARNEST_ROLE=tester)
+  [ "$3" = - ] || e+=(HARNEST_SESSION_BASE="$3")
+  jq -n --arg p "$htree/regression-suite-complete.md" --arg d "$htree" --argjson i "$bwrite" '{tool_name: "Write", tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | env "${e[@]}" python3 "$guard" consumer >/dev/null 2>&1
+  eq "suite add-only baseline: $2" "$1" $?
+}
+brow 2 "HARNEST_SESSION_BASE holds the line the tree's own commit dropped" "$hbase"
+brow 2 "no HARNEST_SESSION_BASE: refused (fails closed)" -
+# Task 5 step 0: a tree with no usable HARNEST_SESSION_BASE (unset, a ref name, a short sha)
+# fails closed, even for an edit the rule would pass
+# nrow <expect> <label> [HARNEST_SESSION_BASE value; "-" leaves it unset]
+nrow() {
+  local -a e=(HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_ROLE=tester)
+  [ "$3" = - ] || e+=(HARNEST_SESSION_BASE="$3")
+  jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" '{tool_name: "Edit", tool_input: {file_path: $p, old_string: "expected: draft.\ncleanup: none.\n", new_string: "expected: draft.\ncleanup: none.\n\n### C-F006 — y\ncleanup: none.\n"}, cwd: $d}' \
+    | env "${e[@]}" python3 "$guard" consumer >"$T/nrow.out" 2>&1
+  grep -q "HARNEST_SESSION_BASE" "$T/nrow.out"
+  local said=$?
+  jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" '{tool_name: "Edit", tool_input: {file_path: $p, old_string: "expected: draft.\ncleanup: none.\n", new_string: "expected: draft.\ncleanup: none.\n\n### C-F006 — y\ncleanup: none.\n"}, cwd: $d}' \
+    | env "${e[@]}" python3 "$guard" consumer >/dev/null 2>&1
+  local rc=$?
+  eq "suite add-only, no usable session base: $2" "$1" "$rc"
+  [ "$1" = 0 ] || eq "suite add-only, no usable session base: $2 (says why)" 0 "$said"
+}
+nrow 0 "the full sha passes" "$sbase"
+nrow 2 "unset" -
+nrow 2 "empty" ""
+nrow 2 "a ref name" main
+nrow 2 "a short sha" "${sbase:0:12}"
+nrow 2 "an expression" "$sbase~1"
+nrow 2 "uppercase hex" "$(printf %s "$sbase" | tr a-f A-F)"
+# a non-suite file in the tree is not this rule's
+jq -n --arg p "$stree/notes.txt" --arg d "$stree" '{tool_name: "Write", tool_input: {file_path: $p, content: "x"}, cwd: $d}' \
+  | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+eq "no session base: a non-suite Write in the tree is not the add-only rule's" 0 $?
+# HARNEST_SESSION_BASE is the driver's too
+row 2 consumer "" $none 'HARNEST_SESSION_BASE=HEAD; echo hi'
+row 2 consumer "" $none 'export HARNEST_SESSION_BASE=HEAD'
+row 2 consumer "" $none 'unset HARNEST_SESSION_BASE'
+row 2 consumer "" $none 'env -u HARNEST_SESSION_BASE ls'
+row 2 consumer "" $none 'echo "${HARNEST_SESSION_BASE:=HEAD}"'
+row 0 consumer "" $none 'echo "$HARNEST_SESSION_BASE"'
+# HARNEST_SESSION_TREE is the driver's too: no assigning, exporting, unsetting or defaulting it
+row 2 consumer "" $none 'HARNEST_SESSION_TREE=/tmp/x; echo hi'
+row 2 consumer "" $none 'export HARNEST_SESSION_TREE=/tmp/x'
+row 2 consumer "" $none 'unset HARNEST_SESSION_TREE'
+row 2 consumer "" $none 'env -u HARNEST_SESSION_TREE ls'
+row 2 consumer "" $none 'echo "${HARNEST_SESSION_TREE:=/tmp/x}"'
+row 0 consumer "" $none 'cat "$HARNEST_SESSION_TREE"/regression-suite-smoke.md'
 # trow <expect> <command>: gh on the mini-ai target
 trow() {
   jq -n --arg c "$2" --arg t "${3:-/nonexistent}" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: $t, cwd: "/tmp"}' \
@@ -271,7 +379,7 @@ irow 2 'ssh -o BatchMode=yes lem "tail ~/dw-serve.log"'
 irow 2 'scp mini-ai:dw-serve.log /tmp/'
 irow 2 'cd ~/src/dkackman/dw-mps-serve && ./scripts/deploy.sh develop'
 irow 2 'bash scripts/deploy.sh develop'
-row 0 implementer "" $none 'ssh lem "~/diffusers-workflow/scripts/deploy.sh develop"'
+row 2 implementer "" $none 'ssh lem "~/diffusers-workflow/scripts/deploy.sh develop"'
 irow 0 'gh issue edit 5 --remove-label target:mini-ai --add-label target:lem'
 irow 2 'gh issue edit 5 --add-label target:mini-ai'
 # on lem nobody adds a claim or a verified-on label
@@ -493,7 +601,49 @@ row 2 implementer "" $none 'sudo bash -c "gh issue edit 5 --add-label status:ver
 row 2 implementer "" $none 'su -c "gh issue close 5"'
 row 2 implementer "" $none 'watch "gh issue close 5 --reason completed"'
 row 2 implementer "" $none 'ssh lem "gh issue edit 5 --add-label status:verified"'
-row 0 implementer "" $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+# R17: the driver deploys between GPU sessions, on lem too; no agent session does
+row 2 implementer "" $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+row 2 lead build $none "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+row 2 implementer "" $none 'bash scripts/deploy.sh develop'
+row 2 lead build $none 'cd ~/src/dkackman/diffusers-workflow && ./scripts/deploy.sh develop'
+row 2 consumer verify "$mcp_transcript" "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
+row 0 implementer "" $none 'git commit --allow-empty -m "the driver runs deploy.sh develop"'
+row 0 implementer "" $none 'ssh lem uptime'
+# deploy.sh hidden in a gh/git command, and testbed.sh verbs that change the
+# server: refused on every target for both roles; only a message's text is exempt
+drow() {
+  local want="$1" target="$2" role="$3" kind="$4" cmd="$5"
+  jq -n --arg c "$cmd" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
+    | HARNEST_TARGET="$target" HARNEST_TARGET_HOST="$target" HARNEST_SESSION_KIND="$kind" python3 "$guard" "$role" >/dev/null 2>&1
+  eq "$role${kind:+/$kind}@$target: $cmd" "$want" $?
+}
+for tg in lem mini-ai; do
+  for rk in implementer: lead:build; do
+    r="${rk%%:*}" k="${rk#*:}"
+    for host in lem mini-ai; do
+      dep="ssh $host ~/diffusers-workflow/scripts/deploy.sh develop"
+      drow 2 $tg $r "$k" "git -c alias.d='!$dep' d"
+      drow 2 $tg $r "$k" "git -C /x submodule foreach '$dep'"
+      drow 2 $tg $r "$k" "gh issue view 5 --jq '\"$dep\"' | bash"
+      drow 2 $tg $r "$k" "git -c core.sshCommand='$dep #' fetch origin"
+      drow 2 $tg $r "$k" "git log -1 --format='$dep' | sh"
+      drow 2 $tg $r "$k" "GIT_SSH_COMMAND='$dep #' git fetch origin"
+    done
+    drow 0 $tg $r "$k" 'git commit -m "the driver runs deploy.sh develop"'
+    drow 0 $tg $r "$k" 'gh issue comment 5 --body "the driver runs deploy.sh develop after the merge"'
+    for v in update start restart stop; do
+      drow 2 $tg $r "$k" "scripts/testbed.sh $tg $v"
+      drow 2 $tg $r "$k" "./scripts/testbed.sh lem $v --force"
+      drow 2 $tg $r "$k" "bash /Users/don/testing/harnest/scripts/testbed.sh mini-ai $v"
+      drow 2 $tg $r "$k" "sh -c 'scripts/testbed.sh lem $v'"
+    done
+    drow 2 $tg $r "$k" 'scripts/testbed.sh lem update feature/x'
+    drow 0 $tg $r "$k" "scripts/testbed.sh $tg status"
+    drow 0 $tg $r "$k" 'scripts/testbed.sh lem logs 50'
+  done
+done
+drow 0 lem implementer "" 'ssh lem uptime'
+drow 0 mini-ai implementer "" 'ssh mini-ai uptime'
 # a body file is read before gh runs: it must be the only command, relative paths resolve against the hook's cwd
 cp "$T/plain.md" "$T/p3.md"
 row 2 implementer "" $none "cp $T/marker.md $T/p3.md; gh issue comment 5 --body-file $T/p3.md"
@@ -1150,4 +1300,52 @@ for r in implementer consumer; do
   row 0 $r "" $none 'timeout 60 pytest -k "$K"'
   row 0 $r "" $none 'nice -n 5 make "$TARGET"'
 done
+# --- ui-check (Task 8b): the consumer runs node only as the fixed runner on a /tmp/dw-ui-*.json spec
+uic="$HARNEST/tools/ui-check/ui-check.mjs"
+uspec="/tmp/dw-ui-guard-$$.json"
+printf '{"steps": []}\n' > "$uspec"
+ln -sf "$uspec" "/tmp/dw-ui-guard-link-$$.json"
+row 0 consumer "" $none "node $uic $uspec"
+row 0 consumer "" $none "node $uic $uspec" # twice: the guard keeps no state
+row 2 consumer "" $none 'node -e "require(\"child_process\").execSync(\"id\")"'
+row 2 consumer "" $none 'node /tmp/other.mjs'
+row 2 consumer "" $none "node $uic /tmp/x.json"
+row 2 consumer "" $none "node $uic /tmp/dw-ui-guard-link-$$.json"
+row 2 consumer "" $none "node $uic /tmp/dw-ui-missing-$$.json"
+row 2 consumer "" $none "node $uic /tmp/../tmp/dw-ui-guard-$$.json"
+row 2 consumer "" $none "node $uic $uspec --inspect"
+row 2 consumer "" $none "node --inspect $uic $uspec"
+row 2 consumer "" $none "node tools/ui-check/ui-check.mjs $uspec"
+row 2 consumer "" $none "node /tmp/tools/ui-check/ui-check.mjs $uspec"
+row 2 consumer "" $none "/usr/local/bin/node $uic $uspec"
+row 2 consumer "" $none "$uic $uspec"
+row 2 consumer "" $none "NODE_OPTIONS=--require=/tmp/x.js node $uic $uspec"
+row 2 consumer "" $none "env NODE_OPTIONS=x node $uic $uspec"
+row 2 consumer "" $none "node $uic $uspec | sh"
+row 2 consumer "" $none "node $uic $uspec > /tmp/out.json"
+row 2 consumer "" $none "node $uic $uspec; node -e 1"
+row 2 consumer "" $none "date && node $uic $uspec"
+row 2 consumer "" $none 'npx playwright test'
+row 2 consumer "" $none 'npm exec playwright'
+row 2 consumer "" $none 'npm install playwright'
+row 2 consumer "" $none 'xargs node < /tmp/args'
+row 2 consumer "" $none 'timeout 60 node -e 1'
+row 2 consumer "" $none 'bash -c "node -e 1"'
+# a segment that is only an assignment has no command word, and is scanned all the same
+row 2 consumer "" $none 'x=node; $x -e 1'
+row 2 consumer "" $none 'x=npx; $x playwright test'
+row 0 consumer "" $none 'gh issue comment 5 --body "ran node -e and npx playwright: neither is allowed"'
+row 0 implementer "" $none 'node -e 1'
+row 0 implementer "" $none 'npx vitest run'
+# the consumer writes no file under tools/ui-check
+uirow() {  # uirow <expect> <tool> <path>
+  jq -n --arg t "$2" --arg p "$3" '{tool_name: $t, tool_input: {file_path: $p, content: "x"}, cwd: "/tmp"}' \
+    | python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer $2 $3" "$1" $?
+}
+uirow 2 Write "$uic"
+uirow 2 Edit "$HARNEST/tools/ui-check/package.json"
+uirow 2 Write "$HARNEST/tools/ui-check/node_modules/playwright-core/index.js"
+uirow 0 Write "/tmp/dw-ui-guard-other-$$.json"
+rm -f "$uspec" "/tmp/dw-ui-guard-link-$$.json"
 finish

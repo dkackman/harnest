@@ -1,0 +1,1 @@
+{"valid": true, "plan": {"estimate": {"minutes": 4, "basis": "observed"}, "host_memory": null}, "downloads_required": [{"repo": "org/real", "bytes": 10}]}

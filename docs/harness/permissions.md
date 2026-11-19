@@ -58,7 +58,11 @@ and a line hidden from its lexers by a `#` comment or `$'…'` quoting (harnest#
 hidden-script class). The consumer roles are held there by their tool allowlists instead:
 `Write`/`Edit` are allow-only on the suite files, `regression-perf/**`, `qa-bible.md` and
 `/tmp/**`, so a consumer can write a file under `/tmp`, but its `Bash` allowlist runs no file
-it wrote, and `dontAsk` denies the rest.
+it wrote, and `dontAsk` denies the rest. The one file it writes that something reads is a
+`/tmp/dw-ui-*.json` spec, data for the fixed web-UI runner (`Bash(node
+$HARNEST_ROOT/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)`, Task 8b; components.md,
+`ui-check`): the runner executes no code from it, and the guard refuses every other `node`,
+`npx` or `npm` and any write under `tools/ui-check`.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
 changed files, the UI's `npm run check`/`lint`/`test` must pass when `ui/` changed (about
@@ -70,8 +74,8 @@ The role prompts' cores carry each guard rule as one line under "Enforced by the
 `arch_gate` also refuses a hand-off or a push of `develop` whose own commits touch dw's hot zone or worsen a
 `scripts/arch_metrics.py` metric (`lib/arch_ratchet.py`, fails closed); only Don's `arch-approved` with a matching `baseline.json` raise waives a rise.
 
-Two deploy paths, and the implementer must say which one a fix used: server code →
-`ssh lem '~/diffusers-workflow/scripts/deploy.sh <branch>'` (in the dw repo: fetch, ff-only pull,
+Two deploy paths, and the hand-off must say which one a fix needs (`deploy: server` or `deploy: plugin`). No agent session deploys, on any server (R17): the guard refuses `deploy.sh` (run directly, over ssh, in a `NAME=value` such as `GIT_SSH_COMMAND`, a git alias or `-c` value, or `gh`/`git` output piped to a shell) and `scripts/testbed.sh update|start|restart|stop` for every role, tester included, on every target; only a message's inline text (`git commit -m`, `gh issue|pr --body/--title`, `gh api -f body=`) may name `deploy.sh`. The driver deploys `develop` between GPU sessions. Server code → the driver runs
+`ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'` (in the dw repo: fetch, ff-only pull,
 reinstall if `pyproject.toml` changed, wait for a running job, restart via the `dw-serve`
 systemd user unit if installed else its `screen` session, poll health — the one call that
 replaced ~40 hand-rolled ssh turns per issue and eleven `kill -9`s of the server), tool schemas
@@ -87,9 +91,9 @@ prompts say the same of comments met via `gh`. `DEPLOYED_HEAD` is refreshed betw
 passes (the tester must be told what it is actually verifying against), and
 `check_target_on_develop` logs a warning and redeploys `develop` itself (`deploy_target`; `DEPLOY_ON_MISMATCH=0`
 to only warn) if the server isn't on `origin/develop` at that point —
-the implementer merges every fix into `develop` and deploys `develop` (the "Fix" and "Deploy" sections of `agents/implementer/fix.md`)
+the implementer merges every fix into `develop` and the driver deploys `develop` ("Fix" in `agents/implementer/fix.md`, "You never deploy" in the core)
 because lem can only be on one commit and a cycle hands off several fixes; on 2026-09-21
-three branch-only deploys were wiped by a fourth session's `develop` deploy and had to be
+three branch-only deploys (then done by sessions) were wiped by a fourth session's `develop` deploy and had to be
 merged by hand before the tester ran. Both are driver-side (one `ls-remote`, the same ssh) —
 the tester still reaches lem only over MCP.
 

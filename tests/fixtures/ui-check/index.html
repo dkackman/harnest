@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ui-check fixture</title>
+<style>
+  .plan-line { color: rgb(20, 20, 20); }
+  .plan-line.warn { color: rgb(180, 83, 9); font-weight: 700; }
+</style>
+</head>
+<body>
+<main class="plan">
+  <h1>Fixture editor</h1>
+  <label>Prompt <input type="text" name="prompt"></label>
+  <button type="button" id="v">Validate</button>
+  <button type="button" id="r">Run</button>
+  <button type="button" id="n">Note</button>
+  <button type="button" id="d">Delete model</button>
+  <button type="button" id="u">Update diffusers</button>
+  <button type="button" id="s">Save workflow</button>
+  <p class="plan-line">steps: 3</p>
+  <p class="plan-line warn" aria-live="polite">estimate: low confidence</p>
+  <div id="answer"></div>
+  <p id="cross">cross-origin: pending</p>
+  <p id="typed">typed: none</p>
+  <p id="run">run: none</p>
+  <p id="admin">admin: none</p>
+  <p id="auth">auth: pending</p>
+  <p id="tok">token: none</p>
+  <p id="long">aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa!</p>
+</main>
+<script>
+  // The bearer token the way dw's UI keeps it (ui/src/lib/token.ts, storage.ts): localStorage
+  // "dw-api-token", JSON. The runner puts it there; the page shows it, so the test can see it scrubbed.
+  var tok = '';
+  try { tok = JSON.parse(localStorage.getItem('dw-api-token') || '""'); } catch (e) {}
+  document.getElementById('tok').textContent = 'token: ' + (tok || 'none');
+  if (tok) console.error('the token is ' + tok);
+  fetch('/api/validate', { headers: tok ? { Authorization: 'Bearer ' + tok } : {} })
+    .then(function (r) { document.getElementById('auth').textContent = 'auth: ' + r.status; },
+          function () { document.getElementById('auth').textContent = 'auth: failed'; });
+  // A request to another origin (same server, other host name): the runner must abort it.
+  var other = location.protocol + '//localhost:' + location.port + '/api/validate';
+  fetch(other, { mode: 'no-cors' })
+    .then(function () { document.getElementById('cross').textContent = 'cross-origin: reached'; })
+    .catch(function () { document.getElementById('cross').textContent = 'cross-origin: blocked'; });
+  document.querySelector('input').addEventListener('input', function (e) {
+    document.getElementById('typed').textContent = 'typed: ' + e.target.value;
+  });
+  // POSTs for the record step: a JSON body and a text one (http.server answers 501; the request is what counts)
+  document.getElementById('r').addEventListener('click', function () {
+    fetch('/api/jobs?sizes=false', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workflow_path: 'catalog/flux.json', sizes: false }) })
+      .then(function (r) { document.getElementById('run').textContent = 'run: answered ' + r.status; },
+            function () { document.getElementById('run').textContent = 'run: failed'; })
+      .finally(function () { document.getElementById('typed').textContent = 'typed: posted'; });
+  });
+  // Destructive admin routes (delete_model, update_diffusers, a workflow save): the runner must abort each.
+  function admin(id, method, url) {
+    document.getElementById(id).addEventListener('click', function () {
+      fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: method === 'DELETE' ? undefined : '{}' })
+        .then(function (r) { document.getElementById('admin').textContent = 'admin: ' + id + ' answered ' + r.status; },
+              function () { document.getElementById('admin').textContent = 'admin: ' + id + ' failed'; });
+    });
+  }
+  admin('d', 'DELETE', '/api/models?repo=org/x');
+  admin('u', 'POST', '/api/system/diffusers/update');
+  admin('s', 'PUT', '/api/workflows/mine');
+  document.getElementById('n').addEventListener('click', function () {
+    fetch('/api/validate?note=1', { method: 'POST', body: 'plain note ' + 'x'.repeat(5000) });
+  });
+  document.getElementById('v').addEventListener('click', function () {
+    fetch('/api/validate').then(function (r) { return r.json(); }).then(function (j) {
+      var out = document.getElementById('answer');
+      out.textContent = '';
+      var lines = [
+        'host RAM: ' + (j.plan && j.plan.host_memory ? j.plan.host_memory.projected_mb + ' MB' : 'none'),
+        'minutes: ' + (j.plan && j.plan.estimate ? j.plan.estimate.minutes : 'none'),
+        'basis: ' + (j.plan && j.plan.estimate ? j.plan.estimate.basis : 'none'),
+        'downloads: ' + (j.downloads_required || []).map(function (d) { return d.repo; }).join(', '),
+        'valid: ' + j.valid
+      ];
+      lines.forEach(function (t) { var p = document.createElement('p'); p.className = 'answer-line'; p.textContent = t; out.appendChild(p); });
+    });
+  });
+</script>
+</body>
+</html>

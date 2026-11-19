@@ -119,13 +119,29 @@ consumer (tester, regression):
   - perf-check runs only as `./scripts/perf-check.sh` (a wrapper that runs the
     script isolated): the consumer may Write under /tmp, so any other path or
     interpreter would run whatever it wrote to the cwd or sys.path first
+  - node only as the UI runner (Task 8b): `node <HARNEST_ROOT>/tools/ui-check/ui-check.mjs
+    /tmp/dw-ui-<name>.json`, alone on the line, the spec a regular file in /tmp (no symlink, at
+    most 256 KB); any other node, npx or npm word outside a gh/git command is refused, and no
+    Edit/Write lands under tools/ui-check
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
-    suite files, perf history, the bible and /tmp, never scripts/)
+    suite files, perf history, the bible and /tmp, never scripts/). The
+    same for HARNEST_SESSION_TREE, the session's own harnest worktree (R17),
+    and HARNEST_SESSION_BASE, its add-only baseline
   - suite cases are add-only (harnest#176): an Edit/Write to a
     `regression-suite-*.md` may not drop or change a line the last commit
     holds, bar a `pending:` line. Lines added since the commit (this
-    session's own new case) stay editable
+    session's own new case) stay editable. A suite file in the session's
+    worktree (HARNEST_SESSION_TREE, outside HARNEST_ROOT) is held to the
+    commit the driver checked it out at (HARNEST_SESSION_BASE, a full 40-hex
+    sha; without one the edit is refused), never the tree's own HEAD, and
+    the rules below that name the harness root cover it too
+every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
+even over ssh, in a NAME=value, a git alias or -c value, or gh/git output piped to a shell),
+nor scripts/testbed.sh update|start|restart|stop; the driver deploys develop between GPU
+sessions, because a session's own MCP connection keeps the old server from exiting (#446,
+2026-09-26). Only a message's inline text (git commit/tag -m, gh issue|pr --body/--title,
+gh api -f body=) may name deploy.sh (deploy_text_words)
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -135,9 +151,6 @@ somewhere other than lem:
 implementer on a server other than lem (HARNEST_TARGET, set by run-loop.sh):
   - `ssh` only to its own test bed (HARNEST_TARGET_HOST), to read its log
     and checkout; no `scp` or `rsync`; lem is off limits
-  - no running dw's deploy script (`deploy.sh`, even over ssh): the driver
-    deploys between sessions, because the session's own MCP connection
-    keeps the old server from exiting (#446, 2026-09-26)
 consumer on a server other than lem (HARNEST_TARGET and HARNEST_ROLE, set
 by run-loop.sh and run-regression.sh; harnest#15). Also runs on Edit and
 Write:
@@ -171,6 +184,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -2218,11 +2232,36 @@ def claim_rule(words, target):
     )
 
 
+def session_tree():
+    """The session's own harnest worktree (R17 "Suite edits"; HARNEST_SESSION_TREE, set by the
+    driver, absolute): a detached checkout of main that the tester or curator edits the suite
+    files in. "" when the session has none."""
+    tree = os.environ.get("HARNEST_SESSION_TREE", "")
+    return os.path.realpath(tree) if os.path.isabs(tree) else ""
+
+
+def session_base():
+    """The add-only baseline for the session's worktree: HARNEST_SESSION_BASE, the full 40-hex
+    main sha the driver checked the tree out at (never the tree's own HEAD, which a session
+    could move, nor a ref name, which can resolve elsewhere). "" when it is unset or not such a
+    sha: the caller fails closed."""
+    base = os.environ.get("HARNEST_SESSION_BASE", "")
+    return base if re.fullmatch(r"[0-9a-f]{40}", base) else ""
+
+
+def harness_root_of(full, roots):
+    """The innermost of <roots> (realpaths) that holds <full>, or "": a session tree is judged
+    as a root of its own even if it sat inside HARNEST_ROOT."""
+    held = [r for r in roots if r and os.path.commonpath([r, full]) == r]
+    return max(held, key=len) if held else ""
+
+
 def target_file_rule(path, cwd, target, role):
-    """Refuse a write to lem's suite or perf files from a non-lem session."""
-    root = os.path.realpath(os.environ.get("HARNEST_ROOT", ""))
+    """Refuse a write to lem's suite or perf files from a non-lem session, in the main
+    checkout or the session's own worktree."""
     full = os.path.realpath(os.path.join(cwd, path))
-    if not root or os.path.commonpath([root, full]) != root:
+    root = harness_root_of(full, [os.path.realpath(os.environ.get("HARNEST_ROOT", "")), session_tree()])
+    if not root:
         return
     parts = os.path.relpath(full, root).split(os.sep)
     if len(parts) == 1 and parts[0].startswith("regression-suite-") and parts[0].endswith(".md") and role != "tester":
@@ -2240,17 +2279,29 @@ def target_file_rule(path, cwd, target, role):
 
 
 def suite_add_only_rule(tool, tool_input, cwd):
-    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`."""
-    root = os.path.realpath(
+    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`.
+    A suite file in the session's own worktree is held to the commit that worktree has out."""
+    main_root = os.path.realpath(
         os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     )
     full = os.path.realpath(os.path.join(cwd, tool_input.get("file_path", "")))
-    name = os.path.basename(full)
-    if os.path.dirname(full) != root or not (name.startswith("regression-suite-") and name.endswith(".md")):
+    name, root = os.path.basename(full), os.path.dirname(full)
+    tree = session_tree()
+    if root not in (main_root, tree) or not (name.startswith("regression-suite-") and name.endswith(".md")):
         return
+    rev = "HEAD"
+    if tree and root == tree:
+        rev = session_base()
+        if not rev:
+            deny(
+                "this session's suite tree (HARNEST_SESSION_TREE) has no usable HARNEST_SESSION_BASE "
+                "(the driver sets it to the full 40-hex sha the tree was made at), so the add-only "
+                "check has no baseline and the edit is refused. This is a driver fault: say so in "
+                "your report rather than editing the suite."
+            )
     try:
         committed = subprocess.run(
-            ["git", "-C", root, "show", "HEAD:" + name], capture_output=True, text=True, timeout=10
+            ["git", "-C", root, "show", rev + ":" + name], capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):
         return
@@ -2588,26 +2639,166 @@ def consumer_script_call_rule(segs, cwd):
             deny("no directory change on a line that calls a harness script: the path is relative to your cwd.")
 
 
+UI_CHECK = os.path.join("tools", "ui-check", "ui-check.mjs")
+UI_SPEC = re.compile(r"/tmp/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json")
+UI_SPEC_MAX = 256 * 1024
+NODE_WORDS = ("node", "nodejs", "npx", "npm", "pnpm", "yarn", "bun", "deno", "corepack")
+NODE_IN_WORD = r"(?<![\w.-])(?:%s)(?![\w.-])" % "|".join(NODE_WORDS)
+UI_CHECK_MSG = (
+    "the consumer runs node only as the UI runner, alone on the line: node %s /tmp/dw-ui-<name>.json "
+    "(a regular file you wrote, letters, digits, . _ -; no other node, npx or npm)."
+)
+
+
+def ui_check_runners():
+    """The runner's absolute path under HARNEST_ROOT, as given and resolved."""
+    root = os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    return {os.path.join(root, UI_CHECK), os.path.join(os.path.realpath(root), UI_CHECK)}
+
+
+def consumer_node_rule(cmd, segs):
+    """Task 8b: node only as `node <HARNEST_ROOT>/tools/ui-check/ui-check.mjs /tmp/dw-ui-<name>.json`,
+    the whole line, the spec a regular file (no symlink) of at most 256 KB in /tmp. Any other
+    node/npx/npm word on a consumer line, outside a gh or git command's text, is refused."""
+    hit = False
+    for seg in segs:
+        # A segment with no command word (x=node; $x -e 1) is scanned too: its assignment is the node.
+        words = command_words(seg)
+        if words and os.path.basename(words[0]) in ("gh", "git"):
+            continue
+        if any(
+            os.path.basename(w) in NODE_WORDS or w.endswith("ui-check.mjs") or re.search(NODE_IN_WORD, w) for w in seg
+        ):
+            hit = True
+    if not hit:
+        return
+    runners = ui_check_runners()
+    msg = UI_CHECK_MSG % sorted(runners)[0]
+    m = re.fullmatch(r"node (\S+) (\S+)", cmd.strip())
+    if not m or m.group(1) not in runners or not UI_SPEC.fullmatch(m.group(2)):
+        deny(msg)
+    spec = m.group(2)
+    try:
+        st = os.lstat(spec)
+    except OSError:
+        deny("no spec file at %s: Write it first. " % spec + msg)
+    if not stat.S_ISREG(st.st_mode) or st.st_size > UI_SPEC_MAX:
+        deny("the spec %s is a symlink, not a regular file, or over 256 KB. " % spec + msg)
+    if os.path.realpath(spec) != os.path.join(os.path.realpath("/tmp"), os.path.basename(spec)):
+        deny("the spec %s resolves outside /tmp. " % spec + msg)
+
+
+def ui_check_write_rule(file_path, cwd):
+    """The consumer writes nothing under tools/ui-check: the runner, its package and node_modules."""
+    full = os.path.join(cwd, file_path)
+    for p in (os.path.normpath(full), os.path.realpath(full)):
+        if re.search(r"/tools/ui-check(/|$)", p):
+            deny("tools/ui-check is the harness's UI runner; a consumer writes only its /tmp/dw-ui-*.json spec.")
+
+
 def consumer_root_rule(text):
     """HARNEST_ROOT is the driver's: the harness scripts resolve through it, so a
     consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
     mention of the name (an assignment, export, unset, env -u, read) is refused; only its
-    expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed."""
+    expansion ($HARNEST_ROOT, ${HARNEST_ROOT}) is allowed. HARNEST_SESSION_TREE (the session's
+    own worktree, R17) and HARNEST_SESSION_BASE (its add-only baseline) are the driver's the
+    same way: the add-only rule reads them."""
     literal, tainted, sublit, _ = var_sets(text)
-    if (
-        "HARNEST_ROOT" in literal
-        or "HARNEST_ROOT" in tainted
-        or "HARNEST_ROOT" in sublit
-        or re.search(r"(?<![\w${])HARNEST_ROOT\b", text)
-        or re.search(r"\$\{HARNEST_ROOT[^}]*=", text)
-    ):
-        deny(
-            "HARNEST_ROOT is set by the driver; a consumer does not assign, export or unset it. "
-            "Run the perf check as: ./scripts/perf-check.sh ..."
-        )
+    for var in ("HARNEST_ROOT", "HARNEST_SESSION_TREE", "HARNEST_SESSION_BASE"):
+        if (
+            var in literal
+            or var in tainted
+            or var in sublit
+            or re.search(r"(?<![\w${])%s\b" % var, text)
+            or re.search(r"\$\{%s[^}]*=" % var, text)
+        ):
+            deny(
+                "%s is set by the driver; a consumer does not assign, export or unset it. "
+                "Run the perf check as: ./scripts/perf-check.sh ..." % var
+            )
 
 
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
+
+
+# testbed.sh verbs that change what the server runs (update, start and restart run deploy.sh; stop kills it)
+TESTBED_STATE_VERBS = ("update", "start", "restart", "stop")
+# a message's inline text, the one place a gh/git word may name deploy.sh: git commit/tag -m,
+# gh issue/pr comment|create|edit --body/--title, gh api -f/-F body=|title=
+GIT_TEXT_FLAGS = ("-m", "--message")
+GH_TEXT_FLAGS = ("-b", "--body", "-t", "--title")
+GH_API_FIELD_FLAGS = ("-f", "-F", "--field", "--raw-field")
+
+
+def deploy_text_words(words):
+    """words without a message's inline text: the value of git commit/tag -m, of gh issue/pr
+    comment|create|edit --body/--title, and of gh api -f body=/title=. Every other word stays."""
+    if not words:
+        return words
+    name = os.path.basename(words[0])
+    if name == "git" and len(words) > 1 and words[1] in ("commit", "tag"):
+        flags, prefix = GIT_TEXT_FLAGS, ""
+    elif name == "gh" and len(words) > 2 and words[1] in ("issue", "pr") and words[2] in ("comment", "create", "edit"):
+        flags, prefix = GH_TEXT_FLAGS, ""
+    elif name == "gh" and len(words) > 1 and words[1] == "api":
+        flags, prefix = GH_API_FIELD_FLAGS, ("body=", "title=")
+    else:
+        return words
+    out, i = [], 0
+    while i < len(words):
+        w = words[i]
+        if w in flags and i + 1 < len(words) and (not prefix or words[i + 1].startswith(prefix)):
+            out.append(w)
+            i += 2
+            continue
+        if any(w.startswith(f + "=") for f in flags if f.startswith("--")) and (
+            not prefix or w.split("=", 1)[1].startswith(prefix)
+        ):
+            i += 1
+            continue
+        out.append(w)
+        i += 1
+    return out
+
+
+def names_deploy(words):
+    """True when a word runs dw's deploy.sh, or testbed.sh with a verb that changes the server,
+    as a word of its own or inside one (ssh host "cd x && ./scripts/deploy.sh", sh -c '...')."""
+    toks = []
+    for w in words:
+        parts = re.split(r"[\s;&|()'\"=!#]+", w)
+        toks.extend(parts if len(parts) > 1 else [w])
+    for j, t in enumerate(toks):
+        base = os.path.basename(t)
+        if base == "deploy.sh":
+            return True
+        if base == "testbed.sh":
+            nxt = [x for x in toks[j + 1 : j + 4] if x]
+            if len(nxt) > 1 and nxt[1] in TESTBED_STATE_VERBS:
+                return True
+    return False
+
+
+def deploy_rule(raw, words, server, text):
+    """No session deploys dw (R17): the driver deploys develop between GPU sessions, on every
+    server, so a session's own MCP connection never holds the old server open. That covers
+    deploy.sh and testbed.sh update|start|restart|stop, run directly, over ssh, by a shell, in a
+    leading NAME=value (GIT_SSH_COMMAND), a git alias or -c value, or a gh/git output piped to a
+    shell. Only a message's inline text (deploy_text_words) may name deploy.sh."""
+    pre = raw[: len(raw) - len(words)] if words and raw[-len(words) :] == words else raw
+    piped = any(
+        os.path.basename(command_words(g)[0] if command_words(g) else "")
+        in SCRIPT_RUNNERS + ("eval", "source", "xargs")
+        for g in segments(text)
+    )
+    hit = names_deploy(pre) or names_deploy(deploy_text_words(words)) or (piped and names_deploy(words))
+    if hit:
+        deny(
+            "no session deploys dw%s: the driver deploys develop between GPU sessions "
+            "(deploy.sh and testbed.sh update/start/restart/stop are its). "
+            "Merge to develop, push, and hand off naming the deploy path (server or plugin)."
+            % (" (the %s server too)" % server if server else "")
+        )
 
 
 ROLES = ("implementer", "lead", "consumer", "curator", "reviewer")
@@ -2623,6 +2814,7 @@ def main():
     target = server if role == "consumer" else ""
     if data.get("tool_name") in ("Edit", "Write"):
         if role == "consumer":
+            ui_check_write_rule(data.get("tool_input", {}).get("file_path", ""), cwd)
             suite_add_only_rule(data.get("tool_name"), data.get("tool_input", {}), cwd)
         if target:
             target_file_rule(
@@ -2689,8 +2881,9 @@ def main():
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     if role == "consumer":
         consumer_script_call_rule(segs, data.get("cwd") or "")
-    for words in segs:
-        words = command_words(words)
+        consumer_node_rule(data.get("tool_input", {}).get("command", ""), segs)
+    for raw in segs:
+        words = command_words(raw)
         if not words:
             continue
         if role == "consumer":
@@ -2700,6 +2893,7 @@ def main():
             implementer_api_rule(words)
         if role in ("implementer", "lead"):
             wrapper_rule(words)
+        deploy_rule(raw, words, server, stripped)
         if role == "implementer" and server:
             lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
             while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
@@ -2713,11 +2907,6 @@ def main():
                 deny(
                     "this loop runs against the %s server: ssh only to its host (%s), to read; no "
                     "scp or rsync; lem is off limits." % (server, own_host() or "unknown")
-                )
-            if any(os.path.basename(w) == "deploy.sh" or w.endswith("/deploy.sh") or "deploy.sh " in w for w in cmdw):
-                deny(
-                    "on the %s server the driver deploys develop after your session: your own "
-                    "MCP connection would hold the old server open. Merge, push and hand off." % server
                 )
         if (
             role == "consumer"

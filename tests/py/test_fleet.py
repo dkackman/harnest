@@ -277,6 +277,8 @@ class Policy(unittest.TestCase):
         self.assertEqual((2, True), (lem.lanes, lem.downloads))
         self.assertIn("MiniMaxAI/MiniMax-H3*", mini.deny_models)
         self.assertEqual((False, 8.0, False, True), (minid.heavy, minid.max_model_gb, minid.loop, minid.local))
+        # R17: one gpu slot per loop server in phase 1; a server that names none gets 1
+        self.assertEqual((1, 1, 1), (lem.loop_gpu_slots, mini.loop_gpu_slots, minid.loop_gpu_slots))
 
 
 class Plan(unittest.TestCase):

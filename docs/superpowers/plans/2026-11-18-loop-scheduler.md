@@ -306,11 +306,13 @@ backfill), which is a separate plan.
       def deploy(self, server, state, waiting: list[int], last: dict | None = None): ...
       def heads(self, server, deployed, develop): ...
       def queues(self, server, queues: dict[str, list[int]]): ...
-      def board(self, rows: list, readable: bool): ...          # appends a history point only when rows changed
-      def gpu_sample(self, server, slot_busy: bool, worker_busy: bool | None): ...  # integrates busy seconds since last sample
-      def status(self, s: str): ...                             # running|draining|stopping|paused-rate-limit
+      def board(self, rows: list, readable: bool): ...  # appends a history point only when rows changed
+      def gpu_sample(
+          self, server, slot_busy: bool, worker_busy: bool | None
+      ): ...  # integrates busy seconds since last sample
+      def status(self, s: str): ...  # running|draining|stopping|paused-rate-limit
       def closed(self, n: int): ...
-      def write(self): ...                                      # tmp + os.replace; also called by a heartbeat every LOOP_POLL_SECS
+      def write(self): ...  # tmp + os.replace; also called by a heartbeat every LOOP_POLL_SECS
   ```
 - The schema is spec "State file and dashboard". Add `"heartbeat": <epoch>` and `"board_readable": bool`.
 - `worker_busy` comes from `/api/health`'s workers. Find the field by reading `harness/deploy.health`'s current parse and dw's health payload (`gh api repos/dkackman/diffusers-workflow/contents/...` per the repo facts). Use `None` when it can't tell, and the dashboard then shows slot busy only.

@@ -80,5 +80,15 @@ def acquire(lock, name, say, held=None, poll=30, sleep=time.sleep):
         sleep(poll)
     with open(os.path.join(lock, "owner"), "w", encoding="utf-8") as f:
         f.write(f"{os.getpid()} {name}\n")
-    atexit.register(shutil.rmtree, lock, True)
+    atexit.register(release, lock)
     return True
+
+
+def release(lock):
+    """Removes <lock> if this process holds it: a lock released early (the
+    loop driver stopping one server) and since taken by another driver is
+    left alone, at exit too."""
+    if _owner(lock).split(" ", 1)[0] == str(os.getpid()):
+        shutil.rmtree(lock, ignore_errors=True)
+        return True
+    return False
