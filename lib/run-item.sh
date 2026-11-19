@@ -1,22 +1,31 @@
 #!/usr/bin/env bash
-# lib/run-item.sh <pass> [<issue> [<reason>]]
+# lib/run-item.sh <pass> <queue> <issue>   a per-issue pass
+# lib/run-item.sh tester-task|tester-closures
+# lib/run-item.sh park <issue> <reason>
+# lib/run-item.sh park-external|unpark|consolidation|housekeeping|labels
 # One pass of run-loop.sh for one issue, as a child of the Python scheduler
 # (harness/drivers/loop.py, R17). It sources run-loop.sh in item mode
 # (HARNEST_ITEM=1): no driver lock, no deploy, no suite commit, no cycle loop.
 # The scheduler holds the lock, owns every deploy, lands suite edits from the
 # session's tree (harness/suite_tree.py) and reads the board for the outcome.
 #
-# Passes (run-loop.sh's functions, narrowed to <issue> by ONLY_ISSUES):
-#   implementer      triage/fix (implementer_pass)
-#   triage           the same pass: triage runs when the issue is stranded
-#   lead             build or close-out (lead_pass)
-#   features         design or decompose (run-features.sh, via features_pass)
-#   tester           spec, verify, handoff or answer (tester_pass, TESTER_PART=issues)
+# The queue is part of a per-issue item: the pass runs only that queue's
+# branch (HARNEST_ITEM_QUEUE, item_queue_allows in providers.sh), for exactly
+# <issue> (ONLY_ISSUES, matched exactly in item mode: a feature parent's item
+# never runs its stages' sessions, which are items of their own).
+#
+# Per-issue passes and the queues each takes (lib/classify.jq's names):
+#   implementer      implementer:fix (a stranded issue's triage rides in it)
+#   triage           the same pass and queue
+#   lead             lead:build or lead:closeout
+#   features         lead:design or lead:decompose (run-features.sh)
+#   tester           tester:spec, tester:verify, tester:handoff or tester:answer
+#   reviewer-arch    reviewer:arch
+#   reviewer-docs    reviewer:docs
+#   curator          curator (one suite-change request on HARNESS_REPO)
+# Issue-less passes:
 #   tester-task      the standing task, now (TESTER_PART=task)
 #   tester-closures  the closures session (TESTER_PART=closures)
-#   reviewer-arch    architecture review (reviewer_pass arch)
-#   reviewer-docs    docs review (reviewer_pass docs)
-#   curator          one suite-change request on HARNESS_REPO (curator_pass)
 #   park             park_issue <issue> <reason>: with Don, for the driver
 #   park-external    park_external_issues
 #   unpark           unpark_pass
@@ -25,25 +34,32 @@
 #                    scheduler's once-a-poll housekeeping)
 #   labels           the claim and backend labels the loop makes at startup
 #
-# Environment, from the scheduler: DW_TARGET, ONLY_ISSUES (set from <issue>
-# here when given), HARNEST_LAST_SESSION (logs/.last-session.item.<slot>),
-# DEPLOYED_HEAD, HARNEST_DW_FROZEN (0|1, dw_frozen as of the last poll),
-# HARNEST_SESSION_TREE and HARNEST_SESSION_BASE (a tester or
-# curator item only), and every role knob run-loop.sh reads.
+# Environment, from the scheduler: DW_TARGET, HARNEST_LAST_SESSION
+# (logs/.last-session.item.<slot>), DEPLOYED_HEAD, HARNEST_DW_FROZEN (0|1,
+# dw_frozen as of the last poll), HARNEST_SESSION_TREE and
+# HARNEST_SESSION_BASE (a tester or curator item only), and every role knob
+# run-loop.sh reads. ONLY_ISSUES and HARNEST_ITEM_QUEUE are set here.
 # A tester or curator item leaves <last-session>.land (JSON: msg, kind, name,
 # email) for the scheduler's suite_tree.land.
 #
 # Exit: 0 when a session ran or nothing was ready, 1 on a driver error.
 
+usage="usage: run-item.sh <pass> <queue> <issue> | tester-task | tester-closures | park <issue> <reason> | park-external | unpark | consolidation | housekeeping | labels"
+item_queue=""
 case "${1:-}" in
-  implementer|triage|lead|features|tester|tester-task|tester-closures|reviewer-arch|reviewer-docs|curator) ;;
+  implementer|triage|lead|features|tester|reviewer-arch|reviewer-docs|curator)
+    [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "run-item.sh: $1 is a per-issue pass and needs <queue> <issue>; $usage" >&2; exit 1; }
+    case "$1:$2" in
+      implementer:implementer:fix|triage:implementer:fix|lead:lead:build|lead:lead:closeout) ;;
+      features:lead:design|features:lead:decompose|curator:curator) ;;
+      tester:tester:spec|tester:tester:verify|tester:tester:handoff|tester:tester:answer) ;;
+      reviewer-arch:reviewer:arch|reviewer-docs:reviewer:docs) ;;
+      *) echo "run-item.sh: queue '$2' is not the $1 pass's" >&2; exit 1 ;;
+    esac
+    item_queue="$2"; set -- "$1" "$3" ;;
   park) [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "usage: run-item.sh park <issue> <reason>" >&2; exit 1; } ;;
-  park-external|unpark|consolidation|housekeeping|labels) ;;
-  *) echo "usage: run-item.sh <implementer|triage|lead|features|tester|tester-task|tester-closures|reviewer-arch|reviewer-docs|curator|park|park-external|unpark|consolidation|housekeeping|labels> [<issue>]" >&2; exit 1 ;;
-esac
-case "$1" in
-  tester|curator|implementer|lead|reviewer-arch|reviewer-docs|park)
-    [ -n "${2:-}" ] || { echo "run-item.sh: $1 is a per-issue pass and needs an <issue>" >&2; exit 1; } ;;
+  tester-task|tester-closures|park-external|unpark|consolidation|housekeeping|labels) ;;
+  *) echo "$usage" >&2; exit 1 ;;
 esac
 [ -n "${HARNEST_LAST_SESSION:-}" ] \
   || { echo "run-item.sh: HARNEST_LAST_SESSION is not set; each item needs its own last-session file (logs/.last-session.item.<slot>)" >&2; exit 1; }
@@ -52,6 +68,7 @@ case "${2:-}" in ''|*[!0-9]*) [ -z "${2:-}" ] || { echo "run-item.sh: <issue> mu
 item_pass="$1" item_issue="${2:-}" item_reason="${3:-}"
 export HARNEST_ITEM=1
 [ "$item_pass" = park ] || [ -z "$item_issue" ] || export ONLY_ISSUES="$item_issue"
+if [ -n "$item_queue" ]; then export HARNEST_ITEM_QUEUE="$item_queue"; else unset HARNEST_ITEM_QUEUE; fi
 case "$item_pass" in
   tester) export TESTER_PART=issues ;;
   tester-task) export TESTER_PART=task ;;

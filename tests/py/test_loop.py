@@ -166,9 +166,11 @@ class HelpersTest(unittest.TestCase):
 
     def test_argv(self):
         r = loop.Runner()
-        self.assertEqual(r.argv(Item("lead:decompose", 4, "lem"))[2:], ["features", "4"])
+        self.assertEqual(r.argv(Item("lead:decompose", 4, "lem"))[2:], ["features", "lead:decompose", "4"])
         self.assertEqual(r.argv(Item("tester:closures", None, "lem"))[2:], ["tester-closures"])
-        self.assertEqual(r.argv(Item("reviewer:arch", 3, "lem"))[2:], ["reviewer-arch", "3"])
+        self.assertEqual(r.argv(Item("reviewer:arch", 3, "lem"))[2:], ["reviewer-arch", "reviewer:arch", "3"])
+        self.assertEqual(r.argv(Item("tester:spec", 40, "lem"))[2:], ["tester", "tester:spec", "40"])
+        self.assertEqual(r.argv(Item("curator", 8, "lem"))[2:], ["curator", "curator", "8"])
 
     def test_cost(self):
         with tempfile.NamedTemporaryFile("w", delete=False) as f:
@@ -370,6 +372,34 @@ class PluginTreeTest(unittest.TestCase):
         self.assertEqual(calls, [lp.srv["lem"].plugin_tree])
         self.assertEqual(lp.runner.started, [("tester:verify", lp.srv["lem"].plugin_tree)])
 
+    def test_a_parents_spec_and_its_stages_verify_are_separate_items(self):
+        # the spec item runs only the spec (run-item.sh's exact filter); the
+        # stage's verify is its own item, on the gpu slot, with its own argv
+        from harness import board
+
+        rows = board.parse("40\ttester:spec\t-\tneeds spec\t-\n41\ttester:verify\t40\thanded off\t-\n")
+        items = board.items({"lem": rows})
+        self.assertEqual([(i.queue, i.issue) for i in items], [("tester:spec", 40), ("tester:verify", 41)])
+        lp = mk()
+        lp.runner = FakeRunner()
+        lp._wait = lambda rec: None
+        argvs = []
+        real = loop.Runner()
+        with (
+            mock.patch.object(loop, "refresh_plugin_tree", return_value="abc"),
+            mock.patch.object(loop.suite_tree, "make", return_value=mock.MagicMock(path="/t", base="b")),
+        ):
+            lp.sched.offer(items)
+            for it, server in lp.sched.next_dispatches():
+                argvs.append(real.argv(it)[2:])
+                lp.launch(it, server)
+        self.assertEqual(sorted(argvs), [["tester", "tester:spec", "40"], ["tester", "tester:verify", "41"]])
+        self.assertEqual(
+            sorted(lp.runner.started),
+            [("tester:spec", lp.srv["lem"].plugin_tree + "-free"), ("tester:verify", lp.srv["lem"].plugin_tree)],
+        )
+        self.assertFalse(lp.sched.gpu_idle("lem"))  # the verify holds gpu:lem
+
     def test_a_failed_refresh_defers_the_verify(self):
         lp = mk()
         calls = self.launch(lp, Item("tester:verify", 5, "lem"), lambda t: None)
@@ -381,6 +411,72 @@ class PluginTreeTest(unittest.TestCase):
         self.assertIn("could not refresh", Path(lp.srv["lem"].log.path).read_text())
         calls = self.launch(lp, Item("tester:verify", 5, "lem"), lambda t: "def")
         self.assertEqual(lp.runner.started, [("tester:verify", lp.srv["lem"].plugin_tree)])
+
+
+def _g(d, *a):
+    import subprocess
+
+    return subprocess.run(["git", "-C", str(d), *a], capture_output=True, text=True, check=True).stdout.strip()
+
+
+class ReviewerTreeTest(unittest.TestCase):
+    """Each reviewer item reads a tree of its own at origin/develop."""
+
+    def setUp(self):
+        d = Path(tempfile.mkdtemp())
+        self.origin, self.src = d / "origin.git", d / "src"
+        _g(d, "init", "-q", "--bare", str(self.origin))
+        _g(d, "clone", "-q", str(self.origin), str(self.src))
+        _g(self.src, "config", "user.email", "t@t")
+        _g(self.src, "config", "user.name", "t")
+        _g(self.src, "checkout", "-q", "-b", "develop")
+        self.push("one")
+        self.lp = mk()
+        srv = self.lp.srv["lem"]
+        srv.source_dir = str(self.src)
+        srv.plugin_tree = str(d / "plugin")
+        self.lp.runner = FakeRunner()
+        self.lp._wait = lambda rec: None
+
+    def push(self, what):
+        (self.src / "f").write_text(what)
+        _g(self.src, "add", "f")
+        _g(self.src, "commit", "-q", "-m", what)
+        _g(self.src, "push", "-q", "origin", "develop")
+        return _g(self.src, "rev-parse", "HEAD")
+
+    def start(self, item):
+        self.lp.sched.offer([item])
+        for it, server in self.lp.sched.next_dispatches():
+            self.assertTrue(self.lp.launch(it, server))
+        return [r for r in self.lp.running.values() if r.item == item][0]
+
+    def test_overlapping_reviews_each_read_their_own_fresh_head(self):
+        a = self.start(Item("reviewer:arch", 4, "lem"))
+        head2 = self.push("two")
+        b = self.start(Item("reviewer:docs", 5, "lem"))
+        ta, tb = self.lp.runner.started[0][1], self.lp.runner.started[1][1]
+        self.assertNotEqual(ta, tb)
+        self.assertEqual((a.own_tree, b.own_tree), (ta, tb))
+        self.assertEqual(_g(tb, "rev-parse", "HEAD"), head2)
+        self.assertNotEqual(_g(ta, "rev-parse", "HEAD"), head2)  # a's tree is not reset under it
+        a.proc.returncode = 0
+        self.lp.ended(a)
+        self.assertFalse(os.path.exists(ta))  # removed when its item ends
+        self.assertEqual(_g(tb, "rev-parse", "HEAD"), head2)
+        b.proc.returncode = 0
+        self.lp.ended(b)
+        self.assertFalse(os.path.exists(tb))
+        self.assertNotIn(ta, _g(self.src, "worktree", "list"))
+
+    def test_a_failed_fetch_defers_the_review(self):
+        shutil_rm = __import__("shutil").rmtree
+        shutil_rm(self.origin)
+        item = Item("reviewer:arch", 4, "lem")
+        self.lp.sched.offer([item])
+        for it, server in self.lp.sched.next_dispatches():
+            self.assertFalse(self.lp.launch(it, server))
+        self.assertEqual(self.lp.runner.started, [])
 
 
 class NightlyTest(unittest.TestCase):
@@ -514,3 +610,4 @@ class MinorTest(unittest.TestCase):
                 lp.sched.finished(rec.item, "lem", True)
                 outs.append(rec.out)
         self.assertNotEqual(outs[0], outs[1])
+

@@ -89,6 +89,10 @@ DEPLOY_KINDS = ("tester:verify", "tester:answer")
 # reviewers' trees are refreshed only while no other item of the family on
 # the server runs (a refresh under a running session would change what it reads).
 TREE_SUFFIX = {"tester-gpu": "", "tester-free": "-free", "reviewer": "-review"}
+# A reviewer item gets a tree of its own instead (<PLUGIN_TREE>-review-<slot>,
+# beside the plugin tree), made at origin/develop before it starts and removed
+# when it ends: reviews overlap, and each must read the head it was started on.
+OWN_TREE = frozenset({"reviewer"})
 
 
 def tree_family(q):
@@ -230,17 +234,20 @@ class Running:
     paused: bool = False  # its rejection already paused the loop
     done: bool = False  # ended() ran: the reader may finish its output file
     reader: object = None
+    own_tree: object = None  # an item's own plugin tree (a reviewer's), removed when it ends
 
 
 class Runner:
-    """Starts one work item as `lib/run-item.sh <pass> [<issue>]`, in its own
-    process group, stdout and stderr on a pipe. The seam phase 1b replaces
-    pass by pass with Python sessions."""
+    """Starts one work item as `lib/run-item.sh <pass> <queue> <issue>` (an
+    issue-less one as `<pass>`), in its own process group, stdout and stderr
+    on a pipe. The queue is part of the item: the pass runs that queue's
+    branch alone, for exactly that issue. The seam phase 1b replaces pass by
+    pass with Python sessions."""
 
     def argv(self, item):
         args = ["bash", str(RUN_ITEM), PASS[item.queue]]
         if item.issue is not None:
-            args.append(str(item.issue))
+            args += [item.queue, str(item.issue)]
         return args
 
     def start(self, item, server, slot, env):
@@ -843,21 +850,31 @@ class Loop:
         last = f"logs/.last-session.item.{slot}"
         env = self.env_for(srv, last)
         fam = TREE_FAMILY.get(item.queue)
+        own_tree = None
         if fam:
             tree_dir = srv.plugin_tree + TREE_SUFFIX[fam]
+            if fam in OWN_TREE:
+                # its own tree, made for it and removed after it: two reviews
+                # that overlap never share one (nor see it reset mid-session)
+                tree_dir = own_tree = f"{tree_dir}-{slot}"
             env["PLUGIN_TREE"] = tree_dir
             others = [r for r in self.running.values() if r.server == server and TREE_FAMILY.get(r.item.queue) == fam]
-            if fam == "tester-gpu" or not others:
+            must = fam == "tester-gpu" or own_tree is not None
+            if must or not others:
                 at = refresh_plugin_tree(srv.source_dir, tree_dir, self.branch(), timeout=self.git_timeout)
                 if at:
-                    srv.log.say(f"[loop] {fam} tree: origin/{self.branch()} @ {at}")
-                elif fam == "tester-gpu" or not os.path.isdir(os.path.join(tree_dir, ".git")):
+                    srv.log.say(
+                        f"[loop] {fam} tree: origin/{self.branch()} @ {at}" + (f" ({tree_dir})" if own_tree else "")
+                    )
+                elif must or not os.path.isdir(os.path.join(tree_dir, ".git")):
                     # a gpu tester verifies against develop's plugin: never a stale one
                     srv.log.say(
                         f"[loop] WARNING: could not refresh the {fam} tree {tree_dir}; "
                         f"{label_of(item)} waits for the next wake"
                     )
                     self.sched.finished(item, server, False)
+                    if own_tree:
+                        self.drop_own_tree(srv, own_tree)
                     return False
                 else:
                     srv.log.say(
@@ -884,10 +901,13 @@ class Loop:
             srv.log.say(f"[loop] WARNING: could not start {label_of(item)}: {e}")
             if tree is not None:
                 suite_tree.remove(REPO, tree.path)
+            if own_tree:
+                self.drop_own_tree(srv, own_tree)
             self.sched.finished(item, server, False)
             self.last_finish[item.key] = time.monotonic()
             return False
         rec = Running(item, server, slot, proc, time.time(), REPO / last, out, tree, label_of(item))
+        rec.own_tree = own_tree
         self.running[slot] = rec
         self.sessions += 1
         if self.once:
@@ -947,6 +967,8 @@ class Loop:
             self.rate_limited(outcome.rejected_until(rec.out) or outcome.rejected_until(rec.last))
         if rec.tree is not None:
             self.land(rec, srv)
+        if rec.own_tree:
+            self.drop_own_tree(srv, rec.own_tree)
         self.sched.finished(rec.item, rec.server, rc == 0)
         self.last_finish[rec.item.key] = time.monotonic()
         if rec.item.queue in CLOSURE_KINDS:
@@ -961,6 +983,14 @@ class Loop:
         rec.done = True
         if rec.reader is None or not rec.reader.is_alive():
             self._keep_out(rec)
+
+    def drop_own_tree(self, srv, tree):
+        """Removes an item's own plugin tree (a worktree of the server's
+        source checkout). A failure is logged and harmless: the next item on
+        that slot resets the same path to origin/<branch> before it starts."""
+        p = git("-C", srv.source_dir, "worktree", "remove", "--force", tree, timeout=self.git_timeout)
+        if p.returncode != 0 and os.path.exists(tree):
+            srv.log.say(f"[loop] WARNING: could not remove the item tree {tree}: {p.stderr.strip()[:200]}")
 
     def suite_paths(self, srv):
         if srv.server.primary:

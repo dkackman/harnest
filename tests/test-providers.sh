@@ -78,6 +78,8 @@ has "consumer flags: the release key is denied" '"Read(~/.config/harnest/**)" "W
 rows=$'5\tq\t-\tr\n7\tq\t12\tr\n9\tq\t-\tr'
 eq "no filter keeps all" "5 7 9" "$(printf '%s\n' "$rows" | only_issues_filter | cut -f1 | xargs)"
 eq "filter by number or parent" "5 7" "$(printf '%s\n' "$rows" | ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
+eq "item mode: the filter is exact (no parent widening)" "5" "$(printf '%s\n' "$rows" | HARNEST_ITEM=1 HARNEST_ITEM_QUEUE=q ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
+eq "a queue without item mode still widens" "5 7" "$(printf '%s\n' "$rows" | HARNEST_ITEM_QUEUE=q ONLY_ISSUES="5, 12" only_issues_filter | cut -f1 | xargs)"
 
 # --- no-progress ledger
 stub_gh 'echo "{\"state\":\"OPEN\",\"labels\":[{\"name\":\"stage\"},{\"name\":\"owner:lead\"}],\"comments\":[]}"'

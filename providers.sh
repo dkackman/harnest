@@ -1753,20 +1753,37 @@ ratchet_deps_current() {
 # only_issues_filter
 # stdin: lines whose first field is an issue number and whose optional
 # third field is its parent. Keeps the lines ONLY_ISSUES names (the issue
-# or its parent), or all of them when it is unset.
+# or its parent), or all of them when it is unset. For a scheduler item
+# (HARNEST_ITEM=1 with HARNEST_ITEM_QUEUE, set by lib/run-item.sh) the match
+# is exact: an item for a feature parent never takes its stages along.
 only_issues_filter() {
   if [ -z "${ONLY_ISSUES:-}" ]; then cat; return 0; fi
-  awk -F'\t' -v only="$ONLY_ISSUES" 'BEGIN { n = split(only, a, /[ ,]+/); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
-    ($1 in want) || ($3 in want)'
+  local exact=0
+  [ "${HARNEST_ITEM:-}" = 1 ] && [ -n "${HARNEST_ITEM_QUEUE:-}" ] && exact=1
+  awk -F'\t' -v only="$ONLY_ISSUES" -v exact="$exact" 'BEGIN { n = split(only, a, /[ ,]+/); for (i = 1; i <= n; i++) if (a[i] != "") want[a[i]] = 1 }
+    ($1 in want) || (exact == 0 && ($3 in want))'
+}
+
+# item_queue_allows <queue>
+# Outside a scheduler item, every queue. In one (HARNEST_ITEM_QUEUE, set by
+# lib/run-item.sh), only the item's queue, so a pass runs that branch alone;
+# an implementer:fix item also takes the issue's stranded row, which its
+# triage unstrands (harness/board.py hands a stranded issue out as a fix).
+item_queue_allows() {
+  [ "${HARNEST_ITEM:-}" = 1 ] && [ -n "${HARNEST_ITEM_QUEUE:-}" ] || return 0
+  [ "$1" = "$HARNEST_ITEM_QUEUE" ] && return 0
+  [ "$HARNEST_ITEM_QUEUE" = implementer:fix ] && [ "$1" = stranded ]
 }
 
 # queue_issues <queue>
 # The issues waiting in one queue of lib/classify.jq, ascending, one per
 # line: number, parent (or -), reason, tab-separated, after ONLY_ISSUES.
+# In a scheduler item, empty for any queue but the item's (item_queue_allows).
 # Prints nothing, and logs, when the snapshot fails, so a gh blip skips a
 # queue for one pass rather than stopping the driver.
 queue_issues() {
   local rows
+  item_queue_allows "$1" || return 0
   if ! rows="$(classify_issues)"; then
     echo "[loop] could not read the issue board for queue $1; skipping it this pass" | tee -a "$LOOP_LOG" >&2
     return 0

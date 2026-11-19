@@ -203,7 +203,9 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   suite trees, pauses on a rate limit and writes `logs/loop/state.json` (the heartbeat stops
   touching it when the main loop hasn't woken for 3 intervals, so a hang shows as stalled).
   GPU testers load `PLUGIN_TREE`, refreshed before each one (a failed refresh waits a wake);
-  spec/handoff testers load `<PLUGIN_TREE>-free`, reviewers `<PLUGIN_TREE>-review`. Every git
+  spec/handoff testers load `<PLUGIN_TREE>-free`; each reviewer item gets a tree of its own,
+  `<PLUGIN_TREE>-review-<slot>`, made at origin/develop before it starts (a failed refresh
+  waits a wake) and removed when it ends, so overlapping reviews never share one. Every git
   call it makes is bounded (120 s); a SIGTERM during a deploy waits for the deploy, lock held.
 - The loop driver's modules (R17, all in `harness/`, stdlib only; the driver is `drivers/loop.py`):
   `scheduler.py` (pure: resources `gpu:S`, `free`, `suite`, `leadtree:S`, `src:S`, priority, the
@@ -218,8 +220,11 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   `lock.py` (the per-server driver lock, shared protocol with `providers.sh`), `gitops.py` (git with
   a timeout, in its own process group). The guard reads the session tree and base from
   `HARNEST_SESSION_TREE` / `HARNEST_SESSION_BASE` (driver-set; add-only is checked against that sha).
-- `lib/run-item.sh <pass> [<issue>]` (R17) — one pass of `run-loop.sh` for one issue, as a
-  child of the Python scheduler: it sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
+- `lib/run-item.sh <pass> <queue> <issue>` (R17; issue-less passes take `<pass>` alone, `park`
+  `<issue> <reason>`) — one pass of `run-loop.sh` for one issue, as a child of the Python
+  scheduler. The queue is part of the item: the pass runs only that queue's branch, for exactly
+  that issue (`HARNEST_ITEM_QUEUE`; no parent-to-stage widening, so a feature parent's spec item
+  never runs a stage's verify outside the deploy drain). It sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
   the lock, the startup deploy, `check_target_on_develop`, the plugin-tree refresh, every
   suite commit and `main`. A tester or curator item runs in `HARNEST_SESSION_TREE` (its own
   suite worktree, `harness/suite_tree.py`) and leaves `<last-session>.land` for the

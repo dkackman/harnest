@@ -1066,7 +1066,7 @@ handoffs='[{"number": 2, "state": "OPEN", "labels": [{"name": "owner:tester"}, {
            {"number": 3, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]}]'
 : > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"; rm -f "$T/h/logs/.last-session.item.s1" "$T/h/logs/.last-session.loop"
 board "$handoffs"
-item tester 2; rc=$?
+item tester tester:verify 2; rc=$?
 eq  "item: exits 0 after a session" 0 "$rc"
 eq  "item: verify runs one session for #2 only" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "item: and its prompt names #2" "VERIFY session for issue #2 only" "$(cat "$FAKE_CLAUDE_LOG.argv")"
@@ -1075,7 +1075,7 @@ ok  "item: last-session file is the one given" grep -q '^usage: ' "$T/h/logs/.la
 fails "item: and not the loop's" test -e "$T/h/logs/.last-session.loop"
 # nothing ready for the issue: exit 0, no session
 : > "$FAKE_CLAUDE_LOG"
-item tester 9; rc=$?
+item tester tester:verify 9; rc=$?
 eq  "item: nothing ready is exit 0" 0 "$rc"
 eq  "item: and no session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 item no-such-pass 2; rc=$?
@@ -1084,13 +1084,13 @@ eq  "item: an unknown pass is a driver error" 1 "$rc"
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"
 sleep 300 & holder=$!
 mkdir "$T/h/logs/.driver.lock"; echo "$holder run-loop" > "$T/h/logs/.driver.lock/owner"
-item tester 3; rc=$?
+item tester tester:verify 3; rc=$?
 eq  "item: takes no lock (runs beside a held one)" "0 1" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 eq  "item: the held lock is untouched" "$holder run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
 kill -KILL "$holder" 2>/dev/null; wait "$holder" 2>/dev/null; rm -rf "$T/h/logs/.driver.lock"
 # the tester's suite edits are not committed in item mode (the Python driver lands them)
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"; before_head="$(git -C "$T/h" rev-parse HEAD)"
-item tester 2 -- FAKE_CLAUDE_DO='printf "\n### S-F999 — item\ncleanup: none.\n" >> regression-suite-smoke.md'
+item tester tester:verify 2 -- FAKE_CLAUDE_DO='printf "\n### S-F999 — item\ncleanup: none.\n" >> regression-suite-smoke.md'
 eq  "item: no suite commit" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
 has "item: the edit is left for the driver to land" "S-F999" "$(git -C "$T/h" diff HEAD -- regression-suite-smoke.md)"
 git -C "$T/h" checkout -q -- regression-suite-smoke.md
@@ -1099,30 +1099,30 @@ ok  "item: a land note for the driver (message, kind, co-author)" jq -e '.msg | 
 git -C "$T/h" worktree add -q --detach "$T/stree" HEAD
 streal="$(cd "$T/stree" && pwd -P)"; sbase="$(git -C "$T/h" rev-parse HEAD)"
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"
-item tester 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
+item tester tester:verify 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
   FAKE_CLAUDE_DO='pwd -P > "$T/item.cwd"; echo "${HARNEST_SESSION_TREE:-unset} ${HARNEST_SESSION_BASE:-unset}" > "$T/item.env"' T="$T"
 eq  "item: a suite tree is the tester's cwd" "$streal" "$(cat "$T/item.cwd")"
 eq  "item: and the guard is told the tree and its base" "$streal $sbase" "$(cat "$T/item.env")"
 # item mode: the scheduler hands DW_URL to run-item.sh (loop.py env_for); the tester session keeps it
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"
-item tester 2 -- DW_URL=http://lem:8765/mcp FAKE_CLAUDE_DO='echo "${DW_URL:-unset}" > "$T/item.url"; echo "${HARNEST_MCP_CONFIG:-unset}" > "$T/item.mcp"' T="$T"
+item tester tester:verify 2 -- DW_URL=http://lem:8765/mcp FAKE_CLAUDE_DO='echo "${DW_URL:-unset}" > "$T/item.url"; echo "${HARNEST_MCP_CONFIG:-unset}" > "$T/item.mcp"' T="$T"
 eq  "item: the tester session carries DW_URL" "http://lem:8765/mcp" "$(cat "$T/item.url" 2>/dev/null)"
 has "item: and its mcp config file" "/logs/.mcp." "$(cat "$T/item.mcp" 2>/dev/null)"
 # a code session never gets them, even when the environment holds them
 board '[{"number": 20, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
-item implementer 20 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
+item implementer implementer:fix 20 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
   FAKE_CLAUDE_DO='pwd -P > "$T/item.cwd"; echo "${HARNEST_SESSION_TREE:-unset} ${HARNEST_SESSION_BASE:-unset}" > "$T/item.env"' T="$T"
 eq  "item: the implementer is not told the suite tree" "unset unset" "$(cat "$T/item.env")"
 eq  "item: and works in the source checkout" "$(cd "$T/src" && pwd -P)" "$(cat "$T/item.cwd")"
 # a tree without a usable base is refused, before any session
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"
-item tester 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE=main; rc=$?
+item tester tester:verify 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE=main; rc=$?
 eq  "item: a suite tree with no 40-hex base is a driver error" "1 0" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 git -C "$T/h" worktree remove --force "$T/stree"
 # the curator: the tree is its cwd too, and its land note carries the approved kind
 printf '%s\n' '{"o/r": [], "h/r": [{"number": 8, "state": "OPEN", "labels": [{"name": "suite"}, {"name": "status:needs-approval"}]}]}' > "$T/board.json"
 before_head="$(git -C "$T/h" rev-parse HEAD)"
-item curator 8 -- SHARED_PASSES=1 FAKE_CLAUDE_DO='case "$*" in *"suite-change request #8"*) printf "\nx\n" >> regression-suite-smoke.md; gh issue close 8 --repo h/r --reason completed ;; esac'
+item curator curator 8 -- SHARED_PASSES=1 FAKE_CLAUDE_DO='case "$*" in *"suite-change request #8"*) printf "\nx\n" >> regression-suite-smoke.md; gh issue close 8 --repo h/r --reason completed ;; esac'
 eq  "item: the curator's edit is not committed either" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
 eq  "item: its land note is the approved route" "curator: applied h/r#8 curator:review" "$(jq -r '.msg + " " + .kind' "$T/h/logs/.last-session.item.s1.land")"
 git -C "$T/h" checkout -q -- regression-suite-smoke.md
@@ -1138,7 +1138,7 @@ rm -f "$T/h/logs/closures-seen"; : > "$FAKE_CLAUDE_LOG"
 item tester-closures
 eq  "item: tester-closures is one CLOSURES session" "0 1" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'CLOSURES session' "$FAKE_CLAUDE_LOG")"
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"
-item tester 2 -- TESTER_TASK_EVERY=1
+item tester tester:verify 2 -- TESTER_TASK_EVERY=1
 eq  "item: a per-issue tester item never runs the task" "0 1" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
 # the implementer never deploys: mini-ai with nothing answering and behind develop
 # would get a startup deploy and a develop check from the loop, none from an item
@@ -1146,7 +1146,7 @@ eq  "item: a per-issue tester item never runs the task" "0 1" "$(grep -c 'TASK s
 cp "$T/bin/ssh" "$T/ssh.saved"; cp "$T/ssh.logging" "$T/bin/ssh"
 printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"; chmod +x "$T/bin/curl"
 board '[{"number": 30, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'
-item implementer 30 -- DW_TARGET=mini-ai PLUGIN_TREE="$T/plugin-mini" LEAD_TREE="$T/lead-mini"; rc=$?
+item implementer implementer:fix 30 -- DW_TARGET=mini-ai PLUGIN_TREE="$T/plugin-mini" LEAD_TREE="$T/lead-mini"; rc=$?
 eq  "item: implementer on mini-ai ran its fix" "0 1" "$rc $(grep -c 'fix session' "$FAKE_CLAUDE_LOG")"
 eq  "item: implementer never deploys" "" "$(grep 'deploy.sh' "$T/ssh-calls" || true)"
 eq  "item: and no deploy reached the test bed" "" "$(cat "$T/deploys")"
@@ -1170,10 +1170,10 @@ eq  "item: consolidation runs" 0 "$rc"
 # two tester items at once on different slots: each has its own session log,
 # and each land note names the model its own session ran on
 board "$handoffs"; rm -f "$T/h/logs/"tester*.jsonl "$T/h/logs/.last-session.item.s"[12]*
-ITEM_OUT="$T/item-s1.out" item tester 2 -- HARNEST_LAST_SESSION=logs/.last-session.item.s1 FAKE_CLAUDE_MODEL=claude-alpha \
+ITEM_OUT="$T/item-s1.out" item tester tester:verify 2 -- HARNEST_LAST_SESSION=logs/.last-session.item.s1 FAKE_CLAUDE_MODEL=claude-alpha \
   FAKE_CLAUDE_SAY='for i in $(seq 1 300); do grep -qs claude-beta "$T/h/logs/"tester*.jsonl && break; sleep 0.1; done; sleep 0.3; echo a' T="$T" &
 s1pid=$!
-item tester 3 -- HARNEST_LAST_SESSION=logs/.last-session.item.s2 FAKE_CLAUDE_MODEL=claude-beta
+item tester tester:verify 3 -- HARNEST_LAST_SESSION=logs/.last-session.item.s2 FAKE_CLAUDE_MODEL=claude-beta
 wait "$s1pid"
 ok  "item: slot s1 has its own session jsonl" grep -q claude-alpha "$T/h/logs/tester.item.s1.jsonl"
 ok  "item: slot s2 has its own session jsonl" grep -q claude-beta "$T/h/logs/tester.item.s2.jsonl"
@@ -1182,13 +1182,13 @@ fails "item: no shared tester.jsonl" test -e "$T/h/logs/tester.jsonl"
 has "item: s1's land note names its own model" "claude-alpha" "$(jq -r .name "$T/h/logs/.last-session.item.s1.land" 2>/dev/null)"
 has "item: s2's land note names its own model" "claude-beta" "$(jq -r .name "$T/h/logs/.last-session.item.s2.land" 2>/dev/null)"
 # an item that runs no session leaves its last-session file empty, not the last item's
-board "$handoffs"; item tester 2
+board "$handoffs"; item tester tester:verify 2
 ok  "item: (a session item fills the slot's file)" test -s "$T/h/logs/.last-session.item.s1"
-item tester 9
+item tester tester:verify 9
 eq  "item: a nothing-ready item on the same slot leaves it empty" 0 "$(wc -c < "$T/h/logs/.last-session.item.s1" | tr -d ' ')"
 # item mode needs its own last-session file, and a per-issue pass needs its issue
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"
-item tester 2 -- HARNEST_LAST_SESSION=; rc=$?
+item tester tester:verify 2 -- HARNEST_LAST_SESSION=; rc=$?
 eq  "item: no HARNEST_LAST_SESSION is refused" "1 0" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 has "item: and says so" "HARNEST_LAST_SESSION" "$(cat "$T/item.out")"
 for p in tester curator implementer lead reviewer-arch reviewer-docs park; do
@@ -1199,11 +1199,35 @@ eq  "item: and none ran a session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
 # a features item: its session goes to the item's last-session file and logs
 board '[{"number": 22, "state": "OPEN", "labels": [{"name": "idea"}, {"name": "owner:lead"}]}]'
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/lead.item.s3.jsonl" "$T/h/logs/.last-session.item.s3"
-item features 22 -- HARNEST_LAST_SESSION=logs/.last-session.item.s3 SHARED_PASSES=1
+item features lead:design 22 -- HARNEST_LAST_SESSION=logs/.last-session.item.s3 SHARED_PASSES=1
 eq  "item: features designs #22" 1 "$(grep -c 'DESIGN session for issue #22' "$FAKE_CLAUDE_LOG")"
 ok  "item: features writes the item's last-session file" grep -q '^usage: ' "$T/h/logs/.last-session.item.s3"
 ok  "item: and the item's own lead jsonl" test -s "$T/h/logs/lead.item.s3.jsonl"
 ok  "item: and the item's own prompt file" test -e "$T/h/logs/.prompt.lead.design.item.s3.md"
+# the queue is part of the item: only that queue's branch runs, for exactly
+# that issue - a feature parent's item never reaches its stages' sessions
+specplan='"comments": [{"author": {"login": "dkackman"}, "body": "<!-- harnest:plan v1 -->\nplan"}, {"author": {"login": "dkackman"}, "body": "<!-- harnest:decomposed v1 -->"}]'
+specboard="[{\"number\": 40, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"owner:tester\"}, {\"name\": \"status:plan-approved\"}, {\"name\": \"status:needs-spec\"}], $specplan, \"subIssuesSummary\": {\"total\": 1, \"completed\": 0}},
+        {\"number\": 41, \"state\": \"OPEN\", \"labels\": [{\"name\": \"feature\"}, {\"name\": \"stage\"}, {\"name\": \"owner:tester\"}, {\"name\": \"status:fixed-pending-verify\"}], \"parent\": {\"number\": 40}}]"
+board "$specboard"
+eq  "item: (the parent is in tester:spec, its stage in tester:verify)" "40 tester:spec 41 tester:verify" \
+  "$(cd "$T/h" && FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" bash lib/board.sh lem | cut -f1,2 | xargs)"
+: > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"
+item tester tester:spec 40 -- SHARED_PASSES=1; rc=$?
+eq  "item: a spec item runs only the spec session" "0 1 0" "$rc $(grep -c 'SPEC session for feature #40' "$FAKE_CLAUDE_LOG.argv") $(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG.argv")"
+: > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"; board "$specboard"
+item tester tester:verify 40 -- SHARED_PASSES=1
+eq  "item: a verify item for the parent does not verify its stage" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+: > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"; board "$specboard"
+item tester tester:verify 41 -- SHARED_PASSES=1
+eq  "item: the stage's own verify item verifies it" "1 0" "$(grep -c 'VERIFY session for issue #41' "$FAKE_CLAUDE_LOG.argv") $(grep -c 'SPEC session' "$FAKE_CLAUDE_LOG.argv")"
+: > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"; board "$handoffs"
+item tester tester:spec 2; rc=$?
+eq  "item: a hand-off under a spec item runs nothing" "0 0" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+item tester lead:build 2; rc=$?
+eq  "item: a queue that is not the pass's is refused" 1 "$rc"
+item tester 2; rc=$?
+eq  "item: a per-issue pass without its queue is refused" 1 "$rc"
 # outside item mode TESTER_PART and HARNEST_LAST_SESSION from the env are ignored
 : > "$FAKE_CLAUDE_LOG"; board "$handoffs"; rm -f "$T/h/logs/.last-session.loop" "$T/h/logs/.last-session.stray"
 TESTER_PART=task HARNEST_LAST_SESSION=logs/.last-session.stray loop 1

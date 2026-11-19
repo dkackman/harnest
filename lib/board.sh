@@ -47,6 +47,7 @@ if [ "$query" = rows ]; then
   TICKET_REPO="${TICKET_REPO:-dkackman/diffusers-workflow}"
   TICKET_OWNER="${TICKET_OWNER:-dkackman}"
   ONLY_ISSUES=""   # the driver narrows by ONLY_ISSUES itself
+  unset HARNEST_ITEM_QUEUE
   mkdir -p "$LOGS"
   # shellcheck source=../providers.sh
   . "$REPO/providers.sh"
@@ -68,7 +69,7 @@ fi
 # The rules that live in run-loop.sh: source it in item mode, with a
 # last-session file of its own (item mode wants one; no session runs).
 export HARNEST_ITEM=1 HARNEST_LAST_SESSION="logs/.last-session.board.$target"
-unset HARNEST_SESSION_TREE HARNEST_SESSION_BASE
+unset HARNEST_SESSION_TREE HARNEST_SESSION_BASE HARNEST_ITEM_QUEUE
 set --
 # shellcheck source=../run-loop.sh
 . "$here/run-loop.sh"

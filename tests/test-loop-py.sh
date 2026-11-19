@@ -452,8 +452,11 @@ s_curator() {
   eq  "curator: exits cleanly" 0 $?
   eq  "curator: one curator session (and the docs review)" "docs other" "$(awk '$1 == "start" { print $3 }' "$FAKE_CLAUDE_LOG" | sort | tr '\n' ' ' | sed 's/ $//')"
   has "curator: ran in its own tree" "/.harnest-worktrees/h/item-" "$(awk '$1 == "start" && $3 == "other" { print $4 }' "$FAKE_CLAUDE_LOG")"
-  eq  "reviewer: reads its own merged tree, not the tester's plugin tree" "$T/plugin-review" "$(awk '$1 == "start" && $3 == "docs" { print $4 }' "$FAKE_CLAUDE_LOG")"
-  eq  "  at develop" "$(git -C "$T/src" rev-parse --short origin/develop)" "$(git -C "$T/plugin-review" rev-parse --short HEAD)"
+  rtree="$(awk '$1 == "start" && $3 == "docs" { print $4 }' "$FAKE_CLAUDE_LOG")"
+  case "$rtree" in "$T/plugin-review-s"[0-9]*) rtree_ok=1 ;; *) rtree_ok="$rtree" ;; esac
+  eq  "reviewer: reads a merged tree of its own, not the tester's plugin tree" 1 "$rtree_ok"
+  has "  at develop" "reviewer tree: origin/develop @ $(git -C "$T/src" rev-parse --short origin/develop) ($rtree)" "$(cat "$T/h/logs/loop.log")"
+  fails "  removed when the review ended" test -e "$rtree"
   eq  "curator: its change landed on main" "curator: applied h/r#5" "$(git -C "$T/h" log -1 --format=%s main)"
   has "curator: the removal is logged as approved" "[audit] curator removed lines from regression-suite-smoke.md" "$(cat "$T/h/logs/loop.log")"
   eq  "curator: no warning" "" "$(grep '\[audit\] WARNING' "$T/h/logs/loop.log")"
