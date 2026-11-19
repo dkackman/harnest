@@ -1,4 +1,5 @@
 """scripts/gpu-busy.py: the pre-R17 baseline (slot busy %, cadence, cost per close)."""
+
 import datetime
 import importlib.util
 import pathlib
@@ -20,14 +21,18 @@ def usage(label, dur, cost):
 class GpuBusy(unittest.TestCase):
     def test_rollover_assigns_days(self):
         sessions = gb.parse_sessions(FIXTURE.read_text().splitlines(), ANCHOR)
-        self.assertEqual([s["date"] for s in sessions],
-                         [datetime.date(2026, 11, 17), datetime.date(2026, 11, 18)])
+        self.assertEqual([s["date"] for s in sessions], [datetime.date(2026, 11, 17), datetime.date(2026, 11, 18)])
         self.assertEqual([s["role"] for s in sessions], ["tester", "regression"])
 
     def test_slot_busy_counts_tester_and_regression_only(self):
-        lines = ["=== 01:00:00 cycle 1: tester:#1 (a/b) ===", usage("tester:#1", 600, "1.0"),
-                 "=== 02:00:00 regression run (opus) ===", usage("regression:smoke", 300, "1.0"),
-                 "=== 03:00:00 lead:#2 (a/b) ===", usage("lead:#2", 900, "1.0")]
+        lines = [
+            "=== 01:00:00 cycle 1: tester:#1 (a/b) ===",
+            usage("tester:#1", 600, "1.0"),
+            "=== 02:00:00 regression run (opus) ===",
+            usage("regression:smoke", 300, "1.0"),
+            "=== 03:00:00 lead:#2 (a/b) ===",
+            usage("lead:#2", 900, "1.0"),
+        ]
         sessions = gb.parse_sessions(lines, ANCHOR)
         day = gb.per_day(sessions, {}, day_secs=3600)[ANCHOR]
         self.assertEqual(day["gpu_slot_busy_pct"], 25.0)
