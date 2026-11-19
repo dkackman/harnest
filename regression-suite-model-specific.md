@@ -10909,4 +10909,548 @@ the feature.
 cleanup: none.
 metrics: none.
 
+### M-F428 — the #1438 arms rebuild `MiniMaxH3Scheduler` through `configuration` + `from_config_args`, differ only in the flag (and the form where needed), and leave `audio_scheduler` shift-only
+pending: #1459
+source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 video (`templates/minimax/video-with-audio`, lightx2v 4-step turbo LoRA; chained-segments)
+and MiniMax-H3-Image t2i, on lem (cuda), workspace `bench`. **Free**: issue reads, job reads, validate.
+The record is `bench/records/h3-stochastic-sampling.md` in the dw repo; read it **as quoted on #1459 or #1438**, never
+from the checkout. Its job/arm table names each arm's job id; else find the jobs by note in `list_jobs(workspace="bench")`.
+Steps: `get_job_workflow(workspace="bench")` and `get_job(workspace="bench")` on every arm job in the table;
+`validate_workflow(workspace="bench")` on each saved bench workflow the record names (`bench/probe-1438-video-with-audio`,
+`bench/probe-1438-chained-segments`, `bench/probe-1438-h3-image` or the names the record gives) with each arm's arguments.
+expected:
+- Every arm the record lists has a job in `bench` whose `note` names that arm (V0, V1, V1b, and V0b / C0 / C1 / I0 /
+  I0-16 / I1 / I2 / I2b where they ran). No arm in the table lacks a job; no `1438` bench job lacks a row.
+- Every arm's video (or image) `scheduler` block has `configuration.scheduler_type` `"MiniMaxH3Scheduler"` and a
+  `from_config_args` equal to what the record states for that arm. **The control arms (V0, C0, I0, I0-16) are rebuilt
+  too**, with `stochastic_sampling` `false` (or absent from a fixed per-arm copy, if the record says substitution did not
+  reach `from_config_args` and fixed copies were used; the record must say which). A bare top-level
+  `"stochastic_sampling"` key in `scheduler` (the issue's ignored form) on any arm is a finding.
+- Video arms keep `shift` as the template has it (`variable:video_shift` or its resolved value). The H3-Image arms have
+  no `shift`.
+- `audio_scheduler` on every video arm (and every chain segment) is shift-only: no `configuration`, no `from_config_args`,
+  identical to the template's.
+- Pairwise diffs, by `get_job_workflow`: V0↔V1 and V1↔V1b differ only in `from_config_args` (V1↔V1b not at all, bar the
+  note); V0b, if present, differs from V0 only in `euler_update_form` `"blend"`; I1↔I2 only in `stochastic_sampling`;
+  I2↔I2b not at all. Seed 42 on every video arm, prompt/size/frames/LoRA as the template's defaults (960x544, 124
+  frames). Seed 1317 and 2048x2048 on I0/I1/I2/I2b (or the 16 MP preset for I1–I2b if the record says that is where the
+  speckle showed). C0/C1: three segments, `seed` 42 pinned, otherwise identical bar the flag.
+- Every bench workflow validates clean with no refusal finding.
+It is a **finding** if any arm runs the template's plain scheduler, any other argument differs between a pair, any
+`audio_scheduler` is changed, or a note does not name its arm.
+cleanup: none (the jobs are the bench record).
+metrics: none.
+
+### M-F429 — the #1438 flag is proven to reach the scheduler: the blend-only refusal, the load log line, lem's diffusers build, and each checkpoint's `euler_update_form`
+pending: #1459
+source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 video and MiniMax-H3-Image on lem (cuda), workspace `bench`. **Free**: reads only.
+Steps: `get_job(workspace="bench")` and `get_job_events(workspace="bench")` on the fail-fast job the record names and on
+one flagged arm (V1); `get_job_workflow` on the fail-fast job; `get_diffusers_state()`; the record as quoted on #1459/#1438.
+expected:
+- A fail-fast job exists whose scheduler `from_config_args` has `stochastic_sampling` `true` and `euler_update_form`
+  `"velocity"`. Its status is `failed`, and its error (in `get_job` or `get_job_events`) names the requirement that
+  stochastic sampling needs the `"blend"` form. A fail-fast job that `completed`, or failed for another reason (OOM, a
+  missing file), is a finding: it does not prove the key reached `__init__`.
+- V1's events (or job log) show `Loading scheduler: MiniMaxH3Scheduler` (or the record's quoted equivalent line).
+- The record quotes a `get_diffusers_state` taken before the first arm, and says the build's `MiniMaxH3Scheduler` has
+  the flag. Every arm ran on that one build (today's state is context only).
+- The record states each checkpoint's `euler_update_form` (H3 video, H3-Image) as read on lem, and what each arm had to
+  change. The arm split follows from it: V0b exists **iff** the video checkpoint is `"velocity"`; where H3-Image is
+  `"velocity"` and I2 ran, I1 (blend only) ran too.
+It is a **finding** if the refusal is missing or for the wrong reason, the load line is absent, the build is not
+quoted, or the arm split contradicts the stated forms.
+cleanup: none.
+metrics: none.
+
+### M-F430 — no #1438 arm is `reused`, the conditional arms fire only on their conditions, and the stage stays within its 60-minute GPU cap
+pending: #1459
+source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 video and MiniMax-H3-Image on lem (cuda), workspace `bench`. **Free**: reads only.
+Steps: `get_job` and `get_job_events` (`workspace="bench"`) on every arm job and the fail-fast job; the record.
+expected:
+- No step of any arm is marked `reused` (by step cache) in `get_job` or its events. In particular V1 does not reuse
+  V0, and V1b does not reuse V1.
+- Every arm job is `completed`, except I0-16, which may be `failed` with an OOM or refusal that the record names as
+  such. A re-run is named in the record with its reason.
+- C0 and C1 exist only if the record judges V1 clean or better than V0; if it judges V1 soft or broken, no `C` job
+  exists. At most one I0-16 attempt exists. I1/I2/I2b exist only if the record says I0 or I0-16 shows speckle at 1:1;
+  if it says no speckle, none exist.
+- At most one extra flagged draw beyond V1b (or I2b), and only if the record says V1↔V1b spread was as large as V0↔V1.
+- The sum of the arms' and fail-fast job's run times (from `get_job` timestamps) is ≤ 60 min. If the cap was reached,
+  the record says so and lists what did not run; no arm job was created after the cap was hit.
+It is a **finding** if any step is `reused`, a conditional arm ran without its condition, or the total exceeds the cap
+without the record saying so.
+cleanup: none.
+metrics: none.
+
+### M-F431 — the #1438 record's frames, crops and texture-band numbers reproduce over MCP
+pending: #1459
+source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 video and MiniMax-H3-Image outputs on lem, workspace `bench`. **Free**: `compare_outputs`,
+`get_output_frames`, `get_output_image` and `assess_output` on existing outputs; nothing is queued.
+Steps: for each comparison the record tables, `compare_outputs(texture_bands=true, workspace="bench")` with the output
+names, moments and crop box the record states (video at frames 0, 62 and 123; stills on the full image unless the
+record names a crop). `get_output_frames` at those frames for each video arm, and `get_output_image` for each still arm,
+cropped to the record's 1:1 boxes where the tool allows.
+expected:
+- Every comparison the record tables names its outputs, moments and crop precisely enough to rerun; one that can't
+  be rerun from the record's text is a finding.
+- The fine (2-8 px), mid (8-32 px) and coarse (32-128 px) band numbers match the record's to its stated precision (the
+  measure is deterministic on the same files). The comparisons cover at least V0↔V1, V1↔V1b, and, where they ran,
+  V0↔V0b, I0↔I1, I1↔I2, I2↔I2b.
+- The frames and crops look as the record describes them (fur, skin; soft, grainy, clean, broken). A clip the record
+  calls clean is not visibly broken, noisy or blank at those frames; a clip it calls broken is.
+- If C0/C1 ran: the record gives creep, seam L step and mean |L| for each, with #1399's tolerances (creep ±15%, seam L
+  ±0.3, mean |L| ±0.1), and its call (inside or outside tolerance) follows from those numbers. `assess_output` on each
+  chain's final shows no seam the record doesn't mention.
+It is a **finding** if a band number does not reproduce, a description contradicts the frame, or a chain call does not
+follow from its numbers.
+cleanup: none (no output is kept or deleted).
+metrics: none.
+
+### M-F432 — the #1438 record states the seeding result, and each arm's verdict (adopt / keep as option / drop) is consistent with it and with the bands
+pending: #1459
+source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 video and MiniMax-H3-Image, lem, workspace `bench`. **Free**: reads, plus the
+`compare_outputs` calls M-F431 already made.
+Steps: the record as quoted on #1459/#1438; the V0↔V1 and V1↔V1b (and I1↔I2, I2↔I2b) band results from M-F431.
+expected:
+- The record says in words whether V1 and V1b differ (and I2 and I2b, if they ran). That statement matches
+  `compare_outputs`: a nonzero difference at any band is "differ"; it is a finding to call them identical when the
+  bands disagree, or different when they match.
+- If V1↔V1b differ by about as much as V0↔V1 (the record says what "about" meant), the verdict for the flag says the
+  pair cannot separate the flag from noise; it does not call the flag a win or a loss on that pair alone.
+- Every arm the record lists (the flagged video arm, the chain pair if it ran, the image arms if they ran) gets exactly
+  one verdict from: adopt as a template variable, keep as a documented option, or drop.
+- Any "adopt" (or "keep") states that shipping the flag needs a seeded re-noise path first, because the re-noise does
+  not follow the workflow seed.
+- A soft or broken V1 is recorded as an answer (verdict drop or keep), with the chain pair skipped (M-F430), not as a
+  failed stage.
+- The record says no per-step mixed plan (`SSRRRS`) and no base-H3 12-step arm was run (non-goals); if it mentions
+  either, it is as a follow-up idea only.
+It is a **finding** if the seeding statement is missing or wrong, an arm has no verdict or two, or "adopt" omits the
+seeded-path requirement.
+cleanup: none.
+metrics: none.
+
+### M-F433 — the #1438 bench leaves the engine and templates unchanged: both H3 templates validate at defaults and neither has gained `from_config_args`
+pending: #1459
+source: tester, spec for #1459 from #1438's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `templates/minimax/video-with-audio` (MiniMax H3) and `templates/minimax-h3-image/text-to-image`
+(MiniMax-H3-Image), lem. **Free**: validate and workflow reads only; nothing is queued.
+Steps: `validate_workflow` on each template with no arguments (`workspace="bench"`); `get_workflow` on each template,
+and on `templates/minimax/chained-segments`.
+expected:
+- Both validate with no refusal finding.
+- `video-with-audio` and `chained-segments`: the video `scheduler` block is as before the stage, shift-only
+  (`"shift": "variable:video_shift"` or the template's existing form), with no `configuration` and no
+  `from_config_args`; `audio_scheduler` unchanged. Neither declares a `stochastic_sampling` or `euler_update_form`
+  variable.
+- `text-to-image` still has no `scheduler` block and no such variable.
+- Neither `list_workflows(shape="shot")` nor `list_workflows(shape="image")` lists a `probe-1438` workflow outside
+  workspace `bench`.
+It is a **finding** if either template has gained a scheduler rebuild or flag variable, a template fails to validate,
+or a bench copy shows up in the shipped catalog.
+cleanup: none.
+metrics: none.
+
+### M-F434 — the #1439 ref-prep record cites every job, each completed with its stated seed and references, and the three arms differ only in the prepared portrait
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA on lem (cuda): `templates/minimax/reference-to-video` (one picture through
+`variable:subject`; defaults 960x544, 124 frames, 9 steps, int4, turbo LoRA, `seed` null) or, on the primary path, the
+#484/#487 field-report shot's own workflow (three references). Workspace: the one the record names (`bench` if it names
+none). **Free**: issue reads and job reads only.
+Inputs: `bench/records/ref-prep-blur.md`/`.json` in the dw repo, read **only** as quoted in the hand-off on #1460 or
+#1439 (never from the checkout). If the hand-off doesn't quote the job ids, arms, seeds and arm-1 path, ask on #1460;
+that is not a pass.
+Steps:
+1. From the quoted record: every job id, its arm (1 as-is / 2 crop / 3 crop + blur), seed, and the arm-1 path taken
+   (primary re-run of #484/#487, or fallback).
+2. `get_job(<id>, workspace=...)` and `get_job_workflow(<id>)` on every clip job the record names.
+3. Primary path only: `get_job_workflow` on the named source job (the #484/#487 field-report job).
+expected:
+- Every job id the record names resolves on lem, is `succeeded`/completed, and its workflow carries the seed the record
+  states (a pinned integer, not null) and the references it states: `subject` on the template, or the re-run shot's
+  reference arguments.
+- The record states which arm-1 path ran and why. On the primary path it names the source job, and arm 1's workflow
+  equals the source job's (same workflow, prompt, seed, settings, every reference). A re-run that changed anything is
+  not "that exact shot" and is a finding unless the record names the change and why.
+- Within one seed, arms 1, 2 and 3 have the same workflow, prompt, seed and settings, and differ **only** in the
+  prepared portrait's argument. On a three-reference shot the other references are byte-for-byte the same `asset:`/
+  `output:` references in all three arms; only the portrait(s) the record says it prepared change (it may prepare only
+  the one whose backdrop leaked).
+- Arm 2's portrait argument names the arm-2 asset and arm 3's names the arm-3 asset (M-F435), never the original.
+- Fallback path: every arm uses `templates/minimax/reference-to-video` at its defaults except `subject`, `prompt` and
+  `seed`; two fixed seeds, the same two in every arm; the prompt puts the subject somewhere visibly different from the
+  reference's backdrop.
+- Ordering: every arm-2/arm-3 job was created after the arm-1 job(s) it compares against had finished (the gate ran
+  first).
+- No two-character pair job exists for this stage (Q2: no); the record lists it as a follow-up.
+It is a **finding** if a cited job is missing, failed without the record naming it as a retry with its replacement,
+carries a different seed or reference than the record states, or the arms differ in anything but the prepared portrait.
+cleanup: none. Never delete a probe job or asset.
+metrics: none.
+
+### M-F435 — the #1439 arm-2 and arm-3 pictures exist and were made as the record says: `segment` mask, square `recenter_crop` at about 1.75x, head and shoulders kept, backdrop blurred outside the subject
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `segment` (Grounding-DINO + SAM2), `recenter_crop` (square cut of `crop` x the shorter side around
+normalised `center_x`/`center_y`), and the bench-only `bench/blur_outside_mask.py` result uploaded with `upload_asset`.
+Workspace as M-F434. **Free**: reads only.
+Skip with a note if M-F438 finds the gate failed (no arm 2/3 exists by design).
+Steps:
+1. From the quoted record: the segmenter, the mask job, the mask's bounding box, `center_x`, `center_y`, `crop`, the
+   blur settings (grow px, feather sigma, blur sigma) and the two asset names.
+2. `list_assets(workspace=..., detail=true)`: find the arm-2 and arm-3 assets.
+3. `get_job_workflow` on the mask job and the crop job.
+4. `get_output_frames` (it takes `asset:`) on the arm-2 asset, the arm-3 asset and the original portrait, one frame each.
+expected:
+- Both assets exist in the listing under the names the record gives.
+- The mask job ran `segment` with prompt `person` on the original portrait (not SAM 3; the record names the
+  still-image SAM 3 gap).
+- The crop job ran `recenter_crop` on the original portrait with exactly the record's `center_x`, `center_y` and `crop`.
+  `center_x`/`center_y` are the mask box's centre normalised to the picture (check against the record's box to 0.01),
+  and the crop side (`crop` x the picture's shorter side) is about 1.75x the box's longer side, or the full picture
+  when that is smaller; the record states which. The arm-2 asset is square.
+- Arm 2 keeps head and shoulders (#1193's bound): it is not a face crop. A crop that cuts at the chin or shows only
+  the face is a finding.
+- Arm 3 has arm 2's size and framing; the subject (face and hair) is as sharp as in arm 2, and everything outside the
+  subject is visibly blurred. No hard cut-out edge; a visible halo is not a finding by itself but the record must
+  mention it (it shows arm 3's frame 0, per the plan's halo risk).
+- The record states the blur settings; the plan's defaults are grow 12 px, feather sigma 6, blur sigma 20, and a
+  difference from them is stated, not silent.
+- The record states that the square crop changes aspect between arm 1 and arms 2-3.
+It is a **finding** if an asset is missing, the crop arguments differ from the record, the crop is not square or is a
+face crop, or arm 3's subject is blurred or its backdrop is not.
+cleanup: none.
+metrics: none.
+
+### M-F436 — every #1439 clip's bleed label (none / framing / backdrop / both) agrees with its frames 0 and 24
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe's MiniMax H3 Ref2VA clips (M-F434). **Free**: `get_output_frames` and `assess_output` on
+existing outputs; nothing is queued.
+Steps:
+1. For every clip the record lists: `get_output_frames(..., workspace=...)` at frames 0, 12, 24 and 48 (frames 0 and 24
+   at the least).
+2. `get_output_frames` (or `get_output_image` on the job's own output) on the reference portrait(s) the clip used.
+3. `assess_output` on each clip.
+expected:
+- Every clip has exactly one label from none / framing / backdrop / both.
+- **Backdrop**: the reference's backdrop (its street, shop, shelves or the field-report portrait's own background)
+  appears in the clip, including as a morph out of it over the first ~3 s (#487). **Framing**: the clip opens on the
+  portrait's composition (the subject posed and framed as in the reference) before the prompted shot. **None**: the
+  clip opens on the prompted scene.
+- Each label agrees with frames 0 and 24. A clip labelled none whose frame 0 shows the reference backdrop, or a clip
+  labelled backdrop whose first frames show only the prompted scene, is a finding.
+- An arm-3 clip that opens on a blurred version of the backdrop counts as backdrop bleed, not none.
+- Primary path: the record says whether arm 1 reproduced the field report's bleed at the same seed, and that statement
+  matches arm 1's label (reproduced ⇔ label is not none).
+- `assess_output` flags nothing near the start that the record's label ignores.
+It is a **finding** if a label is missing, two labels are given, or a label contradicts frames 0 and 24.
+cleanup: none.
+metrics: none.
+
+### M-F437 — every #1439 clip's SFace was scored against the original, unprepared portrait at `samples_per_shot: 16`, and a re-score of one clip reproduces its median within 0.01
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: `analyze_face_drift` (YuNet + SFace cosine; `video`, `reference` required; `threshold` default 0.363;
+`samples_per_shot` default 8; largest face in `reference` used), as in `bench/workflows/t26-face-check.json` for #1317.
+Workspace as M-F434. **Cheap**: reads, plus one scoring re-run (price it with `validate_workflow` first and bind its
+`acknowledged_cost`; if the plan shows a download, skip the re-run and note it).
+Skip the re-run with a note if no clip has a score (gate failed with no clip scored).
+Steps:
+1. Find each clip's scoring run (a step in the clip's job or a separate job; `get_job`, `get_job_workflow`).
+2. Pick one arm-3 clip (or, if none exists, one arm-1 clip) and re-run its scoring: `validate_workflow` then
+   `run_workflow(workspace=..., note="M-F437 re-score <arm> seed <n>", wait_seconds=55, ...)` with the same `video`,
+   `reference`, `samples_per_shot` and `threshold` the original used (the record's scoring workflow if it names one, or
+   an inline one-step `analyze_face_drift`).
+expected:
+- Every clip in the record has exactly one score, with median and minimum SFace stated per clip, equal to its scoring
+  run's own result at the record's printed precision.
+- Every scoring run has `samples_per_shot: 16` and `reference` = the **original unprepared** portrait (the same asset
+  arm 1 used), for all three arms. A scoring run with the arm-2 or arm-3 asset as `reference` is a finding. On a
+  three-reference shot, the scored character is the one whose portrait was prepared, against their original portrait.
+- The re-run's median matches the record within 0.01 (and its minimum within 0.01).
+- The record compares arms with the 0.03 encode floor: a difference below 0.03 is called a tie, not a gain or a loss.
+It is a **finding** if a clip lacks a score or has two that disagree, a reference is a prepared picture, `samples_per_shot`
+isn't 16, or the re-score is off by more than 0.01.
+cleanup: `delete_output(job_id=...)` on the re-score job this case made. Never delete the probe jobs.
+metrics: none.
+
+### M-F438 — the #1439 gate and cap: arms 2-3 ran only after arm 1 bled, a failed gate leaves two no-bleed pictures and no arm-2/3 jobs, and GPU time stays within about 1.5 h
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe's H3 jobs (M-F434) and their labels (M-F436). **Free**: reads only.
+Steps: `list_jobs(workspace=..., limit=50)`, `get_job` on every probe job; the quoted record.
+expected:
+- **Primary path, reproduced**: arm 1 is labelled framing/backdrop/both, then arms 2-3 exist for that seed.
+- **Primary path, not reproduced** (or inputs gone): the record says which, and that the non-reproduction at the same
+  seed is itself a finding about the current build; then the fallback ran. No arm-2/3 job prepared the field-report
+  portrait unless its arm 1 bled.
+- **Fallback, gate passed**: arm 1 ran on both seeds before any arm 2/3, and at least one arm-1 clip is labelled with
+  bleed. Arms 2-3 ran on the same picture and both seeds.
+- **Fallback, gate failed**: exactly two subject pictures (different backdrops) appear as arm-1 runs on the same two
+  seeds (at most four arm-1 clips), all labelled none; **no** arm-2 or arm-3 job exists; the record's verdict is
+  "not reproduced at one reference; drop". A third picture or seed is a finding.
+- A one-of-two against zero-of-two bleed result is reported as a signal, not a finding (two seeds can't measure a rate).
+- The record states the GPU time spent against the 1.5 h cap. The sum of the probe's job run times (from `get_job`
+  start/finish, clips plus mask, crop and scoring jobs) is at most about 1.5 h (allow 10% over), or the record says the
+  cap was reached and lists what did not run, and no probe job started after the cap was hit.
+It is a **finding** if arms 2-3 ran without a bled arm 1, a failed gate left arm-2/3 jobs, or the time exceeds the cap
+without the record saying so.
+cleanup: none.
+metrics: none.
+
+### M-F439 — the #1439 verdict follows the plan's Design 7 rule, and the record names the segmenter, crop numbers, blur settings and the five missing tasks
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe (M-F434–M-F438). **Free**: issue reads, plus `list_tasks`.
+Steps: the record as quoted on #1460/#1439; compute the verdict from M-F436's labels and M-F437's scores; `list_tasks`.
+The rule (plan v2, Design 7):
+- **Line in `per-character.md`**: arm 3 removes bleed that arm 1 (and arm 2) show, at an SFace cost within the 0.03
+  floor.
+- **Crop is enough**: arm 2 matches arm 3 (arm 2 already removes the bleed). Skill unchanged.
+- **Drop**: no bleed in arm 1, or the blur costs likeness (arm 3's median below arm 1's by 0.03 or more).
+expected:
+- The record states one verdict, and it equals the computed one. Edges: an SFace drop of 0.029 is within the floor; 0.03
+  or more is a likeness cost and "drop" even if the bleed went; arm 3 removing bleed on one seed only is reported as a
+  signal; a failed gate (M-F438) is "drop".
+- A "template preparation step" is at most **proposed**, naming that it needs the missing tasks and comes back as its
+  own feature; it is not a verdict that ships anything.
+- The record names: the segmenter (`segment`, Grounding-DINO + SAM2) and the still-image SAM 3 gap; the crop numbers
+  (box, centre, `crop`); the blur settings; and the five missing tasks: a still-image SAM 3 mask, mask grow/feather,
+  gaussian blur, composite through a mask, and a margin crop to a mask box.
+- `list_tasks` shows no new blur, composite-through-mask, mask-grow/feather or mask-box-crop task added by this stage
+  (the plan adds no task).
+It is a **finding** if the stated verdict differs from the computed one, a missing task or the segmenter is unnamed, or a
+task was added.
+cleanup: none.
+metrics: none.
+
+### M-F440 — the #1439 probe changes at most one `per-character.md` line, matching the verdict, and leaves `reference-to-video` and the catalog as they were
+pending: #1460
+source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: the `dw:minimax-h3` skill and `templates/minimax/reference-to-video`. **Free**: skill and catalog
+reads.
+Steps:
+1. Load `dw:minimax-h3` (from `develop`) and read `references/per-character.md` and `references/staging.md`.
+2. `get_workflow("templates/minimax/reference-to-video", variables_only=true)`.
+3. `list_workflows(shape="shot")`.
+4. Read #1460's hand-off for a `tests/test_plugin_skills.py` run and the plugin version bump.
+expected:
+- Verdict "line": `per-character.md` has **exactly one** new line about preparing the reference by cropping and
+  blurring its backdrop, citing #1439 or the record; it states what the record measured (bleed removed, SFace within
+  the floor), not more. The hand-off quotes a passing `tests/test_plugin_skills.py` and a plugin version bump.
+- Verdict "crop is enough" or "drop": no new rule in `per-character.md` or `staging.md` (a "probed and not a rule"
+  mention is allowed, not required).
+- `reference-to-video` is unchanged: one picture through `subject`, defaults 960x544, 124 frames, 9 steps, `{int4}`,
+  `seed` null, no new preparation variable or step.
+- No `probe-1439` bench workflow is listed in the shipped catalog outside the bench workspace.
+- The tester cannot run pytest; if the line changed and no passing run is quoted, ask on #1460 rather than counting it
+  a pass.
+It is a **finding** if a line lands that the verdict didn't earn, two lines land, the line overstates the record, or the
+template changed.
+cleanup: none.
+metrics: none.
+
+### M-F441 — the #1441 hybrid probe workflow validates clean with the graft as `transformer_ref`, needs no download, and its stock twin validates clean too; or the record names the direct-diffusers fallback and why
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA on lem (cuda): `bench/workflows/probe-1441-hybrid-ref.json`, a copy of
+`templates/minimax/reference-to-video` whose `pretrained_model_name_or_path` overrides `transformer_ref` with a local
+graft folder (fl2va tensors, ref2va `adaln_proj` for blocks 20–49). Template defaults as of 2026-11-18: 960x544, 124
+frames, 9 steps, `{int4}`, sparse attention, ref2va 8-step turbo (`minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16`),
+`seed` null. Workspace: the one the record names (`bench` if it names none). **Free**: validate and job reads only.
+Inputs: `bench/records/h3-hybrid.md`, read **only** as quoted in the hand-off on #1463 or #1441 (never from the
+checkout). If the hand-off doesn't quote the two job ids, the seed and which render path ran, ask on #1463; that is not
+a pass.
+Steps:
+1. From the quoted record: the hybrid job id, the stock job id, the seed, the render path (probe workflow through dw,
+   or the direct-diffusers fallback) and, on the fallback, the reason.
+2. `get_job_workflow(<hybrid job>)` and `get_job_workflow(<stock job>)`.
+3. `validate_workflow(workflow=<hybrid job's workflow>, workspace=...)`; also try
+   `validate_workflow(workflow_path="bench/workflows/probe-1441-hybrid-ref.json", workspace=...)` and note whether the
+   server reaches that path (unreachable is not a finding by itself).
+4. `validate_workflow(workflow=<stock job's workflow>, workspace=...)`.
+expected:
+- **dw path**: the hybrid workflow is `valid: true` with no error, and its `plan` is non-null with an `estimate`.
+  `plan.downloads_required` is empty: the graft is a local folder and both parents are already cached (Q3: no Hub
+  download). Any `downloads_required` entry naming `smhfacct` or any repo other than ones already cached is a finding.
+- The hybrid workflow's `transformer_ref` source is a local path, not a Hub repo id, and not under the HF cache (the
+  plan puts the graft in bench scratch). A warning that the local path loads uncached / quantizes fresh is expected and
+  is not a finding.
+- The stock workflow is `valid: true` and names `MiniMaxAI/MiniMax-H3` for `transformer_ref` (no override).
+- **Fallback path**: the record says validation refused the local component path, quotes that refusal, and says the
+  hybrid render went through diffusers' modular pipeline with the same arguments. Re-validating the hybrid workflow (if
+  one exists) reproduces the quoted refusal. A fallback with no stated reason, or a stated refusal that validate does
+  not reproduce, is a finding.
+It is a **finding** if the dw-path hybrid workflow is not clean, it pulls a download, or the record does not say which
+path ran.
+cleanup: none. Never delete a probe job.
+metrics: none.
+
+### M-F442 — the #1441 hybrid run and the stock ref2va baseline are both in `list_jobs`, completed, and differ only in `transformer_ref`'s source: same pinned seed, references, prompt and settings
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: as M-F441. **Free**: job reads only.
+Steps:
+1. `list_jobs(workspace=..., limit=50)`: find both job ids the record quotes.
+2. `get_job(<id>, workspace=...)` on each; `get_job_workflow(<id>)` on each.
+3. Compare the two workflows key by key (every step, every argument, every variable's resolved value).
+expected:
+- Both jobs appear in the listing and are `succeeded`/completed. The stock baseline may be an existing earlier job
+  only if the record names it and its workflow passes every bullet below; otherwise it was run for this stage.
+- Both carry the same **pinned integer** seed (not null; a null seed draws a different take and voids the comparison),
+  the same `prompt`, the same references (`subject` picture and `voice` audio, as the same `asset:`/URL/`output:`
+  reference in both), and the same `num_frames`, `width`, `height`, `num_inference_steps`, `video_shift`,
+  `audio_shift`, LoRA (name, weight, scale, alpha), `weights_dtype`, `attention_backend` and its parameters, and
+  `cache`.
+- The **only** difference is `transformer_ref`'s entry in `pretrained_model_name_or_path`: a local graft path in the
+  hybrid, the stock repo in the baseline. Any other difference is a finding unless the record names it and why (e.g. a
+  per-step `release_pipeline` needed for host RAM), and even then the record must say it may affect the comparison.
+- The hybrid's LoRA is a ref2va entry (the template's ref2va turbo), never an fl2va file (M-F446).
+- Fallback path (M-F441): the hybrid render is not a dw job; the record must then name an `asset:` holding the hybrid
+  clip (uploaded with `upload_asset`) and the exact arguments the script used, equal to the stock job's. No asset named
+  means the clip can't be checked over MCP: ask on #1463, not a pass.
+- No variant other than b20-49 was run, unless the record says b20-49 gained quality but lost identity and a b25-49 run
+  followed (the plan's one allowed second run); a b15-49 or b30-49 run is a finding.
+It is a **finding** if either job is missing or failed, the seed is null or differs, or the two workflows differ in
+anything but `transformer_ref`'s source without the record saying so.
+cleanup: none.
+metrics: none.
+
+### M-F443 — both #1441 renders are real video with sound at the template's shape, and the hybrid is not noise, black or frozen
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the two renders of M-F442. **Free**: reads and `assess_output` on existing outputs; nothing queued.
+Steps:
+1. `get_job(<id>, workspace=...)` on each job: its video output path (on the fallback, the named `asset:`).
+2. `get_gallery_metadata` on each video.
+3. `get_output_frames` on each at frames 0, 62 and the last frame (123 at the defaults).
+4. `assess_output` on each.
+expected:
+- Each job has a video output, and both have the same `width`x`height` (960x544 at the defaults), the same
+  `frame_count` (124 at the defaults), `fps` 24 and a soundtrack (the template's `voice` reference makes speech).
+- Frames from both clips show the referenced subject in a coherent scene. A grafted transformer that came out wrong
+  shows up as pure noise, a flat or black frame, colour-channel garbage or a frozen clip; any of those in the hybrid is
+  a finding (the graft is broken, not "lower quality"), and the record must say so.
+- Frames 0, 62 and the last differ in each clip (it moves).
+- `assess_output` reports no hard problem (dead air, black or frozen run) on either clip that the record omits.
+It is a **finding** if either output is missing, the two clips differ in size, frame count or rate, either lacks audio,
+or the hybrid is broken as above.
+cleanup: none.
+metrics: none.
+
+### M-F444 — the #1441 record gives SFace per reference for both runs, a re-score reproduces one within 0.01, and the floor call follows Don's rule (hybrid within 0.02 of stock, or better)
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `analyze_face_drift` (YuNet + SFace cosine; `video`, `reference` required; `samples_per_shot`
+default 8; `threshold` default 0.363), as #1317 stage A scored with it. Workspace as M-F441. **Cheap**: reads, plus one
+scoring run (price it with `validate_workflow` first and bind its `acknowledged_cost`; if the plan shows a download,
+skip the re-score and note it).
+Steps:
+1. From the quoted record: for each run (hybrid, stock), the SFace median and minimum per reference picture, and the
+   scoring job id(s).
+2. `get_job_workflow` on each scoring job.
+3. Re-score the hybrid clip: `validate_workflow` then `run_workflow(workspace=..., note="M-F444 re-score hybrid",
+   wait_seconds=55, ...)` with a one-step `analyze_face_drift` using exactly the original's `video`, `reference`,
+   `samples_per_shot` and `threshold`.
+expected:
+- Each run has one score per reference picture with a face (the template has one `subject` picture, so at least one
+  score per run), with median and minimum stated, equal to its scoring job's own result at the record's precision.
+- Both runs were scored against the **same** reference picture(s) the renders used, with the same `samples_per_shot`
+  and `threshold`. Different settings between the arms is a finding.
+- The re-score's median and minimum match the record's hybrid numbers within 0.01.
+- The floor call: the record states whether the hybrid's median is within 0.02 of the stock median or better (Q2).
+  Edges: hybrid 0.019 below stock passes the floor; 0.02 below passes ("within 0.02"); 0.021 below fails. A stated
+  pass or fail that contradicts the numbers is a finding.
+- The record leaves the quality verdict to Don (Q2: his look decides). A record that declares the hybrid better on
+  quality, or ships anything on SFace alone, is a finding.
+It is a **finding** if a run lacks a score, the arms were scored differently, the re-score is off by more than 0.01,
+or the floor call contradicts the numbers.
+cleanup: `delete_output(job_id=...)` on the re-score job this case made. Never delete the probe jobs.
+metrics: none.
+
+### M-F445 — the #1441 record states the disk check, the graft's tensor report, the job ids, the wall time, the render path and a verdict line left for Don
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the probe (M-F441–M-F444). **Free**: issue reads and `get_job` only.
+Steps: the record as quoted on #1463/#1441; `get_job` on both renders for start/finish times.
+expected:
+- **Disk check first**: the record quotes a `df` reading of lem's model disk taken before the graft was written, the
+  parents' measured size, and the graft's size (the plan estimates ~40 GB). If free space was under 2x the parents'
+  measured size, the stage stopped there: no graft, no hybrid job, and a filed issue named in the record. A hybrid job
+  that exists after a reading under that bar is a finding.
+- **Tensor report**: whether the two parents' tensor names and shapes matched; if not, which tensors exist only in
+  ref2va and were taken from it. Which tensors came from ref2va for the graft: the `adaln_proj` of blocks 20–49, i.e.
+  30 blocks, no fewer and no more; block 19 and below are fl2va's. A report naming another block range, or silent on
+  the shape check, is a finding.
+- The `config.json` the graft carries is `transformer_ref`'s (the plan's design); the record says so.
+- The two job ids (or job id plus asset on the fallback), the render path and the wall time of each render. The wall
+  times agree with `get_job` start/finish within a minute. The hybrid's time includes the uncached quantize; the record
+  says so rather than calling the hybrid slower to render.
+- One verdict line left for Don: no "adopt", "ship" or catalog recommendation stated as decided.
+- Scratch: the record says whether the ~40 GB graft was deleted after the record (Q1 default) or kept at Don's word.
+It is a **finding** if the disk reading, the tensor report, a job id or the verdict line is missing, or the stated block
+range is not 20–49.
+cleanup: none.
+metrics: none.
+
+### M-F446 — an FL2V LoRA on the hybrid step is still refused at validate by the partition rule, and the ref2va turbo is still clean there
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the hybrid workflow from `get_job_workflow(<hybrid job>)` (M-F441); if the stage took the fallback and
+no hybrid dw workflow exists, a copy of `templates/minimax/reference-to-video` with the record's local `transformer_ref`
+path set the same way. Workspace as M-F441. **Free**: validate only.
+Today's refusal (pinned 2026-11-18 on the stock template, `validate_workflow(name="templates/minimax/reference-to-video",
+arguments={"lora_weight_name": "minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors", "seed": 42})`): `valid: false`,
+error at `arguments.lora_weight_name`, naming catalog entry `minimax-h3/turbo-4step-keyframe`, its `t2va, fl2va`
+partition denoising against `transformer`, and that this step runs `ref2va` against `transformer_ref`.
+Steps:
+1. `validate_workflow(workflow=<hybrid workflow>, workspace=...)` with its LoRA weight changed to
+   `minimax_h3_fl2v_turbo_4step_v1.2_768p_bf16.safetensors` (`minimax-h3/turbo-4step-keyframe`). If the workflow
+   binds the weight through `variable:lora_weight_name`, pass it in `arguments`; otherwise edit the step's literal.
+2. The same with `minimax_h3_fl2v_turbo_8step_v1.0_768p_bf16.safetensors` (`minimax-h3/turbo-keyframe`).
+3. The same with a second adapter added beside the ref2va turbo: `fal/MiniMax-H3-Realism-People-LoRA`
+   (`minimax-h3/realism-people`, t2va/fl2va), scale 0.7.
+4. The unmodified hybrid workflow (its ref2va turbo), as a control.
+5. The same step 1 on the stock template (the pinned call above), unchanged.
+expected:
+- Steps 1–3 are each `valid: false`, each with an error at the LoRA's own path naming the fl2va/t2va entry and the
+  ref2va / `transformer_ref` mismatch, the same rule and wording as the stock template's refusal. A local
+  `transformer_ref` path must not turn the refusal into a warning, skip it, or make the step read as some other
+  partition.
+- Step 4 is clean (M-F441).
+- Step 5 refuses exactly as pinned: the rule is unchanged for stock ref2va too.
+- No new entry for a hybrid partition appears in `list_loras(model="MiniMaxAI/MiniMax-H3")` (the plan cuts the
+  checkpoint-aware partition).
+It is a **finding** if any FL2V or t2va/fl2va LoRA validates on the hybrid step, the refusal path or rule differs from
+the stock one, or the control is refused.
+cleanup: none.
+metrics: none.
+
+### M-F447 — the #1441 probe adds no catalog surface: no hybrid entry in `list_workflows(include_models=true)`, `reference-to-video` as it was, and no smhfacct download
+pending: #1463
+source: tester, spec for #1463 from #1441's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: the catalog and `templates/minimax/reference-to-video`. **Free**: catalog reads only.
+Steps:
+1. `list_workflows(include_models=true)`; also `list_workflows(shape="shot")`.
+2. `get_workflow("templates/minimax/reference-to-video", variables_only=true)`.
+3. `list_downloads()`.
+expected:
+- No catalog workflow or `models/` entry names the hybrid, the graft, `probe-1441`, `smhfacct`, `fl2va-ref2va` or a
+  local `transformer_ref` path. A `bench/` workflow listed only under the bench workspace is not a catalog entry.
+- `reference-to-video`'s variables are as pinned in M-F441 (960x544, 124 frames, 9 steps, shifts 12/3, ref2va 8-step
+  turbo `minimax_h3_ref2v_turbo_8step_v1.0_768p_bf16.safetensors` at scale 1.0, `{int4}`, sparse 0.5/0.15, `seed`
+  null, `cache` null), with no new variable for a transformer override and no `pretrained_model_name_or_path`
+  override pointing at a graft.
+- No download, finished or in progress, of any `smhfacct/*` repo or `minimax_h3_hybrid_*` file (Q3).
+It is a **finding** if a hybrid catalog entry or template change lands, or a smhfacct download appears.
+cleanup: none.
+metrics: none.
+
 ## Performance

@@ -23774,4 +23774,413 @@ expected:
 cleanup: none (nothing runs).
 metrics: none.
 
+### C-F1002 — `analyze_shots` gives every shot a `high_share` in [0, 1] and a `noise_floor_dbfs` at or below its `rms_dbfs`, and keeps every existing key
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Workspace `regression-complete`. Three shared fixtures with audio:
+1. `assess_output(name="asset:qa-cast/ep49-episode.mp4", probe="analyze_shots", workspace="regression-complete")`.
+   This is a three-shot cut, 124 frames each, 44.1 kHz, with `media.shots`.
+2. The same call on `asset:qa-cast/ep3-shot1-incident.mp4`, a single 5.17 s shot.
+3. The same call on `asset:qa-cast/priya-voice.wav`, audio only and mono, 7.453 s.
+4. Call (1) again.
+
+expected:
+- In every answer, every shot record carries both new keys:
+  - `high_share`: a JSON number in [0, 1] (all three fixtures have sound, so `null` is a **finding** here).
+  - `noise_floor_dbfs`: a JSON number no more than 0.1 dB above that shot's `rms_dbfs` (every shot here runs well
+    over 0.5 s, so `null` is a **finding**). It should also be below `rms_dbfs` on every shot: these are speech and
+    footage, not a steady tone.
+- No value in any answer is `NaN`, `Infinity` or `-Infinity`. The answer must parse as strict JSON.
+- `high_share` matches the shot's own `spectral_balance`. It should equal the high band's share of the power summed
+  over the low, mid and high bands (`10^(dB/10)` for each band), to within 0.01. If it doesn't match that power
+  form but does match an amplitude form (`10^(dB/20)`), record both numbers and ask on #1464. That is not a
+  finding. Across ep49's three shots, the shot with the largest high-minus-mid band gap in dB must also have
+  the largest `high_share`. Anything else is a **finding**.
+- Every per-shot key the answer carried before #1464 is still present on every shot: `rms_dbfs`, `peak_dbfs`,
+  `crest_db`, the spectral balance, the dead-air fields, and `opening_jump_ratio`/`opening_cut_s`. Check them
+  against the tasks guide's `analyze_shots` field table (`get_guide("tasks", section="analyze_shots")`): apart
+  from the two new rows, every field it lists must appear. The top-level keys (`shots_source`,
+  `rules_applied`, findings) are unchanged in shape.
+- (4) gives exactly the same `high_share` and `noise_floor_dbfs` values as (1). The measure is deterministic.
+- A **finding**: either key missing on a shot, a value out of range, a floor above `rms_dbfs` by more than 0.1 dB,
+  a non-finite number, or an existing key gone.
+cleanup: none (nothing runs).
+metrics: `high_share` and `noise_floor_dbfs` for each ep49 shot (conditions `ep49-shot1`, `ep49-shot2` and
+`ep49-shot3`). Seed `regression-perf/C-F1002.jsonl` with the first reading after #1464 verifies.
+
+### C-F1003 — `high_share` follows the high band: a low-passed voice reads lower and a high-passed one higher, and gain alone doesn't move it
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+The plan's unit tests use pure tones, which no tool makes. This case gets the same direction from real speech
+with `filter_audio`, which runs a single biquad at 12 dB per octave. CPU only, one inline `run_workflow` with
+three task steps, all on `asset:qa-cast/priya-voice.wav`, each saving `audio/wav` in `final`:
+- `lp`: `filter_audio(audio=<fixture>, kind="lowpass", cutoff_hz=1500)`;
+- `hp`: `filter_audio(audio=<fixture>, kind="highpass", cutoff_hz=5000)`;
+- `quiet`: `gain_audio(audio=<fixture>, gain_db=-12)`, whole track.
+Validate it first, then run it with `wait_seconds=55` and `workspace="regression-complete"`.
+`assess_output(probe="analyze_shots", workspace="regression-complete")` on each of the three outputs and on the
+fixture itself (`asset:qa-cast/priya-voice.wav`). Each gives one shot; call its `high_share` H.
+expected:
+- `H(lp) < H(fixture) < H(hp)`, strictly.
+- `H(lp)` is below 0.05.
+- `H(hp)` is above 0.5. A 5 kHz high-pass leaves mostly the band above 4 kHz.
+- `H(quiet)` is within 0.005 of `H(fixture)`. A share doesn't depend on level.
+- Its `rms_dbfs` is 12 ± 0.2 dB below the fixture's. That check is on the tool, not on #1464.
+- If the fixture's sample rate puts no content above 4 kHz (`get_gallery_metadata` reports `sample_rate` ≤ 8000),
+  the case is blocked, not failed. Say so.
+- A **finding**: the order broken, `H(quiet)` moving more than 0.005, or any `high_share` outside [0, 1] or
+  `null`.
+cleanup: `delete_output(job_id=<the run>)`.
+metrics: `H(lp)`, `H(fixture)` and `H(hp)` (conditions `lp1500`, `orig` and `hp5000`).
+
+### C-F1004 — `noise_floor_dbfs` reads the quiet windows: it tracks a whole-track gain dB for dB, and drops when one stretch is ducked
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+The plan defines the floor as the 10th percentile of the shot's 50 ms RMS windows. A whole-track gain moves every
+window equally. Ducking a stretch longer than 10% of the track puts the percentile inside the ducked windows.
+CPU only, one inline `run_workflow` over `asset:qa-cast/priya-voice.wav` (7.453 s), each step saving `audio/wav`
+in `final`:
+- `down`: `gain_audio(audio=<fixture>, gain_db=-12)`;
+- `duck`: `gain_audio(audio=<fixture>, gain_db=-30, start_seconds=0, duration_seconds=3)`, which ducks 40% of the
+  track.
+Validate first, then run with `wait_seconds=55` and `workspace="regression-complete"`. Run
+`assess_output(probe="analyze_shots", workspace="regression-complete")` on the fixture and on both outputs. Call
+each one's `noise_floor_dbfs` F and its `rms_dbfs` R.
+expected:
+- `F(down)` is 12 ± 0.2 dB below `F(fixture)`, the same shift as `R(down)` against `R(fixture)` to within 0.2 dB.
+- `F(duck)` is at least 10 dB below `F(fixture)`.
+  - If `F(fixture)` already reports the silence value (see C-F1006), which would mean the fixture has digital-zero
+    pauses, this arm is blocked, not failed. Say so.
+- `R(duck)` is at most 6 dB below `R(fixture)`. Speech outside the duck carries the overall level, so the floor
+  moves and the level largely doesn't. That gap is what makes the floor a separate figure.
+- Every F is ≤ its own R + 0.1 dB.
+- A **finding**: `F(down)` off the gain by more than 0.2 dB, the duck not lowering the floor, or a `null` floor
+  on any of these 7.45 s tracks.
+cleanup: `delete_output(job_id=<the run>)`.
+metrics: `F(fixture)` and `F(duck)` (conditions `orig` and `duck-30`).
+
+### C-F1005 — `noise_floor_dbfs` is `null` on a shot under 0.5 s and a number from 0.5 s up, and the answer still succeeds
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+The plan: "`null` when the shot has fewer than 10 windows (under 0.5 s)." Exactly 0.5 s is 10 windows, so it is
+measured. This uses the task form, which takes `shots=`. Each arm is one CPU `run_workflow` with a single
+`analyze_shots` step (`video: "asset:qa-cast/ep49-episode.mp4"`, saving `application/json` in `final`). Use
+`workspace="regression-complete"` and validate first.
+- `shots` is a list built from the records `get_gallery_metadata("asset:qa-cast/ep49-episode.mp4").media.shots`
+  returns. Copy shot 2's record and change its `start_frame`/`num_frames`, and its `start_sample`/`num_samples` at
+  the file's 44.1 kHz (1837.5 samples a frame; round down), to the values each arm gives.
+- Read each run's per-shot records with `get_output_text`.
+
+Arms, each a two-entry `shots` list. Entry 1 is the unchanged full shot 1 record (124 frames), and entry 2 is:
+a. 11 frames from frame 130 (0.458 s, 20212 samples): 9 windows.
+b. 12 frames from frame 130 (0.500 s, 22050 samples): exactly 10 windows.
+c. 13 frames from frame 130 (0.542 s, 23887 samples).
+d. 1 frame from frame 130 (0.042 s, 1837 samples).
+
+expected:
+- Every run `succeeded` with no error, and entry 1 has a non-null floor and `high_share` in every arm.
+- In entry 2:
+  - (a) and (d) give `noise_floor_dbfs: null`;
+  - (b) and (c) give a number no more than 0.1 dB above that entry's `rms_dbfs`;
+  - `high_share` follows its own rule (null only where the spectral balance is null), so a null floor alone must
+    not null the share.
+- Entry 2's null floor never causes a finding, a warning or a `NaN`.
+- If (b) gives `null` and (c) a number, the cutoff is one window off the plan's "fewer than 10". That is a
+  **finding** to record with both readings, which the implementer can rule a rounding choice. Every other
+  disagreement is a **finding**.
+cleanup: `delete_output(job_id=...)` for each run.
+metrics: none.
+
+### C-F1006 — an all-silent shot reports the silence value for both figures, never a crash or `NaN`
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+The plan says the floor is "-inf-safe: an all-silent shot reports the same value `rms_dbfs` gives for silence,
+never a crash", and that `high_share` is `null` where the balance is `null`, "an all-zero window". Setup is
+C-F084's pad control: a one-step inline `pair_audio` (`video: "asset:qa-cast/ep11-coldopen.mp4"` (472 frames,
+19.67 s), `audio: "asset:qa-cast/hal-voice.wav"` (6.48 s), `fit: "video"`, saving `video/mp4` in `final`). That
+gives a video whose sound after 6.48 s is padded silence. Run it in `regression-complete`. Then use the task form
+(one CPU `run_workflow` with an `analyze_shots` step, `video: "output:<the mux output>"`, saving `application/json`)
+with a two-entry `shots` list built as C-F1005 builds one, at the mux output's own `sample_rate` (read it with
+`get_gallery_metadata`):
+- entry 1, frames 0-120 (voice);
+- entry 2, frames 240-360 (10.0-15.0 s, wholly inside the pad).
+Also run `assess_output(name=<the mux output>, probe="analyze_shots", workspace="regression-complete")` with no
+override. It gives a single shot.
+
+expected:
+- Both calls succeed, and the answers parse as strict JSON, with no `NaN` and no `Infinity`/`-Infinity` token.
+- Entry 2's `noise_floor_dbfs` is the same value as entry 2's `rms_dbfs`, whatever form the server uses for
+  silence (a floor number or `null`).
+- Entry 2's `high_share` is `null` if its `spectral_balance` is `null`. If the balance is numeric (the codec
+  leaves a residue), it is a number in [0, 1].
+- Entry 1 has a numeric floor and a numeric share.
+- The whole-file shot from `assess_output` has `noise_floor_dbfs` equal to the silence value too. Over 60% of
+  its windows are pad, so its 10th percentile falls in the silence.
+- A **finding**: a failed job, a 500, a non-finite token, or a silent-shot floor that differs from that shot's
+  `rms_dbfs`.
+cleanup: `delete_output(job_id=...)` for the mux and the probe runs.
+metrics: none.
+
+### C-F1007 — a video with no audio still answers `has_audio: false` with no shots, and audio-less inputs gain no error from the new fields
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, except C-F238's setup if its clip is missing.
+1. `assess_output(name="asset:qa-fit/src-640x480-50f-silent.mp4", probe="analyze_shots", workspace="regression-complete")`.
+   If the asset is missing, make it with C-F238's setup first.
+2. The same call with `detail=true` and no `probe`.
+3. `assess_output(name="asset:qa-cast/priya-portrait.jpg", workspace="regression-complete")`.
+expected:
+- (1): no error. The answer says `has_audio: false` (or the probe's "not applicable" form, as before #1464), with
+  no shot records and no `high_share`/`noise_floor_dbfs` anywhere.
+- (2): the same, inside the `analyze_shots` body. The other probes answer as they did before.
+- (3): not applicable for all three probes, as in C-F101.
+- A **finding**: an error, a 500, or shot records carrying the new keys on a file with no sound.
+cleanup: none.
+metrics: none.
+
+### C-F1008 — `detail=true` carries `high_share` and `noise_floor_dbfs` inside its `analyze_shots` body, equal to the probe form
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job.
+1. `assess_output(name="asset:qa-cast/ep49-episode.mp4", detail=true, workspace="regression-complete")`.
+2. `assess_output(name="asset:qa-cast/ep49-episode.mp4", probe="analyze_shots", workspace="regression-complete")`.
+expected:
+- The `analyze_shots` body in (1) has three shots, and each carries both keys.
+- Each value is identical to the matching shot's in (2).
+- The plain form (no `probe`, no `detail`) may summarise, but nothing in it contradicts (2).
+- A **finding**: either key missing from the detail body, or any value differing between (1) and (2).
+cleanup: none.
+metrics: none.
+
+### C-F1009 — #1464 adds no surface: seams and sync answers are unchanged, no new rule or finding code, no new probe or argument, and the docs name the fields
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+The plan's non-goals: no new rule, probe, MCP parameter, REST route or syntax, and `analyze_seams`,
+`analyze_sync_drift`, `assessment_rules` and the `assess_output` docstring unchanged. Free, no job:
+1. `assess_output(name="asset:qa-cast/ep49-episode.mp4", probe="analyze_seams", workspace="regression-complete")`,
+   then the same with `probe="analyze_sync_drift"`.
+2. `assess_output(name="asset:qa-cast/ep49-episode.mp4", probe="analyze_everything", workspace="regression-complete")`.
+3. `get_task("analyze_shots")`.
+4. `list_tasks`.
+5. The tasks guide's `analyze_shots` entry (`get_guide("tasks", section="analyze_shots")`), and the section holding
+   `assess_output`'s rules table (see C-F148 step 6 for how to find it).
+6. Load the `dw:minimax-h3` skill with `Skill` and read its chain/voice note (near the turbo LoRA voice note).
+expected:
+- (1): neither answer contains `high_share` or `noise_floor_dbfs` anywhere. Each seam record and the sync answer
+  have the same key set they had before.
+  - If a reading from before deploy exists (a `regression-perf` line, or C-F102/C-F131's recorded shapes), compare
+    the values against it.
+  - Otherwise compare against the documented fields in the tasks guide.
+- (1) and (2): `rules_applied`, `rules_skipped` and every finding's code are drawn from the rules table, and no
+  rule or code names a share, floor, hiss, brightness or drift.
+- (2): the same 400 as C-F102, naming exactly `analyze_shots`, `analyze_seams` and `analyze_sync_drift`.
+- (3): the parameters are still exactly `video`, `shots` and `device`. (4): `assessment` is still exactly those
+  three.
+- `assess_output`'s own tool description is unchanged in substance: it lists the same three probes, plus `detail`.
+- (5):
+  - the `analyze_shots` field table has rows for `high_share` (share of energy above 4 kHz, 0-1) and
+    `noise_floor_dbfs` (10th percentile of 50 ms RMS windows, `null` under 0.5 s);
+  - the floor row says that in dense dialogue it may track speech tails rather than hiss, as the plan's risk
+    section promises;
+  - the rules table gains no row.
+- (6): the skill says that `high_share` and `noise_floor_dbfs` rising together down a chain's segments is the
+  dulling-voice signature, to be judged by ear with `get_output_audio`.
+- A **finding**: a new key in seams or sync, a new rule or finding code, a new probe or task argument, a missing
+  doc row, or the skill sentence missing.
+cleanup: none.
+metrics: none.
+
+### C-F1010 — on the bench's generated-dialogue guide chain, all six segments carry both figures, deterministically
+pending: #1464
+source: tester, spec for #1464 from #1442's plan v1 (claude-opus-5-5 via anthropic)
+The plan's intent 6 asks for a table of the S3 and S1 per-segment figures, posted on #1442 as a record. That table
+is the #1464 verify session's job, not this case's: this file holds no results. This case keeps the durable
+part, that a real chain's segments (4.25 s each, the plan's short-segment risk) give stable figures. Free, no job.
+Workspace `bench` (read-only, never delete anything there).
+1. `assess_output(name="s3-dialogue-walk/20261107-204402-f54d3126/final/BenchS3DialogueWalk-chained_keyframe_to_video_audio.0-0.0.mp4", probe="analyze_shots", workspace="bench")`.
+   The file is 634 frames, 32 kHz stereo, with 6 manifest shots: segment 1 is 124 frames, segments 2-6 are 102
+   each.
+2. Call (1) again.
+expected:
+- Six shot records, named from the run manifest (`shots_source` says so), each with a numeric `high_share` in
+  [0, 1] and a numeric `noise_floor_dbfs` no more than 0.1 dB above its `rms_dbfs`. A 4.25 s segment has about 85
+  windows, so `null` is a **finding**.
+- (2) gives identical values to (1).
+- If the file is gone from `bench`, the case is blocked, not failed. Say so, and name the newest
+  `s3-dialogue-walk` chain output (`list_gallery`) as a substitute for a curator request.
+- A **finding**: fewer than six shots, a null or out-of-range figure, or values differing between (1) and (2).
+cleanup: none.
+metrics: `rms_dbfs`, `high_share` and `noise_floor_dbfs` for each of the six segments (conditions `s3-seg1` to
+`s3-seg6`). Seed `regression-perf/C-F1010.jsonl` with the first reading after #1464 verifies. This trend is what
+#1442's trigger for Idea B is read from.
+
+### C-F1011 — the #1465 LongCat-Video-Avatar probe's build comment names its commit, venv, downloads, preflight, fit, time, fps and gate numbers
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. Source: the stage A build comment on #1465 (`gh issue view 1465 --comments`). The probe ran outside dw, in a
+spike venv on lem, so the tester can't read `bench/records/longcat-avatar.md` or lem's disk: the comment has to carry
+what the record says.
+expected, the comment names:
+- the `meituan-longcat/LongCat-Video` commit cloned, and the venv path (under `~/spikes/longcat-avatar/`);
+- the download list with each file's size: the INT8 transformer, the 1.6 LoRAs, Whisper large-v3, the VAE and the
+  UMT5-XXL encoder, and the `--include` patterns used. A total near the full 77 GB repo, or any non-INT8 transformer
+  in the list, is a **finding** (the ruling is INT8 parts only, about 36 GB). Each file is safetensors, or the
+  vendor's own checkpoint format named as such;
+- the preflight `df` free space on the HF cache disk and the venv's disk, and that `dw-serve` was idle for the run;
+- the offload or streaming mode used, and which INT8 path ran on the 3090 (native, or dequantized);
+- peak VRAM (both `max_memory_allocated` and the `nvidia-smi` peak), peak host RSS, first-window time,
+  per-extra-window time, native fps and frame size;
+- the gate decision with the 30 s numbers that decide it (C-F1017's four measures), or the stop that ended the probe
+  before the gate (C-F1012).
+- The frame size is 480p or larger (the shorter side at least 480 rows). A smaller size is a **finding**: the plan
+  forbids lowering the resolution to fit.
+- The probe's settings are 8 steps with the 1.6 two-LoRA switch at `mix_steps` 4, and the 30 s take is seed 1 with
+  the prompt the record names (the vendor default or "a woman speaking to camera").
+If a named item is missing and no stop explains its absence, the issue goes back as needs-info.
+cleanup: none.
+metrics: none.
+
+### C-F1012 — if the #1465 probe stopped early, the comment names the stop that fired with its figure, and claims nothing past it
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. Applies when C-F1011's comment says the probe stopped before the 30 s gate decision. Read the comment, and
+`list_assets(workspace="constitution-walk-3", prefix="bench/longcat-avatar/")`.
+expected:
+- The comment names exactly one stop and the figure that tripped it, and the figure is past the stop line:
+  - disk: free space below 60 GB on a disk the probe needed (60 GB itself does not stop). The comment says nothing
+    was deleted to make room;
+  - OOM: at 480p, under the vendor's most aggressive offload (named). An OOM at a lighter offload with no retry at the
+    most aggressive one is a **finding**, as is any retry below 480p;
+  - host RSS above 90 GB (90 GB itself does not stop);
+  - an extra 480p window taking more than 6 min (6.0 min itself does not stop);
+  - a source build of a CUDA extension failing, with the error quoted and no patch around it.
+- A figure on the safe side of its line, offered as the stop, is a **finding**: the probe stopped when the plan said go on.
+- Nothing past the stop is claimed: no take, no measure table and no gate decision for a step the probe never
+  reached, and no `bench/longcat-avatar/` take asset for it. A fit-and-time stop may still report the figures measured
+  up to it (C-F1011's list, as far as it got).
+- A stop at the fit step leaves no 30 s take, and any stop before the gate leaves no 86 s take, in the asset list.
+cleanup: none.
+metrics: none.
+
+### C-F1013 — every `asset:bench/longcat-avatar/…` file the #1465 record names is listed in `constitution-walk-3`, and nothing the record doesn't name
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_assets(workspace="constitution-walk-3", prefix="bench/longcat-avatar/")`, with a `limit` above the count the
+comment gives. Compare with the asset names in C-F1011's comment.
+expected:
+- Every asset the comment names is listed, with the kind its name implies: each take `video`, each contact sheet and
+  0.5 s reference frame `image`.
+- For each take the probe made (the 30 s take, and the 86 s take only if the gate passed), there is a take, its contact
+  sheet and its 0.5 s reference frame: three assets per take.
+- No take is listed that the record doesn't name; an 86 s take listed after a failed gate is a **finding** (C-F1017).
+- The inputs the probe used are still there: `asset:uploads/bench/keyframes-v2/kf00.jpg` and
+  `asset:bench/constitution-narration-retimed.wav` (`list_assets` with prefixes `uploads/bench/` and `bench/`).
+- If the probe stopped before any take (C-F1012), an empty listing is the expected result.
+A named asset that is missing is a **finding**; if none are reachable, the issue goes back as needs-info.
+cleanup: none (the probe's assets are evidence: never delete them).
+metrics: none.
+
+### C-F1014 — each #1465 take plays as video with sound, at the record's native fps and size, within one window of its narration slice
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. For each take from C-F1013: `get_gallery_metadata("asset:bench/longcat-avatar/<take>", workspace="constitution-walk-3")`
+for `duration_seconds`, `fps`, `frame_count`, size and the audio stream. One window is about 3.7 s (93 frames at 25 fps).
+expected:
+- The take has a video stream and an audio stream, and the audio runs the take's length (it was muxed from the
+  narration slice).
+- `fps` is the native fps the record states (25 is expected from the vendor's windows; whatever the record says, the
+  metadata must agree with it). `frame_count` agrees with `duration_seconds` × `fps` within one frame.
+- The size is the frame size the record states, at 480p or above (C-F1011).
+- The 30 s take's `duration_seconds` is within 3.7 s of 30.0 s (26.3 to 33.7 s, edges included). The 86 s take's is
+  within 3.7 s of the slice length the record gives (about 86 s). Further off is a **finding**.
+- `assess_output` on each take (free) raises no unusable-take finding the record doesn't mention: no black stretch, no
+  silence over the narration.
+cleanup: none.
+metrics: none.
+
+### C-F1015 — `analyze_face_drift` on each #1465 take, one frame at each sample time, matches the record's SFace rows within ±0.03
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Short CPU or GPU runs (`templates/face-drift-check` has observed cold times under 0.1 min). Workspace
+`constitution-walk-3`. Sample times: the 30 s take's are 0.5/5/10/15/20/25/29.5 s; the 86 s take's
+0.5/15/30/45/60/75/85 s. Use the take's own fps (C-F1014), F, to convert: frame round(F·T).
+For each take and each T, run an inline one-step workflow whose single step is the `analyze_face_drift` task, with
+`video` = the take's `asset:`, `samples_per_shot: 1`, `device: "cpu"` and `shots` = one shot record from frame round(F·T)
+to round(F·T)+1, in the shape a chained output's `media.shots` uses (read one from any chain output's
+`get_gallery_metadata` first). Run it twice per T:
+- (a) `reference` = `asset:uploads/bench/keyframes-v2/kf00.jpg`;
+- (b) `reference` = the take's own 0.5 s reference frame asset (C-F1013).
+If the task refuses a hand-made shot record, cut a one-second clip at T with a task from `list_tasks` (`trim_video`)
+and measure that with `samples_per_shot: 1`, and say which task you used. `validate_workflow` each run first and bind
+its plan as `acknowledged_cost`; `run_workflow(..., wait_seconds=55)`. Read each result from `get_job` or `get_output_text`.
+expected:
+- Each run succeeds and reports one face and one similarity.
+- (a) is within ±0.03 of the record's SFace-to-kf00 value at T, and (b) within ±0.03 of its SFace-to-own-0.5 s value,
+  at every T. A gap over 0.03 anywhere is a **finding**: the record's numbers aren't true of the uploaded take.
+- (b) at T = 0.5 s reads about 1.0 (the frame against itself); well below is a **finding** that the reference frame
+  is not the take's 0.5 s frame.
+- A sample time the record lists with no value has a stated reason (a stop, or no face found at T).
+This case checks the numbers only. Whether the face holds is Don's verdict from viewing the take.
+cleanup: `delete_output(job_id=...)` for every measuring run (and any clip cut). Never the probe's assets.
+metrics: none.
+
+### C-F1016 — frames of each #1465 take at the record's contact-sheet times show one face and are the frames the sheet shows
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_output_frames` on each take's `asset:` in `constitution-walk-3` at its contact-sheet times: 0.5/15/29.5 s for
+the 30 s take, 0.5/30/60/85 s for the 86 s take. Read the take's contact sheet asset with `get_output_frames` too, and
+the H3 keeper's frames at the same times (job `514b463a855f`, run `20261110-230854-abc647e9`; `get_job` it in
+`constitution-walk-3` for its final video).
+expected:
+- Every frame is returned and shows one face (one person, no doubled or melted face).
+- Each LongCat tile on the sheet is the take's frame at that time: same person, framing, pose and colour, as far as one
+  look can tell. Each H3 tile is the keeper's frame at that time. A tile that matches neither is a **finding**.
+- The frames are consistent with the record's description (if the record says saturation rose, the late frame is not
+  visibly less saturated than the 0.5 s one).
+If the contact sheet isn't reachable as an asset, or the keeper job isn't found, the issue goes back as needs-info.
+cleanup: none.
+metrics: none.
+
+### C-F1017 — the #1465 gate decision follows from the record's own 30 s numbers, edges inclusive, and an 86 s take exists only after a pass
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. From C-F1011's comment: the 30 s take's SFace to kf00 at each sample, its face-crop saturation at 0.5 s and the
+largest rise after it, its 256 px Laplacian at 20-30 s, and its still-mouth bins over 0-30 s. With C-F1013's listing.
+expected:
+- The gate passes exactly when all four hold, edges inclusive: SFace to kf00 ≥ 0.88 at **every** sample (0.88 passes,
+  0.879 fails); the saturation rise from 0.5 s ≤ 5 (exactly 5 passes; a fall passes); the 256 px Laplacian at 20-30 s
+  ≥ 410 (410 passes); still-mouth bins over 0-30 s ≤ 3 (3 passes, 4 fails). A decision that differs from this rule
+  applied to the record's numbers is a **finding**.
+- The gate uses the 256 px crop Laplacian, not the native-scale one. The native figure is recorded but gating on it
+  is a **finding**.
+- The H3 figures the record compares against are the plan's: keeper 536 / 104.1 / .90 at 20-30 s and 469 / 103.1 / .87
+  at 80-90 s; arc v4 410 / 107.6 / .88 at 20-30 s; keeper still-mouth bins 0 over 0-20 s and 7 over the whole take.
+  A different H3 figure with no stated reason is a **finding**.
+- **Pass:** the 86 s take exists (C-F1013), the record has its SFace and measure rows at 0.5/15/30/45/60/75/85 s,
+  and a 10 s window table (sharpness / saturation / SFace) beside both H3 arms.
+- **Fail:** the record says which threshold failed, with its number, and stopped. No 86 s take, table or contact
+  sheet exists. An 86 s run after a failed gate, or a stop after a pass, is a **finding**.
+- The 30 s numbers the decision uses are the ones C-F1015 confirmed.
+cleanup: none.
+metrics: none.
+
+### C-F1018 — the #1465 probe adds nothing to the server: no LongCat model, workflow or task, and its commits touch only bench and docs
+pending: #1465
+source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_models` (summary form), `list_workflows` (default), `list_tasks` and `list_pipelines`, each searched for
+`longcat` / `LongCat-Video` / `avatar`. Read the build comment's list of changed files.
+expected:
+- No LongCat video or avatar model, template, task or pipeline appears. (The installed `longcat_image` and
+  `longcat_audio_dit` pipelines may still be listed; they predate the probe.) A new one is a **finding**: the ruling
+  forbids any engine, catalog, template or skill change.
+- The comment lists the stage's changed files, and every one is under `bench/` or `docs/` (the new
+  `bench/records/longcat-avatar.md`, the pointer line in `bench/records/narrated.md`, and at most a `bench/ks2v_gate.py`
+  option with a usage line in its header). A file under `dw/`, `dw_mcp/`, `ui/`, `plugins/` or `workflows/` is a
+  **finding**.
+- The comment says nothing was deployed.
+If the comment gives no file list, the file check can't be made over MCP: the issue gets `docs-review` for that item,
+and the server-surface check above still decides this case.
+cleanup: none.
+metrics: none.
+
 ## Performance
