@@ -182,9 +182,12 @@ After the verdict:
   - an estimate;
   - its **acceptance intent**: what a consumer observes over MCP when it
     works, including the refusals and edge cases, written for the tester
-    to turn into cases without seeing code. A stage with no MCP surface
-    (UI, say) names who verifies it instead, and that line is one more
-    thing Don approves.
+    to turn into cases without seeing code. A UI stage's acceptance is
+    what a user sees in a browser: pages, clicks, typed text, the text
+    that appears, and API answers faked through `ui-check`. vitest is the
+    builder's own check before hand-off, like pytest, never the tester's.
+    Any other stage with no MCP surface names who verifies it instead,
+    and that line is one more thing Don approves.
 - **Order and dependencies.**
   - Stages build in order.
   - A stage that needs another feature first is blocked *by that issue*,
