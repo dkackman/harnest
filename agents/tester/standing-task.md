@@ -51,8 +51,8 @@ that fails on something validate passed is a ticket.
 Each task session (the driver runs one every few cycles — `TESTER_TASK_EVERY`,
 default every fourth — separate from the per-issue verify sessions):
 
-1. Pick up where the last episode left off. `qa-bible.md` in your working
-   directory is your memory across cycles — see "The bible" below for what
+1. Pick up where the last episode left off. `qa-bible.md`, at the path your
+   prompt gives, is your memory across cycles — see "The bible" below for what
    goes in it and how to read it.
 2. Advance the series by one concrete step: a new episode, or re-running an
    old one with a recently fixed tool to confirm the fix holds in context.

@@ -718,6 +718,11 @@ isn't found until you re-run the script.
 | `DEPLOY_ON_MISMATCH` | `1` | redeploy `develop` if `lem` is on anything else before the tester pass; `0` = warn only |
 | `IMPLEMENTER_CLAIM_MAX` | `10` | most issues one implementer pass claims; the rest stay unclaimed for another loop; `0` = no cap |
 | `ONLY_ISSUES` | unset | restrict a cycle to these issue numbers |
+| `HARNEST_ITEM` | unset | `1`: `run-loop.sh` is sourced by `lib/run-item.sh <pass> [<issue>]` to run one pass for one issue as the R17 scheduler's child: no lock, no deploy, no suite commit (a `<last-session>.land` note instead), no cycle loop. Set by `run-item.sh`, not by hand |
+| `HARNEST_LAST_SESSION` | `logs/.last-session.loop` | item mode: the session's last-session file (`logs/.last-session.item.<slot>`, relative to the checkout); its prompt files take the same tag |
+| `DEPLOYED_HEAD` / `HARNEST_DW_FROZEN` | asked of the server / of develop | item mode: what the server runs and whether dw's freeze is on (`0`/`1`), as the scheduler last read them |
+| `HARNEST_SESSION_TREE` / `HARNEST_SESSION_BASE` | unset | item mode, a tester or curator item only: the session's own suite worktree (`harness/suite_tree.py`, absolute) and the 40-hex `main` sha it was made at. The session runs there and the guard holds its suite files to that base; a code session is never told. Ignored outside item mode |
+| `TESTER_PART` | `all` | which part of `tester_pass` runs: `all` (the loop), `issues`, `task` (the standing task, now) or `closures`; `run-item.sh` sets it |
 | `CASES_PER_SESSION` | 3 or 8 | `run-regression.sh` only; see above |
 | `REGRESSION_CASES` | empty (every case) | `run-regression.sh` only: the case IDs to run, each with the cases its `setup:`/`cleanup:` lines tie it to; the level's prerequisite is not run, and an ID in none of the run's suite files is refused; see above |
 | `FALLBACK_MODEL` | unset | `--fallback-model`; must be servable by the role's provider |

@@ -356,6 +356,10 @@ CONSUMER_PERMISSION_FLAGS=(
     "Write(regression-suite-*.md)" "Edit(regression-suite-*.md)"
     "Write(regression-perf/**)" "Edit(regression-perf/**)"
     "Write(qa-bible.md)" "Edit(qa-bible.md)"
+    # the bible is git-ignored and lives only in the harness checkout: a
+    # tester whose cwd is a suite tree (run-loop.sh item mode) writes it
+    # there, by its absolute path (`//` + the path)
+    "Write(/$HARNEST_ROOT/qa-bible.md)" "Edit(/$HARNEST_ROOT/qa-bible.md)"
     "Write(/tmp/**)" "Edit(/tmp/**)"
     "Write(//tmp/**)" "Edit(//tmp/**)"
     "Write(/private/tmp/**)" "Edit(/private/tmp/**)"

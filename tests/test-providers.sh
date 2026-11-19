@@ -67,7 +67,8 @@ has "consumer flags allow the perf-check wrapper" '"Bash(./scripts/perf-check.sh
 fails "consumer flags: no perf-check.py spelling" grep -qF 'perf-check.py' <<< "$cflags"
 fails "consumer flags: no bare Write" grep -qF '"Write" ' <<< "$cflags"
 fails "consumer flags: no bare Edit" grep -qF '"Edit" ' <<< "$cflags"
-eq "consumer flags: Write/Edit on nothing else" 14 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | grep -vF '~/.config/harnest/' | wc -l | tr -d ' ')"
+has "consumer flags allow Write/Edit on the bible by its absolute path" "\"Write(/$HARNEST/qa-bible.md)\" \"Edit(/$HARNEST/qa-bible.md)\"" "$cflags"
+eq "consumer flags: Write/Edit on nothing else" 16 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | grep -vF '~/.config/harnest/' | wc -l | tr -d ' ')"
 has "consumer flags: the release key is denied" '"Read(~/.config/harnest/**)" "Write(~/.config/harnest/**)" "Edit(~/.config/harnest/**)"' "$cflags"
 
 # --- ONLY_ISSUES

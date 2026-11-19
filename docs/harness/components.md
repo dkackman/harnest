@@ -191,6 +191,13 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
     by themselves.
   - **Approval** (`status:plan-approved`) is Don's alone: `guard.py` refuses it from
     every role.
+- `lib/run-item.sh <pass> [<issue>]` (R17) — one pass of `run-loop.sh` for one issue, as a
+  child of the Python scheduler: it sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
+  the lock, the startup deploy, `check_target_on_develop`, the plugin-tree refresh, every
+  suite commit and `main`. A tester or curator item runs in `HARNEST_SESSION_TREE` (its own
+  suite worktree, `harness/suite_tree.py`) and leaves `<last-session>.land` for the
+  scheduler's `land()`; `park <issue> <reason>` parks with Don for the scheduler (a deploy
+  that failed twice). The pass list and environment are in its header.
 - `run-release.sh` / `lib/release.sh` / `agents/release/` (R14) — cuts a release in stages
   Don runs: `freeze`, `check`, `review`, `notes`, `gates`, `accept`, `status`, `cut`. It
   records each gate as a marker comment on the release issue, keyed to the full

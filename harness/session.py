@@ -80,6 +80,9 @@ CONSUMER_WRITABLE = (
     "regression-suite-*.md",
     "regression-perf/**",
     "qa-bible.md",
+    # git-ignored, so only in the harness checkout: a tester in a suite tree
+    # writes it by its absolute path (`//` + the path)
+    f"/{REPO}/qa-bible.md",
     "/tmp/**",
     "//tmp/**",
     "/private/tmp/**",

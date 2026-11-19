@@ -611,6 +611,7 @@ case "\$*" in
 esac
 EOS
 chmod +x "$T/bin/ssh"
+cp "$T/bin/ssh" "$T/ssh.logging"   # section 19 puts it back
 mini_health() { printf '#!/usr/bin/env bash\n%secho '"'"'{"status":"ok","device":"mps","hostname":"%s"}'"'"'\n' "${2:-}" "${1:-mini-ai.lan}" > "$T/bin/curl"; chmod +x "$T/bin/curl"; }
 : > "$FAKE_CLAUDE_LOG"
 mini_health
@@ -1036,6 +1037,122 @@ mini_loop DRAIN=1 MAX_CYCLES=3
 has "drain: another loop's feature does end it" "drain: nothing left but deferred issues, exiting after cycle 1." "$(cat "$T/loop-mini.out")"
 dloop 1 DRAIN=2; rc=$?
 eq  "drain: a bad DRAIN is refused" 1 "$rc"
+
+# --- 19. item mode (R17): lib/run-item.sh runs one pass of run-loop.sh for one
+# issue, as the Python scheduler's child: no lock, no deploy, no suite commit,
+# its own last-session file, DEPLOYED_HEAD from the environment
+item() { # item <pass> [<issue> [<reason>]] [-- VAR=value...]: one item, bounded at 60s
+  local -a args=() envs=()
+  while [ $# -gt 0 ] && [ "$1" != -- ]; do args+=("$1"); shift; done
+  [ $# -eq 0 ] || { shift; envs=("$@"); }
+  (cd "$T/h" && exec env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
+     SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" SESSION_RETRY_PAUSE_SECS=0 \
+     HARNEST_LAST_SESSION=logs/.last-session.item.s1 DEPLOYED_HEAD="develop @ ${sha:0:9}" \
+     ${envs[@]+"${envs[@]}"} lib/run-item.sh "${args[@]}") > "$T/item.out" 2>&1 &
+  local pid=$! i
+  for i in $(seq 1 600); do kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done
+  if kill -0 "$pid" 2>/dev/null; then killtree "$pid"; wait "$pid" 2>/dev/null; echo "item timed out" >> "$T/item.out"; return 124; fi
+  wait "$pid"
+}
+handoffs='[{"number": 2, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]},
+           {"number": 3, "state": "OPEN", "labels": [{"name": "owner:tester"}, {"name": "status:fixed-pending-verify"}]}]'
+: > "$FAKE_CLAUDE_LOG"; : > "$FAKE_CLAUDE_LOG.argv"; rm -f "$T/h/logs/.last-session.item.s1" "$T/h/logs/.last-session.loop"
+board "$handoffs"
+item tester 2; rc=$?
+eq  "item: exits 0 after a session" 0 "$rc"
+eq  "item: verify runs one session for #2 only" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "item: and its prompt names #2" "VERIFY session for issue #2 only" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+has "item: the prompt names DEPLOYED_HEAD from the environment" "is running: develop @ ${sha:0:9}" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+ok  "item: last-session file is the one given" grep -q '^usage: ' "$T/h/logs/.last-session.item.s1"
+fails "item: and not the loop's" test -e "$T/h/logs/.last-session.loop"
+# nothing ready for the issue: exit 0, no session
+: > "$FAKE_CLAUDE_LOG"
+item tester 9; rc=$?
+eq  "item: nothing ready is exit 0" 0 "$rc"
+eq  "item: and no session" 0 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+item no-such-pass 2; rc=$?
+eq  "item: an unknown pass is a driver error" 1 "$rc"
+# another driver holds the lock: the item runs anyway, and leaves it alone
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"
+sleep 300 & holder=$!
+mkdir "$T/h/logs/.driver.lock"; echo "$holder run-loop" > "$T/h/logs/.driver.lock/owner"
+item tester 3; rc=$?
+eq  "item: takes no lock (runs beside a held one)" "0 1" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+eq  "item: the held lock is untouched" "$holder run-loop" "$(cat "$T/h/logs/.driver.lock/owner")"
+kill -KILL "$holder" 2>/dev/null; wait "$holder" 2>/dev/null; rm -rf "$T/h/logs/.driver.lock"
+# the tester's suite edits are not committed in item mode (the Python driver lands them)
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"; before_head="$(git -C "$T/h" rev-parse HEAD)"
+item tester 2 -- FAKE_CLAUDE_DO='printf "\n### S-F999 — item\ncleanup: none.\n" >> regression-suite-smoke.md'
+eq  "item: no suite commit" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
+has "item: the edit is left for the driver to land" "S-F999" "$(git -C "$T/h" diff HEAD -- regression-suite-smoke.md)"
+git -C "$T/h" checkout -q -- regression-suite-smoke.md
+ok  "item: a land note for the driver (message, kind, co-author)" jq -e '.msg | startswith("regression: tester added case")' "$T/h/logs/.last-session.item.s1.land"
+# a suite tree: the tester's cwd is the tree, and the guard is told the tree and its base
+git -C "$T/h" worktree add -q --detach "$T/stree" HEAD
+streal="$(cd "$T/stree" && pwd -P)"; sbase="$(git -C "$T/h" rev-parse HEAD)"
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"
+item tester 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
+  FAKE_CLAUDE_DO='pwd -P > "$T/item.cwd"; echo "${HARNEST_SESSION_TREE:-unset} ${HARNEST_SESSION_BASE:-unset}" > "$T/item.env"' T="$T"
+eq  "item: a suite tree is the tester's cwd" "$streal" "$(cat "$T/item.cwd")"
+eq  "item: and the guard is told the tree and its base" "$streal $sbase" "$(cat "$T/item.env")"
+# a code session never gets them, even when the environment holds them
+board '[{"number": 20, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+item implementer 20 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE="$sbase" \
+  FAKE_CLAUDE_DO='pwd -P > "$T/item.cwd"; echo "${HARNEST_SESSION_TREE:-unset} ${HARNEST_SESSION_BASE:-unset}" > "$T/item.env"' T="$T"
+eq  "item: the implementer is not told the suite tree" "unset unset" "$(cat "$T/item.env")"
+eq  "item: and works in the source checkout" "$(cd "$T/src" && pwd -P)" "$(cat "$T/item.cwd")"
+# a tree without a usable base is refused, before any session
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"
+item tester 2 -- HARNEST_SESSION_TREE="$streal" HARNEST_SESSION_BASE=main; rc=$?
+eq  "item: a suite tree with no 40-hex base is a driver error" "1 0" "$rc $(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+git -C "$T/h" worktree remove --force "$T/stree"
+# the curator: the tree is its cwd too, and its land note carries the approved kind
+printf '%s\n' '{"o/r": [], "h/r": [{"number": 8, "state": "OPEN", "labels": [{"name": "suite"}, {"name": "status:needs-approval"}]}]}' > "$T/board.json"
+before_head="$(git -C "$T/h" rev-parse HEAD)"
+item curator 8 -- SHARED_PASSES=1 FAKE_CLAUDE_DO='case "$*" in *"suite-change request #8"*) printf "\nx\n" >> regression-suite-smoke.md; gh issue close 8 --repo h/r --reason completed ;; esac'
+eq  "item: the curator's edit is not committed either" "$before_head" "$(git -C "$T/h" rev-parse HEAD)"
+eq  "item: its land note is the approved route" "curator: applied h/r#8 curator:review" "$(jq -r '.msg + " " + .kind' "$T/h/logs/.last-session.item.s1.land")"
+git -C "$T/h" checkout -q -- regression-suite-smoke.md
+# tester-task runs only the standing task, tester-closures only the closures session
+board '[{"number": 61, "state": "CLOSED", "labels": [{"name": "owner:tester"}, {"name": "wontfix"}]}]'
+rm -f "$T/h/logs/closures-seen"; : > "$FAKE_CLAUDE_LOG"
+item tester-task
+eq  "item: tester-task is one TASK session" "1 0" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'CLOSURES session' "$FAKE_CLAUDE_LOG")"
+has "item: and points the tester at the bible in the harness root" "$(cd "$T/h" && pwd)/qa-bible.md" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+has "item: which the allowlist lets it write" "Write(/$(cd "$T/h" && pwd)/qa-bible.md)" "$(cat "$FAKE_CLAUDE_LOG.argv")"
+rm -f "$T/h/logs/closures-seen"; : > "$FAKE_CLAUDE_LOG"
+item tester-closures
+eq  "item: tester-closures is one CLOSURES session" "0 1" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'CLOSURES session' "$FAKE_CLAUDE_LOG")"
+: > "$FAKE_CLAUDE_LOG"; board "$handoffs"
+item tester 2 -- TESTER_TASK_EVERY=1
+eq  "item: a per-issue tester item never runs the task" "0 1" "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG") $(grep -c 'VERIFY session' "$FAKE_CLAUDE_LOG")"
+# the implementer never deploys: mini-ai with nothing answering and behind develop
+# would get a startup deploy and a develop check from the loop, none from an item
+: > "$FAKE_CLAUDE_LOG"; : > "$T/deploys"; : > "$T/ssh-calls"; echo 0000000 > "$T/mini-head"
+cp "$T/bin/ssh" "$T/ssh.saved"; cp "$T/ssh.logging" "$T/bin/ssh"
+printf '#!/usr/bin/env bash\nexit 7\n' > "$T/bin/curl"; chmod +x "$T/bin/curl"
+board '[{"number": 30, "state": "OPEN", "labels": [{"name": "owner:implementer"}, {"name": "backend:shared"}]}]'
+item implementer 30 -- DW_TARGET=mini-ai PLUGIN_TREE="$T/plugin-mini" LEAD_TREE="$T/lead-mini"; rc=$?
+eq  "item: implementer on mini-ai ran its fix" "0 1" "$rc $(grep -c 'fix session' "$FAKE_CLAUDE_LOG")"
+eq  "item: implementer never deploys" "" "$(grep 'deploy.sh' "$T/ssh-calls" || true)"
+eq  "item: and no deploy reached the test bed" "" "$(cat "$T/deploys")"
+cp "$T/ssh.saved" "$T/bin/ssh"; mini_health
+# park: the driver's park after a deploy failed twice
+board "$handoffs"
+item park 2 "environment: driver deploy failed twice"; rc=$?
+eq  "item: park exits 0" 0 "$rc"
+eq  "item: park hands the issue to Don" "owner:don,status:fixed-pending-verify,status:needs-approval" "$(labels_of 2)"
+has "item: and says why" "environment: driver deploy failed twice" "$(jq -r '.["o/r"][] | select(.number == 2) | .comments[-1].body' "$T/board.json")"
+item park 2; rc=$?
+eq  "item: park needs a reason" 1 "$rc"
+# housekeeping passes
+board '[{"number": 3, "state": "OPEN", "author": {"login": "stranger"}, "labels": [{"name": "owner:implementer"}]}]'
+item park-external; rc=$?
+eq  "item: park-external parks an outside filing" "0 owner:don,status:needs-approval" "$rc $(labels_of 3)"
+item unpark; rc=$?
+eq  "item: unpark runs" 0 "$rc"
+item consolidation; rc=$?
+eq  "item: consolidation runs" 0 "$rc"
 
 for f in loop features reg curate retro; do cp "$T/$f.out" "/tmp/claude-501/last-$f.out" 2>/dev/null; done
 finish
