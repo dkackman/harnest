@@ -501,6 +501,41 @@ row 2 lead build $none 'cd ~/src/dkackman/diffusers-workflow && ./scripts/deploy
 row 2 consumer verify "$mcp_transcript" "ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'"
 row 0 implementer "" $none 'git commit --allow-empty -m "the driver runs deploy.sh develop"'
 row 0 implementer "" $none 'ssh lem uptime'
+# deploy.sh hidden in a gh/git command, and testbed.sh verbs that change the
+# server: refused on every target for both roles; only a message's text is exempt
+drow() {
+  local want="$1" target="$2" role="$3" kind="$4" cmd="$5"
+  jq -n --arg c "$cmd" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
+    | HARNEST_TARGET="$target" HARNEST_TARGET_HOST="$target" HARNEST_SESSION_KIND="$kind" python3 "$guard" "$role" >/dev/null 2>&1
+  eq "$role${kind:+/$kind}@$target: $cmd" "$want" $?
+}
+for tg in lem mini-ai; do
+  for rk in implementer: lead:build; do
+    r="${rk%%:*}" k="${rk#*:}"
+    for host in lem mini-ai; do
+      dep="ssh $host ~/diffusers-workflow/scripts/deploy.sh develop"
+      drow 2 $tg $r "$k" "git -c alias.d='!$dep' d"
+      drow 2 $tg $r "$k" "git -C /x submodule foreach '$dep'"
+      drow 2 $tg $r "$k" "gh issue view 5 --jq '\"$dep\"' | bash"
+      drow 2 $tg $r "$k" "git -c core.sshCommand='$dep #' fetch origin"
+      drow 2 $tg $r "$k" "git log -1 --format='$dep' | sh"
+      drow 2 $tg $r "$k" "GIT_SSH_COMMAND='$dep #' git fetch origin"
+    done
+    drow 0 $tg $r "$k" 'git commit -m "the driver runs deploy.sh develop"'
+    drow 0 $tg $r "$k" 'gh issue comment 5 --body "the driver runs deploy.sh develop after the merge"'
+    for v in update start restart stop; do
+      drow 2 $tg $r "$k" "scripts/testbed.sh $tg $v"
+      drow 2 $tg $r "$k" "./scripts/testbed.sh lem $v --force"
+      drow 2 $tg $r "$k" "bash /Users/don/testing/harnest/scripts/testbed.sh mini-ai $v"
+      drow 2 $tg $r "$k" "sh -c 'scripts/testbed.sh lem $v'"
+    done
+    drow 2 $tg $r "$k" 'scripts/testbed.sh lem update feature/x'
+    drow 0 $tg $r "$k" "scripts/testbed.sh $tg status"
+    drow 0 $tg $r "$k" 'scripts/testbed.sh lem logs 50'
+  done
+done
+drow 0 lem implementer "" 'ssh lem uptime'
+drow 0 mini-ai implementer "" 'ssh mini-ai uptime'
 # a body file is read before gh runs: it must be the only command, relative paths resolve against the hook's cwd
 cp "$T/plain.md" "$T/p3.md"
 row 2 implementer "" $none "cp $T/marker.md $T/p3.md; gh issue comment 5 --body-file $T/p3.md"

@@ -86,8 +86,10 @@ against the MPS test bed on host `mini-ai` under `.driver.lock.mini-ai`, alongsi
   `agents/<role>/target.md` appended to the system prompt (`target_note`).
 - **Guard** (`HARNEST_TARGET`, `HARNEST_ROLE`):
   - for the Mac implementer, ssh only to its own test bed (`HARNEST_TARGET_HOST`), no
-    scp/rsync, and no `deploy.sh` (the driver deploys between sessions: the session's own
-    MCP connection holds the old server open);
+    scp/rsync;
+  - for every role on every target, lem included (R17), no `deploy.sh` and no
+    `scripts/testbed.sh update|start|restart|stop` (the driver deploys between sessions: the
+    session's own MCP connection holds the old server open);
   - no suite edit from a Mac regression run, though the Mac tester may add a case for a
     shared fix;
   - no write to lem's perf history;

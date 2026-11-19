@@ -127,8 +127,11 @@ consumer (tester, regression):
     holds, bar a `pending:` line. Lines added since the commit (this
     session's own new case) stay editable
 every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
-even over ssh); the driver deploys develop between GPU sessions, because a session's own
-MCP connection keeps the old server from exiting (#446, 2026-09-26)
+even over ssh, in a NAME=value, a git alias or -c value, or gh/git output piped to a shell),
+nor scripts/testbed.sh update|start|restart|stop; the driver deploys develop between GPU
+sessions, because a session's own MCP connection keeps the old server from exiting (#446,
+2026-09-26). Only a message's inline text (git commit/tag -m, gh issue|pr --body/--title,
+gh api -f body=) may name deploy.sh (deploy_text_words)
 every role, claims (harnest#15 part 2): `target:<server>` labels are the
 loop driver's claims, and `verified-on:*` says a verification was made
 somewhere other than lem:
@@ -2610,19 +2613,81 @@ def consumer_root_rule(text):
 CONSUMER_ISSUE_SUBCOMMANDS = ("view", "list", "create", "comment", "edit", "close", "reopen", "status")
 
 
-def deploy_rule(words, server):
+# testbed.sh verbs that change what the server runs (update, start and restart run deploy.sh; stop kills it)
+TESTBED_STATE_VERBS = ("update", "start", "restart", "stop")
+# a message's inline text, the one place a gh/git word may name deploy.sh: git commit/tag -m,
+# gh issue/pr comment|create|edit --body/--title, gh api -f/-F body=|title=
+GIT_TEXT_FLAGS = ("-m", "--message")
+GH_TEXT_FLAGS = ("-b", "--body", "-t", "--title")
+GH_API_FIELD_FLAGS = ("-f", "-F", "--field", "--raw-field")
+
+
+def deploy_text_words(words):
+    """words without a message's inline text: the value of git commit/tag -m, of gh issue/pr
+    comment|create|edit --body/--title, and of gh api -f body=/title=. Every other word stays."""
+    if not words:
+        return words
+    name = os.path.basename(words[0])
+    if name == "git" and len(words) > 1 and words[1] in ("commit", "tag"):
+        flags, prefix = GIT_TEXT_FLAGS, ""
+    elif name == "gh" and len(words) > 2 and words[1] in ("issue", "pr") and words[2] in ("comment", "create", "edit"):
+        flags, prefix = GH_TEXT_FLAGS, ""
+    elif name == "gh" and len(words) > 1 and words[1] == "api":
+        flags, prefix = GH_API_FIELD_FLAGS, ("body=", "title=")
+    else:
+        return words
+    out, i = [], 0
+    while i < len(words):
+        w = words[i]
+        if w in flags and i + 1 < len(words) and (not prefix or words[i + 1].startswith(prefix)):
+            out.append(w)
+            i += 2
+            continue
+        if any(w.startswith(f + "=") for f in flags if f.startswith("--")) and (
+            not prefix or w.split("=", 1)[1].startswith(prefix)
+        ):
+            i += 1
+            continue
+        out.append(w)
+        i += 1
+    return out
+
+
+def names_deploy(words):
+    """True when a word runs dw's deploy.sh, or testbed.sh with a verb that changes the server,
+    as a word of its own or inside one (ssh host "cd x && ./scripts/deploy.sh", sh -c '...')."""
+    toks = []
+    for w in words:
+        parts = re.split(r"[\s;&|()'\"=!#]+", w)
+        toks.extend(parts if len(parts) > 1 else [w])
+    for j, t in enumerate(toks):
+        base = os.path.basename(t)
+        if base == "deploy.sh":
+            return True
+        if base == "testbed.sh":
+            nxt = [x for x in toks[j + 1 : j + 4] if x]
+            if len(nxt) > 1 and nxt[1] in TESTBED_STATE_VERBS:
+                return True
+    return False
+
+
+def deploy_rule(raw, words, server, text):
     """No session deploys dw (R17): the driver deploys develop between GPU sessions, on every
-    server, so a session's own MCP connection never holds the old server open. A `gh`/`git`
-    command is exempt: `deploy.sh` there is text in a comment or message, not a command."""
-    lead = 0  # env assignments before the command (FOO=1 ssh ...)
-    while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):
-        lead += 1
-    cmdw = words[lead:]
-    if not cmdw or os.path.basename(cmdw[0]) in ("gh", "git"):
-        return
-    if any(os.path.basename(w) == "deploy.sh" or w.endswith("/deploy.sh") or "deploy.sh " in w for w in cmdw):
+    server, so a session's own MCP connection never holds the old server open. That covers
+    deploy.sh and testbed.sh update|start|restart|stop, run directly, over ssh, by a shell, in a
+    leading NAME=value (GIT_SSH_COMMAND), a git alias or -c value, or a gh/git output piped to a
+    shell. Only a message's inline text (deploy_text_words) may name deploy.sh."""
+    pre = raw[: len(raw) - len(words)] if words and raw[-len(words) :] == words else raw
+    piped = any(
+        os.path.basename(command_words(g)[0] if command_words(g) else "")
+        in SCRIPT_RUNNERS + ("eval", "source", "xargs")
+        for g in segments(text)
+    )
+    hit = names_deploy(pre) or names_deploy(deploy_text_words(words)) or (piped and names_deploy(words))
+    if hit:
         deny(
-            "no session deploys dw%s: the driver deploys develop between GPU sessions. "
+            "no session deploys dw%s: the driver deploys develop between GPU sessions "
+            "(deploy.sh and testbed.sh update/start/restart/stop are its). "
             "Merge to develop, push, and hand off naming the deploy path (server or plugin)."
             % (" (the %s server too)" % server if server else "")
         )
@@ -2707,8 +2772,8 @@ def main():
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     if role == "consumer":
         consumer_script_call_rule(segs, data.get("cwd") or "")
-    for words in segs:
-        words = command_words(words)
+    for raw in segs:
+        words = command_words(raw)
         if not words:
             continue
         if role == "consumer":
@@ -2718,7 +2783,7 @@ def main():
             implementer_api_rule(words)
         if role in ("implementer", "lead"):
             wrapper_rule(words)
-        deploy_rule(words, server)
+        deploy_rule(raw, words, server, stripped)
         if role == "implementer" and server:
             lead = 0  # env assignments before the command (FOO=1 ssh ...), not an ssh -o Key=value
             while lead < len(words) and re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*=.*", words[lead]):

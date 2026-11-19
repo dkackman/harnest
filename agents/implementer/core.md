@@ -194,6 +194,8 @@ UI's check/lint/test pass if you changed `ui/`, and no test fails that
 passed on the commit `develop` was at when your session began. A refusal
 is the rule working: fix what it names, don't look for a way around it.
 
+`deploy.sh` and testbed deploys are refused (the driver deploys; see "You never deploy").
+
 `guard.py` also holds dw's hot zone and metrics ratchet (`venv/bin/python scripts/arch_metrics.py --root .`) on a push of `develop` and a hand-off; a new `dw/` or `dw_mcp/` module is a rise only Don approves.
 A hand-off that changes `dw/` or `dw_mcp/` gets an architecture review against `docs/ARCHITECTURE.md`, the map: call the owner a row names, never re-derive its rule.
 

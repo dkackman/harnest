@@ -70,7 +70,7 @@ The role prompts' cores carry each guard rule as one line under "Enforced by the
 `arch_gate` also refuses a hand-off or a push of `develop` whose own commits touch dw's hot zone or worsen a
 `scripts/arch_metrics.py` metric (`lib/arch_ratchet.py`, fails closed); only Don's `arch-approved` with a matching `baseline.json` raise waives a rise.
 
-Two deploy paths, and the hand-off must say which one a fix needs (`deploy: server` or `deploy: plugin`). No agent session deploys, on any server (R17): the guard refuses `deploy.sh` for implementer and lead everywhere, and the driver deploys `develop` between GPU sessions. Server code → the driver runs
+Two deploy paths, and the hand-off must say which one a fix needs (`deploy: server` or `deploy: plugin`). No agent session deploys, on any server (R17): the guard refuses `deploy.sh` (run directly, over ssh, in a `NAME=value` such as `GIT_SSH_COMMAND`, a git alias or `-c` value, or `gh`/`git` output piped to a shell) and `scripts/testbed.sh update|start|restart|stop` for every role, tester included, on every target; only a message's inline text (`git commit -m`, `gh issue|pr --body/--title`, `gh api -f body=`) may name `deploy.sh`. The driver deploys `develop` between GPU sessions. Server code → the driver runs
 `ssh lem '~/diffusers-workflow/scripts/deploy.sh develop'` (in the dw repo: fetch, ff-only pull,
 reinstall if `pyproject.toml` changed, wait for a running job, restart via the `dw-serve`
 systemd user unit if installed else its `screen` session, poll health — the one call that
