@@ -15,12 +15,14 @@
 //   click       {role, name?} | {text}          [exact?, nth?]
 //   fill        {label | placeholder | role+name?, value}  [exact?, nth?]
 //   press       {key}
-//   mock        {url_glob, set?: {"dotted.path": value, ...}, status?, once?}
+//   mock        {url_glob, set?: {"dotted.path": value, ...}, status?, once?, delay_ms?}
 //               route.fetch() the real request, parse its JSON, set each path
 //               (a.b, a.0.b and a[0].b; any JSON value), route.fulfill({json}),
 //               with status (100-599) in place of the real one when given; at
-//               least one of set and status
-//   stub        {url_glob, json, status?, method?}   answer with this JSON (status
+//               least one of set and status. delay_ms (integer 0-10000) holds the
+//               answer that long after the real fetch, to play a slow server (the
+//               step does not wait; the step and run caps and SIGTERM still apply)
+//   stub        {url_glob, json, status?, method?, delay_ms?}   answer with this JSON (status
 //               100-599, default 200) and never send the request. method POST: a
 //               POST to a POST_ALLOWED route; the glob may name only those routes
 //               (refused otherwise), and a GET or HEAD on it gets the real answer.
@@ -28,6 +30,7 @@
 //               HEAD on any same-origin path (a read changes nothing on the server),
 //               to play a 404 or 500 page-data load; a POST on it goes on. Default:
 //               POST when the glob names only POST_ALLOWED routes, else GET.
+//               delay_ms (integer 0-10000) holds the answer that long, as for mock.
 //   abort       {url_glob}   fail a matching same-origin GET or HEAD as a network
 //               error (anything else on the glob goes on)
 //   unmock      {url_glob}   removes the mocks, stubs and aborts on that glob
@@ -207,8 +210,8 @@ const SHAPES = {
   click: { role: "role", name: "text", text: "text", exact: "boolean", nth: "index" },
   fill: { label: "text", placeholder: "text", role: "role", name: "text", value: "string", exact: "boolean", nth: "index" },
   press: { key: "key" },
-  mock: { url_glob: "glob", set: "set", status: "status", once: "boolean" },
-  stub: { url_glob: "glob", json: "json", status: "status", method: "method" },
+  mock: { url_glob: "glob", set: "set", status: "status", once: "boolean", delay_ms: "delay" },
+  stub: { url_glob: "glob", json: "json", status: "status", method: "method", delay_ms: "delay" },
   abort: { url_glob: "glob" },
   unmock: { url_glob: "glob" },
   record: { url_glob: "glob" },
@@ -268,6 +271,9 @@ function checkValue(kind, v, where) {
       return;
     case "index":
       if (!Number.isInteger(v) || v < 0 || v > 1000) invalid(where + " must be an integer from 0");
+      return;
+    case "delay":
+      if (!Number.isInteger(v) || v < 0 || v > 10000) invalid(where + " must be an integer from 0 to 10000 (milliseconds)");
       return;
     case "timeout":
       if (!Number.isInteger(v) || v < 1 || v > STEP_MS) invalid(where + " must be an integer from 1 to 30000");
@@ -641,6 +647,8 @@ async function main() {
       r.requests.push({ method: req.method(), url: url.pathname + url.search, body: bodyOf(req), timestamp: Date.now() });
     }
   });
+  // Holds an answer s.delay_ms; a SIGTERM ends the run (process.exit) whatever is pending.
+  const hold = (s) => (s.delay_ms ? new Promise((r) => setTimeout(r, s.delay_ms)) : null);
   const run = async (s) => {
     switch (s.step) {
       case "goto": {
@@ -681,13 +689,15 @@ async function main() {
             doc = JSON.parse(await resp.text());
           } catch (e) {
             if (s.set) entry.errors.push("the real answer is not JSON: " + short(e.message, 200));
-            return route.fulfill({ response: resp, ...status });
+            await hold(s);
+            return route.fulfill({ response: resp, ...status }).catch(() => {});
           }
           for (const [k, v] of Object.entries(s.set || {})) setPath(doc, k, v);
-          return route.fulfill({ response: resp, json: doc, ...status });
+          await hold(s);
+          return route.fulfill({ response: resp, json: doc, ...status }).catch(() => {});
         };
         await addRoute(s.url_glob, entry, s.once ? { times: 1 } : {});
-        return { url_glob: s.url_glob, set: Object.keys(s.set || {}), status: s.status ?? null, once: s.once === true };
+        return { url_glob: s.url_glob, set: Object.keys(s.set || {}), status: s.status ?? null, once: s.once === true, delay_ms: s.delay_ms ?? 0 };
       }
       case "stub": {
         // POST: answers a POST to a POST_ALLOWED route and never sends it; anything else
@@ -696,16 +706,17 @@ async function main() {
         // server either way); a write on the glob goes on.
         const method = stubMethod(s);
         const entry = { hits: 0, errors: [] };
-        entry.handler = (route) => {
+        entry.handler = async (route) => {
           const req = route.request();
           const m = req.method().toUpperCase();
           const mine = method === "POST" ? m === "POST" : READ_METHODS.has(m);
           if (!mine || !stubbable(req)) return route.fallback();
           entry.hits++;
-          return route.fulfill({ status: s.status ?? 200, json: s.json });
+          await hold(s);
+          return route.fulfill({ status: s.status ?? 200, json: s.json }).catch(() => {});
         };
         await addRoute(s.url_glob, entry);
-        return { url_glob: s.url_glob, method, status: s.status ?? 200 };
+        return { url_glob: s.url_glob, method, status: s.status ?? 200, delay_ms: s.delay_ms ?? 0 };
       }
       case "abort": {
         // A network failure on a same-origin read; a write on the glob goes on.
