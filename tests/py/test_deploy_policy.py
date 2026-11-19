@@ -85,6 +85,74 @@ class Policy(unittest.TestCase):
         g.succeeded()
         self.assertEqual(g.failed(), "retry")
 
+    def test_head_sha_parses_deployed_head(self):
+        self.assertEqual(dp.head_sha("develop @ abc1234"), "abc1234")
+        self.assertEqual(dp.head_sha("noise\ndevelop @ abc1234\n"), "abc1234")
+        self.assertEqual(dp.head_sha("abc1234"), "abc1234")
+        self.assertIsNone(dp.head_sha("unknown"))
+        self.assertIsNone(dp.head_sha("develop @ unknown"))
+        self.assertIsNone(dp.head_sha(""))
+
+    def test_policy_accepts_deployed_head_string(self):
+        self.commit("fix: #5 in")
+        sha = dp.git("-C", self.src, "rev-parse", "--short", "HEAD").stdout.strip()
+        head = f"develop @ {sha}"
+        self.commit("fix: #6 later", "dw/a.py")
+        develop = dp.git("-C", self.src, "rev-parse", "HEAD").stdout.strip()
+        self.assertTrue(dp.runnable_now(self.src, 5, head))
+        self.assertFalse(dp.runnable_now(self.src, 6, head))
+        self.assertFalse(dp.runnable_now(self.src, 5, "unknown"))
+        self.assertTrue(dp.server_paths_changed(self.src, head, develop))
+        self.assertTrue(dp.server_paths_changed(self.src, "unknown", develop))
+
+    def test_parked_gate_wants_nothing_until_reset(self):
+        g = dp.DeployGate(60, clock=lambda: 1000.0)
+        g.failed()
+        self.assertEqual(g.failed(), "park")
+        self.assertFalse(g.wanted([1], {1: False}, True))
+        g.reset()
+        self.assertTrue(g.wanted([1], {1: False}, True))
+        g.failed()
+        g.failed()
+        g.succeeded()
+        self.assertTrue(g.wanted([1], {1: False}, True))
+
+    def test_gate_state(self):
+        g = dp.DeployGate(60, clock=lambda: 0.0)
+        self.assertEqual(g.state, "idle")
+        for s in ("waiting", "draining", "deploying"):
+            g.set_state(s)
+            self.assertEqual(g.state, s)
+        with self.assertRaises(ValueError):
+            g.set_state("bogus")
+        g.failed()
+        self.assertEqual(g.state, "failed")
+        g.succeeded()
+        self.assertEqual(g.state, "idle")
+        g.set_state("draining")
+        g.failed()
+        g.reset()
+        self.assertEqual(g.state, "idle")
+
+    def test_fix_commit_prefers_non_merge(self):
+        direct = self.commit("fix: #12 real")
+        sh("git", "checkout", "-q", "-b", "side", cwd=self.src)
+        self.commit("side work", "side.txt")
+        sh("git", "checkout", "-q", "develop", cwd=self.src)
+        sh("git", "merge", "-q", "--no-ff", "side", "-m", "Merge pull request (#12) from x", cwd=self.src)
+        sh("git", "push", "-q", "origin", "develop", cwd=self.src)
+        self.assertEqual(dp.fix_commit(self.src, 12), direct)
+
+    def test_fix_commit_falls_back_to_merge(self):
+        sh("git", "checkout", "-q", "-b", "side", cwd=self.src)
+        self.commit("side work", "side.txt")
+        sh("git", "checkout", "-q", "develop", cwd=self.src)
+        self.commit("other", "o.txt")
+        sh("git", "merge", "-q", "--no-ff", "side", "-m", "Merge (#13)", cwd=self.src)
+        sh("git", "push", "-q", "origin", "develop", cwd=self.src)
+        merge = dp.git("-C", self.src, "rev-parse", "HEAD").stdout.strip()
+        self.assertEqual(dp.fix_commit(self.src, 13), merge)
+
     def test_deploy_takes_newest_develop_once(self):
         server = SimpleNamespace(host="lem", dir="~/dw", local=False, name="lem")
         self.commit("fix: #9 server", "dw/a.py")
