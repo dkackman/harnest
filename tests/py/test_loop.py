@@ -625,3 +625,41 @@ class LandErrorTest(unittest.TestCase):
             ):
                 lp.land(rec, lp.srv["lem"])
             self.assertEqual(rm.called, removed, result)
+
+
+class RespawnTest(unittest.TestCase):
+    def test_lead_design_in_loop_0_offers_no_design_or_decompose(self):
+        lp = mk(LEAD_DESIGN_IN_LOOP=0)
+        lp.items = [Item("lead:design", 4, "lem"), Item("lead:decompose", 5, "lem"), Item("lead:build", 6, "lem")]
+        self.assertEqual([i.queue for i in lp.offer()], ["lead:build"])
+        lp = mk()
+        lp.items = [Item("lead:design", 4, "lem")]
+        self.assertEqual([i.queue for i in lp.offer()], ["lead:design"])
+
+    def end(self, lp, item, session):
+        rec = loop.Running(item, "lem", "s1", mock.MagicMock(returncode=0), time.time(), lp.logs / ".ls", lp.logs / ".o")
+        (lp.logs / ".ls").write_text("usage: turns=1\n" if session else "")
+        lp.running["s1"] = rec
+        lp.sched.finished = lambda *a: None
+        lp.ended(rec)
+
+    def test_an_item_that_ran_no_session_backs_off(self):
+        lp = mk()
+        item = Item("lead:build", 6, "lem")
+        lp.items = [item]
+        self.end(lp, item, session=False)
+        self.assertEqual(lp.backoff[item.key][1], loop.EMPTY_BACKOFF)
+        now = time.monotonic()
+        lp.last_finish[item.key] = now - lp.poll - 1  # past the ordinary cooling
+        self.assertEqual(lp.offer(), [])  # but not past the back-off
+        lp.last_finish[item.key] = now - loop.EMPTY_BACKOFF - 1
+        self.assertEqual([i.key for i in lp.offer()], [item.key])
+        # it doubles, up to the cap
+        for want in (2 * loop.EMPTY_BACKOFF, 4 * loop.EMPTY_BACKOFF, loop.EMPTY_BACKOFF_MAX, loop.EMPTY_BACKOFF_MAX):
+            self.end(lp, item, session=False)
+            self.assertEqual(lp.backoff[item.key][1], want)
+        # a session that ran clears it
+        self.end(lp, item, session=True)
+        self.assertNotIn(item.key, lp.backoff)
+        lp.last_finish[item.key] = time.monotonic() - lp.poll - 1
+        self.assertEqual([i.key for i in lp.offer()], [item.key])

@@ -120,6 +120,11 @@ CLOSURE_KINDS = frozenset({"tester:closures", "tester:task"})
 # session may have left it where it was: the no-progress ledger parks it);
 # an issue-less one (closures, task) waits longer, since nothing parks it.
 ISSUELESS_COOLDOWN = 900
+# An item that ran no session (its pass found nothing ready: an empty
+# last-session file) waits this long before it is offered again, doubling
+# each time in a row up to the cap, instead of respawning every poll.
+EMPTY_BACKOFF = 300
+EMPTY_BACKOFF_MAX = 1800
 # What a land of a session with no land note (its item failed) is committed as.
 NO_NOTE = ("unknown (a loop item that left no land note)", "noreply@localhost")
 
@@ -381,6 +386,8 @@ class Loop:
         self.sessions = 0
         self.stop_signal = None
         self.last_finish = {}  # key -> time it ended
+        self.backoff = {}  # key -> (time it ended, secs): it ran no session
+        self.lead_design = (os.environ.get("LEAD_DESIGN_IN_LOOP") or "1") == "1"
         self.done_keys = set()  # --once: keys that ran
         self.task_last = time.time()
         self.paused_until = 0.0
@@ -756,6 +763,9 @@ class Loop:
         if t is None:
             return False
         wait = ISSUELESS_COOLDOWN if key[1] is None else self.poll
+        b = self.backoff.get(key)
+        if b is not None:
+            wait = max(wait, b[1])
         return time.monotonic() - t < wait
 
     def offer(self):
@@ -773,6 +783,8 @@ class Loop:
             if it.queue in DEPLOY_KINDS and (it.server, it.issue) in verify_wait:
                 continue  # waits for a deploy
             if it.queue in ("lead:design", "lead:decompose"):
+                if not self.lead_design:
+                    continue  # LEAD_DESIGN_IN_LOOP=0: left to a hand run of run-features.sh
                 srv = self.srv.get(it.server) if it.server else None
                 if srv is not None and srv.frozen == "1":
                     continue  # features_pass holds them in a stabilization freeze
@@ -971,6 +983,17 @@ class Loop:
             self.drop_own_tree(srv, rec.own_tree)
         self.sched.finished(rec.item, rec.server, rc == 0)
         self.last_finish[rec.item.key] = time.monotonic()
+        try:
+            ran = os.path.getsize(rec.last) > 0
+        except OSError:
+            ran = False
+        if ran:
+            self.backoff.pop(rec.item.key, None)
+        else:
+            prev = self.backoff.get(rec.item.key)
+            secs = EMPTY_BACKOFF if prev is None else min(prev[1] * 2, EMPTY_BACKOFF_MAX)
+            self.backoff[rec.item.key] = (self.last_finish[rec.item.key], secs)
+            srv.log.say(f"[loop] {rec.label} ran no session; not offered again for {secs}s")
         if rec.item.queue in CLOSURE_KINDS:
             srv.closures = []  # read again at the next housekeeping
         srv.log.say(

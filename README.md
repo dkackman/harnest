@@ -772,7 +772,7 @@ isn't found until you re-run the script.
 | `REVIEWER_MODEL` / `REVIEWER_PROVIDER` | the tester's | the docs reviewer: verifies `docs-review` fixes (README, non-guide docs) the tester can't observe |
 | `REVIEWER_BUDGET_USD` | `2` | per docs review session |
 | `LEAD_STAGES_PER_CYCLE` | `1` | stage builds per cycle; one feature in build at a time |
-| `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run |
+| `LEAD_DESIGN_IN_LOOP` | `1` | `run-loop.sh`: run `run-features.sh` in a cycle when a design or decompose waits; `0` leaves them to a hand run. The R17 loop (`harness/drivers/loop.py`) honours it too: at `0` it offers no `lead:design` or `lead:decompose` item |
 | `LEAD_TREE` | `~/src/dkackman/dw-agent-lead` (`-<target>` on another target) | `run-features.sh`: the lead's detached worktree at `origin/develop` |
 | `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` | `1800000` | how long a headless session waits for a background subagent before it is killed (Claude Code's default is 600 s) |
 

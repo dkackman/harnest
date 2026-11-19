@@ -200,7 +200,8 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   ones. It holds each server's `.driver.lock<sfx>` as `run-loop`, owns every deploy
   (`harness/deploy_policy.py`; a failed deploy keeps `gpu:S` held until a deploy succeeds or,
   after the park, S passes its preflight), runs the nightly regression under its lock, lands
-  suite trees, pauses on a rate limit and writes `logs/loop/state.json` (the heartbeat stops
+  suite trees, backs off an item that ran no session (an empty last-session file: 5 min,
+  doubling to 30, cleared when one runs), pauses on a rate limit and writes `logs/loop/state.json` (the heartbeat stops
   touching it when the main loop hasn't woken for 3 intervals, so a hang shows as stalled).
   GPU testers load `PLUGIN_TREE`, refreshed before each one (a failed refresh waits a wake);
   spec/handoff testers load `<PLUGIN_TREE>-free`; each reviewer item gets a tree of its own,
