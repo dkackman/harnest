@@ -198,8 +198,13 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   work items (`harness/board.py`), and starts what `harness/scheduler.py` allows as
   `lib/run-item.sh` children (`Runner`, the phase-1b seam), GPU sessions beside server-free
   ones. It holds each server's `.driver.lock<sfx>` as `run-loop`, owns every deploy
-  (`harness/deploy_policy.py`), runs the nightly regression under its lock, lands suite
-  trees, pauses on a rate limit and writes `logs/loop/state.json`.
+  (`harness/deploy_policy.py`; a failed deploy keeps `gpu:S` held until a deploy succeeds or,
+  after the park, S passes its preflight), runs the nightly regression under its lock, lands
+  suite trees, pauses on a rate limit and writes `logs/loop/state.json` (the heartbeat stops
+  touching it when the main loop hasn't woken for 3 intervals, so a hang shows as stalled).
+  GPU testers load `PLUGIN_TREE`, refreshed before each one (a failed refresh waits a wake);
+  spec/handoff testers load `<PLUGIN_TREE>-free`, reviewers `<PLUGIN_TREE>-review`. Every git
+  call it makes is bounded (120 s); a SIGTERM during a deploy waits for the deploy, lock held.
 - `lib/run-item.sh <pass> [<issue>]` (R17) — one pass of `run-loop.sh` for one issue, as a
   child of the Python scheduler: it sources `run-loop.sh` with `HARNEST_ITEM=1`, which skips
   the lock, the startup deploy, `check_target_on_develop`, the plugin-tree refresh, every

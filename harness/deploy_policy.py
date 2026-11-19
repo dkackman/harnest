@@ -27,38 +27,44 @@ def head_sha(deployed: str) -> str | None:
     return tok if re.fullmatch(r"[0-9a-f]{4,40}", tok) else None
 
 
-def _newest_match(source_dir: str, issue: int, *extra: str) -> str | None:
+def _newest_match(source_dir: str, issue: int, *extra: str, timeout=None) -> str | None:
     # git ERE has no portable \b on macOS; the group is the same word-end test.
     p = git(
         "-C", source_dir, "log", "origin/develop", *extra, "-E",
-        f"--grep=#{issue}([^0-9A-Za-z_]|$)", "-n", "1", "--format=%H",
+        f"--grep=#{issue}([^0-9A-Za-z_]|$)", "-n", "1", "--format=%H", timeout=timeout,
     )  # fmt: skip
     sha = p.stdout.strip()
     return sha if p.returncode == 0 and sha else None
 
 
-def fix_commit(source_dir: str, issue: int) -> str | None:
+def fix_commit(source_dir: str, issue: int, timeout=None) -> str | None:
     """Newest commit on origin/develop whose message names #<issue>, or None.
     Non-merge commits win; a merge (whose (#N) is often a PR number) is used only
     when no non-merge commit matches. The caller must `git fetch` first."""
-    return _newest_match(source_dir, issue, "--no-merges") or _newest_match(source_dir, issue)
+    return _newest_match(source_dir, issue, "--no-merges", timeout=timeout) or _newest_match(
+        source_dir, issue, timeout=timeout
+    )
 
 
-def runnable_now(source_dir: str, issue: int, deployed: str) -> bool:
-    """deployed is a bare sha or run_deploy's "<branch> @ <sha>"."""
+def runnable_now(source_dir: str, issue: int, deployed: str, timeout=None) -> bool:
+    """deployed is a bare sha or run_deploy's "<branch> @ <sha>". timeout
+    bounds each git call (a timed-out one is "not runnable")."""
     sha = head_sha(deployed)
-    fix = fix_commit(source_dir, issue)
+    if sha is None:
+        return False
+    fix = fix_commit(source_dir, issue, timeout=timeout)
     if sha is None or fix is None:
         return False
-    return git("-C", source_dir, "merge-base", "--is-ancestor", fix, sha).returncode == 0
+    return git("-C", source_dir, "merge-base", "--is-ancestor", fix, sha, timeout=timeout).returncode == 0
 
 
-def server_paths_changed(source_dir: str, deployed: str, develop: str) -> bool:
-    """deployed is a bare sha or run_deploy's "<branch> @ <sha>"."""
+def server_paths_changed(source_dir: str, deployed: str, develop: str, timeout=None) -> bool:
+    """deployed is a bare sha or run_deploy's "<branch> @ <sha>". timeout
+    bounds the git call (a timed-out one is "changed")."""
     sha = head_sha(deployed)
     if sha is None:
         return True  # cannot tell: deploying is the safe side
-    p = git("-C", source_dir, "diff", "--name-only", f"{sha}..{develop}")
+    p = git("-C", source_dir, "diff", "--name-only", f"{sha}..{develop}", timeout=timeout)
     if p.returncode != 0:
         return True  # cannot tell: deploying is the safe side
     return any(f and not f.startswith(PLUGIN_ONLY) for f in p.stdout.splitlines())

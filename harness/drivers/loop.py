@@ -77,13 +77,39 @@ PASS = {
 }
 # The sessions that may edit a suite file run in a tree of their own.
 SUITE_WRITERS = frozenset(q for q in PASS if q.startswith("tester:") or q == "curator")
+# The sessions that hold gpu:S.
+GPU_KINDS = frozenset({"tester:verify", "tester:answer", "tester:task", "tester:closures"})
+# What waits for (and so triggers) a deploy: the spec's "verify (or answer)".
+DEPLOY_KINDS = ("tester:verify", "tester:answer")
 # The tester loads the plugin tree (--plugin-dir); a reviewer reads a merged
-# tree as its cwd. Each family has its own tree per server, refreshed to
-# origin/develop before an item only while no other item of that family on
+# tree as its cwd. Each family has its own tree per server (<PLUGIN_TREE> plus
+# the suffix). A GPU tester's tree is refreshed to origin/develop before every
+# item (phase 1 has one gpu slot, so nothing else reads it then), and the item
+# waits for the next wake when that fails. The free-slot testers' and the
+# reviewers' trees are refreshed only while no other item of the family on
 # the server runs (a refresh under a running session would change what it reads).
-TREE_FAMILY = {
-    q: ("tester" if q.startswith("tester:") else "reviewer") for q in PASS if q.startswith(("tester:", "reviewer:"))
-}
+TREE_SUFFIX = {"tester-gpu": "", "tester-free": "-free", "reviewer": "-review"}
+
+
+def tree_family(q):
+    if q in GPU_KINDS:
+        return "tester-gpu"
+    if q.startswith("tester:"):
+        return "tester-free"
+    if q.startswith("reviewer:"):
+        return "reviewer"
+    return None
+
+
+TREE_FAMILY = {q: tree_family(q) for q in PASS if tree_family(q)}
+# Every git call the driver makes itself (fetch, the plugin trees) is bounded.
+GIT_TIMEOUT = 120
+# A main loop that hasn't woken for this many intervals is stalled: the
+# heartbeat stops touching state.json, so the dashboard shows it stalled.
+STALL_INTERVALS = 3
+# How long a deploy in flight at SIGTERM is waited for: run_deploy's own
+# timeout (1800 s) plus its head read and the preflight.
+DEPLOY_WAIT_SECS = 1800 + 120
 # One closures-seen ledger per server: never both at once (task-5 report).
 CLOSURE_KINDS = frozenset({"tester:closures", "tester:task"})
 # A per-issue item that ended waits this long before it may run again (its
@@ -174,6 +200,10 @@ class Srv:
     last_deploy: dict | None = None
     parked_develop: str = ""
     nightly_due: bool = False
+    nightly_day: str = ""  # the day the nightly that is due belongs to
+    nightly_said: bool = False  # "held by a release freeze" said once
+    pf_said: str = ""  # the last preflight failure said for a parked deploy
+    deploy_thread: object = None
     regression: object = None
     deploy_gen: int = 0  # bumped at each deploy's start and end: an older head read is stale
 
@@ -197,6 +227,9 @@ class Running:
     out: Path
     tree: object = None
     label: str = ""
+    paused: bool = False  # its rejection already paused the loop
+    done: bool = False  # ended() ran: the reader may finish its output file
+    reader: object = None
 
 
 class Runner:
@@ -362,6 +395,14 @@ class Loop:
         self.runner = Runner()
         self._children = set()  # housekeeping and board processes running now
         self._children_mx = threading.Lock()
+        self.git_timeout = GIT_TIMEOUT
+        self.localtime = time.localtime
+        self.last_wake = time.monotonic()
+        self.wake_interval = self.poll
+        self.hb_last_write = 0.0
+        self.hb_last_sample = 0.0
+        self.stall_said = False
+        self.out_seq = 0
 
     # -- output ---------------------------------------------------------------
     def say(self, line, srv=None):
@@ -428,11 +469,11 @@ class Loop:
                 self._children.discard(p)
         return p.returncode, out
 
-    def item_pass(self, srv, *args, slot="hk"):
+    def item_pass(self, srv, *args, slot="hk", timeout=600):
         """A run-item.sh pass that runs no session (housekeeping, park,
         labels), to its end: (rc, output)."""
         last = f"logs/.last-session.item.{slot}{srv.sfx}"
-        return self.sync(["bash", str(RUN_ITEM), *args], self.env_for(srv, last))
+        return self.sync(["bash", str(RUN_ITEM), *args], self.env_for(srv, last), timeout=timeout)
 
     def board_env(self, srv):
         return self.env_for(srv)
@@ -477,7 +518,7 @@ class Loop:
         for srv in self.srv.values():
             lock.acquire(srv.lock, LOCK_NAME, srv.log.say, held="")
         for srv in self.srv.values():
-            at = refresh_plugin_tree(srv.source_dir, srv.plugin_tree, self.branch())
+            at = refresh_plugin_tree(srv.source_dir, srv.plugin_tree, self.branch(), timeout=self.git_timeout)
             if at is None and not os.path.isdir(os.path.join(srv.plugin_tree, ".git")):
                 err(f"could not create/refresh the plugin worktree {srv.plugin_tree} from {srv.source_dir}")
                 return 1
@@ -543,6 +584,9 @@ class Loop:
     def release(self, srv, why):
         srv.active = False
         lock.release(srv.lock)
+        st = getattr(self, "state", None)
+        if st is not None:
+            st.released(srv.name)
         srv.log.say(f"[loop] {srv.name}: no longer driven ({why}); its lock is released")
 
     # -- the board ---------------------------------------------------------------
@@ -605,6 +649,13 @@ class Loop:
                     res["curator"] = r.pop("curator", None)
                     res["status"] = None if unreadable else "\n".join(status)
             r["deployed"] = None if srv.deploying else deploy.deployed_head(srv.server)
+            if srv.gate.parked and not srv.deploying:
+                # a deploy failed twice: gpu:S stays held until S passes a preflight
+                try:
+                    deploy.preflight(srv.server, srv.url, srv.token)
+                    r["preflight"] = ""
+                except deploy.PreflightError as e:
+                    r["preflight"] = str(e) or "failed"
             res["servers"][srv.name] = r
         return res
 
@@ -642,8 +693,31 @@ class Loop:
                 srv.freeze = fz
             if r["closures"] is not None:
                 srv.closures = board.numbers(r["closures"])
-            if r["deployed"] and not srv.deploying and r["gen"] == srv.deploy_gen and head_sha(r["deployed"]):
+            fresh = not srv.deploying and r["gen"] == srv.deploy_gen
+            # after a failed deploy the head is "unknown" until a preflight passes
+            if r["deployed"] and fresh and srv.gate.state != "failed" and head_sha(r["deployed"]):
                 srv.deployed = r["deployed"]
+            pf = r.get("preflight")
+            if pf is not None and fresh and srv.gate.parked and "deploy" in srv.holds:
+                if pf == "":
+                    srv.deployed = r["deployed"] if head_sha(r["deployed"] or "") else "unknown"
+                    srv.gate.reset()
+                    srv.pf_said = ""
+                    self.unhold(srv, "deploy")
+                    srv.log.say(
+                        f"[loop:deploy] {srv.name} passes its preflight again (it runs {srv.deployed}): "
+                        f"gpu:{srv.name} is free"
+                        + (
+                            f"; develop {srv.parked_develop} is not deployed again until it moves"
+                            if srv.parked_develop
+                            else ""
+                        )
+                    )
+                    self.need_snapshot = True
+                    self._gpu_flags()
+                elif pf != srv.pf_said:
+                    srv.pf_said = pf
+                    srv.log.say(f"[loop:deploy] {srv.name} still fails its preflight ({pf}); gpu:{srv.name} stays held")
         if res["curator"] is not None:
             self.curator = board.numbers(res["curator"])
         if res["status"] is not None:
@@ -689,7 +763,7 @@ class Loop:
         stopping = {s.name for s in self.srv.values() if s.stopping or not s.active}
         lem_queued = False
         for it in self.items:
-            if it.queue == "tester:verify" and (it.server, it.issue) in verify_wait:
+            if it.queue in DEPLOY_KINDS and (it.server, it.issue) in verify_wait:
                 continue  # waits for a deploy
             if it.queue in ("lead:design", "lead:decompose"):
                 srv = self.srv.get(it.server) if it.server else None
@@ -712,7 +786,10 @@ class Loop:
                 continue
             if srv.closures and (srv.name, "tester:task") not in running_kinds:
                 if not self.only_issues or any(str(n) in self.only_issues for n in srv.closures):
-                    out.append(Item("tester:closures", None, srv.name))
+                    it = Item("tester:closures", None, srv.name)
+                    # one cooling down (or excluded) does not keep the standing task out
+                    if self.offerable(it):
+                        out.append(it)
         lead = self.primary_srv()
         if self.hk_ready and self.curator and not lead.stopping and not (lead.freeze or ""):
             for n in self.curator:
@@ -733,9 +810,10 @@ class Loop:
             and time.time() - self.task_last >= self.task_gap
         ):
             out.append(Item("tester:task", None, primary))
-        out = [i for i in out if not self.only or i.queue in self.only]
-        out = [i for i in out if not self.cooling(i.key) and i.key not in self.done_keys]
-        return out
+        return [i for i in out if self.offerable(i)]
+
+    def offerable(self, it):
+        return (not self.only or it.queue in self.only) and not self.cooling(it.key) and it.key not in self.done_keys
 
     # -- dispatch ----------------------------------------------------------------
     def free_slot(self):
@@ -766,13 +844,21 @@ class Loop:
         env = self.env_for(srv, last)
         fam = TREE_FAMILY.get(item.queue)
         if fam:
-            tree_dir = srv.plugin_tree if fam == "tester" else srv.plugin_tree + "-review"
+            tree_dir = srv.plugin_tree + TREE_SUFFIX[fam]
             env["PLUGIN_TREE"] = tree_dir
             others = [r for r in self.running.values() if r.server == server and TREE_FAMILY.get(r.item.queue) == fam]
-            if not others:
-                at = refresh_plugin_tree(srv.source_dir, tree_dir, self.branch())
+            if fam == "tester-gpu" or not others:
+                at = refresh_plugin_tree(srv.source_dir, tree_dir, self.branch(), timeout=self.git_timeout)
                 if at:
                     srv.log.say(f"[loop] {fam} tree: origin/{self.branch()} @ {at}")
+                elif fam == "tester-gpu" or not os.path.isdir(os.path.join(tree_dir, ".git")):
+                    # a gpu tester verifies against develop's plugin: never a stale one
+                    srv.log.say(
+                        f"[loop] WARNING: could not refresh the {fam} tree {tree_dir}; "
+                        f"{label_of(item)} waits for the next wake"
+                    )
+                    self.sched.finished(item, server, False)
+                    return False
                 else:
                     srv.log.say(
                         f"[loop] WARNING: could not refresh the {fam} tree {tree_dir}; the session reads the previous one"
@@ -788,7 +874,10 @@ class Loop:
                 return False
             env["HARNEST_SESSION_TREE"] = tree.path
             env["HARNEST_SESSION_BASE"] = tree.base
-        out = self.logs / f".item.{slot}.out"
+        # Its own file per run: a straggler of the slot's previous item may
+        # still write to that one's (ended() renames it to .item.<slot>.out).
+        self.out_seq += 1
+        out = self.logs / f".item.{slot}.{os.getpid()}-{self.out_seq}.out"
         try:
             proc = self.runner.start(item, server, slot, env)
         except OSError as e:
@@ -825,11 +914,19 @@ class Loop:
                         self.q.put(("ratelimit", rec, line.decode("utf-8", "replace")))
         except (OSError, ValueError):
             pass
+        if rec.done:  # ended() came first: it left the file to us
+            self._keep_out(rec)
+
+    def _keep_out(self, rec):
+        """The slot's last output stays as logs/.item.<slot>.out."""
+        with contextlib.suppress(OSError):
+            os.replace(rec.out, self.logs / f".item.{rec.slot}.out")
 
     def _wait(self, rec):
         # The item's end is its exit, not its pipe's: a straggler that keeps
         # the pipe open must not hold the slot.
         reader = threading.Thread(target=self._read, args=(rec,), daemon=True)
+        rec.reader = reader
         reader.start()
         rec.proc.wait()
         reader.join(timeout=10)
@@ -846,7 +943,7 @@ class Loop:
             with contextlib.suppress(OSError):
                 tail = " | ".join(Path(rec.out).read_text(errors="replace").strip().splitlines()[-3:])
             srv.log.say(f"[loop] WARNING: {rec.label} item exited {rc}: {tail}")
-        if outcome.rejected(rec.last) or outcome.rejected(rec.out):
+        if not rec.paused and (outcome.rejected(rec.last) or outcome.rejected(rec.out)):
             self.rate_limited(outcome.rejected_until(rec.out) or outcome.rejected_until(rec.last))
         if rec.tree is not None:
             self.land(rec, srv)
@@ -861,6 +958,9 @@ class Loop:
         )
         self.need_snapshot = True
         self._gpu_flags()
+        rec.done = True
+        if rec.reader is None or not rec.reader.is_alive():
+            self._keep_out(rec)
 
     def suite_paths(self, srv):
         if srv.server.primary:
@@ -920,6 +1020,8 @@ class Loop:
 
     def rate_limited(self, epoch):
         now = time.time()
+        if not epoch and self.paused_until > now:
+            return  # already paused; a second unnamed reset must not push it out
         until = epoch + 60 if epoch else now + self.rl_fallback
         if until <= now or until <= self.paused_until:
             return
@@ -951,39 +1053,74 @@ class Loop:
 
     def gpu_running(self, srv):
         return (
-            any(
-                r.server == srv.name
-                and r.item.queue in ("tester:verify", "tester:answer", "tester:task", "tester:closures")
-                for r in self.running.values()
-            )
+            any(r.server == srv.name and r.item.queue in GPU_KINDS for r in self.running.values())
             or srv.regression is not None
         )
 
     # -- deploys -----------------------------------------------------------------
     def deploy_check(self):
+        """The deploy rule, each wake. A failed deploy keeps gpu:S held (its
+        head is "unknown": what S runs can't be told) through the retry
+        window and the retry; after the second failure (the park) until S
+        passes a preflight again (housekeeping checks it each poll)."""
         for srv in self.active():
             if srv.stopping:
                 continue
-            verifies = [i.issue for i in self.items if i.queue == "tester:verify" and i.server == srv.name]
-            if self.only and "tester:verify" not in self.only:
-                verifies = []
+            # what waits on S's head: ready verifies and answers (a running one waits for nothing)
+            running = {r.item.key for r in self.running.values()}
+            ready = [
+                i.issue
+                for i in self.items
+                if i.queue in DEPLOY_KINDS
+                and i.server == srv.name
+                and i.key not in running
+                and (not self.only or i.queue in self.only)
+            ]
             runnable = {}
             changed = False
-            if verifies or srv.gate.state in ("draining", "deploying"):
-                git("-C", srv.source_dir, "fetch", "-q", "origin", self.branch())
-                dev = git("-C", srv.source_dir, "rev-parse", "--short", f"origin/{self.branch()}").stdout.strip()
+            if ready or srv.gate.state in ("draining", "deploying") or srv.gate.parked:
+                t = self.git_timeout
+                fetch = git("-C", srv.source_dir, "fetch", "-q", "origin", self.branch(), timeout=t)
+                if fetch.returncode == 124:
+                    srv.log.say(f"[loop:deploy] WARNING: {fetch.stderr.strip().splitlines()[-1]}")
+                dev = git("-C", srv.source_dir, "rev-parse", "--short", f"origin/{self.branch()}", timeout=t)
+                dev = dev.stdout.strip() if dev.returncode == 0 else ""
                 if dev and dev != srv.develop:
-                    if srv.gate.parked and srv.parked_develop and dev != srv.parked_develop:
-                        srv.log.say(f"[loop:deploy] develop moved to {dev}: deploys to {srv.name} are tried again")
-                        srv.gate.reset()
+                    if srv.parked_develop and dev != srv.parked_develop:
+                        if srv.gate.parked and "deploy" in srv.holds:
+                            srv.log.say(
+                                f"[loop:deploy] develop moved to {dev}: deploying it to {srv.name} "
+                                f"(gpu:{srv.name} is still held)"
+                            )
+                            srv.gate.reset()
+                            srv.gate.set_state("draining")
+                        else:
+                            srv.log.say(f"[loop:deploy] develop moved to {dev}: deploys to {srv.name} are tried again")
+                            srv.gate.reset()
+                        srv.parked_develop = ""
                     srv.develop = dev
-                changed = server_paths_changed(srv.source_dir, srv.deployed, f"origin/{self.branch()}")
-                for n in verifies:
-                    runnable[n] = (not changed) or runnable_now(srv.source_dir, n, srv.deployed)
-            srv.waiting = [n for n in verifies if not runnable.get(n)]
+                changed = server_paths_changed(srv.source_dir, srv.deployed, f"origin/{self.branch()}", timeout=t)
+                for n in ready:
+                    runnable[n] = (not changed) or runnable_now(srv.source_dir, n, srv.deployed, timeout=t)
+            srv.waiting = [n for n in ready if not runnable.get(n)]
             st = srv.gate.state
-            if st in ("idle", "failed") and srv.regression is None and not srv.nightly_due:
-                if srv.gate.wanted(verifies, runnable, changed):
+            if (
+                st == "failed"
+                and not srv.gate.parked
+                and srv.gate.retry_at is not None
+                and time.monotonic() >= srv.gate.retry_at
+            ):
+                # the retry: gpu:S has stayed held since the failure
+                self.hold(srv, "deploy")
+                srv.gate.set_state("draining")
+                srv.log.say(f"[loop:deploy] trying the deploy to {srv.name} again")
+            elif (
+                st == "idle"
+                and srv.regression is None
+                and not srv.nightly_due
+                and not (srv.parked_develop and srv.parked_develop == srv.develop)
+            ):
+                if srv.gate.wanted(ready, runnable, changed):
                     self.hold(srv, "deploy")
                     srv.gate.set_state("draining")
                     srv.log.say(
@@ -999,7 +1136,8 @@ class Loop:
                     f"[loop:deploy] {ts()} deploying {self.branch()} to {srv.name}"
                     + (f" (code sessions running through it: {' '.join(code)})" if code else "")
                 )
-                threading.Thread(target=self._deploy, args=(srv,), daemon=True).start()
+                srv.deploy_thread = threading.Thread(target=self._deploy, args=(srv,), daemon=True)
+                srv.deploy_thread.start()
             self.state.deploy(srv.name, srv.gate.state, srv.waiting, srv.last_deploy)
             self.state.heads(srv.name, head_sha(srv.deployed) or srv.deployed, srv.develop or None)
 
@@ -1007,6 +1145,11 @@ class Loop:
         t0 = time.time()
         try:
             ok, head = deploy.run_deploy(srv.server, srv.log.say, self.branch(), str(self.logs))
+            if ok and not head_sha(head):
+                # what it runs can't be told: not a success (and adopting
+                # "unknown" would only ask for the same deploy again)
+                srv.log.say(f"[loop:deploy] the deploy ran, but {srv.name}'s head can't be read ({head!r})")
+                ok = False
             if ok:
                 try:
                     deploy.preflight(srv.server, srv.url, srv.token)
@@ -1021,67 +1164,100 @@ class Loop:
     def deployed(self, srv, ok, head, secs):
         srv.deploying = False
         srv.deploy_gen += 1
-        if head and head_sha(head):
-            srv.deployed = head
+        ok = bool(ok and head_sha(head))
         srv.last_deploy = {"at": time.time(), "head": head_sha(head) or head, "ok": ok, "secs": int(secs)}
-        self.unhold(srv, "deploy")
         if ok:
+            srv.deployed = head
+            srv.parked_develop = ""
+            srv.pf_said = ""
+            self.unhold(srv, "deploy")
             srv.gate.succeeded()
             srv.log.say(f"[loop:deploy] {srv.name} is running: {srv.deployed} (after driver deploy, {int(secs)}s)")
         else:
+            # A failed deploy may have moved the checkout: what S runs is
+            # unknown, so nothing on gpu:S runs (the hold stays).
+            srv.deployed = "unknown"
             what = srv.gate.failed()
             if what == "retry":
-                srv.log.say(f"[loop:deploy] deploy to {srv.name} failed; trying again in {self.retry_secs}s")
+                srv.log.say(
+                    f"[loop:deploy] deploy to {srv.name} failed; trying again in {self.retry_secs}s "
+                    f"(gpu:{srv.name} stays held)"
+                )
             else:
                 srv.parked_develop = srv.develop
-                srv.log.say(f"[loop:deploy] deploy to {srv.name} failed twice; parking the verifies that wait for it")
+                srv.log.say(
+                    f"[loop:deploy] deploy to {srv.name} failed twice; parking the items that wait for it; "
+                    f"gpu:{srv.name} stays held until {srv.name} passes a preflight"
+                )
                 for n in srv.waiting:
                     rc, out = self.item_pass(
-                        srv, "park", str(n), f"environment: the driver's deploy of develop to {srv.name} failed twice"
+                        srv,
+                        "park",
+                        str(n),
+                        f"environment: the driver's deploy of develop to {srv.name} failed twice",
+                        timeout=120,  # on the main loop: well inside the stall bound
                     )
                     if rc != 0:
                         srv.log.say(f"[loop:deploy] could not park #{n}: {out.strip()[-200:]}")
                 srv.waiting = []
+        self.state.deploy(srv.name, srv.gate.state, srv.waiting, srv.last_deploy)
+        self.state.heads(srv.name, head_sha(srv.deployed) or srv.deployed, srv.develop or None)
         self.need_snapshot = True
         self._gpu_flags()
 
     # -- nightly regression ------------------------------------------------------
     def nightly_check(self):
+        """The hour, the day's stamp and a release freeze are checked only
+        before the nightly comes due. Once due (and gpu:S held for it) it
+        runs as soon as gpu:S is idle, whatever the hour; a release freeze
+        that starts meanwhile lets it go (and unholds)."""
         if not self.nightly_at or self.only:
             return
         for srv in self.active():
             if srv.stopping or srv.regression is not None:
                 continue
-            stamp = self.logs / f".nightly-regression{srv.sfx}"
-            today = time.strftime("%Y-%m-%d")
-            if int(time.strftime("%H")) < int(self.nightly_at):
-                continue
-            try:
-                if stamp.read_text().strip() == today:
-                    continue
-            except OSError:
-                pass
-            if not self.hk_ready:
-                continue
-            if srv.freeze:
-                if not srv.nightly_due:
-                    srv.log.say(
-                        "[nightly] board unreadable; holding under a possible release freeze"
-                        if srv.freeze == "UNKNOWN"
-                        else f"[nightly] held: release freeze {srv.freeze}"
-                    )
+            if srv.nightly_due and srv.freeze:
+                srv.nightly_due = False
+                self.unhold(srv, "regression")
+                srv.log.say(
+                    f"[nightly] {srv.name}: a release freeze ({srv.freeze}) began; the nightly waits for its end"
+                )
+                srv.nightly_said = True
                 continue
             if not srv.nightly_due:
+                now = self.localtime()
+                today = time.strftime("%Y-%m-%d", now)
+                if now.tm_hour < int(self.nightly_at):
+                    continue
+                try:
+                    if (self.logs / f".nightly-regression{srv.sfx}").read_text().strip() == today:
+                        continue
+                except OSError:
+                    pass
+                if not self.hk_ready:
+                    continue
+                if srv.freeze:
+                    if not srv.nightly_said:
+                        srv.nightly_said = True
+                        srv.log.say(
+                            "[nightly] board unreadable; holding under a possible release freeze"
+                            if srv.freeze == "UNKNOWN"
+                            else f"[nightly] held: release freeze {srv.freeze}"
+                        )
+                    continue
+                srv.nightly_said = False
                 srv.nightly_due = True
+                srv.nightly_day = today
                 self.hold(srv, "regression")
                 srv.log.say(f"[nightly] {srv.name}: due; draining gpu:{srv.name} for it")
             if (
                 srv.gate.state in ("draining", "deploying")
+                or "deploy" in srv.holds  # a failed deploy: S's state is unknown
                 or self.gpu_running(srv)
                 or not self.sched.gpu_idle(srv.name)
             ):
                 continue
-            stamp.write_text(today + "\n")
+            (self.logs / f".nightly-regression{srv.sfx}").write_text(srv.nightly_day + "\n")
             self.start_regression(srv)
 
     def start_regression(self, srv):
@@ -1170,33 +1346,52 @@ class Loop:
 
     # -- the heartbeat -------------------------------------------------------------
     def heartbeat(self, stop):
-        last_write = last_sample = 0.0
         while not stop.wait(1):
-            now = time.monotonic()
-            try:
-                if now - last_sample >= self.health_secs:
-                    last_sample = now
-                    for srv in self.active():
-                        h = deploy.health_json(srv.url, srv.token)
-                        workers = []
-                        if isinstance(h, dict) and isinstance(h.get("workers"), list):
-                            for w in h["workers"]:
-                                if isinstance(w, dict):
-                                    workers.append(
-                                        {
-                                            "device": w.get("device"),
-                                            "busy": bool(w.get("current_job")),
-                                            "job": w.get("current_job"),
-                                        }
-                                    )
-                        self.state.workers(srv.name, workers)
-                        self.state.gpu_sample(srv.name, self.gpu_busy.get(srv.name, False), loop_state.workers_busy(h))
-                if now - last_write >= self.poll:
-                    last_write = now
-                    self.state.write()
-            except Exception as e:  # noqa: BLE001 - a heartbeat never takes the driver down
-                with contextlib.suppress(Exception):
-                    self.say(f"[loop] heartbeat: {e!r}")
+            self.heartbeat_tick()
+
+    def stalled(self):
+        """The main loop hasn't woken for STALL_INTERVALS of its own interval."""
+        limit = STALL_INTERVALS * max(self.poll, self.wake_interval)
+        return time.monotonic() - self.last_wake > limit
+
+    def heartbeat_tick(self):
+        now = time.monotonic()
+        try:
+            if now - self.hb_last_sample >= self.health_secs:
+                self.hb_last_sample = now
+                for srv in self.active():
+                    h = deploy.health_json(srv.url, srv.token)
+                    workers = []
+                    if isinstance(h, dict) and isinstance(h.get("workers"), list):
+                        for w in h["workers"]:
+                            if isinstance(w, dict):
+                                workers.append(
+                                    {
+                                        "device": w.get("device"),
+                                        "busy": bool(w.get("current_job")),
+                                        "job": w.get("current_job"),
+                                    }
+                                )
+                    self.state.workers(srv.name, workers)
+                    self.state.gpu_sample(srv.name, self.gpu_busy.get(srv.name, False), loop_state.workers_busy(h))
+            if now - self.hb_last_write >= self.poll:
+                if self.stalled():
+                    # state.json goes stale, so the dashboard says stalled, not running
+                    if not self.stall_said:
+                        self.stall_said = True
+                        self.say(
+                            f"[loop] WARNING: the main loop has not woken for {int(now - self.last_wake)}s: "
+                            "stalled; the heartbeat stops touching state.json"
+                        )
+                    return
+                if self.stall_said:
+                    self.stall_said = False
+                    self.say("[loop] the main loop woke again")
+                self.hb_last_write = now
+                self.state.write()
+        except Exception as e:  # noqa: BLE001 - a heartbeat never takes the driver down
+            with contextlib.suppress(Exception):
+                self.say(f"[loop] heartbeat: {e!r}")
 
     def write_state(self):
         try:
@@ -1240,7 +1435,7 @@ class Loop:
         for srv in self.active():
             if srv.deploying or srv.regression is not None or srv.gate.state == "draining" or srv.nightly_due:
                 return False
-            if srv.gate.state == "failed" and not srv.gate.parked and srv.waiting:
+            if srv.gate.state == "failed" and not srv.gate.parked:
                 return False  # a retry is due
         if time.time() < self.paused_until:
             return False
@@ -1274,6 +1469,7 @@ class Loop:
                 for srv in self.active():
                     self.hold(srv, "signal")
                 self.kill_children()
+                self.wait_deploys()
                 for rec in list(self.running.values()):
                     if rec.tree is not None:
                         self.say(
@@ -1296,9 +1492,26 @@ class Loop:
             self.say(f"[loop] {ts()} the loop driver exits ({rc})")
         return rc
 
+    def wait_deploys(self):
+        """A deploy in flight is never cut: the server lock stays held until
+        it ends (bounded by run_deploy's own timeout)."""
+        for srv in self.srv.values():
+            t = srv.deploy_thread
+            if srv.deploying and t is not None and t.is_alive():
+                srv.log.say(
+                    f"[loop] {ts()} waiting for the deploy to {srv.name} to finish before exiting "
+                    f"(at most {DEPLOY_WAIT_SECS}s); its lock stays held"
+                )
+                t.join(timeout=DEPLOY_WAIT_SECS)
+                srv.log.say(
+                    f"[loop] {ts()} the deploy to {srv.name} "
+                    + ("is still running; exiting anyway" if t.is_alive() else "finished")
+                )
+
     def loop(self):
         while True:
             interval = self.interval()
+            self.wake_interval = interval
             timeout = max(0.05, interval - (time.monotonic() - self.snap_last))
             if self.paused_until:
                 timeout = min(timeout, max(0.05, self.paused_until - time.time()))
@@ -1313,6 +1526,7 @@ class Loop:
                     events.append(self.q.get_nowait())
             except queue.Empty:
                 pass
+            self.last_wake = time.monotonic()
             for ev in events:
                 kind = ev[0]
                 if kind == "exit":
@@ -1322,6 +1536,7 @@ class Loop:
                 elif kind == "regression":
                     self.regression_ended(ev[1])
                 elif kind == "ratelimit":
+                    ev[1].paused = True
                     self.rate_limited(outcome.rejected_until_line(ev[2]))
                 elif kind == "hk":
                     self.apply_hk(ev[1])

@@ -35,7 +35,9 @@ Seventeen files:
   dashboard, fleet, parity, perf check, rank, results, suite).
 - `test-loop-py.sh`: the R17 loop driver (`harness/drivers/loop.py`) end to end, each
   scenario in its own world in parallel: `lib/board.sh`; a design beside a verify; one gpu
-  slot; deploys batched, after the running gpu session, retried then parked; plugin-only and
+  slot; deploys batched, after the running gpu session, retried then parked, the gpu slot held
+  through a failed deploy until the server answers again; SIGTERM mid-deploy; a verify beside a
+  spec gets a fresh plugin tree; plugin-only and
   deployed fixes with no deploy; a GitHub outage; a stale lock; stop-after-cycle for one
   server; SIGTERM; a rate-limit pause; the standing task's gate; suite trees landing, a
   suite conflict kept on a branch; the curator; the nightly regression; `DRAIN=1`; `--only`.

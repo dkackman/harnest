@@ -33,22 +33,29 @@ world() {
   mkdir -p "$T/h/logs"
   # ssh: the deployed head is $T/<server>-head; deploy.sh is recorded (with
   # the time) and moves it to develop, or fails while $T/deploy-fails exists
+  # ($T/deploy-moves-fails: moves it, takes /api/health down, then fails;
+  # $T/deploy-sleep: takes that many seconds first; a success records its end)
   cat > "$T/bin/ssh" <<EOS
 #!/usr/bin/env bash
 srv=lem; case "\$*" in *mini-ai*) srv=mini-ai ;; esac
 case "\$*" in
   *deploy.sh*)
     echo "\$(python3 -c 'import time; print(time.time())') \$srv deploy.sh" >> "$T/deploys"
+    [ ! -e "$T/deploy-sleep" ] || sleep "\$(cat "$T/deploy-sleep")"
     [ ! -e "$T/deploy-fails" ] || { echo "deploy: health check timed out"; exit 1; }
     git -C "$T/src" fetch -q origin develop; git -C "$T/src" rev-parse --short origin/develop > "$T/\$srv-head"
+    [ ! -e "$T/deploy-moves-fails" ] || { touch "$T/health-down"; echo "deploy: health check timed out"; exit 1; }
+    echo "\$(python3 -c 'import time; print(time.time())') \$srv deploy.sh ended" >> "$T/deploy-ends"
     echo "deployed develop" ;;
   *) echo "develop @ \$(cat "$T/\$srv-head" 2>/dev/null || echo 0000000)" ;;
 esac
 EOS
-  # curl: /api/health names the server the URL is on; lem has two idle workers
-  cat > "$T/bin/curl" <<'EOS'
+  # curl: /api/health names the server the URL is on; lem has two idle
+  # workers, and doesn't answer while $T/health-down exists
+  cat > "$T/bin/curl" <<EOS
 #!/usr/bin/env bash
-case "$*" in
+case "\$*" in *mini-ai*) ;; *) [ ! -e "$T/health-down" ] || exit 7 ;; esac
+case "\$*" in
   *mini-ai*) echo '{"status":"ok","device":"mps","hostname":"mini-ai.lan","workers":[{"device":"mps","current_job":null}]}' ;;
   *) echo '{"status":"ok","device":"cuda","hostname":"lem","workers":[{"device":"cuda:0","current_job":null},{"device":"cuda:1","current_job":null}]}' ;;
 esac
@@ -222,14 +229,15 @@ s_concurrent() {
 }
 scenario concurrent s_concurrent
 
-# --- B. two hand-offs land while an answer session (a gpu session) runs, and
-# lem doesn't run their fixes: one deploy, after the answer ends and before
-# either verify
+# --- B. two fixes merge and are handed off while an answer session (a gpu
+# session, on a server that runs develop) runs, and lem doesn't run them:
+# one deploy, after the answer ends and before either verify
 s_deploy() {
-  commit dw/core.py "fix one (#21)" >/dev/null
-  commit dw/core.py "fix two (#22)" >/dev/null
   board "[$(issue 20 owner:tester status:needs-info), $(issue 21 owner:don status:needs-approval), $(issue 22 owner:don status:needs-approval)]"
-  handoff='for i in 21 22; do gh issue edit $i --repo o/r --remove-label owner:don --remove-label status:needs-approval --add-label owner:tester --add-label status:fixed-pending-verify; done'
+  merge="git -C '$T/seed' pull -q origin develop"
+  for i in 21 22; do merge="$merge; echo $i >> '$T/seed/dw/core.py'; git -C '$T/seed' -c user.name=t -c user.email=t@t commit -qam 'fix (#$i)'"; done
+  merge="$merge; git -C '$T/seed' push -q origin HEAD:develop"
+  handoff="$merge"'; for i in 21 22; do gh issue edit $i --repo o/r --remove-label owner:don --remove-label status:needs-approval --add-label owner:tester --add-label status:fixed-pending-verify; done'
   drv_start LOOP_POLL_SECS=1 FAKE_CLAUDE_SLEEP=1.5 FAKE_CLAUDE_DO="$close_it" FAKE_CLAUDE_FIRST='case "$*" in *"ANSWER session"*) '"$handoff"' ;; esac' -- --once
   until_ 20 deploy_state "draining 21 22"
   snap_state state-mid.json
@@ -248,9 +256,10 @@ s_deploy() {
 }
 scenario deploy s_deploy
 
-# --- C. a deploy that fails twice parks the verify that waits for it
+# --- C. a deploy that fails twice parks the verify that waits for it (and
+# the server stays down, so gpu:lem stays held)
 s_deploy_fails() {
-  touch "$T/deploy-fails"
+  touch "$T/deploy-fails" "$T/health-down"
   commit dw/core.py "fix three (#31)" >/dev/null
   board "[$(issue 31 owner:tester status:fixed-pending-verify)]"
   run DEPLOY_RETRY_SECS=1 -- --once
@@ -262,6 +271,74 @@ s_deploy_fails() {
   eq  "failed deploy: state.json says failed" "failed false" "$(state '"\(.servers.lem.deploy.state) \(.servers.lem.deploy.last.ok)"')"
 }
 scenario deploy-fails s_deploy_fails
+
+# --- C2. a deploy that moves lem's head and then fails (lem stops answering):
+# gpu:lem stays held through the retry window and the retry, and after the
+# park until lem answers its preflight again; only then does a gpu session
+# (a closures pass) start
+s_deploy_moves() {
+  touch "$T/deploy-moves-fails"
+  commit dw/core.py "fix four (#91)" >/dev/null
+  board "[$(issue 91 owner:tester status:fixed-pending-verify),
+          {\"number\": 95, \"state\": \"CLOSED\", \"stateReason\": \"NOT_PLANNED\", \"labels\": [{\"name\": \"owner:tester\"}, {\"name\": \"wontfix\"}]}]"
+  drv_start LOOP_POLL_SECS=1 DEPLOY_RETRY_SECS=2 MAX_SESSIONS=1 --
+  until_ 30 grep -q 'failed twice' "$T/h/logs/loop.log"
+  until_ 20 grep -q 'lem still fails its preflight' "$T/h/logs/loop.log"   # a housekeeping pass has checked it
+  sleep 2
+  eq  "moved then failed: no gpu session through the retry and the park" 0 "$(grep -c '^start' "$FAKE_CLAUDE_LOG")"
+  eq  "  the deploy was tried twice" 2 "$(grep -c 'lem deploy.sh' "$T/deploys")"
+  eq  "  state.json: what lem runs is unknown, the gate failed" "unknown failed" "$(state '"\(.servers.lem.deployed) \(.servers.lem.deploy.state)"')"
+  has "  said the preflight still fails" "lem still fails its preflight" "$(cat "$T/h/logs/loop.log")"
+  python3 -c 'import time; print(time.time())' > "$T/health-back"; rm -f "$T/health-down"
+  drv_wait
+  eq  "moved then failed: exits cleanly" 0 $?
+  eq  "  parked the verify with Don" "owner:don,status:fixed-pending-verify,status:needs-approval" "$(labels_of 91)"
+  has "  gpu:lem free again once lem answers" "lem passes its preflight again" "$(cat "$T/h/logs/loop.log")"
+  eq  "  then the closures pass ran" closures "$(awk '$1 == "start" { print $3 }' "$FAKE_CLAUDE_LOG")"
+  ok  "  only after lem answered" lt "$(cat "$T/health-back")" "$(starts closures)"
+  eq  "  and the head was read again" "$(git -C "$T/src" rev-parse --short origin/develop)" "$(state .servers.lem.deployed)"
+}
+scenario deploy-moves s_deploy_moves
+
+# --- C3. SIGTERM while a deploy runs: the driver waits for it, holding the
+# lock, then exits
+s_sigterm_deploy() {
+  echo 3 > "$T/deploy-sleep"
+  commit dw/core.py "fix five (#101)" >/dev/null
+  board "[$(issue 101 owner:tester status:fixed-pending-verify)]"
+  drv_start LOOP_POLL_SECS=1 SESSION_KILL_SECS=1 CHILD_DRIVER_KILL_SECS=1 -- --once
+  until_ 20 test -s "$T/deploys"
+  kill -TERM "$drv"
+  sleep 1
+  lock_mid="$(ls -d "$T/h/logs/.driver.lock" 2>/dev/null)"
+  drv_wait 20; rc=$?
+  eq  "SIGTERM mid-deploy: exits 143" 143 "$rc"
+  has "  said it waits for the deploy" "waiting for the deploy to lem to finish" "$(cat "$T/h/logs/loop.log")"
+  eq  "  kept the lock while it waited" "$T/h/logs/.driver.lock" "$lock_mid"
+  eq  "  the deploy ran to its end" 1 "$(grep -c 'deploy.sh ended' "$T/deploy-ends" 2>/dev/null)"
+  has "  then said so" "the deploy to lem finished" "$(cat "$T/h/logs/loop.log")"
+  eq  "  no verify started" 0 "$(grep -c '^start' "$FAKE_CLAUDE_LOG")"
+  eq  "  the lock is released at exit" "" "$(ls -d "$T/h/logs/.driver.lock" 2>/dev/null)"
+}
+scenario sigterm-deploy s_sigterm_deploy
+
+# --- C4. a verify that starts while a spec runs (on a free slot) still gets
+# a plugin tree refreshed to develop; the spec reads a tree of its own
+s_trees() {
+  board "[$(issue 110 owner:tester status:needs-spec), $(issue 111 owner:don status:needs-approval)]"
+  skill="git -C '$T/seed' pull -q origin develop; echo s >> '$T/seed/plugins/dw/README'"
+  skill="$skill; git -C '$T/seed' -c user.name=t -c user.email=t@t commit -qam 'skill wording (#111)'; git -C '$T/seed' push -q origin HEAD:develop"
+  skill="$skill"'; gh issue edit 111 --repo o/r --remove-label owner:don --remove-label status:needs-approval --add-label owner:tester --add-label status:fixed-pending-verify'
+  where='d="$(printf "%s" "$*" | grep -oE -- "--plugin-dir [^ ]+" | head -1 | cut -d" " -f2)"; echo "$kind $d $(git -C "$d" rev-parse --short HEAD)" >> '"'$T/trees'"
+  run LOOP_POLL_SECS=1 FAKE_CLAUDE_SLEEP=0.5 FAKE_CLAUDE_SLEEP_spec=5 \
+    FAKE_CLAUDE_FIRST="$where; case \"\$*\" in *\"SPEC session\"*) $skill ;; esac" -- --once
+  eq  "trees: exits cleanly" 0 $?
+  dev="$(git -C "$T/src" rev-parse --short origin/develop)"
+  eq  "trees: the verify loads the gpu tree at develop, refreshed beside the spec" "verify $T/plugin/plugins/dw $dev" "$(grep '^verify' "$T/trees")"
+  has "trees: the spec loads a tree of its own" "spec $T/plugin-free/plugins/dw" "$(grep '^spec' "$T/trees")"
+  ok  "  (the verify started while the spec ran)" lt "$(starts verify)" "$(ends spec)"
+}
+scenario trees s_trees
 
 # --- D. a GitHub outage starts nothing; a lock left by a dead driver is taken over
 s_outage() {

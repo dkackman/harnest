@@ -10,7 +10,9 @@ board's call, when and where is the scheduler's.
 
 from __future__ import annotations
 
+import contextlib
 import os
+import signal
 import subprocess
 from typing import NamedTuple
 
@@ -42,19 +44,35 @@ class Row(NamedTuple):
     holder: str | None = None  # the server whose target:* claim holds it (board.sh)
 
 
-def _run(args, env=None, timeout=300):
+# A board read is a few gh calls: past this it is hung (a dead network, a gh
+# waiting on something), and its whole process group is killed.
+BOARD_TIMEOUT = 120
+
+
+def _run(args, env=None, timeout=BOARD_TIMEOUT):
     try:
-        return subprocess.run(
+        p = subprocess.Popen(
             ["bash", str(BOARD_SH), *args],
             cwd=str(REPO),
             env=env if env is not None else os.environ.copy(),
             stdin=subprocess.DEVNULL,
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
             text=True,
-            timeout=timeout,
+            errors="replace",
+            start_new_session=True,
         )
-    except (OSError, subprocess.TimeoutExpired):
+    except OSError:
         return None
+    try:
+        out, errs = p.communicate(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        with contextlib.suppress(ProcessLookupError, PermissionError):
+            os.killpg(p.pid, signal.SIGKILL)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            p.communicate(timeout=5)
+        return None
+    return subprocess.CompletedProcess(p.args, p.returncode, out, errs)
 
 
 def parse(text: str) -> list[Row]:

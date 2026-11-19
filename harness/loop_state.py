@@ -111,6 +111,14 @@ class LoopState:
             self._servers[server]["deployed"] = deployed
             self._servers[server]["develop"] = develop
 
+    def released(self, server):
+        """The driver no longer drives <server> (stop-after-cycle, a failed
+        preflight): it shows as released, with nothing queued or held."""
+        with self._lock:
+            if server in self._servers:
+                self._servers[server]["released"] = True
+                self._servers[server]["queues"] = {}
+
     def queues(self, server, queues):
         with self._lock:
             self._servers[server]["queues"] = {k: list(v) for k, v in queues.items()}
@@ -213,7 +221,7 @@ class LoopState:
             servers = {}
             for name, s in self._servers.items():
                 v = copy.deepcopy(s)
-                v["slots"] = self._slots(name)
+                v["slots"] = [] if s.get("released") else self._slots(name)
                 servers[name] = v
             shared = []
             for item, sv, session in self._sessions:
