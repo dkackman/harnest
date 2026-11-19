@@ -24969,7 +24969,6 @@ cleanup: last case of the group run: `delete_output(job_id=…)` O, R1 and R2.
 metrics: none.
 
 ### C-F1064 — a failed job's list row carries `reason`, the first line of its error, clipped at 160 with `…`
-pending: #1472
 source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, read-only. `list_jobs(status="failed", limit=50)` with no workspace, so every job on the server is listed. For
 each row, `get_job(job_id=…)` and take its `error` (a long sweep may stop after 20 rows, once the two edge rows below
@@ -24992,7 +24991,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F1065 — restart tombstones carry `reason` `server restart: …` and one shared `restart_batch`, the route's `server_instance`
-pending: #1472
 source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, read-only: the batch preview has no `acknowledged_cost`. Fixture: workspace `drill-1371` on mini-ai holds four
 tombstones from one kill -9: `8d8cc7ba497f`, `31531e28c813`, `34c47920676f` and `6196d06350c5`. Their errors read
@@ -25018,7 +25016,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F1066 — a job cancelled while queued carries neither field, and queued and running rows carry neither
-pending: #1472
 source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Two tiny jobs, in workspace `regression-complete`. Validate `templates/text-to-image` with `arguments={"prompt": "a
 blue cup", "seed": 1472}` and bind its `acknowledged_cost`. Then queue it twice with no wait: **A** (note `C-F1066
@@ -25042,7 +25039,6 @@ cleanup: `delete_output(job_id=…)` for A if it wrote a run directory; B has no
 metrics: none.
 
 ### C-F1067 — `list_jobs` documents the two fields, and the whole list keeps them where they belong
-pending: #1472
 source: tester, spec for #1472 from #1449's plan v2 (claude-opus-5-5 via anthropic)
 Free, read-only. Read the `list_jobs` tool's description from the tool schema. Then `list_jobs(limit=200)` with no
 workspace, and `list_jobs(status="failed,cancelled", limit=200)`.
