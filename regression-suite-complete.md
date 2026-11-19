@@ -25169,7 +25169,6 @@ cleanup: `delete_output(job_id=…)` for each job step 3 queued.
 metrics: none.
 
 ### C-F1073 — a checked chain's shots carry `measures`: one entry per computed measure, each with value, ceiling, bound, warn_only and failed
-pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 **Setup shared by C-F1073–C-F1087 and SE-F073.** Workspace `regression-complete`; pass `workspace=` on
 every call. Fixture workflow `chain-1451` (see Fixtures): if `get_workflow(name="chain-1451")` doesn't answer,
@@ -25213,7 +25212,6 @@ C-F1078 kept and the `chain-1451-j2` workflow if it was saved. Keep the `chain-1
 metrics: none.
 
 ### C-F1074 — an overridden ceiling shows the override, a skipped measure has no entry, and `words` is a `min` entry beside the full `shot.words`
-pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1073 (J1, J2). Read `get_job` shots for both.
 expected:
@@ -25231,7 +25229,6 @@ cleanup: as C-F1073.
 metrics: none.
 
 ### C-F1075 — `failed` agrees with `check_failed`, and the `chain_check_failed` warning keeps its text and fields
-pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1073 (J1, J2). Read `get_job(J2)`'s shots and `warnings` (also `get_job_events`), and J1's.
 expected:
@@ -25252,7 +25249,6 @@ cleanup: as C-F1073.
 metrics: none.
 
 ### C-F1076 — an unchecked chain gets no `measures`, and its shots are otherwise unchanged
-pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1073 (J1, J3). Read both jobs' chain-step shots.
 expected:
@@ -25265,7 +25261,6 @@ cleanup: as C-F1073.
 metrics: none.
 
 ### C-F1077 — segment 1 carries only what it measured, and `audio_dbfs` stays top-level and is mirrored as a `min` entry
-pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1073 (J1, J2). Read J1's and J2's shot 1 and shot 2.
 expected:
@@ -25282,7 +25277,6 @@ cleanup: as C-F1073.
 metrics: none.
 
 ### C-F1078 — the kept take's `media.shots` carries the same `measures` as `get_job`
-pending: #1474
 source: tester, spec for #1474 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Setup as in C-F1073 (J1). `keep_output` J1's take (the chain step's final mp4) as `qa-1451/chain-take.mp4`. Check
 first with `get_gallery_metadata(asset="qa-1451/chain-take.mp4")`: an "Unknown asset" reply means the name is free.
