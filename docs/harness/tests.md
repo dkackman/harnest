@@ -53,6 +53,9 @@ Seventeen files:
   `scripts/install-schedules.sh` under a throwaway `HOME`.
 - `test-sync.sh`: `scripts/sync-fixtures.sh` with fake curl, rsync and ssh.
 - `test-testbed.sh`: `scripts/testbed.sh` with fake ssh and curl.
+- `test-ui-check.sh`: `tools/ui-check/ui-check.mjs` against a fixture page on 127.0.0.1:
+  steps, mocks built from the real answer, the origin lock, locator and spec-path refusals.
+  Skipped when `tools/ui-check/node_modules` is missing.
 - `test-ui-ratchet.sh`: the UI's architecture ratchet (`check_ui`) on fixture repos.
 
 Two bash 3.2 traps the suite has already caught: an apostrophe in a comment inside `<( )`

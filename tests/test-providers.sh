@@ -68,7 +68,10 @@ fails "consumer flags: no perf-check.py spelling" grep -qF 'perf-check.py' <<< "
 fails "consumer flags: no bare Write" grep -qF '"Write" ' <<< "$cflags"
 fails "consumer flags: no bare Edit" grep -qF '"Edit" ' <<< "$cflags"
 has "consumer flags allow Write/Edit on the bible by its absolute path" "\"Write(/$HARNEST/qa-bible.md)\" \"Edit(/$HARNEST/qa-bible.md)\"" "$cflags"
-eq "consumer flags: Write/Edit on nothing else" 16 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | grep -vF '~/.config/harnest/' | wc -l | tr -d ' ')"
+has "consumer flags allow the UI runner, exactly (Task 8b)" "\"Bash(node $HARNEST/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)\"" "$cflags"
+has "consumer flags allow Write on the UI runner's spec" '"Write(//tmp/dw-ui-*.json)"' "$cflags"
+eq "consumer flags: no other node, npx or npm" 1 "$(grep -oE '"Bash\((node|npx|npm)[^"]*"' <<< "$cflags" | wc -l | tr -d ' ')"
+eq "consumer flags: Write/Edit on nothing else" 17 "$(grep -oE '"(Write|Edit)\([^)]*\)"' <<< "$cflags" | grep -vF '~/.config/harnest/' | wc -l | tr -d ' ')"
 has "consumer flags: the release key is denied" '"Read(~/.config/harnest/**)" "Write(~/.config/harnest/**)" "Edit(~/.config/harnest/**)"' "$cflags"
 
 # --- ONLY_ISSUES

@@ -364,12 +364,20 @@ CONSUMER_PERMISSION_FLAGS=(
     "Write(//tmp/**)" "Edit(//tmp/**)"
     "Write(/private/tmp/**)" "Edit(/private/tmp/**)"
     "Write(//private/tmp/**)" "Edit(//private/tmp/**)"
+    # the UI runner's spec (Task 8b): covered by //tmp/** today, named so the
+    # runner's one input stays writable if /tmp is ever narrowed
+    "Write(//tmp/dw-ui-*.json)"
     # wc: a case that checks a byte cap (a skill's SKILL.md under 12 KiB) has
     # no other way to measure it - Read, Grep and Glob report no sizes (#182)
     "Bash(gh issue *)" "Bash(date *)" "Bash(file *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)"
     "Bash(./scripts/file-advisory.sh *)"
     "Bash(./scripts/perf-check.sh *)"   # a wrapper: the python3 -I spelling was never matched by the allowlist at run time
+    # dw's web UI, black-box (Task 8b): the fixed, origin-locked Playwright
+    # runner, on a JSON spec of steps the tester writes. No other node, npx or
+    # npm; guard.py holds the line to exactly this form and the spec to a
+    # regular file in /tmp
+    "Bash(node $HARNEST_ROOT/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)"
   --disallowedTools
     "mcp__dw__delete_model" "mcp__dw__update_diffusers" "${RELEASE_KEY_RULES[@]}"
 )

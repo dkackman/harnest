@@ -58,7 +58,11 @@ and a line hidden from its lexers by a `#` comment or `$'…'` quoting (harnest#
 hidden-script class). The consumer roles are held there by their tool allowlists instead:
 `Write`/`Edit` are allow-only on the suite files, `regression-perf/**`, `qa-bible.md` and
 `/tmp/**`, so a consumer can write a file under `/tmp`, but its `Bash` allowlist runs no file
-it wrote, and `dontAsk` denies the rest.
+it wrote, and `dontAsk` denies the rest. The one file it writes that something reads is a
+`/tmp/dw-ui-*.json` spec, data for the fixed web-UI runner (`Bash(node
+$HARNEST_ROOT/tools/ui-check/ui-check.mjs /tmp/dw-ui-*.json)`, Task 8b; components.md,
+`ui-check`): the runner executes no code from it, and the guard refuses every other `node`,
+`npx` or `npm` and any write under `tools/ui-check`.
 
 It also gates the implementer's hand-off. The tree must be clean, `ruff` must pass on the
 changed files, the UI's `npm run check`/`lint`/`test` must pass when `ui/` changed (about

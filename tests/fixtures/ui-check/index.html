@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>ui-check fixture</title>
+<style>
+  .plan-line { color: rgb(20, 20, 20); }
+  .plan-line.warn { color: rgb(180, 83, 9); font-weight: 700; }
+</style>
+</head>
+<body>
+<main class="plan">
+  <h1>Fixture editor</h1>
+  <label>Prompt <input type="text" name="prompt"></label>
+  <button type="button" id="v">Validate</button>
+  <p class="plan-line">steps: 3</p>
+  <p class="plan-line warn" aria-live="polite">estimate: low confidence</p>
+  <div id="answer"></div>
+  <p id="cross">cross-origin: pending</p>
+  <p id="typed">typed: none</p>
+</main>
+<script>
+  // A request to another origin (same server, other host name): the runner must abort it.
+  var other = location.protocol + '//localhost:' + location.port + '/api/validate';
+  fetch(other, { mode: 'no-cors' })
+    .then(function () { document.getElementById('cross').textContent = 'cross-origin: reached'; })
+    .catch(function () { document.getElementById('cross').textContent = 'cross-origin: blocked'; });
+  document.querySelector('input').addEventListener('input', function (e) {
+    document.getElementById('typed').textContent = 'typed: ' + e.target.value;
+  });
+  document.getElementById('v').addEventListener('click', function () {
+    fetch('/api/validate').then(function (r) { return r.json(); }).then(function (j) {
+      var out = document.getElementById('answer');
+      out.textContent = '';
+      var lines = [
+        'host RAM: ' + (j.plan && j.plan.host_memory ? j.plan.host_memory.projected_mb + ' MB' : 'none'),
+        'minutes: ' + (j.plan && j.plan.estimate ? j.plan.estimate.minutes : 'none'),
+        'basis: ' + (j.plan && j.plan.estimate ? j.plan.estimate.basis : 'none'),
+        'downloads: ' + (j.downloads_required || []).map(function (d) { return d.repo; }).join(', '),
+        'valid: ' + j.valid
+      ];
+      lines.forEach(function (t) { var p = document.createElement('p'); p.className = 'answer-line'; p.textContent = t; out.appendChild(p); });
+    });
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,9 @@
+{
+  "name": "harnest-ui-check",
+  "private": true,
+  "description": "The tester's fixed, origin-locked headless-Chromium runner for dw's web UI (ui-check.mjs).",
+  "type": "module",
+  "dependencies": {
+    "playwright-core": "1.64.0"
+  }
+}

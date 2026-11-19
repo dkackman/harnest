@@ -297,6 +297,24 @@ wall seconds), `standing_task_interval_secs` (mean gap between `tester:task` hea
 rollover rule (a time earlier than the previous header's means the next day) anchored on the
 log's mtime. Pre-scheduler numbers: `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`.
 
+`tools/ui-check/ui-check.mjs` (Task 8b, R17) is the tester's one way into dw's web UI, for
+the suite's **Web UI, black-box** cases (C-F1028 on). It is a fixed headless-Chromium runner
+on `playwright-core` (pinned in `tools/ui-check/package.json`; `node_modules` is gitignored, so
+run `cd tools/ui-check && npm install --no-audit --no-fund` once per checkout, which uses the
+Chromium builds already in `~/Library/Caches/ms-playwright`). The tester writes no code: it
+writes a JSON spec of steps to `/tmp/dw-ui-<case>.json` and runs `node
+$HARNEST_ROOT/tools/ui-check/ui-check.mjs <spec>`; the step kinds and the output are in the
+file's header and `agents/tester/core.md` ("Web UI cases"). Locators are visible text and
+role only. The run is locked to the server's origin (`DW_URL` without its path; a spec
+`base` must match it): any other request or WebSocket is aborted and listed in `blocked`, a
+main-frame navigation elsewhere (file:, data:) goes back to `about:blank`, and downloads,
+permissions, service workers and popups are off. 30 s per step, 300 s per run. The spec must
+be a regular file `/tmp/dw-ui-*.json` of at most 256 KB, else exit 2; otherwise it exits 0
+with one JSON document on stdout. The consumer allowlist names exactly that `node` form and
+`guard.py` holds it to it (no other node/npx/npm, no write under `tools/ui-check`).
+`tests/test-ui-check.sh` drives it against a fixture page and skips when `node_modules` is
+missing.
+
 Planned evolution of the harness itself (replay benchmark, hooks, feature specs, suite
 curation, retro loop, SDK port) is tracked in `HARNESS-ROADMAP.md`. Read it before a
 structural change to the drivers or role prompts.

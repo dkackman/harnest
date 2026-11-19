@@ -119,6 +119,10 @@ consumer (tester, regression):
   - perf-check runs only as `./scripts/perf-check.sh` (a wrapper that runs the
     script isolated): the consumer may Write under /tmp, so any other path or
     interpreter would run whatever it wrote to the cwd or sys.path first
+  - node only as the UI runner (Task 8b): `node <HARNEST_ROOT>/tools/ui-check/ui-check.mjs
+    /tmp/dw-ui-<name>.json`, alone on the line, the spec a regular file in /tmp (no symlink, at
+    most 256 KB); any other node, npx or npm word outside a gh/git command is refused, and no
+    Edit/Write lands under tools/ui-check
   - HARNEST_ROOT is never assigned, exported, unset or defaulted: that
     spelling resolves through it (and Write/Edit are allowed only on the
     suite files, perf history, the bible and /tmp, never scripts/). The
@@ -180,6 +184,7 @@ import os
 import re
 import shlex
 import shutil
+import stat
 import subprocess
 import sys
 
@@ -2634,6 +2639,62 @@ def consumer_script_call_rule(segs, cwd):
             deny("no directory change on a line that calls a harness script: the path is relative to your cwd.")
 
 
+UI_CHECK = os.path.join("tools", "ui-check", "ui-check.mjs")
+UI_SPEC = re.compile(r"/tmp/dw-ui-[A-Za-z0-9_-][A-Za-z0-9._-]*\.json")
+UI_SPEC_MAX = 256 * 1024
+NODE_WORDS = ("node", "nodejs", "npx", "npm", "pnpm", "yarn", "bun", "deno", "corepack")
+NODE_IN_WORD = r"(?<![\w.-])(?:%s)(?![\w.-])" % "|".join(NODE_WORDS)
+UI_CHECK_MSG = (
+    "the consumer runs node only as the UI runner, alone on the line: node %s /tmp/dw-ui-<name>.json "
+    "(a regular file you wrote, letters, digits, . _ -; no other node, npx or npm)."
+)
+
+
+def ui_check_runners():
+    """The runner's absolute path under HARNEST_ROOT, as given and resolved."""
+    root = os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
+    return {os.path.join(root, UI_CHECK), os.path.join(os.path.realpath(root), UI_CHECK)}
+
+
+def consumer_node_rule(cmd, segs):
+    """Task 8b: node only as `node <HARNEST_ROOT>/tools/ui-check/ui-check.mjs /tmp/dw-ui-<name>.json`,
+    the whole line, the spec a regular file (no symlink) of at most 256 KB in /tmp. Any other
+    node/npx/npm word on a consumer line, outside a gh or git command's text, is refused."""
+    hit = False
+    for seg in segs:
+        words = command_words(seg)
+        if not words or os.path.basename(words[0]) in ("gh", "git"):
+            continue
+        if any(
+            os.path.basename(w) in NODE_WORDS or w.endswith("ui-check.mjs") or re.search(NODE_IN_WORD, w) for w in seg
+        ):
+            hit = True
+    if not hit:
+        return
+    runners = ui_check_runners()
+    msg = UI_CHECK_MSG % sorted(runners)[0]
+    m = re.fullmatch(r"node (\S+) (\S+)", cmd.strip())
+    if not m or m.group(1) not in runners or not UI_SPEC.fullmatch(m.group(2)):
+        deny(msg)
+    spec = m.group(2)
+    try:
+        st = os.lstat(spec)
+    except OSError:
+        deny("no spec file at %s: Write it first. " % spec + msg)
+    if not stat.S_ISREG(st.st_mode) or st.st_size > UI_SPEC_MAX:
+        deny("the spec %s is a symlink, not a regular file, or over 256 KB. " % spec + msg)
+    if os.path.realpath(spec) != os.path.join(os.path.realpath("/tmp"), os.path.basename(spec)):
+        deny("the spec %s resolves outside /tmp. " % spec + msg)
+
+
+def ui_check_write_rule(file_path, cwd):
+    """The consumer writes nothing under tools/ui-check: the runner, its package and node_modules."""
+    full = os.path.join(cwd, file_path)
+    for p in (os.path.normpath(full), os.path.realpath(full)):
+        if re.search(r"/tools/ui-check(/|$)", p):
+            deny("tools/ui-check is the harness's UI runner; a consumer writes only its /tmp/dw-ui-*.json spec.")
+
+
 def consumer_root_rule(text):
     """HARNEST_ROOT is the driver's: the harness scripts resolve through it, so a
     consumer that sets, exports, unsets or defaults it runs a script of its own choosing. Any bare
@@ -2752,6 +2813,7 @@ def main():
     target = server if role == "consumer" else ""
     if data.get("tool_name") in ("Edit", "Write"):
         if role == "consumer":
+            ui_check_write_rule(data.get("tool_input", {}).get("file_path", ""), cwd)
             suite_add_only_rule(data.get("tool_name"), data.get("tool_input", {}), cwd)
         if target:
             target_file_rule(
@@ -2818,6 +2880,7 @@ def main():
         deny("unbalanced quote in a gh command: write it on one line with matched quotes.")
     if role == "consumer":
         consumer_script_call_rule(segs, data.get("cwd") or "")
+        consumer_node_rule(data.get("tool_input", {}).get("command", ""), segs)
     for raw in segs:
         words = command_words(raw)
         if not words:

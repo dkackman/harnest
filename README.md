@@ -672,6 +672,8 @@ either bound it KILLs what's left).
 - The agents' own clone at `SOURCE_DIR`: run `git clone -b develop
   https://github.com/dkackman/diffusers-workflow.git ~/src/dkackman/dw-agent`, then
   `bash ./install.sh` inside it. This is not your working checkout.
+- For the tester's web-UI cases: `cd tools/ui-check && npm install --no-audit --no-fund`
+  (`playwright-core`, pinned; see docs/harness/components.md, `ui-check`).
 - On `lem`: the dw repo's `scripts/deploy.sh`, with the server running under the
   `dw-serve` systemd user unit. The script falls back to a `screen` session if the unit
   isn't installed.
@@ -970,6 +972,7 @@ regression-suite-{smoke,complete,model-specific,security}.md
 regression-perf/                    append-only per-case metric history (JSONL)
 HARNESS-ROADMAP.md                  planned evolution of the harness
 CLAUDE.md                           notes for Claude Code sessions working on this repo
+tools/ui-check/                     the tester's fixed web-UI runner (ui-check.mjs, playwright-core)
 qa-bible.md                         tester's memory across cycles (gitignored)
 logs/                               session output (gitignored)
 ```

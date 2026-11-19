@@ -4,3 +4,4 @@ qa-bible.md
 __pycache__/
 # secrets (DW_TOKEN_*); .env.example is the template
 .env
+tools/ui-check/node_modules/

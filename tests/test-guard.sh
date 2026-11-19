@@ -1300,4 +1300,49 @@ for r in implementer consumer; do
   row 0 $r "" $none 'timeout 60 pytest -k "$K"'
   row 0 $r "" $none 'nice -n 5 make "$TARGET"'
 done
+# --- ui-check (Task 8b): the consumer runs node only as the fixed runner on a /tmp/dw-ui-*.json spec
+uic="$HARNEST/tools/ui-check/ui-check.mjs"
+uspec="/tmp/dw-ui-guard-$$.json"
+printf '{"steps": []}\n' > "$uspec"
+ln -sf "$uspec" "/tmp/dw-ui-guard-link-$$.json"
+row 0 consumer "" $none "node $uic $uspec"
+row 0 consumer "" $none "node $uic $uspec" # twice: the guard keeps no state
+row 2 consumer "" $none 'node -e "require(\"child_process\").execSync(\"id\")"'
+row 2 consumer "" $none 'node /tmp/other.mjs'
+row 2 consumer "" $none "node $uic /tmp/x.json"
+row 2 consumer "" $none "node $uic /tmp/dw-ui-guard-link-$$.json"
+row 2 consumer "" $none "node $uic /tmp/dw-ui-missing-$$.json"
+row 2 consumer "" $none "node $uic /tmp/../tmp/dw-ui-guard-$$.json"
+row 2 consumer "" $none "node $uic $uspec --inspect"
+row 2 consumer "" $none "node --inspect $uic $uspec"
+row 2 consumer "" $none "node tools/ui-check/ui-check.mjs $uspec"
+row 2 consumer "" $none "node /tmp/tools/ui-check/ui-check.mjs $uspec"
+row 2 consumer "" $none "/usr/local/bin/node $uic $uspec"
+row 2 consumer "" $none "$uic $uspec"
+row 2 consumer "" $none "NODE_OPTIONS=--require=/tmp/x.js node $uic $uspec"
+row 2 consumer "" $none "env NODE_OPTIONS=x node $uic $uspec"
+row 2 consumer "" $none "node $uic $uspec | sh"
+row 2 consumer "" $none "node $uic $uspec > /tmp/out.json"
+row 2 consumer "" $none "node $uic $uspec; node -e 1"
+row 2 consumer "" $none "date && node $uic $uspec"
+row 2 consumer "" $none 'npx playwright test'
+row 2 consumer "" $none 'npm exec playwright'
+row 2 consumer "" $none 'npm install playwright'
+row 2 consumer "" $none 'xargs node < /tmp/args'
+row 2 consumer "" $none 'timeout 60 node -e 1'
+row 2 consumer "" $none 'bash -c "node -e 1"'
+row 0 consumer "" $none 'gh issue comment 5 --body "ran node -e and npx playwright: neither is allowed"'
+row 0 implementer "" $none 'node -e 1'
+row 0 implementer "" $none 'npx vitest run'
+# the consumer writes no file under tools/ui-check
+uirow() {  # uirow <expect> <tool> <path>
+  jq -n --arg t "$2" --arg p "$3" '{tool_name: $t, tool_input: {file_path: $p, content: "x"}, cwd: "/tmp"}' \
+    | python3 "$guard" consumer >/dev/null 2>&1
+  eq "consumer $2 $3" "$1" $?
+}
+uirow 2 Write "$uic"
+uirow 2 Edit "$HARNEST/tools/ui-check/package.json"
+uirow 2 Write "$HARNEST/tools/ui-check/node_modules/playwright-core/index.js"
+uirow 0 Write "/tmp/dw-ui-guard-other-$$.json"
+rm -f "$uspec" "/tmp/dw-ui-guard-link-$$.json"
 finish
