@@ -24016,7 +24016,6 @@ metrics: `rms_dbfs`, `high_share` and `noise_floor_dbfs` for each of the six seg
 #1442's trigger for Idea B is read from.
 
 ### C-F1011 — the #1465 LongCat-Video-Avatar probe's build comment names its commit, venv, downloads, preflight, fit, time, fps and gate numbers
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. Source: the stage A build comment on #1465 (`gh issue view 1465 --comments`). The probe ran outside dw, in a
 spike venv on lem, so the tester can't read `bench/records/longcat-avatar.md` or lem's disk: the comment has to carry
@@ -24042,7 +24041,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1012 — if the #1465 probe stopped early, the comment names the stop that fired with its figure, and claims nothing past it
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. Applies when C-F1011's comment says the probe stopped before the 30 s gate decision. Read the comment, and
 `list_assets(workspace="constitution-walk-3", prefix="bench/longcat-avatar/")`.
@@ -24064,7 +24062,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1013 — every `asset:bench/longcat-avatar/…` file the #1465 record names is listed in `constitution-walk-3`, and nothing the record doesn't name
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_assets(workspace="constitution-walk-3", prefix="bench/longcat-avatar/")`, with a `limit` above the count the
 comment gives. Compare with the asset names in C-F1011's comment.
@@ -24082,7 +24079,6 @@ cleanup: none (the probe's assets are evidence: never delete them).
 metrics: none.
 
 ### C-F1014 — each #1465 take plays as video with sound, at the record's native fps and size, within one window of its narration slice
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. For each take from C-F1013: `get_gallery_metadata("asset:bench/longcat-avatar/<take>", workspace="constitution-walk-3")`
 for `duration_seconds`, `fps`, `frame_count`, size and the audio stream. One window is about 3.7 s (93 frames at 25 fps).
@@ -24100,7 +24096,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1015 — `analyze_face_drift` on each #1465 take, one frame at each sample time, matches the record's SFace rows within ±0.03
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Short CPU or GPU runs (`templates/face-drift-check` has observed cold times under 0.1 min). Workspace
 `constitution-walk-3`. Sample times: the 30 s take's are 0.5/5/10/15/20/25/29.5 s; the 86 s take's
@@ -24126,7 +24121,6 @@ cleanup: `delete_output(job_id=...)` for every measuring run (and any clip cut).
 metrics: none.
 
 ### C-F1016 — frames of each #1465 take at the record's contact-sheet times show one face and are the frames the sheet shows
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_output_frames` on each take's `asset:` in `constitution-walk-3` at its contact-sheet times: 0.5/15/29.5 s for
 the 30 s take, 0.5/30/60/85 s for the 86 s take. Read the take's contact sheet asset with `get_output_frames` too, and
@@ -24143,7 +24137,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1017 — the #1465 gate decision follows from the record's own 30 s numbers, edges inclusive, and an 86 s take exists only after a pass
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. From C-F1011's comment: the 30 s take's SFace to kf00 at each sample, its face-crop saturation at 0.5 s and the
 largest rise after it, its 256 px Laplacian at 20-30 s, and its still-mouth bins over 0-30 s. With C-F1013's listing.
@@ -24166,7 +24159,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1018 — the #1465 probe adds nothing to the server: no LongCat model, workflow or task, and its commits touch only bench and docs
-pending: #1465
 source: tester, spec for #1465 from #1443's plan v2 (claude-opus-5-5 via anthropic)
 Free. `list_models` (summary form), `list_workflows` (default), `list_tasks` and `list_pipelines`, each searched for
 `longcat` / `LongCat-Video` / `avatar`. Read the build comment's list of changed files.
