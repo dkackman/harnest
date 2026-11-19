@@ -26611,4 +26611,25 @@ A "(disk)" suffix on a dw-used row, a plain unmarked atime date, or the atime da
 cleanup: none (read-only).
 metrics: none.
 
+### C-F1144 — a string option in a scheduler's `from_config_args` reaches the scheduler as written, even under a `_type` key
+source: tester, verified in #1491 (claude-opus-5-5 via anthropic)
+Three short SD 1.5 runs. Each workflow is inline with one `StableDiffusionPipeline` step:
+`stable-diffusion-v1-5/stable-diffusion-v1-5`, `torch_dtype: "torch.float32"`, `safety_checker: null`, 512x512 and
+a few steps, `result.content_type: "image/png"`. The scheduler block is
+`{"configuration": {"scheduler_type": "DPMSolverMultistepScheduler"}, "from_config_args": {...}}`. Run each one through
+`validate_workflow` first, then `run_workflow`, with the bound acknowledgement.
+1. `from_config_args: {"use_karras_sigmas": true, "algorithm_type": "dpmsolver++"}`.
+2. `from_config_args: {"algorithm_type": "bogus-solver"}`.
+3. `from_config_args: {"algorithm_type": "sde-dpmsolver++", "solver_type": "{midpoint}"}`.
+expected:
+- All three validate `valid: true`, with no error at `...from_config_args.*`.
+- Run 1 succeeds and writes one PNG.
+- Run 2 fails with diffusers' own refusal naming the value (`bogus-solver is not implemented for ...`). That shows the
+  string was passed through literally.
+- Run 3 succeeds: the `{}` escape is stripped before `from_config`.
+It is a **finding** if any run fails with `module diffusers has no attribute ...`, or if run 3 fails with
+`{midpoint} is not implemented`.
+cleanup: `delete_output(job_id=...)` for each run.
+metrics: none.
+
 ## Performance
