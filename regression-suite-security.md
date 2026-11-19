@@ -2146,7 +2146,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none.
 
 ### SE-F077 — the LoRA editor's catalog panel makes no Hub request and calls no `/recommend`, on any path through it
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, no download, nothing saved. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1113,
 unmocked. Before loading, register `page.on("request")` and `page.on("websocket")` and log every URL. Walk the panel
@@ -2165,7 +2164,6 @@ with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none.
 
 ### SE-F078 — catalog text renders as text in the LoRA editor's panel, and an add carries no markup into the step
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in `regression-suite-complete.md` C-F1113. A catalog entry is JSON anyone with
 `save_lora` (or a writable library) can author, so its text reaches this panel. Register `page.on("dialog")`,

@@ -25893,7 +25893,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1109 — `GET /api/loras` returns the same rows, every key included, as the catalog read it types
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, no download. **REST, plain HTTP GET** (Playwright's `request` or curl) against the server's web root
 (the MCP endpoint's host and port with `/mcp` dropped, e.g. `http://mini-ai:8765/`). Stage A declares a response
@@ -25917,7 +25916,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1110 — `GET /api/loras` keeps optional fields on rows that carry them, and rows without `scale`, under the declared model
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, no download. REST as in C-F1109. The H3 catalog has the fields Z-Image's rows lack: `evidence` lists
 (with `issue`, `job` and `note` keys), rejected rows with no `scale` (`minimax-h3/acc-pdd`, `minimax-h3/hyperflow`),
@@ -25935,7 +25933,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1111 — `/api/loras` still refuses a non-repo `model` with the same 400, and still narrows by H3 partition
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, no download, no H3 run (catalog reads only). REST as in C-F1109.
 (a) GET `/api/loras?model=variable:x`. (b) GET `/api/loras?model=/etc/hosts` (an absolute path).
@@ -25955,7 +25952,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1112 — `/openapi.json` declares a 200 schema for `GET /api/loras` that admits every catalog field
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free. Plain HTTP GET of `/openapi.json` from the web root (or the path the web root's API docs link names). Follow
 `paths["/api/loras"].get.responses["200"].content["application/json"].schema` through its `$ref`s.
@@ -25972,7 +25968,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1113 — the LoRA editor lists a literal repo's catalog entries: proven first, then by name, rejected hidden, each with its stated fields
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. **Web UI, black-box**, setup as in C-F1028 (headless Playwright script under `/tmp`,
 found by visible text and role, mocks built from the **real** answer with `route.fetch()` and only named fields
@@ -25998,7 +25993,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1114 — one click adds the mapped item: repo, weight file and scale filled, revision shown, and the entry turns "added"
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in C-F1113, unmocked, Z-Image base, the step's `loras` empty. Click the add
 button on `z-image/coloring-book`. Then, with `**/api/loras?**` mocked from the real answer so that `z-image/realism`
@@ -26023,7 +26017,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1115 — a step that already has an entry shows it "added" on open; matching is model plus weight file
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in C-F1113. In a Z-Image step, before opening the LoRA section, add two rows
 by hand with the existing row controls: (1) model `renderartist/Coloring-Book-Z-Image-Turbo-LoRA`, weight file
@@ -26038,7 +26031,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1116 — a `variable:`, path, bare-name or empty base fetches nothing and says why
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in C-F1113, request log on. Set the step's base model field in turn to
 `variable:model`, `/Users/someone/model` (an absolute path), `just-a-name`, `owner/name/extra`, and empty; after
@@ -26053,7 +26045,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1117 — typing a base model fetches once after it settles, and the list follows the last value
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in C-F1113, LoRA section open, request log on. Clear the base model field
 and type `Tongyi-MAI/Z-Image-Turbo` one character at a time with a 30 ms delay; wait 1 s. Then select the field's
@@ -26086,7 +26077,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1119 — no matches, all rejected, and a failed fetch each leave the editor usable with one muted line
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in C-F1113, Z-Image base. Mock `**/api/loras?**` from the real answer in
 turn: (a) `loras: []`; (b) every row's `status` set to `rejected`; (c) `route.fulfill({status: 500, json: {detail:
@@ -26104,7 +26094,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1120 — the catalog list is legible in both themes and borrows no live or selection styling
-pending: #1480
 source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing saved. Web UI as in C-F1113, Z-Image base with one entry added (so both an enabled and an
 "added" button show) and, on a second step, the `variable:` line from C-F1116. Take each in the light and the dark
