@@ -176,6 +176,30 @@ class LoopStateTests(unittest.TestCase):
         self.assertEqual(d["heartbeat"], 1000.0)
         self.assertEqual(d["started"], 1000.0)
 
+    def test_stopped_status(self):
+        self.st.status("stopped")
+        self.assertEqual(self.read()["status"], "stopped")
+
+    def test_unknown_status_refused(self):
+        with self.assertRaises(ValueError):
+            self.st.status("sleeping")
+
+    def test_snapshot_taken_under_the_write_lock(self):
+        held = []
+        st = self.st
+        real = st.snapshot
+
+        def probe():
+            # another thread can't take the lock while write() snapshots
+            t = threading.Thread(target=lambda: held.append(not st._lock.acquire(blocking=False) or st._lock.release()))
+            t.start()
+            t.join()
+            return real()
+
+        st.snapshot = probe
+        st.write()
+        self.assertEqual(held, [True])
+
     def test_deploy_keeps_last_when_omitted(self):
         self.st.deploy("lem", "idle", [], {"at": 1, "head": "x", "ok": False, "secs": 1})
         self.st.deploy("lem", "deploying", [])

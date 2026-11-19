@@ -19,6 +19,9 @@ from harness.scheduler import needs
 SERIES_MAX = 720  # 6 h of samples at 30 s
 PARKED = "(parked) "  # status_board's mark on a parked issue's title
 AGENT_OWNERS = frozenset({"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"})
+# "stopped" is the last word of a driver that exited cleanly; the dashboard
+# tells it from a dead one (a stale heartbeat with another status).
+STATUSES = ("running", "draining", "stopping", "paused-rate-limit", "stopped")
 
 
 def workers_busy(health):
@@ -116,6 +119,8 @@ class LoopState:
             self._servers[server]["workers"] = list(workers)
 
     def status(self, s):
+        if s not in STATUSES:
+            raise ValueError(f"loop status {s!r} not in {STATUSES}")
         with self._lock:
             self._status = s
 
@@ -223,8 +228,11 @@ class LoopState:
             }
 
     def write(self):
-        data = json.dumps(self.snapshot())
-        with self._lock:  # one writer at a time: the tmp name is shared
+        # One writer at a time (the tmp name is shared), and the snapshot is
+        # taken under the same lock, so a heartbeat's older snapshot can never
+        # land after the driver's newer one.
+        with self._lock:
+            data = json.dumps(self.snapshot())
             tmp = self.path + ".tmp"
             with open(tmp, "w") as f:
                 f.write(data)
