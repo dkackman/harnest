@@ -25363,7 +25363,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1083 — Repair is disabled on an LTX take with "no repair-segment template for this model family"
-pending: #1476
 source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free past the setup. Web UI as in C-F1079, logging every request. Setup as in C-F1073 (J1, an LTX-2.5 take whose
 rows all have a `segment_file`). Open J1's page. Hover or focus each row's **Repair** action, then click it.
@@ -25377,7 +25376,6 @@ cleanup: none (as C-F1073).
 metrics: none.
 
 ### C-F1084 — on a mocked H3 take, Repair opens `repair-segment` with exactly `chain_take` and `segment` pre-filled, and submits nothing
-pending: #1476
 source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1079. Log every request, and **abort** any POST to a job, run, rerun or validate-and-run
 route. Setup as in C-F1073 (J1). Mock `**/api/jobs/<J1>` from its real answer so the chain step reads as H3 family,
@@ -25398,7 +25396,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1085 — Repair is disabled with its reason on segment 1, on a repaired take, and on a run without kept segments
-pending: #1476
 source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1084 (J1 mocked as H3, job POSTs aborted). Variants of the mock:
 - (a) As C-F1084: read row 1.
@@ -25415,7 +25412,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1086 — Continue the chain on the `stop_after` probe queues a real rerun that resumes from the last kept segment and clears `stop_after`
-pending: #1476
 source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 One LTX-2.5 segment of GPU time. Web UI as in C-F1079. Record the body of every POST to `**/api/jobs/<P>/rerun` with
 `page.route` and `route.continue()`. Setup as in C-F1073 (P: 2 of 3 segments, both with `segment_file`, and
@@ -25435,7 +25431,6 @@ cleanup: delete C with the rest (C-F1073).
 metrics: none.
 
 ### C-F1087 — Continue is absent on a complete take, on a workflow missing either variable, and when a row has no segment file
-pending: #1476
 source: tester, spec for #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Web UI as in C-F1079, aborting any rerun POST. Setup as in C-F1073 (J1, P).
 - (a) J1's page, a complete take.
