@@ -24340,4 +24340,210 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-complete")`. Leave `o
 use it.
 metrics: none.
 
+### C-F1028 — the editor's plan shows host RAM, a low-confidence figure, a withheld figure, and a gated and a missing repo
+pending: #1467
+source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box.** Setup shared by C-F1028–C-F1037 and SE-F069: a headless Chromium Playwright
+script the tester writes under `/tmp`, pointed at the server's own web UI (the MCP endpoint's host and port with the
+`/mcp` path dropped, e.g. `http://mini-ai:8765/`). It finds things by visible text and role, never by selectors read
+from the UI source, and mocks with `page.route("**/api/validate**", …)`. A mocked answer is built from a **real** one:
+`route.fetch()` the request, parse the JSON, overwrite only the fields named, `route.fulfill({json})`. That keeps every
+other field in today's shape. A `downloads_required` entry, when the real answer has none, copies the field names of
+one from `validate_workflow` on any catalog workflow whose model isn't cached here (or from the schema's
+`RequiredDownload`).
+Open `templates/text-to-image` in the editor and validate it the way the editor does, with the answer mocked to set
+`plan.host_memory = {"projected_mb": 15648, "basis": "observed", "runs": 116}`, `plan.estimate.low_confidence = true`,
+and two `downloads_required` entries: `org-a/gated-repo` with `access_blocked: true`, and `org-b/missing-repo` with
+`not_found: true`. Then a second mocked answer sets `plan.estimate` to basis `unknown`, `minutes: null`,
+`withheld: true`, `inherited_from: "templates/some-source"`.
+expected:
+- First answer: the plan shows a line reading `host RAM ~N GB (observed)`, with N the projected need in GB (15 or
+  16 for 15648 MB; either rounding passes). The figure line carries the words `low confidence` and is styled as a
+  warning, not as the plain lines around it. The download lines read `org-a/gated-repo (gated: this box's token can't
+  reach it)` and `org-b/missing-repo (not found)`, both styled as warnings.
+- Second answer: the figure reads `no figure - withheld (not priced from templates/some-source)` (a `-` or an en/em
+  dash both pass), styled as a warning.
+- Every line renders as text (the repo names appear literally).
+A missing line, a qualifier dropped, a gated or missing repo shown as a plain download, or a page error is a
+**finding**.
+cleanup: none (nothing is saved; leave the editor without saving the workflow).
+metrics: none.
+
+### C-F1029 — the editor shows the plan *and* the error when the answer is invalid but carries a plan
+pending: #1467
+source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1028. Open `templates/text-to-image` in the editor and validate it with the
+answer mocked to the not_found shape: `valid: false`, `errors: [{"path": "model_name", "message": "repo org-b/missing-
+repo not found on the Hub"}]`, the real `plan` kept with one `downloads_required` entry `org-b/missing-repo`
+(`not_found: true`). Then mock the argument-error shape: `valid: false`, one error at `arguments.num_images_per_prompt`,
+and `plan: null`.
+expected:
+- First answer: the verdict says invalid, the error text shows, **and** the plan shows below the error list,
+  including `org-b/missing-repo (not found)`.
+- Second answer: the error shows and no plan box (or an empty one) shows. No stale plan from the first answer stays
+  on screen, and the page shows no script error.
+A plan hidden while one is present, or a plan shown when `plan` is null, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1030 — the other estimate qualifiers and host-RAM bases read as the plan says
+pending: #1467
+source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1028; editor on `templates/text-to-image`. One mocked answer per arm, each
+changing only the named fields of the real plan:
+- (a) `host_memory.basis` `fit`, `runs: 7`; (b) `declared`; (c) `inherited`.
+- (d) `estimate.tempered: true`, `observed_minutes: 0.4`, `curated_minutes: 1.0`, `runs: 5`.
+- (e) `estimate.priced_for` set to a card name different from `estimate.device` (the real mini-ai answer already
+  does this: `device: "mps"`, `priced_for: "mps Apple M5 Pro (MPS)"`). (e') `priced_for` equal to `device`.
+- (f) basis `inherited`, `minutes: 2.5`, `inherited_from: "templates/x"`, `low_confidence: true`; (f') the same with
+  `low_confidence: false`.
+- (g) basis `unknown`, `minutes: null`, `unpriced_reason: "no run of this pipeline on this device"`; (g') the same with
+  no `unpriced_reason`.
+- (h) `host_memory: null` (or the key absent).
+expected:
+- (a) `host RAM ~N GB (fit to 7 runs)`; (b) `(declared)`; (c) `(inherited from the template)`.
+- (d) the figure line also says `blended toward the curated 1 min from 5 runs` (`1.0 min` passes too).
+- (e) names the card the run dispatches to; (e') names no second card.
+- (f) reads `~2.5 min, inherited from templates/x`, styled as a warning; (f') the same text, not styled as a warning.
+- (g) shows the reason text in place of `no measured cost`; (g') still says `no measured cost`, as today.
+- (h) no host-RAM line, and nothing breaks.
+A qualifier missing, attached to the wrong arm, or a `null`/`undefined`/`NaN` on screen is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1031 — a plan with none of the new fields renders as it did before #1467
+pending: #1467
+source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1028. Mock the editor's validate answer from the real one with every field
+#1467 reads removed: `host_memory`, and from `estimate` `low_confidence`, `withheld`, `unpriced_reason`,
+`inherited_from`, `priced_for`, `tempered`; no `downloads_required` entry has `access_blocked` or `not_found`.
+Use basis `observed`, `minutes: 0.2`, and one ordinary download entry.
+expected: the plan shows its steps line, a `~0.2 min` figure with its basis, and the download line with no tag. No
+line says `host RAM`, `low confidence`, `withheld`, `inherited`, `blended`, `gated` or `not found`, and no line is
+styled as a warning. (Exact-text equality with the old lines is `plan.test.ts`'s job; this is the black-box half.)
+Any new tag or warning tone appearing here is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1032 — the editor's plan for a real validate answer matches what `validate_workflow` says
+pending: #1467
+source: tester, spec for #1467 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, no mock. `validate_workflow(workflow_path="templates/text-to-image", workspace="regression-complete")`,
+and note `plan.host_memory` and `plan.estimate` (`basis`, `minutes`, `low_confidence`, `priced_for`). Then open the same
+workflow in the web UI editor (setup as in C-F1028, routes not mocked) and validate it.
+expected: the editor's plan agrees with the MCP answer: a `host RAM ~N GB (<basis>)` line when `host_memory` is
+present (on mini-ai on 2026-11-19 it was `15648` MB, `observed`); `low confidence` on the figure exactly when
+`low_confidence` is true (it was true there); the `priced_for` card named when it differs from `device`.
+A field the MCP answer carries that the editor drops, or a qualifier the MCP answer doesn't support, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1033 — the run page shows a plan on load, before anything is pressed
+pending: #1468
+source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1028, routes **not** mocked; record every request to `/api/validate` and
+`/api/jobs` (or whatever the page posts a submit to). Before and after: `list_jobs(workspace=<the UI's workspace>)`.
+Open the run page (the workflow page with the variable form and Run) for `templates/text-to-image` and press nothing.
+expected:
+- Within a few seconds of load, a plan box beside Run shows the steps line, a figure (or `no measured cost`, or the
+  reason of C-F1030 (g)), and a `host RAM` line when `validate_workflow` on the same workflow reports `host_memory`.
+  A verdict (valid) shows with it.
+- The first validate request carries `workflow_path` naming the workflow and an `arguments` object, and asks for
+  `sizes=false`.
+- No submit request was made, and `list_jobs` shows no new job.
+No plan without pressing anything, a validate posted as an inline `workflow` instead of `workflow_path`, or any job
+queued is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1034 — a refused variable value shows its error under that field, and clears when fixed
+pending: #1468
+source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1033, routes not mocked. On `templates/text-to-image`'s run page:
+1. Type `abc` into `num_images_per_prompt`, then stop typing. (A wrong type is the refusal used: an out-of-range
+   value is **not** refused. `validate_workflow` with `num_images_per_prompt: 99` returned `valid: true` on mini-ai on
+   2026-11-19, while `"abc"` returned an error at `arguments.num_images_per_prompt`: `Cannot convert variable
+   'num_images_per_prompt' value 'abc' to type int: …`.) If the form's field won't accept letters, use the nearest
+   value it accepts that `validate_workflow` refuses, and confirm that refusal over MCP first.
+2. Replace it with `2` and stop typing.
+3. Clear the field (empty) and stop typing.
+expected:
+- Step 1: within about 1 s of the last keystroke, the `Cannot convert …` text shows **under the
+  `num_images_per_prompt` field**, and the verdict says invalid. The validate request's `arguments` carries the typed
+  value under that name.
+- Step 2: the error under the field is gone, and the verdict is valid again.
+- Step 3: the request's `arguments` has no `num_images_per_prompt` key at all (an empty is dropped, as Run drops it),
+  and no error shows.
+An error shown only in the general list, one that stays after the fix, or an empty value sent as `""` is a
+**finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1035 — a finding that names no form variable goes in the general list; one that names a variable goes under it
+pending: #1468
+source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1028, validate route mocked on the run page of `templates/text-to-image`
+(variables `prompt`, `num_images_per_prompt`, `seed`). One answer, `valid: false`, with `errors`:
+- `{"path": "model_name", "message": "M1 unknown model"}`
+- `{"path": null, "message": "M2 no path"}`
+- `{"path": "steps[0].pipeline", "message": "M3 a step"}`
+- `{"path": "host_ram_gb", "message": "M4 host ram"}`
+- `{"path": "arguments.not_in_form", "message": "M5 undeclared"}`
+- `{"path": "arguments.prompt[0]", "message": "M6 indexed"}`
+- `{"path": "variables.seed", "message": "M7 variables prefix"}`
+and `warnings`: `"arguments.num_images_per_prompt: W1 rounded up"`, `"cost estimate withheld: W2 bare with colon"`,
+`"W3 bare"`.
+expected:
+- Under `prompt`: M6 (the `[0]` stripped). Under `seed`: M7. Under `num_images_per_prompt`: W1's message.
+- In the general list: M1, M2, M3, M4, M5, W2 (its whole text, `cost estimate withheld: …`, not cut at the colon) and
+  W3. Errors styled bad, warnings styled warn.
+- Nothing is lost: every one of the ten texts appears somewhere on the page. Mocking the real-server case of an
+  unknown variable (validate answers `arguments.model_name` with `Unknown variable 'model_name'` for this template,
+  seen on mini-ai on 2026-11-19), it lands in the general list, since the form has no such field.
+A finding missing from the page, a variable-named one only in the general list, or a bare warning split or placed
+under a field is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1036 — Run stays enabled while validate is pending or refuses, and a refused Run still toasts
+pending: #1468
+source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job queued. Web UI, setup as in C-F1033. `list_jobs(workspace=<the UI's workspace>)` before and after.
+1. Mock the validate route to hold its answer for 5 s; load the run page of `templates/text-to-image` and check Run
+   while it is held.
+2. Unmock; type `abc` into `num_images_per_prompt` and wait for the error (C-F1034).
+3. Press Run.
+expected:
+- Steps 1 and 2: Run is enabled (clickable, not `disabled`, not `aria-disabled`).
+- Step 3: the submit is refused by the server and the page shows a toast with the refusal, as before #1468. No job
+  appears in `list_jobs`.
+Run disabled at any point, or a job queued from the refused form, is a **finding**.
+cleanup: if a job did queue, `cancel_job` it and `delete_output(job_id=…)`, then report the finding.
+metrics: none.
+
+### C-F1037 — typing fast sends one validate per pause, the sized call waits for 3 s idle, and a stale answer is dropped
+pending: #1468
+source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1028, on the run page of `templates/text-to-image`. Record each validate
+request's time, body and `sizes` query value. After the load-time calls settle:
+1. Type 20 characters into `prompt` at ~100 ms apart, then stop for 1.5 s.
+2. Type 5 more characters the same way, then stop for 5 s.
+3. Stale answer: mock the route so the next request's answer is held 3 s and says `valid: false` with an error
+   `STALE-1` under `prompt`, while later requests pass through. Type one character, wait 0.8 s (that request goes
+   out), type another, and wait 6 s.
+4. Stale sized answer: let a pause run past 3 s so a `sizes=true` request goes out, mock that one request to be held
+   3 s and to carry an error `STALE-2`, and type a character while it is held. Wait 6 s.
+expected:
+- Step 1: no `sizes=false` request during the typing; exactly one after it, ~600 ms after the last keystroke, whose
+  `arguments.prompt` is the full 20-character text. No `sizes=true` request in this 1.5 s pause.
+- Step 2: one `sizes=false` request ~600 ms after the pause starts, and one `sizes=true` request ~3 s after the last
+  keystroke, not before.
+- Step 3: `STALE-1` never shows; the page shows the answer for the latest text.
+- Step 4: `STALE-2` never shows (the request may be aborted or its answer ignored; either passes).
+- No `sizes=true` request ever goes out while keys are being typed less than 3 s apart.
+A validate per keystroke, a sized call before 3 s idle, or a stale answer on screen is a **finding**. Timings are
+the UI's own timers, so allow ±300 ms; a slow server answer doesn't move when a request is *sent*.
+cleanup: none.
+metrics: none.
+
 ## Performance

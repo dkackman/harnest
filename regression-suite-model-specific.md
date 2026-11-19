@@ -11057,7 +11057,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F434 — the #1439 ref-prep record cites every job, each completed with its stated seed and references, and the three arms differ only in the prepared portrait
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 Ref2VA on lem (cuda): `templates/minimax/reference-to-video` (one picture through
 `variable:subject`; defaults 960x544, 124 frames, 9 steps, int4, turbo LoRA, `seed` null) or, on the primary path, the
@@ -11095,7 +11094,6 @@ cleanup: none. Never delete a probe job or asset.
 metrics: none.
 
 ### M-F435 — the #1439 arm-2 and arm-3 pictures exist and were made as the record says: `segment` mask, square `recenter_crop` at about 1.75x, head and shoulders kept, backdrop blurred outside the subject
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `segment` (Grounding-DINO + SAM2), `recenter_crop` (square cut of `crop` x the shorter side around
 normalised `center_x`/`center_y`), and the bench-only `bench/blur_outside_mask.py` result uploaded with `upload_asset`.
@@ -11129,7 +11127,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F436 — every #1439 clip's bleed label (none / framing / backdrop / both) agrees with its frames 0 and 24
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe's MiniMax H3 Ref2VA clips (M-F434). **Free**: `get_output_frames` and `assess_output` on
 existing outputs; nothing is queued.
@@ -11155,7 +11152,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F437 — every #1439 clip's SFace was scored against the original, unprepared portrait at `samples_per_shot: 16`, and a re-score of one clip reproduces its median within 0.01
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: `analyze_face_drift` (YuNet + SFace cosine; `video`, `reference` required; `threshold` default 0.363;
 `samples_per_shot` default 8; largest face in `reference` used), as in `bench/workflows/t26-face-check.json` for #1317.
@@ -11182,7 +11178,6 @@ cleanup: `delete_output(job_id=...)` on the re-score job this case made. Never d
 metrics: none.
 
 ### M-F438 — the #1439 gate and cap: arms 2-3 ran only after arm 1 bled, a failed gate leaves two no-bleed pictures and no arm-2/3 jobs, and GPU time stays within about 1.5 h
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe's H3 jobs (M-F434) and their labels (M-F436). **Free**: reads only.
 Steps: `list_jobs(workspace=..., limit=50)`, `get_job` on every probe job; the quoted record.
@@ -11206,7 +11201,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F439 — the #1439 verdict follows the plan's Design 7 rule, and the record names the segmenter, crop numbers, blur settings and the five missing tasks
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the probe (M-F434–M-F438). **Free**: issue reads, plus `list_tasks`.
 Steps: the record as quoted on #1460/#1439; compute the verdict from M-F436's labels and M-F437's scores; `list_tasks`.
@@ -11232,7 +11226,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F440 — the #1439 probe changes at most one `per-character.md` line, matching the verdict, and leaves `reference-to-video` and the catalog as they were
-pending: #1460
 source: tester, spec for #1460 from #1439's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: the `dw:minimax-h3` skill and `templates/minimax/reference-to-video`. **Free**: skill and catalog
 reads.

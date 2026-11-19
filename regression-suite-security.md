@@ -1991,6 +1991,29 @@ privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none (validation only). If `probe-1315` didn't exist, validate in `default` instead. Validating creates
 nothing.
 
+### SE-F069 — validate findings and plan text on the run page and in the editor render as text, never as markup
+pending: #1468
+source: tester, spec for #1468 from #1446's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1028 (headless Chromium, the
+validate route mocked from a real answer). #1468 puts server-supplied strings (errors, warnings, plan download names)
+on the run page, and in a field's own slot. Register `page.on("dialog")`, `page.on("console")` and a
+`page.on("request")` log before loading. Hostile strings, one per position:
+- H1 `<img src=x onerror="window.__pwn1=1">` as an `errors` message at `arguments.prompt` (lands under a field);
+- H2 `<script>window.__pwn2=1</script>` as an `errors` message at `model_name` (general list);
+- H3 `arguments.prompt: <svg onload="window.__pwn3=1">` as a warning (placed under a field);
+- H4 `<a href="javascript:window.__pwn4=1">click</a>` as a bare warning;
+- H5 `"><img src="http://example.invalid/leak.png">` as a `downloads_required` repo id (a plan line);
+- H6 `{{7*7}} ${7*7}` as an error message (template-syntax probe).
+Load the run page of `templates/text-to-image` with that answer; then open the editor on the same workflow and
+validate with the same answer.
+expected:
+- On both pages each string appears **literally** as visible text (the `<`, `>` and quotes shown), and H6 shows
+  `{{7*7}} ${7*7}`, not `49`.
+- `window.__pwn1`…`__pwn4` are all undefined; no dialog opened; no `<img>`, `<script>`, `<svg>` or `<a
+  href="javascript:…">` element exists inside the plan or findings areas; no request went to `example.invalid`.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model
