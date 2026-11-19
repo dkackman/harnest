@@ -611,3 +611,17 @@ class MinorTest(unittest.TestCase):
                 outs.append(rec.out)
         self.assertNotEqual(outs[0], outs[1])
 
+
+class LandErrorTest(unittest.TestCase):
+    def test_an_error_land_keeps_the_tree(self):
+        lp = mk()
+        rec = mock.MagicMock(tree=mock.MagicMock(path="/t", base="b"), last=lp.logs / ".last", label="tester:#4")
+        rec.item = Item("tester:verify", 4, "lem")
+        rec.server = "lem"
+        for result, removed in (("error", False), ("stranded", True), ("landed", True)):
+            with (
+                mock.patch.object(loop.suite_tree, "land", return_value=result),
+                mock.patch.object(loop.suite_tree, "remove") as rm,
+            ):
+                lp.land(rec, lp.srv["lem"])
+            self.assertEqual(rm.called, removed, result)

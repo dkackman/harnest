@@ -216,7 +216,9 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
   rendered to a temp name and renamed; statuses running/draining/stopping/paused-rate-limit/stopped),
   `suite_tree.py` (per-session suite worktrees under `<parent>/.harnest-worktrees/<harnest>/<id>`:
   `make`, `land` the working-tree diff of the suite paths onto a fresh `main`, `remove`; a conflict
-  is kept on a `suite-conflict/*` or `suite-stranded/*` branch and logged `[audit] WARNING`),
+  is kept on a `suite-conflict/*` or `suite-stranded/*` branch and logged `[audit] WARNING`; when
+  that branch cannot be made, `land` returns `error` and the driver keeps the tree, and `make` moves
+  a stale tree it cannot strand to `<id>.kept-<time>`),
   `lock.py` (the per-server driver lock, shared protocol with `providers.sh`), `gitops.py` (git with
   a timeout, in its own process group). The guard reads the session tree and base from
   `HARNEST_SESSION_TREE` / `HARNEST_SESSION_BASE` (driver-set; add-only is checked against that sha).

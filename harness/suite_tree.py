@@ -24,6 +24,7 @@ import os
 import shutil
 import subprocess
 import tempfile
+import time
 from typing import NamedTuple
 
 from . import suite
@@ -68,9 +69,14 @@ def make(harnest, session_id, base_dir=None, say=print):
     harnest = str(harnest)
     tree = os.path.join(os.path.realpath(base_dir or default_base_dir(harnest)), session_id)
     if os.path.exists(tree):
+        kept = False
         if git("-C", tree, "rev-parse", "--git-dir").returncode == 0:
-            _strand(tree, "suite-stranded", "a stale tree from a session that did not land", say)
-        remove(harnest, tree)
+            try:
+                _strand(tree, "suite-stranded", "a stale tree from a session that did not land", say)
+            except StrandError:
+                kept = _move_aside(harnest, tree, say)
+        if not kept:
+            remove(harnest, tree)
     git("-C", harnest, "worktree", "prune")
     os.makedirs(os.path.dirname(tree), exist_ok=True)
     base = git("-C", harnest, "rev-parse", "--verify", f"{BASE}^{{commit}}").stdout.strip()
@@ -78,6 +84,20 @@ def make(harnest, session_id, base_dir=None, say=print):
     if r.returncode != 0 or not base:
         raise RuntimeError(f"suite_tree.make: worktree add {tree} {BASE}: {r.stderr.strip()}")
     return Tree(tree, base)
+
+
+def _move_aside(harnest, tree, say):
+    """A stale tree that could not be stranded goes to <tree>.kept-<time> (still a registered
+    worktree when `git worktree move` works), so the slot's next tree can be made and
+    nothing is dropped. Raises when it cannot be moved either."""
+    dest = f"{tree}.kept-{time.strftime('%Y%m%d-%H%M%S')}-{os.getpid()}"
+    if git("-C", harnest, "worktree", "move", tree, dest).returncode != 0:
+        try:
+            os.rename(tree, dest)
+        except OSError as e:
+            raise RuntimeError(f"suite_tree.make: could not strand or move aside the stale tree {tree}: {e}") from e
+    say(f"[audit] WARNING: the stale tree {tree} could not be stranded; moved to {dest} for Don")
+    return True
 
 
 def remove(harnest, tree):
@@ -114,11 +134,23 @@ def _dirty(tree):
     return bool(git("-C", tree, "status", "--porcelain").stdout.strip())
 
 
+class StrandError(RuntimeError):
+    """Stranding failed (a git call did not succeed): nothing is kept on a branch, so the
+    caller must keep the tree as it is (land() returns "error", make() moves it aside)."""
+
+
 def _snapshot(tree):
     """A commit of the tree's whole working state (tracked, staged and untracked, not ignored)
-    on top of its HEAD, built in a temporary index; HEAD itself when nothing is dirty."""
-    head = git("-C", tree, "rev-parse", "HEAD").stdout.strip()
-    if not _dirty(tree):
+    on top of its HEAD, built in a temporary index; HEAD itself when nothing is dirty.
+    Raises StrandError when any git step fails."""
+    p = git("-C", tree, "rev-parse", "--verify", "HEAD")
+    head = p.stdout.strip()
+    if p.returncode != 0 or not head:
+        raise StrandError(f"rev-parse HEAD in {tree}: {p.stderr.strip()}")
+    st = git("-C", tree, "status", "--porcelain")
+    if st.returncode != 0:
+        raise StrandError(f"status in {tree}: {st.stderr.strip()}")
+    if not st.stdout.strip():
         return head
     fd, index = tempfile.mkstemp(prefix="suite-tree-index-")
     os.close(fd)
@@ -126,14 +158,19 @@ def _snapshot(tree):
         env = {**os.environ, **STRAND_ENV, "GIT_INDEX_FILE": index}
 
         def run(*a):
-            return subprocess.run(["git", "-C", tree, *a], env=env, capture_output=True, text=True)
+            r = subprocess.run(["git", "-C", tree, *a], env=env, capture_output=True, text=True)
+            if r.returncode != 0:
+                raise StrandError(f"git {a[0]} in {tree}: {(r.stderr or '').strip()}")
+            return r.stdout.strip()
 
         run("read-tree", "HEAD")
         run("add", "-A")
-        obj = run("write-tree").stdout.strip()
+        obj = run("write-tree")
         msg = f"stranded: what session {_sid(tree)} left in its tree"
-        sha = run("commit-tree", obj, "-p", head, "-m", msg).stdout.strip()
-        return sha or head
+        sha = run("commit-tree", obj, "-p", head, "-m", msg)
+        if not sha:
+            raise StrandError(f"git commit-tree in {tree} printed no commit")
+        return sha
     finally:
         os.unlink(index)
 
@@ -152,10 +189,20 @@ def _free_branch(tree, prefix):
 
 def _strand(tree, prefix, why, say, sha=None):
     """Keeps <sha> (default: a snapshot of the whole tree) on a new <prefix>/<session> branch
-    and says an [audit] WARNING. Returns the branch."""
-    sha = sha or _snapshot(tree)
-    branch = _free_branch(tree, prefix)
-    git("-C", tree, "branch", branch, sha)
+    and says an [audit] WARNING. Returns the branch. Raises StrandError when the snapshot or
+    the branch could not be made (said as an [audit] WARNING too): nothing was kept."""
+    try:
+        sha = sha or _snapshot(tree)
+        branch = _free_branch(tree, prefix)
+        p = git("-C", tree, "branch", branch, sha)
+        if p.returncode != 0:
+            raise StrandError(f"git branch {branch} {sha[:9]}: {p.stderr.strip()}")
+    except StrandError as e:
+        say(
+            f"[audit] WARNING: could not strand suite work from session {_sid(tree)} ({why}): {e}; "
+            f"the tree {tree} is kept as it is for Don"
+        )
+        raise
     say(
         f"[audit] WARNING: suite work {sha[:9]} from session {_sid(tree)} did not land on {BASE_NAME} ({why}); "
         f"it is kept on branch {branch} for Don to merge"
@@ -213,6 +260,8 @@ def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, 
                  is a symlink (nothing lands), the paths commit touched more than <paths> or
                  holds a symlink or gitlink (nothing lands), or files outside <paths> were left
                  over (the paths commit, if any, still lands)
+      "error"    stranding failed (a git call did not succeed; [audit] WARNING said): the
+                 tree is left as it is and must be kept, not removed
     <kind> is the session kind ("curator:review" logs an approved removal at info level)."""
     harnest = str(harnest)
     if isinstance(tree, Tree):
@@ -225,54 +274,57 @@ def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, 
     logs = logs or os.path.join(harnest, "logs")
     os.makedirs(logs, exist_ok=True)
     with suite_lock:
-        head = git("-C", path, "rev-parse", "HEAD").stdout.strip()
-        if head != base:
-            _strand(
-                path, "suite-stranded", f"the session committed in its tree (HEAD {head[:9]}, base {base[:9]})", say
-            )
-            return "stranded"
-        linked = _linked_paths(path, paths)
-        if linked:
-            _strand(path, "suite-stranded", f"{' '.join(linked)} in the tree is a symlink", say)
-            return "stranded"
-        suite.commit_changes(path, logs, paths, msg, name, email, say, kind=kind)
-        sha = git("-C", path, "rev-parse", "HEAD").stdout.strip()
-        stranded = False
-        if _dirty(path):
-            _strand(path, "suite-stranded", f"files outside {' '.join(paths)} were left in the tree", say)
+        try:
+            return _land(harnest, path, base, msg, name, email, say, paths, logs, kind)
+        except StrandError:
+            return "error"  # said by _strand; the driver keeps the tree
+
+
+def _land(harnest, path, base, msg, name, email, say, paths, logs, kind):
+    head = git("-C", path, "rev-parse", "HEAD").stdout.strip()
+    if head != base:
+        _strand(path, "suite-stranded", f"the session committed in its tree (HEAD {head[:9]}, base {base[:9]})", say)
+        return "stranded"
+    linked = _linked_paths(path, paths)
+    if linked:
+        _strand(path, "suite-stranded", f"{' '.join(linked)} in the tree is a symlink", say)
+        return "stranded"
+    suite.commit_changes(path, logs, paths, msg, name, email, say, kind=kind)
+    sha = git("-C", path, "rev-parse", "HEAD").stdout.strip()
+    stranded = False
+    if _dirty(path):
+        _strand(path, "suite-stranded", f"files outside {' '.join(paths)} were left in the tree", say)
+        git("-C", path, "reset", "-q", "--hard", sha)
+        git("-C", path, "clean", "-qfd")
+        stranded = True
+    if sha == base:
+        return "stranded" if stranded else "clean"
+    parent = git("-C", path, "rev-parse", f"{sha}^").stdout.strip()
+    touched = git("-C", path, "diff", "--name-only", "--no-renames", base, sha).stdout.split("\n")
+    stray = [f for f in touched if f and not _in_paths(f, paths)]
+    links = _link_entries(path, base, sha)
+    if parent != base or stray or links:
+        if links:
+            why = f"the landing commit holds a {', '.join(links)}"
+        else:
+            why = f"the landing commit touched {' '.join(stray) or 'more than one commit'} outside {' '.join(paths)}"
+        _strand(path, "suite-stranded", why, say, sha=sha)
+        return "stranded"
+    done = "stranded" if stranded else "landed"
+    new = sha
+    for _ in range(FF_TRIES):
+        tip = git("-C", path, "rev-parse", BASE).stdout.strip()
+        if git("-C", path, "rebase", "-q", tip).returncode != 0:
+            git("-C", path, "rebase", "--abort")
             git("-C", path, "reset", "-q", "--hard", sha)
-            git("-C", path, "clean", "-qfd")
-            stranded = True
-        if sha == base:
-            return "stranded" if stranded else "clean"
-        parent = git("-C", path, "rev-parse", f"{sha}^").stdout.strip()
-        touched = git("-C", path, "diff", "--name-only", "--no-renames", base, sha).stdout.split("\n")
-        stray = [f for f in touched if f and not _in_paths(f, paths)]
-        links = _link_entries(path, base, sha)
-        if parent != base or stray or links:
-            if links:
-                why = f"the landing commit holds a {', '.join(links)}"
-            else:
-                why = (
-                    f"the landing commit touched {' '.join(stray) or 'more than one commit'} outside {' '.join(paths)}"
-                )
-            _strand(path, "suite-stranded", why, say, sha=sha)
-            return "stranded"
-        done = "stranded" if stranded else "landed"
-        new = sha
-        for _ in range(FF_TRIES):
-            tip = git("-C", path, "rev-parse", BASE).stdout.strip()
-            if git("-C", path, "rebase", "-q", tip).returncode != 0:
-                git("-C", path, "rebase", "--abort")
-                git("-C", path, "reset", "-q", "--hard", sha)
-                _strand(path, "suite-conflict", "rebase conflict", say, sha=sha)
-                return "conflict"
-            new = git("-C", path, "rev-parse", "HEAD").stdout.strip()
-            if _fast_forward(harnest, new, tip):
-                return done
-            if git("-C", path, "rev-parse", BASE).stdout.strip() == tip:
-                # main did not move: the checkout of main refused (local changes over these files)
-                _strand(path, "suite-conflict", f"the checkout of {BASE_NAME} has local changes", say, sha=new)
-                return "conflict"
-        _strand(path, "suite-conflict", f"{BASE_NAME} kept moving", say, sha=new)
-        return "conflict"
+            _strand(path, "suite-conflict", "rebase conflict", say, sha=sha)
+            return "conflict"
+        new = git("-C", path, "rev-parse", "HEAD").stdout.strip()
+        if _fast_forward(harnest, new, tip):
+            return done
+        if git("-C", path, "rev-parse", BASE).stdout.strip() == tip:
+            # main did not move: the checkout of main refused (local changes over these files)
+            _strand(path, "suite-conflict", f"the checkout of {BASE_NAME} has local changes", say, sha=new)
+            return "conflict"
+    _strand(path, "suite-conflict", f"{BASE_NAME} kept moving", say, sha=new)
+    return "conflict"

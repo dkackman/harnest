@@ -202,6 +202,65 @@ class Tree(unittest.TestCase):
         self.assertEqual("stale", g(self.h, "show", "suite-stranded/s1:regression-suite-complete.md"))
         self.assertTrue(self.warned("suite-stranded/s1"), self.said)
 
+    # --- final review: a strand that fails is an error, and the tree is kept
+
+    def failing(self, verb):
+        real = suite_tree.git
+
+        def fake(*a, **kw):
+            if verb in a:
+                return subprocess.CompletedProcess(["git", *a], 128, "", f"fatal: forced {verb} failure")
+            return real(*a, **kw)
+
+        return mock.patch.object(suite_tree, "git", fake)
+
+    def test_a_failed_branch_on_strand_is_an_error_and_keeps_the_tree(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        Path(tree.path, "other.txt").write_text("x\n")
+        with self.failing("branch"):
+            self.assertEqual("error", self.land(tree))
+        self.assertTrue(os.path.exists(os.path.join(tree.path, "other.txt")))  # not reset away
+        self.assertIn("C-F003", Path(tree.path, "regression-suite-complete.md").read_text())
+        self.assertNotIn("suite-stranded/s1", g(self.h, "branch", "--list"))
+        self.assertTrue(self.warned("could not strand"), self.said)
+
+    def test_a_failed_branch_for_a_session_commit_is_an_error(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        g(tree.path, "commit", "-qam", "session committed")
+        with self.failing("branch"):
+            self.assertEqual("error", self.land(tree))
+        self.assertTrue(os.path.isdir(tree.path))
+
+    def test_a_failed_snapshot_is_an_error(self):
+        tree = suite_tree.make(self.h, "s1")
+        g(tree.path, "commit", "-q", "--allow-empty", "-m", "session committed")
+        Path(tree.path, "other.txt").write_text("x\n")
+        real = subprocess.run
+
+        def fake(argv, *a, **kw):
+            if argv[:1] == ["git"] and "write-tree" in argv:
+                return subprocess.CompletedProcess(argv, 128, "", "fatal: forced")
+            return real(argv, *a, **kw)
+
+        with mock.patch.object(suite_tree.subprocess, "run", fake):
+            self.assertEqual("error", self.land(tree))
+        self.assertTrue(os.path.exists(os.path.join(tree.path, "other.txt")))
+
+    def test_make_moves_a_stale_tree_aside_when_it_cannot_strand(self):
+        tree = suite_tree.make(self.h, "s1")
+        Path(tree.path, "regression-suite-complete.md").write_text("stale\n")
+        with self.failing("branch"):
+            tree2 = suite_tree.make(self.h, "s1", say=self.said.append)
+        self.assertEqual(tree.path, tree2.path)
+        kept = [d for d in os.listdir(os.path.dirname(tree.path)) if d.startswith("s1.kept-")]
+        self.assertEqual(len(kept), 1, os.listdir(os.path.dirname(tree.path)))
+        self.assertEqual(
+            "stale\n", Path(os.path.dirname(tree.path), kept[0], "regression-suite-complete.md").read_text()
+        )
+        self.assertTrue(self.warned("could not strand"), self.said)
+
     # --- fix round 1: never land session commits, strand rather than drop
 
     def test_session_commit_is_stranded_not_landed(self):
