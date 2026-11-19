@@ -26073,8 +26073,8 @@ Free, no job, no H3 run (catalog read and UI only), nothing saved. Web UI as in 
 `MiniMaxAI/MiniMax-H3` with no partition (`from_pretrained_arguments.workflow` unset). (b) Set the partition to
 `ref2va` (the editor's own control, or the step's JSON). (c) Set the partition to `variable:part`.
 expected:
-- (a) The request carries `model` and no `workflow`. The list shows `minimax-h3/turbo-reference` (proven) first, and
-  next to each entry whose catalog `workflow` is set, that constraint (`ref2va` for `turbo-reference`,
+- (a) The request carries `model` and no `workflow`. The list shows proven entries before trial ones, each group in name
+  order; `minimax-h3/turbo-reference` (proven) is listed, and next to each entry whose catalog `workflow` is set, that constraint (`ref2va` for `turbo-reference`,
   `turbo-4step-reference`, `orb360`, `wushu-action-reference`, the live-wallpaper pair). No rejected H3 entry
   (`fasth3-4step`, `hyperflow`, `acc-pdd`, `lms`, …) appears.
 - (b) The request carries `workflow=ref2va`; the list equals the non-rejected rows of `list_loras(model=
