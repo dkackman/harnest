@@ -2091,6 +2091,146 @@ expected:
 Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: none.
 
+### SE-F074 — finding text, rule names and not-applicable reasons render as text in the gallery detail
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1088 (workspace `qa-1452`,
+outputs V1 and A1; mocks built from a real answer). The new Findings section renders strings the server derives from
+media and probes. Register `page.on("dialog")`, `page.on("console")` and a `page.on("request")` log before loading.
+- Select A1 with its metadata answer mocked so one finding's `says` is `<img src=x onerror="window.__pwn1=1">`, its
+  `rule` is `<script>window.__pwn2=1</script>`, and its `severity` is `warn"><b>x</b>`.
+- Assess V1 with the answer mocked so one finding's `says` is `{{7*7}} ${7*7}`, `rules_applied` gains
+  `<img src="http://example.invalid/leak.png">`, and one `not_applicable` probe's reason is
+  `<svg onload="window.__pwn3=1">`.
+- Assess A1 with status 422 and `{"detail": "<iframe src=\"http://example.invalid/\"></iframe>"}`.
+expected:
+- Each string appears **literally** as visible text, or not at all: `{{7*7}} ${7*7}` is not `49`. An unknown severity
+  renders as some badge or as text, with no page error.
+- `window.__pwn1`, `__pwn2` and `__pwn3` are undefined. No dialog opened. No injected `<img>`, `<script>`, `<svg>` or
+  `<iframe>` element. No request went to `example.invalid`.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none here (C-F1094 cleans up the setup).
+
+### SE-F075 — event messages, kinds, payloads and the note render as text in the job page's Event log
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1095 (finished job F). A job's
+events carry log lines the job itself wrote, so a workflow's own text reaches this panel. Register
+`page.on("dialog")`, `page.on("console")` and a `page.on("request")` log. Open F's page with
+`**/api/jobs/<F>/event-log**` mocked from its real answer:
+- one event's message is `<img src=x onerror="window.__pwn1=1">`;
+- one event's `kind` is `<script>window.__pwn2=1</script>` (it will appear in the kinds filter too);
+- one event with no message has a payload holding `{"html": "<svg onload=\"window.__pwn3=1\">", "t": "{{7*7}}"}`;
+- `note` is `<a href="javascript:window.__pwn4=1">trimmed</a>`.
+Open the Event log, choose the hostile kind in the filter, and click the note's text.
+expected:
+- Each string appears **literally** as visible text (the payload as compact JSON text), or not at all; `{{7*7}}` is not
+  `49`. The hostile kind is a filter choice shown as text.
+- `window.__pwn1` to `__pwn4` are undefined. No dialog opened. No injected `<img>`, `<script>`, `<svg>` or `<a>`
+  element, and clicking the note navigated nowhere.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
+### SE-F076 — driver names, driver values, the basis and the device name render as text in the card tooltip and on the run page
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, nothing queued. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1102 (listing mock
+on the path `/api/workflows` exactly, built from the real answer). A workflow's own JSON supplies `cost_drivers` keys
+and `cost[].name`, so a saved workflow's text reaches this tooltip. Register `page.on("dialog")`, `page.on("console")`
+and a `page.on("request")` log before loading. Mock the `templates/text-to-image` card so that:
+- `cost_drivers` = `{"<img src=x onerror=window.__pwn1=1>": "\"><img src=x onerror=window.__pwn2=1>",
+  "n": "<script>window.__pwn3=1</script>", "t": "{{7*7}} ${7*7}"}` (each value 40 characters or fewer, so none is cut);
+- `cost[0].name` = `<svg onload=window.__pwn4=1>`;
+- the top-level `cost_basis` = `<a href="javascript:window.__pwn5=1">x</a>`.
+Hover the card's caption on the catalog page and read the tooltip. Then open its run page, read the curated line and
+click on it.
+expected:
+- Every string appears **literally** as text in the tooltip and in the run-page line, or not at all. `{{7*7}} ${7*7}`
+  is not `49`. The quote in `"><img …` doesn't close the tooltip's attribute.
+- `window.__pwn1` to `__pwn5` are undefined. No dialog opened. No injected `<img>`, `<script>`, `<svg>` or `<a>`
+  element, the click navigated nowhere, and no request went anywhere but the server.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
+### SE-F077 — the LoRA editor's catalog panel makes no Hub request and calls no `/recommend`, on any path through it
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, no download, nothing saved. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1113,
+unmocked. Before loading, register `page.on("request")` and `page.on("websocket")` and log every URL. Walk the panel
+through every state: open the editor; set a step's base to `Tongyi-MAI/Z-Image-Turbo` and open the LoRA section;
+add `z-image/coloring-book`; change the base to `MiniMaxAI/MiniMax-H3`, then set partition `ref2va`; set the base
+to `variable:model`, then to `nobody/no-such-model`; with `**/api/loras?**` aborted, reload once. Leave without
+saving.
+expected:
+- No request (any method, including prefetch or image loads) to `/api/loras/recommend`, to `/api/lora-schema`, or
+  to any host other than the server itself: none to `huggingface.co`, `hf.co`, `*.hf.co` or a CDN for a model card.
+  The added row shows no remote thumbnail or link that loads on its own.
+- The only LoRA-related requests are `GET /api/loras?…`.
+- Afterwards `get_health` / `list_downloads` over MCP shows no download started by the walk.
+Any request to the Hub or to `/recommend` from the page is an off-box request the plan forbids: file it privately
+with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
+### SE-F078 — catalog text renders as text in the LoRA editor's panel, and an add carries no markup into the step
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in `regression-suite-complete.md` C-F1113. A catalog entry is JSON anyone with
+`save_lora` (or a writable library) can author, so its text reaches this panel. Register `page.on("dialog")`,
+`page.on("console")` and a request log. Mock `**/api/loras?**` from the real Z-Image answer, overwriting one trial
+row so that:
+- `name` = `<img src=x onerror=window.__pwn1=1>`;
+- `description` = `"><svg onload=window.__pwn2=1>`;
+- `use_when` = `<script>window.__pwn3=1</script>`;
+- `trigger` = `{{7*7}} ${7*7}`;
+- `status` = `trial`, `workflow` = `<a href="javascript:window.__pwn4=1">ref2va</a>` (shown as a constraint, since
+  the step has no partition);
+- `weight_name` = `<img src=x onerror=window.__pwn5=1>.safetensors`.
+Open the LoRA section, read the row, click its text and the constraint, then click its add button and read the new
+LoRA row.
+expected:
+- Every string appears **literally** as text, or not at all. `{{7*7}} ${7*7}` is not `49`.
+- `window.__pwn1` to `__pwn5` are undefined. No dialog opened. No injected `<img>`, `<script>`, `<svg>` or `<a>`
+  element, the clicks navigated nowhere, and no request went anywhere but the server.
+- The added row's weight-file field holds the literal string, as a field value, not as markup.
+Any of those failing is a hole: file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
+### SE-F079 — a request id or item key never becomes a path
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="sef079-req")`; pass `workspace="sef079-req"` on every call. Each a
+`set_request(revision=0, title="t", goal="g", why="probe", items=[{"key":"ok","title":"t"}])` with `request` set to:
+`../x`, `../../etc/hosts`, `a/b`, `/etc/hosts`, `..`, `.`, `x%2F..%2Fy`, `x\..\y`, `x\u0000y`. Then the same with
+`request="probe"` and the one item's `key` set to each of those values. Then `get_request` with each of those
+values as `request`. Then `list_workspaces`, `list_gallery(workspace="sef079-req")`, `list_assets` and
+`list_prompts`, against what each showed before the probe.
+expected:
+- Every write and every read is refused as a clean validation error naming the id or key rule. No reply contains
+  a server path (`/Users/…`, `/private/…`, `/home/`, `/var/`, `/srv/`, `/mnt/`) or a "no such file" message, and no
+  reply echoes the contents of `/etc/hosts`.
+- `get_request()` in `sef079-req` and in `default` lists no request from the probe; no new workspace, gallery
+  entry, asset or prompt appears anywhere.
+Any value stored, any path in a reply, or any new file outside the ledger is a hole: file it privately with
+`./scripts/file-advisory.sh`, never as an issue.
+cleanup: `delete_workspace(name="sef079-req", acknowledged_cost=true)`.
+
+### SE-F080 — a `request` argument on `run_workflow` never selects a path or another workspace's ledger
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free (every call is refused). Setup: `create_workspace(name="sef080-a")` and `create_workspace(name="sef080-b")`;
+in `sef080-b` create request `secret` with item `cat`. `validate_workflow("templates/text-to-image",
+arguments={"prompt":"a cat","seed":1})` for the acknowledgement; `list_jobs` in both to note the counts. Then, with
+`workspace="sef080-a"`, `run_workflow(…, request=R)` for each R: `../sef080-b/secret/cat`, `secret/../../x`,
+`sef080-b:secret/cat`, `/etc/hosts`, `secret/cat`.
+expected:
+- Each refused before anything queues, as a malformed reference or `unknown_request`; no reply names a server path
+  or anything from `sef080-b`'s request beyond what the caller sent.
+- `list_jobs` in both workspaces shows no new job, and `get_request(request="secret", workspace="sef080-b")` shows
+  no attempt.
+A job queued, linked to `sef080-b`'s request from `sef080-a`, or a path in a reply is a hole: file it privately
+with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: `delete_workspace` on `sef080-a` and `sef080-b` (`acknowledged_cost=true`).
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

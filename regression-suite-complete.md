@@ -24194,7 +24194,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1019 — every `list_models` row carries `last_job_use` (epoch seconds or `null`) beside an unchanged `last_accessed`
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Free. `list_models` (no arguments). Pick one repo no dw job names: a stub repo that is not a model dw runs (on mini-ai
 `Jundot/Qwen3.8-27B-oQ4e-mtp`, 2376 bytes; elsewhere any cached repo no catalog template or job in `list_jobs` names).
@@ -24213,7 +24212,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1020 — a `templates/text-to-image` run stamps `stable-diffusion-v1-5/stable-diffusion-v1-5` with its start time, and nothing it doesn't name
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Before the run, read `list_models` and note every row's `last_job_use`.
 `validate_workflow(name="templates/text-to-image", arguments={"prompt": "an apple", "seed": 1}, workspace="regression-complete")`,
@@ -24233,7 +24231,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for both 
 metrics: none.
 
 ### C-F1021 — `templates/transcribe-audio` stamps the repo its `variable:model_name` resolves to, by default and by argument
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. `templates/transcribe-audio` takes `model_name` through a variable, default
 `openai/whisper-base`, and `input_audio` (default: a short Hub-hosted speech clip). Before each run read `list_models`.
@@ -24249,7 +24246,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for both 
 metrics: none.
 
 ### C-F1022 — `validate_workflow`, a refused submission and a job cancelled while queued stamp nothing
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. The probe repo is a cached one these steps would name, other than
 `openai/whisper-base`: `openai/whisper-large-v3-turbo` (any small cached Whisper repo substitutes). Read its
@@ -24270,7 +24266,6 @@ run directory.
 metrics: none.
 
 ### C-F1023 — a job that starts and then fails still stamps its repos
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Make a `templates/transcribe-audio` job (repo `openai/whisper-base`) that passes
 validation and admission and then fails at run time: `input_audio` set to an image, e.g. `output:<png>` from a
@@ -24284,7 +24279,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for each 
 metrics: none.
 
 ### C-F1024 — a local-path `model_name` adds no row and no key, and the job's outcome is what it was without the index
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Workspace `regression-complete`. Note `list_models`' repo ids and every `last_job_use`. Validate and, if validate
 accepts it, run `templates/transcribe-audio` with `model_name` set to an absolute path that names no model, e.g.
@@ -24300,7 +24294,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` if the jo
 metrics: none.
 
 ### C-F1025 — `last_job_use` survives a server restart
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Free; needs a restart between two reads. The restart is the managed one the deploy path does (a deploy restarts
 `dw.serve`), never a `kill -9`, and the tester does not cause it. Read `list_models` and note the SD 1.5 and
@@ -24318,7 +24311,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1026 — a job with a LoRA stamps the LoRA's repo as well as its base
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Find a cached LoRA repo (a `list_models` row) whose base this server can run at verification size, using `list_loras`
 for that base. SD 1.5 had none on mini-ai on 2026-11-19 (`list_loras(model="stable-diffusion-v1-5/stable-diffusion-v1-5")`
@@ -24333,7 +24325,6 @@ cleanup: `delete_output(job_id=<id>, workspace="regression-complete")` for each 
 metrics: none.
 
 ### C-F1027 — deleting a Hub model forgets its record: a re-download alone reads `null`, and the next job stamps it
-pending: #1461
 source: tester, spec for #1461 from #1445's plan v3 (claude-opus-5-5 via anthropic)
 Uses `openai/whisper-base` (295 MB on mini-ai), never a large model. Needs an MCP tool that deletes a Hub model repo
 with `acknowledged_cost`. None was exposed on 2026-11-19 (`download_model` exists, no delete). If the server still has
@@ -25542,6 +25533,1055 @@ expected:
 - No rerun POST in any of them.
 Continue shown in (a)–(d), or absent in (e), is a **finding**.
 cleanup: none.
+metrics: none.
+
+### C-F1088 — the gallery detail shows an output's metadata findings without a click, warn rows first, each with its time
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+CPU tasks only, no model job unless A0 below has to be made. **Web UI, black-box**, Playwright as in C-F1028: found
+by visible text and role, never by selectors read from the UI source; a mock is built from the real answer with
+`route.fetch()`, overwriting only the fields named. Register `page.on("pageerror")`, `page.on("console")` and a
+`page.on("request")` log before loading. **Setup shared by C-F1088–C-F1094 and SE-F074**, in workspace `qa-1452`
+(`create_workspace` it if missing; pass `workspace="qa-1452"` on every call). Author small task-only workflows per
+`get_guide("workflows", section="Authoring a workflow from an agent")`, `validate_workflow` each and bind its
+`acknowledged_cost` (`get_task` gives each command's arguments):
+- **I1**, an image: one `qr_code` step (any short text).
+- **V1**, a video: `stills_to_video` over I1's output (`output:` reference), `durations` 3, `fps` 24.
+- **A0**, any audio already on the box: `list_gallery` over the workspaces (`list_workspaces`) for an audio output
+  with sound in it. If the box holds none, make one with a single `generate_speech` step (validate first; it may
+  download a model).
+- **A1**, a near-silent audio: `gain_audio` over A0 (`output:` reference) with `gain_db` -60. Confirm with
+  `get_gallery_metadata(name=A1, workspace="qa-1452")` that its `findings` carry a `near_silent` entry. If they don't,
+  rerun at -80. That `findings` list, in order, is **M1**.
+Open the web UI's gallery for workspace `qa-1452` (the UI's workspace selector, or its URL parameter) and select A1.
+Then select A1 again with `**/api/gallery/*/metadata**` (or whatever metadata request the request log shows the
+selection makes) mocked to set `findings` to three entries in this order: `{severity: "warn", rule: "full_scale",
+says: "peaks at full scale", at: 75.3}`, `{severity: "warn", rule: "near_silent", says: "quiet from here", at: 0}`,
+`{severity: "info", rule: "near_silent", says: "no time on this one"}` (keep any other field a real finding carries).
+Then once more mocked to `findings: []`.
+expected:
+- Real A1: a **Findings** section in the detail lists M1's findings with no click, one row each, in M1's order (warn
+  rows before info rows). Each row shows a severity badge naming its severity and the finding's `says` text.
+- Mocked: three rows in the reply's order. Row 1 shows `1:15.3` (m:ss.s). Row 2 shows `0:00.0`: an `at` of 0 is a
+  time, not a missing one. Row 3 shows no time and no `undefined`, `null` or `NaN`.
+- Empty mock: the section reads `No findings`.
+- No request to `**/assess**` was made by any selection. No page error, no console error.
+A finding missing, reordered, counted twice, an `at` of 0 dropped, a request to assess without a click, or a page
+error is a **finding**.
+cleanup: none here (C-F1094 cleans up the shared setup).
+metrics: none.
+
+### C-F1089 — Assess on a video and on an audio lists the same findings, in the same order, as `assess_output`, and names what didn't apply
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1088, routes **not** mocked, every request to `**/assess**` logged with its URL,
+method and status. First, over MCP: `assess_output(name=V1, workspace="qa-1452")` and `assess_output(name=A1,
+workspace="qa-1452")`; keep each reply (R_V, R_A). In the UI: select V1, press **Assess**, wait for it to finish; then
+select A1 and press **Assess**.
+expected:
+- Each press sends exactly one request: a `GET` whose path is `/api/gallery/<name>/assess` (the name URL-encoded as
+  the UI sends names elsewhere) and whose query carries `workspace=qa-1452`. It answers 200.
+- After V1's press, the Findings list holds exactly R_V's `findings`: the same count, the same severities and `says`,
+  in R_V's order. The same for A1 against R_A. A1's `near_silent` level finding appears **once**: the assess list
+  replaced the metadata list, it wasn't appended to it.
+- Under each list is one muted line that names every rule in the reply's `rules_applied`, and each probe in its
+  `not_applicable` with that probe's reason text. V1 is silent, so if R_V marks an audio probe not applicable, its
+  reason is on the line. When a reply has no findings, the list reads `No findings` **and** the line still shows what
+  was measured.
+- No page error, no console error.
+A list that differs from `assess_output`'s, a duplicated level finding, a missing not-applicable reason, a request
+that isn't a GET or lacks the workspace, or a page error is a **finding**.
+cleanup: none here (C-F1094).
+metrics: none.
+
+### C-F1090 — Assess is disabled on an image, with the server's reason as its title
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1088. Select I1 in the gallery detail. Read the Assess button's state and its
+title (the `title` attribute, or the tooltip shown on hover). Click it anyway (`force: true`). Then select V1 and A1.
+expected:
+- On I1, **Assess** is present and disabled, and its title reads `a still has no shots, seams or soundtrack to
+  measure`. The forced click sends no request to `**/assess**`.
+- On V1 and on A1, the button is enabled. Selecting I1 after an assessed V1 still shows it disabled: the state
+  follows the selected output, not the last one.
+An enabled button on an image, a missing or different reason, a request sent from I1, or a disabled button on a video
+or audio is a **finding**.
+cleanup: none here (C-F1094).
+metrics: none.
+
+### C-F1091 — while Assess runs the button reads "Assessing…" and is disabled, and a second click sends nothing
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1088. Route `**/api/gallery/*/assess**` through a handler that waits 3 s, then
+gets the real answer with `route.fetch()` and fulfils with it. Select V1, press **Assess**, and within the 3 s read the
+button and click it twice more.
+expected:
+- During the wait the button's text is `Assessing…` (three dots or an ellipsis both pass) and it is disabled.
+- The route saw exactly **one** request.
+- After the answer the button reads `Assess` again, is enabled, and the list shows the reply's findings as in C-F1089.
+A second request, a button that stays enabled while running, or one that stays stuck after the answer is a
+**finding**.
+cleanup: none here (C-F1094).
+metrics: none.
+
+### C-F1092 — an assess error shows the server's detail inline, keeps the earlier list, and leaves the page usable
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1088. Get a real refusal's text first: `assess_output` over MCP on a name that
+can't be assessed, such as `qa-1452`'s I1 or a non-media output (any JSON output, e.g. a `templates/split-takes`
+run's). Copy its error text as D; if every such call succeeds, use D = `could not decode the file: no media
+streams`. Then three arms, each on A1 (whose metadata findings M1 are already shown) with the request log on:
+- (a) `**/api/gallery/*/assess**` fulfilled with status **422**, JSON `{"detail": D}`.
+- (b) status **500**, JSON `{"detail": "assess failed: internal"}`.
+- (c) status 422 with a FastAPI validation-shaped `detail`: `[{"loc": ["query", "probe"], "msg": "bad probe",
+  "type": "value_error"}]`.
+After each, select V1 and then A1 again.
+expected:
+- (a) D appears inline, as text, in the detail near the Findings section. (b) `assess failed: internal` does likewise.
+  (c) Some readable text appears (`bad probe`, or the list rendered as text); `[object Object]` is a finding.
+- In every arm the M1 rows are still shown under the error: an error doesn't blank the earlier list.
+- The button is enabled again after the error and can be pressed again (one more request, which the arm's mock
+  answers the same way).
+- Selecting V1 then A1 works with no page error; A1 shows M1 (an error is not held as an assessed result).
+- No page error. A console error line for the failed fetch is allowed; an uncaught exception is not.
+A swallowed error, a blanked list, a stuck button, `[object Object]`, or a page error is a **finding**.
+cleanup: none here (C-F1094).
+metrics: none.
+
+### C-F1093 — an assessed result is held per output name: switching away and back shows it again with no second request
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1088, routes not mocked, every request to `**/assess**` counted. Select A1 and
+press **Assess** (count 1). Select V1; select A1; select V1; select A1. Then press **Assess** on V1 (count 2), select
+A1, select V1. Then reload the page and select A1.
+expected:
+- Each time A1 is reselected, its list is the assessed one (R_A's findings and the muted rules line), not M1 alone.
+  V1, before it is assessed, shows its own metadata findings (or `No findings`) and **no** rules line: A1's result
+  never shows on V1.
+- After V1 is assessed, both A1 and V1 show their own assessed lists on every reselect.
+- The count is exactly 2 before the reload. After the reload, A1 shows M1 again with no rules line and no request is
+  made until Assess is pressed (nothing is persisted).
+A request on reselect, one output's result shown on another, or a result surviving a reload is a **finding**.
+cleanup: none here (C-F1094).
+metrics: none.
+
+### C-F1094 — the Findings section and severity badges are legible in both themes, warn and info told apart
+pending: #1477
+source: tester, spec for #1477 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1088. Select A1 with the metadata answer mocked to two findings, one `warn` and
+one `info` (any `says`), and assess V1 with the real answer. Take a full-page screenshot of each in the light theme
+and in the dark theme (the UI's theme toggle, or `colorScheme` on the browser context). Read all four.
+expected:
+- In each screenshot the badges, the `says` text, the times and the muted rules line can be read against their
+  background (WCAG AA as read by eye).
+- `warn` and `info` look different from each other, by colour plus a word or icon, in both themes. Neither looks like
+  the UI's live-job or selection highlight (compare with a running job's marker and the selected gallery tile).
+- The rest of the gallery detail (preview, metadata, action bar) is laid out as before: nothing overlaps or is pushed
+  off screen.
+An unreadable badge, warn and info indistinguishable, a badge reusing the live or selected colour, or a broken
+layout
+is a **finding**.
+cleanup: the last stage A case run in a session: `delete_output(job_id=<id>, workspace="qa-1452")` for each setup job
+(I1, V1, A1; A0 too if it was made here), then `delete_workspace("qa-1452")` if this setup created it.
+metrics: none.
+
+### C-F1095 — the Event log section is collapsed by default, on live and finished jobs alike, and makes no request until opened
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. **Web UI, black-box**, Playwright as in C-F1028 (by visible text and role; mocks built from the
+real answer with `route.fetch()`). Register `page.on("pageerror")`, `page.on("console")` and a `page.on("request")`
+log before loading. **Setup shared by C-F1095–C-F1101 and SE-F075**, in workspace `qa-1452` (create if missing):
+- **F**, a finished job. Pick from `list_jobs(workspace=<any>, ...)` a completed job whose `get_job_events(job_id=F,
+  after=-1, limit=1000)` reply carries a `note` saying events were trimmed, or whose first event's `seq` is above 0.
+  Any multi-step job with denoise steps is the likely candidate. If the box holds none, run one small
+  `templates/text-to-image` job (validate first, smallest size it allows) and check again. If even that isn't trimmed,
+  F is that job, and C-F1096's note arm is reported **not exercised**, with the event count it had.
+- **L**, a live job, made in the case that needs it (C-F1097): one small `templates/text-to-image` job, run with
+  `wait_seconds` 0 or omitted, so its page is open while it runs.
+Open F's job page. Then open L's page while L is running (in C-F1097's run). Before anything is clicked, read the page
+and the request log.
+expected:
+- Both pages show a section titled **Event log** (not "Full event log"), collapsed: no event rows visible.
+- No request to `**/event-log**` has been sent from either page before the section is opened. Opening F's section
+  sends one, with query `limit=500` (and an `after`, if the first request sends one).
+- F's page otherwise looks as before the stage: its outputs, steps and metadata are where they were.
+A section open by default, a request before opening, a "Full" label, or a page error is a **finding**.
+cleanup: none here (C-F1101 cleans up).
+metrics: none.
+
+### C-F1096 — a finished job's log lists the same events as `get_job_events`, in `seq` order, under the server's trimming note
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1095, routes not mocked. Over MCP, read F's whole log: `get_job_events(job_id=F,
+after=-1, limit=1000)`, then again with `after=<last_seq>` while the reply says more remain. Keep the `seq` list S, each
+event's `kind`, and the `note`. Open F's page and its Event log section; wait until the requests stop.
+expected:
+- The rows' `seq` values are exactly S, ascending, with no gap S doesn't have and no duplicate.
+- Each row shows its `seq`, a time, its `kind`, and the event's message text, or a compact JSON of its payload when it
+  has no message. No row reads `undefined`, `null` (as a whole cell) or `[object Object]`.
+- When the MCP reply carries a `note`, the same note's text is shown **above** the rows. When it doesn't, no note line
+  is shown (an empty box or `undefined` is a finding).
+- On a finished job, **no Refresh** control is offered.
+- The flow view and step chips above are unchanged by opening the section (compare a screenshot taken before opening
+  with one taken after, above the section).
+Rows that differ from `get_job_events`, rows out of order, a missing note, Refresh on a finished job, or a changed flow
+view is a **finding**.
+cleanup: none here (C-F1101).
+metrics: none.
+
+### C-F1097 — a running job's log grows on Refresh from the last `seq`, and its live flow view and step chips behave as before
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+One small image job (L, setup in C-F1095). Web UI as in C-F1095, every `**/event-log**` request logged with its query.
+Queue L and open its page at once. Record the step chips' text and the flow view. Open the Event log, note the last
+`seq` shown (N1), wait about 10 s, and press **Refresh**. Repeat once. Then `wait_for_job(L, workspace=...)` until it
+finishes and reload its page.
+expected:
+- While L runs, **Refresh** is offered. Each press sends one request whose `after` is the last `seq` then shown (N1 for
+  the first). New rows appear after the old ones, `seq` still ascending, no `seq` repeated.
+- The step chips and the flow view advance as the job runs, the same with the log open as with it closed: opening the
+  log, and each Refresh, adds no row, chip or segment to them and removes none.
+- After L finishes and the page reloads, the section is collapsed again, Refresh is gone once opened, and its rows
+  match `get_job_events` for L as in C-F1096.
+- No page error.
+A Refresh that re-fetches from 0, duplicated rows, a flow view that changes with the log, or a page error is a
+**finding**.
+cleanup: none here (C-F1101).
+metrics: none.
+
+### C-F1098 — the kinds filter is built from the kinds present and shows only the chosen kind
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1095. Open F's Event log. Let K be the set of `kind` values among its rows
+(from C-F1096's MCP read). Read the filter's choices. Choose one kind k with several rows (`memory` or `step`, say),
+then another kind, then clear the filter (an "all" choice, or deselecting).
+expected:
+- The filter offers each kind in K and no kind outside it.
+- With k chosen, every visible row's kind is k, and the row count equals the count of k in the MCP read. The same for
+  the second kind.
+- Clearing restores every row.
+- Choosing a kind sends **no** new request to `**/event-log**` (the filter is client-side).
+A row of another kind showing, a kind offered that has no rows, a missing kind, or a request per filter change is a
+**finding**.
+cleanup: none here (C-F1101).
+metrics: none.
+
+### C-F1099 — an unknown job's page says it has no event log, and doesn't error
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1095. Confirm over MCP that `get_job_events(job_id="00000000-0000-4000-8000-000000000000")`
+reports the job unknown. Open the job page for that id (the UI's job URL with the id swapped in) and open its Event
+log, if the page shows one. Then open F's page with `**/api/jobs/<F>/event-log**` fulfilled with status 404 and the
+body the real unknown-job request returns (`route.fetch()` it against the zero id), and open the Event log.
+expected:
+- On F's page with the mocked 404, the section reads `no event log for this job` and shows no rows and no raw error.
+- On the unknown id's page, whatever the page showed before this stage for an unknown job still shows; if it has an
+  Event log section, opening it reads `no event log for this job`.
+- No page error. A console line for the 404 fetch is allowed; an uncaught exception is not.
+A raw error, an empty section with no message, or a page error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1100 — the log pages on while `truncated` is true, and stops at 5,000 events with the cap message
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1095, on F's page, every `**/api/jobs/<F>/event-log**` request fulfilled by a mock built
+from the real first answer: keep its fields, replace `events` with 500 synthetic events copying a real event's fields,
+`seq` running on from the request's `after` + 1, and set `truncated` and `last_seq` to match. Arms:
+- (a) `truncated: true` on the first two answers and `false` on the third (1,500 events in all).
+- (b) `truncated: true` on every answer.
+- (c) one answer with `events: []`, `truncated: false`.
+- (d) one answer with exactly 500 events and `truncated: false`.
+Open the Event log in each arm and wait until the requests stop.
+expected:
+- (a) Three requests: `after` -1 (or omitted) then 500 then 1,000 (each the previous answer's last `seq`), each with
+  `limit=500`. 1,500 rows, `seq` ascending, none repeated. No cap message.
+- (b) It stops by itself after the request that brings the total to 5,000 (ten requests), shows 5,000 rows, and shows
+  `showing the first 5,000; more on the server`. No eleventh request.
+- (c) No rows, no error, no cap message; the section reads as an empty log (any wording, or the note if there is one).
+- (d) One request, 500 rows, no second request: a full page with `truncated: false` is the end.
+- In every arm the page stays responsive and there is no page error.
+A request past the cap, a missing cap message, a stop before `truncated` goes false, or a repeated row is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1101 — the Event log reads in both themes, and the job page around it is laid out as before
+pending: #1478
+source: tester, spec for #1478 from #1452's plan v1 (claude-opus-5-5 via anthropic)
+Free past the setup. Web UI as in C-F1095. Open F's Event log with its real answer (note shown if F has one), and once
+with C-F1100 arm (b)'s mock (cap message shown). Take a full-page screenshot of each in the light theme and in the
+dark theme. Read all four.
+expected:
+- The rows, the note, the cap message and the filter can be read against their background in both themes (WCAG AA as
+  read by eye).
+- The job page above the section (outputs, steps, flow view) is laid out as before; 5,000 rows don't push it off or
+  overlap it.
+An unreadable theme or a broken layout is a **finding**.
+cleanup: the last stage B case run in a session: `delete_output(job_id=<id>, workspace=...)` for L and for any F made
+by C-F1095's setup; `delete_workspace("qa-1452")` if it is empty and this setup created it.
+metrics: none.
+
+### C-F1102 — the `text-to-image` card's cost tooltip names its basis, its device and the driver value it was measured at
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, Playwright as in C-F1028 (found by visible text and role, never by selectors read
+from the UI source). Setup shared by C-F1102–C-F1108 and SE-F076: the **live card** is read with a plain HTTP GET of
+`<base>/api/workflows` (Playwright's `request.get`, `<base>` the MCP endpoint with `/mcp` dropped); a card is the entry
+whose `name` is the workflow's. Its `cost_drivers` (a map from driver name to value), `cost` (a list or `null`) and the
+response's top-level `cost_basis` are the expected values. Never take them from test code or from the raw definition.
+A mock of the listing matches the path `/api/workflows` exactly (with or without a query string, never
+`/api/workflows/<name>`) and is built from the real answer: `route.fetch()`, parse, overwrite only the fields named,
+`route.fulfill({json})`. The tooltip is the cost caption's hover text: hover the caption (`~N min · X GB VRAM`) on the
+card and read the text the browser offers for it (its `title`, or the hover popup if it is one).
+Open the workflows catalog page and find the `templates/text-to-image` card.
+expected:
+- The live card has `cost_drivers` = `{"num_images_per_prompt": <v>}` and a non-null `cost`. If it doesn't, the case's
+  premise changed: note it, and run the rest of the case against a mock that sets them.
+- The tooltip contains `a maintainer's figure, measured on <where> at num_images_per_prompt=<v>`, with `<where>` the
+  live `cost[0].name` (or `cost[0].device` when `name` is absent) and `<v>` printed as the value itself.
+- The observed part of the tooltip, when this box has run the workflow, is still there after the cost line.
+- The caption itself is unchanged: `~N min · X GB VRAM`, with no basis, device or driver words in it.
+Wording other than `a maintainer's figure`, a missing `at` clause, a `<v>` that is not the live card's, or a device
+other than `cost[0]`'s is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1103 — a preset template's tooltip follows the card's bundle-applied values, in the card's order
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job, no job page opened past the catalog. Web UI, setup as in C-F1102. Read the live card for
+`templates/pika-h3/text-to-video` and the raw definition (`get_workflow("templates/pika-h3/text-to-video",
+variables_only=true)`, or a GET of `<base>/api/workflows/templates/pika-h3/text-to-video`). List every driver whose
+card value differs from the raw `variables` default. If it has none, look through the other live cards that have
+both `presets` in their definition and a non-empty `cost_drivers` for one that does, and record which you used.
+1. On the catalog page, read the chosen card's tooltip.
+2. If no catalog template differs (say so in the record), mock the listing so the pika-h3 card's `cost_drivers` keeps
+   its keys in their order, but its `width` (or the first driver if there's no `width`) holds `111`, a value that is
+   not the raw default. Read the tooltip again.
+expected:
+- The `at` clause lists every key of the card's `cost_drivers`, each as `<name>=<value>`, joined by `, `, in the
+  order the response's JSON lists them, with no key added or dropped.
+- Each value is the **card's**. Where the card and the raw default differ, the card's value shows and the raw one
+  doesn't. With the mock, `width=111` (or `<first>=111`) shows.
+- The caption is unchanged.
+A raw default shown where the card has another value, a reordered or missing driver, or a driver that isn't in
+`cost_drivers` is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1104 — driver values are formatted by kind: a list as its entry count, `null` as "unset", an object as `{…}`, a long value cut at 40
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1102.
+1. Live: find any card whose `cost_drivers` holds a list value. If one exists, read its tooltip.
+2. Mock the listing so the `templates/text-to-image` card's `cost_drivers` is, in this order:
+   `{"a_list": [1, 2, 3], "empty_list": [], "one_list": ["x"], "a_null": null, "an_obj": {"k": 1}, "an_int": 768,
+   "a_float": 0.5, "a_bool": true, "a_str": "hello", "forty": "<s40>", "forty_one": "<s41>"}`, with `<s40>` a string
+   of exactly 40 characters (`"abcdefghij"` four times) and `<s41>` the same plus `"k"`. Keep its real `cost`. Read the
+   tooltip.
+expected:
+- Step 1: the list driver prints as `<name>=<n> entries`, `<n>` the live list's length. If no card has one, say so.
+- Step 2: the `at` clause reads, in order: `a_list=3 entries`, `empty_list=0 entries`, `one_list=1 entries` (`1 entry`
+  passes too), `a_null=unset`, `an_obj={…}` (three dots `...` pass too), `an_int=768`, `a_float=0.5`, `a_bool=true`,
+  `a_str=hello`, `forty=<s40>` whole and uncut, and `forty_one=` followed by a cut value that ends in `…` (or `...`)
+  and does not contain all 41 characters.
+- No value prints as raw JSON (`[1,2,3]`, `{"k":1}`), as `null`, `undefined`, `[object Object]` or `NaN`.
+- The page shows no script error, and every other card on the page renders.
+Any of those rules not holding, a 40-character value cut, or a 41-character one left whole is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1105 — a card with a cost and no drivers has no `at` clause; a card with no cost has no cost line
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1102.
+1. Live: find one card with a non-null `cost` and no `cost_drivers` (the key absent, or `{}`), and one with
+   `cost: null`. Read both tooltips (the null-cost card may show no caption; then read whatever hover text the card's
+   cost area has, if any).
+2. Mock: on `templates/text-to-image`, set `cost_drivers` to `{}`; read the tooltip. Remove the key entirely; read it.
+   Then set `cost: null` (and keep `cost_drivers`); read the card.
+expected:
+- Cost, no drivers (live and both mocks): the tooltip contains `a maintainer's figure, measured on <where>` and no
+  ` at ` clause after it, and no dangling `at`, `at ,` or trailing comma.
+- Null cost (live and mock): no `a maintainer's figure` line and no `measured on` line from the curated figure, and no
+  `unknown cost`. The card's caption is what it was before this stage for a null-cost card.
+- If no live card fits one of these, say so; the mocks still run.
+A dangling `at`, a curated line on a null-cost card, or a script error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1106 — the run page shows the curated figure above the observed text, and nothing when the cost is null or the card is missing
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job: pages are only opened, and Run is never pressed. Web UI, setup as in C-F1102.
+1. Open the run page for `templates/text-to-image`.
+2. Open it with the listing mocked so that card's `cost_drivers` is `{}`.
+3. Open the run page for a live null-cost workflow (C-F1105 step 1). If none exists, open `templates/text-to-image`
+   with its card mocked to `cost: null`.
+4. Open `templates/text-to-image` with the listing mocked to leave that card out of the list entirely.
+expected:
+- Step 1: one line reads `a maintainer's figure: ~N min · X GB VRAM, measured on <where> at num_images_per_prompt=<v>`.
+  `N`, `X` and `<where>` match the same card's caption and C-F1102's tooltip, and `<v>` is the live card's value. The
+  line sits above the observed text when the page shows any (it comes first in reading order).
+- The hint `other values re-price it in the plan` appears, muted, after the line **if** the run page shows #1446's plan
+  box (the validate plan shown on load). If the page shows no plan box, the hint is absent: that is the plan's dropped
+  case, not a finding. Record which you saw.
+- Step 2: the line reads `a maintainer's figure: ~N min · X GB VRAM, measured on <where>`, with no `at` clause.
+- Steps 3 and 4: no curated line, no `a maintainer's figure`, no `unknown cost`; the observed text (if any), the form
+  and the rest of the page render as before, with no script error.
+A curated line on step 3 or 4, a line below the observed text, figures that don't match the card, or a page error is a
+**finding**.
+cleanup: none (nothing is queued or saved).
+metrics: none.
+
+### C-F1107 — a basis other than `curated` prints raw, on the card and on the run page
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1102. Confirm the live listing's `cost_basis` is `"curated"` (if it isn't, note
+the value: the plan said it is a constant). Then mock the listing's top-level `cost_basis` to `"bench-2026"` and read
+the `templates/text-to-image` tooltip and its run page. Then mock it to `""`, and then remove the key; read the same.
+expected:
+- `bench-2026`: the tooltip line reads `bench-2026, measured on <where> at num_images_per_prompt=<v>`, and the run page
+  line `bench-2026: ~N min · X GB VRAM, measured on …`. Neither says `a maintainer's figure`.
+- `""` and the key absent: the pages render with no script error, and the tooltip still contains
+  `measured on <where>`. The wording in front of it isn't asserted, but it is not `undefined` or `null`.
+- Back on the live `curated` answer, the words are `a maintainer's figure` again.
+A non-`curated` basis shown as `a maintainer's figure`, the string `undefined`, or a page error is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1108 — every card's caption is unchanged, and its tooltip gains only the curated line
+pending: #1479
+source: tester, spec for #1479 from #1454's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI, setup as in C-F1102. Open the catalog page with no mock, and for every card with a non-null
+`cost` in the live listing read the caption and the tooltip.
+expected:
+- Every caption is still the short form `~N min` with ` · X GB VRAM` where the entry gives VRAM: no `maintainer`,
+  `measured`, device name, `=` or driver name in it. `N` and `X` are `cost[0]`'s.
+- Every tooltip has exactly one `measured on` from the curated figure, naming `cost[0]`'s device, and carries its
+  `at` clause exactly when that card's `cost_drivers` is non-empty.
+- A card with `observed_minutes` still shows its observed text in the tooltip, as before this stage.
+- The catalog's filters and layout are unchanged, and the page shows no script error.
+A changed caption, a second or missing `measured on`, or an `at` clause that doesn't match the card's `cost_drivers`
+is a **finding**. Name the card.
+cleanup: none.
+metrics: none.
+
+### C-F1109 — `GET /api/loras` returns the same rows, every key included, as the catalog read it types
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, no download. **REST, plain HTTP GET** (Playwright's `request` or curl) against the server's web root
+(the MCP endpoint's host and port with `/mcp` dropped, e.g. `http://mini-ai:8765/`). Stage A declares a response
+model on this existing route and promises its body doesn't change; FastAPI's `response_model` can drop an undeclared
+key silently, so the check is key-for-key, not "the rows are there".
+Baseline: in the same session, `list_loras(model="Tongyi-MAI/Z-Image-Turbo")` over MCP (the stage changes no MCP
+tool). If the verify issue or its stage carries a body of `GET /api/loras?model=Tongyi-MAI/Z-Image-Turbo` captured
+before the stage deployed, compare against that too. Then GET `/api/loras?model=Tongyi-MAI/Z-Image-Turbo`.
+expected:
+- Status 200, JSON with top-level `libraries`, `resolved` and `loras` (no key added or removed against the baseline).
+- `loras` holds the same entries, by `name`, in the same order as the baseline, and each row has **exactly** the
+  baseline row's keys with equal values: `name`, `model_name`, `weight_name`, `revision`, `base_models`, `workflow`
+  (present, `null` when unpartitioned), `description`, `use_when`, `trigger` (where the entry has one), `scale` with
+  `default` and, where present, `range` (e.g. `z-image/detailed-eyes`' `[-1.0, 1.0]`), `status`, `license`, `tags`,
+  `origin`, `writable`.
+- Each `libraries` item keeps `origin` and `writable`; `resolved` is `[{"repo": "Tongyi-MAI/Z-Image-Turbo",
+  "workflow": null}]` as over MCP.
+A missing or renamed key, a value changed (a float rendered differently counts only if the number differs), a row
+dropped or reordered, or a 500 is a **finding**: a strict-response or `response_model` filtering regression.
+cleanup: none.
+metrics: none.
+
+### C-F1110 — `GET /api/loras` keeps optional fields on rows that carry them, and rows without `scale`, under the declared model
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, no download. REST as in C-F1109. The H3 catalog has the fields Z-Image's rows lack: `evidence` lists
+(with `issue`, `job` and `note` keys), rejected rows with no `scale` (`minimax-h3/acc-pdd`, `minimax-h3/hyperflow`),
+subfolder `weight_name`s (`minimax-h3/fasth3-4step`: `dense-datafree/adapter_model.safetensors`), and a `range`
+(`minimax-h3/wushu-action-reference`). Baseline: `list_loras(model="MiniMaxAI/MiniMax-H3")` over MCP, same session.
+Then GET `/api/loras?model=MiniMaxAI/MiniMax-H3`, and also `/api/loras?model=Lightricks/LTX-2.5-Diffusers` and
+`/api/loras?model=black-forest-labs/FLUX.1-dev` (the latter two against their own `list_loras`).
+expected:
+- All three are 200, never 500 (the strict-response risk the plan names).
+- Every row matches its MCP baseline key for key: `evidence` with each item's keys intact, `scale` absent where the
+  catalog has none (not filled in as `null` or `1.0` by the server), `weight_name` subfolders verbatim, `status`
+  `rejected` rows still returned (the route doesn't filter them; the UI does).
+A 500, a dropped `evidence` (or one of its keys), an invented `scale`, or a missing rejected row is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1111 — `/api/loras` still refuses a non-repo `model` with the same 400, and still narrows by H3 partition
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, no download, no H3 run (catalog reads only). REST as in C-F1109.
+(a) GET `/api/loras?model=variable:x`. (b) GET `/api/loras?model=/etc/hosts` (an absolute path).
+(c) GET `/api/loras?model=MiniMaxAI/MiniMax-H3&workflow=ref2va`, and the same with `workflow=t2va`; baseline each with
+`list_loras(model="MiniMaxAI/MiniMax-H3", workflow=<same>)` over MCP.
+(d) GET `/api/loras` with no `model`.
+expected:
+- (a) and (b): status 400, a JSON `detail` saying the value is neither a workflow nor a Hub repo id (the
+  "neither a workflow … nor a Hub repo id" wording). The detail names no server path (`/Users/…`, `/private/…`,
+  `/home/…`).
+- (c): 200; `resolved` names the partition given; the row names equal the MCP baseline's. Every row's `workflow` is
+  `null` or the partition asked for: `minimax-h3/turbo-reference` (`ref2va`) is in the `ref2va` answer and not the
+  `t2va` one.
+- (d): whatever it answered before this stage (record it against `list_loras()` with no `model`); not a 500.
+A 200 for (a)/(b), a changed status or detail, a partition row leaking across, or a 500 is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1112 — `/openapi.json` declares a 200 schema for `GET /api/loras` that admits every catalog field
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free. Plain HTTP GET of `/openapi.json` from the web root (or the path the web root's API docs link names). Follow
+`paths["/api/loras"].get.responses["200"].content["application/json"].schema` through its `$ref`s.
+expected:
+- A schema is declared (today none is): an object with `libraries`, `loras` and `resolved` (optional is fine).
+- `loras` is an array of a row schema that either declares every field C-F1109 and C-F1110 saw (`name`, `model_name`,
+  `weight_name`, `revision`, `base_models`, `workflow`, `description`, `use_when`, `trigger`, `scale`, `status`,
+  `license`, `tags`, `evidence`, `origin`, `writable`) or allows extra properties (`additionalProperties` not `false`).
+- The route's query parameters (`model`, `workflow`, and any others) are unchanged from the document's previous
+  listing; no new parameter appears.
+- `/api/loras/recommend` and `/api/lora-schema` are still listed, unchanged.
+No schema, a row schema that forbids a field the catalog carries, or a new parameter is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1113 — the LoRA editor lists a literal repo's catalog entries: proven first, then by name, rejected hidden, each with its stated fields
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. **Web UI, black-box**, setup as in C-F1028 (headless Playwright script under `/tmp`,
+found by visible text and role, mocks built from the **real** answer with `route.fetch()` and only named fields
+overwritten). Setup shared by C-F1113–C-F1120 and SE-F077–SE-F078. Log every request with `page.on("request")`.
+Open the editor on a new or catalog workflow and, in a pipeline step's options, set the base model field
+(`from_pretrained_arguments.model_name`) to `Tongyi-MAI/Z-Image-Turbo`, leaving no partition (`workflow`) set; wait
+1 s; open the step's LoRA section.
+Then repeat with `**/api/loras?**` mocked from the real answer: set `z-image/realism` to `status: "proven"`,
+`z-image/pixel-art` to `status: "rejected"`, and move `z-image/realism` to the end of the list.
+expected:
+- Unmocked: exactly one GET whose path is `/api/loras` with `model=Tongyi-MAI/Z-Image-Turbo` (URL-encoded or not)
+  and **no** `workflow` parameter, once the field settles. A "From the catalog" list sits above the LoRA rows,
+  showing every non-rejected entry the REST answer returns (13 today; whatever the live answer holds).
+- Each entry shows its name and status, its `description` and `use_when`, its `trigger` where it has one (e.g.
+  `z-image/coloring-book`'s `c0l0ringb00k`), and its stated scale: `scale.default` (`0.7` for coloring-book), plus its
+  range where present (`z-image/detailed-eyes`: `-1` to `1`, in any readable form).
+- Mocked: `z-image/realism` is listed **first** (proven before trial, whatever the server's order), the trial entries
+  follow sorted by name, and `z-image/pixel-art` appears nowhere in the list.
+- The existing LoRA rows and their own add button are where they were.
+A list that's missing, a rejected entry shown, proven not first, an unsorted trial block, a field the plan names not
+shown, or a page error is a **finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1114 — one click adds the mapped item: repo, weight file and scale filled, revision shown, and the entry turns "added"
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in C-F1113, unmocked, Z-Image base, the step's `loras` empty. Click the add
+button on `z-image/coloring-book`. Then, with `**/api/loras?**` mocked from the real answer so that `z-image/realism`
+has **no** `scale` key and `z-image/pixel-art`'s `weight_name` is `sub/dir/pixel.safetensors`, click add on each.
+If the editor has a JSON/source view of the workflow, read the step's `loras` there too.
+expected:
+- After the first click the step has one LoRA row: model `renderartist/Coloring-Book-Z-Image-Turbo-LoRA`, weight file
+  `Coloring_Book_Z_Image_Turbo_v1_renderartist_2000.safetensors`, scale `0.7`. The row shows the revision
+  `3d65420a16668ec00847915f2f69c50854eb5d33` as read-only text.
+- The mocked realism add has scale `1` (the fallback); the pixel-art add's weight file is `sub/dir/pixel.safetensors`
+  verbatim.
+- In a JSON view, each added item holds only `model_name`, `weight_name`, `revision` and `scale`: no `name`,
+  `status`, `description`, `trigger` or other catalog field.
+- Each added entry's button now reads "added" and is disabled; a second click adds nothing. Entries not added keep
+  an enabled add button.
+- Removing the added row with the row's own control re-enables that entry's add button (or at least doesn't leave the
+  step with a phantom row).
+- No request other than `GET /api/loras` (and the page's existing calls) is made by the add; nothing is saved.
+A wrong or empty field, a scale not taken from `scale.default`, a missing revision display, a catalog-only field in
+the item, a re-addable duplicate, or a page error is a **finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1115 — a step that already has an entry shows it "added" on open; matching is model plus weight file
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in C-F1113. In a Z-Image step, before opening the LoRA section, add two rows
+by hand with the existing row controls: (1) model `renderartist/Coloring-Book-Z-Image-Turbo-LoRA`, weight file
+`Coloring_Book_Z_Image_Turbo_v1_renderartist_2000.safetensors`; (2) model `ostris/z_image_turbo_childrens_drawings`,
+weight file `other.safetensors`. Then open the LoRA section.
+expected:
+- `z-image/coloring-book` shows "added" with a disabled button (same model and weight file).
+- `z-image/childrens-drawings` is **not** marked added (same model, different weight file) and can be added; adding it
+  makes a third row, not a change to row (2).
+A marking by model name alone, or an add that overwrites a hand-entered row, is a **finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1116 — a `variable:`, path, bare-name or empty base fetches nothing and says why
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in C-F1113, request log on. Set the step's base model field in turn to
+`variable:model`, `/Users/someone/model` (an absolute path), `just-a-name`, `owner/name/extra`, and empty; after
+each, wait 1 s and look at the LoRA section. Finally set it to `Tongyi-MAI/Z-Image-Turbo`.
+expected:
+- For each non-repo value: **no** request to `/api/loras` at all, and one muted line reading "Catalog suggestions
+  need a literal model repo." (empty may show that line or no panel; either passes, but no request). No list, no
+  error styling, and the LoRA rows still work (a blank row can be added and edited).
+- Switching to `Tongyi-MAI/Z-Image-Turbo` then fetches once and shows the list in place of the line.
+A request for any non-repo value, a missing line, or a 400 surfacing as an error is a **finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1117 — typing a base model fetches once after it settles, and the list follows the last value
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in C-F1113, LoRA section open, request log on. Clear the base model field
+and type `Tongyi-MAI/Z-Image-Turbo` one character at a time with a 30 ms delay; wait 1 s. Then select the field's
+whole text and replace it in one paste with `MiniMaxAI/MiniMax-H3`; wait 1 s.
+expected:
+- The typing produces at most two `GET /api/loras` requests (the plan's 300 ms debounce), the last with the full
+  `Tongyi-MAI/Z-Image-Turbo`; none for a partial value such as `Tongyi-MAI/Z`.
+- After the paste the list shows H3 entries only; no Z-Image entry remains, even if an earlier answer arrives late.
+A request per keystroke, a list for a stale value, or a page error is a **finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1118 — with no literal partition each entry shows its `workflow` constraint; a literal partition is passed to the fetch
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, no H3 run (catalog read and UI only), nothing saved. Web UI as in C-F1113. (a) Set the step's base to
+`MiniMaxAI/MiniMax-H3` with no partition (`from_pretrained_arguments.workflow` unset). (b) Set the partition to
+`ref2va` (the editor's own control, or the step's JSON). (c) Set the partition to `variable:part`.
+expected:
+- (a) The request carries `model` and no `workflow`. The list shows `minimax-h3/turbo-reference` (proven) first, and
+  next to each entry whose catalog `workflow` is set, that constraint (`ref2va` for `turbo-reference`,
+  `turbo-4step-reference`, `orb360`, `wushu-action-reference`, the live-wallpaper pair). No rejected H3 entry
+  (`fasth3-4step`, `hyperflow`, `acc-pdd`, `lms`, …) appears.
+- (b) The request carries `workflow=ref2va`; the list equals the non-rejected rows of `list_loras(model=
+  "MiniMaxAI/MiniMax-H3", workflow="ref2va")`.
+- (c) No request carries `workflow=variable:part`; the list behaves as in (a), constraints shown.
+A partitioned entry listed without its constraint in (a) or (c), a missing or wrong `workflow` parameter, or a
+rejected entry shown is a **finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1119 — no matches, all rejected, and a failed fetch each leave the editor usable with one muted line
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in C-F1113, Z-Image base. Mock `**/api/loras?**` from the real answer in
+turn: (a) `loras: []`; (b) every row's `status` set to `rejected`; (c) `route.fulfill({status: 500, json: {detail:
+"boom"}})`; (d) `route.abort()`. After each, reload the editor and open the LoRA section. Also (e), unmocked, set the
+base to a well-formed repo the catalog doesn't know: `nobody/no-such-model`.
+expected:
+- (a) and (e): one line reading "No catalog LoRAs for <repo>." with the repo named (`Tongyi-MAI/Z-Image-Turbo`,
+  `nobody/no-such-model`).
+- (b): no entry listed; either the "No catalog LoRAs" line or an empty list passes.
+- (c) and (d): one muted line that a suggestion fetch failed; no modal, no blocking banner, no uncaught page error.
+- In every case the LoRA rows can still be added, edited and removed, and the rest of the step editor responds.
+A missing line, a rejected entry shown in (b), an error that blocks the editor, or an uncaught exception is a
+**finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
+### C-F1120 — the catalog list is legible in both themes and borrows no live or selection styling
+pending: #1480
+source: tester, spec for #1480 from #1456's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. Web UI as in C-F1113, Z-Image base with one entry added (so both an enabled and an
+"added" button show) and, on a second step, the `variable:` line from C-F1116. Take each in the light and the dark
+theme (the UI's own theme toggle, or `page.emulateMedia({colorScheme})`). For the entry name, status, description,
+scale, the "added" button and the muted line, read the computed `color` and the effective background.
+expected:
+- Every text reaches WCAG AA contrast (4.5:1 for body text, 3:1 for large text) in both themes. The "added"
+  button's label is exempt only if the button is actually `disabled` (WCAG's inactive-control exemption).
+- No catalog element uses the colour of the UI's live/running indicator or its selection highlight: an entry doesn't
+  look like a running job or a selected row.
+- Status reads as text (`proven`, `trial`), not by colour alone.
+A text below AA, a status shown only by colour, or live/selection styling on the list is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1121 — `set_request` creates a request, and `get_request` lists it and returns the prompt verbatim
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1121-req")`; pass `workspace="cf1121-req"` on every call below.
+(1) Before anything: `get_request(workspace=...)` with no id. (2) `set_request(request="demo", revision=0,
+title="Demo short", goal="A three-shot short about a cat", why="first plan", prompt=P, items=[{"key":"cast-priya",
+"title":"Cast sheet","estimate_minutes":2}, {"key":"shot-01","title":"Opening","depends_on":["cast-priya"],
+"estimate_minutes":3}, {"key":"score","title":"Score","estimate_minutes":1.5}])`, where P is exactly
+`Make me a "short" — a cat  on a roof, at dusk ☾ (no dialogue).` (two spaces after `cat`, curly-free double
+quotes, an em dash, a non-ASCII moon). (3) `get_request()` with no id. (4) `get_request(request="demo")`.
+(5) `get_request(request="nosuch")`.
+expected:
+- (1) an empty list of requests, not an error.
+- (2) returns the stored request with `revision: 1`, `state: "open"`.
+- (3) lists exactly `demo` with its title, `state: open`, `revision: 1`, counts of 3 `planned`, spent 0 and
+  remaining 6.5.
+- (4) `prompt` equal to P character for character (the double space, the dash and the moon survive); `goal` as
+  sent; the three items in the order sent, each `planned`, with its title, `depends_on` (`["cast-priya"]` on
+  `shot-01`, empty or absent on the others) and estimate; no item has an accepted result or a comment; history
+  holds one entry for revision 1 with `by: "agent"`, `why: "first plan"` and the goal.
+- (5) refused with a reason naming the unknown request; no traceback.
+A normalised or trimmed prompt, items out of order, any state other than `planned`, or a missing history entry is
+a **finding**.
+cleanup: `delete_workspace(name="cf1121-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1122 — a revision is read-then-write: a goal change bumps it and keeps both goals, a stale write is refused
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1122-req")`, `workspace=` on every call; create `demo` as in
+C-F1121 step (2) (goal G1 = "A three-shot short about a cat"). (1) `set_request` with the same title and items,
+`revision=1`, `goal="A three-shot short about a dog"` (G2), `why="user changed the animal"`. (2) `get_request
+(request="demo")`. (3) Repeat step (1)'s call with `revision=1` and `goal="G3 stale"`. (4) The same with
+`revision=7`. (5) The same with `revision=0` (create over an existing id). (6) `set_request` at `revision=2`,
+same goal G2, a changed item title, `why="retitle"`. (7) `get_request(request="demo")`.
+expected:
+- (1) returns `revision: 2`.
+- (2) `goal` is G2; history holds the revision 1 entry with G1 and the revision 2 entry with G2 and its `why`.
+- (3), (4), (5) each refused as stale, with the refusal naming the current revision `2`; afterwards the request
+  still reads revision 2 and goal G2 (no `G3 stale` anywhere).
+- (6) returns `revision: 3`; (7) its history entry carries the `why` and **no** goal (it did not change), and the
+  G1 and G2 entries are still there.
+A stale write that lands, a refusal that doesn't name the current revision, or a lost earlier goal is a **finding**.
+cleanup: `delete_workspace(name="cf1122-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1123 — the prompt is write-once
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1123-req")`, `workspace=` on every call; create `demo` as in
+C-F1121 step (2) with prompt P. (1) `set_request` at `revision=1` with everything the same but
+`prompt="a different prompt"`. (2) `set_request` at `revision=1` with `prompt` omitted and a changed goal.
+(3) `get_request(request="demo")`.
+expected:
+- (1) refused, the reason saying the prompt is write-once (`prompt_is_write_once` or words to that effect); the
+  request still reads revision 1.
+- (2) accepted, `revision: 2`.
+- (3) `prompt` is still P exactly.
+Resending the identical P on a later write may be accepted or refused, but must never change the prompt.
+A changed prompt, or an omitted prompt clearing it, is a **finding**.
+cleanup: `delete_workspace(name="cf1123-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1124 — items match by key: removing one with no jobs deletes it, the new order and new items stick
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1124-req")`, `workspace=` on every call; create `demo` as in
+C-F1121 step (2). (1) `set_request` at `revision=1` with items, in this order: `score` (title now "Score v2"),
+`cast-priya`, and a new `final-cut` (estimate 4); `shot-01` left out. (2) `get_request(request="demo")`.
+(3) `set_request` at `revision=2` with `items=[]`. (4) `get_request(request="demo")`.
+expected:
+- (1) `revision: 2`. (2) exactly three items, in the order `score`, `cast-priya`, `final-cut`; `score`'s title is
+  "Score v2"; `shot-01` is **absent** (no linked job, so deleted, not dropped); `final-cut` is `planned`; remaining
+  is 7.5.
+- (3) either accepted (then (4) shows no items and remaining 0) or refused with a reason; both pass. A server
+  error is a **finding**.
+A removed no-job item that comes back as `dropped`, a lost reorder, or a kept item losing its fields is a
+**finding**.
+cleanup: `delete_workspace(name="cf1124-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1125 — `depends_on` names keys in the same request, with no self-reference and no cycle
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1125-req")`, `workspace=` on every call; create `demo` as in
+C-F1121 step (2). Then, each a `set_request` at `revision=1` with the items of C-F1121 changed as stated:
+(a) `shot-01.depends_on=["nosuch"]`; (b) `score.depends_on=["score"]`; (c) `cast-priya.depends_on=["shot-01"]`
+(a two-cycle with `shot-01 → cast-priya`); (d) add items `x1`, `x2`, `x3` with `x1→x2`, `x2→x3`, `x3→x1`;
+(e) two items both keyed `score`; (f) a new item `hub` whose `depends_on` lists 17 distinct keys (add items `d01`
+… `d17` with no dependencies); (g) the same with 16 (`d01` … `d16`).
+expected:
+- (a)–(f) each refused with a reason naming the problem (unknown key, self-reference, cycle, duplicate key, too
+  many dependencies); after each, `get_request` still reads revision 1.
+- (g) accepted (`revision: 2`), and `hub` reads back with its 16 dependencies in order.
+A cycle or a dangling key accepted, or a refused write that still bumps the revision, is a **finding**.
+cleanup: `delete_workspace(name="cf1125-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1126 — request ids and item keys match `^[a-z0-9][a-z0-9-]{0,63}$`
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1126-req")`, `workspace=` on every call. Each is a create
+(`revision=0`, title, goal, why, one item unless stated). As the request id: `A`, `Demo`, `cat_1`, `a.b`, `-lead`,
+`` (empty), and a 65-char `a…a`; then the accepted ones `0`, `z`, `a-b-1`, and a 64-char `b…b`. As an item key
+under request `keys`: the same refused and accepted values (one create per refused key, request id `keys-<n>`).
+expected:
+- Every refused value is refused with a reason naming the id or key and the rule; no request appears for it in
+  `get_request()`.
+- `0`, `z`, `a-b-1` and the 64-char id are created and listed; a request whose items use those keys reads them
+  back unchanged.
+Path-shaped ids and keys (`../x`, `a/b`) are the security suite's (SE-F079).
+An upper-case, underscore, dot or 65-char id or key accepted, or a legal one refused, is a **finding**.
+cleanup: `delete_workspace(name="cf1126-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1127 — every text is capped and carries no control characters
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1127-req")`, `workspace=` on every call. Base call: a create of
+`t-<n>` (a fresh id each time) as in C-F1121 step (2). Vary one field per call:
+(a) request `title` 200 chars / (b) 201; (c) item `title` 200 / (d) 201; (e) `why` 200 / (f) 201; (g) `why` empty
+and (h) `why` omitted; (i) `goal` 20000 chars / (j) 20001; (k) `prompt` 20001; (l) `title` containing U+0007 (BEL);
+(m) `goal` containing U+0000; (n) item `title` containing U+001B (ESC).
+expected:
+- (a), (c), (e), (i) accepted, and read back at full length.
+- Every other call refused with a reason naming the field and the cap or the character; no request `t-<n>` exists
+  afterwards for any refused call (a refused create stores nothing).
+A text over its cap stored (whole or silently truncated), a control character stored, or a missing `why`
+accepted is a **finding**.
+cleanup: `delete_workspace(name="cf1127-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1128 — item counts, estimates, stored arguments and unknown fields are refused strictly
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1128-req")`, `workspace=` on every call; `list_jobs` once to note
+the job count. Each a create of a fresh id (`n-<n>`) as in C-F1121 step (2), varied:
+(a) 200 items `i001` … `i200` / (b) 201 items; (c) `estimate_minutes` 0 and (d) 10000 / (e) -1 and (f) 10001;
+(g) an item with an unknown field `"colour":"red"` and (h) a misspelt `"depend_on":["score"]`;
+(i) an item with `"workflow":"templates/text-to-image"` and `"arguments":{"prompt":"a cat","seed":1,
+"num_images_per_prompt":1}` / (j) the same with 64 arguments `a01` … `a64` (string values) / (k) 65;
+(l) an argument whose value is a list `[1,2]` and (m) an object `{"x":1}`; (n) an argument named `bad name`.
+(o) An item carrying `"comment":{"text":"agent wrote this"}`.
+expected:
+- (a), (c), (d), (i), (j) accepted; (a) reads back 200 items, (i) reads back the workflow and arguments exactly as
+  sent; `list_jobs` shows **no** new job (a stored workflow is inert).
+- (b), (e), (f), (g), (h), (k), (l), (m), (n) each refused with a reason naming the item and field (the unknown
+  field by name for (g) and (h)); nothing stored.
+- (o) either refused with a reason, or accepted with the comment **not** stored (the item reads back with no
+  comment): an agent write never sets a comment.
+A count or bound overrun stored, an unknown field silently dropped and accepted, a non-scalar argument stored, a
+queued job, or an agent-written comment stored is a **finding**.
+cleanup: `delete_workspace(name="cf1128-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1129 — a request's `state` moves between `open`, `done` and `abandoned`, and nothing else
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Setup: `create_workspace(name="cf1129-req")`, `workspace=` on every call; create `demo` as in
+C-F1121 step (2). (1) `set_request` at `revision=1`, same plan, `state="done"`, `why="wrapped"`. (2) At
+`revision=2`, `state="closed"`. (3) At `revision=2`, `state="abandoned"`. (4) `get_request()` with no id.
+expected: (1) `revision: 2`, state `done`; (2) refused naming the allowed states, revision still 2; (3)
+`revision: 3`, state `abandoned`; (4) the list shows `demo` with `abandoned`. An unlisted state stored is a
+**finding**.
+cleanup: `delete_workspace(name="cf1129-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1130 — a workspace holding a request deletes cleanly, and its ledger goes with it
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. (1) `create_workspace(name="cf1130-req")`; create `demo` in it as in C-F1121 step (2)
+(`workspace="cf1130-req"`). (2) `delete_workspace(name="cf1130-req")` without acknowledgement (the preview).
+(3) `delete_workspace(name="cf1130-req", acknowledged_cost=true)`. (4) `create_workspace(name="cf1130-req")` again,
+then `get_request(workspace="cf1130-req")`. (5) `get_request(workspace="default")`.
+expected:
+- (2) previews without refusing on the ledger file (no "foreign entries" / 409-style refusal).
+- (3) succeeds; `list_workspaces` no longer has it.
+- (4) the re-created workspace has an empty request list (no `demo` resurrected).
+- (5) `default` doesn't show `demo` (it never belonged there).
+A delete refused because of `requests.json`, or a request surviving its workspace, is a **finding**.
+cleanup: `delete_workspace(name="cf1130-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1131 — the Requests guide section documents the item fields, the key rule and the caps
+pending: #1481
+source: tester, spec for #1481 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, read-only. `get_guide("workspaces", section="Requests")`; then the tool list (the client's own) or
+`get_guide` index for the stated tool count.
+expected:
+- The section exists and names every item field `set_request` accepts (`key`, `title`, `depends_on`,
+  `estimate_minutes`, `workflow`, `arguments`, `accepted`), that unknown fields are refused, the key pattern, the
+  revision rule (`0` to create, a stale revision refused), the write-once prompt, and the drop-not-delete rule for
+  an item with jobs.
+- The server exposes `set_request` and `get_request`; wherever the guide states a tool count, it matches the
+  number of tools the client actually lists.
+A missing section, an item field the server accepts but the guide doesn't name, or a stated count that disagrees
+with the listed tools is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1132 — a job submitted with `request="<id>/<key>"` is linked, and the item goes from queued/running to done
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: two `templates/text-to-image` runs. Setup: `create_workspace(name="cf1132-req")`, `workspace=` on every call;
+`set_request(request="demo", revision=0, title="Demo", goal="cat and dog boards", why="plan",
+items=[{"key":"cat","title":"Cat","estimate_minutes":1}, {"key":"dog","title":"Dog","estimate_minutes":2}])`.
+`validate_workflow("templates/text-to-image", arguments={"prompt":"a cat","seed":1})` for the acknowledgement.
+(1) `run_workflow("templates/text-to-image", arguments={"prompt":"a cat","seed":1}, request="demo/cat",
+note="cf1132 cat", acknowledged_cost=…)` with **no** wait, then at once `get_request(request="demo")`.
+(2) `wait_for_job` until it finishes. (3) `get_job`, `list_jobs`, `get_request(request="demo")` and
+`get_request()` with no id. (4) Negative control: a second run with the same arguments and **no** `request`;
+`get_job` on it and `get_request(request="demo")` again.
+expected:
+- The `run_workflow` schema has an optional, nullable `request` string.
+- (1) `cat` reads `queued`, `running` or (only if it already finished) `done` — never `planned`; `dog` is
+  `planned`.
+- (3) `get_job` and the job's `list_jobs` row carry `request: "demo"` and `item: "cat"`. `cat` is `done`, with
+  this job among its attempts (job id, status succeeded, its note, minutes) and its run as the result; `dog` still
+  `planned`. `spent_minutes` equals the job's `finished_at − started_at` in minutes (to rounding);
+  `remaining_minutes` is 2. The list form shows counts of 1 done, 1 planned.
+- (4) the unlinked job carries no `request`/`item` fields (or nulls), and `demo`'s attempts are unchanged.
+An unlinked job, a link missing from `list_jobs`, an item that stays `planned`, or spent minutes that disagree
+with the job's own timestamps is a **finding**.
+cleanup: `delete_workspace(name="cf1132-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1133 — reruns inherit the link; the latest success is the result until one is accepted
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: two `templates/text-to-image` runs. Setup: as C-F1132's setup in `cf1133-req`, then run job J1 as C-F1132
+step (1) with `wait_seconds=55` (follow with `wait_for_job`). (1) `rerun_job(J1, new_seed=true,
+acknowledged_cost=…)` → J2; wait for it. (2) `get_job(J2)`, `get_request(request="demo")`. (3) `set_request` at
+the current revision, same items but `cat` given `"accepted": J1`, `why="pick the first"`. (4)
+`get_request(request="demo")`.
+expected:
+- (2) J2 carries `request: "demo"`, `item: "cat"` without being told. `cat` lists both J1 and J2 as attempts, and
+  its result is J2's run (the latest success). `spent_minutes` equals the sum of both jobs' durations.
+- (3) accepted with a new revision. (4) `cat`'s accepted is J1 with J1's run id, and its result is J1's run.
+A rerun that loses the link, a result that isn't the latest success before accepting, or an accept that doesn't
+change the result is a **finding**.
+cleanup: `delete_workspace(name="cf1133-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1134 — deleting the accepted run reports `accepted_missing` and falls back to the other attempt
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: two `templates/text-to-image` runs. Setup: C-F1133 steps (setup)–(3) in `cf1134-req` (J1 accepted, J2 the
+other success). (1) `delete_output(job_id=J1, acknowledged_cost=…)` (the form `delete_output` asks for).
+(2) `get_request(request="demo")`. (3) `delete_output(job_id=J2, …)`; `get_request(request="demo")`.
+expected:
+- (2) `cat` reports `accepted_missing: true` (the accepted J1 is still named, not silently cleared) and its result
+  is J2's run; the item is still `done`.
+- (3) `accepted_missing: true` and no result run (nothing left to show); the request still reads without error,
+  and the attempts still list J1 and J2.
+A hidden missing accept, a result pointing at a deleted run, or an error reading the request is a **finding**.
+cleanup: `delete_workspace(name="cf1134-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1135 — a bad `request` argument is refused with its reason before anything queues
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free (every call is refused). Setup: C-F1132's setup in `cf1135-req` (validate for the acknowledgement); also
+`create_workspace(name="cf1135-other")` and in it a request `elsewhere` with item `cat`; `list_jobs` in both to
+note the counts. Then `run_workflow("templates/text-to-image", arguments={"prompt":"a cat","seed":1},
+acknowledged_cost=…, workspace="cf1135-req")` with each `request` value: `"demo"` (no item), `"demo/"`, `"/cat"`,
+`"demo/nope"`, `"Demo/cat"`, `"demo/cat/x"`, `"nosuch/cat"`, `"elsewhere/cat"` (exists only in the other
+workspace), `""`.
+expected:
+- Each refused with a reason that names the fault: a malformed `id/key` form, `unknown_request`, `unknown_item`
+  or an invalid key, as fits (`elsewhere/cat` is `unknown_request`: a request belongs to one workspace).
+- `list_jobs` in both workspaces shows no new job, queued or cancelled.
+`""` may be treated as "no request" (then the job queues unlinked — cancel it and say so) or refused; either
+passes. Any other value queuing a job, or a refusal with no reason, is a **finding**.
+cleanup: `delete_workspace` on `cf1135-req` and `cf1135-other` (`acknowledged_cost=true`).
+metrics: none.
+
+### C-F1136 — an item with jobs is dropped, not deleted; a closed request and a dropped item refuse new runs, reruns still run with a warning
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: three `templates/text-to-image` runs. Setup: C-F1132's setup in `cf1136-req`; run J1 on `demo/cat` and wait.
+(1) `set_request` at the current revision with only `dog`, `why="cut the cat"`. (2) `get_request(request="demo")`.
+(3) `run_workflow(…, request="demo/cat", …)`. (4) `rerun_job(J1, new_seed=true, …)` → J2; wait; `get_job(J2)`
+(and its `warnings`/`get_job_events`). (5) `set_request` again with `dog` and `cat` (re-added), then
+`get_request`. (6) `set_request` with `state="done"`; then `run_workflow(…, request="demo/dog", …)`.
+(7) `rerun_job(J1, new_seed=true, …)` → J3; wait; `get_job(J3)`.
+expected:
+- (2) `cat` is still there, `dropped: true`, state `dropped`, placed after `dog`, with J1 still listed as its
+  attempt; `remaining_minutes` counts `dog` only (2).
+- (3) refused `item_dropped` (or words naming the dropped item); no job queued.
+- (4) J2 runs, keeps `request: "demo"`, `item: "cat"`, and carries a warning that the item is dropped.
+- (5) `cat` is no longer dropped and reads `done` (its jobs succeeded).
+- (6) refused `request_closed`; no job queued. (7) J3 runs, keeps the link, and warns that the request is closed.
+A removed item with jobs deleted, a new run admitted to a dropped item or a closed request, or a rerun refused
+or silently unlinked is a **finding**.
+cleanup: `delete_workspace(name="cf1136-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1137 — an accept must name a succeeded job linked to that same item; an all-cancelled item reads `failed`
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: two or three `templates/text-to-image` runs. Setup: C-F1132's setup in `cf1137-req`. Run JD on `demo/dog`
+and wait. Run JU with no `request` and wait. Queue JC on `demo/cat` and `cancel_job` it at once (if it already
+finished, queue another and cancel that). `get_request(request="demo")`. Then each a `set_request` at the current
+revision with `cat`'s `accepted` set to: (a) JD (another item's job); (b) JU (no request); (c) JC (cancelled);
+(d) `"no-such-job"`. Finally (e) `dog`'s `accepted` set to JD.
+expected:
+- Before the accepts: `cat` reads `failed` (its only job was cancelled), with JC listed as an attempt with status
+  cancelled; `dog` reads `done`.
+- (a)–(d) each refused with a reason (not this item's job, not succeeded, unknown job); the revision doesn't move.
+- (e) accepted; `dog`'s accepted names JD and its run id.
+An accept of a foreign, unlinked or unsucceeded job stored, or a cancelled-only item shown as anything but
+`failed`, is a **finding**.
+cleanup: `delete_workspace(name="cf1137-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1138 — `move_job` on a linked job says what it did to the link, and the job never ends up linked across workspaces
+pending: #1482
+source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: up to three `templates/text-to-image` runs (cancel what you can). Setup: C-F1132's setup in `cf1138-req`.
+Queue three jobs without waiting: JA unlinked, JB on `demo/cat`, JC on `demo/dog`, so JB and JC are queued behind
+JA. (1) `move_job(JC, direction="front")`. (2) `get_job(JC)` and `get_request(request="demo")`.
+expected (the plan says `move_job` "clears the link and says so", because a request belongs to one workspace):
+- (1) the result states whether JC's link was kept or cleared, in words. (2) `get_job(JC)` agrees with it: if
+  cleared, JC carries no `request`/`item` and `dog` no longer lists JC; if kept, JC's workspace is still
+  `cf1138-req`, the request's own.
+- A link cleared with no word in the result, or a job linked to a request in a workspace other than its own, is a
+  **finding**.
+cleanup: cancel any job still queued; `delete_workspace(name="cf1138-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1139 — the storyboard skill opens a request for a three-board ask, links every run, and the request ends done
+pending: #1484
+source: tester, spec for #1484 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Cost: three (or, with re-rolls, a few more) `templates/text-to-image` runs. Setup: `create_workspace(name=
+"cf1139-req")`, `workspace=` on every call. Load the `dw:storyboard` skill and follow its request step for the ask
+"Storyboard three boards: a cat wakes on a windowsill, stretches, and leaps down", substituting
+`templates/text-to-image` (with a fixed `seed` per board) for the skill's FLUX 3 Klein template, since this case
+checks the ledger, not the pictures. Mark the keeper the way the skill says.
+expected:
+- The skill text tells the agent to open a request (`set_request`) when the ask is three or more jobs, before the
+  first run; to pass `request="<id>/<item-key>"` on each `run_workflow`; to accept the keeper with `set_request`
+  rather than `set_note`; and to read comments back with `get_request` before a revision pass.
+- Before the first run, `get_request()` lists one request whose `prompt` is the ask verbatim, with one item per
+  board (three), all `planned`.
+- Afterwards, `get_request(request=<id>)` shows the three board items `done`, each with a result run, each linked
+  job carrying that request and item in `get_job`; `spent_minutes` equals the sum of the linked jobs' durations.
+- No job note is used as the keeper marker in place of `accepted`.
+A skill that opens no request for this ask, an unlinked board run, or a board item not `done` at the end is a
+**finding**.
+cleanup: `delete_workspace(name="cf1139-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1140 — the four adopting skills teach the request step, and keep single-image asks out of it
+pending: #1484
+source: tester, spec for #1484 from #1458's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. Load each of `dw:storyboard`, `dw:long-form`, `dw:script-to-video` and `dw:series-episodes` (with any
+reference file each names for its shot list).
+expected, in each:
+- At the step that writes the shot list, it opens a request with `set_request`, with one item per shot / cast sheet
+  / score / cut, and a shot's item `arguments` pointing at `prompt:<project>/shot-NN` (storyboard: its boards).
+- It passes `request` on `run_workflow`, marks the keeper with `set_request`'s `accepted` (no longer `set_note`
+  for that), and reads comments back with `get_request` before a revision pass.
+- It says to open a request only for a multi-job ask (three or more jobs), not for a single image.
+- The shot document is still named as the creative source.
+A skill that still marks keepers only with `set_note`, or names a tool or argument the server doesn't expose
+(check against the live tool list), is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1141 — `list_jobs` `total` counts every matching job past 200, and the status and workspace filters partition it
+source: tester, verified in #1466 (claude-opus-5-5 via anthropic)
+Free, read-only, no job. Applies to a server whose job history holds more than 200 jobs. If `total` in call 1 is
+200 or less, report the case as **not exercised**. Use `limit=1` everywhere unless stated. Call: (1) `list_jobs()`
+with no workspace, so every job is counted; (2) `status="succeeded"`; (3) `status="failed,cancelled"`;
+(4) `status="queued,running"`; (5) `status="failed"`; (6) `status="cancelled"`; (7) `workspace=` a named workspace
+that holds jobs; (8) `limit=0` with the same workspace and `status="cancelled"`. Make the calls back to back, with
+nothing queued in between.
+expected:
+- Call 1's `total` is over 200. It is the real count, not stuck at about 200.
+- `total`(2) + `total`(3) + `total`(4) = `total`(1), and `total`(5) + `total`(6) = `total`(3).
+- `total`(7) ≤ `total`(1), and `total`(8) ≤ both `total`(6) and `total`(7).
+- In every reply where `truncated` is true, `next` names `total - returned` older jobs. That holds for call 8 too,
+  where `returned` is 0 and the count is all of `total`. A reply with `returned == total` carries no `next`.
+A `total` of about 200 past that point, a partition that doesn't sum, or a `next` count other than
+`total - returned` is a **finding**. A live job that finishes between two calls can move one count by one: re-run
+the set once before calling it a finding.
+cleanup: none (read-only).
 metrics: none.
 
 ## Performance
