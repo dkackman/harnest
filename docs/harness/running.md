@@ -43,6 +43,21 @@ a heartbeat gone quiet shows stalled; a driver mid-stop shows stopping). Stop th
 server; do not edit `run-loop.sh`/`providers.sh` while it runs. After a merge to a checkout run
 `cd tools/ui-check && npm install --no-audit --no-fund` once (the tester's web-UI runner).
 
+Stopping it: `kill -TERM`, `SIGINT` and `SIGHUP` are handled alike (items TERMed, then KILLed past
+`CHILD_DRIVER_KILL_SECS`; a deploy in flight is waited for, lock held). Every item and every
+deploy runs in a session of its own, so a Ctrl-C (or a closed terminal) reaches only the driver:
+since the final-review fix wave that is as safe as `kill -TERM`, even mid-deploy. Never `kill -9`
+the driver if you can help it: its items, which run in their own sessions, outlive it. After one,
+run `pgrep -fl lib/run-item.sh` (and `pgrep -fl 'claude -p'`) and `kill -TERM` what is left before
+restarting, or the new driver's items run beside the orphans. Each server's last deploy output
+is `logs/.deploy<sfx>.out` (`.deploy.out` for lem, `.deploy.mini-ai.out`).
+
+`totals.closed` in `state.json` (the loop card's "closed", and its cost per close) counts the
+issues this run saw open that have since closed as completed: the driver reads each left issue's
+`stateReason` once (`gh issue view`, at most 20 a poll). Issues closed `not planned` or as
+duplicates do not count; one that closed while the driver was down and never showed open to it
+is not seen at all. The board history's `closed` line still counts every issue that left.
+
 Which roles may run a weak model is a design decision, not a config detail: the tester's
 independence is the whole point, and a weak tester degrades that silently by rubber-stamping, so
 vary the implementer (its mistakes show up in its patches) and keep the tester on a strong model.

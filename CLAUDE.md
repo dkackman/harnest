@@ -11,7 +11,7 @@ regression coverage, the `regression-suite-*.md` files. There is no build step.
 
 **`tests/run.sh` is the test suite: run it before committing any change to a driver,
 `providers.sh`, `lib/classify.jq` or the guard.** It is offline (fake `gh` over a JSON board,
-stub `ssh`/`claude`), takes about a minute, and runs the real drivers end to end.
+stub `ssh`/`claude`), takes several minutes, and runs the real drivers end to end.
 
 ## Where things are
 
