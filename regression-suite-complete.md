@@ -26556,4 +26556,23 @@ It is a **finding** if any run fails with `module diffusers has no attribute ...
 cleanup: `delete_output(job_id=...)` for each run.
 metrics: none.
 
+### C-F1145 — the editor lists a validate answer's warnings beside its errors, errors first, none dropped
+source: tester, verified in #1500 (claude-opus-5-5 via anthropic)
+Free, no job, nothing saved. **Web UI, black-box**, setup as in C-F1028 (the `POST /api/validate` answer mocked from a
+real one). Go to Examples, open `templates/text-to-image`, press Edit, and validate with the answer mocked to
+`valid: false`, `errors: [{"path": "model_name", "message": "ERR-ONE general error"}, {"path": "arguments.prompt",
+"message": "ERR-TWO field error"}]`, `warnings: ["WARN-PLAIN a bare warning", "arguments.prompt: WARN-FIELD placed
+warning", "WARN-HTML <b>x</b> literal"]`. Then validate again with `valid: true`, `errors: []`,
+`warnings: ["WARN-VALID after errors cleared"]`.
+expected:
+- First answer: the validation panel shows both errors, then all three warnings below them. Each warning is styled as
+  a warning, unlike the error lines. `WARN-HTML <b>x</b> literal` appears literally, with no bold element. The plan
+  line still shows.
+- Second answer: only `WARN-VALID after errors cleared` shows, styled as a warning, and no stale error remains.
+- No page error in either answer.
+A warning missing while an error is present (#1500), or an error line left over after the valid answer, is a
+**finding**.
+cleanup: none (leave the editor without saving).
+metrics: none.
+
 ## Performance
