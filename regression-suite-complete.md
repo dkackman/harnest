@@ -26376,17 +26376,17 @@ An accept of a foreign, unlinked or unsucceeded job stored, or a cancelled-only 
 cleanup: `delete_workspace(name="cf1137-req", acknowledged_cost=true)`.
 metrics: none.
 
-### C-F1138 — `move_job` on a linked job says what it did to the link, and the job never ends up linked across workspaces
+### C-F1138 — `move_job` on a linked job leaves the link as it was, and the job never ends up linked across workspaces
 pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: up to three `templates/text-to-image` runs (cancel what you can). Setup: C-F1132's setup in `cf1138-req`.
 Queue three jobs without waiting: JA unlinked, JB on `demo/cat`, JC on `demo/dog`, so JB and JC are queued behind
 JA. (1) `move_job(JC, direction="front")`. (2) `get_job(JC)` and `get_request(request="demo")`.
-expected (the plan says `move_job` "clears the link and says so", because a request belongs to one workspace):
-- (1) the result states whether JC's link was kept or cleared, in words. (2) `get_job(JC)` agrees with it: if
-  cleared, JC carries no `request`/`item` and `dog` no longer lists JC; if kept, JC's workspace is still
-  `cf1138-req`, the request's own.
-- A link cleared with no word in the result, or a job linked to a request in a workspace other than its own, is a
+expected (plan v3: `move_job` only reorders the waiting queue, so it doesn't touch the link, and a link never
+leaves its workspace):
+- (1) `move_job` succeeds. (2) `get_job(JC)` still carries `request: "demo"`, `item: "dog"`, and JC's workspace is
+  still `cf1138-req`, the request's own; `dog` still lists JC.
+- A link changed or cleared by the reorder, or a job linked to a request in a workspace other than its own, is a
   **finding**.
 cleanup: cancel any job still queued; `delete_workspace(name="cf1138-req", acknowledged_cost=true)`.
 metrics: none.
