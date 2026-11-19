@@ -317,6 +317,78 @@ class Tree(unittest.TestCase):
         self.assertEqual("landed", self.land(tree, kind="verify"))
         self.assertTrue(self.warned("removed lines from regression-suite-complete.md"), self.said)
 
+    # --- Task 5 step 0: no symlink or gitlink lands; the base is refs/heads/main, never a
+    # same-named tag
+
+    def test_symlink_suite_entry_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        os.symlink("/etc/passwd", os.path.join(tree.path, "regression-suite-evil.md"))
+        before = g(self.h, "rev-parse", "main")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+        self.assertTrue(self.warned("suite-stranded/s1", "symlink"), self.said)
+
+    def test_suite_file_turned_into_a_symlink_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        p = os.path.join(tree.path, "regression-suite-complete.md")
+        os.unlink(p)
+        os.symlink("/etc/passwd", p)
+        before = g(self.h, "rev-parse", "main")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+
+    def test_symlink_under_a_perf_dir_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        os.makedirs(os.path.join(tree.path, "regression-perf"))
+        os.symlink("/etc/passwd", os.path.join(tree.path, "regression-perf", "S-P001.jsonl"))
+        before = g(self.h, "rev-parse", "main")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+
+    def test_gitlink_entry_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        self.append(tree)
+        real = suite_tree.suite.commit_changes
+
+        def gitlink(repo, logs, paths, msg, name, email, say, **kw):
+            real(repo, logs, paths, msg, name, email, say, **kw)
+            head = g(repo, "rev-parse", "HEAD")
+            g(repo, "update-index", "--add", "--cacheinfo", f"160000,{head},regression-perf/sub")
+            g(repo, "commit", "-q", "--amend", "--no-edit")
+
+        before = g(self.h, "rev-parse", "main")
+        with mock.patch.object(suite_tree.suite, "commit_changes", gitlink):
+            self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+        self.assertTrue(self.warned("suite-stranded/s1", "gitlink"), self.said)
+
+    def test_symlinked_allowed_dir_is_stranded(self):
+        tree = suite_tree.make(self.h, "s1")
+        out = os.path.join(self.tmp, "outside")
+        os.makedirs(out)
+        os.symlink(out, os.path.join(tree.path, "regression-perf"))
+        self.append(tree)
+        before = g(self.h, "rev-parse", "main")
+        self.assertEqual("stranded", self.land(tree))
+        self.assertEqual(before, g(self.h, "rev-parse", "main"))
+        self.assertTrue(self.warned("suite-stranded/s1", "regression-perf", "symlink"), self.said)
+
+    def test_a_tag_named_main_is_not_the_base(self):
+        old = g(self.h, "rev-parse", "main")
+        with open(os.path.join(self.h, "regression-suite-complete.md"), "a") as f:
+            f.write("\n### C-F009 — newer\ncleanup: none.\n")
+        g(self.h, "commit", "-qam", "newer")
+        g(self.h, "update-ref", "refs/tags/main", old)
+        tree = suite_tree.make(self.h, "s1")
+        self.assertEqual(g(self.h, "rev-parse", "refs/heads/main"), tree.base)
+        self.assertRegex(tree.base, r"^[0-9a-f]{40}$")
+        self.append(tree)
+        self.assertEqual("landed", self.land(tree))
+        text = g(self.h, "show", "refs/heads/main:regression-suite-complete.md")
+        self.assertIn("C-F009", text)
+        self.assertIn("C-F003", text)
+        self.assertEqual(old, g(self.h, "rev-parse", "refs/tags/main"))
+
     def test_land_needs_the_base(self):
         tree = suite_tree.make(self.h, "s1")
         with self.assertRaises(ValueError):

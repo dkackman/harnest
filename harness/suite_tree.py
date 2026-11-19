@@ -29,7 +29,9 @@ from typing import NamedTuple
 from . import suite
 from .gitops import git
 
-BASE = "main"
+# The full ref, so a tag or other ref named `main` is never taken for it.
+BASE = "refs/heads/main"
+BASE_NAME = "main"
 # What a tester or curator session may leave in its tree for the commit: the
 # loop's commit paths on lem (providers.sh suite_commit_paths, suite.commit_paths).
 DEFAULT_PATHS = ("regression-suite-*.md", "regression-perf", "regression-results")
@@ -94,7 +96,7 @@ def _main_checkout(harnest):
     for line in out.splitlines():
         if line.startswith("worktree "):
             path = line[len("worktree ") :]
-        elif line == f"branch refs/heads/{BASE}":
+        elif line == f"branch {BASE}":
             return path
     return ""
 
@@ -105,7 +107,7 @@ def _fast_forward(harnest, new, old):
     where = _main_checkout(harnest)
     if where:
         return git("-C", where, "merge", "-q", "--ff-only", new).returncode == 0
-    return git("-C", harnest, "update-ref", f"refs/heads/{BASE}", new, old).returncode == 0
+    return git("-C", harnest, "update-ref", BASE, new, old).returncode == 0
 
 
 def _dirty(tree):
@@ -155,7 +157,7 @@ def _strand(tree, prefix, why, say, sha=None):
     branch = _free_branch(tree, prefix)
     git("-C", tree, "branch", branch, sha)
     say(
-        f"[audit] WARNING: suite work {sha[:9]} from session {_sid(tree)} did not land on {BASE} ({why}); "
+        f"[audit] WARNING: suite work {sha[:9]} from session {_sid(tree)} did not land on {BASE_NAME} ({why}); "
         f"it is kept on branch {branch} for Don to merge"
     )
     return branch
@@ -168,6 +170,35 @@ def _in_paths(name, paths):
     return False
 
 
+# Tree entry modes that must never land: a symlink (it can point the primary checkout's file
+# anywhere) and a gitlink (a submodule commit).
+LINK_MODES = {"120000": "symlink", "160000": "gitlink"}
+
+
+def _linked_paths(tree, paths):
+    """The top-level entries of <tree> under <paths> that are symlinks (a symlinked
+    regression-perf/ would take writes and `git add` outside the tree)."""
+    try:
+        names = os.listdir(tree)
+    except OSError:
+        return []
+    return sorted(n for n in names if _in_paths(n, paths) and os.path.islink(os.path.join(tree, n)))
+
+
+def _link_entries(tree, base, sha):
+    """`<kind> <path>` for each entry the <base>..<sha> diff adds, changes or removes as a
+    symlink or gitlink (either side's mode)."""
+    out = git("-C", tree, "diff", "--raw", "--no-renames", "--no-abbrev", base, sha).stdout
+    found = []
+    for line in out.splitlines():
+        meta, _, name = line.partition("\t")
+        modes = meta.lstrip(":").split()[:2]
+        kinds = sorted({LINK_MODES[m] for m in modes if m in LINK_MODES})
+        if kinds:
+            found.append(f"{'/'.join(kinds)} {name}")
+    return found
+
+
 def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, logs=None, kind="", base=None):
     """Under <suite_lock> (any context manager; the driver's `suite` token) lands what the
     session changed under <paths> in <tree> (a Tree, or a path with <base>) onto main.
@@ -178,9 +209,10 @@ def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, 
       "conflict" the paths commit did not rebase (or main's checkout refused it): it is on
                  suite-conflict/<session>; leftovers, if any, were stranded too
       "stranded" something went on suite-stranded/<session> ([audit] WARNING said): the
-                 session committed in its tree (nothing lands), the paths commit touched more
-                 than <paths> (nothing lands), or files outside <paths> were left over (the
-                 paths commit, if any, still lands)
+                 session committed in its tree (nothing lands), a top-level entry under <paths>
+                 is a symlink (nothing lands), the paths commit touched more than <paths> or
+                 holds a symlink or gitlink (nothing lands), or files outside <paths> were left
+                 over (the paths commit, if any, still lands)
     <kind> is the session kind ("curator:review" logs an approved removal at info level)."""
     harnest = str(harnest)
     if isinstance(tree, Tree):
@@ -199,6 +231,10 @@ def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, 
                 path, "suite-stranded", f"the session committed in its tree (HEAD {head[:9]}, base {base[:9]})", say
             )
             return "stranded"
+        linked = _linked_paths(path, paths)
+        if linked:
+            _strand(path, "suite-stranded", f"{' '.join(linked)} in the tree is a symlink", say)
+            return "stranded"
         suite.commit_changes(path, logs, paths, msg, name, email, say, kind=kind)
         sha = git("-C", path, "rev-parse", "HEAD").stdout.strip()
         stranded = False
@@ -212,8 +248,14 @@ def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, 
         parent = git("-C", path, "rev-parse", f"{sha}^").stdout.strip()
         touched = git("-C", path, "diff", "--name-only", "--no-renames", base, sha).stdout.split("\n")
         stray = [f for f in touched if f and not _in_paths(f, paths)]
-        if parent != base or stray:
-            why = f"the landing commit touched {' '.join(stray) or 'more than one commit'} outside {' '.join(paths)}"
+        links = _link_entries(path, base, sha)
+        if parent != base or stray or links:
+            if links:
+                why = f"the landing commit holds a {', '.join(links)}"
+            else:
+                why = (
+                    f"the landing commit touched {' '.join(stray) or 'more than one commit'} outside {' '.join(paths)}"
+                )
             _strand(path, "suite-stranded", why, say, sha=sha)
             return "stranded"
         done = "stranded" if stranded else "landed"
@@ -230,7 +272,7 @@ def land(harnest, tree, msg, name, email, say, suite_lock, paths=DEFAULT_PATHS, 
                 return done
             if git("-C", path, "rev-parse", BASE).stdout.strip() == tip:
                 # main did not move: the checkout of main refused (local changes over these files)
-                _strand(path, "suite-conflict", f"the checkout of {BASE} has local changes", say, sha=new)
+                _strand(path, "suite-conflict", f"the checkout of {BASE_NAME} has local changes", say, sha=new)
                 return "conflict"
-        _strand(path, "suite-conflict", f"{BASE} kept moving", say, sha=new)
+        _strand(path, "suite-conflict", f"{BASE_NAME} kept moving", say, sha=new)
         return "conflict"

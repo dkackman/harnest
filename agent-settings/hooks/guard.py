@@ -129,9 +129,9 @@ consumer (tester, regression):
     holds, bar a `pending:` line. Lines added since the commit (this
     session's own new case) stay editable. A suite file in the session's
     worktree (HARNEST_SESSION_TREE, outside HARNEST_ROOT) is held to the
-    commit the driver checked it out at (HARNEST_SESSION_BASE, else main),
-    never the tree's own HEAD, and the rules below that name the harness
-    root cover it too
+    commit the driver checked it out at (HARNEST_SESSION_BASE, a full 40-hex
+    sha; without one the edit is refused), never the tree's own HEAD, and
+    the rules below that name the harness root cover it too
 every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh`,
 even over ssh, in a NAME=value, a git alias or -c value, or gh/git output piped to a shell),
 nor scripts/testbed.sh update|start|restart|stop; the driver deploys develop between GPU
@@ -2236,10 +2236,12 @@ def session_tree():
 
 
 def session_base():
-    """The add-only baseline for the session's worktree: HARNEST_SESSION_BASE, the main sha the
-    driver checked the tree out at (never the tree's own HEAD, which a session could move);
-    `main` when the driver set none."""
-    return os.environ.get("HARNEST_SESSION_BASE", "") or "main"
+    """The add-only baseline for the session's worktree: HARNEST_SESSION_BASE, the full 40-hex
+    main sha the driver checked the tree out at (never the tree's own HEAD, which a session
+    could move, nor a ref name, which can resolve elsewhere). "" when it is unset or not such a
+    sha: the caller fails closed."""
+    base = os.environ.get("HARNEST_SESSION_BASE", "")
+    return base if re.fullmatch(r"[0-9a-f]{40}", base) else ""
 
 
 def harness_root_of(full, roots):
@@ -2282,7 +2284,16 @@ def suite_add_only_rule(tool, tool_input, cwd):
     tree = session_tree()
     if root not in (main_root, tree) or not (name.startswith("regression-suite-") and name.endswith(".md")):
         return
-    rev = session_base() if tree and root == tree else "HEAD"
+    rev = "HEAD"
+    if tree and root == tree:
+        rev = session_base()
+        if not rev:
+            deny(
+                "this session's suite tree (HARNEST_SESSION_TREE) has no usable HARNEST_SESSION_BASE "
+                "(the driver sets it to the full 40-hex sha the tree was made at), so the add-only "
+                "check has no baseline and the edit is refused. This is a driver fault: say so in "
+                "your report rather than editing the suite."
+            )
     try:
         committed = subprocess.run(
             ["git", "-C", root, "show", rev + ":" + name], capture_output=True, text=True, timeout=10

@@ -222,16 +222,17 @@ srow 2 consumer "rewrite a committed expectation" '{"old_string": "expected: it 
 srow 2 consumer "Write that drops a committed case" '{"content": "### C-F002 — new this session\nexpected: draft.\ncleanup: none.\n"}'
 srow 0 curator "curator rewrites a committed expectation" '{"old_string": "expected: it works.", "new_string": "expected: it mostly works."}'
 # R17: the session's own harnest worktree (HARNEST_SESSION_TREE) is held to the same rule,
-# against HARNEST_SESSION_BASE (else main), not the tree HEAD; HARNEST_ROOT stays the main checkout
+# against HARNEST_SESSION_BASE (required), not the tree HEAD; HARNEST_ROOT stays the main checkout
 stree="$T/stree"
 git -C "$sroot" worktree add -q --detach "$stree" HEAD
 printf '\n### C-F004 — new in the tree\nexpected: draft.\ncleanup: none.\n' >> "$stree/regression-suite-complete.md"
 # wrow <expect> <label> <tool_input json, file_path added>
 wrow() {
   jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" --argjson i "$3" '{tool_name: ($i.content | if . then "Write" else "Edit" end), tool_input: ($i + {file_path: $p}), cwd: $d}' \
-    | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+    | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_SESSION_BASE="$sbase" HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
   eq "suite add-only in the session tree: $2" "$1" $?
 }
+sbase=$(git -C "$sroot" rev-parse HEAD)
 wrow 0 "append a case" '{"old_string": "expected: draft.\ncleanup: none.\n", "new_string": "expected: draft.\ncleanup: none.\n\n### C-F005 — x\ncleanup: none.\n"}'
 wrow 0 "remove a pending line" '{"old_string": "pending: #12\n", "new_string": ""}'
 wrow 2 "drop a committed line" '{"old_string": "expected: it works.\n", "new_string": ""}'
@@ -286,7 +287,34 @@ brow() {
   eq "suite add-only baseline: $2" "$1" $?
 }
 brow 2 "HARNEST_SESSION_BASE holds the line the tree's own commit dropped" "$hbase"
-brow 2 "no HARNEST_SESSION_BASE: main holds it" -
+brow 2 "no HARNEST_SESSION_BASE: refused (fails closed)" -
+# Task 5 step 0: a tree with no usable HARNEST_SESSION_BASE (unset, a ref name, a short sha)
+# fails closed, even for an edit the rule would pass
+# nrow <expect> <label> [HARNEST_SESSION_BASE value; "-" leaves it unset]
+nrow() {
+  local -a e=(HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_ROLE=tester)
+  [ "$3" = - ] || e+=(HARNEST_SESSION_BASE="$3")
+  jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" '{tool_name: "Edit", tool_input: {file_path: $p, old_string: "expected: draft.\ncleanup: none.\n", new_string: "expected: draft.\ncleanup: none.\n\n### C-F006 — y\ncleanup: none.\n"}, cwd: $d}' \
+    | env "${e[@]}" python3 "$guard" consumer >"$T/nrow.out" 2>&1
+  grep -q "HARNEST_SESSION_BASE" "$T/nrow.out"
+  local said=$?
+  jq -n --arg p "$stree/regression-suite-complete.md" --arg d "$stree" '{tool_name: "Edit", tool_input: {file_path: $p, old_string: "expected: draft.\ncleanup: none.\n", new_string: "expected: draft.\ncleanup: none.\n\n### C-F006 — y\ncleanup: none.\n"}, cwd: $d}' \
+    | env "${e[@]}" python3 "$guard" consumer >/dev/null 2>&1
+  local rc=$?
+  eq "suite add-only, no usable session base: $2" "$1" "$rc"
+  [ "$1" = 0 ] || eq "suite add-only, no usable session base: $2 (says why)" 0 "$said"
+}
+nrow 0 "the full sha passes" "$sbase"
+nrow 2 "unset" -
+nrow 2 "empty" ""
+nrow 2 "a ref name" main
+nrow 2 "a short sha" "${sbase:0:12}"
+nrow 2 "an expression" "$sbase~1"
+nrow 2 "uppercase hex" "$(printf %s "$sbase" | tr a-f A-F)"
+# a non-suite file in the tree is not this rule's
+jq -n --arg p "$stree/notes.txt" --arg d "$stree" '{tool_name: "Write", tool_input: {file_path: $p, content: "x"}, cwd: $d}' \
+  | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
+eq "no session base: a non-suite Write in the tree is not the add-only rule's" 0 $?
 # HARNEST_SESSION_BASE is the driver's too
 row 2 consumer "" $none 'HARNEST_SESSION_BASE=HEAD; echo hi'
 row 2 consumer "" $none 'export HARNEST_SESSION_BASE=HEAD'
