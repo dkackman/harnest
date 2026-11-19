@@ -80,6 +80,13 @@ class LoopStateTests(unittest.TestCase):
         p = self.read()["board"]["history"][0]
         self.assertEqual((p["parked"], p["agents"]), (1, 1))
 
+    def test_parked_behind_a_claim_mark_counts_as_parked(self):
+        # status_board writes "[<loop>] (parked) <title>" on a claimed, parked issue
+        rows = [row(1, "owner:don", title="[lem] (parked) idea"), row(2, "owner:don", title="[mini-ai] (parked) idea")]
+        self.st.board(rows + [row(3, "owner:don", title="[lem] [docs] (parked) is in the title")], True)
+        p = self.read()["board"]["history"][0]
+        self.assertEqual((p["parked"], p["don"]), (2, 1))
+
     def test_unreadable_board_keeps_rows(self):
         self.st.board([row(1)], True)
         self.st.board([], False)

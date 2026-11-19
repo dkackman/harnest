@@ -11,6 +11,7 @@ from __future__ import annotations
 import copy
 import json
 import os
+import re
 import threading
 import time
 
@@ -18,7 +19,8 @@ from harness.scheduler import needs
 
 SERIES_MAX = 720  # 6 h of samples at 30 s
 SUITE_MAX = 50  # suite landings kept for Don
-PARKED = "(parked) "  # status_board's mark on a parked issue's title
+# status_board's mark on a parked issue's title, after the "[<loop>] " claim mark when it has one
+PARKED = re.compile(r"(\[[\w.-]+\] )?\(parked\) ")
 AGENT_OWNERS = frozenset({"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"})
 # "stopped" is the last word of a driver that exited cleanly; the dashboard
 # tells it from a dead one (a stale heartbeat with another status).
@@ -161,7 +163,7 @@ class LoopState:
             if rows == self._rows and self._history:
                 return
             self._rows = rows
-            owners = ["parked" if str(r[3]).startswith(PARKED) else r[2] for r in rows]
+            owners = ["parked" if PARKED.match(str(r[3])) else r[2] for r in rows]
             self._history.append(
                 {
                     "time": self.clock(),
