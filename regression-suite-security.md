@@ -2004,7 +2004,8 @@ on the run page, and in a field's own slot. Register `page.on("dialog")`, `page.
 - H5 `"><img src="http://example.invalid/leak.png">` as a `downloads_required` repo id (a plan line);
 - H6 `{{7*7}} ${7*7}` as an error message (template-syntax probe).
 Load the run page of `templates/text-to-image` with that answer; then open the editor on the same workflow and
-validate with the same answer.
+validate twice (the editor shows no warnings for an answer that has errors): first with the errors H1, H2, H6 and
+H5; then with `valid: true`, no errors, the warnings H3 and H4, and H5.
 expected:
 - On both pages each string appears **literally** as visible text (the `<`, `>` and quotes shown), and H6 shows
   `{{7*7}} ${7*7}`, not `49`.
