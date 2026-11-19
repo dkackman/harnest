@@ -2067,7 +2067,6 @@ Any of those failing is a hole: file it privately with `./scripts/file-advisory.
 cleanup: none.
 
 ### SE-F073 — segment-table measure names, values, file names and reasons render as text, and Repair carries no script into the form
-pending: #1475
 source: tester, spec for #1475 and #1476 from #1451's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job, nothing queued. **Web UI, black-box**, setup as in `regression-suite-complete.md` C-F1073 and C-F1079
 (job J1 of `chain-1451`; mocks built from a real answer; every POST to a job, run or rerun route aborted). Stage B
