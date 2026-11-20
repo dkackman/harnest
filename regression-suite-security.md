@@ -2204,7 +2204,6 @@ Any value stored, any path in a reply, or any new file outside the ledger is a h
 cleanup: `delete_workspace(name="sef079-req", acknowledged_cost=true)`.
 
 ### SE-F080 — a `request` argument on `run_workflow` never selects a path or another workspace's ledger
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free (every call is refused). Setup: `create_workspace(name="sef080-a")` and `create_workspace(name="sef080-b")`;
 in `sef080-b` create request `secret` with item `cat`. `validate_workflow("templates/text-to-image",

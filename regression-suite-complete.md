@@ -26262,7 +26262,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1132 — a job submitted with `request="<id>/<key>"` is linked, and the item goes from queued/running to done
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: two `templates/text-to-image` runs. Setup: `create_workspace(name="cf1132-req")`, `workspace=` on every call;
 `set_request(request="demo", revision=0, title="Demo", goal="cat and dog boards", why="plan",
@@ -26288,7 +26287,6 @@ cleanup: `delete_workspace(name="cf1132-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1133 — reruns inherit the link; the latest success is the result until one is accepted
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: two `templates/text-to-image` runs. Setup: as C-F1132's setup in `cf1133-req`, then run job J1 as C-F1132
 step (1) with `wait_seconds=55` (follow with `wait_for_job`). (1) `rerun_job(J1, new_seed=true,
@@ -26305,7 +26303,6 @@ cleanup: `delete_workspace(name="cf1133-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1134 — deleting the accepted run reports `accepted_missing` and falls back to the other attempt
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: two `templates/text-to-image` runs. Setup: C-F1133 steps (setup)–(3) in `cf1134-req` (J1 accepted, J2 the
 other success). (1) `delete_output(job_id=J1, acknowledged_cost=…)` (the form `delete_output` asks for).
@@ -26320,7 +26317,6 @@ cleanup: `delete_workspace(name="cf1134-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1135 — a bad `request` argument is refused with its reason before anything queues
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free (every call is refused). Setup: C-F1132's setup in `cf1135-req` (validate for the acknowledgement); also
 `create_workspace(name="cf1135-other")` and in it a request `elsewhere` with item `cat`; `list_jobs` in both to
@@ -26338,7 +26334,6 @@ cleanup: `delete_workspace` on `cf1135-req` and `cf1135-other` (`acknowledged_co
 metrics: none.
 
 ### C-F1136 — an item with jobs is dropped, not deleted; a closed request and a dropped item refuse new runs, reruns still run with a warning
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: three `templates/text-to-image` runs. Setup: C-F1132's setup in `cf1136-req`; run J1 on `demo/cat` and wait.
 (1) `set_request` at the current revision with only `dog`, `why="cut the cat"`. (2) `get_request(request="demo")`.
@@ -26359,7 +26354,6 @@ cleanup: `delete_workspace(name="cf1136-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1137 — an accept must name a succeeded job linked to that same item; an all-cancelled item reads `failed`
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: two or three `templates/text-to-image` runs. Setup: C-F1132's setup in `cf1137-req`. Run JD on `demo/dog`
 and wait. Run JU with no `request` and wait. Queue JC on `demo/cat` and `cancel_job` it at once (if it already
@@ -26377,7 +26371,6 @@ cleanup: `delete_workspace(name="cf1137-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1138 — `move_job` on a linked job leaves the link as it was, and the job never ends up linked across workspaces
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: up to three `templates/text-to-image` runs (cancel what you can). Setup: C-F1132's setup in `cf1138-req`.
 Queue three jobs without waiting: JA unlinked, JB on `demo/cat`, JC on `demo/dog`, so JB and JC are queued behind
@@ -26534,7 +26527,6 @@ cleanup: none (leave the editor without saving).
 metrics: none.
 
 ### C-F1146 — deleting a workspace keeps its jobs' `request`/`item` strings in history, and a same-named new workspace inherits no request
-pending: #1482
 source: tester, spec for #1482 from #1458's plan v3 (claude-opus-5-5 via anthropic)
 Cost: one `templates/text-to-image` run. Setup: C-F1132's setup in `cf1146-req`; run J1 on `demo/cat`
 (`wait_seconds=55`, then `wait_for_job` if still running) and note its id. (1) `delete_workspace(name="cf1146-req",
