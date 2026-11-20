@@ -400,13 +400,22 @@ expected: three independent assertions, each a default call and its drill-down.
    list-driven) `lists` again. Both directions matter: a summary that never
    expands is as broken as a default that never summarises.
 metrics: `bytes` of 1 (`condition: guide-index`) and of 3's summary answer
-(`condition: catalog-summary`), logged to `regression-perf/S-F015.jsonl` — the
+(`condition: catalog-summary-delivered`), logged to `regression-perf/S-F015.jsonl` — the
 point of #101 was the number, and a slow creep back up is what this case exists
 to catch, so those two are compared against their history per the regression
-agent's rule as well as against the ceilings here: guide index under 3 KB (above),
-catalog summary under **20 KB** (~12 KB at 71 entries; a catalog that has
-legitimately outgrown that is a `baseline:`-style needs-approval ask, not a
-silent edit). Also log `get_schema()`'s full size (`condition: schema-full`) for
+agent's rule as well as against the ceilings here: guide index under 3 KB (above);
+catalog summary: measure, do not estimate - use the size of the `list_workflows()`
+reply as delivered (the harness's saved-result / `< N chars` figure), and log that
+number. Two ceilings: (a) **250 B per entry** as delivered (size / number of
+`details` entries; 219 B/entry at 118 entries on 2026-11-20) - exceeding it means
+entries got fatter, which is the regression this case exists to catch, and is a
+finding; (b) **32 KB total** as delivered (25.9 KB at 118 entries) - exceeding it
+with (a) still met means the catalog has outgrown the summary form: file a normal dw
+ticket asking for a smaller default answer, not a suite request to raise the number
+again. The delivered size has its own `condition` because the `catalog-summary`
+readings logged up to 2026-11-20 were estimates: they are not comparable with a
+measured size and are never pooled with it. (Amended per dkackman/harnest#269: Don,
+2026-11-20, 0.21.0 release.) Also log `get_schema()`'s full size (`condition: schema-full`) for
 the trend, but no ceiling on it: it's on-request, and its size is the schema's
 honest size — the guard against it is `section=`, which item 2 already checks.
 Note `view`/`note` are absent rather than `view: "full"` on the filtered answer —
