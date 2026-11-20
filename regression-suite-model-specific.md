@@ -11417,4 +11417,178 @@ man in a yellow vest in a sitcom living room), or if frame 1 is a double exposur
 cleanup: as M-F380.
 metrics: none.
 
+### M-F449 — the #1505 masked-keystone gate's jobs: step 1 ran, step 2 only if step 1 passed, all succeeded in `bench` on one quoted build, and no full-length run
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
+The record is the *Masked keystone: early gate* section of `bench/records/narrated.md` in the dw repo, which a tester
+can't read: use the record as the stage's hand-off comment on #1506 quotes it (job ids, frames held, per-pass times,
+measures, outcome). A number the hand-off doesn't quote is missing.
+Steps: `list_jobs(workspace="bench")` around the stage's run window; `get_job` and `get_job_events`
+(`workspace="bench"`) on every job the record names; `get_diffusers_state()`; `list_jobs` of every other workspace
+(`list_workspaces`) over the same window for other H3 jobs.
+expected:
+- The record names one step-1 job and either (pass) two step-2 jobs, control M and arm MA, plus the baseline (reused
+  `2817a04202ae`, or a re-run, M-F453), or (fail) no step-2 job. Every job it names is in `bench` and `completed`
+  (succeeded), not failed or cancelled; a re-run is named with its reason.
+- Step 1 failed: `list_jobs(workspace="bench")` holds no job created after the step-1 job that renders a masked seg02
+  with the real keystone or carries `experimental_keystone_attention`, and the record says the run stopped at step 1.
+  Step 1 passed: both step-2 jobs were created after the step-1 job finished.
+- No full-length run: no job the stage queued renders more than seg02 (no seg03+ step, no 12-segment chain), in
+  `bench` or any other workspace.
+- The record quotes a `get_diffusers_state` build taken before the first job, and every job ran on it (any version a
+  job reports matches). Today's `get_diffusers_state` is context only.
+- No stage job's `started_at`–`finished_at` overlaps another H3 job on lem.
+It is a **finding** if a named job failed without a named re-run, if step-2 jobs exist after a failed step 1 (or are
+missing after a pass with no reason given), if any longer-than-seg02 job exists, if the jobs did not all run on the
+one quoted build, or if two H3 jobs overlapped.
+cleanup: none.
+metrics: none.
+
+### M-F450 — the #1505 step-1 job's seg02 is a masked regional edit with the tail guide and the bright keystone as both `image` and source frame 0, and nothing else
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
+Steps: `get_job_workflow(job_id=<step-1 job>)` (M-F449); `get_job_workflow(job_id="2817a04202ae")` (the #1394 gate
+control) for the seed and the tail guide; `get_job_workflow(job_id="f835a2292345")` (the shared seg01 job);
+`get_gallery_metadata` on the step's `source_video` and `mask_video` inputs (`output:` or `asset:` references, as
+the workflow names them).
+expected:
+- seg02's H3 step is `fl2va`, with `source_video`, `mask_video`, `refine_strength` (1.0, as the #1322 probe; another
+  value is quoted in the record with a reason), `guides` equal to the #1394 tail guide (`[{video: <tail01>, frame: 0}]`,
+  one entry), and `image`.
+- `image` is #1394 step 1's *bright* probe keystone, and `source_video` is that same keystone frame followed by
+  seg01's tail (from `f835a2292345`'s outputs): its frame count is the tail's plus one, and frame 0 is the keystone.
+- `mask_video` is black over the held frames then white, the same frame count as `source_video`; the held count is a
+  whole number of latent cells, and the record states the count actually held.
+- No `latents`, no chaining (the step isn't a chain or chained segment), no `experimental_keystone_attention`, no
+  sparse attention (dense), no capstone, no `keystone_slot`.
+- The seed is the #1394 gate's seed (as in `2817a04202ae`).
+It is a **finding** if any listed input is missing or different, if `source_video` doesn't start with the keystone
+`image` uses, if the mask's held count isn't on the latent grid or isn't the count the record states, or if a
+`latents`, chaining, attention or sparse argument is present.
+cleanup: none.
+metrics: none.
+
+### M-F451 — the #1505 step-1 gate: the luma move toward the bright keystone is recorded, and the outcome follows the +0.5% line
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only, plus `get_output_frames`.
+Steps: read the record's step-1 lines (M-F449); `get_job(workspace="bench")` on the step-1 job for its output;
+`get_output_frames` on that output at the first new frame (frame 22, or the record's first-new-frame index) and one
+second later; the same frames of the matching guides-only take the record compares against.
+expected:
+- The record gives the new frames' (22 onward, or the index it states with the held count) luma change toward the
+  bright keystone as a signed percentage, names `bench/keystone_luma.py` as the measure, and names what it is measured
+  against (the same-seed take without the bright keystone).
+- Pass is a move of **at least +0.5%** toward the keystone (exactly +0.5% passes). A move below that, zero, or away
+  from the keystone (negative) fails.
+- Fail: the record says the run stopped at step 1, with the wording's substance "a keystone doesn't pull under a
+  masked carry on a narrated face either", and M-F449's no-step-2 clause holds. Pass: step 2 ran (M-F449).
+- The frames look like the record's direction: a pass shows brighter new frames than the comparison take.
+It is a **finding** if the number, its sign or its comparison take is missing, if the stated outcome doesn't follow
+from the number and the +0.5% line, or if the frames plainly contradict the stated direction.
+cleanup: none.
+metrics: none.
+
+### M-F452 — the #1505 step-2 arms: M and MA differ only in `experimental_keystone_attention` with test 21's saturation blocks, and no sharpness-block arm ran
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda), flag-on for MA (see M-F375). **Free**: reads only.
+Only if step 1 passed (M-F451); after a failed step 1 record "not applicable: step 1 failed" and skip.
+Steps: `get_job_workflow` on the M and MA jobs (M-F449); `get_job_workflow` on the step-1 job; diff M against MA.
+expected:
+- Both seg02 steps have the M-F450 shape (`source_video` = keystone frame + tail, `mask_video` with the same held
+  count, `refine_strength`, the one tail guide, `image`; no `latents`, no chaining, dense), with the **real** seg01
+  keystone (from `f835a2292345`'s outputs, not the bright probe) as `image` and as `source_video` frame 0.
+- M carries no `experimental_keystone_attention`. MA carries exactly
+  `experimental_keystone_attention: {"balance": 20, "blocks": "30-32,34-37,39,42,44"}`.
+- Everything else matches between M and MA: seed (the #1394 gate's), prompt, sizes, frame counts, steps, guidance,
+  `hold_audio` and every other argument. The only diff line is the attention argument.
+- No job in `bench` from this stage carries the sharpness set `32-35,37,39-40,42,44` (plan non-goal, Q3 default) or
+  any third step-2 arm.
+It is a **finding** if M and MA differ in anything but the attention argument, if MA's blocks or balance differ from
+the plan's, if either arm uses the bright probe keystone or sparse attention, or if a sharpness-block arm exists.
+cleanup: none.
+metrics: none.
+
+### M-F453 — the #1505 baseline is the #1394 control `2817a04202ae`, reused only if the build still matched `e84bda1c`, else re-run unchanged
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
+Only if step 1 passed (M-F451); otherwise "not applicable" and skip.
+Steps: read the record's baseline line and its quoted `get_diffusers_state` (M-F449); `get_job_workflow` and
+`get_job(workspace="bench")` on `2817a04202ae`; if the record names a re-run baseline, the same two calls on it.
+expected:
+- The record names the baseline job and says whether it was reused or re-run, with the build it checked.
+- Reused: the quoted build is `e84bda1c` (the diffusers commit), and the record's baseline numbers come from
+  `2817a04202ae`.
+- Re-run: the quoted build is not `e84bda1c`, and the re-run's `get_job_workflow` equals `2817a04202ae`'s (guides-only,
+  no `source_video`/`mask_video`, the same seed, prompt and arguments), apart from fields a run fills in (ids, times).
+It is a **finding** if `2817a04202ae` was reused on a build other than `e84bda1c`, if a re-run differs from it in any
+argument, or if the record doesn't say which happened.
+cleanup: none.
+metrics: none.
+
+### M-F454 — the #1505 step-2 record: MA, M and the baseline each have the five fixed measures, and the verdict is the one the pass rules give
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
+Only if step 1 passed (M-F451); otherwise "not applicable" and skip.
+Steps: read the record's step-2 table (M-F449) and the face crops it posts.
+expected:
+- Three columns (baseline, M, MA), each with, on seg02's new frames: the in-segment saturation rise (seg02's last
+  second against seg01's last second); face sharpness as the **absolute distance** from seg01's last-second face
+  sharpness (Laplacian variance on the YuNet crop, 1 s means), not a signed rise; the luma rise; SFace to the keystone
+  at seg02's end; and the seg01/02 seam `jump_ratio` from `analyze_seams`. Face crops are posted for each arm.
+- MA passes only if all five hold, applied as written:
+  - saturation rise ≤ 0.75 × the baseline's (exactly 25% smaller passes) **and** ≤ M's (equal passes);
+  - sharpness distance ≤ the baseline's (equal passes);
+  - luma rise ≤ the baseline's (equal passes);
+  - SFace ≥ the baseline's − 0.02 (exactly −0.02 passes);
+  - `jump_ratio` **under** 1.5 × the baseline's (exactly 1.5x fails).
+  If the baseline's saturation rise is zero or negative, the record says how the 25% clause was read; that reading
+  must not let a rise larger than the baseline's pass.
+- The verdict follows: MA passes → the record says so and names a full run as a new question for Don (no full run
+  exists, M-F449). M passes the same rules (against the baseline, the "no larger than M's" clause dropped) and MA
+  doesn't → the record says "the masked keystone helps, the attention doesn't". Neither passes → it says so.
+It is a **finding** if a measure is missing from any column, if sharpness is given as a signed rise, if the verdict
+doesn't follow from the numbers under the rules above, or if a pass is presented as more than a reason for a full run.
+cleanup: none.
+metrics: none.
+
+### M-F455 — the #1505 takes re-measure: `analyze_seams` jump_ratios and frame counts match the record, and no still keystone frame shows at the cut
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: `assess_output` and reads only.
+Steps: for every take the record measures (step 1; and baseline, M, MA if step 2 ran): `get_job(workspace="bench")`
+for the output path; `get_gallery_metadata` on it; `assess_output(name=<output>, probe="analyze_seams",
+workspace="bench")`; `get_output_frames` at the seg01/02 seam frame the record names and the two frames either side.
+expected:
+- Each take's frame count, duration and fps in the record match `get_gallery_metadata`. The joined take's frame count
+  is seg01's plus seg02's minus the held count the record states (held frames dropped at the join, as #1322).
+- Each seam-1 `jump_ratio` from `assess_output` agrees with the record within 5% (0.02 absolute where the value is
+  under 0.4).
+- The frames at the seam show motion continuing across it: no frozen still keystone frame, no repeated frame, no pop
+  to a different exposure at the cut.
+It is a **finding** if a frame count disagrees, a `jump_ratio` falls outside the tolerance, or a still keystone or
+duplicated frame shows at the seam.
+cleanup: none.
+metrics: none.
+
+### M-F456 — the #1505 probe adds no surface: no masked-keystone catalog entry, no new tool or argument, and the workflows guide unchanged on keystone attention
+pending: #1506
+source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
+Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_schema("pipelines")` searched for
+`experimental_keystone_attention`; `get_guide("workflows", section="experimental_keystone_attention")`.
+expected:
+- No catalog workflow is named `masked-keystone-*` (the probe's files are bench files, not templates).
+- `experimental_keystone_attention` keeps its M-F375 fields and defaults, no new field; the guide line M-F381 checks is
+  as M-F381 expects (still experimental, flag-gated).
+It is a **finding** if a masked-keystone template appears, if the attention argument gained or changed a field, or if
+the guide line changed (the plan owes no guide change).
+cleanup: none.
+metrics: none.
+
 ## Performance
