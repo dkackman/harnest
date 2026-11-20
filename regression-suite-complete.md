@@ -9349,13 +9349,13 @@ Free, and validate only. Needs `asset:qa-cast/priya-portrait.jpg`.
    `continuity` set to `"guide"` (edit the document from `get_workflow` and re-save it whole).
    `validate_workflow(name="c-f308-guide", arguments={"image": "asset:qa-cast/priya-portrait.jpg"})`.
 expected:
-- (1) The variables include `continuity`, defaulting to `"last_frame"`, and `guide_frames`,
-  defaulting to `22`. A default of `"guide"` before Don rules on the A/B (C-F311) is a finding.
+- (1) The variables include `continuity`, defaulting to `"guide"` (since #1202), and `guide_frames`,
+  defaulting to `22`. A default of `"last_frame"` is a finding.
 - (2) a-f are all `valid: true` with a `plan.estimate`. No error names `trim_frames`: the template
   sets `trim_frames: 2` itself, and under `"guide"` it is ignored, not refused. A validate-time
   note that `trim_frames` is ignored is welcome but not required. `crossfade_ms: 80` is also set
   by the template and must not be refused.
-- f's `plan` matches today's `last_frame` plan for the template.
+- f's `plan` matches the template's default `guide` plan (since #1202).
 - (3) `valid: true`. `carry_audio: false` is honoured (a video-only guide), not refused.
 It is a **finding** if any variant is refused. A refusal of a or b says the default or 22 isn't
 wired; of c, that 39 isn't allowed; of the template's own `trim_frames`, that the template is
