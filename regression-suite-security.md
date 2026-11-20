@@ -204,16 +204,27 @@ places these live, confirmed against the live schema 2026-09-13:
 `pipeline.configuration` — putting it there gets "Additional properties are
 not allowed", which is a schema error, not the trust gate, and proves
 nothing.
-Expect `validate_workflow` to return `valid: true` for all of these —
-dotted names are resolved at load, not at validation — so the run is the
-real test, not an escalation.
+Since #345 `validate_workflow` refuses these itself: expect `valid: false`,
+with the trust-gate message at the type's own path
+(`steps[0].pipeline.configuration.component_type`,
+`steps[0].pipeline.scheduler.configuration.scheduler_type`). Validation is
+not the boundary, though, since a consumer need not call it: submit each
+probe with `run_workflow` as well (`acknowledged_cost=true`; a refused
+validate returns no plan to bind). The submit is refused with the same
+message and queues no job.
 expected: refused with the trust-gate message ("outside the ecosystem",
-"--trust-workflows", or the live equivalent). Fail if validation passes
-*and* the job fails only at load with an import/attribute error on the
-probe name (it was imported), or if the job runs.
+"--trust-workflows", or the live equivalent) at validate and again at
+submit, with no new job in `list_jobs`. Fail if either call lets a probe
+through. If a job is queued, the run-time gate is what is left and the
+original test applies to it: fail if the job fails only at load with an
+import/attribute error on the probe name (it was imported), or if the job
+runs.
 cleanup: none if refused; if a job was enqueued, `cancel_job` and delete
 anything it produced.
 source: harness, initial security suite 2026-09-13.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): the refusal is
+expected at validate (#345) and at submit, no longer only at load; the
+run-time fail conditions stay for a probe that gets a job.
 
 ### SE-F003 — `pre_load_modules` outside the ecosystem is refused
 Inline workflow with `pre_load_modules: ["subprocess"]` (harmless if
@@ -1257,7 +1268,6 @@ cleanup: `delete_output(job_id=...)` for any job.
 metrics: none.
 
 ### SE-F060 — `stills_to_video.images`, `analyze_face_drift.video`/`reference` and their templates' variables hold the media path gate at validate time
-pending: #1146
 source: tester, spec for #1144 and #1146 from #1141's plan v1 (claude-opus-5-5 via anthropic)
 #1144 adds `stills_to_video`, which reads a list of stills (a list argument, so each item is a path),
 and #1146 adds `analyze_face_drift`, which reads a `video` and a `reference` image; #1145's `animatic`
@@ -1742,11 +1752,16 @@ the trust checks over the definition as a pre-flight, ahead of the marker.
 This case pins both halves of that, because each alone is satisfiable by a bug:
 expected:
 - **The refusal side.** Re-run the SE-F005 probe (`trust_remote_code: true`) and
-  the SE-F006 probe (`custom_pipeline: "lpw_stable_diffusion"`). Each job's full
-  `get_job_events` contains **no `phase` event at all** — not merely no `loading`
-  one. The events are the three `job_status` transitions and any `memory` events,
-  and nothing else: no log lines, `run_start`, `workflow_start` or `step_start`,
-  because since #1333 the refusal comes before run setup.
+  the SE-F006 probe (`custom_pipeline: "lpw_stable_diffusion"`) with `run_workflow`.
+  Since #1410 each is refused at submit, with the trust-gate message naming its key
+  at `steps[0].pipeline`, and **no job is created** (`list_jobs` shows none for it):
+  there are no events at all, so no `phase` event. `validate_workflow` on the same
+  workflow gives `valid: false` with the same message. If a probe does get a job,
+  the refusal has moved back to run time, which is a finding here; that job's full
+  `get_job_events` must still contain **no `phase` event at all** — not merely no
+  `loading` one. Its events are the three `job_status` transitions and any `memory`
+  events, and nothing else: no log lines, `run_start`, `workflow_start` or
+  `step_start`, because since #1333 the run-time refusal comes before run setup.
 - **The control, which is the half that matters.** A *legitimate* pipeline job —
   any small real load; `templates/text-to-image` or an inline SD 1.5 step with no
   trust flags — **does** emit `phase: "loading"` with the model named in `detail`,
@@ -1754,15 +1769,18 @@ expected:
   `loading` stops being emitted anywhere, which is the obvious way a
   "move the marker" change regresses and would leave SE-F005/F006/SE-P001 unable
   to detect a late refusal ever again.
-- The refusal's traceback shows the check reached from the worker's pre-flight
+- A refusal at submit has no job and so no traceback: the tool error is the refusal
+  message alone, with no stack frames. For a refusal that does get a job, its
+  traceback shows the check reached from the worker's pre-flight
   (`_prepare_workflow` → `workflow_run.require_trusted_pipelines` →
   `trust.require_trusted_block`, #1333), i.e. before the run is even set up. A traceback that
   moves back inside `load()`/`load_component` means the pre-flight was lost and
   only the in-load gate is left — still safe, but the evidence is gone again.
-It is a **finding** if a refusal acquires any phase event, if a legitimate load
-stops emitting `loading`, or if the refusal message or its timing band changes
+It is a **finding** if a refusal acquires a job or any phase event, if a legitimate
+load stops emitting `loading`, or if the refusal message or its timing band changes
 (SE-P001 owns the number; this case owns the events).
-cleanup: the refusals write no media and, since #1333, normally no run directory
+cleanup: the refusals create no job and write nothing. If one does create a job, it
+writes no media and, since #1333, normally no run directory
 (`run_dir: null`). If a refusal's job does report a `run_dir`, remove it with
 `delete_output("<workflow id>/<run id>")` — the run-directory form, which is
 the only thing that reaches a run that failed before writing media (#134). Delete
@@ -1774,6 +1792,9 @@ phase among them; control job `3a1545cc713c` emitted `loading` at `seq 9, at
 0.7s`). Filed as a new case rather than as an edit to SE-F005 because no agent
 may rewrite an existing case — the implementer offered the amendment in #137's
 hand-off and this is the form the suite's own "Removing a case" rule allows.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): since #1410 both probes
+are refused at submit with no job, so the refusal side expects no job; the event and
+traceback expectations stay for a refusal that reaches the worker.
 
 ### SE-F029 — the *shared* asset library enforces the same name containment
 SE-F012 and SE-F025(d) pin `asset_name` against the workspace's own library
@@ -1910,7 +1931,6 @@ Jobs: warm `55477458b7db`, SE-F005 refusal `cfd3c24ffff4` (0.079 s, 4 events), S
 `e1bdbd51e83e`, repeat `d85d7772bea1` (`load_cached: true`).
 
 ### SE-F065 — admitting `diffusers.models.` for the LTX2 condition dataclasses admits no other class there
-pending: #1341
 source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**. The plan: if diffusers 0.43 moved `LTX2VideoCondition` / `LTX2ReferenceCondition` under
 `diffusers.models`, the trust gate admits that prefix "for dataclasses only". This case applies only if the stage B
@@ -2228,15 +2248,26 @@ load has already spent the resources it was supposed to protect.
 Time `run_workflow` for the SE-F005 probe (`trust_remote_code`), measured from
 call to the refusal being visible (`get_job` terminal, if a job was even
 created).
-Measure the **job's own** time (`finished_at - started_at` from `get_job`),
-not the agent's call-to-answer wall clock — the latter is dominated by MCP
-round trips and this agent's own tool overhead (~3–4 s), which would swamp
+Since #1410 the probe is refused at submit and no job is created: the refusal
+comes before any load, and there is no job time to read. Time the
+`run_workflow` call itself then, as consumer-side wall clock between two `date`
+readings (`condition: wall`). That figure is mostly MCP round trips and this
+agent's own tool overhead (~3–4 s), so it is a "nothing pathological" bound and
+is never compared with the run-to-refusal readings or their baseline.
+If a job is created, measure the **job's own** time (`finished_at - started_at`
+from `get_job`), not the agent's call-to-answer wall clock, which would swamp
 a sub-second refusal.
 baseline: run-to-refusal (SE-F005 probe) < 2 s. Set from the 2026-09-13 first run; revisit deliberately, don't drift.
-Log the run-to-refusal figure (`condition: run-to-refusal`) to
-`regression-perf/SE-P001.jsonl`; every code-gate refusal has landed between
+The baseline is for a job's own time; the `wall` condition has none, and its log is its
+baseline.
+Log the figure under its own condition (`condition: wall` for a refusal at submit,
+`condition: run-to-refusal` for a job's own time) to
+`regression-perf/SE-P001.jsonl`; every code-gate refusal that ran as a job landed between
 1.2 and 1.9 s (regression-perf/SE-P001.jsonl, 2026-09-14 to 09-22), most of
 it the 'releasing cached models' step before `run_start`. A refusal that acquires a `loading` phase in its events is the
 regression, whatever the number says.
 cleanup: as the referenced cases.
 source: harness, initial security suite 2026-09-13.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): since #1410 the probe is
+refused at submit with no job, so the timing is the call's wall clock; the job-time
+measurement and its baseline stay for a refusal that creates a job.

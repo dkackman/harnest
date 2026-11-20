@@ -113,8 +113,8 @@ nothing uses it anymore.
   validate-only call. They are read-only and never deleted.
 - `asset:qa-cast/priya-portrait.jpg` and `asset:qa-cast/hal-portrait.jpg`: two stills in
   the shared asset library. S-F128 binds them to `templates/ltx2/keyframes` in validate-only
-  calls, so only their existence matters. Any two images substitute. Read-only, never
-  deleted.
+  calls, so only their existence matters. Any two images substitute. S-F147 names the first
+  as its image reference, also validate-only. Read-only, never deleted.
 - `asset:qa-cast/priya-voice.wav`: about 6 s of speech in the shared asset library.
   S-F131 transcribes it with word and segment timestamps. Any short spoken clip under 30 s
   substitutes. Read-only, never deleted.
@@ -400,13 +400,22 @@ expected: three independent assertions, each a default call and its drill-down.
    list-driven) `lists` again. Both directions matter: a summary that never
    expands is as broken as a default that never summarises.
 metrics: `bytes` of 1 (`condition: guide-index`) and of 3's summary answer
-(`condition: catalog-summary`), logged to `regression-perf/S-F015.jsonl` — the
+(`condition: catalog-summary-delivered`), logged to `regression-perf/S-F015.jsonl` — the
 point of #101 was the number, and a slow creep back up is what this case exists
 to catch, so those two are compared against their history per the regression
-agent's rule as well as against the ceilings here: guide index under 3 KB (above),
-catalog summary under **20 KB** (~12 KB at 71 entries; a catalog that has
-legitimately outgrown that is a `baseline:`-style needs-approval ask, not a
-silent edit). Also log `get_schema()`'s full size (`condition: schema-full`) for
+agent's rule as well as against the ceilings here: guide index under 3 KB (above);
+catalog summary: measure, do not estimate - use the size of the `list_workflows()`
+reply as delivered (the harness's saved-result / `< N chars` figure), and log that
+number. Two ceilings: (a) **250 B per entry** as delivered (size / number of
+`details` entries; 219 B/entry at 118 entries on 2026-11-20) - exceeding it means
+entries got fatter, which is the regression this case exists to catch, and is a
+finding; (b) **32 KB total** as delivered (25.9 KB at 118 entries) - exceeding it
+with (a) still met means the catalog has outgrown the summary form: file a normal dw
+ticket asking for a smaller default answer, not a suite request to raise the number
+again. The delivered size has its own `condition` because the `catalog-summary`
+readings logged up to 2026-11-20 were estimates: they are not comparable with a
+measured size and are never pooled with it. (Amended per dkackman/harnest#269: Don,
+2026-11-20, 0.21.0 release.) Also log `get_schema()`'s full size (`condition: schema-full`) for
 the trend, but no ceiling on it: it's on-request, and its size is the schema's
 honest size — the guard against it is `section=`, which item 2 already checks.
 Note `view`/`note` are absent rather than `view: "full"` on the filtered answer —
@@ -452,8 +461,8 @@ does nothing. Free and instant — no run.
 expected: four `validate_workflow` probes on inline one-step workflows.
 (a) Top level carrying `"sedd": 42` and `"varaibles": {}` → `valid: false`, **one**
 error at root (`path: null`) naming both keys and listing the legal set
-(`configures, cost, cost_drivers, description, id, seed, shape, steps, summary,
-traits, variable_constraints, variables, vram_estimate`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
+(`configures, cost, cost_drivers, description, host_ram_gb, id, presets, seed, shape,
+steps, summary, traits, variable_constraints, variables, vram_estimate`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
 `valid: false` at `steps[0].result` naming `subfoldr` and listing `subfolder`
 among the legal set. (c) `pipeline_type` and `model_name` written at **pipeline
 level** (they belong inside `configuration` / `from_pretrained_arguments`) →
@@ -484,6 +493,8 @@ source: tester, verified in #123 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3. Labelled
 `breaking-change` on the fix: a workflow carrying a dead key validated before it
 and does not after.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): the legal root set gains
+`presets` (#1203) and `host_ram_gb` (#1227).
 
 ### S-F019 — an input asset's own duration/fps/sample_rate is readable before a run
 A workflow's `total_frames`, `fps` and `sample_rate` are arguments the *caller*
@@ -1266,8 +1277,13 @@ Cheap — two deliberate failures on SD 1.5, ~6 s and ~2 s, no successful run ne
    second or two after the `generating` phase event.
 2. `wait_for_job`, then `get_job` on it at least a few seconds later.
 3. Same definition with `model_name` pointing at a repo that does not exist (e.g.
-   `stable-diffusion-v1-5/does-not-exist-qa269`; validate lists it under `downloads_required`
-   and the bound acknowledgement must name it). Fails in the load, offline.
+   `stable-diffusion-v1-5/does-not-exist-qa269`). Since #1201 validate answers `valid: false`
+   for it, with one error at `model_name` saying the repo "is not a model repo on Hugging
+   Face", and still returns the `plan`: the repo is listed under `downloads_required` with
+   `not_found: true`, and the bound acknowledgement must name it. (A hub lookup that is
+   offline or times out leaves the entry unknown and the answer `valid: true`, as before; that
+   is not a finding.) Validate's refusal does not stop the submit: run it anyway, since the
+   failed job is what this step is for. Fails in the load, offline.
 4. `wait_for_job` on that one.
 expected:
 - Step 2: `status: "failed"`, `manifest: []`, and `progress` **present** on both calls:
@@ -1293,6 +1309,9 @@ source: tester, verified in #269 on 2026-09-21 over MCP as model `opus` via prov
 `generating` at `at: 4.8`, `seconds_in_phase: 1.4` on both `wait_for_job` and a later
 `get_job`; job `c4dd43dd0787` failed loading with `progress.phase: "loading"`,
 `seconds_in_phase: 0.9`. Case proposed by the implementer in its hand-off comment.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): step 3's validate answer follows
+#1201 (a `model_name` the hub does not have is `valid: false`, no longer a plain
+`downloads_required` entry); the run and its expectations are unchanged.
 
 ### S-F082 — the step cache's workspace scoping is documented, and a plan names the workspace it was evaluated in
 #279: `validate_workflow(workspace=A)` reported `cached_steps: 1` and `workspace=B` reported
@@ -1798,22 +1817,28 @@ provider `anthropic` against `develop @ 4aaeef7` (jobs `543804adb1fe`, `fd892682
 `32398232dba4`, run in `default`; the pinned half, `templates/ltx2/text-to-video` realizing
 42 and taking `new_seed`, was also checked but is too slow for smoke).
 
-### S-F118 — `export_job` doesn't send an MCP-only agent to fetch a token-gated zip, and a mounted `download_output` with no destination is refused
+### S-F118 — `export_job` reports its zip's own gating and tells the agent to fetch it, and a mounted `download_output` with no destination is refused
 Before #353, `export_job` told the agent to "fetch the zip URL and unpack it". The URL was
 relative and sat behind the server's bearer token, which the agent can't attach. A mounted
 `download_output` with no `destination` wrote the file loose in the workspace root, where
-no delete tool reaches. Cheap: one ~1 s utility job, no model load.
+no delete tool reaches. Since #592/#595 the zip route is ungated like `/outputs`, so
+`export_job`'s `auth_required` is `false` even on a server whose `get_server_info` reports
+`auth_required: true`. The two fields answer different questions: zip gated vs server has a
+token. Cheap: one ~1 s utility job, no model load.
 Workflow: the S-F114 inline `resample_audio` on `asset:qa-cast/ep11-bed.wav`. Validate it,
 then `run_workflow(..., workspace="regression-smoke", acknowledged_cost=<plan>,
 wait_seconds=55)` → `succeeded`. Its output name is `<name>`.
 expected:
 - The **served tool descriptions** (the schemas as loaded):
-  - `export_job`'s makes fetching conditional on `auth_required`, and says to hand
-    `open_url` to the person when it is true.
+  - `export_job`'s says `open_url` needs no token and to fetch it, with handing `open_url`
+    to the person only as the no-HTTP fallback, and keeps `auth_required: true` as the
+    hand-over case.
   - `download_output`'s says a `dw.serve --mcp` endpoint requires `destination`.
-- `export_job(job_id=<job>)` returns `zip_url`/`open_url` and `auth_required`.
-  - When `auth_required` is `true`, `next` tells the agent to hand `open_url` to the
-    person and not fetch it.
+- `export_job(job_id=<job>)` returns `zip_url`/`open_url` and `auth_required: false`;
+  `next` tells the agent to fetch `open_url` (prefixing a relative one with the server
+  address).
+  - Only if `auth_required` is ever `true` must `next` say to hand `open_url` to the
+    person and not fetch.
   - With DW_PUBLIC_URL unset, the **`absolute_zip_url` key is absent**, not null, and
     `list_gallery` entries carry `url` and no `absolute_url`. If the server has one
     configured, the key is present and equals that base URL + `zip_url`.
@@ -1823,8 +1848,11 @@ expected:
 - `download_output(name=<name>, destination="outputs/regsmoke-f118/r1/")` → `saved_to`
   ends in `outputs/regsmoke-f118/r1/<file>`, bytes > 0. After that,
   `delete_output(name="regsmoke-f118/r1/<file>")` → `deleted: true`.
-It is a **finding** if either description tells the agent to fetch unconditionally or to
-omit `destination`. It is also a finding if `absolute_zip_url` comes back as `null`, or
+It is a **finding** if `auth_required` is `true` while the zip opens without a token, if
+`next` or the description says "do not fetch" while `auth_required` is `false`, or if
+`download_output`'s description tells the agent to omit `destination`.
+`export_job.auth_required: false` beside `get_server_info.auth_required: true` is not a
+finding (C-F180). It is also a finding if `absolute_zip_url` comes back as `null`, or
 if the no-destination call succeeds, wherever the file lands.
 cleanup: `delete_output(job_id=<job>)`, plus the downloaded copy as above. The export
 directory (`exports/<job id>`, a few KB) stays on the server because no MCP tool removes
@@ -1834,6 +1862,9 @@ source: tester, verified in #353 on 2026-09-23 over MCP as model `claude-opus-5-
 provider `anthropic` against `develop @ 4aaeef7` (export of `ef9c0e9cc3ff` and a
 download/delete of a `templates/restore-faces` output in `default`, not the resample job
 above; the DW_PUBLIC_URL-set path is untested, since that is server config).
+Amended 2026-11-20 (dkackman/harnest#270, approved by Don): the `export_job` expectations
+follow #592/#595, which made `auth_required` report the zip route's own gating; they were
+written for #353 and contradicted C-F180.
 
 ### S-F119 — gallery reads take an `output:`-prefixed name, and `list_gallery(media=true)` carries duration
 You need one audio or video output in the workspace. S-F007's final wav works if you run
@@ -2544,20 +2575,24 @@ An H3 `MiniMaxH3VideoReference` must run a minimum number of frames, which comes
 diffusers' encoder. Validation used to pass a shorter one, so it failed only at run time, after
 the chain's earlier steps had spent their GPU time (#1422). Free apart from one short
 utility job. `<vid>` is a video asset at 24 fps with at least 113 frames.
-Verification used `asset:qa-cast/priya-hal-two-shot.mp4` (121 frames) and the image
-`asset:uploads/cast/loki.jpg` as `<img>`. `<H3>` is a `pipeline` step with
+Verification used `asset:qa-cast/priya-hal-two-shot.mp4` (121 frames). `<img>` is any image
+asset: use `asset:qa-cast/priya-portrait.jpg` (Fixtures). `<H3>` is a `pipeline` step with
 `from_pretrained_arguments={"model_name": "MiniMaxAI/MiniMax-H3", "workflow": "ref2va"}`,
 `configuration={"component_type": "ModularPipeline"}`, `num_frames` 124, 960x544, 9 steps,
 `output: ["videos","audio","sampling_rate"]`, and
-`references: [{MiniMaxH3ImageReference, from_file: <img>}, <video ref>]`.
+`references: [{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": <img>}, <video ref>]`.
+The key is `reference_type` and the value is the full dotted path; an entry spelled any other
+way is not a reference and is not measured.
 1. Inline workflow: step `window` =
    `trim_video(video=<vid>, start_frame=100, num_frames="variable:num_window")`, then `<H3>` with
-   `<video ref>` = `{MiniMaxH3VideoReference, from_previous_result: "window", audio: null}`.
+   `<video ref>` =
+   `{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_previous_result": "window", "audio": null}`.
    `validate_workflow` it with `arguments={"num_window": 5}`, then `12`, then `13`.
 2. The same workflow with literal `num_frames: 5, pad_to: 13` in the trim step.
 3. Run a task-only workflow, `trim_video(video=<vid>, start_frame=100, num_frames=5)`, which
    writes `<short>`. Then validate a single `<H3>` step with `<video ref>` =
-   `{MiniMaxH3VideoReference, from_file: "output:<short>"}`, and again with `from_file: <vid>`.
+   `{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_file": "output:<short>"}`,
+   and again with `"from_file": <vid>`.
 expected:
 - Step 1: `5` and `12` give `valid: false` at `steps[1].pipeline.arguments.references[1]`. The
   message is the encoder's own and gives the minimum. Today's reads `...must run at least 13
@@ -2574,6 +2609,9 @@ cleanup: `delete_output(job_id=<step 3's job>)`.
 metrics: none.
 source: tester, verified in #1422 on 2026-11-17 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 7c2c39c9` on `mini-ai` (mps).
+Amended 2026-11-20 (dkackman/harnest#272, approved by Don): the reference entries are spelled
+out with `reference_type` and the full dotted path, and `<img>` names a fixture asset (the
+verification's `asset:uploads/cast/loki.jpg` is not on lem).
 
 ## Performance
 
