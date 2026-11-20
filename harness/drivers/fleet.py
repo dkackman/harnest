@@ -310,9 +310,10 @@ class ServerRun:
         self.head = "unknown"
         mcp = fleet.profile.get("mcp.name", "dw")
         self.plugin_tree = Path(os.path.expanduser(fleet.profile.get("clones.plugin") + server.clone_suffix))
+        mcp_path = session.mcp_config(mcp, self.url, self.token)
         self.flags = [
             "--mcp-config",
-            session.mcp_config(mcp, self.url, self.token),
+            mcp_path,
             "--strict-mcp-config",
             "--plugin-dir",
             str(self.plugin_tree / fleet.profile.get("clones.plugin_subdir", "plugins/dw")),
@@ -321,10 +322,16 @@ class ServerRun:
             session.CONSUMER_TOOLS,
             *session.consumer_permission_flags(mcp, fleet.profile.get("mcp.deny_tools", ())),
         ]
+        # guard.py reads the HARNEST_ ones. The web UI runner (tools/ui-check)
+        # takes its origin from DW_URL and the UI's bearer token from the MCP
+        # config file (the path, never the token), as in drivers/regression.py:
+        # without them it fails closed and every UI case is skipped.
         self.session_env = {
             "HARNEST_TARGET": server.name,
             "HARNEST_ROLE": "regression",
             "HARNEST_TICKET_REPO": fleet.ticket_repo,
+            "DW_URL": self.url,
+            "HARNEST_MCP_CONFIG": mcp_path,
         }
 
 

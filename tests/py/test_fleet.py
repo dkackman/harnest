@@ -814,3 +814,34 @@ class Watchdog(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class ServerRunEnv(unittest.TestCase):
+    """A fleet session gets what the web UI runner reads, as a regression
+    session does: without DW_URL and the MCP config path, tools/ui-check fails
+    closed and every UI case is skipped (found at 0.21.0 release prep)."""
+
+    def test_the_session_env_names_the_server_and_its_mcp_config(self):
+        from unittest import mock
+
+        profile = {"mcp.name": "dw", "clones.plugin": "/tmp/plugin", "mcp.deny_tools": ()}
+        with tempfile.TemporaryDirectory() as d:
+            owner = type(
+                "F",
+                (),
+                {
+                    "logs": Path(d),
+                    "ticket_repo": "o/r",
+                    "profile": type("P", (), {"get": staticmethod(lambda k, default=None: profile.get(k, default))})(),
+                },
+            )()
+            facts_ = type("X", (), {"device": "cuda", "hostname": "lem"})()
+            with (
+                mock.patch.object(fleet, "resolve_url", lambda s: "http://lem:8765"),
+                mock.patch.object(fleet, "resolve_token", lambda s: "t"),
+                mock.patch.object(fleet.session, "mcp_config", lambda name, url, token: "/x/mcp.json"),
+            ):
+                run = fleet.ServerRun(owner, srv("lem", primary=True), facts_)
+        self.assertEqual("http://lem:8765", run.session_env["DW_URL"])
+        self.assertEqual("/x/mcp.json", run.session_env["HARNEST_MCP_CONFIG"])
+        self.assertEqual("/x/mcp.json", run.flags[run.flags.index("--mcp-config") + 1])
