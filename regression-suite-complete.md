@@ -26385,7 +26385,6 @@ cleanup: cancel any job still queued; `delete_workspace(name="cf1138-req", ackno
 metrics: none.
 
 ### C-F1139 — the storyboard skill opens a request for a three-board ask, links every run, and the request ends done
-pending: #1484
 source: tester, spec for #1484 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Cost: three (or, with re-rolls, a few more) `templates/text-to-image` runs. Setup: `create_workspace(name=
 "cf1139-req")`, `workspace=` on every call. Load the `dw:storyboard` skill and follow its request step for the ask
@@ -26407,7 +26406,6 @@ cleanup: `delete_workspace(name="cf1139-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1140 — the four adopting skills teach the request step, and keep single-image asks out of it
-pending: #1484
 source: tester, spec for #1484 from #1458's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. Load each of `dw:storyboard`, `dw:long-form`, `dw:script-to-video` and `dw:series-episodes` (with any
 reference file each names for its shot list).
