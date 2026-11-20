@@ -622,6 +622,48 @@ class StallTest(unittest.TestCase):
         self.assertTrue(os.path.exists(lp.state.path))
 
 
+class IdleBackoffTest(unittest.TestCase):
+    """While only Don's decisions are left, housekeeping backs off but the
+    board is still read every LOOP_POLL_SECS, so a hand-back starts within a
+    poll (a hand-back once waited up to SLEEP_MAX_SECS)."""
+
+    def backed_off(self):
+        lp = mk(LOOP_POLL_SECS=60, SLEEP_MAX_SECS=1800)
+        lp.idle_secs = 1800
+        now = time.monotonic()
+        lp.snap_last = lp.hk_last = now - 61
+        lp.need_snapshot = False
+        lp.hk_busy = False
+        return lp, now
+
+    def test_the_board_is_read_every_poll_while_backed_off(self):
+        lp, now = self.backed_off()
+        self.assertTrue(lp.snapshot_due(now))
+        self.assertFalse(lp.hk_due(now))
+
+    def test_housekeeping_runs_at_the_backed_off_interval(self):
+        lp, now = self.backed_off()
+        lp.hk_last = now - 1801
+        self.assertTrue(lp.hk_due(now))
+
+    def test_a_changed_board_ends_the_backoff(self):
+        lp, _ = self.backed_off()
+        lp.prev_rows = {"lem": []}
+        with mock.patch.object(
+            loop.board, "snapshot", return_value=[loop.board.Row(1504, "implementer:fix", None, "ready")]
+        ):
+            lp.snapshot()
+        self.assertEqual(lp.idle_secs, lp.poll)
+        self.assertTrue(lp.hk_due(time.monotonic()))
+
+    def test_an_unchanged_board_keeps_the_backoff(self):
+        lp, _ = self.backed_off()
+        lp.prev_rows = {"lem": []}
+        with mock.patch.object(loop.board, "snapshot", return_value=[]):
+            lp.snapshot()
+        self.assertEqual(lp.idle_secs, 1800)
+
+
 class MinorTest(unittest.TestCase):
     def test_a_cooling_closures_does_not_block_the_task(self):
         lp = mk(TESTER_TASK_GAP_SECS=0)

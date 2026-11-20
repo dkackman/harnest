@@ -1552,9 +1552,18 @@ class Loop:
                 os.killpg(p.pid, signal.SIGTERM)
 
     def interval(self):
-        """The poll interval: LOOP_POLL_SECS, backed off (to SLEEP_MAX_SECS)
-        while nothing runs and only Don's decisions are left."""
+        """The housekeeping interval: LOOP_POLL_SECS, backed off (to
+        SLEEP_MAX_SECS) while nothing runs and only Don's decisions are left."""
         return self.poll if self.running else self.idle_secs
+
+    def snapshot_due(self, now):
+        """The board is read every LOOP_POLL_SECS, backed off or not: a hand-back
+        while only Don's decisions were left changes the rows, which resets the
+        backoff (snapshot), so it starts within a poll, not SLEEP_MAX_SECS."""
+        return self.need_snapshot or now - self.snap_last >= self.poll
+
+    def hk_due(self, now):
+        return now - self.hk_last >= self.interval() and not self.hk_busy
 
     def quiet(self):
         """Nothing running, and nothing waiting that will start by itself."""
@@ -1638,9 +1647,8 @@ class Loop:
 
     def loop(self):
         while True:
-            interval = self.interval()
-            self.wake_interval = interval
-            timeout = max(0.05, interval - (time.monotonic() - self.snap_last))
+            self.wake_interval = self.poll
+            timeout = max(0.05, self.poll - (time.monotonic() - self.snap_last))
             if self.paused_until:
                 timeout = min(timeout, max(0.05, self.paused_until - time.time()))
             for srv in self.active():
@@ -1681,13 +1689,13 @@ class Loop:
             if not self.active():
                 self.say("[loop] no server left to drive")
                 return 0
-            interval = self.interval()
-            polled = False
-            if self.need_snapshot or time.monotonic() - self.snap_last >= interval:
+            polled = hk = False
+            if self.snapshot_due(time.monotonic()):
                 self.snapshot()
                 polled = True
-            if time.monotonic() - self.hk_last >= interval and not self.hk_busy:
+            if self.hk_due(time.monotonic()):
                 self.start_hk()
+                hk = True
             self.deploy_check()
             self.nightly_check()
             dispatched = self.dispatch()
@@ -1712,7 +1720,8 @@ class Loop:
                     self.say("[loop] drain: nothing left but deferred issues, exiting")
                     return 0
                 if left and all(x in ("don", "away", "done") for x in left) and any(x != "done" for x in left):
-                    self.idle_secs = min(max(self.poll, self.idle_secs * 2), max(self.poll, self.sleep_max))
+                    if hk:  # one doubling per housekeeping pass, not per board read
+                        self.idle_secs = min(max(self.poll, self.idle_secs * 2), max(self.poll, self.sleep_max))
                 else:
                     self.idle_secs = self.poll
 

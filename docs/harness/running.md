@@ -78,7 +78,9 @@ activity changed it, the next cycle starts immediately. (Whether an agent also a
 regression case in the same cycle isn't part of that check.) When an idle cycle has nothing
 left but issues waiting on Don's decision, the sleep doubles each time, from `SLEEP_SECS` up
 to `SLEEP_MAX_SECS`, and the loop looks at the board every `SLEEP_SECS` meanwhile, so a
-hand-back starts the next cycle at once (`drain_left`, `idle_wait`). A deferred issue
+hand-back starts the next cycle at once (`drain_left`, `idle_wait`). The R17 loop does the
+same: only its housekeeping interval backs off, and it reads the board every
+`LOOP_POLL_SECS`, so a hand-back starts within a poll. A deferred issue
 (`parked`, or parked by dw's stabilization freeze; `lib/classify.jq` starts its `don`
 reason with "deferred") doesn't count as waiting on him.
 
