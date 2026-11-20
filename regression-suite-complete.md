@@ -26546,4 +26546,25 @@ new same-named workspace is a **finding**.
 cleanup: `delete_workspace(name="cf1146-req", acknowledged_cost=true)`.
 metrics: none.
 
+### C-F1147 — the gallery filters to one request item: `req=<id>/<item>` on the hash and `item` on `/api/gallery`
+source: tester, verified in #1483 (claude-opus-5-5 via anthropic)
+Two tiny image jobs plus one unlinked one. **Web UI, black-box**, through `ui-check`. Setup: `create_workspace("cf1147-req")`;
+`set_request` a request `demo` with items `a` and `b`; run one cheap image workflow (e.g. a `qr_code` utility chain)
+three times with `workspace="cf1147-req"`: once with `request="demo/a"`, once with `request="demo/b"`, once unlinked.
+(1) `fetch` `/api/gallery?limit=100&request=demo&item=a&workspace=cf1147-req`, then the same with `item=b`, then
+`item=a` with no `request`, then `request=demo&item=Bad%2Fkey`. (2) `record **/api/gallery**`, then
+`goto /#/ws/cf1147-req/gallery?req=demo/a`. (3) `goto` `...gallery?req=demo/zzz`. (4) Back on `req=demo/a`, click
+the chip's Remove button.
+expected:
+- (1) `item=a` and `item=b` each return 200 with `total: 1`, that item's own file only. `item` without `request` is
+  422 `item needs request`; the bad key is a 422 naming the key rule.
+- (2) the hash keeps `req=demo%2Fa` (not rewritten to `req=demo`); the chip reads `demo › a` and links to the
+  request's page; the page shows one file; the recorded call carries both `request=demo` and `item=a`.
+- (3) the empty state says the request filter matched nothing (no "Nothing generated yet").
+- (4) the chip goes and all three files show.
+No page errors. A gallery showing both items' files under `req=demo/a`, a server ignoring `item`, or a hash
+rewritten to drop the item is a **finding**.
+cleanup: `delete_workspace(name="cf1147-req", acknowledged_cost=true)`.
+metrics: none.
+
 ## Performance
