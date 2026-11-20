@@ -1807,22 +1807,28 @@ provider `anthropic` against `develop @ 4aaeef7` (jobs `543804adb1fe`, `fd892682
 `32398232dba4`, run in `default`; the pinned half, `templates/ltx2/text-to-video` realizing
 42 and taking `new_seed`, was also checked but is too slow for smoke).
 
-### S-F118 — `export_job` doesn't send an MCP-only agent to fetch a token-gated zip, and a mounted `download_output` with no destination is refused
+### S-F118 — `export_job` reports its zip's own gating and tells the agent to fetch it, and a mounted `download_output` with no destination is refused
 Before #353, `export_job` told the agent to "fetch the zip URL and unpack it". The URL was
 relative and sat behind the server's bearer token, which the agent can't attach. A mounted
 `download_output` with no `destination` wrote the file loose in the workspace root, where
-no delete tool reaches. Cheap: one ~1 s utility job, no model load.
+no delete tool reaches. Since #592/#595 the zip route is ungated like `/outputs`, so
+`export_job`'s `auth_required` is `false` even on a server whose `get_server_info` reports
+`auth_required: true`. The two fields answer different questions: zip gated vs server has a
+token. Cheap: one ~1 s utility job, no model load.
 Workflow: the S-F114 inline `resample_audio` on `asset:qa-cast/ep11-bed.wav`. Validate it,
 then `run_workflow(..., workspace="regression-smoke", acknowledged_cost=<plan>,
 wait_seconds=55)` → `succeeded`. Its output name is `<name>`.
 expected:
 - The **served tool descriptions** (the schemas as loaded):
-  - `export_job`'s makes fetching conditional on `auth_required`, and says to hand
-    `open_url` to the person when it is true.
+  - `export_job`'s says `open_url` needs no token and to fetch it, with handing `open_url`
+    to the person only as the no-HTTP fallback, and keeps `auth_required: true` as the
+    hand-over case.
   - `download_output`'s says a `dw.serve --mcp` endpoint requires `destination`.
-- `export_job(job_id=<job>)` returns `zip_url`/`open_url` and `auth_required`.
-  - When `auth_required` is `true`, `next` tells the agent to hand `open_url` to the
-    person and not fetch it.
+- `export_job(job_id=<job>)` returns `zip_url`/`open_url` and `auth_required: false`;
+  `next` tells the agent to fetch `open_url` (prefixing a relative one with the server
+  address).
+  - Only if `auth_required` is ever `true` must `next` say to hand `open_url` to the
+    person and not fetch.
   - With DW_PUBLIC_URL unset, the **`absolute_zip_url` key is absent**, not null, and
     `list_gallery` entries carry `url` and no `absolute_url`. If the server has one
     configured, the key is present and equals that base URL + `zip_url`.
@@ -1832,8 +1838,11 @@ expected:
 - `download_output(name=<name>, destination="outputs/regsmoke-f118/r1/")` → `saved_to`
   ends in `outputs/regsmoke-f118/r1/<file>`, bytes > 0. After that,
   `delete_output(name="regsmoke-f118/r1/<file>")` → `deleted: true`.
-It is a **finding** if either description tells the agent to fetch unconditionally or to
-omit `destination`. It is also a finding if `absolute_zip_url` comes back as `null`, or
+It is a **finding** if `auth_required` is `true` while the zip opens without a token, if
+`next` or the description says "do not fetch" while `auth_required` is `false`, or if
+`download_output`'s description tells the agent to omit `destination`.
+`export_job.auth_required: false` beside `get_server_info.auth_required: true` is not a
+finding (C-F180). It is also a finding if `absolute_zip_url` comes back as `null`, or
 if the no-destination call succeeds, wherever the file lands.
 cleanup: `delete_output(job_id=<job>)`, plus the downloaded copy as above. The export
 directory (`exports/<job id>`, a few KB) stays on the server because no MCP tool removes
@@ -1843,6 +1852,9 @@ source: tester, verified in #353 on 2026-09-23 over MCP as model `claude-opus-5-
 provider `anthropic` against `develop @ 4aaeef7` (export of `ef9c0e9cc3ff` and a
 download/delete of a `templates/restore-faces` output in `default`, not the resample job
 above; the DW_PUBLIC_URL-set path is untested, since that is server config).
+Amended 2026-11-20 (dkackman/harnest#270, approved by Don): the `export_job` expectations
+follow #592/#595, which made `auth_required` report the zip route's own gating; they were
+written for #353 and contradicted C-F180.
 
 ### S-F119 — gallery reads take an `output:`-prefixed name, and `list_gallery(media=true)` carries duration
 You need one audio or video output in the workspace. S-F007's final wav works if you run
