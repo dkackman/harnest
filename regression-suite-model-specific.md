@@ -11457,7 +11457,8 @@ expected:
   value is quoted in the record with a reason), `guides` equal to the #1394 tail guide (`[{video: <tail01>, frame: 0}]`,
   one entry), and `image`.
 - `image` is #1394 step 1's *bright* probe keystone, and `source_video` is that same keystone frame followed by
-  seg01's tail (from `f835a2292345`'s outputs): its frame count is the tail's plus one, and frame 0 is the keystone.
+  seg01's tail (from `f835a2292345`'s outputs), then padding to the step's `num_frames`: its frame count equals
+  `num_frames`, frame 0 is the keystone, and every padding frame lies under the mask's white (regenerated) frames.
 - `mask_video` is black over the held frames then white, the same frame count as `source_video`; the held count is a
   whole number of latent cells, and the record states the count actually held.
 - No `latents`, no chaining (the step isn't a chain or chained segment), no `experimental_keystone_attention`, no
@@ -11561,7 +11562,9 @@ for the output path; `get_gallery_metadata` on it; `assess_output(name=<output>,
 workspace="bench")`; `get_output_frames` at the seg01/02 seam frame the record names and the two frames either side.
 expected:
 - Each take's frame count, duration and fps in the record match `get_gallery_metadata`. The joined take's frame count
-  is seg01's plus seg02's minus the held count the record states (held frames dropped at the join, as #1322).
+  is the record's `head_frames` plus seg02's frames minus the held count the record states, matching
+  `get_gallery_metadata`'s shot list (head, then seg02 less its held frames), and the record says why `head_frames`
+  is less than seg01's frame count if it is.
 - Each seam-1 `jump_ratio` from `assess_output` agrees with the record within 5% (0.02 absolute where the value is
   under 0.4).
 - The frames at the seam show motion continuing across it: no frozen still keystone frame, no repeated frame, no pop
