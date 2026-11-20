@@ -1,0 +1,1 @@
+{"ts": "2026-11-20T17:55:02Z", "level": "security", "case": "SE-F076", "outcome": "skip", "issue": null, "secs": null, "session": "regression:security.lem-1.4", "head": "develop @ 4df3f2eb", "model": "claude-sonnet-5-5", "server": "lem"}
