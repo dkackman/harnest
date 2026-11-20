@@ -267,6 +267,17 @@ class LoopCard(unittest.TestCase):
             self.assertIn(k, st)
         self.assertIn("loop_run", st["streams"]["lem"])
         self.assertIn("looping", st["streams"]["lem"])
+        self.assertIn("r17", st["streams"]["lem"])
+
+    def test_r17_holder_is_the_loop_pid(self):
+        """A stream whose lock the R17 loop holds drops its bash-era run: its log
+        has no numbered cycles, and the loop card carries the board."""
+        held = {"owner": "4242 run-loop", "alive": True, "since": 0}
+        self.assertTrue(serve._r17_holder(held, {"pid": 4242}))
+        self.assertFalse(serve._r17_holder(held, {"pid": 4243}))
+        self.assertFalse(serve._r17_holder(held, None))
+        self.assertFalse(serve._r17_holder(dict(held, alive=False), {"pid": 4242}))
+        self.assertFalse(serve._r17_holder(None, {"pid": 4242}))
 
     def test_fixtures_have_the_producers_shape(self):
         """A snapshot from LoopState today has the keys the committed files have."""

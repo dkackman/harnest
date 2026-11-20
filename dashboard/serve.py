@@ -867,8 +867,19 @@ def loop_state(path=None, now=None):
     return d
 
 
+def _r17_holder(held, loop):
+    """The lock is held by the R17 loop driver (logs/loop/state.json's pid). Its
+    per-server log is written only while that server runs a session, carries no
+    numbered cycles and no board (the loop card above shows the board), so the
+    stream's run summary and its log age say nothing about the loop's health."""
+    if not held or not held.get("alive") or not isinstance(loop, dict):
+        return False
+    return (held["owner"].split() or [""])[0] == str(loop.get("pid"))
+
+
 def state():
     procs, claude = processes()
+    loop = loop_state()
     streams = {}
     for name, idx in INDEXES.items():
         idx.refresh()
@@ -886,6 +897,9 @@ def state():
         # a restarted loop's first cycle hasn't logged yet, and the log has no dates
         if not looping or (loop_run and _clock_epoch(loop_run["start"], time.time()) < held["since"] - 5):
             loop_run = None
+        r17 = _r17_holder(held, loop)
+        if r17:
+            loop_run = None
         streams[name] = {
             "file": STREAMS[name],
             "mtime": mtime,
@@ -893,7 +907,8 @@ def state():
             "run": run_header,
             "sessions": recent,
             "loop_run": loop_run,
-            "looping": looping,
+            "looping": looping and not r17,
+            "r17": r17,
         }
     flags = sorted(p.name for p in LOGS.glob("stop-after-cycle*"))
     ATTENTION.poke(_loop_key())
@@ -902,7 +917,7 @@ def state():
         "drivers": procs,
         "claude_sessions": claude,
         "streams": streams,
-        "loop": loop_state(),
+        "loop": loop,
         "stop_flags": flags,
         "release": release(),
         "attention": ATTENTION.snapshot(),
