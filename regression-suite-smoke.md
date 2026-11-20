@@ -461,8 +461,8 @@ does nothing. Free and instant — no run.
 expected: four `validate_workflow` probes on inline one-step workflows.
 (a) Top level carrying `"sedd": 42` and `"varaibles": {}` → `valid: false`, **one**
 error at root (`path: null`) naming both keys and listing the legal set
-(`configures, cost, cost_drivers, description, id, seed, shape, steps, summary,
-traits, variable_constraints, variables, vram_estimate`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
+(`configures, cost, cost_drivers, description, host_ram_gb, id, presets, seed, shape,
+steps, summary, traits, variable_constraints, variables, vram_estimate`). (b) `result: {"content_type": "text/plain", "subfoldr": "final"}` →
 `valid: false` at `steps[0].result` naming `subfoldr` and listing `subfolder`
 among the legal set. (c) `pipeline_type` and `model_name` written at **pipeline
 level** (they belong inside `configuration` / `from_pretrained_arguments`) →
@@ -493,6 +493,8 @@ source: tester, verified in #123 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3. Labelled
 `breaking-change` on the fix: a workflow carrying a dead key validated before it
 and does not after.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): the legal root set gains
+`presets` (#1203) and `host_ram_gb` (#1227).
 
 ### S-F019 — an input asset's own duration/fps/sample_rate is readable before a run
 A workflow's `total_frames`, `fps` and `sample_rate` are arguments the *caller*
@@ -1275,8 +1277,13 @@ Cheap — two deliberate failures on SD 1.5, ~6 s and ~2 s, no successful run ne
    second or two after the `generating` phase event.
 2. `wait_for_job`, then `get_job` on it at least a few seconds later.
 3. Same definition with `model_name` pointing at a repo that does not exist (e.g.
-   `stable-diffusion-v1-5/does-not-exist-qa269`; validate lists it under `downloads_required`
-   and the bound acknowledgement must name it). Fails in the load, offline.
+   `stable-diffusion-v1-5/does-not-exist-qa269`). Since #1201 validate answers `valid: false`
+   for it, with one error at `model_name` saying the repo "is not a model repo on Hugging
+   Face", and still returns the `plan`: the repo is listed under `downloads_required` with
+   `not_found: true`, and the bound acknowledgement must name it. (A hub lookup that is
+   offline or times out leaves the entry unknown and the answer `valid: true`, as before; that
+   is not a finding.) Validate's refusal does not stop the submit: run it anyway, since the
+   failed job is what this step is for. Fails in the load, offline.
 4. `wait_for_job` on that one.
 expected:
 - Step 2: `status: "failed"`, `manifest: []`, and `progress` **present** on both calls:
@@ -1302,6 +1309,9 @@ source: tester, verified in #269 on 2026-09-21 over MCP as model `opus` via prov
 `generating` at `at: 4.8`, `seconds_in_phase: 1.4` on both `wait_for_job` and a later
 `get_job`; job `c4dd43dd0787` failed loading with `progress.phase: "loading"`,
 `seconds_in_phase: 0.9`. Case proposed by the implementer in its hand-off comment.
+Amended 2026-11-20 (dkackman/harnest#271, approved by Don): step 3's validate answer follows
+#1201 (a `model_name` the hub does not have is `valid: false`, no longer a plain
+`downloads_required` entry); the run and its expectations are unchanged.
 
 ### S-F082 — the step cache's workspace scoping is documented, and a plan names the workspace it was evaluated in
 #279: `validate_workflow(workspace=A)` reported `cached_steps: 1` and `workspace=B` reported
