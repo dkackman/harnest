@@ -11418,7 +11418,6 @@ cleanup: as M-F380.
 metrics: none.
 
 ### M-F449 — the #1505 masked-keystone gate's jobs: step 1 ran, step 2 only if step 1 passed, all succeeded in `bench` on one quoted build, and no full-length run
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
 The record is the *Masked keystone: early gate* section of `bench/records/narrated.md` in the dw repo, which a tester
@@ -11471,7 +11470,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F451 — the #1505 step-1 gate: the luma move toward the bright keystone is recorded, and the outcome follows the +0.5% line
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only, plus `get_output_frames`.
 Steps: read the record's step-1 lines (M-F449); `get_job(workspace="bench")` on the step-1 job for its output;
@@ -11492,7 +11490,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F452 — the #1505 step-2 arms: M and MA differ only in `experimental_keystone_attention` with test 21's saturation blocks, and no sharpness-block arm ran
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda), flag-on for MA (see M-F375). **Free**: reads only.
 Only if step 1 passed (M-F451); after a failed step 1 record "not applicable: step 1 failed" and skip.
@@ -11513,7 +11510,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F453 — the #1505 baseline is the #1394 control `2817a04202ae`, reused only if the build still matched `e84bda1c`, else re-run unchanged
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
 Only if step 1 passed (M-F451); otherwise "not applicable" and skip.
@@ -11531,7 +11527,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F454 — the #1505 step-2 record: MA, M and the baseline each have the five fixed measures, and the verdict is the one the pass rules give
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
 Only if step 1 passed (M-F451); otherwise "not applicable" and skip.
@@ -11577,7 +11572,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F456 — the #1505 probe adds no surface: no masked-keystone catalog entry, no new tool or argument, and the workflows guide unchanged on keystone attention
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
 Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_schema("pipelines")` searched for
