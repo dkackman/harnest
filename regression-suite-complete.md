@@ -26530,8 +26530,7 @@ metrics: none.
 source: tester, spec for #1482 from #1458's plan v3 (claude-opus-5-5 via anthropic)
 Cost: one `templates/text-to-image` run. Setup: C-F1132's setup in `cf1146-req`; run J1 on `demo/cat`
 (`wait_seconds=55`, then `wait_for_job` if still running) and note its id. (1) `delete_workspace(name="cf1146-req",
-acknowledged_cost=true)`. (2) `get_job(J1)`, and `list_jobs` (no workspace filter, or the filter the reply of (1)
-names for deleted workspaces) for J1's row. (3) `create_workspace(name="cf1146-req")` again; `get_request()` and
+acknowledged_cost=true)`. (2) `get_job(J1)`. (3) `create_workspace(name="cf1146-req")` again; `get_request()` and
 `get_request(request="demo")` with `workspace="cf1146-req"`. (4) `validate_workflow` and
 `run_workflow("templates/text-to-image", arguments={"prompt":"a cat","seed":1}, request="demo/cat",
 acknowledged_cost=…, workspace="cf1146-req")`; `list_jobs(workspace="cf1146-req")`.
