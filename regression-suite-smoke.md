@@ -113,8 +113,8 @@ nothing uses it anymore.
   validate-only call. They are read-only and never deleted.
 - `asset:qa-cast/priya-portrait.jpg` and `asset:qa-cast/hal-portrait.jpg`: two stills in
   the shared asset library. S-F128 binds them to `templates/ltx2/keyframes` in validate-only
-  calls, so only their existence matters. Any two images substitute. Read-only, never
-  deleted.
+  calls, so only their existence matters. Any two images substitute. S-F147 names the first
+  as its image reference, also validate-only. Read-only, never deleted.
 - `asset:qa-cast/priya-voice.wav`: about 6 s of speech in the shared asset library.
   S-F131 transcribes it with word and segment timestamps. Any short spoken clip under 30 s
   substitutes. Read-only, never deleted.
@@ -2565,20 +2565,24 @@ An H3 `MiniMaxH3VideoReference` must run a minimum number of frames, which comes
 diffusers' encoder. Validation used to pass a shorter one, so it failed only at run time, after
 the chain's earlier steps had spent their GPU time (#1422). Free apart from one short
 utility job. `<vid>` is a video asset at 24 fps with at least 113 frames.
-Verification used `asset:qa-cast/priya-hal-two-shot.mp4` (121 frames) and the image
-`asset:uploads/cast/loki.jpg` as `<img>`. `<H3>` is a `pipeline` step with
+Verification used `asset:qa-cast/priya-hal-two-shot.mp4` (121 frames). `<img>` is any image
+asset: use `asset:qa-cast/priya-portrait.jpg` (Fixtures). `<H3>` is a `pipeline` step with
 `from_pretrained_arguments={"model_name": "MiniMaxAI/MiniMax-H3", "workflow": "ref2va"}`,
 `configuration={"component_type": "ModularPipeline"}`, `num_frames` 124, 960x544, 9 steps,
 `output: ["videos","audio","sampling_rate"]`, and
-`references: [{MiniMaxH3ImageReference, from_file: <img>}, <video ref>]`.
+`references: [{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": <img>}, <video ref>]`.
+The key is `reference_type` and the value is the full dotted path; an entry spelled any other
+way is not a reference and is not measured.
 1. Inline workflow: step `window` =
    `trim_video(video=<vid>, start_frame=100, num_frames="variable:num_window")`, then `<H3>` with
-   `<video ref>` = `{MiniMaxH3VideoReference, from_previous_result: "window", audio: null}`.
+   `<video ref>` =
+   `{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_previous_result": "window", "audio": null}`.
    `validate_workflow` it with `arguments={"num_window": 5}`, then `12`, then `13`.
 2. The same workflow with literal `num_frames: 5, pad_to: 13` in the trim step.
 3. Run a task-only workflow, `trim_video(video=<vid>, start_frame=100, num_frames=5)`, which
    writes `<short>`. Then validate a single `<H3>` step with `<video ref>` =
-   `{MiniMaxH3VideoReference, from_file: "output:<short>"}`, and again with `from_file: <vid>`.
+   `{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_file": "output:<short>"}`,
+   and again with `"from_file": <vid>`.
 expected:
 - Step 1: `5` and `12` give `valid: false` at `steps[1].pipeline.arguments.references[1]`. The
   message is the encoder's own and gives the minimum. Today's reads `...must run at least 13
@@ -2595,6 +2599,9 @@ cleanup: `delete_output(job_id=<step 3's job>)`.
 metrics: none.
 source: tester, verified in #1422 on 2026-11-17 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 7c2c39c9` on `mini-ai` (mps).
+Amended 2026-11-20 (dkackman/harnest#272, approved by Don): the reference entries are spelled
+out with `reference_type` and the full dotted path, and `<img>` names a fixture asset (the
+verification's `asset:uploads/cast/loki.jpg` is not on lem).
 
 ## Performance
 
