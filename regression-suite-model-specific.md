@@ -11581,7 +11581,7 @@ pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
 Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_schema("pipelines")` searched for
-`experimental_keystone_attention`; `get_guide("workflows", section="experimental_keystone_attention")`.
+`experimental_keystone_attention`; `get_guide("workflows", section="Pipeline Configuration")`.
 expected:
 - No catalog workflow is named `masked-keystone-*` (the probe's files are bench files, not templates).
 - `experimental_keystone_attention` keeps its M-F375 fields and defaults, no new field; the guide line M-F381 checks is
