@@ -23318,51 +23318,6 @@ expected:
 cleanup: none.
 metrics: none.
 
-### C-F981 — `recast-shot` is listed as a shot needing input media and an identity, validates with a clip and a scene frame, and refuses an off-rule clip
-pending: #1415
-source: tester, spec for #1415 from #1411's plan v2 (claude-opus-5-5 via anthropic)
-Free, validate only, `workspace="regression-complete"`. `list_workflows(shape="shot")`; `get_workflow
-("templates/minimax/recast-shot")`, reading the names of its clip, scene-reference and `cast_lines` variables. Make a
-scene frame for setup: `get_first_frame` (or `video_frames`) on `asset:qa-cast/ep6-cold-open.mp4`, kept with
-`keep_output` as `qa-1411/scene-frame.png`, deleted at the end. Validate:
-- a. clip `asset:qa-cast/ep6-cold-open.mp4` (124 frames), the scene frame, a one-line `cast_lines`, `seed: 1415`.
-- b. As a with the clip `asset:qa-guides/ep6-30f.mp4` (30 frames, off 17n+5) and, separately, with
-  `asset:qa-cast/ep65-shot-kf-priya-hal.mp4` (121 frames, off 17n+5).
-- c. As a with no scene reference; then with no clip.
-- d. `list_jobs`.
-expected:
-- `recast-shot` is listed, with traits including `needs-input-media` and `identity-referenced`. Its step is ref2va
-  with one guide at frame 0 fed by the clip variable, the scene reference as `<Picture 1>`, and the
-  `minimax-h3/head-swap` LoRA. Any BFS or Civitai LoRA is a **finding**.
-- a: `valid: true` with a `plan.estimate` (any non-`unknown` basis, or `unknown` with a stated reason).
-- b: each refused before any run, by the guide-length rule, naming the clip's frame count. Or, if the template snaps
-  or pads the clip to the render, a warning saying so, and a render length equal to what the guide covers. A silent
-  acceptance is a **finding**.
-- c: each refused, naming the missing variable.
-- d: no job queued.
-cleanup: `delete_asset` on `qa-1411/scene-frame.png`; delete any job the setup made.
-metrics: none.
-
-### C-F982 — one `recast-shot` run returns the recast shot at the clip's length with the source audio
-pending: #1415
-source: tester, spec for #1415 from #1411's plan v2 (claude-opus-5-5 via anthropic)
-GPU: one H3 ref2va run on CUDA at the template's quoted cost, 20 steps (about the plan's estimate; quote it first).
-`workspace="regression-complete"`. Setup: C-F981's scene frame, then edit it with an existing image-edit template
-(`list_workflows(shape="image-edit")`) so the person reads as a clearly different person (change age and hair: the
-big changes the skill says land), seed 1415; keep it as `qa-1411/scene-recast.png`. Run `recast-shot` with clip
-`asset:qa-cast/ep6-cold-open.mp4`, that scene reference, one `cast_lines` line in the "A becomes B" form, `seed: 1415`;
-validate first and bind the fingerprint, `wait_seconds=55`, then `wait_for_job`. Then `get_gallery_metadata`,
-`get_output_frames` at `frame:0`, `frame:60`, `frame:120` beside the clip's, and
-`get_output_frames(at=[1.0, 3.0], hear=1)` on both.
-expected:
-- The job succeeds. The output has 124 frames at 24 fps, the clip's size, and an audio stream.
-- The person on the sampled frames carries the scene reference's changed face and hair; the framing, pose and
-  background follow the clip.
-- The audio at both sampled seconds is the clip's own (the same speech or sound), not new audio. A different
-  soundtrack is a **finding**.
-cleanup: `delete_output(job_id=…)` on the run and the edit; `delete_asset` on both `qa-1411/` stills.
-metrics: none.
-
 ### C-F983 — the #1398 v2 probe's arms are in `probe-1398`, noted: six at 1344x768 succeeded, B1 failed out of memory, three at 960x544 ran
 pending: #1401
 source: tester, spec for #1401 from #1398's plan v2 (claude-opus-5-5 via anthropic)
