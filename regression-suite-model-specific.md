@@ -11445,7 +11445,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F450 — the #1505 step-1 job's seg02 is a masked regional edit with the tail guide and the bright keystone as both `image` and source frame 0, and nothing else
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: reads only.
 Steps: `get_job_workflow(job_id=<step-1 job>)` (M-F449); `get_job_workflow(job_id="2817a04202ae")` (the #1394 gate
@@ -11554,7 +11553,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F455 — the #1505 takes re-measure: `analyze_seams` jump_ratios and frame counts match the record, and no still keystone frame shows at the cut
-pending: #1506
 source: tester, spec for #1506 from #1505's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `fl2va` on lem (cuda). **Free**: `assess_output` and reads only.
 Steps: for every take the record measures (step 1; and baseline, M, MA if step 2 ran): `get_job(workspace="bench")`
