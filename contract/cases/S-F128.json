@@ -1,0 +1,106 @@
+{
+ "id": "S-F128",
+ "level": "smoke",
+ "title": "an object or list sent to a string-typed variable is refused, not stringified",
+ "note": "run.py cannot compare two steps' answers, so run_workflow's 'the same two errors' is asserted by pinning today's two messages whole in steps 1 and 2. Step 2 sends acknowledged_cost=true as the prose does: if the refusal ever regresses, this step queues a real GPU job.",
+ "steps": [
+  {
+   "label": "step 1: an object and a list are each refused at their argument path",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/ltx2/keyframes",
+    "arguments": {
+     "first_image": {
+      "location": "asset:qa-cast/priya-portrait.jpg"
+     },
+     "last_image": [
+      "asset:qa-cast/hal-portrait.jpg"
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 2
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.first_image\"",
+      "Cannot convert variable 'first_image' value {'location': 'asset:qa-cast/priya-portrait.jpg'} to type str: this variable takes a plain string (a URL, or an 'asset:'/'output:' reference), not an object"
+     ]
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.last_image\"",
+      "Cannot convert variable 'last_image' value ['asset:qa-cast/hal-portrait.jpg'] to type str: this variable takes a plain string (a URL, or an 'asset:'/'output:' reference), not an object"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "step 2: run_workflow refuses before queueing with the same two errors, no job_id",
+   "call": "run_workflow",
+   "args": {
+    "workflow_path": "templates/ltx2/keyframes",
+    "arguments": {
+     "first_image": {
+      "location": "asset:qa-cast/priya-portrait.jpg"
+     },
+     "last_image": [
+      "asset:qa-cast/hal-portrait.jpg"
+     ]
+    },
+    "acknowledged_cost": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": [
+      "Error executing tool run_workflow",
+      "arguments.first_image: Cannot convert variable 'first_image' value {'location': 'asset:qa-cast/priya-portrait.jpg'} to type str: this variable takes a plain string (a URL, or an 'asset:'/'output:' reference), not an object",
+      "arguments.last_image: Cannot convert variable 'last_image' value ['asset:qa-cast/hal-portrait.jpg'] to type str: this variable takes a plain string (a URL, or an 'asset:'/'output:' reference), not an object"
+     ]
+    },
+    {
+     "path": "",
+     "not_contains": "job_id"
+    }
+   ]
+  },
+  {
+   "label": "step 3: the plain string form validates",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/ltx2/keyframes",
+    "arguments": {
+     "first_image": "asset:qa-cast/priya-portrait.jpg",
+     "last_image": "asset:qa-cast/hal-portrait.jpg"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "errors",
+     "len": 0
+    },
+    {
+     "path": "checked_arguments",
+     "contains": [
+      "first_image",
+      "last_image"
+     ]
+    }
+   ]
+  }
+ ]
+}

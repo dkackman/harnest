@@ -1,0 +1,152 @@
+{
+ "id": "S-F032",
+ "level": "smoke",
+ "title": "a declared bound reaches a value inside a list entry, at the same three places",
+ "note": "run.py has no starts-with, so the warning 'beginning shots[0]:' is asserted as the one warning containing 'shots[0]:'.",
+ "steps": [
+  {
+   "label": "61 in an entry is refused at the entry's own path, no plan",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "arguments": {
+     "shots": [
+      {
+       "name": "cold_open",
+       "num_frames": 61,
+       "prompt": "A short test line.",
+       "references": []
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "arguments.shots[0].num_frames"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "124 to 345",
+      "17 * n + 5",
+      "73"
+     ]
+    },
+    {
+     "path": "plan",
+     "exists": false
+    }
+   ]
+  },
+  {
+   "label": "130 validates with one warning naming the entry and 141, and a plan",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "arguments": {
+     "shots": [
+      {
+       "name": "cold_open",
+       "num_frames": 130,
+       "prompt": "A short test line.",
+       "references": []
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "warnings",
+     "len": 1
+    },
+    {
+     "path": "warnings[0]",
+     "contains": [
+      "shots[0]:",
+      "141"
+     ]
+    },
+    {
+     "path": "plan.fingerprint",
+     "exists": true
+    }
+   ]
+  },
+  {
+   "label": "the index is real: the second entry is refused, the first is not warned about",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "arguments": {
+     "shots": [
+      {
+       "name": "cold_open",
+       "num_frames": 141,
+       "prompt": "A short test line.",
+       "references": []
+      },
+      {
+       "name": "second",
+       "num_frames": 400,
+       "prompt": "A short test line.",
+       "references": []
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.shots[1].num_frames\"",
+      "rounds up to 413",
+      "must be at most 345"
+     ]
+    },
+    {
+     "path": "warnings",
+     "none_contains": "shots[0]"
+    }
+   ]
+  },
+  {
+   "label": "the catalog carries the rule beside the field",
+   "call": "get_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "variables_only": true
+   },
+   "expect": [
+    {
+     "path": "lists.shots.constraints.num_frames",
+     "contains": [
+      "17*n+5",
+      "124-345",
+      "rounds up"
+     ]
+    },
+    {
+     "path": "lists.shots.fields",
+     "exists": true
+    }
+   ]
+  }
+ ]
+}

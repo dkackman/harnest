@@ -1,0 +1,294 @@
+{
+ "id": "S-F018",
+ "level": "smoke",
+ "title": "the other three workflow objects are closed too",
+ "note": "Probes (a)-(d) and both positive controls. The legal root set is asserted name by name, not as one string.",
+ "steps": [
+  {
+   "label": "(a) two stray top-level keys: one error at root naming both and listing the legal set",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f018",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ],
+     "sedd": 42,
+     "varaibles": {}
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": null
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "sedd",
+      "varaibles",
+      "configures",
+      "cost",
+      "cost_drivers",
+      "description",
+      "host_ram_gb",
+      "id",
+      "presets",
+      "seed",
+      "shape",
+      "steps",
+      "summary",
+      "traits",
+      "variable_constraints",
+      "variables",
+      "vram_estimate"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(b) a stray result key is refused at steps[0].result, listing subfolder",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f018",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        }
+       },
+       "result": {
+        "content_type": "text/plain",
+        "subfoldr": "final"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].result"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "subfoldr",
+      "subfolder"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(c) pipeline_type and model_name at pipeline level: exactly one error per key, stating the rule",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f018",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        },
+        "pipeline_type": "StableDiffusionXLPipeline",
+        "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 2
+    },
+    {
+     "path": "errors[*].path",
+     "contains": [
+      "\"steps[0].pipeline.pipeline_type\"",
+      "\"steps[0].pipeline.model_name\""
+     ]
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "any other key whose value is a component definition",
+      "from_pretrained_arguments"
+     ]
+    },
+    {
+     "path": "errors[1].message",
+     "contains": [
+      "any other key whose value is a component definition",
+      "from_pretrained_arguments"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "(d) a misspelled component key: exactly one error at its own path, stating the rule",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f018",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        },
+        "trasformer": {}
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].pipeline.trasformer"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "any other key whose value is a component definition",
+      "from_pretrained_arguments"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "control: a shipped workflow with a dynamic component key validates",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/ltx2/two-stage"
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "control: a component under an undeclared name, missing configuration, is validated as a component",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f018",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        },
+        "contract_component": {
+         "from_pretrained_arguments": {
+          "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+         }
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.contract_component\"",
+      "'configuration' is a required property"
+     ]
+    },
+    {
+     "path": "errors",
+     "none_contains": "unknown property"
+    }
+   ]
+  }
+ ]
+}

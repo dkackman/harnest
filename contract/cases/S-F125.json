@@ -1,0 +1,224 @@
+{
+ "id": "S-F125",
+ "level": "smoke",
+ "title": "a dissolve_frames longer than a known input clip is refused by the free pre-flight",
+ "note": "Fixtures are the two common qa-cast assets the prose names (124 frames each).",
+ "steps": [
+  {
+   "label": "step 1: 130 frames against two 124-frame clips names both videos",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f125",
+     "seed": 1,
+     "steps": [
+      {
+       "name": "film",
+       "task": {
+        "command": "dissolve_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep42-shot1-accuse.mp4",
+          "asset:qa-cast/ep42-shot2-deflect.mp4"
+         ],
+         "dissolve_frames": 130,
+         "fps": 24
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].task.arguments.dissolve_frames"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "video 0 has 124 frames, too few for its 1 dissolve(s) of 130 frames",
+      "video 1 has 124 frames, too few for its 1 dissolve(s) of 130 frames"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "step 2: 12 frames validates",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f125",
+     "seed": 1,
+     "steps": [
+      {
+       "name": "film",
+       "task": {
+        "command": "dissolve_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep42-shot1-accuse.mp4",
+          "asset:qa-cast/ep42-shot2-deflect.mp4"
+         ],
+         "dissolve_frames": 12,
+         "fps": 24
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "errors",
+     "len": 0
+    }
+   ]
+  },
+  {
+   "label": "step 3: only the middle clip, which needs two dissolves, is flagged",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f125",
+     "seed": 1,
+     "steps": [
+      {
+       "name": "film",
+       "task": {
+        "command": "dissolve_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep42-shot1-accuse.mp4",
+          "asset:qa-cast/ep42-shot2-deflect.mp4",
+          "asset:qa-cast/ep42-shot1-accuse.mp4"
+         ],
+         "dissolve_frames": 70,
+         "fps": 24
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].task.arguments.dissolve_frames"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": "video 1 has 124 frames, too few for its 2 dissolve(s) of 70 frames"
+    },
+    {
+     "path": "errors[0].message",
+     "not_contains": [
+      "video 0",
+      "video 2"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "step 4: a previous_result input is left alone; only video 1 is flagged, at step index 1",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f125",
+     "seed": 1,
+     "steps": [
+      {
+       "name": "src",
+       "task": {
+        "command": "dissolve_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep42-shot1-accuse.mp4",
+          "asset:qa-cast/ep42-shot2-deflect.mp4"
+         ],
+         "dissolve_frames": 12,
+         "fps": 24
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      },
+      {
+       "name": "film",
+       "task": {
+        "command": "dissolve_videos",
+        "arguments": {
+         "videos": [
+          "previous_result:src",
+          "asset:qa-cast/ep42-shot2-deflect.mp4"
+         ],
+         "dissolve_frames": 130,
+         "fps": 24
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[1].task.arguments.dissolve_frames"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": "video 1"
+    },
+    {
+     "path": "errors[0].message",
+     "not_contains": "video 0"
+    }
+   ]
+  }
+ ]
+}

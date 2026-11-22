@@ -1,0 +1,83 @@
+{
+ "id": "S-F085",
+ "level": "smoke",
+ "title": "a task.command the engine does not register is refused by the free pre-flight",
+ "note": "run.py cannot compare two steps' answers, so 'plan.steps equals the number of steps get_workflow reports' is asserted as both being 25, the count the prose records. If the template gains or loses a step both assertions fail together and this file needs the new count.",
+ "steps": [
+  {
+   "label": "an unregistered command: exactly one error, at the command",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f085",
+     "steps": [
+      {
+       "name": "bad",
+       "task": {
+        "command": "nonexistent_processor",
+        "arguments": {
+         "strength": 0.5
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].task.command"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "nonexistent_processor",
+      "is not a registered task command"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "the shipped template names only registered commands",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/image-processors"
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "errors",
+     "len": 0
+    },
+    {
+     "path": "plan.steps",
+     "eq": 25
+    }
+   ]
+  },
+  {
+   "label": "get_workflow reports the same number of steps",
+   "call": "get_workflow",
+   "args": {
+    "name": "templates/image-processors"
+   },
+   "expect": [
+    {
+     "path": "steps",
+     "len": 25
+    }
+   ]
+  }
+ ]
+}

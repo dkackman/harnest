@@ -1,0 +1,189 @@
+{
+ "id": "S-F110",
+ "level": "smoke",
+ "title": "a component_type/scheduler_type the runtime cannot resolve is refused by the free pre-flight, with suggestions",
+ "note": "Step 2 asserts the SDXL repo is quoted in downloads_required, as the prose does; that holds while lem has not downloaded stabilityai/stable-diffusion-xl-base-1.0.",
+ "steps": [
+  {
+   "label": "step 1: a misspelled class does not exist, with closest matches and no plan",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f110",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.configuration.component_type\"",
+      "'StableDiffusionXLPipline' does not exist",
+      "StableDiffusionXLPipeline"
+     ]
+    },
+    {
+     "path": "errors",
+     "none_contains": "Refusing to load"
+    },
+    {
+     "path": "plan",
+     "exists": false
+    }
+   ]
+  },
+  {
+   "label": "step 2: the real class validates and its plan quotes the SDXL repo",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f110",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "plan.downloads_required[*].repo",
+     "contains": "stabilityai/stable-diffusion-xl-base-1.0"
+    }
+   ]
+  },
+  {
+   "label": "step 3: a dotted reference outside the ecosystem is a refusal, worded differently",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f110",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "os.system"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.configuration.component_type\"",
+      "Refusing to load a dotted type reference",
+      "outside the ecosystem"
+     ]
+    },
+    {
+     "path": "errors",
+     "none_contains": "does not exist"
+    }
+   ]
+  },
+  {
+   "label": "step 4: a misspelled scheduler_type does not exist, with the real one suggested",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f110",
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "a cat"
+        },
+        "scheduler": {
+         "configuration": {
+          "scheduler_type": "EulerDiscreteSchedulr"
+         }
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"steps[0].pipeline.scheduler.configuration.scheduler_type\"",
+      "does not exist",
+      "EulerDiscreteScheduler"
+     ]
+    }
+   ]
+  }
+ ]
+}

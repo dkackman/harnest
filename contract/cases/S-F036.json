@@ -2,7 +2,7 @@
  "id": "S-F036",
  "level": "smoke",
  "title": "an unwritable result.content_type is refused by the free pre-flight, not by the writer",
- "note": "Output refs must be well-formed names (workflow/run/file); they need not exist.",
+ "note": "The three refusals use output: refs that need not exist: the content_type error is the only one reported. The positive step points pair_audio at the two common assets the prose names (qa-cast/ep6-cold-open.mp4, qa-cast/ep20-score.wav), because validate refuses an output: reference that does not exist (dw#494, harnest#28).",
  "steps": [
   {
    "label": "bare word 'video' is refused at its own path",
@@ -96,7 +96,7 @@
    ]
   },
   {
-   "label": "video/mp4 still validates, with a plan",
+   "label": "video/mp4 still validates, with a plan (inputs are media that exist)",
    "call": "validate_workflow",
    "args": {
     "workflow": {
@@ -108,8 +108,8 @@
        "task": {
         "command": "pair_audio",
         "arguments": {
-         "video": "output:contract/run/latest/a.mp4",
-         "audio": "output:contract/run/latest/b.wav"
+         "video": "asset:qa-cast/ep6-cold-open.mp4",
+         "audio": "asset:qa-cast/ep20-score.wav"
         }
        },
        "result": {

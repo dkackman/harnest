@@ -34,6 +34,10 @@ over a list; ["key"] for a key containing dots or slashes):
     none_contains       no element contains the substring
 A step may also say "is_error": true|false (default false) for the tool-level
 error flag.
+
+A case stops at its first failed step, and the report says how many steps
+were not run. A step that expected a tool error and was handed a job_id
+instead has that job cancelled.
 """
 
 import argparse
@@ -145,19 +149,42 @@ def check(result, a):
     return None
 
 
+def cancel_stray_job(client, result):
+    """A step that expected a refusal and got a job instead: cancel it, so a
+    regression in the server costs no GPU time from an unattended script."""
+    job = result.get("job_id") if isinstance(result, dict) else None
+    if not job:
+        return ""
+    try:
+        client.call("cancel_job", {"job_id": job})
+    except (MCPError, OSError) as e:
+        return f"; it queued job {job} and cancelling it failed: {e}"
+    return f"; it queued job {job}, now cancelled"
+
+
 def run_case(client, case):
+    """A case stops at its first failed step: a later step may assume what
+    the failed one established (a run_workflow that is only safe to send
+    once validate has refused the same arguments), so it is reported as not
+    run instead."""
     failures = []
     started = time.time()
-    for i, step in enumerate(case["steps"]):
+    steps = case["steps"]
+    for i, step in enumerate(steps):
         label = step.get("label") or f"step {i + 1} ({step['call']})"
         is_error, result = client.call(step["call"], step.get("args", {}))
         if is_error != step.get("is_error", False):
-            failures.append(f"{label}: tool error flag was {is_error}: {text(result)[:300]}")
-            continue
-        for a in step.get("expect", []):
-            why = check(result, a)
-            if why:
-                failures.append(f"{label}: {why}")
+            stray = cancel_stray_job(client, result) if step.get("is_error", False) else ""
+            failures.append(f"{label}: tool error flag was {is_error}: {text(result)[:300]}{stray}")
+        else:
+            for a in step.get("expect", []):
+                why = check(result, a)
+                if why:
+                    failures.append(f"{label}: {why}")
+        if failures:
+            if i + 1 < len(steps):
+                failures.append(f"{len(steps) - i - 1} later step(s) not run: an earlier step failed")
+            break
     return {
         "id": case["id"],
         "status": "fail" if failures else "pass",
