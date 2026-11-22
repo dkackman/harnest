@@ -12108,19 +12108,20 @@ metrics: none.
 pending: #1570
 source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
-M-F478. The legal range is read as 0..S, S being the step's `num_inference_steps`: 0 is the blended-only arm and S
-is plain sequential windows (the plan's S2 unit tests).
+M-F478. The legal range is read as 0..S, S being the run's denoise passes, `num_inference_steps - 1` on H3: 0 is the
+blended-only arm and S is plain sequential windows (the plan's S2 unit tests).
 Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` with HW = (a)
 `{"switch_step": -1}`; (b) `{"switch_step": 5}`; (c) `{"switch_step": 3.5}`; (d) `{"switch_step": "3"}` (a string
-that is not a `variable:` reference); (e) `{"switch_step": 0}`; (f) `{"switch_step": 3}`; (g) `{"switch_step": 4}`.
+that is not a `variable:` reference); (e) `{"switch_step": 0}`; (f) `{"switch_step": 3}`; (g2) `{"switch_step": 4}`.
+Then with `num_inference_steps` 5: (g) `{"switch_step": 4}`.
 Then with `num_inference_steps` 8: (h) `{"switch_step": 6}`; (i) `{"switch_step": 9}`.
 expected:
-- (a)–(d), (i): `valid: false`, an error naming `experimental_hybrid_windows` and `switch_step` and saying what is
+- (a)–(d), (g2), (i): `valid: false`, an error naming `experimental_hybrid_windows` and `switch_step` and saying what is
   wrong (out of range, ideally naming the range or the step count; not an integer). This error is present whether or
-  not the flag error also is: the tester sees the key's own rule.
+  not the flag error also is: the tester sees the key's own rule. (g2)'s error names "runs 3".
 - (e), (f), (g), (h): no `switch_step` error; the only refusal is the flag one (as M-F478). (h) shows the range
   follows `num_inference_steps`, not a fixed 4.
-It is a **finding** if any of (a)–(d), (i) is refused only by the flag (no `switch_step` error), or any of (e)–(h)
+It is a **finding** if any of (a)–(d), (g2), (i) is refused only by the flag (no `switch_step` error), or any of (e)–(h)
 carries a `switch_step` error.
 cleanup: none.
 metrics: none.
