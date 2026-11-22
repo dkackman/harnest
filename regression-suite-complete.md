@@ -26571,8 +26571,7 @@ metrics: none.
 
 ### C-F1150 — `align` snaps the letterbox box and mask to the H3 cell grid (only if stage A built `align`)
 source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
-Applies only when `get_task("fit_to_model")` lists `align`. If it doesn't, the snap lives in the template, and
-C-F1153/C-F1155 cover it. Record "n/a: snap is in the template" and move on. CPU only.
+CPU only.
 **Setup:** C-F1149's `src` step. Then `fit_to_model(video="previous_result:src", width=544, height=960, num_frames=124,
 mode="letterbox", align=<the value the task's description gives for H3's cell grid>)`. Repeat into 768x768.
 Run validate first, then run.
@@ -28497,34 +28496,21 @@ It is a **finding** if 1 or 2 comes back `valid: true`, if the error doesn't lis
 cleanup: none.
 metrics: none.
 
-### C-F1261 — `fit_to_model` documents `fill` (`black` default, `edge`, `blur`), and reframe documents its `fill` and the whole-frame prompt
-pending: #1567
-source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
-Free, read-only. (1) `get_task("fit_to_model")`. (2) `get_workflow("templates/minimax/reframe", variables_only=true)`,
-then the full form. (3) `list_workflows(shape="shot")` and the default `list_workflows()`. (4) The `dw:minimax-h3` skill's
-reframe routing line.
+### C-F1261 — `fit_to_model` documents `fill` (`black` default, `edge`, `blur`)
+source: tester, spec for #1567 from #1066's plan v5; re-pointed after #1585 (claude-opus-5-5 via anthropic)
+Free, read-only. (1) `get_task("fit_to_model")`.
 expected:
 - (1) `fill` is listed, optional, default `"black"`, with choices exactly `black`, `edge` and `blur`. Its description
   says it is letterbox only; that `edge` carries the picture's outermost rows/columns across the bars with a blur that
   grows with distance; that `blur` fills the canvas with a scaled, centre-cropped, heavily blurred copy under the box;
   and that the box, `mask` and `align` are not changed by it. `mode`, `align` and the summary keep today's text about
-  the mask and the reframe pointers ("reframe a clip to another aspect", `templates/minimax/reframe`).
-- (2) the variables gain `fill`, and `refine_strength`'s default is below 1.0. Until the A/B (C-F1266) rules, the build
-  ships `fill: "edge"` and `refine_strength: 0.8`; after it, both equal the winning arm's values (C-F1267 checks that).
-  In the full form, the fit step's `fill` is `variable:fill`, and the edit's `refine_strength` is `variable:refine_strength`.
-- (2) the `prompt` variable's description (or the template description) says the prompt describes the **whole** tall
-  frame, naming what sits above and below the original, with an example. The template description says the border
-  is seeded from the source picture (not "regenerated from noise"), and does not contain "fill dev".
-- (3) the reframe summary is still 120 characters or fewer, and the default listing shows no truncation notice.
-- (4) the skill's reframe line says the same: describe the whole frame, not "extended above and below".
-A `fill` default other than `black`, a fourth choice, a `refine_strength` default of 1.0, or no whole-frame prompt
-guidance in either the template or the skill is a **finding** (the skill's is a ticket against the skill).
+  the mask and the crop and native-re-render pointers (#1585), naming no reframe template.
+A `fill` default other than `black`, or a fourth choice, is a **finding**.
 cleanup: none.
 metrics: none.
 
 ### C-F1262 — each `fill` changes only the bars: box, mask and the pixels inside the box are those of `black`
-pending: #1567
-source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic); kept after #1066's decline, passed on #1567 and #1585
 CPU tasks only. Fixture `asset:qa-cast/ep3-shot1-incident.mp4` (960x544, 124 frames). One inline `run_workflow`
 (validate first, `wait_seconds=55`) in `workspace="regression-complete"`, every step saved, each a letterbox
 `fit_to_model` of the fixture with `num_frames=124`:
@@ -28554,8 +28540,7 @@ cleanup: `delete_output(job_id=<job>)`.
 metrics: none.
 
 ### C-F1263 — `fill` other than `black` is refused at validate outside letterbox; a bad `fill` value is refused
-pending: #1567
-source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic); kept after #1066's decline, passed on #1567 and #1585
 Free (validate only). An inline one-step workflow: `fit_to_model(video="asset:qa-cast/ep3-shot1-incident.mp4",
 width=544, height=960, num_frames=124, ...)`, `workspace="regression-complete"`. Vary the tail:
 (1) `mode="crop", fill="edge"`. (2) `mode="stretch", fill="blur"`. (3) `mode="crop", fill="black"`.
@@ -28573,43 +28558,37 @@ A clean validate for (1), (2) or (5), or a refusal of (3), (4) or (6), is a **fi
 cleanup: `delete_output(job_id=<job>)` for any run from (7).
 metrics: none.
 
-### C-F1264 — reframe refuses a source whose frame count isn't `num_frames` at validate, naming both counts; a bare `fit_to_model` pad is unchanged
-pending: #1567
-source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
-Mostly free. The fixture `asset:qa-cast/ep3-shot1-incident.mp4` has 124 frames. Base arguments as C-F1154:
-`{"source_video": "asset:qa-cast/ep3-shot1-incident.mp4", "prompt": "<the C-F1266 prompt>", "seed": 42}`,
-`workspace="regression-complete"`.
+### C-F1264 — the fit-source frame-count refusal names both counts at validate; a bare `fit_to_model` pad is unchanged
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic); kept after #1066's decline, passed on #1567 and #1585
+Mostly free. The fixture `asset:qa-cast/ep3-shot1-incident.mp4` has 124 frames. `workspace="regression-complete"`.
 **Setup (CPU, once):** a 141-frame source. Run `fit_to_model(video=<fixture>, width=960, height=544, num_frames=141,
 mode="crop")` (it holds the last frame), then `keep_output` it as `asset:cf1264/src141.mp4` (check with
 `get_gallery_metadata` that it has 141 frames).
-Validate `templates/minimax/reframe` with: (1) the base. (2) + `num_frames: 125`. (3) + `num_frames: 141`.
-(4) `source_video: "asset:cf1264/src141.mp4"` + `num_frames: 141`. (5) that source with the default `num_frames` (124).
-(6) + `width: 550`. (7) + `num_frames: 100`. Then (8) validate `templates/minimax/regional-edit` with the fixture,
-any `mask_image` it accepts, and `num_frames: 125`. (9) Validate (and run, CPU) an inline bare
+Validate an inline workflow: a letterbox `fit_to_model(video=<source>, width=544, height=960, num_frames=<the source's
+count>, mode="letterbox")` step, feeding its video and `mask` as `source_video` and `mask_image` to the H3 step of
+`templates/minimax/regional-edit` (its full form, `width=544, height=960`), with the H3 step's `num_frames`:
+(1) the fixture with `num_frames: 125`. (2) `asset:cf1264/src141.mp4` with `num_frames: 141`. (3) that source with
+`num_frames: 124`. Then (8) validate `templates/minimax/regional-edit` with the fixture, any `mask_image` it accepts,
+and `num_frames: 125`. (9) Validate (and run, CPU) an inline bare
 `fit_to_model(video=<fixture>, width=544, height=960, num_frames=141, mode="letterbox")`.
 expected:
-- (1) clean. (4) clean: the counts match.
-- (2) refused at validate, naming both counts (124 and 141, the snapped count) and `source_video`. Its wording matches
+- (1) refused at validate, naming both counts (124 and 141, the snapped count) and `source_video`. Its wording matches
   regional-edit's refusal in (8) in substance ("source_video has 124 frames, and the step renders num_frames=141 -
-  they must match" or the like). A round-up *warning* with a clean result, the plan's C-F1154(7) bug, is a **finding**.
-- (3) refused the same way (124 vs 141). (5) refused, naming 141 vs 124: a longer source is refused too, not cut.
-- (6) refused by the multiple-of-32 rule and (7) by the 124-345 window, as before.
+  they must match" or the like). A round-up *warning* with a clean result is a **finding**.
+- (2) clean: the counts match.
+- (3) refused, naming 141 vs 124: a longer source is refused too, not cut.
 - (9) validates clean and runs, giving 141 frames whose tail holds the last frame: the bare task's padding is unchanged.
 A refusal that names only one count, a refusal that surfaces only at run time, or a refused (9) is a **finding**.
 cleanup: `delete_output` for the setup and (9) jobs; `delete_asset("cf1264/src141.mp4", acknowledged_cost=true)`.
 metrics: none.
 
-### C-F1265 — a bad `feather` on reframe is reported once
-pending: #1567
-source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
-Free (validate only). Validate `templates/minimax/reframe` with C-F1264's base arguments plus (1) `feather: -1` and
-(2) `feather: 156` (at least half the snapped box's short side at the default canvas; use a value at or above half
-of the box height that C-F1262's `edge32` step reports, if 156 is under it). (3) An inline bare `paste_into_box`
+### C-F1265 — a bad `feather` on a bare `paste_into_box` is reported once
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic); kept after #1066's decline, passed on #1567 and #1585
+Free (validate only). (3) An inline bare `paste_into_box`
 with a literal `content_box=[0, 324, 544, 311]` and `feather=-1` (C-F1152 (3)).
 expected:
-- (1) and (2) are each refused at validate with exactly **one** problem naming `feather` (across both `errors` and
-  `warnings`, not the same rule reported from the variable and again from the paste step).
-- (3) refused with one problem naming `feather`, as C-F1152 has it.
+- (3) refused at validate with exactly **one** problem naming `feather` (across both `errors` and `warnings`), as
+  C-F1152 has it.
 Two entries for one bad `feather`, or a clean validate, is a **finding**.
 cleanup: none.
 metrics: none.
