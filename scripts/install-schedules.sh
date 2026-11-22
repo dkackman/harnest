@@ -1,16 +1,19 @@
 #!/usr/bin/env bash
-# launchd schedules for the two standalone proposal drivers (README,
-# "Running it"): the retro (./run-retro.sh, weekly, Monday 06:00) and the
-# approval digest (./run-digest.sh, daily 07:00). Each job cds to this
+# launchd schedules for the three standalone proposal drivers (README,
+# "Running it"): the retro (./run-retro.sh, weekly, Monday 06:00), the
+# approval digest (./run-digest.sh, daily 07:00) and the suite audit
+# (./run-curate.sh, weekly, Sunday 06:00: it runs the levels that are due
+# and skips one whose last audit still waits on Don). Each job cds to this
 # checkout and skips, saying so, when logs/.driver.lock is absent: no loop
-# is running, so there is nothing new to retro or to digest.
+# is running, so there is nothing new to retro or to digest, and no curator
+# session to rule on an audit.
 #
-#   scripts/install-schedules.sh             # write both plists
+#   scripts/install-schedules.sh             # write the plists
 #   scripts/install-schedules.sh --load      # write them and load them into launchd
 #   scripts/install-schedules.sh --uninstall [--load]   # remove them (and unload)
 #
 # The plists go to ~/Library/LaunchAgents (com.harnest.retro.plist,
-# com.harnest.digest.plist). launchctl is called only with --load, so a
+# com.harnest.digest.plist, com.harnest.curate.plist). launchctl is called only with --load, so a
 # plain install or uninstall changes files and nothing else. A job's output
 # is appended to logs/schedule-<name>.log. PATH is the one this script ran
 # under, since launchd's own has neither claude nor gh. Rerunning rewrites
@@ -82,7 +85,14 @@ digest_when='    <key>Hour</key>
     <key>Minute</key>
     <integer>0</integer>'
 
-for job in "retro run-retro.sh" "digest run-digest.sh"; do
+curate_when='    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>6</integer>
+    <key>Minute</key>
+    <integer>0</integer>'
+
+for job in "retro run-retro.sh" "digest run-digest.sh" "curate run-curate.sh"; do
   name="${job% *}" driver="${job#* }"
   f="$AGENTS/com.harnest.$name.plist"
   if [ "$mode" = uninstall ]; then
@@ -91,7 +101,7 @@ for job in "retro run-retro.sh" "digest run-digest.sh"; do
     continue
   fi
   mkdir -p "$AGENTS" "$REPO/logs"
-  when="$retro_when"; [ "$name" = digest ] && when="$digest_when"
+  case "$name" in digest) when="$digest_when" ;; curate) when="$curate_when" ;; *) when="$retro_when" ;; esac
   plist "$name" "$driver" "$when" > "$f.tmp" && mv "$f.tmp" "$f"
   echo "wrote $f"
   if [ "$load" = 1 ]; then

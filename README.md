@@ -697,11 +697,14 @@ either bound it KILLs what's left).
   `dw-serve` systemd user unit. The script falls back to a `screen` session if the unit
   isn't installed.
 
-**Schedules.** `scripts/install-schedules.sh` writes two launchd agents to
+**Schedules.** `scripts/install-schedules.sh` writes three launchd agents to
 `~/Library/LaunchAgents`: `com.harnest.retro.plist` runs `./run-retro.sh` every Monday at
-06:00, and `com.harnest.digest.plist` runs `./run-digest.sh` daily at 07:00. Both `cd` to
-this checkout, append to `logs/schedule-<name>.log`, and skip when `logs/.driver.lock` is
-absent, since with no loop running there is nothing new to retro or digest. Add `--load` to
+06:00, `com.harnest.digest.plist` runs `./run-digest.sh` daily at 07:00, and
+`com.harnest.curate.plist` runs `./run-curate.sh` every Sunday at 06:00 (the suite audit: it
+takes the levels that are due, and skips one whose last audit still waits on you). All `cd`
+to this checkout, append to `logs/schedule-<name>.log`, and skip when `logs/.driver.lock` is
+absent, since with no loop running there is nothing new to retro or digest and no curator
+session to rule on an audit. Add `--load` to
 load them into launchd as well; `--uninstall` (with `--load`, also unloads) removes them.
 Without `--load` the script only writes or removes files. The agents run with the `PATH` the
 installing shell had, frozen into the plist: a `gh` or `jq` installed somewhere new later
@@ -735,6 +738,8 @@ isn't found until you re-run the script.
 | `NO_PROGRESS_PARK_AFTER` | `2` | sessions in a row that leave an issue's state, labels and markers unchanged and cite no new commit in a `progress:` comment before the driver parks it with Don; `0` = never |
 | `AUTOCOMPACT_TOKENS` | `120000` | `--autocompact` for every session |
 | `TESTER_TASK_EVERY` | `4` | `run-loop.sh` only: run the tester's standing-task session every Nth cycle (the R17 driver uses `TESTER_TASK_GAP_SECS`) |
+| `TESTER_TASK_DRY_ROUNDS` / `TESTER_TASK_DRY_MAX` | `2` / `4` | the dry-round rule, both loop drivers: a standing-task session that files no issue and adds no suite case is a dry round (the count is `logs/task-dry`). From `TESTER_TASK_DRY_ROUNDS` dry rounds in a row the task runs at half its cadence (`TESTER_TASK_EVERY` or `TESTER_TASK_GAP_SECS`), halving again per further dry round down to 1/`TESTER_TASK_DRY_MAX`; the first round that finds something puts it back. `TESTER_TASK_DRY_ROUNDS=0` turns the rule off |
+| `DAY_BUDGET_USD` | `0` | a cap on what every driver on this checkout spends in one local day, from `logs/spend.tsv` (one line per session: date, epoch, dollars, label); `0` = uncapped. Once reached, a loop starts no session and waits for midnight (`DRAIN=1` exits instead), and the nightly regression waits too. Both loops and every other driver count toward it, but only the loops hold for it: a driver you start by hand runs regardless. A session already running finishes, so the day can end over by one session's cap |
 | `IMPLEMENTER_ESCALATE_AFTER` / `IMPLEMENTER_PARK_AFTER` | `2` / `4` | bounces before escalating to the tester's model / parking with Don; `0` = never |
 | `DEPLOY_ON_MISMATCH` | `1` | redeploy `develop` if `lem` is on anything else before the tester pass; `0` = warn only |
 | `IMPLEMENTER_CLAIM_MAX` | `10` | most issues one implementer pass claims; the rest stay unclaimed for another loop; `0` = no cap |
@@ -789,6 +794,7 @@ The standalone drivers have their own knobs:
 | `MIN_RUNS` / `MIN_SECS` | `4` / `300` | `rank-cases.py --candidates` (the audit's per-case evidence): a case listed has run at least this often, never failed, at a median of at least this many seconds |
 | `CURATE_BUDGET_SMOKE` / `_COMPLETE` / `_MODEL_SPECIFIC` / `_SECURITY` | `65 16` / `60 20` / `60 12` / `15 6` | a level's target for one full run: minutes, then USD |
 | `RETRO_MODEL` / `RETRO_PROVIDER` / `RETRO_EFFORT` / `RETRO_BUDGET_USD` | `claude-opus-5-5` / `$PROVIDER` / `$EFFORT` / `5` | `run-retro.sh` |
+| `RETRO_OUTCOME_MIN_DAYS` / `RETRO_OUTCOME_DAYS` | `5` / `60` | `run-retro.sh`: an applied `retro:` proposal (closed as completed, no `retro-outcome:` comment yet) is put in front of the retro for a verdict once it has been closed at least this many days, and no longer after this many |
 | `DIGEST_MODEL` / `DIGEST_PROVIDER` / `DIGEST_BUDGET_USD` | `claude-sonnet-5-5` / `$PROVIDER` / `1` | `run-digest.sh` |
 | `DIGEST_CURATOR_DAYS` | `7` | how far back the digest lists the curator's rulings |
 | `BENCH_BUDGET_USD` / `BENCH_JOBS` | `4` / `1` | `run-bench.sh`: per replayed session, and cases run in parallel |

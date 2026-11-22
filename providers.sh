@@ -1392,6 +1392,39 @@ session_flags() {
 }
 
 # run_claude_session <label> <log-name> <cwd> <prompt-file> <prompt> [claude flags...]
+# spend_record <label> <rendered-session-log>
+# Appends the session's cost to $LOGS/spend.tsv as date, epoch, dollars and
+# label, tab-separated. It is the dated record DAY_BUDGET_USD is checked
+# against (loop.log carries HH:MM:SS only), and every driver's sessions land
+# in it: run_claude_session calls this after each attempt, harness/spend.py
+# does the same for the Python drivers. A session with no usage: line (it
+# died, or the rate limit turned it away) records nothing.
+spend_record() {
+  local cost
+  [ -r "$2" ] || return 0
+  cost="$(awk '/^usage: / { for (i = 1; i <= NF; i++) if ($i ~ /^cost=\$/) { s += substr($i, 7); f = 1 } }
+               END { if (f) printf "%.2f", s }' "$2" 2>/dev/null)" || return 0
+  [ -n "$cost" ] || return 0
+  printf '%s\t%s\t%s\t%s\n' "$(date +%F)" "$(date +%s)" "$cost" "$1" >> "$LOGS/spend.tsv" 2>/dev/null || true
+}
+
+# spend_today: the dollars recorded in $LOGS/spend.tsv on today's local date.
+spend_today() {
+  [ -r "$LOGS/spend.tsv" ] || { echo 0.00; return 0; }
+  awk -F'\t' -v d="$(date +%F)" '$1 == d { s += $3 } END { printf "%.2f", s }' "$LOGS/spend.tsv" 2>/dev/null || echo 0.00
+}
+
+# day_budget_reached: true when DAY_BUDGET_USD is set (not 0) and today's
+# recorded spend has reached it. The budget is the checkout's, not one
+# driver's: both loops, the regression drivers and the proposal drivers all
+# record into the one file. Only the loops hold for it (run-loop.sh
+# day_budget_hold and run_agent, the R17 driver's dispatch): a driver Don
+# starts by hand runs regardless.
+day_budget_reached() {
+  case "${DAY_BUDGET_USD:-0}" in ''|0|0.0|0.00) return 1 ;; esac
+  awk -v s="$(spend_today)" -v b="$DAY_BUDGET_USD" 'BEGIN { exit !(s + 0 >= b + 0) }'
+}
+
 # One fresh `claude -p` session, the way every driver runs one:
 # - the environment is MODEL_ENV (resolve_model_env for this session's pair
 #   first) plus SESSION_ENV, an optional array of VAR=value words;
@@ -1427,6 +1460,7 @@ run_claude_session() {
     snapshot_invalidate  # the session may have edited any issue
     [ -z "${driver_session_dir:-}" ] || rm -f "$driver_session_dir/session.$$"
     SESSION_PGID=""
+    spend_record "$label" "$LAST_SESSION"
     if ! sleep_if_rate_limited "$LAST_SESSION"; then
       [ "$attempt" -eq 1 ] || break
       echo "[$label] the rate limit turned the session away; running it again" | tee -a "$LOOP_LOG"

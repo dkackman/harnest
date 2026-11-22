@@ -37,7 +37,10 @@ One process runs both servers: it takes `.driver.lock` / `.driver.lock.mini-ai` 
 regression. A stop flag is per server: its items finish, the server's lock is released, the flag is
 consumed, shared work moves to the next server, and the driver exits when none is left. `DRAIN=1` exits when
 nothing runs and every server's `drain_left` is `done`; `MAX_SESSIONS` stops dispatching and exits when quiet.
-`TESTER_TASK_EVERY` and `MAX_CYCLES` are `run-loop.sh` only. Dashboard: the loop card reads
+`TESTER_TASK_EVERY` and `MAX_CYCLES` are `run-loop.sh` only. Two brakes work the same in
+both drivers: `DAY_BUDGET_USD` (no session starts once today's `logs/spend.tsv` total reaches
+it; the loop waits for midnight, or exits under `DRAIN=1`) and the dry-round rule
+(`TESTER_TASK_DRY_ROUNDS`: standing-task sessions that find nothing slow the task down). Dashboard: the loop card reads
 `logs/loop/state.json` (per server: deployed head, deploy state, GPU and card busy, running sessions;
 a heartbeat gone quiet shows stalled; a driver mid-stop shows stopping). Stop the bash loop first on a
 server; do not edit `run-loop.sh`/`providers.sh` while it runs. After a merge to a checkout run

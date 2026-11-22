@@ -49,6 +49,7 @@ board() { # board <json for o/r issues>
 loop() { # loop <cycles>: run the real driver against the board
   (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r TICKET_OWNER=dkackman \
      SOURCE_DIR="$T/src" PLUGIN_TREE="$T/plugin" LEAD_TREE="$T/lead" MAX_CYCLES="$1" SLEEP_SECS=0 SESSION_RETRY_PAUSE_SECS=0 \
+     TESTER_TASK_DRY_ROUNDS="${TESTER_TASK_DRY_ROUNDS:-0}" \
      ./run-loop.sh) > "$T/loop.out" 2>&1
 }
 labels_of() { jq -r --arg n "$1" '.["o/r"][] | select((.number|tostring) == $n) | [.labels[].name] | sort | join(",")' "$T/board.json"; }
@@ -275,6 +276,42 @@ head -c 2048 /dev/zero | tr '\0' x > "$T/h/qa-bible.md"
 FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 loop 1
 fails "bible cap: one under the cap is not" grep -q "qa-bible.md is" "$T/loop.out"
 rm -f "$T/h/qa-bible.md"
+
+# --- 3d3. the dry-round rule: standing-task sessions that file nothing and
+# add no case slow the task down (loop() turns the rule off everywhere else)
+: > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/task-dry"
+board '[]'
+FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 TESTER_TASK_DRY_ROUNDS=2 loop 4
+eq  "dry rounds: cycles 1, 2 and 4 run the task, 3 is skipped" 3 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG")"
+has "dry rounds: the second halves the cadence" "dry round 2 (no issue filed, no suite case added); the standing task now runs at 1/2 of its cadence" "$(cat "$T/loop.out")"
+eq  "dry rounds: the count is kept in logs/task-dry" 3 "$(cat "$T/h/logs/task-dry")"
+: > "$FAKE_CLAUDE_LOG"
+FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 TESTER_TASK_DRY_ROUNDS=2 TESTER_TASK_DRY_MAX=2 loop 2
+eq  "dry rounds: TESTER_TASK_DRY_MAX caps the slowdown" 1 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG")"
+echo 3 > "$T/h/logs/task-dry"; : > "$FAKE_CLAUDE_LOG"
+FAKE_CLAUDE_DO='' FAKE_CLAUDE_SAY='echo "> Bash {\"command\":\"gh issue create --repo o/r --title x\"}"' \
+  TESTER_TASK_EVERY=1 TESTER_TASK_DRY_ROUNDS=2 loop 4
+eq  "dry rounds: at 1/4 cadence only cycle 4 runs it" 1 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG")"
+has "dry rounds: a round that files an issue ends the slowdown" "found something after 3 dry round(s): the standing task is back on its cadence" "$(cat "$T/loop.out")"
+eq  "dry rounds: and clears the count" 0 "$(cat "$T/h/logs/task-dry")"
+: > "$FAKE_CLAUDE_LOG"
+FAKE_CLAUDE_DO='' TESTER_TASK_EVERY=1 TESTER_TASK_DRY_ROUNDS=0 loop 3
+eq  "dry rounds: 0 turns the rule off" 3 "$(grep -c 'TASK session' "$FAKE_CLAUDE_LOG")"
+rm -f "$T/h/logs/task-dry"
+
+# --- 3d4. the day budget: once DAY_BUDGET_USD is spent no session starts,
+# and a drain exits at the next cycle boundary rather than wait for midnight
+: > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/spend.tsv" "$T/h/logs/progress-ledger"*
+board '[{"number": 41, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}, {"number": 42, "state": "OPEN", "labels": [{"name": "owner:implementer"}]}]'
+DAY_BUDGET_USD=0.01 DRAIN=1 loop 3; rc=$?
+eq  "day budget: the driver exits cleanly" 0 "$rc"
+eq  "day budget: the session that reaches it is the last" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+has "day budget: a later one in the cycle is not started" "] not started: day budget reached (\$0.01 of DAY_BUDGET_USD=\$0.01 today)" "$(cat "$T/loop.out")"
+has "day budget: a drain exits at the cycle boundary" "day budget reached (\$0.01 of DAY_BUDGET_USD=\$0.01 today); drain: exiting" "$(cat "$T/loop.out")"
+eq  "day budget: an issue whose session never started is not counted against" "" "$(labels_of 42 | grep -o status:needs-approval || true)"
+: > "$FAKE_CLAUDE_LOG"
+DAY_BUDGET_USD=x loop 1; eq "day budget: a value that is not a number is refused" 1 $?
+rm -f "$T/h/logs/spend.tsv"
 
 # --- 3e. run-release.sh: freeze, check, the gates' lock refusal, accept,
 # status, and cut refusing without its gates. (pr/run/release/workflow have
@@ -868,6 +905,31 @@ has "curate: from rank-cases.py, not a failure" "no case has run" "$(cat "$FAKE_
    SESSION_RETRY_PAUSE_SECS=0 ./run-retro.sh) > "$T/retro.out" 2>&1
 eq  "retro: exits cleanly" 0 $?
 eq  "retro: one session" 1 "$(grep -c 'claude -p' "$FAKE_CLAUDE_LOG")"
+# applied proposals come back to be checked: closed as completed, old enough,
+# no verdict yet; the measure is counted as literal text in the window
+cp "$T/board.json" "$T/board.keep"
+old="$(date -u -v-10d '+%Y-%m-%dT%H:%M:%SZ' 2>/dev/null || date -u -d '10 days ago' '+%Y-%m-%dT%H:%M:%SZ')"
+new="$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+jq --arg old "$old" --arg new "$new" '.["h/r"] = [
+  {number: 71, state: "CLOSED", stateReason: "COMPLETED", closedAt: $old, title: "retro: name the allowed tool", labels: [{name: "harness"}],
+   body: "x\n\n## How to measure\n\nmeasure: `ZZ-DENIED-MARK`\nbaseline: 9 in 40 sessions\nexpect: zero\n", comments: []},
+  {number: 72, state: "CLOSED", stateReason: "COMPLETED", closedAt: $old, title: "retro: older style", labels: [{name: "harness"}],
+   body: "x\n\n## How to measure\n\nDenials for `cat >` should drop to zero.\n\n---\nfiled", comments: []},
+  {number: 73, state: "CLOSED", stateReason: "COMPLETED", closedAt: $old, title: "retro: already ruled", labels: [{name: "harness"}],
+   body: "measure: a", comments: [{body: "retro-outcome: helped\n9 -> 0", author: {login: "dkackman"}}]},
+  {number: 74, state: "CLOSED", stateReason: "NOT_PLANNED", closedAt: $old, title: "retro: declined", labels: [{name: "harness"}], body: "", comments: []},
+  {number: 75, state: "CLOSED", stateReason: "COMPLETED", closedAt: $new, title: "retro: applied today", labels: [{name: "harness"}], body: "", comments: []},
+  {number: 76, state: "CLOSED", stateReason: "COMPLETED", closedAt: $old, title: "guard: not a retro proposal", labels: [{name: "harness"}], body: "", comments: []}]' \
+  "$T/board.keep" > "$T/board.json"
+printf 'a ZZ-DENIED-MARK line\nanother ZZ-DENIED-MARK line\nZZ.DENIED.MARK is not it\n' >> "$T/h/logs/loop.log"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r RETRO_EVIDENCE_ONLY=1 ./run-retro.sh) > "$T/retro.ev" 2>&1
+has "retro outcomes: two applied proposals are due" "## Applied proposals to check: 2" "$(cat "$T/retro.ev")"
+has "retro outcomes: the measure is counted as literal text" 'measure: `ZZ-DENIED-MARK` | baseline when filed: 9 in 40 sessions | expected: zero | this window: 2 loop.log lines' "$(cat "$T/retro.ev")"
+has "retro outcomes: one without a measure line quotes what it said" "no \`measure:\` line; what it said would move: Denials for \`cat >\` should drop to zero." "$(cat "$T/retro.ev")"
+fails "retro outcomes: ruled, declined, too new and non-retro issues are left out" grep -qE '#7[3456] ' "$T/retro.ev"
+(cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r RETRO_EVIDENCE_ONLY=1 RETRO_OUTCOME_MIN_DAYS=20 ./run-retro.sh) > "$T/retro.ev" 2>&1
+has "retro outcomes: RETRO_OUTCOME_MIN_DAYS holds a recent one back" "## Applied proposals to check: 0" "$(cat "$T/retro.ev")"
+cp "$T/board.keep" "$T/board.json"
 # a rejected rate limit with no reset named: sleep the fallback, then run the attempt again
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/reject-once"
 (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r FAKE_CLAUDE_REJECT="$T/reject-once" \
