@@ -28747,4 +28747,189 @@ web UI at `/`.
 cleanup: none.
 metrics: none.
 
+### C-F1260 — validate refuses an H3 `reference_type` dotted path that names no class, and lists the real ones
+source: tester, verified in #1554 (claude-opus-5-5 via anthropic)
+Free (validate only). Use the inline workflow from C-F1186 (step `h3`, `ModularPipeline`, `MiniMaxAI/MiniMax-H3`,
+`workflow: ref2va`, I and V as there). Validate it with each R below:
+1. `[{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3NoSuchReference", "from_file": V}]`
+2. `[{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_file": V},
+   {"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VidoeReference", "from_file": V}]` (typo at 1)
+3. `[{"reference_type": "variable:rt", "from_file": V}]`, with the workflow declaring `variables: {"rt":
+   "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference"}` (control)
+expected:
+- 1 is `valid: false` with an error at `steps[0].pipeline.arguments.references[0]` saying the path names no class
+  and listing the reference classes that exist (at least `MiniMaxH3ImageReference`, `MiniMaxH3VideoReference`,
+  `MiniMaxH3AudioReference`).
+- 2 is `valid: false` with exactly one error, at `references[1]`, of the same kind; nothing at `references[0]`.
+- 3 is `valid: true` with a `plan`: `variable:` values are not checked here.
+It is a **finding** if 1 or 2 comes back `valid: true`, if the error doesn't list the real classes, or if 3 is refused.
+cleanup: none.
+metrics: none.
+
+### C-F1261 — `fit_to_model` documents `fill` (`black` default, `edge`, `blur`), and reframe documents its `fill` and the whole-frame prompt
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+Free, read-only. (1) `get_task("fit_to_model")`. (2) `get_workflow("templates/minimax/reframe", variables_only=true)`,
+then the full form. (3) `list_workflows(shape="shot")` and the default `list_workflows()`. (4) The `dw:minimax-h3` skill's
+reframe routing line.
+expected:
+- (1) `fill` is listed, optional, default `"black"`, with choices exactly `black`, `edge` and `blur`. Its description
+  says it is letterbox only; that `edge` carries the picture's outermost rows/columns across the bars with a blur that
+  grows with distance; that `blur` fills the canvas with a scaled, centre-cropped, heavily blurred copy under the box;
+  and that the box, `mask` and `align` are not changed by it. `mode`, `align` and the summary keep today's text about
+  the mask and the reframe pointers ("reframe a clip to another aspect", `templates/minimax/reframe`).
+- (2) the variables gain `fill`, and `refine_strength`'s default is below 1.0. Until the A/B (C-F1266) rules, the build
+  ships `fill: "edge"` and `refine_strength: 0.8`; after it, both equal the winning arm's values (C-F1267 checks that).
+  In the full form, the fit step's `fill` is `variable:fill`, and the edit's `refine_strength` is `variable:refine_strength`.
+- (2) the `prompt` variable's description (or the template description) says the prompt describes the **whole** tall
+  frame, naming what sits above and below the original, with an example. The template description says the border
+  is seeded from the source picture (not "regenerated from noise"), and does not contain "fill dev".
+- (3) the reframe summary is still 120 characters or fewer, and the default listing shows no truncation notice.
+- (4) the skill's reframe line says the same: describe the whole frame, not "extended above and below".
+A `fill` default other than `black`, a fourth choice, a `refine_strength` default of 1.0, or no whole-frame prompt
+guidance in either the template or the skill is a **finding** (the skill's is a ticket against the skill).
+cleanup: none.
+metrics: none.
+
+### C-F1262 — each `fill` changes only the bars: box, mask and the pixels inside the box are those of `black`
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+CPU tasks only. Fixture `asset:qa-cast/ep3-shot1-incident.mp4` (960x544, 124 frames). One inline `run_workflow`
+(validate first, `wait_seconds=55`) in `workspace="regression-complete"`, every step saved, each a letterbox
+`fit_to_model` of the fixture with `num_frames=124`:
+1. `none`: 544x960, no `fill`. 2. `black`: 544x960, `fill="black"`. 3. `edge`: 544x960, `fill="edge"`.
+4. `blur`: 544x960, `fill="blur"`. 5. `edge32` and `blur32`: as 3 and 4 with `align=32`; `black32` with `align=32`.
+6. `wedge` and `wblur`: 1344x544 (bars left and right, box about `[192, 0, 960, 544]`) with `fill="edge"` and `"blur"`;
+   `wblack` the same with `fill="black"`.
+Read each step's `content_box`, each `mask` with `get_output_image`, and each video with `get_output_frames` at frames
+0, 62 and 123. Run `compare_outputs` on `none` vs `black`, `black` vs `edge`, and `black` vs `blur`.
+expected:
+- `none` and `black` are identical: same box, same mask, `compare_outputs` reports no difference. The default is unchanged.
+- `edge`, `blur` (and `edge32`/`blur32`, `wedge`/`wblur`) have exactly the box and mask of their `black` counterpart.
+  `compare_outputs` against `black` shows differences only in the bars. Inside the box the picture is the same
+  (no shift, no blur, no tint), and the box edge is not softened by the fill.
+- `edge`: the rows just above and below the box continue the picture's top and bottom edge rows: the same colours
+  at the boundary, with no gap, black line or step. Features that meet the edge (the brick wall, the desk front) carry
+  into the bars as streaks that blur more the further they are from the box. In `wedge` the same holds for the
+  columns left and right of the box.
+- `blur`: no black anywhere at canvas size. The bars show a heavily blurred, enlarged copy of the scene, roughly
+  centred on it. In `wblur` the side bars are filled the same way.
+- On all three frames the bars of `edge` and `blur` follow the picture over time (they differ between frames 0, 62
+  and 123 where the picture's edge changes), not one frozen frame.
+- `edge32`/`blur32` boxes are on the 32 px grid, as `black32`'s is.
+A changed box or mask, any change inside the box, black in a `blur` bar, a gap or line at an `edge` boundary, or
+`none` differing from `black` is a **finding**.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1263 — `fill` other than `black` is refused at validate outside letterbox; a bad `fill` value is refused
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+Free (validate only). An inline one-step workflow: `fit_to_model(video="asset:qa-cast/ep3-shot1-incident.mp4",
+width=544, height=960, num_frames=124, ...)`, `workspace="regression-complete"`. Vary the tail:
+(1) `mode="crop", fill="edge"`. (2) `mode="stretch", fill="blur"`. (3) `mode="crop", fill="black"`.
+(4) `mode="stretch"` with no `fill`. (5) `mode="letterbox", fill="mirror"`. (6) `fill="edge"` with `mode` omitted
+(letterbox by default). (7) `mode="crop", fill="variable:f"` with the workflow declaring `variables: {"f": "edge"}`.
+expected:
+- (1) and (2) refused at validate, with a message naming `fill`, the mode, and that only letterbox takes it (in
+  the manner of the `align` rule).
+- (3) and (4) clean: `black` is the no-op and is legal with every mode.
+- (5) refused at validate, naming `fill` and its choices.
+- (6) clean.
+- (7) either refused at validate (the variable resolved) or, if validate leaves `variable:` values unchecked, refused
+  at run before any output is written, naming `fill`. A run that silently ignores it is a **finding**.
+A clean validate for (1), (2) or (5), or a refusal of (3), (4) or (6), is a **finding**.
+cleanup: `delete_output(job_id=<job>)` for any run from (7).
+metrics: none.
+
+### C-F1264 — reframe refuses a source whose frame count isn't `num_frames` at validate, naming both counts; a bare `fit_to_model` pad is unchanged
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+Mostly free. The fixture `asset:qa-cast/ep3-shot1-incident.mp4` has 124 frames. Base arguments as C-F1154:
+`{"source_video": "asset:qa-cast/ep3-shot1-incident.mp4", "prompt": "<the C-F1266 prompt>", "seed": 42}`,
+`workspace="regression-complete"`.
+**Setup (CPU, once):** a 141-frame source. Run `fit_to_model(video=<fixture>, width=960, height=544, num_frames=141,
+mode="crop")` (it holds the last frame), then `keep_output` it as `asset:cf1264/src141.mp4` (check with
+`get_gallery_metadata` that it has 141 frames).
+Validate `templates/minimax/reframe` with: (1) the base. (2) + `num_frames: 125`. (3) + `num_frames: 141`.
+(4) `source_video: "asset:cf1264/src141.mp4"` + `num_frames: 141`. (5) that source with the default `num_frames` (124).
+(6) + `width: 550`. (7) + `num_frames: 100`. Then (8) validate `templates/minimax/regional-edit` with the fixture,
+any `mask_image` it accepts, and `num_frames: 125`. (9) Validate (and run, CPU) an inline bare
+`fit_to_model(video=<fixture>, width=544, height=960, num_frames=141, mode="letterbox")`.
+expected:
+- (1) clean. (4) clean: the counts match.
+- (2) refused at validate, naming both counts (124 and 141, the snapped count) and `source_video`. Its wording matches
+  regional-edit's refusal in (8) in substance ("source_video has 124 frames, and the step renders num_frames=141 -
+  they must match" or the like). A round-up *warning* with a clean result, the plan's C-F1154(7) bug, is a **finding**.
+- (3) refused the same way (124 vs 141). (5) refused, naming 141 vs 124: a longer source is refused too, not cut.
+- (6) refused by the multiple-of-32 rule and (7) by the 124-345 window, as before.
+- (9) validates clean and runs, giving 141 frames whose tail holds the last frame: the bare task's padding is unchanged.
+A refusal that names only one count, a refusal that surfaces only at run time, or a refused (9) is a **finding**.
+cleanup: `delete_output` for the setup and (9) jobs; `delete_asset("cf1264/src141.mp4", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1265 — a bad `feather` on reframe is reported once
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+Free (validate only). Validate `templates/minimax/reframe` with C-F1264's base arguments plus (1) `feather: -1` and
+(2) `feather: 156` (at least half the snapped box's short side at the default canvas; use a value at or above half
+of the box height that C-F1262's `edge32` step reports, if 156 is under it). (3) An inline bare `paste_into_box`
+with a literal `content_box=[0, 324, 544, 311]` and `feather=-1` (C-F1152 (3)).
+expected:
+- (1) and (2) are each refused at validate with exactly **one** problem naming `feather` (across both `errors` and
+  `warnings`, not the same rule reported from the variable and again from the paste step).
+- (3) refused with one problem naming `feather`, as C-F1152 has it.
+Two entries for one bad `feather`, or a clean validate, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1266 — the fill × strength A/B: one arm's border reads as the same camera's continuation, and it is recorded
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic), with the 2026-11-22 amendment
+Cost: five H3 masked-edit runs at 544x960, 124 frames (about 2-2.3 min each on lem, about 12 min), all seeded alike.
+Make a request (`set_request`, id `cf1266-reframe-ab`, one item per arm) and link each run to its item. Every run is
+`templates/minimax/reframe` in `workspace="regression-complete"`, validated first, with
+`source_video: "asset:qa-cast/ep3-shot1-incident.mp4"`, `seed: 42`, the template's other defaults, and this
+whole-frame prompt: "The same shot in a tall frame: the brick wall rises above the man to a plain ceiling; below
+the desk, its front panel and a wooden floor." Arms:
+1. `fill: "edge", refine_strength: 0.7`. 2. `edge`, 0.85. 3. `fill: "blur", refine_strength: 0.7`. 4. `blur`, 0.85.
+5. Control: `fill: "black", refine_strength: 1.0`.
+For each, `get_output_frames` at frames 0, 62 and 123 (the top and bottom bands, and both box edges), `assess_output`,
+and `get_job` for warnings.
+expected (an arm **passes** only if all hold on all three frames):
+- the wall and the desk carry on across the box edges into the bands, in the same perspective, light and colour;
+- no new room, wall, window, ceiling fixture or person that the shot doesn't imply (a giant face, a standing man,
+  an attic, as #1542's arms drew, fails);
+- no hard or dark line at the box edge, and no brightness or colour step across it;
+- the bands are not smeared, streaked or hazed by the fill (an `edge` streak or `blur` haze still visible fails),
+  and not frozen: they change between frames with the shot's motion and light, and `assess_output` reports no frozen span;
+- the original is intact in its box, and the output is 544x960, 124 frames, with the source's soundtrack.
+The record (a comment on #1567, never this file) names every arm's job id and its verdict, and posts or links frames
+0, 62 and 123 of the winning arm and of the control (5). The winner is the passing arm that reads best. If only the
+control passes, the winner is `black` × 1.0, and the fix was the prompt (the plan keeps `fill` regardless).
+If **no** arm passes, that is a **finding**, and #1066 goes to `owner:don` with the frames and Q6's three options. It is
+not a pass with a weaker reading.
+cleanup: `delete_output(job_id=<job>)` for each arm, after the record is posted and the frames are attached.
+metrics: none.
+
+### C-F1267 — reframe's shipped `fill` and `refine_strength` are the A/B winner's, and a default run reads as the winner did
+pending: #1567
+source: tester, spec for #1567 from #1066's plan v5 (claude-opus-5-5 via anthropic)
+Runs after C-F1266 has named a winner and the defaults have been set to it. Cost: one H3 run at 544x960, 124 frames,
+or none if the winning arm's arguments equal the new defaults exactly and that arm's job is from this build.
+(1) `get_workflow("templates/minimax/reframe", variables_only=true)`. (2) Run the template with only `source_video`
+(the fixture), C-F1266's prompt and `seed: 42`. Check it as C-F1155 does: `get_gallery_metadata`, `get_output_frames`
+at frames 0, 62 and 123, `analyze_audio` on it and on the fixture, and `assess_output`.
+(3) `validate_workflow` with no `fill` given on a bare letterbox `fit_to_model` (C-F1263 (6) without `fill`).
+expected:
+- (1) the `fill` and `refine_strength` defaults are the winning arm's, as #1567's A/B record names it. A default that
+  differs from the record is a **finding**.
+- (2) the output is a 544x960, 124-frame, 24 fps mp4 of about 5.17 s. The original is intact in its box on every
+  frame. The border passes C-F1266's reading (the same camera's continuation, no new room or person, no hard line,
+  no smear, moving bands). The soundtrack's `mean_dbfs` is within 1 dB of the fixture's -20.0.
+- (3) the task still defaults `fill` to `black`: only the template's default moved.
+A border that fails C-F1266's reading at the shipped defaults is a **finding**, even if the A/B arm passed.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
 ## Performance
