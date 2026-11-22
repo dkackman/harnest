@@ -11779,4 +11779,247 @@ It is a **finding** if an env-swap template appears or `composable-references` c
 cleanup: none.
 metrics: none.
 
+### M-F466 — the #1528 band probes' jobs: exactly 16 Ref2VA turbo clips in `probe-1528`, four probes × two arms × two seeds, all succeeded, nothing unnamed
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` (turbo LoRA) on lem (cuda). **Free**: reads only.
+The record is `docs/proposals/audits/2026-11-vrgdg-band-probes.md` in the dw repo, which a tester can't read: use the
+record as the stage's hand-off comment on #1561 (or #1528) quotes it: one row per arm with its job ids, seeds, prompt
+(or the arm's differing words), references and verdict. A fact the hand-off doesn't quote is missing.
+Steps: `list_jobs(workspace="probe-1528", limit=50)`; `get_job(job_id=..., workspace="probe-1528")` and
+`get_job_workflow(job_id=...)` on every job the record names.
+expected:
+- The record names 16 generation jobs: probes P1 (missing-reference stranger), P2 (wet words near a face), P3 (late
+  exit) and P4 (silent drummer under a held sung slice), each with two arms, each arm at two seeds; the two seeds are
+  the same pair in both arms of a probe.
+- Every named job is in `probe-1528` and `succeeded` (not failed or cancelled). A re-run is allowed only if the record
+  names it and why; the failed attempt is then also named. Any other job in `probe-1528` is named in the record as setup
+  (a cast portrait, a song or its slice) and ran no H3 generation step.
+- Each H3 step is `ref2va` at `width` 960, `height` 544, `num_frames` 124, with the turbo ref2v LoRA and the
+  `num_inference_steps` the record states (the turbo default the `reference-to-video` template sets, `get_workflow` on it
+  for comparison), and `seed` the record's for that row.
+It is a **finding** if a named job is missing, outside `probe-1528`, not `succeeded` with no named re-run, at another
+size, frame count, step count or seed; if fewer than 16 ran (Don's Q1 ruled all four probes); or if an unnamed H3 job
+exists in `probe-1528`.
+cleanup: none (the jobs are the bench record).
+metrics: none.
+
+### M-F467 — each #1528 probe's two arms differ only in the claimed variable
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
+Steps: `get_job_workflow` on every M-F466 job; compare, per probe and per seed, arm one's H3 step with arm two's; compare
+each `prompt` with the text the hand-off quotes for that arm.
+expected:
+- Fields a run fills in (ids, times, output paths) are ignored; the same arm at its two seeds differs only in `seed`.
+- **P1:** one three-person group shot, all three placed by position in both arms. Arm one carries three image
+  references, one per person; arm two carries two of those same files, and its prompt describes the third person
+  in words where arm one labels that person's reference. No other prompt change, no other reference change.
+- **P2:** one face close-up, the same reference(s) in both arms. Arm one's prompt has wet wording near the face (rain,
+  rain-soaked, wet, streaked or the like, named in the record); arm two's is the same prompt with that wording made
+  neutral. Nothing else differs.
+- **P3:** one person. Arm one writes the exit as the shot's last action; arm two puts the same exit in the first half.
+  The rest of the prompt (person, setting, camera) is the same.
+- **P4:** a drummer-only shot on the music-video path: a sung slice of a song held with `hold_audio` (and, as the
+  template does, the slice as an audio reference), the singer not in frame and not described as present. Arm one has no
+  lips wording; arm two adds a closed-lips statement. Same slice, same references, same everything else.
+- Each prompt is byte-equal to the record's quoted prompt for its arm.
+It is a **finding** if any arm pair differs in anything other than its claimed variable (size, steps, LoRA, another
+reference, a reworded line elsewhere), if P1's arm two drops a reference but also drops the person's placement, if P4's
+held slice has no sung vocal in it (`get_output_audio` on the slice, or the record's note of where the vocal sits), or if
+a prompt differs from the record.
+cleanup: none.
+metrics: none.
+
+### M-F468 — the #1528 P1 verdict (missing reference → stranger) re-checks against the frames
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
+Steps: for each P1 job, `get_job` for its output, then `get_output_frames(name=<output>, count=12,
+workspace="probe-1528")` and, on at least three frames spread across the clip, `get_output_frames(name=<output>,
+at=[...], crop=[<the group's box in source pixels>], max_dimension=960, workspace="probe-1528")`; the three references
+with `get_output_image` (or `get_gallery_metadata` and a frame of each reference job). Judge before reading the verdict.
+expected:
+- The record gives, per job, the head count and whether each figure matches a reference; and for the two-reference arm,
+  whether the described-only person comes out as someone matching no reference (a stranger), and whether any extra
+  person appears in either arm.
+- Your count and match per job agree with the record; a disagreement is stated on the issue with the frame index.
+- Counts come from cropped or `max_dimension`-raised frames, never from the 12-frame sheet alone.
+It is a **finding** if a job's verdict is missing, contradicts the frames on head count or on the third person's match,
+or rests on the contact sheet alone.
+cleanup: none.
+metrics: none.
+
+### M-F469 — the #1528 P2 verdict (wet words → skin streaks) re-checks on native-size face crops
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
+Steps: for each P2 job, `get_output_frames(name=<output>, at=[<at least three frames, the record's own if it names
+them>], crop=[<the face's box in source pixels>], max_dimension=<the crop's own long side or more, so no downscale>,
+workspace="probe-1528")`; the same frame indices on both arms at each seed.
+expected:
+- The record states, per job, whether the face skin shows streaks (lines, runs or wet tracks not in the reference), from
+  native-size face crops at named frames, and keeps rain or wetness elsewhere in frame apart from streaks on the skin.
+- Your judgment of each job agrees; a disagreement is stated with the frame index.
+It is a **finding** if a verdict is missing, rests on downscaled frames or the 12-frame sheet, or contradicts the crops.
+cleanup: none.
+metrics: none.
+
+### M-F470 — the #1528 P3 verdict (an exit written last doesn't happen) re-checks on the last frames
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
+Steps: for each P3 job, `get_output_frames(name=<output>, at=["frame:100","frame:112","frame:123"],
+workspace="probe-1528")` and `get_output_frames(name=<output>, count=12, workspace="probe-1528")` for the course of the
+shot.
+expected:
+- The record states, per job, whether the person is out of frame by the last frames (fully gone, partly in frame, or
+  still in place), and for the early-exit arm, whether the frame stays empty after the exit (no re-entry, no new person).
+- "Exits" means no part of the person in frame at `frame:123`; a body part at the edge is "partly", not an exit.
+- Your judgment of each job agrees; a disagreement is stated with the frame index.
+It is a **finding** if a verdict is missing, calls a partial exit an exit, or contradicts the last frames.
+cleanup: none.
+metrics: none.
+
+### M-F471 — the #1528 P4 verdict (a silent drummer under a held sung slice) re-checks across a sung phrase
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` with `hold_audio` on lem (cuda). **Free**: `get_output_frames` and reads only.
+Steps: for each P4 job, `get_output_frames(name=<output>, at=[<at least six frames inside one sung phrase, the
+record's own if named>], crop=[<the drummer's face>], max_dimension=<no downscale of the crop>, hear=1,
+workspace="probe-1528")`.
+expected:
+- The record states, per job, whether the drummer's mouth is open or changes shape across the frames of a sung phrase
+  (mouthing the vocal) or stays closed, with the frames it used, and that those frames sit where the vocal is sung.
+- Your judgment of each job agrees; a disagreement is stated with the frame index.
+- If stills can't decide it (a mouth that moves between the stills, per the plan's risk), the job is marked as
+  needing Don's eye (M-F472), not ruled.
+It is a **finding** if a verdict is missing, judged from frames outside the sung phrase, or contradicts the crops.
+cleanup: none.
+metrics: none.
+
+### M-F472 — the #1528 record's verdict rules: held only when both seeds agree, a split is not settled, and an unjudgeable claim goes to Don
+pending: #1561
+source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (bench record). **Free**: reads only.
+Steps: the record's per-claim verdicts (P1-P4) against its per-job rows (M-F468 to M-F471).
+expected:
+- Each of P1-P4 has exactly one verdict: held, refuted, or not settled.
+- **Held** only if, at both seeds, the claimed arm shows the failure and the other arm doesn't (P1: a stranger or wrong
+  person in the two-reference arm, not in the three-reference arm; P2: streaks with wet words, none neutral; P3: no
+  exit when written last, an exit when written early; P4: the drummer mouths the vocal without lips wording).
+  **Refuted** only if both seeds show no difference the claim predicts. Anything else, including the seeds
+  disagreeing, is **not settled**, and the record says it is not adopted as a rule.
+- A claim whose frames Claude can't judge (P2 or P4 most likely) is marked as needing Don's eye (a `taste` call per the
+  plan), not ruled held or refuted.
+- P4's verdict says what it means for rule o: held → "keep the singer in frame, or render without `hold_audio`" and a
+  follow-up idea for a vocal-free slice; refuted → o recorded as not needed.
+It is a **finding** if a claim is held or refuted from one seed or over a seed split, if a verdict doesn't follow from
+its rows under the rule above, or if a perceptual call the record couldn't make is ruled anyway.
+cleanup: none.
+metrics: none.
+
+### M-F473 — the H3 skill's staging reference carries each #1528 probe verdict in the right place, matching the record
+pending: #1562
+source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
+Steps: read `references/staging.md` under the base directory the loaded `dw:minimax-h3` skill reports (the plugin is
+the consumer surface, refreshed from `develop`; on the stage's build, not an older cached plugin version); `Grep` it for
+`1528`, `probe-1528`, `2026-11-vrgdg-band-probes`, `stranger`, `wet`, `exit`; read the hand-off's verdicts (M-F472).
+expected:
+- P1, P2 and P3 each appear once, citing the record (`2026-11-vrgdg-band-probes.md`, or #1528/#1561):
+  held → a rule in the body; refuted → under *Probed and not a rule*; not settled → not stated as a rule (it may be
+  noted as not settled, under *Probed and not a rule* or with the record).
+- Each line states the same outcome as the record, and a refuted claim is not also given as advice elsewhere.
+- P1's line, held or not, is about a described-but-unreferenced group member, and keeps the existing refutation
+  (an unused reference isn't drawn as another person, `per-character.md`) as a separate claim.
+It is a **finding** if a verdict is missing, in the wrong place, the opposite of the record's, or a not-settled claim
+is written as a rule.
+cleanup: none.
+metrics: none.
+
+### M-F474 — the outside-reported multi-character list in `staging.md` names its source, says "not probed here", and is never worded as tested
+pending: #1562
+source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
+Steps: read `references/staging.md` as in M-F473.
+expected:
+- One list, headed or introduced as reported from an outside band-video run and not probed here, with a source line
+  naming VRGDG (vrgamegirl19/comfyui-vrgamedevgirl, its band-music-video skill) and saying it may describe a finetune,
+  not base H3, or that a field report can promote or remove a line.
+- The list covers rules e-m in substance: calm eye wording (not "eyes flashing wide"); a small prop named plainly and
+  the same way each time; a prop action as separate visible steps; fixed furniture kept out of a walking action;
+  a touch on another face comes out bigger; a crane-up states its framing; a final hit written as played through; no
+  long static wide (start wide, move in).
+- Rule b (clones: "exactly one person" in a single-member shot, a role named as the only one, head and large-prop
+  counts in a wide shot) sits next to the placement rule and says to use it **with** explicit placement, never instead
+  of it; rule c (one position map repeated in every wide shot; a flat floor over a raised stage) sits there too. Both
+  are marked outside-reported.
+- No line of the list says or implies it was rendered or confirmed on our server ("we found", a job id, a record of
+  ours); no list line restates a P1-P4 claim (those are M-F473's).
+- Rule p (stems pick who plays) is not in any file as a rule.
+- No banned phrase appears in any file this stage changed: "locked-off on a tripod", "all caps", "just before contact".
+It is a **finding** if the source or "not probed here" is missing, any of b, c, e-m is missing, a line reads as
+tested here, b is offered in place of placement, p appears as a rule, or a banned phrase appears.
+cleanup: none.
+metrics: none.
+
+### M-F475 — `cuts.md` adds the lyric hand-check and the #1528 P4 outcome; `dialogue.md` cross-refers only if P4 held
+pending: #1562
+source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill) and the issue tracker. **Free**: reads only.
+Steps: read `references/cuts.md` and `references/dialogue.md` as in M-F473 (`Grep` for `held note`, `last line`,
+`hold_audio`, `1528`, `closed`); `gh issue list --repo dkackman/diffusers-workflow --search "vocal-free in:title,body"
+--state all`.
+expected:
+- `cuts.md` keeps lyric timing on the lead-vocal stem as the default (as today, "Planning a music video's cuts") and
+  adds one sentence: hand-check the last lyric lines and held notes, which the aligner can squeeze.
+- `cuts.md` states P4's outcome, matching the record. Held → in substance "a vocal shot without the singer in frame:
+  keep the singer in frame, or render the shot without `hold_audio`"; `dialogue.md`'s silent-listener record (closed
+  mouth without the sentence, #1059) gains a cross-reference so the two don't read as a contradiction; and a separate
+  idea issue for a vocal-free slice option in `music-video` exists, referencing #1528. Refuted → rule o recorded as
+  not needed, no closed-lips rule added, and no vocal-free issue filed for it. Not settled or needing Don's eye → no
+  rule, the status stated.
+- No template, task or MCP surface changed for it: `get_workflow("templates/minimax/music-video")` has no new
+  vocal-free or per-entry instrumental variable.
+It is a **finding** if the hand-check sentence is missing, the vocal-stem default changed, the P4 line differs from
+the record, a held P4 has no cross-reference or follow-up idea, or a refuted P4 still adds a closed-lips rule.
+cleanup: none.
+metrics: none.
+
+### M-F476 — head counts use raised `max_dimension` or `crop`; the 12-frame sheet and the 512 default stay
+pending: #1562
+source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill) and the `get_output_frames` schema. **Free**: reads only.
+Steps: read `references/quality-and-speed.md` §4 "How to judge" as in M-F473; the `get_output_frames` tool schema;
+`Grep` the minimax-h3 skill directory for `count=12`.
+expected:
+- §4 has one line: count heads on a wide shot from `get_output_frames` with `max_dimension` raised or with `crop` on the
+  group, on a few frames, not from the 12-frame sheet. It names `max_dimension` or `crop` (or both).
+- `get_output_frames(count=12)` still stands as the staging sheet in §4 and in SKILL.md's "Run and judge".
+- The `get_output_frames` schema's `max_dimension` default is still 512 (no default change, Don's Q3), and no new
+  full-size flag was added.
+It is a **finding** if the line is missing or names neither parameter, if `count=12` is gone, or if the default moved.
+cleanup: none.
+metrics: none.
+
+### M-F477 — #1528 leaves SKILL.md alone and, if #1519's H3 recipes index is on `develop`, adds each outside rule there as `untested`
+pending: #1562
+source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill, recipes guide). **Free**: reads only.
+Steps: `Grep` the loaded skill's `SKILL.md` for `stranger`, `wet`, `drummer`, `VRGDG`, `max_dimension`, `1528`;
+confirm its `references/staging.md` link line ("A crowd, two people in frame, or a three-reference shot: read
+`references/staging.md`") is unchanged; check #1519's state (`gh issue view 1519 --repo dkackman/diffusers-workflow
+--json state,labels`) and, if it is closed verified, read its H3 index where it put it (its verify comment names the
+place: a recipes guide section or a skill reference).
+expected:
+- SKILL.md has none of those words for this stage, and its staging link line is as before. (The 12 KiB cap and
+  `tests/test_plugin_skills.py` are dw's own tests, not run here.)
+- #1519 landed before the stage was built: each of rules b, c and e-m has an `untested` row in the index, labelled
+  outside-reported. Not landed: no row is required, and the stage didn't wait for it.
+It is a **finding** if SKILL.md changed for this stage, or if #1519 had landed before the build and a rule has no
+`untested` row (or one marked tested).
+cleanup: none.
+metrics: none.
+
 ## Performance

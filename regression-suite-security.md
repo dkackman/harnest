@@ -2269,6 +2269,22 @@ A job queued, linked to `sef080-b`'s request from `sef080-a`, or a path in a rep
 with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: `delete_workspace` on `sef080-a` and `sef080-b` (`acknowledged_cost=true`).
 
+### SE-F082 — the workspace `changes` route refuses a traversal or reserved name and never reads outside the workspace roots
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. A new route that takes a workspace name in its path. One `ui-check` run, every step a `fetch` (GET):
+`/api/workspaces/..%2F..%2Fetc/changes`, `/api/workspaces/%2E%2E/changes`, `/api/workspaces/.hidden/changes`,
+`/api/workspaces/workflows/changes`, `/api/workspaces/common/changes`, `/api/workspaces/a%5Cb/changes`,
+`/api/workspaces/a%00b/changes`, and, for contrast, `/api/workspaces/default/changes`.
+expected:
+- `default` answers 200 with a snapshot (C-F1226's shape).
+- Every other name is refused (400, 404 or 422, matching how the server's other workspace routes refuse that name),
+  with no `epoch` or `kinds` in the body and no server path, stack trace or file name in it.
+- None creates a workspace: `list_workspaces` afterwards lists none of those names.
+A snapshot answered for a traversal or reserved name, a workspace made by a read, or a path in a reply is a hole:
+file it privately with `./scripts/file-advisory.sh`, never as an issue.
+cleanup: none.
+
 ## Performance
 
 Security refusals should be cheap: a gate that only fires after a model

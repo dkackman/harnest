@@ -26521,7 +26521,6 @@ cleanup: `delete_workspace(name="cf1147-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1148 — `paste_into_box` is discoverable, and `fit_to_model` documents its letterbox `mask`
-pending: #1541
 source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
 Free, read-only. (1) `list_tasks()`. (2) `get_task("paste_into_box")`. (3) `get_task("fit_to_model")`.
 expected:
@@ -26541,7 +26540,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1149 — letterbox `fit_to_model` returns a canvas-size mask that agrees exactly with `content_box`
-pending: #1541
 source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
 CPU tasks only, no model. Fixture `asset:qa-cast/ep3-shot1-incident.mp4` (960x544, 124 frames, 24 fps).
 **Setup:** one inline `run_workflow` (validate first, `wait_seconds=55`) in `regression-complete`. Its steps:
@@ -26572,7 +26570,6 @@ cleanup: `delete_output(job_id=<job>)`.
 metrics: none.
 
 ### C-F1150 — `align` snaps the letterbox box and mask to the H3 cell grid (only if stage A built `align`)
-pending: #1541
 source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
 Applies only when `get_task("fit_to_model")` lists `align`. If it doesn't, the snap lives in the template, and
 C-F1153/C-F1155 cover it. Record "n/a: snap is in the template" and move on. CPU only.
@@ -26594,7 +26591,6 @@ cleanup: `delete_output(job_id=<job>)`.
 metrics: none.
 
 ### C-F1151 — `paste_into_box` puts the source back inside the box, keeps `generated` outside, and carries `generated`'s audio and fps
-pending: #1541
 source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
 CPU only. It uses the two fixtures' ~11 dB level spread (`ep3-shot1` -20.0 dBFS, `ep3-shot2` -31.1 dBFS) to
 tell whose audio came through.
@@ -26627,7 +26623,6 @@ cleanup: `delete_output(job_id=<job>)`.
 metrics: none.
 
 ### C-F1152 — `paste_into_box` refuses a frame-count mismatch, a box that doesn't fit, and an out-of-range `feather`, naming the argument
-pending: #1541
 source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
 Validate is free; only (1) and possibly (2) need a CPU run. Use C-F1151's steps 1-3 as the base and vary step 4.
 (1) Build `standin` with `num_frames=141` (and `lb` at 124), then paste. (2) Pass a literal
@@ -27758,6 +27753,1034 @@ expected:
   (never in Don's workspace). Then `delete_workspace("qa-1527")`.
 - The take kept from Don's workspace is still there in its own workspace (`get_gallery_metadata` answers).
 cleanup: this case.
+metrics: none.
+
+### C-F1205 — an argument change after a take makes a done item `revised`: result kept, it is ready, its dependent waits
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+CPU only, one `templates/split-takes` run (no media, no model). **Setup S1531** (other #1531 cases reuse it, each in
+its own workspace `<ws>`): `create_workspace(name="<ws>")`, `workspace=` on every call. `set_request(request="demo",
+revision=0, title="Demo", goal="revised test", why="plan", items=[{"key":"a","title":"A","estimate_minutes":3,
+"workflow":"templates/split-takes","arguments":{"text":"One. Two. Three.","max_seconds":8}}, {"key":"b","title":"B",
+"estimate_minutes":5,"depends_on":["a"],"workflow":"templates/split-takes","arguments":{"text":"Four.",
+"max_seconds":8}}])`. `validate_workflow("templates/split-takes", arguments=<a's arguments>)` for the
+acknowledgement, then `run_workflow("templates/split-takes", arguments=<a's arguments exactly>, request="demo/a",
+note="take 1", acknowledged_cost=…, wait_seconds=55)` → J1 (follow with `wait_for_job` if still running).
+`get_request(request="demo")`: `a` is `done` with J1 as its result, `b` is `ready`. That is S1531.
+Here `<ws>` = `cf1205-req`. (1) `set_request` at the current revision, the plan as read but `a`'s arguments
+`{"text":"One. Two. Three. Four.","max_seconds":8}`, `why="rewrite a"`. (2) `get_request(request="demo")` and
+`get_request()` (the list).
+expected:
+- (2) `a.status` is `revised`; `a.revised_because` is a list naming `arguments`; `a.result` is still J1's run
+  (same job, run id and output) and `a.attempts` still lists J1; `a.ready` is true; `a.changed_at` is present and
+  not earlier than J1's `created_at`.
+- `b.status` is `planned` and `b.ready` is false.
+- The request's `remaining_minutes` is 8 (a's 3 plus b's 5); before step (1) it was 5.
+- The list row's counts by status carry `revised: 1` (and no `done` for `a`); its `ready` count is 1 (a, not b).
+A revised item whose result is cleared, a `b` still ready, or `a` read as `done` is a **finding**.
+cleanup: `delete_workspace(name="cf1205-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1206 — a write that leaves `workflow` and `arguments` alone keeps a done item `done`; `changed_at` is the server's
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One `split-takes` run. Setup S1531 (C-F1205) in `cf1206-req`; read `a.changed_at` as C0. Each step a `set_request` at
+the current revision, then `get_request(request="demo")`: (1) the plan exactly as read (every field echoed back,
+derived ones included); (2) `a`'s title changed; (3) `a`'s `estimate_minutes` changed to 4; (4) `b`'s
+`depends_on` set to `[]` and then, in a second write, back to `["a"]`; (5) `a` given `"changed_at":
+"2000-01-01T00:00:00+00:00"` with nothing else changed; (6) `a`'s arguments changed (`"max_seconds": 9`) and
+`"changed_at": "2000-01-01T00:00:00+00:00"` sent with it.
+expected:
+- After (1)-(5) `a` reads `done`, has no `revised_because` (absent or empty) and `a.changed_at` is still C0. Step
+  (1) is the GET→PUT round trip; a revision there is the false positive the plan names, a **finding**.
+- (5) the client's `changed_at` is ignored (or the write refused naming it): it never reads back as 2000-01-01.
+- (6) `a` reads `revised`; `a.changed_at` is the write's time, later than J1's `created_at`, never 2000-01-01.
+A stamp a client can set is a **finding**: it would let a write hide a change.
+cleanup: `delete_workspace(name="cf1206-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1207 — a variation take with no plan write stays `done`; arguments written back to the take's clear `revised`; a workflow change revises
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Two `split-takes` runs. Setup S1531 (C-F1205) in `cf1207-req`. (1) `run_workflow("templates/split-takes",
+arguments={"text":"One. Two.","max_seconds":8}, request="demo/a", note="variation", acknowledged_cost=…,
+wait_seconds=55)` → J2 (validate first for its acknowledgement); `get_request(request="demo")`. (2) `set_request`
+with `a`'s arguments changed to `{"text":"Something else.","max_seconds":8}`; read. (3) `set_request` with `a`'s
+arguments set to J2's exactly (`{"text":"One. Two.","max_seconds":8}`); read. (4) `set_request` with `a`'s
+`workflow` changed to another catalog workflow (e.g. `templates/check-script`), arguments untouched; read.
+(5) `set_request` with `a`'s workflow back to `templates/split-takes`; read.
+expected:
+- (1) `a` stays `done` (J2 is its result, the latest success); `b` stays `ready`. A take whose arguments differ
+  from the item's, with no plan change after it, never revises the item.
+- (2) `a` reads `revised`, naming `arguments`.
+- (3) `a` reads `done` again: the item's arguments equal a live succeeded take's (J2's). `b` is `ready`.
+- (4) `a` reads `revised`; `revised_because` names the workflow change (`workflow`; the plan lists only an
+  example, so any entry that names the workflow passes, but an empty list does not).
+- (5) `a` reads `done` again.
+cleanup: `delete_workspace(name="cf1207-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1208 — a new take of a revised item makes it `done` and its dependent ready
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Two `split-takes` runs. Setup S1531 (C-F1205) in `cf1208-req`. (1) As C-F1205 step (1): `a` is `revised`.
+(2) `run_workflow` over `a`'s **new** arguments, `request="demo/a"`, `note="take 2"`, wait → J2.
+(3) `get_request(request="demo")`.
+expected:
+- (3) `a` is `done`, with no `revised_because` (absent or empty), J2 its result and both J1 and J2 in its attempts.
+- `b` is `ready`. `remaining_minutes` is 5 again. The list row counts no `revised`.
+A revised item that stays revised after a take of its current plan succeeds is a **finding**.
+cleanup: `delete_workspace(name="cf1208-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1209 — accepting the old take of a revised item makes it `done` until the plan changes again
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Two `split-takes` runs. Setup S1531 (C-F1205) in `cf1209-req`, with no `accepted` on `a`. Also run a variation J2
+on `demo/a` (arguments `{"text":"One. Two.","max_seconds":8}`) and wait; `a` is `done`, J2 its result.
+(1) Change `a`'s arguments to `{"text":"Changed.","max_seconds":8}`: `a` is `revised`. (2) `set_request` with `a`'s
+`accepted: {"job": J1}` and nothing else changed; read. (3) `set_request` with `a`'s arguments changed again (to
+`{"text":"Changed twice.","max_seconds":8}`), `accepted` echoed as read; read. (4) `set_request` with
+`accepted: {"job": J2}`; read.
+expected:
+- (2) `a` is `done`, J1 its result (the accepted take wins), the item carries an acceptance stamp (a time, at or
+  after the change); `b` is `ready`.
+- (3) `a` reads `revised` again, J1 still its result; `b` is not ready.
+- (4) `a` is `done` with J2 as its result; `b` is `ready`.
+The result must never move to a take other than the accepted one, then the latest success; a re-accept that leaves
+`a` revised, or one that stops a later change from revising it, is a **finding**.
+cleanup: `delete_workspace(name="cf1209-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1210 — only a done item becomes revised: dropped, planned and failed items keep their status
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One `split-takes` run, one queued-then-cancelled job. Setup S1531 (C-F1205) in `cf1210-req`; add an item `c`
+(`split-takes`, no dependencies, never run) and an item `d` (`split-takes`), and queue a job on `demo/d` and
+`cancel_job` it at once (if it finished first, queue another and cancel that), so `d` reads `failed`.
+(1) One `set_request` changing the arguments of `a`, `c` and `d`; read. (2) `set_request` with `b`'s
+`depends_on` cleared, then with `a` left out of the plan (it has J1, so it is kept as dropped); read.
+(3) `set_request` writing `a` back, not dropped, with its current (changed) arguments; read.
+expected:
+- (1) `a` is `revised`; `c` stays `planned` and `ready`; `d` stays `failed`. `status_counts` has `revised: 1`.
+- (2) `a` is `dropped` (never `revised`), and absent from `remaining_minutes`; the counts carry no `revised`.
+- (3) `a` reads `revised` again (it comes back with everything it held, and its arguments still differ from J1's
+  with the change after J1).
+cleanup: `delete_workspace(name="cf1210-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1211 — a review hold on a revised item reads `review` as a planned item's does
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One or two `split-takes` runs. Setup S1531 (C-F1205) in `cf1211-req`. (1) `set_request` with `a`'s arguments
+changed **and** `a.review_until` set 70 s ahead (ISO with offset); read at once. (2) Without sleeping: run C-F1205's
+take of `b`'s arguments unlinked (no `request`), or do the next case's setup, until at least 70 s have passed since
+(1) by `date`; then read. (3) `set_request` with `b.review_until` set 70 s ahead while `b` is `planned` and not
+ready; read. (4) Run a take of `a`'s new arguments on `demo/a`, wait; read.
+expected:
+- (1) `a` is `revised`, `ready`, and carries `review` with `state: "holding"`, `until` the value written and
+  `seconds_left` between 1 and 70.
+- (2) `a.review.state` is `due`, `seconds_left` 0. Reading `revised` without `review`, or `review` dropped because
+  the status isn't `planned`, is a **finding**.
+- (3) `b` carries `review` (`holding`), as today for a planned item.
+- (4) `a` is `done` and carries no `review`: a hold shows only on `planned` and `revised` items.
+cleanup: `delete_workspace(name="cf1211-req", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1212 — the guide, the request tools' descriptions and the request skill reference name `revised`
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("workspaces", section="Requests")`; the `get_request` and `set_request` tool descriptions (the
+tool schemas); the `dw:script-to-video` skill and its request reference (`references/request.md`, as the skill
+loads it).
+expected:
+- The Requests section's status rule lists `revised` with its rule: a done item whose `workflow` or `arguments`
+  changed after its latest take and that no take matches; `revised_because`; `changed_at` (server-set, ignored on
+  write); a re-accept (`accepted` written while revised) makes it `done` and keeps the old take as the result;
+  `ready` true for a revised item whose dependencies are `done`; a dependent of a revised item is not ready; the
+  review hold covers `revised` as well as `planned`.
+- `get_request` or `set_request`'s description names `revised`.
+- The skill reference tells the agent to read `revised` before running dependents and that a re-accept keeps the
+  old take. A skill still saying only `done`/`ready` is a **finding** against the skill.
+cleanup: none.
+metrics: none.
+
+### C-F1213 — one take made before stage 2 is kept, for C-F1219
+pending: #1557
+source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One `split-takes` run. Runs once: when #1557 verifies, on a server where #1558 is not yet deployed. Skip it on any
+later run. `save_prompt` a prompt named `cf1531-pre-p` with text "Pre one. Pre two." (check its name is free first
+with `get_prompt`). Setup S1531 (C-F1205) in workspace `qa-1531-pre`, but `a`'s arguments are
+`{"text":"prompt:cf1531-pre-p","max_seconds":8}` and the take is run over them exactly.
+expected:
+- `a` is `done`, `b` `ready`. Leave the workspace and the prompt in place: C-F1219 needs them.
+cleanup: none here; C-F1219 cleans up.
+metrics: none.
+
+### C-F1214 — saving new text into a referenced prompt revises the item with no ledger write
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One `split-takes` run. `save_prompt` `cf1214-p` with text "Alpha. Beta." (name checked free with `get_prompt`).
+Setup S1531 (C-F1205) in `cf1214-req`, with `a`'s arguments `{"text":"prompt:cf1214-p","max_seconds":8}` and J1 run
+over them after #1558 deployed. Read the request: note its `revision` R. (1) `save_prompt` `cf1214-p` with text
+"Alpha. Gamma." (2) `get_request(request="demo")` and `get_request()`.
+expected:
+- (2) `a` reads `revised`, `revised_because` names `prompt:cf1214-p` (and not `arguments`); `a.result` is J1;
+  `a.ready` is true; `b` is not ready; `remaining_minutes` includes `a`'s estimate; the list row counts `revised: 1`.
+- The request's `revision` is still R and its history has no new entry: the prompt edit is no ledger write.
+A done `a` here is the issue's own incident unfixed, a **finding**.
+cleanup: `delete_workspace(name="cf1214-req", acknowledged_cost=true)`; `delete_prompt("cf1214-p")`.
+metrics: none.
+
+### C-F1215 — a prompt saved with the same text, or with only its description or tags changed, revises nothing
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One `split-takes` run. As C-F1214's setup with prompt `cf1215-p` (text "Alpha. Beta.", description "d1", tags
+`["t1"]`) in `cf1215-req`. Each step then `get_request(request="demo")`: (1) `save_prompt` `cf1215-p` with the same
+text, description and tags; (2) same text, description "d2"; (3) same text, tags `["t2"]`.
+expected:
+- After each, `a` reads `done` with no `revised_because` (absent or empty) and `b` is `ready`. The text's digest
+  decides, not the file's time or metadata.
+cleanup: `delete_workspace(name="cf1215-req", acknowledged_cost=true)`; `delete_prompt("cf1215-p")`.
+metrics: none.
+
+### C-F1216 — a referenced prompt deleted makes no claim
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+One `split-takes` run. As C-F1214's setup with prompts `cf1216-p` and `cf1216-q`, in `cf1216-req`; item `a`
+references `cf1216-p`, and add an item `c` (no deps) referencing `cf1216-q`, with its own take J3 run over its
+arguments. (1) `delete_prompt("cf1216-p")`; read. (2) `save_prompt` `cf1216-q` with new text: `c` is `revised`. Then
+`delete_prompt("cf1216-q")`; read.
+expected:
+- (1) `a` stays `done`; the read succeeds with no error.
+- (2) after the delete, `c` reads `done`: a prompt that no longer resolves counts as equal (the plan's rule 2). The
+  read never errors on a missing prompt.
+cleanup: `delete_workspace(name="cf1216-req", acknowledged_cost=true)` (both prompts are already deleted).
+metrics: none.
+
+### C-F1217 — after a prompt edit, a new take or a re-accept makes the item `done`, until the text changes again
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Two `split-takes` runs. C-F1214's setup and step (1) with prompt `cf1217-p`, in `cf1217-req`. (1) `set_request`
+with `a`'s `accepted: {"job": J1}`; read. (2) `save_prompt` `cf1217-p` with a third text; read. (3) Run a new take
+J2 over `a`'s arguments (they still say `prompt:cf1217-p`) on `demo/a`, wait; read.
+expected:
+- (1) `a` is `done`, J1 its result, `b` `ready`.
+- (2) `a` is `revised` again, naming `prompt:cf1217-p`, J1 still its result.
+- (3) `a` is `done` (J2 ran with the current text), `b` `ready`. With J1 still accepted the result stays J1; that
+  is the accept, not a fault.
+cleanup: `delete_workspace(name="cf1217-req", acknowledged_cost=true)`; `delete_prompt("cf1217-p")`.
+metrics: none.
+
+### C-F1218 — `revised_because` names each changed prompt, and the argument change beside it
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Two `split-takes` runs. Prompts `cf1218-p` and `cf1218-q` saved first (names checked free with `get_prompt`).
+Setup as S1531 (C-F1205) in `cf1218-req`, but `a`'s arguments are `{"text":"prompt:cf1218-p","max_seconds":8}`,
+`b`'s are `{"text":"prompt:cf1218-q","max_seconds":8}` and `b` has `depends_on: []`. Run a take of each item over
+its own arguments, linked to it (`demo/a`, `demo/b`), and wait for both. (1) `save_prompt` `cf1218-p` with new text; read. (2) `set_request` changing `a`'s
+`max_seconds` to 9; read.
+expected:
+- (1) `a` is `revised` naming `prompt:cf1218-p` only; `b` stays `done` (its prompt didn't change).
+- (2) `a.revised_because` names both `arguments` and `prompt:cf1218-p`.
+cleanup: `delete_workspace(name="cf1218-req", acknowledged_cost=true)`; `delete_prompt` both prompts.
+metrics: none.
+
+### C-F1219 — a take from before stage 2 carries no digest and is never revised by a prompt edit
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Free. Needs C-F1213's workspace `qa-1531-pre` and prompt `cf1531-pre-p`; if either is gone, the case is not
+runnable (say so; it is not a failure). (1) `get_request(request="demo", workspace="qa-1531-pre")`. (2)
+`save_prompt` `cf1531-pre-p` with new text; read again.
+expected:
+- (1) and (2): `a` is `done`, with no `revised_because`; `b` is `ready`.
+cleanup: `delete_workspace(name="qa-1531-pre", acknowledged_cost=true)`; `delete_prompt("cf1531-pre-p")`.
+metrics: none.
+
+### C-F1220 — reading requests with prompt references costs about what reading them without does
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Two `split-takes` runs. Two workspaces: `cf1220-plain` with S1531 as written, and `cf1220-ref` with S1531 where both
+items reference saved prompts (`cf1220-p`, `cf1220-q`) and both have a take. In each, with `date` before and after,
+make 5 `get_request(request="demo")` calls and 5 `get_request()` calls.
+expected:
+- Every read succeeds. The `cf1220-ref` batch takes no more than twice the `cf1220-plain` batch, or no more than 1 s
+  more in all, whichever is larger (the tool-call overhead dominates both). A read that grows by seconds per prompt
+  is a **finding**: the plan memoizes the digest per file.
+cleanup: `delete_workspace` both (`acknowledged_cost=true`); `delete_prompt` both prompts.
+metrics: none.
+
+### C-F1221 — the guide and the request skill reference name the prompt clause
+pending: #1558
+source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+Free. As C-F1212.
+expected:
+- The Requests section says a done item also reads `revised` when a `prompt:` reference in its arguments resolves to
+  text other than the text its take ran with, named `prompt:<name>` in `revised_because`; that a take from before
+  the feature, or a prompt that no longer resolves, makes no claim; and that a prompt edit is no ledger write (no
+  revision, no notes-channel event; the agent sees it on its next `get_request`).
+- The skill reference says the same in the agent's terms: an edited saved prompt revises the items that use it.
+cleanup: none.
+metrics: none.
+
+### C-F1222 — the request page shows a revised item's result, a **Revised** chip, why, and **Run take 2** beside it; its dependent waits
+pending: #1559
+source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+**Web UI, black-box**, through `ui-check`. **Setup S1531-UI** (C-F1223–C-F1225 reuse it): S1531 (C-F1205) in
+`cf1222-ui`, but `a` is an image item: `workflow` the cheapest image template that runs here (C-F1132's
+`templates/text-to-image`, `seed: 1`) and the take run over its arguments exactly. `fetch` the request's REST read
+(`/api/workspaces/cf1222-ui/requests/demo`) and the list (`/api/workspaces/cf1222-ui/requests`) to see the paths.
+The fakes: `mock` the request read setting `items.0.status` `"revised"`, `items.0.revised_because`
+`["prompt:board-01"]`, `items.0.ready` `true`, `items.1.ready` `false`; and the list, setting its row's counts so
+one item is `revised` and none `done`. Steps: (1) unmocked, `goto` the request's page, `screenshot`; (2) with the
+mocks, `goto` it again, `wait_text` "Revised", `inspect` the chip and `a`'s done chip from (1)'s run, `screenshot`.
+expected:
+- (2) `a` shows its result image (the same take as in (1)), a **Revised** chip styled apart from `done`'s (inspect:
+  class or colour differs), and a line naming `board-01` in words (a prompt changed). A **Run take 2** button sits
+  with the result, not only in the ⋯ menu.
+- `b` shows as waiting on `a`, not ready (no ready mark, no run offer as ready).
+- (1) `a` is a plain done item: no Revised chip and no **Run take 2** beside the result.
+No page errors; a blank chip or a hidden result is a **finding**.
+cleanup: none (C-F1225 cleans up).
+metrics: none.
+
+### C-F1223 — **Run take 2** opens the run dialog with the item's current plan, and a submit links it and shows `queued`
+pending: #1559
+source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+**Web UI, black-box**. S1531-UI (C-F1222), with its mocks, plus `mock` setting `items.0.arguments.prompt` to
+`"a red barn"` (so the current plan differs from the take's). `record **/api/jobs**`; `stub **/api/jobs?**` (and
+`**/api/jobs`) POST answering a queued job in the shape `/openapi.json` gives `POST /api/jobs`. (1) Click **Run take
+2**; `wait_text` the dialog; `screenshot`. (2) Click the dialog's run button; `recorded **/api/jobs**`; `wait_text`
+"queued".
+expected:
+- (1) The dialog names `a`'s workflow and shows `a red barn` as its prompt: the current plan, not the take's.
+- (2) The recorded POST carries that workflow, those arguments and the link `request` "demo" / `item` "a". `a` then
+  shows `queued` (the optimistic status), not `revised` or `done`.
+A dialog prefilled with the old take's arguments is a **finding**: it would rerun the rejected take.
+cleanup: none (C-F1225).
+metrics: none.
+
+### C-F1224 — **Keep this take** writes `accepted` naming the shown take
+pending: #1559
+source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+**Web UI, black-box**. S1531-UI (C-F1222) with its mocks. `record **/api/workspaces/cf1222-ui/requests/**`. (1) Click
+**Keep this take**. (2) `recorded` the same glob; read the run's `blocked` list.
+expected:
+- (1)-(2) A write to the request (`PUT .../requests/demo`, recorded, and in `blocked`: the runner stops plan writes
+  from reaching dw) whose body has `a`'s `accepted` naming J1 (the shown take's job), its other fields and `b`'s as
+  read, and the `revision` read.
+- The page doesn't report a JS error (`page_errors` empty). The runner blocks the write, so `a` showing `done`
+  after it can't be seen here; the server half is C-F1209's.
+cleanup: none (C-F1225).
+metrics: none.
+
+### C-F1225 — **Run what is ready** lists the revised item, and the attention count includes it
+pending: #1559
+source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
+**Web UI, black-box**. S1531-UI (C-F1222). (1) Unmocked: `goto` the request's page and the workspace's requests
+list; `inspect` the attention band (its count); click **Run what is ready** and `screenshot` what it offers, then
+close it without running. (2) With C-F1222's mocks: the same.
+expected:
+- (2) **Run what is ready** offers `a` (by title "A") and not `b`. In (1), with `a` done, it offers `b` and not `a`.
+- (2) the attention band's count is one more than (1)'s, or names `a` as revised.
+- Nothing is submitted (no POST to `/api/jobs` recorded); no page errors.
+cleanup: `delete_workspace(name="cf1222-ui", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1226 — `GET /api/workspaces/<ws>/changes` answers an epoch, a workspaces counter and six integer kinds, and reading it moves nothing
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. **Setup S1536-A** (C-F1227–C-F1232 reuse it): `create_workspace(name="cf1226-chg")` and
+`create_workspace(name="cf1226-other")`. A **snapshot** below means one `ui-check` run whose only steps are
+`fetch {path: "/api/workspaces/cf1226-chg/changes"}` and `fetch {path: "/api/workspaces/cf1226-other/changes"}`
+(Don's Q4 ruling: a plain HTTP GET of the route, alongside MCP writes). Take two snapshots back to back, then
+`fetch /openapi.json` once.
+expected:
+- Both reads answer 200, JSON, with `epoch` (a non-empty id), `workspaces` (an integer ≥ 0) and `kinds` holding
+  exactly `requests`, `prompts`, `workflows`, `assets`, `gallery` and `jobs`, each an integer ≥ 0.
+- The second snapshot equals the first, field for field, in both workspaces: reading is not a write. `epoch` and
+  `workspaces` are the same in both workspaces' snapshots (one server, one server-wide counter).
+- `/openapi.json` names `GET /api/workspaces/{workspace}/changes` with a response schema (`WorkspaceChanges` or
+  the like) carrying those fields, and the route takes no query parameters.
+A missing kind, a string or float where an integer belongs, or a counter that moves between two bare reads is a
+**finding**.
+cleanup: none (C-F1232 cleans up).
+metrics: none.
+
+### C-F1227 — each MCP write grows its own kind, and only that kind
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. S1536-A (C-F1226). `workspace="cf1226-chg"` on every call that takes one. Take a snapshot before
+and after each write, in this order:
+(1) `set_request(request="chg1", revision=0, title="Chg one", goal="g", why="probe", items=[{"key":"a","title":"A"}])`;
+(2) `set_request` on `chg1` again at the revision (1) returned, `title` "Chg one b";
+(3) `save_prompt(name="cf1226-prompt", prompt="a lighthouse at dusk")`;
+(4) `get_workflow("templates/split-takes")`, then `save_workflow(name="cf1226/probe", workflow=<its definition>)`;
+(5) `upload_asset(content="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", asset_name="cf1226/dot.png")` (a 1x1 PNG);
+(6) `set_note(target="asset:uploads/cf1226/dot.png", note="probe")` (the name (5) returned).
+expected:
+- (1) and (2) each grow `requests`; (3) grows `prompts`; (4) `workflows`; (5) and (6) `assets`. Each by at least
+  1, and every other kind, `workspaces` and `epoch` unchanged across that write.
+- Every counter in `cf1226-other` is unchanged across (1), (2), (4), (5) and (6). (3) is exempt there: the prompt
+  library is shared by every workspace, so `prompts` may grow in both.
+A write that moves no counter, or moves a second kind, is a **finding**: it is the stale page the feature exists
+to end.
+cleanup: none (C-F1232).
+metrics: none.
+
+### C-F1228 — deletes bump their kind too
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. S1536-A, after C-F1227 (its request, prompt, workflow and asset exist). Snapshot before and after
+each: (1) `delete_request(request="chg1", workspace="cf1226-chg")` (with `acknowledged_cost` if its schema asks);
+(2) `delete_prompt(name="cf1226-prompt")`; (3) `delete_workflow(name="cf1226/probe", workspace="cf1226-chg")`;
+(4) `delete_asset` on C-F1227's asset in `cf1226-chg`. Confirm each call's exact shape from its schema.
+expected:
+- (1) grows `requests`, (2) `prompts`, (3) `workflows`, (4) `assets`; every other kind and `epoch` unchanged.
+- `cf1226-other` unchanged across (1), (3), (4).
+cleanup: none (C-F1232).
+metrics: none.
+
+### C-F1229 — a job moves `jobs` as it queues, finishes and is cancelled; a finished run with outputs moves `gallery`; `keep_output` moves `assets` only
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds. S1536-A. `workspace="cf1226-chg"` throughout.
+`validate_workflow("templates/audio-trim-fade", arguments={"input_audio":"asset:uploads/qa-cast/room-bed.wav",
+"duration_seconds":2})` for the acknowledgement. Snapshot (S0); (1) `run_workflow` over it **with no wait**, then
+at once `run_workflow` again with the same arguments (job J2), and at once `cancel_job(J2)`; snapshot (S1).
+(2) `wait_for_job` on the first job (J1) until it succeeds; snapshot (S2). (3) `keep_output(name=<J1's audio
+gallery name>, asset_name="cf1226/kept.wav")`; snapshot (S3). (4) `set_note` on J1's output file, `"probe"`;
+snapshot (S4).
+expected:
+- S1 − S0: `jobs` grew (two queues and a cancel); `gallery` not yet, unless J1 already finished (then (2)'s
+  check applies to S1).
+- S2 − S1: `jobs` grew (start and finish) and `gallery` grew (the finished run wrote outputs). `requests`,
+  `prompts`, `workflows`, `assets` unchanged S0→S2.
+- S3 − S2: `assets` grew; `gallery` and `jobs` unchanged. S4 − S3: `gallery` grew; the rest unchanged.
+- `cf1226-other` unchanged S0→S4.
+A finished run that leaves `gallery` where it was is a **finding**: it is the worker-path bump the plan names as
+its main risk.
+cleanup: none (C-F1232).
+metrics: none.
+
+### C-F1230 — a workspace created or deleted moves `workspaces` in every workspace's snapshot, and nothing else
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. S1536-A. Snapshot; `create_workspace(name="cf1230-tmp")`; snapshot, plus a `fetch` of
+`/api/workspaces/cf1230-tmp/changes`; `delete_workspace(name="cf1230-tmp", acknowledged_cost=true)`; snapshot,
+plus that same `fetch` again.
+expected:
+- Create grows `workspaces` by at least 1, read the same in `cf1226-chg` and `cf1226-other`; delete grows it
+  again. Neither moves any kind in either workspace, nor `epoch`.
+- The new workspace's own read answers 200 with integer kinds (zero or not), the shared `workspaces` and the same
+  `epoch`. After the delete, its read answers 404.
+cleanup: none (C-F1232).
+metrics: none.
+
+### C-F1231 — a refused write moves nothing
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. S1536-A, `workspace="cf1226-chg"` where taken. Snapshot; then each of these, every one refused:
+`save_prompt(name="../cf1231", prompt="x")`; `save_prompt(name="cf1231", prompt="variable:x")` (a reference prefix);
+`set_request(request="chg9", revision=5, title="t", goal="g", why="w", items=[])` (no such request at that
+revision); `save_workflow(name="cf1231/none")` (neither `workflow` nor `patch`); `upload_asset(content="aGVsbG8=",
+asset_name="cf1231/x.exe")`; `delete_prompt(name="cf1231-none")`; `delete_workspace(name="cf1226-other")` with no
+`acknowledged_cost`; `keep_output(name="no/such/run/file.png", asset_name="cf1231/k.png")`. Snapshot.
+expected:
+- Each call is refused (an error or a refusal reply; `delete_workspace` reports what it would remove).
+- The two snapshots are identical in both workspaces: every kind, `workspaces` and `epoch`.
+Any counter moved by a refusal is a **finding**: a page would reload on a write that never happened.
+cleanup: none (C-F1232).
+metrics: none.
+
+### C-F1232 — an unknown workspace answers 404, and no MCP surface changed
+pending: #1563
+source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-A. One `ui-check` run: `fetch` `/api/workspaces/cf1232-never-made/changes` and, for contrast, the
+sibling read the UI already uses on that name (`/api/workspaces/cf1232-never-made/requests`). Then over MCP:
+`get_health`, `get_server_info`, and the session's MCP tool list (the deferred-tool names the client shows).
+expected:
+- The unknown workspace's `/changes` answers 404, like its sibling read, with no snapshot and no server path in
+  the body.
+- No MCP tool is named for changes or counters, no tool description mentions `/changes`, and neither `get_health`
+  nor `get_server_info` carries `epoch` or per-kind counters (the plan keeps the route UI-only and rejected adding
+  it to health).
+A new tool, or counters in an agent-facing reply, is a **finding** (the plan's inertia rule: agents learn nothing
+new).
+cleanup: `delete_workspace` on `cf1226-chg` and `cf1226-other` (`acknowledged_cost=true`).
+metrics: none.
+
+### C-F1233 — the Requests page shows a request an agent creates, within about 5 s, with no reload
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. **Setup S1536-BG** (every live case after this one uses
+it): the runner runs one spec start to finish, so an MCP write has to land *while* it waits. Launch the runner's
+command line with Bash `run_in_background: true`, its spec ending in a `wait_text` (`timeout_ms: 30000`) for text
+only the write will produce; then, at once, run `date` and make the write over MCP; read the runner's JSON when it
+reports done. `record {url_glob: "**/api/**"}` is the spec's first step, so the page's own reads, with their
+timestamps, tell a reload apart from a page that was simply slow to load.
+Here: `create_workspace(name="cf1233-live")`. Spec: `record **/api/**`; `goto` the Requests page of `cf1233-live`
+(the path the UI's own sidebar link gives; select the workspace as the UI offers if the path does not carry it);
+`wait_text` the page's heading; `screenshot`; `wait_text "Live probe one"`; `screenshot`; `recorded **/api/**`.
+The write: `set_request(request="live1", revision=0, title="Live probe one", goal="g", why="probe",
+items=[{"key":"a","title":"A"}], workspace="cf1233-live")`.
+expected:
+- The `wait_text` passes: the row appears with no `goto` or reload after the first.
+- `recorded` holds `GET /api/workspaces/cf1233-live/changes` about every 5 s from the page's load, and exactly two
+  reads of the workspace's requests list: the first before `date`'s time, the second after it and within about
+  10 s of it (one feed interval plus slack).
+- Before the write, the list was read once only: the page reloads on the counter, never on a timer of its own.
+No page errors. A row that needs a reload, or list reads on a fixed timer with no counter change, is a **finding**.
+cleanup: none (C-F1235 cleans up).
+metrics: none.
+
+### C-F1234 — an agent's rename and delete on the Requests page show without a reload
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG in `cf1233-live`, after C-F1233. Before launching: `set_request(request="live2", revision=0,
+title="Live probe two", …)`. Spec: `record **/api/**`; `goto` the Requests page; `wait_text "Live probe two"`;
+`wait_text "Renamed probe one"`; `screenshot`; `recorded`. The writes, in order: `delete_request(request="live2")`,
+then `set_request` on `live1` at its current revision with `title` "Renamed probe one".
+expected:
+- The `wait_text` for the rename passes, and the final screenshot shows no "Live probe two" row and no "Live probe
+  one" row: the reload after the rename read a list that already lacked the deleted request.
+- No `goto` after the first; no page errors.
+cleanup: none (C-F1235).
+metrics: none.
+
+### C-F1235 — a closed request's page notices a reopen by an agent, within about 5 s
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG in `cf1233-live`. Before launching: `set_request` on `live1` at its revision with `state: "done"`,
+then `get_request(request="live1")` to confirm it reads closed. Spec: `record **/api/**`; `goto` `live1`'s request
+page; `wait_text "Renamed probe one"`; `screenshot`; `wait_text "Reopened item"`; `screenshot`; `recorded`. The
+write: `set_request` on `live1` at its revision, `state: "open"`, items `a` plus `{"key":"b","title":"Reopened item"}`.
+expected:
+- The new item appears without a reload, and the page's status reads open, not done.
+- Before `date`'s time, `recorded` holds `/changes` reads every ~5 s but only the page's initial read of the
+  request itself: a closed request keeps no timer of its own (Don's Q3: it notices through the feed). After it,
+  one request read follows within about 10 s.
+(Agents never write a request's notes, so the plan's "or adds a note" variant is a UI write and is not run here.)
+No page errors. A closed page that stays at "done" is a **finding**: it is the plan's named closed-tier gap.
+cleanup: `delete_workspace(name="cf1233-live", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1236 — a workspace an agent creates appears in the sidebar, and one it deletes goes
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG. Before launching: `create_workspace(name="cf1236-alpha")`, then load the UI once (a short spec:
+`goto /`, open the sidebar's workspace list, `screenshot`) to confirm `cf1236-alpha` is listed and `cf1236-beta`
+is not. Spec: `record **/api/**`; `goto /`; open the workspace list as the UI offers; `wait_text "cf1236-alpha"`;
+`wait_text "cf1236-beta"`; open the list again if it closed; `screenshot`; `recorded`. The writes, in order:
+`delete_workspace(name="cf1236-alpha", acknowledged_cost=true)`, then `create_workspace(name="cf1236-beta")`.
+expected:
+- `cf1236-beta` appears with no reload, and the final screenshot's list holds no `cf1236-alpha`.
+- `recorded` shows the workspace list re-read once after the writes, not on a timer before them.
+No page errors.
+cleanup: `delete_workspace(name="cf1236-beta", acknowledged_cost=true)` (and `cf1236-alpha` if it survived).
+metrics: none.
+
+### C-F1237 — a hidden tab makes no feed or jobs reads, the status poll keeps firing, and the return catches up at once
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. **Web UI, black-box.** **Needs two `ui-check` steps it lacks today**: one that sets the page hidden and
+visible again (with `visibilitychange` fired), and one that idles a set number of milliseconds. Until the runner
+has them this case is **blocked, not failed**: say so in the run's report. S1536-BG in a fresh
+`create_workspace(name="cf1237-hide")`. Spec: `record **/api/**`; `goto` the Requests page of `cf1237-hide`; idle
+12 s (the baseline); hide; idle 16 s; `screenshot`; make visible; `wait_text "Hidden write"`; `recorded`. The
+write, made while the tab is hidden (just after launch plus ~14 s, read off `date`): `set_request(request="h1",
+revision=0, title="Hidden write", …, workspace="cf1237-hide")`. Repeat with the **Jobs** page open in place of
+Requests (no write; end on its heading).
+expected:
+- During the baseline, `/changes` reads every ~5 s and the app shell's status read (the one other GET repeating
+  every ~5 s on every page) both fire.
+- While hidden: **no** `/changes` read and no `/api/jobs` read on either page. The status read keeps firing, at its
+  interval or a slower one, at least once in the 16 s (Don's Q2 ruling: slowing is allowed, stopping is not).
+- On visible: a `/changes` read within about 1 s (Jobs: a jobs read within about 1 s), and `Hidden write` appears
+  without a reload.
+A status poll that stops while hidden, or a feed that keeps reading, is a **finding**.
+cleanup: `delete_workspace(name="cf1237-hide", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1238 — a draft in a request page's note box keeps its text and focus while an agent writes to that request
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG in a fresh `create_workspace(name="cf1238-draft")` holding `set_request(request="d1", revision=0,
+title="Draft probe", …, items=[{"key":"a","title":"A"}])`. Spec: `record **/api/**`; `goto` `d1`'s request page;
+`fill` its note box (by its label or placeholder) with `"half a thought"`; `wait_text "Agent item"`; `press "X"`;
+`screenshot`; `recorded`. The write: `set_request` on `d1` at its revision adding `{"key":"b","title":"Agent item"}`.
+expected:
+- `Agent item` appears (the reload happened) and the note box then reads `half a thoughtX`: the draft survived and
+  the box kept focus, since the key press landed in it.
+- No note write was sent (nothing to `/notes` or the request in `blocked` or `recorded` but GETs); no page errors.
+A cleared draft, or an `X` that lands nowhere, is a **finding**: a reload under the cursor is what the plan forbids.
+cleanup: `delete_workspace(name="cf1238-draft", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1239 — a failed feed read doesn't stop the feed; the next good read catches up
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG in a fresh `create_workspace(name="cf1239-fail")`. Spec: `record **/api/**`; `mock {url_glob:
+"**/api/workspaces/cf1239-fail/changes", status: 500, once: true}` (the first read fails); `goto` the Requests page;
+`wait_text "After a failure"`; `recorded`. The write: `set_request(request="f1", revision=0, title="After a
+failure", …, workspace="cf1239-fail")`.
+expected:
+- `recorded` shows the 500 read, then further `/changes` reads at the usual ~5 s, and the row appears without a
+  reload.
+- `page_errors` empty (a rejected tick is caught). A feed that stops after one failure is a **finding**.
+cleanup: `delete_workspace(name="cf1239-fail", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1240 — a write in another workspace doesn't reload the open Requests page
+pending: #1564
+source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG. `create_workspace` `cf1240-here` and `cf1240-there`. Spec: `record **/api/**`; `goto` the Requests
+page of `cf1240-here`; `wait_text "Here write"`; `recorded`. The writes, in order, ~6 s apart (read off `date`):
+`set_request(request="t1", revision=0, title="There write", …, workspace="cf1240-there")`, then
+`set_request(request="h1", revision=0, title="Here write", …, workspace="cf1240-here")`.
+expected:
+- `/changes` reads name only `cf1240-here`. Its requests list is read exactly twice: on load, and once after the
+  second write; none after the first write alone.
+- "There write" never shows on the page.
+cleanup: `delete_workspace` on both (`acknowledged_cost=true`).
+metrics: none.
+
+### C-F1241 — the Prompts page shows a prompt an agent saves, and drops one it deletes, with no reload
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG (C-F1233). Before launching: `save_prompt(name="cf1241-gone", prompt="a quiet harbour")`. Spec:
+`record **/api/**`; `goto` the Prompts page; `wait_text "cf1241-gone"`; `wait_text "cf1241-new"`; `screenshot`;
+`recorded`. The writes, in order: `delete_prompt(name="cf1241-gone")`, then `save_prompt(name="cf1241-new",
+prompt="a loud harbour")`.
+expected:
+- `cf1241-new` appears without a reload, and the final screenshot holds no `cf1241-gone`.
+- The prompts list is read once on load and again only after the writes. No page errors.
+cleanup: `delete_prompt(name="cf1241-new")` (and `cf1241-gone` if it survived).
+metrics: none.
+
+### C-F1242 — the Workflows page shows a workflow an agent saves, with no reload
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG in a fresh `create_workspace(name="cf1242-wf")`. Spec: `record **/api/**`; `goto` the Workflows page
+of `cf1242-wf`; `wait_text` its heading; `wait_text "cf1242/probe"` (or its leaf `probe` under a `cf1242` folder, as the page names it); `screenshot`;
+`recorded`. The write: `get_workflow("templates/split-takes")`, then `save_workflow(name="cf1242/probe",
+workflow=<its definition>, workspace="cf1242-wf")`.
+expected:
+- The workflow appears without a reload; the workflows list is read on load and again only after the write.
+No page errors.
+cleanup: `delete_workspace(name="cf1242-wf", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1243 — the Assets page shows an upload and a kept output, with no reload
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds. Setup: `create_workspace(name="cf1243-as")`;
+`workspace=` on every call. Run `templates/audio-trim-fade` over `{"input_audio":"asset:uploads/qa-cast/room-bed.wav",
+"duration_seconds":2}` (validate first) and wait for it, before any spec. Then two S1536-BG runs, each: `record
+**/api/**`; `goto` the Assets page of `cf1243-as`; `wait_text` <the name>; `screenshot`; `recorded`.
+(1) Write: `upload_asset(content=<C-F1227's 1x1 PNG>, asset_name="cf1243/dot.png")`; wait for `dot.png`.
+(2) Write: `keep_output(name=<the run's audio gallery name>, asset_name="cf1243/kept.wav")`; wait for `kept.wav`.
+expected:
+- Each appears without a reload; each run reads the assets list on load and once after its write.
+No page errors.
+cleanup: none (C-F1246 cleans up).
+metrics: none.
+
+### C-F1244 — a finished run appears on Gallery and on Overview, with no reload
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Cost: two CPU-only `templates/audio-trim-fade` runs of a few seconds. `cf1243-as` (C-F1243). Two S1536-BG runs.
+(1) Spec: `record **/api/**`; `goto` the Gallery page of `cf1243-as`; `wait_text` the page's heading; `wait_text
+"cf1244 gallery take"`; `screenshot`; `recorded`. Write: `run_workflow("templates/audio-trim-fade", arguments={…,
+"duration_seconds":3}, note="cf1244 gallery take", acknowledged_cost=…, workspace="cf1243-as")`, no wait.
+(2) The same on the Overview page, with `"duration_seconds":4` and note `"cf1244 overview take"`; `wait_text` the
+note if Overview shows notes, else the new run's id from `run_workflow`'s reply (or its job status, as Overview
+shows recent jobs).
+expected:
+- (1) The new output, with its note, appears without a reload within about 10 s of the job finishing
+  (`get_job`'s `finished_at`, read after). (2) Overview shows the new run or job without a reload.
+- The gallery listing is read on load and again only after the job queues or finishes: never on a timer while
+  nothing changed.
+No page errors.
+cleanup: none (C-F1246).
+metrics: none.
+
+### C-F1245 — a write in another workspace doesn't reload the open Assets page
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG. `cf1243-as` plus `create_workspace(name="cf1245-there")`. Spec: `record **/api/**`; `goto` the
+Assets page of `cf1243-as`; `wait_text "here.png"`; `recorded`. Writes, ~6 s apart: `upload_asset(content=<1x1 PNG>,
+asset_name="cf1245/there.png", workspace="cf1245-there")`, then the same with `asset_name="cf1245/here.png",
+workspace="cf1243-as"`.
+expected:
+- `cf1243-as`'s assets list is read exactly twice: on load and after the second write; none after the first.
+  `there.png` never shows. (Prompts, a library every workspace shares, are not a cross-workspace check.)
+cleanup: `delete_workspace(name="cf1245-there", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1246 — picks on the Assets page survive a background reload
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. S1536-BG in `cf1243-as` (holding `dot.png`, `kept.wav`, `here.png`). Spec: `record **/api/**`; `goto` the
+Assets page; pick `dot.png` and `kept.wav` with the page's own pick control; `inspect` each picked tile (and the
+selection count, if the page shows one); `wait_text "late.png"`; `inspect` the same two again; `screenshot`. Write:
+`upload_asset(content=<1x1 PNG>, asset_name="cf1246/late.png", workspace="cf1243-as")`.
+expected:
+- After `late.png` appears, both picks still read picked (same classes or `aria-*` state as before, same count),
+  and `late.png` is not picked.
+A selection cleared by a reload is a **finding**: the plan's `keepOnly` break.
+cleanup: `delete_workspace(name="cf1243-as", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1247 — a gallery note being typed survives a new output landing
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Cost: two CPU-only `templates/audio-trim-fade` runs. Setup: `create_workspace(name="cf1247-note")`; one run (as
+C-F1243's) and wait. S1536-BG spec: `record **/api/**`; `goto` the Gallery of `cf1247-note`; open that output's
+note box; `fill` it with `"keeper because"`; `wait_text "cf1247 second"`; `press "X"`; `screenshot`. Write: a
+second run with `"duration_seconds":3` and `note="cf1247 second"`, no wait. If the open note box hides the grid, wait
+instead for text the reload changes (a run count, if the page shows one) and confirm the reload in `recorded`.
+expected:
+- The note box reads `keeper becauseX` after the second output lands; no note write in `recorded` or `blocked`.
+No page errors.
+cleanup: `delete_workspace(name="cf1247-note", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1248 — switching workspace on the Prompts page reloads it
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Free. **Web UI, black-box.** `create_workspace` `cf1248-a` and `cf1248-b`. Spec: `record **/api/**`; `goto` the
+Prompts page with `cf1248-a` selected; `wait_text` its heading; switch to `cf1248-b` with the UI's own picker;
+`wait_text` its heading again; `screenshot`; `recorded`.
+expected:
+- The prompts list is read again after the switch (a second read, for `cf1248-b` where the route names a
+  workspace), and the page shows what that read returned. Today it is read once and never again.
+- After the switch the feed reads `cf1248-b`'s `/changes`, not `cf1248-a`'s. No page errors.
+cleanup: `delete_workspace` on both (`acknowledged_cost=true`).
+metrics: none.
+
+### C-F1249 — the Compare page keeps its cells and their metadata through a new output
+pending: #1565
+source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
+Cost: three CPU-only `templates/audio-trim-fade` runs. Setup: `create_workspace(name="cf1249-cmp")`; two runs (as
+C-F1243's, `duration_seconds` 2 and 3) and wait. S1536-BG spec: `record **/api/**`; open Compare with those two
+outputs as cells (as the gallery offers); `screenshot`; `wait_text` the third run's note `"cf1249 third"` if Compare
+shows it, else end after a `screenshot` once the job finished; `screenshot`. Write: a third run, `duration_seconds`
+4, that note, no wait.
+expected:
+- The two cells and the job metadata shown with them (workflow, duration, note) are the same in both screenshots:
+  no cell blanked or lost its metadata on the reload. No page errors.
+cleanup: `delete_workspace(name="cf1249-cmp", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1250 — `get_server_info` carries a `plugin` block whose floor follows from the server's own `version`
+pending: #1560
+source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
+#1535: an installed `dw` plugin far behind the server failed silently. Plan v1 adds a
+`plugin` block to the MCP `get_server_info` result: `current_from` (the oldest plugin release
+that counts as current) and `update` (the commands that update the plugin). No GPU time; read
+only.
+
+Steps:
+1. `get_server_info()`. Note `version`.
+2. `get_server_info(cache_entries=true)`.
+3. `use_workspace(name="regression-complete")`, then `get_server_info()`; then
+   `use_workspace(name="default")` to put the pin back.
+
+expected:
+- Step 1 has a `plugin` object with exactly the keys `current_from` and `update`.
+- `plugin.current_from` follows from `version` by the floor rule:
+  - a release `X.Y.Z` (no `-` suffix) gives `X.Y.0` (`0.23.4` gives `0.23.0`);
+  - a pre-release `X.Y.Z-…` gives `X.(Y-1).0` (`0.23.0-alpha.1` gives `0.22.0`), or `X.0.0`
+    when Y is 0 (`1.0.0-rc.1` gives `1.0.0`).
+  It is a plain `X.Y.0` string, never a pre-release, and never higher than `version`.
+- `plugin.update` is a list of exactly two strings, run in order. They are either
+  `"/plugin marketplace update diffusers-workflow"` then `"/plugin update dw@diffusers-workflow"`
+  (the approved default), or the plan's fallback `"/plugin uninstall dw@diffusers-workflow"`
+  then `"/plugin install dw@diffusers-workflow"`. Any other pair is a **finding**: a wrong
+  command is worse than none.
+- Nothing else moved: `version`, `device`, `hostname`, `directories` and `runtime` are present
+  as before, and `workspace` and `caches` are still in the result.
+- Step 2 carries the same `plugin` block alongside the cache entries.
+- Step 3's `plugin` is identical to step 1's (it doesn't depend on the workspace), while its
+  `workspace` reads `regression-complete`.
+- A `plugin` block is missing only if `version` doesn't parse as a version; a server whose
+  `version` parses and has no `plugin` is a **finding**.
+cleanup: the `use_workspace(name="default")` in step 3.
+metrics: none.
+
+### C-F1251 — the `get_server_info` description tells the agent when to flag a stale plugin
+pending: #1560
+source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
+Plan v1 puts the comparison in the agent's hands: the skill states the release it was
+written for, and the server gives the floor. The tool description is what tells the agent to
+compare. This is a read of the tool schema (the MCP `tools/list` entry for `get_server_info`, as
+the client loads it); no call spends anything.
+
+expected:
+- The `get_server_info` description names `plugin`, `plugin.current_from` and `plugin.update`,
+  and says all of the following (the wording may differ):
+  - a dw skill states the release it was written for;
+  - a loaded dw skill that states **no** release counts as out of date, as does one older
+    than `plugin.current_from`;
+  - then tell the user **once** that the dw plugin is out of date, and give the
+    `plugin.update` commands.
+- It is a **finding** if the description leaves out the no-stated-release case. That case is
+  the one that catches an old install (#1532's 0.9.0-alpha.1) with no plugin update.
+- The rest of the description is still there: `device`, `directories`, `trust_workflows` and
+  `caches` / `cache_entries`.
+- The server's `INSTRUCTIONS` (the MCP initialize instructions) don't change for this: no new
+  plugin sentence there.
+cleanup: none.
+metrics: none.
+
+### C-F1252 — the `plugin` block is MCP-only: `/api/server` and the OpenAPI `ServerInfo` are unchanged
+pending: #1560
+source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
+Plan v1 says "REST: none": the block is merged on the MCP side, the way `workspace` and
+`caches` are merged, and `ServerInfo` and the OpenAPI snapshot stay unchanged. Run it
+through `ui-check` with two `fetch` steps, `{"step": "fetch", "path": "/api/server"}` and
+`{"step": "fetch", "path": "/openapi.json"}`, plus `get_server_info()` over MCP.
+
+expected:
+- `/api/server` answers 200 with the same `version` that `get_server_info` reports, and its
+  body has no `plugin` key.
+- In `/openapi.json`, the schema `/api/server` answers with (`ServerInfo`) has no `plugin`
+  property.
+- `get_server_info` over MCP still has `plugin` (C-F1250). It is a **finding** if the REST
+  answer grew the block, or if the MCP result lost it.
+cleanup: none.
+metrics: none.
+
+### C-F1253 — every dw skill that starts at `get_server_info` states the release it was written for, and a current install isn't flagged
+pending: #1560
+source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
+Plan v1 adds one line under *Before anything* to each of the 10 skills whose first step is
+`get_server_info`: "This skill is written for dw `<version>`; `get_server_info`'s `plugin` says
+whether that is current." `cinematography` makes no server call and gets no line. The
+session's `dw` plugin skills are the consumer surface. They load from `develop`, the
+commit the server runs. Read them by loading each one with the `Skill` tool, never from a
+checkout. No GPU time.
+
+Steps:
+1. `get_server_info()`. Note `version` and `plugin.current_from`.
+2. Load each of `dw:flux3-klein`, `dw:kandinsky-6`, `dw:long-form`, `dw:ltx-2-5`,
+   `dw:minimax-h3`, `dw:minimax-h3-image`, `dw:minimax-music3`, `dw:script-to-video`,
+   `dw:series-episodes` and `dw:storyboard`, plus `dw:cinematography`. Read only the opening of each
+   skill as far as its *Before anything* section; don't act on its steps.
+
+expected:
+- Each of the 10 skills carries the "written for dw `<version>`" line in its *Before anything*
+  section, naming `get_server_info`'s `plugin`.
+- All 10 state the same version, a plain version string. With the plugin loaded from the
+  commit the server runs, it equals `get_server_info.version` (`release.sh` rewrites the lines
+  together with the other version files, so a skill left on an older number is a **finding**).
+- The stated version is at or above `plugin.current_from`, so a freshly installed plugin is
+  never flagged as stale. A pre-release server must not flag its own pre-release skills: the
+  trap the plan's floor exists to stop.
+- `dw:cinematography` has no such line.
+- A skill that starts at `get_server_info` but has no line, or a line whose wording leaves out
+  where to compare (`plugin`), is a **finding**: under C-F1251's rule, that skill flags every
+  install as out of date.
+cleanup: none.
+metrics: none.
+
+### C-F1254 — #1544's per-cut verdict follows plan v4's reading at both ends: either end that meets both halves carries the cut, and ≥ 3 of 5 cuts meet the bar
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
+No calls beyond C-F1162's: apply plan v4's pinned reading ("How the record reads the bar") to the table C-F1163 and
+C-F1257 accepted, and compare with the probe's `RECORD verdict:` line and the record's verdict sentence, both as
+#1544's hand-off reproduces them. Where this case and C-F1164 disagree (C-F1164 was written from plan v2 and judges
+half (b) at the head only), this case's v4 reading governs. The reading, per cut:
+- **Error** is per-token relative L2 against the same token of the continuous encode. **Floor** is the cut's one
+  floor (C-F1257). Every arm of a cut is judged against it.
+- **Half (a), per end:** the hard-cut arm (pre 0 / post 0) has a run of consecutive tokens, counted from the first
+  token (head) or the last token (tail), whose error is **strictly** above 3× the floor, and the run is ≥ 0.25 s,
+  measured as tokens × hop.
+- **Half (b), head** (only where half (a) holds at the head): the cut has at least 1 s of song before it, and the
+  pre 1 s / post 0 arm's mean error over the first 0.25 s of tokens is ≤ 2× the floor (inclusive).
+- **Half (b), tail** (only where half (a) holds at the tail): the pre 0 / post 0.2 s arm's mean error over the last
+  0.2 s of tokens is ≤ 2× the floor (inclusive). On the end-of-song cut that arm's post-context is silence, and it is
+  judged the same way.
+- **A cut meets the bar** when at least one of its ends meets both halves. **The bar is met** when ≥ 3 of the 5 cuts
+  meet it.
+expected:
+- The `RECORD verdict:` line reports, for each cut, half (a) and half (b) at the head **and** at the tail, whether the
+  cut meets the bar, and ends with met or not met. The record's verdict sentence says the same thing in words. A line
+  that reports only the head, or a sentence that contradicts the line, is a **finding**.
+- Recomputing each cut from the table gives the line's per-cut answers, and the count of cuts that meet gives its
+  final met / not met. Boundaries:
+  - a run of exactly 0.25 s meets half (a); one token less does not;
+  - a token at exactly 3× the floor ends a run (strict);
+  - a half-(b) mean of exactly 2× the floor passes (inclusive);
+  - exactly 3 cuts meeting gives **met**; 2 gives **not met**.
+- **Halves pair on one end.** A cut whose head meets half (a) only and whose tail meets half (b) only (or the reverse)
+  does **not** meet the bar. A cut whose head fails half (b) but whose tail meets both halves **does** meet it.
+- **The 0 s cut** can't meet half (b) at the head (it has no 1 s arm, C-F1163's n/a). It can still meet the bar through
+  its tail. The line shows its head half (b) as not met or n/a, never as met.
+- **The end-of-song cut**'s tail half (b) is judged on its silence-padded 0.2 s arm, not skipped.
+- **A tail-only finding can meet the bar:** if 3 or more cuts meet only through their tails, the verdict is **met**. A
+  record that says "not met" there because the head didn't recover (v3's withdrawn reading) is a **finding**.
+- Token 0's relative L2 and cosine are not a reason in the line or the sentence (as in C-F1164).
+- Routing, as C-F1164 says: **met** returns #1516 to the lead for a plan with stages B and C (and, if the bar was met
+  through tails, the hand-off says the A/B must judge the shot's tail too, per the v4 sketch); **not met** returns it
+  to the lead to record a decline for Don to rule on. Neither names an A/B or an engine change as done.
+It is a **finding** if a recomputed per-cut answer or the final verdict differs from the line, the line omits an end or
+a half, halves from different ends are combined, or the tail rule is not applied.
+cleanup: none.
+metrics: none.
+
+### C-F1255 — #1544's hand-off reproduces the record in full and gives Don three ready-to-paste commands
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
+Free and read-only: `gh issue view 1544 --repo dkackman/diffusers-workflow --comments`, the builder's hand-off
+comment. Plan v4 (Stage A → Hand-off, and the v3 ruling) makes this stage's verification partly Don's own action,
+so the hand-off is what he runs from. The tester never runs the commands (no shell on lem).
+expected:
+- **The record, in full**, in the comment itself (a link to `bench/records/h3-audio-encode-context.md` alone is a
+  **finding**): the song's workspace path and length, the commit, the GPU, the probe's arguments (`--cuts`,
+  `--slice-seconds`), the full table (C-F1163, C-F1257) and the verdict sentence (C-F1254).
+- **The probe's `RECORD` lines.** The run's first `RECORD` lines name the commit, the GPU, the song path and length,
+  and the arguments, and they agree with the record's stated values. A `RECORD verdict:` line is present.
+- **Three commands, each a complete line Don can paste on lem** (an absolute or repo-relative script path, the venv
+  or `python` it runs under, and every argument spelled out; no `<placeholder>` left to fill in):
+  1. the full probe on the record's song, with the same `--cuts` and `--slice-seconds` the record ran with;
+  2. the probe on a song path that doesn't exist (the path is named, and plainly doesn't exist);
+  3. the probe on a song shorter than `slice-seconds + 2 s` (7 s at the default 5): either a named clip already on lem,
+     with its length stated and under that bound, or the one-line `ffmpeg` cut that makes one, followed by the probe on
+     its output.
+- Command 1's song path and arguments are the same as the record's (C-F1162). A command 1 that differs (another song,
+  other `--cuts`) is a **finding**: Don's run couldn't reproduce the table.
+- The hand-off says the probe runs on the bench card or with the main server idle (plan v4, *Builds*).
+It is a **finding** if the record isn't reproduced in full, a `RECORD` header field is missing or disagrees, or any of
+the three commands is missing, incomplete, or doesn't test what the plan names.
+cleanup: none.
+metrics: none.
+
+### C-F1256 — Don's re-run on #1544 matches the record, and both bad inputs exit non-zero naming the problem; with no re-run yet, the stage goes to Don, not back
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
+Free and read-only: the same `gh issue view 1544 --comments`. Don's re-run comment is one posted by @dkackman (the
+repo owner) after the hand-off that holds the three commands' output verbatim with their exit codes. A comment by any
+other login is not Don's re-run, whatever it says. A comment by an agent role that signs itself as Don's delegate or
+as the builder is not it either (the builder re-running is the implementer verifying itself).
+expected:
+- **No re-run comment yet.** If every other #1544 case passes and Don's re-run isn't on the thread, the tester does
+  **not** bounce the stage. It hands #1544 to Don (`owner:don`) with the *Asking Don* block, quoting the three commands
+  from the hand-off (C-F1255) verbatim. That hand-over is the expected outcome of this case on that run, not a failure.
+- **Run 1 (the full probe):** its first `RECORD` lines name the same song, length and arguments as the record, and the
+  commit is the record's (or the hand-off said which commit to run at; a different commit is noted and is a
+  **finding** only if the numbers differ). Every table number in its `RECORD` lines matches the record's to 3
+  significant figures, cell for cell, n/a and silence marks included. Its `RECORD verdict:` line gives the same per-cut
+  answers and the same met / not met as the record's. A GPU other than the record's is noted, not a finding by itself.
+- **Run 2 (missing path):** exit code non-zero; the message names the path given. A traceback from loading a model
+  instead of the message (the check must come before any model loads) is a **finding**.
+- **Run 3 (short song):** exit code non-zero; the message gives both lengths (the song's and the `slice-seconds + 2 s`
+  it needed). It exits before any model loads, as run 2.
+- Either bad input exiting 0, or exiting non-zero with a message that doesn't name the problem, is a **finding**.
+It is a **finding** if run 1 differs from the record past 3 significant figures or gives another verdict, or a bad-input
+exit is zero or unexplained. A finding bounces #1544 to the implementer with Don's output quoted.
+cleanup: none.
+metrics: none.
+
+### C-F1257 — #1544's table uses one floor per cut, measures runs in whole hops, and never truncates a pre-context
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
+No calls beyond C-F1162's: read the table as C-F1163 does. Plan v4 pinned these after C-F1163 was written (from v2);
+where they disagree, this case governs (C-F1163 allows a partial pre-context to be "truncated" if marked, and asks for
+a floor per cell; v4 does neither).
+expected:
+- **One floor per cut**, defined in the record as the median error of that cut's hard-cut arm (pre 0 / post 0) over the
+  tokens from 1 s after the slice start to 1 s before its end. Every arm of the cut is judged against that one value;
+  an arm carrying its own, different floor is a **finding**.
+- **Run lengths in whole hops.** The record states the hop. Every head and tail run length is a whole number of tokens
+  × hop (to the precision the record prints), and is between 0 and `slice-seconds`.
+- **Window sizes stated.** The record states how many tokens make "the first 0.25 s", "the first 0.5 s" and "the last
+  0.2 s" at its hop (rounding included), and uses the same counts in every arm.
+- **No truncation.** An arm whose pre-context is longer than the audio before its cut reads "n/a: no audio before"
+  with no numbers; an arm encoded on less pre-context than its label says is a **finding**, even if marked truncated.
+  At the default cuts this is the 0 s cut's 0.5, 1 and 2 s arms; any other cut with less than 2 s before it is n/a on
+  the arms it can't fill.
+- **Post-context past the song's end** is silence and labelled so (the end-of-song cut's post 0.2 s arms), and those
+  arms have numbers (they are what C-F1254's tail half (b) is judged on there).
+- **Token 0** is shown as information (relative L2 and cosine) per arm.
+It is a **finding** if a cut has more than one floor, a run length isn't a whole number of hops, the window token
+counts aren't stated or vary, or a pre-context was truncated rather than marked n/a.
+cleanup: none.
+metrics: none.
+
+### C-F1258 — #1549's drill record carries each arm's command transcript verbatim, and its count and stalls are read from it
+pending: #1549
+source: tester, spec for #1549 from #1525's plan v3 (claude-opus-5-5 via anthropic)
+Free. Plan v3's amendment: nobody re-walks the Docker arm, so the record has to carry each arm's transcript verbatim
+(every command as typed, in order, with each stall marked where it happened), and the count and stalls are checked
+against it, not against the builder's summary. This adds to C-F1184 and governs where the two differ. Read the record
+on #1549 (`gh issue view 1549 --repo dkackman/diffusers-workflow --comments`), and `gh issue view` each issue a stall
+names. Over MCP: `get_guide("docker")` (index), then `get_guide("docker", section=...)` for each section the Docker
+arm's commands come from, and `get_guide("remote", section="On the GPU box")`.
+expected:
+- Both arms, **CUDA** and **Docker**, each have their own transcript: a list or code block of commands, one per
+  entry, in the order they were typed. Prose such as "ran install.sh, then started the server" in place of the
+  commands is a **finding**. So is a transcript shared by the two arms, or one for only one arm.
+- Each transcript starts at the arm's first command on a clean box (a prerequisite install or the `git clone`) and
+  runs up to the MCP client's connection (`claude mcp add ...`) and the run of `templates/text-to-image`. A transcript
+  that starts after the clone or stops before the client connects is a **finding**. The client's own prompts or tool
+  calls don't need to be in it, but the job or output it names (C-F1184) has to come after its last command.
+- **Count.** Count the commands in each transcript yourself. The command count the record states for that arm equals
+  your count. If the record says how it counts (a multi-line command counts once, a retyped command counts again), use
+  that rule. If it gives no rule, count each entry once. A count that doesn't match is a **finding**, and so is a
+  count with no transcript.
+- **Stalls marked in place.** Each stall is marked at the point in the transcript where it happened (a marker,
+  comment or note beside that command), and says what it needed. List every marked stall. The record's stall
+  summary, if it has one, lists the same stalls: one marked in the transcript and missing from the summary, or one in
+  the summary with no mark in the transcript, is a **finding**.
+- **Each marked stall resolves.** It names a doc fix in the stage's branch (file and what changed) or an issue that
+  exists (`gh issue view` answers). For a fix to `DOCKER.md` or `REMOTE.md`, the served `docker` or `remote` guide
+  carries the fixed text once the stage is on lem (`get_guide`). A stall with neither, or a claimed guide fix the
+  served text doesn't carry, is a **finding**.
+- **The Docker arm's commands come from the guide.** Every command in the Docker arm's transcript, from the
+  `git clone` through `bash docker/init-env.sh` and `docker compose ...` to the `claude mcp add --transport http`
+  line, is in the served `docker` guide in the same order. Placeholders (`<token>`, `<port>`) may be filled in, and
+  the `.env` edits the plan names (fresh, empty paths) may differ. A command that isn't in the guide and isn't marked
+  as a stall is a **finding**: it is the step a builder did from memory, which is what the transcript is there to
+  catch.
+- No transcript contains a literal 64-hex token or any other secret. Placeholders or `$VAR` are fine. A real-looking
+  token is a **finding**, and it is filed privately as an advisory, not on the issue.
+It is a **finding** if either arm's count or stalls can be checked only against the builder's summary and not
+against a verbatim transcript.
+cleanup: none.
+metrics: none.
+
+### C-F1259 — #1549's drill record states the web UI's `/` result on each drill server, and a failed `/` is a marked, resolved stall
+pending: #1549
+source: tester, spec for #1549 from #1525's plan v3 (claude-opus-5-5 via anthropic)
+Free. Plan v3 moved stage A's box-side checks (that `bash ./install.sh` leaves a built `ui/dist`, and that `dw-serve`
+serves the UI at `/`) into stage B's record. Each arm records whether the web UI rendered at `/` on its drill server
+and the HTTP status it got. A 404 there is a stall that B fixes. Read the record on #1549 as in C-F1258. C-F1182 is
+the separate check on lem's own server, and this case doesn't replace it.
+expected:
+- Each arm, **CUDA** and **Docker**, states a `/` result for its own drill server: the HTTP status (a number) and
+  whether the app rendered (visible app UI, not a `Not Found` body or a blank page), with when it was checked
+  (before or after the first image). An arm with no `/` result, a result with no status, or a status for lem's own
+  server in place of the drill server's (its port, hostname or URL is the one `get_server_info` reports) is a
+  **finding**.
+- The CUDA arm's transcript (C-F1258) runs `bash ./install.sh`, or the command the fixed README gives for the
+  installer, from the fresh clone before `dw-serve`. That arm's `/` result is what proves the installer's UI build on
+  a clean box. A CUDA arm that installed by another route, or built the UI by hand without marking it as a stall, is
+  a **finding**.
+- The final `/` result on each arm is a 2xx with the app rendered. A final 404, 5xx or blank page is a **finding**,
+  unless the record files an issue for it and says the stage can't close on it. That case goes to Don, and is not
+  passed.
+- If `/` failed at any point before it worked (a 404 after `install.sh`, say), the failure is a stall marked in the
+  transcript at that point, with its fix: a change to `install.sh` or a doc in the stage's branch, or an issue that
+  exists. A failure that the record reports but doesn't mark in the transcript, or that was fixed with a command the
+  transcript doesn't show, is a **finding**.
+- If a Node or npm prerequisite was missing, so that `install.sh` printed the commands instead of building, the
+  record says so, and the arm then either ran those printed commands (in the transcript) or marks a stall. A UI that
+  appeared with no command in the transcript that built it is a **finding**.
+It is a **finding** if either arm's record leaves it unknown whether a stranger following the written steps gets a
+web UI at `/`.
+cleanup: none.
 metrics: none.
 
 ## Performance
