@@ -530,9 +530,9 @@ function loopHeader(lp) { // the header dot and sentence; null when the loop has
       const failed = Object.entries(lp.servers).filter(([, v]) => v.deploy && v.deploy.state === "failed").map(([k]) => k);
       if (failed.length) return { cls: "bad", text: `loop: deploy FAILED on ${failed.join(", ")}: the GPU is held` +
         (n ? ` · ${n} session${n === 1 ? "" : "s"} running` : "") };
-      const paused = lp.status === "paused-rate-limit", drain = lp.status === "draining";
-      return { cls: paused ? "warn" : "ok", text: (n ? `loop: ${n} session${n === 1 ? "" : "s"} running` : "loop: live, no session running") +
-        (paused ? " · paused (rate limit)" : drain ? " · draining" : "") };
+      const paused = lp.status === "paused-rate-limit", budget = lp.status === "paused-day-budget", drain = lp.status === "draining";
+      return { cls: paused || budget ? "warn" : "ok", text: (n ? `loop: ${n} session${n === 1 ? "" : "s"} running` : "loop: live, no session running") +
+        (paused ? " · paused (rate limit)" : budget ? " · paused (day budget)" : drain ? " · draining" : "") };
     }
     case "stopping": return { cls: "warn", text: `loop stopping: waiting out deploys (${n} session${n === 1 ? "" : "s"} left)` };
     case "stalled": return { cls: "warn", text: `loop stalled since ${since}` };
@@ -626,9 +626,9 @@ function renderLoop(st0) {
   const lh = loopHeader(lp);
   const stalled = lp.health === "stalled" || lp.health === "gone";
   const failedDeploys = Object.entries(lp.servers).filter(([, v]) => v.deploy && v.deploy.state === "failed").map(([k]) => k);
-  const label = { live: failedDeploys.length ? `${lp.status} · deploy failed on ${failedDeploys.join(", ")}` : lp.status === "paused-rate-limit" ? "paused (rate limit)" : lp.status, stopping: "stopping",
+  const label = { live: failedDeploys.length ? `${lp.status} · deploy failed on ${failedDeploys.join(", ")}` : lp.status === "paused-rate-limit" ? "paused (rate limit)" : lp.status === "paused-day-budget" ? "paused (day budget)" : lp.status, stopping: "stopping",
     stalled: `stalled since ${hhmm(lp.heartbeat)}`, gone: `stalled (driver gone) since ${hhmm(lp.heartbeat)}`, stopped: "stopped" }[lp.health];
-  const cls = { live: failedDeploys.length ? "bad" : lp.status === "paused-rate-limit" ? "warn" : "ok", stopping: "warn", stalled: "warn", gone: "bad", stopped: "" }[lp.health];
+  const cls = { live: failedDeploys.length ? "bad" : lp.status === "paused-rate-limit" || lp.status === "paused-day-budget" ? "warn" : "ok", stopping: "warn", stalled: "warn", gone: "bad", stopped: "" }[lp.health];
   el.className = "card" + (stalled ? " " + lp.health : "");
   const freeKeys = new Set((lp.shared.slots || []).filter((x) => x.session).map((x) => sessionKey(x.session)));
   const shown = new Set(Object.values(lp.servers).flatMap((v) => (v.slots || []).filter((x) => x.session).map((x) => sessionKey(x.session))));
@@ -642,6 +642,7 @@ function renderLoop(st0) {
       The sessions below were last seen at ${hhmm(lp.heartbeat)}; they may not still be running.</p>`
     : lp.health === "stopping" ? `<p class="lbanner">Stopping: no new sessions; waiting for deploys to finish. The heartbeat is paused until it exits.</p>`
     : lp.status === "paused-rate-limit" && lp.health === "live" ? `<p class="lbanner">Paused: the account hit its rate limit; sessions resume when it clears.</p>`
+    : lp.status === "paused-day-budget" && lp.health === "live" ? `<p class="lbanner">Paused: DAY_BUDGET_USD is spent for today; sessions resume at midnight.</p>`
     : lp.status === "draining" && lp.health === "live" ? `<p class="lbanner" style="color:var(--muted);border-color:var(--line);background:none">Draining: no new sessions start; running ones finish.</p>` : "";
   el.innerHTML = `<h2><span class="dot ${cls}"></span>loop <span class="state ${cls}">${esc(label)}</span>
       <span class="spacer" style="flex:1"></span>

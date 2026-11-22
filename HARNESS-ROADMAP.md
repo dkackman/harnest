@@ -14,11 +14,11 @@ rather than in a separate log.
 | R2  | Pre-hand-off reviewer subagent                    | checklist applied. Measured 2026-11-01: 83% of verified dw issues since 09-01 passed on the first hand-off (402 of 484), but 72% since 10-01 (129 of 177, the feature-stage month). No reviewer subagent beyond the checklist | — |
 | R3  | Invariant hooks for the implementer               | done; hardened again in R16 (2026-10-23 to 25: 34 `fix(guard)` commits closing hidden-script, heredoc and label routes) | —   |
 | R4  | Tester-authored acceptance specs for features     | built, as R11's phase 3: the tester's `spec` kind (`status:needs-spec`) writes `pending: #<stage>` cases from the approved plan before any code exists | R11 |
-| R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56). Since R16: a per-case results ledger (`regression-results/`) and `scripts/rank-cases.py`, which the curator reads. The audit (`run-curate.sh`) is not scheduled: its last run was 2026-10-12 | — |
+| R5  | Scheduled suite curation                          | built; harnest#2 applied (smoke 97 → 56). Since R16: a per-case results ledger (`regression-results/`) and `scripts/rank-cases.py`, which the curator reads. The audit (`run-curate.sh`) runs weekly since 2026-11-22 (`com.harnest.curate`, Sunday 06:00); before that its last run was 2026-10-12 | — |
 | R6  | Graduate mechanical cases to an executable client | runner built; harnest#40 approved marking S-F002, S-F028 and S-F036 `runner: script` (2026-09-30), but only S-F002 and S-F028 carry it (S-F036 is still orphaned). No graduations since | R5 helps |
-| R7  | Retro agent (the self-improvement loop)           | built; 6 proposals filed (4 applied, 2 declined). The weekly launchd schedule exists (`scripts/install-schedules.sh`) but **is not installed**: the last retro ran 2026-09-23 | R1 |
+| R7  | Retro agent (the self-improvement loop)           | built; the weekly launchd schedule is installed and running (last run 2026-11-16, which filed harnest#218 and #219). Since 2026-11-22 each retro first rules on the applied proposals that have no `retro-outcome:` comment, from a `measure:` line the driver counts | R1 |
 | R8  | Port the drivers to Python (Agent SDK optional, later) | built: `harness/` (stdlib only); `harness.drivers.regression` at parity with `run-regression.sh` (`tests/test-regression-py.sh`); the regression fleet (`harness.drivers.fleet`) and the requirements generator; the loop itself is still bash | R12 |
-| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`); the dashboard's Needs you card lists the queue live. R15 adds the Batch and Deferred sections. The daily schedule **is not installed**: the last digest ran 2026-09-24, so run `scripts/install-schedules.sh --load` | — |
+| R9  | Approval digest for `owner:don`                   | built (`run-digest.sh`); the dashboard's Needs you card lists the queue live. R15 adds the Batch and Deferred sections. The daily schedule is installed and running (07:00) | — |
 | R10 | Role prompts: dedupe, then assemble per session kind | done (implementer benched; tester/regression on live spot checks) | R1, R3     |
 | R11 | Feature lead: proposals as issues, designed with Don, built in stages | built; running unattended in `run-loop.sh`. 56 features closed since 2026-10-01 (about $19 each in logged sessions; a one-stage plugin feature runs 6 sessions, about $9). Design posts a resumable draft plan (R16) | R4 (absorbs it), R1 |
 | R12 | Hardening: driver defects, one state machine, tests; researcher folded into the lead | done 2026-09-24 (A, B, C; design queue in the loop) | before dw#378 runs live |
@@ -530,6 +530,15 @@ loop and an `awk` pipeline once each.
 **Applied (2026-09-23), commit `2c8b025`.** A "Your shell" section in
 `agents/tester/core.md` and `agents/regression/core.md` lists what the fence allows and the
 tool to use instead of each denied pattern. The next retro's denial counts are the measure.
+
+**Outcomes (2026-11-22).** The "done when" above asks for a change shown to have helped,
+and nothing checked: #175, #176 and #218 were applied and never looked at again. The driver
+now lists every applied `retro:` proposal that is 5 to 60 days closed and carries no
+`retro-outcome:` comment, and the session rules on each (`helped`, `no-change`, `worse`,
+`cannot-tell`) before it proposes anything. New proposals end "How to measure" with
+`measure:` (literal loop.log text), `baseline:` and `expect:` lines, so the count is the
+driver's and not the agent's reading. Nothing is reverted unattended: a verdict of
+`no-change` or `worse` is a comment, and a revert is a new proposal for Don.
 
 ## R8 — Port the drivers to Python (the Agent SDK optional, later)
 
@@ -1782,6 +1791,23 @@ moved, weekly (`lib/consolidation.py`). PR merges into `develop` stay refused wh
   none of it touches `lem`. Deploys and verification stay serial.
 - **Letting the retro agent apply its own proposals.** Rejected on principle; see
   "Principles every item must keep".
+
+## Loop brakes (2026-11-22)
+
+Two brakes the loop lacked, in both drivers (`run-loop.sh` and `harness/drivers/loop.py`):
+
+- **A day budget.** Every cap was per session, and `MAX_SESSIONS` defaults to unlimited, so
+  the only total was the account's usage limit (it stopped both loops on 2026-11-20).
+  `DAY_BUDGET_USD` caps the checkout's spend per local day from a dated record,
+  `logs/spend.tsv`, that every driver's sessions write. Default 0, uncapped: the number is
+  Don's to pick, from a week of the file.
+- **A dry-round rule.** The standing task ran on a fixed cadence whether or not it found
+  anything. A session that files no issue and adds no suite case is a dry round; from
+  `TESTER_TASK_DRY_ROUNDS` (2) in a row the task slows, to a quarter of its cadence at most,
+  and the first find restores it. Verification is untouched: the rule only spaces discovery.
+
+Measure: `tester:task` sessions and dollars per day in `logs/spend.tsv` against issues the
+task files, before and after.
 
 ## R17 — Loop scheduler: follow-ups
 

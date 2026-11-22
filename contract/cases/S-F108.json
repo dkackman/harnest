@@ -1,0 +1,125 @@
+{
+ "id": "S-F108",
+ "level": "smoke",
+ "title": "a fractional argument to an integer-typed variable is refused, not truncated",
+ "note": "run.py cannot compare two steps' answers, so run_workflow's 'the same message' is asserted by pinning today's message whole in steps 1 and 2. Step 2 sends acknowledged_cost=true as the prose does: if the refusal ever regresses, this step queues a real job.",
+ "steps": [
+  {
+   "label": "step 1: 20.5 to an int variable is refused at arguments.noise_level",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/upscale-diffusion",
+    "arguments": {
+     "noise_level": 20.5
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "arguments.noise_level"
+    },
+    {
+     "path": "errors[0].message",
+     "eq": "noise_level 20.5 would be realized as 20: this variable is typed integer by its default; declare its default as a float (e.g. 20.0) to accept fractional values"
+    }
+   ]
+  },
+  {
+   "label": "step 2: run_workflow refuses before queueing, same message, no job_id",
+   "call": "run_workflow",
+   "args": {
+    "workflow_path": "templates/upscale-diffusion",
+    "arguments": {
+     "noise_level": 20.5
+    },
+    "acknowledged_cost": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": [
+      "Error executing tool run_workflow",
+      "arguments.noise_level: noise_level 20.5 would be realized as 20: this variable is typed integer by its default; declare its default as a float (e.g. 20.0) to accept fractional values"
+     ]
+    },
+    {
+     "path": "",
+     "not_contains": "job_id"
+    }
+   ]
+  },
+  {
+   "label": "step 3: a fraction to a float-defaulted variable validates with no warnings",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/upscale-diffusion",
+    "arguments": {
+     "guidance_scale": 7.5
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "warnings",
+     "len": 0
+    },
+    {
+     "path": "checked_arguments",
+     "contains": "guidance_scale"
+    }
+   ]
+  },
+  {
+   "label": "step 4: integral values, one as a string, are valid",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/upscale-diffusion",
+    "arguments": {
+     "noise_level": 30,
+     "num_inference_steps": "12"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    }
+   ]
+  },
+  {
+   "label": "step 4: a fractional string is refused at arguments.num_inference_steps",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/upscale-diffusion",
+    "arguments": {
+     "noise_level": 30,
+     "num_inference_steps": "12.5"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.num_inference_steps\""
+     ]
+    }
+   ]
+  }
+ ]
+}

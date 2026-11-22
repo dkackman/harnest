@@ -48,7 +48,7 @@ import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from .. import REPO, board, deploy, lock, loop_state, outcome, session, suite_tree
+from .. import REPO, board, deploy, lock, loop_state, outcome, session, spend, suite_tree, task_dry
 from ..deploy_policy import DeployGate, head_sha, runnable_now, server_paths_changed
 from ..gitops import git, refresh_plugin_tree
 from ..log import Log, err, ts
@@ -374,7 +374,14 @@ class Loop:
         self.retry_secs = knob("DEPLOY_RETRY_SECS", 300)
         self.verify_secs = knob("DEPLOY_VERIFY_SECS", 90)
         self.task_gap = knob("TESTER_TASK_GAP_SECS", 5400)
+        self.task_dry_rounds = knob("TESTER_TASK_DRY_ROUNDS", 2)
+        self.task_dry_max = max(1, knob("TESTER_TASK_DRY_MAX", 4))
         self.max_sessions = knob("MAX_SESSIONS", 0)
+        try:
+            self.day_budget = spend.budget()
+        except ValueError as e:
+            raise ProfileError(f"DAY_BUDGET_USD must be a number of dollars (0 = uncapped), got '{e}'") from None
+        self.budget_said = ""  # the day the budget's hold was last logged
         self.sleep_max = knob("SLEEP_MAX_SECS", 1800)
         self.session_kill = knob("SESSION_KILL_SECS", 10)
         self.child_kill = knob("CHILD_DRIVER_KILL_SECS", 30)
@@ -870,10 +877,32 @@ class Loop:
             and self.sched.gpu_idle(primary)
             and (primary, "tester:closures") not in running_kinds
             and not any(i.queue == "tester:closures" and i.server == primary for i in out)
-            and time.time() - self.task_last >= self.task_gap
+            and time.time() - self.task_last >= self.task_gap * self.task_dry_factor()
         ):
             out.append(Item("tester:task", None, primary))
         return [i for i in out if self.offerable(i)]
+
+    def task_dry_factor(self):
+        """The dry-round rule: how many times TESTER_TASK_GAP_SECS the
+        standing task waits now (harness/task_dry.py)."""
+        return task_dry.factor(self.logs, self.task_dry_rounds, self.task_dry_max)
+
+    def over_budget(self):
+        """DAY_BUDGET_USD is spent for today (logs/spend.tsv): nothing new
+        starts. Said once a day; the day turning lifts it."""
+        day = time.strftime("%Y-%m-%d", self.localtime())
+        if not spend.reached(self.logs, self.day_budget, day):
+            if self.budget_said:
+                self.budget_said = ""
+                self.say("[loop] day budget: a new day, starting again")
+            return False
+        if self.budget_said != day:
+            self.budget_said = day
+            self.say(
+                f"[loop] day budget reached (${spend.today(self.logs, day):.2f}"
+                f" of DAY_BUDGET_USD=${self.day_budget:g} today): no session starts before midnight"
+            )
+        return True
 
     def offerable(self, it):
         return (not self.only or it.queue in self.only) and not self.cooling(it.key) and it.key not in self.done_keys
@@ -889,6 +918,8 @@ class Loop:
         if self.max_sessions and self.sessions >= self.max_sessions:
             return 0
         if self.stop_signal:
+            return 0
+        if self.over_budget():
             return 0
         self.sched.offer(self.offer())
         started = 0
@@ -1364,6 +1395,8 @@ class Loop:
                     pass
                 if not self.hk_ready:
                     continue
+                if spend.reached(self.logs, self.day_budget, today):
+                    continue  # not stamped: it comes due once the budget allows
                 if srv.freeze:
                     if not srv.nightly_said:
                         srv.nightly_said = True
@@ -1702,6 +1735,8 @@ class Loop:
             status = "running"
             if self.paused_until:
                 status = "paused-rate-limit"
+            elif self.budget_said:
+                status = "paused-day-budget"
             elif (self.max_sessions and self.sessions >= self.max_sessions) or any(s.stopping for s in self.active()):
                 status = "draining"
             self.state.status(status)
@@ -1713,6 +1748,9 @@ class Loop:
                 return 0
             if self.once and self.quiet():
                 self.say("[loop] --once: nothing more to start, exiting")
+                return 0
+            if self.budget_said and self.drain == "1" and self.quiet():
+                self.say("[loop] day budget reached; drain: exiting")
                 return 0
             if polled and self.quiet() and self.readable:
                 left = [(board.query("drain", s.name, self.board_env(s)) or "unknown").strip() for s in self.active()]

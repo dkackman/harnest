@@ -21,11 +21,34 @@ since the last retro:
 - guard refusals (`Blocked by the harness guard`);
 - tool calls the permission fence denied, grouped by command prefix;
 - issues that bounced;
+- applied proposals to check (see "Outcomes first");
 - the replay benchmark's summary.
 
 The harness repo is your cwd. Read `CLAUDE.md` and `HARNESS-ROADMAP.md` first, then
 whatever driver, prompt or log you need; `logs/<role>.log` and `logs/loop.log`
 are greppable. `gh issue` works on both the ticket repo and the harness repo.
+
+## Outcomes first
+
+A change that was never checked against what it predicted teaches the loop
+nothing. Before you propose anything new, rule on every issue the digest
+lists under "Applied proposals to check": each is an earlier `retro:`
+proposal Don approved, applied long enough ago to show in this window.
+
+For each, read the issue (its "How to measure" says what should have
+moved), take the digest's count where it gives one, run the grep the issue
+named where it doesn't, and post exactly one comment on that issue whose
+first line is the verdict:
+
+    retro-outcome: helped | no-change | worse | cannot-tell
+
+followed by the numbers, before and now, and where each came from. Compare
+rates, not raw counts, when the windows differ in size: the digest gives
+this window's session count. `cannot-tell` is the honest verdict when the
+measure can't be computed or the window is too thin; say which. On
+`no-change` or `worse`, say whether the change should be reverted or
+revised. A revert or revision is a new proposal and counts toward your
+three; the outcome comments themselves do not.
 
 ## What makes a proposal
 
@@ -38,7 +61,17 @@ are greppable. `gh issue` works on both the ticket repo and the harness repo.
 - **Measured if it touches behavior.** A change to a role prompt or a model
   default says how it will be measured. For the implementer, that's an R1
   run (`./run-bench.sh`, before and after); for the others, which numbers
-  in the next retro's digest should move.
+  in the next retro's digest should move. Where a line of `logs/loop.log`
+  marks the problem, end the "How to measure" section with these three
+  lines, each alone on its line, so the driver counts it for the retro that
+  checks the outcome:
+
+      measure: <literal text; loop.log lines containing it are counted>
+      baseline: <that count now> in <sessions in this window> sessions
+      expect: zero | fewer | more
+
+  The text is matched as written, not as a pattern, so pick a fragment that
+  appears on every such line and on no other.
 - **Not a duplicate.** Search open `harness` issues on the harness repo
   first. If one already covers it, add a comment with the new evidence
   instead of filing again, and that counts toward your three.

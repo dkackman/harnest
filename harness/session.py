@@ -25,7 +25,7 @@ import tempfile
 import threading
 import time
 
-from . import REPO, outcome
+from . import REPO, outcome, spend
 from .log import ts
 from .stream import Renderer
 
@@ -375,6 +375,7 @@ def run(
             log.say(f"[{label}] {e}")
             rc = 1
         attempts.append((start, clock()))
+        spend.record(logs, label, last)
         if rc != 0:
             log.say(f"[{label}] session failed, continuing")
         if outcome.sleep_if_rate_limited(last, log.say):

@@ -99,5 +99,47 @@ class Contract(unittest.TestCase):
         self.assertEqual(("imported\n", 0), (r.stdout, r.returncode), r.stderr)
 
 
+class StubClient:
+    """Answers each call from a table of (is_error, result); records calls."""
+
+    def __init__(self, answers):
+        self.answers = answers
+        self.calls = []
+
+    def call(self, tool, args=None):
+        self.calls.append((tool, args or {}))
+        return self.answers[tool]
+
+
+class StopAtFirstFailure(unittest.TestCase):
+    def test_a_failed_step_keeps_the_later_ones_from_running(self):
+        case = {
+            "id": "X",
+            "steps": [
+                {"call": "validate_workflow", "expect": [{"path": "valid", "eq": False}]},
+                {"call": "run_workflow", "is_error": True},
+                {"call": "list_jobs"},
+            ],
+        }
+        c = StubClient({"validate_workflow": (False, {"valid": True})})
+        r = run.run_case(c, case)
+        self.assertEqual("fail", r["status"])
+        self.assertEqual(["validate_workflow"], [t for t, _ in c.calls])  # run_workflow was never sent
+        self.assertIn("2 later step(s) not run", r["failures"][-1])
+
+    def test_a_job_queued_where_a_refusal_was_expected_is_cancelled(self):
+        case = {"id": "X", "steps": [{"call": "run_workflow", "is_error": True}]}
+        c = StubClient({"run_workflow": (False, {"job_id": "j-9"}), "cancel_job": (False, {})})
+        r = run.run_case(c, case)
+        self.assertEqual([("run_workflow", {}), ("cancel_job", {"job_id": "j-9"})], c.calls)
+        self.assertIn("it queued job j-9, now cancelled", r["failures"][0])
+
+    def test_a_passing_case_runs_every_step_and_cancels_nothing(self):
+        case = {"id": "X", "steps": [{"call": "a"}, {"call": "b", "is_error": True}]}
+        c = StubClient({"a": (False, {}), "b": (True, "refused")})
+        self.assertEqual("pass", run.run_case(c, case)["status"])
+        self.assertEqual(["a", "b"], [t for t, _ in c.calls])
+
+
 if __name__ == "__main__":
     unittest.main()

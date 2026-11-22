@@ -36,7 +36,7 @@ eq  "setup: a rerun leaves the clone" "$head1" "$(git -C "$T/agent-mps" rev-pars
 # a copy of the script in a stub checkout, with launchctl stubbed to a log
 mkdir -p "$T/r/scripts" "$T/home"
 cp "$HARNEST/scripts/install-schedules.sh" "$T/r/scripts/"
-for d in run-retro.sh run-digest.sh; do printf '#!/usr/bin/env bash\necho "%s ran in $PWD" >> "%s"\n' "$d" "$T/ran" > "$T/r/$d"; chmod +x "$T/r/$d"; done
+for d in run-retro.sh run-digest.sh run-curate.sh; do printf '#!/usr/bin/env bash\necho "%s ran in $PWD" >> "%s"\n' "$d" "$T/ran" > "$T/r/$d"; chmod +x "$T/r/$d"; done
 printf '#!/usr/bin/env bash\necho "launchctl $*" >> "%s"\n' "$T/launchctl" > "$T/bin/launchctl"; chmod +x "$T/bin/launchctl"
 sched() { HOME="$T/home" "$T/r/scripts/install-schedules.sh" "$@" 2>&1; }
 la="$T/home/Library/LaunchAgents"
@@ -50,6 +50,9 @@ eq  "schedules: retro is weekly, Monday" 1 "$(x retro StartCalendarInterval.Week
 eq  "  at 06:00" "6:0" "$(x retro StartCalendarInterval.Hour):$(x retro StartCalendarInterval.Minute)"
 eq  "schedules: digest is daily (no weekday)" "" "$(x digest StartCalendarInterval.Weekday)"
 eq  "  at 07:00" "7:0" "$(x digest StartCalendarInterval.Hour):$(x digest StartCalendarInterval.Minute)"
+ok  "schedules: the curate plist parses" plutil -lint "$la/com.harnest.curate.plist"
+eq  "schedules: the suite audit is weekly, Sunday" 0 "$(x curate StartCalendarInterval.Weekday)"
+eq  "  at 06:00" "6:0" "$(x curate StartCalendarInterval.Hour):$(x curate StartCalendarInterval.Minute)"
 eq  "schedules: launchctl is not called without --load" "" "$(cat "$T/launchctl" 2>/dev/null)"
 # the job itself: skips with no loop lock, runs the driver in the checkout with one
 job="$(x retro ProgramArguments.2)"
@@ -61,6 +64,8 @@ mkdir -p "$T/r/logs/.driver.lock"
 (cd / && bash -c "$(x digest ProgramArguments.2)") >/dev/null
 has "schedules: with the loop lock, the retro runs in the checkout" "run-retro.sh ran in $T/r" "$(cat "$T/ran")"
 has "  and the digest" "run-digest.sh ran in $T/r" "$(cat "$T/ran")"
+(cd / && bash -c "$(x curate ProgramArguments.2)") >/dev/null
+has "  and the suite audit" "run-curate.sh ran in $T/r" "$(cat "$T/ran")"
 ok  "schedules: a rerun rewrites in place" sched
 out="$(sched --uninstall)"
 eq  "schedules: uninstall exits cleanly" 0 $?

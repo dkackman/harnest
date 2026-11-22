@@ -221,6 +221,18 @@ AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 # have waited up to four cycles; they now get their own cheap session on any
 # cycle where one is pending (see tester_pass).
 TESTER_TASK_EVERY="${TESTER_TASK_EVERY:-4}"   # standing task on every Nth cycle
+# The dry-round rule: a standing-task session that files no issue and adds no
+# suite case is a dry round. From this many dry rounds in a row the task runs
+# at half its cadence, halving again per further dry round, down to one
+# TESTER_TASK_DRY_MAX-th of it; the first round that finds something puts it
+# back. 0 turns the rule off. The count is logs/task-dry (note_task_round).
+TESTER_TASK_DRY_ROUNDS="${TESTER_TASK_DRY_ROUNDS:-2}"
+TESTER_TASK_DRY_MAX="${TESTER_TASK_DRY_MAX:-4}"
+# A cap on what every driver on this checkout spends in one local day
+# (logs/spend.tsv, spend_record in providers.sh); 0 = uncapped. Once reached
+# no session starts (run_agent) and the loop waits for midnight at the next
+# cycle boundary (day_budget_hold); DRAIN=1 exits there instead.
+DAY_BUDGET_USD="${DAY_BUDGET_USD:-0}"
 DW_URL="${DW_URL:-}"            # resolve_target fills in the target's
 # The server-free passes (feature design, docs and architecture review,
 # curator review) run in one loop only. 1 or 0 forces it; unset, lem's loop
@@ -234,6 +246,9 @@ PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
 case "$TESTER_TASK_EVERY" in
   ''|0|*[!0-9]*) echo "TESTER_TASK_EVERY must be a whole number >= 1, got '$TESTER_TASK_EVERY'" >&2; exit 1 ;;
 esac
+case "$TESTER_TASK_DRY_ROUNDS$TESTER_TASK_DRY_MAX" in ''|*[!0-9]*) echo "TESTER_TASK_DRY_ROUNDS and TESTER_TASK_DRY_MAX must be whole numbers, got '$TESTER_TASK_DRY_ROUNDS' / '$TESTER_TASK_DRY_MAX'" >&2; exit 1 ;; esac
+[ "$TESTER_TASK_DRY_MAX" -ge 1 ] || { echo "TESTER_TASK_DRY_MAX must be >= 1, got '$TESTER_TASK_DRY_MAX'" >&2; exit 1; }
+case "$DAY_BUDGET_USD" in ''|*[!0-9.]*|*.*.*|.) echo "DAY_BUDGET_USD must be a number of dollars (0 = uncapped), got '$DAY_BUDGET_USD'" >&2; exit 1 ;; esac
 case "$DRAIN" in 0|1) ;; *) echo "DRAIN must be 0 or 1, got '$DRAIN'" >&2; exit 1 ;; esac
 case "$SLEEP_SECS$SLEEP_MAX_SECS" in ''|*[!0-9]*) echo "SLEEP_SECS and SLEEP_MAX_SECS must be whole numbers, got '$SLEEP_SECS' / '$SLEEP_MAX_SECS'" >&2; exit 1 ;; esac
 command -v claude >/dev/null || { echo "claude CLI not on PATH" >&2; exit 1; }
@@ -391,6 +406,14 @@ run_agent() {
   local role="$1" tag="$2" budget="$3" dir="$4" provider="$5" model="$6" effort="$7" kind="$8" prompt="$9"; shift 9
   local label="$role:$tag"
   SESSION_OK=0
+
+  # The day's budget is spent: nothing starts, and the caller reads an
+  # empty last session (it ran none), as after a session that never began.
+  if day_budget_reached; then
+    : > "$LAST_SESSION"
+    echo "[$label] not started: day budget reached (\$$(spend_today) of DAY_BUDGET_USD=\$$DAY_BUDGET_USD today)" | tee -a "$LOOP_LOG"
+    return 0
+  fi
 
   # Both pairs were validated at startup, so these can't fail on a bad pair —
   # but a bare failing call in the while body would take the whole driver down
@@ -893,6 +916,48 @@ $(issue_context "$n")" \
   [ "$TESTER_PART" = issues ] || tester_rest
 }
 
+# The dry-round rule (TESTER_TASK_DRY_ROUNDS above). The count of dry rounds
+# in a row is one number in logs/task-dry: the standing task is lem's alone,
+# and harness/task_dry.py reads the same file for the R17 driver's gap.
+TASK_DRY_FILE="$LOGS/task-dry"
+
+# task_dry_factor: how many times its cadence the standing task waits now:
+# 1 below TESTER_TASK_DRY_ROUNDS dry rounds, then 2, 4, ... up to
+# TESTER_TASK_DRY_MAX.
+task_dry_factor() {
+  local dry f=1 over
+  [ "$TESTER_TASK_DRY_ROUNDS" -gt 0 ] || { echo 1; return 0; }
+  dry="$(cat "$TASK_DRY_FILE" 2>/dev/null || true)"
+  case "$dry" in ''|*[!0-9]*) dry=0 ;; esac
+  over=$((dry - TESTER_TASK_DRY_ROUNDS + 1))
+  while [ "$over" -gt 0 ] && [ "$f" -lt "$TESTER_TASK_DRY_MAX" ]; do f=$((f * 2)); over=$((over - 1)); done
+  [ "$f" -le "$TESTER_TASK_DRY_MAX" ] || f="$TESTER_TASK_DRY_MAX"
+  echo "$f"
+}
+
+# task_suite_sum: a checksum of the suite files the task session may edit.
+task_suite_sum() {
+  cat "${HARNEST_SESSION_TREE:-$REPO}"/regression-suite-*.md 2>/dev/null | cksum
+}
+
+# note_task_round <suite sum before the session>
+# After a standing-task session that ran to its end: a round that filed an
+# issue (a `gh issue create` tool call in its rendering) or changed a suite
+# file found something and clears the count; any other is a dry round.
+note_task_round() {
+  local dry
+  [ "$TESTER_TASK_DRY_ROUNDS" -gt 0 ] || return 0
+  dry="$(cat "$TASK_DRY_FILE" 2>/dev/null || true)"
+  case "$dry" in ''|*[!0-9]*) dry=0 ;; esac
+  if grep -q '^> Bash .*gh issue create' "$LAST_SESSION" 2>/dev/null || [ "$(task_suite_sum)" != "$1" ]; then
+    [ "$dry" -lt "$TESTER_TASK_DRY_ROUNDS" ] || echo "[tester:task] found something after $dry dry round(s): the standing task is back on its cadence" | tee -a "$LOOP_LOG"
+    echo 0 > "$TASK_DRY_FILE"
+    return 0
+  fi
+  echo $((dry + 1)) > "$TASK_DRY_FILE"
+  echo "[tester:task] dry round $((dry + 1)) (no issue filed, no suite case added); the standing task now runs at 1/$(task_dry_factor) of its cadence" | tee -a "$LOOP_LOG"
+}
+
 # tester_rest: the closures and standing-task half of tester_pass.
 tester_rest() {
   local n
@@ -909,7 +974,7 @@ tester_rest() {
   # now (its driver keeps the cadence) and a closures item never runs it.
   case "$TESTER_PART" in
     task) task_due=1 ;;
-    all) [ $((cycle % TESTER_TASK_EVERY)) -ne 0 ] || task_due=1 ;;
+    all) [ $((cycle % (TESTER_TASK_EVERY * $(task_dry_factor)))) -ne 0 ] || task_due=1 ;;
   esac
   # A release freeze holds discovery too: the standing task files new issues,
   # and nothing but release-blockers moves until the release ships (R14)
@@ -925,6 +990,8 @@ tester_rest() {
     task_here=0
   fi
   if [ -z "$freeze" ] && [ "$task_here" = 1 ] && [ "$task_due" = 1 ]; then
+    local suite_before
+    suite_before="$(task_suite_sum)"
     run_agent tester task "$TESTER_BUDGET_USD" "${HARNEST_SESSION_TREE:-$REPO}" "$TESTER_PROVIDER" "$TESTER_MODEL" "$TESTER_EFFORT" task \
       "Tickets are GitHub Issues on $TICKET_REPO; use the gh CLI to read/act on them. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a TASK session — first respond to the wontfix/duplicate closures you own ($clist), then advance the standing task by one step, filing tickets for anything you hit. Do not re-verify fixed-pending-verify issues here; those get their own sessions. Then stop.
 
@@ -933,6 +1000,7 @@ Your bible is \`$HARNEST_ROOT/qa-bible.md\`: read and save it at that absolute p
     # Only when the session ran to its end: a closure has one chance at a
     # reopen, and a died or cut-off session may not have reached it.
     [ "$SESSION_OK" = 1 ] && mark_closures_seen ${closures[@]+"${closures[@]}"}
+    [ "$SESSION_OK" != 1 ] || note_task_round "$suite_before"
     # The bible is read whole every task session: past its cap
     # (agents/tester/standing-task.md) it costs every later one
     local bible_bytes
@@ -1137,6 +1205,7 @@ nightly_regression_pass() {
   today="$(date +%F)"
   [ "$((10#$(date +%H)))" -ge "$REGRESSION_NIGHTLY_AT" ] || return 0
   [ "$(cat "$stamp" 2>/dev/null || true)" != "$today" ] || return 0
+  ! day_budget_reached || return 0   # not stamped: it runs once the budget allows
   freeze="$(release_freeze)"
   if [ -n "$freeze" ]; then freeze_hold_line "$freeze" nightly | tee -a "$LOOP_LOG"; return 0; fi
   echo "$today" > "$stamp"
@@ -1292,6 +1361,26 @@ idle_wait() {
   return 0
 }
 
+# day_budget_hold
+# At a cycle boundary with DAY_BUDGET_USD spent: waits for the local day to
+# turn, a SLEEP_SECS at a time, and says so once. Returns 1 under DRAIN=1,
+# where the loop exits instead of waiting.
+day_budget_hold() {
+  local said=0 step="$SLEEP_SECS"
+  [ "$step" -gt 0 ] || step=60
+  while day_budget_reached; do
+    if [ "$DRAIN" = 1 ]; then
+      echo "[loop] day budget reached (\$$(spend_today) of DAY_BUDGET_USD=\$$DAY_BUDGET_USD today); drain: exiting" | tee -a "$LOOP_LOG"
+      return 1
+    fi
+    [ "$said" = 1 ] || echo "[loop] day budget reached (\$$(spend_today) of DAY_BUDGET_USD=\$$DAY_BUDGET_USD today): no session starts before midnight" | tee -a "$LOOP_LOG"
+    said=1
+    sleep "$step"
+  done
+  [ "$said" = 0 ] || echo "[loop] day budget: a new day, starting again" | tee -a "$LOOP_LOG"
+  return 0
+}
+
 # step <name> <command...>
 # Runs one top-level step of a cycle. A failure is logged and the cycle goes
 # on: this driver runs forever, and one GitHub or network blip must not
@@ -1312,6 +1401,7 @@ cycle=0
 backoff="$SLEEP_SECS"   # the next idle sleep while only Don's decisions are left
 while true; do
   cycle=$((cycle + 1))
+  day_budget_hold || break
   step park_external_issues park_external_issues
   before="$(status_board)"
   DEPLOYED_HEAD="$(deployed_head)"

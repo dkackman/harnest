@@ -1,0 +1,136 @@
+{
+ "id": "S-F132",
+ "level": "smoke",
+ "title": "a frame-size mismatch between known join inputs is refused by the free pre-flight",
+ "note": "Fixtures are the three common qa-cast assets the prose names (960x544, 960x544, 1536x896).",
+ "steps": [
+  {
+   "label": "step 1: concat_videos on two sizes is refused at the videos argument",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f132",
+     "steps": [
+      {
+       "name": "join",
+       "task": {
+        "command": "concat_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep62-shot1-accuse.mp4",
+          "asset:qa-cast/ep75-shot-ltx2stage-hal.mp4"
+         ]
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].task.arguments.videos"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": "concat_videos needs every video at one size: video 0 is 960x544, video 1 is 1536x896"
+    }
+   ]
+  },
+  {
+   "label": "step 2: dissolve_videos gets the same error, naming itself",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f132",
+     "steps": [
+      {
+       "name": "join",
+       "task": {
+        "command": "dissolve_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep62-shot1-accuse.mp4",
+          "asset:qa-cast/ep75-shot-ltx2stage-hal.mp4",
+          "asset:qa-cast/ep62-shot2-deflect.mp4"
+         ]
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "steps[0].task.arguments.videos"
+    },
+    {
+     "path": "errors[0].message",
+     "contains": "dissolve_videos needs every video at one size: video 0 is 960x544, video 1 is 1536x896"
+    }
+   ]
+  },
+  {
+   "label": "step 3: two videos of one size validate",
+   "call": "validate_workflow",
+   "args": {
+    "workspace": "regression-smoke",
+    "workflow": {
+     "id": "contract-s-f132",
+     "steps": [
+      {
+       "name": "join",
+       "task": {
+        "command": "concat_videos",
+        "arguments": {
+         "videos": [
+          "asset:qa-cast/ep62-shot1-accuse.mp4",
+          "asset:qa-cast/ep62-shot2-deflect.mp4"
+         ]
+        }
+       },
+       "result": {
+        "content_type": "video/mp4"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "errors",
+     "len": 0
+    }
+   ]
+  }
+ ]
+}

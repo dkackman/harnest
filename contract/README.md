@@ -51,12 +51,25 @@ the tester verified it, not what the code currently does.
 
 ## Written so far
 
-| case | status | time |
-|---|---|---|
-| S-F002 | passes on lem, 2026-09-22 | 0.02 s |
-| S-F028 | passes on lem, 2026-09-22 | 0.23 s |
-| S-F036 | passes on lem, 2026-09-22 | 0.11 s |
+17 cases, all passing on lem on 2026-11-22 (dw 0.23.0-alpha.1) in 3.5 s together:
+S-F002, S-F010, S-F018, S-F026, S-F028, S-F032, S-F035, S-F036, S-F085, S-F108, S-F110,
+S-F124, S-F125, S-F128, S-F130, S-F132, S-F145. Each was mutation-checked: one expectation
+per step changed, and every changed step failed with a readable message.
 
-A mutation check changed one expectation in each case: every changed
-expectation failed, with a readable message. None of these is marked
-`runner: script` in the suite yet; that needs approval.
+Only S-F002 and S-F028 are marked `runner: script` in the suite; the rest wait on approval.
+
+Things a case author should know:
+
+- **A case stops at its first failed step.** Five cases (S-F010, S-F026, S-F108, S-F128,
+  S-F145) send a `run_workflow` the server must refuse, with `acknowledged_cost: true`
+  because the server checks cost before arguments. Each follows a validate step asserting
+  the same refusal, so a server that stops refusing fails there and the run is never sent.
+  If a refusal step is handed a `job_id` anyway, the runner cancels the job.
+- **"The same message" is pinned.** The runner cannot compare two steps, so where the prose
+  says a second call returns the same message as the first, both steps assert the full
+  text. A rewording on the server fails both and needs the JSON updated.
+- **No starts-with, ends-with, pattern or cross-step assertion.** S-F060 and S-F116 stay
+  with the agent for that reason; S-F147 because it needs a paid run.
+- **Fixtures.** The cases use the common `qa-cast` assets, the stored prompt
+  `flux/weighted_portrait` and the `regression-smoke` workspace. S-F110 assumes the SDXL
+  repo is not downloaded on lem, as its prose does.

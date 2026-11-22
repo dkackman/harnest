@@ -17,7 +17,8 @@ Seventeen files:
   board that edits change; it lists newest first within `--limit`, honours the `--search`
   qualifiers the drivers use, and stamps comments with `FAKE_GH_AUTHOR` and the time) and a
   throwaway git origin. It covers a GitHub outage, the ledger parking an issue,
-  fix-then-verify in one cycle, an outside filing, the closures window, withheld comments,
+  fix-then-verify in one cycle, an outside filing, the closures window, withheld comments, the dry-round rule, the day budget (a
+  session not started, a drain exiting), the retro's applied proposals to check,
   the curator's audited removals, the spec race, `DRAIN=1` with the idle backoff (and waiting out a claimed feature's stage at another loop), and item mode (`lib/run-item.sh`: one session for one issue, no lock, no deploy, no suite commit, the suite tree as the tester's cwd, the task and closures split, `park`, the queue as part of the item: a feature parent's spec item runs no stage verify).
 - `test-fleet.sh`: a whole regression fleet run (`harness/drivers/fleet.py`) against three
   `tests/fake-mcp.py` servers.
@@ -29,11 +30,12 @@ Seventeen files:
   in the README.
 - `test-providers.sh`: the shared helpers. Session outcomes on canned logs, the stream
   renderer against `tests/fixtures/stream.expected`, model/effort validation, the
-  no-progress ledger, `handoff_count`, `park_external_issues`, the driver lock, suite commits
-  and the board snapshot cache.
+  no-progress ledger, `handoff_count`, `park_external_issues`, the driver lock, suite commits,
+  the board snapshot cache, and the spend record with `day_budget_reached`.
 - `test-python.sh`: the `harness/` unit tests in `tests/py/` (stdlib `unittest`: contract,
   dashboard, fleet, parity, perf check, rank, results, suite; R17: scheduler, board,
-  loop, loop state, deploy policy, lock, gpu-busy).
+  loop, loop state, deploy policy, lock, gpu-busy; spend, with the day budget and the dry-round
+  rule in the loop driver).
 - `test-loop-py.sh`: the R17 loop driver (`harness/drivers/loop.py`) end to end, each
   scenario in its own world in parallel: `lib/board.sh`; a design beside a verify; one gpu
   slot; deploys batched, after the running gpu session, retried then parked, the gpu slot held
@@ -51,7 +53,7 @@ Seventeen files:
 - `test-requirements-py.sh`: the requirements generator (`harness/drivers/requirements.py`)
   end to end.
 - `test-setup.sh`: `scripts/setup-mac-loop.sh` (twice, the second a no-op) and
-  `scripts/install-schedules.sh` under a throwaway `HOME`.
+  `scripts/install-schedules.sh` (retro, digest, suite audit) under a throwaway `HOME`.
 - `test-sync.sh`: `scripts/sync-fixtures.sh` with fake curl, rsync and ssh.
 - `test-testbed.sh`: `scripts/testbed.sh` with fake ssh and curl.
 - `test-ui-check.sh`: `tools/ui-check/ui-check.mjs` against a fixture page on 127.0.0.1:

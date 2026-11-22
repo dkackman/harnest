@@ -1,0 +1,89 @@
+{
+ "id": "S-F124",
+ "level": "smoke",
+ "title": "an unknown workflow name suggests the catalog entry it's a suffix or typo of",
+ "note": "Every call answers a tool-level error whose text is asserted. run.py has no ends-with, so step 3's 'error ending ...' is asserted as containing the suggestion.",
+ "steps": [
+  {
+   "label": "step 1: a unique suffix is suggested",
+   "call": "get_workflow",
+   "args": {
+    "name": "dialogue-short",
+    "variables_only": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": "Unknown workflow: dialogue-short - did you mean templates/minimax/dialogue-short?"
+    }
+   ]
+  },
+  {
+   "label": "step 2: a typo on the short name is suggested",
+   "call": "get_workflow",
+   "args": {
+    "name": "dialog-short",
+    "variables_only": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": "Unknown workflow: dialog-short - did you mean templates/minimax/dialogue-short?"
+    }
+   ]
+  },
+  {
+   "label": "step 3: validate_workflow carries the same suggestion",
+   "call": "validate_workflow",
+   "args": {
+    "name": "dialog-short"
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": " - did you mean templates/minimax/dialogue-short?"
+    }
+   ]
+  },
+  {
+   "label": "step 4: several near matches are offered",
+   "call": "get_workflow",
+   "args": {
+    "name": "music-vidoe",
+    "variables_only": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": [
+      "did you mean one of:",
+      "templates/minimax/music-video"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "step 5: nothing close, no suggestion invented",
+   "call": "get_workflow",
+   "args": {
+    "name": "zzqq-nothing-like-this",
+    "variables_only": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": "Unknown workflow: zzqq-nothing-like-this"
+    },
+    {
+     "path": "",
+     "not_contains": "did you mean"
+    }
+   ]
+  }
+ ]
+}

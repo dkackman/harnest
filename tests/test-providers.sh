@@ -27,6 +27,22 @@ eq "rate limit: no resets_epoch at all sleeps the fallback too" "sleeping 0s" "$
 RATE_LIMIT_FALLBACK_SECS=0 sleep_if_rate_limited "$T/rl" >/dev/null; eq "rate limit: returns 1 when it slept" 1 $?
 sleep_if_rate_limited "$T/done"; eq "rate limit: returns 0 when not rejected" 0 $?
 
+# --- the spend record and the day budget (DAY_BUDGET_USD)
+keep_logs="${LOGS:-}"; LOGS="$T/spendlogs"; mkdir -p "$LOGS"
+eq "spend: nothing recorded reads as 0.00" "0.00" "$(spend_today)"
+printf 'usage: turns=3 duration=4s cost=$1.25 ctx_peak=1k\n  claude-x: in=1 cost=$9.99\n' > "$T/paid"
+spend_record "tester:#1" "$T/paid"; spend_record "lead:#2" "$T/paid"
+spend_record "tester:#3" "$T/died"
+eq "spend: one line per session with a usage: line" 2 "$(wc -l < "$LOGS/spend.tsv" | tr -d ' ')"
+eq "spend: date, epoch, dollars, label" "$(date +%F) 1.25 tester:#1" "$(awk -F'\t' 'NR == 1 { print $1, $3, $4 }' "$LOGS/spend.tsv")"
+printf '2001-01-01\t978307200\t50.00\told\n' >> "$LOGS/spend.tsv"
+eq "spend: today's total leaves out another day's" "2.50" "$(spend_today)"
+DAY_BUDGET_USD=0 day_budget_reached; eq "day budget: 0 is uncapped" 1 $?
+DAY_BUDGET_USD=2.51 day_budget_reached; eq "day budget: under it" 1 $?
+DAY_BUDGET_USD=2.5 day_budget_reached; eq "day budget: reached at the amount" 0 $?
+( unset DAY_BUDGET_USD; day_budget_reached ); eq "day budget: unset is uncapped" 1 $?
+LOGS="$keep_logs"
+
 # --- renderer
 eq "stream renders to the golden text" "$(cat "$HARNEST/tests/fixtures/stream.expected")" \
    "$(render_stream golden < "$HARNEST/tests/fixtures/stream.jsonl")"

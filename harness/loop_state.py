@@ -24,7 +24,7 @@ PARKED = re.compile(r"(\[[\w.-]+\] )?\(parked\) ")
 AGENT_OWNERS = frozenset({"owner:implementer", "owner:tester", "owner:reviewer", "owner:lead"})
 # "stopped" is the last word of a driver that exited cleanly; the dashboard
 # tells it from a dead one (a stale heartbeat with another status).
-STATUSES = ("running", "draining", "stopping", "paused-rate-limit", "stopped")
+STATUSES = ("running", "draining", "stopping", "paused-rate-limit", "paused-day-budget", "stopped")
 
 
 def workers_busy(health):

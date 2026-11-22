@@ -1,0 +1,186 @@
+{
+ "id": "S-F035",
+ "level": "smoke",
+ "title": "a stored default that cannot resolve is caught by the free pre-flight, not by the run",
+ "note": "W is one SDXL img2img step reading both variables; <any stored prompt> is prompt:flux/weighted_portrait and <any real image> is the common asset qa-cast/priya-portrait.jpg. run.py cannot compare two steps' answers, so 'same message' at the two paths is asserted by pinning today's message whole in both steps.",
+ "steps": [
+  {
+   "label": "bare call reports the unresolvable default at variables.reference_sheet",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f035",
+     "variables": {
+      "reference_sheet": "asset:s-f035-never-uploaded.png",
+      "prompt": "prompt:flux/weighted_portrait"
+     },
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLImg2ImgPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "variable:prompt",
+         "image": "variable:reference_sheet"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "variables.reference_sheet"
+    },
+    {
+     "path": "errors[0].message",
+     "eq": "Asset 's-f035-never-uploaded.png' not found in the asset library (workspace, common, examples) - an 'asset:' reference names a file in the asset library, with its extension, like 'asset:iris.jpg' or 'asset:gyre/frame_1.jpg'"
+    },
+    {
+     "path": "checked_arguments",
+     "eq": []
+    }
+   ]
+  },
+  {
+   "label": "the default really is unresolvable: no such asset in any root",
+   "call": "list_assets",
+   "args": {
+    "prefix": "s-f035-never-uploaded"
+   },
+   "expect": [
+    {
+     "path": "assets",
+     "len": 0
+    }
+   ]
+  },
+  {
+   "label": "the same value passed explicitly: same message, at arguments.reference_sheet",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f035",
+     "variables": {
+      "reference_sheet": "asset:s-f035-never-uploaded.png",
+      "prompt": "prompt:flux/weighted_portrait"
+     },
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLImg2ImgPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "variable:prompt",
+         "image": "variable:reference_sheet"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    },
+    "arguments": {
+     "reference_sheet": "asset:s-f035-never-uploaded.png"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "eq": "arguments.reference_sheet"
+    },
+    {
+     "path": "errors[0].message",
+     "eq": "Asset 's-f035-never-uploaded.png' not found in the asset library (workspace, common, examples) - an 'asset:' reference names a file in the asset library, with its extension, like 'asset:iris.jpg' or 'asset:gyre/frame_1.jpg'"
+    }
+   ]
+  },
+  {
+   "label": "an override that resolves is what gets judged; the other default is not flagged",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f035",
+     "variables": {
+      "reference_sheet": "asset:s-f035-never-uploaded.png",
+      "prompt": "prompt:flux/weighted_portrait"
+     },
+     "steps": [
+      {
+       "name": "g",
+       "pipeline": {
+        "configuration": {
+         "component_type": "StableDiffusionXLImg2ImgPipeline"
+        },
+        "from_pretrained_arguments": {
+         "model_name": "stabilityai/stable-diffusion-xl-base-1.0"
+        },
+        "arguments": {
+         "prompt": "variable:prompt",
+         "image": "variable:reference_sheet"
+        }
+       },
+       "result": {
+        "content_type": "image/png"
+       }
+      }
+     ]
+    },
+    "arguments": {
+     "reference_sheet": "asset:qa-cast/priya-portrait.jpg"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "errors",
+     "len": 0
+    },
+    {
+     "path": "checked_arguments",
+     "eq": [
+      "reference_sheet"
+     ]
+    },
+    {
+     "path": "plan.fingerprint",
+     "exists": true
+    }
+   ]
+  }
+ ]
+}

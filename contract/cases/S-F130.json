@@ -1,0 +1,149 @@
+{
+ "id": "S-F130",
+ "level": "smoke",
+ "title": "a keyed media reference that resolves to null is refused by the free pre-flight; one inside a list is not",
+ "note": "The step index in the error path is the prose's <n>; only the rest of the path is asserted.",
+ "steps": [
+  {
+   "label": "call 1: a keyed reference with a null from_file is refused at its own path",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "workspace": "regression-smoke",
+    "arguments": {
+     "shots": [
+      {
+       "name": "s1",
+       "num_frames": 124,
+       "prompt": "a man talks",
+       "references": {
+        "ref_a": {
+         "reference_type": "variable:subject_reference_type",
+         "from_previous_result": "draw_character_a"
+        },
+        "ref_b": {
+         "reference_type": "variable:subject_reference_type",
+         "from_file": null
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "contains": [
+      "steps[",
+      "].pipeline.arguments.references.ref_b.from_file"
+     ]
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "'ref_b'",
+      "the media it would be built from is null",
+      "shot@s1"
+     ]
+    }
+   ]
+  },
+  {
+   "label": "call 2: a null inside a list is dropped, not refused",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "workspace": "regression-smoke",
+    "arguments": {
+     "shots": [
+      {
+       "name": "s1",
+       "num_frames": 124,
+       "prompt": "a man talks",
+       "references": [
+        {
+         "reference_type": "variable:subject_reference_type",
+         "from_previous_result": "draw_character_a"
+        },
+        {
+         "reference_type": "variable:subject_reference_type",
+         "from_file": null
+        }
+       ]
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": true
+    },
+    {
+     "path": "errors",
+     "len": 0
+    }
+   ]
+  },
+  {
+   "label": "call 3: a null reached through a variable: is caught too",
+   "call": "validate_workflow",
+   "args": {
+    "name": "templates/minimax/dialogue-short",
+    "workspace": "regression-smoke",
+    "arguments": {
+     "shots": [
+      {
+       "name": "s1",
+       "num_frames": 124,
+       "prompt": "a man talks",
+       "references": {
+        "ref_a": {
+         "reference_type": "variable:subject_reference_type",
+         "from_previous_result": "draw_character_a"
+        },
+        "voice": {
+         "reference_type": "variable:voice_reference_type",
+         "from_file": "variable:character_a_voice"
+        }
+       }
+      }
+     ]
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 1
+    },
+    {
+     "path": "errors[0].path",
+     "contains": [
+      "steps[",
+      "].pipeline.arguments.references.voice.from_file"
+     ]
+    },
+    {
+     "path": "errors[0].message",
+     "contains": [
+      "'voice'",
+      "the media it would be built from is null",
+      "shot@s1"
+     ]
+    }
+   ]
+  }
+ ]
+}

@@ -1,0 +1,125 @@
+{
+ "id": "S-F010",
+ "level": "smoke",
+ "title": "validate_workflow catches argument errors before the run",
+ "note": "An inline task-only workflow with two declared int variables, so the 'declared variables' list in the message is this case's own. run.py cannot compare two steps' answers, so 'the same string validate_workflow returned' is asserted by pinning both messages whole in both steps: a rewording on the server fails both steps together and needs this file updated; one path drifting from the other fails one step.",
+ "steps": [
+  {
+   "label": "an undeclared name and an uncoercible value: one error each, at arguments.<name>",
+   "call": "validate_workflow",
+   "args": {
+    "workflow": {
+     "id": "contract-s-f010",
+     "variables": {
+      "start_seconds": 0,
+      "duration_seconds": 1
+     },
+     "steps": [
+      {
+       "name": "cut",
+       "task": {
+        "command": "slice_audio",
+        "arguments": {
+         "audio": "asset:qa-cast/ep20-score.wav",
+         "start_seconds": "variable:start_seconds",
+         "duration_seconds": "variable:duration_seconds"
+        }
+       },
+       "result": {
+        "content_type": "audio/wav"
+       }
+      }
+     ]
+    },
+    "arguments": {
+     "not_declared": 1,
+     "duration_seconds": "abc"
+    }
+   },
+   "expect": [
+    {
+     "path": "valid",
+     "eq": false
+    },
+    {
+     "path": "errors",
+     "len": 2
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.not_declared\"",
+      "Unknown variable 'not_declared'; declared variables: duration_seconds, start_seconds"
+     ]
+    },
+    {
+     "path": "errors",
+     "any_contains": [
+      "\"path\": \"arguments.duration_seconds\"",
+      "Cannot convert variable 'duration_seconds' value 'abc' to type int: invalid literal for int() with base 10: 'abc'"
+     ]
+    },
+    {
+     "path": "checked_arguments",
+     "contains": [
+      "not_declared",
+      "duration_seconds"
+     ]
+    },
+    {
+     "path": "plan",
+     "exists": false
+    }
+   ]
+  },
+  {
+   "label": "run_workflow refuses the same two mistakes pre-flight, same path and message",
+   "call": "run_workflow",
+   "args": {
+    "inline_workflow": {
+     "id": "contract-s-f010",
+     "variables": {
+      "start_seconds": 0,
+      "duration_seconds": 1
+     },
+     "steps": [
+      {
+       "name": "cut",
+       "task": {
+        "command": "slice_audio",
+        "arguments": {
+         "audio": "asset:qa-cast/ep20-score.wav",
+         "start_seconds": "variable:start_seconds",
+         "duration_seconds": "variable:duration_seconds"
+        }
+       },
+       "result": {
+        "content_type": "audio/wav"
+       }
+      }
+     ]
+    },
+    "arguments": {
+     "not_declared": 1,
+     "duration_seconds": "abc"
+    },
+    "acknowledged_cost": true
+   },
+   "is_error": true,
+   "expect": [
+    {
+     "path": "",
+     "contains": [
+      "Error executing tool run_workflow",
+      "arguments.not_declared: Unknown variable 'not_declared'; declared variables: duration_seconds, start_seconds",
+      "arguments.duration_seconds: Cannot convert variable 'duration_seconds' value 'abc' to type int: invalid literal for int() with base 10: 'abc'"
+     ]
+    },
+    {
+     "path": "",
+     "not_contains": "job_id"
+    }
+   ]
+  }
+ ]
+}

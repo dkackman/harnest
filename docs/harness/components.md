@@ -279,7 +279,10 @@ Moved from `CLAUDE.md`. Sections named "below" in this text now live in sibling 
     in dw's `arch_report.py` as `consolidation` + `owner:don` issues (`lib/consolidation.py`).
   - **Retro:** files up to three `harness` + `status:needs-approval` issues on **this**
     repo (`dkackman/harnest`), from an evidence digest the driver computes. The window
-    since the last retro is byte offsets in `logs/retro-seen.json`.
+    since the last retro is byte offsets in `logs/retro-seen.json`. It rules on earlier
+    proposals first: the digest lists each applied `retro:` issue that has no
+    `retro-outcome:` comment yet, with its `measure:` text counted in this window, and the
+    session posts one verdict comment per issue before proposing anything new.
   - **Digest:** a tool-less summary of the `owner:don` queue.
 - `harness/` (R8) is the Python port, stdlib only. `harness.drivers.regression` is
   `run-regression.sh` at parity (`tests/test-regression-py.sh` diffs the two). The

@@ -7,6 +7,13 @@
 #   ./run-retro.sh                    # since the last retro (first run: the last 7 days of issues, all of the logs)
 #   RETRO_EVIDENCE_ONLY=1 ./run-retro.sh   # print the evidence digest, no session, no state change
 #
+# It also checks what earlier retros changed. A `retro:` proposal that was
+# closed as completed at least RETRO_OUTCOME_MIN_DAYS (5) and at most
+# RETRO_OUTCOME_DAYS (60) days ago, and carries no `retro-outcome:` comment
+# yet, is listed in the digest with the measure it named and that measure's
+# count in this window; the session posts one verdict comment on each
+# before it proposes anything new (agents/RETRO.agent.md, "Outcomes first").
+#
 # "Since the last retro" is byte offsets into each log (logs are
 # append-only), kept in logs/retro-seen.json and only advanced after a
 # session that finished, so a failed retro doesn't skip its window.
@@ -24,6 +31,9 @@ PROVIDER="${PROVIDER:-anthropic}"
 RETRO_MODEL="${RETRO_MODEL:-claude-opus-5-5}"   # judgment over noisy evidence; runs rarely
 RETRO_PROVIDER="${RETRO_PROVIDER:-$PROVIDER}"
 RETRO_BUDGET_USD="${RETRO_BUDGET_USD:-5}"
+RETRO_OUTCOME_MIN_DAYS="${RETRO_OUTCOME_MIN_DAYS:-5}"   # an applied proposal is checked once it has run this long
+RETRO_OUTCOME_DAYS="${RETRO_OUTCOME_DAYS:-60}"          # and no longer looked at after this
+case "$RETRO_OUTCOME_MIN_DAYS$RETRO_OUTCOME_DAYS" in ''|*[!0-9]*) echo "RETRO_OUTCOME_MIN_DAYS and RETRO_OUTCOME_DAYS must be whole numbers, got '$RETRO_OUTCOME_MIN_DAYS' / '$RETRO_OUTCOME_DAYS'" >&2; exit 1 ;; esac
 AUTOCOMPACT_TOKENS="${AUTOCOMPACT_TOKENS:-120000}"
 SEEN="$LOGS/retro-seen.json"
 
@@ -40,9 +50,10 @@ LAST_SESSION="$LOGS/.last-session.retro"
 driver_traps   # no lock here: TERM still stops the claude session (providers.sh)
 
 NEXT_SEEN="$LOGS/.retro-seen.next.json"
-EVIDENCE="$(python3 - "$LOGS" "$SEEN" "$NEXT_SEEN" "$TICKET_REPO" <<'PY'
-import collections, glob, json, os, re, statistics, subprocess, sys, time
-logs, seen_path, next_path, ticket_repo = sys.argv[1:5]
+EVIDENCE="$(python3 - "$LOGS" "$SEEN" "$NEXT_SEEN" "$TICKET_REPO" "$HARNESS_REPO" "$RETRO_OUTCOME_MIN_DAYS" "$RETRO_OUTCOME_DAYS" <<'PY'
+import calendar, collections, glob, json, os, re, statistics, subprocess, sys, time
+logs, seen_path, next_path, ticket_repo, harness_repo = sys.argv[1:6]
+outcome_min_days, outcome_days = int(sys.argv[6]), int(sys.argv[7])
 seen = json.load(open(seen_path)) if os.path.exists(seen_path) else {}
 offsets = seen.get("offsets", {})
 since = seen.get("at") or time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() - 7 * 86400))
@@ -126,6 +137,49 @@ for n in nums:
 out.append(f"\n## Ticket flow since {since[:10]} ({len(nums)} issues touched)")
 out.append(f"{handoffs} hand-offs; {bounced} issues handed off more than once or reopened")
 out += rows[:15]
+
+# Applied proposals to check (R7: every change is checked against what it
+# said would move). The measure lines of a body are data: `measure:` is literal
+# text counted as loop.log lines containing it, never a pattern to compile.
+def field(body, name):
+    m = re.search(r"^" + name + r":[ \t]*(.+?)[ \t]*$", body or "", re.M)
+    return m.group(1).strip().strip(chr(96)) if m else ""
+def age_days(iso):
+    try:
+        return (time.time() - calendar.timegm(time.strptime(iso, "%Y-%m-%dT%H:%M:%SZ"))) / 86400
+    except (TypeError, ValueError):
+        return None
+try:
+    closed = json.loads(gh("issue", "list", "--repo", harness_repo, "--state", "closed", "--label", "harness",
+                           "--limit", "100", "--json", "number,title,closedAt,stateReason,body,comments") or "[]")
+except ValueError:
+    closed = []
+due = []
+for i in closed if isinstance(closed, list) else []:
+    age = age_days(i.get("closedAt"))
+    if not str(i.get("title", "")).startswith("retro:") or i.get("stateReason") != "COMPLETED" or age is None:
+        continue
+    if not outcome_min_days <= age <= outcome_days:
+        continue
+    if any(str(c.get("body", "")).lstrip().startswith("retro-outcome:") for c in i.get("comments") or []):
+        continue
+    due.append((i, age))
+out.append(f"\n## Applied proposals to check: {len(due)}")
+if due:
+    out.append(f"This window has {len(usage)} sessions in loop.log. Post one `retro-outcome:` comment on each (your instructions, \"Outcomes first\").")
+loop_lines = loop.splitlines()
+for i, age in sorted(due, key=lambda d: d[0].get("number", 0)):
+    body = i.get("body") or ""
+    measure, baseline, expect = field(body, "measure"), field(body, "baseline"), field(body, "expect")
+    out.append(f"- #{i.get('number')} (applied {str(i.get('closedAt'))[:10]}, {age:.0f} days ago): {str(i.get('title'))[:120]}")
+    if measure:
+        n = sum(1 for line in loop_lines if measure in line)
+        out.append(f"  - measure: `{measure[:160]}` | baseline when filed: {baseline or 'not stated'} | expected: {expect or 'not stated'}"
+                   f" | this window: {n} loop.log lines in {len(usage)} sessions")
+    else:
+        m = re.search(r"^#+ *How to measure[^\n]*\n(.*?)(?=^#+ |^---|\Z)", body, re.M | re.S)
+        how = " ".join((m.group(1) if m else "").split())[:400]
+        out.append("  - no `measure:` line; what it said would move: " + (how or "(nothing stated: say so in the comment)"))
 
 bench = subprocess.run([os.path.join(os.path.dirname(logs), "run-bench.sh"), "--summary"],
                        capture_output=True, text=True).stdout.strip()
