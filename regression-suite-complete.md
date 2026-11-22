@@ -27683,7 +27683,6 @@ cleanup: this case.
 metrics: none.
 
 ### C-F1205 — an argument change after a take makes a done item `revised`: result kept, it is ready, its dependent waits
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 CPU only, one `templates/split-takes` run (no media, no model). **Setup S1531** (other #1531 cases reuse it, each in
 its own workspace `<ws>`): `create_workspace(name="<ws>")`, `workspace=` on every call. `set_request(request="demo",
@@ -27709,7 +27708,6 @@ cleanup: `delete_workspace(name="cf1205-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1206 — a write that leaves `workflow` and `arguments` alone keeps a done item `done`; `changed_at` is the server's
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run. Setup S1531 (C-F1205) in `cf1206-req`; read `a.changed_at` as C0. Each step a `set_request` at
 the current revision, then `get_request(request="demo")`: (1) the plan exactly as read (every field echoed back,
@@ -27727,7 +27725,6 @@ cleanup: `delete_workspace(name="cf1206-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1207 — a variation take with no plan write stays `done`; arguments written back to the take's clear `revised`; a workflow change revises
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Two `split-takes` runs. Setup S1531 (C-F1205) in `cf1207-req`. (1) `run_workflow("templates/split-takes",
 arguments={"text":"One. Two.","max_seconds":8}, request="demo/a", note="variation", acknowledged_cost=…,
@@ -27748,7 +27745,6 @@ cleanup: `delete_workspace(name="cf1207-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1208 — a new take of a revised item makes it `done` and its dependent ready
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Two `split-takes` runs. Setup S1531 (C-F1205) in `cf1208-req`. (1) As C-F1205 step (1): `a` is `revised`.
 (2) `run_workflow` over `a`'s **new** arguments, `request="demo/a"`, `note="take 2"`, wait → J2.
@@ -27761,7 +27757,6 @@ cleanup: `delete_workspace(name="cf1208-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1209 — accepting the old take of a revised item makes it `done` until the plan changes again
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Two `split-takes` runs. Setup S1531 (C-F1205) in `cf1209-req`, with no `accepted` on `a`. Also run a variation J2
 on `demo/a` (arguments `{"text":"One. Two.","max_seconds":8}`) and wait; `a` is `done`, J2 its result.
@@ -27780,7 +27775,6 @@ cleanup: `delete_workspace(name="cf1209-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1210 — only a done item becomes revised: dropped, planned and failed items keep their status
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run, one queued-then-cancelled job. Setup S1531 (C-F1205) in `cf1210-req`; add an item `c`
 (`split-takes`, no dependencies, never run) and an item `d` (`split-takes`), and queue a job on `demo/d` and
@@ -27797,7 +27791,6 @@ cleanup: `delete_workspace(name="cf1210-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1211 — a review hold on a revised item reads `review` as a planned item's does
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One or two `split-takes` runs. Setup S1531 (C-F1205) in `cf1211-req`. (1) `set_request` with `a`'s arguments
 changed **and** `a.review_until` set 70 s ahead (ISO with offset); read at once. (2) Without sleeping: run C-F1205's
@@ -27815,7 +27808,6 @@ cleanup: `delete_workspace(name="cf1211-req", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1212 — the guide, the request tools' descriptions and the request skill reference name `revised`
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_guide("workspaces", section="Requests")`; the `get_request` and `set_request` tool descriptions (the
 tool schemas); the `dw:script-to-video` skill and its request reference (`references/request.md`, as the skill
@@ -27833,7 +27825,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1213 — one take made before stage 2 is kept, for C-F1219
-pending: #1557
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run. Runs once: when #1557 verifies, on a server where #1558 is not yet deployed. Skip it on any
 later run. `save_prompt` a prompt named `cf1531-pre-p` with text "Pre one. Pre two." (check its name is free first
@@ -27845,7 +27836,6 @@ cleanup: none here; C-F1219 cleans up.
 metrics: none.
 
 ### C-F1214 — saving new text into a referenced prompt revises the item with no ledger write
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run. `save_prompt` `cf1214-p` with text "Alpha. Beta." (name checked free with `get_prompt`).
 Setup S1531 (C-F1205) in `cf1214-req`, with `a`'s arguments `{"text":"prompt:cf1214-p","max_seconds":8}` and J1 run
@@ -27860,7 +27850,6 @@ cleanup: `delete_workspace(name="cf1214-req", acknowledged_cost=true)`; `delete_
 metrics: none.
 
 ### C-F1215 — a prompt saved with the same text, or with only its description or tags changed, revises nothing
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run. As C-F1214's setup with prompt `cf1215-p` (text "Alpha. Beta.", description "d1", tags
 `["t1"]`) in `cf1215-req`. Each step then `get_request(request="demo")`: (1) `save_prompt` `cf1215-p` with the same
@@ -27872,7 +27861,6 @@ cleanup: `delete_workspace(name="cf1215-req", acknowledged_cost=true)`; `delete_
 metrics: none.
 
 ### C-F1216 — a referenced prompt deleted makes no claim
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run. As C-F1214's setup with prompts `cf1216-p` and `cf1216-q`, in `cf1216-req`; item `a`
 references `cf1216-p`, and add an item `c` (no deps) referencing `cf1216-q`, with its own take J3 run over its
@@ -27886,7 +27874,6 @@ cleanup: `delete_workspace(name="cf1216-req", acknowledged_cost=true)` (both pro
 metrics: none.
 
 ### C-F1217 — after a prompt edit, a new take or a re-accept makes the item `done`, until the text changes again
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Two `split-takes` runs. C-F1214's setup and step (1) with prompt `cf1217-p`, in `cf1217-req`. (1) `set_request`
 with `a`'s `accepted: {"job": J1}`; read. (2) `save_prompt` `cf1217-p` with a third text; read. (3) Run a new take
@@ -27900,7 +27887,6 @@ cleanup: `delete_workspace(name="cf1217-req", acknowledged_cost=true)`; `delete_
 metrics: none.
 
 ### C-F1218 — `revised_because` names each changed prompt, and the argument change beside it
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Two `split-takes` runs. Prompts `cf1218-p` and `cf1218-q` saved first (names checked free with `get_prompt`).
 Setup as S1531 (C-F1205) in `cf1218-req`, but `a`'s arguments are `{"text":"prompt:cf1218-p","max_seconds":8}`,
@@ -27925,7 +27911,6 @@ cleanup: `delete_workspace(name="qa-1531-pre", acknowledged_cost=true)`; `delete
 metrics: none.
 
 ### C-F1220 — reading requests with prompt references costs about what reading them without does
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Two `split-takes` runs. Two workspaces: `cf1220-plain` with S1531 as written, and `cf1220-ref` with S1531 where both
 items reference saved prompts (`cf1220-p`, `cf1220-q`) and both have a take. In each, with `date` before and after,
@@ -27938,7 +27923,6 @@ cleanup: `delete_workspace` both (`acknowledged_cost=true`); `delete_prompt` bot
 metrics: none.
 
 ### C-F1221 — the guide and the request skill reference name the prompt clause
-pending: #1558
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 Free. As C-F1212.
 expected:
@@ -28886,6 +28870,165 @@ expected:
 - (3) the task still defaults `fill` to `black`: only the template's default moved.
 A border that fails C-F1266's reading at the shipped defaults is a **finding**, even if the A/B arm passed.
 cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1268 — `refill: "held"` keeps the frame count on even and odd lengths and records before and after; a take with no holds comes back unchanged without loading RIFE
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a few minutes. Run this case, and C-F1269 to C-F1274, **before C-F1204**, which deletes `qa-1527`. If C-F1204 has
+already run, rebuild the fixtures. Fixtures HC (twos, 76 frames), CL (clean, 38) and ST (static, 120) come from C-F1190
+in `qa-1527`. Add **HO**: `trim_video(video=<HC output>, start_frame=0, num_frames=75)`, the odd length. The workflow
+is one `interpolate_frames(video=<file>, refill="held", device="cuda")` step with a `video/mp4` result. Run it on HC,
+HO, CL and ST, each after `validate_workflow` with its cost bound, in `qa-1527`. For each source and its result, take
+`get_gallery_metadata`, `assess_output(..., probe="analyze_held_frames")` and `get_job_events`.
+expected:
+- Each result has exactly its source's `frame_count` (76, 75, 38, 120), and the same `fps` and `duration_seconds`
+  (±1 ms). One frame short is the 2N-1 **finding** the plan names.
+- HC and HO: `held_frames` on the result is at or under the clean mark (the guide's band, else below the `held_frames`
+  threshold), with no `held_frames` warn.
+- The step's output (`get_job`, its step result or the output's metadata) carries `held_before` and `held_after`.
+  `held_before` equals `analyze_held_frames` on the source, and `held_after` equals it on the result, each ±1.
+- CL and ST: `held_before` is 0, and the length is unchanged. `compare_outputs(names=[<source>, <result>],
+  at=["frame:0", "frame:<mid>", "frame:<last>"])` shows each frame matching the source (SSIM ≥ 0.99). The plan says
+  the frames come back unchanged.
+- CL and ST: `get_job_events` shows no RIFE weight load or download, where HC's events show one. If HC's events never
+  name the load either, say the "RIFE not loaded" half is unverified. Don't pass it.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1269 — a single hold is refilled at the midpoint, and every other frame passes through unchanged
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a minute. Build **GS** in `qa-1527` with C-F1190's chain: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
+start_frame=9, num_frames=38)` named `src`, `video_frames(video="previous_result:src")` named `frames`, then
+`stills_to_video(images="previous_result:frames", fps=24, durations=[38 numbers], result video/mp4)`. Each number is
+0.0417, except still 20 (0-based), which is 0.0834. That makes 39 frames, with one hold at output frame 21 (a copy of
+20). Check first that the source moves around there (C-F1190's d ≥ 2.0 check). Then run `interpolate_frames(
+video=<GS>, refill="held", device="cuda")`. On GS and the result, take `assess_output(..., probe="analyze_held_frames",
+detail=true)`. Also take `compare_outputs(names=[<GS>, <result>], at=["frame:0", "frame:10", "frame:19", "frame:20",
+"frame:21", "frame:22", "frame:30", "frame:38"])`.
+expected:
+- The result has 39 frames. `held_before` is 1 and `held_after` is 0.
+- Frame 21 is new. On GS, d at 21 is about 0 and d at 22 is the whole step from still 20 to still 21 (call it D). On
+  the result, d at 21 and d at 22 are each between 0.25 × D and 0.75 × D: a midpoint at t = ½. If the d series is
+  downsampled so that it isn't per-frame at this length, judge from `get_output_frames` at 20, 21 and 22 that frame
+  21 is between its neighbours (no ghost of both), and say so.
+- Every compared frame except 21 matches GS: SSIM ≥ 0.99, and it scores about as well as frame 0 does. Frame 21 scores
+  clearly lower than those frames. A drop on frames 20 or 22 (the anchors) or on any far frame is a **finding**: the
+  plan passes every non-held frame through byte-equal. A whole-take resynthesis is v1's keep-every-2nd, which plan v2
+  replaced.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1270 — a frame shown four times becomes three in-betweens at ¼, ½ and ¾
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a minute. Build **G4** as GS in C-F1269, but with still 20 at 0.1667. That makes 41 frames: output frames 20 to 23
+are one picture, and 24 is still 21. Run `interpolate_frames(video=<G4>, refill="held", device="cuda")`. Then take
+`assess_output(..., probe="analyze_held_frames", detail=true)` on both, and `compare_outputs(names=[<G4>, <result>],
+at=["frame:19", "frame:20", "frame:21", "frame:22", "frame:23", "frame:24", "frame:30"])`. Run H4 (C-F1190, every
+still four times) through the same step.
+expected:
+- The result has 41 frames. Frames 20 and 24 match G4 (SSIM ≥ 0.99). Frames 21, 22 and 23 each differ from G4 and from
+  each other.
+- On the result, d at 21, 22, 23 and 24 are each between 0.1 × D and 0.45 × D, where D is G4's d at 24 (the whole
+  step). That is an even ¼, ½, ¾ spacing. If the series isn't per-frame, use `get_output_frames` at 20 to 24: a steady
+  progression, no repeat.
+- `held_after` is 0 on G4. On H4, `held_after` is at or under the clean mark, and the frame count is 152.
+- Note: as plan v2 writes the measure, the middle repeat of a frame shown four times has no "clearly moving" neighbour,
+  so B's rule flags only 2 of the 3 repeats (C-F1191). The plan promises the k = 3 refill at ¼, ½ and ¾ anyway. So a
+  result where frame 22 still equals frame 20, where any of 21 to 23 is a copy of another, or where `held_after` > 0
+  on G4, is a **finding** against plan v2's own Design → Repair, whatever the measure flags.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1271 — a hold at the clip's end, or one whose next moving frame is across a cut, stays held, and nothing blends across the cut
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a few minutes. Build in `qa-1527`, as GS in C-F1269:
+- **HE**: 38 stills, with still 15 and still 37 (the last) at 0.0834. That makes 40 frames, with holds at output frames
+  16 and 39. Frame 39 is the clip's last frame, so it has no b.
+- **HX**: first `trim_video(..., start_frame=9, num_frames=24)` of the scythe asset, and 24 stills with stills 10 and 23
+  at 0.0834. That makes 26 frames: one hold at 11, and frames 24 and 25 are one picture. Name it `partA`. Then
+  `trim_video(video="asset:qa-cast/ep3-shot2-reply.mp4", start_frame=0, num_frames=24)` named `partB`. Then
+  `concat_videos` of the two with a plain cut (`get_task("concat_videos")` for the spelling). That makes 50 frames,
+  with the cut at frame 26.
+Run `interpolate_frames(refill="held", device="cuda")` on HE and HX. Take `analyze_held_frames` (`detail=true`) on
+sources and results, and `compare_outputs(names=[<source>, <result>])`, at frames 15, 16, 17, 38 and 39 for HE, and
+at 10, 11, 12, 24, 25, 26 and 27 for HX. Take `get_output_frames` of the HX result at frames 25 and 26.
+expected:
+- Both results keep their source's frame count (40 and 50).
+- HE: frame 16 is refilled (it differs from the source, as in C-F1269). Frames 38 and 39 match the source (SSIM ≥ 0.99),
+  so the end hold is left. `held_after` = `held_before` − 1, and is at least 1 if the measure counts frame 39. If
+  the measure doesn't count an end frame at all, then `held_before` = `held_after` + 1 = 1. Either way, say which.
+- HX: frame 11 is refilled. Frames 24, 25, 26 and 27 match the source (SSIM ≥ 0.99). Frame 25 shows only the scythe
+  shot and frame 26 only the reply shot: no double exposure. A change at 25 or 26 is the **finding** this case exists
+  for: the plan says never to interpolate across a cut. The pair at 24 and 25 is either excluded by the cut guard (in
+  neither count) or left held and counted in `held_after`. Either passes, provided both counts agree with the probe
+  ±1.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1272 — on #1551's highest-count take, `held_before` > `held_after`, and frames away from the clusters match the source
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a few minutes, or none if C-F1199 ran in the same session (reuse its kept asset and result). Otherwise set up as
+C-F1199 does: `keep_output` the record's highest-count take into `qa-1527` (read-only in Don's workspace), then run
+`interpolate_frames(refill="held", device="cuda")` on that `asset:`. Take `assess_output(...,
+probe="analyze_held_frames")` on the asset, giving its `clusters[]`. Pick 5 frames, each at least 8 frames (0.33 s)
+outside every cluster's range, spread over the take, plus the first and last frames. Pick 2 frames inside clusters
+that `detail=true` marks held. Then `compare_outputs(names=[<asset>, <result>], at=["frame:N", ...])` on all of them.
+expected:
+- The step's output has `held_before` > `held_after`. `held_before` equals the probe's count on the asset ±1, and is at
+  least B's threshold.
+- Every frame away from the clusters matches the source: SSIM ≥ 0.99, with mean abs diff no larger than a plain
+  re-encode gives (frame 0 is the yardstick). A real frame changed away from the clusters is a **finding**: v2's
+  added intent.
+- Each of the 2 held frames differs from the source, scoring below the passthrough frames.
+- The frame count, fps, duration and audio match C-F1199.
+cleanup: none (C-F1204 cleans up the kept asset).
+metrics: none.
+
+### C-F1273 — on a real cuts take, the frames at each cut are the source's and the shots are carried
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+GPU, a few minutes. Use a cuts-mode take #1551's record names, preferring one with holds. Keep it into `qa-1527` as
+C-F1199 does. If the record names none, skip this case and say so: C-F1271's HX covers the rule on a built clip. Find
+the source's cut frames with `assess_output(..., probe="analyze_seams")` (or its shots under `analyze_shots`). Run
+`interpolate_frames(refill="held", device="cuda")`. Then `compare_outputs(names=[<asset>, <result>])` at cut-1 and
+cut for every cut (up to 8 frames a call), and `get_output_frames` on the result at those frames.
+expected:
+- At every cut, the result's frames cut-1 and cut match the source (SSIM ≥ 0.99) and each shows a single shot. A
+  blend or ghost of two shots is a **finding**.
+- `analyze_seams` on the result reports the same seams, at the same seconds ±1 frame, as on the source. A default
+  `assess_output` raises no `sync_drift` or `sync_length` finding the source lacks. The result has audio.
+- The frame count equals the source's, and `held_after` < `held_before` when `held_before` > 0.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1274 — the served docs describe the run-wise refill, not keep-every-2nd
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
+Free. `get_task("interpolate_frames")`; the `interpolate_frames` section that `get_guide("tasks")`'s index lists;
+`get_guide("tasks", section="Assessment Probes")`; and the loaded `dw:minimax-h3` skill. On 2026-11-22,
+`get_task("interpolate_frames")` listed `video`, `device`, `multiplier` ("2, 4, or 8 (default: 2)"), `model_name` and
+`filename`, with no `refill`.
+expected:
+- `get_task` lists `refill`, with a description naming `held` and saying it excludes `multiplier`. The other five
+  parameters are still listed.
+- The tasks guide documents `refill: "held"` as plan v2 has it:
+  - only the frames the held measure flags are replaced, each run interpolated between its anchors;
+  - every other frame passes through unchanged;
+  - nothing is interpolated across a cut, and a run with no anchor after it (the clip's end, or a cut) stays held and
+    counts in `held_after`;
+  - the frame count equals the source's, and audio, fps and shots are carried;
+  - `held_before` and `held_after` are reported.
+  A guide that still describes keeping every 2nd frame, or restoring real frames at cuts after a RIFE pass, is a
+  **finding**.
+- The `analyze_held_frames` remedy names `interpolate_frames` with `refill: "held"`.
+- `dw:minimax-h3` says when to repair rather than reroll. A skill that still says reroll only, or that describes
+  keep-every-2nd, is a **finding**, filed against the skill.
+cleanup: none.
 metrics: none.
 
 ## Performance
