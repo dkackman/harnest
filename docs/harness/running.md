@@ -31,6 +31,11 @@ tail -f logs/loop.log                                 # `[loop] start/end <label
 jq . logs/loop/state.json                             # slots, deploy state, board, totals, heartbeat
 ```
 
+`scripts/loop.zsh` wraps the everyday moves: `start [driver args]` (detached, output to
+`logs/loop.stdout`; refuses while a driver or a bash loop runs, and brings the dashboard up if
+none is running), `stop` (graceful: the stop flags, then waits), `stop --now` (`kill -TERM`),
+`restart`, `status`, `log` and `dashboard`. Knobs pass through: `DRAIN=1 scripts/loop.zsh start`.
+
 One process runs both servers: it takes `.driver.lock` / `.driver.lock.mini-ai` (owner name
 `run-loop`, so the bash passes and `lem_loop_running` see it), keeps server-free sessions
 (`LOOP_FREE_SLOTS`) and one GPU session per server going at once, and owns every deploy and the nightly
