@@ -26654,8 +26654,9 @@ expected:
   Its summary is 120 characters or fewer.
 - (2) the variables are regional-edit's set (`source_video`, `prompt`, `refine_strength`, `num_inference_steps`,
   `num_frames`, `width`, `height`, the shifts, the dtype/LoRA set, `seed`, `attention_backend`, `sparse_tau`,
-  `sparse_topk`, `cache`), with **no `mask_image`**, plus `feather` (default 16).
-  - The defaults are `width` 544, `height` 960, `refine_strength` 1.0, `sparse_tau` 0.5 and `sparse_topk` 0.15.
+  `sparse_topk`, `cache`), with **no `mask_image`**, plus `feather` (default 16) and `fill`.
+  - The defaults are `width` 544, `height` 960, `sparse_tau` 0.5 and `sparse_topk` 0.15, and the `refine_strength`
+    and `fill` defaults are those #1567's A/B record names.
   - The constraints are regional-edit's: `num_frames` 17n+5 in 124-345, and `width`/`height` multiples of 32.
   - In the full form, the steps are a letterbox fit with the box snapped to the cell grid (by `align`, or in the
     template), then the H3 edit, then `paste_into_box`, then the mp4. The edit's `mask_grow` is 0 (as a variable or a
@@ -26681,8 +26682,8 @@ metrics: none.
 ### C-F1154 — reframe validates clean at its defaults, and refuses a bad size or frame count by its rule
 pending: #1542
 source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic)
-Free (validate only). Base arguments: `{"source_video": "asset:qa-cast/ep3-shot1-incident.mp4", "prompt": "<any prompt
-describing the scene, extended above and below>", "seed": 42}`, `workspace="regression-complete"`.
+Free (validate only). Base arguments: `{"source_video": "asset:qa-cast/ep3-shot1-incident.mp4", "prompt": "<C-F1266's
+whole-frame prompt>", "seed": 42}`, `workspace="regression-complete"`.
 (1) The base. (2) + `width: 768, height: 768`. (3) + `width: 550`. (4) + `height: 970`. (5) + `num_frames: 100`.
 (6) + `num_frames: 362`. (7) + `num_frames: 125`. (8) + `num_frames: 345`. (9) + `feather: -1`.
 (10) + `mask_image: "asset:qa-cast/ep3-shot1-incident.mp4"`. (11) The base with no `source_video`.
@@ -26728,28 +26729,8 @@ expected:
 - `compare_outputs` shows the box region matching the source apart from the feather band and the downscale.
 - `assess_output` reports no frozen or dead-air span. No warning says the mask is mismatched or the canvas size differs.
 Black or mirrored bands, a moved or cropped original, a visible seam, or a soundtrack that is not the take's is a
-**finding**. If the border reads as a different camera, say so in the finding: per the plan, that is a `loosen` re-plan.
+**finding**. If the border reads as a different camera, say so in the finding: per plan v5, #1066 then goes to `owner:don` with the frames and Q6's options.
 cleanup: `delete_output(job_id=<job>)`.
-metrics: none.
-
-### C-F1156 — the seam A/B: the shipped default (grow 0 + grid-snapped box) reads at least as seamless as grow 1 + feather 16 on an unsnapped box
-pending: #1542
-source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic), Don's seam amendment
-Cost: two H3 runs of the same seeded take (about 4 min on lem). Variant **A** is C-F1155's run at the template's
-defaults; reuse C-F1155's output when it's from the same pass. Variant **B**: `get_workflow("templates/minimax/reframe")`
-in full form, then save it inline with only two changes: the edit step's `mask_grow` set to 1, and the snap removed
-(`align` dropped from the fit step, or the template's snap step bypassed so the box is the plain letterbox
-`[0, 324, 544, 311]`). Feather stays 16. Run it with the same arguments and seed 42.
-On both outputs, check the box's top and bottom edges with `get_output_frames` at frames 0, 62 and 123, looking at
-any feature that crosses the edge.
-expected:
-- A's box edge reads seamless on all three frames: no hard line, no offset of any feature crossing the edge, and no
-  brightness step.
-- B, with its 32+ px of regenerated edge, may show an offset or a ghosted band. If B reads clearly better than A,
-  the shipped default is the wrong one: that is a **finding** against #1542.
-- If neither reads seamless, that is a **finding**, and by the plan a `loosen` re-plan, not a pass.
-- Record which edge features were compared (e.g. "the table edge at frame 62") in the issue, not here.
-cleanup: `delete_output(job_id=<job>)` for both runs. B's inline workflow is not saved to the catalog.
 metrics: none.
 
 ### C-F1157 — reframe to 1:1 (768x768) also works
