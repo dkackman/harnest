@@ -11771,7 +11771,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F466 — the #1528 band probes' jobs: exactly 16 Ref2VA turbo clips in `probe-1528`, four probes × two arms × two seeds, all succeeded, nothing unnamed
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` (turbo LoRA) on lem (cuda). **Free**: reads only.
 The record is `docs/proposals/audits/2026-11-vrgdg-band-probes.md` in the dw repo, which a tester can't read: use the
@@ -11796,7 +11795,6 @@ cleanup: none (the jobs are the bench record).
 metrics: none.
 
 ### M-F467 — each #1528 probe's two arms differ only in the claimed variable
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
 Steps: `get_job_workflow` on every M-F466 job; compare, per probe and per seed, arm one's H3 step with arm two's; compare
@@ -11823,7 +11821,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F468 — the #1528 P1 verdict (missing reference → stranger) re-checks against the frames
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
 Steps: for each P1 job, `get_job` for its output, then `get_output_frames(name=<output>, count=12,
@@ -11842,7 +11839,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F469 — the #1528 P2 verdict (wet words → skin streaks) re-checks on native-size face crops
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
 Steps: for each P2 job, `get_output_frames(name=<output>, at=[<at least three frames, the record's own if it names
@@ -11857,7 +11853,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F470 — the #1528 P3 verdict (an exit written last doesn't happen) re-checks on the last frames
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
 Steps: for each P3 job, `get_output_frames(name=<output>, at=["frame:100","frame:112","frame:123"],
@@ -11873,7 +11868,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F471 — the #1528 P4 verdict (a silent drummer under a held sung slice) re-checks across a sung phrase
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` with `hold_audio` on lem (cuda). **Free**: `get_output_frames` and reads only.
 Steps: for each P4 job, `get_output_frames(name=<output>, at=[<at least six frames inside one sung phrase, the
@@ -11890,7 +11884,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F472 — the #1528 record's verdict rules: held only when both seeds agree, a split is not settled, and an unjudgeable claim goes to Don
-pending: #1561
 source: tester, spec for #1561 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (bench record). **Free**: reads only.
 Steps: the record's per-claim verdicts (P1-P4) against its per-job rows (M-F468 to M-F471).
