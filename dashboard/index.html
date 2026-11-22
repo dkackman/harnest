@@ -111,6 +111,10 @@ header button.on { border-color: var(--ok); color: var(--ok); }
 .prog .kpis { margin-bottom: 4px; }
 .prog b { color: var(--ink); font-weight: 600; }
 .prog .legend i { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+.prog .legend button { font: inherit; color: inherit; background: none; border: 0; padding: 0; cursor: pointer; }
+.prog .legend button:hover { color: var(--ink); }
+.prog .legend button[aria-pressed="false"] { opacity: .45; }
+.prog .legend button[aria-pressed="false"] i { background: none !important; box-shadow: inset 0 0 0 1.5px var(--muted); }
 .burn { position: relative; height: 130px; margin-top: 4px; }
 .burn svg { display: block; }
 .burn .grid { stroke: var(--line); stroke-width: 1; }
@@ -669,8 +673,7 @@ function loopChart(lp, history) {
   const pts = history.map((h, i) => ({ ...h, cycle: i + 1, time: new Date(h.time * 1000).toLocaleTimeString([], { hour12: false }) }));
   const last = pts[pts.length - 1];
   burns.loop = { start: pts[0].time, cycle: pts.length, points: pts, repo: lp.repo, unit: "board" };
-  return `<div class="prog" style="margin:10px 0 0"><div class="legend">${seriesOf(burns.loop).slice().reverse().map((x) =>
-      `<span><i style="background:var(${x.css})"></i>${x.label} <b>${last[x.key] || 0}</b></span>`).join("")}
+  return `<div class="prog" style="margin:10px 0 0"><div class="legend">${legendItems(burns.loop, last)}
       <span>· <b>${last.arrived}</b> arrived</span></div>
     <div class="burn" data-stream="loop" role="img" aria-label="${esc(`${pts.length} boards: ${last.closed} closed, ${last.agents} with agents, ${last.don} waiting on you`)}"></div></div>`;
 }
@@ -690,6 +693,19 @@ const SERIES = [ // bottom of the stack first (the --s-* order)
 const burns = {}, burnHover = {}, openLists = new Set();
 // other and parked only when some board had one (a board logged before the parked mark has none)
 const seriesOf = (lr) => SERIES.filter((x) => !["other", "parked"].includes(x.key) || lr.points.some((p) => p[x.key]));
+// series hidden from the bars by a legend click; kept in localStorage across visits
+const burnHidden = new Set((() => { try { return JSON.parse(LS.get("burnHidden", "[]")); } catch { return []; } })());
+const legendItems = (lr, last) => seriesOf(lr).slice().reverse().map((x) =>
+  `<button type="button" data-series="${x.key}" aria-pressed="${!burnHidden.has(x.key)}"
+    title="show or hide ${x.label} on the chart"><i style="background:var(${x.css})"></i>${x.label} <b>${last[x.key] || 0}</b></button>`).join("");
+document.addEventListener("click", (e) => {
+  const b = e.target.closest(".legend button[data-series]"); if (!b) return;
+  const k = b.dataset.series;
+  burnHidden.has(k) ? burnHidden.delete(k) : burnHidden.add(k);
+  LS.set("burnHidden", JSON.stringify([...burnHidden]));
+  document.querySelectorAll(`.legend button[data-series="${k}"]`).forEach((x) => x.setAttribute("aria-pressed", String(!burnHidden.has(k))));
+  document.querySelectorAll(".burn").forEach(drawBurn);
+});
 
 function progress(name, lr, looping) {
   delete burns[name];
@@ -705,8 +721,7 @@ function progress(name, lr, looping) {
     <div class="kpis"><span>loop since <b>${esc(lr.start)}</b></span><span>cycle <b>${lr.cycle}</b></span>
       <span><b>${lr.closed.length}</b> closed</span><span><b>${lr.arrived.length}</b> arrived</span>
       <span><b>${lr.sessions}</b> sessions · <b>$${lr.cost.toFixed(2)}</b></span></div>
-    <div class="legend">${seriesOf(lr).slice().reverse().map((x) =>
-      `<span><i style="background:var(${x.css})"></i>${x.label} <b>${last[x.key] || 0}</b></span>`).join("")}</div>
+    <div class="legend">${legendItems(lr, last)}</div>
     <div class="burn" data-stream="${esc(name)}" role="img"
       aria-label="${esc(`${lr.points.length} boards since ${lr.start}: ${last.closed} closed, ${last.agents} with agents, ${last.don} waiting on you`)}"></div>
     ${list("closed", "closed or handed to another loop this run", lr.closed)}
@@ -722,7 +737,7 @@ function niceStep(max) { // a 1/2/5 step giving at most four gridlines
 function drawBurn(el) {
   const name = el.dataset.stream, lr = burns[name];
   if (!lr) return;
-  const pts = lr.points, series = seriesOf(lr);
+  const pts = lr.points, series = seriesOf(lr).filter((x) => !burnHidden.has(x.key));
   const W = el.clientWidth, H = el.clientHeight, L = 26, R = 2, T = 6, B = 16;
   const pw = W - L - R, ph = H - T - B;
   const tot = (p) => series.reduce((a, x) => a + (p[x.key] || 0), 0);
