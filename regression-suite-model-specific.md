@@ -12143,4 +12143,37 @@ It is a **finding** if any of (a)–(d) is refused only by the flag, or (e)–(g
 cleanup: none.
 metrics: none.
 
+### M-F485 — on a 23.6 GB card the Ref2VA ceilings at 1344x768 are 243/209/175/141 frames for 1/2/3/4 references, and the next 17-frame step is refused
+source: tester, verified in #1586 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 Ref2VA (`MiniMaxAI/MiniMax-H3`, `workflow: "ref2va"`) via
+`templates/minimax/dialogue-short` and `templates/minimax/reference-to-video`, on an RTX 3090, which reports
+23.6 GB (the gate of #900). The skills, the minimax README and every Ref2VA template's `reason` state
+243/209/175/141 as the 1344x768 ceilings. #479's field runs admitted 209 x 2 and 175 x 3 (#1581's job
+`c2af95984127` also ran 175 x 3 with no OOM). #1586 found the gate refusing them, one step under the stated
+figures, and fixed it by recalibrating `base_gb` to 15.7. This case pins the verdict at each ceiling and one
+step above it, so a recalibration or a gate change can't move the boundary away from what users are told.
+Free: validate calls only. Needs a 24 GB-class cuda card that reports about 23.6 GB. On another card, record
+it as not applicable.
+Setup: references are image references,
+`{"reference_type": "variable:subject_reference_type", ...}`, drawn from `from_previous_result`
+`draw_character_a`, `draw_character_b`, and `from_file` an image asset (any image asset; repeat it for the
+4th). Each shot is `{"name": ..., "num_frames": N, "prompt": "<one line naming each Picture>", "references": [k refs]}`.
+Steps (all `validate_workflow`, workspace `regression-model-specific`, `"width": 1344, "height": 768`, one
+shot per call unless stated):
+1. `dialogue-short`, `shots` = [243 x 1, 209 x 2, 141 x 4], in one call.
+2. `dialogue-short`, 175 x 3.
+3. `dialogue-short`, separately: 260 x 1, 226 x 2, 192 x 3, 158 x 4, 209 x 3.
+4. `reference-to-video` (2 fixed references, subject + voice): `num_frames` 209, then 226.
+expected:
+- Steps 1 and 2 are `valid: true`, with no VRAM error or warning.
+- Each call in step 3 is `valid: false` with one VRAM error at `arguments.shots[0]`, naming the reference count
+  and a projection above the card. At 15.7/28.71/1.0 these are about 23.88, 23.94, 24.00, 24.06 and 24.47 GB.
+  The exact GB may move by a few hundredths.
+- Step 4: 209 is `valid: true`, and 226 is refused (about 23.94 GB) at path `arguments`.
+It is a **finding** if any of the four ceilings is refused, if any one-step-above shape is admitted, or if the
+two OOM points (209 x 3, 260 x 1) are admitted. It is also a finding if the stated 243/209/175/141 figures change
+in a template `reason` or the `minimax-h3` skill without this boundary moving with them.
+cleanup: none (nothing is queued or written).
+metrics: none.
+
 ## Performance
