@@ -27409,12 +27409,15 @@ source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthrop
 CPU tasks only. **Setup shared by C-F1190–C-F1204**, in workspace `qa-1527` (`create_workspace` if missing; pass
 `workspace="qa-1527"` on every call). Each fixture is a task-only workflow, `validate_workflow`'d with its
 `acknowledged_cost` bound (`minutes: null`, since the basis is `unknown`), then `run_workflow(..., wait_seconds=55)`.
-The source is `asset:qa-cast/ep6-shot1-priya.mp4` (124 frames, 24 fps; shared asset). Steps 1 and 2 are
+The source is `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4", start_frame=9, num_frames=38)` named `src`
+(38 frames, 24 fps; shared asset), and Step 1 reads `previous_result:src`. Confirm first with the source's
+`detail=true` series that most neighbours have d ≥ 2.0. If they don't, pick a moving stretch, since the held rule
+needs a clearly moving neighbour. Steps 1 and 2 are
 `video_frames(video=<source>)` named `frames`, then `stills_to_video(images="previous_result:frames", fps=24,
 durations=D)` with `result: {"content_type": "video/mp4"}`. A still gets `max(1, round(D*24))` frames, so:
-- **CL** (clean control): D = 0.0417, one frame per source frame, 124 frames.
-- **HC** (twos): D = 0.0834, every source frame twice, 248 frames: "12 fps shown as 24".
-- **H4** (fours): D = 0.1667, every source frame four times, 496 frames.
+- **CL** (clean control): D = 0.0417, one frame per source frame, 38 frames.
+- **HC** (twos): D = 0.0834, every source frame twice, 76 frames: "12 fps shown as 24".
+- **H4** (fours): D = 0.1667, every source frame four times, 152 frames.
 - **ST** (static): one `trim_video(video=<source>, start_frame=0, num_frames=1, pad_to=120)` step: frame 0 held for 5 s.
 - **CUT** (hard cut into a static shot): `trim_video(video="asset:qa-cast/ep3-shot2-reply.mp4", start_frame=0,
   num_frames=1, pad_to=48)` named `still`, then `concat_videos` of `asset:qa-cast/ep3-shot1-incident.mp4` and
@@ -27426,16 +27429,17 @@ B cases blocked; it is not a finding of #1552.
 Then `assess_output(name=<HC output>, probe="analyze_held_frames", workspace="qa-1527")`, and the same on CL, and on the
 source asset. Read the `held_frames` threshold from the rule table, `get_guide("tasks", section="Assessment Probes")`.
 expected:
-- HC: `held_frames` is at least 100 (about one per source frame, minus frames at rest and the first). `held_ratio`
-  equals `held_frames / frames`, to rounding. `frames` is 248. A `held_frames` finding with severity `warn` is present.
-  `clusters[]` is non-empty, each with `start` <= `end` (seconds, inside 0 to 10.33) and `held` > 0. The clusters'
+- HC: `held_frames` is at least 0.4 × `frames` (about one per source frame, minus frames at rest and the first).
+  `held_ratio` equals `held_frames / frames`, to rounding. `frames` is 2 × the source's. A `held_frames` finding with
+  severity `warn` is present. `clusters[]` is non-empty, each with `start` <= `end` (seconds, inside 0 to HC's
+  duration) and `held` > 0. The clusters'
   `held` values sum to no more than `held_frames`.
 - Each cluster finding's `at` is a number (seconds) inside its own `range` [start, end]. Nothing about a cluster is
   only in its text.
 - The probe answers on HC even though HC has no audio. A `not_applicable` entry for `analyze_held_frames` on any of CL,
   HC or H4 is a **finding**: that is the "no audio → no probes" break the plan names.
 - CL's `held_frames` equals the source asset's, ±2, since CL is a re-encode of it frame for frame. HC's exceeds CL's by
-  at least 100.
+  at least 0.4 × HC's `frames`.
 It is a **finding** if HC raises no `held_frames` warn, or if any probe errors on these files.
 cleanup: none (C-F1204 cleans up).
 metrics: none.
@@ -27465,10 +27469,11 @@ cut, is a large difference. So the plain rule would call frame N+1 held. The pla
 a hard cut". Run `assess_output(..., probe="analyze_held_frames", workspace="qa-1527")` on CUT and on
 `asset:qa-cast/ep3-shot1-incident.mp4`.
 expected:
-- CUT's `held_frames` equals ep3-shot1's own count: the cut adds 0 and the static tail adds 0.
+- CUT's `held_frames` is within ±1 of ep3-shot1's own count (the concat re-encode can move a near-ε frame away from
+  the cut), and with `detail=true` no frame from N−1 to N+2 is held.
 - No cluster in CUT has a range touching frames N-1 to N+2 (seconds = frame / 24).
-- If CUT's `held_frames` is exactly ep3-shot1's + 1, with a cluster at about (N+1)/24 s, that is the **finding** this
-  case exists for.
+- A hold at frame N or N+1, or a cluster at about (N+1)/24 s, is the **finding** this case exists for, whatever the
+  total count.
 cleanup: none.
 metrics: none.
 
