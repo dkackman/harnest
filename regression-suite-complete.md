@@ -28837,11 +28837,10 @@ expected:
 - On the result, d at 21, 22, 23 and 24 are each between 0.1 × D and 0.45 × D, where D is G4's d at 24 (the whole
   step). That is an even ¼, ½, ¾ spacing. If the series isn't per-frame, use `get_output_frames` at 20 to 24: a steady
   progression, no repeat.
-- `held_after` is 0 on G4. On H4, `held_after` is at or under the clean mark, and the frame count is 152.
+- On H4, the frame count is 152. (`held_after` on G4 and H4 is C-F1282's, under plan v3 Q6.)
 - Note: as plan v2 writes the measure, the middle repeat of a frame shown four times has no "clearly moving" neighbour,
   so B's rule flags only 2 of the 3 repeats (C-F1191). The plan promises the k = 3 refill at ¼, ½ and ¾ anyway. So a
-  result where frame 22 still equals frame 20, where any of 21 to 23 is a copy of another, or where `held_after` > 0
-  on G4, is a **finding** against plan v2's own Design → Repair, whatever the measure flags.
+  result where frame 22 still equals frame 20, or where any of 21 to 23 is a copy of another, is a **finding** against plan v2's own Design → Repair, whatever the measure flags.
 cleanup: none (C-F1204 cleans up).
 metrics: none.
 
