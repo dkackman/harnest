@@ -27928,8 +27928,9 @@ Free, no job. **Setup S1536-A** (C-F1227–C-F1232 reuse it): `create_workspace(
 expected:
 - Both reads answer 200, JSON, with `epoch` (a non-empty id), `workspaces` (an integer ≥ 0) and `kinds` holding
   exactly `requests`, `prompts`, `workflows`, `assets`, `gallery` and `jobs`, each an integer ≥ 0.
-- The second snapshot equals the first, field for field, in both workspaces: reading is not a write. `epoch` and
-  `workspaces` are the same in both workspaces' snapshots (one server, one server-wide counter).
+- The second snapshot equals the first, field for field, in both workspaces: reading is not a write. `workspaces` is
+  the same in both workspaces' snapshots (one server-wide counter). `epoch` is per workspace: each workspace's
+  epoch is stable across reads, and epochs are not compared across workspaces.
 - `/openapi.json` names `GET /api/workspaces/{workspace}/changes` with a response schema (`WorkspaceChanges` or
   the like) carrying those fields, and the route takes no query parameters.
 A missing kind, a string or float where an integer belongs, or a counter that moves between two bare reads is a
@@ -27976,7 +27977,7 @@ Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds. S1536-A. `w
 "duration_seconds":2})` for the acknowledgement. Snapshot (S0); (1) `run_workflow` over it **with no wait**, then
 at once `run_workflow` again with the same arguments (job J2), and at once `cancel_job(J2)`; snapshot (S1).
 (2) `wait_for_job` on the first job (J1) until it succeeds; snapshot (S2). (3) `keep_output(name=<J1's audio
-gallery name>, asset_name="cf1226/kept.wav")`; snapshot (S3). (4) `set_note` on J1's output file, `"probe"`;
+gallery name>, asset_name="cf1226/kept.mp3")`; snapshot (S3). (4) `set_note` on J1's output file, `"probe"`;
 snapshot (S4).
 expected:
 - S1 − S0: `jobs` grew (two queues and a cancel); `gallery` not yet, unless J1 already finished (then (2)'s
@@ -27998,8 +27999,8 @@ plus that same `fetch` again.
 expected:
 - Create grows `workspaces` by at least 1, read the same in `cf1226-chg` and `cf1226-other`; delete grows it
   again. Neither moves any kind in either workspace, nor `epoch`.
-- The new workspace's own read answers 200 with integer kinds (zero or not), the shared `workspaces` and the same
-  `epoch`. After the delete, its read answers 404.
+- The new workspace's own read answers 200 with integer kinds (zero or not), the shared `workspaces` and its own
+  `epoch` (epochs are per workspace). After the delete, its read answers 404.
 cleanup: none (C-F1232).
 metrics: none.
 
