@@ -28478,7 +28478,6 @@ cleanup: the `use_workspace(name="default")` in step 3.
 metrics: none.
 
 ### C-F1251 — the `get_server_info` description tells the agent when to flag a stale plugin
-pending: #1560
 source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
 Plan v1 puts the comparison in the agent's hands: the skill states the release it was
 written for, and the server gives the floor. The tool description is what tells the agent to
@@ -28503,7 +28502,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1252 — the `plugin` block is MCP-only: `/api/server` and the OpenAPI `ServerInfo` are unchanged
-pending: #1560
 source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
 Plan v1 says "REST: none": the block is merged on the MCP side, the way `workspace` and
 `caches` are merged, and `ServerInfo` and the OpenAPI snapshot stay unchanged. Run it
@@ -28521,7 +28519,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1253 — every dw skill that starts at `get_server_info` states the release it was written for, and a current install isn't flagged
-pending: #1560
 source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
 Plan v1 adds one line under *Before anything* to each of the 10 skills whose first step is
 `get_server_info`: "This skill is written for dw `<version>`; `get_server_info`'s `plugin` says
