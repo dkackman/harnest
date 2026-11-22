@@ -27899,7 +27899,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1222 — the request page shows a revised item's result, a **Revised** chip, why, and **Run take 2** beside it; its dependent waits
-pending: #1559
 source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 **Web UI, black-box**, through `ui-check`. **Setup S1531-UI** (C-F1223–C-F1225 reuse it): S1531 (C-F1205) in
 `cf1222-ui`, but `a` is an image item: `workflow` the cheapest image template that runs here (C-F1132's
@@ -27920,7 +27919,6 @@ cleanup: none (C-F1225 cleans up).
 metrics: none.
 
 ### C-F1223 — **Run take 2** opens the run dialog with the item's current plan, and a submit links it and shows `queued`
-pending: #1559
 source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 **Web UI, black-box**. S1531-UI (C-F1222), with its mocks, plus `mock` setting `items.0.arguments.prompt` to
 `"a red barn"` (so the current plan differs from the take's). `record **/api/jobs**`; `stub **/api/jobs?**` (and
@@ -27936,7 +27934,6 @@ cleanup: none (C-F1225).
 metrics: none.
 
 ### C-F1224 — **Keep this take** writes `accepted` naming the shown take
-pending: #1559
 source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 **Web UI, black-box**. S1531-UI (C-F1222) with its mocks. `record **/api/workspaces/cf1222-ui/requests/**`. (1) Click
 **Keep this take**. (2) `recorded` the same glob; read the run's `blocked` list.
@@ -27950,7 +27947,6 @@ cleanup: none (C-F1225).
 metrics: none.
 
 ### C-F1225 — **Run what is ready** lists the revised item, and the attention count includes it
-pending: #1559
 source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 **Web UI, black-box**. S1531-UI (C-F1222). (1) Unmocked: `goto` the request's page and the workspace's requests
 list; `inspect` the attention band (its count); click **Run what is ready** and `screenshot` what it offers, then
