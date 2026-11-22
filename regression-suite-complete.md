@@ -29171,4 +29171,175 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1285 — the DMAD bench left one noted job per A0-A3 run in `probe-1579`, at the plan's shape, and a skipped arm is absent and explained
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). Model: MiniMax H3, fl2va, `templates/minimax/image-to-video`, with the DMAD LoRAs from
+`ZhengmingYu/DMAD`. The runs are plan v1's stage A: **A0** (load check: one dmad4 clip), **A1** (two one-speaker
+dialogue prompts, P1 male and P2 female, each a 13-21 word line, seeds 1001 and 2002, in four arms: **base** ×4,
+**dmad4** ×4, **dmad8** ×4, **turbo** control ×2 on P1 only), **A2** (one extra dmad4 P1 seed-1001 take) and **A3**
+(the template's default prompt at seed 42: dmad4 and lightx2v 4-step). Take `list_jobs(workspace="probe-1579")` (page
+through it all) and `get_job(job_id=<id>)` on each job. Read the record as C-F1291 says.
+expected:
+- Each run above has exactly one job whose `note` names its arm, prompt (P1, P2 or A3's default) and seed: 1 (A0;
+  it may double as A1's dmad4 P1 seed-1001 take only if the note and the record both say so) + 14 (A1) + 1 (A2) + 2
+  (A3). A retry is fine only if its note says so and the record names both. A job with no `note`, or a note naming no
+  arm, is a **finding**.
+- A run the record says was skipped (an A0 stop, the 60 min cap) has no job, and the record says why. If A0's load
+  was not clean, no dmad4 or dmad8 job exists past A0 and the record's verdict is "don't adopt". A job present for a
+  run the record calls skipped, or a run missing with no reason given, is a **finding**.
+- Every A0-A2 job is `templates/minimax/image-to-video` (or its realized workflow) at 960x544, 124 frames, int8,
+  sparse attention, step cache off (`get_job_workflow` shows each; C-F1286 checks the scheduler and LoRA). The two
+  prompts' line texts are the same across arms and seeds. A changed line between arms confounds them: a **finding**.
+- `get_job`'s `denoise_total_steps` (or the steps the job reports) is 12 for base, 5 for dmad4, turbo and both A3
+  arms, and 9 for dmad8.
+- Each job finished `completed`, or its failure is visible in `get_job` and the record carries it (C-F1291).
+- The summed run time of the stage's jobs from `get_job` is at most 60 min, or the record says the cap was reached
+  and where the run stopped.
+cleanup: none (the jobs are the record's evidence).
+metrics: none.
+
+### C-F1286 — each DMAD job's realized workflow has the full re-noise scheduler form, audio shift 2, a pinned string `weight_name`, and an adapter not named `turbo`
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). For one dmad4 and one dmad8 job from C-F1285 (A1, P1, seed 1001), the A0 job, one base job and one
+turbo job, take `get_job_workflow(job_id=<id>)` and read the H3 step's `scheduler`, `audio_scheduler`, `loras` (or
+the adapter list the step loads), `num_inference_steps` and shifts.
+expected:
+- dmad jobs: `scheduler` is the full form, `{configuration: {scheduler_type: "MiniMaxH3Scheduler"}, from_config_args:
+  {stochastic_sampling: true}, shift: 12.0}`, and `audio_scheduler` the same with `shift: 2.0`. A bare
+  `stochastic_sampling` key (outside `from_config_args`) is a **finding**: the server ignores it, so the arm ran
+  Euler, not the re-noise sampler.
+- dmad jobs: the LoRA is `ZhengmingYu/DMAD` with `weight_name` a **string**:
+  `minimax_h3/dmad_minimax_h3_4step_full_critic.safetensors` on dmad4 and A0,
+  `minimax_h3/dmad_minimax_h3_8step_full_critic.safetensors` on dmad8, at scale 1, with a `revision` that is a
+  pinned commit (40 hex chars, not `main` or absent). A list or absent `weight_name`, or a floating revision, is a
+  **finding**. The `4step_lora_critic` file appears nowhere.
+- dmad jobs: the adapter name is not `turbo` (the plan names it `dmad`). `turbo` is a **finding**: `h3_lead_in` keys
+  on that name. Guidance is 1.
+- base job: no LoRA, 12 steps, video shift 12 and audio shift 3, no `stochastic_sampling`.
+- turbo job: the lightx2v 4-step LoRA, 5 steps, shifts 12/3, no `stochastic_sampling` (today's turbo path).
+- The A3 lightx2v job matches the turbo job's form at 5 steps; the A3 dmad4 job matches the dmad4 form.
+cleanup: none.
+metrics: none.
+
+### C-F1287 — the DMAD jobs' events show the re-noise scheduler loading and a LoRA load with no unmatched keys, and the record names the partition
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). Take `get_job_events(job_id=<id>)` and `get_job(job_id=<id>)` (its `warnings`) on the A0 job and on
+the dmad4 and dmad8 jobs C-F1286 read.
+expected:
+- Each shows a `Loading scheduler: MiniMaxH3Scheduler` event (for the video and the audio scheduler, if the server
+  logs both). Its absence on a dmad job is a **finding**: the record can't show the flag took.
+- No event or warning says a LoRA key was unmatched, unexpected, skipped or not loaded. Any such line is a
+  **finding**, and a record that still calls that arm a candidate is a second one. A warning that the adapter's
+  partition "cannot be checked" (no proven catalog entry) is expected and not a finding.
+- The record (C-F1291) says which transformer partition the DMAD keys target (`transformer`, `transformer_ref`, or
+  both), and how that was read. Silence on the partition is a **finding**. If it says `transformer` only, no Ref2VA
+  arm exists in `probe-1579`; a Ref2VA job anyway is a **finding** (plan v1's non-goal).
+- If A0's load was not clean, the record says so and stops, as C-F1285 checks.
+cleanup: none.
+metrics: none.
+
+### C-F1288 — the DMAD downloads were only the two named files, never the whole `ZhengmingYu/DMAD` repo
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Free (validate only, nothing runs). Take the dmad4 job's realized workflow from `get_job_workflow` and pass it to
+`validate_workflow(workflow=<it>, workspace="probe-1579")`; read `plan.downloads`. Do the same for the dmad8 job.
+Also `list_downloads()` and the A0 and first dmad8 jobs' `get_job_events` (any download or fetch lines).
+expected:
+- `plan.downloads` names, for the DMAD LoRA, at most the one file in that job's `weight_name` (none once cached).
+  Any other `ZhengmingYu/DMAD` file (the `4step_lora_critic` file, Wan2.1 or SDXL weights, the whole repo) is a
+  **finding**.
+- No `list_downloads` entry or job event shows a `ZhengmingYu/DMAD` fetch of anything but
+  `minimax_h3/dmad_minimax_h3_4step_full_critic.safetensors` and `minimax_h3/dmad_minimax_h3_8step_full_critic.safetensors`.
+  (`list_downloads` holds only recent ones and may be empty; that alone is not a finding.)
+- The record states the two files' sizes (~1.38 GB each) and the pinned revision, matching C-F1286's.
+cleanup: none.
+metrics: none.
+
+### C-F1289 — the record's `analyze_shots` band figures and `transcribe_audio` text reproduce on the same outputs, and the turbo control is read against base
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Mostly free; `transcribe_audio` spends a little GPU, so validate it and quote its estimate first. For at least one
+job per A1 arm (base, dmad4, dmad8, turbo; P1, seed 1001), call `assess_output(name=<the job's mp4 output>,
+probes=["analyze_shots"], workspace="probe-1579")` (or the probe form `get_guide("tasks", section="Assessment
+Probes")` names today) and read each shot's high-band dBFS and `high_share`. Run `transcribe_audio` (the catalog's
+transcription task or template, `list_workflows(shape="text")`) on the same four outputs in workspace `probe-1579`.
+expected:
+- Each clip's high-band dBFS and `high_share` equal the record's to its stated precision. A mismatch past rounding is
+  a **finding** against the record. The outputs are fixed files, so this does not depend on chance.
+- Each transcript equals the record's text for that clip (or its word accuracy, recomputed against the written line,
+  equals the record's to its precision). A transcription model update that moves a word is noted, not a finding,
+  if the record names the model it used.
+- The record compares every dmad clip's band figures against base at the same prompt and seed, and states whether
+  turbo's figures differ from base by about the skill's "~4 dB", or don't. Whether the band measure separates turbo
+  from base is stated either way; a record that omits the turbo-vs-base reading is a **finding**.
+- The record gives, per clip, the face by eye at frames 0, 62 and 123, lip motion during speech, wall time and
+  `denoise_total_steps`, each with the job id. A clip in C-F1285 with any of these missing is a **finding**.
+- The A3 pair's wall times in the record match `get_job` for those two jobs to the record's precision.
+cleanup: `delete_output(job_id=<id>)` for each `transcribe_audio` job this case ran.
+metrics: none.
+
+### C-F1290 — the A2 spread in the record follows from `compare_outputs` on the two dmad4 P1 seed-1001 takes
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). The two takes are A1's dmad4 P1 seed-1001 job and A2's (C-F1285). Call `compare_outputs` on their
+two mp4 outputs in workspace `probe-1579` with the metric(s) the record names (PSNR, as #1438 used, if it names none).
+expected:
+- The record's spread equals `compare_outputs`' answer to its stated precision. A mismatch is a **finding**.
+- The two takes are not identical (the re-noise is unseeded today). If they are bit-identical or `compare_outputs`
+  reports them equal, the record must say so and explain it: either the flag didn't take (then C-F1286 or C-F1287
+  fails) or a seeded path exists. An unexplained identical pair is a **finding**.
+- The record states what the spread means for the verdict (a good dmad clip may be one lucky draw).
+cleanup: none.
+metrics: none.
+
+### C-F1291 — the DMAD record gives each arm exactly one call, never rules a voice clean, and any candidate names both adoption gates
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). The record is `bench/records/h3-dmad.md` in the dw repo, plus a `docs/proposals/todo.md` entry. The
+tester doesn't read the checkout: read the record as the stage's hand-off comment on #1584 quotes it (`gh issue view
+1584 --repo dkackman/diffusers-workflow --comments`). If the comment neither quotes the record's tables and calls nor
+links its text, send the stage back `status:needs-info` asking for it; don't pass it. Take `list_jobs(workspace=
+"probe-1579")`.
+expected:
+- Every job id in C-F1285's list appears in the record, and every job id the record names is a real job there. A
+  failed arm left out is a **finding**.
+- Each arm (dmad4, dmad8, and the A3 dmad4 non-dialogue use) has exactly **one** call, **candidate** or **drop**. Two
+  calls, none, or a third word ("maybe", "promising" in place of a call) is a **finding**. Base and turbo are
+  references, not called.
+- The record never states that a DMAD voice *is* clean (or digitized) as a ruling: Don's ear is the gate. A ruling
+  sentence is a **finding**; a measured observation (band figures, word accuracy) is fine.
+- Every **candidate** names both adoption gates: Don's ear verdict, and a seeded re-noise path (diffusers'
+  `minimax_h3` denoise loop passing `generator`) filed as its own issue. A candidate missing either is a **finding**.
+- The record lists the two DMAD files left on lem (~2.8 GB) and how to remove them with the workspace, and the
+  hand-off says a `docs/proposals/todo.md` entry was added.
+- The hand-off comment hands the stage on for Don's listening; it does not claim adoption, a catalog entry or a skill
+  change.
+cleanup: none.
+metrics: none.
+
+### C-F1292 — #1584 ships nothing: `image-to-video` validates at its defaults, no DMAD catalog entry, no `probe-1579` workflow outside its workspace, the dialogue rule stands
+pending: #1584
+source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic). Plan v1 writes
+`list_loras(model="minimax-h3")`, which today's server refuses ("neither a workflow on this server nor a Hub repo id",
+2026-11-22); the Hub id form below is the same check.
+Free (validate only). Call `validate_workflow(workflow="templates/minimax/image-to-video", workspace=
+"regression-complete")` with no arguments; `get_workflow("templates/minimax/image-to-video")` (its variables);
+`list_loras(model="MiniMaxAI/MiniMax-H3")`; `list_workflows(workspace=<w>)` for `default`, `regression-complete` and
+each other workspace `list_workspaces()` shows; and read the loaded `dw:minimax-h3` skill's dialogue line.
+expected:
+- The template validates clean at its defaults, and its variables carry no DMAD, `stochastic_sampling` or audio-shift
+  variable that was not there before the stage (compare against its variables in any job made from it before the
+  stage, e.g. a `regression-complete` or `probe-1579` base job's `get_job_workflow`). A new variable is a **finding**.
+- `list_loras(model="MiniMaxAI/MiniMax-H3")` has no entry whose `model_name` is `ZhengmingYu/DMAD` or whose name or
+  `weight_name` contains `dmad`, in any status (proven, trial or rejected). One is a **finding**: adoption was cut.
+- No workflow saved in `probe-1579` appears in any other workspace's `list_workflows` or in the shipped `templates/`
+  listing. One that does is a **finding**.
+- The `dw:minimax-h3` skill still drops the turbo LoRA on `<d>` (dialogue) shots and names no DMAD route. A DMAD
+  route in the skill is a **finding** against the stage (filed against the skill).
+cleanup: none.
+metrics: none.
+
 ## Performance
