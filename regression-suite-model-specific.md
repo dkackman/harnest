@@ -12002,7 +12002,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F478 — `experimental_hybrid_windows` is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`
-pending: #1569
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus one `run_workflow` that must be
 refused before queuing. Workspace `regression-model-specific`; needs the `qa-1230/chain-26s.mp4` fixture (see M-F345).
@@ -12036,7 +12035,6 @@ cleanup: cancel any job the run queued (none expected).
 metrics: none.
 
 ### M-F479 — with the flag off, `experimental_hybrid_windows` is refused in every form, including beside the seam pass
-pending: #1569
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server and workspace as M-F478.
 Steps: W_hyb from M-F478 (NF 124), `validate_workflow` with HW = (a) `{"switch_step": 0}` (S1's own arm);
@@ -12055,7 +12053,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F480 — the seam pass (`refine_windows` + `refine_strength`) still validates clean, and still runs, with hybrid windows in the build
-pending: #1569
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free** for steps 1-2; step 3 is M-F356's GPU run.
 Steps:
@@ -12075,7 +12072,6 @@ cleanup: as M-F356.
 metrics: none.
 
 ### M-F481 — without either window key, `num_frames` past 345 is still refused at 345, and 345 itself is clean
-pending: #1569
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server and workspace as M-F478.
 Steps: W_hyb from M-F478 with `experimental_hybrid_windows` removed (and no `refine_windows` or `refine_strength`),
@@ -12093,7 +12089,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F482 — the experimental key adds no MCP surface: no schema entry, tool text or guide text for hybrid windows
-pending: #1569
 source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` (discovery surface). **Free**: reads only.
 Steps: `get_schema` with each section its index lists that covers pipeline arguments or steps (at least
