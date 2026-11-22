@@ -1646,14 +1646,14 @@ Before #479 the template's ceiling (`base_gb` + `bytes_per_voxel` over width × 
 num_frames) ignored references, so a shot that OOMs with three references validated clean. Plan v1
 recalibrates it to `base_gb` 16.0, `bytes_per_voxel` 28.71 and a new `gb_per_reference` 1.0, and
 counts each non-null `from_file`/`from_previous_result` reference as 1.0 GB, whatever its kind.
-At 1344x768 its projections are:
+At 1344x768, after #1586 lowered `base_gb` to 15.7, its projections are:
 
 | shot | projected | verdict |
 |---|---|---|
-| 209 frames × 2 refs | ~23.8 GB | valid |
-| 175 × 3 | ~23.8 GB | valid |
-| 209 × 3 | ~24.8 GB | refused |
-| 260 × 1 | ~24.2 GB | refused |
+| 209 frames × 2 refs | ~23.47 GB | valid |
+| 175 × 3 | ~23.53 GB | valid |
+| 209 × 3 | ~24.47 GB | refused |
+| 260 × 1 | ~23.88 GB | refused |
 
 The margins are ~0.2 GB, so this case pins the verdicts at those four points. A recalibration that
 flips one is a finding, even if the new numbers are defensible, because the four points are the
@@ -1685,13 +1685,14 @@ expected:
   - the product `1344*768*209`;
   - the reference count (3);
   - the formula, or at least the per-reference term;
-  - the projected figure (`~24.8 GB`, to within 0.1);
+  - the projected figure (`~24.47 GB`, to within 0.1);
   - `above the 24 GB declared for RTX 3090`;
   - `#479`.
-- Steps 4 and 5 are each `valid: false` with the same shape of error: 1 reference, ~24.2 GB. The
+- Steps 4 and 5 are each `valid: false` with the same shape of error: 1 reference, ~23.88 GB,
+  except that the limit named is the 23.6 GB card capacity (#900), not the 24 GB entry. The
   two projections are **equal**, since an audio reference costs what an image reference costs.
-- Step 6 is `valid: false` (2 refs, ~25.2 GB).
-- Step 7: `vram_estimate` has `gb_per_reference: 1.0` and `base_gb: 16.0`, and its `reason`
+- Step 6 is `valid: false` (2 refs, ~24.88 GB).
+- Step 7: `vram_estimate` has `gb_per_reference: 1.0` and `base_gb: 15.7`, and its `reason`
   cites `#479`.
 It is a **finding** if:
 - any of the four table points flips verdict;
