@@ -27455,7 +27455,9 @@ Setup as in C-F1190. `assess_output(..., probe="analyze_held_frames", workspace=
 on a take #1551's record names with 0 held frames, in its own workspace, read-only (any one; else the lowest-count
 take, and say so).
 expected:
-- H4: `held_frames` is at least 300 (about three in four of 496), with a `held_frames` warn and clusters.
+- H4: `held_frames` is about 2 per source still (2 × (stills − 1), less frames at rest), so `held_ratio` is at least
+  0.45, with a `held_frames` warn and clusters. Of each still's 3 repeats the middle one has no "clearly moving"
+  neighbour under #1527 plan v1's rule, so only 2 can be held.
 - ST: `held_frames` is 0, `clusters` is empty, and there is no `held_frames` finding. ST is a static shot: its d is
   near zero everywhere, and no neighbour is "clearly moving". A hold counted on ST is a **finding**.
 - The record's take: `held_frames` equals the record's count at the ε the stage shipped (0 for a 0-hold take, with no
