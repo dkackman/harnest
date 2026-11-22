@@ -27278,7 +27278,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1184 — #1549's drill record carries every field the plan asks, per arm, and every stall resolves
-pending: #1549
 source: tester, spec for #1549 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read the drill record on #1549 (`gh issue view 1549 --repo dkackman/diffusers-workflow --comments`), and
 `gh issue view` each issue it links. Over MCP: `get_guide("docker", section="Start it")` and the section holding
@@ -27303,7 +27302,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1185 — #1549's drill leaves lem's own server untouched: same server, workspaces and template
-pending: #1549
 source: tester, spec for #1549 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. Take `get_server_info`, `get_health` and `list_workspaces` before the verify, and compare them with the hand-off's
 stated commit. The plan says "lem's `dw-serve` is untouched. The drill servers use spare ports", and that "an `.env`
@@ -28574,7 +28572,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1258 — #1549's drill record carries each arm's command transcript verbatim, and its count and stalls are read from it
-pending: #1549
 source: tester, spec for #1549 from #1525's plan v3 (claude-opus-5-5 via anthropic)
 Free. Plan v3's amendment: nobody re-walks the Docker arm, so the record has to carry each arm's transcript verbatim
 (every command as typed, in order, with each stall marked where it happened), and the count and stalls are checked
@@ -28616,7 +28613,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1259 — #1549's drill record states the web UI's `/` result on each drill server, and a failed `/` is a marked, resolved stall
-pending: #1549
 source: tester, spec for #1549 from #1525's plan v3 (claude-opus-5-5 via anthropic)
 Free. Plan v3 moved stage A's box-side checks (that `bash ./install.sh` leaves a built `ui/dist`, and that `dw-serve`
 serves the UI at `/`) into stage B's record. Each arm records whether the web UI rendered at `/` on its drill server
