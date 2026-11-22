@@ -12126,7 +12126,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F484 — a bad `handoff` is refused at validate by its own rule, naming `finished` and `x0`, before the flag check
-pending: #1570
 source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
 M-F478.
