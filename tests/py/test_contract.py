@@ -134,6 +134,13 @@ class StopAtFirstFailure(unittest.TestCase):
         self.assertEqual([("run_workflow", {}), ("cancel_job", {"job_id": "j-9"})], c.calls)
         self.assertIn("it queued job j-9, now cancelled", r["failures"][0])
 
+    def test_a_cancel_the_server_refuses_is_not_reported_as_cancelled(self):
+        case = {"id": "X", "steps": [{"call": "run_workflow", "is_error": True}]}
+        c = StubClient({"run_workflow": (False, {"job_id": "j-9"}), "cancel_job": (True, "no such job")})
+        r = run.run_case(c, case)
+        self.assertIn("it queued job j-9 and cancelling it failed: no such job", r["failures"][0])
+        self.assertNotIn("now cancelled", r["failures"][0])
+
     def test_a_passing_case_runs_every_step_and_cancels_nothing(self):
         case = {"id": "X", "steps": [{"call": "a"}, {"call": "b", "is_error": True}]}
         c = StubClient({"a": (False, {}), "b": (True, "refused")})

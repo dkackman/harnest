@@ -427,7 +427,9 @@ function render(st) {
     const held = s.lock && s.lock.alive;
     const sessions = s.sessions.filter((x) => x.turns || x.usage || x.model);
     const cur = sessions[sessions.length - 1];
-    const running = held && cur && !cur.usage;
+    // a session that began before this lock was taken belongs to the driver before it (one stopped mid-session): not running
+    const stale = held && cur && s.lock.since && sinceClock(cur.time, st.now) > st.now - s.lock.since + 5;
+    const running = held && cur && !cur.usage && !stale;
     // held by the R17 loop: its heartbeat is the liveness; the log is written only while this server runs a session
     const r17live = s.r17 && st.loop && st.loop.health === "live";
     const cls = r17live || (running && quiet < 180) ? "ok" : held ? "warn" : s.lock ? "bad" : "";

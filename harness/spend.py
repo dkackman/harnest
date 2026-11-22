@@ -7,6 +7,7 @@ and reads the same file for the bash drivers; the format here must match.
 """
 
 import os
+import re
 import time
 
 NAME = "spend.tsv"
@@ -73,13 +74,11 @@ def budget(environ=None):
     """DAY_BUDGET_USD as a float; 0 means uncapped. Raises ValueError on
     anything that is not a number >= 0."""
     raw = (os.environ if environ is None else environ).get("DAY_BUDGET_USD") or "0"
-    try:
-        value = float(raw)
-    except ValueError:
-        raise ValueError(raw) from None
-    if value < 0 or value != value or value == float("inf"):
+    # The same shape run-loop.sh accepts (digits with at most one point): an
+    # item's bash pass validates it again and would exit on anything else.
+    if not re.fullmatch(r"[0-9]+\.?[0-9]*|\.[0-9]+", raw):
         raise ValueError(raw)
-    return value
+    return float(raw)
 
 
 def reached(logs, limit, day=None):

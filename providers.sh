@@ -1421,8 +1421,9 @@ spend_today() {
 # day_budget_hold and run_agent, the R17 driver's dispatch): a driver Don
 # starts by hand runs regardless.
 day_budget_reached() {
-  case "${DAY_BUDGET_USD:-0}" in ''|0|0.0|0.00) return 1 ;; esac
-  awk -v s="$(spend_today)" -v b="$DAY_BUDGET_USD" 'BEGIN { exit !(s + 0 >= b + 0) }'
+  [ -n "${DAY_BUDGET_USD:-}" ] || return 1
+  # b > 0: any spelling of zero (0, 0.0, 00, .0) is uncapped, as in harness/spend.py
+  awk -v s="$(spend_today)" -v b="$DAY_BUDGET_USD" 'BEGIN { exit !(b + 0 > 0 && s + 0 >= b + 0) }'
 }
 
 # One fresh `claude -p` session, the way every driver runs one:

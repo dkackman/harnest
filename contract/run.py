@@ -156,9 +156,11 @@ def cancel_stray_job(client, result):
     if not job:
         return ""
     try:
-        client.call("cancel_job", {"job_id": job})
+        refused, answer = client.call("cancel_job", {"job_id": job})
     except (MCPError, OSError) as e:
         return f"; it queued job {job} and cancelling it failed: {e}"
+    if refused:
+        return f"; it queued job {job} and cancelling it failed: {text(answer)[:200]}"
     return f"; it queued job {job}, now cancelled"
 
 

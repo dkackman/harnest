@@ -55,7 +55,9 @@ class SpendTest(unittest.TestCase):
     def test_budget(self):
         self.assertEqual(0.0, spend.budget({}))
         self.assertEqual(40.5, spend.budget({"DAY_BUDGET_USD": "40.5"}))
-        for bad in ("x", "-1", "nan", "inf"):
+        self.assertEqual(0.5, spend.budget({"DAY_BUDGET_USD": ".5"}))
+        # what run-loop.sh refuses is refused here too: an item's bash pass would exit on it
+        for bad in ("x", "-1", "nan", "inf", "+5", "1e3", " 5", "1_0", ".", "1.2.3"):
             with self.assertRaises(ValueError):
                 spend.budget({"DAY_BUDGET_USD": bad})
 
@@ -119,6 +121,40 @@ class LoopBrakesTest(unittest.TestCase):
         day[0] = time.strptime("2026-11-23 00:01", "%Y-%m-%d %H:%M")  # the day turns
         self.assertEqual(1, lp.dispatch())
         self.assertEqual("", lp.budget_said)
+
+    def test_the_nightly_gives_the_gpu_back_when_the_budget_goes_while_it_waits(self):
+        lp = mk(REGRESSION_NIGHTLY_AT=23, DAY_BUDGET_USD=5)
+        srv, ran = lp.srv["lem"], []
+        lp.start_regression = ran.append
+        busy = Item("tester:verify", 1, "lem")
+        lp.sched.pool.take(busy, "lem")
+        lp.localtime = lambda: time.strptime("2026-11-18 23:10", "%Y-%m-%d %H:%M")
+        lp.nightly_check()
+        self.assertTrue(srv.nightly_due)  # due, waiting for the gpu session to end
+        self.spent(lp, "2026-11-18", 5)  # which spends the rest of the day's budget
+        lp.sched.pool.release(busy, "lem")
+        lp.nightly_check()
+        self.assertEqual([], ran)
+        self.assertFalse(srv.nightly_due)
+        self.assertNotIn("regression", srv.holds)
+        self.assertFalse((lp.logs / ".nightly-regression").exists())  # not stamped: it comes due again
+        lp.localtime = lambda: time.strptime("2026-11-19 23:10", "%Y-%m-%d %H:%M")
+        lp.nightly_check()  # a new day, the gpu idle: due and started in one pass
+        self.assertEqual([srv], ran)
+
+    def test_one_session_per_issue(self):
+        from harness.drivers import loop
+
+        lp = mk(TESTER_TASK_GAP_SECS=99999)
+        fix = Item("implementer:fix", 7, "lem")
+        lp.running["s1"] = loop.Running(fix, "lem", "s1", None, 0.0, None, None)
+        lp.items = [Item("tester:verify", 7, "lem"), Item("tester:verify", 8, "lem")]
+        self.assertEqual([8], [i.issue for i in lp.offer()])  # 7 waits for its fix item to end
+        lp.running.clear()
+        self.assertEqual([7, 8], [i.issue for i in lp.offer()])
+        # a curator item's number is the harness repo's: it never blocks a dw issue
+        lp.running["s1"] = loop.Running(Item("curator", 7, "lem"), "lem", "s1", None, 0.0, None, None)
+        self.assertEqual([7, 8], [i.issue for i in lp.offer()])
 
     def test_no_budget_is_uncapped(self):
         lp = mk()

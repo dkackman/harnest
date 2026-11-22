@@ -269,6 +269,22 @@ class LoopCard(unittest.TestCase):
         self.assertIn("looping", st["streams"]["lem"])
         self.assertIn("r17", st["streams"]["lem"])
 
+    def test_a_stopped_runs_state_is_dropped_while_a_bash_loop_holds_a_lock(self):
+        """An earlier R17 run's file must not speak for the header or the cost
+        while run-loop.sh is the live driver."""
+        old, old_lock = serve.LOOP_STATE, serve.lock
+        serve.LOOP_STATE = self.path
+        try:
+            self.put("stopped", heartbeat_age=9000, now=serve.time.time())
+            serve.lock = lambda _p: None
+            self.assertEqual("stopped", serve.state()["loop"]["health"])  # no loop running: it is shown
+            serve.lock = lambda _p: {"owner": "999999 run-loop", "alive": True, "since": serve.time.time()}
+            st = serve.state()
+        finally:
+            serve.LOOP_STATE, serve.lock = old, old_lock
+        self.assertIsNone(st["loop"])
+        self.assertTrue(st["streams"]["lem"]["looping"])
+
     def test_r17_holder_is_the_loop_pid(self):
         """A stream whose lock the R17 loop holds drops its bash-era run: its log
         has no numbered cycles, and the loop card carries the board."""

@@ -910,6 +910,10 @@ def state():
             "looping": looping and not r17,
             "r17": r17,
         }
+    # A state file left by an earlier R17 run says nothing while bash loops hold
+    # the locks: its totals and its "gone" would take over the header and the cost.
+    if loop and loop.get("health") in ("gone", "stopped") and any(v["looping"] for v in streams.values()):
+        loop = None
     flags = sorted(p.name for p in LOGS.glob("stop-after-cycle*"))
     ATTENTION.poke(_loop_key())
     return {

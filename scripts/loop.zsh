@@ -32,8 +32,21 @@ out="$logs/loop.stdout"
 
 # The driver's pid, or nothing. The process is found by its command line, so
 # a stale state.json or lock from a killed driver is not mistaken for one.
-driver_pid() { pgrep -f 'python.* -m harness\.drivers\.loop' | head -n 1 || true }
-bash_loops() { pgrep -fl 'bash \./run-loop\.sh' || true }
+# Only a process whose working directory is this checkout counts: the test
+# suite and other checkouts run drivers of their own.
+here() {
+  local p
+  for p in "$@"; do
+    [[ "$(lsof -a -p "$p" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')" == "$repo" ]] && print -r -- "$p"
+  done
+  return 0
+}
+driver_pid() { here $(pgrep -f 'python.* -m harness\.drivers\.loop' || true) | head -n 1 }
+bash_loops() {
+  local p
+  for p in $(here $(pgrep -f 'run-loop\.sh' || true)); do ps -o pid=,command= -p "$p"; done
+  return 0
+}
 
 dash_pid() { pgrep -f 'dashboard/serve\.py' | head -n 1 || true }
 
@@ -94,6 +107,9 @@ stop() {
     local lock sfx n=0
     for lock in "$logs"/.driver.lock*(N/); do
       sfx="${lock:t}"; sfx="${sfx#.driver.lock}"
+      [[ "$sfx" != *.stale.* ]] || continue
+      # only a server this driver holds: another lock is some other run
+      [[ "$(cut -d' ' -f1 "$lock/owner" 2>/dev/null)" == "$pid" ]] || continue
       touch "$logs/stop-after-cycle$sfx"; n=$((n + 1))
     done
     (( n > 0 )) || { kill -TERM "$pid"; say "no server lock held yet; sent TERM to pid $pid" }

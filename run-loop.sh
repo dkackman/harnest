@@ -246,6 +246,8 @@ PLUGIN_DIR="$PLUGIN_TREE/plugins/dw"
 case "$TESTER_TASK_EVERY" in
   ''|0|*[!0-9]*) echo "TESTER_TASK_EVERY must be a whole number >= 1, got '$TESTER_TASK_EVERY'" >&2; exit 1 ;;
 esac
+case "$DAY_BUDGET_USD" in *[0-9]*) ;; *) echo "DAY_BUDGET_USD must be a number of dollars (0 = uncapped), got '$DAY_BUDGET_USD'" >&2; exit 1 ;; esac
+case "$TESTER_TASK_DRY_ROUNDS/$TESTER_TASK_DRY_MAX" in 0[0-9]*|*/0[0-9]*) echo "TESTER_TASK_DRY_ROUNDS and TESTER_TASK_DRY_MAX take no leading zero, got '$TESTER_TASK_DRY_ROUNDS' / '$TESTER_TASK_DRY_MAX'" >&2; exit 1 ;; esac
 case "$TESTER_TASK_DRY_ROUNDS$TESTER_TASK_DRY_MAX" in ''|*[!0-9]*) echo "TESTER_TASK_DRY_ROUNDS and TESTER_TASK_DRY_MAX must be whole numbers, got '$TESTER_TASK_DRY_ROUNDS' / '$TESTER_TASK_DRY_MAX'" >&2; exit 1 ;; esac
 [ "$TESTER_TASK_DRY_MAX" -ge 1 ] || { echo "TESTER_TASK_DRY_MAX must be >= 1, got '$TESTER_TASK_DRY_MAX'" >&2; exit 1; }
 case "$DAY_BUDGET_USD" in ''|*[!0-9.]*|*.*.*|.) echo "DAY_BUDGET_USD must be a number of dollars (0 = uncapped), got '$DAY_BUDGET_USD'" >&2; exit 1 ;; esac
@@ -949,7 +951,7 @@ note_task_round() {
   [ "$TESTER_TASK_DRY_ROUNDS" -gt 0 ] || return 0
   dry="$(cat "$TASK_DRY_FILE" 2>/dev/null || true)"
   case "$dry" in ''|*[!0-9]*) dry=0 ;; esac
-  if grep -q '^> Bash .*gh issue create' "$LAST_SESSION" 2>/dev/null || [ "$(task_suite_sum)" != "$1" ]; then
+  if grep -Eq '^> Bash .*gh .*issue create' "$LAST_SESSION" 2>/dev/null || [ "$(task_suite_sum)" != "$1" ]; then
     [ "$dry" -lt "$TESTER_TASK_DRY_ROUNDS" ] || echo "[tester:task] found something after $dry dry round(s): the standing task is back on its cadence" | tee -a "$LOOP_LOG"
     echo 0 > "$TASK_DRY_FILE"
     return 0
@@ -1364,13 +1366,19 @@ idle_wait() {
 # day_budget_hold
 # At a cycle boundary with DAY_BUDGET_USD spent: waits for the local day to
 # turn, a SLEEP_SECS at a time, and says so once. Returns 1 under DRAIN=1,
-# where the loop exits instead of waiting.
+# where the loop exits instead of waiting, and when a stop-after-cycle flag
+# appears: a held loop is at a cycle boundary, so it stops there (consumed).
 day_budget_hold() {
   local said=0 step="$SLEEP_SECS"
   [ "$step" -gt 0 ] || step=60
   while day_budget_reached; do
     if [ "$DRAIN" = 1 ]; then
       echo "[loop] day budget reached (\$$(spend_today) of DAY_BUDGET_USD=\$$DAY_BUDGET_USD today); drain: exiting" | tee -a "$LOOP_LOG"
+      return 1
+    fi
+    if [ -e "$LOGS/stop-after-cycle$TARGET_SUFFIX" ]; then
+      rm -f "$LOGS/stop-after-cycle$TARGET_SUFFIX"
+      echo "stop-after-cycle found, exiting (held by the day budget)." | tee -a "$LOOP_LOG"
       return 1
     fi
     [ "$said" = 1 ] || echo "[loop] day budget reached (\$$(spend_today) of DAY_BUDGET_USD=\$$DAY_BUDGET_USD today): no session starts before midnight" | tee -a "$LOOP_LOG"

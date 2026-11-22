@@ -38,6 +38,7 @@ eq "spend: date, epoch, dollars, label" "$(date +%F) 1.25 tester:#1" "$(awk -F'\
 printf '2001-01-01\t978307200\t50.00\told\n' >> "$LOGS/spend.tsv"
 eq "spend: today's total leaves out another day's" "2.50" "$(spend_today)"
 DAY_BUDGET_USD=0 day_budget_reached; eq "day budget: 0 is uncapped" 1 $?
+for z in 00 0.000 .0 0.; do DAY_BUDGET_USD=$z day_budget_reached; eq "day budget: $z is zero too, uncapped" 1 $?; done
 DAY_BUDGET_USD=2.51 day_budget_reached; eq "day budget: under it" 1 $?
 DAY_BUDGET_USD=2.5 day_budget_reached; eq "day budget: reached at the amount" 0 $?
 ( unset DAY_BUDGET_USD; day_budget_reached ); eq "day budget: unset is uncapped" 1 $?

@@ -880,7 +880,12 @@ class Loop:
             and time.time() - self.task_last >= self.task_gap * self.task_dry_factor()
         ):
             out.append(Item("tester:task", None, primary))
-        return [i for i in out if self.offerable(i)]
+        # One session per issue: a hand-off flips the labels before the item
+        # that made it has ended (its audit, ledger and arch-review step still
+        # run), and the next queue's key differs, so the scheduler would start
+        # it beside that one. Curator issues are the harness repo's numbers.
+        busy = {r.item.issue for r in self.running.values() if r.item.issue is not None and r.item.queue != "curator"}
+        return [i for i in out if self.offerable(i) and (i.queue == "curator" or i.issue not in busy)]
 
     def task_dry_factor(self):
         """The dry-round rule: how many times TESTER_TASK_GAP_SECS the
@@ -1417,6 +1422,12 @@ class Loop:
                 or self.gpu_running(srv)
                 or not self.sched.gpu_idle(srv.name)
             ):
+                continue
+            if spend.reached(self.logs, self.day_budget, time.strftime("%Y-%m-%d", self.localtime())):
+                # the sessions it waited out spent the day's budget: give the gpu back, come due again later
+                srv.nightly_due = False
+                self.unhold(srv, "regression")
+                srv.log.say(f"[nightly] {srv.name}: day budget reached while it waited; not started")
                 continue
             (self.logs / f".nightly-regression{srv.sfx}").write_text(srv.nightly_day + "\n")
             self.start_regression(srv)
