@@ -28825,7 +28825,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1278 — the skills say where the place card is made and kept, and where it goes in `references`
-pending: #1582
 source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read, as an agent would, the loaded `dw:script-to-video`, `dw:series-episodes`, `dw:storyboard` and
 `dw:minimax-h3` skills (the Skill tool, and the reference files each links, `minimax-h3`'s `references/cuts.md`
@@ -28851,7 +28850,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1279 — which shots carry the card, looks and reverse cards follow the record, never WanGP's unprobed rule
-pending: #1582
 source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free. The same skills and record as C-F1278. Skip the first three bullets if the record says R1 did not hold, and say
 so.
@@ -28873,7 +28871,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1280 — at a cut, the skills name which route to try first, card or #1398's window, and they agree with each other
-pending: #1582
 source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free. `dw:minimax-h3`'s `references/cuts.md` (where #1398's 22-frame window of the establishing wide lives),
 `dw:script-to-video`, `dw:long-form` and `dw:series-episodes`. Also `gh issue view 1323 --repo
@@ -28894,7 +28891,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1281 — the skill's portrait(s) + card ref2va example validates, as written and at R4's shape
-pending: #1582
 source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free (`validate_workflow` only; nothing runs). Workspace `regression-complete`. Copy the one example `references`
 shape the skill shows for a place-card shot (portrait(s) then card) into the template it names (expect
