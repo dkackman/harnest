@@ -27062,7 +27062,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1172 — `list_guides` lists `agent-rules` with its summary and one section per family the drill touched
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. `list_guides`. Compare with #1546's rules-broken table (C-F1166's record copy): the families with at least one
 row marked **a served guide can carry it**. If that set is empty, stage B shrank to the docs claim (approved): skip to
@@ -27080,7 +27079,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1173 — every `agent-rules` section returns, opens with the skill pointer, and links only to served guides
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_guide("agent-rules")` (the index), then `get_guide("agent-rules", section=<s>)` for **each** name in its
 `sections`. Skip if C-F1172 found the stage shrunk.
@@ -27100,7 +27098,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1174 — `agent-rules` section names match loosely, and an unknown or empty one gets the usual refusal
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. Skip if the stage shrank. Today (2026-11-21) `get_guide("mcp", section="known limits")` resolves to *Known
 limits* (case-insensitive), and an unknown section is refused as: `The 'mcp' guide has no section '<s>'. Its sections
@@ -27120,7 +27117,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1175 — every carryable rule from #1546's record is in `agent-rules` with the same number, and the number matches the skill
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. Skip if the stage shrank. For each row of #1546's table marked **a served guide can carry it**, find the rule in
 the matching `agent-rules` section (C-F1173), and in the skill the row names (the tester's loaded `dw` plugin).
@@ -27138,7 +27134,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1176 — the server instructions point a no-plugin client at `agent-rules`, and keep their existing pointers
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read the dw server's instructions as the MCP client receives them (the tester's session shows them as the `dw`
 server instructions; a fresh session after the deploy sees the new text). Skip the first bullet if the stage shrank.
@@ -27155,7 +27150,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1177 — `get_guide("mcp", section="Clients")` states the client claim, and it matches #1546's sentence
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. `list_guides` (the `mcp` entry's sections); `get_guide("mcp", section="Clients")`; `get_guide("mcp",
 section="clients")`. Compare with C-F1170's sentence. This case runs whether or not the stage shrank.
@@ -27174,7 +27168,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1178 — #1547 grows no tool surface: same tool set, `get_guide` takes only `name` and `section`
-pending: #1547
 source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. The tool list the tester's MCP client receives from `dw`, and `get_guide`'s and `list_guides`'s input schemas
 from it.
