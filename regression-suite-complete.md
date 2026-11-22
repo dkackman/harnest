@@ -26914,13 +26914,13 @@ expected:
   at 0 s. One cut's slice ends at the song's end (its start + `slice-seconds` equals the song length C-F1162 read,
   within one hop). The other three are said to be inside vocal passages.
 - **Cells.** Every cut × arm cell is present. Each cell that has numbers gives all of: token 0 relative L2 and cosine,
-  the mean error over the first 0.25 s and the first 0.5 s, the last token and the last 0.2 s, the floor (median error
-  of the middle tokens), and the head and tail run lengths above 3× the floor.
+  the mean error over the first 0.25 s and the first 0.5 s, the last token and the last 0.2 s, the cut's floor (one per
+  cut), and the head and tail run lengths above 3× the floor.
 - **0 s cut.** Its pre-context 0.5, 1 and 2 s arms (both post-context values) read "n/a: no audio before", or words to
   that effect, with no numbers. Its pre-context 0 arms have numbers.
 - **Partial pre-context.** For any other cut whose start is less than an arm's pre-context (a cut at 1.2 s has no 2 s
-  of audio before it), that arm is marked n/a or states it was truncated to the audio there is. A number for a
-  pre-context longer than the audio before the cut, with neither mark, is invented.
+  of audio before it), that arm is marked n/a. A number for a pre-context longer than the audio before the cut is
+  invented.
 - **End-of-song cut.** Its post-context 0.2 s arms are marked as silence (encoded past the song's end). Its
   post-context 0 arms have numbers.
 - **Sanity.** Every floor is positive. Every run length is between 0 and `slice-seconds`. Each cosine is in
@@ -26933,34 +26933,6 @@ expected:
 It is a **finding** if a cell is missing, a missing-context cell carries numbers, the end cut's post-context isn't marked
 as silence, a cut isn't on a hop boundary, a sanity bound fails, the repeat differs past 3 significant figures, or
 the record measured a path other than dw's hold encode.
-cleanup: none.
-metrics: none.
-
-### C-F1164 — #1544's verdict sentence is the one Don's amended bar gives from the record's own numbers; token 0 doesn't decide it
-pending: #1544
-source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
-No calls beyond C-F1162's: apply the bar to the table C-F1163 accepted. Don's amended bar (ruling of 2026-11-21 on
-#1516) is met only when both hold:
-- **(a)** on at least 3 of the 5 cuts, the hard-cut arm (pre 0 / post 0) has a head run **or** a tail run above 3× that
-  cut's floor lasting at least 0.25 s; and
-- **(b)** the 1 s pre-context arm brings the head back within 2× the floor.
-expected:
-- The record states its verdict in one sentence: the bar is **met** or **not met**.
-- (a) is counted from the run-length columns. Boundaries: a run of exactly 0.25 s counts; 0.24 s does not. "Above 3×"
-  is strict: tokens at exactly 3× the floor don't extend a run. Exactly 3 of 5 qualifying cuts meets (a); 2 does not.
-  Head and tail are either-or per cut: a cut with only a tail run counts once, and a cut with both counts once.
-- For (b), the record names which head measure it holds to 2× the floor (the first-0.25 s mean, say) and which cuts it
-  is judged on. The 0 s cut has no 1 s arm and is not counted against (b). Applying the record's stated reading to its
-  own numbers gives the verdict it states; within 2× is inclusive (exactly 2× passes).
-- A verdict of **met** needs both (a) and (b). (a) met with (b) not met is **not met**, and the record says which half
-  failed.
-- Token 0's relative L2 appears in the table but is not a reason in the verdict: a verdict that is met or not met
-  because of token 0 (say, "token 0 is 57% off, so the bar is met") is a **finding**, whatever its other numbers.
-- The hand-off routes the feature by the verdict: **not met** says #1516 is to be declined with the record linked;
-  **met** says the feature returns to the lead for a plan with stages B and C. Neither names an A/B render or an engine
-  change as done in this stage.
-It is a **finding** if the stated verdict differs from what the bar gives on the record's own numbers, the record
-doesn't say how it reads (b), or token 0 decides the verdict.
 cleanup: none.
 metrics: none.
 
@@ -28590,8 +28562,7 @@ pending: #1544
 source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
 No calls beyond C-F1162's: apply plan v4's pinned reading ("How the record reads the bar") to the table C-F1163 and
 C-F1257 accepted, and compare with the probe's `RECORD verdict:` line and the record's verdict sentence, both as
-#1544's hand-off reproduces them. Where this case and C-F1164 disagree (C-F1164 was written from plan v2 and judges
-half (b) at the head only), this case's v4 reading governs. The reading, per cut:
+#1544's hand-off reproduces them. The reading, per cut:
 - **Error** is per-token relative L2 against the same token of the continuous encode. **Floor** is the cut's one
   floor (C-F1257). Every arm of a cut is judged against it.
 - **Half (a), per end:** the hard-cut arm (pre 0 / post 0) has a run of consecutive tokens, counted from the first
@@ -28621,8 +28592,8 @@ expected:
 - **The end-of-song cut**'s tail half (b) is judged on its silence-padded 0.2 s arm, not skipped.
 - **A tail-only finding can meet the bar:** if 3 or more cuts meet only through their tails, the verdict is **met**. A
   record that says "not met" there because the head didn't recover (v3's withdrawn reading) is a **finding**.
-- Token 0's relative L2 and cosine are not a reason in the line or the sentence (as in C-F1164).
-- Routing, as C-F1164 says: **met** returns #1516 to the lead for a plan with stages B and C (and, if the bar was met
+- Token 0's relative L2 and cosine are not a reason in the line or the sentence.
+- Routing: **met** returns #1516 to the lead for a plan with stages B and C (and, if the bar was met
   through tails, the hand-off says the A/B must judge the shot's tail too, per the v4 sketch); **not met** returns it
   to the lead to record a decline for Don to rule on. Neither names an A/B or an engine change as done.
 It is a **finding** if a recomputed per-cut answer or the final verdict differs from the line, the line omits an end or
