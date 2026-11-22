@@ -11904,7 +11904,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F473 — the H3 skill's staging reference carries each #1528 probe verdict in the right place, matching the record
-pending: #1562
 source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
 Steps: read `references/staging.md` under the base directory the loaded `dw:minimax-h3` skill reports (the plugin is
@@ -11923,7 +11922,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F474 — the outside-reported multi-character list in `staging.md` names its source, says "not probed here", and is never worded as tested
-pending: #1562
 source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
 Steps: read `references/staging.md` as in M-F473.
@@ -11949,7 +11947,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F475 — `cuts.md` adds the lyric hand-check and the #1528 P4 outcome; `dialogue.md` cross-refers only if P4 held
-pending: #1562
 source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill) and the issue tracker. **Free**: reads only.
 Steps: read `references/cuts.md` and `references/dialogue.md` as in M-F473 (`Grep` for `held note`, `last line`,
@@ -11972,7 +11969,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F476 — head counts use raised `max_dimension` or `crop`; the 12-frame sheet and the 512 default stay
-pending: #1562
 source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill) and the `get_output_frames` schema. **Free**: reads only.
 Steps: read `references/quality-and-speed.md` §4 "How to judge" as in M-F473; the `get_output_frames` tool schema;
@@ -11988,7 +11984,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F477 — #1528 leaves SKILL.md alone and, if #1519's H3 recipes index is on `develop`, adds each outside rule there as `untested`
-pending: #1562
 source: tester, spec for #1562 from #1528's plan v2 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill, recipes guide). **Free**: reads only.
 Steps: `Grep` the loaded skill's `SKILL.md` for `stranger`, `wet`, `drummer`, `VRGDG`, `max_dimension`, `1528`;
