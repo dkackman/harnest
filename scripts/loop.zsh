@@ -41,7 +41,7 @@ here() {
   done
   return 0
 }
-driver_pid() { here $(pgrep -f 'python.* -m harness\.drivers\.loop' || true) | head -n 1 }
+driver_pid() { here $(pgrep -f '[Pp]ython.* -m harness\.drivers\.loop' || true) | head -n 1 }
 bash_loops() {
   local p
   for p in $(here $(pgrep -f 'run-loop\.sh' || true)); do ps -o pid=,command= -p "$p"; done
