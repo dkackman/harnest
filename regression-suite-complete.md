@@ -26767,7 +26767,6 @@ cleanup: `delete_output(job_id=<job>)`.
 metrics: none.
 
 ### C-F1158 — both existing-break probe jobs exist in their `qa-` workspace, succeeded, and ran A2 and B2 at #1184's configuration with the same words
-pending: #1543
 source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
 #1186 stage A probes whether splitting an H3 line at a sentence break **it already has** removes the silent lead-in
 (#1184's arm B inserted the break). Its evidence is `docs/proposals/audits/2026-11-h3-existing-break-split-probe.md`.
@@ -26809,7 +26808,6 @@ cleanup: none. The jobs are the stage's evidence.
 metrics: none.
 
 ### C-F1159 — every lead, tail, segment rate, gap and delivered rate in the probe table reproduces from the cited word timestamps
-pending: #1543
 source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
 Read-only. For each clip C-F1158 accepted, `get_output_text` on its cited transcribe output (`workspace=` the `qa-`
 workspace); the reply is `{text, chunks}`, each chunk `{start, end, text}` in seconds, and a chunk may carry `suspect`.
@@ -26834,7 +26832,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1160 — the probe's verdicts follow from its table by #1184's bar, per seed and overall, boundaries included
-pending: #1543
 source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
 No calls beyond C-F1158/C-F1159's: apply the plan's bar to the readings C-F1159 confirmed. A B2 seed **passes** when
 its lead is under 1.0 s **and** its delivered rate is at or below 4.5 words/s. An A2 seed **shows the lead-in** when its
@@ -26860,7 +26857,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1161 — the probe lists its clips for Don's listening, sits in the todo index, changes no code, and flags rather than rewrites a skill contradiction
-pending: #1543
 source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
 Read the stage's hand-off on #1543 (`gh issue view 1543 --repo dkackman/diffusers-workflow --comments`) and the
 `dw:minimax-h3` skill's `references/dialogue.md`, *How long a line can be*, as loaded from `develop`. No MCP calls
