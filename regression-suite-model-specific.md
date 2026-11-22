@@ -11587,7 +11587,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F457 — the #1518 env-swap probe's jobs: gate arms A and B at seed 1001 succeeded, the rest of the matrix ran only on a gate pass, and nothing else ran
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
 The record is `bench/records/env-swap-ref2va.md` in the dw repo, which a tester can't read: use the record as the
@@ -11614,7 +11613,6 @@ cleanup: none (the jobs are the bench record).
 metrics: none.
 
 ### M-F458 — every #1518 env-swap arm is `ref2va` at 124 frames and 960x544 with exactly one reference, the recorded source video, and no image, guide or source video
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
 Steps: `get_job_workflow(job_id=...)` on every job M-F457 names; `get_gallery_metadata` (`workspace=` the probe's) on
@@ -11636,7 +11634,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F459 — the #1518 env-swap arms differ only in prompt (and seed across seeds), the prompts are byte-equal to the record's, and C is A less its `retention_analysis` lines
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
 Steps: `get_job_workflow` on every job M-F457 names (realized form); compare their H3 steps pairwise; compare each
@@ -11660,7 +11657,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F460 — the #1518 gate verdict: the five-frame judgments re-check against the source, and the outcome follows the 4-of-5 rule
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
 Steps: `get_job(workspace=<probe's>)` on gate arms A and B for their outputs; `get_output_frames(name=<output>,
@@ -11687,7 +11683,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F461 — the #1518 full matrix (only after a gate pass): a claim holds only when both seeds agree, and A against C settles `retention_analysis`
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
 Only if the gate passed (M-F460); after a failed gate record "not applicable: gate failed" and skip.
@@ -11704,7 +11699,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F462 — the #1518 soundtrack: the record states that a reference can't copy audio, and each judged output has a mux of the source audio checked for sync
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` plus a video/audio utility mux on lem (cuda). **Free**: reads only.
 Steps: the record's soundtrack note and its mux job ids; `get_job_workflow` and `get_job` on each mux job;
@@ -11725,7 +11719,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F463 — the #1518 record's build and timings: one quoted `get_diffusers_state`, and per-pass and wall times that match `get_job_events`
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
 Steps: `get_diffusers_state()`; `get_job_events` and `get_job` (`workspace=` the probe's) on every generation job.
@@ -11743,7 +11736,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F464 — the H3 skill's video-reference line states the #1518 outcome and cites `bench/records/env-swap-ref2va.md`, without `retention_analysis:`
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
 Steps: read `skills/minimax-h3/SKILL.md` in the newest refreshed `dw` plugin under `~/.claude/plugins/cache/` (the
@@ -11767,7 +11759,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F465 — the #1518 probe adds no surface: no env-swap catalog entry, and `composable-references` unchanged by this stage
-pending: #1545
 source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
 Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_workflow("templates/minimax/composable-references")`.
