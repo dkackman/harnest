@@ -28967,7 +28967,7 @@ expected:
   `<Picture 1>` naming).
 - R1 and B0 (`fdba91e57259`) have the same prompt and seed apart from naming the card; a changed reverse prompt
   confounds R1 against its control and is a **finding**.
-- All H3 arms: seed 42, 1344x768. Where a prompt names the card, it calls it by its own picture number (the last
+- All H3 arms: B0's seed (1398, from `get_job_workflow(fdba91e57259)`) and 1344x768. The Klein stills use seed 42. Where a prompt names the card, it calls it by its own picture number (the last
   image's index; "the room of `<Picture K>`"), and the portrait keeps `<Picture 1>` (`<Picture 2>` for R4's second
   person).
 - No arm carries video guides, a first-frame anchor, a video reference or a video window (#1398's route): the card
