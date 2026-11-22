@@ -29102,4 +29102,73 @@ expected:
 cleanup: none (validate writes nothing).
 metrics: none.
 
+### C-F1282 — a slow frame-shown-four-times run is refilled with new in-betweens, counted honestly in `held_after`
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic). Supersedes C-F1270's G4 expectations (`held_after` 0 on G4, and its closing note), which plan v3 (Q6, ruled at default) withdrew.
+GPU, a minute. Run before C-F1204. Build **G4** in `qa-1527` exactly as C-F1270 does: C-F1269's GS chain, but with
+still 20 at 0.1667. That makes 41 frames: output frames 20 to 23 are one picture (anchor a = frame 20), and 24 is
+still 21 (anchor b). Run `interpolate_frames(video=<G4>, refill="held", device="cuda")` after `validate_workflow`
+with its cost bound. Take `assess_output(..., probe="analyze_held_frames", detail=true)` on G4 and on the result, and
+`compare_outputs(names=[<G4>, <result>], at=["frame:0", "frame:19", "frame:20", "frame:21", "frame:22", "frame:23",
+"frame:24", "frame:30"])`. Also make C-F1268's re-encode baseline of G4 and compare it at the same frames. Call **D**
+G4's d at 24 (the whole step a → b), and **n** the largest of G4's d at 21, 22 and 23 (a duplicate's re-encode noise).
+Run H4 (C-F1190, every still four times) through the same step and take its held probe (`detail=true`) too.
+expected:
+- The result has 41 frames, with G4's `fps` and `duration_seconds` (±1 ms).
+- Frames 0, 19, 20, 24 and 30 match G4: SSIM no more than 0.01 below the re-encode baseline at that frame.
+- Frames 21, 22 and 23 are **new**: each scores more than 0.01 below the re-encode baseline at its frame, so none is
+  a copy of a (G4's frames 21 to 23 are a). On the result, d at each of 21, 22, 23 and 24 is above n, so none is a
+  copy of its neighbour either, and d at 21 + 22 + 23 + 24 lies within 0.6 × D to 1.4 × D (the step is spread over
+  the run, not dumped at one end). If the d series isn't per-frame at this length, judge from `get_output_frames`
+  at 20 to 24: a steady progression from a to b, no two alike, no ghost of both. Say which you used.
+- `held_before` equals the probe on G4 ±1 (2 as B's measure stands). `held_after` equals the probe on the result ±1
+  and is no more than `held_before`.
+- Record D. When D ≥ 4.0 ((k+1)·ε with k = 3 and B's ε 1.0), `held_after` is 0 and a held count left at the run is a
+  **finding**. When D < 4.0 (the plan's G4 measured 3.42), `held_after` > 0 at the run is **not** a failure (plan v3
+  Q6); only copies, a frame changed outside 21 to 23, or `held_after` > `held_before` are.
+- H4: 152 frames, and `held_after` < `held_before`. A run whose source step (its D, from H4's d series) is ≥ 4.0
+  is not counted held on the result; slower runs may be.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1283 — a four-frame run whose anchors differ by at least (k+1)·ε reaches `held_after` 0
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic)
+GPU, a minute. Run before C-F1204. Find a fast stretch: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
+start_frame=0, num_frames=<the asset's frame count>)` into `qa-1527` (or use the asset directly if the probe takes
+it) and take `assess_output(..., probe="analyze_held_frames", detail=true)`. Pick a source frame s where d at s+1 is
+≥ 5.0 and d at s and s+2 are each ≥ 2.0. If the scythe asset has none, try `asset:qa-cast/ep3-shot2-reply.mp4`; if
+neither has one, skip the case and say so (the fast half of the plan's v3 statement is then unverified). Build **G4F**
+with C-F1269's chain starting 20 frames before s (`trim_video(..., start_frame=s-20, num_frames=38)`, `video_frames`,
+`stills_to_video` with still 20 at 0.1667, the rest 0.0417), so the anchors are source frames s and s+1. Run
+`interpolate_frames(video=<G4F>, refill="held", device="cuda")` after `validate_workflow` with its cost bound. Take
+the held probe (`detail=true`) on G4F and the result, and `compare_outputs(names=[<G4F>, <result>], at=["frame:0",
+"frame:20", "frame:21", "frame:22", "frame:23", "frame:24", "frame:40"])`.
+expected:
+- G4F's d at 24 (D) is ≥ 4.0. If it measures under 4.0 after the re-encode, pick another s; the case is about D ≥ 4.
+- The result has 41 frames. `held_before` ≥ 1 and `held_after` is 0. A held count left on frames 21 to 24 is a
+  **finding**: plan v3 states a run reaches `held_after` 0 when its anchors differ by at least (k+1)·ε.
+- Frames 0, 20, 24 and 40 match G4F (SSIM no more than 0.01 below C-F1268's re-encode baseline at that frame), and
+  frames 21 to 23 each score below that: new in-betweens.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1284 — the docs and the H3 skill say a slow long hold can survive a refill, and to reroll when `held_after` stays over the mark
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic). Extends C-F1274.
+Free. Read the `interpolate_frames` section that `get_guide("tasks")`'s index lists, `get_task("interpolate_frames")`
+(its `refill` description), the `analyze_held_frames` remedy in `get_guide("tasks", section="Assessment Probes")`, and
+the loaded `dw:minimax-h3` skill's repair line.
+expected:
+- The tasks guide's `interpolate_frames` section says, in substance, that a long hold in slow motion can still count
+  in `held_after` after a refill (its lost motion is under the held threshold per step), and that when `held_after`
+  is still over the mark, the take is rerolled. Its absence is a **finding**.
+- The `dw:minimax-h3` skill's repair line says the same: refill, then reroll if `held_after` stays over the mark. Its
+  absence is a **finding**, filed against the skill.
+- Neither promises that a refill always clears every hold, or that `held_after` is always 0. A sentence that does is
+  a **finding**: plan v3 Q6 withdrew that promise.
+- Everything C-F1274 expects still holds (run-wise refill, passthrough, no blend across a cut, counts reported).
+cleanup: none.
+metrics: none.
+
 ## Performance
