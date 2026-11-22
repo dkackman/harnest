@@ -28950,4 +28950,175 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1275 — the place-card probe left one noted job per arm in `probe-1577`, and the card is a shared Klein still
+pending: #1581
+source: tester, spec for #1581 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). The arms are plan v1's stage A: **K** (the card), **K-night** (a look), **K-rev** (a reverse card),
+**R0** (control: #1398's B0, job `fdba91e57259`, not re-run), **R1** (portrait + card, B0's reverse prompt), **R2**
+(portrait + card, a close-up), **R3** (R1 with K-rev; optional), **R4** (two portraits + card), **N1** (no-people
+insert, card only, ref2va) and **N0** (the same insert, t2va, words only). Take `list_jobs(workspace="probe-1577")`
+(page through it all), `get_job(job_id=<id>)` on each K-family job, and `list_assets()` with its shared listing
+(`get_guide("workflows", section="References")` if the spelling of a shared `asset:` has moved).
+expected:
+- There is exactly one job whose `note` names each of K, K-night, K-rev, R1, R2, R4, N1 and N0. R3 has one job, or
+  none. R0 is not re-run: no job there is noted R0, or one is and the record says why. A second job for one arm (a
+  retry) is fine only if its note says so and the record names both. Any job with no `note`, or a note naming no arm,
+  is a **finding**.
+- K, K-night and K-rev are stills (image output, no video). K and K-night are a FLUX 3 Klein `text-to-image`
+  workflow (`get_job` names the workflow, or its pipeline is Klein's). K-rev is a Klein `image-edit` whose input
+  image is K's output. A card made on another family is a **finding** against the plan's design.
+- K's output is kept as a **shared** asset: it is in the shared listing, readable from a workspace other than
+  `probe-1577` (`assess_output(name="asset:<card>")` from `regression-complete` succeeds). A workspace-only keep is
+  a **finding**.
+- Every job finished `completed`, or its failure (an OOM, an error) is visible in `get_job` and C-F1277 checks that
+  the record carries it.
+cleanup: none (the probe's jobs and card are the record's evidence).
+metrics: none.
+
+### C-F1276 — each arm's realized workflow has the references the plan names, in the plan's order, and nothing else holding the set
+pending: #1581
+source: tester, spec for #1581 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only). For R1, R2, R3 (if it ran), R4, N1 and N0 from C-F1275, plus R0's `fdba91e57259`, take
+`get_job_workflow(job_id=<id>)` and read each H3 step's `references` (or the template's variables that fill it),
+`num_frames`, `width`, `height`, `seed` and prompt.
+expected:
+- R1 and R2: `references` is the one portrait image and then the card (K's shared `asset:`), with the card **last**
+  among the images. A voice clip may follow it. Card before the portrait is a **finding**: the plan puts it after
+  the people so `<Picture N>` numbering does not move.
+- R3: the same as R1 with K-rev's output in K's place, and R1's prompt otherwise.
+- R4: two portraits, then the card, at `num_frames` 175, 1344x768 (the frame count the VRAM table allows for 3
+  references). A voice clip may follow.
+- N1: the card is the **only** image reference. It is an H3 ref2va run (the same pipeline as R1).
+- N0: an H3 t2va run with **no** `references` (absent or empty), and the same prompt words as N1 (±the
+  `<Picture 1>` naming).
+- R1 and B0 (`fdba91e57259`) have the same prompt and seed apart from naming the card; a changed reverse prompt
+  confounds R1 against its control and is a **finding**.
+- All H3 arms: seed 42, 1344x768. Where a prompt names the card, it calls it by its own picture number (the last
+  image's index; "the room of `<Picture K>`"), and the portrait keeps `<Picture 1>` (`<Picture 2>` for R4's second
+  person).
+- No arm carries video guides, a first-frame anchor, a video reference or a video window (#1398's route): the card
+  is the only set-holding lever. Any of those in R1, R2, R3, R4 or N1 is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1277 — the place-card record names every job and gives each arm's markers, framing and face score, failures included
+pending: #1581
+source: tester, spec for #1581 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free (read-only, plus a spot check by eye). The record is `bench/records/place-card.md` in the dw repo. The tester
+doesn't read the checkout: read the record as the stage's hand-off comment on #1581 quotes it (`gh issue view 1581
+--repo dkackman/diffusers-workflow --comments`). If the comment neither quotes the tables nor links the record's text,
+send the stage back `status:needs-info` asking for it; don't pass it. Take `list_jobs(workspace="probe-1577")` and,
+for R0 (`fdba91e57259`), R1 and N1, `get_output_frames` at the first, middle and last frames.
+expected:
+- The record is marked **PRELIMINARY** (one scene, one seed, judged by eye, Don's viewing pending).
+- Every job id in C-F1275's list appears in the record, and every id the record names is a real job there (or
+  R0's `fdba91e57259`). An arm in the jobs but missing from the record, or a failed or OOM arm left out, is a
+  **finding**: the plan says a failed arm is recorded as one.
+- Per H3 arm (R0, R1, R2, R4, N1, N0, and R3 if run), a table row gives: each of the four markers (lamp, shelf, window
+  sky, coat) held or lost; the framing (did it pull toward the card's or E's wide framing); and face similarity
+  (`bench/cut_windows.py`'s score) for every arm with a person. N1 and N0 have markers and framing but no face score.
+- The markers are judged against **K's** markers as well as E's, and where K's room differs from E's, both are given
+  (the plan's Klein-confound mitigation).
+- R3: the record says whether it ran and why, tied to whether R1 was pulled toward K's framing. R3 run while R1
+  was not pulled, or skipped while it was, with no reason, is a **finding**.
+- R1 is compared with B0 and B2 on markers, and with B0 on face similarity. R2 says whether the card pulled the
+  close-up wide and what it cost in face similarity. N1 is compared with N0.
+- Spot check: on the frames you took, the lamp and window sky the record marks held in R1 and lost in R0 are visible
+  (or absent) as it says. A clear contradiction on a marker is a **finding** against the record (an eye call, so name
+  the frame). The outputs are fixed jobs, so this does not depend on chance.
+cleanup: none.
+metrics: none.
+
+### C-F1278 — the skills say where the place card is made and kept, and where it goes in `references`
+pending: #1582
+source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read, as an agent would, the loaded `dw:script-to-video`, `dw:series-episodes`, `dw:storyboard` and
+`dw:minimax-h3` skills (the Skill tool, and the reference files each links, `minimax-h3`'s `references/cuts.md`
+among them). Have #1581's record to hand (C-F1277's hand-off comment). Before #1582, `script-to-video` carried an
+unprobed "keep a wide master too", and `series-episodes` said only the cast portraits need to be assets.
+expected:
+- If the record says R1 **held** the markers at a face cost no worse than B2's:
+  - `script-to-video` and `series-episodes` each have a place-card step beside casting. It says the card is one wide
+    master per recurring set, empty of cast, with no text, and that people who belong in the set (an audience) stay
+    in it. It names how to make it (FLUX 3 Klein `text-to-image`) and how to keep it (`keep_output` with
+    `shared=true`, beside the cast portraits).
+  - The bare "keep a wide master too" line is gone, replaced by the place-card step. Both lines side by side
+    disagree and are a **finding**.
+  - `series-episodes`' "only the cast portraits need to be assets" now names place cards too.
+  - The card's position is stated: in `references` **after** the people (and before or after the voice, as the
+    skill shows it), and the prompt names it by its own `<Picture K>`, so the cast's `<Picture N>` don't move.
+  - `storyboard` has a line saying the board's location image is the place card, reused for the shots.
+- If the record says R1 **did not hold**: no skill tells the reader to make a place card for H3. The "wide master"
+  line is reworded as tested and failed, citing the record. A place-card step written anyway is a **finding**.
+- Either way: the text cites stage A's numbers (markers held, face similarity) and calls them PRELIMINARY while the
+  record is.
+cleanup: none.
+metrics: none.
+
+### C-F1279 — which shots carry the card, looks and reverse cards follow the record, never WanGP's unprobed rule
+pending: #1582
+source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free. The same skills and record as C-F1278. Skip the first three bullets if the record says R1 did not hold, and say
+so.
+expected:
+- **Close-ups** follow R2. If R2 lost face similarity or was pulled wide, the skills say close-ups carry set words
+  only (or "card on wides and mediums, words on close-ups"). If R2 held at no cost, they may say close-ups carry the
+  card. "Every shot, close-ups included" where R2 showed a cost is the **finding** the plan names.
+- **No-people shots** follow N1 against N0. If N1 held the set better, a no-people shot is an H3 ref2va run with the
+  card as its only reference. If not, it stays on LTX t2v/i2v (`script-to-video`'s routing line is unchanged on that
+  point). Text that contradicts the N1/N0 row is a **finding**.
+- **Reverse angles**: a paragraph on a reverse card made with `image-edit` (Klein) is present only if R3 ran and
+  helped. Present when R3 didn't run, or absent when it ran and helped, is a **finding**.
+- **Looks**: one sentence says a changed state of a place (night, wrecked) is a new card.
+- **The planner line**: the skill tells the agent to add a place card when a location recurs and to check that each
+  shot set there has one (where the record supports carrying it). No skill says dw adds them automatically.
+- Nothing promises LTX, Kandinsky or MiniMax-H3-Image place-card behavior the record didn't measure, and nothing
+  states a reference-count rule beyond R4's two people + card.
+cleanup: none.
+metrics: none.
+
+### C-F1280 — at a cut, the skills name which route to try first, card or #1398's window, and they agree with each other
+pending: #1582
+source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free. `dw:minimax-h3`'s `references/cuts.md` (where #1398's 22-frame window of the establishing wide lives),
+`dw:script-to-video`, `dw:long-form` and `dw:series-episodes`. Also `gh issue view 1323 --repo
+dkackman/diffusers-workflow --comments`.
+expected:
+- If R1 held: `cuts.md` names the order: the place card first (cheap, needs no earlier clip), then the 22-frame
+  window when the card fails or an establishing clip already exists. The window route is still documented as it
+  was, with its 3-video-slot cost. If R1 did not hold: `cuts.md` has a paragraph saying a still did not hold the set
+  on H3 and the window is the route, citing the record.
+- No skill gives a different first route at a cut from `cuts.md`. Two skills that each say "try X first" for
+  different X are a **finding**.
+- `cuts.md`'s multi-character sections (#1562's topic) are still present and still say what they said; place-card
+  text sits in its own section or is appended. A place-card change inside them is a **finding** (if it can't be told
+  apart over the plugin, say so and leave it to docs-review).
+- #1323 has a comment saying what #1581 found about the still route (whether the card held, and what that means for
+  the storyboard-sheet-as-reference case).
+cleanup: none.
+metrics: none.
+
+### C-F1281 — the skill's portrait(s) + card ref2va example validates, as written and at R4's shape
+pending: #1582
+source: tester, spec for #1582 from #1577's plan v1 (claude-opus-5-5 via anthropic)
+Free (`validate_workflow` only; nothing runs). Workspace `regression-complete`. Copy the one example `references`
+shape the skill shows for a place-card shot (portrait(s) then card) into the template it names (expect
+`templates/minimax/reference-to-video`, or a workflow the skill writes out). Substitute the fixtures:
+`asset:qa-cast/priya-portrait.jpg` for the first portrait, `asset:qa-cast/hal-portrait.jpg` for a second, and #1581's
+shared card `asset:` (C-F1275) for the card. Validate:
+(1) the example as the skill writes it;
+(2) R4's shape: two portraits then the card, `num_frames=175`, 1344x768;
+(3) if the skill routes no-people shots to ref2va (C-F1279), its card-only example;
+(4) the control: the same workflow with the card's reference removed, so the example less the card.
+expected:
+- (1), (2) and (3) return `valid: true`. A refusal of the example the skill tells the reader to run is a **finding**
+  against the skill (or the server, if the shape is one Ref2VA documents).
+- (2) raises no VRAM-ceiling warning that (4) at the same frame count lacks beyond what the skill itself states.
+  If it does, the skill must state the 175-frame / 3-reference limit beside the example; absent, a **finding**.
+- The card's position in each validated workflow matches what the skill says (after the portraits), and the
+  example's prompt names the card by the picture number that position gives it.
+- (4) is `valid: true` too: the control shows the card is the only change.
+cleanup: none (validate writes nothing).
+metrics: none.
+
 ## Performance
