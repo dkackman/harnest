@@ -27298,7 +27298,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1190 — `analyze_held_frames` scores a built-choppy clip high, with a `held_frames` warn and clusters, on a silent video
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 CPU tasks only. **Setup shared by C-F1190–C-F1204**, in workspace `qa-1527` (`create_workspace` if missing; pass
 `workspace="qa-1527"` on every call). Each fixture is a task-only workflow, `validate_workflow`'d with its
@@ -27356,7 +27355,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1192 — a hard cut into a static shot is not counted as a hold
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Setup as in C-F1190. CUT's frame N+1 (the first repeat of the incoming still) has d ≈ 0, and the frame before it, the
 cut, is a large difference. So the plain rule would call frame N+1 held. The plan excludes "frames within one frame of
