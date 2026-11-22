@@ -26935,7 +26935,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1166 — #1546's no-plugin drill record is on the ticket, ran without skills, and covers all three asks verbatim
-pending: #1546
 source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free and read-only. The record lives in dw's `bench/records/drill.md` (section *Cold drill without the plugin
 (#1524)*), which a consumer can't read, so read its copy on the ticket: `gh issue view 1546 --repo
@@ -26962,7 +26961,6 @@ cleanup: none (read-only).
 metrics: none.
 
 ### C-F1167 — every job #1546's record cites exists in its ask's workspace, ran on lem, finished, and its output opens
-pending: #1546
 source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Reads only. For **every** job id the record (C-F1166) cites: `get_job`; then `get_job_workflow`; then open its output —
 `get_output_image` for an image, `get_output_frames` (a few frames, the default form) for a video,
@@ -26984,7 +26982,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1168 — every rules-broken row names a real skill section and exactly one placement verdict
-pending: #1546
 source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. For each row of the record's rules-broken table: read the skill it names through the tester's own loaded `dw`
 plugin (the `Skill` tool, e.g. `dw:flux3-klein`, `dw:minimax-h3`, `dw:long-form`; these load from `develop`, the
@@ -27008,7 +27005,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1169 — the record misses no break that its jobs' own manifests show, for the plan's listed rules
-pending: #1546
 source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Reads only. The plan lists the skill-only rules each ask can break. For each ask's deliverable job, read
 `get_job_workflow` (resolved workflow and arguments) and check each listed rule against it. A rule the manifest shows
@@ -27036,7 +27032,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1170 — the record's closing client sentence claims only what the drill tested
-pending: #1546
 source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read the **For Don** list's last sentence (C-F1166).
 expected:
@@ -27052,7 +27047,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1171 — #1546 adds no MCP surface: no guide, no tool, no task
-pending: #1546
 source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
 Free and read-only. The plan's stage A is a record only (no code, no deploy). `list_guides`; `get_guide("agent-rules")`;
 `get_guide("mcp")` (the index).
