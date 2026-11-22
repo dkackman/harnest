@@ -28278,7 +28278,8 @@ source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthrop
 Cost: three CPU-only `templates/audio-trim-fade` runs. Setup: `create_workspace(name="cf1249-cmp")`; two runs (as
 C-F1243's, `duration_seconds` 2 and 3) and wait. S1536-BG spec: `record **/api/**`; open Compare with those two
 outputs as cells (as the gallery offers); `screenshot`; `wait_text` the third run's note `"cf1249 third"` if Compare
-shows it, else end after a `screenshot` once the job finished; `screenshot`. Write: a third run, `duration_seconds`
+shows it, else hold until the write has landed: `mock` `/api/memory` with `delay_ms` 10000 and `wait_text` the
+header memory readout's changed value (as #1565's verification did); `screenshot`. Write: a third run, `duration_seconds`
 4, that note, no wait.
 expected:
 - The two cells and the job metadata shown with them (workflow, duration, note) are the same in both screenshots:
