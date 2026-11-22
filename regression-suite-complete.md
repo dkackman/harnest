@@ -27974,14 +27974,18 @@ metrics: none.
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds. S1536-A. `workspace="cf1226-chg"` throughout.
 `validate_workflow("templates/audio-trim-fade", arguments={"input_audio":"asset:uploads/qa-cast/room-bed.wav",
-"duration_seconds":2})` for the acknowledgement. Snapshot (S0); (1) `run_workflow` over it **with no wait**, then
-at once `run_workflow` again with the same arguments (job J2), and at once `cancel_job(J2)`; snapshot (S1).
+"duration_seconds":2})` for the acknowledgement. Snapshot (S0); (1) `run_workflow` over it **with no wait** (job J1,
+made to run long enough that J2 is still waiting behind it when the cancel lands: a longer `duration_seconds`, or a
+slower template), then at once `run_workflow` again with the case's arguments (job J2); once `get_job` shows J1
+running and J2 queued, snapshot (S1a), and at once `cancel_job(J2)`; snapshot (S1).
 (2) `wait_for_job` on the first job (J1) until it succeeds; snapshot (S2). (3) `keep_output(name=<J1's audio
 gallery name>, asset_name="cf1226/kept.mp3")`; snapshot (S3). (4) `set_note` on J1's output file, `"probe"`;
 snapshot (S4).
 expected:
 - S1 − S0: `jobs` grew (two queues and a cancel); `gallery` not yet, unless J1 already finished (then (2)'s
   check applies to S1).
+- S1 − S1a: `jobs` grew (the cancel alone), and `get_job(J2)` is `cancelled`. If J2 had left the queue before the
+  cancel landed, the cancel leg is *not checked* for that run, never a pass: rerun with a longer J1.
 - S2 − S1: `jobs` grew (start and finish) and `gallery` grew (the finished run wrote outputs). `requests`,
   `prompts`, `workflows`, `assets` unchanged S0→S2.
 - S3 − S2: `assets` grew; `gallery` and `jobs` unchanged. S4 − S3: `gallery` grew; the rest unchanged.

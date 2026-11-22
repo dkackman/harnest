@@ -2275,6 +2275,7 @@ Free. A new route that takes a workspace name in its path. One `ui-check` run, e
 `/api/workspaces/..%2F..%2Fetc/changes`, `/api/workspaces/%2E%2E/changes`, `/api/workspaces/.hidden/changes`,
 `/api/workspaces/workflows/changes`, `/api/workspaces/common/changes`, `/api/workspaces/a%5Cb/changes`,
 `/api/workspaces/a%00b/changes`, and, for contrast, `/api/workspaces/default/changes`.
+A path the runner refuses to send is recorded as *not checked* for that run, never as a pass; the other paths still run.
 expected:
 - `default` answers 200 with a snapshot (C-F1226's shape).
 - Every other name is refused (400, 404 or 422, matching how the server's other workspace routes refuse that name),
