@@ -27583,24 +27583,6 @@ today drops it.
 cleanup: none (C-F1204 cleans up).
 metrics: none.
 
-### C-F1200 — across a hard cut the repair keeps the real frames, not a RIFE blend, and keeps the shots
-pending: #1553
-source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-GPU, a few minutes. **HCUT**: `concat_videos` of HC (C-F1190) and a twos clip of `asset:qa-cast/ep3-shot2-reply.mp4`
-(built as HC, D = 0.0834), with a plain cut at frame 248. Also, if #1551's record names a cuts-mode take, use it too,
-kept into `qa-1527` as in C-F1199. Run `interpolate_frames(refill="held")` on each. Then `get_output_frames` on source
-and result at frames cut-2, cut-1, cut and cut+1. On the record's take, take the cut frames from its shots
-(`analyze_shots`) on the source.
-expected:
-- At every cut, the result's frames at cut-1 and cut each show a single shot, matching the source frame at the same
-  index. A double exposure or ghost of both shots on either frame is a **finding**: that is the blend the repair
-  exists to avoid.
-- `assess_output(..., probe="analyze_seams")` on the result reports the same seam count and seam seconds (±1 frame) as
-  on the source. The shots were carried.
-- Frame count equals the source's, and `held_frames` on the result is at or under the clean mark.
-cleanup: none (C-F1204 cleans up).
-metrics: none.
-
 ### C-F1201 — `refill` together with `multiplier` is refused at validate, naming both; a bad `refill` value is refused
 pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
@@ -28902,6 +28884,7 @@ expected:
   for: the plan says never to interpolate across a cut. The pair at 24 and 25 is either excluded by the cut guard (in
   neither count) or left held and counted in `held_after`. Either passes, provided both counts agree with the probe
   ±1.
+- HX: `assess_output(..., probe="analyze_seams")` on the result reports the same seam count, at the same seconds ±1 frame, as on HX (the cut at frame 26). The shots were carried.
 cleanup: none (C-F1204 cleans up).
 metrics: none.
 
