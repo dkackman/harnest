@@ -28164,7 +28164,6 @@ cleanup: `delete_workspace` on both (`acknowledged_cost=true`).
 metrics: none.
 
 ### C-F1241 — the Prompts page shows a prompt an agent saves, and drops one it deletes, with no reload
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG (C-F1233). Before launching: `save_prompt(name="cf1241-gone", prompt="a quiet harbour")`. Spec:
 `record **/api/**`; `goto` the Prompts page; `wait_text "cf1241-gone"`; `wait_text "cf1241-new"`; `screenshot`;
@@ -28177,7 +28176,6 @@ cleanup: `delete_prompt(name="cf1241-new")` (and `cf1241-gone` if it survived).
 metrics: none.
 
 ### C-F1242 — the Workflows page shows a workflow an agent saves, with no reload
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG in a fresh `create_workspace(name="cf1242-wf")`. Spec: `record **/api/**`; `goto` the Workflows page
 of `cf1242-wf`; `wait_text` its heading; `wait_text "cf1242/probe"` (or its leaf `probe` under a `cf1242` folder, as the page names it); `screenshot`;
@@ -28190,7 +28188,6 @@ cleanup: `delete_workspace(name="cf1242-wf", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1243 — the Assets page shows an upload and a kept output, with no reload
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds. Setup: `create_workspace(name="cf1243-as")`;
 `workspace=` on every call. Run `templates/audio-trim-fade` over `{"input_audio":"asset:uploads/qa-cast/room-bed.wav",
@@ -28205,7 +28202,6 @@ cleanup: none (C-F1246 cleans up).
 metrics: none.
 
 ### C-F1244 — a finished run appears on Gallery and on Overview, with no reload
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Cost: two CPU-only `templates/audio-trim-fade` runs of a few seconds. `cf1243-as` (C-F1243). Two S1536-BG runs.
 (1) Spec: `record **/api/**`; `goto` the Gallery page of `cf1243-as`; `wait_text` the page's heading; `wait_text
@@ -28224,7 +28220,6 @@ cleanup: none (C-F1246).
 metrics: none.
 
 ### C-F1245 — a write in another workspace doesn't reload the open Assets page
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG. `cf1243-as` plus `create_workspace(name="cf1245-there")`. Spec: `record **/api/**`; `goto` the
 Assets page of `cf1243-as`; `wait_text "here.png"`; `recorded`. Writes, ~6 s apart: `upload_asset(content=<1x1 PNG>,
@@ -28237,7 +28232,6 @@ cleanup: `delete_workspace(name="cf1245-there", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1246 — picks on the Assets page survive a background reload
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG in `cf1243-as` (holding `dot.png`, `kept.wav`, `here.png`). Spec: `record **/api/**`; `goto` the
 Assets page; pick `dot.png` and `kept.wav` with the page's own pick control; `inspect` each picked tile (and the
@@ -28251,7 +28245,6 @@ cleanup: `delete_workspace(name="cf1243-as", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1247 — a gallery note being typed survives a new output landing
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Cost: two CPU-only `templates/audio-trim-fade` runs. Setup: `create_workspace(name="cf1247-note")`; one run (as
 C-F1243's) and wait. S1536-BG spec: `record **/api/**`; `goto` the Gallery of `cf1247-note`; open that output's
@@ -28265,7 +28258,6 @@ cleanup: `delete_workspace(name="cf1247-note", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1248 — switching workspace on the Prompts page reloads it
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. **Web UI, black-box.** `create_workspace` `cf1248-a` and `cf1248-b`. Spec: `record **/api/**`; `goto` the
 Prompts page with `cf1248-a` selected; `wait_text` its heading; switch to `cf1248-b` with the UI's own picker;
@@ -28278,7 +28270,6 @@ cleanup: `delete_workspace` on both (`acknowledged_cost=true`).
 metrics: none.
 
 ### C-F1249 — the Compare page keeps its cells and their metadata through a new output
-pending: #1565
 source: tester, spec for #1565 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Cost: three CPU-only `templates/audio-trim-fade` runs. Setup: `create_workspace(name="cf1249-cmp")`; two runs (as
 C-F1243's, `duration_seconds` 2 and 3) and wait. S1536-BG spec: `record **/api/**`; open Compare with those two
