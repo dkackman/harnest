@@ -268,6 +268,7 @@ are refused pre-flight rather than failing a queued job, and the message and
 `path` are the same string `validate_workflow` returned — the two paths
 share one validator, and them drifting apart is the finding.
 cleanup: none (read-only).
+runner: script
 
 ### S-F011 — pipeline value constraints are a clean run-time failure
 Validate, then run, a workflow whose values are schema-valid but the
@@ -489,6 +490,7 @@ meant to write), or if either positive control stops validating.
 `from_pretrained_arguments` is open by design and must stay so — do not add a probe
 that closes it.
 cleanup: none (read-only).
+runner: script
 source: tester, verified in #123 on 2026-09-13 over MCP as model `opus` via
 provider `anthropic`, workspace `qa-ep7`, dw 0.4.0-beta.3. Labelled
 `breaking-change` on the fix: a workflow carrying a dead key validated before it
@@ -700,6 +702,7 @@ expected:
   identical message rather than queueing.
 cleanup: none — every call above is `validate_workflow`, which is free and
 writes nothing. The one `run_workflow` is refused before a job exists.
+runner: script
 source: tester, model `opus` via provider `anthropic`, verified in #141 on
 2026-09-14 against dw 0.4.0-beta.4 on `lem`, workspace `qa-ep10`. Cases 1-2 are
 the implementer's proposed pair; the three controls are mine, and the fourth
@@ -825,6 +828,7 @@ expected:
   know to look at a top-level `constraints` block for a variable this template does not
   declare. This is the half that prevents the mistake instead of catching it.
 cleanup: none — all three calls are free discovery/validate calls that write nothing.
+runner: script
 source: tester, model `opus` via provider `anthropic`, verified in #145 on 2026-09-14
 against dw 0.4.0-beta.4 on `lem`, workspace `qa-verify`. Don asked for this case by name
 when approving the fix, as the list-entry variant of the existing #96 case. The third
@@ -962,6 +966,7 @@ expected:
   resolve and are not falsely flagged.
 cleanup: none — all four calls are free discovery/validate calls that load nothing,
 queue nothing and write nothing.
+runner: script
 metrics: none.
 source: tester, model `opus` via provider `anthropic`, verified in #166 on
 2026-09-15 against dw 0.4.0-beta.4 on `lem` (fix a199d37 on `develop`). The
@@ -1024,6 +1029,7 @@ expected:
   `validate_workflow`'s reference checking, not in this case's subject — file it
   rather than editing here.
 cleanup: none — all four are free validate calls. Nothing loads, queues, or is written.
+runner: script
 metrics: none.
 source: tester, model `opus` via provider `anthropic`, verified in #168 on 2026-09-15
 against dw 0.4.0-beta.4 on `lem` (fix 3db782e on `develop`), run in both `qa-ep15` and
@@ -1445,6 +1451,7 @@ errors with no error at `steps[0].task.command`, or reports any error besides th
 at `steps[0].task.command`, or if step 2 reports any step's
 `task.command` as unregistered.
 cleanup: none — nothing is written.
+runner: script
 metrics: none.
 source: tester, verified in #285 on 2026-09-21 over MCP as model `opus` via provider
 `anthropic`: step 1 returned `'nonexistent_processor' is not a registered task command.
@@ -1614,6 +1621,7 @@ Either one means a fraction can reach an int variable and be floored silently. I
 finding if step 3 is refused or warned about, which would mean a real-valued catalog default
 has gone back to an integer literal.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #338 on 2026-09-22 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ e5bfb9e`.
@@ -1641,6 +1649,7 @@ It is a **finding** if step 1 validates or step 2 queues a job, because an objec
 again reach a string variable as its repr. It is also a finding if step 3 is refused, which
 would mean the guard catches the intended string form too.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #433 on 2026-09-25 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ b055573`.
@@ -1675,6 +1684,7 @@ It is a **finding** if step 1 or step 4 comes back `valid: true`, or if step 1 s
 a download. It is also one if step 2 is refused, or if step 3's message can't be told apart
 from step 1's.
 cleanup: none — nothing is written.
+runner: script
 metrics: none.
 source: tester, verified in #345 on 2026-09-22 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ e5bfb9e`. All four came back as expected above.
@@ -2019,6 +2029,7 @@ expected:
 - Step 5: plain `Unknown workflow: zzqq-nothing-like-this`, with no `did you mean`.
 It is a **finding** if steps 1–4 leave out the suggestion, or if step 5 invents one.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #397 on 2026-09-24 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 9fed519`.
@@ -2048,6 +2059,7 @@ expected:
 It is a **finding** if step 1 or 3 validates clean, if step 2 or step 4's `video 0` is flagged,
 or if the error lands at a different path.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #400 on 2026-09-24 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 0fd6043`.
@@ -2161,6 +2173,7 @@ expected:
 It is a **finding** if call 1 or 3 validates, or if call 2 is refused. The template's own default
 shots depend on a null inside a list being dropped silently.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #478 on 2026-09-26 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ 3e8bf8d`.
@@ -2208,6 +2221,7 @@ expected:
 It is a **finding** if step 1 or 2 validates clean, if step 3 is flagged, or if the error lands at
 a different path.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #504 on 2026-09-27 over MCP as model `claude-opus-5-5` via
 provider `anthropic` against `develop @ b8fd862`.
@@ -2538,6 +2552,7 @@ expected:
 It is a **finding** if step 1 or 2 validates, or step 3 queues a job, because an object would
 again run as `true` without a word. It is also a finding if step 4 is refused.
 cleanup: none. Nothing is queued or written.
+runner: script
 metrics: none.
 source: tester, verified in #1250 on 2026-11-07 over MCP as model `claude-opus-5-5` via provider
 `anthropic` against `develop @ 6db8d963` on `mini-ai` (mps).
