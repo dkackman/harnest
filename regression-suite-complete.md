@@ -28793,6 +28793,9 @@ in `qa-1527`. Add **HO**: `trim_video(video=<HC output>, start_frame=0, num_fram
 is one `interpolate_frames(video=<file>, refill="held", device="cuda")` step with a `video/mp4` result. Run it on HC,
 HO, CL and ST, each after `validate_workflow` with its cost bound, in `qa-1527`. For each source and its result, take
 `get_gallery_metadata`, `assess_output(..., probe="analyze_held_frames")` and `get_job_events`.
+**Re-encode baseline:** for each source a case compares, also run a plain re-encode of it (no refill, the same
+`video/mp4` result) and `compare_outputs` it against the source at the same frames. Byte-equal passthrough is
+observable only within that noise (#1553).
 expected:
 - Each result has exactly its source's `frame_count` (76, 75, 38, 120), and the same `fps` and `duration_seconds`
   (±1 ms). One frame short is the 2N-1 **finding** the plan names.
@@ -28801,7 +28804,7 @@ expected:
 - The step's output (`get_job`, its step result or the output's metadata) carries `held_before` and `held_after`.
   `held_before` equals `analyze_held_frames` on the source, and `held_after` equals it on the result, each ±1.
 - CL and ST: `held_before` is 0, and the length is unchanged. `compare_outputs(names=[<source>, <result>],
-  at=["frame:0", "frame:<mid>", "frame:<last>"])` shows each frame matching the source (SSIM ≥ 0.99). The plan says
+  at=["frame:0", "frame:<mid>", "frame:<last>"])` shows each frame matching the source (SSIM no more than 0.01 below the re-encode baseline at that frame). The plan says
   the frames come back unchanged.
 - CL and ST: `get_job_events` shows no RIFE weight load or download, where HC's events show one. If HC's events never
   name the load either, say the "RIFE not loaded" half is unverified. Don't pass it.
@@ -28825,7 +28828,7 @@ expected:
   the result, d at 21 and d at 22 are each between 0.25 × D and 0.75 × D: a midpoint at t = ½. If the d series is
   downsampled so that it isn't per-frame at this length, judge from `get_output_frames` at 20, 21 and 22 that frame
   21 is between its neighbours (no ghost of both), and say so.
-- Every compared frame except 21 matches GS: SSIM ≥ 0.99, and it scores about as well as frame 0 does. Frame 21 scores
+- Every compared frame except 21 matches GS: SSIM no more than 0.01 below the re-encode baseline at that frame, and it scores about as well as frame 0 does. Frame 21 scores
   clearly lower than those frames. A drop on frames 20 or 22 (the anchors) or on any far frame is a **finding**: the
   plan passes every non-held frame through byte-equal. A whole-take resynthesis is v1's keep-every-2nd, which plan v2
   replaced.
@@ -28841,7 +28844,7 @@ are one picture, and 24 is still 21. Run `interpolate_frames(video=<G4>, refill=
 at=["frame:19", "frame:20", "frame:21", "frame:22", "frame:23", "frame:24", "frame:30"])`. Run H4 (C-F1190, every
 still four times) through the same step.
 expected:
-- The result has 41 frames. Frames 20 and 24 match G4 (SSIM ≥ 0.99). Frames 21, 22 and 23 each differ from G4 and from
+- The result has 41 frames. Frames 20 and 24 match G4 (SSIM no more than 0.01 below the re-encode baseline at that frame). Frames 21, 22 and 23 each differ from G4 and from
   each other.
 - On the result, d at 21, 22, 23 and 24 are each between 0.1 × D and 0.45 × D, where D is G4's d at 24 (the whole
   step). That is an even ¼, ½, ¾ spacing. If the series isn't per-frame, use `get_output_frames` at 20 to 24: a steady
@@ -28870,10 +28873,10 @@ sources and results, and `compare_outputs(names=[<source>, <result>])`, at frame
 at 10, 11, 12, 24, 25, 26 and 27 for HX. Take `get_output_frames` of the HX result at frames 25 and 26.
 expected:
 - Both results keep their source's frame count (40 and 50).
-- HE: frame 16 is refilled (it differs from the source, as in C-F1269). Frames 38 and 39 match the source (SSIM ≥ 0.99),
+- HE: frame 16 is refilled (it differs from the source, as in C-F1269). Frames 38 and 39 match the source (SSIM no more than 0.01 below the re-encode baseline at that frame),
   so the end hold is left. `held_after` = `held_before` − 1, and is at least 1 if the measure counts frame 39. If
   the measure doesn't count an end frame at all, then `held_before` = `held_after` + 1 = 1. Either way, say which.
-- HX: frame 11 is refilled. Frames 24, 25, 26 and 27 match the source (SSIM ≥ 0.99). Frame 25 shows only the scythe
+- HX: frame 11 is refilled. Frames 24, 25, 26 and 27 match the source (SSIM no more than 0.01 below the re-encode baseline at that frame). Frame 25 shows only the scythe
   shot and frame 26 only the reply shot: no double exposure. A change at 25 or 26 is the **finding** this case exists
   for: the plan says never to interpolate across a cut. The pair at 24 and 25 is either excluded by the cut guard (in
   neither count) or left held and counted in `held_after`. Either passes, provided both counts agree with the probe
@@ -28894,7 +28897,7 @@ that `detail=true` marks held. Then `compare_outputs(names=[<asset>, <result>], 
 expected:
 - The step's output has `held_before` > `held_after`. `held_before` equals the probe's count on the asset ±1, and is at
   least B's threshold.
-- Every frame away from the clusters matches the source: SSIM ≥ 0.99, with mean abs diff no larger than a plain
+- Every frame away from the clusters matches the source: SSIM no more than 0.01 below the re-encode baseline at that frame, with mean abs diff no larger than a plain
   re-encode gives (frame 0 is the yardstick). A real frame changed away from the clusters is a **finding**: v2's
   added intent.
 - Each of the 2 held frames differs from the source, scoring below the passthrough frames.
@@ -28911,7 +28914,7 @@ the source's cut frames with `assess_output(..., probe="analyze_seams")` (or its
 `interpolate_frames(refill="held", device="cuda")`. Then `compare_outputs(names=[<asset>, <result>])` at cut-1 and
 cut for every cut (up to 8 frames a call), and `get_output_frames` on the result at those frames.
 expected:
-- At every cut, the result's frames cut-1 and cut match the source (SSIM ≥ 0.99) and each shows a single shot. A
+- At every cut, the result's frames cut-1 and cut match the source (SSIM no more than 0.01 below the re-encode baseline at that frame) and each shows a single shot. A
   blend or ghost of two shots is a **finding**.
 - `analyze_seams` on the result reports the same seams, at the same seconds ±1 frame, as on the source. A default
   `assess_output` raises no `sync_drift` or `sync_length` finding the source lacks. The result has audio.
