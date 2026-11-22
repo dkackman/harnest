@@ -12013,4 +12013,151 @@ It is a **finding** if SKILL.md changed for this stage, or if #1519 had landed b
 cleanup: none.
 metrics: none.
 
+### M-F478 — `experimental_hybrid_windows` is refused at validate and at run on a server without the flag, naming `DW_EXPERIMENTAL_HYBRID_WINDOWS`
+pending: #1569
+source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va` from noise. **Free**: validate, plus one `run_workflow` that must be
+refused before queuing. Workspace `regression-model-specific`; needs the `qa-1230/chain-26s.mp4` fixture (see M-F345).
+The server is lem as it normally runs, with no `DW_EXPERIMENTAL_HYBRID_WINDOWS` set (the deployed default).
+Workflow W_hyb (inline, used by M-F478–M-F484), two steps in order:
+1. `gen`: an H3 pipeline step whose `pipeline` (configuration, `from_pretrained_arguments`, LoRA, scheduler) is
+   copied from the `base` step of `get_guide("workflows", section="Promoting an H3 take to 768p in latent space")`,
+   as in M-F345, with `from_pretrained_arguments.workflow` `t2va` and arguments `prompt` "a woman walks along a
+   sunlit street, speaking to camera", `width` 960, `height` 544, `num_frames` NF (124 unless a case says otherwise),
+   `num_inference_steps` 4, `hold_audio: "asset:qa-1230/chain-26s.mp4"`, seed 1188,
+   `experimental_hybrid_windows` HW, and `output` `["videos","audio","sampling_rate"]`. No `latents`,
+   `refine_strength` or `refine_windows`.
+2. `final`: `pair_audio(video="previous_result:gen", audio="asset:qa-1230/chain-26s.mp4", fit="video")`, result
+   `video/mp4`.
+Steps: `validate_workflow(workspace="regression-model-specific", inline_workflow=W_hyb)` with (a) HW `{}`, NF 124;
+(b) HW `{}`, NF 690 (past the 345-frame ceiling: the length the key exists for); (c) HW
+`{"frames": 42, "overlap": 12, "blend": "pyramid", "positions": "rebased"}`, NF 124; (d) HW `"variable:hw"` with
+`variables: {"hw": {}}`, NF 124. Then `run_workflow(workspace="regression-model-specific", inline_workflow=W_hyb)`
+with (a)'s values and an `acknowledged_cost` built from the shape the refusal or `get_schema` documents (any
+fingerprint: the point is that the flag refusal comes first).
+expected:
+- (a)–(d): `valid: false`, an error at `gen` (path `steps[0].pipeline.arguments.experimental_hybrid_windows`, or a
+  message naming `experimental_hybrid_windows`) that names `DW_EXPERIMENTAL_HYBRID_WINDOWS`.
+- (b): the flag refusal is present. A second error naming the 345-frame ceiling may sit beside it; record whether
+  it does. A ceiling error *alone*, with no flag named, is a finding (the caller can't tell the key exists behind a
+  flag).
+- The `run_workflow`: refused with the same flag named, and no job id returned. If a job is queued,
+  `cancel_job` it at once and record it as a finding.
+It is a **finding** if any of (a)–(d) validates clean, or a refusal names the key without the flag.
+cleanup: cancel any job the run queued (none expected).
+metrics: none.
+
+### M-F479 — with the flag off, `experimental_hybrid_windows` is refused in every form, including beside the seam pass
+pending: #1569
+source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server and workspace as M-F478.
+Steps: W_hyb from M-F478 (NF 124), `validate_workflow` with HW = (a) `{"switch_step": 0}` (S1's own arm);
+(b) `{"frames": 42, "windw": 8}` (an unknown key); (c) `42`; (d) `"yes"`; (e) `[42, 12]`. Then (f): W_win from
+M-F345 with RW `{}` (the seam pass, valid on its own) plus `experimental_hybrid_windows: {}` added to its `refine`
+step; and (g) W_hyb (HW `{}`) with `hold_audio` removed.
+expected:
+- Each of (a)–(g): `valid: false`. Each refusal names `experimental_hybrid_windows`, and (a), (f) and (g) name
+  `DW_EXPERIMENTAL_HYBRID_WINDOWS`. (b)–(e) may be refused by the flag or by the value's shape; record which, and
+  whether a shape error names the bad key (`windw`) or the value.
+- (g) may also name `hold_audio` as required; either order is fine, as long as it is not clean.
+- (f): the added key does not make the seam pass validate clean, and the refusal is about the new key, not about
+  `refine_windows` (which M-F480 shows is clean alone).
+It is a **finding** if any of (a)–(g) validates clean on a server without the flag.
+cleanup: none.
+metrics: none.
+
+### M-F480 — the seam pass (`refine_windows` + `refine_strength`) still validates clean, and still runs, with hybrid windows in the build
+pending: #1569
+source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` windowed refine. **Free** for steps 1-2; step 3 is M-F356's GPU run.
+Steps:
+1. M-F345 as written: W_win with RW (a) `{}`, (b) the explicit defaults, (c) the `variable:` form, (d)
+   `{"frames": 22, "overlap": 7}`.
+2. M-F347, M-F349 and M-F350 (a) as written (the seam pass's own refusals).
+3. M-F356 as written (the ≈26 s refine run), unless a regression pass on the same deployed commit already ran it
+   green this cycle: then cite that job id instead of re-running it.
+expected:
+- Step 1: all four `valid: true`, with no error or warning naming `experimental_hybrid_windows`,
+  `DW_EXPERIMENTAL_HYBRID_WINDOWS`, "hybrid" or "experimental".
+- Step 2: each refusal is as its case states, and none of them names the hybrid key or its flag (the new branch
+  must not take over the seam pass's messages).
+- Step 3: M-F356's own expected result.
+It is a **finding** if the seam pass is refused, warns about the new key, or its run no longer meets M-F356.
+cleanup: as M-F356.
+metrics: none.
+
+### M-F481 — without either window key, `num_frames` past 345 is still refused at 345, and 345 itself is clean
+pending: #1569
+source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server and workspace as M-F478.
+Steps: W_hyb from M-F478 with `experimental_hybrid_windows` removed (and no `refine_windows` or `refine_strength`),
+`validate_workflow` with NF = (a) 690; (b) 362 (the next 17n+5 value past 345); (c) 345; (d) 124. Then (e): NF 690
+with `refine_windows: {}` added and no `refine_strength`.
+expected:
+- (a), (b): `valid: false`, an error naming `num_frames` and the 345-frame (14.4 s) ceiling. Neither message tells
+  the caller to set `DW_EXPERIMENTAL_HYBRID_WINDOWS` or use `experimental_hybrid_windows` (the key has no MCP text
+  while it is experimental).
+- (c), (d): no `num_frames` error. (A `hold_audio` length warning or error is allowed; record it.)
+- (e): `valid: false`: the M-F347 refusal (needs `refine_strength`), and the ceiling is not lifted by
+  `refine_windows` alone.
+It is a **finding** if (a), (b) or (e) validates clean, or (c) is refused for its length.
+cleanup: none.
+metrics: none.
+
+### M-F482 — the experimental key adds no MCP surface: no schema entry, tool text or guide text for hybrid windows
+pending: #1569
+source: tester, spec for #1569 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` (discovery surface). **Free**: reads only.
+Steps: `get_schema` with each section its index lists that covers pipeline arguments or steps (at least
+`pipelines`); the tool descriptions in this session's loaded `dw` tool schemas (`validate_workflow`,
+`run_workflow`, `get_pipeline_signature`); `get_guide("workflows")` (the index) and the long-take sections it lists;
+`list_workflows(shape="shot")` and `list_workflows(shape="sequence")`. Search each for `hybrid`,
+`experimental_hybrid_windows`, `DW_EXPERIMENTAL_HYBRID_WINDOWS` and `switch_step`.
+expected:
+- None of them names the key, the flag or `switch_step`, and no catalog entry is a hybrid-windows template.
+- The 345-frame / 14.4 s ceiling text in the guide stands as it was (it changes only at promotion).
+It is a **finding** if the key, the flag or a template for it appears anywhere on the MCP surface before a
+promotion plan is approved.
+cleanup: none.
+metrics: none.
+
+### M-F483 — a `switch_step` out of range is refused at validate by its own rule, before the flag check
+pending: #1570
+source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
+M-F478. The legal range is read as 0..S, S being the step's `num_inference_steps`: 0 is the blended-only arm and S
+is plain sequential windows (the plan's S2 unit tests).
+Steps: W_hyb from M-F478 (NF 124, `num_inference_steps` 4), `validate_workflow` with HW = (a)
+`{"switch_step": -1}`; (b) `{"switch_step": 5}`; (c) `{"switch_step": 3.5}`; (d) `{"switch_step": "3"}` (a string
+that is not a `variable:` reference); (e) `{"switch_step": 0}`; (f) `{"switch_step": 3}`; (g) `{"switch_step": 4}`.
+Then with `num_inference_steps` 8: (h) `{"switch_step": 6}`; (i) `{"switch_step": 9}`.
+expected:
+- (a)–(d), (i): `valid: false`, an error naming `experimental_hybrid_windows` and `switch_step` and saying what is
+  wrong (out of range, ideally naming the range or the step count; not an integer). This error is present whether or
+  not the flag error also is: the tester sees the key's own rule.
+- (e), (f), (g), (h): no `switch_step` error; the only refusal is the flag one (as M-F478). (h) shows the range
+  follows `num_inference_steps`, not a fixed 4.
+It is a **finding** if any of (a)–(d), (i) is refused only by the flag (no `switch_step` error), or any of (e)–(h)
+carries a `switch_step` error.
+cleanup: none.
+metrics: none.
+
+### M-F484 — a bad `handoff` is refused at validate by its own rule, naming `finished` and `x0`, before the flag check
+pending: #1570
+source: tester, spec for #1570 from #1188's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: `MiniMaxAI/MiniMax-H3` `t2va`. **Free**: validate only. Same server (flag off) and workspace as
+M-F478.
+Steps: W_hyb from M-F478 (NF 124), `validate_workflow` with HW = (a) `{"handoff": "finish"}`; (b)
+`{"handoff": "X0"}` (wrong case); (c) `{"handoff": 1}`; (d) `{"handoff": ""}`; (e) `{"handoff": "finished"}`;
+(f) `{"handoff": "x0"}`; (g) `{"switch_step": 3, "handoff": "x0"}`; (h) `{"switch_step": 9, "handoff": "nope"}`.
+expected:
+- (a)–(d): `valid: false`, an error naming `experimental_hybrid_windows` and `handoff` and listing the allowed values
+  `finished` and `x0`, present whether or not the flag error also is.
+- (e), (f), (g): no `handoff` or `switch_step` error; the only refusal is the flag one.
+- (h): both the `switch_step` and the `handoff` error are reported (record if only the first is; one at a time is
+  not a finding, a flag-only refusal is).
+It is a **finding** if any of (a)–(d) is refused only by the flag, or (e)–(g) carries a `handoff` error.
+cleanup: none.
+metrics: none.
+
 ## Performance

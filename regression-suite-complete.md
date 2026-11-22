@@ -27187,7 +27187,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1179 — the served Docker guide starts from a clone, with the repo URL, before `init-env.sh`
-pending: #1548
 source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. `list_guides` (the `docker` entry); `get_guide("docker", section="Start it")`; and, if the clone step went into
 another section, the guide's index `get_guide("docker")` and that section. On 2026-11-21 *Start it* opened with
@@ -27207,7 +27206,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1180 — the served Docker guide gives a same-host `claude mcp add --transport http` line, with the token from `login-url`
-pending: #1548
 source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_guide("docker", section="Start it")` and `get_guide("docker", section="The API token")`, plus whichever
 section holds the new line (`get_guide("docker")` names them). On 2026-11-21 neither section had a `claude mcp add`
@@ -27229,7 +27227,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1181 — the served Remote guide's install step gives the clone URL, the same one the Docker guide uses
-pending: #1548
 source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_guide("remote", section="On the GPU box")`. Compare it with the URL that C-F1179 found. On 2026-11-21 step 1
 read "Install as usual (`git clone …`, `bash ./install.sh`)".
@@ -27245,7 +27242,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1182 — after #1548 lands, lem's web UI still answers at `/` and its pages load
-pending: #1548
 source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. **Web UI, black-box** (`ui-check`). Run it once lem is serving the stage's commit (`get_server_info` / `get_health`
 `version` agree with the hand-off). This is a consumer-side backstop for the plan's "dw-serve serves the UI at /".
@@ -27262,7 +27258,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1183 — #1548 leaves the MCP surface and the first-run template as they were, apart from a possible mps cost row
-pending: #1548
 source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_workflow("templates/text-to-image")`; `list_guides`. The plan promises "no engine, MCP, REST, syntax or
 Docker image change". On 2026-11-21 the template was: SD 1.5 (`stable-diffusion-v1-5/stable-diffusion-v1-5`),
