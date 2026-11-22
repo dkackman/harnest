@@ -27919,7 +27919,6 @@ cleanup: `delete_workspace(name="cf1222-ui", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1226 — `GET /api/workspaces/<ws>/changes` answers an epoch, a workspaces counter and six integer kinds, and reading it moves nothing
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **Setup S1536-A** (C-F1227–C-F1232 reuse it): `create_workspace(name="cf1226-chg")` and
 `create_workspace(name="cf1226-other")`. A **snapshot** below means one `ui-check` run whose only steps are
@@ -27939,7 +27938,6 @@ cleanup: none (C-F1232 cleans up).
 metrics: none.
 
 ### C-F1227 — each MCP write grows its own kind, and only that kind
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. S1536-A (C-F1226). `workspace="cf1226-chg"` on every call that takes one. Take a snapshot before
 and after each write, in this order:
@@ -27960,7 +27958,6 @@ cleanup: none (C-F1232).
 metrics: none.
 
 ### C-F1228 — deletes bump their kind too
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. S1536-A, after C-F1227 (its request, prompt, workflow and asset exist). Snapshot before and after
 each: (1) `delete_request(request="chg1", workspace="cf1226-chg")` (with `acknowledged_cost` if its schema asks);
@@ -27973,7 +27970,6 @@ cleanup: none (C-F1232).
 metrics: none.
 
 ### C-F1229 — a job moves `jobs` as it queues, finishes and is cancelled; a finished run with outputs moves `gallery`; `keep_output` moves `assets` only
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Cost: one CPU-only `templates/audio-trim-fade` run of a few seconds. S1536-A. `workspace="cf1226-chg"` throughout.
 `validate_workflow("templates/audio-trim-fade", arguments={"input_audio":"asset:uploads/qa-cast/room-bed.wav",
@@ -27995,7 +27991,6 @@ cleanup: none (C-F1232).
 metrics: none.
 
 ### C-F1230 — a workspace created or deleted moves `workspaces` in every workspace's snapshot, and nothing else
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. S1536-A. Snapshot; `create_workspace(name="cf1230-tmp")`; snapshot, plus a `fetch` of
 `/api/workspaces/cf1230-tmp/changes`; `delete_workspace(name="cf1230-tmp", acknowledged_cost=true)`; snapshot,
@@ -28009,7 +28004,6 @@ cleanup: none (C-F1232).
 metrics: none.
 
 ### C-F1231 — a refused write moves nothing
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. S1536-A, `workspace="cf1226-chg"` where taken. Snapshot; then each of these, every one refused:
 `save_prompt(name="../cf1231", prompt="x")`; `save_prompt(name="cf1231", prompt="variable:x")` (a reference prefix);
@@ -28025,7 +28019,6 @@ cleanup: none (C-F1232).
 metrics: none.
 
 ### C-F1232 — an unknown workspace answers 404, and no MCP surface changed
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-A. One `ui-check` run: `fetch` `/api/workspaces/cf1232-never-made/changes` and, for contrast, the
 sibling read the UI already uses on that name (`/api/workspaces/cf1232-never-made/requests`). Then over MCP:

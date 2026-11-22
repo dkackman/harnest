@@ -2270,7 +2270,6 @@ with `./scripts/file-advisory.sh`, never as an issue.
 cleanup: `delete_workspace` on `sef080-a` and `sef080-b` (`acknowledged_cost=true`).
 
 ### SE-F082 — the workspace `changes` route refuses a traversal or reserved name and never reads outside the workspace roots
-pending: #1563
 source: tester, spec for #1563 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. A new route that takes a workspace name in its path. One `ui-check` run, every step a `fetch` (GET):
 `/api/workspaces/..%2F..%2Fetc/changes`, `/api/workspaces/%2E%2E/changes`, `/api/workspaces/.hidden/changes`,
