@@ -1930,6 +1930,36 @@ source: tester, model `claude-opus-5-5` via provider `anthropic`, verified in #1
 Jobs: warm `55477458b7db`, SE-F005 refusal `cfd3c24ffff4` (0.079 s, 4 events), SE-F006 refusal
 `e1bdbd51e83e`, repeat `d85d7772bea1` (`load_cached: true`).
 
+### SE-F081 — a `pre_load_modules` or `constant:` refusal is made at submit, queues no job and leaves warm models in place
+SE-F064 covers only `from_pretrained_arguments`. In #1511, a `pre_load_modules` entry outside the
+ecosystem passed validate and was queued. The worker then logged "releasing cached models",
+`run_start` and `step_start`, and only after those did the loader refuse it. So a workflow certain to
+be refused still evicted the warm cache. In one workspace:
+1. **Warm:** run `templates/text-to-image` (seed pinned). It must succeed. Read `get_memory` and
+   note `gpu_memory_allocated_mb` and `run_count`.
+2. **Validate:** an inline `StableDiffusionPipeline` workflow whose
+   `steps[0].pipeline.configuration.pre_load_modules` is `["subprocess"]`, then the same with
+   `["dw_security_probe_nonexistent"]`.
+3. **Submit:** `run_workflow` with each of the two step-2 shapes, plus one with
+   `arguments.cross_attention_kwargs: "constant:os.environ"`.
+4. **Control:** `validate_workflow` with `pre_load_modules: ["diffusers"]`.
+5. Read `list_jobs(workspace=...)` and `get_memory` again.
+expected:
+- Step 2: `valid: false`, with the trust-gate message ("outside the ecosystem") at `steps[0].pipeline`,
+  for both shapes. If the nonexistent module comes back as `ModuleNotFoundError`, the gate ran after
+  the import: that is a **finding**.
+- Step 3: each submit is refused with the trust-gate message and returns **no job id**. The
+  `constant:` refusal is at `steps[0].pipeline.arguments.cross_attention_kwargs`, and its text holds
+  no environment value.
+- Step 4: `valid: true` with a plan. It is a **finding** if the control is refused.
+- Step 5: the newest job in `list_jobs` is still the warm job. `get_memory` shows the same
+  `run_count`, and `gpu_memory_allocated_mb` has not dropped toward empty.
+"Refused too late" looks like a job id from step 3, or a job in `list_jobs` whose events show
+"releasing cached models" before the refusal, or a fall in `gpu_memory_allocated_mb`. Each of these
+is a **finding**.
+cleanup: `delete_output(job_id=...)` for the warm job. The refusals create nothing.
+source: tester, verified in #1511 (claude-opus-5-5 via anthropic), on mini-ai (mps), develop @ c97036bd.
+
 ### SE-F065 — admitting `diffusers.models.` for the LTX2 condition dataclasses admits no other class there
 source: tester, spec for #1341 from #1315's plan v1 (claude-opus-5-5 via anthropic)
 Free, **validate only**. The plan: if diffusers 0.43 moved `LTX2VideoCondition` / `LTX2ReferenceCondition` under

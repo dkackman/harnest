@@ -26520,4 +26520,1244 @@ rewritten to drop the item is a **finding**.
 cleanup: `delete_workspace(name="cf1147-req", acknowledged_cost=true)`.
 metrics: none.
 
+### C-F1148 — `paste_into_box` is discoverable, and `fit_to_model` documents its letterbox `mask`
+pending: #1541
+source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Free, read-only. (1) `list_tasks()`. (2) `get_task("paste_into_box")`. (3) `get_task("fit_to_model")`.
+expected:
+- (1) `commands` holds `paste_into_box`.
+- (2) its parameters are `generated`, `source`, `content_box` and `feather`; `feather` is optional with default `16`,
+  and the other three are required. Its descriptions say that `source` is scaled into the box on every frame,
+  that a linear ramp `feather` px wide is blended *inside* the box, that `generated` is kept outside the box,
+  and that the audio and fps come from `generated`. A `device` parameter, if listed, is fine.
+- (3) the description of `mode` (or the summary) says letterbox mode also returns a `mask`: a canvas-size image,
+  white outside `content_box` and black inside it. It also says crop and stretch return no mask. If stage A
+  built `align`, it is listed as optional and its description says it snaps the content box to the H3 cell
+  grid by cropping a few px of the source. Without it, letterbox behaves as before. The crop-mode
+  sentence still contains "reframe a clip to another aspect" and "Reframe to another aspect".
+A missing task, a `feather` with no default or a default other than 16, or a `fit_to_model` description that
+doesn't mention the mask is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1149 — letterbox `fit_to_model` returns a canvas-size mask that agrees exactly with `content_box`
+pending: #1541
+source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+CPU tasks only, no model. Fixture `asset:qa-cast/ep3-shot1-incident.mp4` (960x544, 124 frames, 24 fps).
+**Setup:** one inline `run_workflow` (validate first, `wait_seconds=55`) in `regression-complete`. Its steps:
+1. `src`: `fit_to_model(video="asset:qa-cast/ep3-shot1-incident.mp4", width=1344, height=768, num_frames=124,
+   mode="stretch")`. This makes a 1344x768 16:9 source.
+2. `lb`: `fit_to_model(video="previous_result:src", width=544, height=960, num_frames=124, mode="letterbox")`.
+3. `lb2`, `lb3`, `lb4`: the same as `lb` from `src` into 768x1344, 768x960 and 768x768.
+4. `lb5`: a letterbox fit of the fixture itself (960x544) into 544x960.
+5. `cr` and `st`: `src` into 544x960 with `mode="crop"` and with `mode="stretch"`.
+
+Save every step's result. Read each `fit.content_box` from the job's result/output listing. Read each mask
+with `get_output_image`, and each video with `get_output_frames` at frames 0, 62 and 123.
+Do not pass `align` here: this case is the default behaviour.
+expected:
+- `lb`: the video is 544x960 and 124 frames, the picture centred on black. `content_box` is about
+  `[0, 324, 544, 311]` (x, y, w, h; ±1 px of rounding). The mask is 544x960, white above row y and at
+  or below row y+h, and black inside the box. Its edges sit on exactly the box's rows (not off by one).
+- `lb2`/`lb3`/`lb4`: the boxes are full width, about 439 px tall and vertically centred (y about 452, 260 and 164).
+  Each mask matches its own box in the same way.
+- `lb5`: the box is about `[0, 326, 544, 308]` and the mask matches it.
+- `cr` and `st` return no `mask` (absent or null), and their videos are unchanged from today's behaviour.
+- Each mask is a single-channel black/white image (L mode, or values only 0 and 255 apart from no anti-aliasing).
+  A grey ramp in the mask is a **finding**: the feather belongs to `paste_into_box`, not the mask.
+A mask edge that disagrees with `content_box`, a mask of the wrong size, or a mask on crop/stretch is a **finding**.
+A mask that the job saves no file for, so that `get_output_image` can't show it, is also a **finding**: the
+plan's intent names `get_output_image`.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1150 — `align` snaps the letterbox box and mask to the H3 cell grid (only if stage A built `align`)
+pending: #1541
+source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Applies only when `get_task("fit_to_model")` lists `align`. If it doesn't, the snap lives in the template, and
+C-F1153/C-F1155 cover it. Record "n/a: snap is in the template" and move on. CPU only.
+**Setup:** C-F1149's `src` step. Then `fit_to_model(video="previous_result:src", width=544, height=960, num_frames=124,
+mode="letterbox", align=<the value the task's description gives for H3's cell grid>)`. Repeat into 768x768.
+Run validate first, then run.
+expected:
+- The returned `content_box` y and h (and the x/w edges inside the canvas) are multiples of the cell size the
+  task's description names (at least 16 px), e.g. h 320 or 288 for the 544x960 case, not 311. The box is
+  still centred to within one cell.
+- The source is cropped, not stretched: the picture's aspect inside the box differs from C-F1149's by only the
+  few px cropped (at most one cell's worth on the long axis). `get_output_frames` at frame 62 shows no
+  squash.
+- The mask agrees with the snapped box exactly, as in C-F1149.
+- With `align` omitted, the result is byte-for-byte C-F1149's `lb` box and mask: the default is unchanged.
+- A bad `align` value (0, negative, a string) is refused at validate with a message that names `align`.
+A snapped box off the grid, a stretch in place of a crop, or a changed default is a **finding**.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1151 — `paste_into_box` puts the source back inside the box, keeps `generated` outside, and carries `generated`'s audio and fps
+pending: #1541
+source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+CPU only. It uses the two fixtures' ~11 dB level spread (`ep3-shot1` -20.0 dBFS, `ep3-shot2` -31.1 dBFS) to
+tell whose audio came through.
+**Setup:** one inline run (validate first, `wait_seconds=55`). Its steps:
+1. `lb`: a letterbox `fit_to_model` of `asset:qa-cast/ep3-shot1-incident.mp4` into 544x960, 124 frames. This
+   gives the box.
+2. `standin`: `fit_to_model(video="asset:qa-cast/ep3-shot2-reply.mp4", width=544, height=960, num_frames=124,
+   mode="crop")`. This is a canvas-size stand-in for `generated` that is visibly different from shot 1.
+   A solid-colour clip is equally good, if a task can make one.
+3. `gen`: `pair_audio` of `standin` with `ep3-shot2-reply.mp4`'s soundtrack, so `generated` has audio of its own.
+4. `paste`: `paste_into_box(generated="previous_result:gen", source="asset:qa-cast/ep3-shot1-incident.mp4",
+   content_box=<lb's content_box by reference, the path the task's docs give, e.g. previous_result:lb.fit.content_box>)`,
+   with the default feather.
+5. `paste0`: the same with `feather=0`.
+
+Then: `get_output_frames` at frames 0, 62 and 123 on `paste`, `paste0` and `standin`; `get_gallery_metadata`
+on `paste`; `get_output_audio` on `paste`, or `analyze_audio` for its `mean_dbfs`; and `compare_outputs(paste, standin)`.
+expected:
+- `paste` is 544x960, 124 frames and 24 fps. On every inspected frame, shot 1's whole picture is centred in the box
+  and shot 2's crop fills the bands above and below, unchanged from `standin` there.
+- At the box's top and bottom edges, `paste` shows a soft transition a few px wide (about 16), lying inside the
+  box. `paste0` shows a hard edge on the box line. Beyond the feather, inside the box, `paste` and `paste0` match.
+- `compare_outputs(paste, standin)` shows the difference confined to the box region (or, if it reports only a
+  global figure, the bands match on the frames inspected).
+- The soundtrack is shot 2's: `mean_dbfs` about -31 (not about -20), and the duration about 5.17 s.
+  The fps is `generated`'s.
+A band not exactly `generated`, a source shifted or stretched in the box, a feather outside the box, or shot 1's
+audio on the output is a **finding**.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1152 — `paste_into_box` refuses a frame-count mismatch, a box that doesn't fit, and an out-of-range `feather`, naming the argument
+pending: #1541
+source: tester, spec for #1541 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Validate is free; only (1) and possibly (2) need a CPU run. Use C-F1151's steps 1-3 as the base and vary step 4.
+(1) Build `standin` with `num_frames=141` (and `lb` at 124), then paste. (2) Pass a literal
+`content_box=[0, 0, 600, 1000]` into the 544x960 `generated`. (2b) Pass `[0, 700, 544, 311]`, which runs off the bottom.
+(3) Pass a literal `content_box=[0, 324, 544, 311]` with `feather=-1`. (4) The same box with `feather=156`, which is
+at least half the short side (311/2 = 155.5). (5) The same box with `feather=155`, and with `feather=0`.
+Use `validate_workflow` for each. Run (1) and (2) only if validate passes them.
+expected:
+- (1) refused, at validate or at run before any output is written, with a message naming the frame counts (124 vs 141)
+  and `generated`/`source`. No output file.
+- (2) and (2b) refused with a message naming `content_box` and `generated`'s size. A literal box should be caught at
+  validate; a run-time refusal with that message is acceptable.
+- (3) refused **at validate** (a literal), with a message naming `feather` and its lower bound.
+- (4) refused at validate, with a message naming `feather` and the half-short-side rule.
+- (5) both validate clean: 155 is just under the bound, and 0 means a hard edge, which is legal.
+A silent clamp, a run that writes a garbled output, a refusal message that doesn't name the argument, or 0 or 155
+refused is a **finding**.
+cleanup: `delete_output(job_id=<job>)` for any run.
+metrics: none.
+
+### C-F1153 — `templates/minimax/reframe` is in the catalog with its cost, defaults and description, and the crop pointers name it
+pending: #1542
+source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Free, read-only. (1) `list_workflows(shape="shot", traits="needs-input-media")`. (2) `get_workflow("templates/minimax/reframe",
+variables_only=true)`, then the full form. (3) `get_task("fit_to_model")`. (4) `list_workflows(shape="image-edit")`
+and the default `list_workflows()`. (5) Read the `dw:minimax-h3` skill's routing for "reframe" / "9:16".
+expected:
+- (1) lists `templates/minimax/reframe` with a `cost` and traits including `needs-input-media` and `has-audio`.
+  Its summary is 120 characters or fewer.
+- (2) the variables are regional-edit's set (`source_video`, `prompt`, `refine_strength`, `num_inference_steps`,
+  `num_frames`, `width`, `height`, the shifts, the dtype/LoRA set, `seed`, `attention_backend`, `sparse_tau`,
+  `sparse_topk`, `cache`), with **no `mask_image`**, plus `feather` (default 16).
+  - The defaults are `width` 544, `height` 960, `refine_strength` 1.0, `sparse_tau` 0.5 and `sparse_topk` 0.15.
+  - The constraints are regional-edit's: `num_frames` 17n+5 in 124-345, and `width`/`height` multiples of 32.
+  - In the full form, the steps are a letterbox fit with the box snapped to the cell grid (by `align`, or in the
+    template), then the H3 edit, then `paste_into_box`, then the mp4. The edit's `mask_grow` is 0 (as a variable or a
+    fixed argument), unless #1542's seam check shipped the other variant and its verification says so. Its
+    `hold_audio` is `variable:source_video`, not the letterbox step. Its `mask_image` is the fit's `mask`.
+  - It carries regional-edit's `vram_estimate`, or its own if listed as template-specific.
+- The description says:
+  - about two thirds of a 9:16 frame is generated;
+  - 768x1344 tops out near 209 frames;
+  - 544x960 at 345 frames is borderline (about 23.6 GiB);
+  - crop and native re-render are the first choices for a generated take, and reframe is for a keeper take whose
+    motion must stay.
+  It does not contain "fill dev".
+- (3) the crop-mode text names `templates/minimax/reframe` as a third option for a keeper take, and keeps
+  "reframe a clip to another aspect".
+- (4) the template appears only under `shot`, and the default listing still fits (no truncation notice it lacked before).
+- (5) the skill routes a reframe/vertical-delivery ask to `templates/minimax/reframe`. A skill that still sends it
+  only to crop is a ticket against the skill.
+A missing cost, a `mask_image` variable, `hold_audio` pointed at the letterbox, or the wrong default canvas is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1154 — reframe validates clean at its defaults, and refuses a bad size or frame count by its rule
+pending: #1542
+source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Free (validate only). Base arguments: `{"source_video": "asset:qa-cast/ep3-shot1-incident.mp4", "prompt": "<any prompt
+describing the scene, extended above and below>", "seed": 42}`, `workspace="regression-complete"`.
+(1) The base. (2) + `width: 768, height: 768`. (3) + `width: 550`. (4) + `height: 970`. (5) + `num_frames: 100`.
+(6) + `num_frames: 362`. (7) + `num_frames: 125`. (8) + `num_frames: 345`. (9) + `feather: -1`.
+(10) + `mask_image: "asset:qa-cast/ep3-shot1-incident.mp4"`. (11) The base with no `source_video`.
+expected:
+- (1) clean, with a `plan.estimate` that has a non-null `minutes` (from the catalog `cost`) and no downloads.
+- (2) clean.
+- (3) and (4) refused, naming the multiple-of-32 rule and the variable.
+- (5) and (6) refused, naming the 124-345 window.
+- (7) gets exactly the answer `templates/minimax/regional-edit` gives for `num_frames: 125` (its constraint says snap up).
+- (8) validates, with at most a VRAM-ceiling *warning*, never a refusal.
+- (9) refused at validate, naming `feather`.
+- (10) is not silently used as the mask: it is refused or warned as an unknown argument, per the server's usual rule.
+- (11) refused, naming `source_video`.
+A clean validate for (3)-(6), a refusal of (8), or a bad `feather` that only surfaces at run time is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1155 — a 16:9 take reframed to 9:16 keeps its picture intact in the centre, a moving generated border, and its own soundtrack
+pending: #1542
+source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Cost: one H3 masked-edit run at 544x960, 124 frames (the catalog `cost`, about 2 min on lem). Seeded, so
+reruns draw the same take.
+Run C-F1154's base arguments (seed 42) through `validate_workflow` and then `run_workflow` (`wait_seconds=55`, then
+`wait_for_job`). Check the result with:
+- `get_gallery_metadata` (fps, duration, frame count);
+- `get_output_frames` at frames 0, 62 and 123;
+- `get_output_audio`, and `analyze_audio` on the output and on the fixture;
+- `compare_outputs(<output>, "asset:qa-cast/ep3-shot1-incident.mp4")`;
+- `assess_output` on the output;
+- `get_job` for `warnings`, and the job's step results for the fit's `content_box`.
+expected:
+- The output is an mp4 at 544x960, 124 frames, 24 fps and about 5.17 s. The run time is within the catalog `cost`'s range
+  (warm or cold).
+- On all three frames, the whole original picture is centred in the box, in place and unchanged apart from the
+  downscale and a feather band at most a few px into the box: no crop of its content beyond the few px of grid
+  snap, and no shift between frames.
+- The box is on the cell grid (its y and h are multiples of the cell size; e.g. h 320 or 288, not 311).
+- The top and bottom bands are filled with a plausible continuation of the scene. They are not black, flat grey,
+  a mirror of the picture or frozen: they change between frames 0, 62 and 123 with the scene's motion.
+- At the box edge there is no hard line, and nothing crossing it (a horizon, a limb, an edge) is offset across the blend.
+- The soundtrack is the source's own: `mean_dbfs` within 1 dB of the fixture's -20.0, with the same duration and channel
+  count, and `get_output_audio` sounds like the same track, not a regenerated one.
+- `compare_outputs` shows the box region matching the source apart from the feather band and the downscale.
+- `assess_output` reports no frozen or dead-air span. No warning says the mask is mismatched or the canvas size differs.
+Black or mirrored bands, a moved or cropped original, a visible seam, or a soundtrack that is not the take's is a
+**finding**. If the border reads as a different camera, say so in the finding: per the plan, that is a `loosen` re-plan.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1156 — the seam A/B: the shipped default (grow 0 + grid-snapped box) reads at least as seamless as grow 1 + feather 16 on an unsnapped box
+pending: #1542
+source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic), Don's seam amendment
+Cost: two H3 runs of the same seeded take (about 4 min on lem). Variant **A** is C-F1155's run at the template's
+defaults; reuse C-F1155's output when it's from the same pass. Variant **B**: `get_workflow("templates/minimax/reframe")`
+in full form, then save it inline with only two changes: the edit step's `mask_grow` set to 1, and the snap removed
+(`align` dropped from the fit step, or the template's snap step bypassed so the box is the plain letterbox
+`[0, 324, 544, 311]`). Feather stays 16. Run it with the same arguments and seed 42.
+On both outputs, check the box's top and bottom edges with `get_output_frames` at frames 0, 62 and 123, looking at
+any feature that crosses the edge.
+expected:
+- A's box edge reads seamless on all three frames: no hard line, no offset of any feature crossing the edge, and no
+  brightness step.
+- B, with its 32+ px of regenerated edge, may show an offset or a ghosted band. If B reads clearly better than A,
+  the shipped default is the wrong one: that is a **finding** against #1542.
+- If neither reads seamless, that is a **finding**, and by the plan a `loosen` re-plan, not a pass.
+- Record which edge features were compared (e.g. "the table edge at frame 62") in the issue, not here.
+cleanup: `delete_output(job_id=<job>)` for both runs. B's inline workflow is not saved to the catalog.
+metrics: none.
+
+### C-F1157 — reframe to 1:1 (768x768) also works
+pending: #1542
+source: tester, spec for #1542 from #1066's plan v4 (claude-opus-5-5 via anthropic)
+Cost: one H3 run at 768x768, 124 frames. Run C-F1154's base arguments plus `width: 768, height: 768` (seed 42):
+validate, run, then `get_output_frames` at frames 0, 62 and 123 and `get_gallery_metadata`.
+expected:
+- The output is 768x768, 124 frames, 24 fps, with the source's soundtrack.
+- The original is centred, full width, and as tall as the letterbox box of about 435 px snapped to the cell grid (e.g. 432 or 448 on a 16 px grid),
+  intact on every frame.
+- The bands above and below are generated, plausible and moving, with no seam, as in C-F1155.
+A refusal, a different output size, or black bands is a **finding**.
+cleanup: `delete_output(job_id=<job>)`.
+metrics: none.
+
+### C-F1158 — both existing-break probe jobs exist in their `qa-` workspace, succeeded, and ran A2 and B2 at #1184's configuration with the same words
+pending: #1543
+source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
+#1186 stage A probes whether splitting an H3 line at a sentence break **it already has** removes the silent lead-in
+(#1184's arm B inserted the break). Its evidence is `docs/proposals/audits/2026-11-h3-existing-break-split-probe.md`.
+A tester can't read the checkout, so the case reads that doc's per-clip table (arm, seed, job id, the `transcribe`
+output, lead, tail, per-segment rate, gap, delivered rate, verdicts) and the `qa-` workspace name as the stage's
+hand-off comment on #1543 reproduces them. If the comment doesn't carry the table and the workspace, that is a
+**finding** against the hand-off, not a reason to read the source. No GPU: read-only calls only, every one with
+`workspace="<that qa- workspace>"`. That workspace is evidence. Never sweep it, and never delete a job in it.
+
+The arms, each at seed 1001 and at seed 2002 (4 clips), run as one inline batch job per seed (the
+`H3DialoguePacingProbe` shape), so two jobs in all:
+- **A2 (control):** `<d>[English] I left the light on. It's late, Daniel.</d>` (one block, two sentences, 8 words)
+- **B2 (split):** `<d>[English] I left the light on.</d> <d>[English] It's late, Daniel.</d>`
+
+Steps:
+1. For each job id the table cites, `get_job`, then `get_job_workflow(job_id)`.
+2. In the realized workflow, read each H3 step's mode, size, frame count, seed, quantization, `lora_model_name`, step
+   count, both shifts and the prompt, and each transcribe step's arguments and input.
+
+expected:
+- Two cited jobs, one per seed, both in the named `qa-` workspace (its name starts `qa-`), both `succeeded`.
+- Every realized H3 step is T2VA, 960x544, 124 frames, int4 sdnq, `lora_model_name` null (or absent, no LoRA loaded),
+  12 steps, shifts 12 and 3 (C-F687's non-turbo settings), with the seed the table states for its job.
+- Each arm's prompt holds its dialogue exactly as listed above, `[English]` tags included. B2's `<d>` contents, joined,
+  are A2's character for character: same words, same case (`It's` capitalised in both), same punctuation, only `</d>
+  <d>[English] ` added at the period. No action sentence in either arm.
+- The scene and voice text outside the dialogue is identical across all four prompts, and matches #1184's (C-F687: one
+  man at a kitchen table facing the camera; "a mid-pitched baritone voice, a neutral American accent and a natural
+  speaking rate"). If the stage changed it, the doc says so and why; silently different text is a finding.
+- Each clip has a transcribe step on its own soundtrack with word timestamps (`timestamps: "word"`), in the same job
+  or a cited follow-up job.
+- All four arm/seed cells have a clip. A failed job or missing seed is marked **not run** in the table with a reason;
+  a cell silently missing is a finding.
+- The cited H3 run time totals within the approved ~35 GPU minutes, or the stage says it stopped at the cap and which
+  cells that left **not run**.
+It is a **finding** if a cited job is missing, failed, or in another workspace, if a setting differs from the above
+(a turbo LoRA, 9 steps, other shifts, another size or frame count), or if B2's words or punctuation differ from A2's.
+cleanup: none. The jobs are the stage's evidence.
+metrics: none.
+
+### C-F1159 — every lead, tail, segment rate, gap and delivered rate in the probe table reproduces from the cited word timestamps
+pending: #1543
+source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
+Read-only. For each clip C-F1158 accepted, `get_output_text` on its cited transcribe output (`workspace=` the `qa-`
+workspace); the reply is `{text, chunks}`, each chunk `{start, end, text}` in seconds, and a chunk may carry `suspect`.
+Take clip duration from `get_gallery_metadata` on the clip (124 frames, about 5.17 s at 24 fps).
+- **lead** = the first spoken word's `start`. **tail** = clip duration − the last spoken word's `end`.
+- **gap** (B2 only) = the `start` of "It's" − the `end` of "on". On A2 report the same interval as the internal pause,
+  if the table gives it.
+- **segment rate** = word count ÷ (its last word's `end` − its first word's `start`): "I left the light on." is 5 words,
+  "It's late, Daniel." is 3. A2's one block is 8.
+- **delivered rate** = the definition #1184's doc used; the new doc states it, and uses the same one for both arms.
+- Words: "It's" may come back as "Its", "It is" or two chunks; count it as one written word and say so.
+expected:
+- Each lead and tail in the table equals the recomputed value within 0.1 s. Each gap and segment rate within 0.1 s
+  and 0.2 words/s. The delivered rate within 0.2 words/s.
+- A stray early word set off from the rest of the line (#1184's s2002 lone "I") gets the lead both ways, from that word
+  and from the rest of the line; a single value must say which it is.
+- A chunk marked `suspect` is not counted as speech unless the table says so.
+- A word the transcript drops or merges, so a boundary can't be placed, is reported as such, not given a made-up gap
+  or rate.
+It is a **finding** if any reading falls outside its tolerance or a boundary is invented.
+cleanup: none.
+metrics: none.
+
+### C-F1160 — the probe's verdicts follow from its table by #1184's bar, per seed and overall, boundaries included
+pending: #1543
+source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
+No calls beyond C-F1158/C-F1159's: apply the plan's bar to the readings C-F1159 confirmed. A B2 seed **passes** when
+its lead is under 1.0 s **and** its delivered rate is at or below 4.5 words/s. An A2 seed **shows the lead-in** when its
+lead is at or above 1.5 s.
+expected:
+- The doc states a verdict per seed and one overall, each **confirm**, **refute** or **control not reproduced** (a seed
+  not run is **not run**), and each is the one the bar gives:
+  - overall **confirm** only if both A2 seeds show the lead-in and both B2 seeds pass;
+  - **control not reproduced** whenever either A2 seed's lead is under 1.5 s, whatever B2 did. It is never written up
+    as confirm or refute. The doc records it as the plan's risk says: the one-block form may already open in time for a
+    line that holds two sentences;
+  - **refute** when both A2 seeds show the lead-in and at least one B2 seed fails.
+- Boundaries: a B2 lead of exactly 1.0 s fails; a delivered rate of exactly 4.5 words/s passes; an A2 lead of exactly
+  1.5 s shows the lead-in; an A2 lead of 1.49 s does not.
+- One seed passing and the other failing is not a confirm. A seed **not run** means the overall verdict is not called;
+  the doc says the probe is incomplete and does not call it on one seed.
+- The doc says, in one line, whether trigger 3 of Don's 2026-11-02 ruling on #1186 is now met (yes only on an overall
+  confirm).
+- No verdict rests on listening: no "more natural", "less rushed" or similar claim.
+It is a **finding** if a stated verdict differs from what the numbers give, a verdict is missing, or one is called on
+one seed.
+cleanup: none.
+metrics: none.
+
+### C-F1161 — the probe lists its clips for Don's listening, sits in the todo index, changes no code, and flags rather than rewrites a skill contradiction
+pending: #1543
+source: tester, spec for #1543 from #1186's plan v2 (claude-opus-5-5 via anthropic)
+Read the stage's hand-off on #1543 (`gh issue view 1543 --repo dkackman/diffusers-workflow --comments`) and the
+`dw:minimax-h3` skill's `references/dialogue.md`, *How long a line can be*, as loaded from `develop`. No MCP calls
+beyond C-F1158's.
+expected:
+- The doc lists the A2 and B2 job ids (both seeds) for Don to listen to, as their own list, not only inside the table,
+  as #1184's did. Every id is one C-F1158 accepted.
+- The hand-off says the doc has a row in `docs/proposals/todo.md` pointing at it.
+- The hand-off says the stage is docs only: no code, workflow, enhancer (`h3_context_ir`) or test change. If it names
+  any code change, that is a **finding** (stage B was cut).
+- If B2's result contradicts what *How long a line can be* says (it says a split removes the lead-in), the doc names the
+  contradiction and the hand-off names a follow-up (an issue or an owed edit). `dialogue.md` itself is not rewritten
+  on this one probe: a changed rule there citing this probe is a **finding**. If there is no contradiction, the skill is
+  unchanged on this point.
+cleanup: none.
+metrics: none.
+
+### C-F1162 — #1544's probe song exists on the server where its record says, is audio, and is long enough for the probe
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
+#1516 stage A is a bench script (`bench/h3_audio_vae_probe.py`) and a record
+(`bench/records/h3-audio-encode-context.md`) with no MCP surface. A tester can't read the checkout, so this case and
+C-F1163–C-F1165 read the record as the stage's hand-off comment on #1544 reproduces it (`gh issue view 1544 --repo
+dkackman/diffusers-workflow --comments`): the song (workspace and name or path, and its length), the commit, the GPU,
+the probe's arguments (`--cuts`, `--slice-seconds`), the full table and the verdict sentence. If the comment doesn't
+carry them, that is a **finding** against the hand-off, not a reason to read the source. Free and read-only: the song
+is in one of Don's music workspaces (evidence and real work). Never delete, move or overwrite it.
+1. From the hand-off, note the song's workspace and its asset or output name.
+2. `get_gallery_metadata(name=<that name>, workspace=<that workspace>)` (or `list_assets(workspace=<that workspace>)`
+   if the record names a file there rather than a gallery reference).
+expected:
+- The record names exactly one song, in one of Don's music workspaces (not one starting `qa-`, `regression-`,
+  `probe-` or `drill-`), used as a held shot's master track, as the plan's *Song* paragraph says. No new download.
+- The name resolves with no "Unknown asset" error and is audio (it has a sample rate and a duration).
+- Its duration matches the record's stated length within 0.05 s.
+- Its duration is at least `slice-seconds + 2 s` for the `--slice-seconds` the record ran with (7 s at the default 5).
+- The record names the commit it ran at and the GPU it ran on.
+It is a **finding** if the song doesn't resolve, isn't audio, its length differs from the record's, it is too short
+for the arguments the record states, or the record doesn't name the commit or GPU.
+cleanup: none. Never touch the song.
+metrics: none.
+
+### C-F1163 — #1544's record table holds every cut × arm, marks missing context as n/a and post-end context as silence, and invents no numbers
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
+No calls beyond C-F1162's: read the table in #1544's hand-off (C-F1162 says where). The plan's arms per cut are
+pre-context {0, 0.5, 1, 2} s × post-context {0, 0.2} s: 8 arms, 40 cells at the default `--cuts 5`.
+expected:
+- **Cuts.** Five cut points (or the `--cuts` the record ran with), each stated as a start time, and each on a latent-hop
+  boundary: the record states the hop (in samples or seconds) and every start is a whole multiple of it. One cut starts
+  at 0 s. One cut's slice ends at the song's end (its start + `slice-seconds` equals the song length C-F1162 read,
+  within one hop). The other three are said to be inside vocal passages.
+- **Cells.** Every cut × arm cell is present. Each cell that has numbers gives all of: token 0 relative L2 and cosine,
+  the mean error over the first 0.25 s and the first 0.5 s, the last token and the last 0.2 s, the floor (median error
+  of the middle tokens), and the head and tail run lengths above 3× the floor.
+- **0 s cut.** Its pre-context 0.5, 1 and 2 s arms (both post-context values) read "n/a: no audio before", or words to
+  that effect, with no numbers. Its pre-context 0 arms have numbers.
+- **Partial pre-context.** For any other cut whose start is less than an arm's pre-context (a cut at 1.2 s has no 2 s
+  of audio before it), that arm is marked n/a or states it was truncated to the audio there is. A number for a
+  pre-context longer than the audio before the cut, with neither mark, is invented.
+- **End-of-song cut.** Its post-context 0.2 s arms are marked as silence (encoded past the song's end). Its
+  post-context 0 arms have numbers.
+- **Sanity.** Every floor is positive. Every run length is between 0 and `slice-seconds`. Each cosine is in
+  [-1, 1]. Each relative L2 is non-negative. The pre-0/post-0 arm (dw's hard cut today) has numbers on every cut.
+- **Determinism.** The record shows a repeat encode of at least one arm with numbers identical to the first to 3
+  significant figures (posterior mode), as the plan's *Determinism* line requires.
+- **Path.** The record says it measured dw's hold path, `encode_audio_span` through
+  `MiniMaxH3Ref2VAReferenceEncoderStep` on a waveform normalized as `DwH3HoldAudioStep` does, against one continuous
+  encode of the whole song; not a bare `audio_vae.encode`.
+It is a **finding** if a cell is missing, a missing-context cell carries numbers, the end cut's post-context isn't marked
+as silence, a cut isn't on a hop boundary, a sanity bound fails, the repeat differs past 3 significant figures, or
+the record measured a path other than dw's hold encode.
+cleanup: none.
+metrics: none.
+
+### C-F1164 — #1544's verdict sentence is the one Don's amended bar gives from the record's own numbers; token 0 doesn't decide it
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
+No calls beyond C-F1162's: apply the bar to the table C-F1163 accepted. Don's amended bar (ruling of 2026-11-21 on
+#1516) is met only when both hold:
+- **(a)** on at least 3 of the 5 cuts, the hard-cut arm (pre 0 / post 0) has a head run **or** a tail run above 3× that
+  cut's floor lasting at least 0.25 s; and
+- **(b)** the 1 s pre-context arm brings the head back within 2× the floor.
+expected:
+- The record states its verdict in one sentence: the bar is **met** or **not met**.
+- (a) is counted from the run-length columns. Boundaries: a run of exactly 0.25 s counts; 0.24 s does not. "Above 3×"
+  is strict: tokens at exactly 3× the floor don't extend a run. Exactly 3 of 5 qualifying cuts meets (a); 2 does not.
+  Head and tail are either-or per cut: a cut with only a tail run counts once, and a cut with both counts once.
+- For (b), the record names which head measure it holds to 2× the floor (the first-0.25 s mean, say) and which cuts it
+  is judged on. The 0 s cut has no 1 s arm and is not counted against (b). Applying the record's stated reading to its
+  own numbers gives the verdict it states; within 2× is inclusive (exactly 2× passes).
+- A verdict of **met** needs both (a) and (b). (a) met with (b) not met is **not met**, and the record says which half
+  failed.
+- Token 0's relative L2 appears in the table but is not a reason in the verdict: a verdict that is met or not met
+  because of token 0 (say, "token 0 is 57% off, so the bar is met") is a **finding**, whatever its other numbers.
+- The hand-off routes the feature by the verdict: **not met** says #1516 is to be declined with the record linked;
+  **met** says the feature returns to the lead for a plan with stages B and C. Neither names an A/B render or an engine
+  change as done in this stage.
+It is a **finding** if the stated verdict differs from what the bar gives on the record's own numbers, the record
+doesn't say how it reads (b), or token 0 decides the verdict.
+cleanup: none.
+metrics: none.
+
+### C-F1165 — #1544 adds no MCP surface and no engine change
+pending: #1544
+source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
+Free and read-only. The plan's stage A is a bench script, a record, a unit test and one line in `bench/README.md`,
+with no MCP, REST or syntax surface and no engine docs change (Q1 ruled: a bench script, not a task).
+1. Read #1544's hand-off comment for the list of what it changed.
+2. `list_tasks()` (summary form), and `get_task("h3_audio_vae_probe")`.
+3. `get_guide("workflows")` (the index), and its section on `hold_audio` (the hold rule the plan's sweep cites).
+expected:
+- The hand-off lists only the probe, the record, the unit test (cut points on hop boundaries, the context-token drop,
+  the metrics including the above-3×-floor run length, against a context-sensitive fake encoder) and the
+  `bench/README.md` line. Naming a change to `h3_hold_steps.py`, `h3_hold.py`, `chain_config.py`, `slice_audio`,
+  a workflow template or a skill is a **finding** (stages B and C aren't planned).
+- Step 2: no task named for the probe or an audio-VAE context encode is listed, and `get_task("h3_audio_vae_probe")`
+  answers that the task is unknown.
+- Step 3: the hold section describes no pre- or post-context encode for a held slice (no 1 s lead, no 0.2 s tail,
+  no token drop). A hold rule there that now encodes context is a **finding**.
+It is a **finding** if any MCP-visible surface or engine rule changed in this stage.
+cleanup: none.
+metrics: none.
+
+### C-F1166 — #1546's no-plugin drill record is on the ticket, ran without skills, and covers all three asks verbatim
+pending: #1546
+source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free and read-only. The record lives in dw's `bench/records/drill.md` (section *Cold drill without the plugin
+(#1524)*), which a consumer can't read, so read its copy on the ticket: `gh issue view 1546 --repo
+dkackman/diffusers-workflow --comments`, the hand-off comment holding the record (or its full text). If the hand-off
+holds only a link to the file and no copy of the record, that is a **finding** on its own (the stage can't be checked
+over MCP); bounce it asking for the record on the ticket.
+expected:
+- The record names the drill client: Claude Sonnet via `claude -p`, `--strict-mcp-config` with the dw MCP only, no
+  `--plugin-dir`, the user-level skills withheld, Bash disallowed, a working directory outside any dw checkout, and
+  the server it ran against (lem).
+- It states that no `Skill` tool was available in any of the three sessions, and **no session's call order contains a
+  `Skill` call** (nor a `dw:` skill name as a call). One such call anywhere is a **finding**: the drill measured the
+  plugin, not its absence.
+- It holds the three asks verbatim: (1) "a product photo of a ceramic teapot on linen, morning light"; (2) an H3 clip
+  of about 8 s with two people and two lines of dialogue; (3) a piece of about 60 s with two scenes with dialogue and
+  a score. Each session's turns are the ask, "go ahead", and "check on the job and finish up" (#1362's shape).
+- Each ask has its own scorecard, its own call order, and its own workspace name; the three workspace names differ.
+- Each ask has at least one job id, **or** (ask 3 only) a stated reason none was run: its quote was 30 min or more,
+  with the quote's minutes given. Ask 1 or ask 2 with no job id is a **finding** (Don ruled both run to completion).
+- The record has a *what it did right on the tool surface alone* list, a rules-broken table, and a **For Don** list
+  whose last item is one sentence on supported clients.
+It is a **finding** if any bullet above is missing.
+cleanup: none (read-only).
+metrics: none.
+
+### C-F1167 — every job #1546's record cites exists in its ask's workspace, ran on lem, finished, and its output opens
+pending: #1546
+source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Reads only. For **every** job id the record (C-F1166) cites: `get_job`; then `get_job_workflow`; then open its output —
+`get_output_image` for an image, `get_output_frames` (a few frames, the default form) for a video,
+`get_gallery_metadata` on a video's output for `duration_seconds`, `fps` and `frame_count`. Then `list_jobs` with
+`workspace=` set to each of the three workspaces the record names.
+expected:
+- Each cited job exists, and its `get_job` workspace is the one the record gives for its ask. A cited job that is in a
+  default, `regression-*`, `qa-*` or another ask's workspace is a **finding**.
+- Each job's `device` names a CUDA card (lem), not `mps` or `cpu`.
+- A job cited as the ask's deliverable is `completed` with at least one output, and that output opens. A failed or
+  cancelled job may be cited only as a failure the scorecard describes as one, never as the deliverable.
+- Ask 1's deliverable is an image; ask 2's is a video with an audio track, `duration_seconds` between 6 and 10, and a
+  `frame_count` of the form 17n+5. If ask 3 ran, its deliverable is a video of at least 45 s.
+- Each workspace's `list_jobs` holds only the drill's jobs for that ask, every one of which the record mentions (a job
+  in the workspace the record never mentions is a **finding**: the call order is incomplete). The workspace was empty
+  before the drill: no job in it is older than the record's first call.
+It is a **finding** if a cited id is missing, in the wrong workspace, off lem, or its output won't open.
+cleanup: none.
+metrics: none.
+
+### C-F1168 — every rules-broken row names a real skill section and exactly one placement verdict
+pending: #1546
+source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. For each row of the record's rules-broken table: read the skill it names through the tester's own loaded `dw`
+plugin (the `Skill` tool, e.g. `dw:flux3-klein`, `dw:minimax-h3`, `dw:long-form`; these load from `develop`, the
+commit lem runs, which is at or after the record's commit). If a row names a `references/` file, read it through the
+skill's own link.
+expected:
+- Every row names a `plugins/dw/skills/<skill>/SKILL.md` (or `.../references/<file>.md`) location and a section or
+  line in it, and that skill exists in the loaded plugin.
+- The rule the row states is in that section of the skill (same numbers: steps, shifts, 35 s, 90 s, 17n+5 and so on).
+  A row citing a section that doesn't hold the rule is a **finding**. A rule the skill changed after the record's commit
+  is not a finding if the row's commit is named and the change is visible in the skill's history note, if any; say so.
+- Every row quotes the transcript or the job's arguments showing the break (a call, an argument, a sentence the
+  session wrote), not a paraphrase alone.
+- Every row has exactly one placement verdict of the plan's three: **a served guide can carry it**, **the tool or
+  validation should refuse it instead**, or **model knowledge, no fix**. A row with none, two, or another word is a
+  **finding**.
+- A rule that the plan lists as already served (17n+5 frames, `WORKFLOW_GUIDE.md`; the turbo-LoRA drop for
+  audio-over-picture) is not marked broken-because-unserved: if broken, the row says the guide already holds it.
+It is a **finding** if any row fails a bullet above.
+cleanup: none.
+metrics: none.
+
+### C-F1169 — the record misses no break that its jobs' own manifests show, for the plan's listed rules
+pending: #1546
+source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Reads only. The plan lists the skill-only rules each ask can break. For each ask's deliverable job, read
+`get_job_workflow` (resolved workflow and arguments) and check each listed rule against it. A rule the manifest shows
+broken must appear in the record's rules-broken table; a rule the manifest shows kept should appear in the
+*did right* list or not at all, but never as broken.
+- **Ask 1 (if FLUX 3 Klein):** the short prompt went through `templates/flux3/upsample-then-generate` (or an
+  equivalent upsample step before the generation); 16 inference steps; no guidance argument; no negative prompt; an
+  explicit device on every component. If the session picked another model family, the record says which and why, and
+  the Klein rules are n/a rather than broken.
+- **Ask 2 (H3):** the prompt holds `<d>` lines, so the turbo LoRA is absent and the step runs 12 steps, `video_shift`
+  12.0, `audio_shift` 3.0; `num_frames` is 17n+5; a voice description repeated word for word for the same speaker;
+  each line's words fit its frames at the skill's words-per-second budget (count words inside `<d>…</d>` against
+  `num_frames / fps`).
+- **Ask 3 (run or planned):** for a planned-only ask, check the plan the record shows (the workflow name and arguments,
+  which the record must give so it can be re-validated); chains of at most 35 s joined by cuts, `check: true,
+  retries: 1`, a score past ~90 s on `music-long`, and the worst-case cost stated.
+expected:
+- For every listed rule, the record's verdict (broken / kept / n/a) agrees with the manifest. A rule broken in the
+  manifest but absent from the table is a **finding**; one kept in the manifest but listed broken is a **finding**.
+- If ask 3 was not run, `validate_workflow` on the workflow and arguments the record gives (free; no run) quotes
+  `plan.estimate` minutes of 30 or more, within the spread of a fresh quote (a quote under 30 min means ask 3 should
+  have run, per Don's ruling: a **finding**). If the record gives no re-validatable plan, that is a **finding**.
+It is a **finding** if any listed rule's verdict disagrees with the job's own manifest.
+cleanup: none.
+metrics: none.
+
+### C-F1170 — the record's closing client sentence claims only what the drill tested
+pending: #1546
+source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read the **For Don** list's last sentence (C-F1166).
+expected:
+- It names Claude Code with the plugin, and a no-plugin Claude session as tested ("tested as a no-plugin Claude
+  session" or equivalent), and says what a client without the plugin loses (the broken rules, or "nothing for the
+  three asks" if none broke).
+- It names **no other client or model as tested**: Codex, Cursor, GPT, Gemini or "any LLM" described as tested or
+  verified is a **finding** (Q1's ruling). Naming them as untested is fine.
+- What it says is lost agrees with the rules-broken table: it neither claims a loss the table doesn't show, nor says
+  "nothing is lost" while the table has a row.
+It is a **finding** if the sentence claims more than the record's evidence.
+cleanup: none.
+metrics: none.
+
+### C-F1171 — #1546 adds no MCP surface: no guide, no tool, no task
+pending: #1546
+source: tester, spec for #1546 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free and read-only. The plan's stage A is a record only (no code, no deploy). `list_guides`; `get_guide("agent-rules")`;
+`get_guide("mcp")` (the index).
+expected:
+- `list_guides` lists the same 16 guides as before the stage (acceleration, docker, ip-adapter, loras, mcp,
+  prompt-weighting, quantization, recipes, remote, security, security-quickref, server, tasks, worker, workflows,
+  workspaces), with no `agent-rules`, while #1547 is unbuilt.
+- `get_guide("agent-rules")` is refused as an unknown guide, naming the guides.
+- The `mcp` guide's sections are unchanged (no *Clients* section yet).
+- The hand-off names only the record in `bench/records/drill.md` as changed.
+It is a **finding** if stage A adds or changes MCP-visible surface (that is stage B's).
+cleanup: none.
+metrics: none.
+
+### C-F1172 — `list_guides` lists `agent-rules` with its summary and one section per family the drill touched
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. `list_guides`. Compare with #1546's rules-broken table (C-F1166's record copy): the families with at least one
+row marked **a served guide can carry it**. If that set is empty, stage B shrank to the docs claim (approved): skip to
+the last bullet.
+expected:
+- An entry named exactly `agent-rules`, `file` `AGENT_RULES.md`, whose summary says it holds hard rules per model
+  family and for pieces longer than one clip, for a client without the dw plugin.
+- Its `sections` hold one section per family in that set (e.g. FLUX 3 Klein, MiniMax H3) and, if any long-form row is
+  in the set, a *Longer than one clip* section. A family in the set with no section is a **finding**; a section for a
+  family the drill never touched is scope creep, a **finding** (the plan: only the rules the drill showed broken).
+- The other 16 guides are still listed, with the same names and files.
+- Shrunk stage: no `agent-rules` entry is listed and the hand-off says stage A found no guide-carryable rule. An
+  `agent-rules` guide while the record marks none carryable, or no guide while it marks some, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1173 — every `agent-rules` section returns, opens with the skill pointer, and links only to served guides
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("agent-rules")` (the index), then `get_guide("agent-rules", section=<s>)` for **each** name in its
+`sections`. Skip if C-F1172 found the stage shrunk.
+expected:
+- The index answers with the guide's opening and first section and names the rest in `sections` (and `withheld`), as
+  every other guide does.
+- Each section returns non-empty `content` under its own heading, and opens by saying that the Claude Code skill
+  (named, e.g. `dw:minimax-h3`) carries the same rules with their evidence.
+- Each rule is one line (a bullet), and the guide adds no tool, parameter or syntax the server doesn't have: any
+  template or task it names resolves (`get_workflow` / `get_task`, free).
+- Every link in the content points at a served guide: its target is a `file` in `list_guides` (e.g.
+  `WORKFLOW_GUIDE.md`, `#…` anchors allowed), or `agent-rules` itself. A link to `plugins/`, `references/`,
+  `RELEASING.md`, `bench/` or any unserved file is a **finding**. #1519's recipes index may be linked only if
+  `list_guides` serves it.
+It is a **finding** if a listed section won't return, lacks the skill pointer, or links to an unserved doc.
+cleanup: none.
+metrics: none.
+
+### C-F1174 — `agent-rules` section names match loosely, and an unknown or empty one gets the usual refusal
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. Skip if the stage shrank. Today (2026-11-21) `get_guide("mcp", section="known limits")` resolves to *Known
+limits* (case-insensitive), and an unknown section is refused as: `The 'mcp' guide has no section '<s>'. Its sections
+are: <list>.` `agent-rules` must behave the same:
+1. For one section, ask for it all-lowercase; and with the heading's exact case plus surrounding spaces.
+2. `get_guide("agent-rules", section="zzqx nonexistent heading")`.
+3. `get_guide("agent-rules", section="")`.
+4. `get_guide("Agent-Rules")` (guide names are exact today: `get_guide("MCP")` is refused as `No guide named 'MCP'`).
+expected:
+- Step 1: both resolve to the section, with its proper heading in `section`.
+- Step 2: refused in the same form as `mcp`'s, naming every `agent-rules` section.
+- Step 3: answers the same as the guide's no-section index, or the same refusal; either is acceptable, but it is the
+  same answer `get_guide("mcp", section="")` gives today (run both and compare). A traceback or a different behaviour
+  from `mcp` is a **finding**.
+- Step 4: refused exactly as `MCP` is, naming the guides with `agent-rules` among them.
+cleanup: none.
+metrics: none.
+
+### C-F1175 — every carryable rule from #1546's record is in `agent-rules` with the same number, and the number matches the skill
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. Skip if the stage shrank. For each row of #1546's table marked **a served guide can carry it**, find the rule in
+the matching `agent-rules` section (C-F1173), and in the skill the row names (the tester's loaded `dw` plugin).
+expected:
+- Each such rule is in the guide. A carryable row with no line in the guide is a **finding**.
+- Every number the line states equals the skill's and the row's: for the plan's examples, FLUX 3 Klein 16 steps with
+  no guidance and no negative prompt; H3 dialogue 12 steps, `video_shift` 12.0, `audio_shift` 3.0, no turbo LoRA;
+  chains of at most 35 s joined by cuts; `check: true, retries: 1`; a score past 90 s on `music-long`. One digit off
+  (e.g. 30 s, 11 steps, shift 3 for video) is a **finding**.
+- A row marked **the tool or validation should refuse it** or **model knowledge** is not required in the guide; if it is
+  there anyway, that is fine, but the hand-off says what happened to a "refuse it" row (an issue filed, or left).
+- The guide states no rule that contradicts a skill it points at.
+It is a **finding** if a carryable rule is missing or any copied number differs from the skill's.
+cleanup: none.
+metrics: none.
+
+### C-F1176 — the server instructions point a no-plugin client at `agent-rules`, and keep their existing pointers
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read the dw server's instructions as the MCP client receives them (the tester's session shows them as the `dw`
+server instructions; a fresh session after the deploy sees the new text). Skip the first bullet if the stage shrank.
+expected:
+- They name `agent-rules` and say to read it (`get_guide("agent-rules")`) before composing when no dw plugin is loaded.
+  The wording is the builder's.
+- They still name `list_workflows(shape=...)`, `list_guides`, `validate_workflow` before a run, and
+  `get_guide("workflows", section="Authoring a workflow from an agent")`; and that section still resolves
+  (`get_guide`, free). A pointer that was dropped to make room is a **finding**.
+- The guide they name exists (`get_guide("agent-rules")` answers).
+It is a **finding** if the instructions don't name the guide, name one that doesn't resolve, or lost an existing
+pointer.
+cleanup: none.
+metrics: none.
+
+### C-F1177 — `get_guide("mcp", section="Clients")` states the client claim, and it matches #1546's sentence
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. `list_guides` (the `mcp` entry's sections); `get_guide("mcp", section="Clients")`; `get_guide("mcp",
+section="clients")`. Compare with C-F1170's sentence. This case runs whether or not the stage shrank.
+expected:
+- `mcp`'s sections include *Clients*, alongside the 9 it has today (Install and run, Client configuration, Verify the
+  setup, The notes channel, Tool reference, The cost gate, Security, Known limits, Troubleshooting).
+- Both calls return the section. It says: Claude Code with the plugin is the tested path; any MCP client gets every
+  tool and the guides (naming `agent-rules`, unless the stage shrank); that path is tested as a no-plugin Claude
+  session; without the skills it loses the rules listed (in `agent-rules`, or listed here if shrunk); other models are
+  untested.
+- It names no client but Claude as tested; Codex, Cursor or "any LLM" as tested is a **finding**.
+- Its tested/lost claim agrees with #1546's closing sentence: it claims neither more clients nor fewer losses.
+- Any link in it points at a served guide (as C-F1173).
+It is a **finding** if the section is missing or its claim goes past the record.
+cleanup: none.
+metrics: none.
+
+### C-F1178 — #1547 grows no tool surface: same tool set, `get_guide` takes only `name` and `section`
+pending: #1547
+source: tester, spec for #1547 from #1524's plan v1 (claude-opus-5-5 via anthropic)
+Free. The tool list the tester's MCP client receives from `dw`, and `get_guide`'s and `list_guides`'s input schemas
+from it.
+expected:
+- The same tool names as before the stage. On 2026-11-21 this tester's client listed 64 `dw` tools (the plan says 65;
+  compare names, not the plan's count): assess_output, cancel_download, cancel_job, clear_memory, compare_outputs,
+  copy_to_workspace, create_workspace, delete_asset, delete_output, delete_prompt, delete_request, delete_workflow,
+  delete_workspace, download_model, download_output, enhance_prompt, export_job, get_class, get_diffusers_state,
+  get_guide, get_health, get_job, get_job_events, get_job_workflow, get_memory, get_output_audio, get_output_frames,
+  get_output_image, get_output_text, get_pipeline_signature, get_prompt, get_prompt_schema, get_request, get_schema,
+  get_server_info, get_task, get_workflow, keep_output, list_assets, list_classes, list_downloads, list_enhancers,
+  list_gallery, list_guides, list_jobs, list_loras, list_models, list_pipelines, list_prompts, list_tasks,
+  list_workflows, move_job, recommend_loras, rerun_job, run_workflow, save_lora, save_prompt, save_workflow, set_note,
+  set_request, upload_asset, use_workspace, validate_workflow, wait_for_job. A tool added by another feature since
+  is not this stage's; check the hand-off and that feature's ticket before calling it a finding.
+- No `get_skill` tool, and the server exposes no MCP prompts or resources carrying skill text (Q4: a guide only).
+- `get_guide` takes exactly `name` (required) and `section` (optional); `list_guides` takes nothing.
+It is a **finding** if a tool or a `get_guide`/`list_guides` parameter was added by this stage.
+cleanup: none.
+metrics: none.
+
+### C-F1179 — the served Docker guide starts from a clone, with the repo URL, before `init-env.sh`
+pending: #1548
+source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. `list_guides` (the `docker` entry); `get_guide("docker", section="Start it")`; and, if the clone step went into
+another section, the guide's index `get_guide("docker")` and that section. On 2026-11-21 *Start it* opened with
+`bash docker/init-env.sh` and no clone step at all, and the guide's sections were: What the host needs, Start it,
+Where the data lives: shared with a native install, diffusers tracks main, on a volume, The API token, Options.
+expected:
+- Before the first `docker/...` command a reader meets, the guide gives a `git clone` command with a full URL for the
+  dw repo (`https://github.com/dkackman/diffusers-workflow` or its `.git` / SSH form) and the `cd` into the
+  clone. A `git clone …`, a `<url>` placeholder or a URL for any other repo is a **finding**.
+- The commands in *Start it* run from the directory that `cd` lands in. If the guide says to run them from somewhere
+  else (no `cd`, or a different directory), that is a **finding**: `docker/init-env.sh` is a relative path.
+- The six sections listed above are all still served (renamed is fine if the content stayed). A link in the new text
+  points at a served guide or an absolute URL.
+It is a **finding** if a reader of the served guide can't get from nothing to `bash docker/init-env.sh` with only the
+commands it gives.
+cleanup: none.
+metrics: none.
+
+### C-F1180 — the served Docker guide gives a same-host `claude mcp add --transport http` line, with the token from `login-url`
+pending: #1548
+source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("docker", section="Start it")` and `get_guide("docker", section="The API token")`, plus whichever
+section holds the new line (`get_guide("docker")` names them). On 2026-11-21 neither section had a `claude mcp add`
+line: a reader had to put one together from the README and `REMOTE.md`.
+expected:
+- One complete `claude mcp add --transport http <name> http://localhost:<port>/mcp --header "Authorization: Bearer
+  <token>"` command, or an equivalent the builder words differently but that keeps each of these parts:
+  `--transport http`, a URL on `localhost` or `127.0.0.1` ending in `/mcp`, and an `Authorization: Bearer` header.
+- The port is the one the guide publishes: `8765`, or `<DW_HOST_PORT>` with the guide's own default of 8765. A port
+  that differs from the guide's default with no explanation is a **finding**.
+- The guide says where the token comes from: `login-url` (the `?token=` value it prints) or
+  `DIFFUSERS_HELPER_ROOT/api-token`, with a command that gets it. "Use your token" with no source is a **finding**.
+- The token in the line is a placeholder (`<token>`, `$DW_API_TOKEN` or similar), never a 64-hex value. A
+  literal-looking token is a **finding**. File it privately as an advisory if it looks like a real one.
+- The URL path is `/mcp`. `/sse`, `/api/mcp` or no path is a **finding**, unless the `mcp` guide's *Client
+  configuration* section (`get_guide("mcp", section="Client configuration")`) gives that same path for HTTP.
+It is a **finding** if the guide still leaves the reader to assemble the line from other documents.
+cleanup: none.
+metrics: none.
+
+### C-F1181 — the served Remote guide's install step gives the clone URL, the same one the Docker guide uses
+pending: #1548
+source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("remote", section="On the GPU box")`. Compare it with the URL that C-F1179 found. On 2026-11-21 step 1
+read "Install as usual (`git clone …`, `bash ./install.sh`)".
+expected:
+- Step 1 carries a `git clone` with the full dw repo URL. The `…` is gone.
+- That URL is the same repo as the Docker guide's (C-F1179). The HTTPS and `.git` forms of one repo count as the
+  same. Two different repos is a **finding**.
+- The rest of the section is still there: the token step (`openssl rand -hex 32`), the
+  `DW_API_TOKEN=<token> dw-serve --host 0.0.0.0 --mcp` line and its exit-2 refusal note, the firewall step, the
+  `--trust-workflows` warning, the `/api/health` check, and *URLs handed to a person*. A dropped line is a
+  **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1182 — after #1548 lands, lem's web UI still answers at `/` and its pages load
+pending: #1548
+source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. **Web UI, black-box** (`ui-check`). Run it once lem is serving the stage's commit (`get_server_info` / `get_health`
+`version` agree with the hand-off). This is a consumer-side backstop for the plan's "dw-serve serves the UI at /".
+lem isn't a fresh install, so the box-side check (a fresh `install.sh` leaves a built `ui/dist`) is not this case.
+Spec: `goto {path: "/"}`; `wait_text` on any visible text (`regex: "\\w"`, 15000 ms); `screenshot {name: "root"}`;
+then `goto` one more page the root links to (its first nav link) and `wait_text` again.
+expected:
+- `/` renders the app: visible app text and controls, not a bare `Not Found` / `{"detail":"Not Found"}` body or an
+  empty page. The screenshot shows it.
+- `page_errors` is empty on both pages, and no `blocked` request is needed to render them.
+It is a **finding** if `/` 404s or renders blank after the stage. That is exactly the defect the plan names, and the
+stage must not leave it, or reintroduce it, on the deployed box.
+cleanup: none.
+metrics: none.
+
+### C-F1183 — #1548 leaves the MCP surface and the first-run template as they were, apart from a possible mps cost row
+pending: #1548
+source: tester, spec for #1548 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_workflow("templates/text-to-image")`; `list_guides`. The plan promises "no engine, MCP, REST, syntax or
+Docker image change". On 2026-11-21 the template was: SD 1.5 (`stable-diffusion-v1-5/stable-diffusion-v1-5`),
+`torch.float32`, `safety_checker: null`, 25 steps, variables `prompt` ("an apple"), `num_images_per_prompt` (1) and
+`seed` (null), `cost_drivers: ["num_images_per_prompt"]`, and one `cost` row
+`{device: cuda, name: RTX 3090, vram_gb: 24, minutes: 0.2}`. `list_guides` served 17 guides (workflows, tasks,
+recipes, acceleration, quantization, loras, prompt-weighting, ip-adapter, server, security, remote, worker, mcp,
+docker, security-quickref, workspaces), each with the sections it listed that day.
+expected:
+- The template's model, dtype, steps, variables, defaults and `cost_drivers` are unchanged: the plan's non-goal is
+  "changing which model the first run uses". The cuda row is still there.
+- A new `cost` row, if any, is `device: "mps"` with a numeric `minutes` and a named machine. Q4 gives that row to
+  stage C, so it is fine either way here. A row with no `minutes`, or one for a device other than mps, is a
+  **finding**.
+- Every guide served before is still served. A guide added by this stage isn't a finding, but say so in the verify.
+It is a **finding** if the stage changed the first run's model or settings, or removed a served guide or section.
+cleanup: none.
+metrics: none.
+
+### C-F1184 — #1549's drill record carries every field the plan asks, per arm, and every stall resolves
+pending: #1549
+source: tester, spec for #1549 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read the drill record on #1549 (`gh issue view 1549 --repo dkackman/diffusers-workflow --comments`), and
+`gh issue view` each issue it links. Over MCP: `get_guide("docker", section="Start it")` and the section holding
+C-F1180's line, at the stage's merged commit.
+expected:
+- Both a **CUDA** arm and a **Docker** arm, each with: the dw commit it walked (stage A's merged commit or later);
+  the diffusers commit it got; wall time from the first command to the first image, with download time split out
+  where the record could; the number of commands; and an image from `templates/text-to-image` produced through an
+  MCP client (the client named, plus a job id or output path). A missing field on either arm is a **finding**.
+- The CUDA arm says it ran in a stock `nvidia/cuda` Ubuntu container with only the listed prerequisites, and that the
+  client reached it over `docker exec -i ... dw-mcp`. The Docker arm says it used `docs/DOCKER.md` as written, with an
+  `.env` pointing every dw directory and the HF cache at fresh, empty paths, and a `--no-cache` build or freshly
+  pulled images (the plan's "clean leaks" risk). An arm that doesn't state how it was kept clean is a **finding**.
+- Every stall listed has either a doc fix in the stage's branch (named) or a filed issue that exists (`gh issue view`
+  answers). A stall with neither is a **finding**.
+- Each doc fix the record claims for `DOCKER.md` or `REMOTE.md` shows in the served guide (`get_guide`) once the stage
+  is on lem. A claimed fix the served text doesn't carry is a **finding**.
+- The record says clean-up happened (containers, images and drill directories removed).
+It is a **finding** if the record claims an image but names no job or output, or counts commands that don't match
+the commands it lists.
+cleanup: none.
+metrics: none.
+
+### C-F1185 — #1549's drill leaves lem's own server untouched: same server, workspaces and template
+pending: #1549
+source: tester, spec for #1549 from #1525's plan v1 (claude-opus-5-5 via anthropic)
+Free. Take `get_server_info`, `get_health` and `list_workspaces` before the verify, and compare them with the hand-off's
+stated commit. The plan says "lem's `dw-serve` is untouched. The drill servers use spare ports", and that "an `.env`
+points every dw directory and the HF cache at fresh, empty paths, so lem's real caches stay untouched".
+expected:
+- lem's server on its usual port still answers with its usual `hostname` and `device: cuda`, on the commit `lem` is
+  meant to run (develop). A drill server answering in its place is a **finding**.
+- `list_workspaces` shows no workspace the drill created (a name containing `drill`, `cold` or the like, or one
+  created during the drill window the record states). One there is a **finding**: a drill server shared lem's dw
+  root.
+- `get_workflow("templates/text-to-image")` still has its `observed` block, with `runs` no lower than before the
+  drill. A reset is a **finding**: the drill wrote into lem's root.
+It is a **finding** if any of lem's own state shows that a drill arm wrote into it.
+cleanup: none.
+metrics: none.
+
+### C-F1186 — validate refuses an H3 `references` entry with no `reference_type` key or a bare class name, at the entry's path
+source: tester, verified in #1512 (claude-opus-5-5 via anthropic)
+Free (validate only). Use one inline workflow, step `h3`: `pipeline.configuration: {"component_type": "ModularPipeline"}`,
+`from_pretrained_arguments: {"model_name": "MiniMaxAI/MiniMax-H3", "workflow": "ref2va"}`, `arguments: {"prompt": "x",
+"num_frames": 124, "width": 960, "height": 544, "num_inference_steps": 9, "output": ["videos", "audio", "sampling_rate"],
+"references": R}`, `result: {"content_type": "video/mp4", "fps": 24}`. Let I = the HF documentation-images
+`diffusers/astronaut.jpg` URL and V = `diffusers/hiker.mp4` (the defaults of `templates/minimax/composable-references`).
+Validate it with each R below:
+1. `[{"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3ImageReference", "from_file": I},
+   {"reference_type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_file": V}]` (control)
+2. `[{"type": "diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference", "from_file": V}]` (`type`, not `reference_type`)
+3. the control with `references[1].reference_type` set to the bare `"MiniMaxH3VideoReference"`
+4. a `window` step placed before `h3` (any step that validates), and R = `[{"type": "MiniMaxH3VideoReference",
+   "from_previous_result": "window", "audio": null}]`
+expected:
+- 1 is `valid: true` and has a `plan`.
+- 2 and 4 are `valid: false` with an error at `steps[<h3>].pipeline.arguments.references[0]` saying the entry has no
+  `reference_type` key, and naming the full dotted path `diffusers.modular_pipelines.minimax_h3.MiniMaxH3VideoReference`.
+- 3 is `valid: false` at `steps[0].pipeline.arguments.references[1]`, saying the name is not a dotted path, with the
+  same pointer to `reference_type` and the full dotted path.
+It is a **finding** if 2, 3 or 4 comes back `valid: true`, or if the error sits somewhere other than the entry's path.
+cleanup: none.
+metrics: none.
+
+### C-F1187 — #1551's held-frame record lists every H3 video in the corpus workspaces, with every field the plan asks
+pending: #1551
+source: tester, spec for #1551 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. Stage A has no MCP surface. The plan has the tester run `bench/held_frames.py` on lem, but a tester never
+reaches lem except over MCP. So this case checks the record (`bench/records/held-frames.md`, as quoted or linked in
+#1551's hand-off: `gh issue view 1551 --repo dkackman/diffusers-workflow --comments`) against what MCP serves. The
+corpus is `known-issues`, `h3-quality`, `constitution-walk`, `constitution-walk-2`, `constitution-walk-3`,
+`inner-space`, `soviet-anthem`, `russian-anthem`, `shedding-skin-quartet`, `acorn-wars`, `sci0fi` and `default`.
+For each one that `list_workspaces` shows, call `list_gallery(workspace=<ws>)` and keep the video outputs. A video is
+"H3" when its job's workflow (`get_job_workflow`, or the template `list_gallery` names) is a `templates/minimax/...`
+H3 video template or composes one. Check this per output in at most 3 workspaces; in the rest compare counts only.
+expected:
+- Every H3 video output in the corpus workspaces is in the record, and each workspace's count in the record matches
+  the count over MCP. A shortfall the record doesn't explain (unreadable file, deleted since) is a **finding**. A
+  workspace the record omits is a **finding** unless `list_workspaces` doesn't show it either.
+- Each listed file carries: workspace, job, workflow or template, H3 mode (single, cuts, chain segment, joined), step
+  count where the job's workflow records it (else marked unknown), frames, the held count at ε 0.5, 1.0 and 1.5,
+  clusters, and the d percentiles. A missing column is a **finding**.
+- For 5 files picked across modes, `frames` equals `get_gallery_metadata(name, workspace=<ws>).frame_count`. A
+  mismatch is a **finding**: the script read something other than the gallery file.
+- `qa-*`, `regression-*`, `drill-*` and `probe-*` takes, if present, are marked as extra samples and are not in the
+  counts the gate reads.
+It is a **finding** if the record lists a file that MCP can't find in the named workspace.
+cleanup: none.
+metrics: none.
+
+### C-F1188 — #1551's record names its flagged takes as openable gallery names and states the gate and the hold pattern
+pending: #1551
+source: tester, spec for #1551 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. Read the record as in C-F1187.
+expected:
+- It gives the distribution per H3 mode and per schedule (4-step and full), at each ε.
+- It names the 5 highest-count takes and the 3 nearest the 6 and 12 marks. Each name resolves with
+  `get_gallery_metadata(name, workspace=<ws>)` and is a video. A name that resolves to nothing is a **finding**:
+  Don can't open it (Q3).
+- It states the gate in the plan's terms: whether any take has a cluster, or 7 or more held frames once static shots
+  and frames at cuts are excluded, and so whether B proceeds. A verdict that contradicts its own table is a
+  **finding**.
+- It says whether the holds come in twos or fours (or names another pattern, or none). A record with no word on the
+  pattern is a **finding**: the plan makes C's stride depend on it.
+- It reports the d distribution that set ε (the plan's "starts at 0.5 and reports the d distribution").
+- The record's numbers match a rerun. A tester can't run the script, so this check passes only if the hand-off quotes
+  a second run (by the implementer or lead) with the same counts. Without one, say so in the verify: it is
+  unverified, not passed.
+cleanup: none.
+metrics: none.
+
+### C-F1189 — #1551 changes no served surface and writes nothing into the corpus workspaces
+pending: #1551
+source: tester, spec for #1551 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. On 2026-11-21, `list_tasks().assessment` was `analyze_seams`, `analyze_shots`, `analyze_sync_drift`, and
+`assess_output(name="asset:qa-cast/ep6-cold-open.mp4", probe="analyze_nonexistent", workspace="regression-complete")`
+was refused with `Unknown probe 'analyze_nonexistent' - one of analyze_shots, analyze_seams, analyze_sync_drift`.
+Repeat both. For 3 corpus workspaces, `list_gallery(workspace=<ws>)`.
+expected:
+- The assessment list and the refusal are unchanged: stage A adds no probe (B does).
+- No corpus workspace holds an output, asset or file made during the bench window with a bench-like name (`held`,
+  `bench`, `choppy`, `decimat...`). One there is a **finding**: Q4 says the bench writes nothing in them, and the
+  plan's synthetic choppy take goes to a scratch dir, never into a workspace.
+cleanup: none.
+metrics: none.
+
+### C-F1190 — `analyze_held_frames` scores a built-choppy clip high, with a `held_frames` warn and clusters, on a silent video
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+CPU tasks only. **Setup shared by C-F1190–C-F1204**, in workspace `qa-1527` (`create_workspace` if missing; pass
+`workspace="qa-1527"` on every call). Each fixture is a task-only workflow, `validate_workflow`'d with its
+`acknowledged_cost` bound (`minutes: null`, since the basis is `unknown`), then `run_workflow(..., wait_seconds=55)`.
+The source is `asset:qa-cast/ep6-shot1-priya.mp4` (124 frames, 24 fps; shared asset). Steps 1 and 2 are
+`video_frames(video=<source>)` named `frames`, then `stills_to_video(images="previous_result:frames", fps=24,
+durations=D)` with `result: {"content_type": "video/mp4"}`. A still gets `max(1, round(D*24))` frames, so:
+- **CL** (clean control): D = 0.0417, one frame per source frame, 124 frames.
+- **HC** (twos): D = 0.0834, every source frame twice, 248 frames: "12 fps shown as 24".
+- **H4** (fours): D = 0.1667, every source frame four times, 496 frames.
+- **ST** (static): one `trim_video(video=<source>, start_frame=0, num_frames=1, pad_to=120)` step: frame 0 held for 5 s.
+- **CUT** (hard cut into a static shot): `trim_video(video="asset:qa-cast/ep3-shot2-reply.mp4", start_frame=0,
+  num_frames=1, pad_to=48)` named `still`, then `concat_videos` of `asset:qa-cast/ep3-shot1-incident.mp4` and
+  `previous_result:still` with a plain cut (`get_task("concat_videos")` for the spelling). The cut sits at the first
+  frame of the still, N = ep3-shot1's `frame_count` (`get_gallery_metadata`).
+CL, HC and H4 are silent: `stills_to_video` makes "one silent clip". If `stills_to_video` refuses the frame array at
+run time (the chain validated on 2026-11-21), the setup can't be built. File that as an ordinary issue and report the
+B cases blocked; it is not a finding of #1552.
+Then `assess_output(name=<HC output>, probe="analyze_held_frames", workspace="qa-1527")`, and the same on CL, and on the
+source asset. Read the `held_frames` threshold from the rule table, `get_guide("tasks", section="Assessment Probes")`.
+expected:
+- HC: `held_frames` is at least 100 (about one per source frame, minus frames at rest and the first). `held_ratio`
+  equals `held_frames / frames`, to rounding. `frames` is 248. A `held_frames` finding with severity `warn` is present.
+  `clusters[]` is non-empty, each with `start` <= `end` (seconds, inside 0 to 10.33) and `held` > 0. The clusters'
+  `held` values sum to no more than `held_frames`.
+- Each cluster finding's `at` is a number (seconds) inside its own `range` [start, end]. Nothing about a cluster is
+  only in its text.
+- The probe answers on HC even though HC has no audio. A `not_applicable` entry for `analyze_held_frames` on any of CL,
+  HC or H4 is a **finding**: that is the "no audio → no probes" break the plan names.
+- CL's `held_frames` equals the source asset's, ±2, since CL is a re-encode of it frame for frame. HC's exceeds CL's by
+  at least 100.
+It is a **finding** if HC raises no `held_frames` warn, or if any probe errors on these files.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1191 — holds in fours count too, and a static shot and a clean take score 0 with no finding
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Setup as in C-F1190. `assess_output(..., probe="analyze_held_frames", workspace="qa-1527")` on H4 and ST. Also run it
+on a take #1551's record names with 0 held frames, in its own workspace, read-only (any one; else the lowest-count
+take, and say so).
+expected:
+- H4: `held_frames` is at least 300 (about three in four of 496), with a `held_frames` warn and clusters.
+- ST: `held_frames` is 0, `clusters` is empty, and there is no `held_frames` finding. ST is a static shot: its d is
+  near zero everywhere, and no neighbour is "clearly moving". A hold counted on ST is a **finding**.
+- The record's take: `held_frames` equals the record's count at the ε the stage shipped (0 for a 0-hold take, with no
+  finding). A mismatch is a **finding**: the probe and the bench disagree on the same file.
+cleanup: none.
+metrics: none.
+
+### C-F1192 — a hard cut into a static shot is not counted as a hold
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Setup as in C-F1190. CUT's frame N+1 (the first repeat of the incoming still) has d ≈ 0, and the frame before it, the
+cut, is a large difference. So the plain rule would call frame N+1 held. The plan excludes "frames within one frame of
+a hard cut". Run `assess_output(..., probe="analyze_held_frames", workspace="qa-1527")` on CUT and on
+`asset:qa-cast/ep3-shot1-incident.mp4`.
+expected:
+- CUT's `held_frames` equals ep3-shot1's own count: the cut adds 0 and the static tail adds 0.
+- No cluster in CUT has a range touching frames N-1 to N+2 (seconds = frame / 24).
+- If CUT's `held_frames` is exactly ep3-shot1's + 1, with a cluster at about (N+1)/24 s, that is the **finding** this
+  case exists for.
+cleanup: none.
+metrics: none.
+
+### C-F1193 — clusters split on a gap of more than 4 frames, and a cluster's times are the held frames' times
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Setup as in C-F1190, plus **GR**: `trim_video(video=<source>, start_frame=40, num_frames=48)` named `cut48`,
+`video_frames(video="previous_result:cut48")` named `frames`, then `stills_to_video(images="previous_result:frames",
+fps=24, durations=[48 numbers])`. Each number is 0.0417, except stills 5, 7, 9, 30, 32, 34 and 36 (0-based), which are
+0.0834. That makes 55 frames. The repeats land at output frames 6, 9 and 12 (group 1) and 34, 37, 40 and 43 (group 2).
+Within a group the gaps are 3, and between the groups the gap is 22. Confirm first with CL's d series
+(`assess_output(..., probe="analyze_held_frames", detail=true)`) that source frames 40–88 move, with d ≥ 2.0 for most
+neighbours. If they don't, shift `start_frame` to a moving stretch; the positions are relative to it.
+expected:
+- GR's `held_frames` is 7 (±1 for the codec), in exactly 2 clusters.
+- Cluster 1 spans about 0.25–0.50 s with `held` 3, and cluster 2 about 1.42–1.79 s with `held` 4, each edge within one
+  frame (0.042 s). A single merged cluster is a **finding**: the gap rule is "≤ 4 frames". So is a split inside a
+  group.
+- Each cluster's finding has `at` equal to its `start`, ±0.042 s.
+- `detail=true` adds the downsampled d series, and the default call doesn't carry it.
+- Note: the plan doesn't say whether cluster findings appear when the count is under the `held_frames` threshold.
+  Seven may be under it. Either reading passes, provided the `clusters[]` measurements are there. Say which one the
+  build chose in the verify.
+cleanup: none.
+metrics: none.
+
+### C-F1194 — the `held_frames` warn fires at the threshold and not one below it
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Setup as in C-F1190. Read T and its comparator from the `held_frames` row of the rule table
+(`get_guide("tasks", section="Assessment Probes")`). Build **B-under** and **B-at** as GR in C-F1193, over a
+`trim_video` span of `3*T + 12` moving frames. B-at doubles stills 4, 7, 10, … (a repeat every 3 stills), giving
+exactly the count that first crosses the comparator (T for `>=`, T+1 for `>`). B-under doubles one fewer.
+expected:
+- B-at: `held_frames` equals the crossing count, and a `held_frames` warn is present.
+- B-under: `held_frames` is one less, and there is no `held_frames` finding.
+- T is a generic number in the rules table (no H3 wording in the engine's row). How to read the count on H3 is in the
+  `minimax-h3` skill (C-F1196).
+It is a **finding** if the warn fires off the stated comparator. If the codec shifts either count by one, rebuild once
+with the doubled stills moved by one. A count that is still off is the finding.
+cleanup: none.
+metrics: none.
+
+### C-F1195 — not applicable to a still and to audio; listed in a default call; an unknown probe is still refused
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. These are today's answers (2026-11-21) in `regression-complete`. A default `assess_output` on
+`asset:qa-cast/priya-portrait.jpg` gave `kind: image`, `rules_applied: []` and `not_applicable` naming the three
+probes, each with "a still has no shots, seams or soundtrack to measure". On `asset:qa-cast/priya-voice.wav` it gave
+`kind: audio`, with `not_applicable` holding `analyze_sync_drift` ("no picture to sync against") and `analyze_seams`.
+On `asset:qa-cast/ep6-cold-open.mp4` it gave `rules_applied` `full_scale`, `near_silent`, `shot_dead_air`,
+`sync_drift`, `sync_length`. Repeat all three default calls, then
+`assess_output(name="asset:qa-cast/priya-voice.wav", probe="analyze_held_frames")` and a call with
+`probe="analyze_nonexistent"`. All are in workspace `regression-complete`.
+expected:
+- Still: `not_applicable` also carries `analyze_held_frames` with a non-empty reason. It is not an error.
+- Audio: `not_applicable` carries `analyze_held_frames` with a reason naming the missing picture. The by-probe call on
+  the wav answers with that reason (n/a), not an error. An error here is a **finding**.
+- Video: `rules_applied` now also contains `held_frames`, and the earlier five are still there. The other probes'
+  `not_applicable` entries are as before.
+- The unknown probe is still refused (REST 400 `unknown_probe`; over MCP the error text), and the list it gives names
+  four probes, `analyze_held_frames` among them.
+- `list_tasks().assessment` contains `analyze_held_frames`, and `assess_output`'s tool description names it.
+cleanup: none.
+metrics: none.
+
+### C-F1196 — the served docs carry the new probe: fields, rule row, remedy, and the H3 skill line
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("tasks", section="Assessment Probes")`; the loaded `dw:minimax-h3`, `dw:script-to-video` and
+`dw:long-form` skills.
+expected:
+- TASKS has an `analyze_held_frames` subsection naming `held_frames`, `held_ratio`, `frames` and `clusters[]` (`start`,
+  `end`, `held`). It defines a hold the way the plan does: near-zero d while a neighbour is moving, frames by a hard
+  cut excluded. It says the probe needs no audio and no shots, and that it doesn't apply to stills or audio-only files.
+- The rule table has a `held_frames` row (probe `analyze_held_frames`, field `held_frames`, a threshold, `warn`).
+- A remedy is given: reroll or re-plan the shot. Once #1553 lands it is `interpolate_frames` with `refill: "held"`.
+- `dw:minimax-h3` says to run `analyze_held_frames` on every take and how to read the count on H3. The check steps
+  in `script-to-video` and `long-form` name it. A skill out of step with the served probe is a **finding**, filed
+  against the skill.
+cleanup: none.
+metrics: none.
+
+### C-F1197 — the gallery's Assess shows the held-frame cluster findings, each with a time
+pending: #1552
+source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+**Web UI, black-box**, through `ui-check` as in C-F1088: open the gallery for workspace `qa-1527`, select HC (C-F1190),
+press **Assess** and wait for it to finish. Also take `assess_output(name=<HC>, workspace="qa-1527")` (the default call)
+as R.
+expected:
+- The list shows R's `held_frames` warn and each cluster finding, in R's order. Each cluster row shows a time that
+  matches its `at` (its start, in the UI's usual time format), not a blank, `NaN` or `[object Object]`.
+- `page_errors` is empty.
+It is a **finding** if a cluster finding is missing from the list or shows no time.
+cleanup: none (C-F1204 cleans up; if #1553 isn't being verified in the same session, run C-F1204's steps now).
+metrics: none.
+
+### C-F1198 — `refill: "held"` repairs the built-choppy clip at the same length and fps, and records before and after
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+GPU, a few minutes (one RIFE pass each). Fixtures HC and ST from C-F1190 in `qa-1527`, plus **HO**:
+`trim_video(video=<HC output>, start_frame=0, num_frames=247)`, the odd length. The workflow is one
+`interpolate_frames(video=<file>, refill="held", device="cuda")` step with a `video/mp4` result. Run it on HC, HO and
+ST; `validate_workflow` each first and bind the cost. Then for each source and its result, take
+`get_gallery_metadata` and `assess_output(..., probe="analyze_held_frames")`.
+expected:
+- Each result has exactly its source's `frame_count` (248, 247, 120), and the same `fps` and `duration_seconds`
+  (±1 ms). One frame short is the 2N-1 **finding** the plan names.
+- HC and HO: `held_frames` on the result is at or under the clean mark (the guide's band, else below the `held_frames`
+  threshold), and there is no `held_frames` warn.
+- The step's output (`get_job`, its step result or the output's metadata) carries `held_before` and `held_after`.
+  `held_before` equals `analyze_held_frames` on the source and `held_after` equals it on the result, each ±1.
+- ST: the length is unchanged, and `held_before` is 0 (the plan's "a take with no holds comes back unchanged in
+  length").
+It is a **finding** if any result's frame count differs from its source's.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1199 — `refill: "held"` on #1551's highest-count take keeps its audio in sync
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+GPU, a few minutes. The source is the highest-count take #1551's record names (a real H3 take with audio, in Don's
+workspace). Read-only there: `keep_output` it into `qa-1527` under a free name (`get_gallery_metadata` answers "Unknown
+asset" first), and run against that `asset:`. Run `interpolate_frames(refill="held")` in `qa-1527`. Then take
+`get_gallery_metadata` and default `assess_output` on both the asset and the result.
+expected:
+- Same `frame_count`, `fps` and `duration_seconds` as the source. The result has audio, with the same `channels` and
+  sample rate.
+- `analyze_sync_drift`: `length_delta_ms` and `max_offset_ms` (where measured) are within 40 ms of the source's. Any
+  new `sync_drift` or `sync_length` finding is a **finding**.
+- `analyze_held_frames` on the result is at or under the clean mark, and `held_before` is at least B's threshold.
+- Listen to 2 s across the middle with `get_output_audio`: speech or music is intact, not doubled or truncated.
+It is a **finding** if the audio is gone. The plan's point is that the repair carries it, where `interpolate_frames`
+today drops it.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1200 — across a hard cut the repair keeps the real frames, not a RIFE blend, and keeps the shots
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+GPU, a few minutes. **HCUT**: `concat_videos` of HC (C-F1190) and a twos clip of `asset:qa-cast/ep3-shot2-reply.mp4`
+(built as HC, D = 0.0834), with a plain cut at frame 248. Also, if #1551's record names a cuts-mode take, use it too,
+kept into `qa-1527` as in C-F1199. Run `interpolate_frames(refill="held")` on each. Then `get_output_frames` on source
+and result at frames cut-2, cut-1, cut and cut+1. On the record's take, take the cut frames from its shots
+(`analyze_shots`) on the source.
+expected:
+- At every cut, the result's frames at cut-1 and cut each show a single shot, matching the source frame at the same
+  index. A double exposure or ghost of both shots on either frame is a **finding**: that is the blend the repair
+  exists to avoid.
+- `assess_output(..., probe="analyze_seams")` on the result reports the same seam count and seam seconds (±1 frame) as
+  on the source. The shots were carried.
+- Frame count equals the source's, and `held_frames` on the result is at or under the clean mark.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1201 — `refill` together with `multiplier` is refused at validate, naming both; a bad `refill` value is refused
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. `validate_workflow` in `regression-complete`, over a one-step `interpolate_frames` on
+`asset:qa-cast/ep6-shot1-priya.mp4`:
+- (a) `refill: "held"`, `multiplier: 2`;
+- (b) `refill: "held"`, `multiplier: 4`;
+- (c) `refill: "all"`;
+- (d) `refill: "held"` alone;
+- (e) `multiplier: 2` alone, which is today's form.
+expected:
+- (a) and (b) are `valid: false`, with an error at the step's arguments whose text names both `refill` and
+  `multiplier`.
+- (c) is refused, naming `refill` and the accepted value `held`. Being accepted and then failing at run time is a
+  **finding**.
+- (d) and (e) are valid. (e) is the old behavior, and a refusal there is a regression.
+- `get_task("interpolate_frames")` lists `refill`, with a description saying it excludes `multiplier`.
+cleanup: none.
+metrics: none.
+
+### C-F1202 — the served docs gain an `interpolate_frames` section and the H3 skill's repair line
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. `get_guide("tasks", section="Frame Interpolation")` (or the new `interpolate_frames` section the guide's index
+lists); `get_guide("tasks", section="Assessment Probes")`; the loaded `dw:minimax-h3` skill.
+expected:
+- The tasks guide documents `refill: "held"`: keep every 2nd frame, RIFE back to the source fps, frame count equal to
+  the source, real frames restored at hard cuts, audio, fps and shots carried, and `held_before`/`held_after`. It says
+  `refill` excludes `multiplier`.
+- The `analyze_held_frames` remedy names `refill: "held"`.
+- `dw:minimax-h3` says when to repair rather than reroll. A skill that still says reroll only is a **finding**
+  against the skill.
+cleanup: none.
+metrics: none.
+
+### C-F1203 — `interpolate_frames` without `refill` behaves as before
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+GPU, about a minute. Run `interpolate_frames(video=<CL output>, multiplier=2, device="cuda")` in `qa-1527` (CL from
+C-F1190).
+expected:
+- The output's frame count is what `multiplier=2` gives today (2N-1 = 247, the behavior the plan leaves alone), and
+  the answer carries no `held_before`/`held_after`.
+It is a **finding** if adding `refill` changed the `multiplier` path.
+cleanup: none (C-F1204 cleans up).
+metrics: none.
+
+### C-F1204 — cleanup for the #1527 cases
+pending: #1553
+source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
+Free. After C-F1190–C-F1203.
+expected:
+- `delete_output(job_id=<id>, workspace="qa-1527")` for each run. `delete_asset` for anything kept into `qa-1527`
+  (never in Don's workspace). Then `delete_workspace("qa-1527")`.
+- The take kept from Don's workspace is still there in its own workspace (`get_gallery_metadata` answers).
+cleanup: this case.
+metrics: none.
+
 ## Performance

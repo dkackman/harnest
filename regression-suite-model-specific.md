@@ -11586,4 +11586,197 @@ the guide line changed (the plan owes no guide change).
 cleanup: none.
 metrics: none.
 
+### M-F457 — the #1518 env-swap probe's jobs: gate arms A and B at seed 1001 succeeded, the rest of the matrix ran only on a gate pass, and nothing else ran
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
+The record is `bench/records/env-swap-ref2va.md` in the dw repo, which a tester can't read: use the record as the
+stage's hand-off comment on #1545 (or #1518) quotes it: the source job and output, every job and run id, the prompts,
+the per-frame verdicts, the timings and the gate outcome. A fact the hand-off doesn't quote is missing.
+Steps: `list_jobs(workspace=<the probe's workspace, as the record names it>, limit=50)` over the stage's run window;
+`get_job` and `get_job_events` (`workspace=` the same) on every job the record names; `list_workspaces`, then
+`list_jobs` of each other workspace over the same window, for any other H3 `ref2va` job whose only reference is the
+source clip.
+expected:
+- The record names exactly two gate jobs, arm A and arm B, both at seed 1001, both `succeeded` (not failed or
+  cancelled). A re-run is allowed only if the record names it and the reason; the failed attempt is then also named.
+- Gate failed: no arm C job and no seed-2002 job exist anywhere, and the record says no further arms ran.
+  Gate passed: four more jobs exist, all `succeeded`: C at seed 1001, then A, B and C at seed 2002, each created
+  after both gate jobs finished.
+- No other env-swap job: no regional-edit arm (no `mask_video`/`hold_audio` job over the source, plan Q3), no third
+  seed, no 1344x768 run, and no job in any workspace using the source clip as a reference besides those named.
+- Out of memory (plan risk): if a gate job failed for memory, the record quotes the error verbatim, `list_jobs`'s
+  `reason` matches it, no job at another size follows, and the stage stopped there; that is an outcome, not a finding,
+  as long as it is recorded so.
+It is a **finding** if a named job is missing, failed with no named re-run, or ran at another seed; if any post-gate
+job exists after a failed gate, or one is missing after a pass with no reason; or if any unnamed env-swap job exists.
+cleanup: none (the jobs are the bench record).
+metrics: none.
+
+### M-F458 — every #1518 env-swap arm is `ref2va` at 124 frames and 960x544 with exactly one reference, the recorded source video, and no image, guide or source video
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
+Steps: `get_job_workflow(job_id=...)` on every job M-F457 names; `get_gallery_metadata` (`workspace=` the probe's) on
+the source the record names (its `asset:` or `output:` name) and, for comparison, on the source job's own output.
+expected:
+- Each H3 step is `ref2va`: `num_frames` 124, `width` 960, `height` 544, `num_inference_steps` 9, the turbo ref2v LoRA,
+  int4, other settings as `templates/minimax/composable-references` sets them (`get_workflow` on it for comparison).
+- Each step has exactly **one** reference, and it is a video: the source the record names (same `asset:`/`output:`
+  name). No image reference of any kind (`subject` absent or null), no `guides`, no `source_video`, no `mask_video`,
+  no `image`/first-frame input.
+- The source is 124 frames at 960x544, has an audio track, and is 5.2 s at its fps (`get_gallery_metadata`). If the
+  record says it was trimmed, the trim job is named, `succeeded`, ran a utility task (no generation), and its input is
+  the named original; otherwise the source is the original output, kept as an asset.
+- The record says why the source qualifies: a visible person in clear body motion and a camera move.
+It is a **finding** if any arm has another mode, size, frame count or step count, more than one reference, an image
+reference, a guide, a `source_video`, or a video reference other than the recorded source; or if the source is not 124
+frames, not 960x544, or silent.
+cleanup: none.
+metrics: none.
+
+### M-F459 — the #1518 env-swap arms differ only in prompt (and seed across seeds), the prompts are byte-equal to the record's, and C is A less its `retention_analysis` lines
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
+Steps: `get_job_workflow` on every job M-F457 names (realized form); compare their H3 steps pairwise; compare each
+`prompt` with the text the hand-off quotes for that arm.
+expected:
+- Each job's realized `prompt` is byte-equal to the record's quoted prompt for its arm (no trimming, no reflow, no
+  smart quotes); the record states the prompts were written before any job ran.
+- Arm A holds the post's structure: `subject_definitions` naming `<Video 1>` as the source of motion and camera, a
+  summary starting `[reference generation] Edit <Video 1>`, the `retention_analysis` lines (environment and weather
+  `fully_replaced`, motion and camera `fully_preserved`), the CHANGE, PRESERVE and consistency blocks, and the
+  soundscape lines.
+- Arm B is one plain paragraph describing the shot after the change (same person, moves and camera, in active
+  snowfall): no `retention_analysis`, no CHANGE/PRESERVE block, no `<Video 1>` edit instruction.
+- Arm C (if run) equals A with only the `retention_analysis` block removed: every other line of A, in order, unchanged.
+- Two jobs at one seed differ in nothing but `prompt`; the same arm at seeds 1001 and 2002 differs in nothing but
+  `seed`. Fields a run fills in (ids, times, output paths) are ignored.
+It is a **finding** if a prompt differs from the record by one byte, if any two arms differ in anything else (size,
+steps, LoRA, reference, guidance), if C keeps any `retention_analysis` line or loses any other line of A, or if B
+carries A's structure.
+cleanup: none.
+metrics: none.
+
+### M-F460 — the #1518 gate verdict: the five-frame judgments re-check against the source, and the outcome follows the 4-of-5 rule
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
+Steps: `get_job(workspace=<probe's>)` on gate arms A and B for their outputs; `get_output_frames(name=<output>,
+at=["frame:0","frame:31","frame:62","frame:93","frame:123"], workspace=...)` (or the record's own five indices for
+0/25/50/75/100%) on A, on B and on the source; judge each matched pair yourself, before reading the record's verdicts.
+expected:
+- The record gives, per arm and per timestamp, a verdict on motion (pose, position in frame, camera position/angle
+  against the source), environment (original background gone, snow visible) and identity (face and clothing the
+  source's), with the frames posted.
+- The tester's own judgment of arm A agrees with the record frame by frame; any disagreement is stated on the issue
+  with the frame index.
+- Gate pass needs all three: A's pose and position match on **at least 4 of 5** frames (exactly 4 passes, 3 fails);
+  the environment is replaced on **all 5** with snow visible on each (one frame with the original background or no
+  snow fails); identity holds. Anything less is a fail.
+- Fail: the record carries the plan's sentence in substance, "Ref2VA with a whole video reference does not keep motion
+  through an environment swap at 960x544/9 steps (seed 1001)", with the frames and arm B as the comparison.
+- B's per-frame verdicts are recorded whichever way A went; if B passes the rule and A doesn't, the record states that
+  the structured prompt is not what does the work.
+- A source with little motion makes the case void: if the source's five frames show no clear pose change or camera
+  move, that is a finding against the source choice, not a pass.
+It is a **finding** if any verdict is missing, if the tester's judgment contradicts the record on a frame that decides
+the 4-of-5 count, or if the stated outcome doesn't follow from the per-frame verdicts under the rule above.
+cleanup: none.
+metrics: none.
+
+### M-F461 — the #1518 full matrix (only after a gate pass): a claim holds only when both seeds agree, and A against C settles `retention_analysis`
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: `get_output_frames` and reads only.
+Only if the gate passed (M-F460); after a failed gate record "not applicable: gate failed" and skip.
+Steps: as M-F460 for arm C at seed 1001 and arms A, B, C at seed 2002; spot-check at least A and C at seed 2002 by eye.
+expected:
+- Every one of the six jobs has the M-F460 per-frame verdicts and a pass or fail under the same rule.
+- Each claim (A keeps motion; A beats B; `retention_analysis` is operative) is stated as holding only if seeds 1001
+  and 2002 agree on it; a split between seeds is recorded as "not established", never as a pass.
+- The record states whether `retention_analysis` is the operative part from A against C on **both** seeds: operative
+  only if A passes and C fails on both. If A and C come out near-identical (plan sweep item 10) the record says so.
+It is a **finding** if a verdict is missing, if a claim is made from one seed or over a seed split, or if the tester's
+spot-check contradicts a verdict that decides a claim.
+cleanup: none.
+metrics: none.
+
+### M-F462 — the #1518 soundtrack: the record states that a reference can't copy audio, and each judged output has a mux of the source audio checked for sync
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` plus a video/audio utility mux on lem (cuda). **Free**: reads only.
+Steps: the record's soundtrack note and its mux job ids; `get_job_workflow` and `get_job` on each mux job;
+`get_gallery_metadata` on each muxed file; `get_output_frames(name=<muxed>, at=[<two moments the record names as an
+action, e.g. a step>], hear=1)` on gate arm A's mux.
+expected:
+- The record states the mechanism: a reference conditions the output and never copies its audio; the arms' own audio
+  is regenerated; only `hold_audio` or a guide's `audio: true` copies a track. It does not score the arms' own audio as
+  an outcome (plan Q2).
+- Each judged arm has one mux job, built only from existing tasks (no generation step), whose inputs are that arm's
+  output video and the source's audio. Each is `succeeded`; its output's frame count equals the arm's (124) and its
+  audio duration matches the source's within one frame.
+- The record says, per arm, whether the visible actions land on the source's sound at the same moments; the tester's
+  listen at the named moments on arm A agrees, or the disagreement is stated.
+It is a **finding** if the mechanism note is missing or claims the reference keeps the soundtrack, if a mux used a
+generation step or the wrong audio, if a muxed file is a different length, or if the sync verdict is missing.
+cleanup: none.
+metrics: none.
+
+### M-F463 — the #1518 record's build and timings: one quoted `get_diffusers_state`, and per-pass and wall times that match `get_job_events`
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 `ref2va` on lem (cuda). **Free**: reads only.
+Steps: `get_diffusers_state()`; `get_job_events` and `get_job` (`workspace=` the probe's) on every generation job.
+expected:
+- The record names the host (lem), the dw commit and a `get_diffusers_state` build. Today's `get_diffusers_state`
+  matches it, or, if lem has moved on since, every job's own reported version/build matches the quoted one.
+- Each job's wall time in the record matches `finished_at` − `started_at` within 5 s; each per-pass (per-step) time
+  matches the denoise phase in `get_job_events` within 5% (or the record's stated rounding).
+- The record sets these times against the measured image-only Ref2VA figures (~22 s/pass) and the whole-clip figure
+  (~97 s/pass at 960x544, 9 steps), and states the ratio; it answers the plain-T2VA cost question from those figures,
+  without a T2VA run of its own (M-F457).
+It is a **finding** if the build is missing or the jobs ran on another, if any timing falls outside the tolerance, or
+if the cost comparison is missing.
+cleanup: none.
+metrics: none.
+
+### M-F464 — the H3 skill's video-reference line states the #1518 outcome and cites `bench/records/env-swap-ref2va.md`, without `retention_analysis:`
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
+Steps: read `skills/minimax-h3/SKILL.md` in the newest refreshed `dw` plugin under `~/.claude/plugins/cache/` (the
+plugin files are the consumer surface; on the stage's build, not an older cached version); `Grep` it for
+`env-swap-ref2va`, `retention_analysis` and the video-reference line (today: "`templates/minimax/composable-references`
+adds a video reference for framing and camera").
+expected:
+- Exactly one new sentence, next to the video-reference line, naming the probe's result and citing
+  `bench/records/env-swap-ref2va.md`.
+- It matches the record's outcome: refuted (the gate failed, or the full matrix didn't hold on both seeds) → in
+  substance "a whole video reference doesn't keep motion through an environment swap"; confirmed → in substance "an
+  environment swap that keeps motion works with an edit-structured prompt (format per MiniMax's h3-prompt-writing
+  skill)". A confirmed line after a gate fail, or a refuted one after a two-seed pass, is wrong.
+- The file contains no `retention_analysis:` anywhere and does not restate the CHANGE/PRESERVE block.
+- The existing video-reference line keeps its meaning (framing and camera, its cost ratio); no other skill line changed
+  for this stage.
+It is a **finding** if the sentence is missing, doesn't cite the record, states the opposite of the record's outcome,
+or if `retention_analysis:` appears. (The skill's 12 KiB cap and `tests/test_plugin_skills.py` are dw's own tests,
+not checked here.)
+cleanup: none.
+metrics: none.
+
+### M-F465 — the #1518 probe adds no surface: no env-swap catalog entry, and `composable-references` unchanged by this stage
+pending: #1545
+source: tester, spec for #1545 from #1518's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (catalog read). **Free**: reads only.
+Steps: `list_workflows()` (summary) and `list_workflows(shape="shot")`; `get_workflow("templates/minimax/composable-references")`.
+expected:
+- No catalog workflow is named `env-swap-*` (the arms are bench files, not templates).
+- `composable-references` keeps its variables and steps; the only change allowed is #1537's
+  `video_reference_exponent` (a separate issue), not anything this stage made.
+It is a **finding** if an env-swap template appears or `composable-references` changed for this stage.
+cleanup: none.
+metrics: none.
+
 ## Performance
