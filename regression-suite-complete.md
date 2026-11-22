@@ -27881,14 +27881,14 @@ metrics: none.
 ### C-F1223 — **Run take 2** opens the run dialog with the item's current plan, and a submit links it and shows `queued`
 source: tester, spec for #1559 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 **Web UI, black-box**. S1531-UI (C-F1222), with its mocks, plus `mock` setting `items.0.arguments.prompt` to
-`"a red barn"` (so the current plan differs from the take's). `record **/api/jobs**`; `stub **/api/jobs?**` (and
+`"a red barn"` (so the current plan differs from the take's). `record **/api/validate**`; `record **/api/jobs**`; `stub **/api/jobs?**` (and
 `**/api/jobs`) POST answering a queued job in the shape `/openapi.json` gives `POST /api/jobs`. (1) Click **Run take
-2**; `wait_text` the dialog; `screenshot`. (2) Click the dialog's run button; `recorded **/api/jobs**`; `wait_text`
+2**; `wait_text` the dialog; `screenshot`; before clicking run, `mock` the request read again, adding `items.0.attempts.1` as a queued attempt with the stubbed job id (the server's answer after a linked submit). (2) Click the dialog's run button; `recorded **/api/jobs**`; `wait_text`
 "queued".
 expected:
-- (1) The dialog names `a`'s workflow and shows `a red barn` as its prompt: the current plan, not the take's.
+- (1) The dialog names `a`'s workflow. Its validate and submit requests carry `a red barn` as the prompt: the current plan, not the take's.
 - (2) The recorded POST carries that workflow, those arguments and the link `request` "demo" / `item` "a". `a` then
-  shows `queued` (the optimistic status), not `revised` or `done`.
+  shows `queued` (from the queued attempt the re-read carries), not `revised` or `done`.
 A dialog prefilled with the old take's arguments is a **finding**: it would rerun the rejected take.
 cleanup: none (C-F1225).
 metrics: none.
