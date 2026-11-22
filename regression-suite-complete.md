@@ -27479,7 +27479,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1193 — clusters split on a gap of more than 4 frames, and a cluster's times are the held frames' times
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Setup as in C-F1190, plus **GR**: `trim_video(video=<source>, start_frame=40, num_frames=48)` named `cut48`,
 `video_frames(video="previous_result:cut48")` named `frames`, then `stills_to_video(images="previous_result:frames",
@@ -27502,7 +27501,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1194 — the `held_frames` warn fires at the threshold and not one below it
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Setup as in C-F1190. Read T and its comparator from the `held_frames` row of the rule table
 (`get_guide("tasks", section="Assessment Probes")`). Build **B-under** and **B-at** as GR in C-F1193, over a
@@ -27519,7 +27517,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1195 — not applicable to a still and to audio; listed in a default call; an unknown probe is still refused
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. These are today's answers (2026-11-21) in `regression-complete`. A default `assess_output` on
 `asset:qa-cast/priya-portrait.jpg` gave `kind: image`, `rules_applied: []` and `not_applicable` naming the three
@@ -27542,7 +27539,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1196 — the served docs carry the new probe: fields, rule row, remedy, and the H3 skill line
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. `get_guide("tasks", section="Assessment Probes")`; the loaded `dw:minimax-h3`, `dw:script-to-video` and
 `dw:long-form` skills.
@@ -27559,7 +27555,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1197 — the gallery's Assess shows the held-frame cluster findings, each with a time
-pending: #1552
 source: tester, spec for #1552 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 **Web UI, black-box**, through `ui-check` as in C-F1088: open the gallery for workspace `qa-1527`, select HC (C-F1190),
 press **Assess** and wait for it to finish. Also take `assess_output(name=<HC>, workspace="qa-1527")` (the default call)
