@@ -28036,7 +28036,6 @@ cleanup: `delete_workspace` on `cf1226-chg` and `cf1226-other` (`acknowledged_co
 metrics: none.
 
 ### C-F1233 — the Requests page shows a request an agent creates, within about 5 s, with no reload
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free, no job. **Web UI, black-box**, through `ui-check`. **Setup S1536-BG** (every live case after this one uses
 it): the runner runs one spec start to finish, so an MCP write has to land *while* it waits. Launch the runner's
@@ -28060,7 +28059,6 @@ cleanup: none (C-F1235 cleans up).
 metrics: none.
 
 ### C-F1234 — an agent's rename and delete on the Requests page show without a reload
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG in `cf1233-live`, after C-F1233. Before launching: `set_request(request="live2", revision=0,
 title="Live probe two", …)`. Spec: `record **/api/**`; `goto` the Requests page; `wait_text "Live probe two"`;
@@ -28074,7 +28072,6 @@ cleanup: none (C-F1235).
 metrics: none.
 
 ### C-F1235 — a closed request's page notices a reopen by an agent, within about 5 s
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG in `cf1233-live`. Before launching: `set_request` on `live1` at its revision with `state: "done"`,
 then `get_request(request="live1")` to confirm it reads closed. Spec: `record **/api/**`; `goto` `live1`'s request
@@ -28091,7 +28088,6 @@ cleanup: `delete_workspace(name="cf1233-live", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1236 — a workspace an agent creates appears in the sidebar, and one it deletes goes
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG. Before launching: `create_workspace(name="cf1236-alpha")`, then load the UI once (a short spec:
 `goto /`, open the sidebar's workspace list, `screenshot`) to confirm `cf1236-alpha` is listed and `cf1236-beta`
@@ -28128,7 +28124,6 @@ cleanup: `delete_workspace(name="cf1237-hide", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1238 — a draft in a request page's note box keeps its text and focus while an agent writes to that request
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG in a fresh `create_workspace(name="cf1238-draft")` holding `set_request(request="d1", revision=0,
 title="Draft probe", …, items=[{"key":"a","title":"A"}])`. Spec: `record **/api/**`; `goto` `d1`'s request page;
@@ -28143,7 +28138,6 @@ cleanup: `delete_workspace(name="cf1238-draft", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1239 — a failed feed read doesn't stop the feed; the next good read catches up
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG in a fresh `create_workspace(name="cf1239-fail")`. Spec: `record **/api/**`; `mock {url_glob:
 "**/api/workspaces/cf1239-fail/changes", status: 500, once: true}` (the first read fails); `goto` the Requests page;
@@ -28157,7 +28151,6 @@ cleanup: `delete_workspace(name="cf1239-fail", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1240 — a write in another workspace doesn't reload the open Requests page
-pending: #1564
 source: tester, spec for #1564 from #1536's plan v2 (claude-opus-5-5 via anthropic)
 Free. S1536-BG. `create_workspace` `cf1240-here` and `cf1240-there`. Spec: `record **/api/**`; `goto` the Requests
 page of `cf1240-here`; `wait_text "Here write"`; `recorded`. The writes, in order, ~6 s apart (read off `date`):
