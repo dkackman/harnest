@@ -28925,7 +28925,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1275 — the place-card probe left one noted job per arm in `probe-1577`, and the card is a shared Klein still
-pending: #1581
 source: tester, spec for #1581 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). The arms are plan v1's stage A: **K** (the card), **K-night** (a look), **K-rev** (a reverse card),
 **R0** (control: #1398's B0, job `fdba91e57259`, not re-run), **R1** (portrait + card, B0's reverse prompt), **R2**
@@ -28950,7 +28949,6 @@ cleanup: none (the probe's jobs and card are the record's evidence).
 metrics: none.
 
 ### C-F1276 — each arm's realized workflow has the references the plan names, in the plan's order, and nothing else holding the set
-pending: #1581
 source: tester, spec for #1581 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). For R1, R2, R3 (if it ran), R4, N1 and N0 from C-F1275, plus R0's `fdba91e57259`, take
 `get_job_workflow(job_id=<id>)` and read each H3 step's `references` (or the template's variables that fill it),
@@ -28976,7 +28974,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1277 — the place-card record names every job and gives each arm's markers, framing and face score, failures included
-pending: #1581
 source: tester, spec for #1581 from #1577's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only, plus a spot check by eye). The record is `bench/records/place-card.md` in the dw repo. The tester
 doesn't read the checkout: read the record as the stage's hand-off comment on #1581 quotes it (`gh issue view 1581
