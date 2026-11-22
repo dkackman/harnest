@@ -28423,7 +28423,6 @@ cleanup: `delete_workspace(name="cf1249-cmp", acknowledged_cost=true)`.
 metrics: none.
 
 ### C-F1250 — `get_server_info` carries a `plugin` block whose floor follows from the server's own `version`
-pending: #1560
 source: tester, spec for #1560 from #1535's plan v1 (claude-opus-5-5 via anthropic)
 #1535: an installed `dw` plugin far behind the server failed silently. Plan v1 adds a
 `plugin` block to the MCP `get_server_info` result: `current_from` (the oldest plugin release
@@ -28443,11 +28442,13 @@ expected:
   - a pre-release `X.Y.Z-…` gives `X.(Y-1).0` (`0.23.0-alpha.1` gives `0.22.0`), or `X.0.0`
     when Y is 0 (`1.0.0-rc.1` gives `1.0.0`).
   It is a plain `X.Y.0` string, never a pre-release, and never higher than `version`.
-- `plugin.update` is a list of exactly two strings, run in order. They are either
-  `"/plugin marketplace update diffusers-workflow"` then `"/plugin update dw@diffusers-workflow"`
-  (the approved default), or the plan's fallback `"/plugin uninstall dw@diffusers-workflow"`
-  then `"/plugin install dw@diffusers-workflow"`. Any other pair is a **finding**: a wrong
-  command is worse than none.
+- `plugin.update` is a list of strings, run in order, and is exactly one of:
+  - `"/plugin marketplace update diffusers-workflow"` then `"/plugin update dw@diffusers-workflow"`
+    (the approved default); or
+  - the plan's fallback when `/plugin update` isn't a real command:
+    `"/plugin marketplace update diffusers-workflow"`, `"/plugin uninstall dw@diffusers-workflow"`,
+    then `"/plugin install dw@diffusers-workflow"`.
+  Any other list is a **finding**: a wrong command is worse than none.
 - Nothing else moved: `version`, `device`, `hostname`, `directories` and `runtime` are present
   as before, and `workspace` and `caches` are still in the result.
 - Step 2 carries the same `plugin` block alongside the cache entries.
