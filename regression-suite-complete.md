@@ -27739,8 +27739,10 @@ metrics: none.
 ### C-F1210 — only a done item becomes revised: dropped, planned and failed items keep their status
 source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run, one queued-then-cancelled job. Setup S1531 (C-F1205) in `cf1210-req`; add an item `c`
-(`split-takes`, no dependencies, never run) and an item `d` (`split-takes`), and queue a job on `demo/d` and
-`cancel_job` it at once (if it finished first, queue another and cancel that), so `d` reads `failed`.
+(`split-takes`, no dependencies, never run) and an item `d` (`split-takes`), then queue one unlinked blocker job
+per GPU (`templates/image-processors`, no variables; `get_health` lists the cards), queue a job on `demo/d`, which
+waits behind them, `cancel_job` it while it reads `queued`, then `cancel_job` the blockers, so `d` reads `failed`
+(if `d` gets a succeeded take, delete the workspace and start again).
 (1) One `set_request` changing the arguments of `a`, `c` and `d`; read. (2) `set_request` with `b`'s
 `depends_on` cleared, then with `a` left out of the plan (it has J1, so it is kept as dropped); read.
 (3) `set_request` writing `a` back, not dropped, with its current (changed) arguments; read.
