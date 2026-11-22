@@ -27788,17 +27788,6 @@ expected:
 cleanup: none.
 metrics: none.
 
-### C-F1213 — one take made before stage 2 is kept, for C-F1219
-source: tester, spec for #1557 from #1531's plan v1 (claude-opus-5-5 via anthropic)
-One `split-takes` run. Runs once: when #1557 verifies, on a server where #1558 is not yet deployed. Skip it on any
-later run. `save_prompt` a prompt named `cf1531-pre-p` with text "Pre one. Pre two." (check its name is free first
-with `get_prompt`). Setup S1531 (C-F1205) in workspace `qa-1531-pre`, but `a`'s arguments are
-`{"text":"prompt:cf1531-pre-p","max_seconds":8}` and the take is run over them exactly.
-expected:
-- `a` is `done`, `b` `ready`. Leave the workspace and the prompt in place: C-F1219 needs them.
-cleanup: none here; C-F1219 cleans up.
-metrics: none.
-
 ### C-F1214 — saving new text into a referenced prompt revises the item with no ledger write
 source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
 One `split-takes` run. `save_prompt` `cf1214-p` with text "Alpha. Beta." (name checked free with `get_prompt`).
@@ -27861,17 +27850,6 @@ expected:
 - (1) `a` is `revised` naming `prompt:cf1218-p` only; `b` stays `done` (its prompt didn't change).
 - (2) `a.revised_because` names both `arguments` and `prompt:cf1218-p`.
 cleanup: `delete_workspace(name="cf1218-req", acknowledged_cost=true)`; `delete_prompt` both prompts.
-metrics: none.
-
-### C-F1219 — a take from before stage 2 carries no digest and is never revised by a prompt edit
-pending: #1558
-source: tester, spec for #1558 from #1531's plan v1 (claude-opus-5-5 via anthropic)
-Free. Needs C-F1213's workspace `qa-1531-pre` and prompt `cf1531-pre-p`; if either is gone, the case is not
-runnable (say so; it is not a failure). (1) `get_request(request="demo", workspace="qa-1531-pre")`. (2)
-`save_prompt` `cf1531-pre-p` with new text; read again.
-expected:
-- (1) and (2): `a` is `done`, with no `revised_because`; `b` is `ready`.
-cleanup: `delete_workspace(name="qa-1531-pre", acknowledged_cost=true)`; `delete_prompt("cf1531-pre-p")`.
 metrics: none.
 
 ### C-F1220 — reading requests with prompt references costs about what reading them without does
