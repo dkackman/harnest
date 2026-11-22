@@ -27353,7 +27353,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1187 — #1551's held-frame record lists every H3 video in the corpus workspaces, with every field the plan asks
-pending: #1551
 source: tester, spec for #1551 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. Stage A has no MCP surface. The plan has the tester run `bench/held_frames.py` on lem, but a tester never
 reaches lem except over MCP. So this case checks the record (`bench/records/held-frames.md`, as quoted or linked in
@@ -27379,7 +27378,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1188 — #1551's record names its flagged takes as openable gallery names and states the gate and the hold pattern
-pending: #1551
 source: tester, spec for #1551 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. Read the record as in C-F1187.
 expected:
@@ -27400,7 +27398,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1189 — #1551 changes no served surface and writes nothing into the corpus workspaces
-pending: #1551
 source: tester, spec for #1551 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. On 2026-11-21, `list_tasks().assessment` was `analyze_seams`, `analyze_shots`, `analyze_sync_drift`, and
 `assess_output(name="asset:qa-cast/ep6-cold-open.mp4", probe="analyze_nonexistent", workspace="regression-complete")`
