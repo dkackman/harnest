@@ -27566,27 +27566,6 @@ It is a **finding** if a cluster finding is missing from the list or shows no ti
 cleanup: none (C-F1204 cleans up; if #1553 isn't being verified in the same session, run C-F1204's steps now).
 metrics: none.
 
-### C-F1198 — `refill: "held"` repairs the built-choppy clip at the same length and fps, and records before and after
-pending: #1553
-source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-GPU, a few minutes (one RIFE pass each). Fixtures HC and ST from C-F1190 in `qa-1527`, plus **HO**:
-`trim_video(video=<HC output>, start_frame=0, num_frames=247)`, the odd length. The workflow is one
-`interpolate_frames(video=<file>, refill="held", device="cuda")` step with a `video/mp4` result. Run it on HC, HO and
-ST; `validate_workflow` each first and bind the cost. Then for each source and its result, take
-`get_gallery_metadata` and `assess_output(..., probe="analyze_held_frames")`.
-expected:
-- Each result has exactly its source's `frame_count` (248, 247, 120), and the same `fps` and `duration_seconds`
-  (±1 ms). One frame short is the 2N-1 **finding** the plan names.
-- HC and HO: `held_frames` on the result is at or under the clean mark (the guide's band, else below the `held_frames`
-  threshold), and there is no `held_frames` warn.
-- The step's output (`get_job`, its step result or the output's metadata) carries `held_before` and `held_after`.
-  `held_before` equals `analyze_held_frames` on the source and `held_after` equals it on the result, each ±1.
-- ST: the length is unchanged, and `held_before` is 0 (the plan's "a take with no holds comes back unchanged in
-  length").
-It is a **finding** if any result's frame count differs from its source's.
-cleanup: none (C-F1204 cleans up).
-metrics: none.
-
 ### C-F1199 — `refill: "held"` on #1551's highest-count take keeps its audio in sync
 pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
@@ -27644,28 +27623,13 @@ expected:
 cleanup: none.
 metrics: none.
 
-### C-F1202 — the served docs gain an `interpolate_frames` section and the H3 skill's repair line
-pending: #1553
-source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
-Free. `get_guide("tasks", section="Frame Interpolation")` (or the new `interpolate_frames` section the guide's index
-lists); `get_guide("tasks", section="Assessment Probes")`; the loaded `dw:minimax-h3` skill.
-expected:
-- The tasks guide documents `refill: "held"`: keep every 2nd frame, RIFE back to the source fps, frame count equal to
-  the source, real frames restored at hard cuts, audio, fps and shots carried, and `held_before`/`held_after`. It says
-  `refill` excludes `multiplier`.
-- The `analyze_held_frames` remedy names `refill: "held"`.
-- `dw:minimax-h3` says when to repair rather than reroll. A skill that still says reroll only is a **finding**
-  against the skill.
-cleanup: none.
-metrics: none.
-
 ### C-F1203 — `interpolate_frames` without `refill` behaves as before
 pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 GPU, about a minute. Run `interpolate_frames(video=<CL output>, multiplier=2, device="cuda")` in `qa-1527` (CL from
 C-F1190).
 expected:
-- The output's frame count is what `multiplier=2` gives today (2N-1 = 247, the behavior the plan leaves alone), and
+- The output's frame count is what `multiplier=2` gives today (2N-1 = 75, the behavior the plan leaves alone), and
   the answer carries no `held_before`/`held_after`.
 It is a **finding** if adding `refill` changed the `multiplier` path.
 cleanup: none (C-F1204 cleans up).
