@@ -27565,7 +27565,6 @@ cleanup: none (C-F1204 cleans up; if #1553 isn't being verified in the same sess
 metrics: none.
 
 ### C-F1199 — `refill: "held"` on #1551's highest-count take keeps its audio in sync
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 GPU, a few minutes. The source is the highest-count take #1551's record names (a real H3 take with audio, in Don's
 workspace). Read-only there: `keep_output` it into `qa-1527` under a free name (`get_gallery_metadata` answers "Unknown
@@ -27584,7 +27583,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1201 — `refill` together with `multiplier` is refused at validate, naming both; a bad `refill` value is refused
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. `validate_workflow` in `regression-complete`, over a one-step `interpolate_frames` on
 `asset:qa-cast/ep6-shot1-priya.mp4`:
@@ -27604,7 +27602,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1203 — `interpolate_frames` without `refill` behaves as before
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 GPU, about a minute. Run `interpolate_frames(video=<CL output>, multiplier=2, device="cuda")` in `qa-1527` (CL from
 C-F1190).
@@ -27616,7 +27613,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1204 — cleanup for the #1527 cases
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v1 (claude-opus-5-5 via anthropic)
 Free. After C-F1190–C-F1203.
 expected:
@@ -28774,7 +28770,6 @@ cleanup: `delete_output(job_id=<job>)`.
 metrics: none.
 
 ### C-F1268 — `refill: "held"` keeps the frame count on even and odd lengths and records before and after; a take with no holds comes back unchanged without loading RIFE
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a few minutes. Run this case, and C-F1269 to C-F1274, **before C-F1204**, which deletes `qa-1527`. If C-F1204 has
 already run, rebuild the fixtures. Fixtures HC (twos, 76 frames), CL (clean, 38) and ST (static, 120) come from C-F1190
@@ -28801,7 +28796,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1269 — a single hold is refilled at the midpoint, and every other frame passes through unchanged
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a minute. Build **GS** in `qa-1527` with C-F1190's chain: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
 start_frame=9, num_frames=38)` named `src`, `video_frames(video="previous_result:src")` named `frames`, then
@@ -28825,7 +28819,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1270 — a frame shown four times becomes three in-betweens at ¼, ½ and ¾
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a minute. Build **G4** as GS in C-F1269, but with still 20 at 0.1667. That makes 41 frames: output frames 20 to 23
 are one picture, and 24 is still 21. Run `interpolate_frames(video=<G4>, refill="held", device="cuda")`. Then take
@@ -28846,7 +28839,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1271 — a hold at the clip's end, or one whose next moving frame is across a cut, stays held, and nothing blends across the cut
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a few minutes. Build in `qa-1527`, as GS in C-F1269:
 - **HE**: 38 stills, with still 15 and still 37 (the last) at 0.0834. That makes 40 frames, with holds at output frames
@@ -28874,7 +28866,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1272 — on #1551's highest-count take, `held_before` > `held_after`, and frames away from the clusters match the source
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a few minutes, or none if C-F1199 ran in the same session (reuse its kept asset and result). Otherwise set up as
 C-F1199 does: `keep_output` the record's highest-count take into `qa-1527` (read-only in Don's workspace), then run
@@ -28894,7 +28885,6 @@ cleanup: none (C-F1204 cleans up the kept asset).
 metrics: none.
 
 ### C-F1273 — on a real cuts take, the frames at each cut are the source's and the shots are carried
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 GPU, a few minutes. Use a cuts-mode take #1551's record names, preferring one with holds. Keep it into `qa-1527` as
 C-F1199 does. If the record names none, skip this case and say so: C-F1271's HX covers the rule on a built clip. Find
@@ -28911,7 +28901,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1274 — the served docs describe the run-wise refill, not keep-every-2nd
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v2 (claude-opus-5-5 via anthropic)
 Free. `get_task("interpolate_frames")`; the `interpolate_frames` section that `get_guide("tasks")`'s index lists;
 `get_guide("tasks", section="Assessment Probes")`; and the loaded `dw:minimax-h3` skill. On 2026-11-22,
@@ -29107,7 +29096,6 @@ cleanup: none (validate writes nothing).
 metrics: none.
 
 ### C-F1282 — a slow frame-shown-four-times run is refilled with new in-betweens, counted honestly in `held_after`
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic). Supersedes C-F1270's G4 expectations (`held_after` 0 on G4, and its closing note), which plan v3 (Q6, ruled at default) withdrew.
 GPU, a minute. Run before C-F1204. Build **G4** in `qa-1527` exactly as C-F1270 does: C-F1269's GS chain, but with
 still 20 at 0.1667. That makes 41 frames: output frames 20 to 23 are one picture (anchor a = frame 20), and 24 is
@@ -29136,7 +29124,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1283 — a four-frame run whose anchors differ by at least (k+1)·ε reaches `held_after` 0
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic)
 GPU, a minute. Run before C-F1204. Find a fast stretch: `trim_video(video="asset:qa-cast/ep441-shot1-scythe.mp4",
 start_frame=0, num_frames=<the asset's frame count>)` into `qa-1527` (or use the asset directly if the probe takes
@@ -29158,7 +29145,6 @@ cleanup: none (C-F1204 cleans up).
 metrics: none.
 
 ### C-F1284 — the docs and the H3 skill say a slow long hold can survive a refill, and to reroll when `held_after` stays over the mark
-pending: #1553
 source: tester, spec for #1553 from #1527's plan v3 (claude-opus-5-5 via anthropic). Extends C-F1274.
 Free. Read the `interpolate_frames` section that `get_guide("tasks")`'s index lists, `get_task("interpolate_frames")`
 (its `refill` description), the `analyze_held_frames` remedy in `get_guide("tasks", section="Assessment Probes")`, and
