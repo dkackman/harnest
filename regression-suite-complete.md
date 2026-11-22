@@ -26856,7 +26856,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1162 — #1544's probe song exists on the server where its record says, is audio, and is long enough for the probe
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
 #1516 stage A is a bench script (`bench/h3_audio_vae_probe.py`) and a record
 (`bench/records/h3-audio-encode-context.md`) with no MCP surface. A tester can't read the checkout, so this case and
@@ -26881,7 +26880,6 @@ cleanup: none. Never touch the song.
 metrics: none.
 
 ### C-F1163 — #1544's record table holds every cut × arm, marks missing context as n/a and post-end context as silence, and invents no numbers
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
 No calls beyond C-F1162's: read the table in #1544's hand-off (C-F1162 says where). The plan's arms per cut are
 pre-context {0, 0.5, 1, 2} s × post-context {0, 0.2} s: 8 arms, 40 cells at the default `--cuts 5`.
@@ -26914,7 +26912,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1165 — #1544 adds no MCP surface and no engine change
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v2 (claude-opus-5-5 via anthropic)
 Free and read-only. The plan's stage A is a bench script, a record, a unit test and one line in `bench/README.md`,
 with no MCP, REST or syntax surface and no engine docs change (Q1 ruled: a bench script, not a task).
@@ -28514,7 +28511,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1254 — #1544's per-cut verdict follows plan v4's reading at both ends: either end that meets both halves carries the cut, and ≥ 3 of 5 cuts meet the bar
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
 No calls beyond C-F1162's: apply plan v4's pinned reading ("How the record reads the bar") to the table C-F1163 and
 C-F1257 accepted, and compare with the probe's `RECORD verdict:` line and the record's verdict sentence, both as
@@ -28558,7 +28554,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1255 — #1544's hand-off reproduces the record in full and gives Don three ready-to-paste commands
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
 Free and read-only: `gh issue view 1544 --repo dkackman/diffusers-workflow --comments`, the builder's hand-off
 comment. Plan v4 (Stage A → Hand-off, and the v3 ruling) makes this stage's verification partly Don's own action,
@@ -28585,7 +28580,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1256 — Don's re-run on #1544 matches the record, and both bad inputs exit non-zero naming the problem; with no re-run yet, the stage goes to Don, not back
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
 Free and read-only: the same `gh issue view 1544 --comments`. Don's re-run comment is one posted by @dkackman (the
 repo owner) after the hand-off that holds the three commands' output verbatim with their exit codes. A comment by any
@@ -28611,7 +28605,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1257 — #1544's table uses one floor per cut, measures runs in whole hops, and never truncates a pre-context
-pending: #1544
 source: tester, spec for #1544 from #1516's plan v4 (claude-opus-5-5 via anthropic)
 No calls beyond C-F1162's: read the table as C-F1163 does. Plan v4 pinned these after C-F1163 was written (from v2);
 where they disagree, this case governs (C-F1163 allows a partial pre-context to be "truncated" if marked, and asks for
