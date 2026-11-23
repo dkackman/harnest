@@ -248,6 +248,29 @@ eq "consumer(regression)@mini-ai: Edit the session tree's suite" 2 $?
 jq -n --arg p "$stree/regression-perf/S-P001.jsonl" '{tool_name: "Write", tool_input: {file_path: $p}, cwd: "/tmp"}' \
   | HARNEST_ROOT="$root" HARNEST_SESSION_TREE="$stree" HARNEST_TARGET=mini-ai HARNEST_ROLE=tester python3 "$guard" consumer >/dev/null 2>&1
 eq "consumer(tester)@mini-ai: Write lem's perf history in the session tree" 2 $?
+# --- perf and result readings are add-only (harnest#294): no committed reading may go, no exemption
+proot="$T/proot"; mkdir -p "$proot/regression-perf/mini-ai"
+printf '{"r":1}\n{"r":2}\n' > "$proot/regression-perf/X.jsonl"
+printf '{"r":1}\n{"r":2}\n' > "$proot/regression-perf/mini-ai/Y.jsonl"
+git -C "$proot" init -q && git -C "$proot" add -A && git -C "$proot" -c user.name=t -c user.email=t@t commit -qm base
+pbase=$(git -C "$proot" rev-parse HEAD)
+ptree="$T/ptree"; git -C "$proot" worktree add -q --detach "$ptree" HEAD
+# prow <expect> <role> <label> <file under the root> <tool_input json> [tree]
+prow() {
+  local r="$proot"; [ -n "${6:-}" ] && r="$ptree"
+  jq -n --arg p "$r/$4" --arg d "$r" --argjson i "$5" '{tool_name: ($i.content | if . then "Write" else "Edit" end), tool_input: ($i + {file_path: $p}), cwd: $d}' \
+    | HARNEST_ROOT="$proot" HARNEST_SESSION_TREE="$ptree" HARNEST_SESSION_BASE="$pbase" HARNEST_ROLE=tester python3 "$guard" "$2" >/dev/null 2>&1
+  eq "readings add-only, $2: $3" "$1" $?
+}
+prow 0 consumer "Edit appends a reading" regression-perf/X.jsonl '{"old_string": "{\"r\":2}\n", "new_string": "{\"r\":2}\n{\"r\":3}\n"}'
+prow 0 consumer "Write of the old readings plus a new one" regression-perf/X.jsonl '{"content": "{\"r\":1}\n{\"r\":2}\n{\"r\":3}\n"}'
+prow 2 consumer "Write of one new reading (070e340)" regression-perf/X.jsonl '{"content": "{\"r\":3}\n"}'
+prow 2 consumer "Edit changes a committed reading" regression-perf/X.jsonl '{"old_string": "{\"r\":1}", "new_string": "{\"r\":9}"}'
+prow 2 consumer "Write of one new reading in mini-ai/" regression-perf/mini-ai/Y.jsonl '{"content": "{\"r\":3}\n"}'
+prow 2 consumer "Write of one new reading in the session tree" regression-perf/X.jsonl '{"content": "{\"r\":3}\n"}' tree
+prow 0 consumer "a readings file not yet committed" regression-results/Z.jsonl '{"content": "{\"r\":3}\n"}'
+prow 0 curator "non-consumer role passes through" regression-perf/X.jsonl '{"content": "{\"r\":3}\n"}'
+git -C "$proot" worktree remove --force "$ptree"
 # fix round 1: the real layout. HARNEST_ROOT is a harnest checkout and the session tree is
 # made by suite_tree.make(), outside it (<dirname>/.harnest-worktrees/<basename>/<id>)
 hroot="$T/hl/harnest"; mkdir -p "$hroot/regression-perf/mini-ai"

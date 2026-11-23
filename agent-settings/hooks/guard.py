@@ -136,6 +136,11 @@ consumer (tester, regression):
     commit the driver checked it out at (HARNEST_SESSION_BASE, a full 40-hex
     sha; without one the edit is refused), never the tree's own HEAD, and
     the rules below that name the harness root cover it too
+  - perf and result readings are add-only too (harnest#294): an Edit/Write
+    to a `*.jsonl` under `regression-perf/` or `regression-results/` (any
+    depth, so per-server dirs too) may not drop or change any committed
+    line, with no `pending:` exemption. Appends pass; Bash `>>` never
+    reaches this hook
 every role, on every server lem included (R17): no running dw's deploy script (`deploy.sh` in
 command position, after a shell, exec, source, ., env, nohup, command or sudo, in a sh -c / eval
 string, anywhere in an ssh remote command, in a NAME=value, a git alias or -c value, or text
@@ -2283,18 +2288,25 @@ def target_file_rule(path, cwd, target, role):
 
 
 def suite_add_only_rule(tool, tool_input, cwd):
-    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`.
-    A suite file in the session's own worktree is held to the commit that worktree has out."""
+    """Refuse a consumer Edit/Write that drops or rewrites a committed suite line, bar `pending:`,
+    or any committed perf/result reading (regression-perf/**.jsonl, regression-results/**.jsonl;
+    harnest#294). A file in the session's own worktree is held to the commit that worktree has out."""
     main_root = os.path.realpath(
         os.environ.get("HARNEST_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
     )
     full = os.path.realpath(os.path.join(cwd, tool_input.get("file_path", "")))
     name, root = os.path.basename(full), os.path.dirname(full)
     tree = session_tree()
-    if root not in (main_root, tree) or not (name.startswith("regression-suite-") and name.endswith(".md")):
+    base = next((b for b in (tree, main_root) if b and (root == b or root.startswith(b + os.sep))), "")
+    rel = os.path.relpath(full, base) if base else ""
+    suite = bool(base) and root == base and name.startswith("regression-suite-") and name.endswith(".md")
+    readings = (
+        bool(base) and rel.split(os.sep)[0] in ("regression-perf", "regression-results") and name.endswith(".jsonl")
+    )
+    if not (suite or readings):
         return
     rev = "HEAD"
-    if tree and root == tree:
+    if tree and base == tree:
         rev = session_base()
         if not rev:
             deny(
@@ -2305,7 +2317,7 @@ def suite_add_only_rule(tool, tool_input, cwd):
             )
     try:
         committed = subprocess.run(
-            ["git", "-C", root, "show", rev + ":" + name], capture_output=True, text=True, timeout=10
+            ["git", "-C", base, "show", rev + ":" + rel], capture_output=True, text=True, timeout=10
         )
     except (OSError, subprocess.SubprocessError):
         return
@@ -2329,6 +2341,13 @@ def suite_add_only_rule(tool, tool_input, cwd):
     for line in committed.stdout.splitlines():
         if left.get(line, 0):
             left[line] -= 1
+        elif readings:
+            deny(
+                "perf and result readings are append-only: this %s drops or rewrites a committed "
+                "reading in %s, which would erase the history perf-check compares against. Append "
+                "the new reading as a new last line (Edit keeping every existing line, or `>>`); "
+                "never Write the file whole." % (tool, rel)
+            )
         elif not line.strip().startswith("pending:"):
             deny(
                 "suite cases are add-only: this %s drops or rewrites %r in %s. To change or remove "
