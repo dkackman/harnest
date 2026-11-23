@@ -28979,7 +28979,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1285 — the DMAD bench left one noted job per A0-A3 run in `probe-1579`, at the plan's shape, and a skipped arm is absent and explained
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). Model: MiniMax H3, fl2va, `templates/minimax/image-to-video`, with the DMAD LoRAs from
 `ZhengmingYu/DMAD`. The runs are plan v1's stage A: **A0** (load check: one dmad4 clip), **A1** (two one-speaker
@@ -29007,7 +29006,6 @@ cleanup: none (the jobs are the record's evidence).
 metrics: none.
 
 ### C-F1286 — each DMAD job's realized workflow has the full re-noise scheduler form, audio shift 2, a pinned string `weight_name`, and an adapter not named `turbo`
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). For one dmad4 and one dmad8 job from C-F1285 (A1, P1, seed 1001), the A0 job, one base job and one
 turbo job, take `get_job_workflow(job_id=<id>)` and read the H3 step's `scheduler`, `audio_scheduler`, `loras` (or
@@ -29031,7 +29029,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1287 — the DMAD jobs' events show the re-noise scheduler loading and a LoRA load with no unmatched keys, and the record names the partition
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). Take `get_job_events(job_id=<id>)` and `get_job(job_id=<id>)` (its `warnings`) on the A0 job and on
 the dmad4 and dmad8 jobs C-F1286 read.
@@ -29049,7 +29046,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1288 — the DMAD downloads were only the two named files, never the whole `ZhengmingYu/DMAD` repo
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (validate only, nothing runs). Take the dmad4 job's realized workflow from `get_job_workflow` and pass it to
 `validate_workflow(workflow=<it>, workspace="probe-1579")`; read `plan.downloads`. Do the same for the dmad8 job.
@@ -29066,7 +29062,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1289 — the record's `analyze_shots` band figures and `transcribe_audio` text reproduce on the same outputs, and the turbo control is read against base
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Mostly free; `transcribe_audio` spends a little GPU, so validate it and quote its estimate first. For at least one
 job per A1 arm (base, dmad4, dmad8, turbo; P1, seed 1001), call `assess_output(name=<the job's mp4 output>,
@@ -29089,7 +29084,6 @@ cleanup: `delete_output(job_id=<id>)` for each `transcribe_audio` job this case 
 metrics: none.
 
 ### C-F1290 — the A2 spread in the record follows from `compare_outputs` on the two dmad4 P1 seed-1001 takes
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). The two takes are A1's dmad4 P1 seed-1001 job and A2's (C-F1285). Call `compare_outputs` on their
 two mp4 outputs in workspace `probe-1579` with the metric(s) the record names (PSNR, as #1438 used, if it names none).
@@ -29103,7 +29097,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1291 — the DMAD record gives each arm exactly one call, never rules a voice clean, and any candidate names both adoption gates
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). The record is `bench/records/h3-dmad.md` in the dw repo, plus a `docs/proposals/todo.md` entry. The
 tester doesn't read the checkout: read the record as the stage's hand-off comment on #1584 quotes it (`gh issue view
@@ -29128,7 +29121,6 @@ cleanup: none.
 metrics: none.
 
 ### C-F1292 — #1584 ships nothing: `image-to-video` validates at its defaults, no DMAD catalog entry, no `probe-1579` workflow outside its workspace, the dialogue rule stands
-pending: #1584
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic). Plan v1 writes
 `list_loras(model="minimax-h3")`, which today's server refuses ("neither a workflow on this server nor a Hub repo id",
 2026-11-22); the Hub id form below is the same check.
