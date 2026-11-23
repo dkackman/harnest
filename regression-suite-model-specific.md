@@ -12177,4 +12177,153 @@ in a template `reason` or the `minimax-h3` skill without this boundary moving wi
 cleanup: none (nothing is queued or written).
 metrics: none.
 
+### M-F486 — `per-character.md` has *A costume change*: the measured path first (one portrait, the new clothes named in every shot, #1193), and wardrobe drifting across cuts without the portrait or a window
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only. Stage A of #1591 is plugin-only, so it has no MCP
+surface.
+Steps: load `dw:minimax-h3` with the `Skill` tool (the plugin follows `develop`; use the base directory it reports, on
+the stage's build, not an older cached plugin). `Grep` its `references/per-character.md` for `^#+ ` and read the section
+headed *A costume change* in full. `Grep` `references/cuts.md` for `^## A place card holds the set`.
+expected:
+- `per-character.md` has exactly one heading named "A costume change".
+- The section states the measured path as the first option, before any untested one. That path is one cast portrait
+  kept for the new outfit, with the new clothes named in the shot's prompt and the prompt saying the clothes are not
+  taken from the picture. It cites #1193 and says that keeping the same portrait is what holds the face.
+- It says wardrobe drifts across a cut unless the portrait or a 22-frame window from an earlier shot carries it. It
+  says to name the outfit in identical words in every shot's prompt, and to use a window from an earlier shot in that
+  outfit when the outfit drifts.
+- It links `cuts.md`'s *A place card holds the set* by that exact heading, and the heading exists in `cuts.md`. It
+  quotes rather than rewords that section: any sentence it reproduces matches `cuts.md` word for word.
+- It does not claim the outfit was measured to hold **across** shots. #1193 measured a change within one shot only.
+It is a **finding** if the section is missing or duplicated, if #1193 is not cited, if the untested option comes
+before the measured one, if the cross-cut drift and its two remedies (portrait, window) are missing, if the link names
+a heading `cuts.md` doesn't have, or if the text says the outfit holds across cuts as a measured fact.
+cleanup: none.
+metrics: none.
+
+### M-F487 — *A costume change* marks the per-outfit portrait untested (#1591), says MPS is unmeasured, and names it `cast/<name>-<outfit>`, `shared=True`
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill) and the FLUX 3 Klein catalog. **Free**: reads only.
+Steps: read *A costume change* as in M-F486. Call `get_server_info()` and
+`list_workflows(shape="image-edit")`, with `workspace="regression-model-specific"` where it is taken.
+expected:
+- The per-outfit portrait (one portrait per outfit, each an edit of the first portrait whose prompt names the face as
+  kept) is marked **untested** and cites #1591. No sentence about it is worded as a measured rule or a requirement
+  ("always", "must", "draw each outfit").
+- For CUDA it names `templates/flux3/multi-reference` or H3-Image's edit route (citing `bench/records/h3-image.md`),
+  or both. Each template it names is in the `list_workflows` reply under that catalog name.
+- It says that on MPS the route is unmeasured and that a session should say so before spending, as the `flux3-klein`
+  skill does for its edit templates. It does not say the route runs on MPS, and does not say it can't.
+- The asset name for an outfit portrait is `cast/<name>-<outfit>`, kept with `shared=True`, and it is distinct from
+  the base `cast/<name>`. The form `cast/<name>/<outfit>` doesn't appear (Q2 took the default).
+- It says that when drift is checked, the reference is the portrait the shot used.
+It is a **finding** if "untested" or "#1591" is missing, if the per-outfit portrait is stated as a rule, if MPS is
+not mentioned or is called measured, if a named template is not in the catalog, or if the asset name differs from
+`cast/<name>-<outfit>` or drops `shared=True`.
+cleanup: none.
+metrics: none.
+
+### M-F488 — `series-episodes` step 0 and `storyboard` each link *A costume change* once, by a heading that exists, with outfit item ids `cast-<name>-<outfit>`
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin skills `dw:series-episodes`, `dw:storyboard`, `dw:minimax-h3`. **Free**: reads only.
+Steps: load `dw:series-episodes` and `dw:storyboard` with the `Skill` tool. `Grep` each `SKILL.md` for
+`costume`, `outfit` and `A costume change`, and read the lines around each hit.
+expected:
+- `series-episodes/SKILL.md` has one costume-change line, inside "## 0. Draw the cast once, before episode 1". It
+  points to *A costume change* in `minimax-h3`'s `references/per-character.md`.
+- `storyboard/SKILL.md` has one such line pointing to the same section.
+- The heading each line names is the exact heading M-F486 found in `per-character.md`, and the path each gives
+  resolves under the plugin's skills directory.
+- Where a line names an item id for an outfit portrait, it is `cast-<name>-<outfit>`. Where it names an asset, it is
+  `cast/<name>-<outfit>`.
+- Step 0's "exactly once" rule and its `cast/<character>` example are still there. The new line adds the outfit case
+  and does not remove the base rule.
+It is a **finding** if either file lacks the line, has more than one, puts it outside step 0 (series-episodes), links
+a heading or file that doesn't exist, or names a different id or asset form.
+cleanup: none.
+metrics: none.
+
+### M-F489 — `fix-ladder.md`'s face-drift check names the portrait the shot was conditioned on, per outfit
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin skill `dw:script-to-video` (`templates/face-drift-check`). **Free**: reads only.
+Steps: load `dw:script-to-video`; read the `## Face drift` section of `references/fix-ladder.md`.
+expected:
+- The section says `templates/face-drift-check`'s `reference` is the cast portrait the shot was conditioned on, and
+  says that means the portrait for the shot's outfit when the cast has more than one.
+- The rest still stands: a `face_drift` finding is a flag to look at with `get_output_frames`, not a verdict, and
+  the re-roll counts against the shot's budget.
+- `templates/face-drift-check` is still in `list_workflows()` under that name.
+It is a **finding** if the per-outfit wording is missing, if the flag-not-verdict sentence or the budget sentence is
+gone, or if the section now says to compare against the base portrait whatever outfit the shot used.
+cleanup: none.
+metrics: none.
+
+### M-F490 — `intents.md` has one per-outfit portrait row, status `untested`, pointing at *A costume change* and citing #1591
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
+Steps: `Grep` the loaded `dw:minimax-h3`'s `references/intents.md` for `outfit`, `costume` and `1591`.
+expected:
+- Exactly one table row is about a per-outfit portrait drawn from the base portrait. Its five cells follow the
+  table's `| intent | template | pattern | evidence | status |` header.
+- Its `pattern` cell is `references/per-character.md` § A costume change, the heading from M-F486. Its `evidence` cell
+  cites #1591 and names no record (an `untested` row needs none). Its `status` is `untested`.
+- No row marks the per-outfit portrait as tested, held or measured.
+It is a **finding** if the row is missing or duplicated, if its status is anything but `untested`, if it points at
+a section that doesn't exist, or if the row breaks the table's column count.
+cleanup: none.
+metrics: none.
+
+### M-F491 — #1591's stage leaves the `cuts.md` place-card sentences and `script-to-video/SKILL.md` as they were
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin skills `dw:minimax-h3`, `dw:script-to-video`. **Free**: reads only.
+Steps: read `cuts.md` § *A place card holds the set* in the loaded `dw:minimax-h3`. Load `dw:script-to-video` and
+`Grep` its `SKILL.md` for `costume`, `outfit`, `wardrobe` and `1591`. Read the stage's hand-off comment on #1594.
+expected:
+- These two bullets are still in `cuts.md`, word for word (line breaks may move):
+  - "**The card holds what it shows, and nothing else.** R1 held all three of its markers on a reverse the card does
+    not frame; the coat, which only the window's frames show, stayed lost. Hold wardrobe or a prop with the window,
+    or by putting it in the portrait."
+  - "**A new look is a new card.** A night version from the same Klein seed and prompt, its light changed, kept the
+    layout. Make one card per look, and keep each under its own name (`places/<set>-night`)."
+- `script-to-video/SKILL.md` has no hit for this stage. It had 4 bytes to spare under its cap, so the plan keeps it
+  untouched. A `wardrobe` hit that was there before the stage is not a finding.
+- The hand-off says dw's own `tests/test_plugin_skills.py` passed, naming the SKILL.md size cap, `TestPlaceCard` and
+  the intents test, plus a new `TestCostumeChange`. These are dw's tests and are not run here; the tester reads only
+  the shipped text.
+It is a **finding** if either bullet changed, if `script-to-video/SKILL.md` gained costume or outfit text, or if the
+hand-off doesn't say those tests passed.
+cleanup: none.
+metrics: none.
+
+### M-F492 — no shipped skill text tells a session to put an `outfit` key on a ledger item, and the ledger still refuses one
+pending: #1594
+source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
+Model/pipeline: plugin skills (whole `dw` plugin) and the request ledger. **Free**: reads, plus one refused
+`set_request`.
+#1591's plan replaced the proposal's "name the outfit in the item note" with names (item id, asset name, run `note`).
+The ledger has no agent-written item note, and it refuses item fields it doesn't know.
+Steps:
+1. `Grep` the plugin's `skills/` directory (the parent of the loaded skills' base directories) for `outfit`. Read
+   each hit in context.
+2. `set_request(request="m-f492-outfit-probe", title="M-F492 probe", goal="probe", why="M-F492: unknown item
+   field", revision=0, items=[{"key": "cast-priya-coat", "title": "Priya, coat", "outfit": "coat"}],
+   workspace="regression-model-specific")`.
+expected:
+- No hit tells a session to set an `outfit` field or key on a request item, or to write the outfit into an item's
+  `notes`. Hits that carry the outfit in an item `key`/id (`cast-<name>-<outfit>`), a `title`, an asset name
+  (`cast/<name>-<outfit>`) or a run `note` are expected.
+- Step 2 is refused, and the error names the unknown item field `outfit`. No request is created:
+  `get_request("m-f492-outfit-probe", workspace="regression-model-specific")` finds none.
+It is a **finding** if any skill line directs an `outfit` item field or an agent-written item note. If step 2 is
+accepted, the plan's premise has moved: file it as an ordinary issue on the ticket repo, `backend:shared`.
+cleanup: if step 2 created the request, `delete_request("m-f492-outfit-probe", workspace="regression-model-specific")`
+(with the `acknowledged_cost` it asks for).
+metrics: none.
+
 ## Performance
