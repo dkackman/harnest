@@ -29061,41 +29061,6 @@ expected:
 cleanup: none.
 metrics: none.
 
-### C-F1289 — the record's `analyze_shots` band figures and `transcribe_audio` text reproduce on the same outputs, and the turbo control is read against base
-source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
-Mostly free; `transcribe_audio` spends a little GPU, so validate it and quote its estimate first. For at least one
-job per A1 arm (base, dmad4, dmad8, turbo; P1, seed 1001), call `assess_output(name=<the job's mp4 output>,
-probes=["analyze_shots"], workspace="probe-1579")` (or the probe form `get_guide("tasks", section="Assessment
-Probes")` names today) and read each shot's high-band dBFS and `high_share`. Run `transcribe_audio` (the catalog's
-transcription task or template, `list_workflows(shape="text")`) on the same four outputs in workspace `probe-1579`.
-expected:
-- Each clip's high-band dBFS and `high_share` equal the record's to its stated precision. A mismatch past rounding is
-  a **finding** against the record. The outputs are fixed files, so this does not depend on chance.
-- Each transcript equals the record's text for that clip (or its word accuracy, recomputed against the written line,
-  equals the record's to its precision). A transcription model update that moves a word is noted, not a finding,
-  if the record names the model it used.
-- The record compares every dmad clip's band figures against base at the same prompt and seed, and states whether
-  turbo's figures differ from base by about the skill's "~4 dB", or don't. Whether the band measure separates turbo
-  from base is stated either way; a record that omits the turbo-vs-base reading is a **finding**.
-- The record gives, per clip, the face by eye at frames 0, 62 and 123, lip motion during speech, wall time and
-  `denoise_total_steps`, each with the job id. A clip in C-F1285 with any of these missing is a **finding**.
-- The A3 pair's wall times in the record match `get_job` for those two jobs to the record's precision.
-cleanup: `delete_output(job_id=<id>)` for each `transcribe_audio` job this case ran.
-metrics: none.
-
-### C-F1290 — the A2 spread in the record follows from `compare_outputs` on the two dmad4 P1 seed-1001 takes
-source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
-Free (read-only). The two takes are A1's dmad4 P1 seed-1001 job and A2's (C-F1285). Call `compare_outputs` on their
-two mp4 outputs in workspace `probe-1579` with the metric(s) the record names (PSNR, as #1438 used, if it names none).
-expected:
-- The record's spread equals `compare_outputs`' answer to its stated precision. A mismatch is a **finding**.
-- The two takes are not identical (the re-noise is unseeded today). If they are bit-identical or `compare_outputs`
-  reports them equal, the record must say so and explain it: either the flag didn't take (then C-F1286 or C-F1287
-  fails) or a seeded path exists. An unexplained identical pair is a **finding**.
-- The record states what the spread means for the verdict (a good dmad clip may be one lucky draw).
-cleanup: none.
-metrics: none.
-
 ### C-F1291 — the DMAD record gives each arm exactly one call, never rules a voice clean, and any candidate names both adoption gates
 source: tester, spec for #1584 from #1579's plan v1 (claude-opus-5-5 via anthropic)
 Free (read-only). The record is `bench/records/h3-dmad.md` in the dw repo, plus a `docs/proposals/todo.md` entry. The
