@@ -12178,7 +12178,6 @@ cleanup: none (nothing is queued or written).
 metrics: none.
 
 ### M-F486 — `per-character.md` has *A costume change*: the measured path first (one portrait, the new clothes named in every shot, #1193), and wardrobe drifting across cuts without the portrait or a window
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only. Stage A of #1591 is plugin-only, so it has no MCP
 surface.
@@ -12203,7 +12202,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F487 — *A costume change* marks the per-outfit portrait untested (#1591), says MPS is unmeasured, and names it `cast/<name>-<outfit>`, `shared=True`
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill) and the FLUX 3 Klein catalog. **Free**: reads only.
 Steps: read *A costume change* as in M-F486. Call `get_server_info()` and
@@ -12226,7 +12224,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F488 — `series-episodes` step 0 and `storyboard` each link *A costume change* once, by a heading that exists, with outfit item ids `cast-<name>-<outfit>`
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin skills `dw:series-episodes`, `dw:storyboard`, `dw:minimax-h3`. **Free**: reads only.
 Steps: load `dw:series-episodes` and `dw:storyboard` with the `Skill` tool. `Grep` each `SKILL.md` for
@@ -12247,7 +12244,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F489 — `fix-ladder.md`'s face-drift check names the portrait the shot was conditioned on, per outfit
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin skill `dw:script-to-video` (`templates/face-drift-check`). **Free**: reads only.
 Steps: load `dw:script-to-video`; read the `## Face drift` section of `references/fix-ladder.md`.
@@ -12263,7 +12259,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F490 — `intents.md` has one per-outfit portrait row, status `untested`, pointing at *A costume change* and citing #1591
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: MiniMax H3 (plugin skill). **Free**: reads only.
 Steps: `Grep` the loaded `dw:minimax-h3`'s `references/intents.md` for `outfit`, `costume` and `1591`.
@@ -12279,7 +12274,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F491 — #1591's stage leaves the `cuts.md` place-card sentences and `script-to-video/SKILL.md` as they were
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin skills `dw:minimax-h3`, `dw:script-to-video`. **Free**: reads only.
 Steps: read `cuts.md` § *A place card holds the set* in the loaded `dw:minimax-h3`. Load `dw:script-to-video` and
@@ -12302,7 +12296,6 @@ cleanup: none.
 metrics: none.
 
 ### M-F492 — no shipped skill text tells a session to put an `outfit` key on a ledger item, and the ledger still refuses one
-pending: #1594
 source: tester, spec for #1594 from #1591's plan v1 (claude-opus-5-5 via anthropic)
 Model/pipeline: plugin skills (whole `dw` plugin) and the request ledger. **Free**: reads, plus one refused
 `set_request`.
