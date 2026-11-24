@@ -4725,6 +4725,126 @@
   }
  },
  {
+  "name": "don: a failed park recheck that keeps parked is still an ask (harnest#266)",
+  "input": {
+   "owner": "dkackman",
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 90,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "feature"
+      },
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "status:needs-info"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 91,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "stage"
+      },
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": [
+       {
+        "number": 92,
+        "state": "CLOSED"
+       }
+      ]
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "don",
+   "2": "don",
+   "3": "don"
+  },
+  "expect_reason": {
+   "1": "status:needs-approval",
+   "2": "status:needs-info",
+   "3": "deferred (parked): no status"
+  }
+ },
+ {
   "name": "a tester queue waits on an open blocker, not an answer or a hand-off",
   "input": {
    "owner": "dkackman",

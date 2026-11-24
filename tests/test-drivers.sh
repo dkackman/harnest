@@ -966,7 +966,8 @@ board '[{"number": 10, "state": "OPEN", "title": "batch plan",
          "comments": [{"author": {"login": "dkackman"}, "createdAt": "2026-11-01T00:00:00Z",
                        "body": "<!-- harnest:plan v2 -->\n## Verdict: build smaller\n- **Q1** [none] which file. Default: x."}]},
         {"number": 11, "state": "OPEN", "title": "deferred idea", "labels": [{"name": "feature"}, {"name": "owner:don"}, {"name": "parked"}]},
-        {"number": 12, "state": "OPEN", "title": "a park", "labels": [{"name": "owner:don"}, {"name": "status:needs-approval"}]}]'
+        {"number": 12, "state": "OPEN", "title": "a park", "labels": [{"name": "owner:don"}, {"name": "status:needs-approval"}]},
+        {"number": 13, "state": "OPEN", "title": "failed recheck", "labels": [{"name": "owner:don"}, {"name": "parked"}, {"name": "status:needs-approval"}]}]'
 : > "$FAKE_CLAUDE_LOG.argv"
 (cd "$T/h" && env FAKE_GH_BOARD="$T/board.json" TICKET_REPO=o/r HARNESS_REPO=h/r ./run-digest.sh) > "$T/digest.out" 2>&1
 d="$(cat "$T/digest.out")"
@@ -978,8 +979,10 @@ has "digest: a deferred section" "## Deferred: waiting on a trigger, not on you"
 has "  listing the parked issue" "- #11 (" "$d"
 m="$(cat "$FAKE_CLAUDE_LOG.argv")"
 has "digest: the rest still go to the model for the table" "## #12: a park" "$m"
+has "digest: parked with a live ask is a decision, not deferred (harnest#266)" "## #13: failed recheck" "$m"
+case "$d" in *"- #13 ("*) _report 1 "  and is not in the deferred section" ;; *) _report 0 "  and is not in the deferred section" ;; esac
 case "$m" in *"## #10:"*|*"## #11:"*) _report 1 "digest: batch and parked issues are not in the table too" ;; *) _report 0 "digest: batch and parked issues are not in the table too" ;; esac
-has "digest: the count covers all three" "3 parked" "$d"
+has "digest: the count covers all four" "4 parked" "$d"
 
 # --- 9b. the nightly regression run: once a day, inside the loop, under its lock
 : > "$FAKE_CLAUDE_LOG"; rm -f "$T/h/logs/.nightly-regression"

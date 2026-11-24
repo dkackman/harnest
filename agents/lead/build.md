@@ -22,9 +22,8 @@ the cases will test what the plan says.
 - **The stage is `parked`** (the driver's reason says every blocker has
   closed): it waits on a build gate in the plan. Check the gate against the
   record. If it's met, comment the evidence, remove `parked`, and build. If
-  it isn't, comment why and hand the stage to Don with the ask block (core,
-  "Asking Don"), keeping `parked`: `--remove-label owner:lead --add-label
-  owner:don`. Don't build past an unmet gate.
+  it isn't, hand the stage to Don as a failed recheck (core, the `parked`
+  label). Don't build past an unmet gate.
 
 ### 1. Build, fanning out code-only work
 

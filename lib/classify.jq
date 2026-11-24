@@ -40,7 +40,8 @@
 # blocker, or any still open, it waits; once every blocker has closed, a
 # feature or idea goes to lead:design and a stage to its usual build route,
 # and that session rechecks the triggers. A parked owner:don issue is Don's
-# like any other: the digest lists it apart, as deferred.
+# like any other: the digest lists it apart, as deferred, unless it also
+# carries status:needs-approval or status:needs-info, which make it an ask.
 #
 # A loop runs against one server (`target` in the snapshot, lem when it is
 # absent; harnest#15). An issue another loop holds, or whose backend this
@@ -126,7 +127,11 @@ def parent_phase:
     # Parked, or parked by dw's stabilization freeze: waiting on a trigger,
     # not on a decision. Still Don's queue, but the reason starts "deferred",
     # which is how the driver's drain and idle backoff tell them apart.
-    {queue: "don", reason: ((if has("parked") then "deferred (parked): "
+    # `parked` with a live ask (needs-approval / needs-info) is a decision,
+    # not a deferral: a lead's failed park recheck (harnest#266).
+    # run-digest.sh lane_of applies the same rule.
+    ((has("status:needs-approval") or has("status:needs-info")) | not) as $idle
+    | {queue: "don", reason: ((if has("parked") and $idle then "deferred (parked): "
                              elif has("stabilization") then "deferred (stabilization): " else "" end)
                             + ($st | join(",") | if . == "" then "no status" else . end))}
   elif $o[0] == "owner:implementer" then

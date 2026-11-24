@@ -42,10 +42,15 @@ of it. An open issue carries exactly one `owner:*` label: whoever acts next.
 - `wontfix` + closed `not planned`: declined.
 - `parked`: deferred. With `owner:lead`, the driver holds it until every
   issue it is blocked by has closed, then gives it back to you to recheck
-  its triggers (design, step 1; build, step 0).
+  its triggers (design, step 1; build, step 0). A recheck that fails is an
+  ask, not a deferral: comment why, then hand it to Don with the ask block
+  ("Asking Don") and drop `parked` in the same command, `--remove-label
+  owner:lead --remove-label parked --add-label owner:don --add-label
+  status:needs-approval`. With `parked` kept, the board and the digest file
+  it as deferred and nothing surfaces the ask (harnest#266).
 - `lane:batch`: a plan waiting on Don in the batch lane ("Asking Don").
 
-A park (`owner:don` + `status:needs-approval`) is lifted only by Don. Once
+A hand-off to Don (`owner:don` + `status:needs-approval`) is lifted only by Don. Once
 he has swapped the owner back to you, a status he left behind is stale:
 clear it in the command that hands the issue on. Every comment you write
 names the model and provider you ran as (your prompt states them).

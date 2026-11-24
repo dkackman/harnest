@@ -41,9 +41,8 @@ Read the thread and decide what Don's hand-back asks for:
   triggers are met, comment the evidence, remove `parked`, and carry on from
   where the feature stood: no approved plan means steps 2–6, and an approved
   one means stop there, because the driver routes it on. If they aren't met
-  and no open blocker is left, comment why and hand it to Don with the ask
-  block (core, "Asking Don"), keeping `parked`: `--remove-label owner:lead
-  --add-label owner:don`.
+  and no open blocker is left, hand it to Don as a failed recheck (core, the
+  `parked` label).
 - **Don asked a question**: answer it in a comment, then hand back as in
   step 6.
 - **The tester's spec questions** (a `spec-questions vN` comment on an

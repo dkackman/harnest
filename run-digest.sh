@@ -169,7 +169,8 @@ view_of() {
 lane_of() {
   view_of "$1" | jq -r '[.labels[].name] as $l
     | if ($l | index("lane:batch")) and ($l | index("status:plan-review")) then "batch"
-      elif ($l | index("parked")) then "parked" else "table" end' 2>/dev/null || echo table
+      elif ($l | index("parked")) and ($l | index("status:needs-approval") | not)
+           and ($l | index("status:needs-info") | not) then "parked" else "table" end' 2>/dev/null || echo table
 }
 batch=() parked=() table_issues=()
 for n in ${issues[@]+"${issues[@]}"}; do
@@ -200,7 +201,8 @@ batch_section() {
 }
 
 # deferred_section: parked with Don, waiting on a trigger rather than on a
-# decision. Removing `parked` (or handing it to owner:lead with its triggers
+# decision. `parked` with a live ask (needs-approval / needs-info) is a
+# decision and goes to the table (lane_of; lib/classify.jq the same). Removing `parked` (or handing it to owner:lead with its triggers
 # linked as blockers) brings one back.
 deferred_section() {
   [ "${#parked[@]}" -gt 0 ] || return 0
