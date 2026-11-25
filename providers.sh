@@ -456,7 +456,9 @@ DELEGATE_PERMISSION_FLAGS=(
   --strict-mcp-config --mcp-config '{"mcpServers":{}}'
   --allowedTools
     "ToolSearch" "TodoWrite" "Read" "Glob" "Grep"
-    "Write(/tmp/**)" "Write(//tmp/**)"
+    # /tmp three ways: the prompt's form, the absolute rule form, and where
+    # macOS puts it (the session's own scratchpad is under /private/tmp).
+    "Write(/tmp/**)" "Write(//tmp/**)" "Write(//private/tmp/**)"
     "Bash(gh issue *)" "Bash(date *)" "Bash(wc *)"
     "Bash(git log *)" "Bash(git status*)" "Bash(git diff *)" "Bash(git show *)" "Bash(git blame *)"
   --disallowedTools "${RELEASE_KEY_RULES[@]}" "Edit" "WebFetch" "WebSearch"
