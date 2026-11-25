@@ -172,6 +172,12 @@ smoke's Fixtures lists the asset too.
   than the second before it. C-F062 mixes and crossfades it with the 44.1 kHz
   `ep15-song.mp3` as the 32 kHz half of a rate-mismatched pair. C-F059 loops it to
   `ep33-episode.mp4`'s length. Read-only — never sliced in place, never deleted.
+- `asset:qa-cast/ep11-bed.wav`, above, is also the base of C-F1315's swell score. Its quiet,
+  fairly level body (−49.9 dBFS mean, −28.9 dBFS peak, 32 kHz mono, 472 frames at 24 fps) is
+  what makes a +24 dB, 0.25 s boost the one clear peak of its envelope. A substitute needs a
+  quiet body with no bin within 12 dB of the boosted one, and at least 416 frames at 24 fps.
+  `ep6-cold-open.mp4` + `ep3-shot2-reply.mp4` (248 frames together) with `ep20-score.wav`
+  are C-F1313's cut and score, at `total_frames` 248 so the score never runs past its end.
 - `asset:qa-cast/ep13-episode.mp4` — a 282-frame 24 fps 960x544 stereo 44.1 kHz
   episode. C-F078 muxes a soundtrack onto it twice; its known geometry is what says the
   mux moved only the audio. C-F057 dissolves it after the 32 kHz `ep6-cold-open.mp4` as
@@ -29590,6 +29596,148 @@ expected:
 - None of the three tells the reader to link a check or an export to the shot or the cut, anywhere.
 It is a **finding** if any rule above is missing or contradicted.
 cleanup: none.
+metrics: none.
+
+### C-F1312 — the plugin documents finishing a cut in one job, composing `assemble-and-score`, and placing a score on a beat
+pending: #1700
+source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
+Free. Load `dw:long-form`, `dw:cinematography` and `dw:script-to-video` with the `Skill` tool, and read
+`references/run-and-repair.md` and `references/audio.md` from `dw:long-form`'s base directory and
+`references/grades.md` from `dw:cinematography`'s, as any skill consumer would. Then read #1613's state:
+`gh issue view 1613 --repo dkackman/diffusers-workflow --json state,stateReason,labels`.
+expected:
+- `run-and-repair.md` has a section on finishing the cut in one job, next to *Export the cut for an editor*. It
+  holds one fenced workflow JSON with, in order:
+  - a step (`cut` in the plan) that is a `workflow` step with `path: "templates/assemble-and-score"` and
+    `arguments`, saving its result to the `intermediate` subfolder;
+  - an `apply_lut` step whose `media` is `previous_result:<the cut step>` and whose `palette` is one of `grades.md`'s
+    palettes (same colours, same order);
+  - a `film_grain` step on the graded result, saving to `final`.
+- The JSON copies none of the template's own steps: no `concat_videos`, `slice_audio`, `mix_audio` or `mux` step
+  of its own. The section says the template is named rather than copied, and why (a copy stops tracking the
+  original).
+- Export follows #1613's state on the day this case runs:
+  - #1613 open, or closed not planned, or ruled "refuse at validate": the section says to export in a **second**
+    job with `export_timeline` reading the finished file as `"video": "output:..."`, and *Export the cut for an
+    editor* says the same. The recipe has no `export_timeline` step reading `previous_result:`.
+  - #1613 closed completed with the same-job fix: `export_timeline` is the recipe's last step. Then nothing on the
+    page still says export must be a second job.
+- Pointers to the section: `grades.md`'s *Applying one*, `long-form`'s `SKILL.md` and `script-to-video`'s
+  `SKILL.md` each send the reader to it for grading a whole cut.
+- `audio.md` has a paragraph on placing the score, after its `assemble-and-score` entry. It says to:
+  - read the score's `get_gallery_metadata(envelope=true)` with a small `interval_seconds` (0.25 or so) near the
+    swell;
+  - take the swell's peak bin at `t_peak` seconds;
+  - with the beat at frame `B` of the cut, set `score_start_frame = round(t_peak × fps) − B`, with `fps` the
+    template's frame rate (the formula may be in words, but it must give that number);
+  - if that comes out negative, pick another beat or a score whose peak comes later;
+  - check the score runs at least `score_start_frame + total_frames` frames.
+It is a **finding** if any item above is missing, if the recipe's export form contradicts #1613's state, if any page
+says `apply_lut` can't take a composed step's result, or if a sign or unit in the placement rule differs (`+ B`,
+or seconds where frames are meant).
+cleanup: none.
+metrics: none.
+
+### C-F1313 — the one-job finishing recipe, copied with real shots and score, validates clean and gives a graded, grained, scored cut
+pending: #1700
+source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
+CPU utility work only, about a minute on lem. Workspace `regression-complete`. Fixtures: `asset:qa-cast/ep6-cold-open.mp4`
+and `asset:qa-cast/ep3-shot2-reply.mp4` (124 frames each, 24 fps), and `asset:qa-cast/ep20-score.wav`.
+1. Copy the fenced JSON of `run-and-repair.md`'s one-job finishing section (C-F1312) as it stands. Change only:
+   its `id`, to `qa-c-f1313-<YYYYMMDDHHMM>` from `date`; `shots` to the two fixture shots in that order; `score` to
+   `asset:qa-cast/ep20-score.wav`; `total_frames` to 248. These go wherever the recipe puts them: literal values in
+   the cut step's `arguments`, or the recipe's own variables passed as `arguments`. If the recipe has an
+   `export_timeline` step (#1613 landed), keep it.
+2. `validate_workflow` on it, with the same `arguments` the run will get, `workspace="regression-complete"`.
+3. `run_workflow` with the bound `acknowledged_cost`, `wait_seconds=55`; then `get_job` and `get_job_events`.
+4. `get_gallery_metadata(envelope=true, include_workflow=false)` on the `intermediate` cut and on the `final` file.
+   `get_output_frames` on both at frame 60.
+5. If the recipe has no export step: run the second-job export exactly as the page gives it, with `"video"` set to
+   the `output:` reference of step 3's `final` file. Validate, run with `wait_seconds=55`, then `get_gallery_metadata`
+   on its `.otioz`.
+expected:
+- Step 2: `valid: true`, no errors. No warning reads `declares no variable` (today's wording for an argument a
+  composed template drops, pinned 2026-11-25). A seed-cache advisory is allowed. `plan.estimate.minutes` is a
+  number.
+- Step 3: one job, `succeeded`. Its outputs hold a video under `intermediate` (the cut) and one under `final`. No
+  `job.warnings` entry is `slice_past_end`, and none says a step could not read the cut.
+- Step 4: the cut and the final are each 248 frames at 24 fps, at the cut's size, so the grade added no frames
+  and dropped none. Both have audio. The final's `mean_dbfs` is above −60 and its envelope has no run of silent
+  bins (≤ −90 dBFS) longer than 1 s: the score is audible. The final's `duration_seconds` is within one frame of the
+  cut's, and its `mean_dbfs` within 1 dB of it, since `apply_lut` and `film_grain` keep the audio. Frame 60 of the
+  final is visibly regraded from the cut's frame 60, in the palette's hues, and grainier.
+- With an export step in the recipe: the job above ends `succeeded` with an `.otioz` among its outputs, and its
+  timeline lists the two shots in order. Without one, step 5's job `succeeded` with an `.otioz` whose `tracks` list
+  the two shots, 124 frames each, in order.
+It is a **finding** if validation warns about an undeclared or dropped argument, if it takes more than one job to get
+the graded file, if the final's frame count differs from the cut's, if the final is silent or lost its audio, if the
+cut isn't kept under `intermediate`, or if the export the page gives fails.
+cleanup: `delete_output(job_id=...)` on the finishing job and on step 5's export job, if any. The fixtures are
+shared: leave them.
+metrics: none.
+
+### C-F1314 — the finishing recipe is refused at validate for a bad palette entry, naming it, and warns on a misspelled template argument
+pending: #1700
+source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
+Free: `validate_workflow` only, `workspace="regression-complete"`. Nothing is run. Start from C-F1313's step 1
+workflow (the recipe with the fixture shots and score), id `qa-c-f1314`. In its `apply_lut` step's `palette`:
+1. replace the second colour with `"#12345"` (five hex digits);
+2. replace it instead with `"teal"`;
+3. cut the palette to its first colour only;
+4. give it 17 colours, all valid (`"#101010"` to `"#f0f0f0"`, any 17);
+5. restore the recipe's palette, and pass the composed template one misspelled argument: `score_star_frame: 0`
+   beside the real ones (in the cut step's `arguments`, or as a recipe argument if the recipe wires its own
+   variables through).
+expected:
+- Steps 1 to 4: each answers `valid: false` with no `plan`, and one error whose `path` reaches the `apply_lut`
+  step's `arguments.palette`. Steps 1 and 2 name the bad entry by index and value (today: `apply_lut 'palette' entry
+  1 ('#12345') is not a #rrggbb colour.`). Steps 3 and 4 name the count and the 2-to-16 bound (today: `has 1 colour
+  ('#102030'); it takes 2 to 16`). None of them is reported only at run time.
+- Step 5: if the misspelling sits in the cut step's `arguments`, the answer is `valid: true`, with a warning at
+  `steps[<cut>].workflow.arguments.score_star_frame` saying `templates/assemble-and-score` declares no such variable
+  and listing `score_start_frame` among those it declares (wording pinned 2026-11-25). If the recipe takes it as one
+  of its own arguments, `valid: false` with `Unknown variable` at `arguments.score_star_frame` passes instead.
+  Silent acceptance in either form fails.
+- No `list_jobs(workspace="regression-complete")` entry appears for `qa-c-f1314` after any step.
+It is a **finding** if any of steps 1 to 4 validates, if an error doesn't name the palette's path or the entry, or if
+step 5 draws neither a warning nor an error.
+cleanup: none.
+metrics: none.
+
+### C-F1315 — a score placed by the docs' rule peaks on the chosen beat of the finished cut, for two beats
+pending: #1700
+source: tester, spec for #1700 from #1622's plan v1 (claude-opus-5-5 via anthropic)
+CPU utility work only, three short runs. Workspace `regression-complete`. The point is the placement rule, so the
+score has one peak and nothing else in the mix competes with it.
+
+Setup (the swell score). Run, after `validate_workflow`, `{"id": "qa-c-f1315-swell-<YYYYMMDDHHMM>", "seed": 1,
+"steps": [{"name": "swell", "task": {"command": "gain_audio", "arguments": {"audio": "asset:qa-cast/ep11-bed.wav",
+"gain_db": 24, "start_seconds": 12.0, "duration_seconds": 0.25}}, "result": {"content_type": "audio/wav",
+"subfolder": "final", "file_base_name": "swell"}}]}` with `wait_seconds=55`. Call its file's `output:` reference
+`<swell>`. Read `get_gallery_metadata(name=<swell>, envelope=true, interval_seconds=0.25, include_workflow=false)`.
+Its loudest `rms_dbfs` bin must be bin 48 (12.0 s), at least 12 dB over every bin outside 47 to 49. If it isn't, the
+fixture has changed: report the case *not checked* and file nothing.
+
+1. Following `audio.md`'s placement paragraph (C-F1312), with `t_peak` read off that envelope as the paragraph
+   says, `fps` 24 and beat `B = 120` (5.0 s), compute `score_start_frame`. With a bin start of 12.0 s it is
+   `288 − 120 = 168`. A bin centre of 12.125 s gives 171, which also passes. Check, as the paragraph says, that the
+   score reaches it: `168 + 248 = 416 ≤ 472`.
+2. Run C-F1313's recipe (same shots, `total_frames` 248), with `score: <swell>`, `score_start_frame` from step 1,
+   and `world_gain: 0` so the shots' own sound doesn't compete (validated free 2026-11-25). Use id
+   `qa-c-f1315-a-<YYYYMMDDHHMM>`. Validate, run with `wait_seconds=55`, then read the `final` file's
+   `get_gallery_metadata(envelope=true, interval_seconds=0.25, include_workflow=false)`.
+3. Repeat steps 1 and 2 with `B = 200` (8.333 s), which gives `score_start_frame` 88 (or 91), id
+   `qa-c-f1315-b-<YYYYMMDDHHMM>`.
+expected:
+- Step 1's figure is what the paragraph's rule gives: 168 (or 171), never 408 (`+ B`) or 288 (B ignored).
+- Step 2: the job `succeeded` with no `slice_past_end` warning. The final's loudest `rms_dbfs` bin is within one bin
+  of `B / fps = 5.0 s`, so bin 19, 20 or 21, and it is at least 12 dB over every bin outside 18 to 22.
+- Step 3: the same with `B / fps = 8.333 s`: loudest bin 32, 33 or 34. That the peak moves with `B` is what
+  shows the rule placed it.
+It is a **finding** if the paragraph's rule gives any other `score_start_frame`, if either final's peak bin is more
+than one bin from its beat, or if either run warns `slice_past_end` at these values.
+cleanup: `delete_output(job_id=...)` on the swell job and both finishing jobs. `ep11-bed.wav` is shared and read
+only: leave it.
 metrics: none.
 
 ## Performance
