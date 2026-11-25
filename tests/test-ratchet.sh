@@ -78,6 +78,11 @@ hrow 0 "a metric improved"
 branch fix-mixed; edit fix-mixed dw/c.py 'new module'
 hrow 2 "one metric up (modules) is enough, even beside an unchanged one"
 has "  the message says which" "modules: 2 -> 3" "$out"
+# from a subdirectory: `git archive` there takes only that subtree, so both
+# sides measured zero and passed. The archive runs from the repo root
+branch fix-subdir; edit fix-subdir dw/b.py '# complex'
+hrow 2 "a regression handed off from a shell in a subdirectory" "$w/dw"
+has "  measured on the whole tree" "complex_functions: 1 -> 2" "$out"
 
 # --- the one waiver (stage C): a new dw/ module raises `modules`. Refused
 # without arch-approved; with it, only when the same commits raise

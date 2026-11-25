@@ -135,8 +135,13 @@ def _load_regressions(script):
 
 
 def _archive(checkout, treeish, dest, paths=()):
+    # From the repository root: run inside a subdirectory, `git archive` takes
+    # only that subtree, and every metric measures zero (#1677)
+    top = _git(checkout, "rev-parse", "--show-toplevel")
+    if top.returncode:
+        raise ToolError("%s is not a git checkout: %s" % (checkout, top.stderr.strip()[-300:]))
     git = subprocess.Popen(
-        ["git", "-C", checkout, "archive", treeish, *paths], stdout=subprocess.PIPE, stderr=subprocess.PIPE
+        ["git", "-C", top.stdout.strip(), "archive", treeish, *paths], stdout=subprocess.PIPE, stderr=subprocess.PIPE
     )
     tar = subprocess.run(["tar", "-x", "-C", dest], stdin=git.stdout, capture_output=True)
     git.stdout.close()
