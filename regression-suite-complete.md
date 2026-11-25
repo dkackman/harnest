@@ -32338,4 +32338,178 @@ expected:
 cleanup: none.
 metrics: none.
 
+### C-F1437 — a video saved with no declared or carried frame rate warns `video_fps_defaulted` and is 8 fps; a declared or carried rate does not warn
+pending: #1727
+source: tester, spec for #1727 from #1643's plan v1 (claude-opus-5-5 via anthropic)
+Task-only, no model load: seconds of GPU-free work. Workspace `regression-complete`. Fixture
+`asset:qa-cast/ep3-shot1-incident.mp4` (24 fps, 124 frames). `video_frames` returns a bare `(frames, h, w, c)` uint8
+array, so its saved mp4 has no rate unless the step declares one. Before the stage such a file was written at 8 fps with
+no warning anywhere (`job.warnings` empty, nothing in the events).
+Inline workflow W, `id` `cf1437-fps`, five steps, each `"result": {"content_type": "video/mp4", "save": true}` unless
+said otherwise:
+- `bare1`: `task.command` `video_frames`, `video` the fixture. No `fps` anywhere.
+- `bare2`: the same as `bare1` again (a second step that falls back, to read the per-step warning).
+- `declared`: the same task, with `"result": {"content_type": "video/mp4", "save": true, "fps": 24}`.
+- `carried_task`: `stills_to_video` with `images` two stills taken from the fixture (`video_processors`
+  `get_first_frame` / `get_last_frame` in two earlier unsaved steps, or any two same-size image assets), `durations`
+  1, `fps` 12. Its rate is carried by the task, not declared on the result.
+- `carried_src`: `fit_to_model` with `video` the fixture, `width` 544, `height` 960, `num_frames` 124 (the C-F1262
+  shape).
+1. `validate_workflow(workflow=W, workspace="regression-complete")`; then `run_workflow(inline_workflow=W,
+   acknowledged_cost=<from validate>, wait_seconds=55, note="#1727 C-F1437", workspace="regression-complete")`.
+2. `get_job(<id>)`; `get_job_events(<id>)`; `get_gallery_metadata` on each saved mp4.
+expected:
+- Completes. `bare1` and `bare2`: `fps` 8, `frame_count` 124, `duration_seconds` about 15.5. `job.warnings` holds a
+  `video_fps_defaulted` warning for **each** of the two steps (the per-step de-duplication keeps one per step, not one per
+  job; two warnings for one step is noise, a finding only if it repeats per file), and each appears as a `warning`
+  event with `kind: "video_fps_defaulted"` in `get_job_events`. Each message names the step (or its file), says 8 fps
+  was assumed, and says how to set a rate (`result.fps`). Either step missing its warning is a **finding**; a warning on
+  only one channel (job but not events, or the reverse) is a **finding** (C-F001's rule).
+- `declared`: `fps` 24, `duration_seconds` about 5.17, and **no** `video_fps_defaulted` naming it.
+- `carried_task`: `fps` 12 and no `video_fps_defaulted` naming it.
+- `carried_src`: no `video_fps_defaulted` naming it **if** its file is 24 fps. If its file is 8 fps, the fallback fired
+  and the warning **must** name it. The invariant across all five steps: a file written at the 8 fps fallback carries the
+  warning, and a file at any other rate does not. Breaking it either way is a **finding**.
+- No `device_adjusted` warning anywhere (lem is CUDA).
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F1438 — a CUDA run carries no `device_adjusted` warning, and the guide says where an MPS correction is reported
+pending: #1727
+source: tester, spec for #1727 from #1643's plan v1 (claude-opus-5-5 via anthropic)
+GPU: one small seeded image. Workspace `regression-complete`. The `device_adjusted` sites (MPS/CPU placement, compile,
+quantized-matmul, attention slicing) cannot fire on lem (`get_server_info.device` `cuda`), so the stage is verified by
+the builder's unit tests (plan Q3) plus this regression: the new kind must not leak onto CUDA runs.
+1. `get_server_info`: confirm `device` is `cuda`. If it is not, this case does not apply as written: record the device
+   and instead expect at least one `device_adjusted` warning on step 3's run (and file what you saw).
+2. Pick the cheapest catalog text-to-image template (`list_workflows(shape="image")`, SD 1.5-class by preference).
+   `validate_workflow(name=<it>, arguments={"seed": 1643, "num_inference_steps": 8}, workspace="regression-complete")`
+   (drop a variable it does not declare; keep the seed).
+3. `run_workflow` with the same arguments and validate's `acknowledged_cost`, `wait_seconds=55`, `note="#1727
+   C-F1438"`; `get_job(<id>)`; `get_job_events(<id>)`.
+4. `get_guide("acceleration")` index, then the section(s) on MPS (the plan's `ACCELERATION.md` lines on the MPS
+   corrections: offload, RoPE precision, attention slicing, compile, quantized matmul).
+expected:
+- 2: `valid: true`; no `device_adjusted` in its warnings (the plan cut validate-time device warnings; one here is not a
+  failure of this stage but record it).
+- 3: completes. **No** warning of kind `device_adjusted` in `job.warnings` or in any `warning` event. One there is a
+  **finding**: either a CUDA run is being told about a correction that did not happen, or a site fires off its device
+  check. The run's other warnings are the same as the template gave before the stage (the seed-null one at most).
+- 4: the MPS section states that these corrections are reported as job warnings (kind `device_adjusted`), not only in
+  the server log. A section that still says they are logged only, or says nothing about where they are reported, is a
+  **finding** against the stage's docs. It must not claim the float16-on-MPS note rewrites the dtype (the plan keeps the
+  dtype and only warns).
+cleanup: `delete_output(job_id=<id>)`.
+metrics: none.
+
+### C-F1439 — a run's manifest records a `torch` block with the live numerics and versions, on success and on failure
+pending: #1728
+source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
+Task-only, no model load. Workspace `regression-complete`. Before the stage `manifest.json` (read with
+`get_output_text(name="<run_dir>/manifest.json", workspace=...)`, `run_dir` from `get_job`) held top-level `run_id`,
+`version`, `status`, `started_at`, `finished_at`, `dw_version`, `device`, `workflow`, `seed`, `arguments`,
+`elided_steps`, `inputs`, `steps`, and no `torch` key; `get_server_info.runtime` reported `torch_version`
+`2.14.1+cu130`, `packages.diffusers` `0.44.0.dev0`, and `get_diffusers_state.version` `0.44.0.dev0` (develop at spec
+time; read them live, they move).
+1. `get_server_info`; `get_diffusers_state`; `get_health` (each card's worker).
+2. Success run: inline `{"id": "cf1439-ok", "steps": [{"name": "f", "task": {"command": "video_frames", "arguments":
+   {"video": "asset:qa-cast/ep3-shot1-incident.mp4"}}, "result": {"content_type": "video/mp4", "save": true, "fps":
+   24}}]}`; validate, then `run_workflow(..., wait_seconds=55, note="#1728 C-F1439 ok", workspace="regression-complete")`.
+3. Failure run: the same with `"id": "cf1439-fail"` and `video` set to `asset:uploads/qa-cast/room-bed.wav` (an audio
+   file where a video is required), so the job fails at run time after the manifest's run directory exists. If
+   validation refuses it before queueing, use any task-only step validation passes but the run fails, and record which.
+4. For each job: `get_job(<id>)`; `get_output_text(name="<run_dir>/manifest.json", workspace="regression-complete")`
+   (raise `max_characters` until untruncated).
+5. `export_job(<ok id>)`: its file list.
+6. Run step 2 again with `note="#1728 C-F1439 ok-2"` until the two runs landed on **different** cards (`get_job.device`
+   `cuda:0` and `cuda:1`; at most three tries, then record that both landed on one card).
+expected:
+- 4 (ok run): the manifest has a `torch` key whose value is an **object** (a string such as a flags report is a
+  **finding**) with exactly the plan's keys `version`, `diffusers_version`, `enable_tf32`, `cudnn_benchmark`,
+  `cudnn_deterministic` (an extra key is recorded, not a finding). `version` equals `get_server_info.runtime.torch_version`;
+  `diffusers_version` equals `get_diffusers_state.version` and `runtime.packages.diffusers`. The three flags are JSON
+  booleans (a null or a string is a **finding**). Every other top-level key the baseline lists is still present and
+  unchanged in kind.
+- The flags match the server's settings: where any MCP reply (`get_server_info`, `get_health`) reports `enable_tf32`,
+  `cudnn_benchmark` or `cudnn_deterministic`, the manifest's value equals it. Where none does, the check is that both
+  cards' runs (step 6) record the same three values (one server's settings) and `cudnn_benchmark` and
+  `cudnn_deterministic` are not both `true`; record the values.
+- 4 (failed run): `status` the failure, and the manifest still carries the same `torch` block (a manifest is written when
+  a run fails part way, and the block describes the process that ran it). A failed run's manifest without the block is a
+  **finding**; no manifest at all is recorded and not a finding of this stage if the baseline also wrote none for it.
+- 5: the export's file list includes the run's `manifest.json`, and its size is larger than a manifest without the
+  block would need only by the block (no other change is promised).
+- 6: each run's block records the values of the worker that ran it; the two agree.
+cleanup: `delete_output(job_id=<id>)` for every job.
+metrics: none.
+
+### C-F1440 — a job from before the manifest change still reads, and a cached rerun's manifest has the block
+pending: #1728
+source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
+Free except one task-only rerun. Workspace `regression-complete`. A pre-stage job with its run directory still on disk at
+spec time: `b03342324e53` (`templates/minimax/reframe`, run `20261122-185219-b367caf9`, finished 2026-11-22). If it is
+gone, use the oldest `succeeded` job in `list_jobs(workspace="regression-complete", status="succeeded", limit=50)`
+whose `finished_at` predates the stage's deploy and whose `get_job_workflow` reports `realized: true`.
+1. `get_job(<old id>)`; `get_job_workflow(<old id>)`; `get_output_text(name="<run_dir>/manifest.json",
+   workspace="regression-complete")`.
+2. `rerun_job(<C-F1439's ok job>)` (run C-F1439 step 2 first if it has been cleaned up) with the acknowledgement it asks
+   for; wait; `get_job` (its manifest entry is marked `reused: true` when the step cache served it); read its
+   `manifest.json`.
+expected:
+- 1: every call answers as before the stage: `get_job` with its manifest and no error, `get_job_workflow`
+  `realized: true`, `manifest.json` readable with no `torch` key (nothing is rewritten on old runs). An error, a
+  500, or a reader that now demands the block is a **finding**.
+- 2: the rerun's manifest has its own `torch` block with the same shape as C-F1439's, whether or not its step was
+  reused. A reused run with no block is a **finding** (the block describes the process that wrote this manifest).
+cleanup: `delete_output(job_id=<rerun id>)`. Never delete the pre-stage job's outputs.
+metrics: none.
+
+### C-F1441 — `enhance_prompt` on the h3 preset with no model runs the model `list_enhancers` advertises, and a named model still wins
+pending: #1728
+source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
+GPU: three short LLM enhancement jobs (Qwen 4B and 1.5B class). `enhance_prompt` takes no `workspace`; its jobs land in
+the session's pinned workspace, so `use_workspace("regression-complete")` first. At spec time `list_enhancers` gave h3
+`default_model` `Qwen/Qwen3-4B-Instruct-2507`, models `[Qwen/Qwen3-4B-Instruct-2507, Qwen/Qwen2.5-7B-Instruct,
+Qwen/Qwen2.5-1.5B-Instruct]`; t2i `default_model` `Qwen/Qwen2.5-1.5B-Instruct`. Before the stage the server passed
+`default_model` as `model_name` on every call. Read them live.
+Idea I = `"Task: T2VA. Duration: 5.17 seconds. Idea: a red fox trotting through a snowy pine forest at dawn."`
+1. `list_enhancers`.
+2. `enhance_prompt(idea=I, preset="h3", acknowledged_cost=true)`; `wait_for_job`; `get_job`; `get_job_workflow`;
+   `get_output_text` on its text file.
+3. `enhance_prompt(idea=I, preset="h3", model_name="Qwen/Qwen2.5-1.5B-Instruct", acknowledged_cost=true)`; the same
+   reads.
+4. `enhance_prompt(idea="a cat portrait in a sunlit window", preset="t2i", acknowledged_cost=true)`; the same reads.
+expected:
+- 2: succeeds with non-empty text. The model that ran (the realized workflow's `model_name` variable, or the step's
+  `model_name`, in `get_job_workflow`) equals the h3 `default_model` from step 1. `get_job.arguments` no longer carries
+  a `model_name` the caller did not pass (the plan's change: the builtin's own variable decides). A different model
+  running, or a failure, is a **finding**; `model_name` still present in `arguments` with the default's value means
+  the call still passes it, a **finding** against the stage (the outcome is the same today, but the advertised value can
+  then drift from the one that runs unseen).
+- 3: succeeds; the model that ran is `Qwen/Qwen2.5-1.5B-Instruct`, and `arguments.model_name` says so.
+- 4: t2i is unchanged: succeeds, runs its `default_model` (`Qwen/Qwen2.5-1.5B-Instruct`).
+- No new warning on any of the three jobs.
+cleanup: `delete_output(job_id=<id>)` for the three jobs.
+metrics: none.
+
+### C-F1442 — the guides state `text_generation`'s `max_new_tokens` default and the manifest's `torch` block
+pending: #1728
+source: tester, spec for #1728 from #1643's plan v1 (claude-opus-5-5 via anthropic)
+Free. Before the stage the TASKS doc stated the `diffusion_upscale` defaults but not `text_generation`'s
+`max_new_tokens` (500, hidden in code), and `get_guide("workspaces", section="Runs")` described `manifest.json` as
+"status, seed, arguments, device, dw version, and each step's files", with no torch numerics.
+1. `list_guides`: find the tasks guide (the one served from `docs/TASKS.md`); `get_guide(<it>, section="text_generation")`
+   (loose match; else its index, then the section that covers `text_generation`).
+2. `get_guide("workspaces", section="Runs")`.
+3. `get_task("text_generation")`.
+expected:
+- 1: the `text_generation` section states that `max_new_tokens` defaults to 500. Missing or a different number is a
+  **finding**.
+- 2: the Runs section says the manifest records a `torch` block (torch and diffusers versions, `enable_tf32`,
+  `cudnn_benchmark`, `cudnn_deterministic`) so a rerun elsewhere can be compared. Missing is a **finding**.
+- 3: answers as before; the plan adds no registry default, so no change here is required (a `max_new_tokens` default
+  appearing is recorded, not a finding). If it does show one, it must say 500.
+cleanup: none.
+metrics: none.
+
 ## Performance
