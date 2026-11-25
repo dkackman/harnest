@@ -32019,4 +32019,131 @@ expected:
 cleanup: DELETE `qa_args`; `delete_output(job_id=...)` for both jobs.
 metrics: none.
 
+### C-F1423 — `templates/preferred/text-to-image` is in the catalog: prompt, seed, width, height and a `tier` preset over one `preference:text_to_image` step
+pending: #1724
+source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Before the stage, `get_workflow(name="templates/preferred/text-to-image")` answered "Unknown workflow ...
+did you mean one of: templates/flux3/text-to-image, templates/minimax-h3-image/text-to-image, templates/text-to-image":
+that is the old behaviour this case turns around.
+1. `get_workflow(name="templates/preferred/text-to-image", variables_only=true)`, then `get_workflow(name=...)` in full.
+2. `list_workflows(shape="image")` (summary form), and the same filtered by trait `composes-workflows` if the tool takes it.
+expected:
+- 1: found. Variables `prompt`, `seed`, `width`, `height` and `tier`, with `tier` defaulting to `standard` and its
+  `constraints` (or preset) naming exactly `draft`, `standard`, `best`. The definition has exactly one step, whose
+  `workflow.path` is `preference:text_to_image` (directly, or through a `variable:` whose default is that string). The
+  step passes `prompt`, `seed`, `width` and `height` from the variables. No inline `pipeline` block in the step: a template
+  that carries its own model instead of composing the preference is a **finding**.
+- 2: the template is listed under shape `image` and carries the `composes-workflows` trait (or the catalog's equivalent
+  marking for a template that composes another). Missing from the shape listing is a **finding**: the skill points
+  agents at it and `list_workflows(shape=...)` is where they start.
+cleanup: none.
+metrics: none.
+
+### C-F1424 — validating the template resolves `preference:text_to_image` per tier: default standard, draft is SD 1.5
+pending: #1724
+source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Workspace `regression-complete` on every call. Shipped ladder (#1626 plan v2, C-F1406): draft
+`templates/text-to-image`; standard `models/z-image`, `models/z-image-sdnq`; best `models/minimax-h3-image` (cuda only),
+`models/qwen-image-2.1`; `default_tier` `standard`. If C-F1406 has run and recorded other picks for this host, those
+picks are the expected targets here.
+1. `validate_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse"})`.
+2. The same with `"tier": "draft"`, then `"tier": "standard"`, then `"tier": "best"` added to the arguments.
+3. The same as 1 with `"width": 768, "height": 512` added, then with `"tier": "draft", "width": 768, "height": 512`.
+expected:
+- Every call `valid: true`, with a `plan` that carries one resolution line for the template's step, in the form
+  `preference:text_to_image (tier <t>) -> <target>; [skipped ...;] source: <source>` (punctuation may differ; key, tier,
+  target, every skip with its reason, and source must be there). No line is a **finding**: the skill tells agents to
+  read that line to say what will run.
+- 1 and 2-standard: `tier standard` -> `models/z-image`: the template's own default, not a silent fall to SD 1.5.
+- 2-draft: `tier draft` -> `templates/text-to-image`. 2-best: `models/minimax-h3-image` or `models/qwen-image-2.1`, and if
+  Qwen, MiniMax-H3-Image named as skipped with a fit reason. Record which.
+- Each tier's `plan.estimate` is priced (`basis` not `unknown`, not `partial`, no `unpriced` step), and the three
+  fingerprints differ.
+- 1 with no arguments beyond `prompt` validates with no warning that an argument is passed to a workflow that declares
+  no such variable. 3: likewise at standard. At draft (`templates/text-to-image` declares no `width`/`height` today),
+  record what the plan says about `width`/`height`: refused, warned or applied. A refusal of a catalog template's own
+  variables at its draft rung is a **finding**; a warning is a finding to file against the template, not a stage failure.
+cleanup: none.
+metrics: none.
+
+### C-F1425 — the template refuses a tier outside `draft | standard | best`, and queues nothing
+pending: #1724
+source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
+Free. Workspace `regression-complete`.
+1. `validate_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse", "tier": T})` for
+   T = `"ultra"`, `""`, `"Best"`, `3`, `null`.
+2. `run_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse", "tier": "ultra"},
+   workspace="regression-complete", acknowledged_cost={"fingerprint": "x", "minutes": 0.1, "downloads": []})`, then
+   `list_jobs(workspace="regression-complete")`.
+expected:
+- 1 `ultra`, `""` and `3`: `valid: false`, naming `tier` and the allowed `draft`, `standard`, `best`. `"Best"`: refused, or
+  folded to `best` with the line saying `tier best`; record which. `null`: refused, or treated as no tier (line says
+  `tier standard`); record which. Any T resolving to a rung with no line saying which, is a **finding**.
+- 2: refused before anything queues; `list_jobs` shows no new job for the template.
+- No message carries an absolute server path (`/home/`, `/Users/`, a workspace root).
+cleanup: cancel and `delete_output` the job if 2 queued one against the expectation.
+metrics: none.
+
+### C-F1426 — a run of the template makes one image, on the resolved target, pinned in the job
+pending: #1724
+source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
+GPU: one SD 1.5 image and one z-image image. Workspace `regression-complete`. `validate_workflow` each run first with the
+same arguments and pass its `acknowledged_cost`.
+1. `run_workflow(workflow="templates/preferred/text-to-image", arguments={"prompt": "a lighthouse", "seed": 1724, "tier":
+   "draft"}, wait_seconds=55, workspace="regression-complete")`; `get_job(<id>)`.
+2. The same with `"tier"` left out (the template's default, standard); `get_job`.
+expected:
+- 1: completes with exactly one image. `get_job`'s `preferences` map has `preference:text_to_image@draft` (or that key and
+  tier in another spelling) -> `templates/text-to-image`, and the events or `get_job_workflow` show SD 1.5 ran.
+- 2: completes with exactly **one** image on `models/z-image` (map entry `@standard` -> `models/z-image`). Four images
+  means z-image's own `num_images_per_prompt` leaked through the template: a **finding**.
+- Neither job carries a warning that the resolution was guessed, skipped or re-resolved in the worker.
+cleanup: `delete_output(job_id=<id>)` for both jobs.
+metrics: none.
+
+### C-F1427 — `get_guide("agent-rules")` has a *Choosing a model* section naming the `choosing-a-model` skill
+pending: #1724
+source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
+Free. Before the stage the guide's `sections` were `FLUX 3 Klein`, `MiniMax H3`, `Longer than one clip`.
+1. `get_guide("agent-rules")` (the index); then `get_guide("agent-rules", section="Choosing a model")`.
+expected:
+- `sections` includes `Choosing a model`. The section names the Claude Code skill `choosing-a-model` as carrying the
+  same rules, as the other sections name theirs.
+- Its rules say, each in some wording: a request that names no family, workflow or model runs the matching
+  `preference:` key (`text_to_image`, through `templates/preferred/text-to-image`) at the tier asked for, else with no
+  tier so the default applies; SD 1.5 (`templates/text-to-image`) only to check the server works; a named family,
+  workflow or model wins over the preference; before spending, read the `preference:... -> ...` resolution line in
+  `validate_workflow`'s plan to say what will run on this host.
+- Every workflow name the section cites resolves with `get_workflow`. A rule missing, or a cited name that does not
+  resolve, is a **finding**.
+- The guide's opening no longer reads as family rules only if the section is not per-family (record its wording; a
+  mismatch is a docs nit, not a failure).
+cleanup: none.
+metrics: none.
+
+### C-F1428 — the `dw:choosing-a-model` skill routes a no-family request to the preference, a smoke test to SD 1.5, and a named workflow past both
+pending: #1724
+source: tester, spec for #1724 from #1627's plan v2 (claude-opus-5-5 via anthropic)
+Free. A reading of the plugin skill as loaded in the session (plugin skills load from `develop`), plus read-only MCP calls.
+1. Find `dw:choosing-a-model` in the session's skill list; read its description. Load it with the `Skill` tool.
+2. For each workflow and MCP tool the skill names: `get_workflow(name=..., variables_only=true)`, or check the tool is in
+   the session's `mcp__dw__` tool list.
+3. Read C-F1427's section beside it.
+expected:
+- 1: the skill exists. Its description fires on a request for an image (or a model choice) that names no family,
+  workflow or model; a description that only fires on a family name is a **finding** (the plan's own risk).
+- Its text says, each in some wording: (a) no family, workflow or model named -> the matching `preference:` key at the
+  asked tier, else no tier passed so the store's default applies, today `text_to_image` via
+  `templates/preferred/text-to-image`; (b) "does it work" / a smoke test -> SD 1.5 `templates/text-to-image`, and SD 1.5
+  is never the default otherwise; (c) a named family, workflow or model wins; (d) before spending, read the
+  `preference:… (tier …) -> …` line in `validate_workflow`'s plan and tell the user what will run on this host. Any of
+  the four missing is a **finding**.
+- 2: every name resolves. The skill may name `get_preferences` only if that tool is in the tool list; naming a tool the
+  server does not have is a **finding** (plan v2 adds it to the skill only once #1723 verifies).
+- Tier names in the skill are exactly `draft`, `standard`, `best`.
+- 3: the skill and the agent-rules section agree rule for rule (the plugin's test holds every number in the section
+  present in the skill); a disagreement is a **finding**.
+cleanup: none.
+metrics: none.
+
 ## Performance
