@@ -30056,4 +30056,244 @@ cleanup: `delete_asset` on `cf1670-grid-a.wav` and `cf1670-grid-b.wav`, and `del
 `qa-c-f1330` job, all `workspace="regression-complete"`, acknowledged as each tool asks.
 metrics: none.
 
+### C-F1334 — #1704's continuity record is on the ticket, with a runs table naming every job, arm, card or shot, prompt and seed
+pending: #1704
+source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads only). The record is `bench/records/continuity-grammar.md` in the dw repo, which the tester can't read:
+read it as the stage's hand-off comment on #1704 quotes it (`gh issue view 1704 --repo dkackman/diffusers-workflow
+--comments`). If the comment neither quotes the runs table and marker reads nor carries the record's text, send the
+stage back `status:needs-info` asking for it; don't pass it. The three probes (plan v1, *Design → Probes*): **P-A**
+(R1+R2, FLUX 3 Klein): a two-shot, then a single of each person, control = names only, treatment = "<A> at frame
+left, facing right" and "<B> at frame right, facing left" in all three cards. **P-B** (R5, Klein): three cards in
+one room, control "warm practical light", treatment "key light from frame left, warm practical". **P-C** (R3, H3):
+two consecutive 5 s shots of one walker, control "walks along the street", treatment "walks from frame left to frame
+right" in both shots. Two seeds per arm.
+expected:
+- The record has a setup section (families, templates or `bench/workflows/continuity-*.json` names, size, seeds, the
+  workspace the jobs ran in) and a runs table with one row per job: probe, arm (control or treatment), card or shot
+  (two-shot / single A / single B; card 1-3; shot 1-2), seed, job id and output path.
+- The table covers every cell: P-A 3 cards × 2 arms × 2 seeds = 12 jobs, P-B 12, P-C 2 shots × 2 arms × 2 seeds = 8
+  (a job may hold several cards or shots if the row says which output is which). A missing cell, or a cell whose
+  job failed and is left out rather than recorded as failed, is a **finding**.
+- Each arm's prompt text is given (quoted, or one shared prompt with the arm's phrase named), so a reader can tell
+  the arms differ only by the plan's phrase.
+- It states that LTX-2.5 and Kandinsky 6 were not probed.
+- It names no rule outside R1, R2, R3 and R5 as probed.
+cleanup: none (the probe's jobs are the record's evidence).
+metrics: none.
+
+### C-F1335 — every #1704 job completed on its probe's family, with its arm's prompt and seed, and the arms are paired
+pending: #1704
+source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads only). For every job id in C-F1334's runs table: `get_job(job_id=<id>, workspace=<the record's
+workspace>)` and `get_job_workflow(job_id=<id>, workspace=...)`. Read the pipeline or template, each generating
+step's prompt, `seed`, `width`, `height`, and for P-C `num_frames` and the frame rate.
+expected:
+- Every job is `completed` (or the record marks it failed, as C-F1334 allows). A job id the record names that
+  `get_job` doesn't know is a **finding**.
+- P-A and P-B jobs are FLUX 3 Klein (`templates/flux3/...` or Klein's pipeline); P-C jobs are MiniMax H3. Another
+  family is a **finding** against the plan.
+- The prompt and seed in the realized workflow are the ones the record's row gives.
+- **Treatment text:** P-A treatment carries the A-left/facing-right and B-right/facing-left phrases in **all three**
+  cards (in the single of A, at least A's phrase; in the single of B, B's); P-B treatment carries "key light from
+  frame left" in all three cards; P-C treatment carries "from frame left to frame right" in both shots. A card or
+  shot missing its arm's phrase is a **finding**.
+- **Control text:** no control prompt says "frame left", "frame right", "facing left/right", "screen left/right",
+  "key light from" or "left to right" (or the same words reworded). A control that leaks the treatment's side is a
+  **finding**: it confounds the probe.
+- **Paired:** for each card or shot, control and treatment use the same two seeds, the same size, steps and (P-C)
+  frame count, and prompts that differ only by the arm's phrase. Any other difference is a **finding**.
+- **Sides, not bodies:** no treatment prompt places a subject by an anatomical side ("her right hand", "on his
+  left side"): the plan probes a subject's side of frame and the direction it faces, because the anatomical
+  phrasing was refuted (#1059, P5).
+- P-C: each shot is about 5 s (`get_gallery_metadata` on the output: `duration_seconds` within 4.5-5.5) and both
+  shots of a seed show the same walker (the second chained from or referencing the first, or the same subject
+  description; the record says which).
+cleanup: none.
+metrics: none.
+
+### C-F1336 — each #1704 job's realized workflow passes `validate_workflow`
+pending: #1704
+source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free (`validate_workflow` only; nothing runs). The stage owes that its three bench workflows pass validate; the
+tester can't read `bench/workflows/`, so validate what ran. For one job per probe arm (six jobs: P-A, P-B, P-C ×
+control, treatment), take `get_job_workflow(job_id=<id>, workspace=...)` and pass its workflow and arguments to
+`validate_workflow(..., workspace="regression-complete")`.
+expected:
+- Each validates with no error. A warning is fine if it is one the realized form explains (a VRAM or cost note).
+- If the hand-off names the bench workflows as stored catalog entries (`list_workflows` shows them), each also
+  validates by name with its default arguments.
+cleanup: none.
+metrics: none.
+
+### C-F1337 — #1704's marker reads match the outputs, card by card and seed by seed, for both arms
+pending: #1704
+source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads and free assessments; an eye call). For P-A and P-B, `get_output_image` on every card of both arms and
+both seeds (24 stills; the job's output, not an `asset:`). For P-C, `get_output_frames` at the first, middle and
+last frame of every clip (8 clips). `assess_output` / `compare_outputs` on any read the record says it took from
+them. Markers (plan v1): **P-A**, each subject's frame side and facing direction per card; a single passes when the
+subject sits in its side's third (A: left third; B: right third) and faces across the frame toward the other's side
+(A right, B left); the two-shot passes with A left and B right, facing each other. **P-B**, the side of the brighter
+half of each face; treatment passes when it is frame left. **P-C**, the sign of the walker's horizontal travel from
+first to last frame; treatment passes on left-to-right in each shot.
+expected:
+- The record gives a read for every card or clip in C-F1334's table, both arms (control reads too: the probe
+  compares the arms), each marked pass / fail / unsettled.
+- Each read agrees with what the stills and frames show. A clear contradiction (the record says A sits left and
+  the still shows A right; travel marked left-to-right and the walker moves right-to-left) is a **finding**: name
+  the job, card and seed.
+- A read the record took by eye is marked as by eye (the plan's fallback), not passed off as an `assess_output`
+  result.
+- A read the tester can't settle either way is not a finding against the record if the record also marks it
+  unsettled (C-F1339 covers where it goes).
+cleanup: none.
+metrics: none.
+
+### C-F1338 — #1704's verdicts follow the both-seeds rule: confirmed only when both treatment seeds pass every card or shot
+pending: #1704
+source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads the record against C-F1337's reads).
+expected:
+- The record gives one verdict per probed rule: R1+R2 (P-A), R5 (P-B), R3 (P-C), each **confirmed**, **refuted**
+  or **unsettled**, on its one probed family (Klein for R1, R2 and R5; H3 for R3).
+- **Confirmed** only when the treatment passes on **both** seeds in every card (P-A, P-B) or both shots (P-C).
+  A rule marked confirmed with one seed showing the effect, or with a single card or shot failing on either seed,
+  fails the stage (the plan's refusal): a **finding**.
+- R1 and R2 may be split (one confirmed, one not) only if the record reads frame side and facing separately; a
+  merged verdict that hides a failed facing read is a **finding**.
+- **Refuted** is a valid result: H3 ignoring direction words, or Klein not holding side from text, is recorded as
+  refuted, not retried until it passes. A rerun beyond the two seeds must be named in the record with why; a third
+  seed that replaces a failing one is a **finding**.
+- The record states the control arm's result beside each verdict (for example "control also held side on both
+  seeds"), so a later reader can tell whether the words did better than names alone.
+- A read marked unsettled can't count toward confirmed.
+cleanup: none.
+metrics: none.
+
+### C-F1339 — #1704 stays in its spend, sends unsettled reads to Don as `taste`, and ships no skill text or surface
+pending: #1704
+source: tester, spec for #1704 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free (reads only). From C-F1335's `get_job` answers, sum each job's run time (its finish less its start). Read the
+issue threads (`gh issue view 1704 --repo dkackman/diffusers-workflow --comments`, and #1685 likewise). Invoke
+`dw:cinematography` (Skill tool) and `get_guide("agent-rules")`.
+expected:
+- The jobs' run times total at most 2 h, or a new `spend` ask for the overrun is on #1685 or #1704 before the jobs
+  past 2 h ran (their start times after the ask). Past 2 h with no ask is a **finding** against the delegate's
+  ruling.
+- Every verdict C-F1338 found unsettled has a `taste` question to Don on #1704 or #1685 (a comment ending in the
+  **Decision for Don** block, `Kind:` taste), naming the jobs to look at. An unsettled read with no question, or one
+  resolved silently in the record, is a **finding**.
+- No skill text in this stage: `dw:cinematography` has no continuity reference link and its six axes and their
+  values are as pinned at spec time (2026-11-25): `shot_size` 7 values (`extreme-wide` ... `extreme-close-up`),
+  `move` 13, `lens` 5 (`wide` `normal` `long` `anamorphic` `vintage`), `light` 5 (`high-key` `low-key`
+  `golden-hour` `practical` `noir`), `era` 5, `tempo` 4. `agent-rules` has no new screen-side, light-side or
+  direction rule.
+- The hand-off names no MCP tool, task, schema or engine change.
+cleanup: none.
+metrics: none.
+
+### C-F1340 — the cinematography skill links a continuity note, which cites #1704's record and words each confirmed rule for its family
+pending: #1705
+source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free: reading the plugin only. Invoke `dw:cinematography` (Skill tool) and read its SKILL.md and the
+`references/continuity.md` it links. Have #1704's verdicts to hand (C-F1338, or the record as quoted on #1704).
+expected:
+- SKILL.md links `references/continuity.md` with one line (a link line or table row; not a new section restating
+  the rules). The note opens through the plugin.
+- The note cites `bench/records/continuity-grammar.md`.
+- Every rule #1704 confirmed is in the note, each worded for the family that confirmed it (Klein for R1/R2/R5, H3
+  for R3) and citing the record. Its wording is the treatment's phrasing that was tested: a subject's side of frame
+  and the direction it faces ("<name> at frame left, facing right"), the key light's side of frame ("key light from
+  frame left"), the walker's direction across frame ("from frame left to frame right"). Wording that places a
+  subject by an anatomical side or by "on screen right" for a body side is a **finding** (#1059's P5).
+- No rule is stated as holding on a family it wasn't confirmed on: a Klein-confirmed rule isn't stated for H3, and
+  R3 isn't stated for Klein. LTX-2.5 and Kandinsky 6 are named "untested" for every probed rule.
+- No rule the record refuted or left unsettled is stated as a rule. A rule the note states that the record didn't
+  confirm on both seeds is a **finding**.
+- If #1704 refuted R1 on Klein (side not held from text), the note says to carry the side with the coverage card's
+  edit (`storyboard`'s coverage set), per the plan's risk line.
+cleanup: none.
+metrics: none.
+
+### C-F1341 — the note lists every refuted rule under "Probed and not a rule", and every cut with its reason, R7 and R13 as measured against
+pending: #1705
+source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free. The same note as C-F1340.
+expected:
+- A section headed "Probed and not a rule" holds each rule #1704 refuted, with its family and the record cited. If
+  none was refuted, the section is absent or says none was; a refuted rule outside it is a **finding**. An
+  unsettled rule is named as unsettled (awaiting Don's look), not listed as confirmed or refuted.
+- The cut rules R4 and R6-R13 each have one line with a reason (the plan's sweep): R4 cut on action (an editing
+  choice), R6 "and then" → split (already stated), R7 a hold at start and end, R8 no music in shot prompts (cut
+  here, follow-up #1706), R9 a VO input holds only the words (already measured on H3), R10 design for animation
+  (taste, no demand), R11 one style line (already held in substance), R12 expression sheet as an edit of the
+  turnaround, R13 "no text" in sheet prompts. A missing cut, or one with no reason, is a **finding**.
+- **R7 and R13 are named as measured against**, not merely cut: R7 because H3's opening silence is a defect we
+  split away and a "static" shot pushed in; R13 because "no lettering" gave pseudo-lettering on both seeds on H3.
+  Either one written as an untested or taste cut is a **finding**.
+- No cut rule is given as advice anywhere in the note (no "add a hold at start and end", no "add 'no text'").
+cleanup: none.
+metrics: none.
+
+### C-F1342 — the storyboard coverage set points at the note; the sitcom-multicam pointer is there only if R1 held
+pending: #1705
+source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free. Invoke `dw:storyboard` and read `references/coverage-set.md`; invoke `dw:series-episodes` and read
+`references/sitcom-multicam.md`.
+expected:
+- `coverage-set.md` has a pointer line to the cinematography continuity note. It states no side, eyeline or light
+  rule that differs from the note (a pointer, not a second copy that can drift); the existing over-the-shoulder
+  line is still there.
+- If #1704 confirmed R1: `sitcom-multicam.md` has a pointer line to the note. If R1 was refuted or unsettled: it has
+  no such pointer and states no screen-side rule. A pointer present when R1 didn't hold, or absent when it held,
+  is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1343 — the Klein and H3 `intents.md` rows match #1704's verdicts
+pending: #1705
+source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free. Invoke `dw:flux3-klein` and `dw:minimax-h3` and read each one's `references/intents.md`.
+expected:
+- `flux3-klein`'s `intents.md` has a row for R1/R2 (side and facing across a cut) and for R5 (key light side), each
+  marked confirmed or refuted as #1704's record says, citing the record.
+- `minimax-h3`'s `intents.md` has a row for R3 (screen direction of a walker across a cut), marked as the record
+  says, citing it.
+- A row whose status differs from the record's verdict is a **finding**. An unsettled verdict is either absent or
+  marked unsettled, never confirmed.
+- No row for a family that wasn't probed.
+cleanup: none.
+metrics: none.
+
+### C-F1344 — #1705 keeps the pins: the medium-close-up line, the closed axes, no shot key, no agent-rules line
+pending: #1705
+source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free. Invoke `dw:cinematography` and `dw:minimax-h3` (its `references/staging.md`), and call
+`get_guide("agent-rules")` and `list_guides()`.
+expected:
+- `minimax-h3`'s `references/staging.md` still has its "face-on at medium close-up" line, unchanged in meaning.
+- `dw:cinematography`'s six axes hold exactly the values pinned at spec time (2026-11-25; the list in C-F1339). A
+  new value (a `screen-side`, `light-left` or similar id) is a **finding**.
+- No skill or note names a `screen_side` or `light_direction` shot key, or any new shot key: the rules go in the
+  existing `beat` and `light` text.
+- `get_guide("agent-rules")` carries no new continuity, screen-side or light-side rule (Q3's default), and no new
+  guide is listed. The `dw:cinematography` SKILL.md reads as before apart from the one link line.
+- `minimax-h3`'s outside-report list (if the skill shows it) still has exactly 10 entries.
+cleanup: none.
+metrics: none.
+
+### C-F1345 — if #1704 confirmed nothing, the note still lands with the refuted and cut lists and no rule
+pending: #1705
+source: tester, spec for #1705 from #1685's plan v1 (claude-opus-5-5 via anthropic)
+Free. Run only if #1704's record confirmed no rule; otherwise say so and skip. The same note as C-F1340.
+expected:
+- `references/continuity.md` exists and is linked from cinematography's SKILL.md, citing the record.
+- It states no continuity rule as advice: every probed rule is under "Probed and not a rule" (or named unsettled),
+  and the cut list is as C-F1341 requires, R7 and R13 as measured against.
+- `sitcom-multicam.md` has no pointer (C-F1342), and the intents rows read refuted or unsettled (C-F1343).
+- A missing note, or a note that recommends a probed rule anyway, is a **finding**.
+cleanup: none.
+metrics: none.
+
 ## Performance
