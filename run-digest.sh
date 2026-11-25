@@ -75,7 +75,7 @@ delegate_section() {
   since="$(( $(date +%s) - DIGEST_DELEGATE_HOURS * 3600 ))"
   rows="$(jq -r --argjson s "$since" '
       select((.ts // "" | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601? // 0) >= $s)
-      | "- #\(.issue) \(.outcome)\(if (.kinds | length) > 0 then " (" + (.kinds | join(", ")) + ")" else "" end): \(.line)"' \
+      | "- \(if (.repo // "" | endswith("/harnest")) then "harnest" else "" end)#\(.issue) \(.outcome)\(if (.kinds | length) > 0 then " (" + (.kinds | join(", ")) + ")" else "" end): \(.line)"' \
       "$LOGS/delegate.jsonl" 2>/dev/null || true)"
   held="$(printf '%s\n' "$board" | awk -F'\t' '$2 == "delegate:rule"' | wc -l | tr -d ' ')"
   [ -n "$rows" ] || [ "$held" != 0 ] || return 0

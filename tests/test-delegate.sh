@@ -30,6 +30,33 @@ eq "record: the session's cost" 0.17 "$(jq -r 'select(.issue == 1600) | .cost' "
 eq "record: the first line, without bold" "Ruling (delegate for Don, 2026-11-25): approved, Q2 amended." \
   "$(jq -r 'select(.issue == 1600) | .line' "$L/delegate.jsonl")"
 
+eq "digest: a harnest ruling is named harnest#n" yes "$(
+  jq -cn --arg t "$(date -u -r $(( $(date +%s) - 60 )) +%Y-%m-%dT%H:%M:%SZ)" \
+    '{ts: $t, repo: "dkackman/harnest", issue: 290, outcome: "ruled", kinds: ["loosen"], line: "x"}' >> "$L/delegate.jsonl"
+  DIGEST_DELEGATE_HOURS=1000000 board='' delegate_section | grep -q 'harnest#290 ruled (loosen)' && echo yes || echo no)"
+
+# delegate_suite_requests: the curator's escalations on harnest the delegate
+# takes, from a fixture `gh issue list` (the stub applies the --jq program).
+eval "$(sed -n '/^delegate_suite_requests() {/,/^}/p' "$HARNEST/run-loop.sh")"
+only_issues_filter() { cat; }
+recent="$(date -u -r $(( $(date +%s) - 600 )) +%Y-%m-%dT%H:%M:%SZ)"
+long_ago="$(date -u -r $(( $(date +%s) - 86400 )) +%Y-%m-%dT%H:%M:%SZ)"
+jq -n --arg r "$recent" --arg o "$long_ago" '[
+  {number: 290, author: {login: "dkackman"}, labels: [{name: "suite"}], comments: []},
+  {number: 291, author: {login: "someone"}, labels: [{name: "suite"}], comments: []},
+  {number: 292, author: {login: "dkackman"}, labels: [{name: "suite"}, {name: "delegate:passed"}], comments: []},
+  {number: 293, author: {login: "dkackman"}, labels: [{name: "suite"}, {name: "harness"}], comments: []},
+  {number: 294, author: {login: "dkackman"}, labels: [{name: "suite"}], comments: [{author: {login: "dkackman"}, createdAt: $o, body: "overrule: keep the case"}]},
+  {number: 295, author: {login: "dkackman"}, labels: [{name: "suite"}], comments: [{author: {login: "dkackman"}, createdAt: $r, body: "Approved (2026-11-25, in Don'"'"'s session)."}]},
+  {number: 296, author: {login: "dkackman"}, labels: [{name: "suite"}], comments: [{author: {login: "dkackman"}, createdAt: $o, body: "Approved (in Don'"'"'s session)."}]}
+]' > "$T/suite.json"
+gh() { local q="" a; while [ $# -gt 0 ]; do a="$1"; shift; [ "$a" = --jq ] && q="$1"; done; jq -r "$q" "$T/suite.json"; }
+# shellcheck disable=SC2034
+TICKET_OWNER=dkackman HARNESS_REPO=dkackman/harnest
+eq "suite: off without DELEGATE_IN_LOOP=1" "" "$(DELEGATE_IN_LOOP=0 delegate_suite_requests | tr '\n' ' ')"
+eq "suite: Don's own requests, not passed, harness, overruled or freshly touched" "290 296 " \
+  "$(DELEGATE_IN_LOOP=1 delegate_suite_requests | tr '\n' ' ')"
+
 # shellcheck disable=SC2034  # read by delegate_section
 DIGEST_DELEGATE_HOURS=1000000 board=$'1700\tdelegate:rule\t-\tfor the delegate\n1701\tdon\t-\tx'
 out="$(delegate_section)"

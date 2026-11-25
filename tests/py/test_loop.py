@@ -182,6 +182,8 @@ class HelpersTest(unittest.TestCase):
         self.assertEqual(loop.PASS["delegate:rule"], "delegate")
         self.assertEqual(loop.TREE_FAMILY["delegate:rule"], "reviewer")
         self.assertEqual(loop.label_of(Item("delegate:rule", 9, "lem")), "delegate:#9")
+        self.assertEqual(loop.PASS["delegate:suite"], "delegate-suite")
+        self.assertEqual(loop.label_of(Item("delegate:suite", 290, "lem")), "delegate:harnest#290")
 
     def test_knob(self):
         os.environ["LOOP_FREE_SLOTS"] = "x"

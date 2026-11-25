@@ -90,6 +90,7 @@ case "$query" in
     printf 'closures\t%s\n' "$(pending_closures | tr '\n' ' ')"
     if [ -n "$lead" ]; then
       printf 'curator\t%s\n' "$(curator_requests | tr '\n' ' ')"
+      printf 'delegate-suite\t%s\n' "$(delegate_suite_requests | tr '\n' ' ')"
       out="$(status_board)"
       if [ -n "$out" ]; then printf '%s\n' "$out" | sed 's/^/status\t/'
       elif gh issue list --repo "$TICKET_REPO" --state open --limit 1 --json number >/dev/null 2>&1; then :

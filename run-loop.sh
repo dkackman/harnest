@@ -1136,6 +1136,59 @@ delegate_record() {
        cost: (if $cost == "" then null else ($cost | tonumber) end)}' >> "$LOGS/delegate.jsonl" 2>/dev/null || true
 }
 
+# delegate_suite_requests — the suite-change requests on this repo the curator
+# escalated to Don (owner:don + status:needs-approval) that the delegate rules
+# on for him (R19), only with DELEGATE_IN_LOOP=1, ascending. Not one another
+# login filed, one already passed through to him (delegate:passed), one he
+# overruled (`overrule:`), or one his own session commented on within
+# DELEGATE_QUIET_HOURS. A `harness` change never: only suite requests.
+delegate_suite_requests() {
+  [ "${DELEGATE_IN_LOOP:-0}" = 1 ] || return 0
+  local quiet=7200 qh="${DELEGATE_QUIET_HOURS:-2}"
+  case "$qh" in ''|*[!0-9]*) ;; *) quiet=$((qh * 3600)) ;; esac
+  gh issue list --repo "$HARNESS_REPO" --state open --limit 100 --label suite --label owner:don --label status:needs-approval \
+    --json number,labels,author,comments \
+    --jq "(now - $quiet) as \$since | .[] | select(.author.login == \"$TICKET_OWNER\")
+          | select([.labels[].name] | (index(\"delegate:passed\") == null) and (index(\"harness\") == null))
+          | select([.comments[] | select(.author.login == \"$TICKET_OWNER\") | .body | test(\"^overrule:\"; \"i\")] | any | not)
+          | select([.comments[] | select(.author.login == \"$TICKET_OWNER\")
+                    | select(.body | test(\"in Don.s session|from Don.s Claude Code session\"))
+                    | .createdAt | fromdateiso8601 | select(. > \$since)] | length == 0)
+          | .number" 2>/dev/null \
+  | sort -n | only_issues_filter
+}
+
+# delegate_suite_pass — one delegate session per delegate_suite_requests
+# issue: the delegate rules on the curator's escalation as Don would, and the
+# curator applies what it approves on its next pass (an open request not
+# with Don is the curator's). The session reads this repo's checkout.
+delegate_suite_pass() {
+  local n dw_repo="$TICKET_REPO" TICKET_REPO="$HARNESS_REPO"
+  shared_passes_here || { echo "[delegate] skipping: lem's loop runs it" | tee -a "$LOOP_LOG"; return 0; }
+  # A suite edit mid-freeze changes what the release's gate tests: as the curator, wait for the cut.
+  local freeze; freeze="$(TICKET_REPO="$dw_repo" release_freeze)"
+  if [ -n "$freeze" ]; then freeze_hold_line "$freeze" delegate | tee -a "$LOOP_LOG"; return 0; fi
+  local -a reqs=()
+  while IFS= read -r n; do [ -n "$n" ] && reqs+=("$n"); done < <(delegate_suite_requests)
+  for n in ${reqs[@]+"${reqs[@]}"}; do
+    HARNEST_DELEGATE_NONCE="$(od -An -N16 -tx1 /dev/urandom | tr -d ' \n')"
+    export HARNEST_DELEGATE_NONCE
+    run_agent delegate "harnest#$n" "$DELEGATE_BUDGET_USD" "$REPO" "$DELEGATE_PROVIDER" "$DELEGATE_MODEL" "$DELEGATE_EFFORT" rule \
+      "Tickets for this ruling are GitHub Issues on $HARNESS_REPO (this repo); use the gh CLI with --repo $HARNESS_REPO. Your role instructions for this kind of session are in your system prompt; follow them exactly: it is a RULING session for Don's ask on suite-change request #$n only: the curator escalated it to Don, and you rule on it for him (the core's \"A harness change\": suite requests only, where the record settles them). When you rule, hand it back by removing owner:don and status:needs-approval: the curator applies what you approve on its next pass. Case history lives on $dw_repo. Then stop.
+
+You are $DELEGATE_MODEL via $DELEGATE_PROVIDER. End your ruling or pass-through comment with this line, exactly: <!-- harnest:delegate-session $HARNEST_DELEGATE_NONCE -->
+
+Your working directory is this repo's checkout (the suite files are regression-suite-*.md); read it, never edit it.
+
+The request as of $(ts):
+
+$(issue_context "$n")" \
+      "${ISOLATION_FLAGS[@]}" --tools "$DELEGATE_TOOLS" "${DELEGATE_PERMISSION_FLAGS[@]}"
+    delegate_record "$n"
+    unset HARNEST_DELEGATE_NONCE
+  done
+}
+
 # curator_requests — the open suite-change requests on this repo the curator
 # rules on, ascending. Not filtered on status:needs-approval: Don hands an
 # escalation back by removing owner:don, and often clears the status too.
@@ -1387,6 +1440,7 @@ drain_left() {
   done < <(printf '%s\n' "$rows" | only_issues_filter)
   [ -z "$(pending_closures)" ] || { echo work; return 0; }
   if [ "$shared" = 1 ] && [ -z "$(release_freeze)" ] && [ -n "$(curator_requests)" ]; then echo work; return 0; fi
+  if [ "$shared" = 1 ] && [ -z "$(release_freeze)" ] && [ -n "$(delegate_suite_requests)" ]; then echo work; return 0; fi
   mine="$(issue_snapshot | jq -r --arg t "target:$DW_TARGET" '
     (.issues | map({key: (.number | tostring), value: [.labels[].name]}) | from_entries) as $l
     | .issues[] | ($l[(.parent.number // 0) | tostring] // []) as $pl

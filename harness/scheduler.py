@@ -26,6 +26,7 @@ PRIORITY = (
     "tester:handoff",
     "curator",
     "delegate:rule",
+    "delegate:suite",
     "tester:closures",
     "tester:task",
 )
@@ -34,7 +35,7 @@ PRIORITY = (
 GPU_FEEDERS = frozenset({"reviewer:arch", "implementer:fix", "lead:build"})
 
 _GPU = frozenset({"tester:verify", "tester:answer", "tester:task", "tester:closures", "regression"})
-_FREE = frozenset({"tester:spec", "tester:handoff", "reviewer:arch", "reviewer:docs", "curator", "delegate:rule"})
+_FREE = frozenset({"tester:spec", "tester:handoff", "reviewer:arch", "reviewer:docs", "curator", "delegate:rule", "delegate:suite"})
 _SRC = frozenset({"implementer:fix", "lead:build", "lead:closeout"})
 _LEADTREE = frozenset({"lead:design", "lead:decompose"})
 

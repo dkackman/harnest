@@ -72,6 +72,7 @@ PASS = {
     "reviewer:arch": "reviewer-arch",
     "reviewer:docs": "reviewer-docs",
     "delegate:rule": "delegate",
+    "delegate:suite": "delegate-suite",
     "curator": "curator",
     "tester:closures": "tester-closures",
     "tester:task": "tester-task",
@@ -167,6 +168,8 @@ def label_of(item):
     role = item.queue.split(":", 1)[0]
     if item.queue == "curator":
         return f"curator:harnest#{item.issue}"
+    if item.queue == "delegate:suite":
+        return f"delegate:harnest#{item.issue}"
     if item.issue is None:
         return f"{role}:{item.queue.split(':', 1)[-1]}"
     return f"{role}:#{item.issue}"
@@ -423,6 +426,7 @@ class Loop:
         self.idle_secs = self.poll
         self.prev_rows = None
         self.curator = []
+        self.delegate_suite = []
         self.hk_ready = False
         self.gpu_busy = {}
         self.suite_problems = []
@@ -673,7 +677,7 @@ class Loop:
                 status, unreadable = [], False
                 for line in text.splitlines():
                     k, _, v = line.partition("\t")
-                    if k in ("frozen", "freeze", "closures") or (k == "curator" and srv is lead):
+                    if k in ("frozen", "freeze", "closures") or (k in ("curator", "delegate-suite") and srv is lead):
                         r[k] = v.strip()
                     elif k == "status":
                         status.append(v)
@@ -681,6 +685,7 @@ class Loop:
                         unreadable = True
                 if srv is lead:
                     res["curator"] = r.pop("curator", None)
+                    res["delegate_suite"] = r.pop("delegate-suite", None)
                     res["status"] = None if unreadable else "\n".join(status)
                     if res["status"] is not None:
                         open_now = {row[0] for row in board.status_rows(res["status"])}
@@ -787,6 +792,8 @@ class Loop:
                     srv.log.say(f"[loop:deploy] {srv.name} still fails its preflight ({pf}); gpu:{srv.name} stays held")
         if res["curator"] is not None:
             self.curator = board.numbers(res["curator"])
+        if res.get("delegate_suite") is not None:
+            self.delegate_suite = board.numbers(res["delegate_suite"])
         if res["status"] is not None:
             rows = board.status_rows(res["status"])
             if rows != self.board_rows:
@@ -874,6 +881,9 @@ class Loop:
             for n in self.curator:
                 if not self.only_issues or str(n) in self.only_issues:
                     out.append(Item("curator", n, lead.name))
+            for n in self.delegate_suite:
+                if not self.only_issues or str(n) in self.only_issues:
+                    out.append(Item("delegate:suite", n, lead.name))
         lemsrv = self.srv.get(primary)
         if (
             lemsrv is not None

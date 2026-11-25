@@ -23,6 +23,8 @@
 #   reviewer-arch    reviewer:arch
 #   reviewer-docs    reviewer:docs
 #   delegate         delegate:rule (R19: one owner:don ask, for Don)
+#   delegate-suite   delegate:suite (R19: one suite request on HARNESS_REPO
+#                    the curator escalated to Don)
 #   curator          curator (one suite-change request on HARNESS_REPO)
 # Issue-less passes:
 #   tester-task      the standing task, now (TESTER_PART=task)
@@ -48,13 +50,13 @@
 usage="usage: run-item.sh <pass> <queue> <issue> | tester-task | tester-closures | park <issue> <reason> | park-external | unpark | consolidation | housekeeping | labels"
 item_queue=""
 case "${1:-}" in
-  implementer|triage|lead|features|tester|reviewer-arch|reviewer-docs|delegate|curator)
+  implementer|triage|lead|features|tester|reviewer-arch|reviewer-docs|delegate|delegate-suite|curator)
     [ -n "${2:-}" ] && [ -n "${3:-}" ] || { echo "run-item.sh: $1 is a per-issue pass and needs <queue> <issue>; $usage" >&2; exit 1; }
     case "$1:$2" in
       implementer:implementer:fix|triage:implementer:fix|lead:lead:build|lead:lead:closeout) ;;
       features:lead:design|features:lead:decompose|curator:curator) ;;
       tester:tester:spec|tester:tester:verify|tester:tester:handoff|tester:tester:answer) ;;
-      reviewer-arch:reviewer:arch|reviewer-docs:reviewer:docs|delegate:delegate:rule) ;;
+      reviewer-arch:reviewer:arch|reviewer-docs:reviewer:docs|delegate:delegate:rule|delegate-suite:delegate:suite) ;;
       *) echo "run-item.sh: queue '$2' is not the $1 pass's" >&2; exit 1 ;;
     esac
     item_queue="$2"; set -- "$1" "$3" ;;
@@ -97,6 +99,7 @@ case "$item_pass" in
   reviewer-arch) reviewer_pass arch || item_fail ;;
   reviewer-docs) reviewer_pass docs || item_fail ;;
   delegate) delegate_pass || item_fail ;;
+  delegate-suite) delegate_suite_pass || item_fail ;;
   curator) curator_pass || item_fail ;;
   park) park_issue "$item_issue" "$item_reason" || item_fail ;;
   park-external) park_external_issues || item_fail ;;
