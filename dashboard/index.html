@@ -55,6 +55,7 @@ main { padding: 16px 20px; display: grid; gap: 16px; max-width: 1500px; margin: 
 .now dd { margin: 0; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .big { font-size: 17px; font-weight: 650; }
 table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+table.sess, table.sess .mono { font-size: 11.5px; }
 th, td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); white-space: nowrap; }
 th { color: var(--muted); font-weight: 500; }
 td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
@@ -462,10 +463,10 @@ function render(st) {
           : ` · last write ${quiet == null ? "never" : ago(quiet) + " ago"}`}</span></h2>
       ${now || '<p class="empty">no sessions in this log</p>'}
       ${s.r17 ? '<p class="prog muted">The board and its chart are on the loop card above.</p>' : progress(name, s.loop_run, s.looping)}
-      <div class="scroll"><table>
+      <div class="scroll"><table class="sess">
         <tr><th>start</th><th>session</th><th>model</th><th class="num">turns</th><th class="num">time</th><th class="num">ctx peak</th><th class="num">cost</th></tr>
         ${rows.map((x) => `<tr class="${x === cur && running ? "live" : ""}">
-          <td class="mono">${esc(x.time)}</td>
+          <td class="mono" title="${esc(x.time)}">${esc(String(x.time || "").replace(/:\d\d$/, ""))}</td>
           <td><a data-file="${esc(s.file)}" data-tag="${esc(x.tag)}">${esc(x.tag)}</a></td>
           <td class="muted">${esc((x.model || "").replace(/^claude-/, ""))}</td>
           <td class="num">${x.usage ? x.usage.turns : x.turns}</td>
