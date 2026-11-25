@@ -30988,4 +30988,310 @@ expected:
 cleanup: revert the probe edits and discard the scratch tree.
 metrics: none.
 
+### C-F1380 — an agent's `state="done"` or `"abandoned"` on an open request is refused `close_needs_user`, naming `propose_close`
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, MCP only. Setup: `create_workspace(name="cf1380-close")`; `workspace="cf1380-close"` on every call;
+create `demo` as in C-F1121 step (2) (it reads `revision: 1`, `state: open`). Each step below is a `set_request` on
+`demo` with C-F1121's title, goal and items, at the revision `get_request` last showed:
+(1) `state="done"`, `why="all items accepted"`. (2) `get_request(request="demo")`. (3) `state="abandoned"`,
+`why="giving up"`. (4) `get_request(request="demo")`. (5) `state="open"` (the stored state, sent unchanged),
+`why="no-op state"`. (6) `state` left out, a changed item title, `why="retitle"`.
+expected:
+- (1) and (3) each refused with code `close_needs_user`; the message says only the user closes a request and names
+  `propose_close` (the plan's text: "only the user closes a request - propose it with close_proposal {state, reason}
+  and the user accepts or declines it in the UI", or words naming the same route). No traceback.
+- (2) and (4): `state: "open"`, `revision: 1` (a refused write does not bump it), no history entry for the refused
+  write, and no `close_proposal` created by the refusal (absent or null).
+- (5) and (6) accepted, each bumping the revision by one; the state reads `open` throughout.
+- The `set_request` tool description (the client's tool list) no longer offers `done` or `abandoned` to the agent:
+  its `state` text says `open` reopens and only the user closes, and it names `propose_close`.
+An agent close that lands, a refusal under another code or with a message that doesn't point at `propose_close`, or
+a refused write that moves the revision is a **finding**.
+cleanup: `delete_workspace(name="cf1380-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1381 — `propose_close` stores a pending proposal, leaves the request open, and survives a plan edit that leaves it out
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, MCP only. Setup: `create_workspace(name="cf1381-close")`, `workspace=` on every call; create `demo` as
+in C-F1121 step (2). (1) `set_request` at `revision=1`, same plan, `propose_close={"state":"done","reason":"all 3
+items accepted"}`, `why="propose done"`. (2) `get_request(request="demo")`. (3) `set_request` at the current
+revision, same plan with `score`'s title changed to "Score v2", `propose_close` **left out**, `why="retitle"`.
+(4) `get_request(request="demo")`. (5) `get_request()` with no id.
+expected:
+- (1) accepted; the answer reads `state: "open"` and carries `close_proposal` with `state: "done"`, `reason: "all 3
+  items accepted"`, `by: "agent"`, `outcome: "pending"`, an `at` time and a `revision`.
+- (2) the same `close_proposal`; `state: "open"`; history's entry for (1) has `by: "agent"`, `why: "propose done"` and
+  records `close_proposed`.
+- (3) accepted. (4) `score` reads "Score v2" and `close_proposal` is unchanged (same reason, still `pending`, same
+  `at`); history's entry for (3) records no close event.
+- (5) the list still shows `demo` as `open` (a pending proposal is not a state).
+A proposal that closes the request, is lost on a write that leaves it out, or reads with any `outcome` but
+`pending` is a **finding**.
+cleanup: `delete_workspace(name="cf1381-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1382 — a proposal's shape is checked strictly: `done` or `abandoned`, a one-line reason of at most 200 characters, no other field
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, MCP only. Setup: `create_workspace(name="cf1382-close")`, `workspace=` on every call; create `demo` as
+in C-F1121 step (2). Each step a `set_request` on `demo`, same plan, at the current revision, with `propose_close`:
+(a) `{"state":"abandoned","reason":"the user moved to another project"}`; (b) `{"state":"done","reason":R200}` where
+R200 is 200 `x`; (c) `R201`, 201 `x`; (d) `{"state":"done","reason":"line one\nline two"}`; (e) a reason carrying
+U+0007; (f) `{"state":"open","reason":"x"}`; (g) `{"state":"closed","reason":"x"}`; (h) `{"state":"done"}` (no
+reason); (i) `{"reason":"x"}` (no state); (j) `{"state":"done","reason":"x","colour":"red"}`; (k) the user's form,
+`{"outcome":"declined","note":"x"}`; (l) `{"state":"done","reason":"x","by":"user"}`. After each, `get_request`.
+expected:
+- (a) accepted: `close_proposal.state: "abandoned"`, `outcome: "pending"`, state still `open`.
+- (b) accepted, the reason read back at its full 200 characters; it replaces (a)'s proposal.
+- (c)–(l) each refused with a reason naming `close_proposal`/`propose_close` and the field at fault (the length, the
+  line break, the control character, the state, the missing field, the unknown field); after each the revision
+  has not moved and the stored proposal is still (b)'s, `pending`, `by: "agent"`.
+An over-long, multi-line or control-character reason stored (whole or truncated), a proposal to `open` or to an
+unlisted state stored, an unknown field silently dropped, or an agent write that settles or forges a proposal as the
+user's is a **finding**.
+cleanup: `delete_workspace(name="cf1382-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1383 — `propose_close=null` withdraws a pending proposal, and a second proposal replaces the first
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job, MCP only. Setup: `create_workspace(name="cf1383-close")`, `workspace=` on every call; create `demo` as
+in C-F1121 step (2). Each a `set_request` on `demo`, same plan, at the current revision: (1) `propose_close=null`
+with nothing pending, `why="withdraw nothing"`. (2) `propose_close={"state":"done","reason":"first"}`. (3)
+`propose_close={"state":"abandoned","reason":"second"}`. (4) `get_request`. (5) `propose_close=null`,
+`why="not yet"`. (6) `get_request`. (7) A plan edit that leaves `propose_close` out. (8) `get_request`.
+expected:
+- (1) accepted (or refused with a clear reason; both pass), and `get_request` then shows no proposal. A server error
+  is a **finding**.
+- (4) exactly one proposal: `state: "abandoned"`, `reason: "second"`, `pending`. Nothing of "first" remains on the
+  request (history may still record that (2) proposed).
+- (5) accepted; (6) shows no pending proposal (`close_proposal` absent or null); state `open`.
+- (8) still no proposal: leaving the field out after a withdrawal does not bring one back.
+A withdrawal that leaves a proposal `pending`, two proposals at once, or a withdrawn one resurrected is a **finding**.
+cleanup: `delete_workspace(name="cf1383-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1384 — a user close accepts the pending proposal, in whichever closed state the user picks
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. **The user write (U-PUT, also used by C-F1385–C-F1387):** `PUT /api/workspaces/<ws>/requests/<id>`
+with the body the UI sends: the request as `get_request` read it (title, goal, items, `revision`), a `why`, `by:
+"user"`, plus the change the step names. MCP writes are always `by: "agent"` and the `ui-check` runner blocks a
+request save, so a session whose tools cannot send U-PUT runs the MCP steps and reports each U-PUT step and the
+checks resting on it as **not run** (never as passed) on #1716 or the regression issue, naming this case.
+Setup: `create_workspace(name="cf1384-close")`, `workspace=` on every call; create `demo` and `other` as in C-F1121
+step (2) (`other` with request id `other`). (1) `set_request` on `demo`, `propose_close={"state":"done","reason":
+"all 3 items accepted"}`. (2) U-PUT on `demo` with `state: "done"`. (3) `get_request(request="demo")`. (4)
+`set_request` on `other`, `propose_close={"state":"done","reason":"done, I think"}`. (5) U-PUT on `other` with
+`state: "abandoned"`. (6) `get_request(request="other")`. (7) U-PUT on `demo` with `state: "abandoned"` (one closed
+state to the other). (8) `get_request(request="demo")`.
+expected:
+- (2) accepted. (3) `state: "done"`; `close_proposal` keeps its `state: "done"` and reason with `outcome:
+  "accepted"` and a `decided_at`; history's entry for (2) has `by: "user"` and records `close_accepted`.
+- (6) `state: "abandoned"` and `close_proposal.outcome: "accepted"`, though it proposed `done` (the plan: "whatever
+  state the user picks").
+- (7) accepted; (8) `state: "abandoned"`, the settled proposal unchanged (still `accepted`, same `decided_at`).
+A user close refused, a pending proposal left `pending` after a user close, or a settled proposal rewritten by a
+later user write is a **finding**.
+cleanup: `delete_workspace(name="cf1384-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1385 — a user decline keeps the request open with the note, a decline with nothing pending is `no_close_proposal`, and a re-proposal replaces the decline
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. U-PUT as defined in C-F1384. Setup: `create_workspace(name="cf1385-close")`, `workspace=` on every
+call; create `demo` as in C-F1121 step (2). (1) U-PUT on `demo` with `close_proposal: {"outcome":"declined"}`
+(nothing pending). (2) `set_request`, `propose_close={"state":"done","reason":"all 3 items accepted"}`. (3) U-PUT
+with `close_proposal: {"outcome":"declined","note":"the second shot still flickers"}`. (4) `get_request(request=
+"demo")`. (5) U-PUT with `close_proposal: {"outcome":"declined","note":"again"}` (already settled). (6) An agent plan
+edit, `propose_close` left out. (7) `get_request`. (8) `set_request`, `propose_close={"state":"done","reason":"fixed
+the flicker"}`. (9) `get_request`. (10) U-PUT with `close_proposal: {"outcome":"declined"}` (no note). (11)
+`set_request`, `propose_close={"state":"done","reason":"try 3"}`; U-PUT with a note of 200 `y`; `get_request`.
+(12) `set_request`, `propose_close={"state":"done","reason":"try 4"}`; U-PUT with a note of 201 `y`; then a note
+`"a\nb"`; then `close_proposal: {"outcome":"accepted"}`; `get_request`.
+expected:
+- (1) refused 422 `no_close_proposal`; the revision does not move.
+- (3) accepted. (4) `state: "open"`; `close_proposal.outcome: "declined"`, `note: "the second shot still flickers"`,
+  a `decided_at`, the proposal's `state` and reason kept; history's entry for (3) has `by: "user"` and records
+  `close_declined`.
+- (5) refused `no_close_proposal` (a declined proposal is not pending); (4)'s note is still the stored one.
+- (7) the decline unchanged after an agent write that leaves the field out.
+- (8) accepted, no refusal (no server re-proposal gate, Don's Q4). (9) one proposal, `reason: "fixed the flicker"`,
+  `outcome: "pending"`, no note and no `decided_at` from the decline.
+- (10) accepted; the proposal reads `declined` with no note (or an empty one).
+- (11) the 200-character note is stored whole.
+- (12) the 201-character note, the two-line note and the user's `outcome: "accepted"` (not a user form: a user
+  closes by `state`) are each refused with a reason naming the field; the proposal stays `pending` with "try 4".
+A decline that closes the request or loses its note, a decline accepted with nothing pending, a re-proposal after a
+decline refused, or an over-long or multi-line note stored is a **finding**.
+cleanup: `delete_workspace(name="cf1385-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1386 — on a closed request an agent cannot propose, can still edit the plan and reopen, and a reopen keeps the settled proposal until the next one
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. U-PUT as defined in C-F1384. Setup: `create_workspace(name="cf1386-close")`, `workspace=` on every
+call; create `demo` as in C-F1121 step (2); `set_request` with `propose_close={"state":"done","reason":"all
+accepted"}`; U-PUT with `state: "done"`; `get_request` reads `done` and `outcome: "accepted"`. (1) `set_request`,
+`propose_close={"state":"abandoned","reason":"x"}`. (2) An agent plan edit (an item title changed), `state` left out.
+(3) The same with `state="done"` (the stored state, unchanged). (4) `get_request`. (5) `set_request` with
+`state="open"`, `why="user asked for one more shot"`. (6) `get_request`. (7) `set_request`, `propose_close={"state":
+"done","reason":"the extra shot is in"}`. (8) `get_request`. (9) `set_request` with `state="done"`.
+expected:
+- (1) refused 422 `request_closed`; the settled proposal still reads `accepted`.
+- (2) and (3) accepted (plan edits on a closed request keep working); (4) `state: "done"`, the title change stored.
+- (5) accepted. (6) `state: "open"`; `close_proposal` is still the settled record (`outcome: "accepted"`,
+  `decided_at`), not `pending`.
+- (7) accepted. (8) one proposal, `reason: "the extra shot is in"`, `pending`; the old accepted one is replaced.
+- (9) refused `close_needs_user`, as on any open request.
+Plan edits refused on a closed request, a proposal stored on a closed request, a reopen refused, or a reopen that
+turns the settled proposal back to `pending` is a **finding**.
+cleanup: `delete_workspace(name="cf1386-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1387 — a user closes with no proposal as before, and a user plan edit leaves a pending proposal pending
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, no job. U-PUT as defined in C-F1384. Setup: `create_workspace(name="cf1387-close")`, `workspace=` on every
+call; create `demo` and `other` as in C-F1121 step (2). (1) U-PUT on `other` with `state: "done"` (no proposal ever
+made). (2) `get_request(request="other")`. (3) `set_request` on `demo`, `propose_close={"state":"done","reason":
+"ready"}`. (4) U-PUT on `demo` with a changed item title, no `state` and no `close_proposal`. (5) `get_request(
+request="demo")`. (6) U-PUT on `other` with `state: "open"`, then `get_request(request="other")`.
+expected:
+- (1) accepted; (2) `state: "done"`, with no `close_proposal` (absent or null: there was nothing to accept), history
+  `by: "user"` with the state.
+- (4) accepted; (5) the title changed and the proposal still `pending` (a user write that neither closes nor
+  declines settles nothing).
+- (6) `state: "open"`.
+A user close refused for want of a proposal, a proposal invented by a user close, or a pending proposal settled by
+a plain user edit is a **finding**.
+cleanup: `delete_workspace(name="cf1387-close", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1388 — the PUT model, the tool schema, the guide, the agent rules and the request skill describe the handshake
+pending: #1716
+source: tester, spec for #1716 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+Free, read-only. (1) The client's tool list: `set_request`'s schema and description. (2) `ui-check` with one step
+`{"step":"fetch","path":"/openapi.json"}`: the PUT `/api/workspaces/{name}/requests/{id}` body schema
+(`RequestWrite`) and the schemas it references. (3) `get_guide("workspaces", section="Requests")`. (4)
+`get_guide("agent-rules")`, then the section on requests if the index names one. (5) The `dw:script-to-video` skill's
+request reference (loaded via the Skill tool; its `references/request.md` request-closing passage).
+expected:
+- (1) `set_request` has a parameter `propose_close`, an object `{state, reason}` or null; its description says the
+  request stays open until the user accepts and that `get_request` shows `close_proposal.outcome`; `state`'s text
+  says `open` reopens and only the user closes.
+- (2) `RequestWrite` has `close_proposal`, a union of the agent form (`state`, `reason`) and the user form
+  (`outcome`, optional `note`), each forbidding extra properties (`additionalProperties: false`); `by` still
+  defaults to `user`. No new request route.
+- (3) the section states that only a user write closes a request, an agent's close is refused `close_needs_user`,
+  the proposal fields and outcomes (`pending`, `accepted`, `declined`), `no_close_proposal`, and that a reopen
+  keeps a settled proposal until the next. Its old "Any write may set `state`, the user's as well as the agent's"
+  is gone.
+- (4) the agent rules say to propose a close and not to re-propose after a decline unless the plan or its takes
+  changed.
+- (5) the skill says to propose the close (not to set `done`).
+Any of these still telling the agent it may close, or missing the re-proposal rule, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1389 — a pending proposal shows as a banner with Close and Keep open; none shows with no proposal or a settled one
+pending: #1717
+source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+**Web UI, black-box** (`ui-check`). Free. Setup: `create_workspace(name="cf1389-banner")`; create `demo` in it as in
+C-F1121 step (2) (`workspace=` on every call); open the workspace in the UI as its sidebar offers. Specs, each
+`goto` `demo`'s request page after the `mock`: (a) `mock` the GET of `demo` with `set` `close_proposal` =
+`{"state":"done","reason":"all 3 items accepted","by":"agent","at":"<now ISO>","revision":1,"outcome":"pending"}`;
+`wait_text "The agent proposes to mark this done"`; `inspect` that text; `screenshot`. (b) The same with `state:
+"abandoned"` and reason "the user moved on". (c) No mock (no proposal). (d) The (a) mock with `outcome: "accepted"`
+and a `decided_at`, and the request's `state` set to `done`. Each spec ends `dup_ids`.
+expected:
+- (a) under the request's header: "The agent proposes to mark this done: all 3 items accepted", with buttons
+  **Close** and **Keep open**. The menu's Mark done, Abandon (and, on a closed request, Reopen) are still there.
+- (b) the banner names `abandoned` (not "done") and the reason.
+- (c) and (d) no banner and no Close / Keep open buttons.
+- No page errors and no duplicate ids.
+A pending proposal with no banner, a banner naming the wrong state, or a banner on a request with none pending is a
+**finding**.
+cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1390 — Close sends a user close in the proposed state, and the closed request shows no banner
+pending: #1717
+source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+**Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. The runner blocks the request PUT, so the case reads
+the body the page sends (`record`, and the `blocked` list) rather than a stored close. Specs: (a) `record **/api/**`;
+C-F1389 (a)'s mock; `goto` the page; `wait_text "The agent proposes"`; `click {role:"button", name:"Close"}`;
+`recorded`. (b) The same over C-F1389 (b)'s mock (proposed `abandoned`). (c) No proposal mock: `record`, open the
+menu, Mark done, `recorded`. (d) `mock` the GET of `demo` with `state: "done"` and the proposal settled
+`outcome: "accepted"`; `goto`; `screenshot`.
+expected:
+- (a) one PUT to `/api/workspaces/cf1389-banner/requests/demo` (also in `blocked`) whose body carries `state:
+  "done"`, `by: "user"`, the revision the page read, and the plan as read (no item lost).
+- (b) the PUT's `state` is `"abandoned"`: Close closes with the proposed state.
+- (c) Mark done still sends a user PUT with `state: "done"` and no proposal (a close needs no proposal).
+- (d) the page shows the request done, with no banner and no Close / Keep open.
+- The blocked write in (a)–(c) is the runner's, not a finding; a page error other than the failed save is.
+A Close that sends no state, the wrong state, or `by: "agent"`, or a done request still showing the banner, is a
+**finding**. (The plan's "page then shows the request as done" after a real Close needs a real write; a session that
+can let one PUT through checks it with `get_request` reading `done` and `outcome: "accepted"`.)
+cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not already gone.
+metrics: none.
+
+### C-F1391 — Keep open declines with or without a note, and a declined proposal shows as "You kept this open"
+pending: #1717
+source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+**Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. Specs: (a) `record **/api/**`; C-F1389 (a)'s mock;
+`goto`; `wait_text "The agent proposes"`; `click {role:"button", name:"Keep open"}`; `fill` the note field it opens
+(by its label or placeholder) with `the second shot still flickers`; confirm (the button the field offers);
+`recorded`. (b) The same with the note left empty. (c) `mock` the GET of `demo` with `close_proposal` as C-F1389 (a)
+but `outcome: "declined"`, `note: "the second shot still flickers"`, a `decided_at`; `goto`; `wait_text "You kept this
+open"`; `inspect` that line and the request header beside it; `screenshot`. (d) The (c) mock with no `note`.
+expected:
+- (a) one PUT to `demo` (also in `blocked`) whose body carries `close_proposal: {"outcome":"declined","note":"the
+  second shot still flickers"}`, `by: "user"`, no closed `state`, and the revision read.
+- (b) the PUT's `close_proposal` is `{"outcome":"declined"}` (no note, or an empty one): no note still declines.
+- (c) the banner is gone; the line reads "You kept this open: the second shot still flickers", styled quieter than a
+  banner (no warning colours, per `inspect`); no Close / Keep open buttons.
+- (d) a "You kept this open" line with no stray colon or "undefined".
+- No page error other than the blocked save.
+A Keep open that sends a close, sends nothing, or needs a note to decline, or a declined proposal still shown as a
+banner, is a **finding**.
+cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not already gone.
+metrics: none.
+
+### C-F1392 — the Requests list and Overview tag a request with a pending proposal "close proposed", and no other
+pending: #1717
+source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+**Web UI, black-box** (`ui-check`). Free. Setup: C-F1389's workspace with `demo` and a second request `other`
+created the same way. Before the specs, `ui-check` `fetch` the list (`/api/workspaces/cf1389-banner/requests`) to see
+the field a row carries the proposal in after #1716 (the request view's `close_proposal`, or a row summary of it).
+Specs: (a) `mock` the list GET so `demo`'s row carries a pending proposal in that field; `goto` the Requests page;
+`wait_text "close proposed"`; `inspect` it; `screenshot`. (b) The same mock; `goto` the Overview; `screenshot`. (c)
+The mock with `demo`'s proposal `declined`, then `accepted`. (d) No mock.
+expected:
+- (a) `demo`'s row shows a "close proposed" tag; `other`'s row shows none. (b) Overview shows the tag on `demo` only.
+- (c) and (d) no "close proposed" anywhere.
+- No page errors.
+A missing tag on a pending proposal, or a tag on a settled or absent one, is a **finding**.
+cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)`.
+metrics: none.
+
+### C-F1393 — a stale revision on Close shows the existing conflict message, not a silent failure
+pending: #1717
+source: tester, spec for #1717 from #1604's plan v2 (claude-opus-5-5 via anthropic)
+**Web UI, black-box** (`ui-check`). Free. Setup as in C-F1389. The PUT must answer 409 `stale_revision` with
+`current_revision` (the server's real answer to a stale write; C-F1122 pins its shape): a `stub` of the request PUT
+with that status and body, if the runner offers one for this route. Spec: C-F1389 (a)'s mock; the 409 stub;
+`goto`; `click {role:"button", name:"Close"}`; `wait_text` the conflict message the request page shows today for a
+stale save (read it first: `goto` the page and make the same stale save from the menu's Mark done under the stub);
+`screenshot`.
+expected: after Close, the page shows the same conflict message as a stale menu save (it says the request changed
+and offers to reload, as the existing one does), and the banner stays (nothing closed). No page error.
+A Close whose 409 shows nothing, or reads as closed, is a **finding**. A session whose runner cannot answer a PUT
+reports this case **not run** on #1717, naming the gap; it is never passed by reasoning.
+cleanup: `delete_workspace(name="cf1389-banner", acknowledged_cost=true)` if not already gone.
+metrics: none.
+
 ## Performance
