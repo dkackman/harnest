@@ -35,9 +35,11 @@ PRIORITY = (
 GPU_FEEDERS = frozenset({"reviewer:arch", "implementer:fix", "lead:build"})
 
 _GPU = frozenset({"tester:verify", "tester:answer", "tester:task", "tester:closures", "regression"})
-_FREE = frozenset(
-    {"tester:spec", "tester:handoff", "reviewer:arch", "reviewer:docs", "curator", "delegate:rule", "delegate:suite"}
-)
+_FREE = frozenset({"tester:spec", "tester:handoff", "reviewer:arch", "reviewer:docs", "curator"})
+# R19's escalation delegate reads only GitHub and a merged tree: it has a pool
+# of its own (DELEGATE_SLOTS), so it neither waits for nor holds up the loops'
+# free slots.
+_DELEGATE = frozenset({"delegate:rule", "delegate:suite"})
 _SRC = frozenset({"implementer:fix", "lead:build", "lead:closeout"})
 _LEADTREE = frozenset({"lead:design", "lead:decompose"})
 
@@ -64,6 +66,8 @@ def needs(item: Item, server: str | None) -> frozenset:
     "deploy" is not dispatched through the scheduler and raises ValueError.
     """
     q = item.queue
+    if q in _DELEGATE:
+        return frozenset({"delegate"})
     if q in _FREE:
         return frozenset({"free"})
     if q in _GPU or q in _SRC or q in _LEADTREE:
@@ -78,8 +82,8 @@ def needs(item: Item, server: str | None) -> frozenset:
 
 
 class Pool:
-    def __init__(self, servers: dict, free_slots: int):
-        self.cap = {"free": free_slots}
+    def __init__(self, servers: dict, free_slots: int, delegate_slots: int = 0):
+        self.cap = {"free": free_slots, "delegate": delegate_slots}
         self._reserve = free_slots >= 2
         for name, slots in servers.items():
             self.cap["gpu:" + name] = slots

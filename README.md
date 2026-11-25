@@ -760,6 +760,7 @@ isn't found until you re-run the script.
 | `DELEGATE_PROVIDER` | `$TESTER_PROVIDER` | the delegate's provider |
 | `DELEGATE_BUDGET_USD` | `2` | per-session `--max-budget-usd` for a delegate ruling (the replay's median was $0.16, p90 $0.26) |
 | `DELEGATE_EFFORT` | `high` | the delegate's `--effort`, live and in the R19 replay |
+| `DELEGATE_SLOTS` | `3` | R19: how many escalation-delegate sessions run at once. A pool of their own beside `LOOP_FREE_SLOTS`, so the delegate never waits for the loops' sessions or holds one up |
 | `DIGEST_DELEGATE_HOURS` | `24` | how far back `run-digest.sh`'s Delegate rulings section reads `logs/delegate.jsonl` |
 | `LOOP_POLL_SECS` | `60` | R17 loop driver: how often it reads the board and runs its housekeeping when nothing wakes it (a session's end, a deploy's end, a rate limit); `logs/loop/state.json` is rewritten at least this often. While nothing runs and only your decisions are left, housekeeping backs off, doubling up to `SLEEP_MAX_SECS`; the board is still read every poll, so a hand-back starts within one |
 | `LOOP_HEALTH_SECS` | `30` | R17 loop driver: how often it samples each server's `/api/health` for the card-busy figure in `state.json` |

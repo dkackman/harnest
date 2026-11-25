@@ -38,7 +38,7 @@ none is running), `stop` (graceful: the stop flags, then waits), `stop --now` (`
 
 One process runs both servers: it takes `.driver.lock` / `.driver.lock.mini-ai` (owner name
 `run-loop`, so the bash passes and `lem_loop_running` see it), keeps server-free sessions
-(`LOOP_FREE_SLOTS`, 2 per server by default) and one GPU session per server going at once, and owns every deploy and the nightly
+(`LOOP_FREE_SLOTS`, 2 per server by default), up to `DELEGATE_SLOTS` (3) escalation-delegate sessions in a pool of their own, and one GPU session per server going at once, and owns every deploy and the nightly
 regression. Unclaimed fixes, builds, close-outs, designs and decomposes go to whichever server has the
 resources free (lem first); unclaimed reviews and spec/hand-off sessions go to the first server. A stop flag is per server: its items finish, the server's lock is released, the flag is
 consumed, shared work moves to the next server, and the driver exits when none is left. `DRAIN=1` exits when

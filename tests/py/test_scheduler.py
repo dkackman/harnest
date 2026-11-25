@@ -30,7 +30,20 @@ class NeedsTest(unittest.TestCase):
         self.assertEqual(needs(it("lead:design"), "lem"), {"leadtree:lem", "free"})
         self.assertEqual(needs(it("reviewer:arch", server=None), "lem"), {"free"})
         self.assertEqual(needs(it("curator", None, None), "lem"), {"free"})
-        self.assertEqual(needs(it("delegate:rule"), "lem"), {"free"})
+        self.assertEqual(needs(it("delegate:rule"), "lem"), {"delegate"})
+        self.assertEqual(needs(it("delegate:suite", 290, "lem"), "lem"), {"delegate"})
+
+    def test_the_delegate_neither_waits_for_nor_holds_free_slots(self):
+        pool = Pool({"lem": 1, "mini-ai": 1}, 2, delegate_slots=2)
+        fix, design = it("implementer:fix", 1), it("lead:design", 2)
+        pool.take(fix, "lem")
+        self.assertFalse(pool.can_take(design, "lem"))  # the free reserve is down to its last unit
+        for n in (10, 11):
+            self.assertTrue(pool.can_take(it("delegate:rule", n), "lem"))
+            pool.take(it("delegate:rule", n), "lem")
+        self.assertFalse(pool.can_take(it("delegate:rule", 12), "lem"))  # its own pool is full
+        self.assertTrue(pool.can_take(it("implementer:fix", 3, "mini-ai"), "mini-ai"))  # and the loops' isn't touched
+        self.assertFalse(Pool({"lem": 1}, 4).can_take(it("delegate:rule", 13), "lem"))  # no delegate slots, no delegate
         self.assertEqual(needs(it("regression", None), "lem"), {"gpu:lem"})
 
     def test_unknown_raises(self):

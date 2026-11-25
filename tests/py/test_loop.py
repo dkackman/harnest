@@ -41,7 +41,7 @@ def mk(servers=("lem",), **env):
         )
     lp.logs = Path(d)
     lp.state = loop_state.LoopState(os.path.join(d, "state.json"), list(lp.srv), poll_secs=lp.poll)
-    lp.sched = Scheduler(Pool({s: 1 for s in lp.srv}, lp.free_slots))
+    lp.sched = Scheduler(Pool({s: 1 for s in lp.srv}, lp.free_slots, lp.delegate_slots))
     lp.hk_ready = True
     lp.task_last = time.time() - 1  # a gap of 0 has passed, any other has not
     return lp
@@ -198,6 +198,7 @@ class HelpersTest(unittest.TestCase):
             (2, 60, 30, 300, 5400, 0),
         )
         self.assertEqual(loop.Loop(["--servers", "lem,mini-ai"]).free_slots, 4)
+        self.assertEqual(loop.Loop(["--servers", "lem,mini-ai"]).delegate_slots, 3)
 
     def test_suite_paths(self):
         lp = mk(servers=("lem", "mini-ai"))

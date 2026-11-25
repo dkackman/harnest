@@ -376,6 +376,8 @@ class Loop:
         # Two server-free sessions per driven server: each has a src and a
         # leadtree slot, and a flat 3 left the second server idle.
         self.free_slots = knob("LOOP_FREE_SLOTS", 2 * len(loop_servers))
+        # R19: the delegate's own sessions, beside the free slots, never in them
+        self.delegate_slots = knob("DELEGATE_SLOTS", 3)
         self.poll = max(1, knob("LOOP_POLL_SECS", 60))
         self.health_secs = max(1, knob("LOOP_HEALTH_SECS", 30))
         self.retry_secs = knob("DEPLOY_RETRY_SECS", 300)
@@ -578,11 +580,12 @@ class Loop:
         names = " ".join(s.name for s in self.active())
         self.say(
             f"[loop] {ts()} the R17 loop driver (pid {os.getpid()}) drives: {names}; "
-            f"free slots {self.free_slots}, poll {self.poll}s{' --once' if self.once else ''}"
+            f"free slots {self.free_slots}, delegate slots {self.delegate_slots}, poll {self.poll}s{' --once' if self.once else ''}"
             + (f", only {','.join(sorted(self.only))}" if self.only else "")
         )
         self.sched = Scheduler(
-            Pool({s.name: s.server.loop_gpu_slots for s in self.active()}, self.free_slots), clock=time.monotonic
+            Pool({s.name: s.server.loop_gpu_slots for s in self.active()}, self.free_slots, self.delegate_slots),
+            clock=time.monotonic,
         )
         return 0
 
