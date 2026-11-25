@@ -267,6 +267,8 @@ mkdir -p "$LOGS"
 . "$REPO/providers.sh"
 
 resolve_target || exit 1
+# A delegate item (R19) logs to the delegate's own stream, not the server's.
+[ -z "${HARNEST_LOOP_LOG:-}" ] || LOOP_LOG="$HARNEST_LOOP_LOG"
 resolve_token || exit 1
 # The claim and backend labels (harnest#15) must exist before anything adds
 # them: gh refuses a label the repo doesn't have, which would fail every
