@@ -29145,4 +29145,40 @@ expected:
 cleanup: cancel the second queued job, let the rest finish, and `delete_output(job_id=...)` each finished run.
 metrics: none.
 
+### C-F1295 — a file name with `..` inside it is served; a `..` path segment is still refused
+source: tester, verified in #1629 (claude-opus-5-5 via anthropic)
+CPU only, seconds. Workspace `regression-complete`. Need any short video asset or earlier video output (call it
+`<clip>`). Run an inline `rc1295dotted`: one `trim_video` step with `video: <clip>`, `start_frame: 0`, `num_frames: 24`,
+and `result: {content_type: "video/mp4", file_base_name: "take..2"}`. Validate first and bind `acknowledged_cost`. Then
+call `list_gallery(folder="rc1295dotted", media=true)` and `get_gallery_metadata` on the file it lists (`<path>`, of
+the form `rc1295dotted/<run id>/take..2-....mp4`). Then call `get_gallery_metadata` on each of
+`rc1295dotted/<run id>/../<run id>/<file>`, `../default/outputs/<path>`, `..`, and `<path>` with every `/` replaced by
+a backslash and a `\..\` segment inserted after the folder.
+expected:
+- The run writes `take..2-....mp4`. `list_gallery(media=true)` lists it with a `duration_seconds`, and
+  `get_gallery_metadata` on it returns `fps`, `frame_count` and `duration_seconds`. A "disallowed pattern" refusal or a
+  missing media field for this file is the #1629 regression: `..` inside a name is not traversal.
+- Each of the four `..`-segment names is refused with "path contains a disallowed pattern". Any of them answering with
+  metadata, or with a server path, is a **finding** (a boundary escape: file it as an advisory, not an issue).
+cleanup: `delete_output(job_id=...)` for the run.
+metrics: none.
+
+### C-F1296 — "Run again with changes…": a seed typed before New seed is ticked is not sent, and unticking brings it back
+source: tester, verified in #1634 (claude-opus-5-5 via anthropic)
+Web UI, black-box. One tiny job in the last step. Need a succeeded `templates/text-to-image` job O (any workspace W).
+Open `/#/ws/<W>/jobs/<O>`, press **Run again with changes…**, record POSTs to `**/api/jobs/*/rerun`.
+1. Type `42` into **seed**, tick **New seed**, press Queue with the POST stubbed.
+2. Reopen; type `42` into **seed**, tick then untick **New seed**, press Queue with the POST stubbed.
+3. Reopen; repeat step 1 with the POST continued (the real server answers).
+expected:
+- Step 1: the seed field is disabled once New seed is ticked, and the body is `{"new_seed": true}` with no `seed` in
+  `arguments` (no `arguments` key, or one without `seed`).
+- Step 2: the body has `new_seed: false` and `arguments.seed` `42` (or `"42"`).
+- Step 3: a job is queued with `rerun_of` = O and no 400; the modal shows no `cannot both be given` error. Its
+  `get_job` `arguments.seed` is a drawn seed, not `42`.
+A `seed` sent alongside `new_seed: true`, or the 400 `'new_seed' and an override of the seed variable ... cannot both
+be given`, is the #1634 regression.
+cleanup: `delete_output(job_id=...)` for the step-3 job.
+metrics: none.
+
 ## Performance

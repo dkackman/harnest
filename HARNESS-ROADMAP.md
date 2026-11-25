@@ -29,6 +29,7 @@ rather than in a separate log.
 | R17 | Loop scheduler: one event-loop driver for both servers, concurrent sessions by resource (`gpu:S`, `free`, `suite`, trees), driver-owned deploys, per-session suite worktrees, `logs/loop/state.json` and a dashboard loop card | phase 1 built on branch `r17-loop-scheduler` (`harness/drivers/loop.py`; bash item runner `lib/run-item.sh`); cutover on lem pending. Baseline, 14 days of the bash loop (`scripts/gpu-busy.py`, `docs/superpowers/specs/2026-11-18-loop-scheduler-baseline.json`): lem GPU slot 18.4% busy, $6.50 per closed dw issue ($1,443 over 222 closes), a standing task every 5,327 s on average. Target: the slot busy share up, cost per close not up. Phase 1b and 2 below | R8, R13, R16 |
 | R18 | Agent sessions run as a separate OS user (`harnest-agent`) with a restricted ssh key and no read access to source for the tester | proposed (Don, 2026-11-19) | R17 |
 | R19 | Escalation delegate: a role that rules on Don's queue (default, amend or pass through) and hands him only taste, trust, direction, large spend and his own earlier rulings; it may add `status:plan-approved` | built 2026-11-25 on Opus 5.5 after a replay of 103 of Don's closed rulings (pass-through recall 89%, $0.16 a ruling; `docs/superpowers/specs/2026-11-25-escalation-delegate-pilot.md`); on by default (`DELEGATE_IN_LOOP=0` turns it off); measure two weeks of overrides | R15, R17 |
+| R20 | UI code review: a `reviewer:ui` lane that checks a UI refactor's diff against the invariant its ticket names, with a driver-run mechanical check | proposed (harnest#297, 2026-11-25) | R17 |
 
 Suggested order: R1 → R2 + R3 → R4 → R5 + R6 → R7, with R8 done the next time the drivers need
 major changes. R12 comes before any further feature work, and before R8 (see R8's trigger). R9 can go in whenever there's room; R10 goes after R3. R11 takes over R4: build
@@ -1831,6 +1832,8 @@ guard refusing deploys from implementer and lead.
   it, so UI-only fixes (#1450, #1453, #1462, #1467, #1468) wait on Don's close. `tools/ui-check`
   (a fixed, origin-locked runner) is the first step; the cases that need more writes than
   `/api/validate`, `/api/jobs` and cancel must add them to its `POST_ALLOWED` on purpose.
+  Stubbed writes for any same-origin route are harnest#296; UI fixes with no visible
+  surface (refactors) are R20.
 - Live `cost_so_far` for running sessions; the standing-task clock surviving a restart.
 
 **Phase 2: two GPU slots on lem.** `loop_gpu_slots = 2`, a plugin tree per GPU slot, and
@@ -1901,6 +1904,59 @@ scored on agreement and on pass-through recall where Don departed. Size its cost
 
 **Done when.** Two weeks live with overrides under 5% of delegate rulings, and none in a
 pass-through kind the delegate ruled on.
+
+## R20 — UI code review: verify UI refactors by their stated invariant
+
+Status: proposed (harnest#297, 2026-11-25).
+
+**Why.** A large share of the open dw UI backlog is code quality with no consumer-visible
+surface: token bypasses (dw#1666), a shared document-route helper (dw#1667), duplicated star,
+save-as-asset and keep-both (dw#1668), layering (dw#1669), `Record<string, any>` editor
+documents (dw#1671), and the low-severity dw#1672–#1677. The tester is source-blind, the docs
+reviewer does not read `ui/`, and `ui-check` sees only behaviour, so under lead/design.md
+"names who verifies it instead" every one of them lands on Don.
+
+**What.**
+- **A third reviewer lane beside `reviewer:arch` and `reviewer:docs`.** `lib/classify.jq` gets
+  `status:fixed-pending-verify` + `ui-review` → `reviewer:ui`, in the same `owner:tester` branch
+  and before `tester:verify`, so a refactor that also changes behaviour goes reviewer first, then
+  tester (the order `arch-review` already has). A board in `tests/classify-cases.json` for each
+  of: `ui-review` alone, `ui-review` + `arch-review`, `ui-review` removed (→ `tester:verify`).
+- **The label comes from the ticket, not from the diff.** Unlike `arch-review`, it is not added
+  because a hand-off touched `ui/`: a behaviour fix under `ui/` stays the tester's. Lead/design
+  adds it to a stage whose acceptance is an invariant; for a filed ticket, whoever files it
+  (Don, an audit) adds it with the invariant. The implementer never adds it: choosing your own
+  verifier is the self-verify the asymmetry forbids.
+- **An invariant with a check, or it stays Don's.** The ticket's `UI invariant:` block names a
+  claim ("no hex or `px` outside the token files", "one implementation of star", "no `any` in
+  editor document types") and one check from a fixed menu: a ripgrep pattern + path globs that
+  must return nothing, `tsc --noEmit` (optionally with a named stricter `tsconfig`), or one named
+  eslint rule over named paths. A ticket that cannot name one is not a `reviewer:ui` ticket.
+- **The driver runs the check, not the reviewer.** Issue text is data and the repo is public, so
+  no session runs a command it read from a ticket, and the reviewer's shell stays `gh`, `date`
+  and read-only `git`. The driver parses the menu item (refusing anything else), runs it in the
+  review tree after `ensure_ui_tools`, and passes the output into the prompt, the way the
+  `arch-review` marker passes the diff range.
+- **What the reviewer judges.** `agents/reviewer/ui.md`: the check's output, and the diff read
+  for the ways around it (a value moved into a new token file nobody uses, a second star kept
+  behind a re-export, `unknown` cast straight back to `any`). Pass and bounce work as in
+  `arch.md`. Taste is not a finding; a finding cites the invariant or the check.
+- **Floor.** The implementer's vitest and the e2e hand-off gate (harnest#298) stay the floor;
+  the review adds the invariant on top and never replaces them.
+- **Ratchet.** Where an invariant is one of `ui/scripts/arch-metrics.mjs`'s measures (the UI
+  ratchet, "dw UI stabilization Phase 4"), the check is that metric reaching its target, and
+  the ratchet keeps it there afterwards.
+- **Model.** Opus by exact id (`claude-opus-5-5`), like the tester: a weak reviewer passes
+  whatever the check passes.
+
+**Not this.** Code review of UI behaviour fixes, and any `ui/` read access for the tester.
+
+**First.** Hand-label the open refactor tickets (dw#1666–#1677) with the invariant and check
+each would carry. If more than a few cannot name a check, the lane is the wrong tool and the
+batch lane (R15) is: Don approves the group once.
+
+**Done when.** The refactor tickets close through `reviewer:ui` without Don's close, and none
+reopens within two weeks for the invariant it was reviewed against.
 
 ## dw UI stabilization Phase 4: the UI's metrics ratchet (2026-10-02)
 
