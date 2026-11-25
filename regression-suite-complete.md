@@ -29181,4 +29181,26 @@ be given`, is the #1634 regression.
 cleanup: `delete_output(job_id=...)` for the step-3 job.
 metrics: none.
 
+### C-F1297 — a quiet reload slower than its triggers still lands, and a failed one still owes its rerun
+source: tester, verified in #1648 (claude-opus-5-5 via anthropic)
+Web UI, black-box. No GPU, about a minute. Workspace W with at least one finished job. Open `/#/ws/<W>/overview` and
+wait for its Jobs card to list a job. Then record GETs to `**/api/jobs?workspace=<W>&status=succeeded**` and
+`**/api/workspaces/<W>/changes`.
+1. `mock` that jobs listing with `jobs.0.workflow` set to `marker-a` and `delay_ms: 8000` (longer than the 5 s
+   changes poll). Then `mock` the changes feed `once` several times (8 or more), each with a higher `kinds.jobs`, so
+   that every poll reports a jobs move. Define them in reverse so they answer 1, 2, 3 and so on. `wait_text
+   marker-a` (30 s), then read `recorded`.
+2. Reload the page. Do the same with two jobs mocks: a lasting one with `marker-b` and `delay_ms: 3000`, and on top of
+   it a `once` one with `status: 500` and `delay_ms: 8000`. Then the moving changes feed. `wait_text marker-b` (30 s),
+   then read `recorded`.
+expected:
+- Step 1: `marker-a` renders while the feed is still moving. No two jobs reads overlap: the second starts only after
+  the first has answered, about 8 s later, not at the next poll.
+- Step 2: after the 500, a further read is still made and `marker-b` renders. Again no two jobs reads overlap. The
+  only console error is the mocked 500.
+If the marker never renders while the feed moves, or a new read starts at each poll while one is still out, that is
+the #1648 regression: each trigger drops the reply still out.
+cleanup: none (mocks only, nothing queued).
+metrics: none.
+
 ## Performance
