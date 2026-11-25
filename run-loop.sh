@@ -273,7 +273,7 @@ resolve_token || exit 1
 # claim and every filing. Idempotent.
 ensure_loop_labels() {
   local l
-  for l in $(printf 'target:%s ' $TARGETS) backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation; do
+  for l in $(printf 'target:%s ' $TARGETS) backend:shared backend:cuda backend:mps verified-on:mps arch-review consolidation delegate:passed; do
     gh label create "$l" --repo "$TICKET_REPO" --force --color 5319e7 >/dev/null 2>&1 || true
   done
 }

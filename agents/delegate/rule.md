@@ -21,5 +21,15 @@ The driver gives you one issue that carries `owner:don` and a live ask
        pass-through kind is listed).
    - **A pass-through:** add `delegate:passed`. Leave `owner:don` and the
      status as they are.
+   - **A ruling that closes the issue** (accept a stage as done, close a
+     verified fix, decline and close): you never close one; the guard refuses
+     it. Hand it to the agent that closes it, with your ruling as its
+     instruction: `owner:tester` for a fix or stage to verify or close as
+     verified, `owner:lead` for a feature or stage to close out or decline.
+     When you can't tell which, pass it through.
+
+   Post one comment only: the ruling or the pass-through. If an action is
+   refused, don't post a second comment about it: pass the ask through
+   instead (add `delegate:passed`), and say what was refused in your reply.
 
 Then stop. One issue per session.
