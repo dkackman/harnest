@@ -1662,20 +1662,35 @@ issue_snapshot() {
     > "$f.$$" 2>/dev/null && mv -f "$f.$$" "$f" || rm -f "$f.$$"
   printf '%s\n' "$snap"
 }
+# issue_snapshot_read: the open issues plus each one's harnest markers (the
+# owner's comment first lines that start <!-- harnest:, and three derived
+# ones: external-parked, overrule (an `overrule:` comment, R19) and
+# don-session <createdAt> (a comment from Don's own session, R19)), and
+# `delegate` {on, quiet_secs} from DELEGATE_IN_LOOP / DELEGATE_QUIET_HOURS,
+# which turns on classify.jq's delegate:rule queue.
 issue_snapshot_read() {
-  local issues markers
+  local issues markers dg=false quiet=7200 qh="${DELEGATE_QUIET_HOURS:-2}"
+  [ "${DELEGATE_IN_LOOP:-0}" = 1 ] && dg=true
+  case "$qh" in ''|*[!0-9]*) ;; *) quiet=$((qh * 3600)) ;; esac
   issues="$(gh issue list --repo "$TICKET_REPO" --state open --limit 500 \
     --json number,title,labels,author,parent,blockedBy,subIssuesSummary 2>/dev/null)" || return 1
   markers="$( { gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label feature --json number,comments \
              && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label idea --json number,comments \
-             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --search "-author:$TICKET_OWNER" --json number,comments; } 2>/dev/null \
+             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --search "-author:$TICKET_OWNER" --json number,comments \
+             && gh issue list --repo "$TICKET_REPO" --state open --limit 200 --label owner:don --json number,comments; } 2>/dev/null \
     | jq -s --arg me "$TICKET_OWNER" '[.[][] | {key: (.number | tostring), value:
-        [.comments[] | select(.author.login == $me) | .body
+        [.comments[] | select(.author.login == $me) | . as $c | .body
          | if startswith("Parked for human review: filed by @") then "<!-- harnest:external-parked -->"
-           elif startswith("<!-- harnest:") then split("\n")[0] else empty end]}]
+           elif startswith("<!-- harnest:") then split("\n")[0]
+           elif test("^overrule:"; "i") then "<!-- harnest:overrule -->"
+           elif test("in Don.s session|from Don.s Claude Code session") then "<!-- harnest:don-session \($c.createdAt) -->"
+           else empty end]}]
         | group_by(.key) | map({key: .[0].key, value: (map(.value) | add | unique)}) | from_entries')" || return 1
   printf '%s\n%s\n' "$issues" "$markers" \
-    | jq -s --arg me "$TICKET_OWNER" --arg target "${DW_TARGET:-lem}" '.[1] as $m | {owner: $me, target: $target, issues: [.[0][] | . + {markers: ($m[(.number | tostring)] // [])}]}'
+    | jq -s --arg me "$TICKET_OWNER" --arg target "${DW_TARGET:-lem}" \
+        --argjson dg "$dg" --argjson quiet "$quiet" \
+        '.[1] as $m | {owner: $me, target: $target, now: (now | floor), delegate: {on: $dg, quiet_secs: $quiet},
+          issues: [.[0][] | . + {markers: ($m[(.number | tostring)] // [])}]}'
 }
 
 # classify_issues

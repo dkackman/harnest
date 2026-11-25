@@ -92,6 +92,23 @@ def plan_version: (marker_versions("plan") | max) // 0;
 def marked($kind): plan_version as $p | marker_versions($kind) | index($p) != null;
 def plan_drafted: any((.markers // [])[]; startswith("<!-- harnest:plan") and test("draft:"));
 
+# R19: an owner:don ask the delegate rules on for Don, when the snapshot
+# turns it on (DELEGATE_IN_LOOP=1 in issue_snapshot_read). Never a deferral
+# (parked or stabilization without a live ask), an ask already passed through
+# to Don (delegate:passed), one Don overruled (`overrule:`), or one his own
+# session commented on in the last quiet_secs: he may be working it.
+def don_session_times:
+  [ (.markers // [])[] | capture("^<!-- harnest:don-session (?<t>[0-9TZ:.-]+) -->") | .t
+    | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 ];
+def delegable($d; $now; $idle):
+  ($d.on == true)
+  and (has("status:needs-approval") or has("status:plan-review") or has("status:needs-info"))
+  and (has("delegate:passed") | not)
+  and ((has("parked") and $idle) | not)
+  and (has("stabilization") | not)
+  and (any((.markers // [])[]; startswith("<!-- harnest:overrule")) | not)
+  and (any(don_session_times[]; . > $now - ($d.quiet_secs // 7200)) | not);
+
 # What an owner:lead feature parent needs next, or why it waits.
 def parent_phase:
   if has("wontfix") then {queue: "lead:closeout", reason: "declined"}
@@ -108,6 +125,8 @@ def parent_phase:
 
 .owner as $me
 | (.target // "lem") as $target
+| (.delegate // {}) as $delegate
+| (.now // 0) as $now
 | (.issues | map({key: (.number | tostring), value: .}) | from_entries) as $open
 | ([.issues[] | select(any(.labels[]; .name == "release")) | .number] | min) as $release
 | .issues[]
@@ -131,9 +150,13 @@ def parent_phase:
     # not a deferral: a lead's failed park recheck (harnest#266).
     # run-digest.sh lane_of applies the same rule.
     ((has("status:needs-approval") or has("status:needs-info")) | not) as $idle
-    | {queue: "don", reason: ((if has("parked") and $idle then "deferred (parked): "
+    | if delegable($delegate; $now; $idle) then
+        {queue: "delegate:rule", reason: "for the delegate: \($st | join(","))"}
+      else
+      {queue: "don", reason: ((if has("parked") and $idle then "deferred (parked): "
                              elif has("stabilization") then "deferred (stabilization): " else "" end)
                             + ($st | join(",") | if . == "" then "no status" else . end))}
+      end
   elif $o[0] == "owner:implementer" then
     # needs-info on an implementer's issue is a question Don was asked (a
     # failed deploy) and has handed back: stale too.
@@ -179,7 +202,7 @@ def parent_phase:
     {queue: "stranded", reason: "owner:researcher is retired: hand it to owner:lead"}
   else {queue: "stranded", reason: "unknown owner \($o[0])"} end)
 | if $release != null
-     and (.queue | test("^(implementer|tester|lead|reviewer):"))
+     and (.queue | test("^(implementer|tester|lead|reviewer|delegate):"))
      and ($i | has("release-blocker") | not)
   then .reason = "release freeze (#\($release)): not a release-blocker (\(.queue) after it)"
      | .queue = "wait"

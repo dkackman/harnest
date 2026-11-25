@@ -422,15 +422,15 @@ stub_gh 'echo x >> "'"$T"'/snap-calls"; case "$*" in *"--json number,title"*) ec
 snaps() { wc -l < "$T/snap-calls" | tr -d ' '; }
 : > "$T/snap-calls"; snapshot_invalidate
 issue_snapshot >/dev/null; issue_snapshot >/dev/null
-eq  "snapshot: a second read within the TTL is the cache" 4 "$(snaps)"
+eq  "snapshot: a second read within the TTL is the cache" 5 "$(snaps)"
 eq  "snapshot: the cached board is the board" 1 "$(issue_snapshot | jq '.issues | length')"
 eq  "snapshot: no cache field leaks to callers" null "$(issue_snapshot | jq -c '.cache')"
 snapshot_invalidate; issue_snapshot >/dev/null
-eq  "snapshot: invalidate forces a fresh read" 8 "$(snaps)"
+eq  "snapshot: invalidate forces a fresh read" 10 "$(snaps)"
 HARNEST_SNAPSHOT_OWNER=other issue_snapshot >/dev/null
-eq  "snapshot: another driver tree reads its own" 12 "$(snaps)"
+eq  "snapshot: another driver tree reads its own" 15 "$(snaps)"
 SNAPSHOT_TTL_SECS=0 issue_snapshot >/dev/null
-eq  "snapshot: TTL 0 never caches" 16 "$(snaps)"
+eq  "snapshot: TTL 0 never caches" 20 "$(snaps)"
 issue_snapshot >/dev/null; still_ready 1 implementer:fix
-eq  "snapshot: still_ready reads a fresh board" 24 "$(snaps)"
+eq  "snapshot: still_ready reads a fresh board" 30 "$(snaps)"
 finish

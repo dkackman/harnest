@@ -5796,5 +5796,511 @@
    "106": "wait",
    "107": "wait"
   }
+ },
+ {
+  "name": "R19 delegate: what the delegate rules on, and what stays Don's",
+  "input": {
+   "owner": "dkackman",
+   "now": 1795600000,
+   "delegate": {
+    "on": true,
+    "quiet_secs": 7200
+   },
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:plan-review"
+      },
+      {
+       "name": "feature"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      },
+      {
+       "name": "bug"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-info"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 4,
+     "title": "t4",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      },
+      {
+       "name": "delegate:passed"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 5,
+     "title": "t5",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "idea"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 6,
+     "title": "t6",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "status:needs-approval"
+      },
+      {
+       "name": "idea"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 7,
+     "title": "t7",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:overrule -->"
+     ]
+    },
+    {
+     "number": 8,
+     "title": "t8",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:don-session 2026-11-25T08:46:40Z -->"
+     ]
+    },
+    {
+     "number": 9,
+     "title": "t9",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": [
+      "<!-- harnest:don-session 2026-11-25T06:46:40Z -->"
+     ]
+    },
+    {
+     "number": 10,
+     "title": "t10",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      },
+      {
+       "name": "stabilization"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 11,
+     "title": "t11",
+     "labels": [
+      {
+       "name": "owner:don"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 12,
+     "title": "t12",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "parked"
+      },
+      {
+       "name": "status:plan-review"
+      },
+      {
+       "name": "idea"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "delegate:rule",
+   "2": "delegate:rule",
+   "3": "delegate:rule",
+   "4": "don",
+   "5": "don",
+   "6": "delegate:rule",
+   "7": "don",
+   "8": "don",
+   "9": "delegate:rule",
+   "10": "don",
+   "11": "don",
+   "12": "don"
+  }
+ },
+ {
+  "name": "R19 delegate: off (no delegate in the snapshot, or on: false) leaves every ask with Don",
+  "input": {
+   "owner": "dkackman",
+   "now": 1795600000,
+   "delegate": {
+    "on": false,
+    "quiet_secs": 7200
+   },
+   "issues": [
+    {
+     "number": 1,
+     "title": "t1",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:plan-review"
+      },
+      {
+       "name": "feature"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "don",
+   "2": "don"
+  }
+ },
+ {
+  "name": "R19 delegate: a release freeze holds the delegate too",
+  "input": {
+   "owner": "dkackman",
+   "now": 1795600000,
+   "delegate": {
+    "on": true,
+    "quiet_secs": 7200
+   },
+   "issues": [
+    {
+     "number": 1,
+     "title": "0.24.0",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "release"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 2,
+     "title": "t2",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    },
+    {
+     "number": 3,
+     "title": "t3",
+     "labels": [
+      {
+       "name": "owner:don"
+      },
+      {
+       "name": "status:needs-approval"
+      },
+      {
+       "name": "release-blocker"
+      }
+     ],
+     "author": {
+      "login": "dkackman"
+     },
+     "parent": null,
+     "blockedBy": {
+      "nodes": []
+     },
+     "subIssuesSummary": {
+      "total": 0,
+      "completed": 0
+     },
+     "markers": []
+    }
+   ]
+  },
+  "expect": {
+   "1": "don",
+   "2": "wait",
+   "3": "delegate:rule"
+  }
  }
 ]
