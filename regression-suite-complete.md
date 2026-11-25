@@ -30442,4 +30442,229 @@ A stale copy after the decline, or a control arm that no longer duplicates, is a
 cleanup: none.
 metrics: none.
 
+### C-F1353 — `templates/text-to-image` declares `width` and `height` at 512, and takes them at validate
+pending: #1710
+source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Before the stage, `validate_workflow(name="templates/text-to-image", arguments={"width":768},
+workspace="regression-complete")` refused `arguments.width` as an unknown variable (declared: `num_images_per_prompt`,
+`prompt`, `seed`); that refusal is the old behaviour this case turns around.
+1. `get_workflow(name="templates/text-to-image", variables_only=true)`.
+2. `list_workflows(shape="image")`: the `templates/text-to-image` entry.
+3. `validate_workflow(name="templates/text-to-image", workspace="regression-complete")`, no arguments.
+4. The same with `arguments={"width":768,"height":512,"seed":1234}`.
+5. The same with `arguments={"prompt":"a red bicycle","seed":1234,"num_images_per_prompt":1}` (the pre-stage
+   argument set, no size).
+expected:
+- 1: the variables include `width: 512` and `height: 512`, beside `prompt`, `seed` and `num_images_per_prompt`
+  (still declared; Q2 made it optional in the contract, not removed). A default other than 512, or either
+  variable missing, is a **finding**.
+- 2: `variable_names` includes `width` and `height`. The entry still has its mps and cuda `cost` rows (the stage
+  moves no cost).
+- 3: `valid: true`. 4: `valid: true`, `checked_arguments` naming `width` and `height`, no error at either.
+- 5: `valid: true`: a caller that never passes a size is not broken by the new variables.
+- The template still declares no `guidance_scale` and no `num_inference_steps` (the plan lists both as the draft
+  target's declines, not as new variables); passing `guidance_scale` is still refused as an undeclared variable.
+cleanup: none.
+metrics: none.
+
+### C-F1354 — SD 1.5 at defaults still renders 512x512; `width=768 height=512` renders 768x512
+pending: #1710
+source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+GPU, the cheapest image template (SD 1.5). Workspace `regression-complete`. `validate_workflow` each call first and
+pass its `acknowledged_cost`.
+1. `run_workflow(workflow="templates/text-to-image", arguments={"prompt":"a red bicycle against a white wall",
+   "seed":1234}, wait_seconds=55, workspace="regression-complete")` (no size: the defaults).
+2. The same with `"width":768,"height":512`.
+3. The same with `"width":512,"height":768,"num_images_per_prompt":2`.
+Read each image's size from the job's output listing (`get_job`) or `get_output_image` on the job's output.
+expected:
+- 1: completes; one image, 512x512, as the template rendered before the stage.
+- 2: completes; one image, exactly 768 wide by 512 high (not the default size, and not transposed). A 512x512 image
+  means the variable is declared but not passed to the pipeline: a **finding**.
+- 3: completes; two images, each 512 wide by 768 high (size and `num_images_per_prompt` together).
+- No run carries a warning that `width` or `height` was ignored or unused.
+cleanup: `delete_output(job_id=<id>)` for each of the three jobs.
+metrics: none.
+
+### C-F1355 — an SD 1.5 size off the pipeline's grid is refused at validate, or what happens is recorded
+pending: #1710
+source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free at validate; one cheap SD 1.5 run only in the fallback arm. Workspace `regression-complete`.
+1. `validate_workflow(name="templates/text-to-image", arguments={"width":500,"seed":1234})` (500 is not a multiple of 8).
+2. The same with `"height":500`.
+3. The same with `"width":504,"height":504` (the nearest multiples of 8, the boundary that must pass).
+4. The same with `"width":"wide"` (a value that won't coerce to an integer).
+expected:
+- 3: `valid: true`, with no refusal and no rounding warning.
+- 4: refused at `arguments.width` as a value that won't coerce. A run queued with it is a **finding**.
+- 1 and 2, the plan's two acceptable outcomes:
+  - **Covered.** Refused at `arguments.width` (`arguments.height` for 2), with a reason naming the grid it must land
+    on (a multiple of 8) or the value it rounds to. A rounding *warning* that names what 500 becomes (C-F077's
+    shape) also meets this. `get_workflow(..., variables_only=true)` then shows the bound under `constraints`.
+  - **Not covered.** `valid: true` with no warning. Then run 1 (validate, acknowledge, `run_workflow`,
+    `wait_seconds=55`) and record the result in the stage's verify comment: the job's status, its error if it
+    failed, or the size it wrote if it succeeded. That is a recorded outcome, not a failure of the stage (the
+    plan's acceptance intent). An uncaught crash with no message, or a written image whose size is neither 500
+    nor a multiple of 8 below or above it, is filed as an ordinary issue.
+  - A refusal whose reason names neither the grid nor the variable is a **finding**.
+cleanup: `delete_output(job_id=<id>)` for the fallback run, if one was made.
+metrics: none.
+
+### C-F1356 — every `text_to_image` ladder target declares the contract's required variables, and the declines are what the plan says
+pending: #1710
+source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. The defaults file itself has no MCP surface until #1626 (its pins are pytest); this checks the same
+contract from the outside, on each target's declared variables. Ladder (plan v2): draft `templates/text-to-image`;
+standard `models/z-image`, `models/z-image-sdnq`; best `models/minimax-h3-image`, `models/qwen-image-2.1`. Contract:
+required `prompt`, `seed`, `width`, `height`; optional `num_images_per_prompt`, `num_inference_steps`, `guidance_scale`.
+1. `list_workflows(configures="templates/text-to-image")` and `list_workflows(shape="image")`.
+2. `validate_workflow(name=<target>, arguments={"prompt":"a red bicycle","seed":1234,"width":512,"height":512},
+   workspace="regression-complete")` for each of the five targets.
+expected:
+- 1: each target is listed (the four models under `configures`, the draft under `shape="image"`), and each one's
+  `variable_names` contains all four required variables. Before the stage the draft target lacked `width`/`height`;
+  after it, none lacks any.
+- The optional variables a target lacks are exactly the plan's declines: `models/minimax-h3-image` lacks
+  `num_images_per_prompt`, `num_inference_steps` and `guidance_scale`; `models/qwen-image-2.1` lacks
+  `guidance_scale`; `templates/text-to-image` lacks `num_inference_steps` and `guidance_scale`; `models/z-image` and
+  `models/z-image-sdnq` lack none. A target that now lacks an optional variable it declared before is a **finding**
+  (the stage changes only the draft target's variables).
+- 2: no refusal on any of the four names for any target (a target that refuses a contract variable breaks a
+  swap). A refusal for a reason that isn't a variable (a device or host-RAM gate, such as `minimax-h3-image` on a
+  host without 64 GB to spare, or a size off a target's 32-pixel grid) is not a finding: record it.
+- `list_workflows(include_models=true)` lists no entry named `preference_defaults`, `preferences` or
+  `preference-defaults` (the file sits outside the workflow library, Q6), and `get_workflow(name="preference_defaults")`
+  answers unknown workflow.
+cleanup: none.
+metrics: none.
+
+### C-F1357 — the workflows guide has a *Default preferences* section with the file, the contract and the placement rule
+pending: #1710
+source: tester, spec for #1710 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free. `list_guides()`; then `get_guide("workflows")` (the index) and `get_guide("workflows", section=<the section
+whose title names default preferences>)`.
+expected:
+- The index lists a section about default preferences, near the `configures` and `cost` material.
+- The section names `dw/preference_defaults.json`; the tiers `draft`, `standard`, `best`; the `text_to_image`
+  contract (required `prompt`, `seed`, `width`, `height`; optional `num_images_per_prompt`, `num_inference_steps`,
+  `guidance_scale`); that an optional variable a target doesn't take is recorded as a decline with its reason; and
+  the rule that a new `configures: templates/text-to-image` entry must be placed in the ladder or left out with a
+  reason.
+- It names no path under `workflows/` for the file (Q6), and does not claim the file is readable over MCP or REST
+  yet (that is #1626).
+- A missing section, or one naming `workflows/preferences.json`, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1358 — the cuda bench gives `z-image-sdnq`, `flux3-klein` and `krea2` a measured cuda `cost`, or an open issue saying why not
+pending: #1711
+source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Before the stage all three had `cost: null` in `list_workflows(configures="templates/text-to-image")`.
+1. `list_workflows(configures="templates/text-to-image")`; `get_workflow(name=<each of the three>)`.
+2. On a server whose `get_server_info` accelerator is cuda only: `validate_workflow(name=<each>,
+   workspace="regression-complete")`, no arguments (defaults).
+expected:
+- 1: each of the three has a `cost` row with `device: "cuda"`, a card name (the RTX 3090) and `minutes` > 0, **or**
+  the stage's hand-off comment cites an open issue for it naming why it couldn't run (gated weights not accepted,
+  an OOM, a failure with its job events). Neither is a **finding**.
+- No other entry's `cost` changed: `models/z-image` still cuda 1.4, `models/minimax-h3-image` cuda 2.3,
+  `models/qwen-image-2.1` cuda 4.3, `models/flux2-dev` cuda 3.3.
+- 2 (cuda only): `plan.estimate.minutes` is not null and `basis` is `catalog` at the committed minutes, or
+  `observed`/tempered from this box's own runs (C-F051, C-F055) — never `unknown`. On any other accelerator, skip 2
+  and say so.
+cleanup: none.
+metrics: none.
+
+### C-F1359 — each committed cuda bench figure is cited to a completed job at defaults whose duration matches it within 10%
+pending: #1711
+source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Run it on a server whose `get_server_info` accelerator is cuda (the bench ran on lem); a job id from
+another server answers unknown here, which is a skip, not a finding. The job ids come from #1711's hand-off
+comment, one per new cuda `cost` row.
+1. For each cited id: `get_job(job_id=<id>)`.
+expected:
+- The job's status is completed, its workflow is the entry the row belongs to, and its arguments override no
+  variable's default (the plan's "one run at the workflow's defaults"; a `prompt` or `seed` alone is not a cost
+  driver and is allowed).
+- The job's wall duration and the row's `minutes` agree to within 10% of the row's figure.
+- A new `cost` row with no cited job, or a cited job that failed, ran another workflow or ran off defaults, is a
+  **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1360 — a non-default argument on a newly benched entry prices as a pre-bench entry's does, not as the catalog figure
+pending: #1711
+source: tester, spec for #1711 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU; holds on any server, because it compares a newly benched entry with a control that already had
+its figure. Workspace `regression-complete`.
+1. Control: `validate_workflow(name="models/z-image", arguments={"num_inference_steps":18,"width":2048,"height":2048})`.
+2. Subject: the same arguments on `models/z-image-sdnq` (a newly benched entry with the same variables).
+3. Both again with no arguments.
+expected:
+- 3: each quotes its own defaults figure for this device (or `other_device`/`unknown` where it has none here).
+- 1 and 2: the subject's `basis` is the same kind as the control's (`derived` with the scaled minutes, or
+  `unknown` where C-F054's overridden-driver rule applies), and neither quotes its catalog `minutes` unchanged as
+  `catalog`. A subject that prices a doubled step count and quadrupled canvas at its defaults figure is a
+  **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1361 — the mps bench gives each mps-capable default target an mps `cost`, or an open issue saying why not, and none to H3-Image
+pending: #1712
+source: tester, spec for #1712 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Before the stage, only `templates/text-to-image` (mps 0.2) among the `text_to_image` defaults had an
+mps figure.
+1. `get_workflow(name=<each>)` for `models/z-image`, `models/z-image-sdnq`, `models/qwen-image-2.1`,
+   `models/minimax-h3-image`, `templates/text-to-image`.
+2. On a server whose `get_server_info` accelerator is mps only: `validate_workflow(name=<each of the first three>,
+   workspace="regression-complete")`, no arguments.
+expected:
+- 1: `models/z-image`, `models/z-image-sdnq` and `models/qwen-image-2.1` each have a `cost` row with
+  `device: "mps"` and `minutes` > 0, **or** the stage's hand-off cites an open issue for it with the job's events
+  (a failure, an OOM, or the per-run cap). Neither is a **finding**.
+- `models/minimax-h3-image` has no mps row (cuda-only by intent). An mps row there is a **finding**.
+- `templates/text-to-image` still has its mps row; the cuda rows of all five are unchanged by the stage.
+- If neither `best` target (`minimax-h3-image`, `qwen-image-2.1`) has an mps row, the stage's hand-off says so in
+  words (the input to Q3's revisit). Saying nothing then is a **finding**.
+- 2 (mps only): each entry with a new mps row quotes non-null minutes, `basis` `catalog` at the committed figure
+  or `observed`/tempered from this box's runs — never `unknown`. On any other accelerator, skip 2 and say so.
+cleanup: none.
+metrics: none.
+
+### C-F1362 — each committed mps bench figure is cited to a completed job at defaults whose duration matches it within 10%
+pending: #1712
+source: tester, spec for #1712 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU. Run it on a server whose `get_server_info` accelerator is mps (the bench ran on mini-ai); a job id
+from another server answers unknown here, which is a skip, not a finding. The job ids come from #1712's hand-off
+comment, one per new mps `cost` row (C-F1361).
+1. For each cited id: `get_job(job_id=<id>)`.
+expected:
+- The job's status is completed, its workflow is the entry the row belongs to, and its arguments override no
+  variable's default (a `prompt` or `seed` alone is not a cost driver and is allowed).
+- The job's wall duration and the row's `minutes` agree to within 10% of the row's figure.
+- A new mps row with no cited job, or a cited job that failed, ran another workflow or ran off defaults, is a
+  **finding**. A target left without a row cites its failed or capped job instead, and that job's
+  `get_job_events` show why (an OOM, an error, or a cancel at the cap).
+cleanup: none.
+metrics: none.
+
+### C-F1363 — on mps, a non-default argument on a newly benched entry prices as SD 1.5's does, not as the catalog figure
+pending: #1712
+source: tester, spec for #1712 from #1625's plan v2 (claude-opus-5-5 via anthropic)
+Free, no GPU; holds on any server. Control: `templates/text-to-image`, which had its mps figure before the stage.
+Workspace `regression-complete`.
+1. Control: `validate_workflow(name="templates/text-to-image", arguments={"width":1024,"height":1024})`.
+2. Subject: `validate_workflow(name="models/z-image", arguments={"width":2048,"height":2048})` (double its default
+   side, read from `get_workflow(..., variables_only=true)`; use these if the default is 1024), and the same on
+   `models/z-image-sdnq`. Skip a subject that C-F1361 found has no mps row.
+3. Each with no arguments.
+expected:
+- 3: each quotes its defaults figure for this device (on mps: the committed mps minutes or this box's observed;
+  elsewhere: its own device's figure, `other_device` or `unknown`).
+- 1 and 2: each subject's `basis` is the same kind as the control's (`derived` with scaled minutes, or `unknown`
+  where C-F054's overridden-driver rule applies), and none quotes its catalog `minutes` unchanged as `catalog`. A
+  subject that prices a quadrupled canvas at its defaults figure is a **finding**.
+cleanup: none.
+metrics: none.
+
 ## Performance
