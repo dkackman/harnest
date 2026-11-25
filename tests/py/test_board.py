@@ -57,6 +57,10 @@ class ItemsTest(unittest.TestCase):
         rows = {"lem": [r(9, "delegate:rule")], "mini-ai": [r(9, "delegate:rule")]}
         self.assertEqual(board.items(rows), [Item("delegate:rule", 9, "lem")])
 
+    def test_a_claim_does_not_move_a_delegate_ruling(self):
+        rows = {"lem": [r(9, "delegate:rule", "mini-ai")], "mini-ai": [r(9, "delegate:rule", "mini-ai")]}
+        self.assertEqual(board.items(rows), [Item("delegate:rule", 9, "lem")])
+
     def test_unclaimed_design_and_decompose_get_candidates(self):
         rows = {
             "lem": [r(7, "lead:design"), r(6, "lead:decompose")],

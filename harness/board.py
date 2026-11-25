@@ -37,6 +37,11 @@ SHARED = frozenset({"reviewer:arch", "reviewer:docs", "tester:spec", "tester:han
 # queueing behind the first server's one leadtree slot while the other idles.
 LEAD_ANY = frozenset({"lead:design", "lead:decompose"})
 
+# R19's delegate rules for Don on any issue, claimed or not: a target:* claim
+# names the loop working the issue, and the delegate is neither loop's. Its
+# item always goes to the first server (the shared passes' loop).
+UNCLAIMED = frozenset({"delegate:rule"})
+
 # A stranded issue is unstranded by the implementer pass's triage
 # (run-item.sh implementer <n>), which holds what a fix holds.
 STRANDED = "stranded"
@@ -159,7 +164,9 @@ def items(rows_by_target: dict[str, list[Row]]) -> list[Item]:
     for (q, n), row in order:
         targets = offers[(q, n)]
         holder = row.holder
-        if holder is not None and holder in targets:
+        if q in UNCLAIMED:
+            out.append(Item(q, n, targets[0]))  # a claim says which loop works the issue, not who rules for Don
+        elif holder is not None and holder in targets:
             out.append(Item(q, n, holder))
         elif row.queue == STRANDED and holder is not None:
             continue  # the holding loop's to unstrand, and it isn't driven here
