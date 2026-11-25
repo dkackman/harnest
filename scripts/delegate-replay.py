@@ -62,10 +62,11 @@ def cases(args) -> int:
             if not ks:
                 continue
             events = dr.label_events(repo, issue["number"])
+            edits = dr.comment_edits(repo, issue["number"])
             for k in ks:
                 when = issue["comments"][k]["createdAt"]
                 commit = dr.develop_at(source, when) if repo.endswith("diffusers-workflow") else None
-                case = dr.cut(issue, k, events, repo, commit)
+                case = dr.cut(issue, k, events, repo, commit, edits)
                 (OUT / "cases" / f"{case['id']}.json").write_text(json.dumps(case, indent=1))
                 (OUT / "answers" / f"{case['id']}.json").write_text(json.dumps(dr.answer(issue, k), indent=1))
                 index.append(

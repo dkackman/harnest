@@ -78,6 +78,12 @@ class CutTest(unittest.TestCase):
         )
         self.assertTrue(dr.cut(folded, 1, EVENTS, "dkackman/diffusers-workflow", None)["leaked"])
 
+    def test_a_comment_edited_after_the_ruling_is_leaked(self):
+        edits = {"2026-11-01T10:00:00Z": "2026-11-01T11:30:00Z"}  # the ask, edited after the ruling
+        self.assertTrue(dr.cut(ISSUE, 1, EVENTS, "dkackman/diffusers-workflow", None, edits)["leaked"])
+        early = {"2026-11-01T10:00:00Z": "2026-11-01T10:30:00Z"}
+        self.assertFalse(dr.cut(ISSUE, 1, EVENTS, "dkackman/diffusers-workflow", None, early)["leaked"])
+
     def test_answer_is_the_ruling(self):
         self.assertEqual(dr.answer(ISSUE, 4)["first_line"], "Don's ruling: **hand back**.")
 

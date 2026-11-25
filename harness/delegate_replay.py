@@ -79,8 +79,12 @@ def labels_at(events: list[dict], when: str) -> list[str]:
     return sorted(held)
 
 
-def cut(issue: dict, k: int, events: list[dict], repo: str, commit: str | None) -> dict:
-    """The case for ruling comment k: everything before it, nothing after."""
+def cut(issue: dict, k: int, events: list[dict], repo: str, commit: str | None, edits: dict | None = None) -> dict:
+    """The case for ruling comment k: everything before it, nothing after.
+
+    `edits` maps a comment's createdAt to its lastEditedAt. A comment before
+    the ruling that was edited at or after it may hold the ruling (a plan
+    comment is edited in place), so the case is leaked."""
     comments = issue["comments"]
     ruling = comments[k]
     when = ruling["createdAt"]
@@ -99,7 +103,9 @@ def cut(issue: dict, k: int, events: list[dict], repo: str, commit: str | None) 
             for c in comments[:k]
         ],
     }
-    out["leaked"] = leaked(out)
+    late = [c["createdAt"] for c in comments[:k] if ((edits or {}).get(c["createdAt"]) or "") >= when]
+    out["edited_after"] = late
+    out["leaked"] = leaked(out) or bool(late)
     return out
 
 
@@ -147,6 +153,19 @@ def label_events(repo: str, number: int) -> list[dict]:
         ["api", "graphql", "-f", f"query={_TIMELINE}", "-F", f"o={owner}", "-F", f"n={name}", "-F", f"i={number}"]
     )
     return json.loads(out)["data"]["repository"]["issue"]["timelineItems"]["nodes"]
+
+
+_EDITS = """query($o:String!,$n:String!,$i:Int!){repository(owner:$o,name:$n){issue(number:$i){
+comments(first:100){nodes{createdAt lastEditedAt}}}}}"""
+
+
+def comment_edits(repo: str, number: int) -> dict:
+    """{createdAt: lastEditedAt} for the issue's comments."""
+    owner, name = repo.split("/")
+    out = _gh(["api", "graphql", "-f", f"query={_EDITS}", "-F", f"o={owner}", "-F", f"n={name}", "-F", f"i={number}"])
+    return {
+        c["createdAt"]: c["lastEditedAt"] for c in json.loads(out)["data"]["repository"]["issue"]["comments"]["nodes"]
+    }
 
 
 def develop_at(source_dir: str, when: str) -> str | None:

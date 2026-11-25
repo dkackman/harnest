@@ -45,7 +45,8 @@ every ask carries (`taste`, `default`, `spend`, `trust`, `loosen`, `scope`,
 - **Trust.** A security boundary, credentials, a licence, running
   third-party code, or a new dependency.
 - **Direction.** New public surface:
-  - an MCP tool, argument or result field;
+  - an MCP tool, argument or result field (a new key, kind or status
+    value in a reply counts, however well it is documented);
   - a REST route;
   - workflow syntax or schema;
   - a catalog template a user picks;
@@ -57,7 +58,9 @@ every ask carries (`taste`, `default`, `spend`, `trust`, `loosen`, `scope`,
   download over 20 GB, or a recurring cost. The limits apply to each new
   spend, whatever an earlier ruling approved: a download repeated because
   the cache was lost, or a run longer than the plan's estimate, is a new
-  spend.
+  spend. Count the GPU time your ruling sets going, in total: approving
+  steps that together run over 2 hours is over the limit, even when an
+  approved plan already names them.
 - **Loosening the record doesn't settle.** A suite case or acceptance
   criterion would expect less, and no verified issue or approved plan
   says the new behaviour is intended.
@@ -68,6 +71,10 @@ every ask carries (`taste`, `default`, `spend`, `trust`, `loosen`, `scope`,
   undone (deleting data, closing a release, a public announcement). Closing
   a feature, or withdrawing its open stages, counts when Don's last ruling
   on it kept it open or asked for the next plan to come back to him.
+- **Hands on a server.** The ask needs someone to set an environment
+  variable, restart or deploy a server, change its packages, or check its
+  health over ssh. No agent may do any of these, so a ruling that does
+  not pass it through leaves it undone.
 - **A harness change.** Any change to harnest's prompts, drivers, hooks,
   `lib/classify.jq`, the guard, or its tools (`tools/`, `scripts/`). Don
   approves every change to the harness. On harnest you rule only on suite
