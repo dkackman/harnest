@@ -29740,4 +29740,320 @@ cleanup: `delete_output(job_id=...)` on the swell job and both finishing jobs. `
 only: leave it.
 metrics: none.
 
+### C-F1316 — a workflow's page reads only its own folder, newest six, and shows no other folder's file
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`. Workspace `regression-complete` (routes are hash routes:
+`/#/ws/<workspace>/<page>`, pinned 2026-11-25). Pick folder F: a folder in `regression-complete` whose
+`list_gallery(folder=F, limit=50, workspace="regression-complete")` has 7 or more files and that has a page in the
+Workflows list (`templates/minimax/reframe` held 10 on 2026-11-25). Note the six newest names from
+`list_gallery(folder=F, limit=6, ...)`. Spec: `record **/api/gallery**`; `goto` the Workflows page; open F's own
+page by its link there (`click` its visible name); `wait_text` a word only F's proofs strip shows (the label of
+its newest file); `screenshot`; `recorded **/api/gallery**`.
+expected:
+- The proofs strip's read is `/api/gallery?folder=<F>&limit=6` (the folder `/` may be raw or `%2F`; other
+  parameters such as `workspace=` may ride along, in any order). No `/api/gallery` read from the page carries
+  `limit=100000` or lacks `folder=`.
+- The strip shows at most 6 files, exactly the six names `list_gallery` gave, newest first as today, and no file
+  whose name starts with another folder.
+No page errors. A whole-listing read from the Workflow page, a seventh tile, or another folder's file is a
+**finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1317 — a workflow's page with fewer than six outputs, or none, shows what it has and the empty state
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI through `ui-check`, as in C-F1316. Pick G: a folder with 1 to 5 files that has a workflow page
+(`templates/ltx2/text-to-video` held 1 on 2026-11-25). Pick E: a catalog workflow whose
+`list_gallery(folder=E, workspace="regression-complete")` is empty (`templates/text-to-image` was not among the
+folders on 2026-11-25). Run C-F1316's spec on G, then on E, then on F (C-F1316's folder) with
+`mock {url_glob: "**/api/gallery?**folder=**", set: {"files": [], "total": 0}}` placed before the `goto`.
+expected:
+- G: the read is `folder=<G>&limit=6`; the strip shows exactly G's files, every one, no other folder's.
+- E: the read is `folder=<E>&limit=6`; the strip shows the page's empty state for a workflow with no outputs (a
+  message, no tile, no spinner left after 10 s), the same state as for F under the mock.
+- F under the mock: the empty state, though F has files: the page trusts the folder read and does not fall back to
+  a whole listing (no `limit=100000` read appears).
+No page errors. An error banner instead of the empty state, a spinner that never settles, or a fallback whole
+listing is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1318 — Compare with 2 and with 4 files from one folder makes one listing read and shows each file and note
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI through `ui-check`. Use F from C-F1316 (7+ files). Reach Compare the way the Gallery offers it:
+on the Gallery page, filter to F's folder (or find F's tiles), pick two of F's files and use the page's Compare
+action; `inspect` the action (its `href`, if it is a link) or read `goto`'s `url` on a later `goto` to learn how
+Compare's URL carries its names. Every later visit is a `goto` straight to that URL form with the names swapped in.
+Spec, for names {a, b} and then for four names {a, b, c, d}, all F's, at least one with a note (`list_gallery` shows
+which): `record **/api/gallery**`; `goto` Compare's URL; `wait_text` the first file's label; `screenshot`;
+`recorded **/api/gallery**`.
+expected:
+- Each visit makes exactly one `/api/gallery` read at load, and it carries `folder=<F>`. None carries
+  `limit=100000` without `folder=`.
+- Every cell shows its own file (label as today) and, where the file has one, its note text exactly as
+  `list_gallery` gives it.
+No page errors. A second read for the same folder, a whole-listing read, or a cell showing the wrong file or no note
+is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1319 — Compare over two folders makes one read per folder, however the names are split
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1318 (same URL form). Folders F (C-F1316) and G (C-F1317, or any other folder with a
+file). Visits: {F1, G1}; {F1, F2, G1} (three names, two folders); {G1, F1, F2, G1′} if G has a second file, else
+{G1, F1, F2}.
+expected:
+- Each visit makes exactly two `/api/gallery` reads at load, one with `folder=<F>` and one with `folder=<G>`;
+  never one per name, never a whole listing.
+- Each cell shows its file and note as `list_gallery` gives them, in the order the names were given.
+No page errors. A read per name, a whole listing, or a misplaced cell is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1320 — Compare shows the missing-file state for a gone file and for a folder that no longer exists
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1318. Visits, each with one real file F1 from F:
+1. {F1, `<F>/<F1's run id>/final/cf1670-no-such-file.png`} (the folder exists, the file doesn't);
+2. {F1, `cf1670-gone-folder/20260101-000000-deadbeef/cf1670-gone.png`} (no such folder:
+   `list_gallery(folder="cf1670-gone-folder")` is empty);
+3. {the two missing names above} (nothing found at all).
+expected:
+- F1's cell shows its file. Each missing name's cell shows the cell's missing-file state (a message in the cell,
+  no broken image), and the page shows no error banner in its place.
+- Visit 2 reads `folder=cf1670-gone-folder` and gets an empty list; that is not an error (the read answers 200).
+- Visit 3 shows two missing-file cells, not an error page.
+A page error, an error banner, a blank page or a spinner that never settles is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1321 — Compare with fewer than two names makes no listing read
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1318. Visits: Compare's URL with one name (F1); with none (the names part empty or
+left out, whichever the URL form allows). `record **/api/gallery**` before each `goto`; `wait_text` any visible text
+of Compare's page, then wait 6 s more (a `wait_text` for text that never comes, `timeout_ms: 6000`, may fail: put it
+last, before `recorded`, in a separate run if the runner stops at it) and `recorded`.
+expected:
+- No `/api/gallery` read for either visit, including after one feed interval.
+- The page shows what it shows today for too few names (a prompt to pick files, or the empty layout), with no
+  page errors.
+Any `/api/gallery` read is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1322 — a note changed over MCP shows on the Workflow page and in Compare within one feed interval, re-read narrow
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI through `ui-check` with setup S1536-BG (C-F1233: runner in the background, the MCP write made
+while its last `wait_text` waits). File X: F's newest file (in C-F1316's strip). Note its current note N0.
+1. Spec: `record **/api/**`; `goto` F's workflow page; `wait_text` X's label; `wait_text "cf1670 live note A"`
+   (`timeout_ms: 30000`); `screenshot`; `recorded **/api/**`. The write, right after `date`:
+   `set_note(target=<X>, note="cf1670 live note A", workspace="regression-complete")`.
+2. Same on Compare's URL with {X, F2}, waiting for `"cf1670 live note B"`, with the note set to that.
+expected:
+- Each `wait_text` passes with no reload: the note shows within about 10 s of `date` (one 5 s feed interval plus
+  slack).
+- `recorded` holds a `/changes` read that moved, then a new `/api/gallery` read after `date` that still carries
+  `folder=<F>` (plus `limit=6` on the Workflow page), and no whole-listing read.
+No page errors. A note that needs a reload, or a re-read that drops `folder=`, is a **finding**.
+cleanup: `set_note(target=<X>, note=<N0>, workspace="regression-complete")` (or `null` if N0 was empty).
+metrics: none.
+
+### C-F1323 — the Gallery page still reads and shows the whole listing
+pending: #1701
+source: tester, spec for #1701 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI through `ui-check`. Stage A changes `api.gallery`'s call shape and keeps today's for the
+whole-listing callers; this checks the Gallery is still one. Spec: `record **/api/gallery**`; `goto
+/#/ws/regression-complete/gallery`; `wait_text` the label of `list_gallery(limit=1)`'s newest file; `screenshot`;
+`recorded`.
+expected:
+- The page's listing read carries no `folder=` and asks for the whole listing (`limit=100000` today, or any limit
+  at least the workspace's `total`), as before the stage.
+- The page shows files from at least two folders, and its file count matches `fetch
+  /api/gallery?limit=1&workspace=regression-complete`'s `total`.
+No page errors. A Gallery narrowed to one folder or capped below `total` is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1324 — the Gallery's text filter keeps every-word matches in any order, ignores case and spaces, and clears
+pending: #1702
+source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. **Web UI, black-box**, through `ui-check`, in `regression-complete`. Before the `goto`,
+`mock {url_glob: "**/api/gallery?**", set: {...}}` from the real answer, setting on three of the real files (any
+three, keep `name` and `url`): `files.0.label` and `files.0.note` to `"cf1670 red sports car"`; `files.1.label`
+and `.note` to `"cf1670 car painted red"`; `files.2.label` and `.note` to `"cf1670 blue car"`. If the page then
+shows none of the three for `cf1670`, its haystack holds neither label nor note: say so in the report and file
+nothing. **Word-filter sequence W** (C-F1325 to C-F1328 reuse it): `fill` the page's filter box with, in turn, and
+after each `screenshot` and `inspect` the three entries by text:
+1. `red car`; 2. `car red`; 3. `  RED  ` (two spaces each side); 4. `re ca` (word fragments); 5. `   ` (spaces
+only); 6. `` (cleared).
+expected:
+- 1 and 2: the "red sports car" and "car painted red" entries show; "blue car" does not.
+- 3: both red entries show; the blue one does not.
+- 4: both red entries show (each word is a substring, not a whole word); the blue one does not.
+- 5 and 6: every file shows again: the page's count equals its unfiltered count.
+No page errors. A word-order-dependent result, a case- or space-sensitive one, or a box of spaces that hides
+everything is a **finding**.
+cleanup: none (the mock writes nothing).
+metrics: none.
+
+### C-F1325 — the Jobs page's filter follows the same every-word rule
+pending: #1702
+source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1324. `/api/jobs` answers `{"jobs": [{"id", "workflow", "note", ...}], "total"}`
+(pinned 2026-11-25). Before the `goto /#/ws/regression-complete/jobs`, `mock {url_glob: "**/api/jobs?**"}` from
+the real answer, setting `jobs.0.note`, `jobs.1.note`, `jobs.2.note` to C-F1324's three phrases. (If the page's
+filter matches no note, set `jobs.N.workflow` to the phrase hyphenated, `cf1670-red-sports-car` etc., instead.) Run
+sequence W on the page's filter.
+expected: as C-F1324, for the three job rows.
+No page errors. Any departure from C-F1324's results is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1326 — the Prompts page moves from one substring to the every-word rule
+pending: #1702
+source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1324, on the shared Prompts page (sidebar "Prompts"). `/api/prompts` answers
+`{"libraries": [...], "prompts": ["<name>", ...]}` (names only, pinned 2026-11-25). Before the `goto`, `mock`
+`**/api/prompts**` from the real answer setting `prompts.0` to `"cf1670/red-sports-car"`, `prompts.1` to
+`"cf1670/car-painted-red"`, `prompts.2` to `"cf1670/blue-car"`. Run sequence W.
+expected: as C-F1324 for the three prompts. Step 1 is the one that changes: under the old single-substring rule
+`red car` matched none of them; now it keeps both red ones. Results only widen: `cf1670/red` still keeps
+both red ones, and a full name (`cf1670/blue-car`) still keeps exactly its prompt.
+No page errors. Old (single-substring) results, or a narrowing, is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1327 — the Assets page moves from one substring to the every-word rule
+pending: #1702
+source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI as in C-F1324, on the workspace Assets page (`/#/ws/regression-complete/assets`, filter box
+placeholder `filter...`). Before the `goto`, `mock` the page's asset listing read (`record **/api/**` once first to
+find it) from the real answer, setting the shown name of three entries to `cf1670-red-sports-car.png`,
+`cf1670-car-painted-red.png` and `cf1670-blue-car.png`. If the listing has fewer than three entries, first
+`keep_output` any three image outputs of `regression-complete` under those asset names (`workspace=
+"regression-complete"`) and skip the mock. Run sequence W.
+expected: as C-F1326 (step 1 widens from the old rule; `cf1670-red` and a full name still match as before).
+No page errors. Old results or a narrowing is a **finding**.
+cleanup: `delete_asset` on any asset this case made (acknowledged as the tool asks); none if it only mocked.
+metrics: none.
+
+### C-F1328 — the Schema page's filter follows the every-word rule
+pending: #1702
+source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI through `ui-check`, on the Schema page (sidebar "Schema"). Pick from the page an entry whose
+visible name holds two parts in order (`<A><B>`, e.g. a type named with two words or a dotted/underscored name) and
+an entry holding only `<B>`. `fill` the filter with, in turn: `<A> <B>`; `<B> <A>`; `<B> zzqq1670`; the first in
+upper case with extra spaces; spaces only; cleared.
+expected:
+- `<A> <B>` and `<B> <A>`: the two-part entry shows; the `<B>`-only entry does not.
+- `<B> zzqq1670`: nothing matches that word, so neither entry shows.
+- The upper-case, padded query gives the same as the first. Spaces only and cleared show every entry.
+No page errors. An order-dependent or case-sensitive result is a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1329 — the Workflows catalog search keeps its whole-word rule: `art` does not match `smart`
+pending: #1702
+source: tester, spec for #1702 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free, no job. Web UI through `ui-check`, on `/#/ws/regression-complete/workflows` (search box placeholder
+`search workflows...`). Before the `goto`, `mock` the page's catalog read (find it with `record **/api/**`) from the
+real answer, setting the description (the text the row shows under its name) of one workflow to `"cf1670 a smart
+pick"` and of another to `"cf1670 pop art poster"`. `fill` the box with `art`, then `cf1670 art`.
+expected:
+- `art`: the "pop art poster" row shows; the "smart pick" row does not.
+- `cf1670 art`: the "pop art poster" row shows, and the "smart pick" row does not; their relative order is the
+  catalog's ranked order (unchanged by this stage).
+No page errors. The "smart" row showing for `art` means the catalog was moved to the substring rule: a **finding**.
+cleanup: none.
+metrics: none.
+
+### C-F1330 — on Gallery and on Assets, Escape clears the picks, and does nothing with none
+pending: #1703
+source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+CPU task only, two tiny jobs. **Web UI, black-box**, through `ui-check`. **Setup S1670-GRID** (C-F1331 to C-F1333
+reuse it): in `regression-complete`, run twice, after `validate_workflow`, `{"id": "qa-c-f1330", "steps": [{"name":
+"clip", "task": {"command": "gain_audio", "arguments": {"audio": "asset:qa-cast/ep11-bed.wav", "gain_db": 0}},
+"result": {"content_type": "audio/wav", "file_base_name": "cf1670-grid"}}]}`, with `note` `"cf1670 grid a"` then
+`"cf1670 grid b"`, `wait_seconds=55`. Call the outputs GA and GB. `keep_output(name=GA, asset_name="cf1670-grid-a.wav",
+workspace="regression-complete")` and the same for GB as `cf1670-grid-b.wav`.
+On each page (Gallery, `/#/ws/regression-complete/gallery`; Assets, `/#/ws/regression-complete/assets`): `fill` the
+filter with `cf1670`; pick both files (the page's own pick control, or "Select all (2)"); `screenshot`; `press
+Escape`; `screenshot`; then `press Escape` again with nothing picked.
+expected:
+- After picking: the page shows both picked and its bulk bar (count 2).
+- After Escape: no file is picked and the bulk bar is gone, on both pages; both files are still listed.
+- The second Escape changes nothing and raises no error.
+No page errors. Picks that survive Escape on either page are a **finding**.
+cleanup: C-F1333's cleanup (run it last), or, run alone: `delete_output(job_id=...)` on both jobs and `delete_asset`
+on both assets.
+metrics: none.
+
+### C-F1331 — a picked file deleted elsewhere drops from the picks, by each page's own rule
+pending: #1703
+source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+CPU task only. S1670-GRID, plus setup S1536-BG (C-F1233). The plan keeps each page's rule for which picks count:
+the Gallery checks a pick against all its files, Assets against the files it shows.
+1. Gallery: spec `goto` Gallery; `fill` `cf1670`; pick both; `wait_text` "1 selected" or the bar's count reading 1
+   (`regex`, `timeout_ms: 30000`); `screenshot`. The write: `delete_output(name=GB's run directory or job_id=GB's
+   job, workspace="regression-complete", ...)` acknowledged.
+2. Gallery, filter-hidden pick: re-run S1670-GRID's GB job (a new GB), pick both under `cf1670`, then `fill`
+   `cf1670 grid a` so only GA shows; `screenshot`; `fill` `cf1670`; `screenshot`.
+3. Assets: the same as 1 with `delete_asset("cf1670-grid-b.wav", workspace="regression-complete")` as the write.
+4. Assets, filter-hidden pick: re-keep GB as `cf1670-grid-b.wav`; pick both under `cf1670`; `fill` `grid-a`;
+   `screenshot`; `fill` `cf1670`; `screenshot`.
+expected:
+- 1 and 3: within about 10 s of the write, the deleted file leaves the listing and the picks; the count reads 1 with
+  no reload, and the bulk bar still acts on the survivor alone.
+- 2 (Gallery checks all files): the hidden pick stays; back on `cf1670`, both are still picked.
+- 4 (Assets checks the shown ones): the hidden pick is dropped; back on `cf1670`, only grid-a is picked.
+No page errors. A deleted file still counted, or a page whose filter-hidden rule differs from the above, is a
+**finding** (the plan promises each page keeps today's rule).
+cleanup: as C-F1330.
+metrics: none.
+
+### C-F1332 — opening a file by its `open` hash scrolls it into view on Gallery and on Assets
+pending: #1703
+source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free past S1670-GRID. Web UI through `ui-check` at the default 1280x720. Find the hash form: on the Gallery,
+`inspect` GA's tile (by its label) and read the `open=` link in its `href`, or click it and read the URL the page
+moves to from the next `goto`'s result. GA is new, so near the top: to get a file far down, use the Gallery's oldest
+file instead (the last `list_gallery(limit=1000, workspace="regression-complete")` entry, 200+ files below the
+fold). `goto` the Gallery's URL with `open=<that file>`; `screenshot`. Then the same on Assets with its last asset
+by name (or the `cf1670-grid-b.wav` asset if the list fits on one screen).
+expected:
+- On each page the opened file is on screen in the screenshot (its tile or viewer, as today), without scrolling by
+  the runner, and it is the file named in the hash.
+No page errors. An `open` hash that lands at the top with the file off screen, or opens another file, is a
+**finding**.
+cleanup: none (C-F1333's cleanup covers the setup).
+metrics: none.
+
+### C-F1333 — Assets keeps its sections, their order, and its paging
+pending: #1703
+source: tester, spec for #1703 from #1670's plan v1 (claude-opus-5-5 via anthropic)
+Free past S1670-GRID. Web UI through `ui-check`. The Assets page's explainer says the workspace's own assets come
+first, then the shared ones its workflows name; the sort toggle is `Name` / `Newest` (pinned 2026-11-25). Spec on
+`/#/ws/regression-complete/assets`: `wait_text "cf1670-grid-a.wav"`; `screenshot`; `click` `Newest`;
+`screenshot`; page forward through every page the page offers (its own next control), `screenshot` each; `fill`
+`cf1670`; `screenshot`. Compare against `list_assets(workspace="regression-complete")`.
+expected:
+- The section headings and their order are the workspace's own assets, then the shared ones (as the explainer
+  says); every own asset from `list_assets` is in the first.
+- `Name` orders each section by name; `Newest` by newest first, `cf1670-grid-b.wav` before `cf1670-grid-a.wav`.
+  Sorting reorders within a section and never moves a file across sections.
+- Every page but the last holds the same number of tiles; the pages together list each asset once, none skipped
+  or repeated; the page's file count matches `list_assets`.
+- Filtered to `cf1670`: the two grid assets, in the own section only, on one page.
+No page errors. A changed grouping or order, a page size that varies, or an asset repeated or lost across pages is
+a **finding**.
+cleanup: `delete_asset` on `cf1670-grid-a.wav` and `cf1670-grid-b.wav`, and `delete_output(job_id=...)` on every
+`qa-c-f1330` job, all `workspace="regression-complete"`, acknowledged as each tool asks.
+metrics: none.
+
 ## Performance
