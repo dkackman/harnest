@@ -188,8 +188,9 @@ class HelpersTest(unittest.TestCase):
         lp = loop.Loop(["--servers", "lem"])
         self.assertEqual(
             (lp.free_slots, lp.poll, lp.health_secs, lp.retry_secs, lp.task_gap, lp.max_sessions),
-            (3, 60, 30, 300, 5400, 0),
+            (2, 60, 30, 300, 5400, 0),
         )
+        self.assertEqual(loop.Loop(["--servers", "lem,mini-ai"]).free_slots, 4)
 
     def test_suite_paths(self):
         lp = mk(servers=("lem", "mini-ai"))
@@ -485,7 +486,7 @@ class ReviewerTreeTest(unittest.TestCase):
         _g(self.src, "config", "user.name", "t")
         _g(self.src, "checkout", "-q", "-b", "develop")
         self.push("one")
-        self.lp = mk()
+        self.lp = mk(LOOP_FREE_SLOTS=3)  # two reviews at once on one server
         srv = self.lp.srv["lem"]
         srv.source_dir = str(self.src)
         srv.plugin_tree = str(d / "plugin")
@@ -731,6 +732,14 @@ class RespawnTest(unittest.TestCase):
         lp = mk()
         lp.items = [Item("lead:design", 4, "lem")]
         self.assertEqual([i.queue for i in lp.offer()], ["lead:design"])
+
+    def test_an_unclaimed_design_skips_a_frozen_candidate(self):
+        lp = mk(servers=("lem", "mini-ai"))
+        lp.srv["lem"].frozen = "1"
+        lp.items = [Item("lead:design", 4, None, ("lem", "mini-ai"))]
+        self.assertEqual([(i.queue, i.candidates) for i in lp.offer()], [("lead:design", ("mini-ai",))])
+        lp.srv["mini-ai"].frozen = "1"
+        self.assertEqual([i.queue for i in lp.offer()], [])
 
     def end(self, lp, item, session):
         rec = loop.Running(

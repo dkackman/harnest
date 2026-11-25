@@ -29,7 +29,13 @@ BOARD_QUEUES = frozenset(PRIORITY) - {"curator", "tester:closures", "tester:task
 # to the first server the driver drives (lem's, while it drives lem), as
 # run-loop.sh's shared_passes_here has it. A stranded issue nobody claims is
 # that server's to unstrand too (stranded_here).
-SHARED = frozenset({"lead:design", "lead:decompose", "reviewer:arch", "reviewer:docs", "tester:spec", "tester:handoff"})
+SHARED = frozenset({"reviewer:arch", "reviewer:docs", "tester:spec", "tester:handoff"})
+
+# Design and decompose read a lead worktree at origin/develop and make no
+# claim, so an unclaimed one may run in any offering server's lead tree: it
+# gets those servers as candidates, like an unclaimed fix, rather than
+# queueing behind the first server's one leadtree slot while the other idles.
+LEAD_ANY = frozenset({"lead:design", "lead:decompose"})
 
 # A stranded issue is unstranded by the implementer pass's triage
 # (run-item.sh implementer <n>), which holds what a fix holds.
@@ -132,9 +138,10 @@ def items(rows_by_target: dict[str, list[Row]]) -> list[Item]:
       only it serves).
     - A claimed stranded issue is its holder's; an unclaimed one, and an
       unclaimed SHARED item, the first server's that offers it.
-    - Any other item several servers offer (an unclaimed fix, build or
-      close-out any of them may take) gets those servers as candidates: the
-      scheduler gives it to the first with its resources free.
+    - Any other item several servers offer (an unclaimed fix, build,
+      close-out, design or decompose any of them may take) gets those servers
+      as candidates: the scheduler gives it to the first with its resources
+      free.
     """
     offers: dict[tuple, list] = {}
     order = []

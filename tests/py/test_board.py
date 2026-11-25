@@ -48,10 +48,20 @@ class ItemsTest(unittest.TestCase):
 
     def test_shared_unclaimed_goes_to_the_first_server(self):
         rows = {
-            "lem": [r(7, "lead:design"), r(8, "reviewer:docs")],
-            "mini-ai": [r(7, "lead:design"), r(8, "reviewer:docs")],
+            "lem": [r(8, "reviewer:docs"), r(9, "tester:spec")],
+            "mini-ai": [r(8, "reviewer:docs"), r(9, "tester:spec")],
         }
-        self.assertEqual(board.items(rows), [Item("lead:design", 7, "lem"), Item("reviewer:docs", 8, "lem")])
+        self.assertEqual(board.items(rows), [Item("reviewer:docs", 8, "lem"), Item("tester:spec", 9, "lem")])
+
+    def test_unclaimed_design_and_decompose_get_candidates(self):
+        rows = {
+            "lem": [r(7, "lead:design"), r(6, "lead:decompose")],
+            "mini-ai": [r(7, "lead:design"), r(6, "lead:decompose")],
+        }
+        self.assertEqual(
+            board.items(rows),
+            [Item("lead:design", 7, None, ("lem", "mini-ai")), Item("lead:decompose", 6, None, ("lem", "mini-ai"))],
+        )
 
     def test_shared_moves_when_the_first_server_is_gone(self):
         rows = {"mini-ai": [r(7, "lead:design")]}

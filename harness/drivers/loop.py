@@ -368,7 +368,9 @@ class Loop:
         if not loop_servers:
             raise ProfileError("no loop server to drive")
         self.servers_cfg = loop_servers
-        self.free_slots = knob("LOOP_FREE_SLOTS", 3)
+        # Two server-free sessions per driven server: each has a src and a
+        # leadtree slot, and a flat 3 left the second server idle.
+        self.free_slots = knob("LOOP_FREE_SLOTS", 2 * len(loop_servers))
         self.poll = max(1, knob("LOOP_POLL_SECS", 60))
         self.health_secs = max(1, knob("LOOP_HEALTH_SECS", 30))
         self.retry_secs = knob("DEPLOY_RETRY_SECS", 300)
@@ -839,6 +841,11 @@ class Loop:
                 srv = self.srv.get(it.server) if it.server else None
                 if srv is not None and srv.frozen == "1":
                     continue  # features_pass holds them in a stabilization freeze
+                if it.server is None:
+                    cands = tuple(c for c in it.candidates if not (c in self.srv and self.srv[c].frozen == "1"))
+                    if not cands:
+                        continue
+                    it = Item(it.queue, it.issue, None, cands)
             if it.server in stopping:
                 continue
             if it.server is None:
