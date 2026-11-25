@@ -56,7 +56,13 @@ hand-off gate):
     status:verified, no lifting a park, one owner at a time)
 every role:
   - no adding `status:plan-approved`: approving a feature plan is Don's
-    alone (roadmap R11), so no agent can approve the plan it wrote
+    (roadmap R11), so no agent can approve the plan it wrote. The one
+    exception is Don's escalation delegate (R19, role `delegate`), right
+    after its own ruling on that issue and never on a taste or trust kind
+  - the delegate: `gh issue` view/list anywhere, comment/edit only on
+    HARNEST_ISSUE with --repo HARNEST_TICKET_REPO, no close/reopen/create/
+    delete/transfer, no status:verified; it may lift owner:don /
+    status:needs-approval only right after its own ruling (delegate_ruling)
   - no adding or removing `release` or `release-blocker`: a freeze, and
     what moves during one, are Don's (roadmap R14)
   - removing `status:plan-approved` only in the plain form, `gh issue edit
@@ -188,6 +194,7 @@ against the model's mistakes, not against an adversary: a determined agent
 could spell a call so this misses it, which audit_issue still catches.
 """
 
+import calendar
 import codecs
 import fcntl
 import json
@@ -943,6 +950,66 @@ def still_parked(words):
     except Exception:
         return True
     return out.returncode != 0 or out.stdout.strip() != "false"
+
+
+# R19: how recent the delegate's own ruling must be for the guard to let it
+# act on that ruling (lift Don's park, approve a plan). One session posts and
+# acts within minutes; an older ruling is some other session's.
+DELEGATE_RULING_SECS = 1800
+DELEGATE_RULING = "**Ruling (delegate for Don"
+# Kinds a delegate ruling never approves a plan under (agents/delegate/core.md,
+# "What is Don's to decide"): they always pass through.
+DELEGATE_NEVER_APPROVES = {"taste", "trust"}
+
+
+def delegate_ruling(words):
+    """The kinds of the delegate's ruling on the issue this command names, when
+    that issue's newest comment is a delegate ruling (agents/delegate/core.md's
+    shape) posted in the last DELEGATE_RULING_SECS; else None. A pass-through
+    comment is not a ruling. Any doubt (no number, gh failing) is None, so the
+    rules that ask for a ruling fail closed."""
+    nums = one_issue(words)
+    if not nums:
+        return None
+    repo = flag_values(words, "--repo", "-R")
+    cmd = ["gh", "issue", "view", nums[0].lstrip("#"), "--json", "comments", "--jq", ".comments[-1] // {}"]
+    if repo:
+        cmd += ["--repo", repo[-1]]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+        last = json.loads(out.stdout) if out.returncode == 0 else {}
+        body = (last.get("body") or "").lstrip()
+        if not body.startswith(DELEGATE_RULING):
+            return None
+        posted = calendar.timegm(time.strptime(last["createdAt"][:19], "%Y-%m-%dT%H:%M:%S"))
+        if time.time() - posted > DELEGATE_RULING_SECS:
+            return None
+    except Exception:
+        return None
+    kinds = re.search(r"^Kinds:\s*(.*)$", body, re.M)
+    return {k.strip().strip("`").lower() for k in (kinds.group(1).split(",") if kinds else []) if k.strip()}
+
+
+def delegate_scope_rule(words):
+    """The delegate rules on one issue (HARNEST_ISSUE, on HARNEST_TICKET_REPO):
+    it reads anything, but comments on and edits only that issue, naming the
+    repo, and never creates, closes, deletes, transfers, pins or locks one."""
+    if len(words) < 3 or os.path.basename(words[0]) != "gh" or words[1] != "issue":
+        return
+    sub = words[2]
+    if sub in ("view", "list", "status"):
+        return
+    if sub not in ("comment", "edit"):
+        deny("the delegate reads issues and comments on or edits the one it rules on; `gh issue %s` is not its." % sub)
+    issue = os.environ.get("HARNEST_ISSUE", "")
+    repo = os.environ.get("HARNEST_TICKET_REPO", "")
+    nums = one_issue(words)
+    named = flag_values(words, "--repo", "-R")
+    if not issue or not repo or not nums or nums[0].lstrip("#") != issue or not named or named[-1] != repo:
+        deny(
+            "the delegate comments on and edits only the issue it rules on: `gh issue %s %s --repo %s ...`."
+            % (sub, issue or "<n>", repo or "<repo>")
+        )
 
 
 def label_lookup(words, label):
@@ -3173,7 +3240,7 @@ def deploy_rule(raw, words, server, text):
         )
 
 
-ROLES = ("implementer", "lead", "consumer", "curator", "reviewer")
+ROLES = ("implementer", "lead", "consumer", "curator", "reviewer", "delegate")
 
 
 def main():
@@ -3357,10 +3424,23 @@ def main():
             else []
         )
         if "status:plan-approved" in added:
-            deny(
-                "status:plan-approved is Don's to add: approving a feature plan is a human decision, "
-                "and no agent may approve a plan, its own or another's."
-            )
+            if role == "delegate":
+                kinds = delegate_ruling(words)
+                if kinds is None:
+                    deny(
+                        "status:plan-approved: post your ruling on this issue first (it must be the issue's newest "
+                        "comment, starting `**Ruling (delegate for Don`), then approve."
+                    )
+                if kinds & DELEGATE_NEVER_APPROVES:
+                    deny(
+                        "a plan with a %s question is Don's to approve: pass it through to him instead."
+                        % "/".join(sorted(kinds & DELEGATE_NEVER_APPROVES))
+                    )
+            else:
+                deny(
+                    "status:plan-approved is Don's (or his delegate's) to add: approving a feature plan is a "
+                    "human decision, and no other agent may approve a plan, its own or another's."
+                )
         if {"release", "release-blocker"} & set(added):
             deny(
                 "release and release-blocker are Don's to add: a freeze, and what may move during "
@@ -3388,10 +3468,12 @@ def main():
             if role != "curator":
                 owner_rule(words)
             removed = flag_values(words, "--remove-label")
-            if "owner:don" in removed:
-                deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
-            if "status:needs-approval" in removed and still_parked(words):
-                deny("owner:don / status:needs-approval is a park with the human; only a human lifts it.")
+            lifts = "owner:don" in removed or ("status:needs-approval" in removed and still_parked(words))
+            if lifts and not (role == "delegate" and delegate_ruling(words) is not None):
+                deny(
+                    "owner:don / status:needs-approval is a park with the human; only a human lifts it"
+                    + (", or the delegate right after its own ruling on the issue." if role == "delegate" else ".")
+                )
         if "arch-approved" in added:
             deny(
                 "arch-approved is Don's to add: it waives new surface during a freeze, a ratchet rise and an "
@@ -3412,6 +3494,12 @@ def main():
                 deny("an architecture review closes nothing: pass the fix on (remove arch-review) or bounce it.")
             if adds_verified(words):
                 deny("status:verified claims an MCP check; a docs review adds status:reviewed instead.")
+        if role == "delegate":
+            delegate_scope_rule(words)
+            if is_gh_issue(words, "close") or is_gh_issue(words, "reopen"):
+                deny("a ruling closes nothing: hand the issue to the agent the ruling names, which closes it.")
+            if adds_verified(words):
+                deny("status:verified is the tester's to add, from a real MCP call.")
         if role in ("implementer", "lead", "reviewer"):
             if role != "reviewer" and closes_completed(words):
                 deny(

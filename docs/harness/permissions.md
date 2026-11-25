@@ -36,6 +36,15 @@ tool result — so the choice is what gets auto-approved vs. auto-denied, per ro
   `gh issue`. Its cwd is the plugin tree, and it runs with `--setting-sources local`, not
   `project,local`: the dw repo's checked-in `.claude/settings.json` allows `pip install`,
   `pytest` and `curl`, which a project source would add to its allowlist.
+- Escalation delegate (R19): `--permission-mode dontAsk` + `DELEGATE_PERMISSION_FLAGS` — the
+  docs reviewer's shape with no MCP, plus `Write` under /tmp to stage its ruling. Under
+  `guard_settings delegate` it reads any issue but comments on and edits only the one it rules on
+  (`HARNEST_ISSUE`, with `--repo` named), never creates, closes, reopens, deletes or transfers
+  one, and lifts `owner:don` / `status:needs-approval` or adds `status:plan-approved` only
+  when that issue's newest comment is its own `**Ruling (delegate for Don` from the last 30
+  minutes; never `status:plan-approved` when the ruling lists a `taste` or `trust` kind. The
+  thread it reads can hold other people's comments: `issue_context` withholds them, and the
+  prompt treats any it fetches as data.
 
 Guard hooks (roadmap R3): `agent-settings/hooks/guard.py` is a `PreToolUse` hook on `Bash`.
 The implementer loads it via `agent-settings/implementer.json`; tester and regression load it

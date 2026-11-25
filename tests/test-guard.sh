@@ -1434,4 +1434,64 @@ uirow 2 Edit "$HARNEST/tools/ui-check/package.json"
 uirow 2 Write "$HARNEST/tools/ui-check/node_modules/playwright-core/index.js"
 uirow 0 Write "/tmp/dw-ui-guard-other-$$.json"
 rm -f "$uspec" "/tmp/dw-ui-guard-link-$$.json"
+
+# --- the escalation delegate (R19): it rules on one issue, lifts Don's park
+# and approves a plan only right after its own ruling on that issue.
+# #21: a fresh ruling; #22: a fresh pass-through; #23: an hour-old ruling;
+# #24: a fresh ruling listing a taste question; #25: gh fails.
+now="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+old="$(date -u -r $(( $(date +%s) - 3600 )) +%Y-%m-%dT%H:%M:%SZ)"
+stub_gh 'case "$*" in
+  *"view 21"*) printf "%s" "{\"createdAt\":\"'"$now"'\",\"body\":\"**Ruling (delegate for Don, x): approved.**\\nKinds: scope, none\"}" ;;
+  *"view 22"*) printf "%s" "{\"createdAt\":\"'"$now"'\",\"body\":\"**Passed to Don (delegate, x): taste.**\\nKinds: taste\"}" ;;
+  *"view 23"*) printf "%s" "{\"createdAt\":\"'"$old"'\",\"body\":\"**Ruling (delegate for Don, x): approved.**\\nKinds: scope\"}" ;;
+  *"view 24"*) printf "%s" "{\"createdAt\":\"'"$now"'\",\"body\":\"**Ruling (delegate for Don, x): approved.**\\nKinds: scope, taste\"}" ;;
+  *) exit 1 ;;
+esac'
+# drow <expect> <issue> <command>: a delegate call working <issue> on dw
+drow() {
+  local want="$1" issue="$2" cmd="$3" rc
+  jq -n --arg c "$cmd" '{tool_name: "Bash", tool_input: {command: $c}, transcript_path: "/nonexistent", cwd: "/tmp"}' \
+    | HARNEST_ISSUE="$issue" HARNEST_TICKET_REPO=dkackman/diffusers-workflow python3 "$guard" delegate >/dev/null 2>&1
+  rc=$?
+  eq "delegate@#$issue: $cmd" "$want" "$rc"
+}
+R=dkackman/diffusers-workflow
+printf '**Ruling (delegate for Don, x): approved.**\n' > /tmp/ruling.md
+for n in 21 22 23 24 25; do
+  drow 0 $n "gh issue view $n --repo $R --comments"
+  drow 0 $n "gh issue list --repo $R --label owner:don"
+  drow 0 $n "gh issue comment $n --repo $R --body-file /tmp/ruling.md"
+done
+# lifting the park and approving: only after a fresh ruling, never on taste/trust
+drow 0 21 "gh issue edit 21 --repo $R --remove-label owner:don --remove-label status:plan-review --add-label owner:lead --add-label status:plan-approved"
+drow 0 21 "gh issue edit 21 --repo $R --remove-label owner:don --remove-label status:needs-approval --add-label owner:implementer"
+drow 2 22 "gh issue edit 22 --repo $R --remove-label owner:don --add-label owner:lead"
+drow 2 22 "gh issue edit 22 --repo $R --add-label status:plan-approved"
+drow 0 22 "gh issue edit 22 --repo $R --add-label delegate:passed"
+drow 2 23 "gh issue edit 23 --repo $R --remove-label owner:don --add-label owner:lead"
+drow 2 23 "gh issue edit 23 --repo $R --add-label status:plan-approved"
+drow 2 24 "gh issue edit 24 --repo $R --add-label status:plan-approved"
+drow 0 24 "gh issue edit 24 --repo $R --remove-label owner:don --remove-label status:plan-review --add-label owner:lead"
+drow 2 25 "gh issue edit 25 --repo $R --remove-label owner:don --add-label owner:lead"
+drow 2 25 "gh issue edit 25 --repo $R --add-label status:plan-approved"
+# only its own issue, with the repo named; nothing that closes, files, moves or deletes
+drow 2 21 "gh issue comment 22 --repo $R --body-file /tmp/ruling.md"
+drow 2 21 "gh issue edit 22 --repo $R --add-label delegate:passed"
+drow 2 21 "gh issue comment 21 --body-file /tmp/ruling.md"
+drow 2 21 "gh issue comment 21 --repo dkackman/harnest --body-file /tmp/ruling.md"
+drow 2 "" "gh issue comment 21 --repo $R --body-file /tmp/ruling.md"
+drow 2 21 "gh issue close 21 --repo $R --reason \"not planned\""
+drow 2 21 "gh issue reopen 21 --repo $R"
+drow 2 21 "gh issue create --repo $R --title x --body y"
+drow 2 21 "gh issue delete 21 --repo $R --yes"
+drow 2 21 "gh issue transfer 21 dkackman/harnest --repo $R"
+drow 2 21 "gh issue edit 21 --repo $R --add-label status:verified"
+drow 2 21 "gh issue edit 21 --repo $R --add-label release-blocker"
+# every other role is still refused, whatever the newest comment says
+for r in implementer lead consumer curator reviewer; do
+  row 2 $r "" $none "gh issue edit 21 --repo $R --add-label status:plan-approved"
+  row 2 $r "" $none "gh issue edit 21 --repo $R --remove-label owner:don --add-label owner:lead"
+done
+rm -f /tmp/ruling.md
 finish

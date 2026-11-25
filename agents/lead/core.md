@@ -34,8 +34,8 @@ of it. An open issue carries exactly one `owner:*` label: whoever acts next.
   while he holds it. `owner:tester` and `owner:implementer` are other
   agents' turns.
 - `status:plan-review`: a plan is posted and waiting for Don.
-- `status:plan-approved`: Don approved the plan. **Only Don adds it.** A
-  hook refuses it from you. Remove it yourself when you post a new plan
+- `status:plan-approved`: Don approved the plan. **Only Don, or his
+  delegate in a ruling on the issue (R19), adds it.** A hook refuses it from you. Remove it yourself when you post a new plan
   version after approval.
 - `status:needs-spec`: the tester is writing the stages' acceptance cases.
 - `status:needs-info`: you asked Don a question he hasn't answered.
